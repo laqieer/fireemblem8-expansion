@@ -78,6 +78,7 @@ override).
 | `MODERN_ABI` | `aapcs`, `apcs-gnu` | `aapcs` | calling convention / struct layout (fingerprint) |
 | `MODERN_ROM_SIZE` | `16M`, `32M`, or an exact byte count equal to one of those | `16M` | output ROM size / padding (fingerprint) |
 | `MODERN_TEXT_SHIFT` | non-negative integer, 4-byte aligned | `0` | link-time padding before `.text` (fingerprint) |
+| `FE8_ITEM_ID_CAP` | integer, `[0x00, 0xFF]` | `0xCD` | active item table capacity and compiled content boundary (metadata and fingerprint) |
 
 The supported default remains English-only at 16 MiB:
 
@@ -102,6 +103,18 @@ make expansion-modern-localization-profile-en-ja-zh-hans
 make expansion-modern-localization-profile-en-fr-de-es-it
 make expansion-modern-localization-profile-all
 ```
+
+The complete supported optional-feature composition has a separate,
+non-configurable named build/check target:
+
+```bash
+make expansion-modern-all-locales-all-features-check
+```
+
+It is release/AAPCS-only, uses a private generated-data/output root, and
+selects all production locales plus the documented optional features. See
+[`patch_release.md`](patch_release.md) for its patch-only artifact contract;
+the default build and every existing locale profile remain unchanged.
 
 The named targets use isolated build roots and select their full-game catalog
 and localized font payload from the same validated
@@ -130,6 +143,11 @@ three by default -- this preserves the pre-existing `NDEBUG` convention
 already used by `include/gba/isagbprint.h`'s `AGB_ASSERT`/`AGB_WARNING`
 macros; subsystems added later should gate development-only code on
 `FE8_EXPANSION_DEBUG` rather than re-deriving it from `NDEBUG` themselves.
+Issue #68's mGBA logging frontend uses the existing
+`FE8_EXPANSION_LOGGING_ENABLED` consequence of this preset directly: it
+adds no independent option, Make variable, or identity field. The preset is
+already fingerprinted, so debug logging and release omission have distinct,
+deterministic ROM identities without changing save compatibility.
 
 Both modern configurations define `BUGFIX=1`, enabling the decompilation's
 reviewed correctness fixes alongside `MODERN=1` and `NONMATCHING=1`. The
@@ -199,6 +217,7 @@ compatibility-relevant setting changes.
 | `features.mechanics_hooks`, `features.mechanics_sample`, `features.danger_overlay_menu`, `features.starter_content` | issue #6 starter-feature opt-ins; each links different code and/or data, so two builds that differ in any of them are behaviourally distinguishable. Diagnostic identity only -- see `docs/starter_features.md`; none of them touches the save format |
 | `features.aoe_reference` | issue #42 default-off reference effect/probe; changes runtime behavior only when explicitly invoked. Diagnostic identity only -- see `docs/aoe.md`; it does not touch the save format |
 | `features.casual_mode` | issue #34 changes defeat handling and therefore runtime behavior. Its marker uses existing serialized unit-state capacity; no save struct or compatibility epoch changes |
+| `item_id_cap` | changes the active generated item table and whether expansion content can compile, so builds with different caps must never share an identity |
 
 Settings that are **not** folded into the fingerprint (e.g. the resolved
 `build_commit`) are informational only: two builds from different commits

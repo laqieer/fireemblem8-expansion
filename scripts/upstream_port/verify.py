@@ -122,7 +122,7 @@ def gates(jobs: int = 2) -> List[Gate]:
             ],
             applicable_note=(
                 "fast host lane (same `host-tests` job): stdlib-only static "
-                "contracts for the dispatch-only Full Matrix CI workflow and "
+                "contracts for the master-only Full Matrix CI workflow and "
                 "its README badge path/name/link. No compiler, ROM, linker, "
                 "network, or subordinate runtime gate is invoked"
             ),
@@ -299,6 +299,16 @@ def gates(jobs: int = 2) -> List[Gate]:
             applicable_note=(
                 "release-config counterpart of the item-expansion debug gate above, "
                 "and the final step of build.yml ROM `build` job"
+            ),
+        ),
+        Gate(
+            name="modern-all-locales-all-features-profile",
+            command=["make", "expansion-modern-all-locales-all-features-check", "-j1"],
+            applicable_note=(
+                "issue #49 trusted-patch preflight: builds and validates the "
+                "isolated release/AAPCS 32 MiB all-production-locales and "
+                "maximal-supported-features profile without reading a base "
+                "image, creating a patch, or publishing an artifact"
             ),
         ),
     ]

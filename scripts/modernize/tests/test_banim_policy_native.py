@@ -154,6 +154,13 @@ int main(void)
         &standard, &standardHit, &standardDamage, &standardCrit);
     BanimPresentationPolicy_ApplyDamageNumberStyle(
         &reduced, &reducedHit, &reducedDamage, &reducedCrit);
+    struct BanimPresentationPolicy off =
+        {{3, 1, 0, 2, 2, 0, 0, 0, 0, 0, 0, 1, 1}};
+    s16 offHit = 80;
+    s16 offDamage = 20;
+    s16 offCrit = 5;
+    BanimPresentationPolicy_ApplyDamageNumberStyle(
+        &off, &offHit, &offDamage, &offCrit);
     return !(
         BanimPresentationPolicy_FromAnimationOption(PLAY_ANIMCONF_ON)
             == BANIM_PRESENTATION_POLICY_DEFAULT
@@ -183,7 +190,12 @@ int main(void)
         && reducedCrit == -1
         && BanimPresentationPolicy_AdjustEffectDuration(&standard, 8) == 8
         && BanimPresentationPolicy_AdjustEffectDuration(&reduced, 8) == 4
-        && BanimPresentationPolicy_AdjustEffectDuration(&reduced, 5) == 2);
+        && BanimPresentationPolicy_AdjustEffectDuration(&reduced, 5) == 2
+        && !BanimPresentationPolicy_UsesHitEffects(&off)
+        && !BanimPresentationPolicy_UsesHitEffectPalette(&off)
+        && offHit == -1
+        && offDamage == -1
+        && offCrit == -1);
 }}
 """
         artifact_dir = ROOT / "build" / "test-artifacts" / "banim-policy-runtime"

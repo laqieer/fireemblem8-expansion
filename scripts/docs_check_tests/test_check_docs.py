@@ -1,5 +1,6 @@
 import copy
 import importlib.util
+import io
 import json
 import os
 import re
@@ -79,6 +80,23 @@ class StripFencedBlocksTests(unittest.TestCase):
             r"unterminated fenced code block opened at line 2 with ```",
         ):
             list(check_docs.iter_fenced_block_bodies("before\n```\nmake all"))
+
+    def test_run_checks_reports_unterminated_fence_by_path_and_cli_returns_one(self):
+        with TempRepo() as repo:
+            write(repo.root, "broken.md", "before\n```\nText-only tests are permitted.\n")
+            repo.add_all()
+            findings, _, _ = check_docs.run_checks(repo.root)
+            fence_findings = [
+                finding
+                for finding in findings
+                if finding.file == "broken.md"
+                and "unterminated fenced code block opened at line 2 with ```"
+                in finding.message
+            ]
+            self.assertEqual(len(fence_findings), 1)
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as output:
+                self.assertEqual(check_docs.main(["--root", repo.root]), 1)
+            self.assertIn("broken.md: unterminated fenced code block", output.getvalue())
 
 
 class HeadingSlugTests(unittest.TestCase):
@@ -763,6 +781,40 @@ class TesterCaseRegistryTests(unittest.TestCase):
     def test_real_repository_foundation_registry_passes(self):
         self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
 
+    def test_patch_release_cases_are_indexed_with_complete_procedures(self):
+        registry_path = os.path.join(REAL_REPO_ROOT, check_docs.TEST_CASE_REGISTRY_PATH)
+        with open(registry_path, encoding="utf-8") as stream:
+            registry = json.load(stream)
+
+        feature = next(
+            entry for entry in registry["features"] if entry["id"] == "patch-release-artifact"
+        )
+        case_ids = ["TC-CI-PATCH-049-001", "TC-CI-PATCH-049-002"]
+        self.assertEqual(feature["required_cases"], case_ids)
+        cases = {entry["id"]: entry for entry in registry["cases"]}
+
+        for case_id in case_ids:
+            with self.subTest(case_id=case_id):
+                case = cases[case_id]
+                self.assertEqual(case["feature_id"], feature["id"])
+                self.assertTrue(case["profiles"])
+                self.assertTrue(case["automation"])
+                for field in (
+                    "purpose", "prerequisites", "actions", "expected_result",
+                    "negative_control", "interactions", "save_compatibility",
+                    "cleanup", "limitations",
+                ):
+                    self.assertTrue(case[field].strip(), field)
+                procedure = check_docs.read_text(
+                    os.path.join(REAL_REPO_ROOT, case["document"])
+                )
+                self.assertIn("## " + case_id + ":", procedure)
+                self.assertIn("### Actions", procedure)
+                self.assertIn("### Expected result", procedure)
+                self.assertIn("### Negative control", procedure)
+                self.assertIn("### Interactions and save compatibility", procedure)
+                self.assertIn("### Automation", procedure)
+
     def test_malformed_and_duplicate_case_ids_fail(self):
         for case_id in ("not-a-case", "TC-SAMPLE--001"):
             malformed = self._valid_registry()
@@ -1409,15 +1461,15 @@ class FullMatrixBadgeContractTests(unittest.TestCase):
 #      ac0ee5d7f17eb8e70175576cb46d9f320d8013cd merged into master.
 #   2. docs/framework-support.md said the item-ID-expansion checks were
 #      "gates 11-12" of the upstream verify gate set; the real, current
-#      scripts/upstream_port/verify.py gates() puts them at indexes 9-10
-#      of exactly 10.
+#      scripts/upstream_port/verify.py gates() puts them at gates 12-13
+#      of exactly 14.
 #
 # These tests prove: (a) every old phrase is flagged stale if it reappears,
 # (b) the current live doc/report text is stale-clean, (c) the historical,
 # batch-scoped technical boundary wording (which looks similar but is not a
 # live current-status claim) is NOT flagged, (d) the current docs/report
 # state #5 CLOSED with the real completion commit as merged evidence, and
-# (e) the "gates 9-10" claim is source-backed against the real
+# (e) the "gates 12-13" claim is source-backed against the real
 # scripts/upstream_port/verify.py gates() ordering -- never a hardcoded
 # fake substitute.
 # ---------------------------------------------------------------------------
@@ -1508,7 +1560,7 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         self.assertNotIn("gates 10-11 of", framework_support_text)
         self.assertNotIn("gates 11-12 of", framework_support_text)
 
-    def test_verify_gates_item_expansion_entries_are_indexes_12_and_13_of_13(self):
+    def test_verify_gates_item_expansion_entries_are_indexes_12_and_13_of_14(self):
         # Safe, standalone, no-network import of the live verify module
         # straight off disk -- proves "gates 11-12" against the real,
         # current scripts/upstream_port/verify.py gates() ordering rather
@@ -1527,13 +1579,17 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         finally:
             sys.modules.pop(spec.name, None)
 
-        self.assertEqual(len(all_gates), 13)
+        self.assertEqual(len(all_gates), 14)
         # Gates are 1-indexed in the docs ("gates 12-13"); Python lists are
         # 0-indexed, so that's positions [11] and [12].
         self.assertIn("itemexpansion", all_gates[11].name)
         self.assertIn("itemexpansion", all_gates[12].name)
         for gate in all_gates[:11]:
             self.assertNotIn("itemexpansion", gate.name)
+        self.assertEqual(
+            all_gates[13].name,
+            "modern-all-locales-all-features-profile",
+        )
 
 
 class ABIFactualDocContractTests(unittest.TestCase):

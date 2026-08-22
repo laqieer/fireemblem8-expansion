@@ -96,9 +96,6 @@ class BackendIntegrationTests(unittest.TestCase):
             self.assertEqual(held["probes"][0]["value"], "0x000003fe")
             self.assertEqual(released_again["probes"][0]["value"], "0x000003ff")
 
-            expected_path.write_text(
-                gba_playtest.serialize_fingerprint(first), encoding="utf-8"
-            )
             self.assertEqual(
                 gba_playtest.compare_fingerprints(first, second, "exact-rom"), []
             )
@@ -115,6 +112,14 @@ class BackendIntegrationTests(unittest.TestCase):
             )
             self.assertEqual(
                 gba_playtest.compare_fingerprints(first, candidate, "behavior"), []
+            )
+            behavior_baseline = copy.deepcopy(first)
+            del behavior_baseline["rom"]
+            gba_playtest.validate_fingerprint(
+                behavior_baseline, "<behavior-baseline>", policy="behavior"
+            )
+            expected_path.write_text(
+                gba_playtest.serialize_fingerprint(behavior_baseline), encoding="utf-8"
             )
 
             captured_stdout = io.StringIO()
@@ -184,12 +189,17 @@ class BackendIntegrationTests(unittest.TestCase):
                         str(expected_path),
                     ]
                 )
-            self.assertEqual(exact_rc, 1)
+            self.assertEqual(exact_rc, 2)
             self.assertEqual(behavior_rc, 0)
-            self.assertIn("baseline ROM:", captured_stdout.getvalue())
+            self.assertIn(
+                "baseline ROM: not recorded (behavior-policy baseline)",
+                captured_stdout.getvalue(),
+            )
             self.assertIn("candidate ROM:", captured_stdout.getvalue())
-            self.assertIn("baseline ROM:", captured_stderr.getvalue())
-            self.assertIn("candidate ROM:", captured_stderr.getvalue())
+            self.assertIn(
+                "missing required field(s): rom",
+                captured_stderr.getvalue(),
+            )
 
             corrupted = copy.deepcopy(first)
             corrupted["checkpoints"][0][

@@ -329,12 +329,12 @@ STALE_PHRASE_RULES = [
     # verify gate set. The actual, current scripts/upstream_port/verify.py
     # gates() ordering (mirrored by docs/upstream-porting.md) puts the two
     # item-expansion gates (modern-itemexpansion-check-debug/-release) at
-    # indexes 12-13 of exactly 13 gates, not 11-12. This exact stale gate
+    # indexes 12-13 of exactly 14 gates, not 11-12. This exact stale gate
     # numbering must never reappear verbatim.
     (
         re.compile(re.escape("gates 10-11 of the current-master")),
         "stale claim: the item-ID-expansion checks are gates 12-13 of the "
-        "exact 13-gate scripts/upstream_port/verify.py gates() set, not "
+        "exact 14-gate scripts/upstream_port/verify.py gates() set, not "
         "gates 10-11 -- see docs/upstream-porting.md",
     ),
 ]
@@ -626,6 +626,20 @@ def strip_fenced_blocks(text):
     return "\n".join(out)
 
 
+def check_fenced_blocks(markdown_files, root):
+    """Return fence findings and Markdown files safe for structure checks."""
+    findings = []
+    safe_files = []
+    for path in markdown_files:
+        try:
+            strip_fenced_blocks(read_text(os.path.join(root, path)))
+        except DocsCheckError as exc:
+            findings.append(Finding(path, 0, str(exc)))
+        else:
+            safe_files.append(path)
+    return findings, safe_files
+
+
 def iter_fenced_block_bodies(text):
     """Yield the raw text content of every fenced code block (for command
     extraction only -- never for link/URL scanning)."""
@@ -907,9 +921,12 @@ def resolve_internal_link(root, source_rel_path, target, heading_slug_cache):
 
     if anchor and is_recognized_markdown_path(target_path):
         if target_path not in heading_slug_cache:
-            heading_slug_cache[target_path] = compute_heading_slugs(
-                strip_fenced_blocks(read_text(abs_target))
-            )
+            try:
+                heading_slug_cache[target_path] = compute_heading_slugs(
+                    strip_fenced_blocks(read_text(abs_target))
+                )
+            except DocsCheckError as exc:
+                return False, "target Markdown has malformed fenced block: %s" % exc
         if anchor not in heading_slug_cache[target_path]:
             return False, "anchor #%s not found in %s (no matching heading slug)" % (anchor, target_path)
 
@@ -1241,7 +1258,10 @@ def _check_registry_document(root, path, anchor, label):
     if anchor is not None:
         if not _is_non_placeholder_string(anchor):
             return ["%s has empty or placeholder anchor" % label]
-        slugs = compute_heading_slugs(strip_fenced_blocks(read_text(full_path)))
+        try:
+            slugs = compute_heading_slugs(strip_fenced_blocks(read_text(full_path)))
+        except DocsCheckError as exc:
+            return ["%s references malformed fenced Markdown in %s: %s" % (label, path, exc)]
         if anchor not in slugs:
             return ["%s references missing anchor #%s in %s" % (label, anchor, path)]
     return []
@@ -2209,6 +2229,8 @@ def run_all_safe_examples(root):
 def run_checks(root, check_examples=False):
     findings = []
     markdown_files = discover_markdown_files(root)
+    fence_findings, structure_safe_files = check_fenced_blocks(markdown_files, root)
+    findings.extend(fence_findings)
 
     entries, inv_errors = parse_inventory(root)
     findings.extend(Finding(INVENTORY_PATH, 0, e) for e in inv_errors)
@@ -2217,16 +2239,18 @@ def run_checks(root, check_examples=False):
 
     rules, reg_errors = parse_registry(root)
     findings.extend(Finding(REGISTRY_PATH, 0, e) for e in reg_errors)
-    findings.extend(check_external_urls(markdown_files, root, rules))
+    findings.extend(check_external_urls(structure_safe_files, root, rules))
 
-    findings.extend(check_internal_links(markdown_files, root))
-    findings.extend(check_reference_style_links(markdown_files, root))
-    findings.extend(check_stale_phrases(markdown_files, root))
-    findings.extend(check_object_count_claims(markdown_files, root))
+    findings.extend(check_internal_links(structure_safe_files, root))
+    findings.extend(check_reference_style_links(structure_safe_files, root))
+    findings.extend(check_stale_phrases(structure_safe_files, root))
+    findings.extend(check_object_count_claims(structure_safe_files, root))
     findings.extend(check_full_matrix_badge(root))
 
     literal_targets, pattern_targets = parse_make_targets(root)
-    findings.extend(check_make_targets(markdown_files, root, literal_targets, pattern_targets))
+    findings.extend(check_make_targets(
+        structure_safe_files, root, literal_targets, pattern_targets
+    ))
 
     example_results = []
     if check_examples:

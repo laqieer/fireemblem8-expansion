@@ -49,6 +49,28 @@ struct BanimPresentationPolicy
     /* 0E */ u16 timingMaxFrames;
 };
 
+#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
+struct BanimPresentationRuntimeProbe
+{
+    /* 00 */ u32 policyId;
+    /* 04 */ u32 realHitPathObserved;
+    /* 08 */ u32 hitEffectsEnabled;
+    /* 0C */ u32 paletteFlashEnabled;
+    /* 10 */ u32 paletteFlashStarted;
+    /* 14 */ u32 hitNumbersVisible;
+    /* 18 */ u32 damageNumbersVisible;
+    /* 1C */ u32 critNumbersVisible;
+    /* 20 */ u32 autoLaunchArmed;
+};
+
+extern struct BanimPresentationRuntimeProbe gBanimPresentationRuntimeProbe;
+
+void BanimPresentationPolicy_RuntimeProbePrepare(void);
+void BanimPresentationPolicy_RuntimeProbeRecordHit(
+    struct BanimPresentationPolicy const *policy);
+void BanimPresentationPolicy_RuntimeProbeRecordPaletteFlash(void);
+#endif
+
 extern struct BanimPresentationPolicy const gBanimPresentationPolicies[BANIM_PRESENTATION_POLICY_COUNT];
 
 struct BanimPresentationPolicy const *BanimPresentationPolicy_Get(u8 policyId);
