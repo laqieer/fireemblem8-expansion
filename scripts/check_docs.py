@@ -600,13 +600,15 @@ def strip_fenced_blocks(text):
     in_fence = False
     fence_char = None
     fence_len = 0
-    for line in lines:
+    fence_line = None
+    for lineno, line in enumerate(lines, start=1):
         stripped = line.strip()
         m = FENCE_RE.match(stripped)
         if not in_fence and m:
             in_fence = True
             fence_char = m.group(1)[0]
             fence_len = len(m.group(1))
+            fence_line = lineno
             out.append("")
             continue
         if in_fence:
@@ -616,12 +618,18 @@ def strip_fenced_blocks(text):
             out.append("")
             continue
         out.append(line)
+    if in_fence:
+        raise DocsCheckError(
+            "unterminated fenced code block opened at line %d with %s"
+            % (fence_line, fence_char * fence_len)
+        )
     return "\n".join(out)
 
 
 def iter_fenced_block_bodies(text):
     """Yield the raw text content of every fenced code block (for command
     extraction only -- never for link/URL scanning)."""
+    strip_fenced_blocks(text)
     lines = text.split("\n")
     in_fence = False
     fence_char = None
@@ -644,10 +652,6 @@ def iter_fenced_block_bodies(text):
             else:
                 body.append(line)
             continue
-    # Unterminated fence (shouldn't happen; balance is a lint concern, not
-    # this function's job) -- yield whatever was collected.
-    if in_fence and body:
-        yield "\n".join(body)
 
 
 def github_heading_slug(text):

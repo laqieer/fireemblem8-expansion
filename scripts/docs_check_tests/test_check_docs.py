@@ -68,6 +68,18 @@ class StripFencedBlocksTests(unittest.TestCase):
         stripped = check_docs.strip_fenced_blocks(text)
         self.assertNotIn("link", stripped)
 
+    def test_unterminated_fence_fails_with_opening_location(self):
+        with self.assertRaisesRegex(
+            check_docs.DocsCheckError,
+            r"unterminated fenced code block opened at line 2 with ```",
+        ):
+            check_docs.strip_fenced_blocks("before\n```\n[fake](nope.md)")
+        with self.assertRaisesRegex(
+            check_docs.DocsCheckError,
+            r"unterminated fenced code block opened at line 2 with ```",
+        ):
+            list(check_docs.iter_fenced_block_bodies("before\n```\nmake all"))
+
 
 class HeadingSlugTests(unittest.TestCase):
     def test_simple_heading(self):

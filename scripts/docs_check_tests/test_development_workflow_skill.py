@@ -4,7 +4,7 @@ import re
 from typing import FrozenSet, Tuple
 import unittest
 
-from scripts.check_docs import strip_fenced_blocks
+from scripts.check_docs import DocsCheckError, strip_fenced_blocks
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -556,6 +556,14 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         )
         with self.assertRaises(AssertionError):
             self.assert_meaningful_test_policy(fenced_terminator_mutation)
+        unterminated_fence_mutation = (
+            policy_text + "\n```\nText-only tests are permitted.\n"
+        )
+        with self.assertRaisesRegex(
+            DocsCheckError,
+            r"unterminated fenced code block opened at line",
+        ):
+            self.assert_meaningful_test_policy(unterminated_fence_mutation)
 
         wrapped_git_rationale = policy_text.replace(
             "  - **Git-text rationale:** required. "
