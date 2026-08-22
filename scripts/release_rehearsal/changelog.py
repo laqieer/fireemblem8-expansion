@@ -57,8 +57,8 @@ IMPACTS = ("none", "patch", "minor", "major")
 IMPACT_RANK = {name: rank for rank, name in enumerate(IMPACTS)}
 
 FRAGMENT_GLOB = "*.json"
-UNRELEASED_BEGIN = "<!-- release-rehearsal:unreleased:begin -->"
-UNRELEASED_END = "<!-- release-rehearsal:unreleased:end -->"
+UNRELEASED_BEGIN = "<!-- release-notes:unreleased:begin -->"
+UNRELEASED_END = "<!-- release-notes:unreleased:end -->"
 
 
 class ChangelogError(ValueError):

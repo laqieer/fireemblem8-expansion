@@ -1,10 +1,7 @@
 # Public API and SemVer policy (issue #9)
 
 This document defines what counts as this project's **public API** for
-SemVer purposes, and the branch/tag conventions used to track it. It does
-not, by itself, authorize publishing anything -- see
-[`docs/release_process.md`](release_process.md)'s "Legal and provenance
-boundary" for why publication remains mechanically blocked today.
+SemVer purposes, and the branch/tag conventions used to track it.
 
 ## What "public API" means here
 
@@ -72,9 +69,8 @@ issue #9 -- these are the conventions a human maintainer follows when they
 later decide to cut a release; `scripts/release_rehearsal/manifest.py` only
 *validates candidate tag text* (see below), it never creates a tag.
 
-* **`master`** -- the trunk. Every merged pull request lands here. CI
-  (`.github/workflows/build.yml`) and this rehearsal
-  (`.github/workflows/release-rehearsal.yml`) both gate it.
+* **`master`** -- the trunk. Every merged pull request lands here. Build CI
+  (`.github/workflows/build.yml`) gates it.
 * **`upcoming`** (optional, maintainer-created when needed) -- an
   integration branch for changes staged ahead of a release that are not
   yet ready to land on `master`. Not created by any tooling in this
@@ -87,12 +83,8 @@ later decide to cut a release; `scripts/release_rehearsal/manifest.py` only
   `v<major>.<minor>.<patch>` (e.g. `v0.1.0`), matching
   `config.mk`'s resolved `EXPANSION_VERSION_*`. This is the exact text
   `scripts/release_rehearsal/manifest.py`'s `candidate_tag` field validates
-  (`CANDIDATE_TAG_RE`) -- validation only, this repository's tooling never
-  runs `git tag` on this text. A human maintainer creates the real tag by
-  hand, after independently confirming the manifest reports
-  `"status": "mechanically eligible"` **and** obtaining the separate human
-  legal/provenance/publish authorization described in
-  [`docs/release_process.md`](release_process.md).
+  (  `CANDIDATE_TAG_RE`) -- validation only; this repository's tooling never
+  runs `git tag` on this text.
 * **`X.Y.Z` (no `master`/`upcoming`/`expansion` prefix, bare version)** --
   reserved for a future maintenance branch cut from a tag, e.g. `0.1.x`,
   if a fix needs to be urgently backported after `master` has moved on.

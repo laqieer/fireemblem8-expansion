@@ -47,6 +47,14 @@ link, boot, and runtime behavior, not by equality with the vanilla ROM;
 the archival lane remains available for byte-level matching investigations
 without a whole-source/object/ROM identity hash gate.
 
+Release provenance derives path, mode, and gitlink membership from the
+immutable target tree. Never commit redundant source/blob/object/ROM/commit
+snapshots, per-file blob hashes, or duplicated submodule pins. Committed
+provenance may preserve human exact-path facts only; configuration fingerprints,
+external source/dependency hashes, extracted-content integrity, behavioral
+framebuffer/SRAM hashes, format CRCs/checksums, exact candidate binding, and
+release-time artifact hashes remain required where consumed.
+
 ## Remote Completion Gate
 
 For any task that changes tracked files, local implementation and tests are
@@ -55,9 +63,8 @@ and push all intended changes, wait for Build CI on the exact pushed commit,
 and require `make remote-completion-check` to pass before reporting completion.
 
 For an objective to resolve all repository issues, also close the resolved
-issues, wait for Release Rehearsal on the exact pushed commit, and require
-`make all-issues-completion-check` to pass. Track commit, push, CI, and issue
-closure as explicit dependent todos from the start.
+issues and require `make all-issues-completion-check` to pass. Track commit,
+push, CI, and issue closure as explicit dependent todos from the start.
 
 CI waiting must not occupy a reasoning subagent. The subagent that dispatches
 a workflow records its exact SHA and run ID, then returns immediately. The

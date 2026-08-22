@@ -58,10 +58,15 @@ MEANINGFUL_TEST_POLICY_TERMS = {
         "semantics-preserving spelling or ordering refactor remains green",
     ),
 }
-MARKDOWN_HEADING = re.compile(r"^#{2,6} ")
+MARKDOWN_HEADING = re.compile(r"^#{2,6} (?P<heading>.+)$")
 MEANINGFUL_TEST_POLICY_CLAUSE = re.compile(
     r"^- \*\*(?P<name>[^*:]+):\*\* (?P<value>.+)$"
 )
+MEANINGFUL_TEST_POLICY_FORBIDDEN_TERMS = {
+    "Prohibited evidence": (
+        "source-text-only test is permitted",
+    ),
+}
 
 
 def read_skill():
@@ -91,7 +96,10 @@ def read_markdown_section(text, heading):
         (
             index
             for index, line in enumerate(lines)
-            if line.lstrip("#").strip() == heading and line.startswith("#")
+            if (
+                MARKDOWN_HEADING.match(line)
+                and MARKDOWN_HEADING.match(line).group("heading").strip() == heading
+            )
         ),
         None,
     )
@@ -151,6 +159,9 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         for clause_name, terms in MEANINGFUL_TEST_POLICY_TERMS.items():
             for term in terms:
                 self.assertIn(term, clauses[clause_name], f"{clause_name}: {term}")
+        for clause_name, terms in MEANINGFUL_TEST_POLICY_FORBIDDEN_TERMS.items():
+            for term in terms:
+                self.assertNotIn(term, clauses[clause_name], f"{clause_name}: {term}")
         return clauses
 
     def test_frontmatter_matches_project_skill_directory(self):
@@ -182,7 +193,9 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Record every tool installed for the task, its version",
             "make expansion-modern-gdb-smoke",
             "symbolic `AgbMain` breakpoint",
-            "Do not add or restore a whole-source/object/ROM SHA-256 identity gate.",
+            "Do not add or restore a whole-source/object/ROM SHA-256 identity gate, or",
+            "committed source/blob/object/commit snapshots that duplicate Git's immutable",
+            "Human provenance metadata may identify exact paths and facts",
             "Build CI for the **exact candidate commit**",
             "make remote-completion-check",
         )
@@ -296,13 +309,20 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
 
     def test_meaningful_test_evidence_policy_is_aligned(self):
         """Validate the labeled public agent-policy contract, not arbitrary prose."""
+        canonical = None
         for path in (
             SKILL_PATH,
             COPILOT_INSTRUCTIONS_PATH,
             CLAUDE_PATH,
         ):
             with self.subTest(surface=str(path.relative_to(ROOT))):
-                self.assert_meaningful_test_policy(path.read_text(encoding="utf-8"))
+                clauses = self.assert_meaningful_test_policy(
+                    path.read_text(encoding="utf-8")
+                )
+                if canonical is None:
+                    canonical = clauses
+                else:
+                    self.assertEqual(canonical, clauses)
 
         _, skill = read_skill()
         clauses = self.assert_meaningful_test_policy(skill)
@@ -316,7 +336,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
 
         self.assertEqual(clauses, parse_meaningful_test_policy(reordered))
 
-        clauses["Static-contract exception"] = clauses[
+        mutation = dict(clauses)
+        mutation["Static-contract exception"] = mutation[
             "Static-contract exception"
         ].replace(
             "functional, parsed, compiled, or runtime evidence cannot replace it",
@@ -328,7 +349,31 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "functional, parsed, compiled, or runtime evidence cannot replace it",
         ):
             self.assert_meaningful_test_policy(
-                render_meaningful_test_policy(clauses, MEANINGFUL_TEST_POLICY_CLAUSES)
+                render_meaningful_test_policy(
+                    mutation, MEANINGFUL_TEST_POLICY_CLAUSES
+                )
+            )
+
+        mutation = dict(clauses)
+        mutation["Prohibited evidence"] += (
+            " A source-text-only test is permitted when its expected phrase exists."
+        )
+
+        with self.assertRaisesRegex(
+            AssertionError,
+            "source-text-only test is permitted",
+        ):
+            self.assert_meaningful_test_policy(
+                render_meaningful_test_policy(
+                    mutation, MEANINGFUL_TEST_POLICY_CLAUSES
+                )
+            )
+
+    def test_meaningful_test_policy_requires_a_valid_markdown_heading(self):
+        with self.assertRaisesRegex(AssertionError, "missing Markdown section"):
+            read_markdown_section(
+                "##Meaningful test evidence\n\n- **Evidence standard:** ignored\n",
+                MEANINGFUL_TEST_POLICY_HEADING,
             )
 
     def test_review_size_preflight_and_exception_contract(self):

@@ -423,7 +423,10 @@ The labeled clauses below are the public test-evidence contract for agents.
 
 ### Issue #29 identity boundary
 
-Do not add or restore a whole-source/object/ROM SHA-256 identity gate.
+Do not add or restore a whole-source/object/ROM SHA-256 identity gate, or
+committed source/blob/object/commit snapshots that duplicate Git's immutable
+candidate tree. Derive release paths, modes, and gitlinks from the exact
+target tree at verification time.
 `legacy-identity-check`, `scripts/archival_identity.py`, and its manifest were
 removed intentionally. Git records source history, the modern expansion ROM is
 not required to match the original binary, and `asmdiff.sh` remains available
@@ -432,8 +435,11 @@ for explicit archival investigations.
 Build CI for the **exact candidate commit** means only that the successful run
 must correspond to the commit being delivered, not an earlier revision. It is
 not a ROM or source-tree SHA-256 equality requirement. Configuration
-fingerprints, dependency integrity hashes, and release-archive determinism may
-remain when they serve their separate correctness contracts.
+fingerprints, dependency integrity hashes, extracted-content integrity,
+behavioral framebuffer/SRAM hashes, format CRCs/checksums, and release-time
+manifest/archive hashes may remain when they serve their separate correctness
+contracts. Human provenance metadata may identify exact paths and facts, but
+must not carry content hashes or duplicated gitlink pins.
 
 ## Phase 6: PR, AI review, and merge
 
