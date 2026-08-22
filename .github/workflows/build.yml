@@ -435,7 +435,7 @@ jobs:
           "$LEGACY_RESULT"
         do
           if [ "$result" != "success" ]; then
-            echo "required master Build CI job did not succeed: $result" >&2
+            echo "required combined Build CI job did not succeed: $result" >&2
             exit 1
           fi
         done

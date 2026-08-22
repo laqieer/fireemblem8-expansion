@@ -87,7 +87,7 @@ def _errors(text: str, full_matrix_exists: bool) -> list[str]:
     if "if: always()" not in summary:
         errors.append("summary must run after failed combined jobs on both triggers")
     if SUMMARY_NEEDS not in summary:
-        errors.append("summary must depend on every required master Build job")
+        errors.append("summary must depend on every required combined Build job")
     if '[ "$result" != "success" ]' not in summary:
         errors.append("summary must fail closed")
 
@@ -166,7 +166,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         self.assertTrue(any("must run for pull-request" in error for error in _errors(changed, False)))
 
-    def test_serial_master_worker_dependency_fails(self):
+    def test_serial_combined_worker_dependency_fails(self):
         changed = self.text.replace(
             "  patch-release:\n",
             "  patch-release:\n    needs: [build]\n",
