@@ -212,6 +212,15 @@ def gates(jobs: int = 2) -> List[Gate]:
         # --check-examples) intentionally has no Gate(...) entry here. It is
         # independently required immediately after the artifact guard.
         Gate(
+            name="codeql-alerts-test",
+            command=["make", "codeql-alerts-test"],
+            applicable_note=(
+                "issue #84 host/static-analysis gate: runs the sanitizer-backed "
+                "SIO, runtime-bound, and PNG harnesses, focused GCC analyzer "
+                "checks, and affected host-tool builds"
+            ),
+        ),
+        Gate(
             name="default-lane-check",
             command=[
                 "python3",
