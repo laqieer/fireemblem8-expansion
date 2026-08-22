@@ -356,6 +356,66 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "image, creating a patch, or publishing an artifact"
             ),
         ),
+        Gate(
+            name="cjk-font-gates",
+            command=["make", "-f", "cjk_fonts.mk", "cjk-fonts-check", "cjk-fonts-test"],
+            applicable_note="combined-gate unique CJK font inventory and codec coverage",
+        ),
+        Gate(
+            name="multilang-codec-gates",
+            command=[
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "scripts/texttools/tests",
+                "-p",
+                "test_multilang_codec*.py",
+                "-v",
+            ],
+            applicable_note="combined-gate unique multilang texttools codec coverage",
+        ),
+        Gate(
+            name="expansion-config-gates",
+            command=[
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "scripts/modernize/tests",
+                "-p",
+                "test_expansion_config.py",
+                "-v",
+            ],
+            applicable_note="combined-gate unique expansion configuration coverage",
+        ),
+        Gate(
+            name="linker-budget-gates",
+            command=[
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "scripts/linker_report/tests",
+                "-p",
+                "test_*.py",
+                "-v",
+            ],
+            applicable_note="combined-gate unique linker-budget coverage",
+        ),
+        Gate(
+            name="legacy-build",
+            command=["make", "legacy", "-j2"],
+            applicable_note="combined-gate archival no-baserom build",
+        ),
+        Gate(
+            name="legacy-payload-identity",
+            command=["make", "-C", "mgfembp", "compare"],
+            applicable_note="combined-gate archival payload identity comparison",
+        ),
     ]
 
 

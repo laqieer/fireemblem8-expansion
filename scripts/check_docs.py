@@ -320,7 +320,7 @@ STALE_PHRASE_RULES = [
     (
         re.compile(re.escape("gates 10-11 of the current-master")),
         "stale claim: the item-ID-expansion checks are gates 17-18 of the "
-        "exact 19-gate scripts/upstream_port/verify.py gates() set, not "
+        "exact 25-gate scripts/upstream_port/verify.py gates() set, not "
         "gates 10-11 -- see docs/upstream-porting.md",
     ),
 ]

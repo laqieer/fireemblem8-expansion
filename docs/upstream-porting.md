@@ -181,9 +181,10 @@ python3 -m scripts.upstream_port verify --dry-run   # list the gate commands wit
 
 **⚠️ This builds and checks the CURRENT TRUSTED WORKTREE (your repo, after
 you manually applied whatever you accepted) — it never builds, checks out,
-or executes the upstream ref/tree.** It orchestrates all 19 current-master
+or executes the upstream ref/tree.** It orchestrates all 25 current-master
 mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
-carries the same 19 commands with argv/order preserved across its host and ROM
+carries the same 25 commands with argv/order preserved across its combined
+host, modern, extended-host, and archival jobs,
 jobs, plus the deliberately standalone issues #7/#17 documentation-governance
 workflow gate described below.
 
@@ -213,6 +214,12 @@ workflow gate described below.
 17. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
 18. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
 19. `make expansion-modern-all-locales-all-features-check -j1`
+20. `make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test`
+21. `python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v`
+22. `python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v`
+23. `python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v`
+24. `make legacy -j2`
+25. `make -C mgfembp compare`
 
 Gates 15-16 aggregate the complete modern debug/release ROM, linker, budget,
 shift, save, starter-feature, and localization runtime matrices through
@@ -232,7 +239,7 @@ python3 scripts/check_docs.py --check --check-examples
 ```
 
 This gate is stdlib-only, zero-network, and zero-ROM, and runs before
-dependency/tool installation. It is additional to all 19 mirrored verifier
+dependency/tool installation. It is additional to all 25 mirrored verifier
 gates and intentionally has no `verify.gates()` entry; it does not weaken,
 reorder, or replace any mirrored command.
 

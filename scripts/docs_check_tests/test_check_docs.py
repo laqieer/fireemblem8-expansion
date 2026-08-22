@@ -1491,13 +1491,14 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         finally:
             sys.modules.pop(spec.name, None)
 
-        self.assertEqual(len(all_gates), 19)
-        self.assertIn("itemexpansion", all_gates[-3].name)
-        self.assertIn("itemexpansion", all_gates[-2].name)
-        for gate in all_gates[:-3]:
-            self.assertNotIn("itemexpansion", gate.name)
+        self.assertEqual(len(all_gates), 25)
+        self.assertIn("itemexpansion", all_gates[16].name)
+        self.assertIn("itemexpansion", all_gates[17].name)
+        for index, gate in enumerate(all_gates):
+            if index not in (16, 17):
+                self.assertNotIn("itemexpansion", gate.name)
         self.assertEqual(
-            all_gates[-1].name,
+            all_gates[18].name,
             "modern-all-locales-all-features-profile",
         )
 

@@ -175,7 +175,7 @@ surface remains bounded by its live reference and evidence report.
 - **#10 typed IDs:** DEFAULT committed and ACTIVE build-local contracts,
   consumer census, and modern-only item cap `0xCE` pilot are supported; its
   debug/release runtime commands are gates 17-18 of the current-master
-  19-gate upstream-port verifier; the all-locales/all-features patch profile
+  25-gate upstream-port verifier; the all-locales/all-features patch profile
   is gate 19. There is no class/chapter/unit/character
   widening
   or implied save migration. See
