@@ -2,11 +2,8 @@
 """Source-release guard (issue #9).
 
 A separate, purpose-built safety checker for a *candidate source-release
-tree or archive*: an exact, deterministic per-member allowlist
-(``docs/release_data/source_allowlist.json`` -- every regular tracked file
-and the ``mgfembp`` submodule gitlink is individually, explicitly listed;
-there is no "top-level directory implies everything under it" rule any
-more) plus recursive hard-deny rules for prohibited nested content, unsafe
+tree or archive*: an exact path set derived by the release caller from the
+immutable candidate tree, plus recursive hard-deny rules for prohibited nested content, unsafe
 paths, and unsafe non-regular members. This is deliberately independent
 of, and does not modify or weaken, ``scripts/artifact_guard.py`` (which
 governs ordinary tracked-Git content review, not release-archive safety)
@@ -748,7 +745,7 @@ def main(argv=None) -> int:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--tree", type=Path, help="scan a real filesystem tree")
     group.add_argument("--archive", type=Path, help="scan a tar archive's members")
-    parser.add_argument("--allowlist", type=Path, default=Path("docs/release_data/source_allowlist.json"))
+    parser.add_argument("--allowlist", type=Path, required=True)
     parser.add_argument(
         "--map-hex-exceptions", type=Path,
         default=Path("docs/release_data/map_hex_exceptions.json"),
