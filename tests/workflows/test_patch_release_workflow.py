@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import http.server
 import re
 import shlex
+import subprocess
+import tempfile
+import threading
 import unittest
 from pathlib import Path
+
+from scripts.modernize import patch_release
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -54,6 +60,18 @@ def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
     return commands
 
 
+def patch_release_download_command(workflow: str) -> list[str]:
+    commands = [
+        command
+        for step in parse_patch_release_run_commands(workflow)
+        for command in step
+        if command and command[0] == "curl"
+    ]
+    if len(commands) != 1:
+        raise AssertionError("publisher job must define exactly one curl download command")
+    return commands[0]
+
+
 class PatchReleaseWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -86,6 +104,80 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("BASEROM_URL:", self.text.split("\n  patch-release:\n", 1)[0])
         self.assertIn("--proto '=https'", self.patch_job)
         self.assertNotIn("set -x", self.patch_job)
+
+    def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
+        download = patch_release_download_command(self.text)
+        self.assertIn("--fail", download)
+        self.assertIn("--silent", download)
+        self.assertIn("--location", download)
+        self.assertIn("--proto", download)
+        self.assertIn("--proto-redir", download)
+        self.assertFalse(any(argument.startswith("--trace") for argument in download))
+        self.assertNotIn("--verbose", download)
+
+        payload = b"redirected but invalid base"
+
+        class RedirectHandler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == "/redirect":
+                    self.send_response(302)
+                    self.send_header("Location", "/wrong-base")
+                    self.end_headers()
+                    return
+                if self.path == "/wrong-base":
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
+                self.send_error(404)
+
+            def log_message(self, format, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        try:
+            with tempfile.TemporaryDirectory(dir=artifact_root) as tmp:
+                output = Path(tmp) / "base-image"
+                command = []
+                skip_next = False
+                for index, argument in enumerate(download):
+                    if skip_next:
+                        skip_next = False
+                        continue
+                    if argument in ("--proto", "--proto-redir"):
+                        skip_next = True
+                        continue
+                    if argument == "$base_image":
+                        command.append(str(output))
+                    elif argument == "$BASEROM_URL":
+                        command.append(
+                            f"http://127.0.0.1:{server.server_address[1]}/redirect"
+                        )
+                    else:
+                        command.append(argument)
+                result = subprocess.run(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8"))
+                self.assertEqual(result.stdout, b"")
+                self.assertEqual(result.stderr, b"")
+                self.assertEqual(output.read_bytes(), payload)
+                with self.assertRaisesRegex(
+                    patch_release.PatchReleaseError, "base validation failed: size mismatch"
+                ):
+                    patch_release.validate_base(output.read_bytes())
+        finally:
+            server.shutdown()
+            thread.join()
+            server.server_close()
 
     def test_publisher_actions_are_immutably_pinned(self):
         self.assertIn(

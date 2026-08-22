@@ -207,6 +207,15 @@ class BaseContractTests(unittest.TestCase):
         with self.assertRaisesRegex(patch_release.PatchReleaseError, "SHA-256 mismatch"):
             patch_release.validate_base(bytes(mutated), contract)
 
+    def test_matching_digest_with_wrong_header_is_rejected(self):
+        mutated = bytearray(synthetic_base())
+        mutated[0xA0] = ord("X")
+        data = bytes(mutated)
+        with self.assertRaisesRegex(
+            patch_release.PatchReleaseError, "base validation failed: header title mismatch"
+        ):
+            patch_release.validate_base(data, synthetic_contract(data))
+
 
 class ArtifactTests(unittest.TestCase):
     def test_valid_three_file_artifact_is_deterministic_and_allowlisted(self):
