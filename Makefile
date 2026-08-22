@@ -290,6 +290,10 @@ remote-completion-check:
 		exit 1; \
 	fi; \
 	branch=$$(git branch --show-current); \
+	if [ -z "$$branch" ]; then \
+		echo "error: remote completion requires checked-out master; HEAD is detached" >&2; \
+		exit 1; \
+	fi; \
 	if [ "$$branch" != "master" ]; then \
 		printf 'error: remote completion requires master, not %s\n' "$$branch" >&2; \
 		exit 1; \
@@ -313,6 +317,7 @@ remote-completion-check:
 		*) printf 'error: Build CI for %s is not successful: %s\n' "$$head_sha" "$$run" >&2; exit 1 ;; \
 	esac; \
 	matrix=$$(gh run list --repo "$$repo" --commit "$$head_sha" --workflow full-matrix.yml \
+		--branch master \
 		--limit 1 --json status,conclusion,url \
 		--jq 'if length == 0 then "missing,," else .[0].status + "," + (.[0].conclusion // "") + "," + .[0].url end'); \
 	case "$$matrix" in \

@@ -143,7 +143,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     "Immediately after each merge",
                     "intentional independent merge batch",
                     "dispatch Full Matrix CI",
-                    "exact resulting master SHA and branch",
+                    "exact pushed master commit and branch",
                 ),
             ),
             (
@@ -159,7 +159,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 (
                     "Issue closure",
                     "remote completion",
-                    "exact merged-master",
+                    "exact pushed master commit",
                     "Build",
                     "Full Matrix",
                     "succeed",
@@ -212,6 +212,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     "Full Matrix CI runs only on master",
                     "never runs on a pull request or feature branch",
                     "manually or automatically",
+                    "exact pushed master commit",
                 ),
             ),
         )
@@ -244,12 +245,16 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "gh pr edit <child-pr> --base master",
             "Apply exact-candidate Build CI and concurrent Copilot review",
             "Do not run Full Matrix for a candidate PR or stacked child.",
-            "Complete the umbrella initiative only after every accepted",
         )
 
         for requirement in required_contract:
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
+
+        self.assertIn(
+            normalize_policy("Complete the umbrella initiative only after every accepted"),
+            normalize_policy(text),
+        )
 
     def test_review_size_preflight_and_exception_contract(self):
         _, text = read_skill()

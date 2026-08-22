@@ -67,8 +67,9 @@ release-time manifest/archive hashes remain valid independent boundaries.
 For any task that changes tracked repository files, local implementation and
 tests are not completion. Unless the user explicitly says not to commit or
 push, do not call `task_complete` until all intended changes are committed,
-pushed to the configured upstream, exact merged-`master` Build and Full Matrix
-checks have passed, and `make remote-completion-check` succeeds.
+pushed to the configured upstream, Build and Full Matrix checks for the exact
+pushed `master` commit have passed, and `make remote-completion-check`
+succeeds.
 
 For an objective to resolve all repository issues, also close the resolved
 GitHub issues and require `make all-issues-completion-check` to succeed. Create explicit
@@ -95,12 +96,12 @@ Full Matrix. Full Matrix CI runs only on `master`; it never runs on a pull
 request or feature branch, manually or automatically.
 
 Immediately after each merge or intentional independent merge batch, monitor
-Build CI and dispatch Full Matrix CI on the exact resulting `master` SHA and
+Build CI and dispatch Full Matrix CI on the exact pushed `master` commit and
 branch. Use attached, nonblocking asynchronous shell watchers and continue
-every unrelated dependency-ready task. These exact-master checks are
+every unrelated dependency-ready task. These exact pushed-`master` checks are
 nonblocking only for unrelated independent PR merges. Their failures interrupt
 ordinary work for fix-forward or revert immediately. Issue closure and remote
-completion wait for both exact merged-master Build and Full Matrix checks to
+completion wait for both checks for that exact pushed `master` commit to
 succeed.
 
 Independent PRs may validate and merge in parallel. Do not queue them by age,

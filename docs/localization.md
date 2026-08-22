@@ -411,8 +411,8 @@ Use targeted localization tests while editing. A candidate PR gates only on
 exact-candidate Build CI and Copilot review, then merges directly when those
 checks and objective acceptance are clean. Full Matrix CI runs only on
 `master`; it never runs on a pull request or feature branch, manually or
-automatically. After the exact resulting `master` revision is available, run
-the broad host/CJK/runtime matrix once:
+automatically. After the exact pushed `master` commit is available, run the
+broad host/CJK/runtime matrix once:
 
 ```bash
 gh workflow run full-matrix.yml --ref master

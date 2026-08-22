@@ -59,9 +59,9 @@ release-time artifact hashes remain required where consumed.
 
 For any task that changes tracked files, local implementation and tests are
 not completion. Unless the user explicitly says not to commit or push, commit
-and push all intended changes, wait for Build CI on the exact pushed commit,
-wait for Full Matrix CI on the exact merged `master` commit, and require
-`make remote-completion-check` to pass before reporting completion.
+and push all intended changes, wait for Build CI and Full Matrix CI on the
+exact pushed `master` commit, and require `make remote-completion-check` to
+pass before reporting completion.
 
 For an objective to resolve all repository issues, also close the resolved
 issues and require `make all-issues-completion-check` to pass. Track commit,
@@ -86,12 +86,12 @@ Full Matrix. Full Matrix CI runs only on `master`; it never runs on a pull
 request or feature branch, manually or automatically.
 
 Immediately after each merge or intentional independent merge batch, monitor
-Build CI and dispatch Full Matrix CI on the exact resulting `master` SHA and
+Build CI and dispatch Full Matrix CI on the exact pushed `master` commit and
 branch. Use attached, nonblocking asynchronous shell watchers and continue
-every unrelated dependency-ready task. These exact-master checks are
+every unrelated dependency-ready task. These exact pushed-`master` checks are
 nonblocking only for unrelated independent PR merges. Their failures interrupt
 ordinary work for fix-forward or revert immediately. Issue closure and remote
-completion wait for both exact merged-master Build and Full Matrix checks to
+completion wait for both checks for that exact pushed `master` commit to
 succeed.
 
 Independent PRs may validate and merge in parallel. Do not queue them by age,

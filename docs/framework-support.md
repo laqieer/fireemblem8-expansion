@@ -30,7 +30,7 @@ review, then merges directly when those checks and its objective acceptance are
 clean. Full Matrix CI runs only on `master`; it never runs on a pull request or
 feature branch, manually or automatically. After each merge or intentional
 independent merge batch, dispatch the one-shot broad matrix for the exact
-resulting `master` revision. Arch and macOS support is exercised by the same
+pushed `master` commit. Arch and macOS support is exercised by the same
 script logic but is not re-run in CI; treat regressions there as
 community-reported, not CI-caught.
 
@@ -119,8 +119,8 @@ no ROM build or network access is required for either.
 ### Dispatch-only full matrix
 
 Prefer focused local checks during iteration. Do not dispatch Full Matrix for a
-candidate branch. After the exact resulting `master` revision is available,
-run the expensive host, modern debug/release, and archival lanes in parallel:
+candidate branch. After the exact pushed `master` commit is available, run the
+expensive host, modern debug/release, and archival lanes in parallel:
 
 ```bash
 gh workflow run full-matrix.yml --ref master

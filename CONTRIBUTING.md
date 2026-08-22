@@ -81,7 +81,7 @@ During iteration, run only the focused fast checks and the one relevant ROM
 profile for the code you changed. Do not repeatedly run every host suite plus
 both linker configurations locally: the dispatch-only
 `.github/workflows/full-matrix.yml` workflow exists to parallelize that broad
-validation pass after the exact resulting `master` commit is available. It is
+validation pass after the exact pushed `master` commit is available. It is
 not a candidate or pull-request gate and does not weaken or replace required
 Build CI.
 
@@ -94,7 +94,7 @@ runs only on `master`; it never runs on a pull request or feature branch,
 manually or automatically.
 
 Immediately after each merge or intentional independent merge batch, monitor
-Build CI and dispatch Full Matrix CI on the exact resulting `master` SHA and
+Build CI and dispatch Full Matrix CI on the exact pushed `master` commit and
 branch:
 
 ```bash
@@ -106,8 +106,8 @@ The run summary records `github.sha`, `github.ref`, and fail-closed conclusions
 for the host, modern debug/release matrix, and archival legacy lanes.
 Post-merge Build and Matrix checks are nonblocking only for unrelated
 independent PR merges; their failures interrupt ordinary work for fix-forward
-or revert. Issue closure and remote completion wait for both exact merged-master
-Build and Full Matrix checks to succeed.
+or revert. Issue closure and remote completion wait for both checks for that
+exact pushed `master` commit to succeed.
 The modern matrix invokes only the canonical
 `expansion-modern-linker-check`; that target already owns its CJK profile,
 runtime, shifted-link, and linker-budget dependencies.
@@ -163,8 +163,8 @@ repository's merge-commit policy, run
 `git diff master...feat/103-selector`, and rerun exact-candidate Build CI and
 concurrent Copilot review if the candidate commit or tree changed. Do not run
 Full Matrix for the child candidate. Complete discussion `#100` only after all
-three issues are independently merged, exact-master Build and Full Matrix
-checks have succeeded, and the issues are closed.
+three issues are independently merged, Build and Full Matrix checks for the
+exact pushed `master` commit have succeeded, and the issues are closed.
 
 ### Review-size preflight
 
