@@ -116,8 +116,18 @@ def read_indexed_png(path):
     if not palette or len(palette) % 3 or len(palette) // 3 > MAX_PALETTE_COLORS:
         raise ValueError("{} palette must contain 1..16 RGB entries".format(path))
     transparent = [data for name, data in chunks if name == b"tRNS"]
-    if transparent and (len(transparent[0]) > len(palette) // 3 or transparent[0].count(0) != 1):
-        raise ValueError("{} must have exactly one transparent palette entry".format(path))
+    if transparent:
+        alpha = transparent[0]
+        if (
+            len(alpha) > len(palette) // 3
+            or alpha.count(0) != 1
+            or any(value not in (0, 255) for value in alpha)
+        ):
+            raise ValueError(
+                "{} tRNS entries must be 0 or 255 with exactly one transparent palette entry".format(
+                    path
+                )
+            )
     encoded = next(data for name, data in chunks if name == b"IDAT")
     try:
         pixels = zlib.decompress(encoded)
@@ -162,17 +172,26 @@ def parse_script(path, frames):
         text = handle.read()
     if "\r" in text:
         raise ValueError("{} must use LF line endings".format(path))
-    lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
-    if not lines or lines[0] != SCRIPT_HEADER:
+    lines = text.splitlines()
+    header_line = None
+    for line_number, source_line in enumerate(lines, 1):
+        line = source_line.strip()
+        if line and not line.startswith("#"):
+            header_line = line_number
+            if line != SCRIPT_HEADER:
+                raise ValueError("{} must begin with '{}'".format(path, SCRIPT_HEADER))
+            break
+    if header_line is None:
         raise ValueError("{} must begin with '{}'".format(path, SCRIPT_HEADER))
     mode_durations = {}
     mode = None
     timed = False
     group_duration = None
-    for line_number, line in enumerate(lines[1:], 2):
-        words = line.split()
-        if not words:
+    for line_number, source_line in enumerate(lines[header_line:], header_line + 1):
+        line = source_line.strip()
+        if not line or line.startswith("#"):
             continue
+        words = line.split()
         command = words[0]
         if command == "mode":
             if len(words) != 2 or words[1] not in MODES or mode is not None or words[1] in mode_durations:

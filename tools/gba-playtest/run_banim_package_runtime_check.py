@@ -21,7 +21,7 @@ PROBE_FIELDS = (
     "magic",
     "selectionCount",
     "originalIndex",
-    "defaultClassIndex",
+    "defaultClassId",
     "aliasIndex",
     "modeCount",
     "normalDuration",
@@ -110,7 +110,7 @@ def main() -> int:
 
     expect("magic", 0x42505431)
     expect("selectionCount", 1)
-    expect("defaultClassIndex", 0)
+    expect("defaultClassId", 1)
     expect("aliasIndex", alias_index)
     expect("modeCount", len(package.mode_durations))
     expect("normalDuration", package.mode_durations["normal"])
@@ -123,7 +123,7 @@ def main() -> int:
         failures.append("originalIndex unexpectedly equals the test-only alias index")
     if failures:
         raise RuntimeError("; ".join(failures))
-    print("PASS: LORM_SP1_PROOF alias entered and completed one real scripted battle")
+    print("PASS: LORM_SP1_PROOF alias selected, entered, and completed exactly one real scripted battle")
     return 0
 
 

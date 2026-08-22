@@ -93,7 +93,7 @@
       "category": "external-interface",
       "reason": null
     },
-    "include/banim_package_runtime_test.h|struct-field|class|BanimPackageRuntimeTestProbe.defaultClassIndex": {
+    "include/banim_package_runtime_test.h|struct-field|class|BanimPackageRuntimeTestProbe.defaultClassId": {
       "category": "runtime-struct",
       "reason": null
     },

@@ -6,10 +6,13 @@ import copy
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import unittest
+import zlib
 from unittest import mock
+from types import SimpleNamespace
 
 from scripts.assets import banim, manifest
 from scripts.generated_data.diagnostics import GeneratedDataError, GeneratedDataValidationError
@@ -345,7 +348,7 @@ class BattleAnimationPackageTests(unittest.TestCase):
         with open(os.path.join(output, "banim", "banim_defs.inc"), encoding="utf-8") as handle:
             definition = handle.read()
         self.assertIn('{"lorm_sp1", &banim_lorm_sp1_modes_bin', entry)
-        self.assertIn("BanimPackage_LormSp1Proof", definition)
+        self.assertIn("BanimPackage_LORM_SP1_PROOF", definition)
         self.assertEqual(len([record for record in records if record.kind == "battle-animation-package"]), 1)
         manifest.check(os.path.join(REPO_ROOT, "assets", "manifest.json"), output)
 
@@ -388,6 +391,80 @@ class BattleAnimationPackageTests(unittest.TestCase):
             )
         with self.assertRaisesRegex(ValueError, "loop without a preceding timed group"):
             banim.parse_script(script, {"idle": "fixture.png"})
+
+    @staticmethod
+    def write_indexed_png(path, alpha):
+        def chunk(name, data):
+            return (
+                struct.pack(">I", len(data))
+                + name
+                + data
+                + struct.pack(">I", zlib.crc32(name + data) & 0xFFFFFFFF)
+            )
+
+        pixels = b"".join(b"\x00" + b"\x00" * 4 for _ in range(8))
+        payload = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", 8, 8, 4, 3, 0, 0, 0))
+            + chunk(b"PLTE", b"\x00\x00\x00\xff\xff\xff")
+            + chunk(b"tRNS", alpha)
+            + chunk(b"IDAT", zlib.compress(pixels))
+            + chunk(b"IEND", b"")
+        )
+        with open(path, "wb") as handle:
+            handle.write(payload)
+
+    def test_png_transparency_is_binary_and_has_one_transparent_index(self):
+        valid = os.path.join(TEST_ROOT, "binary-alpha.png")
+        self.write_indexed_png(valid, b"\x00\xff")
+        self.assertEqual(banim.read_indexed_png(valid)["colors"], 2)
+
+        partial = os.path.join(TEST_ROOT, "partial-alpha.png")
+        self.write_indexed_png(partial, b"\x00\x80")
+        with self.assertRaisesRegex(ValueError, "tRNS entries must be 0 or 255"):
+            banim.read_indexed_png(partial)
+
+        opaque = os.path.join(TEST_ROOT, "opaque-alpha.png")
+        self.write_indexed_png(opaque, b"\xff\xff")
+        with self.assertRaisesRegex(ValueError, "exactly one transparent"):
+            banim.read_indexed_png(opaque)
+
+    def test_script_diagnostics_preserve_original_source_line_numbers(self):
+        script = os.path.join(TEST_ROOT, "line-numbers.txt")
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(
+                "# comment before the header\n\nBANIM 1\n\nmode normal\nframe 1 idle\nend\n"
+                "# diagnostics must retain this line\ninvalid_command\n"
+            )
+        with self.assertRaisesRegex(ValueError, r"line-numbers\.txt:9 has unknown command"):
+            banim.parse_script(script, {"idle": "fixture.png"})
+
+    def test_manifest_ids_remain_collision_free_generated_symbols(self):
+        runtime = {
+            "modes": "banim/example_modes.bin",
+            "motion": "banim/example_motion.o",
+            "oamRight": "banim/example_oam_r.bin",
+            "oamLeft": "banim/example_oam_l.bin",
+            "palette": "graphics/banim/example.agbpal",
+            "linkerInputs": ["banim/example.s"],
+        }
+        package = SimpleNamespace(
+            data={"runtime": runtime, "abbreviation": "example"},
+            mode_durations={mode: 1 for mode in banim.MODES},
+        )
+        records = [
+            SimpleNamespace(
+                id=record_id,
+                kind=manifest.BattleAnimationPackageKind.name,
+                banim_package=package,
+            )
+            for record_id in ("A_B", "A__B")
+        ]
+        definitions = manifest.banim_expected_outputs(records, TEST_ROOT)[
+            os.path.join(TEST_ROOT, "banim", "banim_defs.inc")
+        ]
+        self.assertIn("BanimPackage_A_B[]", definitions)
+        self.assertIn("BanimPackage_A__B[]", definitions)
 
     def test_banim_ownership_and_resource_conflicts_fail(self):
         with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
@@ -440,7 +517,6 @@ class BattleAnimationPackageTests(unittest.TestCase):
 
     def test_generated_banim_includes_are_root_relative(self):
         expected = {
-            "include/ekrbattle.h": "build/generated/assets/banim/banim_defs.h",
             "src/banim_data.c": "build/generated/assets/banim/banim_data_entries.inc",
             "src/data_banimconf.c": "build/generated/assets/banim/banim_defs.inc",
             "src/banim_package_runtime_test.c":
@@ -452,6 +528,8 @@ class BattleAnimationPackageTests(unittest.TestCase):
                     text = handle.read()
                 self.assertIn('#include "{}"'.format(generated), text)
                 self.assertNotIn("../build/generated/assets", text)
+        with open(os.path.join(REPO_ROOT, "include", "ekrbattle.h"), encoding="utf-8") as handle:
+            self.assertNotIn("build/generated/assets", handle.read())
 
 
 if __name__ == "__main__":

@@ -85,7 +85,8 @@ runtime policy; they fail rather than being guessed or dropped.
 Each frame is a single-IDAT, non-interlaced PNG with indexed color type 3,
 4-bit depth, standard compression/filter, a positive 8x8-tile-aligned
 geometry, one 1..16-color `PLTE`, and zero or one `tRNS` chunk. If `tRNS`
-exists it must have exactly one transparent color. RGB/RGBA, interlaced,
+exists it must have exactly one zero-alpha color and every other declared
+entry must be fully opaque (`255`). RGB/RGBA, interlaced,
 over-color, cropped, scaled, rotated, or multi-IDAT PNGs fail. Frame payload
 deduplication and OAM composition remain in the established compiler/linker
 formats; v1 validates the declared 1024-sheet-tile, 32-OAM-entry, 16-palette
@@ -95,8 +96,10 @@ publishing.
 Generation writes only ignored `build/generated/assets/banim/` products:
 `banim_data_entries.inc`, `banim_defs.inc`, `banim_defs.h`, and
 `linker_inputs.mk`. The existing C source includes the generated entry and
-typed declaration; `linker_inputs.mk` is a dependency report, not a second
-linker list. `assets-generate` is write-if-changed/atomic; `assets-check`
+definition seams only; no public header includes generated content.
+`banim_defs.h` remains a generated declaration compatibility artifact for
+incremental archival dependency files. `linker_inputs.mk` is a dependency
+report, not a second linker list. `assets-generate` is write-if-changed/atomic; `assets-check`
 rejects missing, stale, and orphan products. The existing #67 publication
 lock still exclusively serializes `banim/data_banim.o`.
 
@@ -129,9 +132,10 @@ test-only `FE8_BANIM_PACKAGE_RUNTIME_TEST` seam. Its clean isolated ROM enters
 Chapter 4's real scripted battle, selects `LORM_SP1_PROOF` exactly once in the
 test-only battle state through the generated alias, and asserts that selected
 alias index, five modes,
-normal/total timing, five existing runtime resources, the unchanged
-`CLASS_EPHRAIM_LORD -> AnimConf_0 -> 0` default mapping, and clean battle
-completion. The macro is absent from ordinary debug/release builds, so it
+normal/total timing, five existing runtime resources, the actual
+`CLASS_EPHRAIM_LORD` class ID (`0x01`), the unchanged
+`CLASS_EPHRAIM_LORD -> AnimConf_0 -> 0` default mapping, and one selection,
+entry, and completion. The macro is absent from ordinary debug/release builds, so it
 cannot create a production mapping or router. The generated alias remains
 additive and the ordinary resolver remains unmodified.
 

@@ -901,14 +901,14 @@ def banim_expected_outputs(records, out_dir):
             )
         )
         definitions.extend((
-            "CONST_DATA struct BattleAnimDef BanimPackage_{}[] = {{\n".format(record.id.title().replace("_", "")),
+            "CONST_DATA struct BattleAnimDef {}[] = {{\n".format(_banim_package_symbol(record.id)),
             "\t{{ .wtype = SPECIAL_BANIM_WTYPE, .index = {} }},\n".format(index),
             "\t{ 0 },\n",
             "};\n",
         ))
         declarations.append(
-            "extern CONST_DATA struct BattleAnimDef BanimPackage_{}[];\n".format(
-                record.id.title().replace("_", "")
+            "extern CONST_DATA struct BattleAnimDef {}[];\n".format(
+                _banim_package_symbol(record.id)
             )
         )
         prefix = "BANIM_PACKAGE_{}".format(record.id)
@@ -928,6 +928,11 @@ def banim_expected_outputs(records, out_dir):
         os.path.join(out_dir, "banim", "banim_runtime_test_defs.h"): "".join(runtime_test),
         os.path.join(out_dir, "banim", "linker_inputs.mk"): "".join(linker),
     }
+
+
+def _banim_package_symbol(record_id):
+    """Preserve the validated manifest ID so distinct IDs remain distinct C symbols."""
+    return "BanimPackage_{}".format(record_id)
 
 
 def _symbol(path):
@@ -953,9 +958,26 @@ def _banim_table_count():
 
 def generate(manifest_path, out_dir):
     records = load_and_validate(manifest_path)
-    for path, content in expected_outputs(records, out_dir).items():
+    expected = expected_outputs(records, out_dir)
+    for path, content in expected.items():
         _write_if_changed(path, content)
+    _remove_orphan_outputs(safe_output_dir(out_dir), expected)
     return records
+
+
+def _remove_orphan_outputs(out_dir, expected):
+    if not os.path.isdir(out_dir):
+        return
+    for root, _, files in os.walk(out_dir):
+        for filename in files:
+            path = os.path.join(root, filename)
+            if path not in expected:
+                os.unlink(path)
+    for root, directories, _ in os.walk(out_dir, topdown=False):
+        for directory in directories:
+            path = os.path.join(root, directory)
+            if not os.listdir(path):
+                os.rmdir(path)
 
 
 def check(manifest_path, out_dir):

@@ -15,7 +15,7 @@ struct BanimPackageRuntimeTestProbe {
     /* 00 */ u32 magic;
     /* 04 */ u32 selectionCount;
     /* 08 */ u32 originalIndex;
-    /* 0C */ u32 defaultClassIndex;
+    /* 0C */ u32 defaultClassId;
     /* 10 */ u32 aliasIndex;
     /* 14 */ u32 modeCount;
     /* 18 */ u32 normalDuration;

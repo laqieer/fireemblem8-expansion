@@ -41,9 +41,9 @@ $(ASSET_BANIM_DATA_ENTRIES) $(ASSET_BANIM_DEFS) $(ASSET_BANIM_DEFS_HEADER) \
 $(ASSET_BANIM_RUNTIME_TEST_DEFS): $(ASSET_OUTPUT_MK)
 	@test -f $@
 
-src/banim_data.o src/data_banimconf.o src/banim_package_runtime_test.o: \
-	$(ASSET_BANIM_DATA_ENTRIES) $(ASSET_BANIM_DEFS) $(ASSET_BANIM_DEFS_HEADER) \
-	$(ASSET_BANIM_RUNTIME_TEST_DEFS)
+src/banim_data.o $(MODERN_OUTPUT_DIR)/src/banim_data.o: $(ASSET_BANIM_DATA_ENTRIES)
+
+src/data_banimconf.o $(MODERN_OUTPUT_DIR)/src/data_banimconf.o: $(ASSET_BANIM_DEFS)
 
 $(MODERN_OUTPUT_DIR)/src/banim_package_runtime_test.o: $(ASSET_BANIM_RUNTIME_TEST_DEFS)
 
