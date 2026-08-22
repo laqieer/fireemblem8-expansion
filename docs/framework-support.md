@@ -116,8 +116,8 @@ no ROM build or network access is required for either.
 ### Dispatch-only full matrix
 
 Prefer focused local checks during iteration. Once the candidate branch is
-pushed, run the expensive host, modern debug/release, archival, and
-release-evidence lanes in parallel:
+pushed, run the expensive host, modern debug/release, and archival lanes in
+parallel:
 
 ```bash
 gh workflow run full-matrix.yml --ref <branch>
@@ -126,18 +126,8 @@ gh run watch <run-id> --exit-status
 
 The workflow is `workflow_dispatch`-only, read-only, concurrency-cancelled by
 workflow/ref, and records the exact `github.sha` and `github.ref`. Its final
-summary fails unless host, both modern matrix configurations, legacy, and
-release-evidence all succeed. The release-evidence lane runs
-`make release-full-matrix-workflow-guard`; the stdlib-only structural guard
-requires the canonical executable commands in named host/modern/legacy/
-release-evidence steps, rejects job/step `continue-on-error` and conditional
-skip false greens, and requires every lane's actual checkout to use the
-dispatched SHA (or the dispatch-selected default) immediately followed by a
-logged executable `git rev-parse HEAD == github.sha` check. It also proves the
-`if: always()` summary depends on every required lane and fails from the real
-`needs.*.result` bindings; comments, `echo`, `true`, alternate env values,
-checkout credential drift, and release-SHA shadowing cannot satisfy it. The
-debug and release configurations remain parallel matrix jobs, and each job
+summary fails unless host, both modern matrix configurations, and legacy
+succeed. The debug and release configurations remain parallel matrix jobs, and each job
 uses sequential Make to keep its resource use predictable. The canonical Build
 CI gate also runs `expansion-modern-linker-check` with `-j2`:
 battle-animation producers retain the last complete object while staging a

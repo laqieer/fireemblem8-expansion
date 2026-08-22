@@ -32,11 +32,22 @@ jobs:
   host-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      EXPECTED_BUILD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
+        ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        fetch-depth: 0
         submodules: recursive
+        persist-credentials: false
+
+    - name: Verify checked-out revision
+      run: |
+        ACTUAL_SHA="$(git rev-parse HEAD)"
+        printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
+        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
 
     - name: Install host-only dependencies (no arm-none-eabi toolchain)
       run: sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev
@@ -118,11 +129,22 @@ jobs:
     # A normal debug+release linker/runtime run is roughly 25 minutes, but
     # shared-runner variance has reached the former 30-minute ceiling.
     timeout-minutes: 60
+    env:
+      EXPECTED_BUILD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
+        ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        fetch-depth: 0
         submodules: recursive
+        persist-credentials: false
+
+    - name: Verify checked-out revision
+      run: |
+        ACTUAL_SHA="$(git rev-parse HEAD)"
+        printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
+        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
 
     # Runs against the immutable commit CI is building (not the mutable
     # worktree/index) and before Install dependencies/Build tools create any

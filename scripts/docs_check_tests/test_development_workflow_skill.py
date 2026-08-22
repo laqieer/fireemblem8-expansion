@@ -62,7 +62,9 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Record every tool installed for the task, its version",
             "make expansion-modern-gdb-smoke",
             "symbolic `AgbMain` breakpoint",
-            "Do not add or restore a whole-source/object/ROM SHA-256 identity gate.",
+            "Do not add or restore a whole-source/object/ROM SHA-256 identity gate, or",
+            "committed source/blob/object/commit snapshots that duplicate Git's immutable",
+            "Human provenance metadata may identify exact paths and facts",
             "Build CI for the **exact candidate commit**",
             "make remote-completion-check",
         )

@@ -22,6 +22,11 @@ _MULTI_RUN_RE = re.compile(r"^      run: \|\n((?:        .*\n?)+)", re.M)
 # `verify` needs to reproduce. Everything else in the workflow is expected
 # to have a literal, argv-identical counterpart in verify.gates().
 _NON_GATE_STEP_NAMES = {
+    # Exact checkout binding is a required workflow invariant, but not a
+    # repository correctness gate mirrored by scripts/upstream_port/verify.py.
+    # tests/workflows/test_build_ci_checkout.py owns its positive and negative
+    # structural coverage.
+    "Verify checked-out revision",
     # host-tests job setup: installs build-essential + libmgba-dev only (no
     # arm-none-eabi toolchain), so it is environment setup, not a gate.
     "Install host-only dependencies (no arm-none-eabi toolchain)",
@@ -107,6 +112,16 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 f"gate command {gate_command!r} does not literally match "
                 f"build.yml step {step_name!r} command {workflow_argv!r}",
             )
+
+    def test_checkout_verification_is_not_counted_as_a_mirrored_gate(self):
+        parsed = _parse_workflow_gate_commands()
+        self.assertNotIn(
+            "Verify checked-out revision",
+            {step_name for step_name, _ in parsed},
+        )
+        self.assertFalse(
+            any(argv and argv[0].startswith("ACTUAL_SHA=") for _, argv in parsed),
+        )
 
     def test_issue_7_17_docs_governance_is_a_standalone_workflow_step_not_a_verify_gate(self):
         """Docs governance stays outside the current-master 12-gate mirror

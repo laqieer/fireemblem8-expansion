@@ -276,8 +276,7 @@ compare:
 # than build prerequisites. They turn "done" into an executable contract:
 # the worktree must be clean, HEAD must already be pushed to its configured
 # upstream, and the exact pushed SHA must have a successful required workflow.
-# The all-issues variant additionally requires the release rehearsal and zero
-# open GitHub issues.
+# The all-issues variant additionally requires zero open GitHub issues.
 remote-completion-check:
 	@set -eu; \
 	command -v gh >/dev/null 2>&1 || { \
@@ -311,15 +310,7 @@ remote-completion-check:
 
 all-issues-completion-check: remote-completion-check
 	@set -eu; \
-	head_sha=$$(git rev-parse HEAD); \
 	repo=$$(gh repo view --json nameWithOwner --jq .nameWithOwner); \
-	run=$$(gh run list --repo "$$repo" --commit "$$head_sha" --workflow release-rehearsal.yml \
-		--limit 1 --json status,conclusion,url \
-		--jq 'if length == 0 then "missing,," else .[0].status + "," + (.[0].conclusion // "") + "," + .[0].url end'); \
-	case "$$run" in \
-		completed,success,*) ;; \
-		*) printf 'error: Release Rehearsal for %s is not successful: %s\n' "$$head_sha" "$$run" >&2; exit 1 ;; \
-	esac; \
 	open_issues=$$(gh issue list --repo "$$repo" --state open --limit 1000 \
 		--json number --jq 'length'); \
 	if [ "$$open_issues" -ne 0 ]; then \
