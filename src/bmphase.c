@@ -4,6 +4,9 @@
 #include "variables.h"
 
 #include "bmphase.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_autoplay_internal.h"
+#endif
 
 int GetPhaseAbleUnitCount(int faction) {
     int count = 0;
@@ -50,7 +53,13 @@ int CountUnitsInState(int faction, int state) {
 s8 AreUnitsAllied(int left, int right) {
     int a = left & 0x80;
     int b = right & 0x80;
-    return (a == b);
+    s8 result = (a == b);
+
+#ifndef FE8_ARCHIVAL_BUILD
+    ExpansionAutoplay_RecordRelationCheck(left, right, result);
+#endif
+
+    return result;
 }
 
 s8 IsSameAllegiance(int left, int right) {

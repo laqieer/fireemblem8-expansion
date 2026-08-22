@@ -24,6 +24,9 @@
 #include "bmarena.h"
 #include "bmudisp.h"
 #include "bm.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_autoplay_internal.h"
+#endif
 #include "bmsave.h"
 #include "bmlib.h"
 #include "worldmap.h"
@@ -973,6 +976,10 @@ void ClearBattleMapState(void) {
 void StartBattleMap(struct GameCtrlProc* gameCtrl) {
     int i;
 
+#ifndef FE8_ARCHIVAL_BUILD
+    ExpansionAutoplay_Reset();
+#endif
+
     SetupBackgrounds(NULL);
 
     SetMainUpdateRoutine(OnMain);
@@ -1040,6 +1047,10 @@ void StartBattleMap(struct GameCtrlProc* gameCtrl) {
 }
 
 void RestartBattleMap(void) {
+#ifndef FE8_ARCHIVAL_BUILD
+    ExpansionAutoplay_Reset();
+#endif
+
     SetupBackgrounds(NULL);
 
     SetMainUpdateRoutine(OnMain);
@@ -1082,6 +1093,10 @@ void RestartBattleMap(void) {
  */
 void GameCtrl_StartResumedGame(struct GameCtrlProc* gameCtrl) {
     struct BMapMainProc* mapMain;
+
+#ifndef FE8_ARCHIVAL_BUILD
+    ExpansionAutoplay_Reset();
+#endif
 
     if (gPlaySt.chapterIndex == 0x7F) // TODO: CHAPTER_SPECIAL enum?
         ReadExtraMapInfo();
@@ -1203,6 +1218,10 @@ struct BMapMainProc* StartBMapMain(struct GameCtrlProc* gameCtrl) {
 
 void EndBMapMain(void) {
     struct BMapMainProc* mapMain;
+
+#ifndef FE8_ARCHIVAL_BUILD
+    ExpansionAutoplay_Reset();
+#endif
 
     Proc_EndEachMarked(PROC_MARK_DISP);
 

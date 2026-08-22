@@ -2,10 +2,14 @@
 #include "global.h"
 
 #include "proc.h"
+#include "bmunit.h"
 #include "cp_data.h"
 #include "cp_utility.h"
 
 #include "cp_common.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_autoplay_internal.h"
+#endif
 
 static void AiPhaseInit(struct Proc* proc);
 static void AiPhaseBerserkInit(struct Proc* proc);
@@ -80,5 +84,10 @@ static void AiPhaseBerserkInit(struct Proc* proc)
 
 static void AiPhaseCleanup(struct Proc* proc)
 {
+#ifndef FE8_ARCHIVAL_BUILD
+    if (gPlaySt.faction == FACTION_BLUE && !(gAiState.flags & AI_FLAG_BERSERKED))
+        ExpansionAutoplay_OnBlueComputerPhaseComplete();
+#endif
+
     gAiState.flags = AI_FLAGS_NONE;
 }

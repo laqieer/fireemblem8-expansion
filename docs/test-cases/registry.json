@@ -202,6 +202,18 @@
       "required_cases": [
         "TC-UTILITY-001"
       ]
+    },
+    {
+      "id": "transient-blue-computer-control",
+      "title": "Transient blue-phase computer control and telemetry",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/85"
+      ],
+      "reference": "docs/autoplay.md",
+      "status": "current",
+      "required_cases": [
+        "TC-AUTOPLAY-001"
+      ]
     }
   ],
   "cases": [
@@ -871,6 +883,43 @@
         {
           "command": "python3 scripts/modernize/expansion_config.py resolve --config debug --abi aapcs --rom-size 16M --danger-overlay-menu 0",
           "evidence": "scripts/modernize/expansion_config.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-AUTOPLAY-001",
+      "title": "Blue computer-phase smoke",
+      "feature_id": "transient-blue-computer-control",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/85"
+      ],
+      "document": "docs/test-cases/autoplay.md",
+      "anchor": "tc-autoplay-001-blue-computer-phase-smoke",
+      "profiles": [
+        "Modern AAPCS debug ROM with debug-only COMPUTER activation chord",
+        "Modern AAPCS debug and release ROMs with default PLAYER control"
+      ],
+      "purpose": "Prove legal blue execution through the existing AI pipeline, faction relations, bounded telemetry, phase progression, and default-player inertness.",
+      "prerequisites": "Repository root with libmGBA; clean-boot Chapter 2 supplies blue, red, and green actors for the positive, and clean-boot Prologue supplies both negatives.",
+      "actions": "Run the autoplay host suite, then the debug and release expansion-modern-autoplay-check targets.",
+      "expected_result": "The debug COMPUTER fixture completes a blue computer phase with legal actions and valid red-hostile/green-allied observations; phase and turn progress normally.",
+      "negative_control": "Debug and release defaults remain PLAYER with zero blue computer-phase starts, completions, or committed actions.",
+      "interactions": "Uses existing Unit.ai values, AreUnitsAllied, phase events, post-action handling, and Proc cleanup; no feature conflicts.",
+      "save_compatibility": "Controller and telemetry are transient; no saved field, preference, layout, migration, or compatibility-epoch change.",
+      "cleanup": "Use make clean_fast only to remove build artifacts.",
+      "limitations": "No strategy, objective, menu, persistence, accelerated execution, balance, or campaign-completion claim.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_autoplay -v",
+          "evidence": "tools/gba-playtest/tests/test_expansion_autoplay.py"
+        },
+        {
+          "command": "make expansion-modern-autoplay-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_autoplay_checks.py"
+        },
+        {
+          "command": "make expansion-modern-autoplay-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/fingerprints/autoplay-player-default-modern-release.json"
         }
       ]
     }

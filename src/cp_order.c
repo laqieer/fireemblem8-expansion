@@ -6,6 +6,9 @@
 #include "bmunit.h"
 
 #include "cp_common.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_autoplay_internal.h"
+#endif
 
 static void CpOrderMain(ProcPtr proc);
 static void CpOrderBerserkInit(ProcPtr proc);
@@ -194,6 +197,10 @@ int BuildAiUnitList(void)
 
         aiNum++;
     }
+
+#ifndef FE8_ARCHIVAL_BUILD
+    ExpansionAutoplay_RecordEligibleActors(faction, aiNum);
+#endif
 
     return aiNum;
 }

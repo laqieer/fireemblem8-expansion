@@ -1,6 +1,9 @@
 #include "global.h"
 
 #include "cp_common.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_autoplay_internal.h"
+#endif
 
 #include "bmidoten.h"
 #include "bmmap.h"
@@ -297,6 +300,10 @@ s8 AiTryMoveTowardsEscape(void) {
             return gAiDecision.actionPerformed;
         }
     }
+
+#ifndef FE8_ARCHIVAL_BUILD
+    ExpansionAutoplay_RecordUnsupportedEscape();
+#endif
 
     return 0;
 }
