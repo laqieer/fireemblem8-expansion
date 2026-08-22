@@ -11,6 +11,10 @@ PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 CLAUDE_PATH = ROOT / "CLAUDE.md"
 
 
+def normalize_markdown_whitespace(text):
+    return " ".join(text.split())
+
+
 def read_skill():
     text = SKILL_PATH.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -116,16 +120,27 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Only issue closure, remote completion, and other true dependents",
             "exact merged `master` SHA",
             "fix forward or revert immediately",
-            "Validate and merge independent PRs in parallel.",
-            "Another",
-            "independent merge advancing `master` does not by itself",
-            "Monitor Copilot review concurrently with candidate Build CI.",
-            "Dispatch Full Matrix only after both Build CI and Copilot review",
         )
 
         for requirement in required_contract:
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
+
+        markdown_contract = (
+            "Validate and merge independent PRs in parallel.",
+            "Another independent merge advancing `master` does not by itself "
+            "invalidate a candidate head's evidence.",
+            "Monitor Copilot review concurrently with candidate Build CI. Use a "
+            "separate bounded direct watcher for the exact candidate's Copilot "
+            "review check; when it finishes, inspect and triage its threads "
+            "immediately instead of waiting for Build or Full Matrix.",
+            "Dispatch Full Matrix only after both Build CI and Copilot review "
+            "are terminal and clean for the same candidate.",
+        )
+        normalized_skill = normalize_markdown_whitespace(text)
+        for requirement in markdown_contract:
+            with self.subTest(surface="skill", requirement=requirement):
+                self.assertIn(requirement, normalized_skill)
 
         project_instructions = (
             ROOT / ".github" / "copilot-instructions.md"
@@ -147,11 +162,6 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "stopping to wait or sending a waiting-only response",
             "Only closure, remote",
             "fix forward or revert the broken default",
-            "Monitor Copilot review concurrently with candidate Build CI",
-            "do not wait for Build or Full Matrix",
-            "Start Full Matrix only after Build and Copilot review are both clean.",
-            "Independent PRs may validate and merge in parallel.",
-            "another independent PR's post-merge CI",
         )
 
         for requirement in project_contract:
@@ -161,6 +171,25 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 self.assertIn(requirement, project_instructions)
 
         claude_instructions = CLAUDE_PATH.read_text(encoding="utf-8")
+        project_markdown_contract = (
+            "Monitor Copilot review concurrently with candidate Build CI using "
+            "its own bounded direct watcher.",
+            "Inspect review threads as soon as that review is terminal; do not "
+            "wait for Build or Full Matrix.",
+            "Start Full Matrix only after Build and Copilot review are both clean.",
+            "Independent PRs may validate and merge in parallel.",
+            "Do not queue them by age, issue number, shared initiative, or "
+            "another independent PR's post-merge CI.",
+        )
+        for surface, instructions in (
+            ("project instructions", project_instructions),
+            ("Claude project instructions", claude_instructions),
+        ):
+            normalized_instructions = normalize_markdown_whitespace(instructions)
+            for requirement in project_markdown_contract:
+                with self.subTest(surface=surface, requirement=requirement):
+                    self.assertIn(requirement, normalized_instructions)
+
         for requirement in project_contract:
             with self.subTest(
                 surface="Claude project instructions", requirement=requirement
