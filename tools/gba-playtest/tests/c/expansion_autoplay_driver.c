@@ -1,6 +1,7 @@
+#include "global.h"
+
 #include <stdio.h>
 
-#include "global.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "expansion_autoplay.h"

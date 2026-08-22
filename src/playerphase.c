@@ -299,6 +299,7 @@ void PlayerPhase_MainIdle(ProcPtr proc)
     if (ExpansionAutoplay_TryActivateScenario(
             gKeyStatusPtr->newKeys, gKeyStatusPtr->heldKeys))
     {
+        EndPlayerPhaseSideWindows();
         Proc_Goto(proc, 3);
         return;
     }

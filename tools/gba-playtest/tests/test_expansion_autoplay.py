@@ -20,6 +20,7 @@ ARM_NM = shutil.which("arm-none-eabi-nm")
 ARM_SIZE = shutil.which("arm-none-eabi-size")
 RUNNER = ROOT / "tools" / "gba-playtest" / "run_autoplay_checks.py"
 FINGERPRINTS = ROOT / "tools" / "gba-playtest" / "fingerprints"
+PLAYER_PHASE = ROOT / "src" / "playerphase.c"
 sys.path.insert(0, str(ROOT / "tools" / "gba-playtest"))
 
 import gba_playtest  # noqa: E402
@@ -30,6 +31,16 @@ def run(command):
 
 
 class AutoplayHostTests(unittest.TestCase):
+    def test_debug_activation_closes_side_windows_before_phase_exit(self):
+        text = PLAYER_PHASE.read_text(encoding="utf-8")
+        activation = text.index("if (ExpansionAutoplay_TryActivateScenario(")
+        cleanup = text.index("EndPlayerPhaseSideWindows();", activation)
+        phase_exit = text.index("Proc_Goto(proc, 3);", activation)
+        early_return = text.index("return;", activation)
+        self.assertLess(activation, cleanup)
+        self.assertLess(cleanup, phase_exit)
+        self.assertLess(phase_exit, early_return)
+
     def test_public_controller_and_telemetry_contract(self):
         if CC is None:
             self.skipTest("no host C compiler")
