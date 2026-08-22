@@ -85,38 +85,45 @@ branch immediately.
 
 ## Meaningful test evidence
 
-The labeled clauses below are the public test-evidence contract for agents.
-
-- **Evidence standard:** Tests must prove behavior, a parsed structural
-  contract, generated output, compile/link properties, or runtime state.
-- **Prohibited evidence:** Do not add a test whose only evidence comes from a
-  listed category; each listed category is prohibited.
+- **Evidence standard:** required
+  - **behavior:** required
+  - **parsed structural contract:** required
+  - **generated output:** required
+  - **compile/link properties:** required
+  - **runtime state:** required
+- **Prohibited evidence:** prohibited
+  - **sole-evidence rule:** prohibited
   - **arbitrary strings:** prohibited
   - **comments:** prohibited
   - **helper names:** prohibited
   - **line numbers:** prohibited
   - **ordering:** prohibited
   - **implementation spelling:** prohibited
-  - **Git-text rationale:** required. Git tracks source, review, and history,
-    so raw tracked-text presence is not behavior evidence.
-- **Static-contract exception:** A source-text assertion is permitted only
-  when the exact syntax, spelling, or absence is itself a documented public
-  format, security boundary, generated-file contract, ABI/layout constraint,
-  or externally consumed protocol. The test must name that contract and
-  explain why functional, parsed, compiled, or runtime evidence cannot replace
-  it.
-- **Evidence preference:** Prefer calling the real function with positive and
-  adversarial inputs; parsing the real JSON, YAML, Make database, AST, binary,
-  or schema rather than grepping its serialization; compile/link inspection of
-  typed symbols, sections, resources, or generated output; and deterministic
-  target-ROM/libmGBA behavior before a narrowly justified source-text
-  assertion.
-- **Replacement and mutation controls:** When removing or rewriting a brittle
-  test, preserve its accepted requirement with stronger evidence or explicitly
-  prove it duplicated another gate and had no independent contract. Where
-  feasible, demonstrate that a behavior change which preserves the old phrase
-  fails the replacement test, while a semantics-preserving spelling or
-  ordering refactor remains green.
+  - **Git-text rationale:** required. git-tracks=source,review,history; raw-tracked-text=not-behavior-evidence
+- **Static-contract exception:** conditional
+  - **source-text assertion:** permitted-only
+  - **exact syntax/spelling/absence:** required
+  - **documented public format:** one-of
+  - **security boundary:** one-of
+  - **generated-file contract:** one-of
+  - **ABI/layout constraint:** one-of
+  - **externally consumed protocol:** one-of
+  - **named contract:** required
+  - **irreplaceable evidence explanation:** required
+- **Evidence preference:** ordered
+  - **real function positive/adversarial inputs:** first
+  - **parsed JSON/YAML/Make/AST/binary/schema:** second
+  - **compile/link typed symbols/sections/resources/generated output:** third
+  - **deterministic target-ROM/libmGBA behavior:** fourth
+  - **narrowly justified source-text assertion:** last
+- **Replacement and mutation controls:** required
+  - **accepted requirement:** preserve
+  - **stronger evidence:** required-or-duplicate
+  - **duplicate gate:** no-independent-contract
+  - **phrase-preserving behavior change:** fails
+  - **semantics-preserving spelling/order refactor:** green
+
+## First-time setup
 
 First-time setup: `./scripts/quickstart.sh` installs/probes the modern
 toolchain, an ARM GDB debugger, the mGBA GDB-server frontend, and libmGBA by

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import unittest
@@ -12,16 +13,10 @@ PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 CLAUDE_PATH = ROOT / "CLAUDE.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
 MEANINGFUL_TEST_POLICY_HEADING = "Meaningful test evidence"
-MEANINGFUL_TEST_POLICY_CLAUSES = (
-    "Evidence standard",
-    "Prohibited evidence",
-    "Static-contract exception",
-    "Evidence preference",
-    "Replacement and mutation controls",
-)
 MARKDOWN_HEADING = re.compile(r"^#{2,6} (?P<heading>.+)$")
 MEANINGFUL_TEST_POLICY_CLAUSE = re.compile(
-    r"^- \*\*(?P<name>[^*:]+):\*\* (?P<value>.+)$"
+    r"^- \*\*(?P<name>[^*:]+):\*\* (?P<status>[a-z-]+)"
+    r"(?:\. (?P<detail>.+))?$"
 )
 MEANINGFUL_TEST_POLICY_ITEM = re.compile(
     r"^  - \*\*(?P<name>[^*:]+):\*\* "
@@ -36,106 +31,91 @@ PROHIBITED_EVIDENCE_CATEGORIES = (
     "implementation spelling",
 )
 GIT_TEXT_RATIONALE = "Git-text rationale"
-MEANINGFUL_TEST_POLICY_ITEM_SCHEMA = {
-    "Evidence standard": {},
-    "Prohibited evidence": {
-        **{category: "prohibited" for category in PROHIBITED_EVIDENCE_CATEGORIES},
-        GIT_TEXT_RATIONALE: "required",
-    },
-    "Static-contract exception": {},
-    "Evidence preference": {},
-    "Replacement and mutation controls": {},
-}
-MEANINGFUL_TEST_POLICY_SEMANTIC_PATTERNS = {
-    "Evidence standard": {
-        "tests-must-prove": (r"\btests? must prove\b",),
-        "behavior": (r"\bbehavior\b",),
-        "parsed-structural-contract": (r"\bparsed structural contract\b",),
-        "generated-output": (r"\bgenerated output\b",),
-        "compile-link-properties": (r"\bcompile link properties\b",),
-        "runtime-state": (r"\bruntime state\b",),
-    },
-    "Prohibited evidence": {
-        "sole-evidence-rule": (
-            r"\b(?:do not|must not) add (?:a )?test whose only evidence "
-            r"comes from a listed category\b",
+CANONICAL_POLICY_SOURCE = (
+    (
+        "Evidence standard",
+        "required",
+        (
+            ("behavior", "required", ""),
+            ("parsed structural contract", "required", ""),
+            ("generated output", "required", ""),
+            ("compile/link properties", "required", ""),
+            ("runtime state", "required", ""),
         ),
-        "listed-categories-prohibited": (
-            r"\beach listed category is prohibited\b",
-        ),
-    },
-    "Static-contract exception": {
-        "source-text-only": (
-            r"\bsource text assertion is permitted only\b",
-        ),
-        "syntax-spelling-absence": (
-            r"\bexact syntax spelling or absence\b",
-        ),
-        "public-format": (r"\bdocumented public format\b",),
-        "security-boundary": (r"\bsecurity boundary\b",),
-        "generated-file-contract": (r"\bgenerated file contract\b",),
-        "abi-layout-constraint": (r"\babi layout constraint\b",),
-        "externally-consumed-protocol": (
-            r"\bexternally consumed protocol\b",
-        ),
-        "named-contract": (r"\btest must name that contract\b",),
-        "irreplaceable-evidence": (
-            r"\bfunctional parsed compiled or runtime evidence cannot replace it\b",
-        ),
-    },
-    "Evidence preference": {
-        "prefer-real-function-inputs": (
-            r"\bprefer calling the real function with positive and adversarial inputs\b",
-        ),
-        "parse-real-structure": (
-            r"\bparsing the real json yaml make database ast binary or schema\b",
-        ),
-        "avoid-serialized-grep": (
-            r"\brather than grepping its serialization\b",
-        ),
-        "compile-link-inspection": (
-            r"\bcompile link inspection of typed symbols sections resources or generated output\b",
-        ),
-        "deterministic-runtime": (
-            r"\bdeterministic target rom libmgba behavior\b",
-        ),
-        "narrow-static-last": (
-            r"\bbefore a narrowly justified source text assertion\b",
-        ),
-    },
-    "Replacement and mutation controls": {
-        "preserve-requirement": (
-            r"\bpreserve its accepted requirement with stronger evidence\b",
-        ),
-        "duplicate-gate": (
-            r"\bduplicated another gate and had no independent contract\b",
-        ),
-        "behavior-change-fails": (
-            r"\bbehavior change which preserves the old phrase fails the replacement test\b",
-        ),
-        "semantics-preserving-refactor-green": (
-            r"\bsemantics preserving spelling or ordering refactor remains green\b",
-        ),
-    },
-}
-MEANINGFUL_TEST_POLICY_SEMANTICS = {
-    clause_name: frozenset(patterns)
-    for clause_name, patterns in MEANINGFUL_TEST_POLICY_SEMANTIC_PATTERNS.items()
-}
-GIT_TEXT_RATIONALE_PATTERNS = {
-    "git-tracks-source": (r"\bgit tracks source\b",),
-    "git-tracks-review": (r"\bgit tracks(?: source)? review\b",),
-    "git-tracks-history": (
-        r"\bgit tracks(?: source)?(?: review)?(?: and)? history\b",
     ),
-    "tracked-text-is-not-behavior-evidence": (
-        r"\braw tracked text presence is not behavior evidence\b",
+    (
+        "Prohibited evidence",
+        "prohibited",
+        (
+            ("sole-evidence rule", "prohibited", ""),
+            *[(category, "prohibited", "") for category in PROHIBITED_EVIDENCE_CATEGORIES],
+            (
+                GIT_TEXT_RATIONALE,
+                "required",
+                "git-tracks=source,review,history; "
+                "raw-tracked-text=not-behavior-evidence",
+            ),
+        ),
     ),
-}
-GIT_TEXT_RATIONALE_SEMANTICS = frozenset(GIT_TEXT_RATIONALE_PATTERNS)
-PROHIBITED_EVIDENCE_PERMISSION = re.compile(
-    r"\b(?:permitted|allowed|acceptable)\b"
+    (
+        "Static-contract exception",
+        "conditional",
+        (
+            ("source-text assertion", "permitted-only", ""),
+            ("exact syntax/spelling/absence", "required", ""),
+            ("documented public format", "one-of", ""),
+            ("security boundary", "one-of", ""),
+            ("generated-file contract", "one-of", ""),
+            ("ABI/layout constraint", "one-of", ""),
+            ("externally consumed protocol", "one-of", ""),
+            ("named contract", "required", ""),
+            ("irreplaceable evidence explanation", "required", ""),
+        ),
+    ),
+    (
+        "Evidence preference",
+        "ordered",
+        (
+            ("real function positive/adversarial inputs", "first", ""),
+            ("parsed JSON/YAML/Make/AST/binary/schema", "second", ""),
+            (
+                "compile/link typed symbols/sections/resources/generated output",
+                "third",
+                "",
+            ),
+            ("deterministic target-ROM/libmGBA behavior", "fourth", ""),
+            ("narrowly justified source-text assertion", "last", ""),
+        ),
+    ),
+    (
+        "Replacement and mutation controls",
+        "required",
+        (
+            ("accepted requirement", "preserve", ""),
+            ("stronger evidence", "required-or-duplicate", ""),
+            ("duplicate gate", "no-independent-contract", ""),
+            ("phrase-preserving behavior change", "fails", ""),
+            ("semantics-preserving spelling/order refactor", "green", ""),
+        ),
+    ),
 )
+
+
+@dataclass(frozen=True)
+class PolicyItem:
+    status: str
+    detail: tuple[tuple[str, frozenset[str]], ...] = ()
+
+
+@dataclass(frozen=True)
+class PolicyClause:
+    status: str
+    items: frozenset[tuple[str, PolicyItem]]
+
+
+@dataclass(frozen=True)
+class MeaningfulTestPolicy:
+    clauses: frozenset[tuple[str, PolicyClause]]
 
 
 def read_skill():
@@ -161,105 +141,32 @@ def read_skill():
 
 def read_markdown_section(text, heading):
     lines = text.splitlines()
-    heading_line = next(
-        (
-            index
-            for index, line in enumerate(lines)
-            if (
-                MARKDOWN_HEADING.match(line)
-                and MARKDOWN_HEADING.match(line).group("heading").strip() == heading
-            )
-        ),
-        None,
-    )
-    if heading_line is None:
-        raise AssertionError(f"missing Markdown section: {heading}")
+    heading_lines = [
+        index
+        for index, line in enumerate(lines)
+        if (
+            (match := MARKDOWN_HEADING.match(line))
+            and match.group("heading").strip() == heading
+        )
+    ]
+    if len(heading_lines) != 1:
+        raise AssertionError(
+            f"expected exactly one Markdown section {heading!r}, "
+            f"found {len(heading_lines)}"
+        )
 
     end_line = next(
         (
             index
-            for index in range(heading_line + 1, len(lines))
+            for index in range(heading_lines[0] + 1, len(lines))
             if MARKDOWN_HEADING.match(lines[index])
         ),
         len(lines),
     )
-    return lines[heading_line + 1:end_line]
+    return lines[heading_lines[0] + 1:end_line]
 
 
-def parse_meaningful_test_policy(text):
-    clauses = {}
-    clause_name = None
-    item = None
-    for line in read_markdown_section(text, MEANINGFUL_TEST_POLICY_HEADING):
-        match = MEANINGFUL_TEST_POLICY_CLAUSE.match(line)
-        if match:
-            clause_name = match.group("name")
-            item = None
-            if clause_name in clauses:
-                raise AssertionError(f"duplicate policy clause: {clause_name}")
-            clauses[clause_name] = {
-                "text": [match.group("value")],
-                "items": {},
-            }
-        elif match := MEANINGFUL_TEST_POLICY_ITEM.match(line):
-            if clause_name is None:
-                raise AssertionError(f"orphaned policy item: {match.group('name')}")
-            items = clauses[clause_name]["items"]
-            item_name = match.group("name")
-            if item_name in items:
-                raise AssertionError(f"duplicate policy item: {item_name}")
-            item = {
-                "status": match.group("status"),
-                "detail": match.group("detail") or "",
-            }
-            items[item_name] = item
-        elif clause_name is not None and re.match(r"^\s+- ", line):
-            raise AssertionError(f"invalid policy item: {line.strip()}")
-        elif item is not None and line.startswith("    ") and line.strip():
-            item["detail"] = " ".join((item["detail"], line.strip())).strip()
-        elif clause_name is not None and line.startswith("  ") and line.strip():
-            clauses[clause_name]["text"].append(line.strip())
-
-    expected = set(MEANINGFUL_TEST_POLICY_CLAUSES)
-    actual = set(clauses)
-    if actual != expected:
-        raise AssertionError(
-            f"policy clauses differ: missing={expected - actual}, extra={actual - expected}"
-        )
-    return {
-        name: {
-            "text": " ".join(clauses[name]["text"]),
-            "items": clauses[name]["items"],
-        }
-        for name in MEANINGFUL_TEST_POLICY_CLAUSES
-    }
-
-
-def render_meaningful_test_policy(clauses, clause_order):
-    lines = [f"## {MEANINGFUL_TEST_POLICY_HEADING}", ""]
-    for name in clause_order:
-        clause = clauses[name]
-        lines.append(f"- **{name}:** {clause['text']}")
-        for item_name, item in clause["items"].items():
-            detail = f". {item['detail']}" if item["detail"] else ""
-            lines.append(f"  - **{item_name}:** {item['status']}{detail}")
-    return "\n".join([*lines, ""])
-
-
-def clone_meaningful_test_policy(clauses):
-    return {
-        name: {
-            "text": clause["text"],
-            "items": {
-                item_name: dict(item)
-                for item_name, item in clause["items"].items()
-            },
-        }
-        for name, clause in clauses.items()
-    }
-
-
-def normalize_policy_text(text):
+def normalize_policy_atom(text):
     return " ".join(
         re.sub(
             r"[^a-z0-9]+",
@@ -269,68 +176,151 @@ def normalize_policy_text(text):
     )
 
 
-def policy_semantics(text, patterns):
-    normalized = normalize_policy_text(text)
-    return frozenset(
-        name
-        for name, alternatives in patterns.items()
-        if any(re.search(pattern, normalized) for pattern in alternatives)
-    )
+def parse_git_text_rationale_detail(detail):
+    assignments = []
+    assignment_names = set()
+    for assignment in detail.split(";"):
+        name, separator, values = assignment.partition("=")
+        normalized_name = normalize_policy_atom(name)
+        normalized_values = frozenset(
+            normalize_policy_atom(value) for value in values.split(",")
+        )
+        if (
+            not separator
+            or not normalized_name
+            or not normalized_values
+            or "" in normalized_values
+            or normalized_name in assignment_names
+        ):
+            raise AssertionError(f"invalid Git-text rationale detail: {detail}")
+        assignment_names.add(normalized_name)
+        assignments.append((normalized_name, normalized_values))
+    return tuple(sorted(assignments))
+
+
+def parse_policy_item_detail(item_name, detail):
+    if not detail:
+        return ()
+    if item_name != normalize_policy_atom(GIT_TEXT_RATIONALE):
+        raise AssertionError(f"unexpected detail for policy item: {item_name}")
+    return parse_git_text_rationale_detail(detail)
+
+
+def build_policy_ast(raw_clauses):
+    clauses = []
+    for clause_name, clause in raw_clauses.items():
+        if clause["detail"]:
+            raise AssertionError(f"unexpected detail for policy clause: {clause_name}")
+        items = []
+        for item_name, item in clause["items"].items():
+            items.append(
+                (
+                    item_name,
+                    PolicyItem(
+                        status=item["status"],
+                        detail=parse_policy_item_detail(item_name, item["detail"]),
+                    ),
+                )
+            )
+        clauses.append(
+            (
+                clause_name,
+                PolicyClause(
+                    status=clause["status"],
+                    items=frozenset(items),
+                ),
+            )
+        )
+    return MeaningfulTestPolicy(frozenset(clauses))
+
+
+def build_canonical_policy_ast():
+    raw_clauses = {}
+    for clause_name, status, source_items in CANONICAL_POLICY_SOURCE:
+        normalized_clause_name = normalize_policy_atom(clause_name)
+        if normalized_clause_name in raw_clauses:
+            raise AssertionError(f"duplicate canonical policy clause: {clause_name}")
+        raw_clauses[normalized_clause_name] = {
+            "status": normalize_policy_atom(status),
+            "detail": "",
+            "items": {},
+        }
+        for item_name, item_status, item_detail in source_items:
+            normalized_item_name = normalize_policy_atom(item_name)
+            if normalized_item_name in raw_clauses[normalized_clause_name]["items"]:
+                raise AssertionError(
+                    f"duplicate canonical policy item: {item_name}"
+                )
+            raw_clauses[normalized_clause_name]["items"][normalized_item_name] = {
+                "status": normalize_policy_atom(item_status),
+                "detail": item_detail,
+            }
+    return build_policy_ast(raw_clauses)
+
+
+CANONICAL_POLICY_AST = build_canonical_policy_ast()
+
+
+def parse_meaningful_test_policy(text):
+    raw_clauses = {}
+    current_clause = None
+    for line in read_markdown_section(text, MEANINGFUL_TEST_POLICY_HEADING):
+        if not line.strip():
+            continue
+        if match := MEANINGFUL_TEST_POLICY_CLAUSE.match(line):
+            clause_name = normalize_policy_atom(match.group("name"))
+            if clause_name in raw_clauses:
+                raise AssertionError(f"duplicate policy clause: {match.group('name')}")
+            raw_clauses[clause_name] = {
+                "status": normalize_policy_atom(match.group("status")),
+                "detail": match.group("detail") or "",
+                "items": {},
+            }
+            current_clause = clause_name
+            continue
+        if match := MEANINGFUL_TEST_POLICY_ITEM.match(line):
+            if current_clause is None:
+                raise AssertionError(f"orphaned policy item: {match.group('name')}")
+            item_name = normalize_policy_atom(match.group("name"))
+            items = raw_clauses[current_clause]["items"]
+            if item_name in items:
+                raise AssertionError(f"duplicate policy item: {match.group('name')}")
+            items[item_name] = {
+                "status": normalize_policy_atom(match.group("status")),
+                "detail": match.group("detail") or "",
+            }
+            continue
+        raise AssertionError(f"unexpected policy content: {line.strip()}")
+
+    policy = build_policy_ast(raw_clauses)
+    if policy != CANONICAL_POLICY_AST:
+        raise AssertionError("policy AST differs from the canonical policy schema")
+    return policy
+
+
+def render_meaningful_test_policy(clause_order=None, item_orders=None):
+    records = {
+        clause_name: (status, items)
+        for clause_name, status, items in CANONICAL_POLICY_SOURCE
+    }
+    lines = [f"## {MEANINGFUL_TEST_POLICY_HEADING}", ""]
+    for clause_name in clause_order or records:
+        status, items = records[clause_name]
+        lines.append(f"- **{clause_name}:** {status}")
+        item_records = {
+            item_name: (item_status, detail)
+            for item_name, item_status, detail in items
+        }
+        for item_name in (item_orders or {}).get(clause_name, item_records):
+            item_status, detail = item_records[item_name]
+            suffix = f". {detail}" if detail else ""
+            lines.append(f"  - **{item_name}:** {item_status}{suffix}")
+    return "\n".join([*lines, ""])
 
 
 class DevelopmentWorkflowSkillTests(unittest.TestCase):
     def assert_meaningful_test_policy(self, text):
-        clauses = parse_meaningful_test_policy(text)
-        normalized_policy = {}
-
-        for clause_name in MEANINGFUL_TEST_POLICY_CLAUSES:
-            clause = clauses[clause_name]
-            expected_items = MEANINGFUL_TEST_POLICY_ITEM_SCHEMA[clause_name]
-            actual_items = {
-                item_name: item["status"]
-                for item_name, item in clause["items"].items()
-            }
-            self.assertEqual(
-                expected_items,
-                actual_items,
-                f"{clause_name}: policy item schema differs",
-            )
-
-            actual_semantics = policy_semantics(
-                clause["text"],
-                MEANINGFUL_TEST_POLICY_SEMANTIC_PATTERNS[clause_name],
-            )
-            self.assertEqual(
-                MEANINGFUL_TEST_POLICY_SEMANTICS[clause_name],
-                actual_semantics,
-                f"{clause_name}: semantic contract differs",
-            )
-            normalized_policy[clause_name] = {
-                "items": actual_items,
-                "semantics": actual_semantics,
-            }
-
-        prohibited_text = normalize_policy_text(
-            clauses["Prohibited evidence"]["text"]
-        )
-        if PROHIBITED_EVIDENCE_PERMISSION.search(prohibited_text):
-            self.fail(
-                "Prohibited evidence cannot authorize a text-only evidence category"
-            )
-
-        rationale_semantics = policy_semantics(
-            clauses["Prohibited evidence"]["items"][GIT_TEXT_RATIONALE]["detail"],
-            GIT_TEXT_RATIONALE_PATTERNS,
-        )
-        self.assertEqual(
-            GIT_TEXT_RATIONALE_SEMANTICS,
-            rationale_semantics,
-            "Git-text rationale semantic contract differs",
-        )
-        normalized_policy["Prohibited evidence"]["git-text-rationale"] = (
-            rationale_semantics
-        )
-        return normalized_policy
+        return parse_meaningful_test_policy(text)
 
     def test_frontmatter_matches_project_skill_directory(self):
         metadata, _ = read_skill()
@@ -476,180 +466,97 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 self.assertIn(requirement, text)
 
     def test_meaningful_test_evidence_policy_is_aligned(self):
-        """Validate the normalized policy schema and its semantic contracts."""
-        canonical = None
+        """Validate the fail-closed canonical policy AST on every guidance surface."""
         for path in (
             SKILL_PATH,
             COPILOT_INSTRUCTIONS_PATH,
             CLAUDE_PATH,
         ):
             with self.subTest(surface=str(path.relative_to(ROOT))):
-                normalized_policy = self.assert_meaningful_test_policy(
-                    path.read_text(encoding="utf-8")
-                )
-                if canonical is None:
-                    canonical = normalized_policy
-                else:
-                    self.assertEqual(canonical, normalized_policy)
-
-        _, skill = read_skill()
-        clauses = parse_meaningful_test_policy(skill)
-        reordered = render_meaningful_test_policy(
-            clauses, reversed(MEANINGFUL_TEST_POLICY_CLAUSES)
-        ).replace(
-            "Tests must prove behavior, a parsed structural contract",
-            "Tests must prove behavior, a parsed\n"
-            "    structural contract",
-        )
-
-        self.assert_meaningful_test_policy(
-            reordered
-        )
-        self.assert_meaningful_test_policy(
-            render_meaningful_test_policy(
-                clauses, MEANINGFUL_TEST_POLICY_CLAUSES
-            ).replace("behavior", "behaviour")
-        )
-
-        for mutation_name, clause_name, replacement in (
-            (
-                "evidence standard",
-                "Evidence standard",
-                clauses["Evidence standard"]["text"].replace(
-                    "Tests must prove", "Tests may merely mention"
-                ),
-            ),
-            (
-                "static-contract exception",
-                "Static-contract exception",
-                clauses["Static-contract exception"]["text"].replace(
-                    "permitted only", "permitted sometimes"
-                ),
-            ),
-            (
-                "evidence preference",
-                "Evidence preference",
-                clauses["Evidence preference"]["text"].replace(
-                    "Prefer calling", "Avoid calling"
-                ),
-            ),
-            (
-                "replacement mutation control",
-                "Replacement and mutation controls",
-                clauses["Replacement and mutation controls"]["text"].replace(
-                    "fails the replacement test", "passes the replacement test"
-                ),
-            ),
-        ):
-            with self.subTest(mutation=mutation_name):
-                mutation = clone_meaningful_test_policy(clauses)
-                mutation[clause_name]["text"] = replacement
-                with self.assertRaises(AssertionError):
+                self.assertEqual(
+                    CANONICAL_POLICY_AST,
                     self.assert_meaningful_test_policy(
-                        render_meaningful_test_policy(
-                            mutation, MEANINGFUL_TEST_POLICY_CLAUSES
-                        )
-                    )
-
-        mutation = clone_meaningful_test_policy(clauses)
-        mutation["Prohibited evidence"]["text"] += (
-            " Source-text-only tests are permitted."
-        )
-        with self.assertRaises(AssertionError):
-            self.assert_meaningful_test_policy(
-                render_meaningful_test_policy(
-                    mutation, MEANINGFUL_TEST_POLICY_CLAUSES
+                        path.read_text(encoding="utf-8")
+                    ),
                 )
+
+        reverse_clause_order = tuple(
+            reversed([clause_name for clause_name, _, _ in CANONICAL_POLICY_SOURCE])
+        )
+        reverse_item_orders = {
+            clause_name: tuple(
+                reversed([item_name for item_name, _, _ in items])
+            )
+            for clause_name, _, items in CANONICAL_POLICY_SOURCE
+        }
+        harmless_variation = render_meaningful_test_policy(
+            clause_order=reverse_clause_order,
+            item_orders=reverse_item_orders,
+        ).replace("behavior", "behaviour").replace(
+            "source,review,history", "history,source,review"
+        )
+        self.assertEqual(
+            CANONICAL_POLICY_AST,
+            self.assert_meaningful_test_policy(harmless_variation),
+        )
+
+        policy_text = render_meaningful_test_policy()
+        mutations = {
+            "unexpected paragraph": policy_text
+            + "\nText-only tests are permitted.\n",
+            "duplicate heading": policy_text
+            + "\n## Meaningful test evidence\n\n",
+            "negated requirement": policy_text
+            + "\nTests must not prove runtime state.\n",
+            "top-level prohibited polarity": policy_text.replace(
+                "- **Prohibited evidence:** prohibited",
+                "- **Prohibited evidence:** permitted",
+            ),
+            "prohibited category polarity": policy_text.replace(
+                "  - **comments:** prohibited",
+                "  - **comments:** permitted",
+            ),
+            "contradictory Git rationale polarity": policy_text.replace(
+                "raw-tracked-text=not-behavior-evidence",
+                "raw-tracked-text=behavior-evidence",
+            ),
+            "contradictory Git rationale detail": policy_text.replace(
+                "raw-tracked-text=not-behavior-evidence",
+                "raw-tracked-text=not-behavior-evidence; "
+                "text-only-tests=permitted",
+            ),
+            "extra item": policy_text.replace(
+                "  - **behavior:** required",
+                "  - **behavior:** required\n"
+                "  - **arbitrary strings:** permitted",
+            ),
+        }
+        for category in PROHIBITED_EVIDENCE_CATEGORIES:
+            mutations[f"{category} detail"] = policy_text.replace(
+                f"  - **{category}:** prohibited",
+                f"  - **{category}:** prohibited. text-only tests are permitted",
             )
 
-        for mutation_name, detail in (
-            (
-                "Git-text rationale source",
-                "Git tracks review and history, so raw tracked-text presence "
-                "is not behavior evidence.",
-            ),
-            (
-                "Git-text rationale review",
-                "Git tracks source and history, so raw tracked-text presence "
-                "is not behavior evidence.",
-            ),
-            (
-                "Git-text rationale history",
-                "Git tracks source and review, so raw tracked-text presence "
-                "is not behavior evidence.",
-            ),
-            (
-                "Git-text rationale behavior evidence",
-                "Git tracks source, review, and history, so raw tracked-text "
-                "presence is behavior evidence.",
-            ),
-        ):
+        for mutation_name, mutation in mutations.items():
             with self.subTest(mutation=mutation_name):
-                mutation = clone_meaningful_test_policy(clauses)
-                mutation["Prohibited evidence"]["items"][GIT_TEXT_RATIONALE][
-                    "detail"
-                ] = detail
                 with self.assertRaises(AssertionError):
-                    self.assert_meaningful_test_policy(
-                        render_meaningful_test_policy(
-                            mutation, MEANINGFUL_TEST_POLICY_CLAUSES
-                        )
-                    )
+                    self.assert_meaningful_test_policy(mutation)
 
-        for clause_name in MEANINGFUL_TEST_POLICY_CLAUSES:
-            with self.subTest(mutation=f"unexpected item under {clause_name}"):
-                mutation = clone_meaningful_test_policy(clauses)
-                item_name = (
-                    "unexpected category"
-                    if clause_name == "Prohibited evidence"
-                    else "arbitrary strings"
-                )
-                mutation[clause_name]["items"][item_name] = {
-                    "status": "permitted",
-                    "detail": "",
-                }
-                with self.assertRaises(AssertionError):
-                    self.assert_meaningful_test_policy(
-                        render_meaningful_test_policy(
-                            mutation, MEANINGFUL_TEST_POLICY_CLAUSES
-                        )
-                    )
-
-        malformed_item = render_meaningful_test_policy(
-            clauses, MEANINGFUL_TEST_POLICY_CLAUSES
-        ).replace(
-            "  - **comments:** prohibited",
-            "   - **comments:** prohibited",
-        )
-        with self.assertRaises(AssertionError):
-            parse_meaningful_test_policy(malformed_item)
-
-        for mutation_name, mutate_items in (
-            (
-                "missing prohibited category",
-                lambda items: items.pop("helper names"),
-            ),
-            (
-                "permitted prohibited category",
-                lambda items: items["comments"].update(status="permitted"),
-            ),
+    def test_meaningful_test_policy_requires_exactly_one_valid_markdown_heading(self):
+        for policy_text in (
+            "##Meaningful test evidence\n\n- **Evidence standard:** ignored\n",
+            "## Meaningful test evidence\n\n"
+            "## Meaningful test evidence\n",
         ):
-            with self.subTest(mutation=mutation_name):
-                mutation = clone_meaningful_test_policy(clauses)
-                mutate_items(mutation["Prohibited evidence"]["items"])
-                with self.assertRaises(AssertionError):
-                    self.assert_meaningful_test_policy(
-                        render_meaningful_test_policy(
-                            mutation, MEANINGFUL_TEST_POLICY_CLAUSES
-                        )
+            with self.subTest(policy_text=policy_text):
+                with self.assertRaisesRegex(
+                    AssertionError,
+                    "expected exactly one Markdown section",
+                ):
+                    read_markdown_section(
+                        policy_text,
+                        MEANINGFUL_TEST_POLICY_HEADING,
                     )
-
-    def test_meaningful_test_policy_requires_a_valid_markdown_heading(self):
-        with self.assertRaisesRegex(AssertionError, "missing Markdown section"):
-            read_markdown_section(
-                "##Meaningful test evidence\n\n- **Evidence standard:** ignored\n",
-                MEANINGFUL_TEST_POLICY_HEADING,
-            )
 
     def test_review_size_preflight_and_exception_contract(self):
         _, text = read_skill()
