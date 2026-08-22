@@ -96,5 +96,9 @@ git diff --shortstat <base>...HEAD
 > [the development workflow skill](skills/development-workflow/SKILL.md);
 > CODEOWNERS requests are advisory unless an external ruleset enforces them.
 
+- [ ] Candidate Build CI and Copilot review ran concurrently. Full Matrix was
+      not dispatched for this PR, branch, or local candidate.
+- [ ] After merge, automatic Build CI and manually dispatched exact-`master`
+      Full Matrix will be recorded before issue closure or remote completion.
 - [ ] Every objective acceptance criterion is validated; or the exact
       non-agent-verifiable criterion preventing merge is named.

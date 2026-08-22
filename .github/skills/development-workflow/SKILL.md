@@ -260,13 +260,14 @@ immediate base. Review and merge the stack bottom-up; never merge a child while
 its required parent is open. After a parent merges, run
 `gh pr edit <child-pr> --base master`, confirm that
 `git diff master...<child-branch>` contains only the child issue's scope, and
-rerun exact-candidate remote checks whenever the candidate commit or tree
-changes.
+rerun candidate Build CI and Copilot review whenever the candidate commit or
+tree changes.
 
-Apply candidate-commit Build CI, Full Matrix, post-merge Build verification,
-issue evidence and closure, and the remote completion gate independently to
-every issue PR. Complete the umbrella initiative only after every accepted
-issue has been independently merged, verified on `master`, and closed.
+Apply candidate-commit Build CI plus Copilot review, then post-merge Build
+verification and manually dispatched exact-`master` Full Matrix, issue
+evidence and closure, and the remote completion gate independently to every
+issue PR. Complete the umbrella initiative only after every accepted issue has
+been independently merged, verified on `master`, and closed.
 
 ### Review-size preflight
 
@@ -416,8 +417,8 @@ must not carry content hashes or duplicated gitlink pins.
 Use one dedicated pull request for exactly one independent issue by default.
 Push directly to `master` only when the user explicitly requests it and
 repository permissions allow it; direct delivery still requires the same local
-validation, Full Matrix run for the pushed commit, pushed-commit Build CI, and
-remote completion gate.
+validation, pushed-commit Build CI, manually dispatched exact-`master` Full
+Matrix, and remote completion gate.
 
 The PR must record:
 
@@ -488,15 +489,15 @@ hide a broken default branch.
 Before merge:
 
 1. Confirm required Build CI succeeds for the exact candidate commit.
-2. Dispatch and pass `full-matrix.yml` for that same candidate branch and
-   commit.
-3. Resolve every review thread with code or an explanation.
-4. Confirm every objective acceptance criterion, positive scenario, negative
+2. Request Copilot review concurrently with Build CI, and resolve each finding
+   with code or an explanation. Do not dispatch Full Matrix for a candidate,
+   local branch, or pull request.
+3. Confirm every objective acceptance criterion, positive scenario, negative
    control, compatibility check, tester-facing case, and documentation
    requirement is complete.
-5. Confirm no material risk or validation gap remains unresolved.
+4. Confirm no material risk or validation gap remains unresolved.
 
-Merge the PR autonomously when all five conditions hold. Do not wait for human
+Merge the PR autonomously when all four conditions hold. Do not wait for human
 review or approval. Respect branch protection and never bypass a required
 GitHub control.
 
@@ -518,17 +519,21 @@ a generically worded request for review.
 For every issue-specific PR:
 
 1. Verify Build CI on the resulting `master` commit.
-2. If `master` fails, immediately fix forward or revert; do not report the
-   feature as delivered.
-3. Add the final evidence and commit/PR/CI links to the originating issue.
+2. Manually dispatch `full-matrix.yml --ref master` only after that Build
+   succeeds, and verify its host, modern, legacy, and fail-closed summary
+   results for the same `master` revision.
+3. If either post-merge gate fails, immediately fix forward or revert; do not
+   report the feature as delivered. The failure blocks the affected issue's
+   closure and remote completion, but not unrelated independent PRs.
+4. Add the final evidence and commit/PR/CI links to the originating issue.
    Include installed investigation tools, versions, purpose, and any
    pre-existing IDA/Ghidra/GDB resources used.
-4. Close the feature or bug issue only when every required tester-facing case
+5. Close the feature or bug issue only when every required tester-facing case
    is present and every material manual criterion is verified. This
    development workflow overrides conflicting generic language that reserves
    closure for human review.
-5. For tracked changes, run `make remote-completion-check` only after the
-   intended commit is pushed and its Build CI succeeds.
+6. For tracked changes, run `make remote-completion-check` only after the
+   intended `master` commit has successful Build CI and Full Matrix results.
 
 The task is complete only when the implementation and documentation are
 persistent upstream, required CI is green, the remote completion gate passes,

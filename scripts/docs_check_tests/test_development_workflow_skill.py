@@ -77,7 +77,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         _, text = read_skill()
 
         self.assertIn(
-            "Merge the PR autonomously when all five conditions hold.",
+            "Merge the PR autonomously when all four conditions hold.",
             text,
         )
         self.assertIn(
@@ -168,7 +168,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "`Depends on #...` links",
             "Review and merge the stack bottom-up",
             "gh pr edit <child-pr> --base master",
-            "Apply candidate-commit Build CI, Full Matrix, post-merge Build verification",
+            "Apply candidate-commit Build CI plus Copilot review, then post-merge Build",
             "Complete the umbrella initiative only after every accepted",
         )
 
@@ -201,8 +201,9 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "`feat/101-doc-search`, base `master`",
             "`feat/103-selector`, base `feat/102-registry`",
             "gh pr edit <child-pr-number> --base master",
-            "exact-candidate Build CI",
-            "Full Matrix if the candidate commit or tree changed",
+            "rerun candidate Build CI and",
+            "Copilot review if the candidate commit or tree changed",
+            "dispatch Full Matrix only from `master`",
             "make remote-completion-check",
             "git diff --name-only \"$base_ref\"...HEAD",
             "20,000-line limit is a hard ceiling",

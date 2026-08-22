@@ -78,26 +78,31 @@ diagnostic.
 ## 4. Full validation policy
 
 During iteration, run only the focused fast checks and the one relevant ROM
-profile for the code you changed. Do not repeatedly run every host suite plus
-both linker configurations locally: the dispatch-only
-`.github/workflows/full-matrix.yml` workflow exists to parallelize that broad
-evidence pass once for the candidate branch's exact commit before merge. It
-supplements the existing required Build CI workflow and does not weaken or
-replace any push/pull-request gate.
+profile for the code you changed. A pull-request candidate is gated by the
+required Build CI and Copilot review running concurrently. **Do not dispatch
+Full Matrix for a candidate branch, local commit, or pull request.** When
+those candidate gates are clean, merge directly; the merge automatically
+starts Build CI on `master`.
 
-After pushing the candidate branch, dispatch and watch it with:
+After the automatic Build CI for the merged `master` revision succeeds,
+manually dispatch the reduced Full Matrix for that exact `master` revision:
 
 ```bash
-gh workflow run full-matrix.yml --ref <branch>
-gh run watch <run-id> --exit-status
+gh workflow run full-matrix.yml --ref master
 ```
 
-The run summary records `github.sha`, `github.ref`, and fail-closed conclusions
-for the host, modern debug/release matrix, and archival legacy lanes.
-`gh run watch ... --exit-status` must finish successfully before merge.
-The modern matrix invokes only the canonical
+The workflow rejects every ref other than `refs/heads/master` before its
+expensive lanes start. Its fail-closed summary covers Matrix-only CJK/font,
+codec, configuration/linker-budget, modern debug/release, and archival legacy
+evidence. Build CI remains the sole PR/master owner of artifact, documentation,
+generated-data, and localization host evidence; no result artifact or SHA
+ledger is used to transfer that ownership. The modern Matrix invokes only the canonical
 `expansion-modern-linker-check`; that target already owns its CJK profile,
 runtime, shifted-link, and linker-budget dependencies.
+
+If post-merge Build or Full Matrix fails, fix forward or revert the affected
+`master` change. That failure blocks the affected issue's closure and
+`make remote-completion-check`, but does not block unrelated independent PRs.
 
 The fixed upstream-port verifier still lists the current-master Build CI
 commands with `python3 -m scripts.upstream_port verify --dry-run --jobs 2`.
@@ -147,8 +152,10 @@ they touch a shared guide. PR `#103` is a genuine child because it cannot
 build against `master` until `#102` lands. After merging `#102` with the
 repository's merge-commit policy, run
 `gh pr edit <child-pr-number> --base master`, inspect
-`git diff master...feat/103-selector`, and rerun exact-candidate Build CI and
-Full Matrix if the candidate commit or tree changed. Complete discussion
+`git diff master...feat/103-selector`, and rerun candidate Build CI and
+Copilot review if the candidate commit or tree changed. After merge, let the
+automatic master Build finish and dispatch Full Matrix only from `master`.
+Complete discussion
 `#100` only after all three issues are independently merged, verified on
 `master`, and closed.
 

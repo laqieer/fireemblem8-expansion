@@ -276,8 +276,11 @@ compare:
 # These are intentionally opt-in, networked maintainer/agent checks rather
 # than build prerequisites. They turn "done" into an executable contract:
 # the worktree must be clean, HEAD must already be pushed to its configured
-# upstream, and the exact pushed SHA must have a successful required workflow.
-# The all-issues variant additionally requires zero open GitHub issues.
+# upstream, and the exact pushed `master` SHA must have successful automatic
+# Build CI plus the manually dispatched exact-master Full Matrix CI. Candidate
+# branches intentionally stop at Build CI and Copilot review; their Matrix
+# dispatch is rejected by the workflow before expensive lanes start. The
+# all-issues variant additionally requires zero open GitHub issues.
 remote-completion-check:
 	@set -eu; \
 	command -v gh >/dev/null 2>&1 || { \
@@ -287,6 +290,11 @@ remote-completion-check:
 	if [ -n "$$(git status --porcelain)" ]; then \
 		echo "error: worktree is not clean; commit all intended changes first" >&2; \
 		git status --short >&2; \
+		exit 1; \
+	fi; \
+	branch=$$(git branch --show-current); \
+	if [ "$$branch" != master ]; then \
+		echo "error: remote-completion-check requires merged master, not '$$branch'" >&2; \
 		exit 1; \
 	fi; \
 	head_sha=$$(git rev-parse HEAD); \
@@ -307,11 +315,19 @@ remote-completion-check:
 		completed,success,*) ;; \
 		*) printf 'error: Build CI for %s is not successful: %s\n' "$$head_sha" "$$run" >&2; exit 1 ;; \
 	esac; \
+	matrix=$$(gh run list --repo "$$repo" --commit "$$head_sha" --workflow full-matrix.yml \
+		--limit 1 --json status,conclusion,url \
+		--jq 'if length == 0 then "missing,," else .[0].status + "," + (.[0].conclusion // "") + "," + .[0].url end'); \
+	case "$$matrix" in \
+		completed,success,*) ;; \
+		*) printf 'error: Full Matrix CI for %s is not successful: %s\n' "$$head_sha" "$$matrix" >&2; exit 1 ;; \
+	esac; \
 	printf 'Remote completion gate passed: %s (%s)\n' "$$head_sha" "$$repo"
 
 all-issues-completion-check: remote-completion-check
 	@set -eu; \
 	repo=$$(gh repo view --json nameWithOwner --jq .nameWithOwner); \
+	head_sha=$$(git rev-parse HEAD); \
 	open_issues=$$(gh issue list --repo "$$repo" --state open --limit 1000 \
 		--json number --jq 'length'); \
 	if [ "$$open_issues" -ne 0 ]; then \
