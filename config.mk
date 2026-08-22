@@ -162,3 +162,10 @@ EXPANSION_CASUAL_MODE ?= 0
 # fade-in when a changed context returns. The value participates in config
 # identity but never changes save compatibility.
 EXPANSION_BGM_CONTINUATION_POLICY ?= preserve
+
+# EXPANSION_HQ_MIXER -- optional, modern-only high-resolution MP2K PCM
+# mixer (issue #83). The default preserves the stock mixer exactly; 1 selects
+# the pinned DMA-disabled HQ mixer and participates in configuration identity.
+# It changes neither save data nor the save-compatibility epoch, and the
+# archival agbcc lane rejects it before compilation.
+EXPANSION_HQ_MIXER ?= 0

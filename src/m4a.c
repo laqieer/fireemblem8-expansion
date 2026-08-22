@@ -1,19 +1,65 @@
+#include "global.h"
 #include "gba/m4a_internal.h"
+#include "expansion_hq_mixer.h"
 
 extern const u8 gCgb3Vol[];
 
 #define BSS_CODE __attribute__((section(".bss.code")))
+#define BSS_HQ_MIX_BUFFER __attribute__((section(".bss.hq_mix_buffer")))
 
+#if FE8_EXPANSION_HQ_MIXER
+#define HQ_MIXER_CODE_BYTES 0xAC0
+#define HQ_MIXER_BUFFER_BYTES (0xE0 * 4)
+
+extern const u32 MixerSize;
+
+BSS_CODE ALIGNED(4) char SoundMainRAM_Buffer[HQ_MIXER_CODE_BYTES] = {0};
+BSS_HQ_MIX_BUFFER ALIGNED(4) char SoundMainRAM_MixBuffer[HQ_MIXER_BUFFER_BYTES] = {0};
+
+EWRAM_DATA struct ExpansionHqMixerProbe gExpansionHqMixerProbe;
+
+static u32 HqMixerChecksum(const u8 *data, u32 size)
+{
+    u32 hash = 2166136261;
+
+    while (size != 0)
+    {
+        hash ^= *data++;
+        hash *= 16777619;
+        size--;
+    }
+
+    return hash;
+}
+#else
 BSS_CODE ALIGNED(4) char SoundMainRAM_Buffer[0x400] = {0};
+#endif
 
 struct SoundInfo gSoundInfo;
+
+#if FE8_EXPANSION_HQ_MIXER
+EWRAM_DATA void *gMPlayJumpTable[36];
+EWRAM_DATA struct CgbChannel gCgbChans[4];
+EWRAM_DATA u8 gMPlayMemAccArea[0x10];
+
+EWRAM_DATA struct MusicPlayerInfo gMPlayInfo_SE4_BMP2;
+EWRAM_DATA struct MusicPlayerInfo gMPlayInfo_SE5_BMP3;
+EWRAM_DATA struct MusicPlayerInfo gMPlayInfo_BGM1;
+EWRAM_DATA struct MusicPlayerInfo gMPlayInfo_SE6_BMP4;
+EWRAM_DATA struct MusicPlayerInfo gMPlayInfo_BGM2;
+EWRAM_DATA struct MusicPlayerInfo gMPlayInfo_SE1_SYS1;
+EWRAM_DATA struct MusicPlayerInfo gMPlayInfo_SE3_BMP1;
+EWRAM_DATA struct MusicPlayerInfo gMPlayInfo_SE7_EVT;
+EWRAM_DATA struct MusicPlayerInfo gMPlayInfo_SE2_SYS2;
+#else
 void *gMPlayJumpTable[36];
 struct CgbChannel gCgbChans[4];
+u8 gMPlayMemAccArea[0x10];
+#endif
 struct MusicPlayerInfo gMPlay_BGM;
 struct MusicPlayerInfo gMPlay_SE1;
 struct MusicPlayerInfo gMPlay_SE2;
 struct MusicPlayerInfo gMPlay_SE3;
-u8 gMPlayMemAccArea[0x10];
 
 u32 MidiKeyToFreq(struct WaveData *wav, u8 key, u8 fineAdjust)
 {
@@ -66,7 +112,22 @@ void m4aSoundInit(void)
 {
     s32 i;
 
+#if FE8_EXPANSION_HQ_MIXER
+    CpuCopy32((void *)((s32)SoundMainRAM & ~1), SoundMainRAM_Buffer, MixerSize);
+    gExpansionHqMixerProbe.initializationCount++;
+    gExpansionHqMixerProbe.sourceAddress = (u32)SoundMainRAM & ~1;
+    gExpansionHqMixerProbe.destinationAddress = (u32)SoundMainRAM_Buffer;
+    gExpansionHqMixerProbe.codeBytes = MixerSize;
+    gExpansionHqMixerProbe.sourceChecksum = HqMixerChecksum(
+        (const u8 *)((u32)SoundMainRAM & ~1), MixerSize);
+    gExpansionHqMixerProbe.destinationChecksum = HqMixerChecksum(
+        (const u8 *)SoundMainRAM_Buffer, MixerSize);
+    gExpansionHqMixerProbe.mixBufferAddress = (u32)SoundMainRAM_MixBuffer;
+    gExpansionHqMixerProbe.mixBufferBytes = sizeof(SoundMainRAM_MixBuffer);
+    gExpansionHqMixerProbe.dmaEnabled = 0;
+#else
     CpuCopy32((void *)((s32)SoundMainRAM & ~1), SoundMainRAM_Buffer, sizeof(SoundMainRAM_Buffer));
+#endif
 
     SoundInit(&gSoundInfo);
     MPlayExtender(gCgbChans);
@@ -87,6 +148,15 @@ void m4aSoundInit(void)
 void m4aSoundMain(void)
 {
     SoundMain();
+
+#if FE8_EXPANSION_HQ_MIXER
+    gExpansionHqMixerProbe.soundMainCount++;
+    if (gSoundInfo.pcmDmaPeriod == 0
+        || gSoundInfo.pcmDmaCounter > gSoundInfo.pcmDmaPeriod)
+    {
+        gExpansionHqMixerProbe.invalidDmaBufferCount++;
+    }
+#endif
 }
 
 void m4aSongNumStart(u16 n)

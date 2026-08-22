@@ -13,6 +13,9 @@ __iwram_start = ORIGIN(iwram);
 __iwram_top   = ORIGIN(iwram) + LENGTH(iwram);
 __sp_irq      = __iwram_top - 0x060;
 __sp_usr      = __sp_irq - 0x1A0;
+PROVIDE(__hq_mixer_enabled = 0);
+PROVIDE(SoundMainRAM_MixBuffer = 0);
+PROVIDE(SoundMainRAM_End = 0);
 /*
  * crt0 initializes the downward-growing system/user stack at __sp_usr.
  * The historical fixed IWRAM layout ended at 0x030067A8, leaving 0x1658
@@ -326,6 +329,18 @@ SECTIONS
         "IWRAM data leaves no user stack")
     ASSERT(__iwram_static_end <= __iwram_static_limit,
         "IWRAM data leaves less than 0x1000 bytes for the user stack")
+    ASSERT(__hq_mixer_enabled == 0
+        || (SoundMainRAM_End - SoundMainRAM) == 0xAC0,
+        "HQ mixer code extent differs from the pinned 0xAC0-byte contract")
+    ASSERT(__hq_mixer_enabled == 0
+        || SoundMainRAM_Buffer == __iwram_start + 0x2C60,
+        "HQ mixer code buffer is not at its linker-owned IWRAM location")
+    ASSERT(__hq_mixer_enabled == 0
+        || SoundMainRAM_MixBuffer == __iwram_start + 0x6A80,
+        "HQ mixer intermediate buffer is not at its linker-owned IWRAM location")
+    ASSERT(__hq_mixer_enabled == 0
+        || SoundMainRAM_MixBuffer + 0x380 == __iwram_static_limit,
+        "HQ mixer intermediate buffer must end at the static IWRAM budget boundary")
     ASSERT(__ewram_used_end <= ORIGIN(ewram) + LENGTH(ewram), "EWRAM overflow")
     ASSERT(gOpAnimSt - gGenericBuffer == 0x2000,
         "gGenericBuffer must immediately precede gOpAnimSt")

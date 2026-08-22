@@ -109,6 +109,18 @@
       "required_cases": [
         "TC-GAMEPLAY-007"
       ]
+    },
+    {
+      "id": "hq-pcm-mixer",
+      "title": "Optional high-resolution MP2K PCM mixer",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/83"
+      ],
+      "reference": "docs/audio.md",
+      "status": "current",
+      "required_cases": [
+        "TC-AUDIO-HQMIX-001"
+      ]
     }
   ],
   "cases": [
@@ -382,6 +394,44 @@
         {
           "command": "make expansion-modern-aoe-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/run_aoe_checks.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-AUDIO-HQMIX-001",
+      "title": "HQ PCM mixer produces bounded stereo output",
+      "feature_id": "hq-pcm-mixer",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/83"
+      ],
+      "document": "docs/test-cases/audio.md",
+      "anchor": "tc-audio-hqmix-001-hq-pcm-mixer-produces-bounded-stereo-output",
+      "profiles": [
+        "Modern AAPCS debug HQ mixer profile with EXPANSION_HQ_MIXER=1",
+        "Modern AAPCS release HQ mixer profile with EXPANSION_HQ_MIXER=1",
+        "Matching isolated default-disabled controls with EXPANSION_HQ_MIXER=0"
+      ],
+      "purpose": "Verify the selected mixer, IWRAM copy/buffer bounds, target PCM output, interrupt-buffer behavior, and default-disabled omission.",
+      "prerequisites": "Repository root with the supported ARM toolchain, libmGBA, and build tools; no save or external source checkout is required.",
+      "actions": "Run the documented debug and release HQ mixer gates, retain archival rejection, then listen to the same fixed scripted-battle segment from both profiles.",
+      "expected_result": "The enabled target has bounded non-silent stereo PCM, valid interrupt-buffer state, a matching initial ROM/IWRAM code copy, a DMA-disabled mixer, and lower deterministic fixture RMS error.",
+      "negative_control": "The matching disabled target has no HQ symbol, buffer, or probe and retains stock PCM mixing; archival opt-in fails before compilation.",
+      "interactions": "Depends on MP2K, the modern AAPCS linker, IWRAM budget, and libmGBA; DMA-on and real localized-game profiles are excluded, while other optional modules have no conflict.",
+      "save_compatibility": "Configuration fingerprint only; no save bytes, layout, migration, or compatibility-epoch change.",
+      "cleanup": "Close the emulator; use make clean_fast only to remove ignored build artifacts.",
+      "limitations": "Audible clipping, clicks, periodic dropout, and perceptible channel reversal remain a named manual listening judgment; DMA-on, mono, runtime switching, and archival support are excluded.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_hq_mixer -v",
+          "evidence": "tools/gba-playtest/tests/test_hq_mixer.py"
+        },
+        {
+          "command": "make expansion-modern-hq-mixer-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_hq_mixer_checks.py"
+        },
+        {
+          "command": "make expansion-modern-hq-mixer-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_hq_mixer_checks.py"
         }
       ]
     }
