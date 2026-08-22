@@ -2411,9 +2411,9 @@ expansion-modern-boot-preflight:
 # Full 3-checkpoint behavior-policy boot gate: proves the modern ROM reaches
 # the same deterministic runtime state as the legacy ROM at frames 0/60/120
 # (not merely that it links). --policy behavior is required here because the
-# modern ROM is not byte-identical to the legacy ROM referenced by the
-# checked-in fingerprint's own "rom" stanza; only --policy exact-rom would
-# additionally require ROM identity, which this target does not claim.
+# modern ROM is not byte-identical to the legacy baseline; only --policy
+# exact-rom would additionally require ROM identity, which this target does
+# not claim.
 expansion-modern-boot-check: expansion-modern-boot-preflight expansion-modern-rom
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
 		--rom "$(MODERN_ROM)" \

@@ -79,7 +79,7 @@ def _capture_or_skip(rom: Path, scenario, sram_image: Path):
 def _load_committed_fingerprint(name: str) -> dict:
     path = FINGERPRINTS_DIR / f"{name}.json"
     return gba_playtest.validate_fingerprint(
-        json.loads(path.read_text(encoding="utf-8")), str(path)
+        json.loads(path.read_text(encoding="utf-8")), str(path), policy="behavior"
     )
 
 

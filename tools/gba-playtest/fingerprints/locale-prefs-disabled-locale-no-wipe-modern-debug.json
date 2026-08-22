@@ -272,11 +272,5 @@
     }
   ],
   "format_version": 2,
-  "rom": {
-    "game_code": "BE8E",
-    "sha1": "4707e6baeea471547009ef7df099b4b19f85f606",
-    "size": 16777216,
-    "title": "FIREEMBLEM2E"
-  },
   "scenario": "locale-prefs-disabled-locale-no-wipe-modern-debug"
 }

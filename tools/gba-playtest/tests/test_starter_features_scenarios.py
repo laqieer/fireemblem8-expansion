@@ -53,7 +53,7 @@ class StarterHookScenarioSchemaTests(unittest.TestCase):
         path = FINGERPRINTS_DIR / (name + ".json")
         import json
         return gba_playtest.validate_fingerprint(
-            json.loads(path.read_text(encoding="utf-8")), str(path)
+            json.loads(path.read_text(encoding="utf-8")), str(path), policy="behavior"
         )
 
     def test_both_scenarios_parse_and_are_enabled(self):
@@ -204,6 +204,7 @@ class StarterHookRuntimeTests(unittest.TestCase):
         expected = gba_playtest.validate_fingerprint(
             json.loads((FINGERPRINTS_DIR / (scenario_name + ".json")).read_text(encoding="utf-8")),
             scenario_name,
+            policy="behavior",
         )
         actual = gba_playtest.capture(Path(rom), scenario, None, 0)
         diffs = gba_playtest.compare_fingerprints(expected, actual, policy="behavior")

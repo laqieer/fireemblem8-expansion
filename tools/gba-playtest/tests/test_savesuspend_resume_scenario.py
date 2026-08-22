@@ -182,7 +182,9 @@ class SavesuspendResumeScenarioFilesTests(unittest.TestCase):
     def test_committed_fingerprint_exists_and_matches_scenario(self):
         self.assertTrue(FINGERPRINT_PATH.exists(), f"missing fingerprint: {FINGERPRINT_PATH}")
         fingerprint = json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8"))
-        gba_playtest.validate_fingerprint(fingerprint, str(FINGERPRINT_PATH))
+        gba_playtest.validate_fingerprint(
+            fingerprint, str(FINGERPRINT_PATH), policy="behavior"
+        )
         self.assertEqual(fingerprint["scenario"], "savesuspend-resume")
         names = [c["name"] for c in fingerprint["checkpoints"]]
         self.assertEqual(

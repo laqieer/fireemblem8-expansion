@@ -141,19 +141,18 @@ class NewGameScenarioFilesTests(unittest.TestCase):
             with self.subTest(config=config):
                 self.assertTrue(path.exists(), f"missing fingerprint: {path}")
                 fingerprint = gba_playtest.validate_fingerprint(
-                    json.loads(path.read_text(encoding="utf-8")), str(path)
+                    json.loads(path.read_text(encoding="utf-8")),
+                    str(path),
+                    policy="behavior",
                 )
                 self.assertEqual(fingerprint["scenario"], "new-game")
                 self.assertEqual(len(fingerprint["checkpoints"]), 3)
 
-    def test_debug_and_release_fingerprints_report_distinct_rom_identities(self):
-        debug_fp = json.loads(
-            FINGERPRINT_PATHS["debug"].read_text(encoding="utf-8")
-        )
-        release_fp = json.loads(
-            FINGERPRINT_PATHS["release"].read_text(encoding="utf-8")
-        )
-        self.assertNotEqual(debug_fp["rom"]["sha1"], release_fp["rom"]["sha1"])
+    def test_debug_and_release_fingerprints_are_behavior_only_baselines(self):
+        for path in FINGERPRINT_PATHS.values():
+            with self.subTest(path=path):
+                fingerprint = json.loads(path.read_text(encoding="utf-8"))
+                self.assertNotIn("rom", fingerprint)
 
 
 @host_mode.live_artifact_testcase("new-game runtime coverage")
@@ -176,6 +175,7 @@ class NewGameRuntimeTests(unittest.TestCase):
         expected = gba_playtest.validate_fingerprint(
             json.loads(FINGERPRINT_PATHS[config].read_text(encoding="utf-8")),
             str(FINGERPRINT_PATHS[config]),
+            policy="behavior",
         )
         with tempfile.TemporaryDirectory(prefix="gba-playtest-newgame-test-") as tmp:
             fixture_path = sf.write_deterministic_current_fixture(
