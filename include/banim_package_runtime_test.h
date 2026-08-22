@@ -28,7 +28,9 @@ struct BanimPackageRuntimeTestProbe {
 
 extern EWRAM_DATA struct BanimPackageRuntimeTestProbe gBanimPackageRuntimeTestProbe;
 
+bool BanimPackageRuntimeTest_ForceFirstScriptedBattle(void);
 void BanimPackageRuntimeTest_BeginScriptedBattle(void);
+void BanimPackageRuntimeTest_MarkBattleEntry(void);
 void BanimPackageRuntimeTest_MarkBattleComplete(void);
 
 #endif /* FE8_BANIM_PACKAGE_RUNTIME_TEST */

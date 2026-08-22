@@ -13,10 +13,18 @@
 
 EWRAM_DATA struct BanimPackageRuntimeTestProbe gBanimPackageRuntimeTestProbe = {0};
 
+bool BanimPackageRuntimeTest_ForceFirstScriptedBattle(void)
+{
+    return gBanimPackageRuntimeTestProbe.selectionCount == 0;
+}
+
 void BanimPackageRuntimeTest_BeginScriptedBattle(void)
 {
     const struct BattleAnim * animation;
     int originalIndex;
+
+    if (CheckBattleScripted() == false)
+        return;
 
     animation = &banim_data[BANIM_PACKAGE_LORM_SP1_PROOF_INDEX];
     originalIndex = AnimConf_0[0].index - 1;
@@ -39,6 +47,19 @@ void BanimPackageRuntimeTest_BeginScriptedBattle(void)
         gBanimIdx[EKR_POS_L] = BANIM_PACKAGE_LORM_SP1_PROOF_INDEX;
         gBanimIdx_bak[EKR_POS_L] = BANIM_PACKAGE_LORM_SP1_PROOF_INDEX;
         gBanimPackageRuntimeTestProbe.selectedBattleIndex = gBanimIdx[EKR_POS_L];
+    }
+}
+
+void BanimPackageRuntimeTest_MarkBattleEntry(void)
+{
+    if (
+        gBanimPackageRuntimeTestProbe.selectionCount == 1
+        && gBanimPackageRuntimeTestProbe.battleEntryCount == 0
+        && gBanimIdx[EKR_POS_L] == BANIM_PACKAGE_LORM_SP1_PROOF_INDEX
+        && gBanimPackageRuntimeTestProbe.selectedBattleIndex
+            == BANIM_PACKAGE_LORM_SP1_PROOF_INDEX
+    )
+    {
         gBanimPackageRuntimeTestProbe.battleEntryCount++;
     }
 }
@@ -47,6 +68,7 @@ void BanimPackageRuntimeTest_MarkBattleComplete(void)
 {
     if (
         gBanimPackageRuntimeTestProbe.selectionCount == 1
+        && gBanimPackageRuntimeTestProbe.battleEntryCount == 1
         && gBanimPackageRuntimeTestProbe.battleCompleteCount == 0
         && gBanimPackageRuntimeTestProbe.selectedBattleIndex
             == BANIM_PACKAGE_LORM_SP1_PROOF_INDEX

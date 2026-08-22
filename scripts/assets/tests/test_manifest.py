@@ -531,6 +531,15 @@ class BattleAnimationPackageTests(unittest.TestCase):
         with open(os.path.join(REPO_ROOT, "include", "ekrbattle.h"), encoding="utf-8") as handle:
             self.assertNotIn("build/generated/assets", handle.read())
 
+    def test_partial_banim_output_clean_regenerates_all_grouped_outputs(self):
+        with open(os.path.join(REPO_ROOT, "assets.mk"), encoding="utf-8") as handle:
+            rules = handle.read()
+        self.assertIn("$(ASSET_BANIM_RUNTIME_TEST_DEFS) &: $(ASSET_OUTPUT_MK)", rules)
+        self.assertIn(
+            '$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate',
+            rules,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

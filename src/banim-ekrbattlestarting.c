@@ -37,6 +37,9 @@ void BeginAnimsOnBattleAnimations(void)
     }
 
     NewEkrBattleDeamon();
+#if FE8_BANIM_PACKAGE_RUNTIME_TEST
+    BanimPackageRuntimeTest_MarkBattleEntry();
+#endif
     AnimClearAll();
     ret = GetBanimInitPosReal();
     gEkrInitPosReal = ret;

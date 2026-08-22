@@ -6,8 +6,6 @@
 #include "bmitem.h"
 #include "constants/items.h"
 
-#include "banim_package_runtime_test.h"
-
 EWRAM_DATA int gBattleScripted = 0;
 
 u16 GetBattleAnimationId(struct Unit * unit, const struct BattleAnimDef * anim_def, u16 wpn, u32 * out)
@@ -248,17 +246,11 @@ bool EkrCheckAttackRound(u16 round)
 void SetBattleScripted(void)
 {
     gBattleScripted = true;
-#if FE8_BANIM_PACKAGE_RUNTIME_TEST
-    BanimPackageRuntimeTest_BeginScriptedBattle();
-#endif
 }
 
 void SetBattleUnscripted(void)
 {
     gBattleScripted = false;
-#if FE8_BANIM_PACKAGE_RUNTIME_TEST
-    BanimPackageRuntimeTest_MarkBattleComplete();
-#endif
 }
 
 bool CheckBattleScripted(void)

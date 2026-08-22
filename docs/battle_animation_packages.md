@@ -129,9 +129,15 @@ unsafe source paths, stale/orphan output, and atomic replacement.
 
 `make expansion-modern-banim-package-runtime-check` exercises the dedicated
 test-only `FE8_BANIM_PACKAGE_RUNTIME_TEST` seam. Its clean isolated ROM enters
-Chapter 4's real scripted battle, selects `LORM_SP1_PROOF` exactly once in the
-test-only battle state through the generated alias, and asserts that selected
-alias index, five modes,
+Chapter 4's real `FIGHT` through the engine's scripted-animation lifecycle.
+The test-only build makes that route scripted once so the shared combat input
+can retain its ordinary event-skip timing; this macro is absent from every
+normal build. A checkpoint immediately before `FIGHT` is the default negative
+control: every test-only probe remains zero, so no normal boot/setup path can
+select the alias. The real scripted route then selects `LORM_SP1_PROOF` exactly
+once after the ordinary resolver has chosen its default mapping, records entry
+only when the battle-animation lifecycle starts, and records completion only
+from `EkrMainEndExec`. It asserts that selected alias index, five modes,
 normal/total timing, five existing runtime resources, the actual
 `CLASS_EPHRAIM_LORD` class ID (`0x01`), the unchanged
 `CLASS_EPHRAIM_LORD -> AnimConf_0 -> 0` default mapping, and one selection,

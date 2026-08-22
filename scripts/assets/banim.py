@@ -13,9 +13,6 @@ import re
 import struct
 import zlib
 
-from scripts.generated_data.diagnostics import GeneratedDataError
-
-
 PACKAGE_SCHEMA = "fe8.community-banim.v1"
 SCRIPT_HEADER = "BANIM 1"
 MODES = ("normal", "critical", "ranged", "dodge", "standing")

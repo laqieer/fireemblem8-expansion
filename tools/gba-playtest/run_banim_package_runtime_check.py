@@ -51,7 +51,11 @@ def resolve_probe(elf: Path) -> int:
 
 
 def generated_define(path: Path, name: str) -> int:
-    match = re.search(r"^#define " + re.escape(name) + r" (\d+)$", path.read_text(), re.MULTILINE)
+    match = re.search(
+        r"^#define " + re.escape(name) + r" (\d+)$",
+        path.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
     if match is None:
         raise RuntimeError(f"missing generated runtime define {name}")
     return int(match.group(1))
@@ -77,48 +81,69 @@ def main() -> int:
     )
     generated = REPO_ROOT / "build" / "generated" / "assets" / "banim" / "banim_runtime_test_defs.h"
     alias_index = generated_define(generated, "BANIM_PACKAGE_LORM_SP1_PROOF_INDEX")
-    scenario = json.loads((REPO_ROOT / "tools/gba-playtest/scenarios/combat.json").read_text())
+    scenario = json.loads(
+        (REPO_ROOT / "tools/gba-playtest/scenarios/combat.json").read_text(encoding="utf-8")
+    )
     scenario["name"] = "banim-package-runtime"
     scenario["description"] = (
-        "Issue #62 test-only build: the real Chapter 4 scripted battle selects "
-        "the generated LORM_SP1_PROOF alias once, then records the existing "
-        "battle engine's entry and completion without changing normal mappings."
+        "Issue #62 test-only build: the real Chapter 4 FIGHT enters the engine's "
+        "scripted-animation branch once, selects the generated LORM_SP1_PROOF "
+        "alias, then records the existing battle engine's entry and completion "
+        "without changing normal mappings."
     )
-    scenario["checkpoints"] = [{
-        "name": "banim-package-runtime-complete",
-        "frame": 4000,
-        "framebuffer": False,
-        "probes": [
-            {"address": f"0x{base + index * 4:08x}", "size": 4}
-            for index in range(len(PROBE_FIELDS))
-        ],
-    }]
+    probes = [
+        {"address": f"0x{base + index * 4:08x}", "size": 4}
+        for index in range(len(PROBE_FIELDS))
+    ]
+    scenario["checkpoints"] = [
+        {
+            "name": "banim-package-runtime-default-control",
+            "frame": 3285,
+            "framebuffer": False,
+            "probes": probes,
+        },
+        {
+            "name": "banim-package-runtime-complete",
+            "frame": 4000,
+            "framebuffer": False,
+            "probes": probes,
+        },
+    ]
     args.out_dir.mkdir(parents=True, exist_ok=True)
     scenario_path = args.out_dir / "banim-package-runtime.json"
-    scenario_path.write_text(json.dumps(scenario, indent=2, sort_keys=True) + "\n")
+    scenario_path.write_text(json.dumps(scenario, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     capture = gba_playtest.capture(args.rom, gba_playtest.load_scenario(scenario_path))
-    values = {
+    default_values = {
         name: int(probe["value"], 16)
         for name, probe in zip(PROBE_FIELDS, capture["checkpoints"][0]["probes"])
+    }
+    values = {
+        name: int(probe["value"], 16)
+        for name, probe in zip(PROBE_FIELDS, capture["checkpoints"][1]["probes"])
     }
     expected_total = sum(package.mode_durations.values())
     failures = []
 
-    def expect(name: str, expected: int) -> None:
-        if values[name] != expected:
-            failures.append(f"{name}: expected {expected}, observed {values[name]}")
+    def expect(observed: dict[str, int], name: str, expected: int, checkpoint: str) -> None:
+        if observed[name] != expected:
+            failures.append(
+                f"{checkpoint} {name}: expected {expected}, observed {observed[name]}"
+            )
 
-    expect("magic", 0x42505431)
-    expect("selectionCount", 1)
-    expect("defaultClassId", 1)
-    expect("aliasIndex", alias_index)
-    expect("modeCount", len(package.mode_durations))
-    expect("normalDuration", package.mode_durations["normal"])
-    expect("totalDuration", expected_total)
-    expect("resourcesReady", 0x1F)
-    expect("battleEntryCount", 1)
-    expect("battleCompleteCount", 1)
-    expect("selectedBattleIndex", alias_index)
+    for name in PROBE_FIELDS:
+        expect(default_values, name, 0, "default control")
+
+    expect(values, "magic", 0x42505431, "scripted battle")
+    expect(values, "selectionCount", 1, "scripted battle")
+    expect(values, "defaultClassId", 1, "scripted battle")
+    expect(values, "aliasIndex", alias_index, "scripted battle")
+    expect(values, "modeCount", len(package.mode_durations), "scripted battle")
+    expect(values, "normalDuration", package.mode_durations["normal"], "scripted battle")
+    expect(values, "totalDuration", expected_total, "scripted battle")
+    expect(values, "resourcesReady", 0x1F, "scripted battle")
+    expect(values, "battleEntryCount", 1, "scripted battle")
+    expect(values, "battleCompleteCount", 1, "scripted battle")
+    expect(values, "selectedBattleIndex", alias_index, "scripted battle")
     if values["originalIndex"] == values["aliasIndex"]:
         failures.append("originalIndex unexpectedly equals the test-only alias index")
     if failures:

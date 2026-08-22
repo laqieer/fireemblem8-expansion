@@ -1024,7 +1024,10 @@ bool PrepareBattleGraphicsMaybe(void)
     }
 
 #if FE8_BANIM_PACKAGE_RUNTIME_TEST
-    BanimPackageRuntimeTest_BeginScriptedBattle();
+    if (CheckBattleScripted() == true)
+    {
+        BanimPackageRuntimeTest_BeginScriptedBattle();
+    }
 #endif
 
     pid = unit_bu1->pCharacterData->number - 1;
