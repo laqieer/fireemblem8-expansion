@@ -9,11 +9,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
-FULL_MATRIX = ROOT / ".github" / "workflows" / "full-matrix.yml"
+RETIRED_WORKFLOW_FILENAME = "full" + "-matrix.yml"
+RETIRED_WORKFLOW = ROOT / ".github" / "workflows" / RETIRED_WORKFLOW_FILENAME
 MAKEFILE = ROOT / "Makefile"
 MASTER_PUBLISHER_CONDITION = (
     "${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}"
 )
+COMBINED_WORKERS = ("host-tests", "build", "extended-host-tests", "legacy")
+INDEPENDENT_JOBS = COMBINED_WORKERS + ("patch-release",)
 SUMMARY_NEEDS = "needs: [host-tests, build, extended-host-tests, legacy]"
 PULL_REQUEST_TRIGGER = 'pull_request:\n    branches: [ "master" ]'
 PUSH_TRIGGER = 'push:\n    branches: [ "master" ]'
@@ -43,7 +46,7 @@ def _normalise(text: str) -> str:
     return " ".join(text.split())
 
 
-def _contains_command(job: str, command: str) -> bool:
+def _run_block_commands(job: str) -> list[str]:
     lines = job.splitlines()
     commands = []
     index = 0
@@ -58,13 +61,24 @@ def _contains_command(job: str, command: str) -> bool:
             index += 1
             block = []
             while index < len(lines) and lines[index].startswith("        "):
-                block.append(lines[index].strip())
+                line = lines[index].strip()
+                if line and not line.startswith("#"):
+                    block.append(line)
                 index += 1
             commands.extend(block)
             continue
-        commands.append(match.group("value"))
+        value = match.group("value").strip()
+        if value and not value.startswith("#"):
+            commands.append(value)
         index += 1
-    return any(_normalise(command) in _normalise(run) for run in commands)
+    return commands
+
+
+def _contains_command(job: str, command: str) -> bool:
+    return any(
+        _normalise(command) in _normalise(run)
+        for run in _run_block_commands(job)
+    )
 
 
 def _make_recipe(text: str, target: str) -> str:
@@ -78,7 +92,7 @@ def _make_recipe(text: str, target: str) -> str:
     return match.group("recipe")
 
 
-def _errors(text: str, full_matrix_exists: bool) -> list[str]:
+def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     errors = []
     header = text[: text.index("\njobs:\n")]
     if PULL_REQUEST_TRIGGER not in header:
@@ -86,9 +100,9 @@ def _errors(text: str, full_matrix_exists: bool) -> list[str]:
     if PUSH_TRIGGER not in header:
         errors.append("Build must retain the push master trigger")
     if "workflow_dispatch" in header:
-        errors.append("Build must not expose a manual Matrix trigger")
-    if full_matrix_exists:
-        errors.append("the standalone Full Matrix workflow must be deleted")
+        errors.append("Build must not expose a manual retired-workflow trigger")
+    if retired_workflow_exists:
+        errors.append("the retired standalone CI workflow must be deleted")
 
     jobs = _job_blocks(text)
     expected_jobs = {
@@ -103,24 +117,24 @@ def _errors(text: str, full_matrix_exists: bool) -> list[str]:
         errors.append(f"Build job set differs from consolidated contract: {sorted(jobs)}")
         return errors
 
-    for job_name in ("host-tests", "build", "extended-host-tests", "legacy"):
+    for job_name in COMBINED_WORKERS:
         if "if:" in jobs[job_name]:
             errors.append(f"{job_name} must run for pull-request candidates and master pushes")
 
     if f"if: {MASTER_PUBLISHER_CONDITION}" not in jobs["patch-release"]:
         errors.append("patch-release must remain master-push-only")
-    for job_name in ("extended-host-tests", "legacy", "patch-release"):
+    for job_name in INDEPENDENT_JOBS:
         if "needs:" in jobs[job_name]:
-            errors.append(f"{job_name} must not create a serial combined-gate critical path")
+            errors.append(f"{job_name} must not create a serial Build critical path")
 
     summary = jobs["summary"]
     if "if: always()" not in summary:
         errors.append("summary must run after failed combined jobs on both triggers")
     if SUMMARY_NEEDS not in summary:
         errors.append("summary must depend on every required combined Build job")
-    if '[ "$result" != "success" ]' not in summary:
-        errors.append("summary must fail closed")
     loop = summary[summary.index("for result") : summary.index("done", summary.index("for result"))]
+    if '[ "$result" != "success" ]' not in loop:
+        errors.append("summary loop must fail closed")
     for result in SUMMARY_RESULTS:
         if result not in loop:
             errors.append(f"summary loop omits required result: {result}")
@@ -173,11 +187,11 @@ def _remote_completion_errors(makefile_text: str) -> list[str]:
     required = (
         "--event push --branch master --commit",
         "--workflow build.yml",
-        "requires merged master",
+        "requires master, not",
     )
     errors = [f"remote completion lacks {item}" for item in required if item not in recipe]
-    if "full-matrix" in recipe:
-        errors.append("remote completion still depends on deleted Matrix workflow")
+    if RETIRED_WORKFLOW_FILENAME in recipe:
+        errors.append("remote completion still depends on the retired workflow")
     return errors
 
 
@@ -186,7 +200,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.text = WORKFLOW.read_text(encoding="utf-8")
 
     def test_real_workflow_consolidates_master_evidence(self):
-        self.assertEqual(_errors(self.text, FULL_MATRIX.exists()), [])
+        self.assertEqual(_errors(self.text, RETIRED_WORKFLOW.exists()), [])
         self.assertEqual(
             _remote_completion_errors(MAKEFILE.read_text(encoding="utf-8")),
             [],
@@ -208,13 +222,20 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         changed = self.text.replace(PUSH_TRIGGER, 'push:\n    branches: [ "other" ]', 1)
         self.assertTrue(any("push master trigger" in error for error in _errors(changed, False)))
 
-    def test_serial_combined_worker_dependency_fails(self):
-        changed = self.text.replace(
-            "  patch-release:\n",
-            "  patch-release:\n    needs: [build]\n",
-            1,
-        )
-        self.assertTrue(any("serial combined-gate critical path" in error for error in _errors(changed, False)))
+    def test_independent_jobs_reject_serial_dependencies(self):
+        for job_name in INDEPENDENT_JOBS:
+            with self.subTest(job_name=job_name):
+                changed = self.text.replace(
+                    f"  {job_name}:\n",
+                    f"  {job_name}:\n    needs: [host-tests]\n",
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        f"{job_name} must not create a serial Build critical path" in error
+                        for error in _errors(changed, False)
+                    )
+                )
 
     def test_missing_summary_dependency_fails(self):
         changed = self.text.replace(
@@ -232,6 +253,22 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         self.assertTrue(any("summary loop omits" in error for error in _errors(changed, False)))
 
+    def test_summary_comparison_outside_loop_fails(self):
+        changed = self.text.replace(
+            '[ "$result" != "success" ]',
+            '[ "$HOST_TESTS_RESULT" != "success" ]',
+            1,
+        )
+        self.assertTrue(any("summary loop must fail closed" in error for error in _errors(changed, False)))
+
+    def test_comment_text_is_not_treated_as_run_block_evidence(self):
+        changed = self.text.replace(
+            "        make legacy -j2\n",
+            "        true\n        # make legacy -j2\n",
+            1,
+        )
+        self.assertTrue(any("legacy job lost" in error for error in _errors(changed, False)))
+
     def test_duplicate_modern_gate_in_master_host_fails(self):
         changed = self.text.replace(
             "    - name: Run CJK font gates\n",
@@ -242,13 +279,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         self.assertTrue(any("repeats Build-owned" in error for error in _errors(changed, False)))
 
-    def test_matrix_remote_completion_dependency_fails(self):
+    def test_retired_workflow_remote_completion_dependency_fails(self):
         changed = MAKEFILE.read_text(encoding="utf-8").replace(
             "--workflow build.yml",
-            "--workflow full-matrix.yml",
+            f"--workflow {RETIRED_WORKFLOW_FILENAME}",
             1,
         )
-        self.assertTrue(any("deleted Matrix" in error for error in _remote_completion_errors(changed)))
+        self.assertTrue(any("retired workflow" in error for error in _remote_completion_errors(changed)))
 
     def test_pull_request_remote_completion_dependency_fails(self):
         changed = MAKEFILE.read_text(encoding="utf-8").replace("--event push ", "", 1)

@@ -18,6 +18,19 @@ WATCHER_DOC_PATHS = (
     FRAMEWORK_SUPPORT_PATH,
     LOCALIZATION_PATH,
 )
+COMBINED_BUILD_GUIDANCE_PATHS = (
+    SKILL_PATH,
+    ROOT / ".github" / "copilot-instructions.md",
+    CLAUDE_PATH,
+    CONTRIBUTING_PATH,
+    FRAMEWORK_SUPPORT_PATH,
+    LOCALIZATION_PATH,
+)
+RETIRED_MATRIX_SPELLINGS = (
+    "full" + " matrix",
+    "full" + "-matrix",
+    "full" + "_matrix",
+)
 CANONICAL_WATCHER_COMMAND = (
     "timeout 90m gh run watch <run-id> --interval 30 --exit-status"
 )
@@ -149,7 +162,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 ("Build CI", "Copilot review"),
             ),
         )
-        forbidden_policy = ("Full Matrix", "full-matrix.yml")
+        forbidden_policy = RETIRED_MATRIX_SPELLINGS
 
         for surface, instructions in (
             ("development workflow skill", text),
@@ -184,18 +197,19 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         )
 
     def test_combined_build_replaces_matrix_everywhere(self):
-        for surface, path in (
-            ("development workflow skill", SKILL_PATH),
-            ("project instructions", ROOT / ".github" / "copilot-instructions.md"),
-            ("Claude project instructions", CLAUDE_PATH),
-            ("contributor guidance", CONTRIBUTING_PATH),
-            ("framework support", FRAMEWORK_SUPPORT_PATH),
-            ("localization guidance", LOCALIZATION_PATH),
-        ):
+        for path in COMBINED_BUILD_GUIDANCE_PATHS:
             text = path.read_text(encoding="utf-8")
-            with self.subTest(surface=surface):
+            with self.subTest(surface=path):
                 self.assertIn("Build", text)
-                self.assertNotIn("Full Matrix", text)
+                for spelling in RETIRED_MATRIX_SPELLINGS:
+                    self.assertNotIn(spelling, text.casefold())
+
+    def test_readme_exposes_only_the_combined_build_badge(self):
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("actions/workflows/build.yml/badge.svg", text)
+        for retired_badge in (*RETIRED_MATRIX_SPELLINGS, "prs welcome", "makeapullrequest.com"):
+            with self.subTest(retired_badge=retired_badge):
+                self.assertNotIn(retired_badge, text.casefold())
 
     def test_contributor_watcher_examples_are_bounded(self):
         watcher_examples = []
@@ -236,9 +250,12 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "candidate actually changes",
         )
         for surface, text in surfaces.items():
-            for requirement in required_contract:
-                with self.subTest(surface=surface, requirement=requirement):
-                    self.assertIn(requirement, text)
+            assert_normalized_policy(
+                self,
+                surface,
+                text,
+                (("continuous monitoring lifecycle", required_contract),),
+            )
 
     def test_continuous_pr_monitoring_policy_is_mirrored(self):
         _, skill = read_skill()
@@ -263,11 +280,23 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Fix forward or revert a broken `master`",
             "unrelated PRs do not wait",
             "on healthy master runs",
+            "attached asynchronous shell watchers",
+            "nonblocking",
+            "Continue unrelated dependency-ready work",
+            "never occupy a reasoning agent",
+            "waiting-only response",
+            "Cancel only a superseded candidate run",
+            "candidate actually changes",
+            "blocks that issue's closure and remote completion",
+            "not unrelated independent PRs",
         )
         for surface, text in surfaces.items():
-            for requirement in required_contract:
-                with self.subTest(surface=surface, requirement=requirement):
-                    self.assertIn(requirement, text)
+            assert_normalized_policy(
+                self,
+                surface,
+                text,
+                (("continuous monitoring lifecycle", required_contract),),
+            )
 
     def test_issue_specific_pull_request_and_stack_contract(self):
         _, text = read_skill()

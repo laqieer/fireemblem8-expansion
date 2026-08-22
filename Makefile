@@ -298,7 +298,7 @@ remote-completion-check:
 		exit 1; \
 	fi; \
 	if [ "$$branch" != "master" ]; then \
-		printf 'error: remote completion requires merged master, not %s\n' "$$branch" >&2; \
+		printf 'error: remote completion requires master, not %s\n' "$$branch" >&2; \
 		exit 1; \
 	fi; \
 	head_sha=$$(git rev-parse HEAD); \
@@ -325,7 +325,6 @@ all-issues-completion-check: remote-completion-check
 	@set -eu; \
 	head_sha=$$(git rev-parse HEAD); \
 	repo=$$(gh repo view --json nameWithOwner --jq .nameWithOwner); \
-	head_sha=$$(git rev-parse HEAD); \
 	open_issues=$$(gh issue list --repo "$$repo" --state open --limit 1000 \
 		--json number --jq 'length'); \
 	if [ "$$open_issues" -ne 0 ]; then \

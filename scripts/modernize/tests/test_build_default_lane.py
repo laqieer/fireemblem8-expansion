@@ -433,7 +433,7 @@ class RemoteCompletionGateTests(unittest.TestCase):
         self.assertIn("git branch --show-current", text)
         self.assertIn('if [ -z "$$branch" ]; then', text)
         self.assertIn("HEAD is detached", text)
-        self.assertIn('remote completion requires merged master', text)
+        self.assertIn('remote completion requires master, not', text)
         self.assertIn("git rev-parse '@{u}'", text)
         self.assertIn(
             "--event push --branch master --commit \"$$head_sha\" --workflow build.yml",

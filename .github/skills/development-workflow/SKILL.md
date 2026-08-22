@@ -493,6 +493,14 @@ That means the exact-master combined Build CI and an open-PR conflict rescan.
 Fix forward or revert a broken `master`;
 unrelated PRs do not wait on healthy master runs.
 
+All exact-head Build CI, Copilot-review, and post-merge master-branch CI
+monitoring uses attached asynchronous shell watchers and is nonblocking.
+Continue unrelated dependency-ready work while those watchers run; never
+occupy a reasoning agent or stop with a waiting-only response. Cancel only a
+superseded candidate run after that candidate actually changes. A broken
+master Build requires an immediate fix-forward or revert and blocks that
+issue's closure and remote completion, but not unrelated independent PRs.
+
 Before merge:
 
 1. Confirm required Build CI succeeds for the exact candidate commit.
@@ -526,21 +534,20 @@ a generically worded request for review.
 
 For every issue-specific PR:
 
-1. Verify Build CI on the resulting `master` commit.
-2. Verify the same combined Build workflow for that revision; only the
-   technically used patch publisher is master-only.
-3. If the consolidated post-merge Build fails, immediately fix forward or revert; do not
+1. Verify the one combined Build CI run on the resulting `master` commit;
+   only the technically used patch publisher is master-only.
+2. If the consolidated post-merge Build fails, immediately fix forward or revert; do not
    report the feature as delivered. The failure blocks the affected issue's
    closure and remote completion, but not unrelated independent PRs.
-4. Add the final evidence and commit/PR/CI links to the originating issue.
+3. Add the final evidence and commit/PR/CI links to the originating issue.
    Include installed investigation tools, versions, purpose, and any
    pre-existing IDA/Ghidra/GDB resources used.
-5. Close the feature or bug issue only when every required tester-facing case
+4. Close the feature or bug issue only when every required tester-facing case
    is present and every material manual criterion is verified. This
    development workflow overrides conflicting generic language that reserves
    closure for human review.
-   6. For tracked changes, run `make remote-completion-check` only after the
-      intended `master` commit has one successful consolidated Build CI result.
+5. For tracked changes, run `make remote-completion-check` only after the
+   intended `master` commit has one successful consolidated Build CI result.
 
 The task is complete only when the implementation and documentation are
 persistent upstream, the combined Build check for the exact pushed `master`

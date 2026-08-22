@@ -4,13 +4,14 @@ after a maintainer has manually applied a port batch.
 WARNING (see docs/upstream-porting.md): this command builds and checks the
 repository's *own* current working tree/commit. It never builds, checks out,
 or executes the canonical upstream ref/tree. It is a thin, literal mirror of
-.github/workflows/build.yml's gate steps (kept independent from that file:
-this module doesn't parse/execute the workflow, it re-states the same gate
-commands so `verify` stays runnable locally without a CI runner), with one
-DELIBERATE EXCEPTION: build.yml's "Check documentation (issues #7/#17)"
-step remains a required standalone workflow gate outside this mirror. Run
-that standalone command pair directly to reproduce it locally; see
-docs/upstream-porting.md.
+the four combined workers in `.github/workflows/build.yml` (kept independent
+from that file: this module doesn't parse/execute the workflow, it re-states
+the same gate commands so `verify` stays runnable locally without a CI
+runner). Only the master-only publisher and serial summary jobs have no local
+gate equivalent. The one DELIBERATE command-level exception is build.yml's
+"Check documentation (issues #7/#17)" step, which remains a required
+standalone workflow gate outside this mirror. Run that standalone command pair
+directly to reproduce it locally; see docs/upstream-porting.md.
 """
 
 from __future__ import annotations

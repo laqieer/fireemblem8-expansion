@@ -102,6 +102,14 @@ That means the exact-master combined Build CI and an open-PR conflict rescan.
 Fix forward or revert a broken `master`;
 unrelated PRs do not wait on healthy master runs.
 
+All exact-head Build CI, Copilot-review, and post-merge master-branch CI
+monitoring uses attached asynchronous shell watchers and is nonblocking.
+Continue unrelated dependency-ready work while those watchers run; never
+occupy a reasoning agent or stop with a waiting-only response. Cancel only a
+superseded candidate run after that candidate actually changes. A broken
+master Build requires an immediate fix-forward or revert and blocks that
+issue's closure and remote completion, but not unrelated independent PRs.
+
 ## Development workflow skill
 
 For incoming feature requests, ideas, bug reports, or regressions, invoke the

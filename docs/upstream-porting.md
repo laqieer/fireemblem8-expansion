@@ -184,9 +184,20 @@ you manually applied whatever you accepted) — it never builds, checks out,
 or executes the upstream ref/tree.** It orchestrates all 25 current-master
 mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
 carries the same 25 commands with argv/order preserved across its combined
-host, modern, extended-host, and archival jobs,
-jobs, plus the deliberately standalone issues #7/#17 documentation-governance
-workflow gate described below.
+host, modern, extended-host, and archival jobs, plus the deliberately
+standalone issues #7/#17 documentation-governance workflow gate described
+below. The four combined workers run in parallel in CI; `summary` is their
+only serial, fail-closed join. Local `verify` runs the same 25 gates in its
+documented order and therefore does not reproduce CI wall-clock parallelism.
+
+Before a non-dry-run local `verify`, install both the supported modern
+toolchain and the explicit archival `make legacy` prerequisites. The
+archival setup is intentionally opt-in (`./scripts/quickstart.sh --legacy`
+or the equivalent instructions in
+[`docs/archival-decomp.md`](archival-decomp.md)); `verify` has no safe
+subset switch and fails closed if the legacy toolchain is absent. Use
+`verify --dry-run` to inspect the complete 25-gate sequence without those
+local prerequisites.
 
 1. `GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -v`
    (issue #13 host-only suite; the inline environment assignment applies only

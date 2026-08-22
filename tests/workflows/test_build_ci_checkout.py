@@ -59,7 +59,7 @@ def _contract_errors(text):
 
 
 class BuildCiCheckoutContractTests(unittest.TestCase):
-    def test_real_workflow_binds_both_jobs_to_the_event_head(self):
+    def test_real_workflow_binds_all_combined_workers_to_the_event_head(self):
         self.assertEqual(_contract_errors(WORKFLOW.read_text(encoding="utf-8")), [])
 
     def test_missing_fetch_depth_is_rejected(self):

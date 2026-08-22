@@ -12,6 +12,7 @@ from scripts.upstream_port import cli, verify as verify_mod
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BUILD_WORKFLOW_PATH = os.path.join(REPO_ROOT, ".github", "workflows", "build.yml")
+UPSTREAM_PORTING_PATH = os.path.join(REPO_ROOT, "docs", "upstream-porting.md")
 
 _STEP_NAME_RE = re.compile(r"^    - name: (.+)$", re.M)
 _SINGLE_RUN_RE = re.compile(r"^      run: (?!\|\s*$)(.+)$", re.M)
@@ -53,10 +54,11 @@ _WORKFLOW_CONTRACT_STEP_NAME = "Run workflow contract test suite"
 def _parse_workflow_gate_commands(path=BUILD_WORKFLOW_PATH):
     """Read candidate-safe Build CI jobs with stdlib only (no PyYAML).
 
-    ``verify`` is a local, no-secret mirror of the pull-request gate, so it
-    intentionally excludes Build's master-only extended-host, legacy,
-    publisher, and summary jobs. This deliberately re-derives the expected
-    commands from the live candidate jobs instead of hardcoding a copy.
+    ``verify`` is a local, no-secret mirror of all four combined candidate
+    workers. Only the master-only publisher and the serial summary are
+    excluded at the job level; the separately asserted documentation step is
+    the one deliberate command-level exception. This deliberately re-derives
+    expected commands from live run blocks instead of hardcoding a copy.
     """
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
@@ -343,6 +345,20 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         for g in verify_mod.gates()[:4]:
             self.assertNotIn("make", g.command)
             self.assertNotIn("expansion-modern-linker-check", g.command)
+
+    def test_upstream_porting_documents_parallel_ci_and_local_legacy_prerequisite(self):
+        with open(UPSTREAM_PORTING_PATH, "r", encoding="utf-8") as f:
+            text = " ".join(f.read().split())
+
+        for clause in (
+            "four combined workers run in parallel",
+            "only serial, fail-closed join",
+            "install both the supported modern toolchain",
+            "explicit archival `make legacy` prerequisites",
+            "`verify` has no safe subset switch",
+        ):
+            with self.subTest(clause=clause):
+                self.assertIn(clause, text)
 
     def test_artifact_guard_command(self):
         # Full-game closure and artifact-guard unit checks precede the
