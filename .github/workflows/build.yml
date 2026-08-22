@@ -275,6 +275,7 @@ jobs:
     - name: Verify checked-out revision
       run: |
         ACTUAL_SHA="$(git rev-parse HEAD)"
+        printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
         test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
 
     - name: Install extended host dependencies
@@ -312,6 +313,7 @@ jobs:
     - name: Verify checked-out revision
       run: |
         ACTUAL_SHA="$(git rev-parse HEAD)"
+        printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
         test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
 
     - name: Install archival build dependencies

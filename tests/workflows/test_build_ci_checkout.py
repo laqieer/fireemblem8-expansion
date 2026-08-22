@@ -26,7 +26,7 @@ def _job_block(text, name):
 
 def _contract_errors(text):
     errors = []
-    for name in ("host-tests", "build"):
+    for name in ("host-tests", "build", "extended-host-tests", "legacy"):
         job = _job_block(text, name)
         if not job:
             errors.append(f"missing {name} job")

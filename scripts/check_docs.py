@@ -315,7 +315,7 @@ STALE_PHRASE_RULES = [
     # verify gate set. The actual, current scripts/upstream_port/verify.py
     # gates() ordering (mirrored by docs/upstream-porting.md) puts the two
     # item-expansion gates (modern-itemexpansion-check-debug/-release) at
-    # indexes 17-18 of exactly 19 gates, not 10-11. This exact stale gate
+    # indexes 17-18 of exactly 25 gates, not 10-11. This exact stale gate
     # numbering must never reappear verbatim.
     (
         re.compile(re.escape("gates 10-11 of the current-master")),

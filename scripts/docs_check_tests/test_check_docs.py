@@ -1373,9 +1373,9 @@ class StaleFrameworkSupportABIRegressionTests(unittest.TestCase):
 #      now CLOSED (closed 2026-07-25), with completion commit
 #      ac0ee5d7f17eb8e70175576cb46d9f320d8013cd merged into master.
 #   2. docs/framework-support.md said the item-ID-expansion checks were
-#      "gates 11-12" of the upstream verify gate set; the real, current
+#      "gates 17-18" of the upstream verify gate set; the real, current
 #      scripts/upstream_port/verify.py gates() puts them at gates 17-18
-#      of exactly 19.
+#      of exactly 25.
 #
 # These tests prove: (a) every old phrase is flagged stale if it reappears,
 # (b) the current live doc/report text is stale-clean, (c) the historical,
@@ -1474,7 +1474,7 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
 
     def test_verify_gates_item_expansion_entries_precede_patch_profile(self):
         # Safe, standalone, no-network import of the live verify module
-        # straight off disk -- proves "gates 11-12" against the real,
+        # straight off disk -- proves "gates 17-18" against the real,
         # current scripts/upstream_port/verify.py gates() ordering rather
         # than a hardcoded fake substitute.
         verify_path = os.path.join(
