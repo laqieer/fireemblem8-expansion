@@ -281,6 +281,17 @@ class AssetManifestTests(unittest.TestCase):
         )
         self.assertEqual(manifest.portrait_registration_ids(), tuple(range(1, 173)))
 
+    def test_portrait_registration_surface_includes_global_first(self):
+        source = os.path.join(REPO_ROOT, "src", "portrait_data.c")
+        with open(source, encoding="utf-8") as handle:
+            includes = [
+                line.strip()
+                for line in handle
+                if line.startswith("#include ")
+            ]
+        self.assertEqual(includes[0], '#include "global.h"')
+        self.assertIn('#include "build/generated/assets/portrait_data.inc"', includes)
+
     def test_portrait_registry_is_complete_without_package_overrides(self):
         records = manifest.load_and_validate(self.write_manifest([valid_record()]))
         rendered = manifest.render_portrait_data(records)
