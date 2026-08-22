@@ -4,8 +4,9 @@ Issue #83 adds a permanent, default-off high-resolution PCM mixer at the
 existing MP2K `SoundMainRAM` / `m4aSoundInit` seam. It retains the normal
 sequence, song, SFX, and volume APIs; only the direct-sound PCM mixing
 implementation changes after a rebuild. The pinned HQ profile compiles
-`ENABLE_REVERB=0`: its downsampler omits reverb feedback, so MP2K's stored
-reverb setting is not applied to HQ PCM output.
+`ENABLE_REVERB=0`: reverb metadata and setters remain ABI-compatible, but the
+downsampler omits reverb feedback, so MP2K's stored reverb setting is not
+applied to HQ PCM output.
 
 ## Configuration
 
@@ -63,11 +64,11 @@ EWRAM, and IWRAM maps. The runtime gate emits the exact profile map values in
 The padded 16 MiB ROM file remains the configured size in both profiles; the
 `+0x724` mixer-object delta above is the meaningful ROM-content delta.
 
-The imported configuration disables its DMA3 fast path. This avoids claiming
-DMA ownership and preserves compatibility with existing HBlank and other
-DMA-sensitive effects. DMA-on, mono, compressed samples, Camelot synth
-extensions, sample-rate/voice-count changes, runtime switching, and archival
-decomp matching are unsupported.
+The imported configuration disables its DMA3 fast path and mixer reverb pass.
+This avoids claiming DMA ownership and preserves compatibility with existing
+HBlank and other DMA-sensitive effects. DMA-on, mono, direct-sound reverb,
+compressed samples, Camelot synth extensions, sample-rate/voice-count changes,
+runtime switching, and archival decomp matching are unsupported.
 
 ## Validation and tester procedure
 

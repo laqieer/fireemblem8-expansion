@@ -67,7 +67,7 @@ capture hashes, or source text.
 ### Cleanup and limitations
 
 Use `make clean_fast` to remove build artifacts if desired. Closing the
-emulator resets the case; no in-game cleanup exists. DMA-on, mono, runtime
-switching, altered sample rates/voice limits, compressed samples, Camelot
-synth support, and the archival decompilation lane are intentionally
-unsupported.
+emulator resets the case; no in-game cleanup exists. DMA-on, mono,
+direct-sound reverb, runtime switching, altered sample rates/voice limits,
+compressed samples, Camelot synth support, and the archival decompilation lane
+are intentionally unsupported.
