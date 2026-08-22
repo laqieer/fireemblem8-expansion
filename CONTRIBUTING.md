@@ -89,7 +89,9 @@ A candidate PR requires exact-candidate Build CI and concurrent Copilot review.
 A valid review finding supersedes the candidate and cancels all candidate
 checks. Do not run Full Matrix for a candidate PR or stacked child. Once
 candidate Build and review are terminal and clean and objective acceptance is
-complete, merge directly without candidate or local Full Matrix.
+complete, merge directly without candidate or local Full Matrix. Full Matrix CI
+runs only on `master`; it never runs on a pull request or feature branch,
+manually or automatically.
 
 Immediately after each merge or intentional independent merge batch, monitor
 Build CI and dispatch Full Matrix CI on the exact resulting `master` SHA and

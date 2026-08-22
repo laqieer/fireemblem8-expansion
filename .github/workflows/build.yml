@@ -80,7 +80,7 @@ jobs:
     - name: Run upstream-port tooling test suite
       run: python3 -m unittest discover -s tests/upstream_port -v
 
-    # Full Matrix CI workflow/README contract: dispatch-only trigger,
+    # Full Matrix CI workflow/README contract: master-only manual trigger,
     # permissions/concurrency, exact commands, fail-closed summary, and badge
     # path/name/link binding. Pure stdlib/YAML-text parsing; no ROM/toolchain.
     - name: Run workflow contract test suite

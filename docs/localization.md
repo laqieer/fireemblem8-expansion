@@ -405,14 +405,17 @@ expansion-only keys are explicitly outside that original-game comparison.
    sources must follow `CONTRIBUTING.md` and the pinned-provenance workflow;
    do not hand-copy or paraphrase unapproved third-party text.
 
-### Efficient local and pre-merge validation
+### Efficient local and post-merge validation
 
-Use targeted localization tests while editing. After pushing the exact
-candidate branch, run the broad host/CJK/runtime/release evidence once in the
-dispatch-only full matrix:
+Use targeted localization tests while editing. A candidate PR gates only on
+exact-candidate Build CI and Copilot review, then merges directly when those
+checks and objective acceptance are clean. Full Matrix CI runs only on
+`master`; it never runs on a pull request or feature branch, manually or
+automatically. After the exact resulting `master` revision is available, run
+the broad host/CJK/runtime matrix once:
 
 ```bash
-gh workflow run full-matrix.yml --ref <branch>
+gh workflow run full-matrix.yml --ref master
 gh run watch <run-id> --exit-status
 ```
 

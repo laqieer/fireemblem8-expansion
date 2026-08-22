@@ -10,6 +10,8 @@ SKILL_PATH = (
 CONTRIBUTING_PATH = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 CLAUDE_PATH = ROOT / "CLAUDE.md"
+FRAMEWORK_SUPPORT_PATH = ROOT / "docs" / "framework-support.md"
+LOCALIZATION_PATH = ROOT / "docs" / "localization.md"
 
 
 def normalize_policy(text):
@@ -201,6 +203,33 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 ),
             ),
         )
+
+    def test_full_matrix_policy_is_master_only_everywhere(self):
+        master_only_policy = (
+            (
+                "master-only matrix",
+                (
+                    "Full Matrix CI runs only on master",
+                    "never runs on a pull request or feature branch",
+                    "manually or automatically",
+                ),
+            ),
+        )
+
+        for surface, path in (
+            ("development workflow skill", SKILL_PATH),
+            ("project instructions", ROOT / ".github" / "copilot-instructions.md"),
+            ("Claude project instructions", CLAUDE_PATH),
+            ("contributor guidance", CONTRIBUTING_PATH),
+            ("framework support", FRAMEWORK_SUPPORT_PATH),
+            ("localization guidance", LOCALIZATION_PATH),
+        ):
+            assert_normalized_policy(
+                self,
+                surface,
+                path.read_text(encoding="utf-8"),
+                master_only_policy,
+            )
 
     def test_issue_specific_pull_request_and_stack_contract(self):
         _, text = read_skill()
