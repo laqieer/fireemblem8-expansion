@@ -157,6 +157,31 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             ):
                 self.assertIn(requirement, claude_instructions)
 
+    def test_post_merge_reconciliation_policy_is_mirrored(self):
+        _, skill = read_skill()
+        surfaces = {
+            "skill": skill,
+            "Copilot instructions": (ROOT / ".github" / "copilot-instructions.md").read_text(
+                encoding="utf-8"
+            ),
+            "CLAUDE": CLAUDE_PATH.read_text(encoding="utf-8"),
+        }
+        required_contract = (
+            "After each merge, immediately inspect every open PR.",
+            "real conflicts or shared-contract changes",
+            "refresh",
+            "independent conflicts concurrently",
+            "rerun only conflict-affected checks",
+            "Never pause or cancel unaffected PR CI",
+            "priority or unrelated `master` movement",
+            "only when its",
+            "candidate actually changes",
+        )
+        for surface, text in surfaces.items():
+            for requirement in required_contract:
+                with self.subTest(surface=surface, requirement=requirement):
+                    self.assertIn(requirement, text)
+
     def test_issue_specific_pull_request_and_stack_contract(self):
         _, text = read_skill()
         required_contract = (

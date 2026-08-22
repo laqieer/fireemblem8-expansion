@@ -485,6 +485,13 @@ completion chain on success. On failure, interrupt ordinary delivery work as
 needed to fix forward or revert immediately; never let background monitoring
 hide a broken default branch.
 
+After each merge, immediately inspect every open PR. Merge current `master`
+only into PRs with real conflicts or shared-contract changes; refresh
+independent conflicts concurrently and rerun only conflict-affected checks
+plus replacement Build/review. Never pause or cancel unaffected PR CI because
+of priority or unrelated `master` movement; cancel superseded CI only when its
+candidate actually changes.
+
 Before merge:
 
 1. Confirm required Build CI succeeds for the exact candidate commit.

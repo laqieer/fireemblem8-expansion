@@ -85,6 +85,13 @@ completion, and true dependents wait. When the watcher finishes, resume those
 dependents on success; on failure, fix forward or revert the broken default
 branch immediately.
 
+After each merge, immediately inspect every open PR. Merge current `master`
+only into PRs with real conflicts or shared-contract changes; refresh
+independent conflicts concurrently and rerun only conflict-affected checks
+plus replacement Build/review. Never pause or cancel unaffected PR CI because
+of priority or unrelated `master` movement; cancel superseded CI only when its
+candidate actually changes.
+
 First-time setup: `./scripts/quickstart.sh` installs/probes the modern
 toolchain, an ARM GDB debugger, the mGBA GDB-server frontend, and libmGBA by
 default, **no agbcc of any kind**; pass
