@@ -25,7 +25,9 @@ the authoritative technical documentation and are checked by CI.
 | Audit a community asset format before proposing an adapter | [`community_asset_coverage.md`](community_asset_coverage.md) |
 | Author a source-owned asset record or add an asset adapter | [`asset_manifest.md`](asset_manifest.md) |
 | Author a strict community battle-animation text/PNG package | [`battle_animation_packages.md`](battle_animation_packages.md) |
+| Author a safe Tiled chapter map layout | [`tmx_map_layouts.md`](tmx_map_layouts.md) |
 | Author expansion-localized UI text/locales | [`localization.md`](localization.md) |
+| Build or verify the patch-only maximal profile artifact | [`patch_release.md`](patch_release.md) |
 | Generate or test localized full-game message catalogs | [`game_localization_catalog.md`](game_localization_catalog.md) |
 | Evaluate and deliver a feature request or bug fix with Copilot | [`development-workflow`](../.github/skills/development-workflow/SKILL.md) |
 | Contribute code/docs and know the review process | [`../CONTRIBUTING.md`](../CONTRIBUTING.md), [`project-governance.md`](project-governance.md) |
@@ -71,12 +73,14 @@ numbers mark merged (closed) contracts only:
 | Typed IDs / caps (issue #10) | `include/id_space.h` (DEFAULT), `build/generated/data/id_space_active.h` (ACTIVE), `FE8_ITEM_ID_CAP` | [`id_space.md`](id_space.md), [`../reports/id_space_audit.md`](../reports/id_space_audit.md) |
 | Config / ROM identity | `struct ExpansionMetadata` (`include/expansion_metadata.h`), `EXPANSION_SAVE_COMPAT_EPOCH` | [`config_identity.md`](config_identity.md), [`save_format.md`](save_format.md) |
 | Debug-tools extension (issue #11) | Action-registration API (`include/expansion_debugtools.h`), `FE8_EXPANSION_DEBUGTOOLS_ENABLED` | [`debugtools.md`](debugtools.md) |
+| Release-safe mGBA logging (issue #68) | Bounded typed API (`include/expansion_log.h`), existing `FE8_EXPANSION_LOGGING_ENABLED` debug profile gate | [`debugtools.md`](debugtools.md#release-safe-mgba-logging-issue-68) |
 | Starter features (issue #6) | Four default-off flags; `include/expansion_mechanics.h`; `include/expansion_starter_content.h`; danger-overlay menu | [`starter_features.md`](starter_features.md) |
 | Typed area-of-effect actions (issue #42) | `include/expansion_aoe.h`; bounded target/effect API and shared item/action/AI route registry | [`aoe.md`](aoe.md) |
 | Portrait/minimug resolver (issue #35) | Typed character/class/chapter/flag registry with legacy fallback | [`portrait_resolver.md`](portrait_resolver.md) |
 | Community asset coverage (issue #59) | Asset-family ownership/gap catalog; not an importer or runtime API | [`community_asset_coverage.md`](community_asset_coverage.md) |
 | Asset manifest (issue #60) | Versioned source-owned asset records and generated existing-seam dependencies | [`asset_manifest.md`](asset_manifest.md) |
 | Battle-animation packages (issue #62) | Strict text/PNG package adapter through the existing battle-animation and compressor seams | [`battle_animation_packages.md`](battle_animation_packages.md) |
+| Safe TMX chapter maps (issue #64) | Fail-closed Tiled 1.10 map-layout subset and source workflow | [`tmx_map_layouts.md`](tmx_map_layouts.md) |
 | Localization (issue #18) | `ExpansionLocaleId`/`ExpansionMsgId`, `texts/expansion/`, prefs + selector/settings APIs | [`localization.md`](localization.md), [`save_format.md`](save_format.md) |
 | Runtime test harness (issue #13) | JSON scenario format + fingerprints, `GBA_PLAYTEST_HOST_ONLY` | [`../tools/gba-playtest/README.md`](../tools/gba-playtest/README.md) |
 | Upstream-port review tooling | `python3 -m scripts.upstream_port {scan,drift,verify,update-state}` | [`upstream-porting.md`](upstream-porting.md) |
@@ -128,11 +132,14 @@ and
 | [`community_asset_coverage.md`](community_asset_coverage.md) | Current | Authoritative community asset family ownership, build/runtime seam, and gap catalog (issue #59) |
 | [`asset_manifest.md`](asset_manifest.md) | Current | Versioned asset manifest, generated existing-seam dependencies, and adapter contract (issue #60) |
 | [`battle_animation_packages.md`](battle_animation_packages.md) | Current | Strict versioned community battle-animation text/PNG package adapter (issue #62) |
+| [`tmx_map_layouts.md`](tmx_map_layouts.md) | Current | Fail-closed TMX map-layout adapter and Tiled authoring boundary (issue #64) |
 | [`localization.md`](localization.md) | Current | Stable locale/message IDs, authoring, prefs/UI, budgets and matrices (issue #18) |
+| [`patch_release.md`](patch_release.md) | Current | Trusted BPS-only maximal-profile artifact and local verification contract (issue #49) |
 | [`ui_presentation_registry.md`](ui_presentation_registry.md) | Current | Typed battle-animation, chapter/screen manifest, and utility-preference registries (issues #41/#43/#44) |
 | [`test-cases/README.md`](test-cases/README.md) | Current | Indexed tester-facing case catalog, template, and backfill lifecycle (issue #54) |
 | [`test-cases/template.md`](test-cases/template.md) | Template | Reusable tester-facing procedure template (issue #54) |
 | [`test-cases/foundation.md`](test-cases/foundation.md) | Current | Catalog/checker foundation procedure (issue #54) |
+| [`test-cases/patch-release.md`](test-cases/patch-release.md) | Current | Trusted BPS artifact validation/application and malformed-input procedures (issue #49) |
 | [`game_localization_catalog.md`](game_localization_catalog.md) | Current | Full-game FE8U-indexed CJK catalog generation, runtime bounds, and synthetic link gate |
 | [`documentation-inventory.md`](documentation-inventory.md) | Current | Exact recognized-Markdown inventory |
 | [`external-link-registry.md`](external-link-registry.md) | Current | Offline URL ownership/status coverage |

@@ -464,11 +464,5 @@
     }
   ],
   "format_version": 2,
-  "rom": {
-    "game_code": "BE8E",
-    "sha1": "5dd100ab142f8ff354abaa54d5f0dad6a4e32850",
-    "size": 16777216,
-    "title": "FIREEMBLEM2E"
-  },
   "scenario": "debugtools-hub-modern-release"
 }

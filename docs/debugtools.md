@@ -1494,9 +1494,10 @@ explicitly, honestly open is narrow:
   `src/debugtools_tools.c`) that complements the live runtime; the
   config-parametrized release sibling proves the identical input is a
   compiled-out all-zero no-op.
-- **A complete `mgba_printf`/AGB debug print-protocol implementation, an
-  interactive debugger, and an arbitrary memory editor** remain explicit,
-  deliberate non-goals (never attempted) -- see
+- **Nintendo's legacy `AGBPrint*` print protocol, an interactive debugger,
+  and an arbitrary memory editor** remain explicit, deliberate non-goals.
+  Issue #68's separate, bounded mGBA debug-register transport does not give
+  the legacy declarations mGBA-specific semantics. See
   `reports/debugtools_issue11_closure.md`'s "Explicit non-goals" section
   for the reasoning. The on-screen BG2 diagnostic line plus the bounded
   log ring/assert record (`src/debugtools_diag.c`) are this subsystem's
@@ -1506,3 +1507,62 @@ explicitly, honestly open is narrow:
   (Weather/Fog were migrated first; a chapter/skirmish selector specifically
   would also unlock the live-prep-screen gap above) is not part of this
   closure's WHAT and remains available as clearly-scoped future work.
+
+## Release-safe mGBA logging (issue #68)
+
+`include/expansion_log.h` provides the modern framework's small, typed,
+main-thread-only diagnostic transport. It is separate from the structured
+debug-tools ring: the ring remains the bounded in-ROM diagnostic record,
+while this API sends transient developer messages to mGBA's `gba.debug`
+logger.
+
+The API accepts `EXPANSION_LOG_FATAL` through `EXPANSION_LOG_DEBUG` and
+returns an explicit `enum ExpansionLogStatus`. `ExpansionLog_Write` accepts a
+NUL-terminated string; `ExpansionLog_Printf`/`ExpansionLog_VPrintf` support
+bounded `%`, `%c`, `%s`, `%d`/`%i`, `%u`, `%x`/`%X`, and `%p` formatting.
+Messages hold at most 255 visible ASCII bytes plus their terminator. Longer
+messages return `EXPANSION_LOG_TRUNCATED`; unsupported formatting and invalid
+arguments return explicit errors.
+
+Only the existing `FE8_EXPANSION_LOGGING_ENABLED` gate controls it. Modern
+debug builds enable it; modern release builds compile every convenience macro
+to `((void)0)` without evaluating arguments, and omit the backend, mGBA
+register access, and debug-only message literals. The archival agbcc lane
+does not compile `src/expansion_log.c`, so it has no object, layout, or
+behavioral impact. There is intentionally no second logging feature flag.
+
+On an enabled build, `ExpansionLog_Init` writes mGBA's official `0xC0DE`
+handshake value to `0x04FFF780` and requires a `0x1DEA` readback before it
+ever writes the 256-byte payload region at `0x04FFF600` or send register at
+`0x04FFF700`. Availability is cached. A failed handshake returns
+`EXPANSION_LOG_UNAVAILABLE` and sends nothing, making real hardware and
+unsupported emulators fail closed rather than pretending a message was
+delivered. Do not call the API from an interrupt handler or reentrantly.
+
+For interactive mGBA SDL capture, use an isolated configuration/log path:
+
+```bash
+mgba -C logToStdout=1 -C logLevel.gba.debug=127 build/expansion-modern/debug/aapcs/fireemblem8.gba
+mgba -C logToFile=1 -C logFile=build/mgba-debug.log \
+  -C logLevel.gba.debug=127 build/expansion-modern/debug/aapcs/fireemblem8.gba
+```
+
+`expansion-modern-debuglog-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
+captures the deterministic `FE8LOG ready` boot message through the real
+libmGBA core. Run the matching release command to prove the negative:
+
+```bash
+make expansion-modern-debuglog-check MODERN_CONFIG=debug MODERN_ABI=aapcs
+make expansion-modern-debuglog-check MODERN_CONFIG=release MODERN_ABI=aapcs
+```
+
+The first command implements **TC-DEBUGLOG-001**: from a clean debug ROM,
+boot normally and observe one `FE8LOG ready` entry through mGBA's `gba.debug`
+output at its info level. Host stubs also prove successful and failed
+handshakes, every severity encoding, formatting, and the 256-byte boundary.
+The second implements
+**TC-DEBUGLOG-002**: boot the same route in release, observe no entry, and
+verify the target ELF omits the backend symbols and ready string. Both cases
+have no save, generated-data, localization, resource allocation, or
+debug-tools-ring interaction; the only debug resource cost is code/ROM data
+measured by the normal linker budget check.

@@ -576,11 +576,5 @@
     }
   ],
   "format_version": 2,
-  "rom": {
-    "game_code": "BE8E",
-    "sha1": "ac40576fd4dd8a617c9a32791d56159d17733a1f",
-    "size": 16777216,
-    "title": "FIREEMBLEM2E"
-  },
   "scenario": "locale-repair-corrupt-multi-modern-release"
 }

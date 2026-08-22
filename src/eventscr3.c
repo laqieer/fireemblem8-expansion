@@ -1,4 +1,5 @@
 #include "global.h"
+#include "banim_presentation.h"
 
 #include "bmunit.h"
 #include "prepscreen.h"
@@ -205,6 +206,13 @@ void StartEventBattle(struct Unit * unitA, struct Unit * unitB, u8 isBallista, s
 {
     int sp04;
     int tmp;
+#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
+    struct BanimPresentationPolicy const * policy;
+
+    BanimPresentationPolicy_RuntimeProbePrepare();
+    policy = BanimPresentationPolicy_GetCurrent();
+    BanimPresentationPolicy_RuntimeProbeRecordHit(policy);
+#endif
 
     SetBattleScripted();
 

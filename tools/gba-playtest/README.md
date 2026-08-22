@@ -1,11 +1,25 @@
 # GBA headless playtest fingerprints
 
+## Capturing mGBA debug-register logs
+
+For an isolated real-core capture, set `GBA_PLAYTEST_LOG_CAPTURE` to a
+writable file before invoking `capture` or `verify`. The libmGBA backend
+records its normal log callback as tab-separated category, level, and message
+records in that file; it otherwise remains silent. Issue #68's
+`tools/gba-playtest/run_debuglog_checks.py` uses this seam to assert one
+`FE8LOG ready` mGBA message in the debug ROM and no message in release. Set
+`TMPDIR` to a repository-local build directory when running the command in an
+environment that forbids system temporary directories.
+
 `gba_playtest.py` replays a strict JSON input scenario through libmGBA, captures
 named framebuffer/RAM checkpoints, and emits deterministic JSON. It is intended
 to compare behavior when ROM bytes or link addresses legitimately change.
 Every capture binds the behavior to machine-readable ROM provenance: SHA-1,
 byte size, header title, and header game code. The backend executes the same
 immutable temporary ROM copy that is hashed, avoiding a hash/load path race.
+Capture output always includes that diagnostic identity. A behavior-policy
+expected baseline may omit it because behavior verification does not compare
+ROM identity; exact-ROM verification still requires it.
 
 The tool does not load save files, screenshots, or savestates. Framebuffer hashes
 are FNV-1a-64 over canonical 24-bit RGB bytes (alpha/padding and host endianness
@@ -70,7 +84,8 @@ python3 tools/gba-playtest/gba_playtest.py verify \
   --scenario tools/gba-playtest/scenarios/boot.json \
   --expected tools/gba-playtest/fingerprints/boot.json
 
-# Explicit migration comparison: report both ROM identities but compare behavior
+# Explicit behavior comparison: report the candidate ROM identity, while an
+# older baseline identity is shown when the expected file retains one.
 python3 tools/gba-playtest/gba_playtest.py verify \
   --policy behavior \
   --rom candidate.gba \
@@ -106,11 +121,13 @@ match. Accidentally testing the wrong ROM is therefore a hard mismatch.
 
 `--policy behavior` is the explicit baseline-vs-candidate migration mode. It
 compares scenario/checkpoint behavior while intentionally allowing ROM
-provenance to differ, and always prints both complete identities. Use it only
-when changed ROM bytes are expected; it never silently turns off identity
-reporting. Capture JSON always contains provenance under `"rom"` regardless of
-the later verification policy. Scenario schema version remains 1; provenance is
-mandatory in fingerprint format version 2.
+provenance to differ. Its expected baseline may omit the otherwise-unused
+`"rom"` object; diagnostics label that omitted baseline identity and always
+print the captured candidate identity. Use it only when changed ROM bytes are
+expected; it never silently turns off capture identity reporting. Capture JSON
+always contains provenance under `"rom"` regardless of the later verification
+policy. Scenario schema version remains 1; exact-ROM expected fingerprints
+require valid provenance in format version 2.
 
 ## Host-only test mode
 

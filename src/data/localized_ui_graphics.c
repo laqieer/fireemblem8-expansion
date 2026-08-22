@@ -141,6 +141,7 @@ static const u8 sLocalizedUiJaChapterAsset08A8B39CPng[] = INCBIN_U8("graphics/lo
 static const u8 sLocalizedUiJaChapterAsset08A8Bb88Png[] = INCBIN_U8("graphics/localized_ui/ja/chapter/asset_08A8BB88.4bpp.lz");
 static const u8 sLocalizedUiJaChapterFramePng[] = INCBIN_U8("graphics/localized_ui/ja/chapter/frame.4bpp.lz");
 static const u8 sLocalizedUiJaChapterTitleLayoutTsaBin[] = INCBIN_U8("graphics/localized_ui/ja/chapter/title_layout.tsa.bin.lz");
+static const u8 sLocalizedUiJaMenuDifficultyModePng[] = INCBIN_U8("graphics/localized_ui/ja/menu/difficulty_mode.4bpp.lz");
 
 static const u8 sLocalizedUiZhHansTitleLogoPng[] = INCBIN_U8("graphics/localized_ui/zh-Hans/title/logo.4bpp.lz");
 static const u8 sLocalizedUiZhHansTitleLabelsPng[] = INCBIN_U8("graphics/localized_ui/zh-Hans/title/labels.4bpp.lz");
@@ -278,6 +279,7 @@ static const u8 sLocalizedUiZhHansChapterAsset080F0098Png[] = INCBIN_U8("graphic
 static const u8 sLocalizedUiZhHansChapterAsset080F0758Png[] = INCBIN_U8("graphics/localized_ui/zh-Hans/chapter/asset_080F0758.4bpp.lz");
 static const u8 sLocalizedUiZhHansChapterFramePng[] = INCBIN_U8("graphics/localized_ui/zh-Hans/chapter/frame.4bpp.lz");
 static const u8 sLocalizedUiZhHansChapterTitleLayoutTsaBin[] = INCBIN_U8("graphics/localized_ui/zh-Hans/chapter/title_layout.tsa.bin.lz");
+static const u8 sLocalizedUiZhHansMenuDifficultyModePng[] = INCBIN_U8("graphics/localized_ui/zh-Hans/menu/difficulty_mode.4bpp.lz");
 
 static const struct LocalizedUiGraphicsSubtitleSlide sLocalizedUiJaSubtitle[] = {
     { sLocalizedUiJaPrologueSlide00Png, sLocalizedUiJaPrologueSlide00TsaBin, 335 },
@@ -567,6 +569,18 @@ const u8 *LocalizedUiGraphics_GetSaveMenuMainSprites(void)
         return sLocalizedUiJaMenuMainSpritesPng;
     case EXPANSION_LOCALE_ZH_HANS:
         return sLocalizedUiZhHansMenuMainSpritesPng;
+    default:
+        return 0;
+    }
+}
+
+const u8 *LocalizedUiGraphics_GetDifficultyMenuObjects(void)
+{
+    switch (LocalizedUiGraphics_CurrentCjkLocale()) {
+    case EXPANSION_LOCALE_JA:
+        return sLocalizedUiJaMenuDifficultyModePng;
+    case EXPANSION_LOCALE_ZH_HANS:
+        return sLocalizedUiZhHansMenuDifficultyModePng;
     default:
         return 0;
     }
