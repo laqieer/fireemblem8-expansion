@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "coverage": {
+    "mode": "foundation",
+    "expected_feature_ids": [
+      "tester-case-catalog"
+    ],
+    "deferred_issues": [
+      "https://github.com/laqieer/fireemblem8-expansion/issues/55",
+      "https://github.com/laqieer/fireemblem8-expansion/issues/56",
+      "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+      "https://github.com/laqieer/fireemblem8-expansion/issues/58"
+    ],
+    "reason": "The feature backfill issues own the current shipped-feature inventory and must switch this registry to complete mode after their entries land."
+  },
+  "features": [
+    {
+      "id": "tester-case-catalog",
+      "title": "Indexed tester-facing case catalog",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/54"
+      ],
+      "reference": "docs/test-cases/README.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CATALOG-001"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "TC-CATALOG-001",
+      "title": "Tester-case catalog foundation",
+      "feature_id": "tester-case-catalog",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/54"
+      ],
+      "document": "docs/test-cases/foundation.md",
+      "anchor": "tc-catalog-001-tester-case-catalog-foundation",
+      "profiles": [
+        "Clean source checkout with Python 3; no ROM, emulator, artifact, or optional feature profile"
+      ],
+      "purpose": "Exercise the stable catalog schema and checker integration that future feature cases extend.",
+      "prerequisites": "Start from the repository root with docs/test-cases and scripts/check_docs.py present; no save state is needed.",
+      "actions": "Inspect the catalog index, template, and registry; run the focused docs-checker unit test and the checker command named below.",
+      "expected_result": "The registry exposes separate feature and case records, the procedure is indexed, and both commands accept the valid foundation data.",
+      "negative_control": "Focused fixtures reject malformed or duplicate IDs, unknown ownership, missing links or anchors, placeholders, unnamed automation, missing exclusion rationale, and a missing complete-mode feature.",
+      "interactions": "Depends on issue #53's tester-case contract. The feature backfill is deliberately deferred to issues #55 through #58.",
+      "save_compatibility": "No save bytes, migration, compatibility epoch, or runtime profile changes.",
+      "cleanup": "No cleanup is required.",
+      "limitations": "This foundation validates the schema and extension seam only; it does not yet assert full current-feature coverage.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs -v",
+          "evidence": "scripts/docs_check_tests/test_check_docs.py"
+        },
+        {
+          "command": "python3 scripts/check_docs.py --check",
+          "evidence": "scripts/check_docs.py"
+        }
+      ]
+    }
+  ]
+}
