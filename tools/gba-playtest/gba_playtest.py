@@ -163,7 +163,7 @@ def _validate_resolved_address(address: int, size: int, path: str) -> None:
         )
     _, end = containing
     if address + size > end:
-        raise PlaytestError(f"{path} plus size {size} crosses the RAM region boundary")
+        raise PlaytestError(f"{path} plus size {size} crosses the address region boundary")
     if address % size:
         raise PlaytestError(f"{path} must be aligned to probe size {size}")
 
