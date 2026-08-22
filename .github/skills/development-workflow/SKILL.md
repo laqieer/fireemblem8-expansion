@@ -393,35 +393,33 @@ actual results, and the mapped automation result or precise manual-only reason.
 
 ### Meaningful test evidence
 
-Tests must prove behavior, a parsed structural contract, generated output,
-compile/link properties, or runtime state. Do not add a test whose only
-evidence is that arbitrary strings, comments, helper names, line numbers,
-ordering, or implementation spelling exist or do not exist in a Git-tracked
-text file. Git already preserves that text, and retaining the expected phrase
-does not prove the implementation works.
+The labeled clauses below are the public test-evidence contract for agents.
 
-A source-text assertion is permitted only when the exact syntax, spelling, or
-absence is itself a documented public format, security boundary, generated
-file contract, ABI/layout constraint, or externally consumed protocol. The
-test must name that contract and explain why function-level, parsed, compiled,
-or runtime evidence cannot replace it.
-
-Prefer evidence in this order:
-
-1. call the real function with positive and adversarial inputs;
-2. parse the real JSON, YAML, Make database, AST, binary, or schema rather
-   than grepping its serialization;
-3. compile/link and inspect typed symbols, sections, resources, or generated
-   output;
-4. run deterministic target-ROM/libmGBA behavior; and
-5. use a narrowly justified source-text assertion only for the static
-   contracts above.
-
-When removing or rewriting a brittle test, preserve its accepted requirement
-with stronger evidence or explicitly prove it duplicated another gate and had
-no independent contract. Where feasible, demonstrate that a behavior change
-which preserves the old phrase fails the replacement test, while a
-semantics-preserving spelling or ordering refactor remains green.
+- **Evidence standard:** Tests must prove behavior, a parsed structural
+  contract, generated output, compile/link properties, or runtime state.
+- **Prohibited evidence:** Do not add a test whose only evidence is that
+  arbitrary strings, comments, helper names, line numbers, ordering, or
+  implementation spelling exist or do not exist in a Git-tracked text file.
+  Git already preserves that text, and retaining the expected phrase does not
+  prove the implementation works.
+- **Static-contract exception:** A source-text assertion is permitted only
+  when the exact syntax, spelling, or absence is itself a documented public
+  format, security boundary, generated-file contract, ABI/layout constraint,
+  or externally consumed protocol. The test must name that contract and
+  explain why functional, parsed, compiled, or runtime evidence cannot replace
+  it.
+- **Evidence preference:** Prefer calling the real function with positive and
+  adversarial inputs; parsing the real JSON, YAML, Make database, AST, binary,
+  or schema rather than grepping its serialization; compile/link inspection of
+  typed symbols, sections, resources, or generated output; and deterministic
+  target-ROM/libmGBA behavior before a narrowly justified source-text
+  assertion.
+- **Replacement and mutation controls:** When removing or rewriting a brittle
+  test, preserve its accepted requirement with stronger evidence or explicitly
+  prove it duplicated another gate and had no independent contract. Where
+  feasible, demonstrate that a behavior change which preserves the old phrase
+  fails the replacement test, while a semantics-preserving spelling or
+  ordering refactor remains green.
 
 ### Issue #29 identity boundary
 

@@ -97,16 +97,35 @@ boundary for criteria the agent cannot validate. It is authoritative over
 conflicting generic review or closure guidance and requires no human review or
 approval.
 
-Tests must provide meaningful behavioral or structural evidence. Do not add
-raw source-text assertions that merely pin arbitrary strings, comments, helper
-names, line numbers, ordering, or implementation spelling in Git-tracked
-files. Prefer calling real functions, parsing the real format, compile/link or
-symbol/resource inspection, and deterministic runtime scenarios. A text-level
-assertion is allowed only when the exact text or absence is itself a documented
-public format, security, generated-file, ABI/layout, or external protocol
-contract, and the test must state that justification. Rewrite or remove
-brittle checks only with stronger replacement evidence or proof that another
-gate already owns the same contract.
+## Meaningful test evidence
+
+The labeled clauses below are the public test-evidence contract for agents.
+
+- **Evidence standard:** Tests must prove behavior, a parsed structural
+  contract, generated output, compile/link properties, or runtime state.
+- **Prohibited evidence:** Do not add a test whose only evidence is that
+  arbitrary strings, comments, helper names, line numbers, ordering, or
+  implementation spelling exist or do not exist in a Git-tracked text file.
+  Git already preserves that text, and retaining the expected phrase does not
+  prove the implementation works.
+- **Static-contract exception:** A source-text assertion is permitted only
+  when the exact syntax, spelling, or absence is itself a documented public
+  format, security boundary, generated-file contract, ABI/layout constraint,
+  or externally consumed protocol. The test must name that contract and
+  explain why functional, parsed, compiled, or runtime evidence cannot replace
+  it.
+- **Evidence preference:** Prefer calling the real function with positive and
+  adversarial inputs; parsing the real JSON, YAML, Make database, AST, binary,
+  or schema rather than grepping its serialization; compile/link inspection of
+  typed symbols, sections, resources, or generated output; and deterministic
+  target-ROM/libmGBA behavior before a narrowly justified source-text
+  assertion.
+- **Replacement and mutation controls:** When removing or rewriting a brittle
+  test, preserve its accepted requirement with stronger evidence or explicitly
+  prove it duplicated another gate and had no independent contract. Where
+  feasible, demonstrate that a behavior change which preserves the old phrase
+  fails the replacement test, while a semantics-preserving spelling or
+  ordering refactor remains green.
 
 ## Architecture
 

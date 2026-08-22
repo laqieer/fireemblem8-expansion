@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import unittest
 
 
@@ -9,6 +10,58 @@ SKILL_PATH = (
 CONTRIBUTING_PATH = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 CLAUDE_PATH = ROOT / "CLAUDE.md"
+COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
+MEANINGFUL_TEST_POLICY_HEADING = "Meaningful test evidence"
+MEANINGFUL_TEST_POLICY_CLAUSES = (
+    "Evidence standard",
+    "Prohibited evidence",
+    "Static-contract exception",
+    "Evidence preference",
+    "Replacement and mutation controls",
+)
+MEANINGFUL_TEST_POLICY_TERMS = {
+    "Evidence standard": (
+        "Tests must prove behavior",
+        "parsed structural contract",
+        "generated output",
+        "compile/link properties",
+        "runtime state",
+    ),
+    "Prohibited evidence": (
+        "arbitrary strings",
+        "Git-tracked text file",
+        "Git already preserves that text",
+        "does not prove the implementation works",
+    ),
+    "Static-contract exception": (
+        "documented public format",
+        "security boundary",
+        "generated-file contract",
+        "ABI/layout constraint",
+        "externally consumed protocol",
+        "name that contract",
+        "functional, parsed, compiled, or runtime evidence cannot replace it",
+    ),
+    "Evidence preference": (
+        "real function with positive and adversarial inputs",
+        "JSON, YAML, Make database, AST, binary, or schema",
+        "compile/link inspection",
+        "typed symbols, sections, resources, or generated output",
+        "deterministic target-ROM/libmGBA behavior",
+        "source-text assertion",
+    ),
+    "Replacement and mutation controls": (
+        "preserve its accepted requirement",
+        "stronger evidence",
+        "duplicated another gate",
+        "behavior change which preserves the old phrase fails",
+        "semantics-preserving spelling or ordering refactor remains green",
+    ),
+}
+MARKDOWN_HEADING = re.compile(r"^#{2,6} ")
+MEANINGFUL_TEST_POLICY_CLAUSE = re.compile(
+    r"^- \*\*(?P<name>[^*:]+):\*\* (?P<value>.+)$"
+)
 
 
 def read_skill():
@@ -32,7 +85,74 @@ def read_skill():
     return metadata, text
 
 
+def read_markdown_section(text, heading):
+    lines = text.splitlines()
+    heading_line = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if line.lstrip("#").strip() == heading and line.startswith("#")
+        ),
+        None,
+    )
+    if heading_line is None:
+        raise AssertionError(f"missing Markdown section: {heading}")
+
+    end_line = next(
+        (
+            index
+            for index in range(heading_line + 1, len(lines))
+            if MARKDOWN_HEADING.match(lines[index])
+        ),
+        len(lines),
+    )
+    return lines[heading_line + 1:end_line]
+
+
+def parse_meaningful_test_policy(text):
+    clauses = {}
+    clause_name = None
+    for line in read_markdown_section(text, MEANINGFUL_TEST_POLICY_HEADING):
+        match = MEANINGFUL_TEST_POLICY_CLAUSE.match(line)
+        if match:
+            clause_name = match.group("name")
+            if clause_name in clauses:
+                raise AssertionError(f"duplicate policy clause: {clause_name}")
+            clauses[clause_name] = [match.group("value")]
+        elif clause_name is not None and line.startswith("  ") and line.strip():
+            clauses[clause_name].append(line.strip())
+
+    expected = set(MEANINGFUL_TEST_POLICY_CLAUSES)
+    actual = set(clauses)
+    if actual != expected:
+        raise AssertionError(
+            f"policy clauses differ: missing={expected - actual}, extra={actual - expected}"
+        )
+    return {name: " ".join(clauses[name]) for name in MEANINGFUL_TEST_POLICY_CLAUSES}
+
+
+def render_meaningful_test_policy(clauses, clause_order):
+    return "\n".join(
+        [
+            f"## {MEANINGFUL_TEST_POLICY_HEADING}",
+            "",
+            *[
+                f"- **{name}:** {clauses[name]}"
+                for name in clause_order
+            ],
+            "",
+        ]
+    )
+
+
 class DevelopmentWorkflowSkillTests(unittest.TestCase):
+    def assert_meaningful_test_policy(self, text):
+        clauses = parse_meaningful_test_policy(text)
+        for clause_name, terms in MEANINGFUL_TEST_POLICY_TERMS.items():
+            for term in terms:
+                self.assertIn(term, clauses[clause_name], f"{clause_name}: {term}")
+        return clauses
+
     def test_frontmatter_matches_project_skill_directory(self):
         metadata, _ = read_skill()
 
@@ -175,49 +295,41 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 self.assertIn(requirement, text)
 
     def test_meaningful_test_evidence_policy_is_aligned(self):
-        _, skill = read_skill()
-        required_skill_contract = (
-            "Tests must prove behavior, a parsed structural contract",
-            "Do not add a test whose only",
-            "evidence is that arbitrary strings",
-            "Git already preserves that text",
-            "A source-text assertion is permitted only when",
-            "call the real function with positive and adversarial inputs",
-            "parse the real JSON, YAML, Make database, AST, binary, or schema",
-            "compile/link and inspect typed symbols",
-            "run deterministic target-ROM/libmGBA behavior",
-            "preserve its accepted requirement",
-            "with stronger evidence",
-            "semantics-preserving spelling or ordering",
-            "refactor remains green",
-        )
-        for requirement in required_skill_contract:
-            with self.subTest(surface="skill", requirement=requirement):
-                self.assertIn(requirement, skill)
-
-        required_project_contract = (
-            "Tests must provide meaningful behavioral or structural evidence.",
-            "Do not add",
-            "raw source-text assertions",
-            "Prefer calling real functions, parsing the real format",
-            "compile/link or",
-            "symbol/resource inspection",
-            "deterministic runtime scenarios",
-            "documented",
-            "public format, security, generated-file, ABI/layout",
-            "stronger replacement evidence",
-        )
+        """Validate the labeled public agent-policy contract, not arbitrary prose."""
         for path in (
-            ROOT / ".github" / "copilot-instructions.md",
+            SKILL_PATH,
+            COPILOT_INSTRUCTIONS_PATH,
             CLAUDE_PATH,
         ):
-            text = path.read_text(encoding="utf-8")
-            for requirement in required_project_contract:
-                with self.subTest(
-                    surface=str(path.relative_to(ROOT)),
-                    requirement=requirement,
-                ):
-                    self.assertIn(requirement, text)
+            with self.subTest(surface=str(path.relative_to(ROOT))):
+                self.assert_meaningful_test_policy(path.read_text(encoding="utf-8"))
+
+        _, skill = read_skill()
+        clauses = self.assert_meaningful_test_policy(skill)
+        reordered = render_meaningful_test_policy(
+            clauses, reversed(MEANINGFUL_TEST_POLICY_CLAUSES)
+        ).replace(
+            "Tests must prove behavior, a parsed structural contract",
+            "Tests must prove behavior, a parsed\n"
+            "    structural contract",
+        )
+
+        self.assertEqual(clauses, parse_meaningful_test_policy(reordered))
+
+        clauses["Static-contract exception"] = clauses[
+            "Static-contract exception"
+        ].replace(
+            "functional, parsed, compiled, or runtime evidence cannot replace it",
+            "the assertion is convenient",
+        )
+
+        with self.assertRaisesRegex(
+            AssertionError,
+            "functional, parsed, compiled, or runtime evidence cannot replace it",
+        ):
+            self.assert_meaningful_test_policy(
+                render_meaningful_test_policy(clauses, MEANINGFUL_TEST_POLICY_CLAUSES)
+            )
 
     def test_review_size_preflight_and_exception_contract(self):
         _, text = read_skill()
