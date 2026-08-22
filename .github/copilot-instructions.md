@@ -97,6 +97,17 @@ boundary for criteria the agent cannot validate. It is authoritative over
 conflicting generic review or closure guidance and requires no human review or
 approval.
 
+Tests must provide meaningful behavioral or structural evidence. Do not add
+raw source-text assertions that merely pin arbitrary strings, comments, helper
+names, line numbers, ordering, or implementation spelling in Git-tracked
+files. Prefer calling real functions, parsing the real format, compile/link or
+symbol/resource inspection, and deterministic runtime scenarios. A text-level
+assertion is allowed only when the exact text or absence is itself a documented
+public format, security, generated-file, ABI/layout, or external protocol
+contract, and the test must state that justification. Rewrite or remove
+brittle checks only with stronger replacement evidence or proof that another
+gate already owns the same contract.
+
 ## Architecture
 
 ### Compiler & toolchain

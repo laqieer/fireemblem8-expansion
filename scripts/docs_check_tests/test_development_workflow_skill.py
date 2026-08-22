@@ -174,6 +174,51 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
 
+    def test_meaningful_test_evidence_policy_is_aligned(self):
+        _, skill = read_skill()
+        required_skill_contract = (
+            "Tests must prove behavior, a parsed structural contract",
+            "Do not add a test whose only",
+            "evidence is that arbitrary strings",
+            "Git already preserves that text",
+            "A source-text assertion is permitted only when",
+            "call the real function with positive and adversarial inputs",
+            "parse the real JSON, YAML, Make database, AST, binary, or schema",
+            "compile/link and inspect typed symbols",
+            "run deterministic target-ROM/libmGBA behavior",
+            "preserve its accepted requirement",
+            "with stronger evidence",
+            "semantics-preserving spelling or ordering",
+            "refactor remains green",
+        )
+        for requirement in required_skill_contract:
+            with self.subTest(surface="skill", requirement=requirement):
+                self.assertIn(requirement, skill)
+
+        required_project_contract = (
+            "Tests must provide meaningful behavioral or structural evidence.",
+            "Do not add",
+            "raw source-text assertions",
+            "Prefer calling real functions, parsing the real format",
+            "compile/link or",
+            "symbol/resource inspection",
+            "deterministic runtime scenarios",
+            "documented",
+            "public format, security, generated-file, ABI/layout",
+            "stronger replacement evidence",
+        )
+        for path in (
+            ROOT / ".github" / "copilot-instructions.md",
+            CLAUDE_PATH,
+        ):
+            text = path.read_text(encoding="utf-8")
+            for requirement in required_project_contract:
+                with self.subTest(
+                    surface=str(path.relative_to(ROOT)),
+                    requirement=requirement,
+                ):
+                    self.assertIn(requirement, text)
+
     def test_review_size_preflight_and_exception_contract(self):
         _, text = read_skill()
         required_contract = (

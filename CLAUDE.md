@@ -76,6 +76,17 @@ completion, and true dependents wait. When the watcher finishes, resume those
 dependents on success; on failure, fix forward or revert the broken default
 branch immediately.
 
+Tests must provide meaningful behavioral or structural evidence. Do not add
+raw source-text assertions that merely pin arbitrary strings, comments, helper
+names, line numbers, ordering, or implementation spelling in Git-tracked
+files. Prefer calling real functions, parsing the real format, compile/link or
+symbol/resource inspection, and deterministic runtime scenarios. A text-level
+assertion is allowed only when the exact text or absence is itself a documented
+public format, security, generated-file, ABI/layout, or external protocol
+contract, and the test must state that justification. Rewrite or remove
+brittle checks only with stronger replacement evidence or proof that another
+gate already owns the same contract.
+
 First-time setup: `./scripts/quickstart.sh` installs/probes the modern
 toolchain, an ARM GDB debugger, the mGBA GDB-server frontend, and libmGBA by
 default, **no agbcc of any kind**; pass
