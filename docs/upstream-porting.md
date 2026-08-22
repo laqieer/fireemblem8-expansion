@@ -194,7 +194,7 @@ workflow gate described below.
    (pure-stdlib upstream-port tests, including the workflow mirror contract;
    rerun it for the current test count rather than trusting a written count)
 3. `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`
-   (pure-stdlib Full Matrix CI workflow and README badge contracts)
+   (pure-stdlib consolidated Build CI topology and checkout contracts)
 4. `python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"`
    (issue #18 host-only localization schema/catalog/pseudo/generation/resolver
    coverage)

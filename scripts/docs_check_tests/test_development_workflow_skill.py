@@ -168,8 +168,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "`Depends on #...` links",
             "Review and merge the stack bottom-up",
             "gh pr edit <child-pr> --base master",
-            "Apply candidate-commit Build CI plus Copilot review, then post-merge Build",
-            "Complete the umbrella initiative only after every accepted",
+            "Apply candidate-commit Build CI plus Copilot review",
+            "consolidated Build verification",
+            "Complete the umbrella",
+            "initiative only after every accepted",
         )
 
         for requirement in required_contract:
@@ -203,7 +205,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "gh pr edit <child-pr-number> --base master",
             "rerun candidate Build CI and",
             "Copilot review if the candidate commit or tree changed",
-            "dispatch Full Matrix only from `master`",
+            "automatic master Build run",
+            "consolidated master-only evidence",
             "make remote-completion-check",
             "git diff --name-only \"$base_ref\"...HEAD",
             "20,000-line limit is a hard ceiling",

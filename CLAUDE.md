@@ -61,9 +61,8 @@ For any task that changes tracked files, local implementation and tests are
 not completion. Unless the user explicitly says not to commit or push, commit
 and push all intended changes, require clean candidate Build CI and Copilot
 review, merge, then require automatic Build CI and manually dispatched Full
-Matrix on the exact `master` revision before
-`make remote-completion-check` can pass. Every Full Matrix job is master-only;
-a non-master dispatch executes no Matrix job.
+Build's consolidated master-only jobs on the exact `master` revision before
+`make remote-completion-check` can pass.
 
 For an objective to resolve all repository issues, also close the resolved
 issues and require `make all-issues-completion-check` to pass. Track commit,

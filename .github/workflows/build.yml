@@ -80,9 +80,9 @@ jobs:
     - name: Run upstream-port tooling test suite
       run: python3 -m unittest discover -s tests/upstream_port -v
 
-    # Full Matrix CI workflow/README contract: dispatch-only trigger,
-    # permissions/concurrency, exact commands, fail-closed summary, and badge
-    # path/name/link binding. Pure stdlib/YAML-text parsing; no ROM/toolchain.
+    # Consolidated Build CI topology contract: candidate/master triggers,
+    # master-only workers, evidence ownership, and fail-closed summary. Pure
+    # stdlib/YAML-text parsing; no ROM/toolchain.
     - name: Run workflow contract test suite
       run: python3 -m unittest discover -s tests/workflows -p "test_*.py" -v
 
@@ -258,12 +258,116 @@ jobs:
     - name: Build isolated all-locales/all-features profile (issue #49)
       run: make expansion-modern-all-locales-all-features-check -j1
 
+  # This master-only lane holds the unique broader host evidence that is too
+  # expensive for candidate PRs but must accompany the post-merge Build run.
+  master-host-tests:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        fetch-depth: 0
+        submodules: recursive
+        persist-credentials: false
+
+    - name: Verify checked-out master revision
+      run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+    - name: Install master host dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential
+
+    - name: Run CJK font gates
+      run: make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test
+
+    - name: Run multilang texttools codec gates
+      run: python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v
+
+    - name: Run configuration and linker-budget gates
+      run: |
+        python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v
+        python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v
+
+  # The archival lane remains master-only and parallel with the supported
+  # modern jobs. It is intentionally not candidate PR evidence.
+  legacy:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AGBCC_COMMIT: da598c1d918402c42c0c0d7128ba14567f3175e9
+      MGFEMBP_AGBCC_COMMIT: 63b22f3eb8a8051af30bd80c4795b355e439e7ef
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        fetch-depth: 0
+        submodules: recursive
+        persist-credentials: false
+
+    - name: Verify checked-out master revision
+      run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+    - name: Install archival build dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi libpng-dev pkg-config python3-pip python3-numpy python3-pil
+
+    - name: Preflight archival toolchain executables
+      run: |
+        set -euo pipefail
+        command -v arm-none-eabi-cpp >/dev/null 2>&1
+        command -v arm-none-eabi-as >/dev/null 2>&1
+        command -v arm-none-eabi-ld >/dev/null 2>&1
+        command -v arm-none-eabi-objcopy >/dev/null 2>&1
+
+    - name: Install pinned archival agbcc compilers
+      run: |
+        set -euo pipefail
+
+        rm -rf .deps/agbcc-ci "$RUNNER_TEMP/mgfembp-agbcc-ci"
+        git init --quiet .deps/agbcc-ci
+        git -C .deps/agbcc-ci remote add origin https://github.com/pret/agbcc.git
+        git -C .deps/agbcc-ci fetch --quiet --depth=1 origin "$AGBCC_COMMIT"
+        git -C .deps/agbcc-ci checkout --quiet --detach FETCH_HEAD
+        test "$(git -C .deps/agbcc-ci rev-parse HEAD)" = "$AGBCC_COMMIT"
+        (
+          cd .deps/agbcc-ci
+          ./build.sh
+          ./install.sh "$GITHUB_WORKSPACE"
+        )
+
+        git init --quiet "$RUNNER_TEMP/mgfembp-agbcc-ci"
+        git -C "$RUNNER_TEMP/mgfembp-agbcc-ci" remote add origin https://github.com/StanHash/agbcc.git
+        git -C "$RUNNER_TEMP/mgfembp-agbcc-ci" fetch --quiet --depth=1 origin "$MGFEMBP_AGBCC_COMMIT"
+        git -C "$RUNNER_TEMP/mgfembp-agbcc-ci" checkout --quiet --detach FETCH_HEAD
+        test "$(git -C "$RUNNER_TEMP/mgfembp-agbcc-ci" rev-parse HEAD)" = "$MGFEMBP_AGBCC_COMMIT"
+        (
+          cd "$RUNNER_TEMP/mgfembp-agbcc-ci"
+          ./build.sh
+          ./install.sh "$GITHUB_WORKSPACE/mgfembp"
+        )
+
+    - name: Build tools
+      run: ./build_tools.sh
+
+    - name: Build archival lane without a copyrighted baserom
+      run: |
+        set -euo pipefail
+        test ! -e baserom.gba
+        make legacy -j2
+        test ! -e baserom.gba
+
+    - name: Validate pinned archival payload identities
+      run: make -C mgfembp compare
+
   # This separate job is the sole publisher. Its event guard excludes pull
   # requests before secrets are materialized; it consumes BASEROM_URL only
-  # through curl's environment expansion and never prints or persists it.
+  # through curl's environment expansion and never prints or persists it. It
+  # is independent of other master jobs so summary is the only graph join.
   patch-release:
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-    needs: [build, host-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -303,3 +407,39 @@ jobs:
         path: ${{ runner.temp }}/patch-artifact
         if-no-files-found: error
         retention-days: 30
+
+  summary:
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    needs: [host-tests, build, master-host-tests, legacy, patch-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      HOST_TESTS_RESULT: ${{ needs.host-tests.result }}
+      BUILD_RESULT: ${{ needs.build.result }}
+      MASTER_HOST_TESTS_RESULT: ${{ needs.master-host-tests.result }}
+      LEGACY_RESULT: ${{ needs.legacy.result }}
+      PATCH_RELEASE_RESULT: ${{ needs.patch-release.result }}
+
+    steps:
+    - name: Render fail-closed master Build summary
+      run: |
+        {
+          echo "## Master Build CI"
+          echo
+          echo "| Job | Conclusion |"
+          echo "| --- | --- |"
+          echo "| host-tests | $HOST_TESTS_RESULT |"
+          echo "| build | $BUILD_RESULT |"
+          echo "| master-host-tests | $MASTER_HOST_TESTS_RESULT |"
+          echo "| legacy | $LEGACY_RESULT |"
+          echo "| patch-release | $PATCH_RELEASE_RESULT |"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" "$MASTER_HOST_TESTS_RESULT" \
+          "$LEGACY_RESULT" "$PATCH_RELEASE_RESULT"
+        do
+          if [ "$result" != "success" ]; then
+            echo "required master Build CI job did not succeed: $result" >&2
+            exit 1
+          fi
+        done

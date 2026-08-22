@@ -276,11 +276,11 @@ compare:
 # These are intentionally opt-in, networked maintainer/agent checks rather
 # than build prerequisites. They turn "done" into an executable contract:
 # the worktree must be clean, HEAD must already be pushed to its configured
-# upstream, and the exact pushed `master` SHA must have successful automatic
-# Build CI plus the manually dispatched exact-master Full Matrix CI. Candidate
-# branches intentionally stop at Build CI and Copilot review; their Matrix
-# dispatch is rejected by the workflow before expensive lanes start. The
-# all-issues variant additionally requires zero open GitHub issues.
+# upstream, and the exact pushed `master` SHA must have one successful
+# automatic Build CI run. Candidate branches intentionally stop at Build CI
+# and Copilot review; the master run contains all consolidated broader-host,
+# archival, publication, and summary evidence. The all-issues variant
+# additionally requires zero open GitHub issues.
 remote-completion-check:
 	@set -eu; \
 	command -v gh >/dev/null 2>&1 || { \
@@ -308,19 +308,12 @@ remote-completion-check:
 		exit 1; \
 	fi; \
 	repo=$$(gh repo view --json nameWithOwner --jq .nameWithOwner); \
-	run=$$(gh run list --repo "$$repo" --commit "$$head_sha" --workflow build.yml \
+	run=$$(gh run list --repo "$$repo" --branch master --commit "$$head_sha" --workflow build.yml \
 		--limit 1 --json status,conclusion,url \
 		--jq 'if length == 0 then "missing,," else .[0].status + "," + (.[0].conclusion // "") + "," + .[0].url end'); \
 	case "$$run" in \
 		completed,success,*) ;; \
 		*) printf 'error: Build CI for %s is not successful: %s\n' "$$head_sha" "$$run" >&2; exit 1 ;; \
-	esac; \
-	matrix=$$(gh run list --repo "$$repo" --commit "$$head_sha" --workflow full-matrix.yml \
-		--limit 1 --json status,conclusion,url \
-		--jq 'if length == 0 then "missing,," else .[0].status + "," + (.[0].conclusion // "") + "," + .[0].url end'); \
-	case "$$matrix" in \
-		completed,success,*) ;; \
-		*) printf 'error: Full Matrix CI for %s is not successful: %s\n' "$$head_sha" "$$matrix" >&2; exit 1 ;; \
 	esac; \
 	printf 'Remote completion gate passed: %s (%s)\n' "$$head_sha" "$$repo"
 

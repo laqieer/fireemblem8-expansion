@@ -263,11 +263,11 @@ its required parent is open. After a parent merges, run
 rerun candidate Build CI and Copilot review whenever the candidate commit or
 tree changes.
 
-Apply candidate-commit Build CI plus Copilot review, then post-merge Build
-verification and manually dispatched exact-`master` Full Matrix, issue
-evidence and closure, and the remote completion gate independently to every
-issue PR. Complete the umbrella initiative only after every accepted issue has
-been independently merged, verified on `master`, and closed.
+Apply candidate-commit Build CI plus Copilot review, then post-merge
+consolidated Build verification, issue evidence and closure, and the remote
+completion gate independently to every issue PR. Complete the umbrella
+initiative only after every accepted issue has been independently merged,
+verified on `master`, and closed.
 
 ### Review-size preflight
 
@@ -417,8 +417,7 @@ must not carry content hashes or duplicated gitlink pins.
 Use one dedicated pull request for exactly one independent issue by default.
 Push directly to `master` only when the user explicitly requests it and
 repository permissions allow it; direct delivery still requires the same local
-validation, pushed-commit Build CI, manually dispatched exact-`master` Full
-Matrix, and remote completion gate.
+validation, pushed-commit consolidated Build CI, and remote completion gate.
 
 The PR must record:
 
@@ -490,9 +489,8 @@ Before merge:
 
 1. Confirm required Build CI succeeds for the exact candidate commit.
 2. Request Copilot review concurrently with Build CI, and resolve each finding
-   with code or an explanation. Do not dispatch Full Matrix for a candidate,
-   local branch, or pull request; every Matrix job is executable only on
-   `master`.
+   with code or an explanation. Candidate branches run no manual CI workflow;
+   broader evidence belongs to the automatic post-merge Build jobs.
 3. Confirm every objective acceptance criterion, positive scenario, negative
    control, compatibility check, tester-facing case, and documentation
    requirement is complete.
@@ -520,11 +518,9 @@ a generically worded request for review.
 For every issue-specific PR:
 
 1. Verify Build CI on the resulting `master` commit.
-2. Manually dispatch `full-matrix.yml --ref master` only after that Build
-   succeeds, and verify its host, modern, legacy, and fail-closed summary
-   results for the same `master` revision. Every Matrix job is master-only;
-   a non-master dispatch executes no Matrix job.
-3. If either post-merge gate fails, immediately fix forward or revert; do not
+2. Verify the same Build workflow's parallel master-only broader-host,
+   archival, publication, and fail-closed summary jobs for that revision.
+3. If the consolidated post-merge Build fails, immediately fix forward or revert; do not
    report the feature as delivered. The failure blocks the affected issue's
    closure and remote completion, but not unrelated independent PRs.
 4. Add the final evidence and commit/PR/CI links to the originating issue.
@@ -535,7 +531,7 @@ For every issue-specific PR:
    development workflow overrides conflicting generic language that reserves
    closure for human review.
 6. For tracked changes, run `make remote-completion-check` only after the
-   intended `master` commit has successful Build CI and Full Matrix results.
+   intended `master` commit has one successful consolidated Build CI result.
 
 The task is complete only when the implementation and documentation are
 persistent upstream, required CI is green, the remote completion gate passes,

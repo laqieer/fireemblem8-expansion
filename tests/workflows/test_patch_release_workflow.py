@@ -69,7 +69,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
     def test_trusted_push_only_and_no_pr_publication(self):
         self.assertIn("github.event_name == 'push'", self.patch_job)
         self.assertIn("github.ref == 'refs/heads/master'", self.patch_job)
-        self.assertIn("needs: [build, host-tests]", self.patch_job)
+        self.assertNotIn("needs:", self.patch_job)
         self.assertNotIn("pull_request_target", self.text)
         self.assertEqual(
             self.patch_job.count(

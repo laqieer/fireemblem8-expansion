@@ -11,7 +11,7 @@ it links to them.
 
 | Host | Package manager | Auto-installed by `scripts/quickstart.sh` | CI-verified |
 | --- | --- | --- | --- |
-| Ubuntu / Debian / WSL | `apt` | Yes | Yes — automatic `.github/workflows/build.yml`; post-merge manual `.github/workflows/full-matrix.yml` on `master`, both on `ubuntu-latest` |
+| Ubuntu / Debian / WSL | `apt` | Yes | Yes — automatic `.github/workflows/build.yml` on `ubuntu-latest`, with parallel master-only broader host and archival lanes after merge |
 | Arch Linux | `pacman` | Yes | No (community-supported; same script path as Ubuntu) |
 | macOS | Homebrew (`brew`) | Yes | No (community-supported) |
 
@@ -25,12 +25,11 @@ none of `scripts/quickstart.sh`, the Makefile, or CI target Windows
 directly.
 
 **Automatic Build CI is the only host this repository re-verifies on every
-push/PR.** A PR candidate uses Build CI and Copilot review concurrently; it
-must never dispatch Full Matrix. After the direct merge, automatic Build CI
-runs on `master`, then a maintainer manually dispatches Full Matrix only on
-that exact branch. Arch and macOS support is exercised by the same script
-logic but is not re-run in CI; treat regressions there as community-reported,
-not CI-caught.
+push/PR.** A PR candidate uses Build CI and Copilot review concurrently. After
+the direct merge, the same Build workflow adds parallel master-only broader
+host, archival, publication, and fail-closed summary jobs. Arch and macOS
+support is exercised by the same script logic but is not re-run in CI; treat
+regressions there as community-reported, not CI-caught.
 
 ## Supported toolchains
 
@@ -114,24 +113,18 @@ no ROM build or network access is required for either.
   `expansion-modern-savefmt-check` (these five need libmGBA too), and
   `scripts.upstream_port verify`.
 
-### Dispatch-only full matrix
+### Consolidated Build CI
 
-Prefer focused local checks during iteration. Candidate branches use Build CI
-and Copilot review, not Full Matrix. Once the change is merged and automatic
-Build CI succeeds on `master`, run the Matrix-only host, modern debug/release,
-and archival lanes in parallel:
+Prefer focused local checks during iteration. Candidate branches run the
+existing `host-tests` and `build` jobs plus Copilot review. A merged `master`
+push automatically adds parallel `master-host-tests`, `legacy`,
+`patch-release`, and fail-closed `summary` jobs to that same workflow. The
+broader master jobs retain CJK/font, codec, configuration/budget, archival,
+and publication evidence without rerunning Build-owned modern debug/release,
+artifact, documentation, generated-data, or localization commands. The
+expected wall clock is approximately 35–40 minutes, not a hard duration gate.
 
-```bash
-gh workflow run full-matrix.yml --ref master
-```
-
-The workflow is `workflow_dispatch`-only, read-only, and concurrency-cancelled
-for `master`. Every Matrix job, including its summary, requires `master`, so a
-non-master dispatch executes no Matrix job. Its master-only final summary fails
-unless host, both modern matrix configurations, and legacy succeed. The debug
-and release configurations remain parallel matrix jobs, and each job
-uses sequential Make to keep its resource use predictable. The canonical Build
-CI gate also runs `expansion-modern-linker-check` with `-j2`:
+The canonical Build CI gate runs `expansion-modern-linker-check` with `-j2`:
 battle-animation producers retain the last complete object while staging a
 replacement and then publish it with same-directory atomic replacement, so
 concurrent linker consumers cannot observe a missing or torn object. The

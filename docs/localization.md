@@ -408,21 +408,11 @@ expansion-only keys are explicitly outside that original-game comparison.
 ### Efficient local and pre-merge validation
 
 Use targeted localization tests while editing. A candidate branch receives
-Build CI and Copilot review concurrently; it must not dispatch Full Matrix.
-After merge, once automatic Build CI succeeds for `master`, dispatch the
-reduced Matrix from that exact branch:
-
-```bash
-gh workflow run full-matrix.yml --ref master
-```
-
-The Matrix host lane retains only CJK font, multilang-codec, and
-configuration/linker-budget evidence. Build CI owns locale-source, crosswalk,
-raw-closure, and rendered-width evidence for both candidate and `master`
-revisions. Every Matrix job, including summary, requires `master`, so a
-non-master dispatch executes no Matrix job; its modern debug/release matrix
-owns the subordinate CJK profiles, runtime, shifted-link, and linker-budget
-gates.
+Build CI and Copilot review concurrently. After merge, automatic Build CI on
+`master` adds parallel CJK/font, multilang-codec, and
+configuration/linker-budget coverage. Build owns locale-source, crosswalk,
+raw-closure, rendered-width, and modern debug/release evidence exactly once
+for both candidate and `master` revisions; no separate manual workflow exists.
 
 ## Testing -- real libmGBA runtime evidence (Sprint 4)
 

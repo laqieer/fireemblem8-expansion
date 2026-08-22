@@ -46,40 +46,45 @@ _WORKFLOW_CONTRACT_STEP_NAME = "Run workflow contract test suite"
 
 
 def _parse_workflow_gate_commands(path=BUILD_WORKFLOW_PATH):
-    """Read build.yml with stdlib only (no PyYAML) and return the ordered
-    list of shell command argv lists for every step that is a correctness
-    gate (i.e. not in _NON_GATE_STEP_NAMES).
+    """Read candidate-safe Build CI jobs with stdlib only (no PyYAML).
 
-    This deliberately re-derives the expected gate list from the *current*
-    workflow text on every test run, instead of hardcoding a copy of it, so
-    the test actually fails when build.yml and verify.py drift apart again.
+    ``verify`` is a local, no-secret mirror of the pull-request gate, so it
+    intentionally excludes Build's master-only extended-host, legacy,
+    publisher, and summary jobs. This deliberately re-derives the expected
+    commands from the live candidate jobs instead of hardcoding a copy.
     """
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
 
-    step_matches = list(_STEP_NAME_RE.finditer(text))
-    assert step_matches, f"no steps found parsing {path}; workflow format changed?"
-
     commands = []
-    for i, m in enumerate(step_matches):
-        step_name = m.group(1).strip()
-        start = m.end()
-        end = step_matches[i + 1].start() if i + 1 < len(step_matches) else len(text)
-        block = text[start:end]
+    for job_name in ("host-tests", "build"):
+        job = re.search(
+            rf"(?ms)^  {re.escape(job_name)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            text,
+        )
+        assert job is not None, f"missing candidate Build job {job_name!r}"
+        step_matches = list(_STEP_NAME_RE.finditer(job.group("body")))
+        assert step_matches, f"no steps found parsing {job_name!r}; workflow format changed?"
 
-        if step_name in _NON_GATE_STEP_NAMES:
-            continue
+        for i, m in enumerate(step_matches):
+            step_name = m.group(1).strip()
+            start = m.end()
+            end = step_matches[i + 1].start() if i + 1 < len(step_matches) else len(job.group("body"))
+            block = job.group("body")[start:end]
 
-        single_m = _SINGLE_RUN_RE.search(block)
-        if single_m:
-            lines = [single_m.group(1).strip()]
-        else:
-            multi_m = _MULTI_RUN_RE.search(block)
-            assert multi_m, f"step {step_name!r} has no parseable 'run:' block"
-            lines = [line.strip() for line in multi_m.group(1).splitlines() if line.strip()]
+            if step_name in _NON_GATE_STEP_NAMES:
+                continue
 
-        for line in lines:
-            commands.append((step_name, shlex.split(line)))
+            single_m = _SINGLE_RUN_RE.search(block)
+            if single_m:
+                lines = [single_m.group(1).strip()]
+            else:
+                multi_m = _MULTI_RUN_RE.search(block)
+                assert multi_m, f"step {step_name!r} has no parseable 'run:' block"
+                lines = [line.strip() for line in multi_m.group(1).splitlines() if line.strip()]
+
+            for line in lines:
+                commands.append((step_name, shlex.split(line)))
 
     return commands
 

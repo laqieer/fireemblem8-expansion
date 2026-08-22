@@ -51,8 +51,8 @@ ELF, map, save, or savestate is published, cached, or logged.
 
 Only a successful trusted `push` to `master` can upload
 `modern-release-all-locales-all-features-aapcs-bps-<commit>` with 30-day
-retention. Pull requests and Full Matrix receive no base-input secret and
-publish nothing. The artifact contains exactly:
+retention. Pull requests receive no base-input secret and publish nothing. The
+artifact contains exactly:
 
 ```text
 fireemblem8-expansion-all-locales-all-features-aapcs.bps
