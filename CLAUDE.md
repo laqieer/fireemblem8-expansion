@@ -59,6 +59,23 @@ issues, wait for Release Rehearsal on the exact pushed commit, and require
 `make all-issues-completion-check` to pass. Track commit, push, CI, and issue
 closure as explicit dependent todos from the start.
 
+CI waiting must not occupy a reasoning subagent. The subagent that dispatches
+a workflow records its exact SHA and run ID, then returns immediately. The
+orchestrator runs exactly one bounded direct shell watcher:
+`timeout 90m gh run watch <run-id> --interval 30 --exit-status`. Rely on the
+shell runtime's completion notification, and invoke a reasoning agent only
+after the run is terminal to inspect logs or reviews. Do not repeatedly wake an
+agent to poll, do not create duplicate watchers, and cancel superseded
+candidate runs before dispatching replacement checks.
+
+After a PR merge, monitor the exact-`master` Build CI with an attached,
+nonblocking asynchronous shell watcher. Leave its verification todo in
+progress and continue every unrelated dependency-ready task instead of
+stopping to wait or sending a waiting-only response. Only closure, remote
+completion, and true dependents wait. When the watcher finishes, resume those
+dependents on success; on failure, fix forward or revert the broken default
+branch immediately.
+
 First-time setup: `./scripts/quickstart.sh` installs/probes the modern
 toolchain, an ARM GDB debugger, the mGBA GDB-server frontend, and libmGBA by
 default, **no agbcc of any kind**; pass
