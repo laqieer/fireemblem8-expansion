@@ -187,14 +187,16 @@ def parse_git_text_rationale_detail(detail):
     for assignment in detail.split(";"):
         name, separator, values = assignment.partition("=")
         normalized_name = normalize_policy_atom(name)
-        normalized_values = frozenset(
+        normalized_value_sequence = tuple(
             normalize_policy_atom(value) for value in values.split(",")
         )
+        normalized_values = frozenset(normalized_value_sequence)
         if (
             not separator
             or not normalized_name
             or not normalized_values
             or "" in normalized_values
+            or len(normalized_value_sequence) != len(normalized_values)
             or normalized_name in assignment_names
         ):
             raise AssertionError(f"invalid Git-text rationale detail: {detail}")
@@ -614,6 +616,14 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "contradictory Git rationale polarity": policy_text.replace(
                 "raw-tracked-text=not-behavior-evidence",
                 "raw-tracked-text=behavior-evidence",
+            ),
+            "duplicate Git-tracks value": policy_text.replace(
+                "source,review,history",
+                "source,review,history,source",
+            ),
+            "duplicate raw-tracked-text value": policy_text.replace(
+                "raw-tracked-text=not-behavior-evidence",
+                "raw-tracked-text=not-behavior-evidence,not-behavior-evidence",
             ),
             "punctuated Git rationale polarity": policy_text.replace(
                 "raw-tracked-text=not-behavior-evidence",
