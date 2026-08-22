@@ -25,11 +25,14 @@ none of `scripts/quickstart.sh`, the Makefile, or CI target Windows
 directly.
 
 **Automatic Build CI is the only host this repository re-verifies on every
-push/PR.** The manual Full Matrix CI workflow adds a one-shot pre-merge broad
-pass for the candidate branch's exact commit; it does not change the automatic
-Build CI contract. Arch and macOS support is exercised by the same script
-logic but is not re-run in CI; treat regressions there as community-reported,
-not CI-caught.
+push/PR.** A candidate PR gates only on exact-candidate Build CI and Copilot
+review, then merges directly when those checks and its objective acceptance are
+clean. Full Matrix CI runs only on `master`; it never runs on a pull request or
+feature branch, manually or automatically. After each merge or intentional
+independent merge batch, dispatch the one-shot broad matrix for the exact
+pushed `master` commit. Arch and macOS support is exercised by the same
+script logic but is not re-run in CI; treat regressions there as
+community-reported, not CI-caught.
 
 ## Supported toolchains
 
@@ -115,21 +118,22 @@ no ROM build or network access is required for either.
 
 ### Dispatch-only full matrix
 
-Prefer focused local checks during iteration. Once the candidate branch is
-pushed, run the expensive host, modern debug/release, and archival lanes in
-parallel:
+Prefer focused local checks during iteration. Do not dispatch Full Matrix for a
+candidate branch. After the exact pushed `master` commit is available, run the
+expensive host, modern debug/release, and archival lanes in parallel:
 
 ```bash
-gh workflow run full-matrix.yml --ref <branch>
-gh run watch <run-id> --exit-status
+gh workflow run full-matrix.yml --ref master
+timeout 90m gh run watch <run-id> --interval 30 --exit-status
 ```
 
 The workflow is `workflow_dispatch`-only, read-only, concurrency-cancelled by
-workflow/ref, and records the exact `github.sha` and `github.ref`. Its final
-summary fails unless host, both modern matrix configurations, and legacy
-succeed. The debug and release configurations remain parallel matrix jobs, and each job
-uses sequential Make to keep its resource use predictable. The canonical Build
-CI gate also runs `expansion-modern-linker-check` with `-j2`:
+workflow/ref, and master-gated so its jobs do not execute on another ref. It
+records the exact `github.sha` and `github.ref`. Its final summary fails unless
+host, both modern matrix configurations, and legacy succeed. The debug and
+release configurations remain parallel matrix jobs, and each job uses
+sequential Make to keep its resource use predictable. The canonical Build CI
+gate also runs `expansion-modern-linker-check` with `-j2`:
 battle-animation producers retain the last complete object while staging a
 replacement and then publish it with same-directory atomic replacement, so
 concurrent linker consumers cannot observe a missing or torn object. The

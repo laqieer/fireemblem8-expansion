@@ -73,6 +73,16 @@ def run_make(args, env_overrides=None):
     )
 
 
+def has_successful_workflow(runs, commit, branch):
+    return any(
+        run["commit"] == commit
+        and run["branch"] == branch
+        and run["status"] == "completed"
+        and run["conclusion"] == "success"
+        for run in runs
+    )
+
+
 class DefaultGoalDatabaseProbeTests(unittest.TestCase):
     """Mirrors generated-data-link-check's own build-state-independent probe:
     a `-rR -p` database dump against a nonexistent target name never
@@ -420,10 +430,61 @@ class RemoteCompletionGateTests(unittest.TestCase):
         self.assertIn("remote-completion-check:", text)
         self.assertIn("all-issues-completion-check: remote-completion-check", text)
         self.assertIn("git status --porcelain", text)
+        self.assertIn("git branch --show-current", text)
+        self.assertIn('if [ -z "$$branch" ]; then', text)
+        self.assertIn("HEAD is detached", text)
+        self.assertIn('remote completion requires master', text)
         self.assertIn("git rev-parse '@{u}'", text)
-        self.assertIn("--commit \"$$head_sha\" --workflow build.yml", text)
+        build_lookup = text.split("run=$$(gh run list", 1)[1].split("case", 1)[0]
+        self.assertIn("--commit \"$$head_sha\" --workflow build.yml", build_lookup)
+        self.assertIn("--branch master", build_lookup)
+        matrix_lookup = text.split("matrix=$$(gh run list", 1)[1].split("case", 1)[0]
+        self.assertIn("--commit \"$$head_sha\" --workflow full-matrix.yml", matrix_lookup)
+        self.assertIn("--branch master", matrix_lookup)
+        self.assertIn("Full Matrix CI for master", text)
+        self.assertNotIn("--workflow release-rehearsal.yml", text)
         self.assertIn("gh issue list", text)
         self.assertIn("--state open", text)
+
+    def test_same_sha_feature_matrix_cannot_replace_missing_master_matrix(self):
+        exact_master_sha = "a" * 40
+        runs = [
+            {
+                "commit": exact_master_sha,
+                "branch": "feature/master-only-matrix",
+                "status": "completed",
+                "conclusion": "success",
+            }
+        ]
+
+        self.assertFalse(has_successful_workflow(runs, exact_master_sha, "master"))
+        self.assertTrue(
+            has_successful_workflow(
+                runs,
+                exact_master_sha,
+                "feature/master-only-matrix",
+            )
+        )
+
+    def test_same_sha_pr_build_cannot_replace_missing_master_build(self):
+        exact_master_sha = "b" * 40
+        runs = [
+            {
+                "commit": exact_master_sha,
+                "branch": "agent/issue-93-review",
+                "status": "completed",
+                "conclusion": "success",
+            }
+        ]
+
+        self.assertFalse(has_successful_workflow(runs, exact_master_sha, "master"))
+        self.assertTrue(
+            has_successful_workflow(
+                runs,
+                exact_master_sha,
+                "agent/issue-93-review",
+            )
+        )
 
     def test_agent_instructions_make_remote_gate_mandatory(self):
         for path in (COPILOT_INSTRUCTIONS, CLAUDE_INSTRUCTIONS):
