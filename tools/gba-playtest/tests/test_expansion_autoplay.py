@@ -156,7 +156,9 @@ class AutoplayHostTests(unittest.TestCase):
                 path = FINGERPRINTS / f"{name}.json"
                 self.assertTrue(path.is_file(), f"missing runtime fingerprint {path}")
                 fingerprint = gba_playtest.validate_fingerprint(
-                    json.loads(path.read_text(encoding="utf-8")), str(path)
+                    json.loads(path.read_text(encoding="utf-8")),
+                    str(path),
+                    policy="behavior",
                 )
                 self.assertEqual(check(fingerprint, *args), [])
 

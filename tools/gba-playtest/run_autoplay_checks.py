@@ -250,12 +250,16 @@ def _verify_or_capture(
 ) -> list[str]:
     path = _fingerprint_path(name)
     if capture_fingerprints:
-        path.write_text(gba_playtest.serialize_fingerprint(capture), encoding="utf-8")
+        baseline = dict(capture)
+        baseline.pop("rom", None)
+        path.write_text(gba_playtest.serialize_fingerprint(baseline), encoding="utf-8")
         return []
     if not path.is_file():
         return [f"missing checked fingerprint: {path}"]
     expected = gba_playtest.validate_fingerprint(
-        json.loads(path.read_text(encoding="utf-8")), str(path)
+        json.loads(path.read_text(encoding="utf-8")),
+        str(path),
+        policy="behavior",
     )
     return gba_playtest.compare_fingerprints(expected, capture, policy="behavior")
 
