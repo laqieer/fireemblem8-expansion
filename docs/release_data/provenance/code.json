@@ -1472,8 +1472,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "9c77ddf12830af666a5899ae3e385a1af66f2137",
-    "sha256": "9660cd346465536db48d13935e9fa5e925b1d2825181171208e1d5f46ff05e5d"
+    "oid": "7010a4c60bcbe38416345caa6fe2b20bb21c67fc",
+    "sha256": "deeead970be5e378025c05edf744d69f1352f86d3aaf61b86e89683f81470704"
   },
   {
     "path": "docs/release_data/version_ledger.json",
@@ -4604,8 +4604,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "1105a0f7629733798910cb5720cade5c168fb3bd",
-    "sha256": "bed3fae579bae0829f6d9116d601a9c3575e772805288253b639d191bdf096bc"
+    "oid": "840d351ea0e237a28fc92b58ed2493126901083b",
+    "sha256": "c87b9fac107b2288fc2407aed8edaf8ad48b75e7edf691625c522883e71ac91c"
   },
   {
     "path": "scripts/classify_blob.py",
@@ -4784,8 +4784,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "16d7b7f20fb475edc8964e6c0f8862352dc12409",
-    "sha256": "0864e3e913eae87e9d10ee1e765c90c467887ec483a259535b85ff1ea730cc16"
+    "oid": "21d0a3a6d84d1fbc700e22217cd075783e8d60f0",
+    "sha256": "52b4e9c22c2b568f6cf32a77ab3928846d09e04bc8da86d0278384565ebedb7b"
   },
   {
     "path": "scripts/docs_check_tests/test_development_workflow_skill.py",
