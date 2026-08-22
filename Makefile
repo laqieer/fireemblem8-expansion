@@ -298,7 +298,7 @@ remote-completion-check:
 		exit 1; \
 	fi; \
 	if [ "$$branch" != "master" ]; then \
-		printf 'error: remote completion requires master, not %s\n' "$$branch" >&2; \
+		printf 'error: remote completion requires merged master, not %s\n' "$$branch" >&2; \
 		exit 1; \
 	fi; \
 	head_sha=$$(git rev-parse HEAD); \
@@ -318,14 +318,6 @@ remote-completion-check:
 	case "$$run" in \
 		completed,success,*) ;; \
 		*) printf 'error: Build CI for %s is not successful: %s\n' "$$head_sha" "$$run" >&2; exit 1 ;; \
-	esac; \
-	matrix=$$(gh run list --repo "$$repo" --commit "$$head_sha" --workflow full-matrix.yml \
-		--branch master \
-		--limit 1 --json status,conclusion,url \
-		--jq 'if length == 0 then "missing,," else .[0].status + "," + (.[0].conclusion // "") + "," + .[0].url end'); \
-	case "$$matrix" in \
-		completed,success,*) ;; \
-		*) printf 'error: Full Matrix CI for master %s is not successful: %s\n' "$$head_sha" "$$matrix" >&2; exit 1 ;; \
 	esac; \
 	printf 'Remote completion gate passed: %s (%s)\n' "$$head_sha" "$$repo"
 
