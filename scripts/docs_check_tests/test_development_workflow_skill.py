@@ -240,6 +240,35 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 with self.subTest(surface=surface, requirement=requirement):
                     self.assertIn(requirement, text)
 
+    def test_continuous_pr_monitoring_policy_is_mirrored(self):
+        _, skill = read_skill()
+        surfaces = {
+            "skill": skill,
+            "Copilot instructions": (ROOT / ".github" / "copilot-instructions.md").read_text(
+                encoding="utf-8"
+            ),
+            "CLAUDE": CLAUDE_PATH.read_text(encoding="utf-8"),
+        }
+        required_contract = (
+            "After each PR opens or updates",
+            "exact-head Build CI",
+            "Copilot comments/threads",
+            "mergeability",
+            "triage review findings",
+            "immediately",
+            "normal `master` merge",
+            "monitor exact-master combined Build CI",
+            "rescan every open PR for",
+            "conflicts",
+            "Fix forward or revert a broken `master`",
+            "unrelated PRs do not wait",
+            "on healthy master runs",
+        )
+        for surface, text in surfaces.items():
+            for requirement in required_contract:
+                with self.subTest(surface=surface, requirement=requirement):
+                    self.assertIn(requirement, text)
+
     def test_issue_specific_pull_request_and_stack_contract(self):
         _, text = read_skill()
         required_contract = (

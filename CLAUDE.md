@@ -84,6 +84,13 @@ plus replacement Build/review. Never pause or cancel unaffected PR CI because
 of priority or unrelated `master` movement; cancel superseded CI only when its
 candidate actually changes.
 
+After each PR opens or updates, concurrently monitor exact-head Build CI,
+Copilot comments/threads, and mergeability; triage review findings
+immediately. Refresh real conflicts with a normal `master` merge. After every
+merge, monitor exact-master combined Build CI and rescan every open PR for
+conflicts. Fix forward or revert a broken `master`; unrelated PRs do not wait
+on healthy master runs.
+
 First-time setup: `./scripts/quickstart.sh` installs/probes the modern
 toolchain, an ARM GDB debugger, the mGBA GDB-server frontend, and libmGBA by
 default, **no agbcc of any kind**; pass
