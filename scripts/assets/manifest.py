@@ -790,8 +790,10 @@ class ChapterMapLayoutKind:
         return ((self._object, record.sources), (self._modern_object, record.sources))
 
     def source_dependencies(self, record):
-        del record
-        return ()
+        return (
+            record.ownership["chapterSettings"],
+            record.ownership["tableSource"],
+        )
 
     def generated_outputs(self, record, out_dir):
         del record, out_dir
@@ -1003,8 +1005,7 @@ class TiledTmxMapLayoutKind(ChapterMapLayoutKind):
         )
 
     def source_dependencies(self, record):
-        del record
-        return ()
+        return super().source_dependencies(record) + (self._map_data_source,)
 
 
 class FormattedPortraitPackageKind:

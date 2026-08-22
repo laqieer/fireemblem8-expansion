@@ -831,6 +831,121 @@ class AssetManifestTests(unittest.TestCase):
             asset_makefile,
         )
 
+    def assert_asset_manifest_would_regenerate(
+        self, manifest_path, output_dir, dependencies
+    ):
+        manifest.generate(manifest_path, output_dir)
+        target = os.path.relpath(
+            os.path.join(output_dir, manifest.OUTPUT_MAKEFILE), REPO_ROOT
+        )
+        target_path = os.path.join(output_dir, manifest.OUTPUT_MAKEFILE)
+        manifest_arg = os.path.relpath(manifest_path, REPO_ROOT)
+        output_arg = os.path.relpath(output_dir, REPO_ROOT)
+        driver_path = os.path.join(TEST_ROOT, "asset-manifest-incremental.mk")
+        with open(driver_path, "w", encoding="utf-8") as handle:
+            handle.write(
+                "PYTHON := {python}\n"
+                "ASSET_MANIFEST := {manifest}\n"
+                "ASSET_OUTPUT_DIR := {output}\n"
+                "include assets.mk\n"
+                ".PHONY: verify\n"
+                "verify: $(ASSET_OUTPUT_MK)\n".format(
+                    python=sys.executable,
+                    manifest=manifest_arg,
+                    output=output_arg,
+                )
+            )
+
+        for dependency in dependencies:
+            dependency_path = os.path.join(REPO_ROOT, dependency)
+            original = os.stat(dependency_path)
+            target_original = os.stat(target_path)
+            updated_mtime = max(
+                time.time_ns(),
+                target_original.st_mtime_ns + 2_000_000_000,
+            )
+            os.utime(
+                dependency_path,
+                ns=(original.st_atime_ns, updated_mtime),
+            )
+            os.utime(
+                target_path,
+                ns=(target_original.st_atime_ns, updated_mtime - 1_000_000_000),
+            )
+            try:
+                result = subprocess.run(
+                    [
+                        "make",
+                        "-n",
+                        "-f",
+                        driver_path,
+                        "verify",
+                    ],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("scripts.assets", result.stdout)
+            finally:
+                os.utime(
+                    dependency_path,
+                    ns=(original.st_atime_ns, original.st_mtime_ns),
+                )
+                os.utime(
+                    target_path,
+                    ns=(target_original.st_atime_ns, target_original.st_mtime_ns),
+                )
+
+    def test_immutable_validation_sources_trigger_asset_manifest_regeneration(self):
+        chapter_dependencies = (
+            "src/data/chapter_settings.json",
+            "src/data/data_8B363C.c",
+        )
+        legacy = valid_record()
+        legacy["id"] = "CH1_MAIN_MAP"
+        legacy["kind"] = "chapter-map-layout"
+        legacy["sources"] = [
+            "graphics/map/layout/Ch1Map.mar",
+            "graphics/map/layout/Ch1Map.json",
+        ]
+        legacy["options"] = {"format": "mar", "compression": "lz77"}
+        legacy["ownership"].update(
+            {"chapterSettingsIndex": 1, "mainLayerId": 8, "symbol": "Ch1Map"}
+        )
+        legacy["resources"].update({"mapWidth": 15, "mapHeight": 10})
+        legacy_manifest = self.write_manifest([legacy])
+        legacy_record = manifest.load_and_validate(legacy_manifest)[0]
+        self.assertEqual(
+            manifest.ChapterMapLayoutKind().source_dependencies(legacy_record),
+            chapter_dependencies,
+        )
+        self.assert_asset_manifest_would_regenerate(
+            legacy_manifest,
+            os.path.join(TEST_ROOT, "legacy-incremental"),
+            chapter_dependencies,
+        )
+
+        records = manifest.load_and_validate(
+            os.path.join(REPO_ROOT, "assets", "manifest.json")
+        )
+        tiled = next(
+            record for record in records if record.kind == manifest.TiledTmxMapLayoutKind.name
+        )
+        tiled_dependencies = chapter_dependencies + (
+            "src/data/const_data_chapter_maps.c",
+        )
+        self.assertEqual(
+            manifest.TiledTmxMapLayoutKind().source_dependencies(tiled),
+            tiled_dependencies,
+        )
+        self.assert_asset_manifest_would_regenerate(
+            os.path.join(REPO_ROOT, "assets", "manifest.json"),
+            os.path.join(REPO_ROOT, "build", "generated", "assets"),
+            tiled_dependencies,
+        )
+
     def test_asset_makefile_guards_only_tmx_incbin_consumers(self):
         guarded = subprocess.run(
             [

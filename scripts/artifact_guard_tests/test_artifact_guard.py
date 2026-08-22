@@ -223,6 +223,30 @@ class TestUnmergedIndexEntries(ArtifactGuardRepoTestCase):
         self.assertEqual(code, 1)
         self.assertEqual(lines, ["conflict.txt: unmerged-index-entry"])
 
+    def test_unmerged_manifest_never_grants_portrait_allowances_or_reads_blobs(self):
+        entries = (
+            artifact_guard.Entry("100644", "a" * 40, "assets/manifest.json", 1),
+            artifact_guard.Entry("100644", "b" * 40, "assets/manifest.json", 2),
+            artifact_guard.Entry(
+                "100644", "c" * 40, "assets/portraits/eirika/eirika.png", 0
+            ),
+        )
+        with mock.patch.object(
+            artifact_guard,
+            "_read_blob",
+            side_effect=AssertionError("unmerged manifest must not be read"),
+        ), mock.patch.object(artifact_guard, "read_blob_heads", return_value={}):
+            self.assertEqual(artifact_guard.declared_portrait_sources(entries), set())
+            findings = artifact_guard.scan(entries)
+        self.assertIn(("assets/manifest.json", "unmerged-index-entry"), findings)
+        self.assertIn(
+            (
+                "assets/portraits/eirika/eirika.png",
+                "restricted-extension-outside-allowed-root",
+            ),
+            findings,
+        )
+
 
 class TestDeterminismAndNoContentDisclosure(ArtifactGuardRepoTestCase):
     def test_output_is_sorted_and_never_contains_scanned_bytes(self):

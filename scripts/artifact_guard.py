@@ -228,7 +228,11 @@ def declared_portrait_sources(entries):
     manifest_entry = next(
         (
             entry for entry in entries
-            if entry.path == "assets/manifest.json" and entry.mode in REGULAR_MODES
+            if (
+                entry.path == "assets/manifest.json"
+                and entry.mode in REGULAR_MODES
+                and entry.stage == 0
+            )
         ),
         None,
     )
