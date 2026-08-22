@@ -1,7 +1,10 @@
 from dataclasses import dataclass
 from pathlib import Path
 import re
+from typing import FrozenSet, Tuple
 import unittest
+
+from scripts.check_docs import strip_fenced_blocks
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -13,7 +16,7 @@ PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 CLAUDE_PATH = ROOT / "CLAUDE.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
 MEANINGFUL_TEST_POLICY_HEADING = "Meaningful test evidence"
-MARKDOWN_HEADING = re.compile(r"^(?P<level>#{1,6}) (?P<heading>.+)$")
+MARKDOWN_HEADING = re.compile(r"^(?P<level>#{1,6})\s+(?P<heading>.+)$")
 POLICY_ATOM = re.compile(r"^[A-Za-z]+(?:[ /-][A-Za-z]+)*$")
 MEANINGFUL_TEST_POLICY_CLAUSE = re.compile(
     r"^- \*\*(?P<name>[^*:]+):\*\* (?P<status>[a-z-]+)"
@@ -105,18 +108,18 @@ CANONICAL_POLICY_SOURCE = (
 @dataclass(frozen=True)
 class PolicyItem:
     status: str
-    detail: tuple[tuple[str, frozenset[str]], ...] = ()
+    detail: Tuple[Tuple[str, FrozenSet[str]], ...] = ()
 
 
 @dataclass(frozen=True)
 class PolicyClause:
     status: str
-    items: frozenset[tuple[str, PolicyItem]]
+    items: FrozenSet[Tuple[str, PolicyItem]]
 
 
 @dataclass(frozen=True)
 class MeaningfulTestPolicy:
-    clauses: frozenset[tuple[str, PolicyClause]]
+    clauses: FrozenSet[Tuple[str, PolicyClause]]
 
 
 def read_skill():
@@ -141,7 +144,7 @@ def read_skill():
 
 
 def read_markdown_section(text, heading):
-    lines = text.splitlines()
+    lines = strip_fenced_blocks(text).splitlines()
     heading_lines = [
         (index, len(match.group("level")))
         for index, line in enumerate(lines)
@@ -518,6 +521,40 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             CANONICAL_POLICY_AST,
             self.assert_meaningful_test_policy(top_level_terminator),
         )
+        for policy_heading in (
+            "##  Meaningful test evidence",
+            "##\tMeaningful test evidence",
+        ):
+            with self.subTest(policy_heading=policy_heading):
+                self.assertEqual(
+                    CANONICAL_POLICY_AST,
+                    self.assert_meaningful_test_policy(
+                        policy_text.replace(
+                            "## Meaningful test evidence",
+                            policy_heading,
+                        )
+                    ),
+                )
+
+        fenced_policy_example = (
+            "```markdown\n"
+            "## Meaningful test evidence\n"
+            "- **Prohibited evidence:** permitted\n"
+            "```\n\n"
+            + policy_text
+        )
+        self.assertEqual(
+            CANONICAL_POLICY_AST,
+            self.assert_meaningful_test_policy(fenced_policy_example),
+        )
+        fenced_terminator_mutation = (
+            policy_text
+            + "\n```\n# Separate document section\n```\n"
+            + "Text-only tests are permitted.\n"
+        )
+        with self.assertRaises(AssertionError):
+            self.assert_meaningful_test_policy(fenced_terminator_mutation)
+
         wrapped_git_rationale = policy_text.replace(
             "  - **Git-text rationale:** required. "
             "git-tracks=source,review,history; "
