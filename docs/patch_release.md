@@ -61,11 +61,14 @@ README.txt
 ```
 
 The stdlib-only audited producer/applier is
-`scripts/modernize/bps_patch.py` (`stdlib-bps-target-read-v1`). It emits
-deterministic BPS TargetRead actions and validates all BPS source, target, and
-patch CRCs. The manifest is canonical JSON and binds the commit, full profile,
-configuration fingerprint, base/output/patch sizes and hashes, producer
-identity, expected base header, and embedded output metadata.
+`scripts/modernize/bps_patch.py` (`stdlib-bps-source-target-read-v1`). It emits
+deterministic, position-aligned BPS SourceRead runs for unchanged base bytes
+and TargetRead runs only for changed spans; the patch therefore cannot
+reconstruct the release without the exact checked base. It validates all BPS
+source, target, and patch CRCs. The manifest is canonical JSON and binds the
+commit, full profile, configuration fingerprint, complete base record
+(size, SHA-256, SHA-1, and header), output/patch sizes and hashes, producer
+identity, and embedded output metadata.
 
 After downloading the artifact and supplying a legal base locally, verify it
 without uploading either input or result:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -14,7 +15,12 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.text = WORKFLOW.read_text(encoding="utf-8")
-        cls.patch_job = cls.text.split("\n  patch-release:\n", 1)[1]
+        job = re.search(
+            r"(?ms)^  patch-release:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            cls.text,
+        )
+        cls.assertIsNotNone(job, "workflow must define a jobs.patch-release job")
+        cls.patch_job = job.group("body")
 
     def test_trusted_push_only_and_no_pr_publication(self):
         self.assertIn("github.event_name == 'push'", self.patch_job)

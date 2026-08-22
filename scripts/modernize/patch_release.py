@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import struct
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -88,6 +87,16 @@ def canonical_json(value: dict) -> bytes:
     return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
+def _validate_commit(commit: object) -> str:
+    if (
+        not isinstance(commit, str)
+        or len(commit) != 40
+        or any(char not in "0123456789abcdef" for char in commit)
+    ):
+        raise PatchReleaseError("artifact validation failed: commit must be a lowercase SHA-1")
+    return commit
+
+
 def _header(data: bytes) -> dict[str, object]:
     if len(data) < verify_rom_header.HEADER_END:
         raise PatchReleaseError("base validation failed: header is truncated")
@@ -125,6 +134,23 @@ def validate_base(data: bytes, contract: BaseContract = FE8U_REV0) -> None:
     for key, value in expected.items():
         if header[key] != value:
             raise PatchReleaseError(f"base validation failed: header {key} mismatch")
+
+
+def _base_record(data: bytes) -> dict:
+    header = _header(data)
+    return {
+        "size": len(data),
+        "sha256": sha256(data),
+        "sha1": hashlib.sha1(data).hexdigest(),
+        "header": {
+            "title": header["title"],
+            "game_code": header["game_code"],
+            "maker_code": header["maker_code"],
+            "fixed_byte": header["fixed_byte"],
+            "revision": header["revision"],
+            "checksum": header["checksum"],
+        },
+    }
 
 
 def _validate_profile_metadata(metadata: dict, commit: str) -> None:
@@ -179,19 +205,7 @@ def artifact_manifest(base: bytes, target: bytes, patch: bytes, metadata: dict, 
         "schema_version": SCHEMA_VERSION,
         "commit": commit,
         "profile": {"name": PROFILE_NAME, "settings": PROFILE_SETTINGS},
-        "base": {
-            "size": len(base),
-            "sha256": sha256(base),
-            "sha1": hashlib.sha1(base).hexdigest(),
-            "header": {
-                "title": BASE_TITLE,
-                "game_code": BASE_GAME_CODE,
-                "maker_code": BASE_MAKER_CODE,
-                "fixed_byte": BASE_FIXED_BYTE,
-                "revision": BASE_REVISION,
-                "checksum": BASE_CHECKSUM,
-            },
-        },
+        "base": _base_record(base),
         "output": {
             "size": len(target),
             "sha256": sha256(target),
@@ -226,8 +240,7 @@ def create_artifact(
 ) -> dict:
     if output_dir.exists():
         raise PatchReleaseError("artifact validation failed: output directory already exists")
-    if len(commit) != 40 or any(char not in "0123456789abcdef" for char in commit):
-        raise PatchReleaseError("artifact validation failed: commit must be a lowercase SHA-1")
+    _validate_commit(commit)
     validate_base(base, contract)
     _validate_profile_metadata(metadata, commit)
     validate_target(target, metadata)
@@ -244,50 +257,70 @@ def create_artifact(
 
 
 def verify_artifact(base: bytes, artifact_dir: Path, contract: BaseContract = FE8U_REV0) -> dict:
-    if not artifact_dir.is_dir():
+    if artifact_dir.is_symlink() or not artifact_dir.is_dir():
         raise PatchReleaseError("artifact validation failed: staging directory missing")
-    actual_files = {path.name for path in artifact_dir.iterdir() if path.is_file()}
-    if actual_files != ARTIFACT_FILES:
+    try:
+        entries = list(artifact_dir.iterdir())
+    except OSError:
+        raise PatchReleaseError("artifact validation failed: staging directory unreadable") from None
+    if (
+        {path.name for path in entries} != ARTIFACT_FILES
+        or any(path.is_symlink() or not path.is_file() for path in entries)
+    ):
         raise PatchReleaseError("artifact validation failed: allowlist mismatch")
-    manifest_bytes = (artifact_dir / "manifest.json").read_bytes()
+    manifest_bytes = _read_bytes(artifact_dir / "manifest.json", "manifest")
     try:
         manifest = json.loads(manifest_bytes)
     except ValueError as error:
         raise PatchReleaseError("artifact validation failed: manifest is malformed") from error
+    if not isinstance(manifest, dict):
+        raise PatchReleaseError("artifact validation failed: manifest is malformed")
     if canonical_json(manifest) != manifest_bytes:
         raise PatchReleaseError("artifact validation failed: manifest is not canonical")
     if manifest.get("schema_version") != SCHEMA_VERSION:
         raise PatchReleaseError("artifact validation failed: manifest schema mismatch")
     if manifest.get("profile") != {"name": PROFILE_NAME, "settings": PROFILE_SETTINGS}:
         raise PatchReleaseError("artifact validation failed: profile mismatch")
+    commit = _validate_commit(manifest.get("commit"))
     validate_base(base, contract)
-    if manifest.get("base", {}).get("sha256") != sha256(base):
-        raise PatchReleaseError("artifact validation failed: base digest mismatch")
-    patch = (artifact_dir / PATCH_FILENAME).read_bytes()
+    if manifest.get("base") != _base_record(base):
+        raise PatchReleaseError("artifact validation failed: base record mismatch")
+    patch = _read_bytes(artifact_dir / PATCH_FILENAME, "patch")
     patch_record = manifest.get("patch", {})
+    if not isinstance(patch_record, dict):
+        raise PatchReleaseError("artifact validation failed: patch record is malformed")
     if patch_record.get("filename") != PATCH_FILENAME or patch_record.get("sha256") != sha256(patch):
         raise PatchReleaseError("artifact validation failed: patch digest mismatch")
     if patch_record.get("size") != len(patch) or patch_record.get("producer_applier") != PRODUCER:
         raise PatchReleaseError("artifact validation failed: patch identity mismatch")
     target = bps_patch.apply_patch(base, patch)
     output = manifest.get("output", {})
+    if not isinstance(output, dict):
+        raise PatchReleaseError("artifact validation failed: output record is malformed")
     if output.get("size") != len(target) or output.get("sha256") != sha256(target):
         raise PatchReleaseError("artifact validation failed: output digest mismatch")
     metadata = output.get("metadata")
     if not isinstance(metadata, dict):
         raise PatchReleaseError("artifact validation failed: metadata missing")
-    _validate_profile_metadata(metadata, manifest.get("commit", ""))
+    _validate_profile_metadata(metadata, commit)
     validate_target(target, metadata)
-    if (artifact_dir / "README.txt").read_bytes() != readme(manifest["commit"]):
+    if _read_bytes(artifact_dir / "README.txt", "README") != readme(commit):
         raise PatchReleaseError("artifact validation failed: README mismatch")
     return manifest
+
+
+def _read_bytes(path: Path, label: str) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError:
+        raise PatchReleaseError(f"{label} unreadable") from None
 
 
 def _metadata(path: Path) -> dict:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        raise PatchReleaseError("profile validation failed: metadata is unreadable") from error
+    except (OSError, ValueError):
+        raise PatchReleaseError("profile validation failed: metadata is unreadable") from None
     if not isinstance(parsed, dict):
         raise PatchReleaseError("profile validation failed: metadata is not an object")
     return parsed
@@ -309,13 +342,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "create":
             create_artifact(
-                args.base.read_bytes(), args.target.read_bytes(), _metadata(args.metadata),
+                _read_bytes(args.base, "base image"), _read_bytes(args.target, "target image"),
+                _metadata(args.metadata),
                 args.output_dir, args.commit,
             )
         else:
-            verify_artifact(args.base.read_bytes(), args.artifact_dir)
+            verify_artifact(_read_bytes(args.base, "base image"), args.artifact_dir)
     except (PatchReleaseError, bps_patch.BpsError, OSError) as error:
-        print(f"error: {error}", file=sys.stderr)
+        message = "artifact I/O failed" if isinstance(error, OSError) else str(error)
+        print(f"error: {message}", file=sys.stderr)
         return 1
     print("patch release artifact verified")
     return 0

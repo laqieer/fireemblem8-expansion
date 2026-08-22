@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import os
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
@@ -58,13 +61,17 @@ def profile_metadata(commit: str) -> dict:
 
 
 class BpsTests(unittest.TestCase):
-    def test_target_read_patch_round_trips_deterministically(self):
-        source = b"approved base"
-        target = b"expanded target with a different length"
+    def test_source_and_target_reads_are_deterministic_and_require_base(self):
+        source = b"unchanged-prefix-" * 8 + b"source" + b"-unchanged-tail" * 8
+        target = b"unchanged-prefix-" * 8 + b"target" + b"-unchanged-tail" * 8
         first = bps_patch.create_patch(source, target)
         self.assertEqual(first, bps_patch.create_patch(source, target))
         self.assertTrue(first.startswith(b"BPS1"))
         self.assertEqual(bps_patch.apply_patch(source, first), target)
+        self.assertNotIn(target, first)
+        self.assertLess(len(first), len(target))
+        with self.assertRaisesRegex(bps_patch.BpsError, "source checksum mismatch"):
+            bps_patch.apply_patch(source[:-1] + b"?", first)
 
     def test_corrupt_patch_and_wrong_base_fail_closed(self):
         source = b"base"
@@ -84,6 +91,14 @@ class BaseContractTests(unittest.TestCase):
             patch_release.validate_base(base[:-1], contract)
         self.assertIn("size mismatch", str(context.exception))
         self.assertNotIn("FIREEMBLEM2E", str(context.exception))
+
+    def test_one_byte_base_mutation_is_rejected(self):
+        base = synthetic_base()
+        contract = synthetic_contract(base)
+        mutated = bytearray(base)
+        mutated[-1] ^= 1
+        with self.assertRaisesRegex(patch_release.PatchReleaseError, "SHA-256 mismatch"):
+            patch_release.validate_base(bytes(mutated), contract)
 
 
 class ArtifactTests(unittest.TestCase):
@@ -107,7 +122,7 @@ class ArtifactTests(unittest.TestCase):
                 )
                 patch_release.verify_artifact(base, artifact, contract)
 
-    def test_extra_file_or_wrong_base_prevents_verification(self):
+    def test_extra_file_directory_or_symlink_prevents_verification(self):
         base = synthetic_base()
         contract = synthetic_contract(base)
         target = b"synthetic patched output"
@@ -120,12 +135,81 @@ class ArtifactTests(unittest.TestCase):
                 (artifact / "forbidden.bin").write_bytes(b"extra")
                 with self.assertRaisesRegex(patch_release.PatchReleaseError, "allowlist mismatch"):
                     patch_release.verify_artifact(base, artifact, contract)
+                (artifact / "forbidden.bin").unlink()
+                (artifact / "forbidden-dir").mkdir()
+                with self.assertRaisesRegex(patch_release.PatchReleaseError, "allowlist mismatch"):
+                    patch_release.verify_artifact(base, artifact, contract)
+                (artifact / "forbidden-dir").rmdir()
+                (artifact / "README.txt").unlink()
+                os.symlink(artifact / "manifest.json", artifact / "README.txt")
+                with self.assertRaisesRegex(patch_release.PatchReleaseError, "allowlist mismatch"):
+                    patch_release.verify_artifact(base, artifact, contract)
+
+    def test_manifest_requires_a_valid_commit_and_complete_base_record(self):
+        base = synthetic_base()
+        contract = synthetic_contract(base)
+        target = b"synthetic patched output"
+        commit = "d" * 40
+        metadata = profile_metadata(commit)
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = Path(tmp) / "artifact"
+            with mock.patch.object(patch_release, "validate_target"):
+                patch_release.create_artifact(base, target, metadata, artifact, commit, contract)
+                manifest_path = artifact / "manifest.json"
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                del manifest["commit"]
+                manifest_path.write_bytes(patch_release.canonical_json(manifest))
+                with self.assertRaisesRegex(patch_release.PatchReleaseError, "commit"):
+                    patch_release.verify_artifact(base, artifact, contract)
+
+                manifest["commit"] = commit
+                for key, value in (
+                    ("size", len(base) + 1),
+                    ("sha256", "0" * 64),
+                    ("sha1", "0" * 40),
+                ):
+                    with self.subTest(key=key):
+                        manifest["base"][key] = value
+                        manifest_path.write_bytes(patch_release.canonical_json(manifest))
+                        with self.assertRaisesRegex(
+                            patch_release.PatchReleaseError, "base record mismatch"
+                        ):
+                            patch_release.verify_artifact(base, artifact, contract)
+                        manifest["base"] = patch_release._base_record(base)
+
+                manifest["base"]["header"]["revision"] = 1
+                manifest_path.write_bytes(patch_release.canonical_json(manifest))
+                with self.assertRaisesRegex(patch_release.PatchReleaseError, "base record mismatch"):
+                    patch_release.verify_artifact(base, artifact, contract)
 
     def test_missing_item_cap_metadata_is_rejected(self):
         metadata = profile_metadata("c" * 40)
         del metadata["item_id_cap"]
         with self.assertRaisesRegex(patch_release.PatchReleaseError, "item_id_cap mismatch"):
             patch_release._validate_profile_metadata(metadata, "c" * 40)
+
+    def test_cli_read_errors_do_not_disclose_paths(self):
+        stderr = io.StringIO()
+        error = OSError(2, "No such file or directory", "/restricted/legal-base.gba")
+        with mock.patch.object(Path, "read_bytes", side_effect=error), redirect_stderr(stderr):
+            result = patch_release.main(
+                [
+                    "create",
+                    "--base",
+                    "/restricted/legal-base.gba",
+                    "--target",
+                    "/restricted/target.gba",
+                    "--metadata",
+                    "/restricted/metadata.json",
+                    "--output-dir",
+                    "/restricted/artifact",
+                    "--commit",
+                    "e" * 40,
+                ]
+            )
+        self.assertEqual(result, 1)
+        self.assertIn("base image unreadable", stderr.getvalue())
+        self.assertNotIn("/restricted", stderr.getvalue())
 
 
 class NamedProfileTests(unittest.TestCase):

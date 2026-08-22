@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Deterministic, stdlib-only BPS producer and verifier.
 
-The encoder deliberately emits only BPS TargetRead actions.  This is less
-compact than a matching encoder, but makes the output independent of heuristic
-choices and keeps the producer/auditor surface small.  The applier implements
-all four BPS action types so it verifies standard BPS files as well.
+The encoder emits aligned SourceRead runs for unchanged bytes and TargetRead
+runs only for changes. This keeps the encoding non-heuristic while ensuring a
+patch cannot reconstruct its output without the exact source image. The
+applier implements all four BPS action types so it verifies standard BPS files
+as well.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from pathlib import Path
 
 
 MAGIC = b"BPS1"
-IDENTITY = "stdlib-bps-target-read-v1"
+IDENTITY = "stdlib-bps-source-target-read-v1"
 ACTION_SOURCE_READ = 0
 ACTION_TARGET_READ = 1
 ACTION_SOURCE_COPY = 2
@@ -71,9 +72,24 @@ def create_patch(source: bytes, target: bytes, metadata: bytes = b"") -> bytes:
     body += encode_number(len(target))
     body += encode_number(len(metadata))
     body += metadata
-    if target:
-        body += encode_number(((len(target) - 1) << 2) | ACTION_TARGET_READ)
-        body += target
+
+    offset = 0
+    while offset < len(target):
+        source_read = offset < len(source) and source[offset] == target[offset]
+        start = offset
+        offset += 1
+        while offset < len(target):
+            unchanged = offset < len(source) and source[offset] == target[offset]
+            if unchanged != source_read:
+                break
+            offset += 1
+
+        length = offset - start
+        action = ACTION_SOURCE_READ if source_read else ACTION_TARGET_READ
+        body += encode_number(((length - 1) << 2) | action)
+        if action == ACTION_TARGET_READ:
+            body += target[start:offset]
+
     body += struct.pack("<II", crc32(source), crc32(target))
     body += struct.pack("<I", crc32(bytes(body)))
     return bytes(body)
