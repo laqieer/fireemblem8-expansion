@@ -227,9 +227,12 @@ def readme(commit: str) -> bytes:
         f"Profile: {PROFILE_NAME}\n\n"
         "This artifact distributes no ROM, ELF, map, save, base image, or base-image location.\n"
         "Obtain a legal Fire Emblem: The Sacred Stones (USA) revision 0 image independently.\n"
-        "Before applying, verify the base identity in manifest.json. Apply the fixed BPS file with\n"
-        f"the audited {PRODUCER} implementation (`python3 -m scripts.modernize.patch_release verify`).\n"
-        "Verify the reconstructed output against manifest.json and the embedded ExpansionMetadata.\n"
+        "First validate the artifact, base identity, manifest, and embedded metadata with\n"
+        "`python3 -m scripts.modernize.patch_release verify`; it reconstructs in memory and\n"
+        "does not write an output ROM. To write a separate local output, run:\n"
+        "python3 -m scripts.modernize.bps_patch apply --source /path/to/legal-fe8u-rev0 "
+        f"--patch {PATCH_FILENAME} --output /path/to/patched-fireemblem8-expansion.gba\n"
+        f"This audited {PRODUCER} apply command validates BPS checksums; never overwrite the base.\n"
         "The Actions artifact is retained for 30 days; source builds using the named profile are equivalent.\n"
     ).encode("ascii")
 

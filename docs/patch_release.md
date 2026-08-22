@@ -70,14 +70,30 @@ commit, full profile, configuration fingerprint, complete base record
 (size, SHA-256, SHA-1, and header), output/patch sizes and hashes, producer
 identity, and embedded output metadata.
 
-After downloading the artifact and supplying a legal base locally, verify it
-without uploading either input or result:
+After downloading the artifact and supplying a legal base locally, first
+validate the artifact without uploading either input or result:
 
 ```bash
 python3 -m scripts.modernize.patch_release verify \
   --base /path/to/legal-fe8u-rev0 \
   --artifact-dir /path/to/unpacked-artifact
 ```
+
+`verify` validates the base, allowlist, manifest, BPS checksums, reconstructed
+target digest, and embedded metadata. It reconstructs the target only in
+memory and **does not write an output ROM**. To write a separately named local
+output after validation, use the audited BPS applier:
+
+```bash
+python3 -m scripts.modernize.bps_patch apply \
+  --source /path/to/legal-fe8u-rev0 \
+  --patch /path/to/unpacked-artifact/fireemblem8-expansion-all-locales-all-features-aapcs.bps \
+  --output /path/to/patched-fireemblem8-expansion.gba
+```
+
+The apply command validates BPS source, target, and patch CRCs before writing
+the chosen output path. Do not overwrite the independently obtained base, and
+do not publish the base or resulting ROM.
 
 For a local build plus round-trip artifact check, use:
 
@@ -93,20 +109,8 @@ restricted bytes.
 
 ## Tester cases
 
-`TC-CI-PATCH-049-001` validates a trusted SHA-named artifact with the approved
-base: verification must reconstruct the manifest digest, prove the embedded
-32 MiB profile metadata, and retain the source-build boot/runtime checks.
-Its negative control is the unchanged English-only, default-off, 16 MiB bare
-`make` path.
-
-`TC-CI-PATCH-049-002` supplies a missing, malformed, wrong-size, wrong-header,
-wrong-hash, or one-byte-modified base. It must fail before artifact creation
-or upload and disclose no base content or protected source. The synthetic host
-tests cover these input and artifact-allowlist cases; workflow contract tests
-prove the trusted-event and no-PR-secret boundaries.
-
-Dependencies are the existing modern configuration/metadata, generated-data,
-localization, linker budget, boot/runtime, and artifact-guard seams. The
-profile conflicts with output-root contamination, profile-incompatible SRAM,
-untrusted secret access, and non-`preserve` BGM policies; it has no new public
-C API, save migration, localization-ID migration, or archival-lane behavior.
+The canonical human procedures and machine-indexed definitions are
+[`TC-CI-PATCH-049-001` and `TC-CI-PATCH-049-002`](test-cases/patch-release.md).
+They cover trusted local validation/application and fail-closed malformed or
+untrusted inputs. Their dependency, conflict, save, cleanup, and automation
+contracts are authoritative over this summary.

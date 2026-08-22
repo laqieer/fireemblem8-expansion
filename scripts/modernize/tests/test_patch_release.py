@@ -82,6 +82,35 @@ class BpsTests(unittest.TestCase):
         with self.assertRaises(bps_patch.BpsError):
             bps_patch.apply_patch(source, corrupt)
 
+    def test_apply_cli_writes_a_distinct_requested_output(self):
+        source = b"legal base"
+        target = b"patched output"
+        patch = bps_patch.create_patch(source, target)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_path = root / "base.gba"
+            patch_path = root / "artifact.bps"
+            output_path = root / "patched.gba"
+            source_path.write_bytes(source)
+            patch_path.write_bytes(patch)
+
+            self.assertEqual(
+                bps_patch.main(
+                    [
+                        "apply",
+                        "--source",
+                        str(source_path),
+                        "--patch",
+                        str(patch_path),
+                        "--output",
+                        str(output_path),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(source_path.read_bytes(), source)
+            self.assertEqual(output_path.read_bytes(), target)
+
 
 class BaseContractTests(unittest.TestCase):
     def test_wrong_base_is_rejected_without_disclosing_content(self):
@@ -210,6 +239,21 @@ class ArtifactTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("base image unreadable", stderr.getvalue())
         self.assertNotIn("/restricted", stderr.getvalue())
+
+    def test_generated_readme_distinguishes_validation_from_output_writing(self):
+        text = patch_release.readme("f" * 40).decode("ascii")
+        self.assertIn(
+            "`python3 -m scripts.modernize.patch_release verify`; it reconstructs in memory and\n"
+            "does not write an output ROM.",
+            text,
+        )
+        self.assertIn(
+            "python3 -m scripts.modernize.bps_patch apply --source /path/to/legal-fe8u-rev0 "
+            "--patch fireemblem8-expansion-all-locales-all-features-aapcs.bps "
+            "--output /path/to/patched-fireemblem8-expansion.gba",
+            text,
+        )
+        self.assertNotIn("Apply the fixed BPS file with\n", text)
 
 
 class NamedProfileTests(unittest.TestCase):

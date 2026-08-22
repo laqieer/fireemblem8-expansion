@@ -751,6 +751,40 @@ class TesterCaseRegistryTests(unittest.TestCase):
     def test_real_repository_foundation_registry_passes(self):
         self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
 
+    def test_patch_release_cases_are_indexed_with_complete_procedures(self):
+        registry_path = os.path.join(REAL_REPO_ROOT, check_docs.TEST_CASE_REGISTRY_PATH)
+        with open(registry_path, encoding="utf-8") as stream:
+            registry = json.load(stream)
+
+        feature = next(
+            entry for entry in registry["features"] if entry["id"] == "patch-release-artifact"
+        )
+        case_ids = ["TC-CI-PATCH-049-001", "TC-CI-PATCH-049-002"]
+        self.assertEqual(feature["required_cases"], case_ids)
+        cases = {entry["id"]: entry for entry in registry["cases"]}
+
+        for case_id in case_ids:
+            with self.subTest(case_id=case_id):
+                case = cases[case_id]
+                self.assertEqual(case["feature_id"], feature["id"])
+                self.assertTrue(case["profiles"])
+                self.assertTrue(case["automation"])
+                for field in (
+                    "purpose", "prerequisites", "actions", "expected_result",
+                    "negative_control", "interactions", "save_compatibility",
+                    "cleanup", "limitations",
+                ):
+                    self.assertTrue(case[field].strip(), field)
+                procedure = check_docs.read_text(
+                    os.path.join(REAL_REPO_ROOT, case["document"])
+                )
+                self.assertIn("## " + case_id + ":", procedure)
+                self.assertIn("### Actions", procedure)
+                self.assertIn("### Expected result", procedure)
+                self.assertIn("### Negative control", procedure)
+                self.assertIn("### Interactions and save compatibility", procedure)
+                self.assertIn("### Automation", procedure)
+
     def test_malformed_and_duplicate_case_ids_fail(self):
         for case_id in ("not-a-case", "TC-SAMPLE--001"):
             malformed = self._valid_registry()
