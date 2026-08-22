@@ -122,7 +122,7 @@ def gates(jobs: int = 2) -> List[Gate]:
             ],
             applicable_note=(
                 "fast host lane (same `host-tests` job): stdlib-only static "
-                "contracts for the dispatch-only Full Matrix CI workflow and "
+                "contracts for the master-only Full Matrix CI workflow and "
                 "its README badge path/name/link. No compiler, ROM, linker, "
                 "network, or subordinate runtime gate is invoked"
             ),
