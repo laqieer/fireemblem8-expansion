@@ -40,10 +40,10 @@ feature is covered. The feature-family backfills own that work:
 | [#58](https://github.com/laqieer/fireemblem8-expansion/issues/58) | Presentation, audio, and utility |
 | [#56](https://github.com/laqieer/fireemblem8-expansion/issues/56) | Localization and locale persistence |
 
-The shipped #55 gameplay and #57 core-framework backfills add their
-reference-document links and records. The remaining #56/#58 backfills change
-`coverage.mode` to `complete`, remove `deferred_issues`, and supply the
-explicit current shipped-feature index.
+The shipped #55 gameplay, #57 core-framework, and #58 presentation backfills
+add their reference-document links and records. The remaining #56 backfill
+changes `coverage.mode` to `complete`, removes `deferred_issues`, and supplies
+the explicit current shipped-feature index.
 In complete mode the checker fails if an indexed feature is absent, is not
 current, or lacks a required owned case. A retired or excluded record is not
 coverage: it requires an explicit reason and cannot satisfy a complete-mode
