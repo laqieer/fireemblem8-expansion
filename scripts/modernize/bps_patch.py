@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import struct
+import sys
 import zlib
 from pathlib import Path
 
@@ -167,6 +168,11 @@ def apply_patch(source: bytes, patch: bytes) -> bytes:
     return bytes(target)
 
 
+def validate_apply_paths(source: Path, output: Path) -> None:
+    if source.resolve() == output.resolve():
+        raise BpsError("BPS output path must differ from source")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -183,9 +189,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "create":
             args.output.write_bytes(create_patch(args.source.read_bytes(), args.target.read_bytes()))
         else:
+            validate_apply_paths(args.source, args.output)
             args.output.write_bytes(apply_patch(args.source.read_bytes(), args.patch.read_bytes()))
     except (BpsError, OSError) as error:
-        print(f"error: {error}")
+        print(f"error: {error}", file=sys.stderr)
         return 1
     return 0
 

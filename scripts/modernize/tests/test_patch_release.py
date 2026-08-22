@@ -9,7 +9,7 @@ import os
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -94,8 +94,10 @@ class BpsTests(unittest.TestCase):
             source_path.write_bytes(source)
             patch_path.write_bytes(patch)
 
-            self.assertEqual(
-                bps_patch.main(
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                result = bps_patch.main(
                     [
                         "apply",
                         "--source",
@@ -105,11 +107,87 @@ class BpsTests(unittest.TestCase):
                         "--output",
                         str(output_path),
                     ]
-                ),
-                0,
-            )
+                )
+            self.assertEqual(result, 0)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertEqual(stderr.getvalue(), "")
             self.assertEqual(source_path.read_bytes(), source)
             self.assertEqual(output_path.read_bytes(), target)
+
+    def test_apply_cli_rejects_source_and_symlink_alias_before_io(self):
+        source = b"legal base"
+        patch = bps_patch.create_patch(source, b"patched output")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_path = root / "base.gba"
+            patch_path = root / "artifact.bps"
+            symlink_path = root / "base-alias.gba"
+            source_path.write_bytes(source)
+            patch_path.write_bytes(patch)
+            symlink_path.symlink_to(source_path)
+
+            for output_path in (source_path, symlink_path):
+                with self.subTest(output=output_path.name):
+                    stdout = io.StringIO()
+                    stderr = io.StringIO()
+                    with (
+                        mock.patch.object(Path, "read_bytes") as read_bytes,
+                        mock.patch.object(Path, "write_bytes") as write_bytes,
+                        redirect_stdout(stdout),
+                        redirect_stderr(stderr),
+                    ):
+                        result = bps_patch.main(
+                            [
+                                "apply",
+                                "--source",
+                                str(source_path),
+                                "--patch",
+                                str(patch_path),
+                                "--output",
+                                str(output_path),
+                            ]
+                        )
+                    self.assertEqual(result, 1)
+                    self.assertEqual(read_bytes.call_count, 0)
+                    self.assertEqual(write_bytes.call_count, 0)
+                    self.assertEqual(stdout.getvalue(), "")
+                    self.assertIn("output path must differ from source", stderr.getvalue())
+                    self.assertEqual(source_path.read_bytes(), source)
+                    self.assertEqual(output_path.read_bytes(), source)
+            self.assertTrue(symlink_path.is_symlink())
+
+    def test_apply_cli_errors_write_stderr_without_mutating_paths(self):
+        source = b"legal base"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_path = root / "base.gba"
+            invalid_patch_path = root / "invalid.bps"
+            missing_patch_path = root / "missing.bps"
+            source_path.write_bytes(source)
+            invalid_patch_path.write_bytes(b"not a BPS patch")
+
+            for patch_path in (invalid_patch_path, missing_patch_path):
+                with self.subTest(patch=patch_path.name):
+                    output_path = root / (patch_path.stem + ".gba")
+                    stdout = io.StringIO()
+                    stderr = io.StringIO()
+                    with redirect_stdout(stdout), redirect_stderr(stderr):
+                        result = bps_patch.main(
+                            [
+                                "apply",
+                                "--source",
+                                str(source_path),
+                                "--patch",
+                                str(patch_path),
+                                "--output",
+                                str(output_path),
+                            ]
+                        )
+                    self.assertEqual(result, 1)
+                    self.assertEqual(stdout.getvalue(), "")
+                    self.assertTrue(stderr.getvalue().startswith("error: "))
+                    self.assertEqual(source_path.read_bytes(), source)
+                    self.assertFalse(output_path.exists())
 
 
 class BaseContractTests(unittest.TestCase):
