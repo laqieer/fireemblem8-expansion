@@ -1,0 +1,389 @@
+{
+  "schema_version": 1,
+  "coverage": {
+    "mode": "foundation",
+    "expected_feature_ids": [
+      "tester-case-catalog"
+    ],
+    "deferred_issues": [
+      "https://github.com/laqieer/fireemblem8-expansion/issues/55",
+      "https://github.com/laqieer/fireemblem8-expansion/issues/56",
+      "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+      "https://github.com/laqieer/fireemblem8-expansion/issues/58"
+    ],
+    "reason": "The feature backfill issues own the current shipped-feature inventory and must switch this registry to complete mode after their entries land."
+  },
+  "features": [
+    {
+      "id": "tester-case-catalog",
+      "title": "Indexed tester-facing case catalog",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/54"
+      ],
+      "reference": "docs/test-cases/README.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CATALOG-001"
+      ]
+    },
+    {
+      "id": "mechanics-hook-registry",
+      "title": "Typed battle-stat mechanics hook registry",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/6"
+      ],
+      "reference": "docs/starter_features.md",
+      "status": "current",
+      "required_cases": [
+        "TC-GAMEPLAY-001"
+      ]
+    },
+    {
+      "id": "full-hp-guard-sample",
+      "title": "Full-HP Guard sample mechanic",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/6"
+      ],
+      "reference": "docs/starter_features.md",
+      "status": "current",
+      "required_cases": [
+        "TC-GAMEPLAY-002"
+      ]
+    },
+    {
+      "id": "danger-overlay-menu",
+      "title": "Threat Range danger overlay menu",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/6"
+      ],
+      "reference": "docs/starter_features.md",
+      "status": "current",
+      "required_cases": [
+        "TC-GAMEPLAY-003"
+      ]
+    },
+    {
+      "id": "starter-generated-content",
+      "title": "Starter generated-content example",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/6"
+      ],
+      "reference": "docs/starter_features.md",
+      "status": "current",
+      "required_cases": [
+        "TC-GAMEPLAY-004"
+      ]
+    },
+    {
+      "id": "casual-defeat-policy",
+      "title": "Casual defeat restoration policy",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/34"
+      ],
+      "reference": "docs/starter_features.md",
+      "status": "current",
+      "required_cases": [
+        "TC-GAMEPLAY-005"
+      ]
+    },
+    {
+      "id": "aoe-reference-module",
+      "title": "Typed AoE reference module",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/42"
+      ],
+      "reference": "docs/aoe.md",
+      "status": "current",
+      "required_cases": [
+        "TC-GAMEPLAY-006"
+      ]
+    },
+    {
+      "id": "optional-gameplay-combinations",
+      "title": "Supported optional gameplay combinations",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/55"
+      ],
+      "reference": "docs/test-cases/optional-gameplay.md",
+      "status": "current",
+      "required_cases": [
+        "TC-GAMEPLAY-007"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "TC-CATALOG-001",
+      "title": "Tester-case catalog foundation",
+      "feature_id": "tester-case-catalog",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/54"
+      ],
+      "document": "docs/test-cases/foundation.md",
+      "anchor": "tc-catalog-001-tester-case-catalog-foundation",
+      "profiles": [
+        "Clean source checkout with Python 3; no ROM, emulator, artifact, or optional feature profile"
+      ],
+      "purpose": "Exercise the stable catalog schema and checker integration that future feature cases extend.",
+      "prerequisites": "Start from the repository root with docs/test-cases and scripts/check_docs.py present; no save state is needed.",
+      "actions": "Inspect the catalog index, template, and registry; run the focused docs-checker unit test and the checker command named below.",
+      "expected_result": "The registry exposes separate feature and case records, the procedure is indexed, and both commands accept the valid foundation data.",
+      "negative_control": "Focused fixtures reject malformed or duplicate IDs, unknown ownership, missing links or anchors, placeholders, unnamed automation, missing exclusion rationale, and a missing complete-mode feature.",
+      "interactions": "Depends on issue #53's tester-case contract. The feature backfill is deliberately deferred to issues #55 through #58.",
+      "save_compatibility": "No save bytes, migration, compatibility epoch, or runtime profile changes.",
+      "cleanup": "No cleanup is required.",
+      "limitations": "This foundation validates the schema and extension seam only; it does not yet assert full current-feature coverage.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs -v",
+          "evidence": "scripts/docs_check_tests/test_check_docs.py"
+        },
+        {
+          "command": "python3 scripts/check_docs.py --check",
+          "evidence": "scripts/check_docs.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GAMEPLAY-001",
+      "title": "Mechanics registry applies ordered, bounded hooks",
+      "feature_id": "mechanics-hook-registry",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/6",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/55"
+      ],
+      "document": "docs/test-cases/optional-gameplay.md",
+      "anchor": "tc-gameplay-001-mechanics-registry-applies-ordered-bounded-hooks",
+      "profiles": [
+        "Modern AAPCS release starter profile with mechanics hooks and sample enabled",
+        "Modern AAPCS default profile with mechanics hooks disabled"
+      ],
+      "purpose": "Verify deterministic registry order, bounded registration failures, the real battle seam, and disabled inertness.",
+      "prerequisites": "Repository root with a host C compiler; libmGBA is required only by the mapped ROM gate.",
+      "actions": "Run the mechanics host suite, the release starter hook gate, and the sample-without-hooks dependency failure.",
+      "expected_result": "The registry is ordered, accepts eight entries, refuses the ninth, the enabled real bout reports the documented counters and +1 defence delta, and invalid dependencies fail before compilation.",
+      "negative_control": "The flags-off host and ROM paths leave all hook state inert and preserve the same resolved vanilla battle.",
+      "interactions": "The sample and starter content require hooks; danger, casual, and AoE are independent.",
+      "save_compatibility": "Diagnostic fingerprint only; no save field, layout, migration, or compatibility-epoch change.",
+      "cleanup": "Use make clean_fast only to remove artifacts.",
+      "limitations": "The registry is a battle-stat seam, not a content catalog, option menu, or persisted setting.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_mechanics.MechanicsRegistryHostTests -v",
+          "evidence": "tools/gba-playtest/tests/test_expansion_mechanics.py"
+        },
+        {
+          "command": "make expansion-modern-starter-hook-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/starter-hook-clean-modern-release.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-GAMEPLAY-002",
+      "title": "Full-HP Guard grants exactly one bounded defence",
+      "feature_id": "full-hp-guard-sample",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/6",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/55"
+      ],
+      "document": "docs/test-cases/optional-gameplay.md",
+      "anchor": "tc-gameplay-002-full-hp-guard-grants-exactly-one-bounded-defence",
+      "profiles": [
+        "Modern AAPCS release starter profile with mechanics hooks and sample enabled",
+        "Modern AAPCS default profile with mechanics hooks and sample disabled"
+      ],
+      "purpose": "Prove the sample's full-HP condition, exact delta, cap, and real-combat seam.",
+      "prerequisites": "Repository root; the mapped clean-boot route needs libmGBA.",
+      "actions": "Run the sample host test, the release starter hook gate, and the disabled host test.",
+      "expected_result": "Full HP adds exactly +1 defence, damaged subjects add zero, and the 99-defence cap bounds the result.",
+      "negative_control": "A disabled sample is absent, inert, and cannot be enabled without its required registry.",
+      "interactions": "Starter content adds a separate +5 avoid callback through the same registry without changing defence behavior.",
+      "save_compatibility": "No save state, layout, migration, or compatibility-epoch impact.",
+      "cleanup": "Use make clean_fast only to remove artifacts.",
+      "limitations": "The content-free sample has no player-facing toggle and is not a downstream ruleset.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_mechanics.MechanicsRegistryHostTests.test_sample_exact_effect_and_clamp -v",
+          "evidence": "tools/gba-playtest/tests/test_expansion_mechanics.py"
+        },
+        {
+          "command": "make expansion-modern-starter-hook-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/fingerprints/starter-hook-clean-modern-release.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-GAMEPLAY-003",
+      "title": "Threat Range menu toggles and safely returns to the map",
+      "feature_id": "danger-overlay-menu",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/6",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/55"
+      ],
+      "document": "docs/test-cases/optional-gameplay.md",
+      "anchor": "tc-gameplay-003-threat-range-menu-toggles-and-safely-returns-to-the-map",
+      "profiles": [
+        "Modern AAPCS debug or release starter QoL profile with danger overlay enabled",
+        "Matching modern AAPCS default profile with danger overlay disabled"
+      ],
+      "purpose": "Verify the player-reachable overlay lifecycle and its default-disabled absence.",
+      "prerequisites": "Repository root with libmGBA; the scenario starts clean and creates no save fixture.",
+      "actions": "Run the host table tests and the debug QoL gate; select Threat Range and cancel twice on the enabled Prologue map.",
+      "expected_result": "The menu adds one entry, displays exactly 39 danger tiles, cancels twice, and returns to an interactive map.",
+      "negative_control": "The default menu is vanilla and its semantic overlay probe remains all-zero on the same route.",
+      "interactions": "Independent of mechanics, content, casual mode, and AoE; reuses the vanilla danger-zone path.",
+      "save_compatibility": "No saved option bit, save field, layout, migration, or compatibility-epoch change.",
+      "cleanup": "Exit with B; use make clean_fast only to remove artifacts.",
+      "limitations": "Semantic probe values automate range behavior; no extra threat UI or AI behavior is included.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_danger_overlay -v",
+          "evidence": "tools/gba-playtest/tests/test_expansion_danger_overlay.py"
+        },
+        {
+          "command": "make expansion-modern-starter-qol-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/starter-danger-overlay-modern-debug.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-GAMEPLAY-004",
+      "title": "Starter Sample Charm composes generated data and hooks",
+      "feature_id": "starter-generated-content",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/6",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/55"
+      ],
+      "document": "docs/test-cases/optional-gameplay.md",
+      "anchor": "tc-gameplay-004-starter-sample-charm-composes-generated-data-and-hooks",
+      "profiles": [
+        "Modern AAPCS debug content profile with item cap 0xCE, starter content, hooks, and sample enabled",
+        "Modern AAPCS starter profile with content disabled and vanilla item cap"
+      ],
+      "purpose": "Verify the authored item record, production name/UI path, serialization round trips, item-gated effect, and dependencies.",
+      "prerequisites": "Repository root; generated content is build-local and the runtime gate needs libmGBA.",
+      "actions": "Run the item expansion gate, the starter content host suite, and both invalid dependency profiles.",
+      "expected_result": "Sample Charm has halfword 0x03CE, three uses, icon 222, authored name, and exactly +5 avoid for its bearer only.",
+      "negative_control": "Content-disabled builds omit the callback, accessor, authored bytes, and expanded table; missing hooks or cap fail explicitly.",
+      "interactions": "Requires mechanics hooks and item cap 0xCE; sample is optional and all other optional gameplay modules are independent.",
+      "save_compatibility": "Existing item and game/suspend serialization only; no save layout, migration, or compatibility-epoch change.",
+      "cleanup": "Use make clean_fast to remove generated profile artifacts.",
+      "limitations": "Only the name is shown in game; help text is intentionally unset and this is one example, not a content pack.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_starter_content -v",
+          "evidence": "tools/gba-playtest/tests/test_expansion_starter_content.py"
+        },
+        {
+          "command": "FE8_ITEM_ID_CAP=0xCE EXPANSION_STARTER_CONTENT=1 make generated-data-content-text && FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make VPATH=build/generated/data expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1",
+          "evidence": "tools/gba-playtest/run_item_expansion_checks.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GAMEPLAY-005",
+      "title": "Casual defeat restores ordinary player defeats only",
+      "feature_id": "casual-defeat-policy",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/34",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/55"
+      ],
+      "document": "docs/test-cases/optional-gameplay.md",
+      "anchor": "tc-gameplay-005-casual-defeat-restores-ordinary-player-defeats-only",
+      "profiles": [
+        "Modern AAPCS profile with casual mode enabled",
+        "Modern AAPCS default profile with casual mode disabled"
+      ],
+      "purpose": "Execute ordinary-defeat marking/restoration and prove permanent-removal exclusions and cross-profile serialization.",
+      "prerequisites": "Repository root with a host C compiler; no campaign-specific death event or save fixture is required.",
+      "actions": "Run the casual host driver, the issue 34 contract suite, and enabled, disabled, and invalid config resolutions.",
+      "expected_result": "Enabled combat and arena defeats mark and restore at a chapter boundary; direct scripted and hazard paths remain permanent.",
+      "negative_control": "Disabled mode preserves ordinary permadeath and existing serialized marker state without activating restoration.",
+      "interactions": "Independent of starter, danger, and AoE modules; alternate restoration policies do not stack.",
+      "save_compatibility": "Uses existing packed unit and suspend state; no field, layout, migration, or compatibility-epoch change.",
+      "cleanup": "Use make distclean only if this case created Autoconf output.",
+      "limitations": "The framework ships no campaign-specific scripted-death chapter; the real policy host driver is the deterministic tester surface.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_casual_mode -v",
+          "evidence": "tools/gba-playtest/tests/test_expansion_casual_mode.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_issue34_35_resolvers.CasualModeContractTests -v",
+          "evidence": "scripts/modernize/tests/test_issue34_35_resolvers.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GAMEPLAY-006",
+      "title": "Typed AoE reference heals bounded allied targets",
+      "feature_id": "aoe-reference-module",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/42",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/55"
+      ],
+      "document": "docs/test-cases/optional-gameplay.md",
+      "anchor": "tc-gameplay-006-typed-aoe-reference-heals-bounded-allied-targets",
+      "profiles": [
+        "Modern AAPCS debug or release isolated AoE reference profile",
+        "Matching forced disabled AoE reference profile"
+      ],
+      "purpose": "Verify typed targeting, the bounded reference effect, state restoration, and disabled symbol omission.",
+      "prerequisites": "Repository root; libmGBA is needed by the mapped live gate.",
+      "actions": "Run the AoE host suite and the debug and release AoE gates.",
+      "expected_result": "A radius-2 ally heal applies exactly three HP in deterministic order, rejects over-capacity sets, and restores temporary probe state.",
+      "negative_control": "The disabled profile omits the probe and callback and leaves the public reference API inert.",
+      "interactions": "Independent of starter and casual flags and intentionally separate from the battle-stat registry.",
+      "save_compatibility": "Atomic rebuild stores no transient target, callback, pointer, or proc state and changes no save layout or epoch.",
+      "cleanup": "Use make clean_fast to remove the isolated enabled and disabled build roots.",
+      "limitations": "The reference is not a spell/item pack; downstream projects own item routes and UI.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_aoe -v",
+          "evidence": "tools/gba-playtest/tests/test_expansion_aoe.py"
+        },
+        {
+          "command": "make expansion-modern-aoe-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_aoe_checks.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GAMEPLAY-007",
+      "title": "Optional gameplay profiles compose without changing saves",
+      "feature_id": "optional-gameplay-combinations",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/55"
+      ],
+      "document": "docs/test-cases/optional-gameplay.md",
+      "anchor": "tc-gameplay-007-optional-gameplay-profiles-compose-without-changing-saves",
+      "profiles": [
+        "Modern AAPCS debug combined profile with all issue 55 optional gameplay flags enabled",
+        "Modern AAPCS default profile with all optional gameplay flags disabled"
+      ],
+      "purpose": "Verify the documented dependencies, independent optional modules, and save-neutral combined configuration.",
+      "prerequisites": "Repository root with a clean or command-line-only configuration.",
+      "actions": "Resolve the full combined profile, run configuration contracts, then run the starter and AoE member gates.",
+      "expected_result": "The full profile resolves, content and sample coexist, and each independent module retains its positive behavior.",
+      "negative_control": "The all-default profile is off and invalid dependencies or non-binary values fail before compilation.",
+      "interactions": "Sample requires hooks; content requires hooks and cap 0xCE; danger, casual, and AoE are otherwise independent with no conflicts.",
+      "save_compatibility": "All flags alter diagnostic fingerprint only and preserve ExpansionSaveMeta, packed-unit layout, and compatibility epoch.",
+      "cleanup": "Use make clean_fast for artifacts and make distclean only for generated Autoconf output.",
+      "limitations": "This is not an all-feature artifact and does not enable complete catalog coverage mode.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_expansion_config scripts.modernize.tests.test_issue34_35_resolvers -v",
+          "evidence": "scripts/modernize/tests/test_expansion_config.py"
+        },
+        {
+          "command": "make expansion-modern-starter-runtime-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/tests/test_starter_features_scenarios.py"
+        },
+        {
+          "command": "make expansion-modern-aoe-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_aoe_checks.py"
+        }
+      ]
+    }
+  ]
+}

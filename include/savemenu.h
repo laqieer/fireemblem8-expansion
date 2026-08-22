@@ -403,7 +403,7 @@ extern u16 * SpriteArray_SavemenuData_0[];
 extern u16 * SpriteArray_SavemenuData_1[];
 extern u16 * SpriteArray_SavemenuData_2[];
 extern u16 * SpriteArray_SavemenuData_3[];
-#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0)
+#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x06u) != 0)
 const u16 *GetSaveMenuMainOptionSprite(u8 spriteIdx);
 #else
 #define GetSaveMenuMainOptionSprite(spriteIdx) SpriteArray_SavemenuData_1[spriteIdx]

@@ -75,6 +75,10 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/asset_manifest.md | laqieer | current | Versioned source-owned asset manifest, ownership dependency generation, and adapter contract (issue #60)
 - docs/bgm_routing.md | laqieer | current | Typed BGM context routing, action selectors, and preserve/continue policy
 - docs/ui_presentation_registry.md | laqieer | current | Typed UI presentation manifests and bounded presentation-resource registry
+- docs/test-cases/README.md | laqieer | current | Indexed tester-facing case catalog, schema, and staged coverage lifecycle
+- docs/test-cases/template.md | laqieer | template | Reusable tester-facing case procedure template
+- docs/test-cases/foundation.md | laqieer | current | Tester procedure for the catalog and checker foundation (issue #54)
+- docs/test-cases/optional-gameplay.md | laqieer | current | Indexed optional gameplay procedures, profiles, negatives, save expectations, and automation (issue #55)
 - docs/localization.md | laqieer | current | Stable locale/message IDs, catalog authoring, prefs/UI, budgets, and runtime matrices (issue #18)
 - docs/game_localization_catalog.md | laqieer | current | Full-game FE8U-indexed CJK catalog generation, bounded runtime, and synthetic link gate
 - docs/game_locale_sources.md | laqieer | current | Maintainer reference for pinned FE8J/FE8CN imports, verified FE8U mappings, fallbacks, and regeneration gates
@@ -83,7 +87,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/cjk_fonts.md | laqieer | current | Maintainer reference for licensed Noto inputs, deterministic CJK font assets, budgets, and verification
 - docs/upstream-porting.md | laqieer | current | Canonical upstream-port tracking tooling reference (issue #12)
 - docs/issue-resolution-policy.md | laqieer | current | Wave 0 issue closure / review / legal-boundary governance baseline
-- docs/release_process.md | laqieer | current | Authoritative release-rehearsal/publication-eligibility process contract (issue #9)
+- docs/release_process.md | laqieer | current | Local deterministic archive and candidate-tree technical command reference
 - docs/public_api_policy.md | laqieer | current | Public API/SemVer scope and branch/tag conventions for this pre-1.0 project (issue #9)
 - docs/migration_registry.md | laqieer | current | EXPANSION_SAVE_COMPAT_EPOCH transition registry: mechanical-vs-manual migrations (issue #9)
 - docs/release_closure_candidate.md | laqieer | evidence | Issue #9 closure-candidate evidence report; not a closure claim or publication approval
