@@ -219,7 +219,9 @@ hand-written callback with a second event router.
 
 1. Run `make expansion-modern-idspace-active-check` and
    `FE8_ITEM_ID_CAP=0xCE make expansion-modern-idspace-active-check`.
-2. Run the debug and release item-expansion gates at cap `0xCE`.
+2. Run
+   `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
+   and repeat with `MODERN_CONFIG=release`.
 3. Compare the DEFAULT committed header with the ACTIVE generated header.
 
 ### Expected result
@@ -313,10 +315,27 @@ debugger, or release feature.
 ### Actions
 
 1. Run `GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -v`.
-2. Run a documented behavior-policy capture/verify pair against a newly built
-   modern ROM.
-3. Use the baseline test fixture to observe a deliberate mismatch diagnostic;
-   do not capture over an expected fingerprint.
+2. Build and capture a fresh debug ROM, then verify the capture under the
+   behavior policy:
+
+   ```sh
+   make expansion-modern-rom MODERN_CONFIG=debug MODERN_ABI=aapcs
+   python3 tools/gba-playtest/gba_playtest.py capture \
+     --rom build/expansion-modern/debug/aapcs/fireemblem8.gba \
+     --scenario tools/gba-playtest/scenarios/boot.json \
+     --output build/tc-core-007-boot.json
+   python3 tools/gba-playtest/gba_playtest.py verify \
+     --policy behavior \
+     --rom build/expansion-modern/debug/aapcs/fireemblem8.gba \
+     --scenario tools/gba-playtest/scenarios/boot.json \
+     --expected build/tc-core-007-boot.json
+   ```
+
+3. Run
+   `python3 -m unittest tools.gba-playtest.tests.test_baseline_no_autorefresh -v`
+   to exercise both a deliberate checkpoint mismatch and a matching capture.
+   The fixture checks the expected file's bytes and modification time after
+   each `verify`; do not capture over an expected fingerprint.
 
 ### Expected result
 
