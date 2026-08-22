@@ -1431,7 +1431,7 @@ class FullMatrixBadgeContractTests(unittest.TestCase):
 #      ac0ee5d7f17eb8e70175576cb46d9f320d8013cd merged into master.
 #   2. docs/framework-support.md said the item-ID-expansion checks were
 #      "gates 11-12" of the upstream verify gate set; the real, current
-#      scripts/upstream_port/verify.py gates() puts them at gates 12-13
+#      scripts/upstream_port/verify.py gates() puts them at gates 17-18
 #      of exactly 14.
 #
 # These tests prove: (a) every old phrase is flagged stale if it reappears,
@@ -1439,7 +1439,7 @@ class FullMatrixBadgeContractTests(unittest.TestCase):
 # batch-scoped technical boundary wording (which looks similar but is not a
 # live current-status claim) is NOT flagged, (d) the current docs/report
 # state #5 CLOSED with the real completion commit as merged evidence, and
-# (e) the "gates 12-13" claim is source-backed against the real
+# (e) the "gates 17-18" claim is source-backed against the real
 # scripts/upstream_port/verify.py gates() ordering -- never a hardcoded
 # fake substitute.
 # ---------------------------------------------------------------------------

@@ -181,7 +181,7 @@ python3 -m scripts.upstream_port verify --dry-run   # list the gate commands wit
 
 **⚠️ This builds and checks the CURRENT TRUSTED WORKTREE (your repo, after
 you manually applied whatever you accepted) — it never builds, checks out,
-or executes the upstream ref/tree.** It orchestrates all 18 current-master
+or executes the upstream ref/tree.** It orchestrates all 19 current-master
 mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
 carries the same 12 commands with argv/order preserved across its host and ROM
 jobs, plus the deliberately standalone issues #7/#17 documentation-governance
@@ -212,13 +212,14 @@ workflow gate described below.
 16. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs`
 17. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
 18. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
+19. `make expansion-modern-all-locales-all-features-check -j1`
 
 Gates 15-16 aggregate the complete modern debug/release ROM, linker, budget,
 shift, save, starter-feature, and localization runtime matrices through
 `expansion-modern-linker-check`. Gates 17-18 reuse the item-expansion runtime
 probe at cap `0xCE`; the three issue #6 arguments make the same ROM also prove
-the typed starter-content record and both registered mechanics. No extra ROM
-build or gate is added.
+the typed starter-content record and both registered mechanics. No additional
+item-expansion ROM build or gate is added.
 
 ### Standalone workflow check
 
@@ -231,7 +232,7 @@ python3 scripts/check_docs.py --check --check-examples
 ```
 
 This gate is stdlib-only, zero-network, and zero-ROM, and runs before
-dependency/tool installation. It is additional to all 18 mirrored verifier
+dependency/tool installation. It is additional to all 19 mirrored verifier
 gates and intentionally has no `verify.gates()` entry; it does not weaken,
 reorder, or replace any mirrored command.
 

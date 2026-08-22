@@ -124,7 +124,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_issue_7_17_docs_governance_is_a_standalone_workflow_step_not_a_verify_gate(self):
-        """Docs governance stays outside the current-master 18-gate mirror
+        """Docs governance stays outside the current-master 19-gate mirror
         while remaining required, argv-identical, and immediately after the
         artifact guard in build.yml."""
         names = [g.name for g in verify_mod.gates()]
