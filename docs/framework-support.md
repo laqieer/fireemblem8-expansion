@@ -116,8 +116,8 @@ no ROM build or network access is required for either.
 ### Dispatch-only full matrix
 
 Prefer focused local checks during iteration. Once the candidate branch is
-pushed, run the expensive host, modern debug/release, archival, and
-release-evidence lanes in parallel:
+pushed, run the expensive host, modern debug/release, and archival lanes in
+parallel:
 
 ```bash
 gh workflow run full-matrix.yml --ref <branch>
@@ -126,22 +126,22 @@ gh run watch <run-id> --exit-status
 
 The workflow is `workflow_dispatch`-only, read-only, concurrency-cancelled by
 workflow/ref, and records the exact `github.sha` and `github.ref`. Its final
-summary fails unless host, both modern matrix configurations, legacy, and
-release-evidence all succeed. The release-evidence lane runs
-`make release-full-matrix-workflow-guard`; the stdlib-only structural guard
-requires the canonical executable commands in named host/modern/legacy/
-release-evidence steps, rejects job/step `continue-on-error` and conditional
-skip false greens, and requires every lane's actual checkout to use the
-dispatched SHA (or the dispatch-selected default) immediately followed by a
-logged executable `git rev-parse HEAD == github.sha` check. It also proves the
-`if: always()` summary depends on every required lane and fails from the real
-`needs.*.result` bindings; comments, `echo`, `true`, alternate env values,
-checkout credential drift, and release-SHA shadowing cannot satisfy it. The
-debug and release configurations remain parallel matrix jobs, but each job
-runs `expansion-modern-linker-check` with sequential Make. Do not add an inner
-`-j`/`--jobs` flag: the canonical gate invokes nested submakes that share
-battle-animation outputs, and parallelizing them can race into undefined
-`banim_*` symbols at the modern link.
+summary fails unless host, both modern matrix configurations, and legacy
+succeed. The debug and release configurations remain parallel matrix jobs, and each job
+uses sequential Make to keep its resource use predictable. The canonical Build
+CI gate also runs `expansion-modern-linker-check` with `-j2`:
+battle-animation producers retain the last complete object while staging a
+replacement and then publish it with same-directory atomic replacement, so
+concurrent linker consumers cannot observe a missing or torn object. The
+object and its `.sym.o` sidecar are a generation pair: every supported linker
+consumer holds the same output lock while opening both paths, so it observes
+either the complete old pair or the complete new pair rather than the
+individual replacement gap.
+`TC-BUILD-BANIM-001` maps that producer/consumer overlap to
+`python3 -m unittest scripts.modernize.tests.test_arm_compressing_linker_lock -v`;
+its explicit legacy delete-before-build control preserves the pre-fix
+missing-input failure, while staged-output and first-build assertions cover
+failed/interrupted production cleanup and no-prior-publication behavior.
 
 The legally restricted live FE8J provenance proof is not a hosted-CI command
 and remains a mandatory local maintainer pre-push step. Use the procedure

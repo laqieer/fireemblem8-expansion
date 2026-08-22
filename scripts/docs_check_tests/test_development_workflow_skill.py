@@ -8,6 +8,7 @@ SKILL_PATH = (
 )
 CONTRIBUTING_PATH = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
+CLAUDE_PATH = ROOT / "CLAUDE.md"
 
 
 def read_skill():
@@ -61,7 +62,9 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Record every tool installed for the task, its version",
             "make expansion-modern-gdb-smoke",
             "symbolic `AgbMain` breakpoint",
-            "Do not add or restore a whole-source/object/ROM SHA-256 identity gate.",
+            "Do not add or restore a whole-source/object/ROM SHA-256 identity gate, or",
+            "committed source/blob/object/commit snapshots that duplicate Git's immutable",
+            "Human provenance metadata may identify exact paths and facts",
             "Build CI for the **exact candidate commit**",
             "make remote-completion-check",
         )
@@ -89,6 +92,70 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "not stop for review or approval after all objective evidence is complete.",
             text,
         )
+
+    def test_ci_waiting_does_not_hold_reasoning_subagents(self):
+        _, text = read_skill()
+        required_contract = (
+            "Reasoning subagents must not remain alive merely to wait",
+            "records the exact candidate",
+            "SHA and run ID",
+            "returns immediately",
+            "exactly one direct shell watcher",
+            "timeout 90m gh run watch <run-id> --interval 30 --exit-status",
+            "process-completion",
+            "never create duplicate watchers",
+            "Only after the workflow reaches a terminal state",
+            "gh run cancel <run-id>",
+            "Never repeatedly wake the same subagent merely",
+            "never accept a stale run",
+            "Post-merge `master` Build CI monitoring is always nonblocking.",
+            "attached asynchronous mode",
+            "immediately continue scheduling every dependency-ready",
+            "Do not stop orchestration or",
+            "send a waiting-only response",
+            "Only issue closure, remote completion, and other true dependents",
+            "exact merged `master` SHA",
+            "fix forward or revert immediately",
+        )
+
+        for requirement in required_contract:
+            with self.subTest(requirement=requirement):
+                self.assertIn(requirement, text)
+
+        project_instructions = (
+            ROOT / ".github" / "copilot-instructions.md"
+        ).read_text(encoding="utf-8")
+        project_contract = (
+            "CI waiting must not occupy a reasoning subagent.",
+            "records its exact SHA and run ID, then returns immediately",
+            "exactly one bounded direct shell watcher",
+            "timeout 90m gh run watch <run-id> --interval 30 --exit-status",
+            "invoke a reasoning agent only",
+            "after the run is terminal",
+            "Do not repeatedly wake an",
+            "agent to poll",
+            "cancel superseded",
+            "candidate runs before dispatching replacement checks",
+            "After a PR merge, monitor the exact-`master` Build CI",
+            "nonblocking asynchronous shell watcher",
+            "continue every unrelated dependency-ready task",
+            "stopping to wait or sending a waiting-only response",
+            "Only closure, remote",
+            "fix forward or revert the broken default",
+        )
+
+        for requirement in project_contract:
+            with self.subTest(
+                surface="project instructions", requirement=requirement
+            ):
+                self.assertIn(requirement, project_instructions)
+
+        claude_instructions = CLAUDE_PATH.read_text(encoding="utf-8")
+        for requirement in project_contract:
+            with self.subTest(
+                surface="Claude project instructions", requirement=requirement
+            ):
+                self.assertIn(requirement, claude_instructions)
 
     def test_issue_specific_pull_request_and_stack_contract(self):
         _, text = read_skill()

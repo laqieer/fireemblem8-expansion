@@ -291,6 +291,9 @@ class NoLaneSelectionVariableSurvivesInMakefileTests(unittest.TestCase):
         self.assertIsNotNone(match, "could not find all:'s recipe block in Makefile")
         recipe = match.group(1)
         self.assertIn("expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs", recipe)
+        self.assertNotIn("+$(MAKE)", recipe)
+        self.assertIn("for flag in $(MAKEFLAGS); do", recipe)
+        self.assertIn("*n*) dry_run=1 ;;", recipe)
         self.assertNotIn("ifeq", recipe)
         self.assertNotIn("FE8_DEFAULT_LANE", recipe)
 
@@ -419,7 +422,6 @@ class RemoteCompletionGateTests(unittest.TestCase):
         self.assertIn("git status --porcelain", text)
         self.assertIn("git rev-parse '@{u}'", text)
         self.assertIn("--commit \"$$head_sha\" --workflow build.yml", text)
-        self.assertIn("--workflow release-rehearsal.yml", text)
         self.assertIn("gh issue list", text)
         self.assertIn("--state open", text)
 
@@ -431,7 +433,6 @@ class RemoteCompletionGateTests(unittest.TestCase):
             self.assertIn("commit", text.lower())
             self.assertIn("push", text.lower())
             self.assertIn("Build CI", text)
-            self.assertIn("Release Rehearsal", text)
 
 
 class QuickstartLegacyGlueRegressionGuardTests(unittest.TestCase):

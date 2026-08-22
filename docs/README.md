@@ -21,6 +21,7 @@ the authoritative technical documentation and are checked by CI.
 | Add a bounded area-of-effect target/effect or item route | [`aoe.md`](aoe.md) |
 | Configure casual defeat restoration | [`starter_features.md`](starter_features.md#optional-casual-defeat-policy-issue-34) |
 | Configure portrait/minimug rules | [`portrait_resolver.md`](portrait_resolver.md) |
+| Run a tester-facing feature procedure | [`test-cases/README.md`](test-cases/README.md) |
 | Audit a community asset format before proposing an adapter | [`community_asset_coverage.md`](community_asset_coverage.md) |
 | Author a source-owned asset record or add an asset adapter | [`asset_manifest.md`](asset_manifest.md) |
 | Author a safe Tiled chapter map layout | [`tmx_map_layouts.md`](tmx_map_layouts.md) |
@@ -129,6 +130,9 @@ and
 | [`tmx_map_layouts.md`](tmx_map_layouts.md) | Current | Fail-closed TMX map-layout adapter and Tiled authoring boundary (issue #64) |
 | [`localization.md`](localization.md) | Current | Stable locale/message IDs, authoring, prefs/UI, budgets and matrices (issue #18) |
 | [`ui_presentation_registry.md`](ui_presentation_registry.md) | Current | Typed battle-animation, chapter/screen manifest, and utility-preference registries (issues #41/#43/#44) |
+| [`test-cases/README.md`](test-cases/README.md) | Current | Indexed tester-facing case catalog, template, and backfill lifecycle (issue #54) |
+| [`test-cases/template.md`](test-cases/template.md) | Template | Reusable tester-facing procedure template (issue #54) |
+| [`test-cases/foundation.md`](test-cases/foundation.md) | Current | Catalog/checker foundation procedure (issue #54) |
 | [`game_localization_catalog.md`](game_localization_catalog.md) | Current | Full-game FE8U-indexed CJK catalog generation, runtime bounds, and synthetic link gate |
 | [`documentation-inventory.md`](documentation-inventory.md) | Current | Exact recognized-Markdown inventory |
 | [`external-link-registry.md`](external-link-registry.md) | Current | Offline URL ownership/status coverage |
