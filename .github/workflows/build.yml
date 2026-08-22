@@ -174,6 +174,9 @@ jobs:
     - name: Build tools
       run: ./build_tools.sh
 
+    - name: Run CodeQL alert regression suite (issue #84)
+      run: make codeql-alerts-test
+
     # Issue #15 closure: a bare `make`/`make all` must unconditionally
     # resolve to the modern release AAPCS boot-check chain, with the
     # archival agbcc lane reachable only by explicitly naming `make

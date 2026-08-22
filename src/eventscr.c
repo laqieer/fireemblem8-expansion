@@ -254,17 +254,23 @@ u8 Event07_SlotQueueOperations(struct EventEngineProc * proc)
     switch (sub_cmd) {
     case EVSUBCMD_SENQUEUE:
         slot = EVT_CMD_ARGV(scr)[0];
-        SlotQueuePush(gEventSlots[slot]);
+        if (!SlotQueuePush(gEventSlots[slot]))
+            return EVC_ERROR;
         break;
 
     case EVSUBCMD_SENQUEUE_S1:
-        SlotQueuePush(gEventSlots[0x1]);
+        if (!SlotQueuePush(gEventSlots[0x1]))
+            return EVC_ERROR;
         break;
 
     case EVSUBCMD_SDEQUEUE:
         slot = EVT_CMD_ARGV(scr)[0];
-        gEventSlots[slot] = SlotQueuePop();
+        if (!SlotQueuePop(&gEventSlots[slot]))
+            return EVC_ERROR;
         break;
+
+    default:
+        return EVC_ERROR;
     }
     return EVC_ADVANCE_CONTINUE;
 }
@@ -3905,25 +3911,11 @@ u8 Event3E_PrepScreenCall(struct EventEngineProc * proc)
 //! FE8U = 0x0801098C
 struct BattleHit * GenerateScriptBattleHitFormEventQueue(void)
 {
-    u8 i;
-    u32 * queueIt = gEventSlotQueue;
-    struct BattleHit * bhIt = gActionData.script_hits;
-
-    for (i = 0; i < gEventSlots[0xd] && ((u8 *)(queueIt))[0] != 0xff; bhIt++, queueIt++, i++)
-    {
-        bhIt->attributes = ((u16 *)(queueIt))[1];
-        bhIt->info = 0;
-
-        if (i == 0)
-            bhIt->info |= BATTLE_HIT_INFO_BEGIN;
-
-        if (((u8 *)(queueIt))[0] == 1)
-            bhIt->info |= BATTLE_HIT_INFO_RETALIATION;
-
-        bhIt->hpChange = ((u8 *)(queueIt))[1];
-    }
-
-    bhIt->info = BATTLE_HIT_INFO_END;
+    BuildScriptBattleHits(
+        gEventSlotQueue,
+        gEventSlots[0xD],
+        gActionData.script_hits,
+        ARRAY_COUNT(gActionData.script_hits));
     return gActionData.script_hits;
 }
 

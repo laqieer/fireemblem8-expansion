@@ -137,6 +137,7 @@ and
 | [`test-cases/template.md`](test-cases/template.md) | Template | Reusable tester-facing procedure template (issue #54) |
 | [`test-cases/foundation.md`](test-cases/foundation.md) | Current | Catalog/checker foundation procedure (issue #54) |
 | [`test-cases/patch-release.md`](test-cases/patch-release.md) | Current | Trusted BPS artifact validation/application and malformed-input procedures (issue #49) |
+| [`test-cases/codeql-alerts.md`](test-cases/codeql-alerts.md) | Current | Link Arena and confirmed CodeQL alert regression procedures (issue #84) |
 | [`game_localization_catalog.md`](game_localization_catalog.md) | Current | Full-game FE8U-indexed CJK catalog generation, runtime bounds, and synthetic link gate |
 | [`documentation-inventory.md`](documentation-inventory.md) | Current | Exact recognized-Markdown inventory |
 | [`external-link-registry.md`](external-link-registry.md) | Current | Offline URL ownership/status coverage |
