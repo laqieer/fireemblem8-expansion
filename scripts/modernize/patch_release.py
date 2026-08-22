@@ -153,7 +153,8 @@ def _base_record(data: bytes) -> dict:
     }
 
 
-def _validate_profile_metadata(metadata: dict, commit: str) -> None:
+def validate_profile_metadata(metadata: dict, commit: str) -> None:
+    """Validate metadata for the supported all-locales/all-features profile."""
     expected = {
         "build_commit": commit,
         "config_preset": "release",
@@ -245,7 +246,7 @@ def create_artifact(
         raise PatchReleaseError("artifact validation failed: output directory already exists")
     _validate_commit(commit)
     validate_base(base, contract)
-    _validate_profile_metadata(metadata, commit)
+    validate_profile_metadata(metadata, commit)
     validate_target(target, metadata)
     patch = bps_patch.create_patch(base, target)
     if bps_patch.apply_patch(base, patch) != target:
@@ -305,7 +306,7 @@ def verify_artifact(base: bytes, artifact_dir: Path, contract: BaseContract = FE
     metadata = output.get("metadata")
     if not isinstance(metadata, dict):
         raise PatchReleaseError("artifact validation failed: metadata missing")
-    _validate_profile_metadata(metadata, commit)
+    validate_profile_metadata(metadata, commit)
     validate_target(target, metadata)
     if _read_bytes(artifact_dir / "README.txt", "README") != readme(commit):
         raise PatchReleaseError("artifact validation failed: README mismatch")

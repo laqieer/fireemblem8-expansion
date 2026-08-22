@@ -293,7 +293,7 @@ class ArtifactTests(unittest.TestCase):
         metadata = profile_metadata("c" * 40)
         del metadata["item_id_cap"]
         with self.assertRaisesRegex(patch_release.PatchReleaseError, "item_id_cap mismatch"):
-            patch_release._validate_profile_metadata(metadata, "c" * 40)
+            patch_release.validate_profile_metadata(metadata, "c" * 40)
 
     def test_cli_read_errors_do_not_disclose_paths(self):
         stderr = io.StringIO()
@@ -362,6 +362,14 @@ class NamedProfileTests(unittest.TestCase):
             "FE8_ITEM_ID_CAP=0xCE",
         ):
             self.assertIn(setting, modern_mk)
+
+    def test_profile_make_contract_uses_the_public_metadata_validator(self):
+        modern_mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
+        self.assertIn(
+            "patch_release.validate_profile_metadata(metadata, metadata[\"build_commit\"])",
+            modern_mk,
+        )
+        self.assertNotIn("patch_release._validate_profile_metadata(", modern_mk)
 
     def test_starter_content_header_bare_alias_resolves_on_a_cold_build(self):
         with tempfile.TemporaryDirectory() as tmp:

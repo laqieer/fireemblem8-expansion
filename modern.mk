@@ -1807,7 +1807,7 @@ expansion-modern-all-locales-all-features-check:
 		--elf "$(MODERN_PATCH_RELEASE_OUTPUT_DIR)/fireemblem8.elf" \
 		--output "$(MODERN_PATCH_RELEASE_BUDGET)" --validate-elf \
 		--require-positive-headroom ewram --require-positive-headroom iwram
-	@$(PYTHON) -c 'import json, pathlib; from scripts.modernize import patch_release; metadata = json.loads(pathlib.Path("$(MODERN_PATCH_RELEASE_METADATA)").read_text(encoding="utf-8")); patch_release._validate_profile_metadata(metadata, metadata["build_commit"]); print("all-locales/all-features profile identity validated")'
+	@$(PYTHON) -c 'import json, pathlib; from scripts.modernize import patch_release; metadata = json.loads(pathlib.Path("$(MODERN_PATCH_RELEASE_METADATA)").read_text(encoding="utf-8")); patch_release.validate_profile_metadata(metadata, metadata["build_commit"]); print("all-locales/all-features profile identity validated")'
 
 # PATCH_BASE_ROM is deliberately a local/trusted input only. It is never
 # downloaded here, never a default, and never appears in artifact metadata.
