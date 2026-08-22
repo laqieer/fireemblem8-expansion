@@ -186,6 +186,23 @@ class AssetManifestTests(unittest.TestCase):
             manifest.load_and_validate(self.write_manifest(assets))
         self.assertIn(text, str(raised.exception))
 
+    def run_assets_make(self, manifest_path, output_dir, *goals):
+        return subprocess.run(
+            [
+                "make",
+                "-f",
+                "assets.mk",
+                *goals,
+                "PYTHON={}".format(sys.executable),
+                "ASSET_MANIFEST={}".format(manifest_path),
+                "ASSET_OUTPUT_DIR={}".format(output_dir),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
     def test_real_manifest_is_valid_and_deterministic(self):
         path = os.path.join(REPO_ROOT, "assets", "manifest.json")
         first = manifest.load_and_validate(path)
@@ -372,6 +389,19 @@ class AssetManifestTests(unittest.TestCase):
         self.assertIn("// 0", generated)
         self.assertTrue(os.path.isfile(os.path.join(out_dir, "portraits", record["id"], "tileset.4bpp.lz")))
         self.assertEqual(len(manifest.portrait_component_outputs(records, out_dir)), 7)
+        with open(
+            os.path.join(out_dir, manifest.OUTPUT_PORTRAIT_COMPONENTS),
+            encoding="utf-8",
+        ) as handle:
+            generated_components = handle.read()
+        self.assertIn(
+            "u16 __attribute__((aligned(4))) portrait_Proof_palette[] = INCBIN_U16(",
+            generated_components,
+        )
+        self.assertEqual(
+            manifest.portrait_incbin_consumer_ids(records),
+            ("PROOF_FORMATTED_PORTRAIT",),
+        )
 
     def test_formatted_portrait_package_uses_tile_ordered_low_nibble_first_4bpp(self):
         rows = [[1, 2] * 4 + [3, 4] * 4 for _ in range(8)]
@@ -458,6 +488,28 @@ class AssetManifestTests(unittest.TestCase):
             text=True,
         )
         self.assertIn("assets/portrait_registry.json", result.stdout.splitlines())
+
+    def test_make_rejects_output_override_with_portrait_incbin_consumer(self):
+        result = self.run_assets_make(
+            os.path.join(REPO_ROOT, "assets", "manifest.json"),
+            "build/generated/assets/test-work/portrait-output-override",
+            "assets-generate",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "ASSET_OUTPUT_DIR must be build/generated/assets while portrait package "
+            "INCBIN consumer(s) EIRIKA_FORMATTED_PORTRAIT are declared",
+            result.stdout + result.stderr,
+        )
+
+    def test_make_allows_output_override_without_portrait_incbin_consumer(self):
+        source = self.write_manifest([valid_record()])
+        output_dir = "build/generated/assets/test-work/map-output-override"
+        result = self.run_assets_make(source, output_dir, "assets-generate", "assets-check")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(
+            os.path.isfile(os.path.join(REPO_ROOT, output_dir, manifest.OUTPUT_MAKEFILE))
+        )
 
 
     def test_formatted_portrait_package_rejects_boolean_geometry_and_alias_drift(self):

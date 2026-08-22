@@ -30,7 +30,14 @@ def _parser():
         help="ignored generated-output directory (default: %(default)s)",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("validate", "generate", "check", "sources", "clean"):
+    for name in (
+        "validate",
+        "generate",
+        "check",
+        "sources",
+        "portrait-incbin-consumers",
+        "clean",
+    ):
         subparsers.add_parser(name)
     return parser
 
@@ -64,6 +71,10 @@ def main(argv=None):
                     sources.update(dependencies)
             for source in sorted(sources):
                 print(source)
+        elif args.command == "portrait-incbin-consumers":
+            records = manifest.load_and_validate(args.manifest)
+            for record_id in manifest.portrait_incbin_consumer_ids(records):
+                print(record_id)
         else:
             if os.path.exists(args.out_dir):
                 shutil.rmtree(args.out_dir)

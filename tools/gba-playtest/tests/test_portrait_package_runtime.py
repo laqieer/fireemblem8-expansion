@@ -144,6 +144,12 @@ class PortraitPackageRuntimeTests(unittest.TestCase):
         host_mode.require_built_rom(elf, f"modern {config} ELF")
         resolver = ElfSymbolResolver(elf)
         scenario = self._scenario(elf)
+        palette_address, _ = resolver("portrait_Eirika_palette")
+        self.assertEqual(
+            palette_address % 4,
+            0,
+            "the portrait palette source must satisfy CopyToPaletteBuffer's CpuFastCopy alignment",
+        )
         fixture = sf.write_deterministic_current_fixture(
             REPO_ROOT / "build" / "gba-playtest-tmp" / f"issue63-{config}.sav"
         )
