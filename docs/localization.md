@@ -405,7 +405,7 @@ expansion-only keys are explicitly outside that original-game comparison.
    sources must follow `CONTRIBUTING.md` and the pinned-provenance workflow;
    do not hand-copy or paraphrase unapproved third-party text.
 
-### Efficient local and pre-merge validation
+### Efficient local and post-merge validation
 
 Use targeted localization tests while editing. A candidate branch receives
 Build CI and Copilot review concurrently. The same combined Build gate runs

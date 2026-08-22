@@ -1,5 +1,6 @@
-from pathlib import Path
+import re
 import unittest
+from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -9,6 +10,48 @@ SKILL_PATH = (
 CONTRIBUTING_PATH = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 CLAUDE_PATH = ROOT / "CLAUDE.md"
+FRAMEWORK_SUPPORT_PATH = ROOT / "docs" / "framework-support.md"
+LOCALIZATION_PATH = ROOT / "docs" / "localization.md"
+WATCHER_DOC_PATHS = (
+    SKILL_PATH,
+    CONTRIBUTING_PATH,
+    FRAMEWORK_SUPPORT_PATH,
+    LOCALIZATION_PATH,
+)
+CANONICAL_WATCHER_COMMAND = (
+    "timeout 90m gh run watch <run-id> --interval 30 --exit-status"
+)
+FENCED_COMMAND_BLOCK = re.compile(
+    r"```(?:bash|sh|shell|text)?\n(?P<commands>.*?)```",
+    re.DOTALL,
+)
+
+
+def normalize_policy(text):
+    return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def assert_normalized_policy(test_case, surface, text, concepts, forbidden=()):
+    normalized = normalize_policy(text)
+
+    for concept, terms in concepts:
+        for term in terms:
+            with test_case.subTest(surface=surface, concept=concept, term=term):
+                test_case.assertIn(normalize_policy(term), normalized)
+
+    for clause in forbidden:
+        with test_case.subTest(surface=surface, forbidden=clause):
+            test_case.assertNotIn(normalize_policy(clause), normalized)
+
+
+def watcher_example_violations(text):
+    violations = []
+    for block in FENCED_COMMAND_BLOCK.finditer(text):
+        for command in block.group("commands").splitlines():
+            normalized = " ".join(command.split())
+            if re.search(r"\bgh run watch\b", normalized) and normalized != CANONICAL_WATCHER_COMMAND:
+                violations.append(normalized)
+    return violations
 
 
 def read_skill():
@@ -95,67 +138,82 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
 
     def test_ci_waiting_does_not_hold_reasoning_subagents(self):
         _, text = read_skill()
-        required_contract = (
-            "Reasoning subagents must not remain alive merely to wait",
-            "records the exact candidate",
-            "SHA and run ID",
-            "returns immediately",
-            "exactly one direct shell watcher",
-            "timeout 90m gh run watch <run-id> --interval 30 --exit-status",
-            "process-completion",
-            "never create duplicate watchers",
-            "Only after the workflow reaches a terminal state",
-            "gh run cancel <run-id>",
-            "Never repeatedly wake the same subagent merely",
-            "never accept a stale run",
-            "Post-merge `master` Build CI monitoring is always nonblocking.",
-            "attached asynchronous mode",
-            "immediately continue scheduling every dependency-ready",
-            "Do not stop orchestration or",
-            "send a waiting-only response",
-            "Only issue closure, remote completion, and other true dependents",
-            "exact merged `master` SHA",
-            "fix forward or revert immediately",
-        )
-
-        for requirement in required_contract:
-            with self.subTest(requirement=requirement):
-                self.assertIn(requirement, text)
-
         project_instructions = (
             ROOT / ".github" / "copilot-instructions.md"
         ).read_text(encoding="utf-8")
-        project_contract = (
-            "CI waiting must not occupy a reasoning subagent.",
-            "records its exact SHA and run ID, then returns immediately",
-            "exactly one bounded direct shell watcher",
-            "timeout 90m gh run watch <run-id> --interval 30 --exit-status",
-            "invoke a reasoning agent only",
-            "after the run is terminal",
-            "Do not repeatedly wake an",
-            "agent to poll",
-            "cancel superseded",
-            "candidate runs before dispatching replacement checks",
-            "After a PR merge, monitor the exact-`master` Build CI",
-            "nonblocking asynchronous shell watcher",
-            "continue every unrelated dependency-ready task",
-            "stopping to wait or sending a waiting-only response",
-            "Only closure, remote",
-            "fix forward or revert the broken default",
+        claude_instructions = CLAUDE_PATH.read_text(encoding="utf-8")
+        contributing = CONTRIBUTING_PATH.read_text(encoding="utf-8")
+        required_policy = (
+            (
+                "candidate gate",
+                ("Build CI", "Copilot review"),
+            ),
+        )
+        forbidden_policy = ("Full Matrix", "full-matrix.yml")
+
+        for surface, instructions in (
+            ("development workflow skill", text),
+            ("project instructions", project_instructions),
+            ("Claude project instructions", claude_instructions),
+            ("contributor guidance", contributing),
+        ):
+            assert_normalized_policy(
+                self,
+                surface,
+                instructions,
+                required_policy,
+                forbidden_policy,
+            )
+
+        assert_normalized_policy(
+            self,
+            "development workflow skill",
+            text,
+            (
+                (
+                    "direct watcher lifecycle",
+                    (
+                        "Reasoning subagents must not remain alive merely to wait",
+                        "exactly one direct shell watcher",
+                        "timeout 90m gh run watch <run-id> --interval 30 --exit-status",
+                        "never create duplicate watchers",
+                        "Only after the workflow reaches a terminal state",
+                    ),
+                ),
+            ),
         )
 
-        for requirement in project_contract:
-            with self.subTest(
-                surface="project instructions", requirement=requirement
-            ):
-                self.assertIn(requirement, project_instructions)
+    def test_combined_build_replaces_matrix_everywhere(self):
+        for surface, path in (
+            ("development workflow skill", SKILL_PATH),
+            ("project instructions", ROOT / ".github" / "copilot-instructions.md"),
+            ("Claude project instructions", CLAUDE_PATH),
+            ("contributor guidance", CONTRIBUTING_PATH),
+            ("framework support", FRAMEWORK_SUPPORT_PATH),
+            ("localization guidance", LOCALIZATION_PATH),
+        ):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(surface=surface):
+                self.assertIn("Build", text)
+                self.assertNotIn("Full Matrix", text)
 
-        claude_instructions = CLAUDE_PATH.read_text(encoding="utf-8")
-        for requirement in project_contract:
-            with self.subTest(
-                surface="Claude project instructions", requirement=requirement
-            ):
-                self.assertIn(requirement, claude_instructions)
+    def test_contributor_watcher_examples_are_bounded(self):
+        watcher_examples = []
+        for path in WATCHER_DOC_PATHS:
+            text = path.read_text(encoding="utf-8")
+            watcher_examples.extend(
+                " ".join(command.split())
+                for block in FENCED_COMMAND_BLOCK.finditer(text)
+                for command in block.group("commands").splitlines()
+                if re.search(r"\bgh run watch\b", command)
+            )
+            self.assertEqual(watcher_example_violations(text), [], path)
+
+        self.assertIn(CANONICAL_WATCHER_COMMAND, watcher_examples)
+        self.assertEqual(
+            watcher_example_violations("```bash\ngh run watch <run-id> --exit-status\n```"),
+            ["gh run watch <run-id> --exit-status"],
+        )
 
     def test_post_merge_reconciliation_policy_is_mirrored(self):
         _, skill = read_skill()
@@ -202,6 +260,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         for requirement in required_contract:
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
+
+        self.assertIn(
+            normalize_policy("Complete the umbrella initiative only after every accepted"),
+            normalize_policy(text),
+        )
 
     def test_review_size_preflight_and_exception_contract(self):
         _, text = read_skill()

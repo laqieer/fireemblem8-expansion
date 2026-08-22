@@ -247,6 +247,15 @@ when one issue genuinely depends on another issue's unmerged code or contract,
 not merely because the issues touch shared files or belong to the same
 initiative.
 
+Validate and merge independent PRs in parallel. Do not serialize them by age,
+issue number, shared initiative, or an unrelated PR's post-merge CI. Another
+independent merge advancing `master` does not by itself invalidate a candidate
+head's evidence. Refresh and rerun gates only when the candidate tree changes,
+GitHub reports a merge conflict, a declared shared contract changes, or the
+new base exposes a concrete interaction. Post-merge Build CI then verifies the
+combined default branch and triggers immediate fix-forward or revert on
+failure.
+
 Every non-root PR must record:
 
 - `Depends on #...` links for its immediate issue and PR dependency;
@@ -470,21 +479,6 @@ If a candidate SHA changes, cancel superseded candidate runs with
 checks for the replacement SHA. Never repeatedly wake the same subagent merely
 to poll CI, and never accept a stale run because its watcher completed.
 
-Post-merge `master` Build CI monitoring is always nonblocking. Start its
-bounded direct shell watcher in attached asynchronous mode so process
-completion produces a notification, leave the post-merge verification work
-item in progress, and immediately continue scheduling every dependency-ready
-task that does not depend on that Build result. Do not stop orchestration or
-send a waiting-only response merely because the master watcher is active.
-Only issue closure, remote completion, and other true dependents wait for the
-post-merge result.
-
-When the asynchronous watcher completes, verify that the run belongs to the
-exact merged `master` SHA and inspect every required job. Resume the dependent
-completion chain on success. On failure, interrupt ordinary delivery work as
-needed to fix forward or revert immediately; never let background monitoring
-hide a broken default branch.
-
 After each merge, immediately inspect every open PR. Merge current `master`
 only into PRs with real conflicts or shared-contract changes; refresh
 independent conflicts concurrently and rerun only conflict-affected checks
@@ -507,8 +501,9 @@ Merge the PR autonomously when all four conditions hold. Do not wait for human
 review or approval. Respect branch protection and never bypass a required
 GitHub control.
 
-For a stacked PR, satisfy those conditions against its immediate base, merge
-only after its parent, then retarget and revalidate it as described above.
+For a stacked PR, satisfy those candidate Build/review conditions against its
+immediate base, merge only after its parent, then retarget and revalidate it as
+described above.
 
 Leave the PR open only when:
 
@@ -537,12 +532,13 @@ For every issue-specific PR:
    is present and every material manual criterion is verified. This
    development workflow overrides conflicting generic language that reserves
    closure for human review.
-6. For tracked changes, run `make remote-completion-check` only after the
-   intended `master` commit has one successful consolidated Build CI result.
+   6. For tracked changes, run `make remote-completion-check` only after the
+      intended `master` commit has one successful consolidated Build CI result.
 
 The task is complete only when the implementation and documentation are
-persistent upstream, required CI is green, the remote completion gate passes,
-and no current-request work item remains open.
+persistent upstream, the combined Build check for the exact pushed `master`
+commit is green, the remote completion gate passes, and no current-request
+work item remains open.
 
 ## Required final report
 

@@ -81,7 +81,7 @@ jobs:
       run: python3 -m unittest discover -s tests/upstream_port -v
 
     # Consolidated Build CI topology contract: candidate/master triggers,
-    # master-only workers, evidence ownership, and fail-closed summary. Pure
+    # combined workers, evidence ownership, and fail-closed summary. Pure
     # stdlib/YAML-text parsing; no ROM/toolchain.
     - name: Run workflow contract test suite
       run: python3 -m unittest discover -s tests/workflows -p "test_*.py" -v
