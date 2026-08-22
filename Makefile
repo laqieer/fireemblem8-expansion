@@ -310,6 +310,7 @@ remote-completion-check:
 	fi; \
 	repo=$$(gh repo view --json nameWithOwner --jq .nameWithOwner); \
 	run=$$(gh run list --repo "$$repo" --commit "$$head_sha" --workflow build.yml \
+		--branch master \
 		--limit 1 --json status,conclusion,url \
 		--jq 'if length == 0 then "missing,," else .[0].status + "," + (.[0].conclusion // "") + "," + .[0].url end'); \
 	case "$$run" in \

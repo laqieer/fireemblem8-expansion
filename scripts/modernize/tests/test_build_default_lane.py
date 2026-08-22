@@ -435,7 +435,9 @@ class RemoteCompletionGateTests(unittest.TestCase):
         self.assertIn("HEAD is detached", text)
         self.assertIn('remote completion requires master', text)
         self.assertIn("git rev-parse '@{u}'", text)
-        self.assertIn("--commit \"$$head_sha\" --workflow build.yml", text)
+        build_lookup = text.split("run=$$(gh run list", 1)[1].split("case", 1)[0]
+        self.assertIn("--commit \"$$head_sha\" --workflow build.yml", build_lookup)
+        self.assertIn("--branch master", build_lookup)
         matrix_lookup = text.split("matrix=$$(gh run list", 1)[1].split("case", 1)[0]
         self.assertIn("--commit \"$$head_sha\" --workflow full-matrix.yml", matrix_lookup)
         self.assertIn("--branch master", matrix_lookup)
@@ -461,6 +463,26 @@ class RemoteCompletionGateTests(unittest.TestCase):
                 runs,
                 exact_master_sha,
                 "feature/master-only-matrix",
+            )
+        )
+
+    def test_same_sha_pr_build_cannot_replace_missing_master_build(self):
+        exact_master_sha = "b" * 40
+        runs = [
+            {
+                "commit": exact_master_sha,
+                "branch": "agent/issue-93-review",
+                "status": "completed",
+                "conclusion": "success",
+            }
+        ]
+
+        self.assertFalse(has_successful_workflow(runs, exact_master_sha, "master"))
+        self.assertTrue(
+            has_successful_workflow(
+                runs,
+                exact_master_sha,
+                "agent/issue-93-review",
             )
         )
 
