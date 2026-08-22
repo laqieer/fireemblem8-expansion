@@ -145,7 +145,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 output = Path(tmp) / "base-image"
                 command = []
                 skip_next = False
-                for index, argument in enumerate(download):
+                for argument in download:
                     if skip_next:
                         skip_next = False
                         continue
@@ -170,10 +170,14 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 self.assertEqual(result.stdout, b"")
                 self.assertEqual(result.stderr, b"")
                 self.assertEqual(output.read_bytes(), payload)
-                with self.assertRaisesRegex(
-                    patch_release.PatchReleaseError, "base validation failed: size mismatch"
-                ):
+                with self.assertRaises(patch_release.PatchReleaseError) as context:
                     patch_release.validate_base(output.read_bytes())
+                self.assertEqual(
+                    str(context.exception),
+                    "base validation failed: size mismatch "
+                    f"(expected {patch_release.BASE_ROM_SIZE} bytes, got {len(payload)} bytes)",
+                )
+                self.assertNotIn(payload.decode("ascii"), str(context.exception))
         finally:
             server.shutdown()
             thread.join()
