@@ -11,6 +11,7 @@ MODERN_GOALS := \
 	expansion-modern-boot-check \
 	expansion-modern-savefmt-check \
 	expansion-modern-itemexpansion-check \
+	expansion-modern-custom-spell-check \
 	expansion-modern-title-check \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
@@ -183,6 +184,12 @@ endif
 # itself #errors when it is enabled without an expanded FE8_ITEM_ID_CAP.
 ifeq ($(FE8_EXPANSION_ITEMTEST),1)
 MODERN_DEFINE_FLAGS += -DFE8_EXPANSION_ITEMTEST_ENABLED=1
+endif
+
+# Issue #77: isolated, test-only custom-spell lifecycle ROM. Ordinary debug,
+# release, default, and archival builds compile this seam out completely.
+ifeq ($(FE8_EXPANSION_CUSTOM_SPELL_TEST),1)
+MODERN_DEFINE_FLAGS += -DFE8_EXPANSION_CUSTOM_SPELL_TEST=1
 endif
 MODERN_INCLUDE_FLAGS := -Iinclude -I.
 
@@ -736,6 +743,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-boot-check \
 	expansion-modern-savefmt-check \
 	expansion-modern-itemexpansion-check \
+	expansion-modern-custom-spell-check \
 	expansion-modern-title-check \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
@@ -1400,6 +1408,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-boot-check \
 	expansion-modern-savefmt-check \
 	expansion-modern-itemexpansion-check \
+	expansion-modern-custom-spell-check \
 	expansion-modern-title-check \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
@@ -1558,6 +1567,7 @@ ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 		--danger-overlay-menu "$(EXPANSION_DANGER_OVERLAY_MENU)" \
 		--starter-content "$(EXPANSION_STARTER_CONTENT)" \
 		--aoe-reference "$(EXPANSION_AOE_REFERENCE)" \
+		--custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
 		--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 		--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 		--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
@@ -1622,6 +1632,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	--danger-overlay-menu "$(EXPANSION_DANGER_OVERLAY_MENU)" \
 	--starter-content "$(EXPANSION_STARTER_CONTENT)" \
 	--aoe-reference "$(EXPANSION_AOE_REFERENCE)" \
+	--custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
 	--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 	--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 	--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
@@ -1653,6 +1664,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
   MODERN_EXPANSION_DEFAULT_LOCALE_ID := $(patsubst MODERN_EXPANSION_DEFAULT_LOCALE_ID=%,%,$(filter MODERN_EXPANSION_DEFAULT_LOCALE_ID=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED := $(patsubst MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED=%,%,$(filter MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_AOE_REFERENCE := $(patsubst MODERN_EXPANSION_AOE_REFERENCE=%,%,$(filter MODERN_EXPANSION_AOE_REFERENCE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS := $(patsubst MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS=%,%,$(filter MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_CASUAL_MODE := $(patsubst MODERN_EXPANSION_CASUAL_MODE=%,%,$(filter MODERN_EXPANSION_CASUAL_MODE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_BGM_CONTINUATION_POLICY := $(patsubst MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,%,$(filter MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),preserve)
@@ -1703,6 +1715,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	-DFE8_EXPANSION_DANGER_OVERLAY_MENU=$(EXPANSION_DANGER_OVERLAY_MENU) \
 	-DFE8_EXPANSION_STARTER_CONTENT=$(EXPANSION_STARTER_CONTENT) \
 	-DFE8_EXPANSION_AOE_REFERENCE=$(EXPANSION_AOE_REFERENCE) \
+	-DFE8_EXPANSION_CUSTOM_SPELL_EFFECTS=$(EXPANSION_CUSTOM_SPELL_EFFECTS) \
 	-DFE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP=$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP) \
 	-DFE8_EXPANSION_CASUAL_MODE=$(EXPANSION_CASUAL_MODE) \
 	-DFE8_EXPANSION_BGM_CONTINUATION_POLICY=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID)
@@ -1954,11 +1967,13 @@ ifneq (,$(MODERN_EXPANSION_DEFINES_ACTIVE))
 		printf '%s\n' 'danger_overlay_menu=$(EXPANSION_DANGER_OVERLAY_MENU)'; \
 		printf '%s\n' 'starter_content=$(EXPANSION_STARTER_CONTENT)'; \
 		printf '%s\n' 'aoe_reference=$(EXPANSION_AOE_REFERENCE)'; \
+		printf '%s\n' 'custom_spell_effects=$(EXPANSION_CUSTOM_SPELL_EFFECTS)'; \
 		printf '%s\n' 'casual_mode=$(EXPANSION_CASUAL_MODE)'; \
 		printf '%s\n' 'bgm_continuation_policy=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)'; \
 		printf '%s\n' 'modern_build=1'; \
 		printf '%s\n' 'item_id_cap=$(FE8_ITEM_ID_CAP)'; \
 		printf '%s\n' 'item_expansion_itemtest=$(FE8_EXPANSION_ITEMTEST)'; \
+		printf '%s\n' 'custom_spell_test=$(FE8_EXPANSION_CUSTOM_SPELL_TEST)'; \
 		printf '%s\n' 'layout_flags=$(MODERN_LAYOUT_FLAGS)'; \
 		printf '%s\n' 'data_layout_flags=$(MODERN_DATA_LAYOUT_FLAGS)'; \
 		printf '%s\n' 'banim_overlay_layout_flags=$(MODERN_BANIM_OVERLAY_LAYOUT_FLAGS)'; \
@@ -3821,6 +3836,27 @@ expansion-modern-itemexpansion-check: expansion-modern-rom
 	@printf 'Modern ROM item-expansion runtime check passed: %s (config=%s abi=%s cap=%s stages=%s content=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(FE8_ITEM_ID_CAP)' '$(MODERN_ITEMEXPANSION_STAGES)' '$(EXPANSION_STARTER_CONTENT)'
 
+# Issue #77 isolated battle-spell lifecycle probe. The caller supplies a
+# dedicated MODERN_BUILD_ROOT so production outputs are never reused and
+# enables the test-only harness explicitly. The ROM bypasses StartGame and
+# chapter scripts, creates bounded Anim fixtures, and calls the public
+# StartSpellAnimation dispatch before exposing scalar state to libmGBA.
+MODERN_CUSTOM_SPELL_TEST_SCRIPT := tools/gba-playtest/run_custom_spell_effect_checks.py
+MODERN_CUSTOM_SPELL_TEST_DIR := $(MODERN_OUTPUT_DIR)/custom-spell-test
+
+expansion-modern-custom-spell-check: expansion-modern-rom
+	@if [ "$(FE8_EXPANSION_CUSTOM_SPELL_TEST)" != "1" ]; then \
+		printf 'error: %s needs FE8_EXPANSION_CUSTOM_SPELL_TEST=1\n' \
+			'expansion-modern-custom-spell-check' >&2; \
+		exit 1; \
+	fi
+	NM="$(MODERN_NM)" "$(PYTHON)" "$(MODERN_CUSTOM_SPELL_TEST_SCRIPT)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--config "$(MODERN_CONFIG)" \
+		--enabled "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
+		--out-dir "$(MODERN_CUSTOM_SPELL_TEST_DIR)"
+
 expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-overlay-audit \
 		expansion-modern-starter-runtime-check \
@@ -3866,6 +3902,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 	expansion-modern-saveload-check \
 	expansion-modern-savefmt-check \
 	expansion-modern-itemexpansion-check \
+	expansion-modern-custom-spell-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \
 	expansion-modern-relocs \

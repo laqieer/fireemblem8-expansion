@@ -8,6 +8,7 @@
 #include "soundwrapper.h"
 #include "gamecontrol.h"
 #ifdef MODERN
+#include "custom_spell_effect_test.h"
 #include "expansion_language_menu.h"
 #include "expansion_log.h"
 #endif
@@ -98,7 +99,12 @@ void AgbMain(void)
         VBlankIntrWait();
     SetGameTime(GetGameClock() - syncFrames);
 #endif
+#if FE8_EXPANSION_CUSTOM_SPELL_TEST
+    SetMainUpdateRoutine(OnMain);
+    CustomSpellEffectTest_Start();
+#else
     StartGame();
+#endif
 
     // perform the game loop.
     while (1)

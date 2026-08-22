@@ -12,7 +12,7 @@ AUTOTOOLS_CONFIG_MK := @abs_top_builddir@/config.autotools.mk
 
 .PHONY: _autotools_forward
 _autotools_forward:
-	+$(MAKE) --no-print-directory -C "$(AUTOTOOLS_SOURCE_DIR)" -f Makefile \
+	+$(MAKE) $(MAKEOVERRIDES) --no-print-directory -C "$(AUTOTOOLS_SOURCE_DIR)" -f Makefile \
 		AUTOTOOLS_BUILD_DIR="$(AUTOTOOLS_BUILD_DIR)" \
 		AUTOTOOLS_CONFIG_MK="$(AUTOTOOLS_CONFIG_MK)" \
 		$(if $(MAKECMDGOALS),$(MAKECMDGOALS),all)

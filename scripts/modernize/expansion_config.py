@@ -88,6 +88,47 @@ BUILD_ID_OVERRIDE_PATTERN = re.compile(r"^[0-9a-fA-F]{4,40}$")
 # First N hex characters of a SHA-256 digest used as the config fingerprint.
 FINGERPRINT_LEN = 16
 
+# Issue #77's runtime foundation has one synthetic descriptor until #78 owns
+# generated package inventory. Keep these full SHA-256 values in build metadata
+# and fold them into identity only when the default-off runtime is enabled.
+CUSTOM_SPELL_EFFECT_RUNTIME_ABI = 1
+CUSTOM_SPELL_EFFECT_EMPTY_DIGEST = hashlib.sha256(b"").hexdigest()
+CUSTOM_SPELL_EFFECT_REFERENCE_INVENTORY_DIGEST = hashlib.sha256(
+    json.dumps(
+        {
+            "effects": [
+                {
+                    "animation_id": 0x80,
+                    "fallback_animation_id": 22,
+                    "frame_count": 2,
+                    "hit_frame": 2,
+                    "symbol": "CUSTOM_SPELL_REFERENCE",
+                    "total_frames": 4,
+                }
+            ]
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+).hexdigest()
+CUSTOM_SPELL_EFFECT_RESOURCE_BUDGET_DIGEST = hashlib.sha256(
+    json.dumps(
+        {
+            "bg_bytes": 0x2000,
+            "bg_palette_line": 1,
+            "bg_tsa_bytes": 1200,
+            "max_effects": 16,
+            "obj_bytes": 0x1000,
+            "obj_oam_entries": 16,
+            "obj_palette_line": 2,
+            "rom_bytes": 0x40000,
+            "sound_events": 8,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+).hexdigest()
+
 # config.mk's fixed set of simple scalar assignments this tool understands.
 CONFIG_MK_KEYS = (
     "EXPANSION_VERSION_MAJOR",
@@ -114,6 +155,7 @@ CONFIG_MK_FEATURE_KEYS = (
     "EXPANSION_DANGER_OVERLAY_MENU",
     "EXPANSION_STARTER_CONTENT",
     "EXPANSION_AOE_REFERENCE",
+    "EXPANSION_CUSTOM_SPELL_EFFECTS",
     "EXPANSION_LOCALIZED_TEXT_AUTO_WRAP",
     "EXPANSION_CASUAL_MODE",
     "EXPANSION_BGM_CONTINUATION_POLICY",
@@ -639,6 +681,10 @@ class ExpansionIdentity:
     danger_overlay_menu: int = 0
     starter_content: int = 0
     aoe_reference: int = 0
+    custom_spell_effects: int = 0
+    custom_spell_effect_runtime_abi: int = 0
+    custom_spell_effect_inventory_digest: str = CUSTOM_SPELL_EFFECT_EMPTY_DIGEST
+    custom_spell_effect_resource_budget_digest: str = CUSTOM_SPELL_EFFECT_EMPTY_DIGEST
     localized_text_auto_wrap: int = 0
     casual_mode: int = 0
     bgm_continuation_policy: str = "preserve"
@@ -673,7 +719,7 @@ class ExpansionIdentity:
         because a locale or feature-flag setting changed -- proven by
         scripts/modernize/tests/test_expansion_config.py. See
         docs/config_identity.md and docs/starter_features.md."""
-        return {
+        fields = {
             "version": [self.version_major, self.version_minor, self.version_patch],
             "abi": self.abi,
             "config_preset": self.config_preset,
@@ -692,12 +738,20 @@ class ExpansionIdentity:
                 "danger_overlay_menu": self.danger_overlay_menu,
                 "starter_content": self.starter_content,
                 "aoe_reference": self.aoe_reference,
+                "custom_spell_effects": self.custom_spell_effects,
                 "localized_text_auto_wrap": self.localized_text_auto_wrap,
                 "casual_mode": self.casual_mode,
             },
             "bgm_continuation_policy": self.bgm_continuation_policy,
             "item_id_cap": self.item_id_cap,
         }
+        if self.custom_spell_effects:
+            fields["custom_spell_effect_contract"] = {
+                "runtime_abi": self.custom_spell_effect_runtime_abi,
+                "inventory_digest": self.custom_spell_effect_inventory_digest,
+                "resource_budget_digest": self.custom_spell_effect_resource_budget_digest,
+            }
+        return fields
 
     def to_dict(self) -> dict:
         data = asdict(self)
@@ -733,6 +787,7 @@ def load_identity(
     danger_overlay_menu=None,
     starter_content=None,
     aoe_reference=None,
+    custom_spell_effects=None,
     localized_text_auto_wrap=None,
     casual_mode=None,
     bgm_continuation_policy=None,
@@ -820,6 +875,12 @@ def load_identity(
         if aoe_reference not in (None, "")
         else cfg.get("EXPANSION_AOE_REFERENCE", "0"),
     )
+    resolved_custom_spell_effects = validate_feature_flag(
+        "EXPANSION_CUSTOM_SPELL_EFFECTS",
+        custom_spell_effects
+        if custom_spell_effects not in (None, "")
+        else cfg.get("EXPANSION_CUSTOM_SPELL_EFFECTS", "0"),
+    )
     resolved_casual_mode = validate_feature_flag(
         "EXPANSION_CASUAL_MODE",
         casual_mode
@@ -863,6 +924,20 @@ def load_identity(
         danger_overlay_menu=resolved_danger,
         starter_content=resolved_content,
         aoe_reference=resolved_aoe_reference,
+        custom_spell_effects=resolved_custom_spell_effects,
+        custom_spell_effect_runtime_abi=(
+            CUSTOM_SPELL_EFFECT_RUNTIME_ABI if resolved_custom_spell_effects else 0
+        ),
+        custom_spell_effect_inventory_digest=(
+            CUSTOM_SPELL_EFFECT_REFERENCE_INVENTORY_DIGEST
+            if resolved_custom_spell_effects
+            else CUSTOM_SPELL_EFFECT_EMPTY_DIGEST
+        ),
+        custom_spell_effect_resource_budget_digest=(
+            CUSTOM_SPELL_EFFECT_RESOURCE_BUDGET_DIGEST
+            if resolved_custom_spell_effects
+            else CUSTOM_SPELL_EFFECT_EMPTY_DIGEST
+        ),
         localized_text_auto_wrap=resolved_localized_text_auto_wrap,
         casual_mode=resolved_casual_mode,
         bgm_continuation_policy=resolved_bgm_continuation_policy,
@@ -911,6 +986,13 @@ def generate_metadata_files(output_dir: Path, identity: ExpansionIdentity) -> Di
         f"MODERN_EXPANSION_DEFAULT_LOCALE_ID := {identity.default_locale_id}",
         f"MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED := {identity.pseudo_locale_enabled}",
         f"MODERN_EXPANSION_AOE_REFERENCE := {identity.aoe_reference}",
+        f"MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS := {identity.custom_spell_effects}",
+        "MODERN_EXPANSION_CUSTOM_SPELL_EFFECT_RUNTIME_ABI := "
+        f"{identity.custom_spell_effect_runtime_abi}",
+        "MODERN_EXPANSION_CUSTOM_SPELL_EFFECT_INVENTORY_DIGEST := "
+        f"{identity.custom_spell_effect_inventory_digest}",
+        "MODERN_EXPANSION_CUSTOM_SPELL_EFFECT_RESOURCE_BUDGET_DIGEST := "
+        f"{identity.custom_spell_effect_resource_budget_digest}",
         f"MODERN_EXPANSION_CASUAL_MODE := {identity.casual_mode}",
         f"MODERN_EXPANSION_BGM_CONTINUATION_POLICY := {identity.bgm_continuation_policy}",
         "",
@@ -983,6 +1065,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="override EXPANSION_AOE_REFERENCE (0 or 1)",
     )
     parser.add_argument(
+        "--custom-spell-effects",
+        default=None,
+        help="override EXPANSION_CUSTOM_SPELL_EFFECTS (0 or 1)",
+    )
+    parser.add_argument(
         "--item-id-cap",
         default=None,
         help=(
@@ -1020,6 +1107,7 @@ def _resolve_tokens(identity: ExpansionIdentity) -> str:
         f"MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED={identity.pseudo_locale_enabled}"
         f" MODERN_EXPANSION_CASUAL_MODE={identity.casual_mode}"
         f" MODERN_EXPANSION_AOE_REFERENCE={identity.aoe_reference}"
+        f" MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS={identity.custom_spell_effects}"
         f" MODERN_EXPANSION_BGM_CONTINUATION_POLICY={identity.bgm_continuation_policy}"
     )
 
@@ -1071,6 +1159,7 @@ def main(argv=None) -> int:
             danger_overlay_menu=args.danger_overlay_menu,
             starter_content=args.starter_content,
             aoe_reference=args.aoe_reference,
+            custom_spell_effects=args.custom_spell_effects,
             item_id_cap=args.item_id_cap,
             localized_text_auto_wrap=args.localized_text_auto_wrap,
             casual_mode=args.casual_mode,
