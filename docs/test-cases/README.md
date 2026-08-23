@@ -29,20 +29,16 @@ and coverage lifecycle.
 
 ## Coverage lifecycle
 
-The initial registry is intentionally in **foundation** mode. It validates
-the catalog's own case but does **not** claim that every current shipped
-feature is covered. The feature-family backfills own that work:
+The registry is in **complete** mode. The #55 optional-gameplay, #56
+localization, #57 core-framework, and #58 presentation/audio/utility backfills
+all supply their current feature records, case links, and automation mappings.
+`coverage.expected_feature_ids` enumerates every current feature, while
+`deferred_issues` is empty.
 
-| Issue | Backfill family |
-| --- | --- |
-| [#57](https://github.com/laqieer/fireemblem8-expansion/issues/57) | Core framework and authoring |
-| [#55](https://github.com/laqieer/fireemblem8-expansion/issues/55) | Optional gameplay |
-| [#58](https://github.com/laqieer/fireemblem8-expansion/issues/58) | Presentation, audio, and utility |
-| [#56](https://github.com/laqieer/fireemblem8-expansion/issues/56) | Localization and locale persistence |
+Complete mode is a living shipped-feature inventory, not a snapshot of those
+four backfills. Every subsequently shipped named contract must add its feature
+ID, stable case, procedure, and automation mapping in the same change.
 
-Those issues add their reference-document links and records. The final
-backfill changes `coverage.mode` to `complete`, removes
-`deferred_issues`, and supplies the explicit current shipped-feature index.
 In complete mode the checker fails if an indexed feature is absent, is not
 current, or lacks a required owned case. A retired or excluded record is not
 coverage: it requires an explicit reason and cannot satisfy a complete-mode
@@ -60,4 +56,21 @@ python3 -m unittest scripts.docs_check_tests.test_check_docs -v
 python3 scripts/check_docs.py --check
 ```
 
-The foundation procedure is [`TC-CATALOG-001`](foundation.md#tc-catalog-001-tester-case-catalog-foundation).
+The foundation procedures are
+[`TC-CATALOG-001`](foundation.md#tc-catalog-001-tester-case-catalog-foundation)
+and
+[`TC-TEST-QUALITY-001`](foundation.md#tc-test-quality-001-meaningful-test-evidence-policy-rejects-semantic-mutations).
+The core framework and authoring procedures are in
+[`core-framework.md`](core-framework.md); optional gameplay procedures are in
+[`optional-gameplay.md`](optional-gameplay.md); presentation, audio, and
+utility procedures are in
+[`presentation-audio-utility.md`](presentation-audio-utility.md); and
+localization procedures are in [`localization.md`](localization.md). The
+optional HQ PCM mixer procedure is
+[`TC-AUDIO-HQMIX-001`](audio.md#tc-audio-hqmix-001-hq-pcm-mixer-produces-bounded-stereo-output).
+Community asset-adapter procedures are in
+[`asset-authoring.md`](asset-authoring.md), and repository delivery-policy
+procedures are in [`workflow-governance.md`](workflow-governance.md).
+Issue #84's security/correctness procedures are
+[`TC-SIO-084`](codeql-alerts.md#tc-sio-084-bounded-link-arena-transfer) and
+[`TC-CODEQL-084`](codeql-alerts.md#tc-codeql-084-remaining-confirmed-alert-boundaries).

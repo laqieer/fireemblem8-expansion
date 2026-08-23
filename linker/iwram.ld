@@ -89,95 +89,123 @@
 . = ALIGN(4);
 
 /* COMMON */
+__hq_mixer_layout_shift = __hq_mixer_enabled * 0x6C0;
+__hq_mixer_layout_anchor = 0x006A80;
 . = 0x002C60;
         . = ALIGN(4); *src/m4a.o(.bss.code);
 PROVIDE(gUnk_62 = __iwram_start + 0x002C61);
-. = 0x003060; gUnk_63 = .;
-. = 0x003070; gOamLoPutIt = .;
-. = 0x003080; gLCDControlBuffer = .;
-. = 0x0030D8; gUnk_64 = .;
-. = 0x0030F0; gIRQHandlers = .;
-. = 0x003128; gUnk_65 = .;
-. = 0x00312C; gOamAffinePutId = .;
-. = 0x003130; gUnk_66 = .;
-. = 0x003134; sHBlankHandler1 = .;
-. = 0x003140; gOam = .;
-. = 0x003740; gUnk_67 = .;
-. = 0x003744; gOamHiPutIt = .;
-. = 0x003748; sHBlankHandler2 = .;
-. = 0x003750; gUnk_68 = .;
-. = 0x004150; DecodeStringRAMFunc = .;
-. = 0x004154; gUnk_69 = .;
-. = 0x004158; gOamAffinePutIt = .;
-. = 0x004160; IntrMain_Buffer = .;
-. = 0x004960; gUnk_70 = .;
-. = 0x004970; gSpriteAllocIt = .;
-. = 0x004980; gFaces = .;
-. = 0x004990; gpBgVerticalScrollSt = .;
-. = 0x0049A0; gWorkingBmMap = .;
-. = 0x0049B0; gMovMapFillStPool1 = .;
-. = 0x004BB0; gWorkingTerrainMoveCosts = .;
-. = 0x004C00; gStatGainSimUnit = .;
-. = 0x004C50; gMovMapFillStPool2 = .;
-. = 0x004E50; gActiveUnit = .;
-. = 0x004E60; gMovMapFillState = .;
-. = 0x004E70; gUnk_71 = .;
-. = 0x004E74; gUnk_72 = .;
-. = 0x004E80; gUnk_73 = .;
-. = 0x004E86; gUnk_74 = .;
-. = 0x004F08; gSioStateId = .;
-. = 0x004F0C; gSioMsgBuf = .;
-. = 0x004F10; AiDecideMainFunc = .;
-. = 0x004F20; gUnk_75 = .;
-. = 0x004FA0; gUnk_76 = .;
-. = 0x004FA4; gUnk_77 = .;
-. = 0x004FA8; gEkrXQuakeOff = .;
-. = 0x004FAC; gBanimDebugCurrentIndex = .;
-. = 0x004FB0; gEkrYQuakeOff = .;
-. = 0x004FC0;
+. = 0x003060 + __hq_mixer_layout_shift; gUnk_63 = .;
+. = 0x003070 + __hq_mixer_layout_shift; gOamLoPutIt = .;
+. = 0x003080 + __hq_mixer_layout_shift; gLCDControlBuffer = .;
+. = 0x0030D8 + __hq_mixer_layout_shift; gUnk_64 = .;
+. = 0x0030F0 + __hq_mixer_layout_shift; gIRQHandlers = .;
+. = 0x003128 + __hq_mixer_layout_shift; gUnk_65 = .;
+. = 0x00312C + __hq_mixer_layout_shift; gOamAffinePutId = .;
+. = 0x003130 + __hq_mixer_layout_shift; gUnk_66 = .;
+. = 0x003134 + __hq_mixer_layout_shift; sHBlankHandler1 = .;
+. = 0x003140 + __hq_mixer_layout_shift; gOam = .;
+. = 0x003740 + __hq_mixer_layout_shift; gUnk_67 = .;
+. = 0x003744 + __hq_mixer_layout_shift; gOamHiPutIt = .;
+. = 0x003748 + __hq_mixer_layout_shift; sHBlankHandler2 = .;
+. = 0x003750 + __hq_mixer_layout_shift; gUnk_68 = .;
+. = 0x004150 + __hq_mixer_layout_shift; DecodeStringRAMFunc = .;
+. = 0x004154 + __hq_mixer_layout_shift; gUnk_69 = .;
+. = 0x004158 + __hq_mixer_layout_shift; gOamAffinePutIt = .;
+. = 0x004160 + __hq_mixer_layout_shift; IntrMain_Buffer = .;
+. = 0x004960 + __hq_mixer_layout_shift; gUnk_70 = .;
+. = 0x004970 + __hq_mixer_layout_shift; gSpriteAllocIt = .;
+. = 0x004980 + __hq_mixer_layout_shift; gFaces = .;
+. = 0x004990 + __hq_mixer_layout_shift; gpBgVerticalScrollSt = .;
+. = 0x0049A0 + __hq_mixer_layout_shift; gWorkingBmMap = .;
+. = 0x0049B0 + __hq_mixer_layout_shift; gMovMapFillStPool1 = .;
+. = 0x004BB0 + __hq_mixer_layout_shift; gWorkingTerrainMoveCosts = .;
+. = 0x004C00 + __hq_mixer_layout_shift; gStatGainSimUnit = .;
+. = 0x004C50 + __hq_mixer_layout_shift; gMovMapFillStPool2 = .;
+. = 0x004E50 + __hq_mixer_layout_shift; gActiveUnit = .;
+. = 0x004E60 + __hq_mixer_layout_shift; gMovMapFillState = .;
+. = 0x004E70 + __hq_mixer_layout_shift; gUnk_71 = .;
+. = 0x004E74 + __hq_mixer_layout_shift; gUnk_72 = .;
+. = 0x004E80 + __hq_mixer_layout_shift; gUnk_73 = .;
+. = 0x004E86 + __hq_mixer_layout_shift; gUnk_74 = .;
+. = 0x004F08 + __hq_mixer_layout_shift; gSioStateId = .;
+. = 0x004F0C + __hq_mixer_layout_shift; gSioMsgBuf = .;
+. = 0x004F10 + __hq_mixer_layout_shift; AiDecideMainFunc = .;
+. = 0x004F20 + __hq_mixer_layout_shift; gUnk_75 = .;
+. = 0x004FA0 + __hq_mixer_layout_shift; gUnk_76 = .;
+. = 0x004FA4 + __hq_mixer_layout_shift; gUnk_77 = .;
+. = 0x004FA8 + __hq_mixer_layout_shift; gEkrXQuakeOff = .;
+. = 0x004FAC + __hq_mixer_layout_shift; gBanimDebugCurrentIndex = .;
+. = 0x004FB0 + __hq_mixer_layout_shift; gEkrYQuakeOff = .;
+. = 0x004FC0 + __hq_mixer_layout_shift;
 . = ALIGN(4); *src/mapanim_debug.o(.bss);
 . = ALIGN(4); *src/mapanim_spellassocfx.o(.bss);
-. = 0x005250; gPermanentFlagBits = .;
-. = 0x005270; gChapterFlagBits = .;
-. = 0x005280; gGMData = .;
-. = 0x005324; gUnk_78 = .;
-. = 0x005349; gUnk_79 = .;
-. = 0x00534E; gGmMonsterRnState = .;
-. = 0x005360; gFontClassChgMenu = .;
-. = 0x005380; gFontClassChg = .;
-. = 0x005398; gUnk_80 = .;
-. = 0x0053A0; gUnk_81 = .;
-. = 0x0053E0; gUnk_82 = .;
-. = 0x005408; gUnk_83 = .;
-. = 0x005410;
+. = 0x005250 + __hq_mixer_layout_shift; gPermanentFlagBits = .;
+. = 0x005270 + __hq_mixer_layout_shift; gChapterFlagBits = .;
+. = 0x005280 + __hq_mixer_layout_shift; gGMData = .;
+. = 0x005324 + __hq_mixer_layout_shift; gUnk_78 = .;
+. = 0x005349 + __hq_mixer_layout_shift; gUnk_79 = .;
+. = 0x00534E + __hq_mixer_layout_shift; gGmMonsterRnState = .;
+. = 0x005360 + __hq_mixer_layout_shift; gFontClassChgMenu = .;
+. = 0x005380 + __hq_mixer_layout_shift; gFontClassChg = .;
+. = 0x005398 + __hq_mixer_layout_shift; gUnk_80 = .;
+. = 0x0053A0 + __hq_mixer_layout_shift; gUnk_81 = .;
+. = 0x0053E0 + __hq_mixer_layout_shift; gUnk_82 = .;
+. = 0x005408 + __hq_mixer_layout_shift; gUnk_83 = .;
+. = 0x005410 + __hq_mixer_layout_shift;
         . = ALIGN(4); *src/m4a.o(.bss.gSoundInfo);
-. = 0x0063C0; gMPlayInfo_SE4_BMP2 = .;
-. = 0x006400; gMPlayInfo_SE5_BMP3 = .;
-. = 0x006440; gMPlayInfo_BGM1 = .;
-. = 0x006480;
+. = 0x0063C0 + __hq_mixer_layout_shift;
+PROVIDE(gMPlayInfo_SE4_BMP2 = .);
+. = (0x006400 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
+PROVIDE(gMPlayInfo_SE5_BMP3 = .);
+. = (0x006440 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
+PROVIDE(gMPlayInfo_BGM1 = .);
+. = (0x006480 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
         . = ALIGN(4); *src/m4a.o(.bss.gMPlayJumpTable);
-PROVIDE(gUnk_84 = __iwram_start + 0x006484);
-PROVIDE(gUnk_85 = __iwram_start + 0x006508);
-PROVIDE(gUnk_86 = __iwram_start + 0x00650C);
-. = 0x006510;
+PROVIDE(gUnk_84 = __iwram_start + 0x006484 + __hq_mixer_layout_shift);
+PROVIDE(gUnk_85 = __iwram_start + 0x006508 + __hq_mixer_layout_shift);
+PROVIDE(gUnk_86 = __iwram_start + 0x00650C + __hq_mixer_layout_shift);
+. = (0x006510 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
         . = ALIGN(4); *src/m4a.o(.bss.gCgbChans);
-. = 0x006610; gMPlayInfo_SE6_BMP4 = .;
-. = 0x006650; gMPlayInfo_BGM2 = .;
-. = 0x006690; gMPlayInfo_SE1_SYS1 = .;
-. = 0x0066D0; gMPlayInfo_SE3_BMP1 = .;
-. = 0x006710;
+. = (0x006610 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
+PROVIDE(gMPlayInfo_SE6_BMP4 = .);
+. = (0x006650 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
+PROVIDE(gMPlayInfo_BGM2 = .);
+. = (0x006690 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
+PROVIDE(gMPlayInfo_SE1_SYS1 = .);
+. = (0x0066D0 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
+PROVIDE(gMPlayInfo_SE3_BMP1 = .);
+. = (0x006710 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
         . = ALIGN(4); *src/m4a.o(.bss.gMPlayMemAccArea);
-. = 0x006720; gMPlayInfo_SE7_EVT = .;
-. = 0x006760; gMPlayInfo_SE2_SYS2 = .;
+. = (0x006720 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
+PROVIDE(gMPlayInfo_SE7_EVT = .);
+. = (0x006760 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
+PROVIDE(gMPlayInfo_SE2_SYS2 = .);
 
 /* *src/agb_sram.o(COMMON); */
-. = 0x0067A0;
+. = (0x0067A0 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
         . = ALIGN(4); *src/agb_sram.o(.bss.ReadSramFast);
-. = 0x0067A4;
+. = (0x0067A4 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
         . = ALIGN(4); *src/agb_sram.o(.bss.VerifySramFast);
 
-. = 0x67A8;
+. = (0x0067A8 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
+    + __hq_mixer_layout_anchor * __hq_mixer_enabled;
 . = ALIGN(4); *libc.a:libc_a-sbrkr.o(COMMON);
+
+. = __hq_mixer_layout_anchor * __hq_mixer_enabled + . * (1 - __hq_mixer_enabled);
+        . = ALIGN(4); *src/m4a.o(.bss.hq_mix_buffer);
 
 /*
  * Modern CJK message transforms need their decoded source and derived

@@ -78,6 +78,18 @@ AC_ARG_ENABLE(
     [fe8_aoe_reference=])
 
 AC_ARG_ENABLE(
+    [custom-spell-effects],
+    [AS_HELP_STRING(
+        [--enable-custom-spell-effects],
+        [enable the bounded typed custom battle spell-effect runtime])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_custom_spell_effects=1],
+        [no], [fe8_custom_spell_effects=0],
+        [AC_MSG_ERROR([--enable-custom-spell-effects accepts only yes or no])])],
+    [fe8_custom_spell_effects=])
+
+AC_ARG_ENABLE(
     [localized-text-auto-wrap],
     [AS_HELP_STRING(
         [--enable-localized-text-auto-wrap],
@@ -100,6 +112,18 @@ AC_ARG_ENABLE(
         [no], [fe8_casual_mode=0],
         [AC_MSG_ERROR([--enable-casual-mode accepts only yes or no])])],
     [fe8_casual_mode=])
+
+AC_ARG_ENABLE(
+    [hq-mixer],
+    [AS_HELP_STRING(
+        [--enable-hq-mixer],
+        [select the optional high-resolution MP2K PCM mixer (modern AAPCS only)])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_hq_mixer=1],
+        [no], [fe8_hq_mixer=0],
+        [AC_MSG_ERROR([--enable-hq-mixer accepts only yes or no])])],
+    [fe8_hq_mixer=])
 
 AC_ARG_WITH(
     [bgm-continuation-policy],
@@ -202,6 +226,10 @@ AS_IF(
     [FE8_CFG_AOE_REFERENCE="EXPANSION_AOE_REFERENCE := $fe8_aoe_reference"],
     [FE8_CFG_AOE_REFERENCE=])
 AS_IF(
+    [test -n "$fe8_custom_spell_effects"],
+    [FE8_CFG_CUSTOM_SPELL_EFFECTS="EXPANSION_CUSTOM_SPELL_EFFECTS := $fe8_custom_spell_effects"],
+    [FE8_CFG_CUSTOM_SPELL_EFFECTS=])
+AS_IF(
     [test -n "$fe8_localized_text_auto_wrap"],
     [FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP="EXPANSION_LOCALIZED_TEXT_AUTO_WRAP := $fe8_localized_text_auto_wrap"],
     [FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP=])
@@ -209,6 +237,10 @@ AS_IF(
     [test -n "$fe8_casual_mode"],
     [FE8_CFG_CASUAL_MODE="EXPANSION_CASUAL_MODE := $fe8_casual_mode"],
     [FE8_CFG_CASUAL_MODE=])
+AS_IF(
+    [test -n "$fe8_hq_mixer"],
+    [FE8_CFG_HQ_MIXER="EXPANSION_HQ_MIXER := $fe8_hq_mixer"],
+    [FE8_CFG_HQ_MIXER=])
 AS_IF(
     [test -n "$fe8_bgm_continuation_policy"],
     [FE8_CFG_BGM_CONTINUATION_POLICY="EXPANSION_BGM_CONTINUATION_POLICY := $fe8_bgm_continuation_policy"],
@@ -243,8 +275,10 @@ AC_SUBST([FE8_CFG_MECHANICS_SAMPLE])
 AC_SUBST([FE8_CFG_DANGER_OVERLAY_MENU])
 AC_SUBST([FE8_CFG_STARTER_CONTENT])
 AC_SUBST([FE8_CFG_AOE_REFERENCE])
+AC_SUBST([FE8_CFG_CUSTOM_SPELL_EFFECTS])
 AC_SUBST([FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP])
 AC_SUBST([FE8_CFG_CASUAL_MODE])
+AC_SUBST([FE8_CFG_HQ_MIXER])
 AC_SUBST([FE8_CFG_BGM_CONTINUATION_POLICY])
 AC_SUBST([FE8_CFG_PSEUDO_LOCALE])
 AC_SUBST([FE8_CFG_ENABLED_LOCALES])
@@ -274,8 +308,10 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --danger-overlay-menu "$fe8_danger_overlay_menu" \
     --starter-content "$fe8_starter_content" \
     --aoe-reference "$fe8_aoe_reference" \
+    --custom-spell-effects "$fe8_custom_spell_effects" \
     --localized-text-auto-wrap "$fe8_localized_text_auto_wrap" \
     --casual-mode "$fe8_casual_mode" \
+    --hq-mixer "$fe8_hq_mixer" \
     --bgm-continuation-policy "$fe8_bgm_continuation_policy" \
     --item-id-cap "$fe8_item_id_cap" 2>&1`
 fe8_config_status=$?

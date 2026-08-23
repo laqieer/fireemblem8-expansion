@@ -20,11 +20,14 @@ the authoritative technical documentation and are checked by CI.
 | Enable/extend starter content, mechanics, or Threat Range QoL | [`starter_features.md`](starter_features.md) |
 | Add a bounded area-of-effect target/effect or item route | [`aoe.md`](aoe.md) |
 | Drive blue units through the existing AI for automated smoke tests | [`autoplay.md`](autoplay.md) |
+| Enable the typed custom battle spell-effect runtime foundation | [`custom_spell_effects.md`](custom_spell_effects.md) |
 | Configure casual defeat restoration | [`starter_features.md`](starter_features.md#optional-casual-defeat-policy-issue-34) |
+| Enable the optional high-resolution MP2K PCM mixer | [`audio.md`](audio.md) |
 | Configure portrait/minimug rules | [`portrait_resolver.md`](portrait_resolver.md) |
 | Run a tester-facing feature procedure | [`test-cases/README.md`](test-cases/README.md) |
 | Audit a community asset format before proposing an adapter | [`community_asset_coverage.md`](community_asset_coverage.md) |
 | Author a source-owned asset record or add an asset adapter | [`asset_manifest.md`](asset_manifest.md) |
+| Author a strict community battle-animation text/PNG package | [`battle_animation_packages.md`](battle_animation_packages.md) |
 | Author a strict formatted full-portrait package | [`portrait_packages.md`](portrait_packages.md) |
 | Author a safe Tiled chapter map layout | [`tmx_map_layouts.md`](tmx_map_layouts.md) |
 | Author expansion-localized UI text/locales | [`localization.md`](localization.md) |
@@ -71,6 +74,7 @@ numbers mark merged (closed) contracts only:
 | --- | --- | --- |
 | Generated data authoring | JSON sources under `src/data/*.json` + table schemas in `scripts/generated_data/*/schema.py`; `make generated-data-check`/`generated-data-active-heal-check` | [`generated_data.md`](generated_data.md), [`generated_data_tutorial.md`](generated_data_tutorial.md) |
 | Typed BGM routing and continuation | Public context router, validated chapter/flag variants, dancer/staff selectors, and preserve/resume/restart policy | [`bgm_routing.md`](bgm_routing.md), [`config_identity.md`](config_identity.md) |
+| Optional HQ PCM mixer (issue #83) | Default-off modern MP2K mixer selection, IWRAM budget, and target PCM procedure | [`audio.md`](audio.md) |
 | Typed IDs / caps (issue #10) | `include/id_space.h` (DEFAULT), `build/generated/data/id_space_active.h` (ACTIVE), `FE8_ITEM_ID_CAP` | [`id_space.md`](id_space.md), [`../reports/id_space_audit.md`](../reports/id_space_audit.md) |
 | Config / ROM identity | `struct ExpansionMetadata` (`include/expansion_metadata.h`), `EXPANSION_SAVE_COMPAT_EPOCH` | [`config_identity.md`](config_identity.md), [`save_format.md`](save_format.md) |
 | Debug-tools extension (issue #11) | Action-registration API (`include/expansion_debugtools.h`), `FE8_EXPANSION_DEBUGTOOLS_ENABLED` | [`debugtools.md`](debugtools.md) |
@@ -78,9 +82,11 @@ numbers mark merged (closed) contracts only:
 | Starter features (issue #6) | Four default-off flags; `include/expansion_mechanics.h`; `include/expansion_starter_content.h`; danger-overlay menu | [`starter_features.md`](starter_features.md) |
 | Typed area-of-effect actions (issue #42) | `include/expansion_aoe.h`; bounded target/effect API and shared item/action/AI route registry | [`aoe.md`](aoe.md) |
 | Transient blue computer control (issue #85) | `include/expansion_autoplay.h`; `PLAYER`/`COMPUTER` control and pointer-free semantic telemetry | [`autoplay.md`](autoplay.md) |
+| Custom battle spell effects (issue #77) | `include/custom_spell_effect.h`; typed descriptor lookup/start API and `0x80..0x8F` generated-private range | [`custom_spell_effects.md`](custom_spell_effects.md) |
 | Portrait/minimug resolver (issue #35) | Typed character/class/chapter/flag registry with legacy fallback | [`portrait_resolver.md`](portrait_resolver.md) |
 | Community asset coverage (issue #59) | Asset-family ownership/gap catalog; not an importer or runtime API | [`community_asset_coverage.md`](community_asset_coverage.md) |
 | Asset manifest (issue #60) | Versioned source-owned asset records and generated existing-seam dependencies | [`asset_manifest.md`](asset_manifest.md) |
+| Battle-animation packages (issue #62) | Strict text/PNG package adapter through the existing battle-animation and compressor seams | [`battle_animation_packages.md`](battle_animation_packages.md) |
 | Formatted portrait packages (issue #63) | Strict sheet contract, generated FaceData registration, and tester procedure | [`portrait_packages.md`](portrait_packages.md) |
 | Safe TMX chapter maps (issue #64) | Fail-closed Tiled 1.10 map-layout subset and source workflow | [`tmx_map_layouts.md`](tmx_map_layouts.md) |
 | Localization (issue #18) | `ExpansionLocaleId`/`ExpansionMsgId`, `texts/expansion/`, prefs + selector/settings APIs | [`localization.md`](localization.md), [`save_format.md`](save_format.md) |
@@ -131,9 +137,11 @@ and
 | [`starter_features.md`](starter_features.md) | Current | Four opt-in flags, typed mechanics/content API, QoL and matrices (issue #6) |
 | [`aoe.md`](aoe.md) | Current | Typed bounded AoE targeting/effects, shared item seam, and default-off reference (issue #42) |
 | [`autoplay.md`](autoplay.md) | Current | Transient blue computer control, bounded telemetry, action support, and runtime evidence (issue #85) |
+| [`custom_spell_effects.md`](custom_spell_effects.md) | Current | Default-off typed battle spell-effect runtime foundation and resource contract (issue #77) |
 | [`portrait_resolver.md`](portrait_resolver.md) | Current | Typed data-driven portrait/minimug resolver and validation contract (issue #35) |
 | [`community_asset_coverage.md`](community_asset_coverage.md) | Current | Authoritative community asset family ownership, build/runtime seam, and gap catalog (issue #59) |
 | [`asset_manifest.md`](asset_manifest.md) | Current | Versioned asset manifest, generated existing-seam dependencies, and adapter contract (issue #60) |
+| [`battle_animation_packages.md`](battle_animation_packages.md) | Current | Strict versioned community battle-animation text/PNG package adapter (issue #62) |
 | [`portrait_packages.md`](portrait_packages.md) | Current | Strict formatted portrait package, generated FaceData registration, and tester procedure (issue #63) |
 | [`tmx_map_layouts.md`](tmx_map_layouts.md) | Current | Fail-closed TMX map-layout adapter and Tiled authoring boundary (issue #64) |
 | [`localization.md`](localization.md) | Current | Stable locale/message IDs, authoring, prefs/UI, budgets and matrices (issue #18) |
@@ -142,9 +150,15 @@ and
 | [`test-cases/README.md`](test-cases/README.md) | Current | Indexed tester-facing case catalog, template, and backfill lifecycle (issue #54) |
 | [`test-cases/template.md`](test-cases/template.md) | Template | Reusable tester-facing procedure template (issue #54) |
 | [`test-cases/foundation.md`](test-cases/foundation.md) | Current | Catalog/checker foundation procedure (issue #54) |
+| [`test-cases/core-framework.md`](test-cases/core-framework.md) | Current | Core framework and authoring procedures, profiles, controls, and automation (issue #57) |
+| [`test-cases/optional-gameplay.md`](test-cases/optional-gameplay.md) | Current | Optional gameplay procedures, profiles, controls, and automation (issue #55) |
+| [`test-cases/presentation-audio-utility.md`](test-cases/presentation-audio-utility.md) | Current | Presentation, audio, and utility procedures, profiles, controls, and automation (issue #58) |
+| [`test-cases/asset-authoring.md`](test-cases/asset-authoring.md) | Current | Source-asset adapter procedures, controls, runtime evidence, and cleanup (issue #62) |
+| [`test-cases/workflow-governance.md`](test-cases/workflow-governance.md) | Current | Trusted-push and centralized CI-wait orchestration procedure (issue #93) |
 | [`test-cases/localization.md`](test-cases/localization.md) | Current | Localization and locale-persistence procedures, semantic runtime mappings, and negative controls (issue #56) |
 | [`test-cases/patch-release.md`](test-cases/patch-release.md) | Current | Trusted BPS artifact validation/application and malformed-input procedures (issue #49) |
 | [`test-cases/autoplay.md`](test-cases/autoplay.md) | Current | TC-AUTOPLAY-001 blue computer-phase smoke and default PLAYER negatives (issue #85) |
+| [`test-cases/codeql-alerts.md`](test-cases/codeql-alerts.md) | Current | Link Arena and confirmed CodeQL alert regression procedures (issue #84) |
 | [`game_localization_catalog.md`](game_localization_catalog.md) | Current | Full-game FE8U-indexed CJK catalog generation, runtime bounds, and synthetic link gate |
 | [`documentation-inventory.md`](documentation-inventory.md) | Current | Exact recognized-Markdown inventory |
 | [`external-link-registry.md`](external-link-registry.md) | Current | Offline URL ownership/status coverage |

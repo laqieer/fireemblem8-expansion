@@ -68,14 +68,31 @@ For an objective to resolve all repository issues, also close the resolved
 issues and require `make all-issues-completion-check` to pass. Track commit,
 push, CI, and issue closure as explicit dependent todos from the start.
 
-CI waiting must not occupy a reasoning subagent. The subagent that dispatches
-a workflow records its exact SHA and run ID, then returns immediately. The
-orchestrator runs exactly one bounded direct shell watcher:
+Implementation subagents validate and commit locally but do not push. The
+orchestrator pushes the exact commit under repository-owner context so Build
+does not become `action_required`. If an already-pushed run for that same SHA
+is `action_required`, the orchestrator reruns it with `gh run rerun <run-id>`
+under owner context. Never create empty commits, weaken Actions approvals, or
+use privileged `pull_request_target` just to bypass approval.
+
+CI waiting must not occupy a reasoning subagent. The orchestrator that
+dispatches a workflow records its exact SHA and run ID, then returns
+immediately. The orchestrator runs exactly one bounded direct shell watcher:
 `timeout 90m gh run watch <run-id> --interval 30 --exit-status`. Rely on the
 shell runtime's completion notification, and invoke a reasoning agent only
 after the run is terminal to inspect logs or reviews. Do not repeatedly wake an
 agent to poll, do not create duplicate watchers, and cancel superseded
 candidate runs before dispatching replacement checks.
+
+For a fleet with multiple active pull requests, designate one delivery
+coordinator. It owns the run/PR ledger, starts or records exactly one direct
+shell watcher per active run, receives terminal watcher notifications, triages
+CI and review failures, routes local-only fixes to one owner, performs each
+final merge gate and autonomous merge, and initiates the post-merge conflict
+sweep. The coordinator must not poll, sleep, or keep a reasoning turn alive
+solely to wait. Other agents must not duplicate watchers, fix ownership, or
+merge decisions; they return validated local commits to the coordinator for
+the trusted owner-context push.
 
 After each merge, immediately inspect every open PR. Merge current `master`
 only into PRs with real conflicts or shared-contract changes; refresh
@@ -98,6 +115,49 @@ occupy a reasoning agent or stop with a waiting-only response. Cancel only a
 superseded candidate run after that candidate actually changes. A broken
 master Build requires an immediate fix-forward or revert and blocks that
 issue's closure and remote completion, but not unrelated independent PRs.
+
+## Meaningful test evidence
+
+- **Evidence standard:** required
+  - **behavior:** required
+  - **parsed structural contract:** required
+  - **generated output:** required
+  - **compile/link properties:** required
+  - **runtime state:** required
+- **Prohibited evidence:** prohibited
+  - **sole-evidence rule:** prohibited
+  - **arbitrary strings:** prohibited
+  - **comments:** prohibited
+  - **helper names:** prohibited
+  - **line numbers:** prohibited
+  - **ordering:** prohibited
+  - **implementation spelling:** prohibited
+  - **Git-text rationale:** required. git-tracks=source,review,history;
+    raw-tracked-text=not-behavior-evidence
+- **Static-contract exception:** conditional
+  - **source-text assertion:** permitted-only
+  - **exact syntax/spelling/absence:** required
+  - **documented public format:** one-of
+  - **security boundary:** one-of
+  - **generated-file contract:** one-of
+  - **ABI/layout constraint:** one-of
+  - **externally consumed protocol:** one-of
+  - **named contract:** required
+  - **irreplaceable evidence explanation:** required
+- **Evidence preference:** ordered
+  - **real function positive/adversarial inputs:** first
+  - **parsed JSON/YAML/Make/AST/binary/schema:** second
+  - **compile/link typed symbols/sections/resources/generated output:** third
+  - **deterministic target-ROM/libmGBA behavior:** fourth
+  - **narrowly justified source-text assertion:** last
+- **Replacement and mutation controls:** required
+  - **accepted requirement:** preserve
+  - **stronger evidence:** required-or-duplicate
+  - **duplicate gate:** no-independent-contract
+  - **phrase-preserving behavior change:** fails
+  - **semantics-preserving spelling/order refactor:** green
+
+## First-time setup
 
 First-time setup: `./scripts/quickstart.sh` installs/probes the modern
 toolchain, an ARM GDB debugger, the mGBA GDB-server frontend, and libmGBA by

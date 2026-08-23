@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import http.server
+import os
 import re
 import shlex
 import subprocess
@@ -16,6 +17,11 @@ from scripts.modernize import patch_release
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
+ARTIFACT_FILENAMES = (
+    "README.txt",
+    "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
+    "manifest.json",
+)
 
 
 def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
@@ -70,6 +76,24 @@ def patch_release_download_command(workflow: str) -> list[str]:
     if len(commands) != 1:
         raise AssertionError("publisher job must define exactly one curl download command")
     return commands[0]
+
+
+def artifact_filename_set_check(directory: Path, inherited_locale: str) -> subprocess.CompletedProcess:
+    script = """\
+set -euo pipefail
+LC_ALL=C
+export LC_ALL
+find "$1" -maxdepth 1 -type f -printf '%f\\n' | sort | diff -u \\
+  <(printf '%s\\n' README.txt fireemblem8-expansion-all-locales-all-features-aapcs.bps manifest.json | sort) -
+"""
+    environment = dict(os.environ, LC_ALL=inherited_locale)
+    return subprocess.run(
+        ["bash", "-c", script, "--", str(directory)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=environment,
+        check=False,
+    )
 
 
 class PatchReleaseWorkflowTests(unittest.TestCase):
@@ -207,9 +231,43 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             self.patch_job,
         )
         self.assertIn("retention-days: 30", self.patch_job)
-        self.assertIn("fireemblem8-expansion-all-locales-all-features-aapcs.bps", self.patch_job)
-        self.assertIn("manifest.json README.txt", self.patch_job)
+        for name in ARTIFACT_FILENAMES:
+            with self.subTest(name=name):
+                self.assertIn(name, self.patch_job)
         self.assertNotIn("modern-release-aapcs-rom-map", self.text)
+
+    def test_artifact_filename_allowlist_is_locale_independent_and_exact(self):
+        expected_check = (
+            "LC_ALL=C\n"
+            "        export LC_ALL\n"
+            "        find \"$PATCH_ARTIFACT_DIR\" -maxdepth 1 -type f -printf '%f\\n' | sort | diff -u "
+            "<(printf '%s\\n' README.txt fireemblem8-expansion-all-locales-all-features-aapcs.bps manifest.json | sort) -"
+        )
+        self.assertIn(expected_check, self.patch_job)
+
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        try:
+            with tempfile.TemporaryDirectory(dir=artifact_root) as tmp:
+                artifact = Path(tmp)
+                for name in reversed(ARTIFACT_FILENAMES):
+                    (artifact / name).write_bytes(b"artifact")
+
+                for inherited_locale in ("C", "C.UTF-8"):
+                    with self.subTest(inherited_locale=inherited_locale):
+                        result = artifact_filename_set_check(artifact, inherited_locale)
+                        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8"))
+
+                (artifact / "extra.bin").write_bytes(b"extra")
+                self.assertNotEqual(artifact_filename_set_check(artifact, "C.UTF-8").returncode, 0)
+                (artifact / "extra.bin").unlink()
+
+                (artifact / "README.txt").unlink()
+                self.assertNotEqual(artifact_filename_set_check(artifact, "C").returncode, 0)
+        finally:
+            for child in artifact_root.iterdir():
+                if child.is_dir() and not any(child.iterdir()):
+                    child.rmdir()
 
     def test_profile_and_local_verifier_are_required_before_upload(self):
         self.assertIn("make expansion-modern-all-locales-all-features-check -j1", self.patch_job)

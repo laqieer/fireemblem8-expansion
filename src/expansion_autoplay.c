@@ -99,7 +99,8 @@ bool ExpansionAutoplay_TryActivateScenario(u16 newKeys, u16 heldKeys)
 
 bool ExpansionAutoplay_IsBlueComputerPhase(void)
 {
-    return sExpansionBlueControl == EXPANSION_BLUE_CONTROL_COMPUTER
+    return gPlaySt.faction == FACTION_BLUE
+        && sExpansionBlueControl == EXPANSION_BLUE_CONTROL_COMPUTER
         && (gExpansionAutoplayTelemetry.state == EXPANSION_AUTOPLAY_STATE_COMPUTER_PHASE
             || gExpansionAutoplayTelemetry.state == EXPANSION_AUTOPLAY_STATE_FAILURE);
 }

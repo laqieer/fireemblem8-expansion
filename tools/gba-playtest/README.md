@@ -304,3 +304,9 @@ development but is not exercised by CI. The archival/decomp `agbcc`
 modern path vs. archival decomp path") continues to build locally, unrelated
 to and unaffected by this harness, but it is not part of any CI gate here and
 must never be read as a substitute runtime gate for the modern path.
+
+## Tester-facing procedure
+
+[`TC-CORE-007`](../../docs/test-cases/core-framework.md#tc-core-007-runtime-harness-detects-mismatch)
+records the clean behavior-policy capture/verify procedure, host-only switch,
+deliberate mismatch control, and no-auto-refresh boundary.

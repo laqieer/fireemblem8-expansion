@@ -401,6 +401,47 @@ human-review requirement. Validation evidence must name the tester-facing case
 IDs exercised, exact profile or artifact, environment, positive and negative
 actual results, and the mapped automation result or precise manual-only reason.
 
+### Meaningful test evidence
+
+- **Evidence standard:** required
+  - **behavior:** required
+  - **parsed structural contract:** required
+  - **generated output:** required
+  - **compile/link properties:** required
+  - **runtime state:** required
+- **Prohibited evidence:** prohibited
+  - **sole-evidence rule:** prohibited
+  - **arbitrary strings:** prohibited
+  - **comments:** prohibited
+  - **helper names:** prohibited
+  - **line numbers:** prohibited
+  - **ordering:** prohibited
+  - **implementation spelling:** prohibited
+  - **Git-text rationale:** required. git-tracks=source,review,history;
+    raw-tracked-text=not-behavior-evidence
+- **Static-contract exception:** conditional
+  - **source-text assertion:** permitted-only
+  - **exact syntax/spelling/absence:** required
+  - **documented public format:** one-of
+  - **security boundary:** one-of
+  - **generated-file contract:** one-of
+  - **ABI/layout constraint:** one-of
+  - **externally consumed protocol:** one-of
+  - **named contract:** required
+  - **irreplaceable evidence explanation:** required
+- **Evidence preference:** ordered
+  - **real function positive/adversarial inputs:** first
+  - **parsed JSON/YAML/Make/AST/binary/schema:** second
+  - **compile/link typed symbols/sections/resources/generated output:** third
+  - **deterministic target-ROM/libmGBA behavior:** fourth
+  - **narrowly justified source-text assertion:** last
+- **Replacement and mutation controls:** required
+  - **accepted requirement:** preserve
+  - **stronger evidence:** required-or-duplicate
+  - **duplicate gate:** no-independent-contract
+  - **phrase-preserving behavior change:** fails
+  - **semantics-preserving spelling/order refactor:** green
+
 ### Issue #29 identity boundary
 
 Do not add or restore a whole-source/object/ROM SHA-256 identity gate, or
@@ -452,10 +493,29 @@ No human code review or approval is required. A CODEOWNERS request is advisory
 unless an external GitHub ruleset enforces it; this workflow does not add such
 a gate.
 
+### Trusted push ownership
+
+Implementation subagents validate and commit locally but do not push. The
+orchestrator pushes the exact commit under repository-owner context so Build
+does not become `action_required`. If an already-pushed run for that same SHA
+is `action_required`, the orchestrator reruns it with `gh run rerun <run-id>`
+under owner context. Never create empty commits, weaken Actions approvals, or
+use privileged `pull_request_target` just to bypass approval.
+
 ### CI waiting and agent lifetime
 
+For a fleet with multiple active pull requests, designate one delivery
+coordinator. It owns the run/PR ledger, starts or records exactly one direct
+shell watcher per active run, receives terminal watcher notifications, triages
+CI and review failures, routes local-only fixes to one owner, performs each
+final merge gate and autonomous merge, and initiates the post-merge conflict
+sweep. The coordinator must not poll, sleep, or keep a reasoning turn alive
+solely to wait. Other agents must not duplicate watchers, fix ownership, or
+merge decisions; they return validated local commits to the coordinator for
+the trusted owner-context push.
+
 Reasoning subagents must not remain alive merely to wait for a remote workflow.
-The subagent that pushes or dispatches a workflow records the exact candidate
+The orchestrator that pushes or dispatches a workflow records the exact candidate
 SHA and run ID, updates the orchestration state, and returns immediately. It
 must not poll until completion, sleep through rate-limit backoff, or repeatedly
 report that the workflow is still pending.
@@ -500,6 +560,10 @@ occupy a reasoning agent or stop with a waiting-only response. Cancel only a
 superseded candidate run after that candidate actually changes. A broken
 master Build requires an immediate fix-forward or revert and blocks that
 issue's closure and remote completion, but not unrelated independent PRs.
+
+The indexed source-only regression for trusted-push ownership and centralized
+CI waiting is
+[`TC-WORKFLOW-CI-WAIT-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-ci-wait-001-keep-ci-waiting-centralized-and-trusted-pushes-owner-scoped).
 
 Before merge:
 

@@ -626,8 +626,10 @@ FE8_CFG_DEFAULT_LOCALE
 FE8_CFG_ENABLED_LOCALES
 FE8_CFG_PSEUDO_LOCALE
 FE8_CFG_BGM_CONTINUATION_POLICY
+FE8_CFG_HQ_MIXER
 FE8_CFG_CASUAL_MODE
 FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP
+FE8_CFG_CUSTOM_SPELL_EFFECTS
 FE8_CFG_AOE_REFERENCE
 FE8_CFG_STARTER_CONTENT
 FE8_CFG_DANGER_OVERLAY_MENU
@@ -681,8 +683,10 @@ enable_mechanics_sample
 enable_danger_overlay_menu
 enable_starter_content
 enable_aoe_reference
+enable_custom_spell_effects
 enable_localized_text_auto_wrap
 enable_casual_mode
+enable_hq_mixer
 with_bgm_continuation_policy
 enable_pseudo_locale
 with_enabled_locales
@@ -1323,11 +1327,16 @@ Optional Features:
   --enable-starter-content
                           link the generated starter item and mechanic
   --enable-aoe-reference  enable the bounded typed-AoE reference probe/effect
+  --enable-custom-spell-effects
+                          enable the bounded typed custom battle spell-effect
+                          runtime
   --enable-localized-text-auto-wrap
                           enable the runtime localized-text wrapping safety
                           net
   --enable-casual-mode    restore eligible ordinary player defeats at chapter
                           boundaries
+  --enable-hq-mixer       select the optional high-resolution MP2K PCM mixer
+                          (modern AAPCS only)
   --enable-pseudo-locale  enable qps-ploc (also include it in
                           --with-enabled-locales)
 
@@ -1936,6 +1945,22 @@ else $as_nop
 fi
 
 
+# Check whether --enable-custom-spell-effects was given.
+if test ${enable_custom_spell_effects+y}
+then :
+  enableval=$enable_custom_spell_effects; case $enableval in #(
+  yes) :
+    fe8_custom_spell_effects=1 ;; #(
+  no) :
+    fe8_custom_spell_effects=0 ;; #(
+  *) :
+    as_fn_error $? "--enable-custom-spell-effects accepts only yes or no" "$LINENO" 5 ;;
+esac
+else $as_nop
+  fe8_custom_spell_effects=
+fi
+
+
 # Check whether --enable-localized-text-auto-wrap was given.
 if test ${enable_localized_text_auto_wrap+y}
 then :
@@ -1965,6 +1990,22 @@ then :
 esac
 else $as_nop
   fe8_casual_mode=
+fi
+
+
+# Check whether --enable-hq-mixer was given.
+if test ${enable_hq_mixer+y}
+then :
+  enableval=$enable_hq_mixer; case $enableval in #(
+  yes) :
+    fe8_hq_mixer=1 ;; #(
+  no) :
+    fe8_hq_mixer=0 ;; #(
+  *) :
+    as_fn_error $? "--enable-hq-mixer accepts only yes or no" "$LINENO" 5 ;;
+esac
+else $as_nop
+  fe8_hq_mixer=
 fi
 
 
@@ -2108,6 +2149,12 @@ then :
 else $as_nop
   FE8_CFG_AOE_REFERENCE=
 fi
+if test -n "$fe8_custom_spell_effects"
+then :
+  FE8_CFG_CUSTOM_SPELL_EFFECTS="EXPANSION_CUSTOM_SPELL_EFFECTS := $fe8_custom_spell_effects"
+else $as_nop
+  FE8_CFG_CUSTOM_SPELL_EFFECTS=
+fi
 if test -n "$fe8_localized_text_auto_wrap"
 then :
   FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP="EXPANSION_LOCALIZED_TEXT_AUTO_WRAP := $fe8_localized_text_auto_wrap"
@@ -2119,6 +2166,12 @@ then :
   FE8_CFG_CASUAL_MODE="EXPANSION_CASUAL_MODE := $fe8_casual_mode"
 else $as_nop
   FE8_CFG_CASUAL_MODE=
+fi
+if test -n "$fe8_hq_mixer"
+then :
+  FE8_CFG_HQ_MIXER="EXPANSION_HQ_MIXER := $fe8_hq_mixer"
+else $as_nop
+  FE8_CFG_HQ_MIXER=
 fi
 if test -n "$fe8_bgm_continuation_policy"
 then :
@@ -2178,6 +2231,7 @@ fi
 
 
 
+
 fe8_validate_rom_size=${fe8_rom_size:-16M}
 fe8_validate_text_shift=${fe8_text_shift:-0}
 fe8_abs_srcdir=`cd "$srcdir" && pwd`
@@ -2200,8 +2254,10 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --danger-overlay-menu "$fe8_danger_overlay_menu" \
     --starter-content "$fe8_starter_content" \
     --aoe-reference "$fe8_aoe_reference" \
+    --custom-spell-effects "$fe8_custom_spell_effects" \
     --localized-text-auto-wrap "$fe8_localized_text_auto_wrap" \
     --casual-mode "$fe8_casual_mode" \
+    --hq-mixer "$fe8_hq_mixer" \
     --bgm-continuation-policy "$fe8_bgm_continuation_policy" \
     --item-id-cap "$fe8_item_id_cap" 2>&1`
 fe8_config_status=$?

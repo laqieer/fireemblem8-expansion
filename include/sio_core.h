@@ -57,6 +57,9 @@ struct SioBigReceiveProc
     /* 3A */ u8 lastBlockLen;
     /* 3B */ u8 completionPercent;
     /* 3C */ u8 unk_3C;
+    /* 3D */ STRUCT_PAD(0x3D, 0x40);
+    /* 40 */ u32 capacity;
+    /* 44 */ u32 receivedSize;
 };
 
 enum
@@ -65,6 +68,14 @@ enum
     PLAYER_STATUS_1 = 1,
     PLAYER_STATUS_2 = 2,
     PLAYER_STATUS_5 = 5,
+};
+
+enum
+{
+    SIO_BIG_TRANSFER_IDLE = 0,
+    SIO_BIG_TRANSFER_ACTIVE,
+    SIO_BIG_TRANSFER_COMPLETE,
+    SIO_BIG_TRANSFER_ERROR,
 };
 
 struct SioMessage
@@ -157,10 +168,18 @@ s16 SioSend(const void * src, u16 len);
 s16 Sio_ReadPacket(s8 playerId, void * dst);
 int SioSend16(u16 * word, int arg_1);
 int Sio_ReadMultiFrame(int unused_0, u16 * arg_1);
-void SioQueuePendingRecvData(struct SioData * data);
+bool Sio_IsValidDataPacket(const struct SioData * data, u16 packetLen, u8 physicalSender);
+int SioQueuePendingRecvData(const struct SioData * data, u16 packetLen);
 struct SioData * Sio_PeekPendingSendData(u32 * out);
 int SioEmitData(const u8 * src, u16 len);
-int SioReceiveData(void * dst, u8 * outSenderId, bool (*verify)(void *));
+int SioReceiveData(
+    void * dst,
+    u16 dstCapacity,
+    u16 expectedLen,
+    u8 * outSenderId,
+    bool (*verify)(void *));
+bool SioGetBigTransferLayout(u32 len, u16 * blockCount, u8 * lastBlockLen);
+bool SioValidateBigTransferLayout(u16 blockCount, u8 lastBlockLen, u32 capacity, u32 * totalSize);
 void Sio_Halt(void);
 void Sio_SetSubState(int arg_0);
 void Sio_BeginSyncPhase(void);
@@ -173,8 +192,13 @@ void SioBigReceive_Init(struct SioBigReceiveProc * proc);
 void SioBigReceive_RecvHeader(struct SioBigReceiveProc * proc);
 void SioBigReceive_Loop(struct SioBigReceiveProc * proc);
 int StartSioBigSend(void * data, u32 len, void (*func)(struct SioBigSendProc *), u8 arg_3, ProcPtr parent);
-void StartSioBigReceive(void * data, void (*func)(struct SioBigReceiveProc *), ProcPtr parent);
+int StartSioBigReceive(
+    void * data,
+    u32 capacity,
+    void (*func)(struct SioBigReceiveProc *),
+    ProcPtr parent);
 bool IsSioBigTransferActive(void);
+int GetSioBigTransferStatus(void);
 
 extern struct SioSt * SHOULD_BE_CONST gSioSt;
 

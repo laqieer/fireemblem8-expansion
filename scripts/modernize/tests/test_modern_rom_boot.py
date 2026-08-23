@@ -645,6 +645,31 @@ class ModernRomBootTargetTests(unittest.TestCase):
         self.assertIn("expansion-modern-rom", goals_block)
         self.assertIn("expansion-modern-boot-check", goals_block)
 
+    def test_banim_package_runtime_check_is_a_modern_goal_with_its_recipe(self):
+        """The root Make invocation must select the dedicated runtime check,
+        not fall through to an implicit assembler rule."""
+        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
+        goals_block = mk.split("MODERN_GOALS :=", 1)[1].split(
+            "ifneq", 1
+        )[0]
+        self.assertIn(
+            "expansion-modern-banim-package-runtime-check", goals_block
+        )
+
+        result = self.make(
+            "-prRq", "expansion-modern-banim-package-runtime-check"
+        )
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(
+            "FE8_BANIM_PACKAGE_RUNTIME_TEST=1", result.stdout
+        )
+        self.assertIn(
+            "run_banim_package_runtime_check.py", result.stdout
+        )
+        self.assertNotIn(
+            " -o expansion-modern-banim-package-runtime-check", result.stdout
+        )
+
     # -- expansion-modern-clean must not pay the config-validation cost --------
 
     def test_clean_succeeds_with_invalid_expansion_config(self):

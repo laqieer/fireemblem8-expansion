@@ -294,6 +294,20 @@
 #endif
 
 /*
+ * Optional issue #77 custom battle spell-effect runtime. This permanent
+ * project choice is available only in the modern AAPCS lane; the archival
+ * lane retains this zero fallback and links no custom dispatcher or assets.
+ */
+#ifndef FE8_EXPANSION_CUSTOM_SPELL_EFFECTS
+#define FE8_EXPANSION_CUSTOM_SPELL_EFFECTS 0
+#endif
+
+#if (FE8_EXPANSION_CUSTOM_SPELL_EFFECTS != 0) \
+    && (FE8_EXPANSION_CUSTOM_SPELL_EFFECTS != 1)
+#error "FE8_EXPANSION_CUSTOM_SPELL_EFFECTS must be 0 or 1"
+#endif
+
+/*
  * Opt-in CJK runtime overflow guard. Generated locale catalogs are wrapped
  * deterministically at build time regardless of this flag; enabling it adds
  * a second, allocation-aware guard for dynamic substitutions. It defaults to
@@ -322,6 +336,28 @@
 #if (FE8_EXPANSION_CASUAL_MODE != 0) \
     && (FE8_EXPANSION_CASUAL_MODE != 1)
 #error "FE8_EXPANSION_CASUAL_MODE must be 0 or 1"
+#endif
+
+/*
+ * Optional high-resolution MP2K PCM mixer (issue #83). The modern build
+ * supplies this through config.mk; the archival lane keeps it off and rejects
+ * any attempted opt-in before compilation.
+ */
+#ifndef FE8_EXPANSION_HQ_MIXER
+#define FE8_EXPANSION_HQ_MIXER 0
+#endif
+
+#if (FE8_EXPANSION_HQ_MIXER != 0) && (FE8_EXPANSION_HQ_MIXER != 1)
+#error "FE8_EXPANSION_HQ_MIXER must be 0 or 1"
+#endif
+
+#if FE8_EXPANSION_HQ_MIXER && !FE8_EXPANSION_MODERN_BUILD
+#error "FE8_EXPANSION_HQ_MIXER requires the modern AAPCS build"
+#endif
+
+#if FE8_EXPANSION_HQ_MIXER \
+    && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & ~0x81u) != 0)
+#error "FE8_EXPANSION_HQ_MIXER requires an en or en,qps-ploc profile to retain IWRAM stack headroom"
 #endif
 
 /*

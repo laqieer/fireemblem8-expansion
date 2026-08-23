@@ -8,6 +8,7 @@
 #include "ekrbattle.h"
 #include "efxbattle.h"
 #include "banim_data.h"
+#include "banim_package_runtime_test.h"
 #include "constants/classes.h"
 
 CONST_DATA AnimScr BanimScr_DefaultAnim[] = {
@@ -242,6 +243,13 @@ void UpdateBanimFrame(void)
         EnablePaletteSync();
         LZ77UnCompWram(banim[bid].oam_l, gBanimOaml);
         gBanimOaml[0x57F0 / 4] = 1;
+#if FE8_BANIM_PACKAGE_RUNTIME_TEST
+        BanimPackageRuntimeTest_MarkRuntimeDataConsumed(
+            (const u32 *)gBanimScrLeft,
+            gBanimOaml,
+            gBanimPaletteLeft
+        );
+#endif
     }
 
     if (gBanimValid[EKR_POS_R] == true) {
@@ -265,6 +273,13 @@ void UpdateBanimFrame(void)
         EnablePaletteSync();
         LZ77UnCompWram(banim[bid].oam_r, gBanimOamr2);
         gBanimOamr2[0x57F0 / 4] = 1;
+#if FE8_BANIM_PACKAGE_RUNTIME_TEST
+        BanimPackageRuntimeTest_MarkRuntimeDataConsumed(
+            (const u32 *)gBanimScrRight,
+            gBanimOamr2,
+            gBanimPaletteRight
+        );
+#endif
     }
 
     if (gpEkrTriangleUnits[0] != NULL) {

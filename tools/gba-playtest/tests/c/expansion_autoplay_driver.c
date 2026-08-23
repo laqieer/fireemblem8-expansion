@@ -211,6 +211,54 @@ static int TestActionCapabilities(void)
     return 0;
 }
 
+static int TestFailurePhaseAuthority(void)
+{
+    u32 suppressionCount;
+
+    gPlaySt.faction = FACTION_BLUE;
+    ExpansionAutoplay_Reset();
+    CHECK(ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER)
+              == EXPANSION_AUTOPLAY_OK,
+          "COMPUTER must be accepted before the phase-authority regression");
+    ExpansionAutoplay_OnBlueComputerPhaseStart();
+    CHECK(!ExpansionAutoplay_IsActionSupported(AI_ACTION_ESCAPE),
+          "blue escape must trigger the regression failure state");
+    CHECK(ExpansionAutoplay_IsBlueComputerPhase(),
+          "failure during blue AI must retain blue-phase safety");
+
+    ExpansionAutoplay_RecordSuspendSuppressed();
+    suppressionCount = gExpansionAutoplayTelemetry.suspendWriteSuppressedCount;
+    CHECK(suppressionCount == 1,
+          "blue failure must retain transient suspend suppression");
+
+    gPlaySt.faction = FACTION_RED;
+    CHECK(!ExpansionAutoplay_IsBlueComputerPhase(),
+          "blue failure must not remain active after red phase advance");
+    ExpansionAutoplay_RecordSuspendSuppressed();
+    CHECK(gExpansionAutoplayTelemetry.suspendWriteSuppressedCount == suppressionCount,
+          "red phase must not suppress its ordinary suspend write");
+
+    gPlaySt.faction = FACTION_GREEN;
+    CHECK(!ExpansionAutoplay_IsBlueComputerPhase(),
+          "blue failure must not remain active after green phase advance");
+    ExpansionAutoplay_RecordSuspendSuppressed();
+    CHECK(gExpansionAutoplayTelemetry.suspendWriteSuppressedCount == suppressionCount,
+          "green phase must not suppress its ordinary suspend write");
+
+    CHECK(ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_PLAYER)
+              == EXPANSION_AUTOPLAY_OK,
+          "PLAYER control must be restorable after faction advance");
+    CHECK(ExpansionAutoplay_GetBlueControl() == EXPANSION_BLUE_CONTROL_PLAYER,
+          "restoration must replace COMPUTER control");
+    CHECK(gExpansionAutoplayTelemetry.controller == EXPANSION_BLUE_CONTROL_PLAYER
+              && gExpansionAutoplayTelemetry.state == EXPANSION_AUTOPLAY_STATE_RESET
+              && gExpansionAutoplayTelemetry.failure == EXPANSION_AUTOPLAY_FAILURE_NONE,
+          "successful restoration must clear the stale blue failure");
+
+    gPlaySt.faction = FACTION_BLUE;
+    return 0;
+}
+
 int main(void)
 {
     CHECK(sizeof(struct ExpansionAutoplayTelemetry)
@@ -218,6 +266,7 @@ int main(void)
           "telemetry size contract changed");
     CHECK(TestControllerAndLifecycle() == 0, "controller/lifecycle test");
     CHECK(TestValidationAndBounds() == 0, "validation/bounds test");
+    CHECK(TestFailurePhaseAuthority() == 0, "failure phase-authority test");
     CHECK(TestActionCapabilities() == 0, "action capability test");
 
     puts("AUTOPLAY_HOST_TEST: PASS");

@@ -66,6 +66,7 @@ name.
 | `make localization-validate` / `make localization-generate` / `make localization-check` / `make localization-test` | Expansion locale registry/catalog authoring and host tests (see [`localization.md`](localization.md)) | No | No |
 | `make expansion-modern-starter-runtime-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #6 enabled/disabled mechanics + Threat Range runtime matrix | Yes | Yes |
 | `make expansion-modern-aoe-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #42 typed AoE enabled reference + default-disabled semantic runtime matrix | Yes | Yes |
+| `make expansion-modern-hq-mixer-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #83 enabled/disabled HQ PCM mixer, linker budget, and libmGBA PCM/interrupt-buffer matrix | Yes | Yes |
 | `make expansion-modern-localization-budget-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #18 catalog/resolver/UI source+linker budget and real region headroom | No new ROM beyond its linked prerequisite | No |
 | `python3 -m scripts.upstream_port {scan,drift,report,verify,...}` | Upstream-drift tracking (see [`docs/upstream-porting.md`](upstream-porting.md)) | No for `scan`/`drift`/`report`; `verify` builds the full gate set | No for `scan`/`drift`/`report`; depends on the gate set for `verify` |
 
@@ -169,14 +170,14 @@ surface remains bounded by its live reference and evidence report.
   `FE8_ITEM_ID_CAP>=0xCE`. The mechanics registry has typed callbacks, eight
   slots, copied key/label storage, deterministic order, explicit error codes,
   and a reentrancy guard. Debug and release both run enabled and default-disabled runtime negatives;
-  the content profile rides gates 17-18 of the current
+  the content profile rides gates 18-19 of the current
   `scripts/upstream_port/verify.py` sequence. See
   [`starter_features.md`](starter_features.md).
 - **#10 typed IDs:** DEFAULT committed and ACTIVE build-local contracts,
   consumer census, and modern-only item cap `0xCE` pilot are supported; its
-  debug/release runtime commands are gates 17-18 of the current-master
-  25-gate upstream-port verifier; the all-locales/all-features patch profile
-  is gate 19. There is no class/chapter/unit/character
+  debug/release runtime commands are gates 18-19 of the current-master
+  26-gate upstream-port verifier; the all-locales/all-features patch profile
+  is gate 20. There is no class/chapter/unit/character
   widening
   or implied save migration. See
   [`id_space.md`](id_space.md).
@@ -206,6 +207,13 @@ surface remains bounded by its live reference and evidence report.
 The archival agbcc lane remains explicit and default-only for these expansion
 features. Modern output is judged by link/boot/runtime behavior, never vanilla
 ROM byte identity.
+
+## Tester-facing procedure
+
+[`TC-CORE-009`](test-cases/core-framework.md#tc-core-009-reproduce-default-release-from-a-successful-build-ci-run)
+documents how to bind a successful Build CI URL/head SHA to a locally
+reproduced default AAPCS release, verify its header, and distinguish that
+reproduction from issue #49's published maximal BPS artifact.
 
 ## Future versioned release work (issue #9)
 

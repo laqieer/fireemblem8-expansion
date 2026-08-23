@@ -53,6 +53,17 @@ DYNAMIC_ASSIGNMENT_NAMES = {
     "__shift_start",
     "_banim_pal_end",
     "_banim_pal_size",
+    "__hq_mixer_layout_anchor",
+    "__hq_mixer_layout_shift",
+    "gMPlayInfo_SE4_BMP2",
+    "gMPlayInfo_SE5_BMP3",
+    "gMPlayInfo_BGM1",
+    "gMPlayInfo_SE6_BMP4",
+    "gMPlayInfo_BGM2",
+    "gMPlayInfo_SE1_SYS1",
+    "gMPlayInfo_SE3_BMP1",
+    "gMPlayInfo_SE7_EVT",
+    "gMPlayInfo_SE2_SYS2",
 }
 
 IWRAM_STACK_POINTER_SYMBOL = "__sp_usr"

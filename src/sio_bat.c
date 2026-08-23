@@ -366,11 +366,12 @@ void StartSioProcs(ProcPtr proc)
 void SioBat_SetupLoop(struct SioBatProc * proc)
 {
     int i;
+    int sendId;
     u8 buf[4];
     u8 recvBuf[4];
 
     int timeouts = 0;
-    u16 got = 0;
+    int got = 0;
     struct SioBatProc_Unk2C * unk_2c = proc->unk_2c;
 
     gUnk_Sio_13 = 0;
@@ -457,8 +458,12 @@ void SioBat_SetupLoop(struct SioBatProc * proc)
             SioClearOutgoingQueue();
 
             buf[0] = 0x18;
-            proc->unk_34 = SioEmitData(buf, 4);
+            sendId = SioEmitData(buf, sizeof(buf));
 
+            if (sendId < 0)
+                return;
+
+            proc->unk_34 = sendId;
             Proc_Break(proc);
             return;
         }
@@ -471,8 +476,14 @@ void SioBat_SetupLoop(struct SioBatProc * proc)
 
     if (((gSioSt->selfId != 0) && (Sio_IsPlayerConnected(gSioSt->selfId) != 0)))
     {
-        got = SioReceiveData(buf, recvBuf, 0);
-        if (got != 0)
+        got = SioReceiveData(buf, sizeof(buf), sizeof(buf), recvBuf, NULL);
+        if (got < 0)
+        {
+            StartSioErrorScreen();
+            return;
+        }
+
+        if (got > 0)
         {
             EndLinkArenaButtonSpriteDraw();
 
@@ -548,6 +559,7 @@ void SioBat_WaitSetupAck(struct SioBatProc * proc)
 //! FE8U = 0x08046234
 void SioBat_DecideFirstMover(struct SioBatProc * proc)
 {
+    int sendId;
     u8 buf[0x10];
 
     PutSioText(MSG_749, 1); // "Please wait..."
@@ -565,7 +577,16 @@ void SioBat_DecideFirstMover(struct SioBatProc * proc)
 
         StoreRNState((void *)buf + 6);
 
-        proc->unk_34 = SioEmitData(buf, sizeof(buf));
+        sendId = SioEmitData(buf, sizeof(buf));
+
+        if (sendId < 0)
+        {
+            gSioSt->playerStatus[gSioSt->selfId] = PLAYER_STATUS_2;
+            Proc_Goto(proc, 2);
+            return;
+        }
+
+        proc->unk_34 = sendId;
     }
 
     proc->unk_3a = 0;
@@ -577,7 +598,7 @@ void SioBat_DecideFirstMover(struct SioBatProc * proc)
 //! FE8U = 0x080462D4
 void SioBat_ReceiveFirstMover(struct SioBatProc * proc)
 {
-    u16 got;
+    int got;
     struct SioBatProc_Unk2C * unk_2c;
     u8 buf[16];
     u8 outSenderId[4];
@@ -597,9 +618,15 @@ void SioBat_ReceiveFirstMover(struct SioBatProc * proc)
     {
         if ((GetGameClock() % 38) == 0)
         {
-            got = SioReceiveData(buf, outSenderId, NULL);
+            got = SioReceiveData(buf, sizeof(buf), sizeof(buf), outSenderId, NULL);
 
-            if (got != 0)
+            if (got < 0)
+            {
+                StartSioErrorScreen();
+                return;
+            }
+
+            if (got > 0)
             {
                 struct LinkArenaStMaybe * las = &gLinkArenaSt;
                 u8 * buf2 = buf;
@@ -735,7 +762,9 @@ void SioBat_InitTeamTransfer(struct SioBatProc * proc)
 void SioBat_TeamTransferLoop(struct SioBatProc * proc)
 {
     int i;
-    u8 buf[0x24];
+    int got;
+    int sendId;
+    u8 buf[0x28];
     u8 outSenderId[4];
 
     u8 unk = 0;
@@ -754,16 +783,27 @@ void SioBat_TeamTransferLoop(struct SioBatProc * proc)
 
     if (proc->unk_64 < 5)
     {
-        proc->unk_58 = (u8)SioEmitData((u8 *)&gSioPostbattle_3->units[proc->unk_64], 0x28);
+        sendId = SioEmitData((u8 *)&gSioPostbattle_3->units[proc->unk_64], sizeof(buf));
+
+        if (sendId < 0)
+            return;
+
+        proc->unk_58 = sendId;
         proc->unk_64++;
         gLinkArenaSt.linking_status[gSioSt->selfId] = proc->unk_64;
     }
 
     if ((GetGameClock() % 38) == 0)
     {
-        u16 got = SioReceiveData(buf, outSenderId, 0);
+        got = SioReceiveData(buf, sizeof(buf), sizeof(buf), outSenderId, NULL);
 
-        if (got != 0)
+        if (got < 0)
+        {
+            StartSioErrorScreen();
+            return;
+        }
+
+        if (got > 0)
         {
             int base = outSenderId[0] * 0x40 + 1;
             struct Unit * unit = GetUnit(base + gLinkArenaSt.linking_status[outSenderId[0]]);

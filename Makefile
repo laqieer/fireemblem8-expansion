@@ -38,6 +38,7 @@ FETSATOOL  := scripts/gfxtools/tsa_generator.py
 TMAP2TSA   := scripts/tmap2tsa.py
 MARTOMAP   := scripts/mar_to_map.py
 PYTHON    ?= python3
+HOST_CC   ?= cc
 PAL2GBAPAL := $(GBAGFX)
 
 # Optional GNU Autoconf front end (issue #28). A configured build writes an
@@ -48,6 +49,18 @@ PAL2GBAPAL := $(GBAGFX)
 AUTOTOOLS_CONFIG_MK ?= config.autotools.mk
 AUTOTOOLS_BUILD_DIR ?= .
 -include $(wildcard $(AUTOTOOLS_CONFIG_MK))
+
+# Keep the archival guard default-disabled before modern.mk has included the
+# committed config.mk. Command-line and configured values still override this.
+EXPANSION_HQ_MIXER ?= 0
+
+# The HQ mixer has a modern GCC/GAS/linker contract and its IWRAM layout is
+# intentionally unavailable to the archival decompilation lane.
+ifneq (,$(filter legacy fireemblem8.gba,$(MAKECMDGOALS)))
+ifneq ($(or $(strip $(EXPANSION_HQ_MIXER)),0),0)
+$(error EXPANSION_HQ_MIXER=$(EXPANSION_HQ_MIXER) is unsupported by the archival lane; use the modern AAPCS build or set EXPANSION_HQ_MIXER=0)
+endif
+endif
 
 # A command-line FE8_ITEM_ID_CAP already reaches recipe subprocesses; a value
 # loaded from config.autotools.mk must have identical behavior so every Python
@@ -629,8 +642,8 @@ sound/%.bin: sound/%.aif ; $(AIF2PCM) $< $@
 
 # Battle Animation Recipes
 
-$(BANIM_OBJECT): $(shell ./scripts/arm_compressing_linker.py -t linker_script_banim.txt -m)
-	./scripts/arm_compressing_linker.py -o $@ -t linker_script_banim.txt -b 0x8c02000 -l $(LD) --objcopy $(OBJCOPY) -c ./scripts/compressor.py
+$(BANIM_OBJECT): $(shell ./scripts/arm_compressing_linker.py -t linker_script_banim.txt -m) $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)
+	./scripts/arm_compressing_linker.py -o $@ -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -b 0x8c02000 -l $(LD) --objcopy $(OBJCOPY) -c ./scripts/compressor.py
 
 %_modes.bin: %_motion.o
 	$(OBJCOPY) -O binary -j .data.modes $< $@
@@ -647,12 +660,93 @@ graphics/map/%.bin: graphics/map/%.S graphics/map/tile_config.inc
 	$(AS) $(ASFLAGS) -g $< -o $(@:.bin=.o)
 	$(OBJCOPY) -O binary $(@:.bin=.o) $@
 
+CODEQL_TEST_DIR := build/tests/codeql
+CODEQL_TEST_CFLAGS := -std=gnu11 -DMODERN -Iinclude -ffunction-sections \
+	-fdata-sections -Wall -Wextra -Werror -fsanitize=address,undefined \
+	-fno-omit-frame-pointer -Wno-unused-parameter -Wno-unused-variable \
+	-Wno-sequence-point -Wno-return-type -Wno-implicit-fallthrough
+CODEQL_TEST_LDFLAGS := -Wl,--gc-sections -fsanitize=address,undefined
+CODEQL_REQUIRE_FANALYZER ?= 0
+CODEQL_ANALYZER_PROBE_FLAGS := -std=gnu11 -fanalyzer \
+	-Werror=analyzer-use-after-free -Werror=analyzer-double-free \
+	-Werror=analyzer-out-of-bounds -Werror=analyzer-use-of-uninitialized-value \
+	-Werror=analyzer-malloc-leak -Werror=analyzer-null-dereference
+
+codeql-alerts-test:
+	@mkdir -p $(CODEQL_TEST_DIR)
+	$(HOST_CC) $(CODEQL_TEST_CFLAGS) \
+	    tests/codeql/sio_protocol_host_test.c src/sio_core.c \
+	    $(CODEQL_TEST_LDFLAGS) -o $(CODEQL_TEST_DIR)/sio_protocol_host_test
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+	    $(CODEQL_TEST_DIR)/sio_protocol_host_test
+	$(HOST_CC) $(CODEQL_TEST_CFLAGS) \
+	    -DNONMATCHING=1 -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast \
+	    -Wno-tautological-compare \
+	    tests/codeql/runtime_bounds_host_test.c src/bmtrick.c src/event.c src/eventscr.c \
+	    $(CODEQL_TEST_LDFLAGS) -o $(CODEQL_TEST_DIR)/runtime_bounds_host_test
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+	    $(CODEQL_TEST_DIR)/runtime_bounds_host_test
+	$(HOST_CC) -std=c11 -Itools/gbagfx -ffunction-sections -fdata-sections \
+	    -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
+	    $$(pkg-config --cflags libpng) \
+	    tests/codeql/png_bounds_host_test.c tools/gbagfx/convert_png.c \
+	    -Wl,--gc-sections -fsanitize=address,undefined \
+	    $$(pkg-config --libs libpng) -o $(CODEQL_TEST_DIR)/png_bounds_host_test
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+	    $(CODEQL_TEST_DIR)/png_bounds_host_test
+	$(MAKE) --no-print-directory codeql-fanalyzer-test
+	$(PYTHON) -m unittest \
+	    scripts.modernize.tests.test_audit.AuditTests.test_bitfield_matcher_is_linear_and_preserves_valid_declarations \
+	    -v
+	$(MAKE) -C tools/gbagfx
+	$(MAKE) -C tools/mid2agb
+
+codeql-fanalyzer-test:
+	@mkdir -p $(CODEQL_TEST_DIR)
+	@set -eu; \
+	case "$(CODEQL_REQUIRE_FANALYZER)" in \
+	    0|1) ;; \
+	    *) echo "codeql-fanalyzer-test: error:" \
+	        "CODEQL_REQUIRE_FANALYZER must be 0 or 1" >&2; exit 2 ;; \
+	esac; \
+	probe_src="$(CODEQL_TEST_DIR)/fanalyzer_probe.c"; \
+	probe_obj="$(CODEQL_TEST_DIR)/fanalyzer_probe.o"; \
+	printf '%s\n' 'int main(void) { return 0; }' > "$$probe_src"; \
+	if $(HOST_CC) $(CODEQL_ANALYZER_PROBE_FLAGS) -c "$$probe_src" -o "$$probe_obj" \
+	    >/dev/null 2>&1; then \
+	    rm -f "$$probe_src" "$$probe_obj"; \
+	    echo "codeql-fanalyzer-test: analyzer support detected; running checks"; \
+	    $(HOST_CC) -std=gnu11 -DMODERN -Iinclude -fanalyzer \
+	        -Werror=analyzer-use-after-free -Werror=analyzer-double-free \
+	        -Werror=analyzer-out-of-bounds -Werror=analyzer-use-of-uninitialized-value \
+	        -Wno-unused-variable -Wno-unused-parameter -c src/sio_core.c \
+	        -o $(CODEQL_TEST_DIR)/sio_core_analyzer.o; \
+	    $(HOST_CC) -std=gnu11 -DMODERN -Iinclude -fanalyzer \
+	        -Werror=analyzer-out-of-bounds -Werror=analyzer-use-of-uninitialized-value \
+	        -Wno-unused-variable -Wno-unused-parameter -c src/event.c \
+	        -o $(CODEQL_TEST_DIR)/event_analyzer.o; \
+	    $(HOST_CC) -std=c11 -Itools/gbagfx $$(pkg-config --cflags libpng) -fanalyzer \
+	        -Werror=analyzer-malloc-leak -Werror=analyzer-use-after-free \
+	        -Werror=analyzer-double-free -Werror=analyzer-null-dereference \
+	        -c tools/gbagfx/convert_png.c -o $(CODEQL_TEST_DIR)/convert_png_analyzer.o; \
+	else \
+	    rm -f "$$probe_src" "$$probe_obj"; \
+	    if [ "$(CODEQL_REQUIRE_FANALYZER)" = 1 ]; then \
+	        echo "codeql-fanalyzer-test: error: analyzer support is required but" \
+	            "HOST_CC='$(HOST_CC)' rejected the probe" >&2; \
+	        exit 1; \
+	    fi; \
+	    echo "codeql-fanalyzer-test: SKIP: HOST_CC='$(HOST_CC)' does not support" \
+	        "the required -fanalyzer flags"; \
+	fi
+
+.PHONY: codeql-alerts-test codeql-fanalyzer-test
 
 # Automatic dependency generation
 
 MAKEDEP = mkdir -p $(DEPS_DIR)/$(dir $*) && $(CPP) $(CPPFLAGS) $< -MM -MG -MT $*.o > $(DEPS_DIR)/$*.d
 
-MAKECMDGOALS_NODEP := clean tag $(MODERN_GOALS) \
+MAKECMDGOALS_NODEP := clean tag codeql-alerts-test codeql-fanalyzer-test $(MODERN_GOALS) \
 	game-localization-validate game-localization-generate \
 	game-localization-check game-localization-test game-localization-budget \
 	game-localization-leakage-audit game-localization-leakage-check \

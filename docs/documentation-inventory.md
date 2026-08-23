@@ -71,21 +71,29 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/starter_features.md | laqieer | current | Four default-off starter flags, typed mechanics/content API, QoL, and runtime matrices (issue #6)
 - docs/aoe.md | laqieer | current | Typed bounded AoE targeting/effects, shared item/action/AI seam, and default-off reference (issue #42)
 - docs/autoplay.md | laqieer | current | Transient typed blue controller, pointer-free telemetry, existing-AI capability boundary, and runtime evidence (issue #85)
+- docs/custom_spell_effects.md | laqieer | current | Default-off typed battle spell-effect runtime foundation and resource contract (issue #77)
 - docs/portrait_resolver.md | laqieer | current | Typed character/class/chapter/flag portrait and minimug resolver with legacy fallback (issue #35)
 - docs/community_asset_coverage.md | laqieer | current | Authoritative community asset-family ownership, build/runtime seam, provenance boundary, and gap catalog (issue #59)
 - docs/asset_manifest.md | laqieer | current | Versioned source-owned asset manifest, ownership dependency generation, and adapter contract (issue #60)
+- docs/battle_animation_packages.md | laqieer | current | Strict versioned community battle-animation text/PNG package adapter (issue #62)
 - docs/portrait_packages.md | laqieer | current | Strict formatted portrait package, generated FaceData registration, and tester procedure (issue #63)
 - docs/tmx_map_layouts.md | laqieer | current | Fail-closed Tiled TMX map-layout subset, source workflow, and compatibility boundary (issue #64)
 - docs/bgm_routing.md | laqieer | current | Typed BGM context routing, action selectors, and preserve/continue policy
+- docs/audio.md | laqieer | current | Default-off HQ MP2K PCM mixer configuration, resource, and runtime contract (issue #83)
 - docs/ui_presentation_registry.md | laqieer | current | Typed UI presentation manifests and bounded presentation-resource registry
 - docs/test-cases/README.md | laqieer | current | Indexed tester-facing case catalog, schema, and staged coverage lifecycle
 - docs/test-cases/template.md | laqieer | template | Reusable tester-facing case procedure template
 - docs/test-cases/foundation.md | laqieer | current | Tester procedure for the catalog and checker foundation (issue #54)
+- docs/test-cases/core-framework.md | laqieer | current | Core framework and authoring procedures, profiles, negatives, save expectations, and automation (issue #57)
 - docs/test-cases/localization.md | laqieer | current | Indexed localization and locale-persistence procedures, profiles, negatives, and semantic automation (issue #56)
 - docs/test-cases/presentation-audio-utility.md | laqieer | current | Tester procedures for portrait, sound-room, BGM, presentation, manifest, and utility seams (issue #58)
 - docs/test-cases/optional-gameplay.md | laqieer | current | Indexed optional gameplay procedures, profiles, negatives, save expectations, and automation (issue #55)
+- docs/test-cases/audio.md | laqieer | current | Indexed optional HQ PCM mixer procedure, profiles, negatives, and audio criterion (issue #83)
 - docs/test-cases/patch-release.md | laqieer | current | Indexed BPS artifact validation/application and fail-closed input procedures (issue #49)
 - docs/test-cases/autoplay.md | laqieer | current | TC-AUTOPLAY-001 blue computer-phase smoke and default-player negative procedure (issue #85)
+- docs/test-cases/asset-authoring.md | laqieer | current | Indexed source-asset adapter procedure, controls, runtime evidence, and cleanup (issue #62)
+- docs/test-cases/workflow-governance.md | laqieer | current | Indexed trusted-push and centralized CI-wait orchestration procedure (issue #93)
+- docs/test-cases/codeql-alerts.md | laqieer | current | Link Arena and confirmed CodeQL alert regression procedures (issue #84)
 - docs/localization.md | laqieer | current | Stable locale/message IDs, catalog authoring, prefs/UI, budgets, and runtime matrices (issue #18)
 - docs/patch_release.md | laqieer | current | Trusted BPS-only maximal-profile artifact and local verification contract (issue #49)
 - docs/game_localization_catalog.md | laqieer | current | Full-game FE8U-indexed CJK catalog generation, bounded runtime, and synthetic link gate
