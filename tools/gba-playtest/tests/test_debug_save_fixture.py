@@ -251,7 +251,7 @@ class DebugSaveFixtureContractTests(unittest.TestCase):
 
 
 class DebugSaveFixtureLayoutEmissionTests(unittest.TestCase):
-    def test_retained_anchor_has_frozen_object_and_elf_addresses(self):
+    def test_retained_anchor_and_fixture_budget_layout(self):
         elf = (
             ROOT
             / "build"

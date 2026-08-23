@@ -78,8 +78,13 @@ def _check_symbols(elf: Path, config: str) -> None:
 
 def check_layout_anchor(elf: Path) -> None:
     obj = elf.parent / "src" / "debugtools_tools.o"
+    fixture_obj = elf.parent / "src" / "debug_save_fixture.o"
     if not obj.is_file():
         raise RuntimeError(f"missing debugtools object for layout check: {obj}")
+    if not fixture_obj.is_file():
+        raise RuntimeError(
+            f"missing debug save-fixture object for layout check: {fixture_obj}"
+        )
 
     object_symbols = subprocess.run(
         ["arm-none-eabi-nm", "-S", str(obj)],
@@ -89,6 +94,18 @@ def check_layout_anchor(elf: Path) -> None:
     ).stdout
     object_table = subprocess.run(
         ["arm-none-eabi-objdump", "-t", str(obj)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    fixture_object_symbols = subprocess.run(
+        ["arm-none-eabi-nm", "-S", str(fixture_obj)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    fixture_object_table = subprocess.run(
+        ["arm-none-eabi-objdump", "-t", str(fixture_obj)],
         check=True,
         capture_output=True,
         text=True,
@@ -121,11 +138,63 @@ def check_layout_anchor(elf: Path) -> None:
         elf_symbols,
         re.MULTILINE,
     )
+    shared_menu_storage = re.search(
+        r"^00000008 000000d8 \w sSaveFixtureMenuItemDefs$",
+        object_symbols,
+        re.MULTILINE,
+    )
+    shared_menu_section = re.search(
+        r"^00000008\s+\w+\s+O\s+debug_save_fixture_data\s+000000d8 "
+        r"sSaveFixtureMenuItemDefs$",
+        object_table,
+        re.MULTILINE,
+    )
+    fixture_probe = re.search(
+        r"^00000000 00000058 \w gDebugSaveFixtureProbe$",
+        fixture_object_symbols,
+        re.MULTILINE,
+    )
+    fixture_state = re.search(
+        r"^00000058 000000a8 \w sDebugSaveFixtureState$",
+        fixture_object_symbols,
+        re.MULTILINE,
+    )
+    fixture_probe_section = re.search(
+        r"^00000000\s+\w+\s+O\s+debug_save_fixture_data\s+00000058 "
+        r"gDebugSaveFixtureProbe$",
+        fixture_object_table,
+        re.MULTILINE,
+    )
+    fixture_state_section = re.search(
+        r"^00000058\s+\w+\s+O\s+debug_save_fixture_data\s+000000a8 "
+        r"sDebugSaveFixtureState$",
+        fixture_object_table,
+        re.MULTILINE,
+    )
+    recovered_menu_bytes = (6 + 5 + 3) * 0x24 - 0xD8
 
-    if not all((object_anchor, object_section, elf_anchor, stable_probe)):
+    if not all(
+        (
+            object_anchor,
+            object_section,
+            elf_anchor,
+            stable_probe,
+            shared_menu_storage,
+            shared_menu_section,
+            fixture_probe,
+            fixture_state,
+            fixture_probe_section,
+            fixture_state_section,
+        )
+    ):
         raise RuntimeError(
-            "debug Save State layout anchor was not retained at its frozen "
-            "object/ELF location"
+            "debug Save State layout, shared menu storage, or the 0x100-byte "
+            "fixture state/probe contract drifted"
+        )
+    if recovered_menu_bytes < 0x10:
+        raise RuntimeError(
+            "shared save-fixture menu storage recovered less than 16 bytes "
+            "of persistent EWRAM"
         )
 
 
