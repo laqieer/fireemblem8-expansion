@@ -107,7 +107,7 @@ tree, object set, or ROM to a committed identity hash.
 3. Run one exact-candidate archival rehearsal:
 
    ```bash
-   make release-rehearse RELEASE_TARGET_SHA="$(git rev-parse HEAD)"
+   make release-rehearse RELEASE_TARGET_SHA=<exact-40-character-candidate-sha>
    ```
 
 ### Expected result
