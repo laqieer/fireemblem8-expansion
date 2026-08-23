@@ -54,6 +54,7 @@
 #include "constants/classes.h"
 #include "constants/terrains.h"
 #include "constants/items.h"
+#include "constants/msg.h"
 #include "constants/songs.h"
 
 extern u16 gBattleForecast_2[];
@@ -117,7 +118,7 @@ u8 MapMenu_SuspendCommand(struct MenuProc* menu, struct MenuItemProc* menuItem) 
             return MENU_ACT_SND6B;
 #endif
 
-        MenuFrozenHelpBox(menu, 0x864); // TODO: msgid "You cannot stop in the[NL]middle of the tutorial.[.]"
+        MenuFrozenHelpBox(menu, MSG_846);
         return MENU_ACT_SND6B;
     }
 

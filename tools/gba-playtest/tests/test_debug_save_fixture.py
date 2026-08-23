@@ -227,9 +227,10 @@ class DebugSaveFixtureContractTests(unittest.TestCase):
             tools.index('sSaveFixtureMenuItemDefs[1].name = "Run RAM"'),
         )
         self.assertIn(
-            "gKeyStatusPtr->heldKeys & required",
+            "gKeyStatusPtr->heldKeys & requiredModifiers",
             tools,
         )
+        self.assertIn("gKeyStatusPtr->newKeys & A_BUTTON", tools)
 
     def test_save_format_and_archival_boundaries_are_explicit(self):
         header = (

@@ -1135,12 +1135,13 @@ static u8 DebugToolsSaveFixture_ContinueSelected(
 {
     const struct DebugSaveFixturePreview* preview =
         DebugSaveFixture_GetPreview();
-    u16 required = L_BUTTON | R_BUTTON | A_BUTTON;
+    u16 requiredModifiers = L_BUTTON | R_BUTTON;
 
     (void)menu;
     (void)item;
 
-    if ((gKeyStatusPtr->heldKeys & required) != required
+    if ((gKeyStatusPtr->heldKeys & requiredModifiers) != requiredModifiers
+        || !(gKeyStatusPtr->newKeys & A_BUTTON)
         || preview == NULL)
         return MENU_ACT_SND6B;
 
@@ -1251,8 +1252,9 @@ static void DebugToolsSaveFixtureSource_BuildMenuItems(void)
     sSaveFixtureMenuItemDefs[item].onSelected =
         DebugToolsSaveFixture_Game0Selected;
     DEBUGTOOLS_LOCALIZE_ITEM(
-        &sSaveFixtureMenuItemDefs[item++],
+        &sSaveFixtureMenuItemDefs[item],
         EXP_MSG_DEBUG_SAVE_FIXTURE_GAME0);
+    item++;
 
     sSaveFixtureMenuItemDefs[item].name = "Game 1";
     sSaveFixtureMenuItemDefs[item].overrideId =
@@ -1261,8 +1263,9 @@ static void DebugToolsSaveFixtureSource_BuildMenuItems(void)
     sSaveFixtureMenuItemDefs[item].onSelected =
         DebugToolsSaveFixture_Game1Selected;
     DEBUGTOOLS_LOCALIZE_ITEM(
-        &sSaveFixtureMenuItemDefs[item++],
+        &sSaveFixtureMenuItemDefs[item],
         EXP_MSG_DEBUG_SAVE_FIXTURE_GAME1);
+    item++;
 
     sSaveFixtureMenuItemDefs[item].name = "Game 2";
     sSaveFixtureMenuItemDefs[item].overrideId =
@@ -1271,8 +1274,9 @@ static void DebugToolsSaveFixtureSource_BuildMenuItems(void)
     sSaveFixtureMenuItemDefs[item].onSelected =
         DebugToolsSaveFixture_Game2Selected;
     DEBUGTOOLS_LOCALIZE_ITEM(
-        &sSaveFixtureMenuItemDefs[item++],
+        &sSaveFixtureMenuItemDefs[item],
         EXP_MSG_DEBUG_SAVE_FIXTURE_GAME2);
+    item++;
 
     sSaveFixtureMenuItemDefs[item].name = "Suspend";
     sSaveFixtureMenuItemDefs[item].overrideId =
@@ -1281,8 +1285,9 @@ static void DebugToolsSaveFixtureSource_BuildMenuItems(void)
     sSaveFixtureMenuItemDefs[item].onSelected =
         DebugToolsSaveFixture_SuspendSelected;
     DEBUGTOOLS_LOCALIZE_ITEM(
-        &sSaveFixtureMenuItemDefs[item++],
+        &sSaveFixtureMenuItemDefs[item],
         EXP_MSG_DEBUG_SAVE_FIXTURE_LATEST_SUSPEND);
+    item++;
 
     sSaveFixtureMenuItemDefs[item].name = "Back";
     sSaveFixtureMenuItemDefs[item].isAvailable = MenuAlwaysEnabled;
