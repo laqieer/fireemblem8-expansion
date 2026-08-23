@@ -29,25 +29,19 @@ and coverage lifecycle.
 
 ## Coverage lifecycle
 
-The initial registry is intentionally in **foundation** mode. It validates
-the catalog's own case but does **not** claim that every current shipped
-feature is covered. The feature-family backfills own that work:
+The registry is in **complete** mode. The #55 optional-gameplay, #56
+localization, #57 core-framework, and #58 presentation/audio/utility backfills
+all supply their current feature records, case links, and automation mappings.
+`coverage.expected_feature_ids` enumerates every current feature, while
+`deferred_issues` is empty.
 
-| Issue | Backfill family |
-| --- | --- |
-| [#57](https://github.com/laqieer/fireemblem8-expansion/issues/57) | Core framework and authoring |
-| [#55](https://github.com/laqieer/fireemblem8-expansion/issues/55) | Optional gameplay |
-| [#58](https://github.com/laqieer/fireemblem8-expansion/issues/58) | Presentation, audio, and utility |
-| [#56](https://github.com/laqieer/fireemblem8-expansion/issues/56) | Localization and locale persistence |
-
-The shipped #55 gameplay, #57 core-framework, and #58 presentation backfills
-add their reference-document links and records. The remaining #56 backfill
-changes `coverage.mode` to `complete`, removes `deferred_issues`, and supplies
-the explicit current shipped-feature index.
 In complete mode the checker fails if an indexed feature is absent, is not
 current, or lacks a required owned case. A retired or excluded record is not
 coverage: it requires an explicit reason and cannot satisfy a complete-mode
 current feature.
+
+The localization and locale-persistence procedures are
+[`TC-LOCALIZATION-001` through `TC-LOCALIZATION-008`](localization.md).
 
 ## Running catalog checks
 
@@ -63,4 +57,5 @@ The core framework and authoring procedures are in
 [`core-framework.md`](core-framework.md); optional gameplay procedures are in
 [`optional-gameplay.md`](optional-gameplay.md); presentation, audio, and
 utility procedures are in
-[`presentation-audio-utility.md`](presentation-audio-utility.md).
+[`presentation-audio-utility.md`](presentation-audio-utility.md); localization
+procedures are in [`localization.md`](localization.md).
