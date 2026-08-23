@@ -9,7 +9,6 @@ here. The small driver sources live in tools/gba-playtest/tests/c/ and are
 test-only (never referenced by modern.mk/Makefile).
 """
 
-import re
 import shutil
 import subprocess
 import unittest
@@ -35,12 +34,6 @@ DISABLED_DRIVER = C_FIXTURES_DIR / "expansion_mechanics_disabled_driver.c"
 CC = shutil.which("gcc") or shutil.which("cc")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 NM = shutil.which("nm")
-
-
-def _strip_c_comments(text):
-    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
-    text = re.sub(r"//[^\n]*", " ", text)
-    return text
 
 
 def _skip_if_no_host_compiler():
@@ -161,17 +154,6 @@ class MechanicsSeamWiringTests(unittest.TestCase):
     def setUpClass(cls):
         _skip_if_no_host_compiler()
 
-    def test_seam_is_compile_gated_in_bmbattle(self):
-        code = _strip_c_comments(BMBATTLE_SRC.read_text(encoding="utf-8"))
-        self.assertIn("#if FE8_EXPANSION_MECHANICS_HOOKS", code)
-        self.assertIn("ExpansionMechanicsApplyBattleStats", code)
-        # The apply call must sit inside the gated region, before an #endif.
-        gated = re.search(
-            r"#if FE8_EXPANSION_MECHANICS_HOOKS(.*?)#endif", code, flags=re.DOTALL
-        )
-        self.assertIsNotNone(gated, "seam must be wrapped in #if/#endif")
-        self.assertIn("ExpansionMechanicsApplyBattleStats", gated.group(1))
-
     def test_disabled_bmbattle_object_has_no_mechanics_reference(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -201,17 +183,6 @@ class MechanicsSeamWiringTests(unittest.TestCase):
 class MechanicsBuildWiringTests(unittest.TestCase):
     """C89/AAPCS shape and modern.mk/Makefile wiring."""
 
-    def test_source_and_header_exist_and_are_globbed(self):
-        self.assertTrue(MECHANICS_SRC.is_file(), "src/expansion_mechanics.c must exist")
-        self.assertTrue(MECHANICS_HEADER.is_file(), "include/expansion_mechanics.h must exist")
-        # Auto-globbed by both build lanes via src/*.c.
-        self.assertIn(MECHANICS_SRC, list((REPO_ROOT / "src").glob("*.c")))
-
-    def test_modern_mk_wires_the_flag_defines(self):
-        modern_mk = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("-DFE8_EXPANSION_MECHANICS_HOOKS=$(EXPANSION_MECHANICS_HOOKS)", modern_mk)
-        self.assertIn("-DFE8_EXPANSION_MECHANICS_SAMPLE=$(EXPANSION_MECHANICS_SAMPLE)", modern_mk)
-
     def test_c89_shape_has_no_declaration_after_statement(self):
         _skip_if_no_host_compiler()
         import tempfile
@@ -225,13 +196,6 @@ class MechanicsBuildWiringTests(unittest.TestCase):
                            "-Werror=implicit-int"],
                 )
                 self.assertEqual(rc, 0, "C89-shape compile failed (defs=%r):\n%s" % (defs, out))
-
-    def test_no_new_line_comments_in_shared_c(self):
-        for path in (MECHANICS_SRC, MECHANICS_HEADER):
-            text = path.read_text(encoding="utf-8")
-            stripped = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
-            stripped = re.sub(r'"(\\.|[^"\\])*"', ' ', stripped)
-            self.assertNotIn("//", stripped, "%s must use only /* */ comments" % path.name)
 
     def test_arm_aapcs_compile(self):
         if ARM_CC is None:

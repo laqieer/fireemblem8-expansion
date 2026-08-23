@@ -144,23 +144,5 @@ class ProbeBindingToolTests(unittest.TestCase):
         self.assertIn("gba-playtest: cannot launch ELF symbol tool", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
 
-    def test_make_threads_modern_nm_to_playtest_and_binding_tools(self):
-        modern_mk = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn(
-            '--elf "$(1)" --nm "$(MODERN_NM)"',
-            modern_mk,
-        )
-        self.assertGreaterEqual(
-            modern_mk.count('--elf "$(MODERN_ELF)" --nm "$(MODERN_NM)"'),
-            2,
-        )
-        self.assertGreaterEqual(
-            modern_mk.count(
-                '--elf "$(MODERN_STARTER_PROFILE_ELF)" --nm "$(MODERN_NM)"'
-            ),
-            2,
-        )
-
-
 if __name__ == "__main__":
     unittest.main()

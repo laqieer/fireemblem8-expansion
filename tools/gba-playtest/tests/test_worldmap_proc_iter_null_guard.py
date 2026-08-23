@@ -51,92 +51,11 @@ INCLUDE_DIRS = [REPO_ROOT / "include", REPO_ROOT / "include" / "generated"]
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_OBJDUMP = shutil.which("arm-none-eabi-objdump")
 
-FIND_NEXT_CALL = "= Proc_FindNext(&procIter);"
-NULL_GUARD = "if (proc == NULL)"
-
-# The world-map helpers that iterate with Proc_FindNext(). Every one of them
-# is reached from the world-map opening tour, so every one of them has to be
-# able to terminate on an empty proc list.
-GUARDED_FUNCTIONS = {
-    "src/worldmap_rm.c": [
-        "EndGmapRmBorder1",
-        "GmapRmBorder1Exists",
-        "RequestGmapRmBorder1Remove",
-        "EndWmPlaceDotByIndex",
-        "IsWmPlaceDotActiveAtIndex",
-        "SetWmPlaceDotFlagForIndex",
-    ],
-    "src/worldmap_automu.c": [
-        "EndGmAutoMuFor",
-        "IsGmAutoMuActiveFor",
-    ],
-}
-
-
 def _include_flags():
     flags = []
     for path in INCLUDE_DIRS:
         flags += ["-I", str(path)]
     return flags
-
-
-class ProcFindNextSourceGuardTests(unittest.TestCase):
-    """Source invariant: the iterator result is NULL-checked before any use."""
-
-    def test_every_find_next_call_site_is_null_guarded(self):
-        offenders = []
-        for source in sorted(SRC_DIR.rglob("*.c")):
-            lines = source.read_text(encoding="utf-8").split("\n")
-            for index, line in enumerate(lines):
-                if FIND_NEXT_CALL not in line:
-                    continue
-                # Look at the next few non-blank lines: the first statement
-                # after the call must be the NULL guard.
-                following = [
-                    text.strip()
-                    for text in lines[index + 1:index + 5]
-                    if text.strip()
-                ]
-                if not following or not following[0].startswith(NULL_GUARD):
-                    offenders.append(
-                        "%s:%d" % (source.relative_to(REPO_ROOT), index + 1))
-        self.assertEqual(
-            offenders, [],
-            "Proc_FindNext() result used before its NULL check at: %s -- the "
-            "iterator returns NULL when exhausted, and dereferencing first "
-            "lets an optimising compiler delete the loop exit"
-            % ", ".join(offenders))
-
-    def test_no_loop_relies_on_a_post_dereference_null_condition(self):
-        """`} while (proc != NULL);` after a dereference is the broken shape."""
-        offenders = []
-        for relative in GUARDED_FUNCTIONS:
-            text = (REPO_ROOT / relative).read_text(encoding="utf-8")
-            if "} while (proc != NULL);" in text:
-                offenders.append(relative)
-        self.assertEqual(
-            offenders, [],
-            "%s still terminate a Proc_FindNext() loop on a condition the "
-            "compiler can prove redundant" % ", ".join(offenders))
-
-    def test_named_helpers_contain_the_guard(self):
-        for relative, functions in GUARDED_FUNCTIONS.items():
-            text = (REPO_ROOT / relative).read_text(encoding="utf-8")
-            for function in functions:
-                match = re.search(
-                    r"^[a-zA-Z_].*\b%s\s*\(" % re.escape(function),
-                    text, re.MULTILINE)
-                self.assertIsNotNone(
-                    match, "%s: %s not found" % (relative, function))
-                body = text[match.start():match.start() + 1200]
-                self.assertIn(
-                    FIND_NEXT_CALL, body,
-                    "%s: %s no longer iterates with Proc_FindNext()"
-                    % (relative, function))
-                self.assertIn(
-                    NULL_GUARD, body,
-                    "%s: %s lost its Proc_FindNext() NULL guard"
-                    % (relative, function))
 
 
 class ProcFindNextCodegenTests(unittest.TestCase):

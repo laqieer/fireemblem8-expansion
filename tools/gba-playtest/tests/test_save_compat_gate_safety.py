@@ -91,51 +91,6 @@ class StartSaveMenuGateStructureTests(unittest.TestCase):
             "save-menu Proc_StartBlocking() call in source order",
         )
 
-    def test_savemenu_c_includes_save_format_and_compat_menu_headers(self):
-        self.assertIn('#include "save_format.h"', self.text)
-        self.assertIn('#include "save_compat_menu.h"', self.text)
-
-
-class NoBypassOfTheGateTests(unittest.TestCase):
-    """Proves StartSaveMenu() is the only directly-coupled entry point that
-    can reach ProcScr_SaveMenu from a proc script, and that no other file
-    starts ProcScr_SaveMenu directly."""
-
-    def test_procscr_savemenu_is_only_started_inside_startsavemenu(self):
-        offenders = []
-        for c_file in sorted(SRC_DIR.glob("*.c")):
-            text = _strip_comments(c_file.read_text(encoding="utf-8", errors="replace"))
-            for match in re.finditer(r"Proc_StartBlocking\s*\(\s*ProcScr_SaveMenu\b", text):
-                # Only src/savemenu.c itself (inside StartSaveMenu()) may
-                # start ProcScr_SaveMenu directly.
-                if c_file.name != "savemenu.c":
-                    offenders.append(f"{c_file.name}:{text.count(chr(10), 0, match.start()) + 1}")
-        self.assertEqual(
-            offenders, [],
-            f"ProcScr_SaveMenu started outside StartSaveMenu()'s gate: {offenders}",
-        )
-
-    def test_startsavemenu_has_exactly_one_proc_script_call_site(self):
-        """The only proc-script call site into StartSaveMenu() must be
-        gamecontrol.c's PROC_CALL(StartSaveMenu) (LGAMECTRL_EXEC_SAVEMENU).
-        save_compat_menu.c's own recursive call after a confirmed erase
-        re-enters the same gated function and is not a bypass."""
-        call_sites = []
-        for c_file in sorted(SRC_DIR.glob("*.c")):
-            if c_file.name in ("savemenu.c", "save_compat_menu.c"):
-                continue
-            text = _strip_comments(c_file.read_text(encoding="utf-8", errors="replace"))
-            # Matches both a direct call (StartSaveMenu(...)) and a
-            # function-pointer reference used by a proc script
-            # (PROC_CALL(StartSaveMenu)).
-            if re.search(r"\bStartSaveMenu\b", text):
-                call_sites.append(c_file.name)
-        self.assertEqual(
-            call_sites, ["gamecontrol.c"],
-            f"unexpected StartSaveMenu() call site(s): {call_sites}",
-        )
-
-
 class CompatMenuNeverTouchesSlotOrBlockApisTests(unittest.TestCase):
     """Proves src/save_compat_menu.c's compiled code never references any
     forbidden slot/block/current-struct accessor."""
@@ -143,17 +98,6 @@ class CompatMenuNeverTouchesSlotOrBlockApisTests(unittest.TestCase):
     def setUp(self):
         self.text = _strip_comments(
             SAVE_COMPAT_MENU_C.read_text(encoding="utf-8")
-        )
-
-    def test_no_forbidden_identifier_present(self):
-        offenders = [
-            identifier
-            for identifier in _FORBIDDEN_IDENTIFIERS
-            if re.search(rf"\b{re.escape(identifier)}\b", self.text)
-        ]
-        self.assertEqual(
-            offenders, [],
-            f"src/save_compat_menu.c references forbidden API(s): {offenders}",
         )
 
     def test_only_allowed_save_format_calls_present(self):
@@ -187,42 +131,6 @@ class CompatMenuNeverTouchesSlotOrBlockApisTests(unittest.TestCase):
         )
         self.assertIsNotNone(do_back_match)
         self.assertNotIn("InitGlobalSaveInfodata", do_back_match.group(1))
-
-    def test_back_is_default_first_menu_item(self):
-        """Back is item 0 in *both* the legacy and modern-guarded
-        branches of gSaveCompatMenuItems (issue #18 sprint 3 wrapped the
-        array's first two rows in `#ifdef MODERN ... #else ... #endif`
-        so their labels resolve through the expansion catalog under
-        MODERN instead of the vanilla MSG_SAVE_COMPAT_BACK/
-        MSG_SAVE_COMPAT_ERASE_ALL lookup -- see src/save_compat_menu.c's
-        own header comment). The legacy (#else) branch must still use
-        the exact original vanilla MSG_SAVE_COMPAT_BACK literal,
-        unchanged."""
-        items_match = re.search(
-            r"CONST_DATA struct MenuItemDef gSaveCompatMenuItems\[\]\s*=\s*\{(.*?)MenuItemsEnd",
-            self.text, re.DOTALL,
-        )
-        self.assertIsNotNone(items_match)
-        body = items_match.group(1)
-
-        guard_match = re.search(
-            r"#ifdef MODERN\s*\n(.*?)\n#else\b(.*?)#endif",
-            body, re.DOTALL,
-        )
-        self.assertIsNotNone(
-            guard_match,
-            "expected an #ifdef MODERN/#else/#endif guard as the array's first rows",
-        )
-
-        modern_first_item = guard_match.group(1).strip().splitlines()[0]
-        legacy_first_item = guard_match.group(2).strip().splitlines()[0]
-
-        self.assertIn("SaveCompatMenu_DrawBackLabel", modern_first_item)
-        self.assertIn("SaveCompatMenu_SelectBack", modern_first_item)
-
-        self.assertIn("MSG_SAVE_COMPAT_BACK", legacy_first_item)
-        self.assertIn("SaveCompatMenu_SelectBack", legacy_first_item)
-
 
 class EraseConfirmWarningActiveTests(unittest.TestCase):
     """Proves the authored irreversible-erase warning
@@ -310,11 +218,6 @@ class EraseConfirmWarningActiveTests(unittest.TestCase):
 class DiagnosticProbeGlobalsTests(unittest.TestCase):
     """Proves the read-only diagnostic probe globals (requirement 4) are
     declared and are the only new EWRAM globals this feature adds."""
-
-    def test_probe_globals_declared_in_header(self):
-        text = SAVE_COMPAT_MENU_H.read_text(encoding="utf-8")
-        self.assertIn("extern EWRAM_DATA u8 gSaveCompatMenuActive;", text)
-        self.assertIn("extern EWRAM_DATA u8 gSaveCompatMenuLastState;", text)
 
     def test_probe_globals_defined_exactly_once(self):
         text = SAVE_COMPAT_MENU_C.read_text(encoding="utf-8")

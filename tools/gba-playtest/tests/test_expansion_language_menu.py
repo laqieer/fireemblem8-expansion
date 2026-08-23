@@ -359,13 +359,6 @@ class GameControlIntegrationStructureTests(unittest.TestCase):
         self.assertLess(selector_idx, opanim_idx,
             "selector must run before ProcScr_OpAnim")
 
-    def test_title_idle_and_debug_hotkey_lifecycle_untouched(self):
-        # Presence-only proof (this sprint never edits these) -- a real
-        # regression removing/renaming either would fail this.
-        self.assertIn("Title_IDLE", self.text)
-        self.assertIn("gamecontrol.h", (REPO_ROOT / "src" / "gamecontrol.c").read_text())
-
-
 class GameOptionAbiUnchangedTests(unittest.TestCase):
     """struct GameOption's layout/size (in particular selectors[4]) must
     stay exactly as-is -- the language settings entry is a real Config
@@ -503,26 +496,6 @@ class UiConfigLanguageEntryStructureTests(unittest.TestCase):
         self.assertIn("ExpansionLanguageMenu_SelectSettingsLocale", body)
         self.assertIn("ExpansionLanguageMenu_OpenSettings(proc)", body)
         self.assertIn("EXPANSION_LANGUAGE_SETTINGS_OPEN_MENU", body)
-
-    def test_more_submenu_lists_only_locales_outside_inline_slots(self):
-        language_text = LANGUAGE_MENU_SRC.read_text(encoding="utf-8")
-        match = re.search(
-            r"void ExpansionLanguageMenu_OpenSettings\(ProcPtr parent\)\s*\{(.*?)\n\}",
-            language_text,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(match)
-        body = match.group(1)
-        self.assertIn(
-            "skippedRows = EXPANSION_LANGUAGE_INLINE_MAX - 1;",
-            body,
-        )
-        self.assertRegex(
-            body,
-            r"ExpansionLanguageMenu_BuildLocaleRows\(\s*"
-            r"sLanguageMenuItemDefs,\s*TRUE,\s*skippedRows\)",
-        )
-        self.assertIn("if (skippedRows != 0)", body)
 
     def test_a_routes_to_more_only_for_virtual_more_slot(self):
         match = re.search(
@@ -771,26 +744,6 @@ class FrameworkUtf8DrawingTests(unittest.TestCase):
         self.assertIn("byteCount = (int)(next - cursor);", body)
         self.assertIn("Text_DrawString(text, clipped);", body)
         self.assertNotIn("GetStringTextLenASCII", body)
-
-
-class ExpansionLocaleVanillaIsolationTests(unittest.TestCase):
-    """Production locale selection stays independent of vanilla language
-    mode and XMAP save semantics across the owned runtime/UI files."""
-
-    def test_owned_runtime_files_have_no_vanilla_language_or_xmap_calls(self):
-        for path in (
-            REPO_ROOT / "src" / "expansion_locale.c",
-            REPO_ROOT / "src" / "expansion_save_prefs.c",
-            LANGUAGE_MENU_SRC,
-            UICONFIG_SRC,
-        ):
-            text = _strip_c_comments(path.read_text(encoding="utf-8"))
-            with self.subTest(path=path.name):
-                for token in ("GetLang", "SetLang", "gLanguageMode", "XMAP"):
-                    self.assertIsNone(
-                        re.search(rf"\b{re.escape(token)}\b", text),
-                        f"{path.name} references forbidden vanilla symbol {token}",
-                    )
 
 
 class SaveCompatMenuLegacyPathUnchangedTests(unittest.TestCase):

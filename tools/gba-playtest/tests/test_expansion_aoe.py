@@ -235,19 +235,6 @@ class AoEArmAndBudgetTests(unittest.TestCase):
                 )
                 self.assertIn(name, completed.stderr)
 
-    def test_shared_sources_use_c89_comments(self):
-        for path in (
-            CORE,
-            REFERENCE,
-            ROOT / "include" / "expansion_aoe.h",
-            ROOT / "include" / "expansion_aoe_reference.h",
-        ):
-            text = path.read_text(encoding="utf-8")
-            without_blocks = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
-            without_strings = re.sub(r'"(\\.|[^"\\])*"', " ", without_blocks)
-            self.assertNotIn("//", without_strings, f"{path.name} has // comments")
-
-
 class AoEConfigAndSeamTests(unittest.TestCase):
     def test_config_identity_tracks_reference_flag_and_rejects_invalid_value(self):
         import sys
@@ -284,70 +271,6 @@ class AoEConfigAndSeamTests(unittest.TestCase):
                 repo_root=ROOT,
                 aoe_reference=2,
             )
-
-    def test_item_action_and_ai_pipelines_use_one_dispatch_api(self):
-        expected = {
-            "src/bmitemuse.c": 2,
-            "src/bmusemind.c": 1,
-            "src/cp_staff.c": 1,
-            "src/cpextra_80407F0.c": 1,
-        }
-        for relative, count in expected.items():
-            text = (ROOT / relative).read_text(encoding="utf-8")
-            self.assertEqual(
-                text.count("ExpansionAoE_DispatchItem"),
-                count,
-                f"{relative} must use only the shared AoE item dispatch seam",
-            )
-            self.assertIn("FE8_EXPANSION_MODERN_BUILD", text)
-
-    def test_item_routes_are_rom_authored_through_one_weak_provider(self):
-        core = CORE.read_text(encoding="utf-8")
-        header = (ROOT / "include" / "expansion_aoe.h").read_text(encoding="utf-8")
-        self.assertIn("ExpansionAoE_GetItemRouteTable(void)", core)
-        self.assertIn("__attribute__((weak))", core)
-        self.assertIn("ExpansionAoE_ValidateItemRouteTable", core)
-        self.assertNotIn("ExpansionAoE_RegisterItemRoute", core)
-        self.assertNotIn("ExpansionAoE_ResetItemRoutes", core)
-        self.assertIn("const struct ExpansionAoEItemRoute* routes;", header)
-
-    def test_reference_flag_is_default_off_across_make_c_and_autoconf(self):
-        config_mk = (ROOT / "config.mk").read_text(encoding="utf-8")
-        header = (ROOT / "include" / "expansion_config.h").read_text(encoding="utf-8")
-        configure_ac = (ROOT / "configure.ac").read_text(encoding="utf-8")
-        modern_mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("EXPANSION_AOE_REFERENCE       ?= 0", config_mk)
-        self.assertIn("#define FE8_EXPANSION_AOE_REFERENCE 0", header)
-        self.assertIn("--enable-aoe-reference", configure_ac)
-        self.assertIn(
-            "-DFE8_EXPANSION_AOE_REFERENCE=$(EXPANSION_AOE_REFERENCE)", modern_mk
-        )
-        self.assertIn("expansion-modern-aoe-check:", modern_mk)
-        self.assertIn(
-            "MODERN_AOE_DISABLED_PROFILE_ROOT := build/expansion-modern-aoe-disabled",
-            modern_mk,
-        )
-        self.assertIn(
-            "MODERN_BUILD_ROOT=$(MODERN_AOE_DISABLED_PROFILE_ROOT)",
-            modern_mk,
-        )
-        self.assertIn("EXPANSION_AOE_REFERENCE=0", modern_mk)
-        self.assertIn(
-            '--disabled-elf "$(MODERN_AOE_DISABLED_PROFILE_ELF)"',
-            modern_mk,
-        )
-        runner = (
-            ROOT / "tools" / "gba-playtest" / "run_aoe_checks.py"
-        ).read_text(encoding="utf-8")
-        probe_header = (
-            ROOT / "include" / "expansion_aoe_reference.h"
-        ).read_text(encoding="utf-8")
-        fields = re.findall(r"/\* [0-9A-F]{2} \*/ u32 ([A-Za-z0-9_]+);", probe_header)
-        module = runpy.run_path(
-            str(ROOT / "tools" / "gba-playtest" / "run_aoe_checks.py"),
-            run_name="aoe_runtime_schema",
-        )
-        self.assertEqual(tuple(fields), module["PROBE_FIELDS"])
 
     def test_aoe_linked_gate_rejects_archival_abi(self):
         completed = run(

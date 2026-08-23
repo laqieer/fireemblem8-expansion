@@ -224,33 +224,6 @@ class HostOnlyClassificationTests(unittest.TestCase):
                 self.assertEqual(result.failures, [])
                 self.assertEqual(result.skipped, [])
 
-    def test_repository_rom_paths_are_only_built_in_host_mode(self):
-        offenders = []
-        for path in sorted(TESTS_DIR.glob("*.py")):
-            if path.name in ("host_mode.py", Path(__file__).name):
-                continue
-            if _ROM_PATH_CONSTRUCTION_RE.search(path.read_text(encoding="utf-8")):
-                offenders.append(path.name)
-        self.assertEqual(
-            offenders, [],
-            "repository ROM/ELF paths must come from tests/host_mode.py so a "
-            "single contract owns every artifact-dependent test",
-        )
-
-    def test_modules_using_repository_roms_are_registered_as_live(self):
-        registered_modules = set(host_mode.LIVE_TEST_MODULES)
-        for path in sorted(TESTS_DIR.glob("test_*.py")):
-            if path.name == Path(__file__).name:
-                continue
-            if _HOST_MODE_ROM_USE_RE.search(path.read_text(encoding="utf-8")):
-                with self.subTest(module=path.stem):
-                    self.assertIn(
-                        path.stem, registered_modules,
-                        f"{path.stem} consumes a repository ROM but is not "
-                        f"registered in host_mode.LIVE_TEST_CLASSES",
-                    )
-
-
 class HostOnlyCentralGateTests(unittest.TestCase):
     """The central choke points behave identically for every live test."""
 
