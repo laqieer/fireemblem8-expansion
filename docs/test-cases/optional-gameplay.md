@@ -21,7 +21,8 @@ unit, spell, or test chapter to expose that public seam.
 
 ### Actions
 
-1. Run `python3 -m unittest tools.gba-playtest.tests.test_expansion_mechanics.MechanicsRegistryHostTests -v`.
+1. Run
+   `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_mechanics.py" -v`.
 2. Run `make expansion-modern-starter-hook-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
 3. For the dependency negative, run
    `make -n expansion-modern-rom EXPANSION_MECHANICS_HOOKS=0 EXPANSION_MECHANICS_SAMPLE=1`
@@ -51,7 +52,7 @@ it adds no save field, layout change, or compatibility-epoch change.
 
 ### Automation
 
-- `python3 -m unittest tools.gba-playtest.tests.test_expansion_mechanics.MechanicsRegistryHostTests -v`
+- `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_mechanics.py" -v`
   — `tools/gba-playtest/tests/test_expansion_mechanics.py`.
 - `make expansion-modern-starter-hook-check MODERN_CONFIG=release MODERN_ABI=aapcs`
   — `tools/gba-playtest/scenarios/starter-hook-clean-modern-release.json`.
@@ -75,10 +76,11 @@ or campaign mechanic beyond the selected callbacks.
 
 ### Actions
 
-1. Run `python3 -m unittest tools.gba-playtest.tests.test_expansion_mechanics.MechanicsRegistryHostTests.test_sample_exact_effect_and_clamp -v`.
+1. Run
+   `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_mechanics.py" -v`.
 2. Run `make expansion-modern-starter-hook-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
 3. Repeat step 1 with the registry disabled path:
-   `python3 -m unittest tools.gba-playtest.tests.test_expansion_mechanics.MechanicsRegistryHostTests.test_disabled_path_is_inert_and_probe_stays_zero -v`.
+   `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_mechanics.py" -v`.
 
 ### Expected result
 
@@ -101,7 +103,7 @@ save layout, migration, or `EXPANSION_SAVE_COMPAT_EPOCH` changes.
 
 ### Automation
 
-- `python3 -m unittest tools.gba-playtest.tests.test_expansion_mechanics.MechanicsRegistryHostTests.test_sample_exact_effect_and_clamp -v`
+- `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_mechanics.py" -v`
   — `tools/gba-playtest/tests/test_expansion_mechanics.py`.
 - `make expansion-modern-starter-hook-check MODERN_CONFIG=release MODERN_ABI=aapcs`
   — `tools/gba-playtest/fingerprints/starter-hook-clean-modern-release.json`.
@@ -125,7 +127,8 @@ replacement for a downstream ruleset's mechanics.
 
 ### Actions
 
-1. Run `python3 -m unittest tools.gba-playtest.tests.test_expansion_danger_overlay -v`.
+1. Run
+   `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_danger_overlay.py" -v`.
 2. Run `make expansion-modern-starter-qol-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
 3. On the enabled ROM, open the map menu at Prologue player phase, select
    **Threat Range**, press `B` to return, and repeat once; move the cursor
@@ -153,7 +156,7 @@ router. It changes only config identity; it writes no save bytes.
 
 ### Automation
 
-- `python3 -m unittest tools.gba-playtest.tests.test_expansion_danger_overlay -v`
+- `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_danger_overlay.py" -v`
   — `tools/gba-playtest/tests/test_expansion_danger_overlay.py`.
 - `make expansion-modern-starter-qol-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
   — `tools/gba-playtest/scenarios/starter-danger-overlay-modern-debug.json`.
@@ -183,7 +186,8 @@ additional threat UI, persisted preference, or AI behavior is shipped.
    `FE8_ITEM_ID_CAP=0xCE EXPANSION_STARTER_CONTENT=1 make generated-data-content-text`,
    then run
    `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make VPATH=build/generated/data expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`.
-2. Run `python3 -m unittest tools.gba-playtest.tests.test_expansion_starter_content -v`.
+2. Run
+   `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_starter_content.py" -v`.
 3. Run each dependency negative and retain its failure:
    `make -n expansion-modern-rom EXPANSION_STARTER_CONTENT=1` and
    `make -n expansion-modern-rom EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 FE8_ITEM_ID_CAP=0xCD`.
@@ -213,7 +217,7 @@ diagnostic config fingerprint.
 
 ### Automation
 
-- `python3 -m unittest tools.gba-playtest.tests.test_expansion_starter_content -v`
+- `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_starter_content.py" -v`
   — `tools/gba-playtest/tests/test_expansion_starter_content.py`.
 - `FE8_ITEM_ID_CAP=0xCE EXPANSION_STARTER_CONTENT=1 make generated-data-content-text`
   followed by
@@ -245,7 +249,8 @@ intentionally unset, and this single example is not a content pack.
 
 ### Actions
 
-1. Run `python3 -m unittest tools.gba-playtest.tests.test_expansion_casual_mode -v`.
+1. Run
+   `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_casual_mode.py" -v`.
 2. Run `python3 -m unittest scripts.modernize.tests.test_issue34_35_resolvers.CasualModeContractTests -v`.
 3. Run
    `python3 scripts/modernize/expansion_config.py resolve --config debug --abi aapcs --rom-size 16M --casual-mode 0`
@@ -277,7 +282,7 @@ epoch bump, although the flag changes the diagnostic fingerprint.
 
 ### Automation
 
-- `python3 -m unittest tools.gba-playtest.tests.test_expansion_casual_mode -v`
+- `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_casual_mode.py" -v`
   — `tools/gba-playtest/tests/test_expansion_casual_mode.py`.
 - `python3 -m unittest scripts.modernize.tests.test_issue34_35_resolvers.CasualModeContractTests -v`
   — `scripts/modernize/tests/test_issue34_35_resolvers.py`.
@@ -305,7 +310,8 @@ not ship a project-specific scripted-death chapter.
 
 ### Actions
 
-1. Run `python3 -m unittest tools.gba-playtest.tests.test_expansion_aoe -v`.
+1. Run
+   `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_aoe.py" -v`.
 2. Run `make expansion-modern-aoe-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
 3. Repeat step 2 with `MODERN_CONFIG=release`.
 
@@ -332,7 +338,7 @@ is no save layout or epoch change.
 
 ### Automation
 
-- `python3 -m unittest tools.gba-playtest.tests.test_expansion_aoe -v`
+- `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_aoe.py" -v`
   — `tools/gba-playtest/tests/test_expansion_aoe.py`.
 - `make expansion-modern-aoe-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
   — `tools/gba-playtest/run_aoe_checks.py`.

@@ -61,4 +61,6 @@ python3 scripts/check_docs.py --check
 The foundation procedure is [`TC-CATALOG-001`](foundation.md#tc-catalog-001-tester-case-catalog-foundation).
 The core framework and authoring procedures are in
 [`core-framework.md`](core-framework.md); optional gameplay procedures are in
-[`optional-gameplay.md`](optional-gameplay.md).
+[`optional-gameplay.md`](optional-gameplay.md); presentation, audio, and
+utility procedures are in
+[`presentation-audio-utility.md`](presentation-audio-utility.md).

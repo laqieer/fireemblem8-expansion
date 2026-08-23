@@ -392,7 +392,7 @@
       "limitations": "The registry is a battle-stat seam, not a content catalog, option menu, or persisted setting.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_mechanics.MechanicsRegistryHostTests -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_expansion_mechanics.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_mechanics.py"
         },
         {
@@ -426,7 +426,7 @@
       "limitations": "The content-free sample has no player-facing toggle and is not a downstream ruleset.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_mechanics.MechanicsRegistryHostTests.test_sample_exact_effect_and_clamp -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_expansion_mechanics.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_mechanics.py"
         },
         {
@@ -460,7 +460,7 @@
       "limitations": "Semantic probe values automate range behavior; no extra threat UI or AI behavior is included.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_danger_overlay -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_expansion_danger_overlay.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_danger_overlay.py"
         },
         {
@@ -494,7 +494,7 @@
       "limitations": "Only the name is shown in game; help text is intentionally unset and this is one example, not a content pack.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_starter_content -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_expansion_starter_content.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_starter_content.py"
         },
         {
@@ -528,7 +528,7 @@
       "limitations": "The framework ships no campaign-specific scripted-death chapter; the real policy host driver is the deterministic tester surface.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_casual_mode -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_expansion_casual_mode.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_casual_mode.py"
         },
         {
@@ -562,7 +562,7 @@
       "limitations": "The reference is not a spell/item pack; downstream projects own item routes and UI.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_aoe -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_expansion_aoe.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_aoe.py"
         },
         {
@@ -1099,7 +1099,7 @@
       "limitations": "In-console structural migration remains intentionally unsupported.",
       "automation": [
         {
-          "command": "python3 -m unittest scripts.modernize.tests.test_save_format_tool tools.gba-playtest.tests.test_save_compat_scenarios -v",
+          "command": "python3 -m unittest scripts.modernize.tests.test_save_format_tool -v && GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_save_compat_scenarios.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_save_compat_scenarios.py"
         },
         {
@@ -1205,7 +1205,7 @@
       "limitations": "This is not an arbitrary memory editor or release feature.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_debugtools_registry -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_debugtools_registry.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_debugtools_registry.py"
         },
         {
@@ -1239,7 +1239,7 @@
       "limitations": "Screenshots are supplementary; semantic probes are the oracle.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_baseline_no_autorefresh tools.gba-playtest.tests.test_host_only_mode -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_baseline_no_autorefresh.py\" -v && python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_host_only_mode.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_baseline_no_autorefresh.py"
         },
         {

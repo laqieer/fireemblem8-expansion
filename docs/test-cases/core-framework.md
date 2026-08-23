@@ -117,10 +117,12 @@ configuration registry.
 
 ### Actions
 
-1. Run `python3 -m unittest scripts.modernize.tests.test_save_format_tool tools.gba-playtest.tests.test_save_compat_scenarios -v`.
-2. Run `make expansion-modern-savefmt-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
+1. Run `python3 -m unittest scripts.modernize.tests.test_save_format_tool -v`.
+2. Run
+   `GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -p "test_save_compat_scenarios.py" -v`.
+3. Run `make expansion-modern-savefmt-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
    and repeat for release.
-3. In the debug clean-boot route, observe CURRENT, choose Back for an
+4. In the debug clean-boot route, observe CURRENT, choose Back for an
    incompatible fixture, then confirm Erase only in its separate fixture.
 
 ### Expected result
@@ -145,7 +147,7 @@ documents and bumps the format or epoch.
 
 - `python3 -m unittest scripts.modernize.tests.test_save_format_tool -v`
   — `scripts/modernize/tests/test_save_format_tool.py`.
-- `python3 -m unittest tools.gba-playtest.tests.test_save_compat_scenarios -v`
+- `GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -p "test_save_compat_scenarios.py" -v`
   — `tools/gba-playtest/tests/test_save_compat_scenarios.py`.
 - `make expansion-modern-savefmt-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
   — `tools/gba-playtest/run_save_compat_checks.py`.
@@ -219,9 +221,15 @@ hand-written callback with a second event router.
 
 1. Run `make expansion-modern-idspace-active-check` and
    `FE8_ITEM_ID_CAP=0xCE make expansion-modern-idspace-active-check`.
-2. Run
-   `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
-   and repeat with `MODERN_CONFIG=release`.
+2. Run both expanded-cap runtime gates:
+
+   ```sh
+   FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 \
+     make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs
+   FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 \
+     make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs
+   ```
+
 3. Compare the DEFAULT committed header with the ACTIVE generated header.
 
 ### Expected result
@@ -267,7 +275,8 @@ compatible.
 
 ### Actions
 
-1. Run the debug-tools registry host suite.
+1. Run
+   `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_debugtools_registry.py" -v`.
 2. Run `make expansion-modern-debugtools-tools-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
 3. Repeat the gate for release and use the same clean input sequence.
 
@@ -290,7 +299,7 @@ migration, nor compatibility epoch.
 
 ### Automation
 
-- `python3 -m unittest tools.gba-playtest.tests.test_debugtools_registry -v`
+- `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_debugtools_registry.py" -v`
   — `tools/gba-playtest/tests/test_debugtools_registry.py`.
 - `make expansion-modern-debugtools-tools-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
   — `tools/gba-playtest/tests/test_tools_scenario.py`.
@@ -331,10 +340,25 @@ debugger, or release feature.
      --expected build/tc-core-007-boot.json
    ```
 
-3. Run
-   `python3 -m unittest tools.gba-playtest.tests.test_baseline_no_autorefresh -v`
-   to exercise both a deliberate checkpoint mismatch and a matching capture.
-   The fixture checks the expected file's bytes and modification time after
+3. Create a build-local deliberately mismatched copy and verify that it fails
+   without changing the matching capture:
+
+   ```sh
+   cp build/tc-core-007-boot.json build/tc-core-007-boot-mismatch.json
+   python3 -c 'import json; from pathlib import Path; path = Path("build/tc-core-007-boot-mismatch.json"); expected = json.loads(path.read_text()); expected["checkpoints"][0]["framebuffer_hash"] = "fnv1a64-rgb24:0000000000000000"; path.write_text(json.dumps(expected, indent=2, sort_keys=True) + "\n")'
+   if python3 tools/gba-playtest/gba_playtest.py verify \
+     --policy behavior \
+     --rom build/expansion-modern/debug/aapcs/fireemblem8.gba \
+     --scenario tools/gba-playtest/scenarios/boot.json \
+     --expected build/tc-core-007-boot-mismatch.json; then
+     echo "expected mismatch unexpectedly passed"
+     exit 1
+   fi
+   python3 -m unittest discover -s tools/gba-playtest/tests \
+     -p "test_baseline_no_autorefresh.py" -v
+   ```
+
+   The fixture checks the matching capture's bytes and modification time after
    each `verify`; do not capture over an expected fingerprint.
 
 ### Expected result
@@ -357,9 +381,9 @@ ROM, save layout, or configuration identity itself.
 
 ### Automation
 
-- `python3 -m unittest tools.gba-playtest.tests.test_baseline_no_autorefresh -v`
+- `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_baseline_no_autorefresh.py" -v`
   — `tools/gba-playtest/tests/test_baseline_no_autorefresh.py`.
-- `python3 -m unittest tools.gba-playtest.tests.test_host_only_mode -v`
+- `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_host_only_mode.py" -v`
   — `tools/gba-playtest/tests/test_host_only_mode.py`.
 - `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
   — `tools/gba-playtest/gba_playtest.py`.
