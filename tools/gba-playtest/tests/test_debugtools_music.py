@@ -56,8 +56,12 @@ def _link(work, objects, output):
 
 
 def _defined_symbols(path):
+    nm = shutil.which("nm")
+    if nm is None:
+        raise unittest.SkipTest("no host 'nm' executable available for symbol-omission checks")
+
     result = subprocess.run(
-        ["nm", str(path)],
+        [nm, str(path)],
         cwd=ROOT,
         text=True,
         capture_output=True,
