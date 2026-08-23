@@ -1845,14 +1845,14 @@
         "Native host tools and modern AAPCS debug, release, and default builds"
       ],
       "purpose": "Exercise the confirmed regex, PNG arithmetic, MIDI formatting, map-change, event-queue, and scripted-hit boundaries.",
-      "prerequisites": "Repository root with normal host-tool and modern build dependencies.",
+      "prerequisites": "Repository root with normal host-tool and modern build dependencies; sanitizer/runtime checks support the selected host compiler, while Build CI requires a successful GCC -fanalyzer compile probe.",
       "actions": "Run make codeql-alerts-test, the modernization suite, documentation checker, and modern build gates.",
       "expected_result": "Adversarial qualifiers remain bounded by process CPU time, unsafe PNG products are rejected, format checking passes, invalid map/event extents do not mutate state, invalid event-slot queue operands, an empty dequeue, or a 31st queue push fail safely, and six hits plus sentinel fit without overwrite.",
       "negative_control": "The fixtures exercise the exact pre-fix ambiguous regex, narrowed products, format mismatch, wrapping indices, unchecked event-slot indexing, queue underflow, and one-past-end sentinel write.",
       "interactions": "No dependencies or conflicts with starter features, localization, generated data, item caps, configuration identity, or saves.",
       "save_compatibility": "No save field, migration, layout, or compatibility-epoch change.",
       "cleanup": "Use make clean_fast for ROM artifacts; host test outputs are ignored under build/tests/codeql.",
-      "limitations": "GitHub source-alert state updates only after remote analysis; false positives are dismissed in GitHub without source suppression.",
+      "limitations": "GitHub source-alert state updates only after remote analysis; false positives are dismissed in GitHub without source suppression, and supported non-GCC hosts explicitly skip analyzer-only checks after runtime harnesses pass.",
       "automation": [
         {
           "command": "make codeql-alerts-test",

@@ -665,6 +665,11 @@ CODEQL_TEST_CFLAGS := -std=gnu11 -DMODERN -Iinclude -ffunction-sections \
 	-fno-omit-frame-pointer -Wno-unused-parameter -Wno-unused-variable \
 	-Wno-sequence-point -Wno-return-type -Wno-implicit-fallthrough
 CODEQL_TEST_LDFLAGS := -Wl,--gc-sections -fsanitize=address,undefined
+CODEQL_REQUIRE_FANALYZER ?= 0
+CODEQL_ANALYZER_PROBE_FLAGS := -std=gnu11 -fanalyzer \
+	-Werror=analyzer-use-after-free -Werror=analyzer-double-free \
+	-Werror=analyzer-out-of-bounds -Werror=analyzer-use-of-uninitialized-value \
+	-Werror=analyzer-malloc-leak -Werror=analyzer-null-dereference
 
 codeql-alerts-test:
 	@mkdir -p $(CODEQL_TEST_DIR)
@@ -688,32 +693,59 @@ codeql-alerts-test:
 	    $$(pkg-config --libs libpng) -o $(CODEQL_TEST_DIR)/png_bounds_host_test
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
 	    $(CODEQL_TEST_DIR)/png_bounds_host_test
-	$(HOST_CC) -std=gnu11 -DMODERN -Iinclude -fanalyzer \
-	    -Werror=analyzer-use-after-free -Werror=analyzer-double-free \
-	    -Werror=analyzer-out-of-bounds -Werror=analyzer-use-of-uninitialized-value \
-	    -Wno-unused-variable -Wno-unused-parameter -c src/sio_core.c \
-	    -o $(CODEQL_TEST_DIR)/sio_core_analyzer.o
-	$(HOST_CC) -std=gnu11 -DMODERN -Iinclude -fanalyzer \
-	    -Werror=analyzer-out-of-bounds -Werror=analyzer-use-of-uninitialized-value \
-	    -Wno-unused-variable -Wno-unused-parameter -c src/event.c \
-	    -o $(CODEQL_TEST_DIR)/event_analyzer.o
-	$(HOST_CC) -std=c11 -Itools/gbagfx $$(pkg-config --cflags libpng) -fanalyzer \
-	    -Werror=analyzer-malloc-leak -Werror=analyzer-use-after-free \
-	    -Werror=analyzer-double-free -Werror=analyzer-null-dereference \
-	    -c tools/gbagfx/convert_png.c -o $(CODEQL_TEST_DIR)/convert_png_analyzer.o
+	$(MAKE) --no-print-directory codeql-fanalyzer-test
 	$(PYTHON) -m unittest \
 	    scripts.modernize.tests.test_audit.AuditTests.test_bitfield_matcher_is_linear_and_preserves_valid_declarations \
 	    -v
 	$(MAKE) -C tools/gbagfx
 	$(MAKE) -C tools/mid2agb
 
-.PHONY: codeql-alerts-test
+codeql-fanalyzer-test:
+	@mkdir -p $(CODEQL_TEST_DIR)
+	@set -eu; \
+	case "$(CODEQL_REQUIRE_FANALYZER)" in \
+	    0|1) ;; \
+	    *) echo "codeql-fanalyzer-test: error:" \
+	        "CODEQL_REQUIRE_FANALYZER must be 0 or 1" >&2; exit 2 ;; \
+	esac; \
+	probe_src="$(CODEQL_TEST_DIR)/fanalyzer_probe.c"; \
+	probe_obj="$(CODEQL_TEST_DIR)/fanalyzer_probe.o"; \
+	printf '%s\n' 'int main(void) { return 0; }' > "$$probe_src"; \
+	if $(HOST_CC) $(CODEQL_ANALYZER_PROBE_FLAGS) -c "$$probe_src" -o "$$probe_obj" \
+	    >/dev/null 2>&1; then \
+	    rm -f "$$probe_src" "$$probe_obj"; \
+	    echo "codeql-fanalyzer-test: analyzer support detected; running checks"; \
+	    $(HOST_CC) -std=gnu11 -DMODERN -Iinclude -fanalyzer \
+	        -Werror=analyzer-use-after-free -Werror=analyzer-double-free \
+	        -Werror=analyzer-out-of-bounds -Werror=analyzer-use-of-uninitialized-value \
+	        -Wno-unused-variable -Wno-unused-parameter -c src/sio_core.c \
+	        -o $(CODEQL_TEST_DIR)/sio_core_analyzer.o; \
+	    $(HOST_CC) -std=gnu11 -DMODERN -Iinclude -fanalyzer \
+	        -Werror=analyzer-out-of-bounds -Werror=analyzer-use-of-uninitialized-value \
+	        -Wno-unused-variable -Wno-unused-parameter -c src/event.c \
+	        -o $(CODEQL_TEST_DIR)/event_analyzer.o; \
+	    $(HOST_CC) -std=c11 -Itools/gbagfx $$(pkg-config --cflags libpng) -fanalyzer \
+	        -Werror=analyzer-malloc-leak -Werror=analyzer-use-after-free \
+	        -Werror=analyzer-double-free -Werror=analyzer-null-dereference \
+	        -c tools/gbagfx/convert_png.c -o $(CODEQL_TEST_DIR)/convert_png_analyzer.o; \
+	else \
+	    rm -f "$$probe_src" "$$probe_obj"; \
+	    if [ "$(CODEQL_REQUIRE_FANALYZER)" = 1 ]; then \
+	        echo "codeql-fanalyzer-test: error: analyzer support is required but" \
+	            "HOST_CC='$(HOST_CC)' rejected the probe" >&2; \
+	        exit 1; \
+	    fi; \
+	    echo "codeql-fanalyzer-test: SKIP: HOST_CC='$(HOST_CC)' does not support" \
+	        "the required -fanalyzer flags"; \
+	fi
+
+.PHONY: codeql-alerts-test codeql-fanalyzer-test
 
 # Automatic dependency generation
 
 MAKEDEP = mkdir -p $(DEPS_DIR)/$(dir $*) && $(CPP) $(CPPFLAGS) $< -MM -MG -MT $*.o > $(DEPS_DIR)/$*.d
 
-MAKECMDGOALS_NODEP := clean tag codeql-alerts-test $(MODERN_GOALS) \
+MAKECMDGOALS_NODEP := clean tag codeql-alerts-test codeql-fanalyzer-test $(MODERN_GOALS) \
 	game-localization-validate game-localization-generate \
 	game-localization-check game-localization-test game-localization-budget \
 	game-localization-leakage-audit game-localization-leakage-check \

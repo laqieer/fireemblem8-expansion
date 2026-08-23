@@ -179,7 +179,7 @@ jobs:
       run: ./build_tools.sh
 
     - name: Run CodeQL alert regression suite (issue #84)
-      run: make codeql-alerts-test
+      run: make codeql-alerts-test CODEQL_REQUIRE_FANALYZER=1
 
     # Issue #15 closure: a bare `make`/`make all` must unconditionally
     # resolve to the modern release AAPCS boot-check chain, with the

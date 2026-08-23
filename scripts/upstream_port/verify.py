@@ -213,11 +213,11 @@ def gates(jobs: int = 2) -> List[Gate]:
         # independently required immediately after the artifact guard.
         Gate(
             name="codeql-alerts-test",
-            command=["make", "codeql-alerts-test"],
+            command=["make", "codeql-alerts-test", "CODEQL_REQUIRE_FANALYZER=1"],
             applicable_note=(
                 "issue #84 host/static-analysis gate: runs the sanitizer-backed "
-                "SIO, runtime-bound, and PNG harnesses, focused GCC analyzer "
-                "checks, and affected host-tool builds"
+                "SIO, runtime-bound, and PNG harnesses, required GCC analyzer "
+                "checks in this CI-equivalent mirror, and affected host-tool builds"
             ),
         ),
         Gate(

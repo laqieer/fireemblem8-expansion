@@ -179,6 +179,11 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(f"legacy job lost unique evidence: {command}")
 
     build = jobs["build"]
+    if not _contains_command(
+        build,
+        "make codeql-alerts-test CODEQL_REQUIRE_FANALYZER=1",
+    ):
+        errors.append("build must require analyzer support for codeql-alerts-test")
     for command in (
         "expansion-modern-linker-check MODERN_CONFIG=debug",
         "expansion-modern-linker-check MODERN_CONFIG=release",
@@ -299,6 +304,15 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             1,
         )
         self.assertTrue(any("repeats Build-owned" in error for error in _errors(changed, False)))
+
+    def test_build_cannot_silently_skip_required_analyzer_checks(self):
+        changed = self.text.replace(" CODEQL_REQUIRE_FANALYZER=1", "", 1)
+        self.assertTrue(
+            any(
+                "must require analyzer support" in error
+                for error in _errors(changed, False)
+            )
+        )
 
     def test_retired_workflow_remote_completion_dependency_fails(self):
         changed = MAKEFILE.read_text(encoding="utf-8").replace(

@@ -71,6 +71,10 @@ build the modern debug and release AAPCS ROMs. No optional feature profile or
 save fixture is required.
 
 **Prerequisites:** Install the normal host-tool and modern build dependencies.
+The sanitizer/runtime harnesses support the selected host compiler. GCC
+`-fanalyzer` checks run only when an exact compile probe accepts all required
+analyzer flags; Build CI sets `CODEQL_REQUIRE_FANALYZER=1`, so its mandatory
+Ubuntu/GCC analyzer lane cannot silently skip.
 
 **Actions:**
 
@@ -105,7 +109,9 @@ under ignored `build/tests/codeql`.
 
 **Limitations:** Code-scanning state for source fixes changes only after
 GitHub analyzes the delivered commit. Evidence-backed false positives are
-dismissed in GitHub rather than suppressed in source.
+dismissed in GitHub rather than suppressed in source. A supported host compiler
+without GCC `-fanalyzer` receives an explicit analyzer-only skip after the
+sanitizer/runtime harnesses pass.
 
 **Automation:** `tests/codeql/runtime_bounds_host_test.c`,
 `tests/codeql/png_bounds_host_test.c`, and
