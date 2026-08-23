@@ -1,4 +1,10 @@
-"""Data-contract checks that complement native modern CJK consumer tests."""
+"""Narrow popup source-order checks complementing native CJK consumer tests.
+
+The remaining assertion intentionally parses function bodies because the
+exact ordering of message lookup and punctuation-slot emission is the
+contract under test; no generated artifact or exported symbol represents
+that local sequencing.
+"""
 
 from __future__ import annotations
 
