@@ -27,7 +27,6 @@ struct DebugSaveFixtureState
     enum DebugSaveFixturePhase phase;
     enum DebugSaveFixtureResult lastResult;
     u32 generationCounter;
-    struct DebugSaveFixturePreview preview;
     struct GlobalSaveInfo fixtureGlobal;
 };
 
@@ -483,7 +482,7 @@ static int DebugSaveFixture_BuildSanitizedImage(
 static void DebugSaveFixture_UpdateProbe(void)
 {
     const struct DebugSaveFixturePreview *preview =
-        &sDebugSaveFixtureState.preview;
+        &sSaveStateStableLayout.fixture.preview;
     const struct SaveBlocks *image = DebugSaveFixture_GetImage();
 
     gDebugSaveFixtureProbe.generation = preview->target.generation;
@@ -653,8 +652,9 @@ static enum DebugSaveFixtureResult DebugSaveFixture_Prepare(
     preview.fixtureCompatibility = DebugSaveFixture_ClassifyImage(image);
     preview.overrides = *overrides;
 
-    memset(&sDebugSaveFixtureState.preview, 0, sizeof(sDebugSaveFixtureState.preview));
-    sDebugSaveFixtureState.preview = preview;
+    memset(&sSaveStateStableLayout.fixture.preview, 0,
+        sizeof(sSaveStateStableLayout.fixture.preview));
+    sSaveStateStableLayout.fixture.preview = preview;
     sDebugSaveFixtureState.generationCounter = generation;
     DebugSaveFixture_SetPhase(DEBUG_SAVE_FIXTURE_PREVIEW);
     DebugSaveFixture_SetResult(DEBUG_SAVE_FIXTURE_OK);
@@ -776,7 +776,7 @@ enum DebugSaveFixtureResult DebugSaveFixture_Arm(
 
     if (!DebugSaveFixture_TargetEquals(
         target,
-        &sDebugSaveFixtureState.preview.target))
+        &sSaveStateStableLayout.fixture.preview.target))
     {
         DebugSaveFixture_SetResult(DEBUG_SAVE_FIXTURE_ERR_STALE_TARGET);
         return DEBUG_SAVE_FIXTURE_ERR_STALE_TARGET;
@@ -814,7 +814,7 @@ enum DebugSaveFixtureResult DebugSaveFixture_RequestContinue(
 
     if (!DebugSaveFixture_TargetEquals(
         target,
-        &sDebugSaveFixtureState.preview.target))
+        &sSaveStateStableLayout.fixture.preview.target))
     {
         DebugSaveFixture_SetResult(DEBUG_SAVE_FIXTURE_ERR_STALE_TARGET);
         return DEBUG_SAVE_FIXTURE_ERR_STALE_TARGET;
@@ -900,7 +900,7 @@ const struct DebugSaveFixturePreview *DebugSaveFixture_GetPreview(void)
     if (sDebugSaveFixtureState.phase == DEBUG_SAVE_FIXTURE_EMPTY)
         return NULL;
 
-    return &sDebugSaveFixtureState.preview;
+    return &sSaveStateStableLayout.fixture.preview;
 }
 
 enum DebugSaveFixtureContinueResult DebugSaveFixture_ConsumePendingContinue(void)
@@ -913,7 +913,7 @@ enum DebugSaveFixtureContinueResult DebugSaveFixture_ConsumePendingContinue(void
         != DEBUG_SAVE_FIXTURE_PENDING_CONTINUE)
         return DEBUG_SAVE_FIXTURE_CONTINUE_NONE;
 
-    target = sDebugSaveFixtureState.preview.target;
+    target = sSaveStateStableLayout.fixture.preview.target;
 
     if (!DebugSaveFixture_ValidatePreparedImage(&target))
     {
@@ -945,7 +945,7 @@ enum DebugSaveFixtureContinueResult DebugSaveFixture_ConsumePendingContinue(void
     DebugSaveFixture_SetResult(DEBUG_SAVE_FIXTURE_OK);
     gDebugSaveFixtureProbe.continueConsumeCount++;
     gDebugSaveFixtureProbe.liveCompletionCount =
-        sDebugSaveFixtureState.preview.overrides.completionCount;
+        sSaveStateStableLayout.fixture.preview.overrides.completionCount;
     memset(image, 0, CART_SRAM_SIZE);
     return result;
 }

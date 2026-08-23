@@ -34,7 +34,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
     }
     DIRECT_MENU_LABELS = Counter(
         {
-            "Back": 8,
+            "Back": 9,
             "Confirm Heal to Full": 1,
             "Confirm Add Item": 1,
             "Confirm Toggle Flag": 1,
@@ -239,7 +239,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         ):
             self.assertIn(f"EXP_MSG_DEBUG_{key_suffix}", tools)
 
-        self.assertEqual(tools.count("EXP_MSG_FRAMEWORK_BACK"), 7)
+        self.assertEqual(tools.count("EXP_MSG_FRAMEWORK_BACK"), 8)
         self.assertIn("DebugToolsTools_LocalizedMenuItemDraw", tools)
         self.assertIn("ExpansionLocale_ResolveCurrent", tools)
         self.assertIn("PutDrawText(", tools)

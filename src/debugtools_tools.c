@@ -15,6 +15,7 @@
 #include "bmsave.h"
 #include "save_format.h"
 #include "expansion_debug_save_fixture.h"
+#include "debug_save_fixture_internal.h"
 #if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
 #include "face.h"
 #endif
@@ -290,27 +291,13 @@ EWRAM_DATA static struct MenuItemDef sDebugToolsMenuItemDefs[6] = {{0}};
 #define sSaveFixtureMenuItemDefs sDebugToolsMenuItemDefs
 
 /* Retain the pre-#128 72-byte Save State capacity while reusing it for the
- * title-only fixture menu controls instead of allocating another EWRAM item. */
-union DebugToolsSaveStateStableLayout
-{
-    struct MenuItemDef retained[2];
-    struct
-    {
-        struct DebugSaveFixtureOverrides overrides;
-        u8 sourceKind;
-        u8 sourceGameSlot;
-        u8 openingPreview;
-        u8 openingFinal;
-        u8 handoff;
-    } fixture;
-};
-
-EWRAM_DATA static union DebugToolsSaveStateStableLayout sSaveStateStableLayout
+ * fixture preview and title-only menu controls. */
+EWRAM_DATA union DebugSaveFixtureStableStorage sSaveStateStableLayout
     __attribute__((used)) = {0};
 
-#define sSaveFixtureOverrides sSaveStateStableLayout.fixture.overrides
-#define sSaveFixtureSourceKind sSaveStateStableLayout.fixture.sourceKind
-#define sSaveFixtureSourceGameSlot sSaveStateStableLayout.fixture.sourceGameSlot
+#define sSaveFixtureOverrides sSaveStateStableLayout.fixture.preview.overrides
+#define sSaveFixtureSourceKind sSaveStateStableLayout.fixture.preview.target.sourceKind
+#define sSaveFixtureSourceGameSlot sSaveStateStableLayout.fixture.preview.target.sourceGameSlot
 #define sSaveFixtureOpeningPreview sSaveStateStableLayout.fixture.openingPreview
 #define sSaveFixtureOpeningFinal sSaveStateStableLayout.fixture.openingFinal
 #define sSaveFixtureHandoff sSaveStateStableLayout.fixture.handoff
