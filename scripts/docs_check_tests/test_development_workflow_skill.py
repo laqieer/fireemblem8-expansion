@@ -154,10 +154,97 @@ FENCED_COMMAND_BLOCK = re.compile(
     r"```(?:bash|sh|shell|text)?\n(?P<commands>.*?)```",
     re.DOTALL,
 )
+RAW_HTML_TEXT_TAGS = frozenset(("pre", "script", "style", "textarea"))
+RAW_HTML_BLOCK_TAGS = frozenset(
+    """
+    address article aside base basefont blockquote body caption center col
+    colgroup dd details dialog dir div dl dt fieldset figcaption figure footer
+    form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li
+    link main menu menuitem nav noframes ol optgroup option p param search
+    section summary table tbody td tfoot th thead title tr track ul
+    """.split()
+)
+HTML_BLOCK_WHITESPACE = " \t\r\f"
+
+
+def is_ascii_letter(char):
+    return "A" <= char <= "Z" or "a" <= char <= "z"
+
+
+def raw_html_block_kind(line):
+    """Classify a CommonMark raw HTML block start, or return None."""
+    indent = 0
+    while indent < len(line) and line[indent] == " ":
+        indent += 1
+    if indent > 3:
+        return None
+
+    source = line[indent:]
+    if not source.startswith("<"):
+        return None
+    if source.startswith("<?"):
+        return "processing instruction"
+    if source.startswith("<![CDATA["):
+        return "CDATA section"
+    if (
+        source.startswith("<!")
+        and len(source) > 2
+        and "A" <= source[2] <= "Z"
+    ):
+        return "declaration"
+
+    cursor = 1
+    closing = False
+    if cursor < len(source) and source[cursor] == "/":
+        closing = True
+        cursor += 1
+    if cursor >= len(source) or not is_ascii_letter(source[cursor]):
+        return None
+
+    name_start = cursor
+    cursor += 1
+    while cursor < len(source):
+        char = source[cursor]
+        if not (
+            is_ascii_letter(char)
+            or "0" <= char <= "9"
+            or char == "-"
+        ):
+            break
+        cursor += 1
+
+    tag_name = source[name_start:cursor].casefold()
+    remainder = source[cursor:]
+    has_boundary = (
+        not remainder
+        or remainder[0] in HTML_BLOCK_WHITESPACE
+        or remainder[0] == ">"
+        or remainder.startswith("/>")
+    )
+    if not has_boundary:
+        return None
+
+    if not closing and tag_name in RAW_HTML_TEXT_TAGS:
+        return f"raw-text tag <{tag_name}>"
+    if tag_name in RAW_HTML_BLOCK_TAGS:
+        return f"block tag <{tag_name}>"
+    if source.rstrip(HTML_BLOCK_WHITESPACE).endswith(">"):
+        return f"complete tag <{tag_name}>"
+    return None
+
+
+def reject_raw_html_blocks(text):
+    """Reject raw HTML blocks instead of partially interpreting their body."""
+    for line_number, line in enumerate(text.split("\n"), start=1):
+        kind = raw_html_block_kind(line)
+        if kind is not None:
+            raise AssertionError(
+                f"raw HTML block ({kind}) starts at line {line_number}"
+            )
 
 
 def strip_html_comments(text):
-    """Blank HTML comments while preserving layout and rejecting ambiguity."""
+    """Remove HTML comments while preserving lines and rejecting ambiguity."""
     visible = []
     comment_line_indexes = set()
     in_comment = False
@@ -174,7 +261,6 @@ def strip_html_comments(text):
             in_comment = True
             opening_line = line_number
             comment_line_indexes.add(line_number - 1)
-            visible.extend(" " * 4)
             cursor += 4
             continue
 
@@ -189,7 +275,6 @@ def strip_html_comments(text):
                     f"stray HTML comment closer at line {line_number}"
                 )
             comment_line_indexes.add(line_number - 1)
-            visible.extend(" " * 3)
             in_comment = False
             opening_line = None
             cursor += 3
@@ -265,9 +350,16 @@ def read_markdown_section(text, heading):
     unfenced_text = strip_fenced_blocks(text)
     raw_lines = unfenced_text.split("\n")
     visible_text, comment_line_indexes = strip_html_comments(unfenced_text)
+    reject_raw_html_blocks(visible_text)
     visible_lines = visible_text.split("\n")
     if len(raw_lines) != len(visible_lines):
         raise AssertionError("HTML comment scanner changed Markdown line count")
+    for index in comment_line_indexes:
+        if raw_lines[index].strip() and visible_lines[index].strip():
+            raise AssertionError(
+                "HTML comments must occupy standalone lines "
+                f"(line {index + 1})"
+            )
 
     heading_lines = []
     for index, raw_line in enumerate(raw_lines):
@@ -308,16 +400,6 @@ def read_markdown_section(text, heading):
         ),
         len(visible_lines),
     )
-    for index in range(heading_lines[0][0] + 1, end_line):
-        if (
-            index in comment_line_indexes
-            and raw_lines[index].strip()
-            and visible_lines[index].strip()
-        ):
-            raise AssertionError(
-                "HTML comments in the policy section must occupy "
-                f"standalone lines (line {index + 1})"
-            )
     return visible_lines[heading_lines[0][0] + 1:end_line]
 
 
@@ -869,6 +951,70 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             CANONICAL_POLICY_AST,
             self.assert_meaningful_test_policy(harmless_multiline_comment),
         )
+        compact_policy_text = policy_text.replace(
+            f"## {MEANINGFUL_TEST_POLICY_HEADING}\n\n",
+            f"## {MEANINGFUL_TEST_POLICY_HEADING}\n",
+        )
+        raw_html_mutations = (
+            ("unclosed script", "<script>\n" + policy_text),
+            (
+                "closed script",
+                "<script>\n"
+                + policy_text
+                + "\n# hidden boundary\n</script>\n",
+            ),
+            ("unclosed pre", "<pre>\n" + policy_text),
+            (
+                "closed pre",
+                "<pre>\n"
+                + policy_text
+                + "\n# hidden boundary\n</pre>\n",
+            ),
+            ("style", "<style>\n" + policy_text),
+            ("textarea", "<textarea>\n" + policy_text),
+            ("processing instruction", "<?policy\n" + policy_text),
+            ("CDATA section", "<![CDATA[\n" + policy_text),
+            ("declaration", "<!POLICY\n" + policy_text),
+            ("block tag", "<div>\n" + compact_policy_text),
+            (
+                "closing block tag",
+                "</section>\n" + compact_policy_text,
+            ),
+            (
+                "complete tag",
+                "<policy-wrapper>\n" + compact_policy_text,
+            ),
+            (
+                "indented mixed-case raw-text tag",
+                "   <ScRiPt>\n" + policy_text,
+            ),
+        )
+        for mutation_name, mutation in raw_html_mutations:
+            with self.subTest(raw_html_block=mutation_name):
+                with self.assertRaisesRegex(
+                    AssertionError,
+                    r"raw HTML block .* starts at line 1",
+                ):
+                    self.assert_meaningful_test_policy(mutation)
+        with self.assertRaisesRegex(
+            AssertionError,
+            r"HTML comments must occupy standalone lines",
+        ):
+            self.assert_meaningful_test_policy(
+                "  <!-- note -->  <script>\n" + policy_text
+            )
+
+        safe_html_contexts = (
+            "```html\n<script>\n<pre>\n</pre>\n</script>\n```\n",
+            "<!--\n<script>\n<pre>\n</pre>\n</script>\n-->\n",
+            "    <script>\n",
+        )
+        for prefix in safe_html_contexts:
+            with self.subTest(safe_html_context=prefix.splitlines()[0]):
+                self.assertEqual(
+                    CANONICAL_POLICY_AST,
+                    self.assert_meaningful_test_policy(prefix + policy_text),
+                )
 
         hidden_boundary_mutation = (
             policy_text
