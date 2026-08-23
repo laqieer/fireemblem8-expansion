@@ -162,7 +162,8 @@ RAW_ROM_RE = re.compile(rf"(?<![0-9A-Za-z_]){ROM_LITERAL}(?![0-9A-Fa-f])")
 # The final alternative also covers unnamed integral padding fields (``u8 : 2``).
 BITFIELD_RE = re.compile(
     r"^\s*(?:(?:const|volatile|signed|unsigned|struct\s+[A-Za-z_]\w*|"
-    r"union\s+[A-Za-z_]\w*|enum\s+[A-Za-z_]\w*|[A-Za-z_]\w*)\s+)+"
+    r"union\s+[A-Za-z_]\w*|enum\s+[A-Za-z_]\w*|"
+    r"(?!(?:const|volatile|signed|unsigned|struct|union|enum)\b)[A-Za-z_]\w*)\s+)+"
     r"(?:[A-Za-z_]\w*\s*)?:\s*(?:\d+|[A-Za-z_]\w*)\s*;"
 )
 OFFSET_FIELD_RE = re.compile(

@@ -1453,16 +1453,16 @@ class StaleFrameworkSupportABIRegressionTests(unittest.TestCase):
 #      now CLOSED (closed 2026-07-25), with completion commit
 #      ac0ee5d7f17eb8e70175576cb46d9f320d8013cd merged into master.
 #   2. docs/framework-support.md said the item-ID-expansion checks were
-#      "gates 17-18" of the upstream verify gate set; the real, current
-#      scripts/upstream_port/verify.py gates() puts them at gates 17-18
-#      of exactly 25.
+#      "gates 11-12" of the upstream verify gate set; the real, current
+#      scripts/upstream_port/verify.py gates() puts them at gates 18-19
+#      of exactly 26.
 #
 # These tests prove: (a) every old phrase is flagged stale if it reappears,
 # (b) the current live doc/report text is stale-clean, (c) the historical,
 # batch-scoped technical boundary wording (which looks similar but is not a
 # live current-status claim) is NOT flagged, (d) the current docs/report
 # state #5 CLOSED with the real completion commit as merged evidence, and
-# (e) the "gates 17-18" claim is source-backed against the real
+# (e) the "gates 18-19" claim is source-backed against the real
 # scripts/upstream_port/verify.py gates() ordering -- never a hardcoded
 # fake substitute.
 # ---------------------------------------------------------------------------
@@ -1545,12 +1545,15 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         self.assertNotIn("is still **OPEN**", generated_data_text)
         self.assertNotIn("OPEN at time of writing", closure_report_text)
 
-    def test_framework_support_states_item_expansion_gates_17_18(self):
+    def test_framework_support_states_item_expansion_gates_18_19(self):
         framework_support_text = check_docs.read_text(
             os.path.join(REAL_REPO_ROOT, "docs", "framework-support.md")
         )
-        self.assertIn("gates 17-18 of", framework_support_text)
+        self.assertIn("gates 18-19 of", framework_support_text)
+        self.assertNotIn("gates 17-18 of", framework_support_text)
         self.assertNotIn("gates 12-13 of", framework_support_text)
+        self.assertNotIn("gates 10-11 of", framework_support_text)
+        self.assertNotIn("gates 11-12 of", framework_support_text)
 
     def test_verify_gates_item_expansion_entries_precede_patch_profile(self):
         # Safe, standalone, no-network import of the live verify module
@@ -1571,14 +1574,14 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         finally:
             sys.modules.pop(spec.name, None)
 
-        self.assertEqual(len(all_gates), 25)
-        self.assertIn("itemexpansion", all_gates[16].name)
+        self.assertEqual(len(all_gates), 26)
         self.assertIn("itemexpansion", all_gates[17].name)
+        self.assertIn("itemexpansion", all_gates[18].name)
         for index, gate in enumerate(all_gates):
-            if index not in (16, 17):
+            if index not in (17, 18):
                 self.assertNotIn("itemexpansion", gate.name)
         self.assertEqual(
-            all_gates[18].name,
+            all_gates[19].name,
             "modern-all-locales-all-features-profile",
         )
 

@@ -68,3 +68,6 @@ PCM mixer procedure is
 Community asset-adapter procedures are in
 [`asset-authoring.md`](asset-authoring.md), and repository delivery-policy
 procedures are in [`workflow-governance.md`](workflow-governance.md).
+Issue #84's security/correctness procedures are
+[`TC-SIO-084`](codeql-alerts.md#tc-sio-084-bounded-link-arena-transfer) and
+[`TC-CODEQL-084`](codeql-alerts.md#tc-codeql-084-remaining-confirmed-alert-boundaries).

@@ -34,6 +34,7 @@
 #include "EAstdlib.h"
 
 #include "sio_core.h"
+#include "sioerror.h"
 #include "sio.h"
 
 #include "constants/msg.h"
@@ -130,7 +131,7 @@ void LinkArenaBattleMap_ClearCmdBuffer(void)
 }
 
 //! FE8U = 0x08049350
-u16 LinkArenaBattleMap_SendCommand(u8 a, u8 b, u8 c, u8 d)
+int LinkArenaBattleMap_SendCommand(u8 a, u8 b, u8 c, u8 d)
 {
     LinkArenaBattleMap_ClearCmdBuffer();
 
@@ -943,7 +944,11 @@ void LABattleMap_SelectAttacker_Loop(struct SioBattleMapProc * proc)
             gUnk_Sio_16.unk_04 = gUnk_Sio_16.unk_02;
 
             LABattleMap_MoveSelectCursor(0x40, 1);
-            LinkArenaBattleMap_SendCommand(1, gActiveUnitId, 0, 0);
+            if (LinkArenaBattleMap_SendCommand(1, gActiveUnitId, 0, 0) < 0)
+            {
+                StartSioErrorScreen();
+                return;
+            }
 
             Proc_Goto(proc, 5);
             return;
@@ -1046,7 +1051,12 @@ void LABattleMap_SelectTarget_Loop(struct SioBattleMapProc * proc)
 
         LinkArenaBattleMap_StartUnitMoveOut(
             gUnk_42[gUnk_Sio_16.unk_02], 1, &gUnk_Sio_16.unk_05, &proc->unk_34, &proc->unk_38);
-        LinkArenaBattleMap_SendCommand(3, gUnk_42[gUnk_Sio_16.unk_05], gActiveUnitId, 0);
+        if (LinkArenaBattleMap_SendCommand(3, gUnk_42[gUnk_Sio_16.unk_05], gActiveUnitId, 0) < 0)
+        {
+            StartSioErrorScreen();
+            return;
+        }
+
         EndLinkArenaPointsBox();
 
         Proc_Goto(proc, 7);
@@ -1066,7 +1076,11 @@ void LABattleMap_SelectTarget_Loop(struct SioBattleMapProc * proc)
         gUnk_Sio_16.unk_02 = gUnk_Sio_16.unk_04;
         gUnk_Sio_16.unk_03 = gUnk_Sio_16.unk_04 + 1;
 
-        LinkArenaBattleMap_SendCommand(2, gActiveUnitId, gUnk_42[gUnk_Sio_16.unk_04], 0);
+        if (LinkArenaBattleMap_SendCommand(2, gActiveUnitId, gUnk_42[gUnk_Sio_16.unk_04], 0) < 0)
+        {
+            StartSioErrorScreen();
+            return;
+        }
 
         Proc_Goto(proc, 1);
 
@@ -1304,7 +1318,12 @@ void LABattleMap_ConfirmTarget(struct SioBattleMapProc * proc)
 
         gUnk_Sio_16.unk_02 = gUnk_Sio_16.unk_05;
         gUnk_Sio_16.unk_03 = gUnk_Sio_16.unk_05 + 1;
-        LinkArenaBattleMap_SendCommand(4, 0, gUnk_42[gUnk_Sio_16.unk_05], 0);
+        if (LinkArenaBattleMap_SendCommand(4, 0, gUnk_42[gUnk_Sio_16.unk_05], 0) < 0)
+        {
+            StartSioErrorScreen();
+            return;
+        }
+
         LABattleMap_StartPointsBox(proc);
         Proc_Goto(proc, 5);
     }
@@ -1318,7 +1337,11 @@ void LABattleMap_ConfirmTarget(struct SioBattleMapProc * proc)
             unit->state &= ~US_BIT9;
         }
 
-        LinkArenaBattleMap_SendCommand(5, 0, gUnk_Sio_16.unk_06, gUnk_Sio_16.unk_07);
+        if (LinkArenaBattleMap_SendCommand(5, 0, gUnk_Sio_16.unk_06, gUnk_Sio_16.unk_07) < 0)
+        {
+            StartSioErrorScreen();
+            return;
+        }
     }
 
     return;
@@ -1341,8 +1364,6 @@ void LABattleMap_StartCombatantWarpFx(struct SioBattleMapProc * proc)
 
     return;
 }
-
-extern u8 gUnk_45[];
 
 extern u8 sLinkArenaCombatantMoveRightScript[];
 
@@ -1703,9 +1724,20 @@ void LABattleMap_ReceiveAttackDeclaration(struct SioProc85AA4CC * proc)
 {
     u8 buf[4];
 
-    u16 got = SioReceiveData(gUnk_45, buf, LABattleMap_IsAttackOrSurrenderMsg);
+    int got = SioReceiveData(
+        gUnk_45,
+        sizeof(gUnk_45),
+        sizeof(gUnk_45),
+        buf,
+        LABattleMap_IsAttackOrSurrenderMsg);
 
-    if (got != 0)
+    if (got < 0)
+    {
+        StartSioErrorScreen();
+        return;
+    }
+
+    if (got > 0)
     {
         switch (gUnk_45[0])
         {
@@ -1760,9 +1792,20 @@ void LABattleMap_ReceiveTargetSelection(struct SioProc85AA4CC * proc)
     struct Unit * unit;
     u8 buf[4];
 
-    u16 got = SioReceiveData(gUnk_45, buf, LABattleMap_IsSelectOrCancelMsg);
+    int got = SioReceiveData(
+        gUnk_45,
+        sizeof(gUnk_45),
+        sizeof(gUnk_45),
+        buf,
+        LABattleMap_IsSelectOrCancelMsg);
 
-    if (got != 0)
+    if (got < 0)
+    {
+        StartSioErrorScreen();
+        return;
+    }
+
+    if (got > 0)
     {
         switch (gUnk_45[0])
         {
@@ -1834,9 +1877,20 @@ void LABattleMap_ReceiveForecastResponse(struct SioProc85AA4CC * proc)
     struct Unit * unitB;
     u8 buf[4];
 
-    u16 got = SioReceiveData(gUnk_45, buf, LABattleMap_IsForecastMsg);
+    int got = SioReceiveData(
+        gUnk_45,
+        sizeof(gUnk_45),
+        sizeof(gUnk_45),
+        buf,
+        LABattleMap_IsForecastMsg);
 
-    if (got != 0)
+    if (got < 0)
+    {
+        StartSioErrorScreen();
+        return;
+    }
+
+    if (got > 0)
     {
         switch (gUnk_45[0])
         {
@@ -2372,7 +2426,8 @@ void LABattleMap_HandleSurrenderPrompt(ProcPtr proc)
     }
 
     EndAllMus();
-    LinkArenaBattleMap_SendCommand(6, gPlaySt.faction, 0, 0);
+    if (LinkArenaBattleMap_SendCommand(6, gPlaySt.faction, 0, 0) < 0)
+        StartSioErrorScreen();
 
     return;
 }
@@ -2388,7 +2443,8 @@ void LABattleMap_HandleNoDamagePrompt(ProcPtr proc)
     }
 
     EndAllMus();
-    LinkArenaBattleMap_SendCommand(7, gPlaySt.faction, 0, 0);
+    if (LinkArenaBattleMap_SendCommand(7, gPlaySt.faction, 0, 0) < 0)
+        StartSioErrorScreen();
 
     return;
 }

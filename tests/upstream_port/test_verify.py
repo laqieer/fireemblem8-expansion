@@ -46,6 +46,7 @@ _NON_GATE_STEP_NAMES = {
 # from verify.gates(). Its exact commands and position are asserted separately
 # below; localization remains part of the current 25-gate candidate mirror.
 _DOCS_GOVERNANCE_STEP_NAME = "Check documentation (issues #7/#17)"
+_CODEQL_ALERTS_STEP_NAME = "Run CodeQL alert regression suite (issue #84)"
 _LOCALIZATION_HOST_STEP_NAME = "Run localization host test suite (issue #18)"
 _GAME_LOCALIZATION_WIDTH_STEP_NAME = "Run full-game localization width contract (issue #18)"
 _WORKFLOW_CONTRACT_STEP_NAME = "Run workflow contract test suite"
@@ -187,8 +188,14 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(
             ordered_unique_steps[docs_index + 1],
+            _CODEQL_ALERTS_STEP_NAME,
+            "docs-governance step must immediately precede the #84 alert gate",
+        )
+        codeql_index = ordered_unique_steps.index(_CODEQL_ALERTS_STEP_NAME)
+        self.assertEqual(
+            ordered_unique_steps[codeql_index + 1],
             "Check default build lane and quickstart legacy glue (issue #15)",
-            "docs-governance step must immediately precede the #15 default-lane step",
+            "the #84 alert gate must immediately precede the #15 default-lane step",
         )
 
     def test_issue_18_localization_host_suite_is_in_mirrored_gate_set(self):
@@ -302,7 +309,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_gate_list_full_ordered_names(self):
-        # All 25 current candidate Build gates remain; docs governance is
+        # All 26 current candidate Build gates remain; docs governance is
         # deliberately absent and asserted as a standalone workflow step.
         names = [g.name for g in verify_mod.gates()]
         self.assertEqual(
@@ -318,6 +325,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "game-localization-raw-closure-check",
                 "artifact-guard-tests",
                 "artifact-guard",
+                "codeql-alerts-test",
                 "default-lane-check",
                 "quickstart-legacy-check",
                 "generated-data-test",
@@ -376,7 +384,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
 
     def test_dry_run_never_executes_subprocess(self):
         results = verify_mod.run_gates("/nonexistent/path/should/not/matter", dry_run=True)
-        self.assertEqual(len(results), 25)
+        self.assertEqual(len(results), 26)
         self.assertTrue(all(r.ran is False for r in results))
         self.assertTrue(all(r.passed is False for r in results))  # not-ran != passed
 
@@ -387,7 +395,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         dry = [r.gate.name for r in verify_mod.run_gates("/nonexistent/path", dry_run=True)]
         real_names = [g.name for g in verify_mod.gates()]
         self.assertEqual(dry, real_names)
-        self.assertEqual(len(dry), 25)
+        self.assertEqual(len(dry), 26)
 
 
 class VerifyGateSelectionRemovedTests(unittest.TestCase):
@@ -447,7 +455,7 @@ class VerifyGateSelectionRemovedTests(unittest.TestCase):
             self.assertIn(name, printed)
         # Every line for a dry-run gate is explicitly marked SKIPPED(dry-run)
         # -- never silently omitted, never marked PASS/FAIL without running.
-        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), 25)
+        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), 26)
 
 
 class HostOnlyEnvGateMirrorTests(unittest.TestCase):
@@ -536,9 +544,9 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                 "run_gates must not mutate the parent environment",
             )
 
-        self.assertEqual(len(results), 25)
+        self.assertEqual(len(results), 26)
         self.assertTrue(all(result.passed for result in results))
-        self.assertEqual(len(seen), 25)
+        self.assertEqual(len(seen), 26)
 
         host_argv, host_env = seen[0]
         self.assertEqual(host_argv[0], "python3")

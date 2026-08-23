@@ -70,6 +70,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/generated_data_tutorial.md | laqieer | current | Contributor-facing generated-data authoring walkthrough
 - docs/starter_features.md | laqieer | current | Four default-off starter flags, typed mechanics/content API, QoL, and runtime matrices (issue #6)
 - docs/aoe.md | laqieer | current | Typed bounded AoE targeting/effects, shared item/action/AI seam, and default-off reference (issue #42)
+- docs/custom_spell_effects.md | laqieer | current | Default-off typed battle spell-effect runtime foundation and resource contract (issue #77)
 - docs/portrait_resolver.md | laqieer | current | Typed character/class/chapter/flag portrait and minimug resolver with legacy fallback (issue #35)
 - docs/community_asset_coverage.md | laqieer | current | Authoritative community asset-family ownership, build/runtime seam, provenance boundary, and gap catalog (issue #59)
 - docs/asset_manifest.md | laqieer | current | Versioned source-owned asset manifest, ownership dependency generation, and adapter contract (issue #60)
@@ -90,6 +91,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/test-cases/patch-release.md | laqieer | current | Indexed BPS artifact validation/application and fail-closed input procedures (issue #49)
 - docs/test-cases/asset-authoring.md | laqieer | current | Indexed source-asset adapter procedure, controls, runtime evidence, and cleanup (issue #62)
 - docs/test-cases/workflow-governance.md | laqieer | current | Indexed trusted-push and centralized CI-wait orchestration procedure (issue #93)
+- docs/test-cases/codeql-alerts.md | laqieer | current | Link Arena and confirmed CodeQL alert regression procedures (issue #84)
 - docs/localization.md | laqieer | current | Stable locale/message IDs, catalog authoring, prefs/UI, budgets, and runtime matrices (issue #18)
 - docs/patch_release.md | laqieer | current | Trusted BPS-only maximal-profile artifact and local verification contract (issue #49)
 - docs/game_localization_catalog.md | laqieer | current | Full-game FE8U-indexed CJK catalog generation, bounded runtime, and synthetic link gate
