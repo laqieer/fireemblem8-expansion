@@ -748,8 +748,80 @@ class TesterCaseRegistryTests(unittest.TestCase):
     def test_valid_foundation_registry_passes(self):
         self.assertEqual(self._messages(self._valid_registry()), [])
 
-    def test_real_repository_foundation_registry_passes(self):
+    def test_real_repository_complete_registry_passes(self):
         self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
+
+    def test_late_shipped_contracts_are_complete_and_fail_closed(self):
+        registry_path = os.path.join(REAL_REPO_ROOT, check_docs.TEST_CASE_REGISTRY_PATH)
+        with open(registry_path, encoding="utf-8") as stream:
+            registry = json.load(stream)
+
+        coverage = registry["coverage"]
+        self.assertEqual(coverage["mode"], "complete")
+        self.assertEqual(coverage["deferred_issues"], [])
+
+        expected_feature_ids = coverage["expected_feature_ids"]
+        current_feature_ids = [
+            entry["id"] for entry in registry["features"] if entry["status"] == "current"
+        ]
+        case_ids = [entry["id"] for entry in registry["cases"]]
+        self.assertEqual(len(expected_feature_ids), 33)
+        self.assertEqual(len(set(expected_feature_ids)), 33)
+        self.assertEqual(len(current_feature_ids), 33)
+        self.assertEqual(len(set(current_feature_ids)), 33)
+        self.assertCountEqual(expected_feature_ids, current_feature_ids)
+        self.assertEqual(len(case_ids), 42)
+        self.assertEqual(len(set(case_ids)), 42)
+
+        features = {entry["id"]: entry for entry in registry["features"]}
+        cases = {entry["id"]: entry for entry in registry["cases"]}
+        contracts = {
+            "battle-animation-package": {
+                "case_id": "TC-BANIM-PACKAGE-062",
+                "reference": "docs/battle_animation_packages.md",
+                "document": "docs/test-cases/asset-authoring.md",
+                "commands": {
+                    "python3 -m unittest scripts.assets.tests.test_manifest -v",
+                    "make expansion-modern-banim-package-runtime-check",
+                },
+            },
+            "workflow-governance": {
+                "case_id": "TC-WORKFLOW-CI-WAIT-001",
+                "reference": ".github/skills/development-workflow/SKILL.md",
+                "document": "docs/test-cases/workflow-governance.md",
+                "commands": {
+                    "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+                },
+            },
+        }
+
+        for feature_id, contract in contracts.items():
+            with self.subTest(feature_id=feature_id):
+                self.assertIn(feature_id, expected_feature_ids)
+                feature = features[feature_id]
+                self.assertEqual(feature["reference"], contract["reference"])
+                self.assertEqual(feature["required_cases"], [contract["case_id"]])
+                case = cases[contract["case_id"]]
+                self.assertEqual(case["feature_id"], feature_id)
+                self.assertEqual(case["document"], contract["document"])
+                self.assertTrue(
+                    contract["commands"].issubset({
+                        record["command"] for record in case["automation"]
+                    })
+                )
+                procedure = check_docs.read_text(
+                    os.path.join(REAL_REPO_ROOT, case["document"])
+                )
+                self.assertIn("## " + contract["case_id"] + ":", procedure)
+                for heading in (
+                    "### Actions",
+                    "### Expected result",
+                    "### Negative control",
+                    "### Interactions and save compatibility",
+                    "### Automation",
+                    "### Cleanup and limitations",
+                ):
+                    self.assertIn(heading, procedure)
 
     def test_patch_release_cases_are_indexed_with_complete_procedures(self):
         registry_path = os.path.join(REAL_REPO_ROOT, check_docs.TEST_CASE_REGISTRY_PATH)
@@ -920,6 +992,15 @@ class TesterCaseRegistryTests(unittest.TestCase):
         complete["coverage"]["expected_feature_ids"] = ["sample-feature", "missing-feature"]
         self.assertTrue(any("absent from the registry" in message
                             for message in self._messages(complete)))
+
+        duplicate = self._valid_registry()
+        duplicate["coverage"]["mode"] = "complete"
+        duplicate["coverage"]["deferred_issues"] = []
+        duplicate["coverage"]["expected_feature_ids"] = [
+            "sample-feature", "sample-feature"
+        ]
+        self.assertTrue(any("contains duplicates" in message
+                            for message in self._messages(duplicate)))
 
         omitted = self._valid_registry()
         omitted["coverage"]["mode"] = "complete"

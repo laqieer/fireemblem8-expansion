@@ -520,6 +520,10 @@ superseded candidate run after that candidate actually changes. A broken
 master Build requires an immediate fix-forward or revert and blocks that
 issue's closure and remote completion, but not unrelated independent PRs.
 
+The indexed source-only regression for trusted-push ownership and centralized
+CI waiting is
+[`TC-WORKFLOW-CI-WAIT-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-ci-wait-001-keep-ci-waiting-centralized-and-trusted-pushes-owner-scoped).
+
 Before merge:
 
 1. Confirm required Build CI succeeds for the exact candidate commit.

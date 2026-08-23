@@ -35,6 +35,10 @@ all supply their current feature records, case links, and automation mappings.
 `coverage.expected_feature_ids` enumerates every current feature, while
 `deferred_issues` is empty.
 
+Complete mode is a living shipped-feature inventory, not a snapshot of those
+four backfills. Every subsequently shipped named contract must add its feature
+ID, stable case, procedure, and automation mapping in the same change.
+
 In complete mode the checker fails if an indexed feature is absent, is not
 current, or lacks a required owned case. A retired or excluded record is not
 coverage: it requires an explicit reason and cannot satisfy a complete-mode
@@ -61,3 +65,6 @@ utility procedures are in
 procedures are in [`localization.md`](localization.md); and the optional HQ
 PCM mixer procedure is
 [`TC-AUDIO-HQMIX-001`](audio.md#tc-audio-hqmix-001-hq-pcm-mixer-produces-bounded-stereo-output).
+Community asset-adapter procedures are in
+[`asset-authoring.md`](asset-authoring.md), and repository delivery-policy
+procedures are in [`workflow-governance.md`](workflow-governance.md).

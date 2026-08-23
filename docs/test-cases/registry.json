@@ -17,6 +17,7 @@
       "expanded-sound-room",
       "typed-bgm-routing",
       "battle-animation-presentation",
+      "battle-animation-package",
       "ui-presentation-manifests",
       "unified-utility-preferences",
       "modern-framework-build",
@@ -29,6 +30,7 @@
       "upstream-port-tooling",
       "build-ci-default-release-reproduction",
       "typed-authoring-conveniences",
+      "workflow-governance",
       "expansion-locale-selection",
       "full-game-localization",
       "locale-preference-persistence",
@@ -216,6 +218,18 @@
       ]
     },
     {
+      "id": "battle-animation-package",
+      "title": "Community battle-animation text and PNG package adapter",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/62"
+      ],
+      "reference": "docs/battle_animation_packages.md",
+      "status": "current",
+      "required_cases": [
+        "TC-BANIM-PACKAGE-062"
+      ]
+    },
+    {
       "id": "ui-presentation-manifests",
       "title": "Chapter and screen presentation manifests",
       "issue_urls": [
@@ -370,6 +384,18 @@
       "status": "current",
       "required_cases": [
         "TC-CORE-010"
+      ]
+    },
+    {
+      "id": "workflow-governance",
+      "title": "Centralized CI waiting and trusted-push orchestration",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/93"
+      ],
+      "reference": ".github/skills/development-workflow/SKILL.md",
+      "status": "current",
+      "required_cases": [
+        "TC-WORKFLOW-CI-WAIT-001"
       ]
     },
     {
@@ -1086,6 +1112,47 @@
       ]
     },
     {
+      "id": "TC-BANIM-PACKAGE-062",
+      "title": "Generate and exercise a community battle-animation package",
+      "feature_id": "battle-animation-package",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/62"
+      ],
+      "document": "docs/test-cases/asset-authoring.md",
+      "anchor": "tc-banim-package-062-generate-and-exercise-a-community-battle-animation-package",
+      "profiles": [
+        "Clean modern source checkout with Python 3 and the supported ARM toolchain",
+        "Isolated modern AAPCS debug libmGBA proof with FE8_BANIM_PACKAGE_RUNTIME_TEST=1"
+      ],
+      "purpose": "Prove deterministic text/PNG package generation, fail-closed validation, and bounded runtime consumption through existing battle-animation seams.",
+      "prerequisites": "Use the committed project-owned LORM_SP1_PROOF package without hand-editing generated output; ordinary builds must omit the runtime-test macro.",
+      "actions": "Validate/generate/check assets, run the package and lifecycle host tests, then run the isolated libmGBA runtime gate.",
+      "expected_result": "Generated package/class/linker payloads validate and the scripted Chapter 4 battle asserts the class, five modes, timing, sound, OAM, and palette data while selecting, entering, consuming, and completing the proof alias exactly once.",
+      "negative_control": "Default mappings and pre-FIGHT probes remain unchanged/zero; malformed packages, commands, resources, paths, ownership, and output state fail closed.",
+      "interactions": "Depends on the sole asset manifest, existing banim/class/linker seams, issue #67 publication lock, and libmGBA; conflicts with manual or custom-runtime ownership of those seams.",
+      "save_compatibility": "No save bytes, migration, compatibility epoch, configuration identity, localization, or default runtime mapping change.",
+      "cleanup": "Use make assets-clean and make clean_fast for ignored products; downstream rollback removes the package record and generated output together.",
+      "limitations": "The visual comparison is supplementary only; V1 excludes custom spells, unknown commands, runtime switching, and opaque editor binaries.",
+      "automation": [
+        {
+          "command": "make assets-validate assets-generate assets-check",
+          "evidence": "scripts/assets/manifest.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.assets.tests.test_manifest -v",
+          "evidence": "scripts/assets/tests/test_manifest.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_banim_package_runtime -v",
+          "evidence": "tools/gba-playtest/tests/test_banim_package_runtime.py"
+        },
+        {
+          "command": "make expansion-modern-banim-package-runtime-check",
+          "evidence": "tools/gba-playtest/run_banim_package_runtime_check.py"
+        }
+      ]
+    },
+    {
       "id": "TC-MANIFEST-001",
       "title": "Resolve localized presentation manifest fallbacks safely",
       "feature_id": "ui-presentation-manifests",
@@ -1493,6 +1560,34 @@
         {
           "command": "python3 -m unittest scripts.generated_data.tests.test_classes_schema scripts.generated_data.tests.test_units_schema scripts.generated_data.tests.test_eventlists_schema scripts.generated_data.tests.test_eventlists_roundtrip -v",
           "evidence": "scripts/generated_data/tests/test_eventlists_roundtrip.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-CI-WAIT-001",
+      "title": "Keep CI waiting centralized and trusted pushes owner-scoped",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/93"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-ci-wait-001-keep-ci-waiting-centralized-and-trusted-pushes-owner-scoped",
+      "profiles": [
+        "Clean source checkout with Python 3 and no live GitHub workflow"
+      ],
+      "purpose": "Prove centralized bounded CI waiting, concurrent review monitoring, stale-run cancellation, and trusted owner-context push ownership.",
+      "prerequisites": "Start at the repository root with the mirrored development-workflow policy files unchanged; no credentials or active run are required.",
+      "actions": "Inspect the trusted-push and CI-waiting policy, run the focused workflow-skill unittest, and confirm its positive/forbidden-policy fixtures.",
+      "expected_result": "Dispatch returns after recording exact identity, one bounded watcher owns each run, review is concurrent, terminal inspection and stale cancellation are enforced, and only the owner orchestrator pushes.",
+      "negative_control": "Missing required policy, duplicate/unbounded watchers, stale push roles, weakened approvals, privileged pull_request_target, or restored Full Matrix wording fails the focused suite.",
+      "interactions": "Depends on GitHub CLI and the shell runtime for real delivery; conflicts with duplicate polling agents, repeated wakeups, stale evidence, and implementation-agent pushes.",
+      "save_compatibility": "Source-only governance; no save, generated-data, localization, ROM/RAM, debug/release, or archival impact.",
+      "cleanup": "No cleanup is required because the case dispatches no workflow and changes no repository state.",
+      "limitations": "The test validates policy text and fixtures; it does not grant credentials or exercise the live GitHub service.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
         }
       ]
     },

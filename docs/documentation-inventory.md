@@ -88,6 +88,8 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/test-cases/optional-gameplay.md | laqieer | current | Indexed optional gameplay procedures, profiles, negatives, save expectations, and automation (issue #55)
 - docs/test-cases/audio.md | laqieer | current | Indexed optional HQ PCM mixer procedure, profiles, negatives, and audio criterion (issue #83)
 - docs/test-cases/patch-release.md | laqieer | current | Indexed BPS artifact validation/application and fail-closed input procedures (issue #49)
+- docs/test-cases/asset-authoring.md | laqieer | current | Indexed source-asset adapter procedure, controls, runtime evidence, and cleanup (issue #62)
+- docs/test-cases/workflow-governance.md | laqieer | current | Indexed trusted-push and centralized CI-wait orchestration procedure (issue #93)
 - docs/localization.md | laqieer | current | Stable locale/message IDs, catalog authoring, prefs/UI, budgets, and runtime matrices (issue #18)
 - docs/patch_release.md | laqieer | current | Trusted BPS-only maximal-profile artifact and local verification contract (issue #49)
 - docs/game_localization_catalog.md | laqieer | current | Full-game FE8U-indexed CJK catalog generation, bounded runtime, and synthetic link gate
