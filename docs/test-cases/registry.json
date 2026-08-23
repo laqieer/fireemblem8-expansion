@@ -29,6 +29,7 @@
       "generated-data-platform",
       "typed-id-item-cap",
       "debug-tools",
+      "debugtools-music-preview",
       "runtime-playtest-harness",
       "upstream-port-tooling",
       "build-ci-default-release-reproduction",
