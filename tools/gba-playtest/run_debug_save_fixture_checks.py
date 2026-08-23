@@ -150,23 +150,23 @@ def check_layout_anchor(elf: Path) -> None:
         re.MULTILINE,
     )
     fixture_probe = re.search(
-        r"^00000000 00000058 \w gDebugSaveFixtureProbe$",
+        r"^0000006c 00000058 \w gDebugSaveFixtureProbe$",
         fixture_object_symbols,
         re.MULTILINE,
     )
     fixture_state = re.search(
-        r"^00000058 000000a8 \w sDebugSaveFixtureState$",
+        r"^00000000 0000006c \w sDebugSaveFixtureState$",
         fixture_object_symbols,
         re.MULTILINE,
     )
     fixture_probe_section = re.search(
-        r"^00000000\s+\w+\s+O\s+debug_save_fixture_data\s+00000058 "
+        r"^0000006c\s+\w+\s+O\s+debug_save_fixture_data\s+00000058 "
         r"gDebugSaveFixtureProbe$",
         fixture_object_table,
         re.MULTILINE,
     )
     fixture_state_section = re.search(
-        r"^00000058\s+\w+\s+O\s+debug_save_fixture_data\s+000000a8 "
+        r"^00000000\s+\w+\s+O\s+debug_save_fixture_data\s+0000006c "
         r"sDebugSaveFixtureState$",
         fixture_object_table,
         re.MULTILINE,
@@ -189,7 +189,7 @@ def check_layout_anchor(elf: Path) -> None:
     ):
         raise RuntimeError(
             "debug Save State layout, shared menu storage, or the 0x100-byte "
-            "fixture state/probe contract drifted"
+            "fixture state/preview/probe contract drifted"
         )
     if recovered_menu_bytes < 0x1B0:
         raise RuntimeError(

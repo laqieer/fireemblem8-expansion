@@ -5,6 +5,21 @@
 
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
 
+union DebugSaveFixtureStableStorage
+{
+    u8 retained[0x48];
+    struct
+    {
+        struct DebugSaveFixturePreview preview;
+        u8 openingPreview;
+        u8 openingFinal;
+        u8 handoff;
+        u8 reserved;
+    } fixture;
+};
+
+extern union DebugSaveFixtureStableStorage sSaveStateStableLayout;
+
 enum DebugSaveFixtureContinueResult DebugSaveFixture_ConsumePendingContinue(void);
 void DebugSaveFixture_NotifyTitleScreenStarting(void);
 int DebugSaveFixture_ShouldBlockSramWrite(const void *dest, u32 size);
