@@ -114,13 +114,30 @@ class HqMixerConfigurationTests(unittest.TestCase):
                 ]
             )
             text = result.stdout + result.stderr
-            source_list = next(
+            source_lists = [
                 line
                 for line in text.splitlines()
                 if line.startswith("MODERN_ELF_EXTRA_ASM_SOURCES :=")
+            ]
+            self.assertEqual(
+                len(source_lists),
+                1,
+                "make -rR -pn output must contain exactly one "
+                f"MODERN_ELF_EXTRA_ASM_SOURCES assignment (enabled={enabled}):\n{text}",
             )
+            source_list = source_lists[0]
             with self.subTest(enabled=enabled):
                 self.assertEqual("src/m4a_hq_mixer.s" in source_list, bool(enabled))
+
+    def test_documented_budget_matches_enforced_hq_contract(self) -> None:
+        audio_doc = (ROOT / "docs" / "audio.md").read_text(encoding="utf-8")
+        for value in (
+            f"0x{hq.HQ_EWRAM_BOOKKEEPING_BYTES:X}",
+            f"0x{hq.HQ_DISABLED_IWRAM_STATIC_END:08X}",
+            f"0x{hq.HQ_ENABLED_IWRAM_STATIC_END:08X}",
+            f"0x{hq.HQ_IWRAM_STATIC_DELTA:X}",
+        ):
+            self.assertIn(value, audio_doc)
 
 
 class HqMixerCompiledArtifactTests(unittest.TestCase):

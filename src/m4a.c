@@ -20,12 +20,12 @@ EWRAM_DATA struct ExpansionHqMixerProbe gExpansionHqMixerProbe;
 
 static u32 HqMixerChecksum(const u8 *data, u32 size)
 {
-    u32 hash = 2166136261;
+    u32 hash = 2166136261u;
 
     while (size != 0)
     {
         hash ^= *data++;
-        hash *= 16777619;
+        hash *= 16777619u;
         size--;
     }
 

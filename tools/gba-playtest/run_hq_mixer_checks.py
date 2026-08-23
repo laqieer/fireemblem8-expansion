@@ -21,6 +21,9 @@ from scripts.linker_report import budget
 HQ_NO_REVERB_CODE_BYTES = 0xAC0
 HQ_MIX_BUFFER_BYTES = 0x380
 HQ_EWRAM_BOOKKEEPING_BYTES = 0x418
+HQ_DISABLED_IWRAM_STATIC_END = 0x030067A9
+HQ_ENABLED_IWRAM_STATIC_END = 0x03006E00
+HQ_IWRAM_STATIC_DELTA = HQ_ENABLED_IWRAM_STATIC_END - HQ_DISABLED_IWRAM_STATIC_END
 SOUND_INFO_PCM_BUFFER_OFFSET = 0x350
 PCM_CHANNEL_STRIDE = 0x630
 PCM_SAMPLE_OFFSETS = (0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xD0)
@@ -106,6 +109,14 @@ def check_budget(map_path: Path, elf_path: Path, enabled: bool) -> dict:
         fail(
             f"{map_path} expected the HQ mixer to consume the declared IWRAM "
             f"growth headroom, got 0x{iwram['static_growth_headroom_bytes']:x}"
+        )
+    expected_static_end = (
+        HQ_ENABLED_IWRAM_STATIC_END if enabled else HQ_DISABLED_IWRAM_STATIC_END
+    )
+    if iwram["static_end_address"] != expected_static_end:
+        fail(
+            f"{map_path} IWRAM static end is 0x{iwram['static_end_address']:08x}, "
+            f"expected 0x{expected_static_end:08x}"
         )
     ewram = next((region for region in report["regions"] if region["name"] == "ewram"), None)
     if ewram is None:
@@ -393,6 +404,16 @@ def main() -> int:
             "HQ mixer EWRAM bookkeeping delta differs from the linker contract: "
             f"enabled=0x{enabled_budget['ewram']['occupied_bytes']:x} "
             f"disabled=0x{disabled_budget['ewram']['occupied_bytes']:x}"
+        )
+    if (
+        enabled_budget["iwram"]["static_end_address"]
+        - disabled_budget["iwram"]["static_end_address"]
+        != HQ_IWRAM_STATIC_DELTA
+    ):
+        fail(
+            "HQ mixer IWRAM static delta differs from the linker contract: "
+            f"enabled=0x{enabled_budget['iwram']['static_end_address']:08x} "
+            f"disabled=0x{disabled_budget['iwram']['static_end_address']:08x}"
         )
 
     enabled_pcm = validate_pcm_capture(
