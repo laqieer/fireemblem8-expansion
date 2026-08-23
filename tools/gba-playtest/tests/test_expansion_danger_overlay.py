@@ -230,8 +230,16 @@ class MapMenuSuspendHelpTests(unittest.TestCase):
         )[0]
 
         self.assertIn('#include "constants/msg.h"', source)
+        self.assertIn(
+            "DebugSaveFixture_RecordBlockedWrite(\n"
+            "                DEBUG_SAVE_FIXTURE_WRITE_SUSPEND);",
+            body,
+        )
         self.assertIn("MenuFrozenHelpBox(menu, MSG_846)", body)
         self.assertNotRegex(body, r"MenuFrozenHelpBox\(menu,\s*0x[0-9A-Fa-f]+")
+        record = body.index("DebugSaveFixture_RecordBlockedWrite(")
+        help_box = body.index("MenuFrozenHelpBox(menu, MSG_846)")
+        self.assertNotIn("return MENU_ACT_SND6B;", body[record:help_box])
 
 
 class DangerOverlayWiringTests(unittest.TestCase):
