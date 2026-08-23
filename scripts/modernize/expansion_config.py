@@ -158,6 +158,7 @@ CONFIG_MK_FEATURE_KEYS = (
     "EXPANSION_CUSTOM_SPELL_EFFECTS",
     "EXPANSION_LOCALIZED_TEXT_AUTO_WRAP",
     "EXPANSION_CASUAL_MODE",
+    "EXPANSION_HQ_MIXER",
     "EXPANSION_BGM_CONTINUATION_POLICY",
 )
 
@@ -404,6 +405,21 @@ def validate_feature_flag(name: str, value) -> int:
             f"expected 0 (off) or 1 (on)"
         )
     return flag
+
+
+def validate_hq_mixer_profile(flag: int, enabled_locales: Tuple[str, ...]) -> None:
+    """Keep the HQ mixer's fixed IWRAM reservation within its stack contract."""
+    conflicting_locales = tuple(
+        locale for locale in enabled_locales if locale in locale_schema.REAL_LOCALIZED_LOCALES
+    )
+    if flag and conflicting_locales:
+        raise ConfigError(
+            "EXPANSION_HQ_MIXER=1 cannot be combined with real localized-game "
+            f"profiles {conflicting_locales!r}: the locale transform scratch and "
+            "the HQ mixer's IWRAM code/buffer cannot both retain the required "
+            "0x1000-byte user-stack floor. Use an en/qps-ploc profile or set "
+            "EXPANSION_HQ_MIXER=0"
+        )
 
 
 def compute_locale_mask(enabled_locales: Tuple[str, ...]) -> int:
@@ -687,6 +703,7 @@ class ExpansionIdentity:
     custom_spell_effect_resource_budget_digest: str = CUSTOM_SPELL_EFFECT_EMPTY_DIGEST
     localized_text_auto_wrap: int = 0
     casual_mode: int = 0
+    hq_mixer: int = 0
     bgm_continuation_policy: str = "preserve"
     item_id_cap: int = ITEM_ID_DEFAULT_CAP
     config_fingerprint: str = field(default="")
@@ -727,6 +744,7 @@ class ExpansionIdentity:
             "aoe_reference": self.aoe_reference,
             "localized_text_auto_wrap": self.localized_text_auto_wrap,
             "casual_mode": self.casual_mode,
+            "hq_mixer": self.hq_mixer,
         }
         fields = {
             "version": [self.version_major, self.version_minor, self.version_patch],
@@ -791,6 +809,7 @@ def load_identity(
     custom_spell_effects=None,
     localized_text_auto_wrap=None,
     casual_mode=None,
+    hq_mixer=None,
     bgm_continuation_policy=None,
     item_id_cap=None,
 ) -> ExpansionIdentity:
@@ -888,6 +907,13 @@ def load_identity(
         if casual_mode not in (None, "")
         else cfg.get("EXPANSION_CASUAL_MODE", "0"),
     )
+    resolved_hq_mixer = validate_feature_flag(
+        "EXPANSION_HQ_MIXER",
+        hq_mixer
+        if hq_mixer not in (None, "")
+        else cfg.get("EXPANSION_HQ_MIXER", "0"),
+    )
+    validate_hq_mixer_profile(resolved_hq_mixer, resolved_enabled_locales)
     resolved_bgm_continuation_policy = validate_bgm_continuation_policy(
         bgm_continuation_policy
         if bgm_continuation_policy not in (None, "")
@@ -941,6 +967,7 @@ def load_identity(
         ),
         localized_text_auto_wrap=resolved_localized_text_auto_wrap,
         casual_mode=resolved_casual_mode,
+        hq_mixer=resolved_hq_mixer,
         bgm_continuation_policy=resolved_bgm_continuation_policy,
         item_id_cap=resolved_item_id_cap,
     )
@@ -995,6 +1022,7 @@ def generate_metadata_files(output_dir: Path, identity: ExpansionIdentity) -> Di
         "MODERN_EXPANSION_CUSTOM_SPELL_EFFECT_RESOURCE_BUDGET_DIGEST := "
         f"{identity.custom_spell_effect_resource_budget_digest}",
         f"MODERN_EXPANSION_CASUAL_MODE := {identity.casual_mode}",
+        f"MODERN_EXPANSION_HQ_MIXER := {identity.hq_mixer}",
         f"MODERN_EXPANSION_BGM_CONTINUATION_POLICY := {identity.bgm_continuation_policy}",
         "",
     ]
@@ -1090,6 +1118,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="override EXPANSION_CASUAL_MODE (0 or 1)",
     )
     parser.add_argument(
+        "--hq-mixer",
+        default=None,
+        help="override EXPANSION_HQ_MIXER (0 or 1)",
+    )
+    parser.add_argument(
         "--bgm-continuation-policy",
         default=None,
         help="override EXPANSION_BGM_CONTINUATION_POLICY (preserve, resume, or restart)",
@@ -1107,6 +1140,7 @@ def _resolve_tokens(identity: ExpansionIdentity) -> str:
         f"MODERN_EXPANSION_DEFAULT_LOCALE_ID={identity.default_locale_id} "
         f"MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED={identity.pseudo_locale_enabled}"
         f" MODERN_EXPANSION_CASUAL_MODE={identity.casual_mode}"
+        f" MODERN_EXPANSION_HQ_MIXER={identity.hq_mixer}"
         f" MODERN_EXPANSION_AOE_REFERENCE={identity.aoe_reference}"
         f" MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS={identity.custom_spell_effects}"
         f" MODERN_EXPANSION_BGM_CONTINUATION_POLICY={identity.bgm_continuation_policy}"
@@ -1164,6 +1198,7 @@ def main(argv=None) -> int:
             item_id_cap=args.item_id_cap,
             localized_text_auto_wrap=args.localized_text_auto_wrap,
             casual_mode=args.casual_mode,
+            hq_mixer=args.hq_mixer,
             bgm_continuation_policy=args.bgm_continuation_policy,
         )
     except ConfigError as error:

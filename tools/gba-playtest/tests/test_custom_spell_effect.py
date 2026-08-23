@@ -96,6 +96,7 @@ class CustomSpellConfigTests(unittest.TestCase):
                 "aoe_reference": disabled.aoe_reference,
                 "localized_text_auto_wrap": disabled.localized_text_auto_wrap,
                 "casual_mode": disabled.casual_mode,
+                "hq_mixer": disabled.hq_mixer,
             },
             "bgm_continuation_policy": disabled.bgm_continuation_policy,
             "item_id_cap": disabled.item_id_cap,

@@ -44,6 +44,9 @@ MODERN_GOALS := \
 	expansion-modern-starter-hook-check \
 	expansion-modern-starter-qol-check \
 	expansion-modern-starter-runtime-check \
+	expansion-modern-hq-mixer-profile-rom \
+	expansion-modern-hq-mixer-disabled-profile-rom \
+	expansion-modern-hq-mixer-check \
 	expansion-modern-bgm-registry-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
@@ -301,7 +304,8 @@ MODERN_ASFLAGS := \
 	$(MODERN_DRIVER_FLAGS) \
 	$(MODERN_ARCH_FLAGS) \
 	$(MODERN_INCLUDE_FLAGS) \
-	$(MODERN_ABI_FLAGS)
+	$(MODERN_ABI_FLAGS) \
+	-Wa,--defsym,FE8_EXPANSION_HQ_MIXER=$(EXPANSION_HQ_MIXER)
 
 MODERN_COHORT_C_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_COHORT_SOURCES:.c=.o))
 MODERN_COHORT_ASM_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_COHORT_ASM_SOURCES:.s=.o))
@@ -1425,6 +1429,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-newgame-check \
 	expansion-modern-combat-check \
 	expansion-modern-saveload-check \
+	expansion-modern-hq-mixer-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-budget \
@@ -1445,6 +1450,9 @@ endif
 
 # Link-only assembly objects not in expansion-modern-all.
 MODERN_ELF_EXTRA_ASM_SOURCES := src/rom_header.s src/crt0.s src/m4a_1.s
+ifeq ($(EXPANSION_HQ_MIXER),1)
+MODERN_ELF_EXTRA_ASM_SOURCES += src/m4a_hq_mixer.s
+endif
 MODERN_ELF_EXTRA_ASM_OBJECTS := \
 	$(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ELF_EXTRA_ASM_SOURCES:.s=.o))
 
@@ -1576,6 +1584,7 @@ ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 		--custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
 		--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 		--casual-mode "$(EXPANSION_CASUAL_MODE)" \
+		--hq-mixer "$(EXPANSION_HQ_MIXER)" \
 		--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 		--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 		--output-dir "$(MODERN_GENERATED_DIR)"
@@ -1641,6 +1650,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	--custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
 	--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 	--casual-mode "$(EXPANSION_CASUAL_MODE)" \
+	--hq-mixer "$(EXPANSION_HQ_MIXER)" \
 	--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 	--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 	--save-compat-epoch "$(EXPANSION_SAVE_COMPAT_EPOCH)" 2>&1)
@@ -1672,6 +1682,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
   MODERN_EXPANSION_AOE_REFERENCE := $(patsubst MODERN_EXPANSION_AOE_REFERENCE=%,%,$(filter MODERN_EXPANSION_AOE_REFERENCE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS := $(patsubst MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS=%,%,$(filter MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_CASUAL_MODE := $(patsubst MODERN_EXPANSION_CASUAL_MODE=%,%,$(filter MODERN_EXPANSION_CASUAL_MODE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_EXPANSION_HQ_MIXER := $(patsubst MODERN_EXPANSION_HQ_MIXER=%,%,$(filter MODERN_EXPANSION_HQ_MIXER=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_BGM_CONTINUATION_POLICY := $(patsubst MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,%,$(filter MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),preserve)
     MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 0
@@ -1724,6 +1735,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	-DFE8_EXPANSION_CUSTOM_SPELL_EFFECTS=$(EXPANSION_CUSTOM_SPELL_EFFECTS) \
 	-DFE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP=$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP) \
 	-DFE8_EXPANSION_CASUAL_MODE=$(EXPANSION_CASUAL_MODE) \
+	-DFE8_EXPANSION_HQ_MIXER=$(EXPANSION_HQ_MIXER) \
 	-DFE8_EXPANSION_BGM_CONTINUATION_POLICY=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID)
 
   # Internal modern-build provenance discriminator (NOT a user feature flag,
@@ -1975,6 +1987,8 @@ ifneq (,$(MODERN_EXPANSION_DEFINES_ACTIVE))
 		printf '%s\n' 'aoe_reference=$(EXPANSION_AOE_REFERENCE)'; \
 		printf '%s\n' 'custom_spell_effects=$(EXPANSION_CUSTOM_SPELL_EFFECTS)'; \
 		printf '%s\n' 'casual_mode=$(EXPANSION_CASUAL_MODE)'; \
+		printf '%s\n' 'hq_mixer=$(EXPANSION_HQ_MIXER)'; \
+		printf '%s\n' 'internal_test_defines=$(MODERN_INTERNAL_TEST_DEFINES)'; \
 		printf '%s\n' 'bgm_continuation_policy=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)'; \
 		printf '%s\n' 'modern_build=1'; \
 		printf '%s\n' 'item_id_cap=$(FE8_ITEM_ID_CAP)'; \
@@ -2000,6 +2014,15 @@ endif
 # and the self-contained mgfembp sources are intentionally excluded: neither
 # includes global.h, so neither can observe expansion_config.h.
 $(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS): $(MODERN_COMPILE_SETTINGS)
+
+# src/m4a_1.s selects its stock SoundMainRAM body through the assembler
+# FE8_EXPANSION_HQ_MIXER symbol. It does not include global.h, so the general
+# C/data compile-settings dependency above cannot invalidate it when the
+# feature changes in a reused build root. Reuse that content-addressed stamp
+# explicitly so enabled and disabled links never reuse the other mixer's
+# object.
+$(MODERN_OUTPUT_DIR)/src/m4a_1.o $(MODERN_OUTPUT_DIR)/src/m4a_hq_mixer.o: \
+	$(MODERN_COMPILE_SETTINGS)
 
 # --- Localization catalog generation (issue #18 sprint 1) -------------------
 # Regenerates $(MODERN_BUILD_ROOT)/expansion-localization/generated/{expansion_locale_catalog.c,
@@ -2248,6 +2271,7 @@ $(MODERN_ELF_LINK_SETTINGS): FORCE_MODERN_ELF_LINK_SETTINGS
 	@{ \
 		printf '%s\n' 'rom_size=$(MODERN_ROM_SIZE_BYTES)'; \
 		printf '%s\n' 'text_shift=$(MODERN_TEXT_SHIFT)'; \
+		printf '%s\n' 'hq_mixer=$(EXPANSION_HQ_MIXER)'; \
 		printf '%s\n' 'ld=$(MODERN_LD)'; \
 		printf '%s\n' 'ldscript=$(MODERN_CLEAN_LDSCRIPT)'; \
 	} > "$@.tmp"
@@ -2356,6 +2380,7 @@ $(MODERN_ELF): expansion-modern-link-prepare $(MODERN_ELF_LINK_SETTINGS) \
 		--orphan-handling=error \
 		--defsym=__rom_size=$(MODERN_ROM_SIZE_BYTES) \
 		--defsym=__text_shift=$(MODERN_TEXT_SHIFT) \
+		--defsym=__hq_mixer_enabled=$(EXPANSION_HQ_MIXER) \
 		-T "$(MODERN_CLEAN_LDSCRIPT)" \
 		-Map "$(MODERN_MAP)" \
 		@"$(MODERN_ELF_OBJECTS_LST)" \
@@ -3201,6 +3226,52 @@ expansion-modern-starter-runtime-check: expansion-modern-starter-hook-check \
 	@printf 'Modern ROM starter runtime matrix passed (mechanics hook + player QoL overlay, positive and default-disabled negative): config=%s abi=%s\n' \
 		'$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
+# Issue #83 optional HQ mixer gate. Enabled and disabled profiles are built
+# into separate roots so an ambient feature override cannot contaminate the
+# negative control. The runner binds every target probe through each exact ELF
+# and reads PCM/interrupt-buffer state from real libmGBA execution.
+MODERN_HQ_MIXER_PROFILE_ROOT := build/expansion-modern-hq-mixer
+MODERN_HQ_MIXER_PROFILE_ROM := $(MODERN_HQ_MIXER_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_HQ_MIXER_PROFILE_ELF := $(MODERN_HQ_MIXER_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_HQ_MIXER_PROFILE_MAP := $(MODERN_HQ_MIXER_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.map
+MODERN_HQ_MIXER_DISABLED_ROOT := build/expansion-modern-hq-mixer-disabled
+MODERN_HQ_MIXER_DISABLED_ROM := $(MODERN_HQ_MIXER_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_HQ_MIXER_DISABLED_ELF := $(MODERN_HQ_MIXER_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_HQ_MIXER_DISABLED_MAP := $(MODERN_HQ_MIXER_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.map
+MODERN_HQ_MIXER_RUNTIME_DIR := $(MODERN_OUTPUT_DIR)/hq-mixer-runtime
+MODERN_HQ_MIXER_RUNTIME_SCRIPT := tools/gba-playtest/run_hq_mixer_checks.py
+
+CLEAN_DIRS += $(MODERN_HQ_MIXER_PROFILE_ROOT)
+CLEAN_DIRS += $(MODERN_HQ_MIXER_DISABLED_ROOT)
+
+expansion-modern-hq-mixer-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_HQ_MIXER_PROFILE_ROOT) \
+		EXPANSION_HQ_MIXER=1 \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_HQ_MIXER_TEST_FIXTURE=1
+
+expansion-modern-hq-mixer-disabled-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_HQ_MIXER_DISABLED_ROOT) \
+		EXPANSION_HQ_MIXER=0 \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_HQ_MIXER_TEST_FIXTURE=1
+
+expansion-modern-hq-mixer-check: expansion-modern-boot-preflight \
+		expansion-modern-hq-mixer-profile-rom \
+		expansion-modern-hq-mixer-disabled-profile-rom
+	MODERN_NM="$(MODERN_NM)" TMPDIR="$(abspath $(MODERN_HQ_MIXER_RUNTIME_DIR)/tmp)" \
+		"$(PYTHON)" "$(MODERN_HQ_MIXER_RUNTIME_SCRIPT)" \
+		--enabled-rom "$(MODERN_HQ_MIXER_PROFILE_ROM)" \
+		--enabled-elf "$(MODERN_HQ_MIXER_PROFILE_ELF)" \
+		--enabled-map "$(MODERN_HQ_MIXER_PROFILE_MAP)" \
+		--disabled-rom "$(MODERN_HQ_MIXER_DISABLED_ROM)" \
+		--disabled-elf "$(MODERN_HQ_MIXER_DISABLED_ELF)" \
+		--disabled-map "$(MODERN_HQ_MIXER_DISABLED_MAP)" \
+		--config "$(MODERN_CONFIG)" --nm "$(MODERN_NM)" \
+		--out-dir "$(MODERN_HQ_MIXER_RUNTIME_DIR)"
+
 # Issue #42 typed AoE runtime gate. The reference effect has its own enabled
 # build root, and the disabled negative control has a separate build root that
 # forces EXPANSION_AOE_REFERENCE=0. This prevents a command-line
@@ -3890,6 +3961,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-newgame-check \
 		expansion-modern-combat-check \
 		expansion-modern-saveload-check \
+		expansion-modern-hq-mixer-check \
 		expansion-modern-savefmt-check \
 		expansion-modern-shifted-check \
 		expansion-modern-localization-budget-check \
