@@ -247,6 +247,15 @@ when one issue genuinely depends on another issue's unmerged code or contract,
 not merely because the issues touch shared files or belong to the same
 initiative.
 
+Validate and merge independent PRs in parallel. Do not serialize them by age,
+issue number, shared initiative, or an unrelated PR's post-merge CI. Another
+independent merge advancing `master` does not by itself invalidate a candidate
+head's evidence. Refresh and rerun gates only when the candidate tree changes,
+GitHub reports a merge conflict, a declared shared contract changes, or the
+new base exposes a concrete interaction. Post-merge Build CI then verifies the
+combined default branch and triggers immediate fix-forward or revert on
+failure.
+
 Every non-root PR must record:
 
 - `Depends on #...` links for its immediate issue and PR dependency;
@@ -263,10 +272,16 @@ its required parent is open. After a parent merges, run
 rerun exact-candidate remote checks whenever the candidate commit or tree
 changes.
 
-Apply candidate-commit Build CI, Full Matrix, post-merge Build verification,
-issue evidence and closure, and the remote completion gate independently to
-every issue PR. Complete the umbrella initiative only after every accepted
-issue has been independently merged, verified on `master`, and closed.
+Apply exact-candidate Build CI and concurrent Copilot review before merging
+every issue PR. Do not run Full Matrix for a candidate PR or stacked child.
+Full Matrix CI runs only on `master`; it never runs on a pull request or
+feature branch, manually or automatically.
+Immediately after each merge or intentional independent merge batch, monitor
+Build CI and dispatch Full Matrix CI on the exact pushed `master` commit and
+branch. Issue closure and remote completion wait for both checks for that exact
+pushed `master` commit to succeed. Complete the umbrella initiative only after
+every accepted issue has been independently merged, verified on `master`, and
+closed.
 
 ### Review-size preflight
 
@@ -416,8 +431,8 @@ must not carry content hashes or duplicated gitlink pins.
 Use one dedicated pull request for exactly one independent issue by default.
 Push directly to `master` only when the user explicitly requests it and
 repository permissions allow it; direct delivery still requires the same local
-validation, Full Matrix run for the pushed commit, pushed-commit Build CI, and
-remote completion gate.
+validation, Build CI and Full Matrix CI on that exact pushed `master` commit
+and branch, and the remote completion gate.
 
 The PR must record:
 
@@ -470,38 +485,44 @@ If a candidate SHA changes, cancel superseded candidate runs with
 checks for the replacement SHA. Never repeatedly wake the same subagent merely
 to poll CI, and never accept a stale run because its watcher completed.
 
-Post-merge `master` Build CI monitoring is always nonblocking. Start its
-bounded direct shell watcher in attached asynchronous mode so process
-completion produces a notification, leave the post-merge verification work
-item in progress, and immediately continue scheduling every dependency-ready
-task that does not depend on that Build result. Do not stop orchestration or
-send a waiting-only response merely because the master watcher is active.
-Only issue closure, remote completion, and other true dependents wait for the
-post-merge result.
+Every candidate PR requires exact-candidate Build CI and concurrent Copilot
+review. Use a separate bounded direct watcher for each exact-candidate check;
+when review finishes, inspect and triage its threads immediately. A valid
+review finding supersedes the candidate and cancels all candidate checks. Do
+not run Full Matrix for a candidate PR or stacked child. Once candidate Build
+and review are terminal and clean and objective acceptance is complete, merge
+directly without candidate or local Full Matrix. Full Matrix CI runs only on
+`master`; it never runs on a pull request or feature branch, manually or
+automatically.
 
-When the asynchronous watcher completes, verify that the run belongs to the
-exact merged `master` SHA and inspect every required job. Resume the dependent
-completion chain on success. On failure, interrupt ordinary delivery work as
-needed to fix forward or revert immediately; never let background monitoring
-hide a broken default branch.
+Immediately after each merge or intentional independent merge batch, monitor
+Build CI and dispatch Full Matrix CI on the exact pushed `master` commit and
+branch. Record each run ID and start its bounded direct shell watcher in
+attached asynchronous mode, then immediately continue every dependency-ready
+task that does not depend on those results. These exact pushed-`master` checks
+are nonblocking only for unrelated independent PR merges. Their failures
+interrupt ordinary work for fix-forward or revert immediately; never let
+background monitoring hide a broken default branch. Issue closure, remote
+completion, and other true dependents wait for both checks for that exact
+pushed `master` commit to succeed.
 
 Before merge:
 
 1. Confirm required Build CI succeeds for the exact candidate commit.
-2. Dispatch and pass `full-matrix.yml` for that same candidate branch and
-   commit.
-3. Resolve every review thread with code or an explanation.
-4. Confirm every objective acceptance criterion, positive scenario, negative
+2. Confirm concurrent Copilot review is clean and resolve every review thread
+   with code or an explanation.
+3. Confirm every objective acceptance criterion, positive scenario, negative
    control, compatibility check, tester-facing case, and documentation
    requirement is complete.
-5. Confirm no material risk or validation gap remains unresolved.
+4. Confirm no material risk or validation gap remains unresolved.
 
-Merge the PR autonomously when all five conditions hold. Do not wait for human
+Merge the PR autonomously when all four conditions hold. Do not wait for human
 review or approval. Respect branch protection and never bypass a required
 GitHub control.
 
-For a stacked PR, satisfy those conditions against its immediate base, merge
-only after its parent, then retarget and revalidate it as described above.
+For a stacked PR, satisfy those candidate Build/review conditions against its
+immediate base, merge only after its parent, then retarget and revalidate it as
+described above. Do not run Full Matrix for the stacked child candidate.
 
 Leave the PR open only when:
 
@@ -517,22 +538,26 @@ a generically worded request for review.
 
 For every issue-specific PR:
 
-1. Verify Build CI on the resulting `master` commit.
-2. If `master` fails, immediately fix forward or revert; do not report the
-   feature as delivered.
+1. Immediately monitor Build CI and dispatch Full Matrix CI on the exact
+   pushed `master` commit and branch.
+2. If either check for that exact pushed `master` commit fails, immediately fix
+   forward or revert; do not report the feature as delivered.
 3. Add the final evidence and commit/PR/CI links to the originating issue.
    Include installed investigation tools, versions, purpose, and any
    pre-existing IDA/Ghidra/GDB resources used.
 4. Close the feature or bug issue only when every required tester-facing case
-   is present and every material manual criterion is verified. This
-   development workflow overrides conflicting generic language that reserves
-   closure for human review.
+   is present, every material manual criterion is verified, and both exact
+   pushed-`master` Build and Full Matrix checks succeed. This development
+   workflow overrides conflicting generic language that reserves closure for
+   human review.
 5. For tracked changes, run `make remote-completion-check` only after the
-   intended commit is pushed and its Build CI succeeds.
+   intended `master` commit is pushed and both checks for that exact pushed
+   `master` commit succeed.
 
 The task is complete only when the implementation and documentation are
-persistent upstream, required CI is green, the remote completion gate passes,
-and no current-request work item remains open.
+persistent upstream, Build and Full Matrix checks for the exact pushed
+`master` commit are green, the remote completion gate passes, and no
+current-request work item remains open.
 
 ## Required final report
 

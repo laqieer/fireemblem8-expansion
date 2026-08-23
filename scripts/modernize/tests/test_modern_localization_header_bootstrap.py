@@ -541,6 +541,68 @@ exec "REAL_SED_PATH_TOKEN" "$@"
         self._run_hostile_sed_isolated_headers_d_build("release")
 
 
+class ModernGeneratedHeaderAliasFilterTests(unittest.TestCase):
+    """Exercise the Make-expanded filter against both generated-header aliases."""
+
+    @staticmethod
+    def _make_alias_filter_probe(directory):
+        expansion_dependency = Path(directory) / "expansion.headers.d"
+        content_dependency = Path(directory) / "content.headers.d"
+        recipe = "\n".join(
+            (
+                ".PHONY: generated-header-alias-filter-probe",
+                "generated-header-alias-filter-probe:",
+                "\t@printf '%s\\n' 'fixture.o: expansion_msg_ids.h retained.h' > "
+                f"'{expansion_dependency}'",
+                "\t@printf '%s\\n' 'fixture.o: items_expansion_content_text.h "
+                f"retained.h' > '{content_dependency}'",
+                "\t@for dependency in "
+                f"'{expansion_dependency}' '{content_dependency}'; do "
+                "sed -E 's/(^|[[:space:]])"
+                "($(MODERN_GENERATED_HEADER_BASENAME_RE))"
+                "([[:space:]]|$$)/\\1\\3/g' "
+                '"$$dependency" > "$$dependency.filtered"; done',
+                "\t@printf '%s\\n' '$(MODERN_GENERATED_HEADER_BASENAME_RE)'",
+            )
+        )
+        result = subprocess.run(
+            [
+                "make",
+                "--no-print-directory",
+                "-s",
+                f"--eval={recipe}",
+                "generated-header-alias-filter-probe",
+            ],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        return result, (
+            expansion_dependency.with_suffix(".d.filtered"),
+            content_dependency.with_suffix(".d.filtered"),
+        )
+
+    def test_make_expands_exact_regex_and_filters_both_cold_aliases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result, filtered_dependencies = self._make_alias_filter_probe(tmp)
+            self.assertEqual(result.returncode, 0, result.stdout)
+
+            regex = result.stdout.strip()
+            self.assertEqual(
+                regex,
+                r"expansion_msg_ids\.h|items_expansion_content_text\.h",
+            )
+            self.assertNotRegex(regex, r"\s")
+
+            for filtered_dependency in filtered_dependencies:
+                filtered = filtered_dependency.read_text(encoding="utf-8")
+                self.assertNotIn("expansion_msg_ids.h", filtered)
+                self.assertNotIn("items_expansion_content_text.h", filtered)
+                self.assertIn("retained.h", filtered)
+
+
 class ModernLocalizationGenerationParallelSafetyTests(unittest.TestCase):
     """A second, distinct clean-build hazard found while fixing the
     "No rule to make target 'expansion_msg_ids.h'" regression above: the

@@ -188,7 +188,9 @@ class ToolsScenarioFilesTests(unittest.TestCase):
 
     def test_committed_fingerprint_matches(self):
         fp = gba_playtest.validate_fingerprint(
-            json.loads(DEBUG_FINGERPRINT.read_text(encoding="utf-8")), str(DEBUG_FINGERPRINT)
+            json.loads(DEBUG_FINGERPRINT.read_text(encoding="utf-8")),
+            str(DEBUG_FINGERPRINT),
+            policy="behavior",
         )
         self.assertEqual(fp["scenario"], DEBUG_NAME)
         self.assertEqual(len(fp["checkpoints"]), 14)
@@ -219,7 +221,9 @@ class ToolsRuntimeTests(unittest.TestCase):
         host_mode.require_built_rom(rom, f"modern ROM for {name}")
         scenario = gba_playtest.load_scenario(scenario_path)
         expected = gba_playtest.validate_fingerprint(
-            json.loads(fingerprint_path.read_text(encoding="utf-8")), str(fingerprint_path)
+            json.loads(fingerprint_path.read_text(encoding="utf-8")),
+            str(fingerprint_path),
+            policy="behavior",
         )
         actual = host_mode.capture_live_or_skip(  # blank SRAM
             rom, scenario, label=f"debugtools-tools runtime coverage ({name})"

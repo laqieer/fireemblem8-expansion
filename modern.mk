@@ -7,6 +7,7 @@ MODERN_GOALS := \
 	expansion-modern-elf \
 	expansion-modern-rom \
 	expansion-modern-gdb-smoke \
+	expansion-modern-banim-presentation-check \
 	expansion-modern-boot-check \
 	expansion-modern-savefmt-check \
 	expansion-modern-itemexpansion-check \
@@ -147,6 +148,21 @@ MODERN_BANIM_OVERLAY_LAYOUT_FLAGS := -fno-toplevel-reorder
 # Modern framework builds favor corrected behavior; the archival lane leaves
 # BUGFIX undefined to preserve byte-identical original behavior.
 MODERN_DEFINE_FLAGS := -DMODERN=1 -DNONMATCHING=1 -DBUGFIX=1
+
+# Internal-only battle-presentation runtime evidence. The probe is compiled
+# solely by expansion-modern-banim-presentation-check's dedicated debug
+# profiles; ordinary debug and every release/production build omit it.
+MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY ?=
+ifneq ($(strip $(MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY)),)
+  ifneq ($(MODERN_CONFIG),debug)
+    $(error MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY is debug-test-only)
+  endif
+  ifeq (,$(filter 0 3,$(MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY)))
+    $(error MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY must be 0 (standard) or 3 (off))
+  endif
+  MODERN_DEFINE_FLAGS += \
+	-DBANIM_PRESENTATION_RUNTIME_PROBE_POLICY=$(MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY)
+endif
 
 # Issue #10: the item ID cap is a single build input shared by the data
 # generator (scripts/generated_data/idspace.py resolve_item_id_cap, via the
@@ -888,6 +904,11 @@ $(foreach t,$(GENERATED_DATA_LINKED_TABLES),$(eval $(call GENERATED_DATA_MODERN_
 # consumes that header.
 ifeq ($(EXPANSION_STARTER_CONTENT),1)
 $(MODERN_OUTPUT_DIR)/src/expansion_starter_content.o: $(GENERATED_DATA_CONTENT_TEXT_HEADER)
+# A clean generated-header scan can record the literal include spelling
+# before GCC can resolve the profile-specific -I directory. Keep that bare
+# token as an alias of the real build-local output so any included dependency
+# file remains resolvable across Make's remake/restart cycle.
+$(notdir $(GENERATED_DATA_CONTENT_TEXT_HEADER)): $(GENERATED_DATA_CONTENT_TEXT_HEADER) ;
 endif
 
 # Issue #5 Batch 3a: explicit (non-pattern) compile rule for the `units`
@@ -1310,7 +1331,8 @@ $(MODERN_ALL_C_HEADER_DEPS): | expansion-modern-toolchain-check
 # already waits for generation first; this just removes the duplicate,
 # unresolvable alias GCC's -MG happens to also emit.
 MODERN_LOCALIZATION_MSG_IDS_H_BASENAME := $(notdir $(MODERN_LOCALIZATION_MSG_IDS_H))
-MODERN_LOCALIZATION_MSG_IDS_H_BASENAME_RE := $(subst .,\.,$(MODERN_LOCALIZATION_MSG_IDS_H_BASENAME))
+MODERN_CONTENT_TEXT_H_BASENAME := $(notdir $(GENERATED_DATA_CONTENT_TEXT_HEADER))
+MODERN_GENERATED_HEADER_BASENAME_RE := $(subst .,\.,$(MODERN_LOCALIZATION_MSG_IDS_H_BASENAME))|$(subst .,\.,$(MODERN_CONTENT_TEXT_H_BASENAME))
 
 # Portability note: this filter deliberately never uses `sed -i` (in-place
 # editing). GNU sed's `-i` takes an *optional* backup-suffix argument (no
@@ -1336,7 +1358,7 @@ $(MODERN_ALL_C_HEADER_DEPS): $(MODERN_OUTPUT_DIR)/%.headers.d: %.c
 		printf '%s\n' "error: failed to pre-scan $< for generated header dependencies" >&2; \
 		exit 1; \
 	}
-	@sed -E 's/(^|[[:space:]])$(MODERN_LOCALIZATION_MSG_IDS_H_BASENAME_RE)([[:space:]]|$$)/\1\2/g' "$@.tmp" > "$@.tmp2" || { \
+	@sed -E 's/(^|[[:space:]])($(MODERN_GENERATED_HEADER_BASENAME_RE))([[:space:]]|$$)/\1\3/g' "$@.tmp" > "$@.tmp2" || { \
 		rm -f "$@.tmp" "$@.tmp2"; \
 		printf '%s\n' "error: failed to filter generated header dependencies for $<" >&2; \
 		exit 1; \
@@ -1725,6 +1747,40 @@ MODERN_LOCALE_PROFILE_EN_EU_OUTPUT_DIR := \
 MODERN_LOCALE_PROFILE_ALL_OUTPUT_DIR := \
 	$(MODERN_LOCALE_PROFILE_ALL_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
 
+# Issue #49's production patch profile is intentionally a distinct root,
+# including generated data, so it cannot reuse or contaminate a default or
+# localization-only build. It is a named composition of existing validated
+# switches, not another user-configurable feature surface.
+MODERN_PATCH_RELEASE_ROOT := build/expansion-modern-all-locales-all-features
+MODERN_PATCH_RELEASE_GENERATED_DATA_DIR := $(MODERN_PATCH_RELEASE_ROOT)/generated-data
+MODERN_PATCH_RELEASE_OUTPUT_DIR := \
+	$(MODERN_PATCH_RELEASE_ROOT)/release/aapcs
+MODERN_PATCH_RELEASE_METADATA := \
+	$(MODERN_PATCH_RELEASE_OUTPUT_DIR)/generated/expansion_build_metadata.json
+MODERN_PATCH_RELEASE_ROM := $(MODERN_PATCH_RELEASE_OUTPUT_DIR)/fireemblem8.gba
+MODERN_PATCH_RELEASE_ARTIFACT_DIR := $(MODERN_PATCH_RELEASE_ROOT)/patch-artifact
+MODERN_PATCH_RELEASE_BUDGET := $(MODERN_PATCH_RELEASE_OUTPUT_DIR)/linker-budget.json
+MODERN_PATCH_RELEASE_LOCALIZATION_BUDGET := \
+	$(MODERN_PATCH_RELEASE_OUTPUT_DIR)/localization-budget.json
+MODERN_PATCH_RELEASE_FLAGS := \
+	MODERN_CONFIG=release \
+	MODERN_ABI=aapcs \
+	MODERN_ROM_SIZE=32M \
+	MODERN_BUILD_ROOT=$(MODERN_PATCH_RELEASE_ROOT) \
+	GENERATED_DATA_OUT_DIR=$(MODERN_PATCH_RELEASE_GENERATED_DATA_DIR) \
+	EXPANSION_ENABLED_LOCALES=en,ja,zh-Hans,fr,de,es,it \
+	EXPANSION_DEFAULT_LOCALE=en \
+	EXPANSION_PSEUDO_LOCALE=0 \
+	EXPANSION_MECHANICS_HOOKS=1 \
+	EXPANSION_MECHANICS_SAMPLE=1 \
+	EXPANSION_DANGER_OVERLAY_MENU=1 \
+	EXPANSION_STARTER_CONTENT=1 \
+	EXPANSION_AOE_REFERENCE=1 \
+	EXPANSION_LOCALIZED_TEXT_AUTO_WRAP=1 \
+	EXPANSION_CASUAL_MODE=1 \
+	EXPANSION_BGM_CONTINUATION_POLICY=preserve \
+	FE8_ITEM_ID_CAP=0xCE
+
 expansion-modern-localization-profile-en-ja:
 	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_ROM_SIZE=32M MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_EN_JA_ROOT) \
@@ -1756,6 +1812,38 @@ expansion-modern-localization-profile-all:
 	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_ROM_SIZE=32M MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_ALL_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,ja,zh-Hans,fr,de,es,it
+
+expansion-modern-all-locales-all-features-check:
+	+$(MAKE) expansion-modern-boot-check expansion-modern-overlay-audit \
+		expansion-modern-relocs expansion-modern-localization-budget-check \
+		expansion-modern-game-localization-config-check $(MODERN_PATCH_RELEASE_FLAGS) \
+		MODERN_BUDGET_REPORT=$(MODERN_PATCH_RELEASE_BUDGET) \
+		MODERN_LOCALIZATION_BUDGET_REPORT=$(MODERN_PATCH_RELEASE_LOCALIZATION_BUDGET)
+	READELF="$(MODERN_READELF)" "$(PYTHON)" "$(MODERN_BUDGET_SCRIPT)" \
+		--map "$(MODERN_PATCH_RELEASE_OUTPUT_DIR)/fireemblem8.map" \
+		--elf "$(MODERN_PATCH_RELEASE_OUTPUT_DIR)/fireemblem8.elf" \
+		--output "$(MODERN_PATCH_RELEASE_BUDGET)" --validate-elf \
+		--require-positive-headroom ewram --require-positive-headroom iwram
+	@$(PYTHON) -c 'import json, pathlib; from scripts.modernize import patch_release; metadata = json.loads(pathlib.Path("$(MODERN_PATCH_RELEASE_METADATA)").read_text(encoding="utf-8")); patch_release.validate_profile_metadata(metadata, metadata["build_commit"]); print("all-locales/all-features profile identity validated")'
+
+# PATCH_BASE_ROM is deliberately a local/trusted input only. It is never
+# downloaded here, never a default, and never appears in artifact metadata.
+expansion-modern-all-locales-all-features-patch-check: \
+		expansion-modern-all-locales-all-features-check
+	@if [ -z "$(PATCH_BASE_ROM)" ]; then \
+		echo "error: PATCH_BASE_ROM must name a locally obtained legal FE8U revision-0 image" >&2; \
+		exit 1; \
+	fi
+	@rm -rf "$(MODERN_PATCH_RELEASE_ARTIFACT_DIR)"
+	@$(PYTHON) -m scripts.modernize.patch_release create \
+		--base "$(PATCH_BASE_ROM)" \
+		--target "$(MODERN_PATCH_RELEASE_ROM)" \
+		--metadata "$(MODERN_PATCH_RELEASE_METADATA)" \
+		--output-dir "$(MODERN_PATCH_RELEASE_ARTIFACT_DIR)" \
+		--commit "$$(git rev-parse HEAD)"
+	@$(PYTHON) -m scripts.modernize.patch_release verify \
+		--base "$(PATCH_BASE_ROM)" \
+		--artifact-dir "$(MODERN_PATCH_RELEASE_ARTIFACT_DIR)"
 
 # Build the product profiles serially: every private modern build root still
 # shares the generated battle-animation sidecar, so parallel recursive profile
@@ -1807,7 +1895,9 @@ expansion-modern-localization-profile-headroom-check:
 	expansion-modern-localization-profile-en-ja-zh-hans-qps \
 	expansion-modern-localization-profile-en-fr-de-es-it \
 	expansion-modern-localization-profile-all \
-	expansion-modern-localization-profile-headroom-check
+	expansion-modern-localization-profile-headroom-check \
+	expansion-modern-all-locales-all-features-check \
+	expansion-modern-all-locales-all-features-patch-check
 
 # Compile-settings stamp: a content-addressed prerequisite of every modern
 # C/data object that can observe include/expansion_config.h (global.h
@@ -2329,6 +2419,35 @@ expansion-modern-gdb-smoke:
 		--elf "$(MODERN_GDB_SMOKE_OUTPUT_DIR)/fireemblem8.elf" \
 		--rom "$(MODERN_GDB_SMOKE_OUTPUT_DIR)/fireemblem8.gba"
 
+MODERN_BANIM_PRESENTATION_RUNTIME_ROOT := $(MODERN_BUILD_ROOT)-banim-presentation-runtime
+MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT := \
+	$(MODERN_BANIM_PRESENTATION_RUNTIME_ROOT)/standard
+MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT := \
+	$(MODERN_BANIM_PRESENTATION_RUNTIME_ROOT)/off
+MODERN_BANIM_PRESENTATION_RUNTIME_CHECK := \
+	tools/gba-playtest/run_banim_presentation_checks.py
+MODERN_BANIM_PRESENTATION_RUNTIME_OUTPUT := \
+	$(MODERN_BANIM_PRESENTATION_RUNTIME_ROOT)/captures
+
+.PHONY: expansion-modern-banim-presentation-check
+expansion-modern-banim-presentation-check: expansion-modern-boot-preflight
+	+$(MAKE) --no-print-directory expansion-modern-rom \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		MODERN_BUILD_ROOT="$(MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT)" \
+		MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY=0
+	+$(MAKE) --no-print-directory expansion-modern-rom \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		MODERN_BUILD_ROOT="$(MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT)" \
+		MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY=3
+	"$(PYTHON)" "$(MODERN_BANIM_PRESENTATION_RUNTIME_CHECK)" \
+		--standard-rom "$(MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT)/debug/aapcs/fireemblem8.gba" \
+		--standard-elf "$(MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT)/debug/aapcs/fireemblem8.elf" \
+		--off-rom "$(MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT)/debug/aapcs/fireemblem8.gba" \
+		--off-elf "$(MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT)/debug/aapcs/fireemblem8.elf" \
+		--out-dir "$(MODERN_BANIM_PRESENTATION_RUNTIME_OUTPUT)"
+	@printf 'Modern ROM battle-presentation runtime check passed (real Ch4 hit, standard + off): %s\n' \
+		"$(MODERN_BANIM_PRESENTATION_RUNTIME_OUTPUT)"
+
 # Preflight the libmGBA-backed playtest backend before spending time building
 # the ROM, with an actionable error pointing at the same backend-check
 # subcommand used by tools/gba-playtest's own tests.
@@ -2366,9 +2485,9 @@ expansion-modern-boot-preflight:
 # Full 3-checkpoint behavior-policy boot gate: proves the modern ROM reaches
 # the same deterministic runtime state as the legacy ROM at frames 0/60/120
 # (not merely that it links). --policy behavior is required here because the
-# modern ROM is not byte-identical to the legacy ROM referenced by the
-# checked-in fingerprint's own "rom" stanza; only --policy exact-rom would
-# additionally require ROM identity, which this target does not claim.
+# modern ROM is not byte-identical to the legacy baseline; only --policy
+# exact-rom would additionally require ROM identity, which this target does
+# not claim.
 expansion-modern-boot-check: expansion-modern-boot-preflight expansion-modern-rom
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
 		--rom "$(MODERN_ROM)" \

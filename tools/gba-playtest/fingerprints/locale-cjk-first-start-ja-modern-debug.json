@@ -32,11 +32,5 @@
     }
   ],
   "format_version": 2,
-  "rom": {
-    "game_code": "BE8E",
-    "sha1": "04c3b20dd41f62f915002bdf58e11dc7bac6785b",
-    "size": 33554432,
-    "title": "FIREEMBLEM2E"
-  },
   "scenario": "locale-cjk-first-start-ja-modern-debug"
 }

@@ -74,8 +74,14 @@ void StartBattleAnimHitEffects(struct Anim *anim, int type, int a, int b)
     int val1, val2;
     s16 roundt1, roundt2;
 #ifdef MODERN
+#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
+    BanimPresentationPolicy_RuntimeProbePrepare();
+#endif
     struct BanimPresentationPolicy const *policy = BanimPresentationPolicy_GetCurrent();
 
+#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
+    BanimPresentationPolicy_RuntimeProbeRecordHit(policy);
+#endif
     if (!BanimPresentationPolicy_UsesHitEffects(policy))
         return;
 #endif
@@ -143,11 +149,16 @@ void StartBattleAnimHitEffects(struct Anim *anim, int type, int a, int b)
 #ifdef MODERN
                 BanimPresentationPolicy_AdjustEffectDuration(policy, 5));
             if (BanimPresentationPolicy_UsesHitEffectPalette(policy))
+            {
+#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
+                BanimPresentationPolicy_RuntimeProbeRecordPaletteFlash();
+#endif
                 NewEfxFlashUnit(
                     animr5,
                     0,
                     BanimPresentationPolicy_AdjustEffectDuration(policy, 8),
                     0);
+            }
 #else
                 5);
             NewEfxFlashUnit(animr5, 0, 8, 0);
@@ -182,8 +193,14 @@ void StartBattleAnimResireHitEffects(struct Anim * anim, int type)
     int val1, val2, off;
     struct Anim * animR7, * animR5, * animR8;
 #ifdef MODERN
+#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
+    BanimPresentationPolicy_RuntimeProbePrepare();
+#endif
     struct BanimPresentationPolicy const *policy = BanimPresentationPolicy_GetCurrent();
 
+#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
+    BanimPresentationPolicy_RuntimeProbeRecordHit(policy);
+#endif
     if (!BanimPresentationPolicy_UsesHitEffects(policy))
         return;
 #endif
@@ -230,11 +247,16 @@ void StartBattleAnimResireHitEffects(struct Anim * anim, int type)
 #ifdef MODERN
                 BanimPresentationPolicy_AdjustEffectDuration(policy, 5));
             if (BanimPresentationPolicy_UsesHitEffectPalette(policy))
+            {
+#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
+                BanimPresentationPolicy_RuntimeProbeRecordPaletteFlash();
+#endif
                 NewEfxFlashUnit(
                     animR5,
                     0,
                     BanimPresentationPolicy_AdjustEffectDuration(policy, 8),
                     0);
+            }
 #else
                 5);
             NewEfxFlashUnit(animR5, 0, 8, 0);
@@ -269,7 +291,16 @@ void StartBattleAnimStatusChgHitEffects(struct Anim * anim, int type)
 {
     struct Anim * anim1;
 #ifdef MODERN
-    if (!BanimPresentationPolicy_UsesHitEffects(BanimPresentationPolicy_GetCurrent()))
+    struct BanimPresentationPolicy const *policy;
+
+#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
+    BanimPresentationPolicy_RuntimeProbePrepare();
+#endif
+    policy = BanimPresentationPolicy_GetCurrent();
+#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
+    BanimPresentationPolicy_RuntimeProbeRecordHit(policy);
+#endif
+    if (!BanimPresentationPolicy_UsesHitEffects(policy))
         return;
 #endif
 

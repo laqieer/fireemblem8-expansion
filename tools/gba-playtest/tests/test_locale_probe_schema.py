@@ -172,6 +172,7 @@ class ExpansionLanguageMenuProbeSchemaTests(unittest.TestCase):
             json.loads(fingerprint_path.read_text(encoding="utf-8")),
             str(fingerprint_path),
             resolver,
+            policy="behavior",
         )
         self.assertEqual(scenario.checkpoints[0].probes[0].address, base)
         self.assertEqual(

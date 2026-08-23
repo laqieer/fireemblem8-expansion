@@ -81,3 +81,10 @@ python3 -m scripts.localization check --out-dir build/generated/localization
 python3 -m unittest discover -s scripts/generated_data/tests -v
 python3 -m unittest discover -s scripts/modernize/tests -v
 ```
+
+## Tester-facing cases
+
+[`TC-BANIM-001`, `TC-BANIM-002`, `TC-MANIFEST-001`, and
+`TC-UTILITY-001`](test-cases/presentation-audio-utility.md#tc-banim-001-apply-standard-reduced-and-off-battle-presentation)
+cover policy behavior/bounds, generated manifest fallback and rejection,
+saved preference normalization, and the default-off Threat Range profile.
