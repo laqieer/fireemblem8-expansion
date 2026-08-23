@@ -130,7 +130,7 @@ save bit, preference, or release behavior.
   `FE8_ARCHIVAL_BUILD`; the agbcc lane is unchanged.
 - **Modern budget:** 68 bytes persistent IWRAM total (64-byte telemetry plus
   4-byte controller), moved together so they survive every map, battle, and UI
-  overlay. The tight all-locale debug profile retains 275 bytes of IWRAM static
+  overlay. The tight all-locale debug profile retains 272 bytes of IWRAM static
   growth headroom above the required 4 KiB user-stack margin and recovers 68
   EWRAM bytes, turning the previous 24-byte overflow into 44 bytes of headroom.
   Default debug/release EWRAM remains unchanged from the immediate base. The
@@ -143,6 +143,8 @@ save bit, preference, or release behavior.
 python3 -m unittest tools.gba-playtest.tests.test_expansion_autoplay -v
 make expansion-modern-autoplay-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-autoplay-check MODERN_CONFIG=release MODERN_ABI=aapcs
+make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=debug MODERN_ABI=aapcs
+make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=release MODERN_ABI=aapcs
 ```
 
 The debug positive uses a clean Chapter 2 fixture because it contains blue,

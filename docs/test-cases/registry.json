@@ -988,6 +988,14 @@
         {
           "command": "make expansion-modern-autoplay-check MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/fingerprints/autoplay-player-default-modern-release.json"
+        },
+        {
+          "command": "make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "scripts/linker_report/budget.py"
+        },
+        {
+          "command": "make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "scripts/linker_report/budget.py"
         }
       ]
     },

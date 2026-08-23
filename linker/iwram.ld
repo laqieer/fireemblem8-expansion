@@ -197,3 +197,11 @@ __localized_msg_transform_scratch_end = .;
  * Issue #58's runtime probe fields.
  */
 *src/banim_presentation.o(iwram_data)
+
+/*
+ * Issue #85's transient controller and pointer-free telemetry must survive
+ * map, UI, and battle-animation overlay switches, but are never serialized.
+ * Keep both together in persistent IWRAM rather than consuming the final
+ * all-locale EWRAM headroom.
+ */
+*src/expansion_autoplay.o(iwram_data)

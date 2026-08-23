@@ -20,6 +20,10 @@
    `make expansion-modern-autoplay-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
 3. Run
    `make expansion-modern-autoplay-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
+4. Run
+   `make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+5. Run
+   `make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
 
 The positive scenario presses the documented debug-only `SELECT+START+R`
 activation chord after Chapter 2 reaches its ordinary interactive player
@@ -64,6 +68,11 @@ preference, migration, or compatibility epoch changes.
 - `make expansion-modern-autoplay-check MODERN_CONFIG=release MODERN_ABI=aapcs`
   - default PLAYER negative with
     `autoplay-player-default-modern-release.json`.
+- `make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
+  and its `release` counterpart
+  - every CJK/all-locale profile retains positive EWRAM and IWRAM headroom;
+    the tight all-locale debug profile has 44 EWRAM bytes and 272 IWRAM
+    static-growth bytes above the required stack margin.
 
 ### Cleanup and limitations
 
