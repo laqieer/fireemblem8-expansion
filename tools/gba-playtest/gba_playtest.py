@@ -74,7 +74,15 @@ MAX_PIXEL_PROBES_PER_CHECKPOINT = 256
 # policy: exact vs. normalized" section). The algorithm name in the hash
 # text always identifies which policy produced it.
 SRAM_HASH_RE = re.compile(r"^fnv1a64-sram(?:-normalized)?:[0-9a-f]{16}$")
-RAM_RANGES = ((0x02000000, 0x02040000), (0x03000000, 0x03008000), (0x0E000000, 0x0E008000))
+RAM_RANGES = (
+    (0x02000000, 0x02040000),
+    (0x03000000, 0x03008000),
+    (0x05000000, 0x05000400),
+    (0x06000000, 0x06018000),
+    (0x07000000, 0x07000400),
+    (0x08000000, 0x0A000000),
+    (0x0E000000, 0x0E008000),
+)
 SRAM_IMAGE_SIZE = 0x8000
 # Matches backend.c's read_plan() rejection of checkpoint->exclude_range_count
 # > 64 -- validated here too so a scenario with too many ranges fails fast
@@ -150,12 +158,12 @@ def _validate_resolved_address(address: int, size: int, path: str) -> None:
     )
     if containing is None:
         raise PlaytestError(
-            f"{path} must be in EWRAM 0x02000000-0x0203ffff, IWRAM 0x03000000-0x03007fff, "
-            "or cart SRAM 0x0e000000-0x0e007fff"
+            f"{path} must be in EWRAM, IWRAM, palette RAM, VRAM, OAM, "
+            "cartridge ROM, or cart SRAM"
         )
     _, end = containing
     if address + size > end:
-        raise PlaytestError(f"{path} plus size {size} crosses the RAM region boundary")
+        raise PlaytestError(f"{path} plus size {size} crosses the address region boundary")
     if address % size:
         raise PlaytestError(f"{path} must be aligned to probe size {size}")
 

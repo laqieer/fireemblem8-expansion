@@ -71,7 +71,6 @@ repo) instead of one registry line per pinned link.
 - host:gcc.gnu.org | laqieer | third-party-reference | Upstream GCC documentation/feature pages.
 - host:ghidra-sre.org | laqieer | third-party-reference | Ghidra tool homepage.
 - host:www.libpng.org | laqieer | third-party-reference | libpng project homepage (build dependency).
-- host:makeapullrequest.com | laqieer | third-party-reference | PR-badge link target.
 - host:img.shields.io | laqieer | third-party-reference | Badge image service used by README.md.
 - host:marketplace.visualstudio.com | laqieer | third-party-reference | VS Code Makefile Tools extension listing.
 - host:retdec.com | laqieer | third-party-reference | RetDec decompiler homepage.

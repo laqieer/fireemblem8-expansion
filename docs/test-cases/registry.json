@@ -218,6 +218,74 @@
         "TC-CUSTOM-SPELL-061-004",
         "TC-CUSTOM-SPELL-061-005"
       ]
+    },
+    {
+      "id": "expansion-locale-selection",
+      "title": "Expansion locale selection and pseudo-locale routing",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/18",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+      ],
+      "reference": "docs/localization.md",
+      "status": "current",
+      "required_cases": [
+        "TC-LOCALIZATION-001",
+        "TC-LOCALIZATION-002"
+      ]
+    },
+    {
+      "id": "full-game-localization",
+      "title": "Localized FE8U full-game message catalog",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/18",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+      ],
+      "reference": "docs/game_localization_catalog.md",
+      "status": "current",
+      "required_cases": [
+        "TC-LOCALIZATION-003"
+      ]
+    },
+    {
+      "id": "locale-preference-persistence",
+      "title": "Versioned locale preference persistence and repair",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/18",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+      ],
+      "reference": "docs/localization.md",
+      "status": "current",
+      "required_cases": [
+        "TC-LOCALIZATION-004"
+      ]
+    },
+    {
+      "id": "localized-text-input-ui",
+      "title": "Localized text consumers, input, and static UI graphics",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/18",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+      ],
+      "reference": "docs/localization.md",
+      "status": "current",
+      "required_cases": [
+        "TC-LOCALIZATION-005",
+        "TC-LOCALIZATION-006",
+        "TC-LOCALIZATION-007"
+      ]
+    },
+    {
+      "id": "localization-profile-validation",
+      "title": "Localization profile validation and resource budgets",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/18",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+      ],
+      "reference": "docs/localization.md",
+      "status": "current",
+      "required_cases": [
+        "TC-LOCALIZATION-008"
+      ]
     }
   ],
   "cases": [
@@ -1001,6 +1069,43 @@
       ]
     },
     {
+      "id": "TC-LOCALIZATION-001",
+      "title": "Default English and single-locale auto-select",
+      "feature_id": "expansion-locale-selection",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/18",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+      ],
+      "document": "docs/test-cases/localization.md",
+      "anchor": "tc-localization-001-default-english-and-single-locale-auto-select",
+      "profiles": [
+        "Modern AAPCS debug and release default English-only 16 MiB profile"
+      ],
+      "purpose": "Prove the supported default remains selector-free and does not create a redundant settings route.",
+      "prerequisites": "Repository root with libmGBA; use the target-generated blank and UNSET SRAM fixtures.",
+      "actions": "Run the default debug and release localization runtime gates, then attempt Right on the one-locale Configuration row.",
+      "expected_result": "English is the only enabled locale, no selector is visible, and the single-locale settings action is a no-op.",
+      "negative_control": "No real locale payload is selected or linked, and multi-locale UI does not appear on blank default SRAM.",
+      "interactions": "Independent of optional feature flags and relies only on the existing locale preference record.",
+      "save_compatibility": "No layout, migration, compatibility epoch, or default-locale change.",
+      "cleanup": "Remove ignored build output with make clean_fast or regenerate fixture SRAM before rerunning.",
+      "limitations": "This proves selection semantics, not translation quality.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_locale_tester_cases -v",
+          "evidence": "tools/gba-playtest/tests/test_locale_tester_cases.py"
+        },
+        {
+          "command": "make expansion-modern-localization-runtime-debug-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/locale-blank-sram-no-selector-default-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-localization-runtime-release-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/locale-auto-select-single-locale-modern-release.json"
+        }
+      ]
+    },
+    {
       "id": "TC-CUSTOM-SPELL-061-005",
       "title": "Custom spell runtime remains save-neutral",
       "feature_id": "custom-spell-runtime",
@@ -1035,6 +1140,263 @@
         {
           "command": "make expansion-modern-savefmt-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_CUSTOM_SPELL_EFFECTS=1",
           "evidence": "tools/gba-playtest/run_save_compat_checks.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-LOCALIZATION-002",
+      "title": "Selector, inline configuration, More, and pseudo locale",
+      "feature_id": "expansion-locale-selection",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/18",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+      ],
+      "document": "docs/test-cases/localization.md",
+      "anchor": "tc-localization-002-selector-inline-configuration-more-and-pseudo-locale",
+      "profiles": [
+        "Modern AAPCS en,qps-ploc 16 MiB debug and release profile",
+        "Modern AAPCS CJK and European 32 MiB named profiles"
+      ],
+      "purpose": "Prove first-start selection, inline Configuration changes, bounded More routing, and pseudo-locale labelling.",
+      "prerequisites": "Start from blank SRAM or the generated valid English preference fixture.",
+      "actions": "Run the multi-locale runtime gates, choose Pseudo (Test), navigate the Language row, and use inline, More, and Back actions.",
+      "expected_result": "Only real selections change stable locale IDs, cache generation, and stored preferences; Back does not change state.",
+      "negative_control": "Single-locale Configuration has no More route, and qps-ploc is never claimed as a production translation.",
+      "interactions": "Expansion and full-game caches invalidate together after a real switch; no optional feature conflicts exist.",
+      "save_compatibility": "Uses the existing preference subrecord without a layout or migration change.",
+      "cleanup": "Regenerate the named fixture or use clean SRAM for a different first-start choice.",
+      "limitations": "The test route verifies behavior and labels, not translation editorial quality.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_language_menu.ExpansionLanguageMenuDecisionHostTests tools.gba-playtest.tests.test_locale_tester_cases -v",
+          "evidence": "tools/gba-playtest/tests/test_expansion_language_menu.py"
+        },
+        {
+          "command": "make expansion-modern-localization-runtime-multi-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/locale-selector-multi-switch-qps-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-localization-runtime-multi-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/locale-settings-real-navigation-multi-modern-debug.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-LOCALIZATION-003",
+      "title": "Production expansion and full-game locale catalogs",
+      "feature_id": "full-game-localization",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/18",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+      ],
+      "document": "docs/test-cases/localization.md",
+      "anchor": "tc-localization-003-production-expansion-and-full-game-locale-catalogs",
+      "profiles": [
+        "Modern AAPCS CJK, European, and all-locale 32 MiB named profiles"
+      ],
+      "purpose": "Prove every production locale has a complete expansion and full-game catalog in its supported profile.",
+      "prerequisites": "Repository root with host compiler and libmGBA; start selector captures with blank SRAM.",
+      "actions": "Run full-game catalog checks and CJK/European runtime gates, then select each supported locale in its named profile.",
+      "expected_result": "JA, ZH, and FR selectors commit their stable IDs and every production locale reports complete 3,414-entry full-game coverage.",
+      "negative_control": "English-only 16 MiB profiles contain no real-locale game payload and disabled locales remain unavailable.",
+      "interactions": "The expansion and full-game catalogs are distinct inputs driven by one selected profile.",
+      "save_compatibility": "Locale selection reuses current preferences without changing identifiers, save structure, or epoch.",
+      "cleanup": "Use separate blank SRAM images for manual selections and clean ignored outputs if necessary.",
+      "limitations": "Catalog coverage is functional evidence, not a linguistic review.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.localization.tests.test_catalog scripts.localization.tests.test_eu_localization tools.gba-playtest.tests.test_locale_tester_cases -v",
+          "evidence": "scripts/localization/tests/test_eu_localization.py"
+        },
+        {
+          "command": "make expansion-modern-localization-runtime-cjk-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/locale-cjk-first-start-ja-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-localization-runtime-eu-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/locale-eu-first-start-fr-modern-debug.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-LOCALIZATION-004",
+      "title": "Preference repair, no-wipe behavior, and soft-reset persistence",
+      "feature_id": "locale-preference-persistence",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/18",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+      ],
+      "document": "docs/test-cases/localization.md",
+      "anchor": "tc-localization-004-preference-repair-no-wipe-behavior-and-soft-reset-persistence",
+      "profiles": [
+        "Modern AAPCS default and en,qps-ploc debug and release profiles with generated preference fixtures"
+      ],
+      "purpose": "Prove every invalid preference state repairs through a real selector without wiping unrelated SRAM.",
+      "prerequisites": "Use only target-generated UNSET, CORRUPT, UNKNOWN_LOCALE, and DISABLED_LOCALE fixtures.",
+      "actions": "Run native preference tests and multi-locale debug/release repair gates, select English after a cursor round trip, then soft reset.",
+      "expected_result": "Repair stores a valid explicit English record, preserves the allowed whole-SRAM hash, and suppresses the selector after reset.",
+      "negative_control": "A valid explicit preference suppresses prompts, while single-locale repair remains an honestly separate auto-select control.",
+      "interactions": "Normal save/load and suspend/resume retain their existing regression gates.",
+      "save_compatibility": "Only the existing 12-byte preference subrecord may change; no format, layout, or epoch migration occurs.",
+      "cleanup": "Fixture output is ignored and removable through make clean_fast; never commit save data.",
+      "limitations": "The documented no-wipe exclusions cover existing vanilla bookkeeping and the preference record only.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_expansion_user_prefs_native tools.gba-playtest.tests.test_locale_tester_cases -v",
+          "evidence": "scripts/modernize/tests/test_expansion_user_prefs_native.py"
+        },
+        {
+          "command": "make expansion-modern-localization-runtime-multi-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/locale-repair-corrupt-multi-modern-release.json"
+        },
+        {
+          "command": "make expansion-modern-localization-runtime-prefs-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/locale-prefs-corrupt-no-wipe-modern-debug.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-LOCALIZATION-005",
+      "title": "UTF-8 controls, bounded consumers, and cache switching",
+      "feature_id": "localized-text-input-ui",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/18",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+      ],
+      "document": "docs/test-cases/localization.md",
+      "anchor": "tc-localization-005-utf-8-controls-bounded-consumers-and-cache-switching",
+      "profiles": [
+        "Modern AAPCS CJK 32 MiB profile",
+        "English-only and archival negative paths"
+      ],
+      "purpose": "Execute real UTF-8 consumers, bounded error paths, and cross-catalog cache invalidation.",
+      "prerequisites": "Repository root with host compiler and repository preprocessor available or buildable.",
+      "actions": "Run renderer, consumer, and resolver-native tests, then perform a documented real locale switch.",
+      "expected_result": "Valid controls and substitutions remain bounded, malformed input has a visible marker, and both cache families invalidate on switch.",
+      "negative_control": "English-only and archival retain established legacy paths, and an unbounded modern request fails visibly.",
+      "interactions": "Scratch/cache state is transient and is independent of saved preferences after the selection is applied.",
+      "save_compatibility": "No text buffer, control stream, or pointer is persisted and no save contract changes.",
+      "cleanup": "Host test scratch output is removed by the tests.",
+      "limitations": "The checks prove rendering mechanics, not translation quality.",
+      "automation": [
+        {
+          "command": "python3 scripts/texttools/tests/test_text_renderer_native.py",
+          "evidence": "scripts/texttools/tests/test_text_renderer_native.py"
+        },
+        {
+          "command": "python3 scripts/texttools/tests/test_text_consumers_native.py",
+          "evidence": "scripts/texttools/tests/test_text_consumers_native.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.localization.tests.test_resolver_native.ResolverNativeTests -v",
+          "evidence": "scripts/localization/tests/test_resolver_native.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-LOCALIZATION-006",
+      "title": "Locale-specific tactician entry remains byte-bounded",
+      "feature_id": "localized-text-input-ui",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/18",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+      ],
+      "document": "docs/test-cases/localization.md",
+      "anchor": "tc-localization-006-locale-specific-tactician-entry-remains-byte-bounded",
+      "profiles": [
+        "Modern AAPCS JA or ZH 32 MiB profile with the ASCII entry page"
+      ],
+      "purpose": "Verify locale grids and atomic UTF-8-aware tactician-name bounds.",
+      "prerequisites": "Begin with a known player name and no saved test fixture.",
+      "actions": "Run mapped native tests, enter a valid bounded name, then try oversize and split-scalar input.",
+      "expected_result": "Locale pages and ASCII remain available, valid names fit ten encoded bytes plus NUL, and invalid input preserves the prior value.",
+      "negative_control": "English, pseudo, and archival retain their existing grids and never receive a widened persistent field.",
+      "interactions": "Uses the selected locale but no optional feature module.",
+      "save_compatibility": "Uses the existing player-name field and serializers without migration or epoch change.",
+      "cleanup": "Restore or erase only the test player name.",
+      "limitations": "No campaign-specific tactician test chapter is supplied.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.localization.tests.test_sio_localization scripts.texttools.tests.test_text_consumers_native.TextConsumerNativeTests.test_reviewed_consumer_functions -v",
+          "evidence": "scripts/localization/tests/test_sio_localization.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_locale_tester_cases -v",
+          "evidence": "tools/gba-playtest/tests/test_locale_tester_cases.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-LOCALIZATION-007",
+      "title": "Localized static graphics and CJK menu regressions",
+      "feature_id": "localized-text-input-ui",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/18",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+      ],
+      "document": "docs/test-cases/localization.md",
+      "anchor": "tc-localization-007-localized-static-graphics-and-cjk-menu-regressions",
+      "profiles": [
+        "Modern AAPCS CJK and all-locale 32 MiB profiles"
+      ],
+      "purpose": "Verify locale-bound static graphics selection and the corrected CJK menu layout contracts.",
+      "prerequisites": "Blank SRAM, libmGBA, and no save slot before Mode Select.",
+      "actions": "Run localized UI checks and CJK runtime scenarios, then reach Mode Select and Save Menu after selecting JA or ZH.",
+      "expected_result": "Registered CJK resources and the corrected zh-Hans OAM layout are selected while semantic locale and persistence probes remain stable.",
+      "negative_control": "English and European retain FE8U resources, and the former zh-Hans OAM hash remains a rejected regression value.",
+      "interactions": "Resource selection follows active locale only and conflicts with no optional module.",
+      "save_compatibility": "Static resource selection does not change saved preferences, layout, or configuration identity.",
+      "cleanup": "Remove only test SRAM or ignored build output before repeating.",
+      "limitations": "Visual comparison to authorized regional artwork remains a named manual criterion; semantic selection and layout are automated.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.localization.tests.test_localized_ui_graphics tools.gba-playtest.tests.test_locale_tester_cases -v",
+          "evidence": "scripts/localization/tests/test_localized_ui_graphics.py"
+        },
+        {
+          "command": "make localized-ui-graphics-check",
+          "evidence": "graphics/localized_ui/manifest.json"
+        },
+        {
+          "command": "make expansion-modern-localization-runtime-cjk-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/locale-cjk-softreset-persistence-modern-debug.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-LOCALIZATION-008",
+      "title": "Validated localization profiles and resource budgets",
+      "feature_id": "localization-profile-validation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/18",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+      ],
+      "document": "docs/test-cases/localization.md",
+      "anchor": "tc-localization-008-validated-localization-profiles-and-resource-budgets",
+      "profiles": [
+        "Clean modern AAPCS default, pseudo, CJK, European, and all-locale named profiles"
+      ],
+      "purpose": "Validate deterministic catalog generation, isolated profile roots, resource headroom, and invalid profile rejection.",
+      "prerequisites": "Repository root with ARM toolchain, host compiler, and libmGBA for linked runtime targets.",
+      "actions": "Run localization and full-game validation, generation, check, and test targets, then run headroom and all-locale release targets plus invalid configuration probes.",
+      "expected_result": "Valid profiles remain isolated and retain positive map/ELF headroom; invalid size/default/pseudo combinations fail before compilation.",
+      "negative_control": "No generated output, budget threshold, identity fingerprint, or baseline is refreshed, and invalid profiles do not build.",
+      "interactions": "Profile metadata is descriptive and shares the stable locale ID ordering across individual and combined profiles.",
+      "save_compatibility": "Profile identity is not a save-compatibility key and no save contract changes.",
+      "cleanup": "Use make clean_fast only for ignored artifacts; never hand-edit generated output.",
+      "limitations": "The restricted-ROM final provenance gate is separate from this shipped source-build procedure.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.localization.tests.test_catalog scripts.localization.tests.test_generate scripts.localization.tests.test_eu_localization tools.gba-playtest.tests.test_locale_tester_cases -v",
+          "evidence": "scripts/localization/tests/test_catalog.py"
+        },
+        {
+          "command": "make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "scripts/linker_report/localization_budget.py"
+        },
+        {
+          "command": "make expansion-modern-localization-profile-all MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "modern.mk"
         }
       ]
     }

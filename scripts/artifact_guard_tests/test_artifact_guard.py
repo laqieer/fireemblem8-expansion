@@ -153,6 +153,12 @@ class TestRestrictedSourceAssetAllowance(ArtifactGuardRepoTestCase):
     def test_allowed_only_under_existing_source_roots(self):
         self.write("graphics/tiles/x.png", "png-shaped")
         self.write("assets/x.png", "png-shaped")
+        self.write("assets/portraits/eirika/eirika.png", "portrait-png-shaped")
+        self.write("assets/portraits/eirika/eirika.pal", "portrait-pal-shaped")
+        self.write("assets/portraits/eirika/alternate.png", "unowned-portrait-png")
+        self.write("assets/portraits/eirika/alternate.pal", "unowned-portrait-pal")
+        self.write("assets/portraits/eirika/frames/eirika.png", "nested-portrait-png")
+        self.write("assets/portraits/eirika/eirika.agbpal", "unsupported-portrait-palette")
         self.write("graphics/tiles/x.map.bin", "map-bin-shaped")
         self.write("graphics/tiles/x.bin", "plain-bin-shaped")
         self.write("texts/locales/source/fe8j/proof.cp932", "typed-proof")
@@ -161,20 +167,48 @@ class TestRestrictedSourceAssetAllowance(ArtifactGuardRepoTestCase):
         self.write("preview/shot.png", "png-shaped")
         self.write("sound/theme.mid", "midi-shaped")
         self.write("other/theme.mid", "midi-shaped")
+        self.write(
+            "assets/manifest.json",
+            """{"assets":[{"kind":"formatted-portrait-package","sources":[
+            "assets/portraits/eirika/eirika.png",
+            "assets/portraits/eirika/eirika.pal"]}]}""",
+        )
         self.commit()
 
         code, lines = self.findings("--revision", "HEAD")
         self.assertEqual(code, 1)
         rejected = {line.split(":")[0] for line in lines}
         self.assertIn("assets/x.png", rejected)
+        self.assertIn("assets/portraits/eirika/alternate.png", rejected)
+        self.assertIn("assets/portraits/eirika/alternate.pal", rejected)
+        self.assertIn("assets/portraits/eirika/frames/eirika.png", rejected)
+        self.assertIn("assets/portraits/eirika/eirika.agbpal", rejected)
         self.assertIn("graphics/tiles/x.bin", rejected)
         self.assertIn(untyped_proof, rejected)
         self.assertIn("other/theme.mid", rejected)
         self.assertNotIn("graphics/tiles/x.png", rejected)
+        self.assertNotIn("assets/portraits/eirika/eirika.png", rejected)
+        self.assertNotIn("assets/portraits/eirika/eirika.pal", rejected)
         self.assertNotIn("graphics/tiles/x.map.bin", rejected)
         self.assertNotIn("texts/locales/source/fe8j/proof.cp932", rejected)
         self.assertNotIn("preview/shot.png", rejected)
         self.assertNotIn("sound/theme.mid", rejected)
+
+    def test_undeclared_canonical_portrait_package_is_rejected(self):
+        self.write("assets/portraits/rogue/rogue.png", "portrait-png-shaped")
+        self.write(
+            "assets/manifest.json",
+            """{"assets":[{"kind":"formatted-portrait-package","sources":[
+            "assets/portraits/eirika/eirika.png"]}]}""",
+        )
+        self.commit()
+
+        code, lines = self.findings("--revision", "HEAD")
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "assets/portraits/rogue/rogue.png: restricted-extension-outside-allowed-root",
+            lines,
+        )
 
 
 class TestUnmergedIndexEntries(ArtifactGuardRepoTestCase):
@@ -188,6 +222,30 @@ class TestUnmergedIndexEntries(ArtifactGuardRepoTestCase):
         code, lines = self.findings("--index")
         self.assertEqual(code, 1)
         self.assertEqual(lines, ["conflict.txt: unmerged-index-entry"])
+
+    def test_unmerged_manifest_never_grants_portrait_allowances_or_reads_blobs(self):
+        entries = (
+            artifact_guard.Entry("100644", "a" * 40, "assets/manifest.json", 1),
+            artifact_guard.Entry("100644", "b" * 40, "assets/manifest.json", 2),
+            artifact_guard.Entry(
+                "100644", "c" * 40, "assets/portraits/eirika/eirika.png", 0
+            ),
+        )
+        with mock.patch.object(
+            artifact_guard,
+            "_read_blob",
+            side_effect=AssertionError("unmerged manifest must not be read"),
+        ), mock.patch.object(artifact_guard, "read_blob_heads", return_value={}):
+            self.assertEqual(artifact_guard.declared_portrait_sources(entries), set())
+            findings = artifact_guard.scan(entries)
+        self.assertIn(("assets/manifest.json", "unmerged-index-entry"), findings)
+        self.assertIn(
+            (
+                "assets/portraits/eirika/eirika.png",
+                "restricted-extension-outside-allowed-root",
+            ),
+            findings,
+        )
 
 
 class TestDeterminismAndNoContentDisclosure(ArtifactGuardRepoTestCase):

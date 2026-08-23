@@ -1,0 +1,6 @@
+{
+  "issue": null,
+  "category": "fixed",
+  "summary": "Raise the combined Build extended-host timeout from 30 to 60 minutes after a reproduced shared-runner cancellation interrupted the full-game localization gate despite every preceding host gate passing.",
+  "semver_impact": "none"
+}

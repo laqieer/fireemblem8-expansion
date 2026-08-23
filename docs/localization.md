@@ -16,6 +16,15 @@ This is an architecture/authoring/testing reference, not a remote GitHub
 issue-state claim; branch-local closure evidence remains in
 `reports/issue18_localization_closure.md`.
 
+## Tester-facing procedures
+
+The canonical procedures for the shipped locale selector, catalogs,
+preferences, UTF-8 consumers, tactician entry, localized graphics, and
+profiles are [`TC-LOCALIZATION-001` through
+`TC-LOCALIZATION-008`](test-cases/localization.md). They map each
+deterministic assertion to existing host-native or libmGBA semantic evidence;
+they do not create a second registry or change this framework contract.
+
 ## Architecture
 
 The framework is layered, each layer independently testable:
@@ -407,27 +416,12 @@ expansion-only keys are explicitly outside that original-game comparison.
 
 ### Efficient local and post-merge validation
 
-Use targeted localization tests while editing. A candidate PR gates only on
-exact-candidate Build CI and Copilot review, then merges directly when those
-checks and objective acceptance are clean. Full Matrix CI runs only on
-`master`; it never runs on a pull request or feature branch, manually or
-automatically. After the exact pushed `master` commit is available, run the
-broad host/CJK/runtime matrix once:
-
-```bash
-gh workflow run full-matrix.yml --ref master
-timeout 90m gh run watch <run-id> --interval 30 --exit-status
-```
-
-The host lane rebuilds the committed locale-source, crosswalk, and raw-closure
-artifacts offline and never receives legally restricted FE8J inputs. That is
-not a substitute for the mandatory live FE8J provenance proof, which remains
-a local maintainer pre-push step rather than a CI command. Follow
-[`game_locale_sources.md`](game_locale_sources.md) for the procedure supported
-by the checked-out branch; do not copy a target from another branch or upload
-restricted inputs to GitHub Actions. The workflow summary records the exact
-`github.sha`/`github.ref`; its modern debug/release matrix already owns the
-subordinate CJK profiles, runtime, shifted-link, and linker-budget gates.
+Use targeted localization tests while editing. A candidate branch receives
+Build CI and Copilot review concurrently. The same combined Build gate runs
+parallel CJK/font, multilang-codec, and configuration/linker-budget coverage
+for both candidate and `master` revisions. Build owns locale-source,
+crosswalk, raw-closure, rendered-width, and modern debug/release evidence
+exactly once; no separate manual workflow exists.
 
 ## Testing -- real libmGBA runtime evidence (Sprint 4)
 

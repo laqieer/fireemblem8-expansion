@@ -48,6 +48,9 @@ current, or lacks a required owned case. A retired or excluded record is not
 coverage: it requires an explicit reason and cannot satisfy a complete-mode
 current feature.
 
+The localization and locale-persistence procedures are
+[`TC-LOCALIZATION-001` through `TC-LOCALIZATION-008`](localization.md).
+
 ## Running catalog checks
 
 Run the focused schema fixtures and the repository checker from the root:

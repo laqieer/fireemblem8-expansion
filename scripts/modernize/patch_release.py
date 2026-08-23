@@ -28,6 +28,8 @@ ARTIFACT_FILES = frozenset(
 PATCH_FILENAME = "fireemblem8-expansion-all-locales-all-features-aapcs.bps"
 PROFILE_NAME = "modern-release-all-locales-all-features-aapcs"
 SCHEMA_VERSION = 1
+BASE_ROM_SIZE = 16 * 1024 * 1024
+TARGET_ROM_SIZE = 32 * 1024 * 1024
 BASE_TITLE = "FIREEMBLEM2E"
 BASE_GAME_CODE = "BE8E"
 BASE_MAKER_CODE = "01"
@@ -51,7 +53,7 @@ class BaseContract:
 
 
 FE8U_REV0 = BaseContract(
-    size=16_777_216,
+    size=BASE_ROM_SIZE,
     sha256="638cda9d9b72657220fbf7e7a500cd3b64d9686c36e8a56fca69d26d13886f2f",
     sha1="c25b145e37456171ada4b0d440bf88a19f4d509f",
 )
@@ -116,7 +118,10 @@ def _header(data: bytes) -> dict[str, object]:
 
 def validate_base(data: bytes, contract: BaseContract = FE8U_REV0) -> None:
     if len(data) != contract.size:
-        raise PatchReleaseError("base validation failed: size mismatch")
+        raise PatchReleaseError(
+            "base validation failed: size mismatch "
+            f"(expected {contract.size} bytes, got {len(data)} bytes)"
+        )
     if sha256(data) != contract.sha256:
         raise PatchReleaseError("base validation failed: SHA-256 mismatch")
     if hashlib.sha1(data).hexdigest() != contract.sha1:
@@ -159,7 +164,7 @@ def validate_profile_metadata(metadata: dict, commit: str) -> None:
         "build_commit": commit,
         "config_preset": "release",
         "abi": "aapcs",
-        "rom_size_bytes": 32 * 1024 * 1024,
+        "rom_size_bytes": TARGET_ROM_SIZE,
         "enabled_locales": ["en", "ja", "zh-Hans", "fr", "de", "es", "it"],
         "default_locale_id": 0,
         "pseudo_locale_enabled": 0,
@@ -182,7 +187,7 @@ def validate_profile_metadata(metadata: dict, commit: str) -> None:
 
 
 def validate_target(data: bytes, metadata: dict) -> dict:
-    if len(data) != 32 * 1024 * 1024:
+    if len(data) != TARGET_ROM_SIZE:
         raise PatchReleaseError("target validation failed: size mismatch")
     try:
         facts = _header(data)
