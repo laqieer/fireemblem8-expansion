@@ -1026,7 +1026,12 @@ bool PrepareBattleGraphicsMaybe(void)
 #if FE8_BANIM_PACKAGE_RUNTIME_TEST
     if (CheckBattleScripted() == true)
     {
-        BanimPackageRuntimeTest_BeginScriptedBattle();
+        BanimPackageRuntimeTest_BeginScriptedBattle(
+            unit_bu1,
+            gEkrDistanceType == EKR_DISTANCE_PROMOTION ? bu1->weapon : bu1->weaponBefore,
+            unit_bu2,
+            gEkrDistanceType == EKR_DISTANCE_PROMOTION ? bu2->weapon : bu2->weaponBefore
+        );
     }
 #endif
 

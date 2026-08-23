@@ -26,6 +26,7 @@ symlinked, escaping, or case-fold-colliding.
   "abbreviation": "package_animation_abbreviation",
   "animConf": "AnimConf_N",
   "class": "CLASS_SYMBOL",
+  "weaponType": "ITYPE_DARK",
   "frames": [{"id": "lower_case_frame_id", "path": "graphics/banim/frame.png"}],
   "paletteVariants": ["default"],
   "resources": {
@@ -44,7 +45,10 @@ declared PNG frames and text script, then registers them through the existing
 compressing-linker object, additive `banim_data[]` entry, and generated
 `BattleAnimDef`. The selected class must currently point to the declared
 `AnimConf_*`; duplicate `AnimConf_*` ownership, IDs, source paths, or package
-IDs fail before generation.
+IDs fail before generation. `abbreviation` is at most 11 ASCII identifier
+characters so it remains terminated in `struct BattleAnim.abbr[12]`.
+`weaponType` must be present in the selected class's generated-data
+`baseRanks`; the generated `BattleAnimDef` uses it as the resolver fallback.
 
 ## Text grammar v1
 
@@ -84,7 +88,7 @@ malformed mode, or unterminated frame group is accepted.
 Each frame is a single-IDAT, non-interlaced PNG with indexed color type 3,
 4-bit depth, standard compression/filter, a positive 32x32-block-aligned
 geometry, one 1..16-color `PLTE`, and zero or one `tRNS` chunk. If `tRNS`
-exists it must have exactly one zero-alpha color and every other declared
+exists only palette index 0 may have zero alpha and every other declared
 entry must be fully opaque (`255`). RGB/RGBA, interlaced,
 over-color, 8x8-but-not-32px, cropped, scaled, rotated, or multi-IDAT PNGs
 fail. Every frame must carry byte-identical `PLTE` and `tRNS` chunks, since
@@ -147,8 +151,8 @@ only when the battle-animation lifecycle starts, and records completion only
 from `EkrMainEndExec`. It asserts that selected alias index, five modes,
 normal/total timing, generated script sound opcode, decompressed OAM and
 palette payloads, the actual
-`CLASS_EPHRAIM_LORD` class ID (`0x01`), the unchanged
-`CLASS_EPHRAIM_LORD -> AnimConf_0 -> 0` default mapping, and one selection,
+`CLASS_MOGALL` class ID (`0x5F`), the unchanged
+`CLASS_MOGALL -> AnimConf_90` default mapping, and one selection,
 entry, generated-data consumption, and completion. The macro is absent from ordinary debug/release builds, so it
 cannot create a production mapping or router. The generated alias remains
 additive and the ordinary resolver remains unmodified.

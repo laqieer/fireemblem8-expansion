@@ -873,10 +873,10 @@ class BattleAnimationPackageKind:
             outputs, _paths, metadata = banim.runtime_outputs(
                 package, os.path.join(ASSET_OUTPUT_ROOT, "banim")
             )
-            if metadata["max_oam_entries"] > record.resources["oamEntries"]:
+            if metadata["total_oam_entries"] > record.resources["oamEntries"]:
                 raise ValueError(
                     "generated OAM count {} exceeds resources.oamEntries".format(
-                        metadata["max_oam_entries"]
+                        metadata["total_oam_entries"]
                     )
                 )
             if metadata["unique_frame_bytes"] > record.resources["objVramBytes"]:
@@ -897,6 +897,10 @@ class BattleAnimationPackageKind:
         matches = [entry for entry in classes if entry.get("class") == package["class"]]
         if len(matches) != 1 or matches[0].get("battleAnim") != package["animConf"]:
             raise ValueError("class '{}' does not bind '{}'".format(package["class"], package["animConf"]))
+        if package["weaponType"] not in matches[0].get("baseRanks", {}):
+            raise ValueError(
+                "class '{}' cannot use '{}'".format(package["class"], package["weaponType"])
+            )
 
     def ownership_key(self, record):
         return "{}:{}".format(record.ownership["seam"], record.banim_package.data["animConf"])
@@ -1228,7 +1232,9 @@ def banim_expected_outputs(records, out_dir):
         )
         definitions.extend((
             "CONST_DATA struct BattleAnimDef {}[] = {{\n".format(_banim_package_symbol(record.id)),
-            "\t{{ .wtype = SPECIAL_BANIM_WTYPE, .index = {} }},\n".format(index),
+            "\t{{ .wtype = 0x100 | {}, .index = {} }},\n".format(
+                record.banim_package.data["weaponType"], index
+            ),
             "\t{ 0 },\n",
             "};\n",
         ))

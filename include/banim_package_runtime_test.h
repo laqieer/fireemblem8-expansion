@@ -30,7 +30,12 @@ struct BanimPackageRuntimeTestProbe {
 extern EWRAM_DATA struct BanimPackageRuntimeTestProbe gBanimPackageRuntimeTestProbe;
 
 bool BanimPackageRuntimeTest_ForceFirstScriptedBattle(void);
-void BanimPackageRuntimeTest_BeginScriptedBattle(void);
+void BanimPackageRuntimeTest_BeginScriptedBattle(
+    struct Unit * unitLeft,
+    u16 weaponLeft,
+    struct Unit * unitRight,
+    u16 weaponRight
+);
 void BanimPackageRuntimeTest_MarkBattleEntry(void);
 void BanimPackageRuntimeTest_MarkRuntimeDataConsumed(
     const u32 * script,

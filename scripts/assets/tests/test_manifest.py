@@ -634,6 +634,7 @@ class BattleAnimationPackageTests(unittest.TestCase):
             definition = handle.read()
         self.assertIn('{"lorm_sp1", &banim_package_lorm_sp1_proof_modes_bin', entry)
         self.assertIn("BanimPackage_LORM_SP1_PROOF", definition)
+        self.assertIn(".wtype = 0x100 | ITYPE_DARK", definition)
         with open(
             os.path.join(output, "banim", "banim_package_lorm_sp1_proof_motion.s"),
             encoding="utf-8",
@@ -738,13 +739,18 @@ class BattleAnimationPackageTests(unittest.TestCase):
 
         partial = os.path.join(TEST_ROOT, "partial-alpha.png")
         self.write_indexed_png(partial, b"\x00\x80")
-        with self.assertRaisesRegex(ValueError, "tRNS entries must be 0 or 255"):
+        with self.assertRaisesRegex(ValueError, "only palette index 0 transparent"):
             banim.read_indexed_png(partial)
 
         opaque = os.path.join(TEST_ROOT, "opaque-alpha.png")
         self.write_indexed_png(opaque, b"\xff\xff")
-        with self.assertRaisesRegex(ValueError, "exactly one transparent"):
+        with self.assertRaisesRegex(ValueError, "only palette index 0 transparent"):
             banim.read_indexed_png(opaque)
+
+        wrong_index = os.path.join(TEST_ROOT, "wrong-index.png")
+        self.write_indexed_png(wrong_index, b"\xff\x00")
+        with self.assertRaisesRegex(ValueError, "only palette index 0 transparent"):
+            banim.read_indexed_png(wrong_index)
 
         non_block = os.path.join(TEST_ROOT, "forty-pixels.png")
         self.write_indexed_png(non_block, b"\x00\xff", width=40, height=32)
@@ -834,6 +840,20 @@ class BattleAnimationPackageTests(unittest.TestCase):
         self.assertIn("generated OAM count", str(raised.exception))
 
         proof["resources"]["oamEntries"] = 32
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        package = banim.load_package(
+            REPO_ROOT,
+            proof["sources"][0],
+            proof["sources"][1],
+            set(proof["sources"]),
+        )
+        package.modes["critical"][0] = ("frame", 1, "idle", "left")
+        with mock.patch.object(banim, "load_package", return_value=package):
+            with self.assertRaises(GeneratedDataValidationError) as raised:
+                manifest.load_and_validate(path)
+        self.assertIn("generated OAM count", str(raised.exception))
+
         proof["resources"]["romBytes"] = 1
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(document, handle)
@@ -884,6 +904,40 @@ class BattleAnimationPackageTests(unittest.TestCase):
             ),
             1,
         )
+
+    def test_sheet_tile_budget_uses_deduplicated_frame_payloads(self):
+        package_path = os.path.join(TEST_ROOT, "package.json")
+        script_path = os.path.join(TEST_ROOT, "script.txt")
+        first_path = os.path.join(TEST_ROOT, "first.png")
+        second_path = os.path.join(TEST_ROOT, "second.png")
+        with open(
+            os.path.join(REPO_ROOT, "assets", "banim", "lorm_sp1", "package.json"),
+            encoding="utf-8",
+        ) as handle:
+            package = json.load(handle)
+        with open(
+            os.path.join(REPO_ROOT, "assets", "banim", "lorm_sp1", "script.txt"),
+            encoding="utf-8",
+        ) as source, open(script_path, "w", encoding="utf-8", newline="\n") as destination:
+            destination.write(source.read())
+        package["frames"] = [
+            {"id": "idle", "path": "first.png"},
+            {"id": "duplicate", "path": "second.png"},
+        ]
+        package["resources"]["maxFrames"] = 2
+        package["resources"]["maxSheetTiles"] = 16
+        self.write_indexed_png(first_path, b"\x00\xff")
+        shutil.copyfile(first_path, second_path)
+        with open(package_path, "w", encoding="utf-8") as handle:
+            json.dump(package, handle)
+
+        loaded = banim.load_package(
+            TEST_ROOT,
+            "package.json",
+            "script.txt",
+            {"package.json", "script.txt", "first.png", "second.png"},
+        )
+        self.assertEqual(len(loaded.frames), 2)
 
     def test_obj_vram_budget_uses_deduplicated_runtime_payloads(self):
         with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
@@ -1031,6 +1085,20 @@ class BattleAnimationPackageTests(unittest.TestCase):
             script = source.read()
         shutil.copyfile(os.path.join(REPO_ROOT, "graphics/banim/banim_lorm_sp1_sheet_0.png"), frame_path)
         package["frames"][0]["path"] = "frame.png"
+        package["abbreviation"] = "way_too_long"
+        with open(package_path, "w", encoding="utf-8") as handle:
+            json.dump(package, handle)
+        with open(script_path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(script)
+        with self.assertRaisesRegex(ValueError, r"fit char abbr\[12\]"):
+            banim.load_package(
+                TEST_ROOT,
+                "package.json",
+                "script.txt",
+                {"package.json", "script.txt", "frame.png"},
+            )
+
+        package["abbreviation"] = "lorm_sp1"
         package["paletteVariants"] = ["default", "alternate"]
         with open(package_path, "w", encoding="utf-8") as handle:
             json.dump(package, handle)

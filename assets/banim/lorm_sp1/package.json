@@ -2,8 +2,9 @@
   "schemaVersion": "fe8.community-banim.v1",
   "id": "LORM_SP1_PROOF",
   "abbreviation": "lorm_sp1",
-  "animConf": "AnimConf_0",
-  "class": "CLASS_EPHRAIM_LORD",
+  "animConf": "AnimConf_90",
+  "class": "CLASS_MOGALL",
+  "weaponType": "ITYPE_DARK",
   "frames": [
     {
       "id": "idle",
