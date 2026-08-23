@@ -311,6 +311,16 @@
         "ja": "チャプター",
         "key": "ui.presentation.chapter_title_default",
         "zh-Hans": "章节"
+      },
+      {
+        "ja": "突撃",
+        "key": "autoplay.charge.label",
+        "zh-Hans": "冲锋"
+      },
+      {
+        "ja": "残りのユニットをこのフェイズだけAIに任せる",
+        "key": "autoplay.charge.help",
+        "zh-Hans": "仅在本回合将剩余单位交给电脑控制"
       }
     ],
     "reason": "Expansion registry keys have no original FE8J/FE8CN indexed source."
