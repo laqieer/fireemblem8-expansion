@@ -7,7 +7,6 @@ enum ExpansionBlueControl
 {
     EXPANSION_BLUE_CONTROL_PLAYER = 0,
     EXPANSION_BLUE_CONTROL_COMPUTER = 1,
-    EXPANSION_BLUE_CONTROL_COUNT,
 };
 
 enum ExpansionAutoplayResult
