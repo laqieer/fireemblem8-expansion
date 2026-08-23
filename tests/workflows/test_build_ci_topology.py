@@ -117,6 +117,12 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         errors.append(f"Build job set differs from consolidated contract: {sorted(jobs)}")
         return errors
 
+    for job_name, job in jobs.items():
+        for command in _run_block_commands(job):
+            words = set(command.split())
+            if "apt-get" in words and "libpng-dev" in words and "pkg-config" not in words:
+                errors.append(f"{job_name} installs libpng-dev without pkg-config")
+
     for job_name in COMBINED_WORKERS:
         if "if:" in jobs[job_name]:
             errors.append(f"{job_name} must run for pull-request candidates and master pushes")
@@ -233,6 +239,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 self.assertTrue(
                     any(
                         f"{job_name} must not create a serial Build critical path" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_every_libpng_install_lane_declares_pkg_config(self):
+        for job_name, job in _job_blocks(self.text).items():
+            if "libpng-dev" not in job:
+                continue
+            with self.subTest(job_name=job_name):
+                changed_job = job.replace(" pkg-config", "", 1)
+                self.assertNotEqual(changed_job, job)
+                changed = self.text.replace(job, changed_job, 1)
+                self.assertTrue(
+                    any(
+                        f"{job_name} installs libpng-dev without pkg-config" in error
                         for error in _errors(changed, False)
                     )
                 )
