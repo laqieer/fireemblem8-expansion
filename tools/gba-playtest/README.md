@@ -91,11 +91,65 @@ python3 tools/gba-playtest/gba_playtest.py verify \
   --rom candidate.gba \
   --scenario tools/gba-playtest/scenarios/boot.json \
   --expected tools/gba-playtest/fingerprints/boot.json
+
+# Run a finite, normal-fidelity seed batch. The specification declares the
+# profile/configuration, explicit writable seed binding, and semantic metrics.
+python3 tools/gba-playtest/autoplay_batch.py run \
+  --rom fireemblem8.gba --elf fireemblem8.elf \
+  --scenario build/my-bounded-scenario.json \
+  --specification build/my-batch-specification.json \
+  --seeds 1,2,3 --max-jobs 3 \
+  --max-frames 18001 --max-turns 3 --max-actions 62 \
+  --output build/autoplay-batches/my-report.json
+
+# Compare two immutable reports without rewriting either input.
+python3 tools/gba-playtest/autoplay_batch.py compare \
+  --baseline build/autoplay-batches/baseline.json \
+  --candidate build/autoplay-batches/candidate.json \
+  --output build/autoplay-batches/comparison.json
 ```
 
 Exit statuses are 0 for success, 1 for a valid-but-different fingerprint, and 2
 for malformed input, missing dependencies, or backend/setup failure. Verify
 diagnostics identify the exact JSON path, expected value, and captured value.
+
+### Bounded autoplay batch reports
+
+`autoplay_batch.py` is the issue #91 host-only collector for
+`TC-AUTOPLAY-BATCH-001`. It accepts a finite, explicit `--seeds` list of at
+most 256 distinct uint32 values, `--max-jobs` from 1 through 16, and all three
+positive per-run bounds. Every bound must exactly match the selected
+schema-version-2 `run_until` scenario; a missing turn/action bound or a looser
+CLI value is rejected before any emulator starts.
+
+The required specification is versioned JSON. It names the configuration and
+strategy profile, requires `"fidelity": "normal"`, and declares a writable
+EWRAM/IWRAM seed injection address and frame. The runner writes each seed only
+at that declared frame after a fresh libmGBA boot; it never treats a seed as a
+label or silently mutates an unknown RNG state. The terminal checkpoint must
+declare every semantic probe used by the selected metrics. Supported metric
+kinds cover the typed terminal reason/frame/turn/action values,
+survivor/casualty counts by faction/group, selected recruitment/village/chest
+event outcomes, and configured EXP/item/resource group deltas. Unknown metric
+kinds or unrecorded probes fail before execution.
+
+Reports use `format_version: 1`, sorted object keys, sorted numeric seed
+records, complete ROM/configuration/scenario/profile/seed-binding/bound
+provenance, one terminal and metric record per seed, and explicit
+`terminal_failure` or `execution_failure` records. Non-success terminals such
+as a stall or exhausted bound remain in the report and make `run` return 1.
+Serial and parallel runs omit scheduling/timing details from the JSON, so the
+same inputs produce byte-identical reports. The summary adds deterministic
+terminal-reason counts and per-metric value distributions without omitting the
+individual records.
+
+Outputs are required to be new files beneath ignored `build/`; an existing
+path is an error, not an overwrite. Batch mode rejects `--sram-image`, so no
+writable save fixture can be reused. `compare` reads two reports and writes a
+third new file containing added/removed seeds plus terminal and metric changes.
+It has no update/refresh mode and never rewrites either report; comparisons
+describe observed differences only and make no statistical, difficulty, or
+balance conclusion.
 
 ### Baseline refresh policy
 

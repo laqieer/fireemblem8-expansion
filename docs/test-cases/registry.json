@@ -16,6 +16,7 @@
       "bounded-semantic-run-until",
       "typed-chapter-autoplay-objectives",
       "typed-autoplay-strategy-profiles",
+      "deterministic-autoplay-batch-reports",
       "custom-spell-runtime",
       "hq-pcm-mixer",
       "patch-release-artifact",
@@ -479,6 +480,18 @@
       "status": "current",
       "required_cases": [
         "TC-AUTOPLAY-STRATEGY-001"
+      ]
+    },
+    {
+      "id": "deterministic-autoplay-batch-reports",
+      "title": "Deterministic finite autoplay batch reports",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/91"
+      ],
+      "reference": "docs/autoplay.md",
+      "status": "current",
+      "required_cases": [
+        "TC-AUTOPLAY-BATCH-001"
       ]
     },
     {
@@ -2001,6 +2014,38 @@
         {
           "command": "make expansion-modern-autoplay-strategies-objects MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_AUTOPLAY_STRATEGIES=1 MODERN_BUILD_ROOT=build/issue90-release-enabled",
           "evidence": "build/issue90-release-enabled/release/aapcs/src/expansion_autoplay_strategies.o"
+        }
+      ]
+    },
+    {
+      "id": "TC-AUTOPLAY-BATCH-001",
+      "title": "Deterministic finite autoplay batch report",
+      "feature_id": "deterministic-autoplay-batch-reports",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/91"
+      ],
+      "document": "docs/test-cases/autoplay.md",
+      "anchor": "tc-autoplay-batch-001-deterministic-finite-autoplay-batch-report",
+      "profiles": [
+        "Normal-fidelity generated three-seed libmGBA fixture"
+      ],
+      "purpose": "Prove finite explicit seed injection, clean boot per seed, bounded terminal reports, deterministic serial/parallel JSON, and non-mutating comparison.",
+      "prerequisites": "Repository root with Python 3, a host C compiler, libmGBA development files, and a new ignored build/ output path; no save or savestate.",
+      "actions": "Run the focused synthetic batch selector and the exact three-seed libmGBA fixture selector.",
+      "expected_result": "Serial and parallel reports are byte-identical and retain terminal/metric records for every seed; comparison reports a changed metric without a balance conclusion.",
+      "negative_control": "Implicit/duplicate seeds, missing bounds, unsupported metrics, output collisions, and save reuse fail before capture; terminal failure remains visible and nonzero.",
+      "interactions": "Depends on #86 bounded terminals and #90 profile identity; #88 accelerated fidelity is optional and not a stack parent.",
+      "save_compatibility": "Host-only, clean-boot collection with no loaded or mutated save, target allocation, migration, compatibility epoch, localization, generated data, or archival impact.",
+      "cleanup": "The generated fixture removes its build/test-artifacts directory; use make clean_fast for other ignored build output.",
+      "limitations": "Three seeds prove deterministic collection and reporting, not statistical power, difficulty, campaign quality, or balance.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_batch.AutoplayBatchHostTests -v",
+          "evidence": "tools/gba-playtest/tests/test_autoplay_batch.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_batch.AutoplayBatchLibmGBAIntegrationTests.test_three_seed_clean_boot_fixture_is_serial_parallel_identical -v",
+          "evidence": "tools/gba-playtest/tests/test_autoplay_batch.py"
         }
       ]
     },

@@ -291,3 +291,56 @@ reconstructs assignment selection without hidden runtime storage.
 - `test_autoplay_strategies` executes the real callback/dispatch API for
   chapter/group/unit precedence, event-boundary, unsupported-profile, disabled
   fallback, and ARM ROM/RAM assertions.
+
+## TC-AUTOPLAY-BATCH-001: Deterministic finite autoplay batch report
+
+- **Feature / originating issue:** `deterministic-autoplay-batch-reports` /
+  [#91](https://github.com/laqieer/fireemblem8-expansion/issues/91).
+- **Supported configuration or artifact:** normal-fidelity generated homebrew
+  libmGBA fixture with three explicit seeds. Accelerated fidelity (#88) is not
+  required and is rejected by this initial collector.
+- **Prerequisites and clean state:** Python 3, a host C compiler, libmGBA
+  development files, one exact ROM/ELF/scenario/specification, and a new
+  output path below ignored `build/`. Do not provide a save or savestate.
+
+### Actions
+
+1. Run
+   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_batch.AutoplayBatchHostTests -v`.
+2. Run
+   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_batch.AutoplayBatchLibmGBAIntegrationTests.test_three_seed_clean_boot_fixture_is_serial_parallel_identical -v`.
+
+### Expected result
+
+The normal-fidelity fixture runs three declared seed writes from independent
+clean boots. Serial and three-job parallel reports are byte-identical,
+versioned, sorted JSON. Every seed has exact ROM/configuration/scenario/profile
+provenance, a terminal record, and configured terminal/frame/turn/action,
+faction/group, event, EXP, item, and resource metric records. A comparison
+reports a deliberately changed metric for its seed without claiming that either
+result is balanced or statistically significant.
+
+### Negative controls
+
+Duplicate or implicit seed lists, a missing/non-positive hard bound,
+unsupported metric, existing output path, and `--sram-image` all fail before
+the capture function runs. A non-success terminal is retained as
+`terminal_failure`, contributes to the failure count, and makes the command
+return 1. Comparison leaves both input report bytes untouched.
+
+### Interactions and save compatibility
+
+The collector depends on #86's bounded terminal/checkpoint semantics and #90's
+profile identity. #88 accelerated fidelity is optional integration only, not a
+parent. The seed write is restricted to explicitly declared writable
+EWRAM/IWRAM at one declared frame; no save is loaded or retained. There are no
+ROM feature flags, target allocation, generated data, localization, save
+layout, migration, compatibility epoch, or archival impact.
+
+### Cleanup and limitations
+
+The test fixture removes its temporary directory beneath `build/test-artifacts`.
+Use
+`make clean_fast` for other build outputs. Three seeds prove report
+determinism, complete per-run visibility, and comparison structure only; they
+do not establish statistical power, difficulty, campaign quality, or balance.

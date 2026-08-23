@@ -367,3 +367,46 @@ resource, survival, balance, or campaign planning. Existing low-level AI may
 move or attack but is not a chapter-completion oracle. Remove the controller
 module, its guarded hooks, runtime gate, and documentation to roll back; no
 save or generated-data recovery is required.
+
+## Deterministic finite autoplay batch reports
+
+Issue [#91](https://github.com/laqieer/fireemblem8-expansion/issues/91) adds
+the `tools/gba-playtest/autoplay_batch.py` host collector. It is a framework
+capability built directly on #85's telemetry, #86's bounded terminal contract,
+#89's semantic group/objective telemetry, and #90's profile identity. Its
+immediate stack parent is #90; #88 accelerated fidelity is explicitly not a
+stack parent or requirement. `TC-AUTOPLAY-BATCH-001` uses only normal fidelity.
+
+The batch CLI requires one exact ROM/ELF, one schema-version-2 bounded
+scenario, one versioned specification, an explicit finite unique seed list,
+bounded `--max-jobs`, and explicit frame/turn/action bounds. The values must
+match the scenario's hard limits exactly. Each seed starts a new libmGBA core
+from clean boot. A specification supplies the only permitted seed mechanism:
+an exact linked EWRAM/IWRAM binding and a frame at which that value is written.
+The report therefore identifies a real seed injection rather than claiming
+that an arbitrary label changed the ROM's RNG.
+
+The version-1 specification declares normal-fidelity profile/configuration
+identity and semantic metric descriptors. Metric probes must be part of the
+terminal checkpoint, keeping faction/group survivor and casualty counts,
+recruitment/village/chest outcomes, and configured EXP/item/resource deltas
+grounded in ROM-supplied semantic telemetry. Unsupported metrics, duplicate or
+implicit seeds, omitted bounds, unresolved metric probes, reuse of a writable
+SRAM image, and output collisions fail before execution.
+
+The version-1 report contains sorted ROM/configuration/scenario/profile/bound
+provenance and one sorted run record per seed. A terminal success, objective
+failure, stall, or exhausted frame/turn/action budget is all retained with its
+terminal counters and declared metrics; non-success records make the command
+fail visibly rather than disappearing from deterministic terminal and
+per-metric distributions. Parallel scheduling cannot affect report order or
+bytes. The companion `compare` command reports
+added/removed seeds and terminal/metric deltas without inferring statistical
+significance, difficulty, or balance. It only creates a new ignored
+`build/` output and cannot refresh either input report.
+
+This host-only layer adds no ROM code, RAM allocation, feature gate,
+configuration-identity field, generated game data, localization, save byte,
+migration, compatibility epoch, or archival-lane behavior. Removing the batch
+script, its bounded backend seed-write record, tests, and documentation rolls
+back the feature without save recovery.

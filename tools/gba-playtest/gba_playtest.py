@@ -345,6 +345,13 @@ class Scenario:
     run_until: RunUntil | None = None
 
 
+@dataclass(frozen=True)
+class ScheduledWrite:
+    frame: int
+    probe: Probe
+    value: int
+
+
 def _parse_fixed_scenario_data(
     data: Any,
     source: str = "<scenario>",
@@ -1266,12 +1273,18 @@ def build_backend(output: Path, retries: int = 0) -> None:
         )
 
 
-def _write_plan(path: Path, scenario: Scenario) -> None:
-    # Fixed scenarios retain plan format 3 exactly. Format 4 appends the
-    # bounded semantic run-until records after the same checkpoint payload.
+def _write_plan(
+    path: Path,
+    scenario: Scenario,
+    scheduled_write: ScheduledWrite | None = None,
+) -> None:
+    # Fixed scenarios retain plan format 3 exactly. Format 4 appends bounded
+    # semantic run-until records; format 5 adds one declared seed write.
     # Plans are generated and consumed within one capture/verify invocation;
     # scenario and fingerprint compatibility lives in their JSON versions.
-    plan_version = 4 if scenario.run_until is not None else 3
+    plan_version = 5 if scheduled_write is not None else (
+        4 if scenario.run_until is not None else 3
+    )
     lines = [f"GBA_PLAYTEST_PLAN {plan_version}", f"RANGES {len(scenario.inputs)}"]
     lines.extend(
         f"{frame_range.start} {frame_range.end} {frame_range.key_mask}"
@@ -1369,6 +1382,32 @@ def _write_plan(path: Path, scenario: Scenario) -> None:
                         f"{add_probe(counter.probe)} {counter.maximum}",
                     )
                 )
+    if scheduled_write is not None:
+        if scheduled_write.probe.address is None:
+            raise PlaytestError(
+                f"scheduled write {scheduled_write.probe.binding!r} has no "
+                "resolved execution address; supply the exact linked ELF with --elf"
+            )
+        if scheduled_write.frame > (
+            scenario.run_until.max_frames - 1
+            if scenario.run_until is not None
+            else scenario.checkpoints[-1].frame
+        ):
+            raise PlaytestError(
+                f"scheduled write frame {scheduled_write.frame} is outside "
+                f"scenario {scenario.name!r}'s execution bounds"
+            )
+        maximum_value = (1 << (scheduled_write.probe.size * 8)) - 1
+        if not 0 <= scheduled_write.value <= maximum_value:
+            raise PlaytestError(
+                f"scheduled write value {scheduled_write.value} does not fit "
+                f"the {scheduled_write.probe.size}-byte binding "
+                f"{scheduled_write.probe.binding!r}"
+            )
+        lines.append(
+            f"SEED_WRITE {scheduled_write.frame} {scheduled_write.probe.address} "
+            f"{scheduled_write.probe.size} {scheduled_write.value}"
+        )
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
@@ -1676,6 +1715,8 @@ def capture(
     scenario: Scenario,
     sram_image: Path | None = None,
     retries: int = 0,
+    scheduled_write: ScheduledWrite | None = None,
+    work_dir: Path | None = None,
 ) -> dict[str, Any]:
     if scenario.disabled:
         raise PlaytestError(f"scenario {scenario.name!r} is disabled: {scenario.blocker}")
@@ -1690,7 +1731,15 @@ def capture(
                 f"SRAM image {sram_image} must be exactly {SRAM_IMAGE_SIZE} (0x8000) bytes, "
                 f"got {actual_size}"
             )
-    with tempfile.TemporaryDirectory(prefix="gba-playtest-") as temporary:
+    if work_dir is not None:
+        try:
+            work_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise PlaytestError(f"cannot create capture work directory {work_dir}: {exc}") from exc
+    with tempfile.TemporaryDirectory(
+        prefix="gba-playtest-",
+        dir=str(work_dir) if work_dir is not None else None,
+    ) as temporary:
         temporary_path = Path(temporary)
         backend = temporary_path / "gba-playtest-backend"
         plan = temporary_path / "plan.txt"
@@ -1717,7 +1766,7 @@ def capture(
         # libmGBA, avoiding a path-replacement race between hashing and loading.
         provenance = rom_provenance(execution_rom)
         build_backend(backend, retries)
-        _write_plan(plan, scenario)
+        _write_plan(plan, scenario, scheduled_write)
         last_frame = (
             scenario.run_until.max_frames - 1
             if scenario.run_until is not None

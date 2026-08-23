@@ -23,6 +23,10 @@
 
 #define GBA_SRAM_BASE 0x0E000000u
 #define GBA_SRAM_SIZE 0x8000u
+#define GBA_EWRAM_BASE 0x02000000u
+#define GBA_EWRAM_SIZE 0x40000u
+#define GBA_IWRAM_BASE 0x03000000u
+#define GBA_IWRAM_SIZE 0x8000u
 #define MAX_INPUT_RANGES 1000000u
 #define MAX_RUN_PROBES 128u
 #define MAX_TERMINALS 3u
@@ -141,6 +145,10 @@ struct Plan {
 	struct StallLimit stall;
 	struct CounterLimit turn_limit;
 	struct CounterLimit action_limit;
+	bool has_seed_write;
+	uint32_t seed_frame;
+	struct Probe seed_write;
+	uint32_t seed_value;
 };
 
 static FILE* sLogCapture;
@@ -150,6 +158,14 @@ static bool probe_value_fits(unsigned size, uint32_t value)
 	if (size == 4)
 		return true;
 	return value < (UINT32_C(1) << (size * 8));
+}
+
+static bool writable_probe_address(uint32_t address, unsigned size)
+{
+	return (address >= GBA_EWRAM_BASE &&
+	        address <= GBA_EWRAM_BASE + GBA_EWRAM_SIZE - size) ||
+	       (address >= GBA_IWRAM_BASE &&
+	        address <= GBA_IWRAM_BASE + GBA_IWRAM_SIZE - size);
 }
 
 static void capture_log(struct mLogger* logger, int category,
@@ -200,7 +216,7 @@ static bool read_plan(const char* path, struct Plan* plan)
 	unsigned version;
 	if (fscanf(file, "%31s %u", word, &version) != 2 ||
 	    strcmp(word, "GBA_PLAYTEST_PLAN") != 0 ||
-	    (version != 3 && version != 4)) {
+	    (version != 3 && version != 4 && version != 5)) {
 		fprintf(stderr, "malformed plan header\n");
 		goto fail;
 	}
@@ -315,7 +331,7 @@ static bool read_plan(const char* path, struct Plan* plan)
 			}
 		}
 	}
-	if (version == 4) {
+	if (version >= 4) {
 		unsigned reason_mask = 0;
 		unsigned enabled;
 
@@ -484,6 +500,22 @@ static bool read_plan(const char* path, struct Plan* plan)
 			goto fail;
 		}
 	}
+	if (version == 5) {
+		if (fscanf(file, "%31s %" SCNu32 " %" SCNu32 " %u %" SCNu32,
+		           word, &plan->seed_frame, &plan->seed_write.address,
+		           &plan->seed_write.size, &plan->seed_value) != 5 ||
+		    strcmp(word, "SEED_WRITE") != 0 ||
+		    plan->seed_frame >= plan->max_frames ||
+		    (plan->seed_write.size != 1 && plan->seed_write.size != 2 &&
+		     plan->seed_write.size != 4) ||
+		    !probe_value_fits(plan->seed_write.size, plan->seed_value) ||
+		    !writable_probe_address(plan->seed_write.address,
+		                            plan->seed_write.size)) {
+			fprintf(stderr, "malformed SEED_WRITE record\n");
+			goto fail;
+		}
+		plan->has_seed_write = true;
+	}
 	if (fscanf(file, "%31s", word) == 1) {
 		fprintf(stderr, "unexpected trailing plan data\n");
 		goto fail;
@@ -562,6 +594,21 @@ static uint32_t read_probe(struct mCore* core, const struct Probe* probe)
 		return core->busRead16(core, probe->address);
 	default:
 		return core->busRead32(core, probe->address);
+	}
+}
+
+static void write_probe(struct mCore* core, const struct Probe* probe, uint32_t value)
+{
+	switch (probe->size) {
+	case 1:
+		core->busWrite8(core, probe->address, value);
+		break;
+	case 2:
+		core->busWrite16(core, probe->address, value);
+		break;
+	default:
+		core->busWrite32(core, probe->address, value);
+		break;
 	}
 }
 
@@ -699,6 +746,8 @@ static void apply_frame_input(struct mCore* core, const struct Plan* plan,
 	if (*range_index < plan->range_count &&
 	    plan->ranges[*range_index].start <= frame)
 		keys = plan->ranges[*range_index].keys;
+	if (plan->has_seed_write && plan->seed_frame == frame)
+		write_probe(core, &plan->seed_write, plan->seed_value);
 	core->setKeys(core, keys);
 	core->runFrame(core);
 }
