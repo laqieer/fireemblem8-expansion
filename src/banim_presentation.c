@@ -48,7 +48,11 @@ struct BanimPresentationPolicy const gBanimPresentationPolicies[BANIM_PRESENTATI
     },
 };
 
+#if FE8_EXPANSION_HQ_MIXER
+EWRAM_DATA static u8 sSelectedPolicyState;
+#else
 IWRAM_DATA static u8 sSelectedPolicyState;
+#endif
 
 #ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
 #if BANIM_PRESENTATION_RUNTIME_PROBE_POLICY != BANIM_PRESENTATION_POLICY_DEFAULT && \

@@ -74,6 +74,12 @@ src/data_banimconf.o $(MODERN_OUTPUT_DIR)/src/data_banimconf.o: $(ASSET_BANIM_DE
 $(MODERN_OUTPUT_DIR)/src/banim_package_runtime_test.o: $(ASSET_BANIM_DEFS_HEADER) \
 $(ASSET_BANIM_RUNTIME_TEST_DEFS)
 
+# A normal build can request the derived TMX `.mar`/metadata pair after a
+# clean or an interrupted asset generation. Regenerate both together before
+# Make reaches the ordinary `.mar -> .bin -> .bin.lz` conversion chain.
+$(ASSET_OUTPUT_DIR)/tmx/%.mar $(ASSET_OUTPUT_DIR)/tmx/%.json &: $(ASSET_OUTPUT_MK)
+	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
+
 # A strict maintenance/check command must report a missing or stale output
 # instead of Make remaking this include before the target runs. Any ordinary
 # build goal (including bare `make`) still remakes and includes it before the
