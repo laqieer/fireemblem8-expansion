@@ -4,6 +4,9 @@ The full-game catalog is an opt-in modern-build input for FE8U message IDs.
 It is separate from the expansion-framework catalog documented in
 `localization.md`.
 
+The tester-facing production-catalog procedure is
+[`TC-LOCALIZATION-003`](test-cases/localization.md#tc-localization-003-production-expansion-and-full-game-locale-catalogs).
+
 ## Generate and validate
 
 ```bash
