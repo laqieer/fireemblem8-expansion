@@ -11,7 +11,7 @@ it links to them.
 
 | Host | Package manager | Auto-installed by `scripts/quickstart.sh` | CI-verified |
 | --- | --- | --- | --- |
-| Ubuntu / Debian / WSL | `apt` | Yes | Yes — automatic `.github/workflows/build.yml` plus dispatch-only `.github/workflows/full-matrix.yml` run on `ubuntu-latest` |
+| Ubuntu / Debian / WSL | `apt` | Yes | Yes — automatic `.github/workflows/build.yml` on `ubuntu-latest`, with parallel broader host and archival lanes on both PR and master runs |
 | Arch Linux | `pacman` | Yes | No (community-supported; same script path as Ubuntu) |
 | macOS | Homebrew (`brew`) | Yes | No (community-supported) |
 
@@ -25,14 +25,11 @@ none of `scripts/quickstart.sh`, the Makefile, or CI target Windows
 directly.
 
 **Automatic Build CI is the only host this repository re-verifies on every
-push/PR.** A candidate PR gates only on exact-candidate Build CI and Copilot
-review, then merges directly when those checks and its objective acceptance are
-clean. Full Matrix CI runs only on `master`; it never runs on a pull request or
-feature branch, manually or automatically. After each merge or intentional
-independent merge batch, dispatch the one-shot broad matrix for the exact
-pushed `master` commit. Arch and macOS support is exercised by the same
-script logic but is not re-run in CI; treat regressions there as
-community-reported, not CI-caught.
+push/PR.** A PR candidate uses the complete combined Build gate and Copilot
+review concurrently. The same Build jobs rerun on `master`; only the
+technically used patch publisher is master-only. Arch and macOS support is
+exercised by the same script logic but is not re-run in CI; treat regressions
+there as community-reported, not CI-caught.
 
 ## Supported toolchains
 
@@ -116,24 +113,18 @@ no ROM build or network access is required for either.
   `expansion-modern-savefmt-check` (these five need libmGBA too), and
   `scripts.upstream_port verify`.
 
-### Dispatch-only full matrix
+### Consolidated Build CI
 
-Prefer focused local checks during iteration. Do not dispatch Full Matrix for a
-candidate branch. After the exact pushed `master` commit is available, run the
-expensive host, modern debug/release, and archival lanes in parallel:
+Prefer focused local checks during iteration. Candidate branches run
+`host-tests`, `build`, `extended-host-tests`, `legacy`, and fail-closed
+`summary` jobs plus Copilot review. A merged `master` push reruns that same
+combined gate and adds only `patch-release`. Unique CJK/font, codec,
+configuration/budget, and archival evidence stays parallel with Build-owned
+modern debug/release, artifact, documentation, generated-data, and
+localization commands. The expected wall clock is approximately 35–40 minutes,
+not a hard duration gate.
 
-```bash
-gh workflow run full-matrix.yml --ref master
-timeout 90m gh run watch <run-id> --interval 30 --exit-status
-```
-
-The workflow is `workflow_dispatch`-only, read-only, concurrency-cancelled by
-workflow/ref, and master-gated so its jobs do not execute on another ref. It
-records the exact `github.sha` and `github.ref`. Its final summary fails unless
-host, both modern matrix configurations, and legacy succeed. The debug and
-release configurations remain parallel matrix jobs, and each job uses
-sequential Make to keep its resource use predictable. The canonical Build CI
-gate also runs `expansion-modern-linker-check` with `-j2`:
+The canonical Build CI gate runs `expansion-modern-linker-check` with `-j2`:
 battle-animation producers retain the last complete object while staging a
 replacement and then publish it with same-directory atomic replacement, so
 concurrent linker consumers cannot observe a missing or torn object. The
@@ -146,12 +137,6 @@ individual replacement gap.
 its explicit legacy delete-before-build control preserves the pre-fix
 missing-input failure, while staged-output and first-build assertions cover
 failed/interrupted production cleanup and no-prior-publication behavior.
-
-The legally restricted live FE8J provenance proof is not a hosted-CI command
-and remains a mandatory local maintainer pre-push step. Use the procedure
-supported by the checked-out branch in
-[`game_locale_sources.md`](game_locale_sources.md), rather than copying a
-target from another branch or uploading restricted inputs.
 
 ## Configuration surface
 
@@ -183,14 +168,15 @@ surface remains bounded by its live reference and evidence report.
   to `0`. Sample requires hooks; starter content requires hooks and
   `FE8_ITEM_ID_CAP>=0xCE`. The mechanics registry has typed callbacks, eight
   slots, copied key/label storage, deterministic order, explicit error codes,
-  and a reentrancy guard. Debug and release both run enabled and default-
-  disabled runtime negatives; the content profile rides the existing item-
-  expansion gates. See [`starter_features.md`](starter_features.md).
+  and a reentrancy guard. Debug and release both run enabled and default-disabled runtime negatives;
+  the content profile rides gates 17-18 of the current
+  `scripts/upstream_port/verify.py` sequence. See
+  [`starter_features.md`](starter_features.md).
 - **#10 typed IDs:** DEFAULT committed and ACTIVE build-local contracts,
   consumer census, and modern-only item cap `0xCE` pilot are supported; its
-  debug/release runtime commands are gates 12-13 of the current-master
-  14-gate upstream-port verifier; the all-locales/all-features patch profile
-  is gate 14. There is no class/chapter/unit/character
+  debug/release runtime commands are gates 17-18 of the current-master
+  25-gate upstream-port verifier; the all-locales/all-features patch profile
+  is gate 19. There is no class/chapter/unit/character
   widening
   or implied save migration. See
   [`id_space.md`](id_space.md).

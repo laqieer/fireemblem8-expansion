@@ -4,13 +4,14 @@ after a maintainer has manually applied a port batch.
 WARNING (see docs/upstream-porting.md): this command builds and checks the
 repository's *own* current working tree/commit. It never builds, checks out,
 or executes the canonical upstream ref/tree. It is a thin, literal mirror of
-.github/workflows/build.yml's gate steps (kept independent from that file:
-this module doesn't parse/execute the workflow, it re-states the same gate
-commands so `verify` stays runnable locally without a CI runner), with one
-DELIBERATE EXCEPTION: build.yml's "Check documentation (issues #7/#17)"
-step remains a required standalone workflow gate outside this mirror. Run
-that standalone command pair directly to reproduce it locally; see
-docs/upstream-porting.md.
+the four combined workers in `.github/workflows/build.yml` (kept independent
+from that file: this module doesn't parse/execute the workflow, it re-states
+the same gate commands so `verify` stays runnable locally without a CI
+runner). Only the master-only publisher and serial summary jobs have no local
+gate equivalent. The one DELIBERATE command-level exception is build.yml's
+"Check documentation (issues #7/#17)" step, which remains a required
+standalone workflow gate outside this mirror. Run that standalone command pair
+directly to reproduce it locally; see docs/upstream-porting.md.
 """
 
 from __future__ import annotations
@@ -122,9 +123,9 @@ def gates(jobs: int = 2) -> List[Gate]:
             ],
             applicable_note=(
                 "fast host lane (same `host-tests` job): stdlib-only static "
-                "contracts for the master-only Full Matrix CI workflow and "
-                "its README badge path/name/link. No compiler, ROM, linker, "
-                "network, or subordinate runtime gate is invoked"
+                "contracts for the consolidated Build CI job graph. No "
+                "compiler, ROM, linker, network, or subordinate runtime gate "
+                "is invoked"
             ),
         ),
         Gate(
@@ -160,6 +161,46 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "metrics-aware generated line breaks, and native text "
                 "consumer behavior before the target-ROM gates"
             ),
+        ),
+        Gate(
+            name="game-localization-catalog-check",
+            command=["python3", "-m", "scripts.localization.game_locales", "check"],
+            applicable_note="Build host lane closure check for the committed full-game locale catalog",
+        ),
+        Gate(
+            name="game-localization-crosswalk-check",
+            command=[
+                "python3",
+                "-m",
+                "scripts.localization.game_locales",
+                "check-crosswalk",
+            ],
+            applicable_note="Build host lane closure check for full-game source/catalog crosswalk coverage",
+        ),
+        Gate(
+            name="game-localization-raw-closure-check",
+            command=[
+                "python3",
+                "-m",
+                "scripts.localization.game_locales",
+                "check-raw-closure",
+            ],
+            applicable_note="Build host lane closure check for unresolved raw full-game locale content",
+        ),
+        Gate(
+            name="artifact-guard-tests",
+            command=[
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "scripts/artifact_guard_tests",
+                "-p",
+                "test_*.py",
+                "-v",
+            ],
+            applicable_note="Build ROM lane host tests for immutable candidate artifact hygiene",
         ),
         Gate(
             name="artifact-guard",
@@ -206,6 +247,11 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "archival agbcc lane via explicit `make legacy`/`make "
                 "fireemblem8.gba`, never via env/CLI variable overrides"
             ),
+        ),
+        Gate(
+            name="generated-data-test",
+            command=["make", "generated-data-test"],
+            applicable_note="applicable when generated-data schema and cross-reference tests exist",
         ),
         Gate(
             name="generated-data-check",
@@ -310,6 +356,66 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "maximal-supported-features profile without reading a base "
                 "image, creating a patch, or publishing an artifact"
             ),
+        ),
+        Gate(
+            name="cjk-font-gates",
+            command=["make", "-f", "cjk_fonts.mk", "cjk-fonts-check", "cjk-fonts-test"],
+            applicable_note="combined-gate unique CJK font inventory and codec coverage",
+        ),
+        Gate(
+            name="multilang-codec-gates",
+            command=[
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "scripts/texttools/tests",
+                "-p",
+                "test_multilang_codec*.py",
+                "-v",
+            ],
+            applicable_note="combined-gate unique multilang texttools codec coverage",
+        ),
+        Gate(
+            name="expansion-config-gates",
+            command=[
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "scripts/modernize/tests",
+                "-p",
+                "test_expansion_config.py",
+                "-v",
+            ],
+            applicable_note="combined-gate unique expansion configuration coverage",
+        ),
+        Gate(
+            name="linker-budget-gates",
+            command=[
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "scripts/linker_report/tests",
+                "-p",
+                "test_*.py",
+                "-v",
+            ],
+            applicable_note="combined-gate unique linker-budget coverage",
+        ),
+        Gate(
+            name="legacy-build",
+            command=["make", "legacy", "-j2"],
+            applicable_note="combined-gate archival no-baserom build",
+        ),
+        Gate(
+            name="legacy-payload-identity",
+            command=["make", "-C", "mgfembp", "compare"],
+            applicable_note="combined-gate archival payload identity comparison",
         ),
     ]
 

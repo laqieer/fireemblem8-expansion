@@ -55,24 +55,30 @@ class ScenarioParsingTests(unittest.TestCase):
         with self.assertRaisesRegex(gba_playtest.PlaytestError, "only string"):
             gba_playtest.parse_scenario_data(data)
 
-    def test_rejects_rom_and_unmapped_addresses(self):
-        for address in ("0x08000000", "0x03008000"):
+    def test_rejects_unmapped_addresses(self):
+        for address in ("0x01000000", "0x03008000"):
             with self.subTest(address=address):
                 data = valid_scenario()
                 data["checkpoints"][0]["probes"][0]["address"] = address
-                with self.assertRaisesRegex(gba_playtest.PlaytestError, "must be in EWRAM"):
+                with self.assertRaisesRegex(gba_playtest.PlaytestError, "must be in"):
                     gba_playtest.parse_scenario_data(data)
 
-    def test_rejects_unaligned_and_boundary_crossing_probe(self):
+    def test_rejects_unaligned_and_address_region_boundary_crossing_probe(self):
         data = valid_scenario()
         data["checkpoints"][0]["probes"][0]["address"] = "0x02000002"
         with self.assertRaisesRegex(gba_playtest.PlaytestError, "aligned"):
             gba_playtest.parse_scenario_data(data)
 
-        data = valid_scenario()
-        data["checkpoints"][0]["probes"][0]["address"] = "0x0203fffe"
-        with self.assertRaisesRegex(gba_playtest.PlaytestError, "crosses"):
-            gba_playtest.parse_scenario_data(data)
+        for _, end in gba_playtest.RAM_RANGES:
+            address = f"0x{end - 2:08x}"
+            with self.subTest(address=address):
+                data = valid_scenario()
+                data["checkpoints"][0]["probes"][0]["address"] = address
+                with self.assertRaisesRegex(
+                    gba_playtest.PlaytestError, "crosses the address region boundary"
+                ) as raised:
+                    gba_playtest.parse_scenario_data(data)
+                self.assertNotIn("RAM", str(raised.exception))
 
     def test_rejects_overlapping_frame_ranges(self):
         data = valid_scenario()

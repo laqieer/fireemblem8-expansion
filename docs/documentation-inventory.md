@@ -74,12 +74,14 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/portrait_resolver.md | laqieer | current | Typed character/class/chapter/flag portrait and minimug resolver with legacy fallback (issue #35)
 - docs/community_asset_coverage.md | laqieer | current | Authoritative community asset-family ownership, build/runtime seam, provenance boundary, and gap catalog (issue #59)
 - docs/asset_manifest.md | laqieer | current | Versioned source-owned asset manifest, ownership dependency generation, and adapter contract (issue #60)
+- docs/portrait_packages.md | laqieer | current | Strict formatted portrait package, generated FaceData registration, and tester procedure (issue #63)
 - docs/tmx_map_layouts.md | laqieer | current | Fail-closed Tiled TMX map-layout subset, source workflow, and compatibility boundary (issue #64)
 - docs/bgm_routing.md | laqieer | current | Typed BGM context routing, action selectors, and preserve/continue policy
 - docs/ui_presentation_registry.md | laqieer | current | Typed UI presentation manifests and bounded presentation-resource registry
 - docs/test-cases/README.md | laqieer | current | Indexed tester-facing case catalog, schema, and staged coverage lifecycle
 - docs/test-cases/template.md | laqieer | template | Reusable tester-facing case procedure template
 - docs/test-cases/foundation.md | laqieer | current | Tester procedure for the catalog and checker foundation (issue #54)
+- docs/test-cases/localization.md | laqieer | current | Indexed localization and locale-persistence procedures, profiles, negatives, and semantic automation (issue #56)
 - docs/test-cases/presentation-audio-utility.md | laqieer | current | Tester procedures for portrait, sound-room, BGM, presentation, manifest, and utility seams (issue #58)
 - docs/test-cases/optional-gameplay.md | laqieer | current | Indexed optional gameplay procedures, profiles, negatives, save expectations, and automation (issue #55)
 - docs/test-cases/patch-release.md | laqieer | current | Indexed BPS artifact validation/application and fail-closed input procedures (issue #49)

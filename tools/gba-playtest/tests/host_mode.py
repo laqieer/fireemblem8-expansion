@@ -127,6 +127,7 @@ BACKEND_UNAVAILABLE_MARKERS = (
 LIVE_TEST_CLASSES = (
     ("test_combat_scenario", "CombatRuntimeTests"),
     ("test_new_game_scenario", "NewGameRuntimeTests"),
+    ("test_portrait_package_runtime", "PortraitPackageRuntimeTests"),
     ("test_prep_positive_scenario", "PrepPositiveRuntimeTests"),
     ("test_save_compat_scenarios", "SaveCompatScenarioTests_legacy"),
     ("test_save_compat_scenarios", "SaveCompatScenarioTests_modern_debug"),
