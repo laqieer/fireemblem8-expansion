@@ -753,10 +753,12 @@ enum
 };
 
 /* Preserve the pre-#128 persistent layout occupied by the original
- * two-entry Save State menu. The expanded title-only menus live in the
- * appended fixture section below so existing runtime probe addresses do not
- * move. */
-EWRAM_DATA static struct MenuItemDef sSaveStateStableLayout[2] = {{0}};
+ * two-entry Save State menu. `used` prevents compiler elimination; this
+ * anchor shares debugtools_tools.o's live ewram_data input section with
+ * referenced menu storage, so linker GC retains it with that section. The
+ * expanded title-only menus live in the appended fixture section below. */
+EWRAM_DATA static struct MenuItemDef sSaveStateStableLayout[2]
+    __attribute__((used)) = {{0}};
 SECTION("debug_save_fixture_data") static struct MenuItemDef
     sSaveStateMenuItemDefs[6] = {{0}};
 SECTION("debug_save_fixture_data") static struct MenuItemDef
