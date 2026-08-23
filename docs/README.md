@@ -82,7 +82,7 @@ numbers mark merged (closed) contracts only:
 | Starter features (issue #6) | Four default-off flags; `include/expansion_mechanics.h`; `include/expansion_starter_content.h`; danger-overlay menu | [`starter_features.md`](starter_features.md) |
 | Typed area-of-effect actions (issue #42) | `include/expansion_aoe.h`; bounded target/effect API and shared item/action/AI route registry | [`aoe.md`](aoe.md) |
 | Transient blue computer control (issue #85) | `include/expansion_autoplay.h`; `PLAYER`/`COMPUTER` control and pointer-free semantic telemetry | [`autoplay.md`](autoplay.md) |
-| Bounded semantic run-until scenarios (issue #86) | `tools/gba-playtest` schema v2, fingerprint format v3, seven typed terminal reasons, and fixed-frame compatibility | [`autoplay.md`](autoplay.md), [`../tools/gba-playtest/README.md`](../tools/gba-playtest/README.md) |
+| Bounded semantic run-until and accelerated fidelity (issues #86/#88) | `tools/gba-playtest` schema v2/v3, typed terminal reasons, exact semantic traces, profile-contained game-speed/BANIM-off configuration, and fixed-frame compatibility | [`autoplay.md`](autoplay.md), [`../tools/gba-playtest/README.md`](../tools/gba-playtest/README.md) |
 | Custom battle spell effects (issue #77) | `include/custom_spell_effect.h`; typed descriptor lookup/start API and `0x80..0x8F` generated-private range | [`custom_spell_effects.md`](custom_spell_effects.md) |
 | Portrait/minimug resolver (issue #35) | Typed character/class/chapter/flag registry with legacy fallback | [`portrait_resolver.md`](portrait_resolver.md) |
 | Community asset coverage (issue #59) | Asset-family ownership/gap catalog; not an importer or runtime API | [`community_asset_coverage.md`](community_asset_coverage.md) |
@@ -137,7 +137,7 @@ and
 | [`generated_data_tutorial.md`](generated_data_tutorial.md) | Current, tutorial | Contributor-facing generated-data walkthrough |
 | [`starter_features.md`](starter_features.md) | Current | Four opt-in flags, typed mechanics/content API, QoL and matrices (issue #6) |
 | [`aoe.md`](aoe.md) | Current | Typed bounded AoE targeting/effects, shared item seam, and default-off reference (issue #42) |
-| [`autoplay.md`](autoplay.md) | Current | Transient blue control/telemetry plus bounded semantic run-until outcomes (issues #85/#86) |
+| [`autoplay.md`](autoplay.md) | Current | Transient blue control/telemetry, bounded semantic outcomes, and accelerated-fidelity comparison (issues #85/#86/#88) |
 | [`custom_spell_effects.md`](custom_spell_effects.md) | Current | Default-off typed battle spell-effect runtime foundation and resource contract (issue #77) |
 | [`portrait_resolver.md`](portrait_resolver.md) | Current | Typed data-driven portrait/minimug resolver and validation contract (issue #35) |
 | [`community_asset_coverage.md`](community_asset_coverage.md) | Current | Authoritative community asset family ownership, build/runtime seam, and gap catalog (issue #59) |
@@ -158,7 +158,7 @@ and
 | [`test-cases/workflow-governance.md`](test-cases/workflow-governance.md) | Current | Trusted-push and centralized CI-wait orchestration procedure (issue #93) |
 | [`test-cases/localization.md`](test-cases/localization.md) | Current | Localization and locale-persistence procedures, semantic runtime mappings, and negative controls (issue #56) |
 | [`test-cases/patch-release.md`](test-cases/patch-release.md) | Current | Trusted BPS artifact validation/application and malformed-input procedures (issue #49) |
-| [`test-cases/autoplay.md`](test-cases/autoplay.md) | Current | Blue computer-phase and bounded semantic termination procedures (issues #85/#86) |
+| [`test-cases/autoplay.md`](test-cases/autoplay.md) | Current | Blue computer-phase, bounded semantic termination, and accelerated-fidelity procedures (issues #85/#86/#88) |
 | [`test-cases/codeql-alerts.md`](test-cases/codeql-alerts.md) | Current | Link Arena and confirmed CodeQL alert regression procedures (issue #84) |
 | [`game_localization_catalog.md`](game_localization_catalog.md) | Current | Full-game FE8U-indexed CJK catalog generation, runtime bounds, and synthetic link gate |
 | [`documentation-inventory.md`](documentation-inventory.md) | Current | Exact recognized-Markdown inventory |

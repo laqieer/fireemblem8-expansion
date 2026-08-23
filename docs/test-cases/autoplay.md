@@ -174,3 +174,83 @@ objectives, choose AI actions, accelerate engine logic, score strategies,
 claim balance, or prove arbitrary chapter completion. Explicit
 `controller_exhausted` telemetry must come from the controller/objective
 contract being tested and is not inferred from inactivity.
+
+## TC-AUTOPLAY-ACCEL-001: Accelerated-fidelity equivalence
+
+- **Feature / originating issue:** `accelerated-fidelity-harness` /
+  [#88](https://github.com/laqieer/fireemblem8-expansion/issues/88).
+- **Stack dependency:** immediate parent issue [#86](https://github.com/laqieer/fireemblem8-expansion/issues/86),
+  based locally on `agent/issue-86` at
+  `82d4aad10578b86af72002ce3491f1843775ac5a`; #85 supplies the existing
+  controller/action telemetry. The child has no other issue dependency,
+  dependent, or conflict.
+- **Supported configuration or artifact:** one modern AAPCS debug ROM and
+  exact linked ELF, run twice from the same clean boot, fixture, controller,
+  and deterministic RNG state: `normal-fidelity` and
+  `accelerated-fidelity`.
+- **Prerequisites and clean starting state:** repository root, Python 3.10+,
+  a host C compiler, libmGBA development files, and the modern ARM toolchain.
+  Use no save or savestate. The runner owns only ignored output under
+  `build/`.
+
+### Actions
+
+1. Run
+   `python3 tools/gba-playtest/tests/test_accelerated_fidelity.py -v`.
+2. Run
+   `make expansion-modern-autoplay-accelerated-fidelity-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+3. Inspect
+   `build/expansion-modern/debug/aapcs/autoplay-accelerated-fidelity-check/accelerated-fidelity-benchmark.json`
+   for the reported libmGBA version, host/runner identity, ROM provenance,
+   source commit, profile names, and three non-gating wall-clock samples.
+
+Both profiles execute every frame through `core->runFrame()` and use the same
+clean Chapter 2 route and debug-only COMPUTER activation. The accelerated
+profile applies only the already-supported `gPlaySt.config.gameSpeed` setting
+and `BANIM_PRESENTATION_POLICY_OFF`'s existing animation option in its
+disposable emulator core after the route's fixed input cadence. It does not
+skip movement, camera, Proc, battle, event, trap, phase, save, or controller
+logic, and it never writes a user save fixture.
+
+### Expected result
+
+The baseline finishes with `success` after exactly **17,135** emulated frames.
+Accelerated fidelity finishes after exactly **16,869** frames, a deterministic
+**266-frame reduction**. The terminal objective result, turn/action counts,
+all terminal semantic probes (including the active blue units' state and
+items), ordered committed-action/event telemetry, and every sampled RNG state
+are identical. Semantic-only terminal checkpoints omit the unused whole-frame
+hash while libmGBA still allocates and renders its framebuffer normally.
+
+### Negative control
+
+The focused host/backend fixture rejects malformed profile configuration,
+duplicate traces, and unexpected framebuffer output. The paired runner flips
+one committed semantic trace value after capture and requires the comparator
+to reject it; a faster divergent action/event/RNG route is therefore never
+accepted. Normal visual, audio, and presentation-timing scenarios remain on
+their existing normal-fidelity paths and fingerprints.
+
+### Interactions and save compatibility
+
+This is a harness profile only. It depends on #85 telemetry, #86 bounded
+terminal semantics, existing game-speed and battle-presentation policy seams,
+ELF probes, and libmGBA. It adds no player-facing switch, target code,
+save field, preference, migration, compatibility epoch, configuration
+identity, generated data, localization, ROM allocation, RAM allocation, or
+archival-lane behavior.
+
+### Automation, cleanup, and limitations
+
+- `tools/gba-playtest/tests/test_accelerated_fidelity.py` validates strict
+  schema-v3/profile parsing, plan-v5 semantic-only hashing, one real
+  `runFrame()` per fixture frame, profile application, and trace perturbation.
+- `expansion-modern-autoplay-accelerated-fidelity-check` runs the paired
+  modern-debug libmGBA fixture, freezes the frame target, and writes the
+  reproducible benchmark report. Wall-clock samples are report-only rather
+  than an exact-duration assertion.
+
+Delete ignored build output with `make clean_fast` only when needed. This case
+does not validate visual/audio/timing behavior, authorize emulator savestates,
+add a game-speed or animation setting, or model/simulate a shortened game
+path.

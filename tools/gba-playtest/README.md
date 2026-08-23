@@ -364,6 +364,49 @@ continues to apply only to a transient compiler/pkg-config/backend process
 timeout; it cannot turn an objective failure, exhausted controller, stall, or
 budget result into success.
 
+### Accelerated-fidelity schema version 3
+
+Issue #88 adds a strict `execution_profile` to bounded run-until scenarios:
+`normal-fidelity` or `accelerated-fidelity`. Schema-v1/v2 inputs and
+fingerprint formats remain unchanged. Both profiles execute every selected
+frame through the same `core->runFrame()` path; no profile can skip engine,
+Proc, event, battle, movement, camera, trap, phase, controller, or save logic.
+
+The accelerated profile has one explicit `play_state_config` binding and
+`config_apply_frame`. At that frame, only the existing `gPlaySt.config`
+game-speed bit and the animation option selected by
+`BANIM_PRESENTATION_POLICY_OFF` are applied inside the disposable libmGBA
+core. Normal fidelity accepts no configuration write. The profile also owns a
+non-empty ordered `trace` array of normal 1/2/4-byte semantic probes. The
+backend samples it each emulated frame and emits a full snapshot only on a
+semantic change, retaining action/event/RNG order without making host
+wall-clock time a behavioral oracle.
+
+Schema-v3 uses plan format 5 and fingerprint format 4. Format 5 retains
+framebuffer allocation/rendering but adds one checkpoint flag: when a
+semantic-only checkpoint has `framebuffer: false`, it does not calculate or
+emit an unused whole-frame hash. Region/pixel capture still requires
+`framebuffer: true`. The format-4 fingerprint records profile application
+details and the ordered trace, while preserving normal ROM provenance,
+terminal reason/counters, and terminal semantic checkpoint.
+
+The focused reproducible command is:
+
+```sh
+make expansion-modern-autoplay-accelerated-fidelity-check \
+  MODERN_CONFIG=debug MODERN_ABI=aapcs
+```
+
+It writes an ignored benchmark JSON beside the debug ROM. That report records
+libmGBA version, host/runner identity, source commit, ROM provenance/config,
+emulated-frame counts, and three wall-clock samples. The checked Chapter 2
+fixture freezes 17,135 normal-fidelity frames and 16,869 accelerated-fidelity
+frames (266 fewer); wall-clock samples are evidence only. The paired
+comparator requires equal terminal semantic state, ordered trace, RNG values,
+unit state/items, flags/objective result, and turn/action counters, and its
+perturbed-trace negative must fail. Visual/audio/timing cases stay on their
+normal-fidelity scenarios.
+
 ## Initial coverage and limits
 
 `boot.json` is a no-input early boot capture. `title-progression.json` uses the
@@ -407,6 +450,7 @@ similarity alone.
 | `debugtools-tools-modern-{debug,release}.json` (issue #11) | The five shipped bounded tools driven **live** from the real Chapter 2 map hub: each of Unit Inspect/Edit, Convoy Inspect/Edit, Flag/Chapter, RNG Inspect/Control, and Save Compatibility/State Inspect is triggered from its real hub row with an asserted semantic effect (Unit heal transaction; Convoy count `0 -> 1`; Flag `0 -> 1`; RNG seed `0x0000ee77 -> 0x0000690b`; Save read-only, count `0 -> 1` and unchanged on Back) and a safe hub return (`hubOpenCount 2 -> 9`), ending with the map still interactive (player cursor `0x06 -> 0x07`); probe-only, relocation-independent. Release mirror proves the hub/tools are compiled out (`gDebugToolsProbe` all-zero) | debug (live) / release (negative) |
 | `run_autoplay_checks.py` generated scenarios (issue #85) | `TC-AUTOPLAY-001`: a clean Chapter 2 debug-only activation chord drives a full blue phase through the existing AI and records legal actions, faction-relation checks, completion, and progression; clean Prologue debug/release defaults remain PLAYER with zero blue AI actions | debug (positive + negative) / release (negative) |
 | `run_autoplay_bounds_checks.py` generated scenarios (issue #86) | `TC-AUTOPLAY-BOUNDS-001`: the same debug COMPUTER route stops at its first semantic completion (frame 17134 in the checked candidate), while clean debug/release PLAYER controls reach `max_frames` at frame 3950 with zero actions; the generated homebrew fixture separately covers all seven terminal reasons | debug (positive + negative) / release (negative) |
+| `run_accelerated_fidelity_checks.py` generated paired scenarios (issue #88) | `TC-AUTOPLAY-ACCEL-001`: same-ROM normal/accelerated Chapter 2 profiles preserve terminal probes, ordered telemetry/RNG trace, active-unit state/items, objective result, and turn/action counts while reducing 17,135 frames to 16,869; the benchmark reports non-gating wall-clock samples and the perturbation control rejects divergence | debug only |
 
 New-game, chapter/map arrival, combat, and normal save/load are all enabled,
 verified scenarios -- see the coverage table above. **No `*.stub.json` files

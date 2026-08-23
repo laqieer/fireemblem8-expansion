@@ -13,6 +13,10 @@ Issue [#86](https://github.com/laqieer/fireemblem8-expansion/issues/86)
 builds on this telemetry with bounded semantic run-until scenarios; its
 canonical procedure is
 [`TC-AUTOPLAY-BOUNDS-001`](test-cases/autoplay.md#tc-autoplay-bounds-001-bounded-semantic-autoplay-termination).
+Issue [#88](https://github.com/laqieer/fireemblem8-expansion/issues/88) is the
+stacked accelerated-fidelity child of #86; its canonical paired-profile
+procedure is
+[`TC-AUTOPLAY-ACCEL-001`](test-cases/autoplay.md#tc-autoplay-accel-001-accelerated-fidelity-equivalence).
 
 ## Public API
 
@@ -149,6 +153,39 @@ The seven terminal reasons are deliberately not interchangeable:
 - `max_frames`, `max_turns`, and `max_actions` identify the exact exhausted
   budget.
 
+## Accelerated-fidelity profile
+
+Schema version 3 adds an explicit `execution_profile` beside the existing
+normal-fidelity baseline. It remains a bounded run-until scenario and preserves
+all schema-v1/v2 scenario and fingerprint formats unchanged. Both profiles
+call `core->runFrame()` for every emulated frame; acceleration is never a
+simulation or an engine shortcut.
+
+The `accelerated-fidelity` profile binds the existing `gPlaySt.config` word at
+one declared frame and applies only `gameSpeed` plus the existing animation
+option selected by `BANIM_PRESENTATION_POLICY_OFF`. Its emulator core and
+temporary SRAM copy are destroyed after capture, so it cannot persist either
+choice. `normal-fidelity` has no configuration write. The profile also names
+ordered semantic trace probes. The backend emits a complete snapshot only
+when one of those semantic values changes, preserving action/event and RNG
+order without treating wall-clock timing as behavior.
+
+Profile plans use backend format 5. A semantic-only terminal checkpoint emits
+its probes/SRAM state and no whole-framebuffer hash; the framebuffer remains
+allocated and attached to libmGBA, and region/pixel/visual scenarios still
+require the normal framebuffer capture path. Format-version-4 fingerprints
+record the profile state and trace. The paired comparator ignores emulated
+frame timestamps while requiring the terminal reason/counters, endpoint
+semantic probes, and ordered trace values to match exactly.
+
+The focused Chapter 2 fixture freezes 17,135 normal-fidelity frames and
+16,869 accelerated-fidelity frames (a 266-frame reduction). The benchmark
+records libmGBA/package version, host and runner identity, exact ROM
+provenance/configuration, source commit, frame counts, and three non-gating
+wall-clock samples. It rejects a deliberately perturbed trace even if that
+candidate completes faster. Visual, audio, or presentation-timing cases must
+remain on normal fidelity.
+
 Unit coordinates, pointers, source text, wall-clock duration, and framebuffer
 similarity are not progress proxies. A stationary defend/wait state reports
 work not expected and therefore does not accrue stall frames. Epoch regression
@@ -178,8 +215,8 @@ This is host/runtime-test infrastructure only:
 - **Dependencies:** #85's public control/telemetry contract,
   `tools/gba-playtest`, existing ELF probe bindings, libmGBA, and the
   tester-case catalog.
-- **Dependents:** authored objectives (#88), accelerated-fidelity work (#89),
-  and later strategy/batch/planner layers through their own contracts.
+- **Dependents:** accelerated-fidelity comparison (#88), later integration
+  work (#89), and strategy/batch/planner layers through their own contracts.
 - **Conflicts:** none; fixed-frame scenarios and fingerprints remain valid and
   are exercised unchanged.
 - **Profiles:** generated homebrew/libmGBA host integration, modern AAPCS debug
