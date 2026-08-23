@@ -280,6 +280,12 @@ void DebugTools_QueueSubmenuTransition(
     const struct MenuDef* submenuDef);
 void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu);
 
+/* Finalizes an active submenu session without reopening the hub. The same
+ * one-yield transition restores the owning font/counter and clears session
+ * ownership; game-control handoffs may then consume their already-queued
+ * typed request. Calls outside an active submenu session are safe no-ops. */
+void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu);
+
 /* Opens the debug hub menu (a StartOrphanMenu-based menu, same idiom as
  * the existing dormant debug menus in src/menu_def.c). Lazily registers
  * all shipped built-in actions on first call.

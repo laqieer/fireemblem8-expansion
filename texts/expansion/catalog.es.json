@@ -63,6 +63,20 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "Capítulo"
+    "ui.presentation.chapter_title_default": "Capítulo",
+    "debug.save_fixture.game0": "Partida 0",
+    "debug.save_fixture.game1": "Partida 1",
+    "debug.save_fixture.game2": "Partida 2",
+    "debug.save_fixture.latest_suspend": "Suspender",
+    "debug.save_fixture.completion": "Finales:",
+    "debug.save_fixture.tactician": "Estratega:",
+    "debug.save_fixture.keep": "Conservar",
+    "debug.save_fixture.marker": "Prueba",
+    "debug.save_fixture.arm": "Armar RAM",
+    "debug.save_fixture.continue": "Iniciar RAM",
+    "debug.save_fixture.preview": "Copia RAM",
+    "debug.save_fixture.title_only": "Solo título",
+    "debug.save_fixture.invalid": "No válida",
+    "debug.save_fixture.blocked": "Guardado off"
   }
 }

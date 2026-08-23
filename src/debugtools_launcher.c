@@ -6,6 +6,7 @@
 #include "bmunit.h"
 #include "playerphase.h"
 #include "expansion_debugtools.h"
+#include "debug_save_fixture_internal.h"
 #include "debugtools_internal.h"
 
 /*
@@ -303,6 +304,8 @@ int DebugTools_IsBootstrapSuppressionActive(void)
 
 void DebugTools_NotifyTitleScreenStarting(void)
 {
+    DebugSaveFixture_NotifyTitleScreenStarting();
+
     /* No-op whenever suppression is not currently active -- an ordinary
      * title screen (re)start (first boot, a real user quitting back to
      * title, etc.) is not "abandoning a pending deterministic boot".

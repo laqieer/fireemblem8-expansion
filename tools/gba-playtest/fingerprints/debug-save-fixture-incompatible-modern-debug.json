@@ -1,0 +1,35 @@
+{
+  "checkpoints": [
+    {
+      "frame": 1220,
+      "framebuffer_hash": "fnv1a64-rgb24:8debb32b811caa5f",
+      "name": "incompatible-source-rejected",
+      "probes": [
+        {
+          "address": "0x0203f478",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203f47c",
+          "size": 4,
+          "value": "0x00000004"
+        },
+        {
+          "address": "0x0203f48c",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:2d6e9ec16c75ff6d"
+    }
+  ],
+  "format_version": 2,
+  "rom": {
+    "game_code": "BE8E",
+    "sha1": "707f99110f52b8bfe5d6cd42c6b553b838e48817",
+    "size": 16777216,
+    "title": "FIREEMBLEM2E"
+  },
+  "scenario": "debug-save-fixture-incompatible-modern-debug"
+}

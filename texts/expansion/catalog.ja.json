@@ -63,6 +63,20 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "チャプター"
+    "ui.presentation.chapter_title_default": "チャプター",
+    "debug.save_fixture.game0": "ゲームスロット0",
+    "debug.save_fixture.game1": "ゲームスロット1",
+    "debug.save_fixture.game2": "ゲームスロット2",
+    "debug.save_fixture.latest_suspend": "最新の中断",
+    "debug.save_fixture.completion": "クリア回数:",
+    "debug.save_fixture.tactician": "軍師名:",
+    "debug.save_fixture.keep": "そのまま",
+    "debug.save_fixture.marker": "テスト",
+    "debug.save_fixture.arm": "一時データ準備",
+    "debug.save_fixture.continue": "RAMデータで再開",
+    "debug.save_fixture.preview": "RAMテストデータ",
+    "debug.save_fixture.title_only": "タイトル画面のみ",
+    "debug.save_fixture.invalid": "データ無効",
+    "debug.save_fixture.blocked": "保存禁止"
   }
 }

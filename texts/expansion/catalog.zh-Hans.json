@@ -63,6 +63,20 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "章节"
+    "ui.presentation.chapter_title_default": "章节",
+    "debug.save_fixture.game0": "游戏存档0",
+    "debug.save_fixture.game1": "游戏存档1",
+    "debug.save_fixture.game2": "游戏存档2",
+    "debug.save_fixture.latest_suspend": "最新中断",
+    "debug.save_fixture.completion": "通关次数:",
+    "debug.save_fixture.tactician": "军师名:",
+    "debug.save_fixture.keep": "保留",
+    "debug.save_fixture.marker": "测试",
+    "debug.save_fixture.arm": "准备临时数据",
+    "debug.save_fixture.continue": "从RAM继续",
+    "debug.save_fixture.preview": "RAM测试数据",
+    "debug.save_fixture.title_only": "仅标题画面",
+    "debug.save_fixture.invalid": "数据无效",
+    "debug.save_fixture.blocked": "禁止保存"
   }
 }

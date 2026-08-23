@@ -63,6 +63,20 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "Chapitre"
+    "ui.presentation.chapter_title_default": "Chapitre",
+    "debug.save_fixture.game0": "Partie 0",
+    "debug.save_fixture.game1": "Partie 1",
+    "debug.save_fixture.game2": "Partie 2",
+    "debug.save_fixture.latest_suspend": "Suspendre",
+    "debug.save_fixture.completion": "Fins:",
+    "debug.save_fixture.tactician": "Stratège:",
+    "debug.save_fixture.keep": "Garder",
+    "debug.save_fixture.marker": "Test",
+    "debug.save_fixture.arm": "Armer RAM",
+    "debug.save_fixture.continue": "Lancer RAM",
+    "debug.save_fixture.preview": "Copie RAM",
+    "debug.save_fixture.title_only": "Titre seul",
+    "debug.save_fixture.invalid": "Invalide",
+    "debug.save_fixture.blocked": "Sauv. bloquée"
   }
 }

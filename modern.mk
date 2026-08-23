@@ -17,6 +17,7 @@ MODERN_GOALS := \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debug-save-fixture-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
 	expansion-modern-debuglog-check \
@@ -765,6 +766,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debug-save-fixture-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
 	expansion-modern-newgame-check \
@@ -1430,6 +1432,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debug-save-fixture-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
 	expansion-modern-newgame-check \
@@ -2675,6 +2678,20 @@ expansion-modern-debugtools-tools-check: expansion-modern-boot-preflight expansi
 		--expected "$(MODERN_DEBUGTOOLS_TOOLS_FINGERPRINT)" \
 		--policy behavior
 	@printf 'Modern ROM debugtools-tools-check passed (five bounded tools live+confirmed in debug, compiled-out all-zero in release): %s (config=%s abi=%s)\n' \
+		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+MODERN_DEBUG_SAVE_FIXTURE_CHECK := \
+	tools/gba-playtest/run_debug_save_fixture_checks.py
+MODERN_DEBUG_SAVE_FIXTURE_DIR := \
+	$(MODERN_OUTPUT_DIR)/debug-save-fixture
+
+expansion-modern-debug-save-fixture-check: expansion-modern-boot-preflight expansion-modern-rom
+	"$(PYTHON)" "$(MODERN_DEBUG_SAVE_FIXTURE_CHECK)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--config "$(MODERN_CONFIG)" \
+		--out-dir "$(MODERN_DEBUG_SAVE_FIXTURE_DIR)"
+	@printf 'Modern debug save-fixture check passed: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
 MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT := \
@@ -3993,6 +4010,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-debugtools-timer-check \
 		expansion-modern-debugtools-map-check \
 		expansion-modern-debugtools-tools-check \
+		expansion-modern-debug-save-fixture-check \
 		expansion-modern-debugtools-prep-check \
 		expansion-modern-debugtools-ch4prep-check \
 		expansion-modern-newgame-check \
@@ -4023,6 +4041,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debug-save-fixture-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
 	expansion-modern-newgame-check \

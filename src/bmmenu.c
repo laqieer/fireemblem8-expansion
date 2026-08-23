@@ -4,6 +4,9 @@
 #ifdef MODERN
 #include "expansion_ui_prefs.h"
 #endif
+#ifndef FE8_ARCHIVAL_BUILD
+#include "debug_save_fixture_internal.h"
+#endif
 
 #include "hardware.h"
 #include "fontgrp.h"
@@ -93,6 +96,11 @@ u8 MenuEffect_CloseMenu(struct MenuProc* menu, struct MenuItemProc* menuItem) {
 
 u8 MapMenu_IsSuspendCommandAvailable(const struct MenuItemDef* def, int number) {
 
+#ifndef FE8_ARCHIVAL_BUILD
+    if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED)
+        return MENU_DISABLED;
+#endif
+
     if (gPlaySt.chapterStateBits & PLAY_FLAG_TUTORIAL) {
         return MENU_DISABLED;
     }
@@ -102,6 +110,13 @@ u8 MapMenu_IsSuspendCommandAvailable(const struct MenuItemDef* def, int number) 
 
 u8 MapMenu_SuspendCommand(struct MenuProc* menu, struct MenuItemProc* menuItem) {
     if (menuItem->availability == MENU_DISABLED) {
+#ifndef FE8_ARCHIVAL_BUILD
+        if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED
+            && DebugSaveFixture_RecordBlockedWrite(
+                DEBUG_SAVE_FIXTURE_WRITE_SUSPEND))
+            return MENU_ACT_SND6B;
+#endif
+
         MenuFrozenHelpBox(menu, 0x864); // TODO: msgid "You cannot stop in the[NL]middle of the tutorial.[.]"
         return MENU_ACT_SND6B;
     }

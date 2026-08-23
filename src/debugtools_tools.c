@@ -14,6 +14,7 @@
 #include "rng.h"
 #include "bmsave.h"
 #include "save_format.h"
+#include "expansion_debug_save_fixture.h"
 #if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
 #include "face.h"
 #endif
@@ -38,7 +39,7 @@
  *   6. Convoy inspection/edit
  *   7. Flag/chapter/event state action
  *   8. RNG inspection/control
- *   9. Save compatibility/state inspection
+ *   9. Save compatibility/state inspection and volatile fixture continue
  *
  * Each is a single registry action, following the exact same
  * StartOrphanMenu submenu idiom src/debugtools_actions.c's Weather/Fog
@@ -46,7 +47,8 @@
  * two-item "Confirm <action>" / "Back" submenu -- a mutation only ever
  * happens after that explicit, separate confirmation input, never on the
  * initial hub selection alone. Tool 9 is read-only (no Confirm item at
- * all: nothing to confirm). See include/expansion_debugtools.h's "Five
+ * all unless the title-only volatile fixture flow is selected). See
+ * include/expansion_debugtools.h's "Five
  * bounded validated tools" block comment, docs/debugtools.md, and
  * reports/debugtools_issue11_closure.md.
  *
@@ -59,7 +61,8 @@
  * -- callers below always re-check via UNIT_IS_VALID/DEBUGTOOLS_ASSERT
  * immediately before any mutation. This file never edits
  * src/bmdebug.c, src/menu_def.c, or src/uidebug.c, and never touches
- * SRAM/any save-block struct directly.
+ * SRAM/any save-block struct directly. The Save State action delegates its
+ * isolated fixture image/state machine to expansion_debug_save_fixture.h.
  */
 
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
@@ -233,9 +236,20 @@ static void DebugToolsTools_SaveStateMenuOnInit(struct MenuProc* menu)
     (void)menu;
     if (!DebugToolsTools_UsesCjkText())
         return;
-    sprintf(buf, "%s %d",
-        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_SAVE_STATE),
-        (int)gDebugToolsProbe.saveCompatLastState);
+
+    if (DebugSaveFixture_IsPersistenceBlocked())
+        sprintf(buf, "%s",
+            ExpansionLocale_ResolveCurrent(
+                EXP_MSG_DEBUG_SAVE_FIXTURE_BLOCKED));
+    else if (!DebugSaveFixture_CanPrepare())
+        sprintf(buf, "%s",
+            ExpansionLocale_ResolveCurrent(
+                EXP_MSG_DEBUG_SAVE_FIXTURE_TITLE_ONLY));
+    else
+        sprintf(buf, "%s %d",
+            ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_SAVE_STATE),
+            (int)gDebugToolsProbe.saveCompatLastState);
+
     DebugToolsTools_DrawCjkStatusLine(buf);
 }
 
@@ -724,12 +738,159 @@ CONST_DATA static struct DebugToolsAction sRngInspectAction = {
     8, "RNG Inspect", DebugToolsActions_RngInspectSelected
 };
 
-/* --- 9. Save compatibility/state inspection (read-only) ------------------ */
+/* --- 9. Save compatibility/state + volatile fixture --------------------- */
 
-EWRAM_DATA static struct MenuItemDef sSaveStateMenuItemDefs[2] = {{0}}; /* back + terminator: nothing to confirm */
+enum
+{
+    DEBUGTOOLS_SAVE_GAME0_OVERRIDE_ID = 0xE6,
+    DEBUGTOOLS_SAVE_GAME1_OVERRIDE_ID = 0xE7,
+    DEBUGTOOLS_SAVE_GAME2_OVERRIDE_ID = 0xE8,
+    DEBUGTOOLS_SAVE_SUSPEND_OVERRIDE_ID = 0xE9,
+    DEBUGTOOLS_SAVE_COMPLETION_OVERRIDE_ID = 0xEA,
+    DEBUGTOOLS_SAVE_TACTICIAN_OVERRIDE_ID = 0xEB,
+    DEBUGTOOLS_SAVE_ARM_OVERRIDE_ID = 0xEC,
+    DEBUGTOOLS_SAVE_CONTINUE_OVERRIDE_ID = 0xED
+};
+
+/* Preserve the pre-#128 persistent layout occupied by the original
+ * two-entry Save State menu. The expanded title-only menus live in the
+ * appended fixture section below so existing runtime probe addresses do not
+ * move. */
+EWRAM_DATA static struct MenuItemDef sSaveStateStableLayout[2] = {{0}};
+SECTION("debug_save_fixture_data") static struct MenuItemDef
+    sSaveStateMenuItemDefs[6] = {{0}};
+SECTION("debug_save_fixture_data") static struct MenuItemDef
+    sSaveFixturePreviewMenuItemDefs[5] = {{0}};
+SECTION("debug_save_fixture_data") static struct MenuItemDef
+    sSaveFixtureFinalMenuItemDefs[3] = {{0}};
+SECTION("debug_save_fixture_data") static struct DebugSaveFixtureOverrides
+    sSaveFixtureOverrides = {0};
+SECTION("debug_save_fixture_data") static u8 sSaveFixtureSourceKind = 0;
+SECTION("debug_save_fixture_data") static u8 sSaveFixtureSourceGameSlot = 0;
+SECTION("debug_save_fixture_data") static u8 sSaveFixtureOpeningPreview = 0;
+SECTION("debug_save_fixture_data") static u8 sSaveFixtureOpeningFinal = 0;
+SECTION("debug_save_fixture_data") static u8 sSaveFixtureHandoff = 0;
+
+static void DebugToolsSaveFixture_ShowStatus(void)
+{
+    const struct DebugSaveFixturePreview* preview =
+        DebugSaveFixture_GetPreview();
+    char buf[64];
+
+    if (preview == NULL)
+    {
+        enum DebugSaveFixtureResult result =
+            DebugSaveFixture_GetLastResult();
+        const char* label = result
+            == DEBUG_SAVE_FIXTURE_ERR_PERSISTENCE_BLOCKED
+                ? DEBUGTOOLS_LOCALIZED_TEXT(
+                    EXP_MSG_DEBUG_SAVE_FIXTURE_BLOCKED,
+                    "Save Blocked")
+                : DEBUGTOOLS_LOCALIZED_TEXT(
+                    EXP_MSG_DEBUG_SAVE_FIXTURE_INVALID,
+                    "Invalid");
+
+        sprintf(buf, "%s %d", label, (int)result);
+    }
+    else
+    {
+        if (DebugSaveFixture_GetPhase() == DEBUG_SAVE_FIXTURE_ARMED)
+        {
+            sprintf(buf, "%s H%04X V%d/E%d",
+                DEBUGTOOLS_LOCALIZED_TEXT(
+                    EXP_MSG_DEBUG_SAVE_FIXTURE_PREVIEW,
+                    "RAM Fixture"),
+                (unsigned int)(preview->target.sourceHashLo & 0xFFFF),
+                (int)preview->provenance.formatVersion,
+                (int)preview->provenance.compatEpoch);
+        }
+        else
+        {
+            sprintf(buf, "%s %c%d/G%d #%02X",
+                DEBUGTOOLS_LOCALIZED_TEXT(
+                    EXP_MSG_DEBUG_SAVE_FIXTURE_PREVIEW,
+                    "RAM Fixture"),
+                preview->target.sourceKind == DEBUG_SAVE_FIXTURE_SOURCE_GAME
+                    ? 'G'
+                    : 'S',
+                preview->target.sourceKind == DEBUG_SAVE_FIXTURE_SOURCE_GAME
+                    ? (int)preview->target.sourceGameSlot
+                    : (int)preview->target.resolvedSuspendSlot,
+                (int)preview->target.backingGameSlot,
+                (unsigned int)(preview->target.generation & 0xFF));
+        }
+    }
+
+#ifdef MODERN
+    if (DebugToolsTools_UsesCjkText())
+    {
+        DebugToolsTools_DrawCjkStatusLine(buf);
+        return;
+    }
+#endif
+
+    DebugToolsTools_ShowStatusLine(buf);
+}
+
+static void DebugToolsSaveFixture_MenuOnInit(struct MenuProc* menu)
+{
+    (void)menu;
+    DebugToolsSaveFixture_ShowStatus();
+}
+
+static enum DebugSaveFixtureResult DebugToolsSaveFixture_PrepareSelected(void)
+{
+    struct DebugSaveFixturePreview preview;
+
+    if (sSaveFixtureSourceKind == DEBUG_SAVE_FIXTURE_SOURCE_GAME)
+        return DebugSaveFixture_PrepareGame(
+            (enum DebugSaveFixtureGameSlot)sSaveFixtureSourceGameSlot,
+            &sSaveFixtureOverrides,
+            &preview);
+
+    return DebugSaveFixture_PrepareLatestSuspend(
+        &sSaveFixtureOverrides,
+        &preview);
+}
 
 static void DebugToolsSaveState_OnEnd(struct MenuProc* menu)
 {
+    if (sSaveFixtureOpeningPreview)
+    {
+        sSaveFixtureOpeningPreview = 0;
+    }
+    else
+    {
+        DebugSaveFixture_Abort(DEBUG_SAVE_FIXTURE_ABORT_CANCEL);
+    }
+
+    DebugTools_ReturnToHubAfterMenuEnd(menu);
+}
+
+static void DebugToolsSaveFixturePreview_OnEnd(struct MenuProc* menu)
+{
+    if (sSaveFixtureOpeningFinal)
+    {
+        sSaveFixtureOpeningFinal = 0;
+    }
+    else
+    {
+        DebugSaveFixture_Abort(DEBUG_SAVE_FIXTURE_ABORT_CANCEL);
+    }
+
+    DebugTools_ReturnToHubAfterMenuEnd(menu);
+}
+
+static void DebugToolsSaveFixtureFinal_OnEnd(struct MenuProc* menu)
+{
+    if (sSaveFixtureHandoff)
+    {
+        sSaveFixtureHandoff = 0;
+        DebugTools_EndSessionAfterMenuEnd(menu);
+        return;
+    }
+
+    DebugSaveFixture_Abort(DEBUG_SAVE_FIXTURE_ABORT_CANCEL);
     DebugTools_ReturnToHubAfterMenuEnd(menu);
 }
 
@@ -745,19 +906,367 @@ CONST_DATA struct MenuDef gDebugToolsSaveStateMenuDef = {
     0
 };
 
-static void DebugToolsSaveState_BuildMenuItems(void)
-{
-    memset(sSaveStateMenuItemDefs, 0, sizeof(sSaveStateMenuItemDefs));
+CONST_DATA struct MenuDef gDebugToolsSaveFixturePreviewMenuDef = {
+    {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
+    0,
+    sSaveFixturePreviewMenuItemDefs,
+    DebugToolsSaveFixture_MenuOnInit,
+    DebugToolsSaveFixturePreview_OnEnd,
+    0,
+    MenuCancelSelect,
+    0,
+    0
+};
 
-    sSaveStateMenuItemDefs[0].name = "Back";
-    sSaveStateMenuItemDefs[0].isAvailable = MenuAlwaysEnabled;
-    sSaveStateMenuItemDefs[0].onSelected = MenuCancelSelect;
+CONST_DATA struct MenuDef gDebugToolsSaveFixtureFinalMenuDef = {
+    {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
+    0,
+    sSaveFixtureFinalMenuItemDefs,
+    DebugToolsSaveFixture_MenuOnInit,
+    DebugToolsSaveFixtureFinal_OnEnd,
+    0,
+    MenuCancelSelect,
+    0,
+    0
+};
+
+static u8 DebugToolsSaveFixture_PrepareSource(
+    struct MenuProc* menu,
+    enum DebugSaveFixtureSourceKind kind,
+    int gameSlot)
+{
+    enum DebugSaveFixtureResult result;
+
+    sSaveFixtureSourceKind = kind;
+    sSaveFixtureSourceGameSlot = gameSlot;
+    result = DebugToolsSaveFixture_PrepareSelected();
+    DebugToolsSaveFixture_ShowStatus();
+
+    if (result != DEBUG_SAVE_FIXTURE_OK)
+        return MENU_ACT_SND6B;
+
+    sSaveFixtureOpeningPreview = 1;
+    DebugTools_QueueSubmenuTransition(
+        menu,
+        &gDebugToolsSaveFixturePreviewMenuDef);
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A
+        | MENU_ACT_CLEAR;
+}
+
+static u8 DebugToolsSaveFixture_Game0Selected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)item;
+    return DebugToolsSaveFixture_PrepareSource(
+        menu,
+        DEBUG_SAVE_FIXTURE_SOURCE_GAME,
+        DEBUG_SAVE_FIXTURE_GAME0);
+}
+
+static u8 DebugToolsSaveFixture_Game1Selected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)item;
+    return DebugToolsSaveFixture_PrepareSource(
+        menu,
+        DEBUG_SAVE_FIXTURE_SOURCE_GAME,
+        DEBUG_SAVE_FIXTURE_GAME1);
+}
+
+static u8 DebugToolsSaveFixture_Game2Selected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)item;
+    return DebugToolsSaveFixture_PrepareSource(
+        menu,
+        DEBUG_SAVE_FIXTURE_SOURCE_GAME,
+        DEBUG_SAVE_FIXTURE_GAME2);
+}
+
+static u8 DebugToolsSaveFixture_SuspendSelected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)item;
+    return DebugToolsSaveFixture_PrepareSource(
+        menu,
+        DEBUG_SAVE_FIXTURE_SOURCE_SUSPEND,
+        DEBUG_SAVE_FIXTURE_GAME_NONE);
+}
+
+static int DebugToolsSaveFixture_CompletionDraw(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    char buf[64];
+
+    sprintf(buf, "%s %d",
+        DEBUGTOOLS_LOCALIZED_TEXT(
+            EXP_MSG_DEBUG_SAVE_FIXTURE_COMPLETION,
+            "Clears:"),
+        (int)sSaveFixtureOverrides.completionCount);
+    Text_DrawString(&item->text, buf);
+    PutText(
+        &item->text,
+        TILEMAP_LOCATED(
+            BG_GetMapBuffer(menu->frontBg),
+            item->xTile,
+            item->yTile));
+    return 0;
+}
+
+static int DebugToolsSaveFixture_TacticianDraw(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    char buf[64];
+    const char* value;
+
+    value = sSaveFixtureOverrides.tacticianMode
+        == DEBUG_SAVE_FIXTURE_TACTICIAN_KEEP
+        ? DEBUGTOOLS_LOCALIZED_TEXT(
+            EXP_MSG_DEBUG_SAVE_FIXTURE_KEEP,
+            "Keep")
+        : DEBUGTOOLS_LOCALIZED_TEXT(
+            EXP_MSG_DEBUG_SAVE_FIXTURE_MARKER,
+            "Fixture");
+
+    sprintf(buf, "%s %s",
+        DEBUGTOOLS_LOCALIZED_TEXT(
+            EXP_MSG_DEBUG_SAVE_FIXTURE_TACTICIAN,
+            "Name:"),
+        value);
+    Text_DrawString(&item->text, buf);
+    PutText(
+        &item->text,
+        TILEMAP_LOCATED(
+            BG_GetMapBuffer(menu->frontBg),
+            item->xTile,
+            item->yTile));
+    return 0;
+}
+
+static u8 DebugToolsSaveFixture_CompletionSelected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)menu;
+    (void)item;
+
+    sSaveFixtureOverrides.completionCount++;
+    if (sSaveFixtureOverrides.completionCount > MAX_SAVED_GAME_CLEARS)
+        sSaveFixtureOverrides.completionCount = 0;
+
+    DebugToolsSaveFixture_PrepareSelected();
+    DebugToolsSaveFixture_ShowStatus();
+    DebugToolsSaveFixture_CompletionDraw(menu, item);
+    return MENU_ACT_SND6A;
+}
+
+static u8 DebugToolsSaveFixture_TacticianSelected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)menu;
+    (void)item;
+
+    sSaveFixtureOverrides.tacticianMode =
+        sSaveFixtureOverrides.tacticianMode
+        == DEBUG_SAVE_FIXTURE_TACTICIAN_KEEP
+            ? DEBUG_SAVE_FIXTURE_TACTICIAN_FIXED_MARKER
+            : DEBUG_SAVE_FIXTURE_TACTICIAN_KEEP;
+
+    DebugToolsSaveFixture_PrepareSelected();
+    DebugToolsSaveFixture_ShowStatus();
+    DebugToolsSaveFixture_TacticianDraw(menu, item);
+    return MENU_ACT_SND6A;
+}
+
+static u8 DebugToolsSaveFixture_ArmSelected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    const struct DebugSaveFixturePreview* preview =
+        DebugSaveFixture_GetPreview();
+    enum DebugSaveFixtureResult result;
+
+    (void)item;
+
+    if (preview == NULL)
+        return MENU_ACT_SND6B;
+
+    result = DebugSaveFixture_Arm(&preview->target);
+    DebugToolsSaveFixture_ShowStatus();
+
+    if (result != DEBUG_SAVE_FIXTURE_OK)
+        return MENU_ACT_SND6B;
+
+    sSaveFixtureOpeningFinal = 1;
+    DebugTools_QueueSubmenuTransition(
+        menu,
+        &gDebugToolsSaveFixtureFinalMenuDef);
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A
+        | MENU_ACT_CLEAR;
+}
+
+static u8 DebugToolsSaveFixture_ContinueSelected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    const struct DebugSaveFixturePreview* preview =
+        DebugSaveFixture_GetPreview();
+    u16 required = L_BUTTON | R_BUTTON | A_BUTTON;
+
+    (void)menu;
+    (void)item;
+
+    if ((gKeyStatusPtr->heldKeys & required) != required
+        || preview == NULL)
+        return MENU_ACT_SND6B;
+
+    if (DebugSaveFixture_RequestContinue(&preview->target)
+        != DEBUG_SAVE_FIXTURE_OK)
+    {
+        DebugToolsSaveFixture_ShowStatus();
+        return MENU_ACT_SND6B;
+    }
+
+    sSaveFixtureHandoff = 1;
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A
+        | MENU_ACT_CLEAR;
+}
+
+static void DebugToolsSaveFixturePreview_BuildMenuItems(void)
+{
+    memset(
+        sSaveFixturePreviewMenuItemDefs,
+        0,
+        sizeof(sSaveFixturePreviewMenuItemDefs));
+
+    sSaveFixturePreviewMenuItemDefs[0].name = "Clears:";
+    sSaveFixturePreviewMenuItemDefs[0].overrideId =
+        DEBUGTOOLS_SAVE_COMPLETION_OVERRIDE_ID;
+    sSaveFixturePreviewMenuItemDefs[0].isAvailable = MenuAlwaysEnabled;
+    sSaveFixturePreviewMenuItemDefs[0].onDraw =
+        DebugToolsSaveFixture_CompletionDraw;
+    sSaveFixturePreviewMenuItemDefs[0].onSelected =
+        DebugToolsSaveFixture_CompletionSelected;
+
+    sSaveFixturePreviewMenuItemDefs[1].name = "Name:";
+    sSaveFixturePreviewMenuItemDefs[1].overrideId =
+        DEBUGTOOLS_SAVE_TACTICIAN_OVERRIDE_ID;
+    sSaveFixturePreviewMenuItemDefs[1].isAvailable = MenuAlwaysEnabled;
+    sSaveFixturePreviewMenuItemDefs[1].onDraw =
+        DebugToolsSaveFixture_TacticianDraw;
+    sSaveFixturePreviewMenuItemDefs[1].onSelected =
+        DebugToolsSaveFixture_TacticianSelected;
+
+    sSaveFixturePreviewMenuItemDefs[2].name = "Arm RAM";
+    sSaveFixturePreviewMenuItemDefs[2].overrideId =
+        DEBUGTOOLS_SAVE_ARM_OVERRIDE_ID;
+    sSaveFixturePreviewMenuItemDefs[2].isAvailable = MenuAlwaysEnabled;
+    sSaveFixturePreviewMenuItemDefs[2].onSelected =
+        DebugToolsSaveFixture_ArmSelected;
     DEBUGTOOLS_LOCALIZE_ITEM(
-        &sSaveStateMenuItemDefs[0],
+        &sSaveFixturePreviewMenuItemDefs[2],
+        EXP_MSG_DEBUG_SAVE_FIXTURE_ARM);
+
+    sSaveFixturePreviewMenuItemDefs[3].name = "Back";
+    sSaveFixturePreviewMenuItemDefs[3].isAvailable = MenuAlwaysEnabled;
+    sSaveFixturePreviewMenuItemDefs[3].onSelected = MenuCancelSelect;
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sSaveFixturePreviewMenuItemDefs[3],
         EXP_MSG_FRAMEWORK_BACK);
 }
 
-static u8 DebugToolsActions_SaveStateInspectSelected(struct MenuProc* menu, struct MenuItemProc* item)
+static void DebugToolsSaveFixtureFinal_BuildMenuItems(void)
+{
+    memset(
+        sSaveFixtureFinalMenuItemDefs,
+        0,
+        sizeof(sSaveFixtureFinalMenuItemDefs));
+
+    sSaveFixtureFinalMenuItemDefs[0].name = "Back";
+    sSaveFixtureFinalMenuItemDefs[0].isAvailable = MenuAlwaysEnabled;
+    sSaveFixtureFinalMenuItemDefs[0].onSelected = MenuCancelSelect;
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sSaveFixtureFinalMenuItemDefs[0],
+        EXP_MSG_FRAMEWORK_BACK);
+
+    sSaveFixtureFinalMenuItemDefs[1].name = "Run RAM";
+    sSaveFixtureFinalMenuItemDefs[1].overrideId =
+        DEBUGTOOLS_SAVE_CONTINUE_OVERRIDE_ID;
+    sSaveFixtureFinalMenuItemDefs[1].isAvailable = MenuAlwaysEnabled;
+    sSaveFixtureFinalMenuItemDefs[1].onSelected =
+        DebugToolsSaveFixture_ContinueSelected;
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sSaveFixtureFinalMenuItemDefs[1],
+        EXP_MSG_DEBUG_SAVE_FIXTURE_CONTINUE);
+}
+
+static void DebugToolsSaveState_BuildMenuItems(void)
+{
+    int item = 0;
+
+    memset(sSaveStateMenuItemDefs, 0, sizeof(sSaveStateMenuItemDefs));
+
+    if (DebugSaveFixture_CanPrepare())
+    {
+        sSaveStateMenuItemDefs[item].name = "Game 0";
+        sSaveStateMenuItemDefs[item].overrideId =
+            DEBUGTOOLS_SAVE_GAME0_OVERRIDE_ID;
+        sSaveStateMenuItemDefs[item].isAvailable = MenuAlwaysEnabled;
+        sSaveStateMenuItemDefs[item].onSelected =
+            DebugToolsSaveFixture_Game0Selected;
+        DEBUGTOOLS_LOCALIZE_ITEM(
+            &sSaveStateMenuItemDefs[item++],
+            EXP_MSG_DEBUG_SAVE_FIXTURE_GAME0);
+
+        sSaveStateMenuItemDefs[item].name = "Game 1";
+        sSaveStateMenuItemDefs[item].overrideId =
+            DEBUGTOOLS_SAVE_GAME1_OVERRIDE_ID;
+        sSaveStateMenuItemDefs[item].isAvailable = MenuAlwaysEnabled;
+        sSaveStateMenuItemDefs[item].onSelected =
+            DebugToolsSaveFixture_Game1Selected;
+        DEBUGTOOLS_LOCALIZE_ITEM(
+            &sSaveStateMenuItemDefs[item++],
+            EXP_MSG_DEBUG_SAVE_FIXTURE_GAME1);
+
+        sSaveStateMenuItemDefs[item].name = "Game 2";
+        sSaveStateMenuItemDefs[item].overrideId =
+            DEBUGTOOLS_SAVE_GAME2_OVERRIDE_ID;
+        sSaveStateMenuItemDefs[item].isAvailable = MenuAlwaysEnabled;
+        sSaveStateMenuItemDefs[item].onSelected =
+            DebugToolsSaveFixture_Game2Selected;
+        DEBUGTOOLS_LOCALIZE_ITEM(
+            &sSaveStateMenuItemDefs[item++],
+            EXP_MSG_DEBUG_SAVE_FIXTURE_GAME2);
+
+        sSaveStateMenuItemDefs[item].name = "Suspend";
+        sSaveStateMenuItemDefs[item].overrideId =
+            DEBUGTOOLS_SAVE_SUSPEND_OVERRIDE_ID;
+        sSaveStateMenuItemDefs[item].isAvailable = MenuAlwaysEnabled;
+        sSaveStateMenuItemDefs[item].onSelected =
+            DebugToolsSaveFixture_SuspendSelected;
+        DEBUGTOOLS_LOCALIZE_ITEM(
+            &sSaveStateMenuItemDefs[item++],
+            EXP_MSG_DEBUG_SAVE_FIXTURE_LATEST_SUSPEND);
+    }
+
+    sSaveStateMenuItemDefs[item].name = "Back";
+    sSaveStateMenuItemDefs[item].isAvailable = MenuAlwaysEnabled;
+    sSaveStateMenuItemDefs[item].onSelected = MenuCancelSelect;
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sSaveStateMenuItemDefs[item],
+        EXP_MSG_FRAMEWORK_BACK);
+}
+
+static u8 DebugToolsActions_SaveStateInspectSelected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
 {
     enum SaveCompatState state;
     char buf[64];
@@ -777,9 +1286,32 @@ static u8 DebugToolsActions_SaveStateInspectSelected(struct MenuProc* menu, stru
         (int)state);
 
     DebugTools_LogEvent(DEBUGTOOLS_LOG_SAVESTATE_INSPECT, (u32)state, 0);
+    if (DebugSaveFixture_IsPersistenceBlocked())
+    {
+        sprintf(buf, "%s",
+            DEBUGTOOLS_LOCALIZED_TEXT(
+                EXP_MSG_DEBUG_SAVE_FIXTURE_BLOCKED,
+                "Save Blocked"));
+    }
+    else if (DebugSaveFixture_CanPrepare())
+    {
+        sSaveFixtureOverrides.completionCount = 3;
+        sSaveFixtureOverrides.tacticianMode =
+            DEBUG_SAVE_FIXTURE_TACTICIAN_FIXED_MARKER;
+    }
+    else
+    {
+        sprintf(buf, "%s",
+            DEBUGTOOLS_LOCALIZED_TEXT(
+                EXP_MSG_DEBUG_SAVE_FIXTURE_TITLE_ONLY,
+                "Title Only"));
+    }
+
     DebugToolsTools_ShowStatusLine(buf);
 
     DebugToolsSaveState_BuildMenuItems();
+    DebugToolsSaveFixturePreview_BuildMenuItems();
+    DebugToolsSaveFixtureFinal_BuildMenuItems();
     DebugTools_QueueSubmenuTransition(menu, &gDebugToolsSaveStateMenuDef);
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;

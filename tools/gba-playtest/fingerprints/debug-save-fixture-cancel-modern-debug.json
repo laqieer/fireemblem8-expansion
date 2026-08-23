@@ -1,0 +1,63 @@
+{
+  "checkpoints": [
+    {
+      "frame": 1200,
+      "framebuffer_hash": "fnv1a64-rgb24:5b408285548a231e",
+      "name": "cancel-preview-ready",
+      "probes": [
+        {
+          "address": "0x0203f478",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x0203f484",
+          "size": 4,
+          "value": "0x00000001"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+    },
+    {
+      "frame": 1420,
+      "framebuffer_hash": "fnv1a64-rgb24:104b21790e64477c",
+      "name": "cancel-zeroized",
+      "probes": [
+        {
+          "address": "0x02000000",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020073a4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203f478",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203f48c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203f494",
+          "size": 4,
+          "value": "0x00000003"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+    }
+  ],
+  "format_version": 2,
+  "rom": {
+    "game_code": "BE8E",
+    "sha1": "16e105a69e9b78af672cc413d3d547260654d8e5",
+    "size": 16777216,
+    "title": "FIREEMBLEM2E"
+  },
+  "scenario": "debug-save-fixture-cancel-modern-debug"
+}
