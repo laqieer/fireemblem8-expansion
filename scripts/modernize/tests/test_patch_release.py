@@ -196,7 +196,10 @@ class BaseContractTests(unittest.TestCase):
         contract = synthetic_contract(base)
         with self.assertRaises(patch_release.PatchReleaseError) as context:
             patch_release.validate_base(base[:-1], contract)
-        self.assertIn("size mismatch", str(context.exception))
+        self.assertEqual(
+            str(context.exception),
+            "base validation failed: size mismatch (expected 1024 bytes, got 1023 bytes)",
+        )
         self.assertNotIn("FIREEMBLEM2E", str(context.exception))
 
     def test_one_byte_base_mutation_is_rejected(self):
@@ -206,6 +209,21 @@ class BaseContractTests(unittest.TestCase):
         mutated[-1] ^= 1
         with self.assertRaisesRegex(patch_release.PatchReleaseError, "SHA-256 mismatch"):
             patch_release.validate_base(bytes(mutated), contract)
+
+    def test_matching_digest_with_wrong_header_is_rejected(self):
+        mutated = bytearray(synthetic_base())
+        mutated[0xA0] = ord("X")
+        data = bytes(mutated)
+        with self.assertRaisesRegex(
+            patch_release.PatchReleaseError, "base validation failed: header title mismatch"
+        ):
+            patch_release.validate_base(data, synthetic_contract(data))
+
+    def test_base_and_target_sizes_are_independent_bps_contracts(self):
+        self.assertEqual(patch_release.BASE_ROM_SIZE, 16 * 1024 * 1024)
+        self.assertEqual(patch_release.FE8U_REV0.size, patch_release.BASE_ROM_SIZE)
+        self.assertEqual(patch_release.TARGET_ROM_SIZE, 32 * 1024 * 1024)
+        self.assertNotEqual(patch_release.BASE_ROM_SIZE, patch_release.TARGET_ROM_SIZE)
 
 
 class ArtifactTests(unittest.TestCase):

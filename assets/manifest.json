@@ -68,6 +68,44 @@
           "scripts.assets v1"
         ]
       }
+    },
+    {
+      "id": "EIRIKA_FORMATTED_PORTRAIT",
+      "kind": "formatted-portrait-package",
+      "sources": [
+        "assets/portraits/eirika/eirika.png",
+        "assets/portraits/eirika/metadata.json",
+        "assets/portraits/eirika/eirika.pal"
+      ],
+      "dependsOn": [],
+      "options": {
+        "format": "fe7-fe8-formatted-png",
+        "adapterVersion": 1,
+        "jascSidecar": true
+      },
+      "ownership": {
+        "seam": "portrait-data-table",
+        "tableSource": "src/portrait_data.c",
+        "registrySource": "assets/portrait_registry.json",
+        "portraitId": 2,
+        "symbol": "Eirika",
+        "consumer": "GetPortraitData"
+      },
+      "resources": {
+        "sheetWidth": 128,
+        "sheetHeight": 112,
+        "paletteColors": 16,
+        "mainBytes": 2880,
+        "minimugBytes": 512,
+        "eyeFrameBytes": 256,
+        "mouthFrameBytes": 256
+      },
+      "provenance": {
+        "origin": "repository-owned migration proof from the existing Eirika portrait",
+        "license": "Repository provenance is recorded separately; this field is not legal clearance.",
+        "modifications": "formatted-sheet structural migration; runtime components are explicit aliases",
+        "tools": ["python3 standard library"]
+      }
     }
   ]
 }

@@ -12,6 +12,7 @@ baseline diff/history engine.
 Exit codes: 0 clean, 1 policy findings, 2 invocation/Git error.
 """
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -44,6 +45,9 @@ PROHIBITED_PATH_SEGMENTS = {
 PROHIBITED_ROOT_ARTIFACTS = {"fireemblem8.map", "fireemblem8_relocs.map", "objects.lst"}
 
 # Existing tracked source assets are narrowly allowed only under known roots.
+# Portrait package sheets are source inputs owned by assets/manifest.json; the
+# package directory and the sheet basename must agree so this does not turn
+# assets/ into a general image/palette allowance.
 RESTRICTED_EXTENSIONS = {
     ".png", ".bin", ".agbpal", ".mid", ".pal", ".aif", ".mar", ".pcm",
     ".tmap", ".tsa",
@@ -165,7 +169,20 @@ def read_blob_heads(oids, head_len=MAGIC_READ_BYTES):
 def _extension_of(filename):
     return f".{filename.rsplit('.', 1)[-1]}" if "." in filename else ""
 
-def _is_allowed_source_asset(lower_path, filename, ext):
+def _is_allowed_source_asset(path, lower_path, filename, ext, portrait_sources):
+    portrait_prefix = "assets/portraits/"
+
+    if lower_path.startswith(portrait_prefix) and ext in {".png", ".pal"}:
+        relative_path = path[len(portrait_prefix):]
+        package_name, separator, package_file = relative_path.partition("/")
+
+        return (
+            bool(package_name)
+            and separator == "/"
+            and "/" not in package_file
+            and package_file in {f"{package_name}.png", f"{package_name}.pal"}
+            and path in portrait_sources
+        )
     if ext == ".bin":
         return lower_path.startswith("graphics/") and (
             filename.endswith(".map.bin") or filename.endswith(".tsa.bin")
@@ -178,7 +195,7 @@ def _is_allowed_source_asset(lower_path, filename, ext):
         return True
     return False
 
-def classify_path(path):
+def classify_path(path, portrait_sources=()):
     findings = []
     lower = path.lower()
     segments = lower.split("/")
@@ -195,9 +212,50 @@ def classify_path(path):
     ext = _extension_of(filename)
     if ext in PROHIBITED_EXTENSIONS or SAVESTATE_SLOT_RE.search(filename):
         findings.append("prohibited-extension")
-    elif ext in RESTRICTED_EXTENSIONS and not _is_allowed_source_asset(lower, filename, ext):
+    elif ext in RESTRICTED_EXTENSIONS and not _is_allowed_source_asset(
+        path, lower, filename, ext, portrait_sources
+    ):
         findings.append("restricted-extension-outside-allowed-root")
     return findings
+
+def _read_blob(oid):
+    result = _run_git(["cat-file", "blob", oid])
+    if result.returncode != 0:
+        raise GitError(result.stderr.decode(errors="replace").strip())
+    return result.stdout
+
+def declared_portrait_sources(entries):
+    manifest_entry = next(
+        (
+            entry for entry in entries
+            if (
+                entry.path == "assets/manifest.json"
+                and entry.mode in REGULAR_MODES
+                and entry.stage == 0
+            )
+        ),
+        None,
+    )
+    if manifest_entry is None:
+        return set()
+    try:
+        document = json.loads(_read_blob(manifest_entry.oid).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return set()
+    assets = document.get("assets") if isinstance(document, dict) else None
+    if not isinstance(assets, list):
+        return set()
+    sources = set()
+    for asset in assets:
+        if not isinstance(asset, dict) or asset.get("kind") != "formatted-portrait-package":
+            continue
+        declared = asset.get("sources")
+        if not isinstance(declared, list):
+            continue
+        for path in declared:
+            if isinstance(path, str) and path.endswith((".png", ".pal")):
+                sources.add(path)
+    return sources
 
 def _is_gba_header(head):
     return len(head) >= 0xB3 and head[4:20] == GBA_LOGO_PREFIX and head[0xB2] == 0x96
@@ -222,6 +280,7 @@ def classify_magic(head):
 def scan(entries):
     findings = set()
     content_targets = []
+    portrait_sources = declared_portrait_sources(entries)
     for entry in entries:
         if entry.stage != 0:
             findings.add((entry.path, "unmerged-index-entry"))
@@ -236,7 +295,7 @@ def scan(entries):
         if entry.mode not in REGULAR_MODES:
             findings.add((entry.path, "unexpected-mode"))
             continue
-        for rule in classify_path(entry.path):
+        for rule in classify_path(entry.path, portrait_sources):
             findings.add((entry.path, rule))
         content_targets.append(entry)
 

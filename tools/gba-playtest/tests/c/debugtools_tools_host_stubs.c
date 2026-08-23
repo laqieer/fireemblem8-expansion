@@ -16,10 +16,15 @@
  * This file is never compiled into the actual GBA ROM (not referenced by
  * modern.mk/Makefile) and is not itself part of the debug-tools feature.
  */
+#define _GNU_SOURCE
+
+#include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 
 #include "global.h"
 #include "hardware.h"
+#include "face.h"
 #include "fontgrp.h"
 #include "uimenu.h"
 #include "proc.h"
@@ -42,11 +47,113 @@ static struct Font sDebugToolsToolsTestFont = {0};
 struct Font* gActiveFont = &sDebugToolsToolsTestFont;
 
 static u16 sToolsStubBgMap[32 * 32];
+u16 gPaletteBuffer[0x200] = {0};
+
+int gDebugToolsToolsHostStubPutFaceChibiCallCount = 0;
+int gDebugToolsToolsHostStubLastFaceChibiId = -1;
+int gDebugToolsToolsHostStubLastFaceChibiChr = -1;
+int gDebugToolsToolsHostStubLastFaceChibiPal = -1;
+int gDebugToolsToolsHostStubLastFaceChibiFlipped = -1;
+int gDebugToolsToolsHostStubBgSyncCallCount = 0;
+int gDebugToolsToolsHostStubLastBgSyncMask = 0;
+int gDebugToolsToolsHostStubStartFace2CallCount = 0;
+int gDebugToolsToolsHostStubLastStartFaceId = -1;
+int gDebugToolsToolsHostStubLastEyeControl = -1;
+int gDebugToolsToolsHostStubFaceMouthInitCount = 0;
+int gDebugToolsToolsHostStubFaceMouthLoopCount = 0;
+
+static struct FaceProc sDebugToolsToolsFakeFace;
+static struct FaceBlinkProc sDebugToolsToolsFakeMouth;
+
+static void DebugToolsHostStub_MapVram(void) __attribute__((constructor));
+
+static void DebugToolsHostStub_MapVram(void)
+{
+    void* mapped;
+
+    mapped = mmap(
+        (void*)VRAM,
+        VRAM_SIZE,
+        PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED,
+        -1,
+        0);
+    if (mapped != (void*)VRAM)
+        abort();
+}
 
 u16* BG_GetMapBuffer(int bg)
 {
     (void)bg;
     return sToolsStubBgMap;
+}
+
+void BG_EnableSyncByMask(int bgMask)
+{
+    gDebugToolsToolsHostStubBgSyncCallCount++;
+    gDebugToolsToolsHostStubLastBgSyncMask = bgMask;
+}
+
+void PutFaceChibi(int faceId, u16* tilemap, int chr, int pal, s8 isFlipped)
+{
+    (void)tilemap;
+
+    gDebugToolsToolsHostStubPutFaceChibiCallCount++;
+    gDebugToolsToolsHostStubLastFaceChibiId = faceId;
+    gDebugToolsToolsHostStubLastFaceChibiChr = chr;
+    gDebugToolsToolsHostStubLastFaceChibiPal = pal;
+    gDebugToolsToolsHostStubLastFaceChibiFlipped = isFlipped;
+    *(u32*)(VRAM + chr * CHR_SIZE + 0x20) = 0xE1A2B3C4;
+    gPaletteBuffer[pal * 0x10] = 0x1234;
+    gPaletteBuffer[pal * 0x10 + 1] = 0x5678;
+}
+
+struct FaceProc* StartFace2(int slot, int faceId, int x, int y, int displayBits)
+{
+    (void)slot;
+    (void)x;
+    (void)y;
+
+    memset(&sDebugToolsToolsFakeFace, 0, sizeof(sDebugToolsToolsFakeFace));
+    memset(&sDebugToolsToolsFakeMouth, 0, sizeof(sDebugToolsToolsFakeMouth));
+    sDebugToolsToolsFakeFace.faceId = faceId;
+    sDebugToolsToolsFakeFace.displayBits = displayBits;
+    sDebugToolsToolsFakeFace.oam2 = 0x120;
+    sDebugToolsToolsFakeFace.unk_44 = &sDebugToolsToolsFakeMouth;
+    sDebugToolsToolsFakeMouth.pFaceProc = &sDebugToolsToolsFakeFace;
+    gDebugToolsToolsHostStubStartFace2CallCount++;
+    gDebugToolsToolsHostStubLastStartFaceId = faceId;
+    return &sDebugToolsToolsFakeFace;
+}
+
+void SetFaceEyeControl(struct FaceProc* face, int control)
+{
+    gDebugToolsToolsHostStubLastEyeControl = control;
+    face->pBlinkProc = &sDebugToolsToolsFakeMouth;
+}
+
+int GetFaceDisplayBits(struct FaceProc* face)
+{
+    return face->displayBits;
+}
+
+void FaceMouth_Init(struct FaceBlinkProc* mouth)
+{
+    (void)mouth;
+    gDebugToolsToolsHostStubFaceMouthInitCount++;
+}
+
+void FaceMouth_Loop(struct FaceBlinkProc* mouth)
+{
+    u32* tiles = (u32*)(
+        VRAM + (((mouth->pFaceProc->oam2 + 28) & 0x3FF) * CHR_SIZE));
+    u32 frame = mouth->blinkControl ? 0xC3020100 : 0xA1000102;
+
+    tiles[1] = frame;
+    tiles[9] = 0;
+    tiles[17] = 0;
+    tiles[25] = 0;
+    gDebugToolsToolsHostStubFaceMouthLoopCount++;
 }
 
 void SetupDebugFontForBG(int bg, int tileDataOffset)

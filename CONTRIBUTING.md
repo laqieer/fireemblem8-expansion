@@ -78,39 +78,23 @@ diagnostic.
 ## 4. Full validation policy
 
 During iteration, run only the focused fast checks and the one relevant ROM
-profile for the code you changed. Do not repeatedly run every host suite plus
-both linker configurations locally: the dispatch-only
-`.github/workflows/full-matrix.yml` workflow exists to parallelize that broad
-validation pass after the exact pushed `master` commit is available. It is
-not a candidate or pull-request gate and does not weaken or replace required
-Build CI.
+profile for the code you changed. A pull-request candidate is gated by the
+required Build CI and Copilot review running concurrently. When those
+candidate gates are clean, merge directly; the merge automatically starts the
+expanded Build CI on `master`.
 
-A candidate PR requires exact-candidate Build CI and concurrent Copilot review.
-A valid review finding supersedes the candidate and cancels all candidate
-checks. Do not run Full Matrix for a candidate PR or stacked child. Once
-candidate Build and review are terminal and clean and objective acceptance is
-complete, merge directly without candidate or local Full Matrix. Full Matrix CI
-runs only on `master`; it never runs on a pull request or feature branch,
-manually or automatically.
+Both PR and master Build runs execute `host-tests`, `build`,
+`extended-host-tests`, `legacy`, and the seconds-only fail-closed `summary` in
+parallel. Master additionally runs the technically used `patch-release`
+publisher. Artifact, documentation, generated-data, localization, crosswalk,
+raw-closure, and modern debug/release runtime evidence run only in their
+existing Build owners; no duplicate Matrix path or manual dispatch exists. The
+expected combined-gate wall clock is approximately 35–40 minutes because the
+jobs run in parallel; that operational range is not a duration assertion.
 
-Immediately after each merge or intentional independent merge batch, monitor
-Build CI and dispatch Full Matrix CI on the exact pushed `master` commit and
-branch:
-
-```bash
-gh workflow run full-matrix.yml --ref master
-timeout 90m gh run watch <run-id> --interval 30 --exit-status
-```
-
-The run summary records `github.sha`, `github.ref`, and fail-closed conclusions
-for the host, modern debug/release matrix, and archival legacy lanes.
-Post-merge Build and Matrix checks are nonblocking only for unrelated
-independent PR merges; their failures interrupt ordinary work for fix-forward
-or revert. Issue closure and remote completion wait for both checks for that
-exact pushed `master` commit to succeed.
-The modern matrix invokes only the canonical
-`expansion-modern-linker-check`; that target already owns its CJK profile,
-runtime, shifted-link, and linker-budget dependencies.
+If post-merge Build fails, fix forward or revert the affected `master` change.
+That failure blocks the affected issue's closure and
+`make remote-completion-check`, but does not block unrelated independent PRs.
 
 The fixed upstream-port verifier still lists the current-master Build CI
 commands with `python3 -m scripts.upstream_port verify --dry-run --jobs 2`.
@@ -160,11 +144,11 @@ they touch a shared guide. PR `#103` is a genuine child because it cannot
 build against `master` until `#102` lands. After merging `#102` with the
 repository's merge-commit policy, run
 `gh pr edit <child-pr-number> --base master`, inspect
-`git diff master...feat/103-selector`, and rerun exact-candidate Build CI and
-concurrent Copilot review if the candidate commit or tree changed. Do not run
-Full Matrix for the child candidate. Complete discussion `#100` only after all
-three issues are independently merged, Build and Full Matrix checks for the
-exact pushed `master` commit have succeeded, and the issues are closed.
+`git diff master...feat/103-selector`, and rerun candidate Build CI and
+Copilot review if the candidate commit or tree changed. After merge, let the
+automatic master Build rerun the same consolidated evidence. Complete discussion
+`#100` only after all three issues are independently merged, verified on
+`master`, and closed.
 
 ### Review-size preflight
 

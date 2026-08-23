@@ -59,6 +59,141 @@ def valid_record():
     }
 
 
+def valid_portrait_record(root):
+    package = os.path.join(root, "portrait-package")
+    os.makedirs(package)
+    sheet = os.path.join(package, "proof.png")
+    metadata = os.path.join(package, "metadata.json")
+    sidecar = os.path.join(package, "proof.pal")
+    registry = os.path.join(root, "portrait_registry.json")
+    write_indexed_png(sheet)
+    write_jasc_palette(sidecar)
+    with open(metadata, "w", encoding="utf-8") as handle:
+        json.dump({
+            "schemaVersion": 1,
+            "portraitId": 1,
+            "symbol": "Proof",
+            "blinkKind": "FACE_BLINK_NORMAL",
+            "anchors": {"mouth": [2, 6], "eyes": [3, 4]},
+            "frames": {
+                "main": [0, 0, 80, 72],
+                "minimug": [80, 0, 32, 32],
+                "eyeOpen": [0, 72, 32, 16],
+                "eyeClosed": [32, 72, 32, 16],
+                "mouthClosed": [64, 72, 32, 16],
+                "mouthOpen": [96, 72, 32, 16],
+            },
+            "alias": {"mode": "generated", "components": {}},
+        }, handle)
+    entries = []
+    for portrait_id in range(1, 173):
+        entries.append({
+            "id": portrait_id,
+            "img": "portrait_Mystery_1_tileset",
+            "imgChibi": "portrait_Mystery_1_chibi",
+            "pal": "portrait_Mystery_1_palette",
+            "imgMouth": "portrait_Mystery_1_mouth",
+            "imgCard": None,
+            "xMouth": 2,
+            "yMouth": 5,
+            "xEyes": 3,
+            "yEyes": 3,
+            "blinkKind": "FACE_BLINK_NORMAL",
+        })
+    with open(registry, "w", encoding="utf-8") as handle:
+        json.dump({"schemaVersion": 1, "entries": entries}, handle)
+    return {
+        "id": "PROOF_FORMATTED_PORTRAIT",
+        "kind": "formatted-portrait-package",
+        "sources": [
+            os.path.relpath(sheet, REPO_ROOT),
+            os.path.relpath(metadata, REPO_ROOT),
+            os.path.relpath(sidecar, REPO_ROOT),
+        ],
+        "dependsOn": [],
+        "options": {
+            "format": "fe7-fe8-formatted-png",
+            "adapterVersion": 1,
+            "jascSidecar": True,
+        },
+        "ownership": {
+            "seam": "portrait-data-table",
+            "tableSource": "src/portrait_data.c",
+            "registrySource": os.path.relpath(registry, REPO_ROOT),
+            "portraitId": 1,
+            "symbol": "Proof",
+            "consumer": "GetPortraitData",
+        },
+        "resources": {
+            "sheetWidth": 128,
+            "sheetHeight": 112,
+            "paletteColors": 16,
+            "mainBytes": 2880,
+            "minimugBytes": 512,
+            "eyeFrameBytes": 256,
+            "mouthFrameBytes": 256,
+        },
+        "provenance": {
+            "origin": "synthetic test fixture",
+            "license": "test-only; not legal clearance",
+            "modifications": "none",
+            "tools": ["python standard library"],
+        },
+    }
+
+
+def png_chunk(kind, payload):
+    return (
+        struct.pack(">I", len(payload))
+        + kind
+        + payload
+        + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+    )
+
+
+def write_indexed_png_stream(
+    path, *, width=128, height=112, depth=4, indexed=True, interlace=0, idat=b""
+):
+    color_type = 3 if indexed else 2
+    palette = bytes(component for value in range(16) for component in (value * 16,) * 3)
+    chunks = [
+        b"\x89PNG\r\n\x1a\n",
+        png_chunk(
+            b"IHDR",
+            struct.pack(">IIBBBBB", width, height, depth, color_type, 0, 0, interlace),
+        ),
+    ]
+    if indexed:
+        chunks.extend(
+            (png_chunk(b"PLTE", palette), png_chunk(b"tRNS", b"\0" + b"\xff" * 15))
+        )
+    chunks.extend((png_chunk(b"IDAT", idat), png_chunk(b"IEND", b"")))
+    with open(path, "wb") as handle:
+        handle.write(b"".join(chunks))
+
+
+def write_indexed_png(path, width=128, height=112, indexed=True):
+    depth = 4 if indexed else 8
+    rows = b"".join(
+        b"\0" + (b"\0" * ((width * depth + 7) // 8)) for _ in range(height)
+    )
+    write_indexed_png_stream(
+        path,
+        width=width,
+        height=height,
+        depth=depth,
+        indexed=indexed,
+        idat=zlib.compress(rows),
+    )
+
+
+def write_jasc_palette(path):
+    with open(path, "w", encoding="ascii") as handle:
+        handle.write("JASC-PAL\n0100\n16\n")
+        for value in range(16):
+            handle.write("{0} {0} {0}\n".format(value * 16))
+
+
 class AssetManifestTests(unittest.TestCase):
     def setUp(self):
         if os.path.exists(TEST_ROOT):
@@ -84,6 +219,23 @@ class AssetManifestTests(unittest.TestCase):
             manifest.load_and_validate(self.write_manifest(assets))
         self.assertIn(text, str(raised.exception))
 
+    def run_assets_make(self, manifest_path, output_dir, *goals):
+        return subprocess.run(
+            [
+                "make",
+                "-f",
+                "assets.mk",
+                *goals,
+                "PYTHON={}".format(sys.executable),
+                "ASSET_MANIFEST={}".format(manifest_path),
+                "ASSET_OUTPUT_DIR={}".format(output_dir),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
     def test_real_manifest_is_valid_and_deterministic(self):
         path = os.path.join(REPO_ROOT, "assets", "manifest.json")
         first = manifest.load_and_validate(path)
@@ -92,6 +244,62 @@ class AssetManifestTests(unittest.TestCase):
         self.assertIn(
             "$(MODERN_OUTPUT_DIR)/src/data/data_8B363C.o: assets/tmx/Ch2Map.tmx",
             manifest.render_makefile(first),
+        )
+
+    def test_eirika_existing_component_alias_preserves_face_data_row(self):
+        records = manifest.load_and_validate(os.path.join(REPO_ROOT, "assets", "manifest.json"))
+        registry = manifest._read_portrait_registry("assets/portrait_registry.json")
+        eirika = registry[2]
+        self.assertEqual(
+            (
+                eirika["img"],
+                eirika["imgChibi"],
+                eirika["pal"],
+                eirika["imgMouth"],
+                eirika["xMouth"],
+                eirika["yMouth"],
+                eirika["xEyes"],
+                eirika["yEyes"],
+                eirika["blinkKind"],
+            ),
+            (
+                "portrait_Eirika_tileset",
+                "portrait_Eirika_chibi",
+                "portrait_Eirika_palette",
+                "portrait_Eirika_mouth",
+                2,
+                6,
+                3,
+                4,
+                "FACE_BLINK_NORMAL",
+            ),
+        )
+        rendered = manifest.render_portrait_data(records)
+        self.assertIn(
+            "{portrait_Eirika_tileset, portrait_Eirika_chibi, portrait_Eirika_palette, "
+            "portrait_Eirika_mouth, 0, 2, 6, 3, 4, FACE_BLINK_NORMAL}, // 1",
+            rendered,
+        )
+        self.assertEqual(manifest.portrait_registration_ids(), tuple(range(1, 173)))
+
+    def test_portrait_registration_surface_includes_global_first(self):
+        source = os.path.join(REPO_ROOT, "src", "portrait_data.c")
+        with open(source, encoding="utf-8") as handle:
+            includes = [
+                line.strip()
+                for line in handle
+                if line.startswith("#include ")
+            ]
+        self.assertEqual(includes[0], '#include "global.h"')
+        self.assertIn('#include "build/generated/assets/portrait_data.inc"', includes)
+
+    def test_portrait_registry_is_complete_without_package_overrides(self):
+        records = manifest.load_and_validate(self.write_manifest([valid_record()]))
+        rendered = manifest.render_portrait_data(records)
+        self.assertEqual(rendered.count("// "), 172)
+        self.assertEqual(
+            manifest.portrait_registration_ids(self.write_manifest([valid_record()])),
+            tuple(range(1, 173)),
         )
 
     def test_generated_fragment_uses_existing_chapter_table_object(self):
@@ -219,6 +427,260 @@ class AssetManifestTests(unittest.TestCase):
             {StaticTestKind.name: StaticTestKind()},
         ):
             self.assert_validation_error([valid_record(), other], "ownership conflict")
+
+    def test_formatted_portrait_package_generates_components_and_registration(self):
+        record = valid_portrait_record(TEST_ROOT)
+        source = self.write_manifest([record])
+        out_dir = os.path.join(TEST_ROOT, "out")
+        with mock.patch.object(manifest, "_repo_path", side_effect=lambda path, *_: path):
+            records = manifest.generate(source, out_dir)
+            manifest.check(source, out_dir)
+        with open(os.path.join(out_dir, manifest.OUTPUT_PORTRAIT_DATA), encoding="utf-8") as handle:
+            generated = handle.read()
+        self.assertIn("portrait_Proof_tileset", generated)
+        self.assertIn("// 0", generated)
+        self.assertTrue(os.path.isfile(os.path.join(out_dir, "portraits", record["id"], "tileset.4bpp.lz")))
+        self.assertEqual(len(manifest.portrait_component_outputs(records, out_dir)), 7)
+        with open(
+            os.path.join(out_dir, manifest.OUTPUT_PORTRAIT_COMPONENTS),
+            encoding="utf-8",
+        ) as handle:
+            generated_components = handle.read()
+        self.assertIn(
+            "u16 __attribute__((aligned(4))) portrait_Proof_palette[] = INCBIN_U16(",
+            generated_components,
+        )
+        self.assertEqual(
+            manifest.portrait_incbin_consumer_ids(records),
+            ("PROOF_FORMATTED_PORTRAIT",),
+        )
+
+    def test_formatted_portrait_package_uses_tile_ordered_low_nibble_first_4bpp(self):
+        rows = [[1, 2] * 4 + [3, 4] * 4 for _ in range(8)]
+        packed = manifest._pack_4bpp(rows, 0, 0, 16, 8)
+        self.assertEqual(
+            packed[:4],
+            bytes((0x21, 0x21, 0x21, 0x21)),
+        )
+        self.assertEqual(packed[32:36], bytes((0x43, 0x43, 0x43, 0x43)))
+        with self.assertRaisesRegex(ValueError, "multiples of 8"):
+            manifest._pack_4bpp([[1, 2, 3, 4]], 0, 0, 4, 1)
+
+    def test_formatted_portrait_package_rejects_sheet_and_metadata_failures(self):
+        record = valid_portrait_record(TEST_ROOT)
+        source = self.write_manifest([record])
+        with mock.patch.object(manifest, "_repo_path", side_effect=lambda path, *_: path):
+            manifest.load_and_validate(source)
+
+            write_indexed_png(os.path.join(REPO_ROOT, record["sources"][0]), width=127)
+            self.assert_validation_error([record], "exactly 128x112")
+
+            write_indexed_png(os.path.join(REPO_ROOT, record["sources"][0]))
+            with open(os.path.join(REPO_ROOT, record["sources"][1]), encoding="utf-8") as handle:
+                metadata = json.load(handle)
+            del metadata["anchors"]
+            with open(os.path.join(REPO_ROOT, record["sources"][1]), "w", encoding="utf-8") as handle:
+                json.dump(metadata, handle)
+            self.assert_validation_error([record], "must contain exactly")
+
+    def test_formatted_portrait_png_reader_bounds_decompression(self):
+        huge_path = os.path.join(TEST_ROOT, "huge-ihdr.png")
+        write_indexed_png_stream(
+            huge_path,
+            width=0x7FFFFFFF,
+            height=0x7FFFFFFF,
+            idat=zlib.compress(b"bomb"),
+        )
+        with mock.patch.object(manifest.zlib, "decompressobj") as decompressor:
+            with self.assertRaisesRegex(ValueError, "exactly 128x112"):
+                manifest._read_png(huge_path)
+        decompressor.assert_not_called()
+
+        expected_size = 112 * (((128 * 4 + 7) // 8) + 1)
+        overrun_path = os.path.join(TEST_ROOT, "overrun.png")
+        write_indexed_png_stream(
+            overrun_path,
+            idat=zlib.compress(b"\0" * (expected_size * 128)),
+        )
+        real_decompressobj = zlib.decompressobj
+        limits = []
+
+        class RecordingDecompressor:
+            def __init__(self):
+                self._inner = real_decompressobj()
+
+            def decompress(self, data, max_length):
+                limits.append(max_length)
+                return self._inner.decompress(data, max_length)
+
+            def flush(self, max_length):
+                return self._inner.flush(max_length)
+
+            @property
+            def eof(self):
+                return self._inner.eof
+
+            @property
+            def unconsumed_tail(self):
+                return self._inner.unconsumed_tail
+
+            @property
+            def unused_data(self):
+                return self._inner.unused_data
+
+        with mock.patch.object(
+            manifest.zlib, "decompressobj", side_effect=RecordingDecompressor
+        ):
+            with self.assertRaisesRegex(ValueError, "exceeds the expected length"):
+                manifest._read_png(overrun_path)
+        self.assertEqual(limits, [expected_size + 1])
+
+        trailing_path = os.path.join(TEST_ROOT, "trailing-zlib.png")
+        valid_rows = b"\0" * expected_size
+        write_indexed_png_stream(
+            trailing_path,
+            idat=zlib.compress(valid_rows) + zlib.compress(b"trailing"),
+        )
+        with self.assertRaisesRegex(ValueError, "trailing data"):
+            manifest._read_png(trailing_path)
+
+    def test_formatted_portrait_package_reports_malformed_metadata_without_crashing(self):
+        record = valid_portrait_record(TEST_ROOT)
+        with open(os.path.join(REPO_ROOT, record["sources"][1]), "w", encoding="utf-8") as handle:
+            handle.write("{ malformed metadata")
+        self.assert_validation_error([record], "cannot load portrait metadata")
+
+    def test_formatted_portrait_package_reports_unreadable_metadata_without_crashing(self):
+        record = valid_portrait_record(TEST_ROOT)
+        metadata_path = os.path.join(REPO_ROOT, record["sources"][1])
+        real_open = open
+
+        def reject_metadata(path, *args, **kwargs):
+            if os.fspath(path) == metadata_path:
+                raise OSError("metadata unavailable for test")
+            return real_open(path, *args, **kwargs)
+
+        with mock.patch("builtins.open", side_effect=reject_metadata):
+            self.assert_validation_error([record], "cannot load portrait metadata")
+
+    def test_formatted_portrait_package_reports_missing_metadata_field_without_crashing(self):
+        record = valid_portrait_record(TEST_ROOT)
+        metadata_path = os.path.join(REPO_ROOT, record["sources"][1])
+        with open(metadata_path, encoding="utf-8") as handle:
+            metadata = json.load(handle)
+        del metadata["blinkKind"]
+        metadata["alias"] = {
+            "mode": "existing-components",
+            "components": {
+                "img": "portrait_Mystery_1_tileset",
+                "imgChibi": "portrait_Mystery_1_chibi",
+                "pal": "portrait_Mystery_1_palette",
+                "imgMouth": "portrait_Mystery_1_mouth",
+            },
+        }
+        with open(metadata_path, "w", encoding="utf-8") as handle:
+            json.dump(metadata, handle)
+        self.assert_validation_error([record], "portrait metadata must contain exactly")
+
+    def test_formatted_portrait_package_requires_metadata_json(self):
+        record = valid_portrait_record(TEST_ROOT)
+        record["sources"][1] = record["sources"][1].replace("metadata.json", "proof.json")
+        source_path = os.path.join(REPO_ROOT, record["sources"][1])
+        os.rename(
+            os.path.join(REPO_ROOT, record["sources"][1].replace("proof.json", "metadata.json")),
+            source_path,
+        )
+        self.assert_validation_error([record], "metadata.json")
+
+    def test_sources_command_includes_portrait_registry_dependency(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "scripts.assets", "sources"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        sources = result.stdout.splitlines()
+        self.assertIn("assets/portrait_registry.json", sources)
+        self.assertIn("assets/tmx/Ch2Map.tmx", sources)
+        self.assertTrue(all("$(" not in source for source in sources))
+        self.assertFalse(any(source.startswith("build/") for source in sources))
+
+    def test_make_rejects_output_override_with_portrait_incbin_consumer(self):
+        result = self.run_assets_make(
+            os.path.join(REPO_ROOT, "assets", "manifest.json"),
+            "build/generated/assets/test-work/portrait-output-override",
+            "assets-generate",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "ASSET_OUTPUT_DIR must be build/generated/assets while portrait package "
+            "INCBIN consumer(s) EIRIKA_FORMATTED_PORTRAIT are declared",
+            result.stdout + result.stderr,
+        )
+
+    def test_make_allows_output_override_without_portrait_incbin_consumer(self):
+        legacy = valid_record()
+        legacy["id"] = "CH1_MAIN_MAP"
+        legacy["kind"] = "chapter-map-layout"
+        legacy["sources"] = [
+            "graphics/map/layout/Ch1Map.mar",
+            "graphics/map/layout/Ch1Map.json",
+        ]
+        legacy["options"] = {"format": "mar", "compression": "lz77"}
+        legacy["ownership"].update(
+            {"chapterSettingsIndex": 1, "mainLayerId": 8, "symbol": "Ch1Map"}
+        )
+        legacy["resources"].update({"mapWidth": 15, "mapHeight": 10})
+        source = self.write_manifest([legacy])
+        output_dir = "build/generated/assets/test-work/map-output-override"
+        result = self.run_assets_make(source, output_dir, "assets-generate", "assets-check")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(
+            os.path.isfile(os.path.join(REPO_ROOT, output_dir, manifest.OUTPUT_MAKEFILE))
+        )
+
+
+    def test_formatted_portrait_package_rejects_boolean_geometry_and_alias_drift(self):
+        record = valid_portrait_record(TEST_ROOT)
+        source = self.write_manifest([record])
+        with mock.patch.object(manifest, "_repo_path", side_effect=lambda path, *_: path):
+            with open(os.path.join(REPO_ROOT, record["sources"][1]), encoding="utf-8") as handle:
+                metadata = json.load(handle)
+            metadata["frames"]["main"][0] = True
+            with open(os.path.join(REPO_ROOT, record["sources"][1]), "w", encoding="utf-8") as handle:
+                json.dump(metadata, handle)
+            self.assert_validation_error([record], "frame geometry")
+
+            metadata["frames"]["main"][0] = 0
+            metadata["alias"] = {
+                "mode": "existing-components",
+                "components": {
+                    "img": "portrait_Mystery_1_tileset",
+                    "imgChibi": "portrait_Mystery_1_chibi",
+                    "pal": "portrait_Mystery_1_palette",
+                    "imgMouth": "portrait_NotTheRegistry_mouth",
+                },
+            }
+            with open(os.path.join(REPO_ROOT, record["sources"][1]), "w", encoding="utf-8") as handle:
+                json.dump(metadata, handle)
+            self.assert_validation_error([record], "must match canonical FaceData symbol")
+
+    def test_formatted_portrait_package_rejects_unsafe_registry_expression(self):
+        record = valid_portrait_record(TEST_ROOT)
+        registry_path = os.path.join(REPO_ROOT, record["ownership"]["registrySource"])
+        with open(registry_path, encoding="utf-8") as handle:
+            registry = json.load(handle)
+        registry["entries"][0]["img"] = "portrait_Proof_tileset; injected"
+        with open(registry_path, "w", encoding="utf-8") as handle:
+            json.dump(registry, handle)
+        self.assert_validation_error([record], "C identifiers or 0")
+
+    def test_capacity_and_actual_ownership_conflicts_fail(self):
+        capacity = valid_record()
+        capacity["resources"]["mapWidth"] = 200
+        capacity["resources"]["mapHeight"] = 200
+        self.assert_validation_error([capacity], "exceed the 2048-byte gBmMapBuffer")
 
     def test_tmx_capacity_boundaries_agree_for_resources_and_payloads(self):
         fitting = valid_record()
@@ -462,6 +924,121 @@ class AssetManifestTests(unittest.TestCase):
         self.assertIn(
             "$(ASSET_OUTPUT_MK): $(ASSET_MANIFEST) $(ASSET_MANIFEST_SOURCES) $(ASSET_TOOL_INPUTS)",
             asset_makefile,
+        )
+
+    def assert_asset_manifest_would_regenerate(
+        self, manifest_path, output_dir, dependencies
+    ):
+        manifest.generate(manifest_path, output_dir)
+        target = os.path.relpath(
+            os.path.join(output_dir, manifest.OUTPUT_MAKEFILE), REPO_ROOT
+        )
+        target_path = os.path.join(output_dir, manifest.OUTPUT_MAKEFILE)
+        manifest_arg = os.path.relpath(manifest_path, REPO_ROOT)
+        output_arg = os.path.relpath(output_dir, REPO_ROOT)
+        driver_path = os.path.join(TEST_ROOT, "asset-manifest-incremental.mk")
+        with open(driver_path, "w", encoding="utf-8") as handle:
+            handle.write(
+                "PYTHON := {python}\n"
+                "ASSET_MANIFEST := {manifest}\n"
+                "ASSET_OUTPUT_DIR := {output}\n"
+                "include assets.mk\n"
+                ".PHONY: verify\n"
+                "verify: $(ASSET_OUTPUT_MK)\n".format(
+                    python=sys.executable,
+                    manifest=manifest_arg,
+                    output=output_arg,
+                )
+            )
+
+        for dependency in dependencies:
+            dependency_path = os.path.join(REPO_ROOT, dependency)
+            original = os.stat(dependency_path)
+            target_original = os.stat(target_path)
+            updated_mtime = max(
+                time.time_ns(),
+                target_original.st_mtime_ns + 2_000_000_000,
+            )
+            os.utime(
+                dependency_path,
+                ns=(original.st_atime_ns, updated_mtime),
+            )
+            os.utime(
+                target_path,
+                ns=(target_original.st_atime_ns, updated_mtime - 1_000_000_000),
+            )
+            try:
+                result = subprocess.run(
+                    [
+                        "make",
+                        "-n",
+                        "-f",
+                        driver_path,
+                        "verify",
+                    ],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("scripts.assets", result.stdout)
+            finally:
+                os.utime(
+                    dependency_path,
+                    ns=(original.st_atime_ns, original.st_mtime_ns),
+                )
+                os.utime(
+                    target_path,
+                    ns=(target_original.st_atime_ns, target_original.st_mtime_ns),
+                )
+
+    def test_immutable_validation_sources_trigger_asset_manifest_regeneration(self):
+        chapter_dependencies = (
+            "src/data/chapter_settings.json",
+            "src/data/data_8B363C.c",
+        )
+        legacy = valid_record()
+        legacy["id"] = "CH1_MAIN_MAP"
+        legacy["kind"] = "chapter-map-layout"
+        legacy["sources"] = [
+            "graphics/map/layout/Ch1Map.mar",
+            "graphics/map/layout/Ch1Map.json",
+        ]
+        legacy["options"] = {"format": "mar", "compression": "lz77"}
+        legacy["ownership"].update(
+            {"chapterSettingsIndex": 1, "mainLayerId": 8, "symbol": "Ch1Map"}
+        )
+        legacy["resources"].update({"mapWidth": 15, "mapHeight": 10})
+        legacy_manifest = self.write_manifest([legacy])
+        legacy_record = manifest.load_and_validate(legacy_manifest)[0]
+        self.assertEqual(
+            manifest.ChapterMapLayoutKind().source_dependencies(legacy_record),
+            chapter_dependencies,
+        )
+        self.assert_asset_manifest_would_regenerate(
+            legacy_manifest,
+            os.path.join(TEST_ROOT, "legacy-incremental"),
+            chapter_dependencies,
+        )
+
+        records = manifest.load_and_validate(
+            os.path.join(REPO_ROOT, "assets", "manifest.json")
+        )
+        tiled = next(
+            record for record in records if record.kind == manifest.TiledTmxMapLayoutKind.name
+        )
+        tiled_dependencies = chapter_dependencies + (
+            "src/data/const_data_chapter_maps.c",
+        )
+        self.assertEqual(
+            manifest.TiledTmxMapLayoutKind().source_dependencies(tiled),
+            tiled_dependencies,
+        )
+        self.assert_asset_manifest_would_regenerate(
+            os.path.join(REPO_ROOT, "assets", "manifest.json"),
+            os.path.join(REPO_ROOT, "build", "generated", "assets"),
+            tiled_dependencies,
         )
 
     def test_asset_makefile_guards_only_tmx_incbin_consumers(self):

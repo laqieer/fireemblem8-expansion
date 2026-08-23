@@ -18,6 +18,19 @@ WATCHER_DOC_PATHS = (
     FRAMEWORK_SUPPORT_PATH,
     LOCALIZATION_PATH,
 )
+COMBINED_BUILD_GUIDANCE_PATHS = (
+    SKILL_PATH,
+    ROOT / ".github" / "copilot-instructions.md",
+    CLAUDE_PATH,
+    CONTRIBUTING_PATH,
+    FRAMEWORK_SUPPORT_PATH,
+    LOCALIZATION_PATH,
+)
+RETIRED_MATRIX_SPELLINGS = (
+    "full" + " matrix",
+    "full" + "-matrix",
+    "full" + "_matrix",
+)
 CANONICAL_WATCHER_COMMAND = (
     "timeout 90m gh run watch <run-id> --interval 30 --exit-status"
 )
@@ -145,55 +158,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         contributing = CONTRIBUTING_PATH.read_text(encoding="utf-8")
         required_policy = (
             (
-                "candidate gates",
-                ("exact-candidate Build CI", "concurrent Copilot review"),
-            ),
-            (
-                "review finding cancellation",
-                ("valid review finding", "supersedes", "cancels", "candidate checks"),
-            ),
-            (
-                "candidate matrix exclusion",
-                ("Do not run Full Matrix", "candidate PR", "stacked child"),
-            ),
-            (
-                "direct candidate merge",
-                ("merge directly", "candidate", "local Full Matrix"),
-            ),
-            (
-                "exact master dispatch",
-                (
-                    "Immediately after each merge",
-                    "intentional independent merge batch",
-                    "dispatch Full Matrix CI",
-                    "exact pushed master commit and branch",
-                ),
-            ),
-            (
-                "independent merge concurrency",
-                ("nonblocking only", "unrelated independent PR merges"),
-            ),
-            (
-                "master failure response",
-                ("failures interrupt ordinary work", "fix-forward or revert"),
-            ),
-            (
-                "closure and completion gate",
-                (
-                    "Issue closure",
-                    "remote completion",
-                    "exact pushed master commit",
-                    "Build",
-                    "Full Matrix",
-                    "succeed",
-                ),
+                "candidate gate",
+                ("Build CI", "Copilot review"),
             ),
         )
-        forbidden_policy = (
-            "Dispatch and pass full matrix yml for that same candidate branch",
-            "Start Full Matrix only after Build and Copilot review are both clean",
-            "Full Matrix if the candidate commit or tree changed",
-        )
+        forbidden_policy = RETIRED_MATRIX_SPELLINGS
 
         for surface, instructions in (
             ("development workflow skill", text),
@@ -227,33 +196,20 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             ),
         )
 
-    def test_full_matrix_policy_is_master_only_everywhere(self):
-        master_only_policy = (
-            (
-                "master-only matrix",
-                (
-                    "Full Matrix CI runs only on master",
-                    "never runs on a pull request or feature branch",
-                    "manually or automatically",
-                    "exact pushed master commit",
-                ),
-            ),
-        )
+    def test_combined_build_replaces_matrix_everywhere(self):
+        for path in COMBINED_BUILD_GUIDANCE_PATHS:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(surface=path):
+                self.assertIn("Build", text)
+                for spelling in RETIRED_MATRIX_SPELLINGS:
+                    self.assertNotIn(spelling, text.casefold())
 
-        for surface, path in (
-            ("development workflow skill", SKILL_PATH),
-            ("project instructions", ROOT / ".github" / "copilot-instructions.md"),
-            ("Claude project instructions", CLAUDE_PATH),
-            ("contributor guidance", CONTRIBUTING_PATH),
-            ("framework support", FRAMEWORK_SUPPORT_PATH),
-            ("localization guidance", LOCALIZATION_PATH),
-        ):
-            assert_normalized_policy(
-                self,
-                surface,
-                path.read_text(encoding="utf-8"),
-                master_only_policy,
-            )
+    def test_readme_exposes_only_the_combined_build_badge(self):
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("actions/workflows/build.yml/badge.svg", text)
+        for retired_badge in (*RETIRED_MATRIX_SPELLINGS, "prs welcome", "makeapullrequest.com"):
+            with self.subTest(retired_badge=retired_badge):
+                self.assertNotIn(retired_badge, text.casefold())
 
     def test_contributor_watcher_examples_are_bounded(self):
         watcher_examples = []
@@ -273,6 +229,75 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             ["gh run watch <run-id> --exit-status"],
         )
 
+    def test_post_merge_reconciliation_policy_is_mirrored(self):
+        _, skill = read_skill()
+        surfaces = {
+            "skill": skill,
+            "Copilot instructions": (ROOT / ".github" / "copilot-instructions.md").read_text(
+                encoding="utf-8"
+            ),
+            "CLAUDE": CLAUDE_PATH.read_text(encoding="utf-8"),
+        }
+        required_contract = (
+            "After each merge, immediately inspect every open PR.",
+            "real conflicts or shared-contract changes",
+            "refresh",
+            "independent conflicts concurrently",
+            "rerun only conflict-affected checks",
+            "Never pause or cancel unaffected PR CI",
+            "priority or unrelated `master` movement",
+            "only when its",
+            "candidate actually changes",
+        )
+        for surface, text in surfaces.items():
+            assert_normalized_policy(
+                self,
+                surface,
+                text,
+                (("continuous monitoring lifecycle", required_contract),),
+            )
+
+    def test_continuous_pr_monitoring_policy_is_mirrored(self):
+        _, skill = read_skill()
+        surfaces = {
+            "skill": skill,
+            "Copilot instructions": (ROOT / ".github" / "copilot-instructions.md").read_text(
+                encoding="utf-8"
+            ),
+            "CLAUDE": CLAUDE_PATH.read_text(encoding="utf-8"),
+        }
+        required_contract = (
+            "After each PR opens or updates",
+            "exact-head Build CI",
+            "Copilot comments/threads",
+            "mergeability",
+            "triage review findings",
+            "immediately",
+            "normal `master` merge",
+            "Monitor master-branch CI after every merge",
+            "exact-master combined Build CI",
+            "open-PR conflict rescan",
+            "Fix forward or revert a broken `master`",
+            "unrelated PRs do not wait",
+            "on healthy master runs",
+            "attached asynchronous shell watchers",
+            "nonblocking",
+            "Continue unrelated dependency-ready work",
+            "never occupy a reasoning agent",
+            "waiting-only response",
+            "Cancel only a superseded candidate run",
+            "candidate actually changes",
+            "blocks that issue's closure and remote completion",
+            "not unrelated independent PRs",
+        )
+        for surface, text in surfaces.items():
+            assert_normalized_policy(
+                self,
+                surface,
+                text,
+                (("continuous monitoring lifecycle", required_contract),),
+            )
+
     def test_issue_specific_pull_request_and_stack_contract(self):
         _, text = read_skill()
         required_contract = (
@@ -284,8 +309,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "`Depends on #...` links",
             "Review and merge the stack bottom-up",
             "gh pr edit <child-pr> --base master",
-            "Apply exact-candidate Build CI and concurrent Copilot review",
-            "Do not run Full Matrix for a candidate PR or stacked child.",
+            "Apply candidate-commit Build CI plus Copilot review",
+            "consolidated Build verification",
+            "Complete the umbrella",
+            "initiative only after every accepted",
         )
 
         for requirement in required_contract:
@@ -322,8 +349,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "`feat/101-doc-search`, base `master`",
             "`feat/103-selector`, base `feat/102-registry`",
             "gh pr edit <child-pr-number> --base master",
-            "exact-candidate Build CI",
-            "concurrent Copilot review if the candidate commit or tree changed",
+            "rerun candidate Build CI and",
+            "Copilot review if the candidate commit or tree changed",
+            "automatic master Build rerun",
+            "same consolidated evidence",
             "make remote-completion-check",
             "git diff --name-only \"$base_ref\"...HEAD",
             "20,000-line limit is a hard ceiling",

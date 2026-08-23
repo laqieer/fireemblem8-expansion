@@ -7,6 +7,13 @@
 ASSET_MANIFEST ?= assets/manifest.json
 ASSET_OUTPUT_DIR ?= build/generated/assets
 ASSET_TOOL := $(PYTHON) -m scripts.assets
+ASSET_PORTRAIT_INCBIN_CONSUMERS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" portrait-incbin-consumers)
+ifneq ($(strip $(ASSET_PORTRAIT_INCBIN_CONSUMERS)),)
+ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
+$(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while portrait package INCBIN consumer(s) $(ASSET_PORTRAIT_INCBIN_CONSUMERS) are declared)
+endif
+endif
+
 ASSET_TMX_INCBIN_CONSUMERS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" tmx-incbin-consumers)
 ifneq ($(strip $(ASSET_TMX_INCBIN_CONSUMERS)),)
 ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)

@@ -14,6 +14,9 @@
 #include "rng.h"
 #include "bmsave.h"
 #include "save_format.h"
+#if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
+#include "face.h"
+#endif
 #include "expansion_debugtools.h"
 #include "debugtools_internal.h"
 
@@ -61,6 +64,10 @@
 
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
 
+#if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
+EWRAM_DATA struct PortraitPackageRuntimeProbe gPortraitPackageRuntimeProbe = {0};
+#endif
+
 enum
 {
     /* Distinct from Weather (0xE0) and Fog (0xE1), src/debugtools_actions.c,
@@ -90,6 +97,16 @@ enum
  * DEBUGTOOLS_FASTBOOT_RNG_SEED (src/gamecontrol.c) so the two are never
  * confused in logs/tests. */
 #define DEBUGTOOLS_TOOLS_RNG_SEED 0x1EE7C0DEu
+#if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
+#define DEBUGTOOLS_PORTRAIT_PROBE_FACE_ID 2
+#define DEBUGTOOLS_PORTRAIT_PROBE_CHR 0x280
+#define DEBUGTOOLS_PORTRAIT_PROBE_PAL 2
+
+static u32 DebugToolsTools_ReadU32(const u16* values)
+{
+    return (u32)values[0] | ((u32)values[1] << 16);
+}
+#endif
 
 #ifdef MODERN
 static int DebugToolsTools_LocalizedMenuItemDraw(
@@ -321,6 +338,11 @@ static void DebugToolsUnit_BuildMenuItems(void)
 static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct MenuItemProc* item)
 {
     struct Unit* unit;
+#if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
+    struct FaceProc* face;
+    struct FaceBlinkProc* mouth;
+    u16* mouthTiles;
+#endif
     char buf[64];
 
     (void)item;
@@ -329,9 +351,59 @@ static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct Me
 
     if (UNIT_IS_VALID(unit))
     {
+#if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
+        PutFaceChibi(
+            DEBUGTOOLS_PORTRAIT_PROBE_FACE_ID,
+            TILEMAP_LOCATED(BG_GetMapBuffer(2), 1, 4),
+            DEBUGTOOLS_PORTRAIT_PROBE_CHR,
+            DEBUGTOOLS_PORTRAIT_PROBE_PAL,
+            FALSE);
+        BG_EnableSyncByMask(BG2_SYNC_BIT);
+#endif
+
         gDebugToolsProbe.unitInspectTargetFound = 1;
         gDebugToolsProbe.unitInspectLastCurHp = (u32)GetUnitCurrentHp(unit);
         gDebugToolsProbe.unitInspectLastMaxHp = (u32)GetUnitMaxHp(unit);
+
+#if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
+        gPortraitPackageRuntimeProbe.faceId = DEBUGTOOLS_PORTRAIT_PROBE_FACE_ID;
+        gPortraitPackageRuntimeProbe.minimugRenderCount++;
+        gPortraitPackageRuntimeProbe.minimugVramWord = DebugToolsTools_ReadU32(
+            (const u16*)(VRAM + (DEBUGTOOLS_PORTRAIT_PROBE_CHR * CHR_SIZE) + 0x20));
+        gPortraitPackageRuntimeProbe.minimugPaletteWord =
+            DebugToolsTools_ReadU32(gPaletteBuffer + (DEBUGTOOLS_PORTRAIT_PROBE_PAL * 0x10));
+        face = StartFace2(
+            0,
+            DEBUGTOOLS_PORTRAIT_PROBE_FACE_ID,
+            48,
+            24,
+            FACE_DISP_KIND(FACE_96x80) | FACE_DISP_TALK_1);
+        if (face != NULL)
+        {
+            SetFaceEyeControl(face, 2);
+            gPortraitPackageRuntimeProbe.fullFaceRenderCount++;
+            gPortraitPackageRuntimeProbe.mouthDisplayBits =
+                GetFaceDisplayBits(face) & (FACE_DISP_TALK_1 | FACE_DISP_TALK_2);
+            gPortraitPackageRuntimeProbe.eyeControl = 2;
+            gPortraitPackageRuntimeProbe.faceOam2 = face->oam2;
+
+            mouth = (struct FaceBlinkProc*)face->unk_44;
+            FaceMouth_Init(mouth);
+            mouth->unk_32 = -1;
+            mouth->blinkControl = 0;
+            FaceMouth_Loop(mouth);
+            mouthTiles = (u16*)(
+                VRAM + (((face->oam2 + 28) & 0x3FF) * CHR_SIZE));
+            gPortraitPackageRuntimeProbe.mouthFrame0 =
+                mouthTiles[2] ^ mouthTiles[18] ^ mouthTiles[34] ^ mouthTiles[50];
+
+            mouth->unk_32 = -1;
+            mouth->blinkControl = 1;
+            FaceMouth_Loop(mouth);
+            gPortraitPackageRuntimeProbe.mouthFrame2 =
+                mouthTiles[2] ^ mouthTiles[18] ^ mouthTiles[34] ^ mouthTiles[50];
+        }
+#endif
         sprintf(buf, "%s %d/%d",
             DEBUGTOOLS_LOCALIZED_TEXT(EXP_MSG_DEBUG_STATUS_UNIT_HP, "UNIT HP"),
             GetUnitCurrentHp(unit), GetUnitMaxHp(unit));
