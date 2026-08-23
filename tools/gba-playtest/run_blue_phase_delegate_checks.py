@@ -62,10 +62,11 @@ def _positive_data() -> dict:
             {"start": 17300, "end": 17306, "keys": ["A"]},
             {"start": 17400, "end": 17406, "keys": ["UP"]},
             {"start": 17500, "end": 17506, "keys": ["R"]},
-            {"start": 17600, "end": 17606, "keys": ["A"]},
+            {"start": 17600, "end": 17606, "keys": ["B"]},
+            {"start": 17700, "end": 17706, "keys": ["A"]},
             *[
                 {"start": frame, "end": frame + 4, "keys": ["A"]}
-                for frame in range(18300, 21300, 60)
+                for frame in range(23200, 23800, 60)
             ],
         ],
         "checkpoints": [
@@ -95,13 +96,19 @@ def _positive_data() -> dict:
             },
             {
                 "name": "charge-command-dispatched",
-                "frame": 17650,
+                "frame": 17750,
                 "framebuffer": True,
                 "probes": menu_probes,
             },
             {
-                "name": "next-blue-player-restored",
+                "name": "next-blue-boundary-player-restored",
                 "frame": 23100,
+                "framebuffer": False,
+                "probes": lifecycle_probes,
+            },
+            {
+                "name": "next-blue-player-interactive",
+                "frame": 24000,
                 "framebuffer": False,
                 "probes": lifecycle_probes,
             },
@@ -120,6 +127,7 @@ def _capture(rom: Path, elf: Path, data: dict) -> dict:
 
 def _check_positive(capture: dict) -> list[str]:
     before = autoplay._values(capture["checkpoints"][0])
+    boundary = autoplay._values(capture["checkpoints"][-2])
     after = autoplay._values(capture["checkpoints"][-1])
     failures = autoplay._check_default(
         {"checkpoints": [capture["checkpoints"][0]]},
@@ -166,6 +174,19 @@ def _check_positive(capture: dict) -> list[str]:
         )
     if after["suspendWriteSuppressedCount"] < 1:
         failures.append("positive: blue-AI suspend suppression was not exercised")
+    if boundary["controller"] != PLAYER_CONTROL:
+        failures.append(
+            "positive: PLAYER was not restored before the next-blue turn event"
+        )
+    if boundary["chapterTurnNumber"] != before["chapterTurnNumber"] + 1:
+        failures.append(
+            "positive: next-blue boundary turn mismatch "
+            f"({before['chapterTurnNumber']}->{boundary['chapterTurnNumber']})"
+        )
+    if boundary["faction"] != 0:
+        failures.append(
+            f"positive: next-blue boundary faction={boundary['faction']}, expected 0"
+        )
     if after["chapterTurnNumber"] != before["chapterTurnNumber"] + 1:
         failures.append(
             "positive: next interactive blue turn mismatch "

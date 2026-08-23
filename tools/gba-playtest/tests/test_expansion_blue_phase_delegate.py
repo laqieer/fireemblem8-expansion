@@ -241,11 +241,11 @@ class BluePhaseDelegateMenuTests(unittest.TestCase):
             flags=re.DOTALL,
         )
         self.assertIsNotNone(function)
-        self.assertIn("ExpansionBluePhaseDelegate_MenuSelect", function.group(0))
         self.assertIn("MenuAutoHelpBoxSelect(menu);", function.group(0))
         self.assertNotIn("MenuStdHelpBox", function.group(0))
         self.assertIn("ExpansionBluePhaseDelegate_MenuHelpBox", bmmenu)
-        self.assertIn("CloseHelpBox();", bmmenu)
+        self.assertIn("StartHelpBoxString(", bmmenu)
+        self.assertIn("ExpansionLocale_ResolveCurrent(EXP_MSG_AUTOPLAY_CHARGE_HELP)", bmmenu)
         self.assertIn("EXP_MSG_AUTOPLAY_CHARGE_HELP", menu_def)
         self.assertIn("ExpansionBluePhaseDelegate_MenuRPress", menu_def)
         self.assertIn("ExpansionBluePhaseDelegate_MenuHelpBox", menu_def)
@@ -345,9 +345,13 @@ class BluePhaseDelegateRuntimeContractTests(unittest.TestCase):
             "charge-r-help-domain-guard",
             [checkpoint["name"] for checkpoint in scenario["checkpoints"]],
         )
+        self.assertIn(
+            "next-blue-boundary-player-restored",
+            [checkpoint["name"] for checkpoint in scenario["checkpoints"]],
+        )
         self.assertEqual(
             scenario["checkpoints"][-1]["name"],
-            "next-blue-player-restored",
+            "next-blue-player-interactive",
         )
 
 

@@ -31,7 +31,7 @@ from scripts.fonttools.cjk.package import (
 class CjkFontTests(unittest.TestCase):
     SCRATCH = Path(__file__).resolve().parent / ".scratch"
 
-    def test_expansion_catalog_inventory_provenance_matches_current_62_keys(self):
+    def test_expansion_catalog_inventory_provenance_matches_current_64_keys(self):
         inventory = json.loads((ROOT / "fonts/cjk/inventory.json").read_text())
         registry_path = ROOT / "texts/expansion/registry.json"
         registry = json.loads(registry_path.read_text())
@@ -40,7 +40,7 @@ class CjkFontTests(unittest.TestCase):
             for record in registry["messages"]
             if record["status"] == "active"
         }
-        self.assertEqual(len(active_keys), 62)
+        self.assertEqual(len(active_keys), 64)
 
         catalog_paths = sorted((ROOT / "texts/expansion").glob("catalog.*.json"))
         source_paths = [registry_path, *catalog_paths]

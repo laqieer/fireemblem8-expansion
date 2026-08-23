@@ -181,6 +181,8 @@ void HbRedirect_SSSupports(struct HelpBoxProc* proc);
 void UpdateHelpBoxDisplay(struct HelpBoxProc* proc, int arg1);
 
 void StartHelpBox(int x, int y, int mid);
+/* `string` must remain valid until the help box closes. */
+void StartHelpBoxString(int x, int y, const char *string);
 void StartHelpBox_Unk(int x, int y, int mid);
 void StartItemHelpBox(int x, int y, int item);
 void StartHelpBoxExt(const struct HelpBoxInfo* info, int unk);

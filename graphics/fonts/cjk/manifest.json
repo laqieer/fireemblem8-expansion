@@ -171,7 +171,7 @@
     },
     "inventory": {
       "path": "fonts/cjk/inventory.json",
-      "sha256": "be19d2cbc1bfff2c865f6d40ce630f050de37739accbc86c70eda5f3456f5926"
+      "sha256": "5e529ed0e2d0476df5cc8511312e86bff32b5c5d9f6613a5f56ec87cf176b577"
     }
   },
   "spacing_scalars": [

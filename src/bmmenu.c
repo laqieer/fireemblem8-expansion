@@ -278,15 +278,6 @@ u8 ExpansionBluePhaseDelegate_MenuSelect(
 
 u8 ExpansionBluePhaseDelegate_MenuRPress(struct MenuProc* menu)
 {
-    struct MenuItemProc* menuItem = menu->menuItems[menu->itemCurrent];
-
-    /* ExpansionMsgId values must not be passed to the vanilla help catalog. */
-    if (menuItem->def->onSelected == ExpansionBluePhaseDelegate_MenuSelect)
-    {
-        PlaySoundEffect(SONG_SE_SYS_WINDOW_CANSEL1);
-        return 0;
-    }
-
     MenuAutoHelpBoxSelect(menu);
     return 0;
 }
@@ -297,7 +288,10 @@ u8 ExpansionBluePhaseDelegate_MenuHelpBox(
 {
     if (menuItem->def->onSelected == ExpansionBluePhaseDelegate_MenuSelect)
     {
-        CloseHelpBox();
+        StartHelpBoxString(
+            menuItem->xTile * 8,
+            menuItem->yTile * 8,
+            ExpansionLocale_ResolveCurrent(EXP_MSG_AUTOPLAY_CHARGE_HELP));
         return 0;
     }
 

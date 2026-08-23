@@ -64,7 +64,7 @@
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
     "ui.presentation.chapter_title_default": "チャプター",
-    "autoplay.charge.label": "突撃",
+    "autoplay.charge.label": "進撃",
     "autoplay.charge.help": "残りのユニットをこのフェイズだけAIに任せる"
   }
 }
