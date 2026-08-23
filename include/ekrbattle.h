@@ -754,7 +754,6 @@ extern CONST_DATA struct BattleAnimDef AnimConf_97[];
 extern CONST_DATA struct BattleAnimDef AnimConf_98[];
 extern CONST_DATA struct BattleAnimDef AnimConf_99[];
 extern CONST_DATA struct BattleAnimDef AnimConf_100[];
-
 extern struct BattleAnimDef * gUnitSpecificBanimConfigs[];
 
 void SetBanimLinkArenaFlag(int unk);

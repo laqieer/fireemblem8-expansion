@@ -100,10 +100,10 @@ JSON dimensions for its header; its `.lz` and INCBIN consumer therefore rebuild
 when dimensions change even if the flattened tile bytes do not. It does not
 emit C, assembly, a linker list, or an asset lookup table. The existing
 `Ch2Map` symbol now INCbins that generated LZ stream from the fixed
-`build/generated/assets/` root. `ASSET_OUTPUT_DIR` therefore fails fast only
-when the selected manifest declares a TMX map layout with that literal INCBIN
-consumer. A manifest without a `tiled-tmx-map-layout` record retains the
-supported subdirectory override. The pre-existing `gChapterDataAssetTable`,
+`build/generated/assets/` root. `ASSET_OUTPUT_DIR` therefore fails fast when
+the selected manifest declares any literal-INCBIN consumer (`formatted-portrait-package`,
+`tiled-tmx-map-layout`, or `battle-animation-package`). A manifest without
+those kinds retains the supported subdirectory override. The pre-existing `gChapterDataAssetTable`,
 `GetChapterMapPointer`, and `InitChapterMap`/`UnpackChapterMap` path remain
 the runtime consumers.
 

@@ -37,6 +37,7 @@
 #include "EAstdlib.h"
 #include "constants/backgrounds.h"
 #include "eventcall.h"
+#include "banim_package_runtime_test.h"
 #include "bmdifficulty.h"
 #include "bmfx.h"
 #include "colorfade.h"
@@ -3978,11 +3979,20 @@ u8 Event3F_ScriptBattle(struct EventEngineProc * proc)
         unitA = GetUnitStructFromEventParameter(charIdA);
         unitB = GetUnitStructFromEventParameter(charIdB);
 
+#if FE8_BANIM_PACKAGE_RUNTIME_TEST
+        if (BanimPackageRuntimeTest_ForceFirstScriptedBattle())
+        {
+            scripted = 1;
+        }
+        else
+#endif
         if (EVENT_IS_SKIPPING(proc) || (proc->evStateBits & EV_STATE_FADEDIN))
             scripted = 0;
         else
-        {
             scripted = 1;
+
+        if (scripted)
+        {
             childProc = Proc_StartBlocking(ProcScr_ScriptBattleDeamon, proc);
             childProc->evtproc = proc;
             childProc->lock = GetGameLock();

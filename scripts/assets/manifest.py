@@ -19,6 +19,8 @@ from scripts.generated_data.diagnostics import (
 )
 from scripts.generated_data.json_loader import load_json_file
 
+from . import banim
+
 
 SCHEMA_VERSION = 1
 OUTPUT_MAKEFILE = "asset_manifest.mk"
@@ -56,7 +58,7 @@ class AssetRecord:
         "id", "id_loc", "kind", "kind_loc", "sources", "source_locs",
         "depends_on", "dependency_locs", "options", "option_locs",
         "ownership", "ownership_locs", "resources", "resource_locs",
-        "provenance", "provenance_locs", "loc",
+        "provenance", "provenance_locs", "loc", "banim_package",
     )
 
     def __init__(
@@ -82,6 +84,7 @@ class AssetRecord:
         self.provenance = provenance
         self.provenance_locs = provenance_locs
         self.loc = loc
+        self.banim_package = None
 
 
 def _ensure_exact_keys(node, required, reference_path):
@@ -1307,6 +1310,140 @@ class FormattedPortraitPackageKind:
         return ()
 
 
+class BattleAnimationPackageKind:
+    """Own a package-backed additive entry through existing banim seams."""
+
+    name = "battle-animation-package"
+    _options = {"format": "community-text-png-v1"}
+    _ownership = {
+        "seam": "battle-animation-table",
+        "tableSource": "src/banim_data.c",
+        "classData": "src/data/classes.json",
+        "linkerScript": "linker_script_banim.txt",
+        "consumer": "GetBattleAnimationId",
+    }
+    _object = "src/banim_data.o"
+    _definitions_object = "src/data_banimconf.o"
+    _banim_object = "banim/data_banim.o"
+
+    def validate(self, record, diagnostics):
+        valid = _validate_exact_values(
+            record.options, record.option_locs, self._options, diagnostics, record.loc,
+            "{}.options".format(record.id),
+        )
+        valid = _validate_exact_values(
+            record.ownership, record.ownership_locs,
+            ("seam", "tableSource", "classData", "linkerScript", "consumer"),
+            diagnostics, record.loc, "{}.ownership".format(record.id),
+        ) and valid
+        valid = _validate_exact_values(
+            record.resources, record.resource_locs,
+            ("romBytes", "objVramBytes", "oamEntries", "paletteColors"),
+            diagnostics, record.loc, "{}.resources".format(record.id),
+        ) and valid
+        if not valid:
+            return
+        for key, expected in self._options.items():
+            if record.options[key] != expected:
+                diagnostics.add(GeneratedDataError(
+                    "battle-animation-package options.{} must be '{}'".format(key, expected),
+                    record.option_locs[key], "{}.options.{}".format(record.id, key),
+                ))
+        for key, expected in self._ownership.items():
+            if record.ownership[key] != expected:
+                diagnostics.add(GeneratedDataError(
+                    "battle-animation-package ownership.{} must be '{}'".format(key, expected),
+                    record.ownership_locs[key], "{}.ownership.{}".format(record.id, key),
+                ))
+        for key, capacity in (
+            ("romBytes", 0x40000),
+            ("objVramBytes", 0x8000),
+            ("oamEntries", 128),
+            ("paletteColors", 16),
+        ):
+            value = record.resources[key]
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0 or value > capacity:
+                diagnostics.add(GeneratedDataError(
+                    "resources.{} must be within 1..{}".format(key, capacity),
+                    record.resource_locs[key], "{}.resources.{}".format(record.id, key),
+                ))
+        if (
+            len(record.sources) < 3
+            or not record.sources[0].endswith("package.json")
+            or not record.sources[1].endswith(".txt")
+        ):
+            diagnostics.add(GeneratedDataError(
+                "battle-animation-package requires ordered package.json, script.txt, and indexed PNG sources",
+                record.loc, "{}.sources".format(record.id),
+            ))
+            return
+        try:
+            package = banim.load_package(REPO_ROOT, record.sources[0], record.sources[1], set(record.sources))
+            if package.data["id"] != record.id:
+                raise ValueError(
+                    "package id '{}' does not match manifest id '{}'".format(package.data["id"], record.id)
+                )
+            if not package.data["animConf"].startswith("AnimConf_"):
+                raise ValueError("animConf must name an existing AnimConf_* declaration")
+            _outputs, _paths, metadata = banim.runtime_outputs(
+                package, os.path.join(ASSET_OUTPUT_ROOT, "banim")
+            )
+            if metadata["total_oam_entries"] > record.resources["oamEntries"]:
+                raise ValueError(
+                    "generated OAM count {} exceeds resources.oamEntries".format(
+                        metadata["total_oam_entries"]
+                    )
+                )
+            if metadata["unique_frame_bytes"] > record.resources["objVramBytes"]:
+                raise ValueError("generated frame data exceeds resources.objVramBytes")
+            if max(png["colors"] for png in package.pngs.values()) > record.resources["paletteColors"]:
+                raise ValueError("generated palette exceeds resources.paletteColors")
+            if metadata["runtime_bytes"] > record.resources["romBytes"]:
+                raise ValueError("generated runtime data exceeds resources.romBytes")
+            self._validate_class_binding(package.data, record)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            diagnostics.add(GeneratedDataError(str(exc), record.loc, "{}.package".format(record.id)))
+            return
+        record.banim_package = package
+
+    def _validate_class_binding(self, package, record):
+        with open(os.path.join(REPO_ROOT, record.ownership["classData"]), encoding="utf-8") as handle:
+            classes = json.load(handle)["classes"]
+        matches = [entry for entry in classes if entry.get("class") == package["class"]]
+        if len(matches) != 1 or matches[0].get("battleAnim") != package["animConf"]:
+            raise ValueError("class '{}' does not bind '{}'".format(package["class"], package["animConf"]))
+        if package["weaponType"] not in matches[0].get("baseRanks", {}):
+            raise ValueError(
+                "class '{}' cannot use '{}'".format(package["class"], package["weaponType"])
+            )
+
+    def ownership_key(self, record):
+        return "{}:{}".format(record.ownership["seam"], record.banim_package.data["animConf"])
+
+    def make_dependencies(self, record):
+        sources = tuple(record.sources)
+        return (
+            (self._object, sources),
+            (self._definitions_object, sources),
+            (self._banim_object, sources),
+            ("$(MODERN_OUTPUT_DIR)/src/banim_data.o", sources),
+            ("$(MODERN_OUTPUT_DIR)/src/data_banimconf.o", sources),
+        )
+
+    def source_dependencies(self, record):
+        return (
+            record.ownership["classData"],
+            record.ownership["tableSource"],
+            record.ownership["linkerScript"],
+        )
+
+    def generated_outputs(self, record, out_dir):
+        return {}
+
+    def transient_outputs(self, record, out_dir):
+        return banim_derived_outputs([record], out_dir)
+
+
 class KindRegistry:
     """The sole static extension seam for asset kinds."""
 
@@ -1326,6 +1463,7 @@ KIND_REGISTRY = KindRegistry()
 KIND_REGISTRY.register(ChapterMapLayoutKind())
 KIND_REGISTRY.register(FormattedPortraitPackageKind())
 KIND_REGISTRY.register(TiledTmxMapLayoutKind())
+KIND_REGISTRY.register(BattleAnimationPackageKind())
 
 
 def validate(records):
@@ -1381,6 +1519,8 @@ def validate(records):
         metadata = kind.validate(record, diagnostics)
         if record.kind == FormattedPortraitPackageKind.name:
             portrait_metadata[id(record)] = metadata
+        if isinstance(kind, BattleAnimationPackageKind) and record.banim_package is None:
+            continue
         try:
             key = kind.ownership_key(record)
         except (KeyError, TypeError) as exc:
@@ -1542,6 +1682,16 @@ def tmx_incbin_consumer_ids(records):
     )
 
 
+def banim_incbin_consumer_ids(records):
+    """Return battle-animation package records whose consumers require the default output root."""
+
+    return tuple(
+        record.id
+        for record in records
+        if record.kind == BattleAnimationPackageKind.name
+    )
+
+
 def render_makefile(records):
     lines = [
         "# AUTO-GENERATED by scripts.assets -- DO NOT EDIT BY HAND.\n",
@@ -1577,6 +1727,44 @@ def render_makefile(records):
             if isinstance(target, tuple):
                 target = " ".join(target)
             lines.append("{}: {}\n".format(target, " ".join(prerequisites)))
+    packages = [
+        record for record in records if record.kind == BattleAnimationPackageKind.name
+    ]
+    generated = []
+    for record in packages:
+        _outputs, paths, _metadata = banim.runtime_outputs(
+            record.banim_package, "$(ASSET_OUTPUT_DIR)"
+        )
+        generated.extend(paths.values())
+    generated.append("$(ASSET_BANIM_COMBINED_LINKER_SCRIPT)")
+    if packages:
+        lines.append("\n{} &: $(ASSET_OUTPUT_MK)\n".format(" ".join(generated)))
+    else:
+        lines.append("\n{}: $(ASSET_OUTPUT_MK)\n".format(generated[0]))
+    lines.append(
+        '\t$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate\n'
+    )
+    for output in generated:
+        lines.append("\t@test -f {}\n".format(output))
+    for record in packages:
+        _outputs, paths, _metadata = banim.runtime_outputs(
+            record.banim_package, "$(ASSET_OUTPUT_DIR)"
+        )
+        motion_object = paths["motion"][:-1] + "o"
+        lines.append("\n{}: {}\n".format(motion_object, paths["motion"]))
+        lines.append("\t$(AS) $(ASFLAGS) $< -o $@\n")
+        lines.append(
+            "banim/data_banim.o: {} {} {} {} {} {}\n".format(
+                motion_object,
+                paths["modes"],
+                paths["oam_left"],
+                paths["oam_right"],
+                paths["palette"],
+                " ".join(
+                    paths["frame_" + frame_id] for frame_id in record.banim_package.frames
+                ),
+            )
+        )
     return "".join(lines)
 
 
@@ -1809,6 +1997,120 @@ def portrait_component_outputs(records, out_dir):
     return outputs
 
 
+def banim_derived_outputs(records, out_dir):
+    paths = set()
+    for record in records:
+        if record.kind != BattleAnimationPackageKind.name:
+            continue
+        _outputs, runtime, _metadata = banim.runtime_outputs(record.banim_package, out_dir)
+        motion_object = runtime["motion"][:-1] + "o"
+        paths.update((
+            motion_object,
+            motion_object + ".bin",
+            motion_object + ".bin.lz",
+            motion_object + ".bin.lz.o",
+            runtime["modes"] + ".o",
+        ))
+        for key, path in runtime.items():
+            if key.startswith("frame_") or key in ("palette", "oam_left", "oam_right"):
+                paths.add(path + ".lz")
+                paths.add(path + ".lz.o")
+    return paths
+
+
+def banim_expected_outputs(records, out_dir):
+    packages = [record for record in records if record.kind == BattleAnimationPackageKind.name]
+    entries = ["/* AUTO-GENERATED by scripts.assets; do not edit. */\n"]
+    definitions = ["/* AUTO-GENERATED by scripts.assets; do not edit. */\n"]
+    declarations = ["/* AUTO-GENERATED by scripts.assets; do not edit. */\n"]
+    runtime_test = ["/* AUTO-GENERATED by scripts.assets; do not edit. */\n"]
+    symbols = ["/* AUTO-GENERATED by scripts.assets; do not edit. */\n"]
+    with open(os.path.join(REPO_ROOT, "linker_script_banim.txt"), encoding="utf-8") as handle:
+        linker = [handle.read()]
+    if linker[-1] and not linker[-1].endswith("\n"):
+        linker.append("\n")
+    linker.append("# AUTO-GENERATED package runtime entries; do not edit.\n")
+    for offset, record in enumerate(packages):
+        abbr = record.banim_package.data["abbreviation"]
+        _outputs, paths, metadata = banim.runtime_outputs(record.banim_package, out_dir)
+        stem = banim.runtime_stem(record.banim_package)
+        index = _banim_table_count() + offset + 1
+        symbols.extend((
+            "extern int {}_modes_bin;\n".format(stem),
+            "extern char {}_motion_o;\n".format(stem),
+            "extern char {}_oam_r_bin;\n".format(stem),
+            "extern char {}_oam_l_bin;\n".format(stem),
+            "extern char {}_palette_pal;\n".format(stem),
+        ))
+        entries.append(
+            '\t{{"{}", &{}, &{}, &{}, &{}, &{}}},\n'.format(
+                abbr, stem + "_modes_bin", stem + "_motion_o",
+                stem + "_oam_r_bin", stem + "_oam_l_bin", stem + "_palette_pal",
+            )
+        )
+        definitions.extend((
+            "CONST_DATA struct BattleAnimDef {}[] = {{\n".format(_banim_package_symbol(record.id)),
+            "\t{{ .wtype = 0x100 | {}, .index = {} }},\n".format(
+                record.banim_package.data["weaponType"], index
+            ),
+            "\t{ 0 },\n",
+            "};\n",
+        ))
+        declarations.append(
+            "extern CONST_DATA struct BattleAnimDef {}[];\n".format(
+                _banim_package_symbol(record.id)
+            )
+        )
+        prefix = "BANIM_PACKAGE_{}".format(record.id)
+        runtime_test.extend((
+            "#define {}_INDEX {}\n".format(prefix, index - 1),
+            "#define {}_MODE_COUNT {}\n".format(prefix, len(record.banim_package.mode_durations)),
+            "#define {}_NORMAL_DURATION {}\n".format(
+                prefix, record.banim_package.mode_durations["normal"]),
+            "#define {}_TOTAL_DURATION {}\n".format(
+                prefix, sum(record.banim_package.mode_durations.values())),
+            "#define {}_SCRIPT_WORD_COUNT {}\n".format(prefix, metadata["script_word_count"]),
+            "#define {}_SOUND_OPCODE 0x{:08X}\n".format(prefix, metadata["sound_opcode"]),
+            "#define {}_OAM_ENTRY_COUNT {}\n".format(prefix, metadata["max_oam_entries"]),
+            "#define {}_PALETTE_COLOR_1 0x{:04X}\n".format(
+                prefix, metadata["palette_color_1"]
+            ),
+        ))
+        seen_frames = set()
+        for frame_id in record.banim_package.frames:
+            path = paths["frame_" + frame_id]
+            if path not in seen_frames:
+                linker.append("{}>lz\n".format(path))
+                seen_frames.add(path)
+        linker.extend((
+            "{}>lz\n".format(paths["palette"]),
+            "{}>lz\n".format(paths["oam_left"]),
+            "{}>lz\n".format(paths["oam_right"]),
+            "{}|.data.script>lz\n".format(paths["motion"][:-1] + "o"),
+            "{}\n".format(paths["modes"]),
+        ))
+    outputs = {
+        os.path.join(out_dir, "banim", "banim_data_entries.inc"): "".join(entries),
+        os.path.join(out_dir, "banim", "banim_defs.inc"): "".join(definitions),
+        os.path.join(out_dir, "banim", "banim_defs.h"): "".join(declarations),
+        os.path.join(out_dir, "banim", "banim_runtime_test_defs.h"): "".join(runtime_test),
+        os.path.join(out_dir, "banim", "banim_runtime_symbols.h"): "".join(symbols),
+        os.path.join(out_dir, "banim", "linker_script_banim.txt"): "".join(linker),
+    }
+    for record in packages:
+        outputs.update(banim.runtime_outputs(record.banim_package, out_dir)[0])
+    return outputs
+
+
+def _banim_package_symbol(record_id):
+    return "BanimPackage_{}".format(record_id)
+
+
+def _banim_table_count():
+    with open(os.path.join(REPO_ROOT, "src", "banim_data.c"), encoding="utf-8") as handle:
+        return len(re.findall(r'^\s*\{"[^"]+"\s*,', handle.read(), re.MULTILINE))
+
+
 def expected_outputs(records, out_dir):
     out_dir = safe_output_dir(out_dir)
     outputs = {
@@ -1822,6 +2124,8 @@ def expected_outputs(records, out_dir):
     for record in records:
         kind = KIND_REGISTRY.resolve(record.kind)
         outputs.update(kind.generated_outputs(record, out_dir))
+    for path, content in banim_expected_outputs(records, out_dir).items():
+        outputs[path] = content.encode("utf-8") if isinstance(content, str) else content
     return outputs
 
 
