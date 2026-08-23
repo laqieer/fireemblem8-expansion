@@ -1,8 +1,6 @@
 #include "global.h"
 
 #ifndef FE8_ARCHIVAL_BUILD
-#include <string.h>
-
 #include "hardware.h"
 #include "fontgrp.h"
 #include "uimenu.h"
@@ -27,8 +25,7 @@ SECTION("debugtools_contributor_data") struct DebugToolsMusicProbe
 
 enum
 {
-    DEBUGTOOLS_MUSIC_OVERRIDE_ID = 0xE2,
-    DEBUGTOOLS_MUSIC_MENU_SLOTS = 3
+    DEBUGTOOLS_MUSIC_OVERRIDE_ID = 0xE2
 };
 
 struct DebugToolsMusicState
@@ -37,8 +34,6 @@ struct DebugToolsMusicState
     u8 sessionActive;
 };
 
-SECTION("debugtools_contributor_data") static struct MenuItemDef
-    sMusicMenuItemDefs[DEBUGTOOLS_MUSIC_MENU_SLOTS] = {0};
 SECTION("debugtools_contributor_data") static struct DebugToolsMusicState
     sMusicState = {-1, FALSE};
 
@@ -186,6 +181,27 @@ static u8 DebugToolsMusic_BackSelected(
     return MenuCancelSelect(menu, item);
 }
 
+static const struct MenuItemDef sMusicMenuItemDefs[] =
+{
+    {
+        .name = "Music",
+        .overrideId = DEBUGTOOLS_MUSIC_OVERRIDE_ID,
+        .isAvailable = MenuAlwaysEnabled,
+        .onDraw = DebugToolsMusic_DrawSong,
+        .onSelected = DebugToolsMusic_SongSelected,
+        .onIdle = DebugToolsMusic_SongIdle,
+    },
+    {
+        .name = "Back",
+        .isAvailable = MenuAlwaysEnabled,
+#ifdef MODERN
+        .onDraw = DebugToolsMusic_DrawBack,
+#endif
+        .onSelected = DebugToolsMusic_BackSelected,
+    },
+    {0},
+};
+
 void DebugTools_CleanupMusicPreview(void)
 {
     int releaseResult;
@@ -238,25 +254,6 @@ CONST_DATA struct MenuDef gDebugToolsMusicPreviewMenuDef = {
     0
 };
 
-static void DebugToolsMusic_BuildMenuItems(void)
-{
-    memset(sMusicMenuItemDefs, 0, sizeof(sMusicMenuItemDefs));
-
-    sMusicMenuItemDefs[0].name = "Music";
-    sMusicMenuItemDefs[0].overrideId = DEBUGTOOLS_MUSIC_OVERRIDE_ID;
-    sMusicMenuItemDefs[0].isAvailable = MenuAlwaysEnabled;
-    sMusicMenuItemDefs[0].onDraw = DebugToolsMusic_DrawSong;
-    sMusicMenuItemDefs[0].onSelected = DebugToolsMusic_SongSelected;
-    sMusicMenuItemDefs[0].onIdle = DebugToolsMusic_SongIdle;
-
-    sMusicMenuItemDefs[1].name = "Back";
-    sMusicMenuItemDefs[1].isAvailable = MenuAlwaysEnabled;
-    sMusicMenuItemDefs[1].onSelected = DebugToolsMusic_BackSelected;
-#ifdef MODERN
-    sMusicMenuItemDefs[1].onDraw = DebugToolsMusic_DrawBack;
-#endif
-}
-
 static u8 DebugToolsMusic_ActionSelected(
     struct MenuProc * menu,
     struct MenuItemProc * item)
@@ -290,7 +287,6 @@ static u8 DebugToolsMusic_ActionSelected(
     gDebugToolsMusicProbe.priorContext =
         (u32)ExpansionBgm_GetCurrentContext();
 
-    DebugToolsMusic_BuildMenuItems();
     DebugTools_QueueSubmenuTransition(menu, &gDebugToolsMusicPreviewMenuDef);
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
