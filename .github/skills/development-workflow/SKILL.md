@@ -401,6 +401,47 @@ human-review requirement. Validation evidence must name the tester-facing case
 IDs exercised, exact profile or artifact, environment, positive and negative
 actual results, and the mapped automation result or precise manual-only reason.
 
+### Meaningful test evidence
+
+- **Evidence standard:** required
+  - **behavior:** required
+  - **parsed structural contract:** required
+  - **generated output:** required
+  - **compile/link properties:** required
+  - **runtime state:** required
+- **Prohibited evidence:** prohibited
+  - **sole-evidence rule:** prohibited
+  - **arbitrary strings:** prohibited
+  - **comments:** prohibited
+  - **helper names:** prohibited
+  - **line numbers:** prohibited
+  - **ordering:** prohibited
+  - **implementation spelling:** prohibited
+  - **Git-text rationale:** required. git-tracks=source,review,history;
+    raw-tracked-text=not-behavior-evidence
+- **Static-contract exception:** conditional
+  - **source-text assertion:** permitted-only
+  - **exact syntax/spelling/absence:** required
+  - **documented public format:** one-of
+  - **security boundary:** one-of
+  - **generated-file contract:** one-of
+  - **ABI/layout constraint:** one-of
+  - **externally consumed protocol:** one-of
+  - **named contract:** required
+  - **irreplaceable evidence explanation:** required
+- **Evidence preference:** ordered
+  - **real function positive/adversarial inputs:** first
+  - **parsed JSON/YAML/Make/AST/binary/schema:** second
+  - **compile/link typed symbols/sections/resources/generated output:** third
+  - **deterministic target-ROM/libmGBA behavior:** fourth
+  - **narrowly justified source-text assertion:** last
+- **Replacement and mutation controls:** required
+  - **accepted requirement:** preserve
+  - **stronger evidence:** required-or-duplicate
+  - **duplicate gate:** no-independent-contract
+  - **phrase-preserving behavior change:** fails
+  - **semantics-preserving spelling/order refactor:** green
+
 ### Issue #29 identity boundary
 
 Do not add or restore a whole-source/object/ROM SHA-256 identity gate, or
@@ -519,6 +560,10 @@ occupy a reasoning agent or stop with a waiting-only response. Cancel only a
 superseded candidate run after that candidate actually changes. A broken
 master Build requires an immediate fix-forward or revert and blocks that
 issue's closure and remote completion, but not unrelated independent PRs.
+
+The indexed source-only regression for trusted-push ownership and centralized
+CI waiting is
+[`TC-WORKFLOW-CI-WAIT-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-ci-wait-001-keep-ci-waiting-centralized-and-trusted-pushes-owner-scoped).
 
 Before merge:
 

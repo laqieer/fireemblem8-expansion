@@ -478,8 +478,7 @@ OBJECT_COUNT_SPELLED_ENUM_RE = re.compile(
     re.IGNORECASE,
 )
 
-FENCE_RE = re.compile(r"^(```+|~~~+)")
-HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+FENCE_RE = re.compile(r"^[ ]{0,3}(```+|~~~+)")
 LINK_START_RE = re.compile(r'!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]\(')
 INLINE_CODE_RE = re.compile(r"(?<!`)`([^`]+)`(?!`)")
 URL_RE = re.compile(r"https?://[^\s)>\]\"'`]+", re.IGNORECASE)
@@ -573,6 +572,79 @@ def read_text(path):
 # Markdown structure helpers (stdlib only -- no third-party parser)
 # ---------------------------------------------------------------------------
 
+def parse_fence_opening(line, line_number=None):
+    """Return ``(marker, length)`` for a CommonMark fenced-code opener."""
+    fence_text = line.rstrip(" \t\r")
+    match = FENCE_RE.match(fence_text)
+    if match is None:
+        return None
+    marker = match.group(1)
+    if marker[0] == "`" and "`" in fence_text[match.end():]:
+        location = (
+            " at line %d" % line_number
+            if line_number is not None
+            else ""
+        )
+        raise DocsCheckError(
+            "invalid backtick fenced code opener%s: "
+            "info string contains a backtick" % location
+        )
+    return marker[0], len(marker)
+
+
+def is_fence_closing(line, marker, minimum_length):
+    """Return whether ``line`` closes the active CommonMark fence."""
+    fence_text = line.rstrip(" \t\r")
+    cursor = 0
+    while cursor < len(fence_text) and fence_text[cursor] == " ":
+        cursor += 1
+    if cursor > 3:
+        return False
+
+    marker_start = cursor
+    while cursor < len(fence_text) and fence_text[cursor] == marker:
+        cursor += 1
+    return (
+        cursor - marker_start >= minimum_length
+        and cursor == len(fence_text)
+    )
+
+
+def parse_atx_heading(line):
+    """Return ``(level, text)`` for a CommonMark ATX heading."""
+    if line.endswith("\r"):
+        line = line[:-1]
+
+    cursor = 0
+    while cursor < len(line) and line[cursor] == " ":
+        cursor += 1
+    if cursor > 3:
+        return None
+
+    marker_start = cursor
+    while cursor < len(line) and line[cursor] == "#":
+        cursor += 1
+    level = cursor - marker_start
+    if level < 1 or level > 6:
+        return None
+    if cursor < len(line) and line[cursor] not in " \t":
+        return None
+
+    while cursor < len(line) and line[cursor] in " \t":
+        cursor += 1
+    heading = line[cursor:].rstrip(" \t\r")
+
+    closing_start = len(heading)
+    while closing_start > 0 and heading[closing_start - 1] == "#":
+        closing_start -= 1
+    if closing_start < len(heading) and (
+        closing_start == 0 or heading[closing_start - 1] in " \t"
+    ):
+        heading = heading[:closing_start].rstrip(" \t")
+
+    return level, heading
+
+
 def strip_fenced_blocks(text):
     """Blank out the contents (and fence lines) of fenced code blocks.
 
@@ -586,54 +658,66 @@ def strip_fenced_blocks(text):
     in_fence = False
     fence_char = None
     fence_len = 0
-    for line in lines:
-        stripped = line.strip()
-        m = FENCE_RE.match(stripped)
-        if not in_fence and m:
-            in_fence = True
-            fence_char = m.group(1)[0]
-            fence_len = len(m.group(1))
-            out.append("")
-            continue
+    fence_line = None
+    for lineno, line in enumerate(lines, start=1):
         if in_fence:
-            closing = re.match(r"^(" + re.escape(fence_char) + r"{%d,})\s*$" % fence_len, stripped)
-            if closing:
+            if is_fence_closing(line, fence_char, fence_len):
                 in_fence = False
             out.append("")
             continue
+        opening = parse_fence_opening(line, lineno)
+        if opening is not None:
+            in_fence = True
+            fence_char, fence_len = opening
+            fence_line = lineno
+            out.append("")
+            continue
         out.append(line)
+    if in_fence:
+        raise DocsCheckError(
+            "unterminated fenced code block opened at line %d with %s"
+            % (fence_line, fence_char * fence_len)
+        )
     return "\n".join(out)
+
+
+def check_fenced_blocks(markdown_files, root):
+    """Return fence findings and Markdown files safe for structure checks."""
+    findings = []
+    safe_files = []
+    for path in markdown_files:
+        try:
+            strip_fenced_blocks(read_text(os.path.join(root, path)))
+        except DocsCheckError as exc:
+            findings.append(Finding(path, 0, str(exc)))
+        else:
+            safe_files.append(path)
+    return findings, safe_files
 
 
 def iter_fenced_block_bodies(text):
     """Yield the raw text content of every fenced code block (for command
     extraction only -- never for link/URL scanning)."""
+    strip_fenced_blocks(text)
     lines = text.split("\n")
     in_fence = False
     fence_char = None
     fence_len = 0
     body = []
-    for line in lines:
-        stripped = line.strip()
-        m = FENCE_RE.match(stripped)
-        if not in_fence and m:
-            in_fence = True
-            fence_char = m.group(1)[0]
-            fence_len = len(m.group(1))
-            body = []
-            continue
+    for lineno, line in enumerate(lines, start=1):
         if in_fence:
-            closing = re.match(r"^(" + re.escape(fence_char) + r"{%d,})\s*$" % fence_len, stripped)
-            if closing:
+            if is_fence_closing(line, fence_char, fence_len):
                 in_fence = False
                 yield "\n".join(body)
             else:
                 body.append(line)
             continue
-    # Unterminated fence (shouldn't happen; balance is a lint concern, not
-    # this function's job) -- yield whatever was collected.
-    if in_fence and body:
-        yield "\n".join(body)
+        opening = parse_fence_opening(line, lineno)
+        if opening is not None:
+            in_fence = True
+            fence_char, fence_len = opening
+            body = []
+            continue
 
 
 def github_heading_slug(text):
@@ -676,10 +760,10 @@ def compute_heading_slugs(stripped_text):
     next_suffix = {}
     slugs = []
     for line in stripped_text.split("\n"):
-        m = HEADING_RE.match(line)
-        if not m:
+        heading = parse_atx_heading(line)
+        if heading is None:
             continue
-        base = github_heading_slug(m.group(2))
+        base = github_heading_slug(heading[1])
         if base not in used:
             slug = base
         else:
@@ -889,9 +973,12 @@ def resolve_internal_link(root, source_rel_path, target, heading_slug_cache):
 
     if anchor and is_recognized_markdown_path(target_path):
         if target_path not in heading_slug_cache:
-            heading_slug_cache[target_path] = compute_heading_slugs(
-                strip_fenced_blocks(read_text(abs_target))
-            )
+            try:
+                heading_slug_cache[target_path] = compute_heading_slugs(
+                    strip_fenced_blocks(read_text(abs_target))
+                )
+            except DocsCheckError as exc:
+                return False, "target Markdown has malformed fenced block: %s" % exc
         if anchor not in heading_slug_cache[target_path]:
             return False, "anchor #%s not found in %s (no matching heading slug)" % (anchor, target_path)
 
@@ -1223,7 +1310,10 @@ def _check_registry_document(root, path, anchor, label):
     if anchor is not None:
         if not _is_non_placeholder_string(anchor):
             return ["%s has empty or placeholder anchor" % label]
-        slugs = compute_heading_slugs(strip_fenced_blocks(read_text(full_path)))
+        try:
+            slugs = compute_heading_slugs(strip_fenced_blocks(read_text(full_path)))
+        except DocsCheckError as exc:
+            return ["%s references malformed fenced Markdown in %s: %s" % (label, path, exc)]
         if anchor not in slugs:
             return ["%s references missing anchor #%s in %s" % (label, anchor, path)]
     return []
@@ -2139,6 +2229,8 @@ def run_all_safe_examples(root):
 def run_checks(root, check_examples=False):
     findings = []
     markdown_files = discover_markdown_files(root)
+    fence_findings, structure_safe_files = check_fenced_blocks(markdown_files, root)
+    findings.extend(fence_findings)
 
     entries, inv_errors = parse_inventory(root)
     findings.extend(Finding(INVENTORY_PATH, 0, e) for e in inv_errors)
@@ -2147,14 +2239,17 @@ def run_checks(root, check_examples=False):
 
     rules, reg_errors = parse_registry(root)
     findings.extend(Finding(REGISTRY_PATH, 0, e) for e in reg_errors)
-    findings.extend(check_external_urls(markdown_files, root, rules))
+    findings.extend(check_external_urls(structure_safe_files, root, rules))
 
-    findings.extend(check_internal_links(markdown_files, root))
-    findings.extend(check_reference_style_links(markdown_files, root))
-    findings.extend(check_stale_phrases(markdown_files, root))
+    findings.extend(check_internal_links(structure_safe_files, root))
+    findings.extend(check_reference_style_links(structure_safe_files, root))
+    findings.extend(check_stale_phrases(structure_safe_files, root))
     findings.extend(check_object_count_claims(markdown_files, root))
+
     literal_targets, pattern_targets = parse_make_targets(root)
-    findings.extend(check_make_targets(markdown_files, root, literal_targets, pattern_targets))
+    findings.extend(check_make_targets(
+        structure_safe_files, root, literal_targets, pattern_targets
+    ))
 
     example_results = []
     if check_examples:
