@@ -15,6 +15,17 @@ from scripts.localization import extract_ui_graphics
 
 
 class LocalizedUiGraphicsTests(unittest.TestCase):
+    HOST_COMPILE_FLAGS = (
+        "-std=gnu89",
+        "-Werror=implicit-function-declaration",
+        "-Werror=incompatible-pointer-types",
+        # GBA VRAM addresses are 32-bit values, unlike host pointers.
+        "-Wno-int-to-pointer-cast",
+        "-DMODERN=1",
+        "-DNONMATCHING=1",
+        "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=0x07u",
+    )
+
     @classmethod
     def setUpClass(cls):
         cls.manifest = json.loads(
@@ -157,11 +168,7 @@ class LocalizedUiGraphicsTests(unittest.TestCase):
                 result = subprocess.run(
                     [
                         cc,
-                        "-std=gnu89",
-                        "-w",
-                        "-DMODERN=1",
-                        "-DNONMATCHING=1",
-                        "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=0x07u",
+                        *self.HOST_COMPILE_FLAGS,
                         "-I",
                         str(ROOT / "include"),
                         "-c",
@@ -187,6 +194,54 @@ class LocalizedUiGraphicsTests(unittest.TestCase):
                 self.assertEqual(symbols.returncode, 0, symbols.stdout)
                 for selector in selectors:
                     self.assertIn(selector, symbols.stdout, (source, selector))
+
+    def test_cjk_consumer_compile_rejects_missing_or_incompatible_api(self):
+        cc = shutil.which("cc")
+        if cc is None:
+            self.skipTest("no host compiler available")
+
+        build_root = ROOT / "build"
+        build_root.mkdir(exist_ok=True)
+        probes = {
+            "implicit-declaration.c": (
+                "int Probe(void)\n"
+                "{\n"
+                "    return LocalizedUiGraphics_Missing();\n"
+                "}\n"
+            ),
+            "incompatible-pointer.c": (
+                "int Probe(void)\n"
+                "{\n"
+                "    int value;\n"
+                "    const char *text;\n"
+                "\n"
+                "    text = &value;\n"
+                "    return text != 0;\n"
+                "}\n"
+            ),
+        }
+        with tempfile.TemporaryDirectory(
+            prefix="localized-ui-diagnostics-",
+            dir=build_root,
+        ) as temporary:
+            build_dir = Path(temporary)
+            for name, source in probes.items():
+                path = build_dir / name
+                path.write_text(source, encoding="ascii")
+                result = subprocess.run(
+                    [
+                        cc,
+                        *self.HOST_COMPILE_FLAGS,
+                        "-fsyntax-only",
+                        str(path),
+                    ],
+                    cwd=ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout)
 
     def test_difficulty_menu_tiles_palette_and_oam_stay_within_their_surfaces(self):
         tsa = (ROOT / "graphics/misc/Tsa_DifficultyMenuObjs.tsa.bin").read_bytes()
