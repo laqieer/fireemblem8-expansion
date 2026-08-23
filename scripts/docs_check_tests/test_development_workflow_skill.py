@@ -26,6 +26,11 @@ COMBINED_BUILD_GUIDANCE_PATHS = (
     FRAMEWORK_SUPPORT_PATH,
     LOCALIZATION_PATH,
 )
+TRUSTED_PUSH_GUIDANCE_PATHS = (
+    SKILL_PATH,
+    ROOT / ".github" / "copilot-instructions.md",
+    CLAUDE_PATH,
+)
 RETIRED_MATRIX_SPELLINGS = (
     "full" + " matrix",
     "full" + "-matrix",
@@ -195,6 +200,40 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 ),
             ),
         )
+
+    def test_trusted_push_ownership_is_mirrored_and_rejects_stale_roles(self):
+        required_policy = (
+            (
+                "local implementation ownership",
+                (
+                    "Implementation subagents validate and commit locally but do not push",
+                    "orchestrator pushes the exact commit under repository-owner context",
+                    "Build does not become `action_required`",
+                    "already-pushed run for that same SHA is `action_required`",
+                    "gh run rerun <run-id>",
+                    "under owner context",
+                    "Never create empty commits",
+                    "weaken Actions approvals",
+                    "privileged `pull_request_target`",
+                ),
+            ),
+        )
+        stale_policy = (
+            "Implementation subagents may push",
+            "The subagent that pushes or dispatches a workflow",
+            "The subagent that dispatches a workflow",
+            "Create an empty commit to retrigger Build",
+            "May weaken Actions approvals",
+            "May use privileged pull_request_target",
+        )
+        for path in TRUSTED_PUSH_GUIDANCE_PATHS:
+            assert_normalized_policy(
+                self,
+                str(path),
+                path.read_text(encoding="utf-8"),
+                required_policy,
+                stale_policy,
+            )
 
     def test_combined_build_replaces_matrix_everywhere(self):
         for path in COMBINED_BUILD_GUIDANCE_PATHS:

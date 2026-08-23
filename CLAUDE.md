@@ -68,9 +68,16 @@ For an objective to resolve all repository issues, also close the resolved
 issues and require `make all-issues-completion-check` to pass. Track commit,
 push, CI, and issue closure as explicit dependent todos from the start.
 
-CI waiting must not occupy a reasoning subagent. The subagent that dispatches
-a workflow records its exact SHA and run ID, then returns immediately. The
-orchestrator runs exactly one bounded direct shell watcher:
+Implementation subagents validate and commit locally but do not push. The
+orchestrator pushes the exact commit under repository-owner context so Build
+does not become `action_required`. If an already-pushed run for that same SHA
+is `action_required`, the orchestrator reruns it with `gh run rerun <run-id>`
+under owner context. Never create empty commits, weaken Actions approvals, or
+use privileged `pull_request_target` just to bypass approval.
+
+CI waiting must not occupy a reasoning subagent. The orchestrator that
+dispatches a workflow records its exact SHA and run ID, then returns
+immediately. The orchestrator runs exactly one bounded direct shell watcher:
 `timeout 90m gh run watch <run-id> --interval 30 --exit-status`. Rely on the
 shell runtime's completion notification, and invoke a reasoning agent only
 after the run is terminal to inspect logs or reviews. Do not repeatedly wake an

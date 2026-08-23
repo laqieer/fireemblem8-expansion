@@ -452,10 +452,19 @@ No human code review or approval is required. A CODEOWNERS request is advisory
 unless an external GitHub ruleset enforces it; this workflow does not add such
 a gate.
 
+### Trusted push ownership
+
+Implementation subagents validate and commit locally but do not push. The
+orchestrator pushes the exact commit under repository-owner context so Build
+does not become `action_required`. If an already-pushed run for that same SHA
+is `action_required`, the orchestrator reruns it with `gh run rerun <run-id>`
+under owner context. Never create empty commits, weaken Actions approvals, or
+use privileged `pull_request_target` just to bypass approval.
+
 ### CI waiting and agent lifetime
 
 Reasoning subagents must not remain alive merely to wait for a remote workflow.
-The subagent that pushes or dispatches a workflow records the exact candidate
+The orchestrator that pushes or dispatches a workflow records the exact candidate
 SHA and run ID, updates the orchestration state, and returns immediately. It
 must not poll until completion, sleep through rate-limit backoff, or repeatedly
 report that the workflow is still pending.
