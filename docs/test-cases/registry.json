@@ -4,6 +4,7 @@
     "mode": "complete",
     "expected_feature_ids": [
       "tester-case-catalog",
+      "meaningful-test-evidence-policy",
       "mechanics-hook-registry",
       "full-hp-guard-sample",
       "danger-overlay-menu",
@@ -52,6 +53,18 @@
       "status": "current",
       "required_cases": [
         "TC-CATALOG-001"
+      ]
+    },
+    {
+      "id": "meaningful-test-evidence-policy",
+      "title": "Meaningful test-evidence policy validation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/100"
+      ],
+      "reference": "docs/test-cases/foundation.md",
+      "status": "current",
+      "required_cases": [
+        "TC-TEST-QUALITY-001"
       ]
     },
     {
@@ -527,6 +540,42 @@
         },
         {
           "command": "python3 scripts/check_docs.py --check",
+          "evidence": "scripts/check_docs.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-TEST-QUALITY-001",
+      "title": "Meaningful test-evidence policy rejects semantic mutations",
+      "feature_id": "meaningful-test-evidence-policy",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/100"
+      ],
+      "document": "docs/test-cases/foundation.md",
+      "anchor": "tc-test-quality-001-meaningful-test-evidence-policy-rejects-semantic-mutations",
+      "profiles": [
+        "Clean source checkout with Python 3; no ROM, emulator, artifact, optional feature profile, or save state"
+      ],
+      "purpose": "Exercise the canonical meaningful-test-evidence policy AST and its fail-closed Markdown semantics.",
+      "prerequisites": "Start from the repository root with the three policy references, docs/test-cases, and scripts/docs_check_tests present; no save state is needed.",
+      "actions": "Follow the anchored human procedure, run the focused policy test, then run the catalog fixture and documentation checker commands named below.",
+      "expected_result": "All three policy surfaces parse to one canonical AST; accepted whitespace, line-wrap, spelling, ordering, and top-level heading boundaries remain green while semantic mutations fail.",
+      "negative_control": "The focused policy test rejects missing prohibited categories, permission/polarity changes, contradictory details, unmodeled Markdown, duplicate or lower-level policy headings, and malformed policy syntax.",
+      "interactions": "Owns issue #100's test-governance foundation and depends on issue #54's catalog seam. It does not alter gameplay, optional profiles, localization, generated data, or issue #101's duplicate-policy cleanup.",
+      "save_compatibility": "No save bytes, migration, compatibility epoch, or runtime profile changes.",
+      "cleanup": "No cleanup is required; the commands read tracked documentation and execute host-side tests only.",
+      "limitations": "This case validates policy documentation and host-side semantic mutations, not a target-ROM runtime behavior or a complete current-feature catalog.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs -v",
+          "evidence": "scripts/docs_check_tests/test_check_docs.py"
+        },
+        {
+          "command": "python3 scripts/check_docs.py --check --check-examples",
           "evidence": "scripts/check_docs.py"
         }
       ]

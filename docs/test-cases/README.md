@@ -56,14 +56,17 @@ python3 -m unittest scripts.docs_check_tests.test_check_docs -v
 python3 scripts/check_docs.py --check
 ```
 
-The foundation procedure is [`TC-CATALOG-001`](foundation.md#tc-catalog-001-tester-case-catalog-foundation).
+The foundation procedures are
+[`TC-CATALOG-001`](foundation.md#tc-catalog-001-tester-case-catalog-foundation)
+and
+[`TC-TEST-QUALITY-001`](foundation.md#tc-test-quality-001-meaningful-test-evidence-policy-rejects-semantic-mutations).
 The core framework and authoring procedures are in
 [`core-framework.md`](core-framework.md); optional gameplay procedures are in
 [`optional-gameplay.md`](optional-gameplay.md); presentation, audio, and
 utility procedures are in
-[`presentation-audio-utility.md`](presentation-audio-utility.md); localization
-procedures are in [`localization.md`](localization.md); and the optional HQ
-PCM mixer procedure is
+[`presentation-audio-utility.md`](presentation-audio-utility.md); and
+localization procedures are in [`localization.md`](localization.md). The
+optional HQ PCM mixer procedure is
 [`TC-AUDIO-HQMIX-001`](audio.md#tc-audio-hqmix-001-hq-pcm-mixer-produces-bounded-stereo-output).
 Community asset-adapter procedures are in
 [`asset-authoring.md`](asset-authoring.md), and repository delivery-policy
