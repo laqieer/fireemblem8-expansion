@@ -29,6 +29,8 @@ class DebugToolsUnitEditorLayoutTests(unittest.TestCase):
                 CC,
                 "-c",
                 "-w",
+                "-fno-pic",
+                "-fno-pie",
                 "-I",
                 str(ROOT / "include"),
                 "-I",
@@ -47,7 +49,7 @@ class DebugToolsUnitEditorLayoutTests(unittest.TestCase):
         return obj
 
     @staticmethod
-    def _symbol_size(obj: Path, symbol: str) -> int:
+    def _symbol_info(obj: Path, symbol: str) -> tuple[int, str]:
         result = subprocess.run(
             [NM, "-S", str(obj)],
             cwd=ROOT,
@@ -56,12 +58,12 @@ class DebugToolsUnitEditorLayoutTests(unittest.TestCase):
             check=True,
         )
         pattern = re.compile(
-            rf"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+\S\s+{re.escape(symbol)}$"
+            rf"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+(\S)\s+{re.escape(symbol)}$"
         )
         for line in result.stdout.splitlines():
             match = pattern.match(line.strip())
             if match:
-                return int(match.group(1), 16)
+                return int(match.group(1), 16), match.group(2)
         raise AssertionError(f"{symbol} missing from {obj}")
 
     def test_private_snapshot_compacts_without_shrinking_public_telemetry(self):
@@ -73,15 +75,27 @@ class DebugToolsUnitEditorLayoutTests(unittest.TestCase):
             )
 
             self.assertEqual(
-                self._symbol_size(tools, "sUnitEditor"),
+                self._symbol_info(tools, "sUnitEditor")[0],
                 0x24,
                 "private editor snapshot must stay at the reviewed 36-byte layout",
             )
             self.assertEqual(
-                self._symbol_size(registry, "gDebugToolsUnitEditorProbe"),
+                self._symbol_info(registry, "gDebugToolsUnitEditorProbe")[0],
                 0x48,
                 "public issue #125 telemetry must retain all 72 bytes",
             )
+            for symbol in (
+                "sUnitMenuItemDefs",
+                "sUnitHpMenuItemDefs",
+                "sUnitStatsMenuItemDefs",
+                "sUnitAiMenuItemDefs",
+            ):
+                with self.subTest(symbol=symbol):
+                    self.assertEqual(
+                        self._symbol_info(tools, symbol)[1].lower(),
+                        "r",
+                        f"{symbol} must remain ROM-backed read-only data",
+                    )
 
 
 if __name__ == "__main__":

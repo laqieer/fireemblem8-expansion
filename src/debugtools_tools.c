@@ -298,20 +298,11 @@ typedef char DebugToolsUnitEditorProbeLayoutAssert[
     sizeof(struct DebugToolsUnitEditorProbe) == 0x48 ? 1 : -1];
 
 EWRAM_DATA static struct DebugToolsUnitEditorState sUnitEditor = {0};
-EWRAM_DATA static struct MenuItemDef sUnitMenuItemDefs[9] = {{0}};
-/* HP, stats, and AI are mutually exclusive owned submenus. Reuse one array
- * sized for the largest (stats) menu instead of reserving three EWRAM tables. */
-EWRAM_DATA static struct MenuItemDef sUnitValueMenuItemDefs[9] = {{0}};
 
 extern CONST_DATA struct MenuDef gDebugToolsUnitMenuDef;
 extern CONST_DATA struct MenuDef gDebugToolsUnitHpMenuDef;
 extern CONST_DATA struct MenuDef gDebugToolsUnitStatsMenuDef;
 extern CONST_DATA struct MenuDef gDebugToolsUnitAiMenuDef;
-
-static void DebugToolsUnit_BuildMenuItems(void);
-static void DebugToolsUnit_BuildHpMenuItems(void);
-static void DebugToolsUnit_BuildStatsMenuItems(void);
-static void DebugToolsUnit_BuildAiMenuItems(void);
 
 static u8 DebugToolsUnit_CloseFlags(void)
 {
@@ -891,9 +882,6 @@ static int DebugToolsUnit_ReadOnlyMenuItemDraw(
     return 0;
 }
 
-#define DEBUGTOOLS_UNIT_SET_DRAW(item, draw) ((item)->onDraw = (draw))
-#else
-#define DEBUGTOOLS_UNIT_SET_DRAW(item, draw) ((void)0)
 #endif
 
 static void DebugToolsUnit_ResetSession(void)
@@ -999,7 +987,6 @@ static u8 DebugToolsUnit_ReturnToRootSelected(
     }
 
     DebugToolsUnit_LoadValues(unit);
-    DebugToolsUnit_BuildMenuItems();
     DebugTools_QueueSubmenuTransition(menu, &gDebugToolsUnitMenuDef);
     if (!DebugTools_IsMenuTransitionScheduled())
         return MENU_ACT_SND6B;
@@ -1423,17 +1410,14 @@ static u8 DebugToolsUnit_OpenEditorSelected(
     switch (item->def->overrideId)
     {
         case DEBUGTOOLS_UNIT_EDIT_HP_OVERRIDE_ID:
-            DebugToolsUnit_BuildHpMenuItems();
             menuDef = &gDebugToolsUnitHpMenuDef;
             break;
 
         case DEBUGTOOLS_UNIT_EDIT_STATS_OVERRIDE_ID:
-            DebugToolsUnit_BuildStatsMenuItems();
             menuDef = &gDebugToolsUnitStatsMenuDef;
             break;
 
         case DEBUGTOOLS_UNIT_EDIT_AI_OVERRIDE_ID:
-            DebugToolsUnit_BuildAiMenuItems();
             menuDef = &gDebugToolsUnitAiMenuDef;
             break;
 
@@ -1455,232 +1439,221 @@ static u8 DebugToolsUnit_OpenEditorSelected(
     return DebugToolsUnit_CloseFlags();
 }
 
-static void DebugToolsUnit_SetMenuItem(
-    struct MenuItemDef* item,
-    const char* name,
-    u8 overrideId,
-    MenuAvailabilityFunc isAvailable,
-    MenuSelectFunc onSelected)
-{
-    item->name = name;
-    item->overrideId = overrideId;
-    item->isAvailable = isAvailable;
-    item->onSelected = onSelected;
-}
+#ifdef MODERN
+#define DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(message, draw) \
+    .helpMsgId = (u16)(message), .onDraw = (draw),
+#else
+#define DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(message, draw)
+#endif
 
-static void DebugToolsUnit_BuildMenuItems(void)
-{
-    memset(sUnitMenuItemDefs, 0, sizeof(sUnitMenuItemDefs));
+static const struct MenuItemDef sUnitMenuItemDefs[] = {
+    {
+        .name = "Confirm Heal to Full",
+        .overrideId = DEBUGTOOLS_UNIT_OVERRIDE_ID,
+        .isAvailable = MenuAlwaysEnabled,
+        .onSelected = DebugToolsUnit_HealSelected,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_CONFIRM_HEAL_FULL,
+            DebugToolsTools_LocalizedMenuItemDraw)
+    },
+    {
+        .name = "Edit HP",
+        .overrideId = DEBUGTOOLS_UNIT_EDIT_HP_OVERRIDE_ID,
+        .isAvailable = MenuAlwaysEnabled,
+        .onSelected = DebugToolsUnit_OpenEditorSelected,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_EDIT_HP,
+            DebugToolsTools_LocalizedMenuItemDraw)
+    },
+    {
+        .name = "Edit Stats",
+        .overrideId = DEBUGTOOLS_UNIT_EDIT_STATS_OVERRIDE_ID,
+        .isAvailable = MenuAlwaysEnabled,
+        .onSelected = DebugToolsUnit_OpenEditorSelected,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_EDIT_STATS,
+            DebugToolsTools_LocalizedMenuItemDraw)
+    },
+    {
+        .name = "Edit AI",
+        .overrideId = DEBUGTOOLS_UNIT_EDIT_AI_OVERRIDE_ID,
+        .isAvailable = MenuAlwaysEnabled,
+        .onSelected = DebugToolsUnit_OpenEditorSelected,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_EDIT_AI,
+            DebugToolsTools_LocalizedMenuItemDraw)
+    },
+    {
+        .name = "Confirm Clear Status",
+        .overrideId = DEBUGTOOLS_UNIT_CLEAR_STATUS_OVERRIDE_ID,
+        .isAvailable = DebugToolsUnit_ClearStatusAvailable,
+        .onSelected = DebugToolsUnit_ClearStatusSelected,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_CLEAR_STATUS,
+            DebugToolsTools_LocalizedMenuItemDraw)
+    },
+    {
+        .name = "Unit/Class",
+        .overrideId = DEBUGTOOLS_UNIT_IDENTITY_OVERRIDE_ID,
+        .isAvailable = MenuAlwaysDisabled,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_IDENTITY,
+            DebugToolsUnit_ReadOnlyMenuItemDraw)
+    },
+    {
+        .name = "State",
+        .overrideId = DEBUGTOOLS_UNIT_STATE_OVERRIDE_ID,
+        .isAvailable = MenuAlwaysDisabled,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_STATE,
+            DebugToolsUnit_ReadOnlyMenuItemDraw)
+    },
+    {
+        .name = "Back",
+        .isAvailable = MenuAlwaysEnabled,
+        .onSelected = DebugToolsUnit_CloseSelected,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_FRAMEWORK_BACK,
+            DebugToolsTools_LocalizedMenuItemDraw)
+    },
+    {0}
+};
 
-    DebugToolsUnit_SetMenuItem(
-        &sUnitMenuItemDefs[0],
-        "Confirm Heal to Full",
-        DEBUGTOOLS_UNIT_OVERRIDE_ID,
-        MenuAlwaysEnabled,
-        DebugToolsUnit_HealSelected);
-    DEBUGTOOLS_LOCALIZE_ITEM(
-        &sUnitMenuItemDefs[0],
-        EXP_MSG_DEBUG_CONFIRM_HEAL_FULL);
+static const struct MenuItemDef sUnitHpMenuItemDefs[] = {
+    {
+        .name = "Current HP",
+        .overrideId = DEBUGTOOLS_UNIT_CURRENT_HP_OVERRIDE_ID,
+        .isAvailable = DebugToolsUnit_ValueAvailable,
+        .onSelected = DebugToolsUnit_CommitValueSelected,
+        .onIdle = DebugToolsUnit_AdjustValue,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_CURRENT_HP,
+            DebugToolsUnit_ValueMenuItemDraw)
+    },
+    {
+        .name = "Back",
+        .isAvailable = MenuAlwaysEnabled,
+        .onSelected = DebugToolsUnit_ReturnToRootSelected,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_FRAMEWORK_BACK,
+            DebugToolsTools_LocalizedMenuItemDraw)
+    },
+    {0}
+};
 
-    DebugToolsUnit_SetMenuItem(
-        &sUnitMenuItemDefs[1],
-        "Edit HP",
-        DEBUGTOOLS_UNIT_EDIT_HP_OVERRIDE_ID,
-        MenuAlwaysEnabled,
-        DebugToolsUnit_OpenEditorSelected);
-    DEBUGTOOLS_LOCALIZE_ITEM(
-        &sUnitMenuItemDefs[1],
-        EXP_MSG_DEBUG_UNIT_EDIT_HP);
+static const struct MenuItemDef sUnitStatsMenuItemDefs[] = {
+    {
+        .name = "Max HP",
+        .overrideId = DEBUGTOOLS_UNIT_MAX_HP_OVERRIDE_ID,
+        .isAvailable = DebugToolsUnit_ValueAvailable,
+        .onSelected = DebugToolsUnit_CommitValueSelected,
+        .onIdle = DebugToolsUnit_AdjustValue,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_MAX_HP,
+            DebugToolsUnit_ValueMenuItemDraw)
+    },
+    {
+        .name = "Power",
+        .overrideId = DEBUGTOOLS_UNIT_POWER_OVERRIDE_ID,
+        .isAvailable = DebugToolsUnit_ValueAvailable,
+        .onSelected = DebugToolsUnit_CommitValueSelected,
+        .onIdle = DebugToolsUnit_AdjustValue,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_POWER,
+            DebugToolsUnit_ValueMenuItemDraw)
+    },
+    {
+        .name = "Skill",
+        .overrideId = DEBUGTOOLS_UNIT_SKILL_OVERRIDE_ID,
+        .isAvailable = DebugToolsUnit_ValueAvailable,
+        .onSelected = DebugToolsUnit_CommitValueSelected,
+        .onIdle = DebugToolsUnit_AdjustValue,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_SKILL,
+            DebugToolsUnit_ValueMenuItemDraw)
+    },
+    {
+        .name = "Speed",
+        .overrideId = DEBUGTOOLS_UNIT_SPEED_OVERRIDE_ID,
+        .isAvailable = DebugToolsUnit_ValueAvailable,
+        .onSelected = DebugToolsUnit_CommitValueSelected,
+        .onIdle = DebugToolsUnit_AdjustValue,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_SPEED,
+            DebugToolsUnit_ValueMenuItemDraw)
+    },
+    {
+        .name = "Defense",
+        .overrideId = DEBUGTOOLS_UNIT_DEFENSE_OVERRIDE_ID,
+        .isAvailable = DebugToolsUnit_ValueAvailable,
+        .onSelected = DebugToolsUnit_CommitValueSelected,
+        .onIdle = DebugToolsUnit_AdjustValue,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_DEFENSE,
+            DebugToolsUnit_ValueMenuItemDraw)
+    },
+    {
+        .name = "Resistance",
+        .overrideId = DEBUGTOOLS_UNIT_RESISTANCE_OVERRIDE_ID,
+        .isAvailable = DebugToolsUnit_ValueAvailable,
+        .onSelected = DebugToolsUnit_CommitValueSelected,
+        .onIdle = DebugToolsUnit_AdjustValue,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_RESISTANCE,
+            DebugToolsUnit_ValueMenuItemDraw)
+    },
+    {
+        .name = "Luck",
+        .overrideId = DEBUGTOOLS_UNIT_LUCK_OVERRIDE_ID,
+        .isAvailable = DebugToolsUnit_ValueAvailable,
+        .onSelected = DebugToolsUnit_CommitValueSelected,
+        .onIdle = DebugToolsUnit_AdjustValue,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_LUCK,
+            DebugToolsUnit_ValueMenuItemDraw)
+    },
+    {
+        .name = "Back",
+        .isAvailable = MenuAlwaysEnabled,
+        .onSelected = DebugToolsUnit_ReturnToRootSelected,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_FRAMEWORK_BACK,
+            DebugToolsTools_LocalizedMenuItemDraw)
+    },
+    {0}
+};
 
-    DebugToolsUnit_SetMenuItem(
-        &sUnitMenuItemDefs[2],
-        "Edit Stats",
-        DEBUGTOOLS_UNIT_EDIT_STATS_OVERRIDE_ID,
-        MenuAlwaysEnabled,
-        DebugToolsUnit_OpenEditorSelected);
-    DEBUGTOOLS_LOCALIZE_ITEM(
-        &sUnitMenuItemDefs[2],
-        EXP_MSG_DEBUG_UNIT_EDIT_STATS);
-
-    DebugToolsUnit_SetMenuItem(
-        &sUnitMenuItemDefs[3],
-        "Edit AI",
-        DEBUGTOOLS_UNIT_EDIT_AI_OVERRIDE_ID,
-        MenuAlwaysEnabled,
-        DebugToolsUnit_OpenEditorSelected);
-    DEBUGTOOLS_LOCALIZE_ITEM(
-        &sUnitMenuItemDefs[3],
-        EXP_MSG_DEBUG_UNIT_EDIT_AI);
-
-    DebugToolsUnit_SetMenuItem(
-        &sUnitMenuItemDefs[4],
-        "Confirm Clear Status",
-        DEBUGTOOLS_UNIT_CLEAR_STATUS_OVERRIDE_ID,
-        DebugToolsUnit_ClearStatusAvailable,
-        DebugToolsUnit_ClearStatusSelected);
-    DEBUGTOOLS_LOCALIZE_ITEM(
-        &sUnitMenuItemDefs[4],
-        EXP_MSG_DEBUG_UNIT_CLEAR_STATUS);
-
-    DebugToolsUnit_SetMenuItem(
-        &sUnitMenuItemDefs[5],
-        "Unit/Class",
-        DEBUGTOOLS_UNIT_IDENTITY_OVERRIDE_ID,
-        MenuAlwaysDisabled,
-        NULL);
-    DEBUGTOOLS_LOCALIZE_ITEM(
-        &sUnitMenuItemDefs[5],
-        EXP_MSG_DEBUG_UNIT_IDENTITY);
-    DEBUGTOOLS_UNIT_SET_DRAW(
-        &sUnitMenuItemDefs[5],
-        DebugToolsUnit_ReadOnlyMenuItemDraw);
-
-    DebugToolsUnit_SetMenuItem(
-        &sUnitMenuItemDefs[6],
-        "State",
-        DEBUGTOOLS_UNIT_STATE_OVERRIDE_ID,
-        MenuAlwaysDisabled,
-        NULL);
-    DEBUGTOOLS_LOCALIZE_ITEM(
-        &sUnitMenuItemDefs[6],
-        EXP_MSG_DEBUG_UNIT_STATE);
-    DEBUGTOOLS_UNIT_SET_DRAW(
-        &sUnitMenuItemDefs[6],
-        DebugToolsUnit_ReadOnlyMenuItemDraw);
-
-    DebugToolsUnit_SetMenuItem(
-        &sUnitMenuItemDefs[7],
-        "Back",
-        0,
-        MenuAlwaysEnabled,
-        DebugToolsUnit_CloseSelected);
-    DEBUGTOOLS_LOCALIZE_ITEM(
-        &sUnitMenuItemDefs[7],
-        EXP_MSG_FRAMEWORK_BACK);
-}
-
-static void DebugToolsUnit_SetValueMenuItem(
-    struct MenuItemDef* item,
-    const char* name,
-    u8 overrideId)
-{
-    DebugToolsUnit_SetMenuItem(
-        item,
-        name,
-        overrideId,
-        DebugToolsUnit_ValueAvailable,
-        DebugToolsUnit_CommitValueSelected);
-    item->onIdle = DebugToolsUnit_AdjustValue;
-}
-
-#define DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(item, message) \
-    do \
-    { \
-        DEBUGTOOLS_LOCALIZE_ITEM((item), (message)); \
-        DEBUGTOOLS_UNIT_SET_DRAW((item), DebugToolsUnit_ValueMenuItemDraw); \
-    } while (0)
-
-static void DebugToolsUnit_SetBackMenuItem(struct MenuItemDef* item)
-{
-    DebugToolsUnit_SetMenuItem(
-        item,
-        "Back",
-        0,
-        MenuAlwaysEnabled,
-        DebugToolsUnit_ReturnToRootSelected);
-    DEBUGTOOLS_LOCALIZE_ITEM(item, EXP_MSG_FRAMEWORK_BACK);
-}
-
-static void DebugToolsUnit_BuildHpMenuItems(void)
-{
-    memset(sUnitValueMenuItemDefs, 0, sizeof(sUnitValueMenuItemDefs));
-
-    DebugToolsUnit_SetValueMenuItem(
-        &sUnitValueMenuItemDefs[0],
-        "Current HP",
-        DEBUGTOOLS_UNIT_CURRENT_HP_OVERRIDE_ID);
-    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
-        &sUnitValueMenuItemDefs[0],
-        EXP_MSG_DEBUG_UNIT_CURRENT_HP);
-    DebugToolsUnit_SetBackMenuItem(&sUnitValueMenuItemDefs[1]);
-}
-
-static void DebugToolsUnit_BuildStatsMenuItems(void)
-{
-    memset(sUnitValueMenuItemDefs, 0, sizeof(sUnitValueMenuItemDefs));
-
-    DebugToolsUnit_SetValueMenuItem(
-        &sUnitValueMenuItemDefs[0],
-        "Max HP",
-        DEBUGTOOLS_UNIT_MAX_HP_OVERRIDE_ID);
-    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
-        &sUnitValueMenuItemDefs[0],
-        EXP_MSG_DEBUG_UNIT_MAX_HP);
-    DebugToolsUnit_SetValueMenuItem(
-        &sUnitValueMenuItemDefs[1],
-        "Power",
-        DEBUGTOOLS_UNIT_POWER_OVERRIDE_ID);
-    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
-        &sUnitValueMenuItemDefs[1],
-        EXP_MSG_DEBUG_UNIT_POWER);
-    DebugToolsUnit_SetValueMenuItem(
-        &sUnitValueMenuItemDefs[2],
-        "Skill",
-        DEBUGTOOLS_UNIT_SKILL_OVERRIDE_ID);
-    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
-        &sUnitValueMenuItemDefs[2],
-        EXP_MSG_DEBUG_UNIT_SKILL);
-    DebugToolsUnit_SetValueMenuItem(
-        &sUnitValueMenuItemDefs[3],
-        "Speed",
-        DEBUGTOOLS_UNIT_SPEED_OVERRIDE_ID);
-    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
-        &sUnitValueMenuItemDefs[3],
-        EXP_MSG_DEBUG_UNIT_SPEED);
-    DebugToolsUnit_SetValueMenuItem(
-        &sUnitValueMenuItemDefs[4],
-        "Defense",
-        DEBUGTOOLS_UNIT_DEFENSE_OVERRIDE_ID);
-    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
-        &sUnitValueMenuItemDefs[4],
-        EXP_MSG_DEBUG_UNIT_DEFENSE);
-    DebugToolsUnit_SetValueMenuItem(
-        &sUnitValueMenuItemDefs[5],
-        "Resistance",
-        DEBUGTOOLS_UNIT_RESISTANCE_OVERRIDE_ID);
-    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
-        &sUnitValueMenuItemDefs[5],
-        EXP_MSG_DEBUG_UNIT_RESISTANCE);
-    DebugToolsUnit_SetValueMenuItem(
-        &sUnitValueMenuItemDefs[6],
-        "Luck",
-        DEBUGTOOLS_UNIT_LUCK_OVERRIDE_ID);
-    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
-        &sUnitValueMenuItemDefs[6],
-        EXP_MSG_DEBUG_UNIT_LUCK);
-    DebugToolsUnit_SetBackMenuItem(&sUnitValueMenuItemDefs[7]);
-}
-
-static void DebugToolsUnit_BuildAiMenuItems(void)
-{
-    memset(sUnitValueMenuItemDefs, 0, sizeof(sUnitValueMenuItemDefs));
-
-    DebugToolsUnit_SetValueMenuItem(
-        &sUnitValueMenuItemDefs[0],
-        "AI A",
-        DEBUGTOOLS_UNIT_AI_A_OVERRIDE_ID);
-    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
-        &sUnitValueMenuItemDefs[0],
-        EXP_MSG_DEBUG_UNIT_AI_A);
-    DebugToolsUnit_SetValueMenuItem(
-        &sUnitValueMenuItemDefs[1],
-        "AI B",
-        DEBUGTOOLS_UNIT_AI_B_OVERRIDE_ID);
-    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
-        &sUnitValueMenuItemDefs[1],
-        EXP_MSG_DEBUG_UNIT_AI_B);
-    DebugToolsUnit_SetBackMenuItem(&sUnitValueMenuItemDefs[2]);
-}
+static const struct MenuItemDef sUnitAiMenuItemDefs[] = {
+    {
+        .name = "AI A",
+        .overrideId = DEBUGTOOLS_UNIT_AI_A_OVERRIDE_ID,
+        .isAvailable = DebugToolsUnit_ValueAvailable,
+        .onSelected = DebugToolsUnit_CommitValueSelected,
+        .onIdle = DebugToolsUnit_AdjustValue,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_AI_A,
+            DebugToolsUnit_ValueMenuItemDraw)
+    },
+    {
+        .name = "AI B",
+        .overrideId = DEBUGTOOLS_UNIT_AI_B_OVERRIDE_ID,
+        .isAvailable = DebugToolsUnit_ValueAvailable,
+        .onSelected = DebugToolsUnit_CommitValueSelected,
+        .onIdle = DebugToolsUnit_AdjustValue,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_DEBUG_UNIT_AI_B,
+            DebugToolsUnit_ValueMenuItemDraw)
+    },
+    {
+        .name = "Back",
+        .isAvailable = MenuAlwaysEnabled,
+        .onSelected = DebugToolsUnit_ReturnToRootSelected,
+        DEBUGTOOLS_UNIT_LOCALIZED_FIELDS(
+            EXP_MSG_FRAMEWORK_BACK,
+            DebugToolsTools_LocalizedMenuItemDraw)
+    },
+    {0}
+};
 
 CONST_DATA struct MenuDef gDebugToolsUnitMenuDef = {
     {1, 2, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
@@ -1697,7 +1670,7 @@ CONST_DATA struct MenuDef gDebugToolsUnitMenuDef = {
 CONST_DATA struct MenuDef gDebugToolsUnitHpMenuDef = {
     {1, 2, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
-    sUnitValueMenuItemDefs,
+    sUnitHpMenuItemDefs,
     DEBUGTOOLS_UNIT_MENU_ON_INIT,
     DebugToolsUnit_OnEnd,
     0,
@@ -1709,7 +1682,7 @@ CONST_DATA struct MenuDef gDebugToolsUnitHpMenuDef = {
 CONST_DATA struct MenuDef gDebugToolsUnitStatsMenuDef = {
     {1, 2, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
-    sUnitValueMenuItemDefs,
+    sUnitStatsMenuItemDefs,
     DEBUGTOOLS_UNIT_MENU_ON_INIT,
     DebugToolsUnit_OnEnd,
     0,
@@ -1721,7 +1694,7 @@ CONST_DATA struct MenuDef gDebugToolsUnitStatsMenuDef = {
 CONST_DATA struct MenuDef gDebugToolsUnitAiMenuDef = {
     {1, 2, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
-    sUnitValueMenuItemDefs,
+    sUnitAiMenuItemDefs,
     DEBUGTOOLS_UNIT_MENU_ON_INIT,
     DebugToolsUnit_OnEnd,
     0,
@@ -1823,7 +1796,6 @@ static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct Me
     if (outcome != DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED)
         return MENU_ACT_SND6B;
 
-    DebugToolsUnit_BuildMenuItems();
     DebugTools_QueueSubmenuTransition(menu, &gDebugToolsUnitMenuDef);
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
