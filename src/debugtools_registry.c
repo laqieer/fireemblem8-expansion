@@ -797,10 +797,7 @@ void DebugTools_TitleHotkeyCheck(void)
      * authoritative reentrancy guard (returns DEBUGTOOLS_ERR_ALREADY_ACTIVE,
      * a no-op, rather than starting a second concurrent MenuProc). */
     if ((gKeyStatusPtr->heldKeys & mask) == mask && (gKeyStatusPtr->newKeys & mask) != 0)
-    {
-        if (DebugTools_OpenHub() == DEBUGTOOLS_ERR_ALREADY_ACTIVE)
-            gKeyStatusPtr->newKeys &= (u16)~mask;
-    }
+        DebugTools_OpenHub();
 }
 
 /* Issue #11 slice 2: map-phase and prep-screen hub entry points. Same
@@ -812,10 +809,7 @@ void DebugTools_MapHotkeyCheck(void)
     u16 mask = FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK;
 
     if ((gKeyStatusPtr->heldKeys & mask) == mask && (gKeyStatusPtr->newKeys & mask) != 0)
-    {
-        if (DebugTools_OpenHub() == DEBUGTOOLS_ERR_ALREADY_ACTIVE)
-            gKeyStatusPtr->newKeys &= (u16)~mask;
-    }
+        DebugTools_OpenHub();
 }
 
 void DebugTools_PrepHotkeyCheck(void)
@@ -836,8 +830,7 @@ void DebugTools_PrepHotkeyCheck(void)
         if (gPlaySt.chapterStateBits & PLAY_FLAG_PREPSCREEN)
             gDebugToolsProbe.prepScreenObservedCount++;
 
-        if (DebugTools_OpenHub() == DEBUGTOOLS_ERR_ALREADY_ACTIVE)
-            gKeyStatusPtr->newKeys &= (u16)~mask;
+        DebugTools_OpenHub();
     }
 }
 
