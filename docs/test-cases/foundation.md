@@ -19,8 +19,8 @@
 ### Expected result
 
 The registry exposes distinct feature and case records, this procedure is
-addressable through its stable ID, and both commands accept the valid
-foundation catalog.
+addressable through its stable ID, and both commands accept the valid complete
+catalog.
 
 ### Negative control
 
@@ -32,10 +32,10 @@ future `complete` mode.
 
 ### Interactions and save compatibility
 
-This depends on issue #53's tester-facing-case contract. It stays in
-explicit foundation/backfill-pending mode until #55 through #58 supply their
-feature-family entries. It has no runtime feature interaction and changes no
-save bytes, migration, or compatibility epoch.
+This depends on issue #53's tester-facing-case contract. The #55 through #58
+feature-family entries are present and complete coverage is enforced. It has
+no runtime feature interaction and changes no save bytes, migration, or
+compatibility epoch.
 
 ### Automation
 
@@ -46,9 +46,8 @@ checker. No manual-only criterion applies.
 
 ### Cleanup and limitations
 
-No cleanup is required. This case validates the generic catalog/checker seam;
-the final fail-closed all-current-feature assertion is intentionally deferred
-until the #55 through #58 backfills land.
+No cleanup is required. This case validates the generic catalog/checker seam
+and its fail-closed all-current-feature coverage assertion.
 
 ## TC-TEST-QUALITY-001: Meaningful test-evidence policy rejects semantic mutations
 
