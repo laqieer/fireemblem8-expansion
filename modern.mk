@@ -1589,6 +1589,7 @@ ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 		--starter-content "$(EXPANSION_STARTER_CONTENT)" \
 		--aoe-reference "$(EXPANSION_AOE_REFERENCE)" \
 		--custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
+		--asset-manifest "$(ASSET_MANIFEST)" \
 		--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 		--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 		--hq-mixer "$(EXPANSION_HQ_MIXER)" \
@@ -1655,6 +1656,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	--starter-content "$(EXPANSION_STARTER_CONTENT)" \
 	--aoe-reference "$(EXPANSION_AOE_REFERENCE)" \
 	--custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
+	--asset-manifest "$(ASSET_MANIFEST)" \
 	--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 	--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 	--hq-mixer "$(EXPANSION_HQ_MIXER)" \

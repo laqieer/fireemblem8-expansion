@@ -145,12 +145,12 @@ and lane cell records the family-specific coverage in addition to them.
 
 | Field | Current coverage |
 | --- | --- |
-| Community input | None. Existing effect code/data is not a generic custom-spell import format. |
-| Canonical source/build product | Per-effect graphics, palettes, TSA, scripts, and C procedures are maintained alongside `src/banim-efxmagic-*.c` and other battle-effect code. |
-| Runtime consumer/seam | Battle effect dispatch, procedures, and graphics/palette registration calls own effect semantics; assets alone cannot create a new effect. |
-| IDs and limits | Effect commands, battle procedure ABI, VRAM, OAM, BG layers, palette slots, DMA timing, ROM/RAM, and interaction with battle animation state are runtime constraints. They have no generic declarative schema. |
-| Validation and lane | Existing effects compile/link; there is no source-owned custom-spell package validator or bounded module profile. |
-| Status/gap | **Runtime capability missing**. #61 must first freeze the optional runtime ABI, resources, save/config decision, positive case, and disabled control; it must not be folded into a converter. |
+| Community input | The strict `custom-spell-effect` kind accepts only documented `feditor-magic-v1` `spell.json`/text/indexed-PNG packages. CSA, arbitrary commands/C, patch binaries, ROM mutation, and external TSA/OAM are rejected. |
+| Canonical source/build product | Committed package sources generate deterministic per-frame compressed OBJ/BG/TSA/palettes, fixed OAM scripts, typed descriptors, `SpellAssoc` binding, inventory/provenance, and identity digests under ignored `build/generated/assets/custom_spell/`. |
+| Runtime consumer/seam | #77's closed `C05` / `StartSpellAnimation` range and one typed owner Proc consume the generated ABI. `scripts/assets/manifest.py` remains the only source adapter registry. |
+| IDs and limits | Stable `CUSTOM_SPELL_*` IDs generate private dense `0x80..0x8F` indices; 1..64 frames, 255 ticks, OBJ `0x1000`, BG `0x2000`, 1200-byte TSA, 16 OAM, 8 SFX, and aggregate `0x40000` are fail-closed. |
+| Validation and lane | Host adversarial/determinism tests plus enabled debug/release libmGBA prove the reference; the default root is catalog-free and archival always disables runtime/assets. |
+| Status/gap | **Supported narrow subset**. Future dialects/exporters require separate issues and must not weaken `feditor-magic-v1`. |
 
 ### Backgrounds and TSA/tilemaps
 
@@ -226,7 +226,7 @@ and lane cell records the family-specific coverage in addition to them.
 | TMX layouts | #64 depends on #60 and this layout row. | Claiming all TMX layers, transforms, external tilesets, encodings, or editor exports are supported before its safe subset validates them. |
 | Portrait packages | #63 depends on #60 and the `FaceData` row. | Generating only PNG conversion while leaving IDs, symbols, cards/minimugs, or table entries manual. |
 | Battle-animation packages | #62 depends on #60 and the banim table/class/linker row. | Registering images without the modes/script/OAM/palette/class/linker contract. |
-| Custom spells | #61 depends on #60 but remains a separate runtime module. | Treating a magic package as a converter-only change or hiding a runtime extension in the generic asset framework. |
+| Custom spells | #61/#77/#78 use #60 for source adaptation and a separate typed runtime owner. | Treating a magic package as converter-only, accepting editor patches/ROM mutation, or adding a second dispatcher/registry. |
 | Generated data | Existing generated-data sources can provide typed references. | Replacing generated-data or duplicating its validation with an unrelated asset registry. |
 | Localization/fonts | Locale/asset adapters must preserve locale masks, renderer data, and source provenance. | Making FEBuilderGBA, a GUI, network access, an installed font, or a commercial asset a normal build dependency. |
 | Save/configuration | This audit changes neither. Future runtime modules must state their own compatibility decision. | Inferring a save/config change from a converter-only change, or silently changing configuration identity. |

@@ -19,7 +19,7 @@ from scripts.generated_data.diagnostics import (
 )
 from scripts.generated_data.json_loader import load_json_file
 
-from . import banim
+from . import banim, custom_spell
 
 
 SCHEMA_VERSION = 1
@@ -59,6 +59,8 @@ class AssetRecord:
         "depends_on", "dependency_locs", "options", "option_locs",
         "ownership", "ownership_locs", "resources", "resource_locs",
         "provenance", "provenance_locs", "loc", "banim_package",
+        "custom_spell_package", "custom_spell_fallback_id",
+        "custom_spell_item_type", "custom_spell_render",
     )
 
     def __init__(
@@ -85,6 +87,10 @@ class AssetRecord:
         self.provenance_locs = provenance_locs
         self.loc = loc
         self.banim_package = None
+        self.custom_spell_package = None
+        self.custom_spell_fallback_id = None
+        self.custom_spell_item_type = None
+        self.custom_spell_render = None
 
 
 def _ensure_exact_keys(node, required, reference_path):
@@ -1444,6 +1450,135 @@ class BattleAnimationPackageKind:
         return banim_derived_outputs([record], out_dir)
 
 
+class CustomSpellEffectKind:
+    """Generate one bounded custom-spell descriptor through the #77 ABI."""
+
+    name = "custom-spell-effect"
+    _options = {
+        "importFormat": custom_spell.IMPORT_FORMAT,
+        "runtimeAbi": custom_spell.RUNTIME_ABI,
+        "compression": custom_spell.COMPRESSION,
+    }
+    _ownership = {
+        "seam": "spell-effect-dispatch",
+        "spellAssociationSource": "src/spellassoc-data.c",
+    }
+    _resources = (
+        "frames", "totalFrames", "hitFrame", "objBytes", "bgBytes",
+        "bgTsaBytes", "objOamEntries", "objPalettes", "bgPalettes",
+        "soundEvents", "romBytes",
+    )
+
+    def validate(self, record, diagnostics):
+        valid = _validate_exact_values(
+            record.options, record.option_locs, self._options, diagnostics,
+            record.loc, "{}.options".format(record.id),
+        )
+        valid = _validate_exact_values(
+            record.ownership, record.ownership_locs,
+            (
+                "seam", "item", "effectSymbol", "fallbackVanillaEffect",
+                "spellAssociationSource",
+            ),
+            diagnostics, record.loc, "{}.ownership".format(record.id),
+        ) and valid
+        valid = _validate_exact_values(
+            record.resources, record.resource_locs, self._resources, diagnostics,
+            record.loc, "{}.resources".format(record.id),
+        ) and valid
+        if not valid:
+            return
+        for key, expected in self._options.items():
+            if not _has_exact_value(record.options[key], expected):
+                diagnostics.add(GeneratedDataError(
+                    "custom-spell-effect options.{} must be {!r}".format(
+                        key, expected
+                    ),
+                    record.option_locs[key],
+                    "{}.options.{}".format(record.id, key),
+                ))
+        for key, expected in self._ownership.items():
+            if record.ownership[key] != expected:
+                diagnostics.add(GeneratedDataError(
+                    "custom-spell-effect ownership.{} must be '{}'".format(
+                        key, expected
+                    ),
+                    record.ownership_locs[key],
+                    "{}.ownership.{}".format(record.id, key),
+                ))
+        if (
+            len(record.sources) < 4
+            or os.path.basename(record.sources[0]) != "spell.json"
+            or os.path.basename(record.sources[1]) != "animation.txt"
+            or any(not path.lower().endswith(".png") for path in record.sources[2:])
+        ):
+            diagnostics.add(GeneratedDataError(
+                "custom-spell-effect requires ordered spell.json, animation.txt, and referenced PNG sources",
+                record.loc,
+                "{}.sources".format(record.id),
+            ))
+            return
+        try:
+            package = custom_spell.load_package(
+                REPO_ROOT,
+                record.sources[0],
+                record.sources[1],
+                record.sources,
+                "include/constants/songs.h",
+                record.ownership["effectSymbol"],
+            )
+            custom_spell.validate_declared_resources(package, record.resources)
+            fallback, item_type = custom_spell.validate_runtime_binding(
+                REPO_ROOT, record.ownership
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            diagnostics.add(GeneratedDataError(
+                str(exc), record.loc, "{}.package".format(record.id)
+            ))
+            return
+        record.custom_spell_package = package
+        record.custom_spell_fallback_id = fallback
+        record.custom_spell_item_type = item_type
+
+    def ownership_key(self, record):
+        return "{}:{}:{}".format(
+            record.ownership["seam"],
+            record.ownership["spellAssociationSource"],
+            record.ownership["item"],
+        )
+
+    def make_dependencies(self, record):
+        sources = tuple(record.sources) + self.source_dependencies(record)
+        return (
+            ("src/custom_spell_effect.o", sources),
+            ("src/data/custom_spell_effect_data.o", sources),
+            ("src/spellassoc-data.o", sources),
+            ("$(MODERN_OUTPUT_DIR)/src/custom_spell_effect.o", sources),
+            ("$(MODERN_OUTPUT_DIR)/src/data/custom_spell_effect_data.o", sources),
+            ("$(MODERN_OUTPUT_DIR)/src/spellassoc-data.o", sources),
+        )
+
+    def source_dependencies(self, record):
+        del record
+        return (
+            "include/constants/songs.h",
+            "include/custom_spell_effect.h",
+            "include/spellassoc.h",
+            "src/banim-efxmagic.c",
+            "src/data/custom_spell_effect_data.c",
+            "src/data_items.c",
+            "src/spellassoc-data.c",
+        )
+
+    def generated_outputs(self, record, out_dir):
+        del record, out_dir
+        return {}
+
+    def transient_outputs(self, record, out_dir):
+        del record, out_dir
+        return ()
+
+
 class KindRegistry:
     """The sole static extension seam for asset kinds."""
 
@@ -1464,6 +1599,7 @@ KIND_REGISTRY.register(ChapterMapLayoutKind())
 KIND_REGISTRY.register(FormattedPortraitPackageKind())
 KIND_REGISTRY.register(TiledTmxMapLayoutKind())
 KIND_REGISTRY.register(BattleAnimationPackageKind())
+KIND_REGISTRY.register(CustomSpellEffectKind())
 
 
 def validate(records):
@@ -1520,6 +1656,8 @@ def validate(records):
         if record.kind == FormattedPortraitPackageKind.name:
             portrait_metadata[id(record)] = metadata
         if isinstance(kind, BattleAnimationPackageKind) and record.banim_package is None:
+            continue
+        if isinstance(kind, CustomSpellEffectKind) and record.custom_spell_package is None:
             continue
         try:
             key = kind.ownership_key(record)
@@ -1616,6 +1754,10 @@ def validate(records):
                     "dangling dependency '{}'".format(dependency), loc, "{}.dependsOn".format(record.id)
                 ))
     _validate_dependencies(records, by_id, diagnostics)
+    try:
+        custom_spell.validate_collection(records)
+    except ValueError as exc:
+        diagnostics.add(GeneratedDataError(str(exc), reference_path="custom-spell-effect"))
     diagnostics.raise_if_any()
     return records
 
@@ -1658,8 +1800,27 @@ def _validate_dependencies(records, by_id, diagnostics):
             visit(record)
 
 
-def load_and_validate(path):
-    return validate(load_manifest(path))
+def validate_custom_spell_selection(records, enabled):
+    if enabled not in (0, 1):
+        raise GeneratedDataError("EXPANSION_CUSTOM_SPELL_EFFECTS must be 0 or 1")
+    count = sum(
+        record.kind == CustomSpellEffectKind.name for record in records
+    )
+    if enabled == 0 and count:
+        raise GeneratedDataError(
+            "custom-spell-effect record(s) require EXPANSION_CUSTOM_SPELL_EFFECTS=1"
+        )
+    if enabled == 1 and count == 0:
+        raise GeneratedDataError(
+            "EXPANSION_CUSTOM_SPELL_EFFECTS=1 requires at least one custom-spell-effect record"
+        )
+
+
+def load_and_validate(path, custom_spell_effects=None):
+    records = validate(load_manifest(path))
+    if custom_spell_effects is not None:
+        validate_custom_spell_selection(records, custom_spell_effects)
+    return records
 
 
 def portrait_incbin_consumer_ids(records):
@@ -1689,6 +1850,16 @@ def banim_incbin_consumer_ids(records):
         record.id
         for record in records
         if record.kind == BattleAnimationPackageKind.name
+    )
+
+
+def custom_spell_incbin_consumer_ids(records):
+    """Return custom-spell records whose generated includes require the default root."""
+
+    return tuple(
+        record.id
+        for record in records
+        if record.kind == CustomSpellEffectKind.name
     )
 
 
@@ -1765,6 +1936,56 @@ def render_makefile(records):
                 ),
             )
         )
+    custom_records = [
+        record for record in records
+        if record.kind == CustomSpellEffectKind.name
+    ]
+    if custom_records:
+        generated = custom_spell.output_paths(
+            custom_records, "$(ASSET_OUTPUT_DIR)"
+        )
+        lines.append("\n{} &: $(ASSET_OUTPUT_MK)\n".format(" ".join(generated)))
+        lines.append(
+            '\t$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" '
+            '--out-dir "$(ASSET_OUTPUT_DIR)" generate\n'
+        )
+        for output in generated:
+            lines.append("\t@test -f {}\n".format(output))
+        data_include = (
+            "$(ASSET_OUTPUT_DIR)/custom_spell/custom_spell_effect_data.inc"
+        )
+        assoc_include = (
+            "$(ASSET_OUTPUT_DIR)/custom_spell/"
+            "custom_spell_effect_spellassoc.inc"
+        )
+        generated_header = (
+            "$(ASSET_OUTPUT_DIR)/custom_spell/custom_spell_effect_generated.h"
+        )
+        runtime_test_header = (
+            "$(ASSET_OUTPUT_DIR)/custom_spell/custom_spell_effect_runtime_test.h"
+        )
+        binary_outputs = [
+            path for path in generated
+            if not path.endswith((".h", ".inc", ".json"))
+        ]
+        lines.append(
+            "\nsrc/custom_spell_effect.o $(MODERN_OUTPUT_DIR)/src/custom_spell_effect.o: "
+            "{}\n".format(generated_header)
+        )
+        lines.append(
+            "src/data/custom_spell_effect_data.o "
+            "$(MODERN_OUTPUT_DIR)/src/data/custom_spell_effect_data.o: "
+            "{} {}\n".format(data_include, " ".join(binary_outputs))
+        )
+        lines.append(
+            "src/spellassoc-data.o $(MODERN_OUTPUT_DIR)/src/spellassoc-data.o: "
+            "{}\n".format(assoc_include)
+        )
+        lines.append(
+            "$(MODERN_OUTPUT_DIR)/src/custom_spell_effect_test.o: {}\n".format(
+                runtime_test_header
+            )
+        )
     return "".join(lines)
 
 
@@ -1781,7 +2002,13 @@ def render_inventory(records):
         lines.append(
             "| {} | {} | {} | {} | {} |\n".format(
                 record.id, record.kind, "<br>".join(record.sources),
-                record.ownership["seam"], record.ownership["consumer"],
+                record.ownership["seam"],
+                record.ownership.get(
+                    "consumer",
+                    "CustomSpellEffect_Lookup"
+                    if record.kind == CustomSpellEffectKind.name
+                    else "<unspecified>",
+                ),
             )
         )
     return "".join(lines)
@@ -2126,11 +2353,12 @@ def expected_outputs(records, out_dir):
         outputs.update(kind.generated_outputs(record, out_dir))
     for path, content in banim_expected_outputs(records, out_dir).items():
         outputs[path] = content.encode("utf-8") if isinstance(content, str) else content
+    outputs.update(custom_spell.expected_outputs(records, out_dir))
     return outputs
 
 
-def generate(manifest_path, out_dir):
-    records = load_and_validate(manifest_path)
+def generate(manifest_path, out_dir, custom_spell_effects=None):
+    records = load_and_validate(manifest_path, custom_spell_effects)
     out_dir = safe_output_dir(out_dir)
     outputs = expected_outputs(records, out_dir)
     for path in outputs:
@@ -2140,8 +2368,8 @@ def generate(manifest_path, out_dir):
     return records
 
 
-def check(manifest_path, out_dir):
-    records = load_and_validate(manifest_path)
+def check(manifest_path, out_dir, custom_spell_effects=None):
+    records = load_and_validate(manifest_path, custom_spell_effects)
     out_dir = safe_output_dir(out_dir)
     expected = expected_outputs(records, out_dir)
     errors = []

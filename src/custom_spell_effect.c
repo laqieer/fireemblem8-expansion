@@ -14,6 +14,8 @@
 
 #define CUSTOM_SPELL_EFFECT_REFERENCE_FALLBACK 22
 
+#include "build/generated/assets/custom_spell/custom_spell_effect_generated.h"
+
 enum
 {
     CUSTOM_SPELL_EFFECT_FALLBACK_INVALID = 1,
@@ -39,64 +41,6 @@ struct ProcCustomSpellEffect
     /* 3D */ u8 acquired;
     /* 3E */ u8 finalDisplayLatch;
     /* 3F */ u8 _pad;
-};
-
-static const struct CustomSpellEffectFrameAssets sReferenceFrameAssets[] =
-{
-    {
-        Img_FireSpellSprites,
-        Img_FireSpellBg,
-        Tsa_Banim_0,
-        Tsa_efxFireBG_0,
-        Pal_FireSpellSprites,
-        Pal_FireSpellBg,
-    },
-    {
-        Img_FireSpellSprites,
-        Img_FireSpellBg,
-        Tsa_Banim_0,
-        Tsa_efxFireBG_0,
-        Pal_FireSpellSprites,
-        Pal_FireSpellBg,
-    },
-};
-
-static const struct CustomSpellEffectFrame sReferenceFrames[] =
-{
-    { 2, 0, 0, 1, &sReferenceFrameAssets[0] },
-    { 2, 0, 1, 0, &sReferenceFrameAssets[1] },
-};
-
-static const u16 sReferenceSoundIds[] = { 0xF1 };
-
-static const struct CustomSpellEffect sReferenceEffect =
-{
-    "CUSTOM_SPELL_REFERENCE",
-    sReferenceFrames,
-    {
-        CUSTOM_SPELL_EFFECT_MAX_OBJ_BYTES,
-        CUSTOM_SPELL_EFFECT_MAX_BG_BYTES,
-        CUSTOM_SPELL_EFFECT_BG_TSA_BYTES,
-        CUSTOM_SPELL_EFFECT_OBJ_PALETTE_LINE,
-        CUSTOM_SPELL_EFFECT_BG_PALETTE_LINE,
-        1,
-        1,
-        { 0, 0 },
-        0,
-    },
-    {
-        FramScr_Unk5D4F90,
-        FramScr_Unk5D4F90,
-        FramScr_Unk5D4F90,
-        FramScr_Unk5D4F90,
-    },
-    sReferenceSoundIds,
-    CUSTOM_SPELL_EFFECT_BASE,
-    CUSTOM_SPELL_EFFECT_REFERENCE_FALLBACK,
-    2,
-    4,
-    2,
-    { 0, 0, 0 },
 };
 
 #if FE8_EXPANSION_DEBUG
@@ -240,11 +184,15 @@ const struct CustomSpellEffect *CustomSpellEffect_Lookup(u8 animationId)
     gCustomSpellEffectDebugProbe.lookups++;
 #endif
 
-    if (animationId == sReferenceEffect.animationId)
-        return &sReferenceEffect;
+    if (animationId >= CUSTOM_SPELL_EFFECT_BASE
+        && animationId < CUSTOM_SPELL_EFFECT_BASE
+            + CUSTOM_SPELL_EFFECT_GENERATED_COUNT)
+        return &gGeneratedCustomSpellEffects[
+            animationId - CUSTOM_SPELL_EFFECT_BASE];
 
 #if FE8_EXPANSION_CUSTOM_SPELL_TEST
-    testEffect = CustomSpellEffectTest_OverrideLookup(animationId, &sReferenceEffect);
+    testEffect = CustomSpellEffectTest_OverrideLookup(
+        animationId, &gGeneratedCustomSpellEffects[0]);
     if (testEffect != NULL)
         return testEffect;
 #endif
@@ -371,6 +319,15 @@ static bool8 CustomSpellEffect_LoadInitialResources(struct ProcCustomSpellEffect
         scripts->rightBack,
         scripts->leftBack);
 
+    if (proc->childAnim != NULL)
+    {
+        if (GetAnimPosition(proc->anim) == EKR_POS_L)
+            proc->childAnim->xPosition = 0x44;
+        else
+            proc->childAnim->xPosition = 0xAC;
+        proc->childAnim->yPosition = 0x58;
+    }
+
 #if FE8_EXPANSION_CUSTOM_SPELL_TEST
     if (proc->childAnim != NULL)
         CustomSpellEffectTest_RecordChildCreate();
@@ -393,12 +350,16 @@ static void CustomSpellEffect_Loop(struct ProcCustomSpellEffect *proc)
 
     frame = &proc->effect->frames[proc->frameIndex];
     if (proc->frameTimer == 0)
+    {
+        if (proc->frameIndex != 0)
+            CustomSpellEffect_ApplyFrameAssets(proc, frame->assets);
         for (sound = 0; sound < frame->soundCount; ++sound)
             PlaySFX(
                 proc->effect->soundIds[frame->soundStart + sound],
                 0x100,
                 proc->anim->xPosition,
                 1);
+    }
 
     if (proc->elapsedFrames == proc->effect->hitFrame && proc->hitApplied == 0)
     {
@@ -430,9 +391,6 @@ static void CustomSpellEffect_Loop(struct ProcCustomSpellEffect *proc)
     {
         proc->frameTimer = 0;
         proc->frameIndex++;
-        if (proc->frameIndex < proc->effect->frameCount)
-            CustomSpellEffect_ApplyFrameAssets(
-                proc, proc->effect->frames[proc->frameIndex].assets);
     }
 
     if (proc->frameIndex >= proc->effect->frameCount)

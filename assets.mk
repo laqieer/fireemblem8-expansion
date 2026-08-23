@@ -6,7 +6,8 @@
 
 ASSET_MANIFEST ?= assets/manifest.json
 ASSET_OUTPUT_DIR ?= build/generated/assets
-ASSET_TOOL := $(PYTHON) -m scripts.assets
+EXPANSION_CUSTOM_SPELL_EFFECTS ?= 0
+ASSET_TOOL := $(PYTHON) -m scripts.assets --custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)"
 ASSET_PORTRAIT_INCBIN_CONSUMERS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" portrait-incbin-consumers)
 ifneq ($(strip $(ASSET_PORTRAIT_INCBIN_CONSUMERS)),)
 ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
@@ -25,6 +26,13 @@ ASSET_BANIM_INCBIN_CONSUMERS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFE
 ifneq ($(strip $(ASSET_BANIM_INCBIN_CONSUMERS)),)
 ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
 $(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while battle-animation package INCBIN consumer(s) $(ASSET_BANIM_INCBIN_CONSUMERS) are declared)
+endif
+endif
+
+ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" custom-spell-incbin-consumers)
+ifneq ($(strip $(ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS)),)
+ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
+$(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while custom-spell-effect INCBIN consumer(s) $(ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS) are declared)
 endif
 endif
 
@@ -50,10 +58,13 @@ assets-check:
 	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" check
 
 assets-clean:
-	$(ASSET_TOOL) --out-dir "$(ASSET_OUTPUT_DIR)" clean
+	$(PYTHON) -m scripts.assets --out-dir "$(ASSET_OUTPUT_DIR)" clean
 
 assets-test:
-	$(PYTHON) -m unittest discover -s scripts/assets/tests -v
+	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES \
+		-u ASSET_MANIFEST -u ASSET_OUTPUT_DIR \
+		-u EXPANSION_CUSTOM_SPELL_EFFECTS \
+		$(PYTHON) -m unittest discover -s scripts/assets/tests -v
 
 # Remake this included Makefile before resolving object prerequisites. The
 # emitted fragment lists every declared source directly on the existing

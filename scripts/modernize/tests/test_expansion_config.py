@@ -1288,7 +1288,14 @@ class LoadIdentityFeatureFlagTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             implicit_default = self._identity(tmp)
             explicit_default = self._identity(tmp, custom_spell_effects="0")
-            enabled = self._identity(tmp, custom_spell_effects="1")
+            enabled = self._identity(
+                tmp,
+                custom_spell_effects="1",
+                asset_manifest=(
+                    ROOT / "assets" / "manifests"
+                    / "custom-spell-reference.json"
+                ),
+            )
 
         self.assertEqual(
             implicit_default.fingerprint_fields(),

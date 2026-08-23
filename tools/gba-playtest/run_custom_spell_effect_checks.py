@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run issue #77's isolated custom-spell dispatch/lifecycle probe ROM."""
+"""Run issues #77/#78's isolated generated custom-spell probe ROM."""
 
 from __future__ import annotations
 
@@ -327,7 +327,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.enabled:
             print(
-                "  registered dispatch, vanilla route, missing/invalid fallback, "
+                "  generated item association, registered dispatch, vanilla route, "
+                "missing/invalid fallback, "
                 "reentrancy, post-acquire failure cleanup, WITH_BACKGROUNDS, "
                 "foreign semaphore preservation, forced end, and final zero "
                 "ownership all matched; Anim/Proc allocation failures were "
