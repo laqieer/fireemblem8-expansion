@@ -9,8 +9,18 @@ static u16 readSramFast_Work[64];  // buffer to hold code of ReadSramFast_Core
 static u16 verifySramValueFast_Work[80];
 #endif
 
+#if FE8_EXPANSION_HQ_MIXER
+/*
+ * The HQ mixer reserves the final IWRAM headroom for its intermediate
+ * stereo buffer. These function pointers are not executed from IWRAM, so
+ * keep the copied SRAM routines but store their dispatch pointers in EWRAM.
+ */
+EWRAM_DATA u32 (* VerifySramFast)(void const * src, void * dest, u32 size);
+EWRAM_DATA void (* ReadSramFast)(void const * src, void * dest, u32 size);
+#else
 u32 (* VerifySramFast)(void const * src, void * dest, u32 size);    // pointer to verifySramFast_Work
 void (* ReadSramFast)(void const * src, void * dest, u32 size);     // pointer to readSramFast_Work
+#endif
 #ifdef MODERN
 u32 (* VerifySramValueFast)(void const * src, u8 value, u32 size);
 #endif

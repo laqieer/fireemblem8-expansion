@@ -404,7 +404,9 @@ jobs:
         curl --fail --silent --location --proto '=https' --proto-redir '=https' --tlsv1.2 --output "$base_image" "$BASEROM_URL"
         python3 -m scripts.modernize.patch_release create --base "$base_image" --target "$target_image" --metadata build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json --output-dir "$PATCH_ARTIFACT_DIR" --commit "$PATCH_COMMIT"
         python3 -m scripts.modernize.patch_release verify --base "$base_image" --artifact-dir "$PATCH_ARTIFACT_DIR"
-        find "$PATCH_ARTIFACT_DIR" -maxdepth 1 -type f -printf '%f\n' | sort | diff -u - <(printf '%s\n' fireemblem8-expansion-all-locales-all-features-aapcs.bps manifest.json README.txt)
+        LC_ALL=C
+        export LC_ALL
+        find "$PATCH_ARTIFACT_DIR" -maxdepth 1 -type f -printf '%f\n' | sort | diff -u <(printf '%s\n' README.txt fireemblem8-expansion-all-locales-all-features-aapcs.bps manifest.json | sort) -
       env:
         BASEROM_URL: ${{ secrets.BASEROM_URL }}
         PATCH_ARTIFACT_DIR: ${{ runner.temp }}/patch-artifact

@@ -20,6 +20,7 @@ the authoritative technical documentation and are checked by CI.
 | Enable/extend starter content, mechanics, or Threat Range QoL | [`starter_features.md`](starter_features.md) |
 | Add a bounded area-of-effect target/effect or item route | [`aoe.md`](aoe.md) |
 | Configure casual defeat restoration | [`starter_features.md`](starter_features.md#optional-casual-defeat-policy-issue-34) |
+| Enable the optional high-resolution MP2K PCM mixer | [`audio.md`](audio.md) |
 | Configure portrait/minimug rules | [`portrait_resolver.md`](portrait_resolver.md) |
 | Run a tester-facing feature procedure | [`test-cases/README.md`](test-cases/README.md) |
 | Audit a community asset format before proposing an adapter | [`community_asset_coverage.md`](community_asset_coverage.md) |
@@ -70,6 +71,7 @@ numbers mark merged (closed) contracts only:
 | --- | --- | --- |
 | Generated data authoring | JSON sources under `src/data/*.json` + table schemas in `scripts/generated_data/*/schema.py`; `make generated-data-check`/`generated-data-active-heal-check` | [`generated_data.md`](generated_data.md), [`generated_data_tutorial.md`](generated_data_tutorial.md) |
 | Typed BGM routing and continuation | Public context router, validated chapter/flag variants, dancer/staff selectors, and preserve/resume/restart policy | [`bgm_routing.md`](bgm_routing.md), [`config_identity.md`](config_identity.md) |
+| Optional HQ PCM mixer (issue #83) | Default-off modern MP2K mixer selection, IWRAM budget, and target PCM procedure | [`audio.md`](audio.md) |
 | Typed IDs / caps (issue #10) | `include/id_space.h` (DEFAULT), `build/generated/data/id_space_active.h` (ACTIVE), `FE8_ITEM_ID_CAP` | [`id_space.md`](id_space.md), [`../reports/id_space_audit.md`](../reports/id_space_audit.md) |
 | Config / ROM identity | `struct ExpansionMetadata` (`include/expansion_metadata.h`), `EXPANSION_SAVE_COMPAT_EPOCH` | [`config_identity.md`](config_identity.md), [`save_format.md`](save_format.md) |
 | Debug-tools extension (issue #11) | Action-registration API (`include/expansion_debugtools.h`), `FE8_EXPANSION_DEBUGTOOLS_ENABLED` | [`debugtools.md`](debugtools.md) |
