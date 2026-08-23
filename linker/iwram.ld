@@ -86,6 +86,18 @@
 . = ALIGN(4); *src/agb_sram.o(.bss.readSramFast_Work);
         . = ALIGN(4); *src/agb_sram.o(.bss.verifySramFast_Work);
         . = ALIGN(4); *src/agb_sram.o(.bss.verifySramValueFast_Work);
+
+/*
+ * The modern VerifySramValueFast workspace reserves 0x94 bytes for the
+ * current 0x90-byte routine, leaving exactly 0x44 bytes before the fixed
+ * SoundMainRAM buffer. The HQ profile uses that persistent gap for Issue #85's
+ * telemetry and controller instead of placing them above the mixer buffer at
+ * the user-stack boundary.
+ */
+. = ALIGN(4);
+__expansion_autoplay_hq_iwram_start = .;
+*src/expansion_autoplay.o(iwram_data.expansion_autoplay_hq)
+__expansion_autoplay_hq_iwram_end = .;
 . = ALIGN(4);
 
 /* COMMON */
@@ -225,3 +237,15 @@ __localized_msg_transform_scratch_end = .;
  * Issue #58's runtime probe fields.
  */
 *src/banim_presentation.o(iwram_data)
+
+/*
+ * Issue #85's transient controller and pointer-free telemetry must survive
+ * map, UI, and battle-animation overlay switches, but are never serialized.
+ * Keep both together in persistent IWRAM rather than consuming the final
+ * all-locale EWRAM headroom. The HQ profile consumes its dedicated section
+ * in the reclaimed pre-mixer gap above, so this input is empty there.
+ */
+. = ALIGN(4);
+__expansion_autoplay_regular_iwram_start = .;
+*src/expansion_autoplay.o(iwram_data)
+__expansion_autoplay_regular_iwram_end = .;

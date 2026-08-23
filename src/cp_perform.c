@@ -3,6 +3,7 @@
 #include "cp_common.h"
 #include "bmunit.h"
 #include "bmmap.h"
+#include "bmphase.h"
 #include "bmidoten.h"
 #include "mu.h"
 #include "bmtrick.h"
@@ -20,6 +21,9 @@
 #include "bm.h"
 #include "bmbattle.h"
 #include "eventinfo.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_autoplay_internal.h"
+#endif
 
 #include "cp_perform.h"
 
@@ -588,6 +592,28 @@ void CpPerform_WaitAction(struct CpPerformProc* proc) {
 }
 
 void CpPerform_Cleanup(struct CpPerformProc* proc) {
+#ifndef FE8_ARCHIVAL_BUILD
+    if (gPlaySt.faction == FACTION_BLUE
+        && gExpansionAutoplayTelemetry.state == EXPANSION_AUTOPLAY_STATE_COMPUTER_PHASE)
+    {
+        enum ExpansionAutoplayTargetRelation relation = EXPANSION_AUTOPLAY_TARGET_NONE;
+
+        if (gAiDecision.targetId != 0)
+        {
+            relation = IsAllegianceAllied(gAiDecision.unitId, gAiDecision.targetId)
+                ? EXPANSION_AUTOPLAY_TARGET_ALLIED
+                : EXPANSION_AUTOPLAY_TARGET_HOSTILE;
+        }
+
+        ExpansionAutoplay_RecordCommittedAction(
+            gPlaySt.faction,
+            gAiDecision.unitId,
+            gAiDecision.actionId,
+            gAiDecision.targetId,
+            relation);
+    }
+#endif
+
     UpdateAllPhaseHealingAIStatus();
     AiRefreshMap();
 

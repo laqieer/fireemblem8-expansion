@@ -14,6 +14,9 @@
 #include "constants/classes.h"
 
 #include "cp_common.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_autoplay_internal.h"
+#endif
 
 static void CpDecide_Suspend(ProcPtr proc);
 static void CpDecide_Main(ProcPtr proc);
@@ -62,6 +65,14 @@ PROC_LABEL(0),
 
 void CpDecide_Suspend(ProcPtr proc)
 {
+#ifndef FE8_ARCHIVAL_BUILD
+    if (ExpansionAutoplay_IsBlueComputerPhase())
+    {
+        ExpansionAutoplay_RecordSuspendSuppressed();
+        return;
+    }
+#endif
+
     if (UNIT_FACTION(gActiveUnit) == FACTION_BLUE)
         gActionData.suspendPointType = SUSPEND_POINT_BSKPHASE;
     else
@@ -117,6 +128,15 @@ next_unit:
             else
             {
                 gAiState.unitIt++;
+#ifndef FE8_ARCHIVAL_BUILD
+                if (ExpansionAutoplay_IsBlueComputerPhase()
+                    && !ExpansionAutoplay_IsActionSupported(gAiDecision.actionId))
+                {
+                    gAiDecision.actionPerformed = FALSE;
+                    Proc_Goto(proc, 0);
+                    return;
+                }
+#endif
                 Proc_StartBlocking(gProcScr_CpPerform, proc);
             }
         } while (0);

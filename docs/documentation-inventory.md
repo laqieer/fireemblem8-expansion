@@ -70,6 +70,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/generated_data_tutorial.md | laqieer | current | Contributor-facing generated-data authoring walkthrough
 - docs/starter_features.md | laqieer | current | Four default-off starter flags, typed mechanics/content API, QoL, and runtime matrices (issue #6)
 - docs/aoe.md | laqieer | current | Typed bounded AoE targeting/effects, shared item/action/AI seam, and default-off reference (issue #42)
+- docs/autoplay.md | laqieer | current | Transient typed blue controller, pointer-free telemetry, existing-AI capability boundary, and runtime evidence (issue #85)
 - docs/custom_spell_effects.md | laqieer | current | Default-off typed battle spell-effect runtime foundation and resource contract (issue #77)
 - docs/portrait_resolver.md | laqieer | current | Typed character/class/chapter/flag portrait and minimug resolver with legacy fallback (issue #35)
 - docs/community_asset_coverage.md | laqieer | current | Authoritative community asset-family ownership, build/runtime seam, provenance boundary, and gap catalog (issue #59)
@@ -89,6 +90,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/test-cases/optional-gameplay.md | laqieer | current | Indexed optional gameplay procedures, profiles, negatives, save expectations, and automation (issue #55)
 - docs/test-cases/audio.md | laqieer | current | Indexed optional HQ PCM mixer procedure, profiles, negatives, and audio criterion (issue #83)
 - docs/test-cases/patch-release.md | laqieer | current | Indexed BPS artifact validation/application and fail-closed input procedures (issue #49)
+- docs/test-cases/autoplay.md | laqieer | current | TC-AUTOPLAY-001 blue computer-phase smoke and default-player negative procedure (issue #85)
 - docs/test-cases/asset-authoring.md | laqieer | current | Indexed source-asset adapter procedure, controls, runtime evidence, and cleanup (issue #62)
 - docs/test-cases/workflow-governance.md | laqieer | current | Indexed trusted-push and centralized CI-wait orchestration procedure (issue #93)
 - docs/test-cases/codeql-alerts.md | laqieer | current | Link Arena and confirmed CodeQL alert regression procedures (issue #84)

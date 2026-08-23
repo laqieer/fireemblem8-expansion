@@ -15,21 +15,21 @@
       "name": "iwram",
       "origin": 50331648,
       "capacity_bytes": 32768,
-      "occupied_bytes": 26537,
-      "physical_free_bytes": 6231,
-      "free_bytes": 5719,
-      "utilization_percent": 80.98,
+      "occupied_bytes": 26608,
+      "physical_free_bytes": 6160,
+      "free_bytes": 5648,
+      "utilization_percent": 81.2,
       "overflow": false,
       "static_budget_available": true,
-      "static_end_address": 50358185,
+      "static_end_address": 50358256,
       "static_limit_address": 50359808,
       "user_stack_pointer_address": 50363904,
       "static_usable_capacity_bytes": 32256,
       "reserved_stack_bytes": 512,
-      "usable_static_headroom_bytes": 5719,
+      "usable_static_headroom_bytes": 5648,
       "minimum_user_stack_margin_bytes": 4096,
-      "static_growth_headroom_bytes": 1623,
-      "static_utilization_percent": 82.27,
+      "static_growth_headroom_bytes": 1552,
+      "static_utilization_percent": 82.49,
       "static_overflow": false,
       "stack_margin_violation": false
     },
@@ -118,7 +118,7 @@
     {
       "name": "IWRAM",
       "address": 50331648,
-      "size_bytes": 26537,
+      "size_bytes": 26608,
       "is_overlay": false,
       "region": "iwram"
     },
@@ -261,6 +261,12 @@
       "address": 33813448,
       "expression": ".",
       "region": "ewram"
+    },
+    {
+      "name": "__hq_mixer_layout_shift",
+      "address": 50331648,
+      "expression": "(__hq_mixer_enabled * 0x6c0)",
+      "region": "iwram"
     },
     {
       "name": "__iwram_start",
@@ -599,6 +605,18 @@
       "region": "iwram"
     },
     {
+      "name": "__expansion_autoplay_hq_iwram_end",
+      "address": 50342940,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "__expansion_autoplay_hq_iwram_start",
+      "address": 50342940,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
       "name": "gUnk_63",
       "address": 50344032,
       "expression": ".",
@@ -923,60 +941,6 @@
       "region": "iwram"
     },
     {
-      "name": "gMPlayInfo_SE4_BMP2",
-      "address": 50357184,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE5_BMP3",
-      "address": 50357248,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_BGM1",
-      "address": 50357312,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE6_BMP4",
-      "address": 50357776,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_BGM2",
-      "address": 50357840,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE1_SYS1",
-      "address": 50357904,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE3_BMP1",
-      "address": 50357968,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE7_EVT",
-      "address": 50358048,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE2_SYS2",
-      "address": 50358112,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
       "name": "__localized_msg_transform_scratch_end",
       "address": 50358184,
       "expression": ".",
@@ -989,9 +953,27 @@
       "region": "iwram"
     },
     {
+      "name": "__expansion_autoplay_regular_iwram_start",
+      "address": 50358188,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "__expansion_autoplay_regular_iwram_end",
+      "address": 50358256,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
       "name": "__iwram_static_end",
-      "address": 50358185,
+      "address": 50358256,
       "expression": "(ADDR (IWRAM) + SIZEOF (IWRAM))",
+      "region": "iwram"
+    },
+    {
+      "name": "__hq_mixer_layout_anchor",
+      "address": 50358912,
+      "expression": "0x6a80",
       "region": "iwram"
     },
     {
@@ -1051,7 +1033,7 @@
     },
     {
       "name": "__floating_end",
-      "address": 145954196,
+      "address": 145956428,
       "expression": ".",
       "region": "rom"
     },
@@ -1158,7 +1140,7 @@
         "name": "IWRAM",
         "type": "NOBITS",
         "address": 50331648,
-        "size_bytes": 26537,
+        "size_bytes": 26608,
         "flags": "WA"
       },
       {
