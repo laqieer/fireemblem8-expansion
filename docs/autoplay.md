@@ -39,7 +39,7 @@ always resumes with `PLAYER`, even if the previous process had requested
 returns `EXPANSION_AUTOPLAY_ERR_PHASE_ACTIVE`, preserves the running
 controller, and records an explicit invalid-phase failure.
 
-`gExpansionAutoplayTelemetry` is a 64-byte EWRAM record containing only `u32`
+`gExpansionAutoplayTelemetry` is a 64-byte IWRAM record containing only `u32`
 scalars. It has no pointers, callback addresses, Proc handles, or dynamically
 sized storage. `ExpansionAutoplay_GetTelemetry()` returns a read-only view for
 runtime clients; ELF probes may bind the global symbol directly.
@@ -128,12 +128,14 @@ save bit, preference, or release behavior.
 - **Save:** no field, migration, preference, or compatibility-epoch change.
 - **Archival:** `src/expansion_autoplay.c` and all hooks are excluded from
   `FE8_ARCHIVAL_BUILD`; the agbcc lane is unchanged.
-- **Modern budget:** 68 bytes EWRAM total (64-byte telemetry plus 4-byte
-  controller); the module contributes 768 bytes of debug Thumb text and 692
-  bytes of release Thumb text. Relative
-  to the immediate base, linked ROM content grows by 2,136 debug bytes and 880
-  release bytes. The linked debug build retains 1,636 bytes of physical EWRAM
-  headroom; release retains 3,060 bytes.
+- **Modern budget:** 68 bytes persistent IWRAM total (64-byte telemetry plus
+  4-byte controller), moved together so they survive every map, battle, and UI
+  overlay. The tight all-locale debug profile retains 275 bytes of IWRAM static
+  growth headroom above the required 4 KiB user-stack margin and recovers 68
+  EWRAM bytes, turning the previous 24-byte overflow into 44 bytes of headroom.
+  Default debug/release EWRAM remains unchanged from the immediate base. The
+  module contributes 768 bytes of debug Thumb text and 692 bytes of release
+  Thumb text.
 
 ## Validation
 

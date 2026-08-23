@@ -8,8 +8,8 @@
 typedef char ExpansionAutoplayTelemetrySizeCheck[
     sizeof(struct ExpansionAutoplayTelemetry) == EXPANSION_AUTOPLAY_TELEMETRY_SIZE ? 1 : -1];
 
-static u32 EWRAM_DATA sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
-struct ExpansionAutoplayTelemetry EWRAM_DATA gExpansionAutoplayTelemetry = { 0 };
+static u32 IWRAM_DATA sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
+struct ExpansionAutoplayTelemetry IWRAM_DATA gExpansionAutoplayTelemetry = { 0 };
 
 static void IncrementBounded(u32* value)
 {

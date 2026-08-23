@@ -84,7 +84,7 @@ class AutoplayHostTests(unittest.TestCase):
                     )
                     self.assertIn("AUTOPLAY_HOST_TEST: PASS", completed.stdout)
 
-    def test_arm_aapcs_rom_and_ewram_budgets(self):
+    def test_arm_aapcs_rom_and_ram_budgets(self):
         if ARM_CC is None or ARM_NM is None or ARM_SIZE is None:
             self.skipTest("arm-none-eabi compiler/binutils unavailable")
         build_root = ROOT / "build"
@@ -145,7 +145,14 @@ class AutoplayHostTests(unittest.TestCase):
                     r"^\.text\s+(\d+)\s+", sections.stdout, re.MULTILINE
                 )
             )
-            self.assertEqual(ewram_bytes, 68)
+            iwram_bytes = sum(
+                int(value)
+                for value in re.findall(
+                    r"^iwram_data\s+(\d+)\s+", sections.stdout, re.MULTILINE
+                )
+            )
+            self.assertEqual(ewram_bytes, 0)
+            self.assertEqual(iwram_bytes, 68)
             self.assertLessEqual(text_bytes, 4096)
 
     def test_checked_runtime_evidence_satisfies_semantic_contract(self):

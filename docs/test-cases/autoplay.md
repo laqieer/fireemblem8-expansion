@@ -56,7 +56,7 @@ preference, migration, or compatibility epoch changes.
 
 - `python3 -m unittest tools.gba-playtest.tests.test_expansion_autoplay -v`
   - real public API, validation, bounded counters, action capabilities, and
-    fixed ARM ROM/EWRAM budget.
+    fixed ARM ROM/RAM budget.
 - `make expansion-modern-autoplay-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
   - `tools/gba-playtest/run_autoplay_checks.py` plus
     `autoplay-computer-modern-debug.json` and
