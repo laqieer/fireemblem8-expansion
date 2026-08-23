@@ -84,6 +84,8 @@ or campaign mechanic beyond the selected callbacks.
    `MechanicsRegistryHostTests.test_disabled_path_is_inert_and_probe_stays_zero`
    for the disabled path; retain both named assertions in its output.
 2. Run `make expansion-modern-starter-hook-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
+3. Confirm the step 1 invocation also passes its disabled-registry assertions; it
+   builds the disabled driver with no mechanics defines and verifies the probe is inert.
 
 ### Expected result
 
