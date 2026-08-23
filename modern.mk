@@ -47,6 +47,7 @@ MODERN_GOALS := \
 	expansion-modern-hq-mixer-disabled-profile-rom \
 	expansion-modern-hq-mixer-check \
 	expansion-modern-bgm-registry-check \
+	expansion-modern-banim-package-runtime-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-idspace-active-check \
@@ -192,6 +193,10 @@ endif
 # itself #errors when it is enabled without an expanded FE8_ITEM_ID_CAP.
 ifeq ($(FE8_EXPANSION_ITEMTEST),1)
 MODERN_DEFINE_FLAGS += -DFE8_EXPANSION_ITEMTEST_ENABLED=1
+endif
+
+ifeq ($(FE8_BANIM_PACKAGE_RUNTIME_TEST),1)
+MODERN_DEFINE_FLAGS += -DFE8_BANIM_PACKAGE_RUNTIME_TEST=1
 endif
 MODERN_INCLUDE_FLAGS := -Iinclude -I.
 
@@ -3013,6 +3018,18 @@ expansion-modern-combat-check:
 	@printf 'Modern ROM combat-check skipped: the Ch4 scripted-FIGHT combat scenario boots via the debug-only Fast Boot launcher (compiled out for config=%s); a debug-launcher scenario is legitimately debug-only, and the release runtime matrix does not include a separate combat scenario -- see reports/gba_playtest_issue13_closure.md\n' \
 		'$(MODERN_CONFIG)'
 endif
+
+.PHONY: expansion-modern-banim-package-runtime-check
+expansion-modern-banim-package-runtime-check:
+	@set -eu; \
+	out="build/banim-package-runtime"; \
+	rm -rf "$$out"; \
+	$(MAKE) expansion-modern-rom MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		MODERN_BUILD_ROOT="$$out" FE8_BANIM_PACKAGE_RUNTIME_TEST=1; \
+	"$(PYTHON)" tools/gba-playtest/run_banim_package_runtime_check.py \
+		--rom "$$out/debug/aapcs/fireemblem8.gba" \
+		--elf "$$out/debug/aapcs/fireemblem8.elf" \
+		--out-dir "$$out"
 
 # Issue #6 starter-foundation runtime gate. The positive scenarios need a ROM
 # built with the starter features ON, so this gate builds ONE dedicated
