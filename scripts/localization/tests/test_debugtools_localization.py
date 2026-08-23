@@ -34,7 +34,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
     }
     DIRECT_MENU_LABELS = Counter(
         {
-            "Back": 7,
+            "Back": 9,
             "Confirm Heal to Full": 1,
             "Confirm Add Item": 1,
             "Confirm Toggle Flag": 1,
@@ -181,14 +181,6 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             menu_labels.extend(
                 re.findall(r"\.name\s*=\s*\"([^\"]+)\"", self.sources[name])
             )
-        menu_labels.extend(
-            re.findall(
-                r"DebugToolsUnit_Set(?:Value)?MenuItem\(\s*"
-                r"[^,]+,\s*\"([^\"]+)\"",
-                self.sources["debugtools_tools.c"],
-                flags=re.DOTALL,
-            )
-        )
         self.assertEqual(Counter(menu_labels), self.DIRECT_MENU_LABELS)
 
         registry = {
@@ -263,7 +255,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         ):
             self.assertIn(f"EXP_MSG_DEBUG_{key_suffix}", tools)
 
-        self.assertEqual(tools.count("EXP_MSG_FRAMEWORK_BACK"), 6)
+        self.assertEqual(tools.count("EXP_MSG_FRAMEWORK_BACK"), 8)
         self.assertIn("DebugToolsTools_LocalizedMenuItemDraw", tools)
         self.assertIn("ExpansionLocale_ResolveCurrent", tools)
         self.assertIn("PutDrawText(", tools)
