@@ -1,17 +1,44 @@
 {
   "schema_version": 1,
   "coverage": {
-    "mode": "foundation",
+    "mode": "complete",
     "expected_feature_ids": [
-      "tester-case-catalog"
+      "tester-case-catalog",
+      "mechanics-hook-registry",
+      "full-hp-guard-sample",
+      "danger-overlay-menu",
+      "starter-generated-content",
+      "casual-defeat-policy",
+      "aoe-reference-module",
+      "optional-gameplay-combinations",
+      "custom-spell-runtime",
+      "hq-pcm-mixer",
+      "patch-release-artifact",
+      "portrait-minimug-resolver",
+      "expanded-sound-room",
+      "typed-bgm-routing",
+      "battle-animation-presentation",
+      "ui-presentation-manifests",
+      "unified-utility-preferences",
+      "modern-framework-build",
+      "configuration-identity",
+      "save-compatibility",
+      "generated-data-platform",
+      "typed-id-item-cap",
+      "debug-tools",
+      "debugtools-music-preview",
+      "runtime-playtest-harness",
+      "upstream-port-tooling",
+      "build-ci-default-release-reproduction",
+      "typed-authoring-conveniences",
+      "expansion-locale-selection",
+      "full-game-localization",
+      "locale-preference-persistence",
+      "localized-text-input-ui",
+      "localization-profile-validation",
+      "codeql-alert-remediation"
     ],
-    "deferred_issues": [
-      "https://github.com/laqieer/fireemblem8-expansion/issues/55",
-      "https://github.com/laqieer/fireemblem8-expansion/issues/56",
-      "https://github.com/laqieer/fireemblem8-expansion/issues/57",
-      "https://github.com/laqieer/fireemblem8-expansion/issues/58"
-    ],
-    "reason": "The feature backfill issues own the current shipped-feature inventory and must switch this registry to complete mode after their entries land."
+    "deferred_issues": []
   },
   "features": [
     {
@@ -228,6 +255,155 @@
       ]
     },
     {
+      "id": "custom-spell-runtime",
+      "title": "Typed custom battle spell-effect runtime",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/61",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/77"
+      ],
+      "reference": "docs/custom_spell_effects.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CUSTOM-SPELL-061-001",
+        "TC-CUSTOM-SPELL-061-002",
+        "TC-CUSTOM-SPELL-061-004",
+        "TC-CUSTOM-SPELL-061-005"
+      ]
+    },
+    {
+      "id": "modern-framework-build",
+      "title": "Modern default build and explicit archival split",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/3",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/4",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/28",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "reference": "docs/quickstart.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CORE-001"
+      ]
+    },
+    {
+      "id": "configuration-identity",
+      "title": "Configuration and embedded ROM identity",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/8",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "reference": "docs/config_identity.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CORE-002"
+      ]
+    },
+    {
+      "id": "save-compatibility",
+      "title": "Save format and compatibility gate",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/2",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "reference": "docs/save_format.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CORE-003"
+      ]
+    },
+    {
+      "id": "generated-data-platform",
+      "title": "Generated-data authoring platform",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/5",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "reference": "docs/generated_data_tutorial.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CORE-004"
+      ]
+    },
+    {
+      "id": "typed-id-item-cap",
+      "title": "Typed ID DEFAULT and ACTIVE item-cap boundary",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/10",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "reference": "docs/id_space.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CORE-005"
+      ]
+    },
+    {
+      "id": "debug-tools",
+      "title": "Bounded debug-tools subsystem",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/11",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "reference": "docs/debugtools.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CORE-006"
+      ]
+    },
+    {
+      "id": "runtime-playtest-harness",
+      "title": "Semantic runtime playtest harness",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/13",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "reference": "tools/gba-playtest/README.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CORE-007"
+      ]
+    },
+    {
+      "id": "upstream-port-tooling",
+      "title": "Read-only upstream-port review tooling",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/12",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "reference": "docs/upstream-porting.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CORE-008"
+      ]
+    },
+    {
+      "id": "build-ci-default-release-reproduction",
+      "title": "Reproduce default release from a successful Build CI run",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/20",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "reference": "docs/framework-support.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CORE-009"
+      ]
+    },
+    {
+      "id": "typed-authoring-conveniences",
+      "title": "Typed event, class, and unit authoring conveniences",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/45",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/46",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "reference": "docs/generated_data_tutorial.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CORE-010"
+      ]
+    },
+    {
       "id": "expansion-locale-selection",
       "title": "Expansion locale selection and pseudo-locale routing",
       "issue_urls": [
@@ -294,6 +470,19 @@
       "required_cases": [
         "TC-LOCALIZATION-008"
       ]
+    },
+    {
+      "id": "codeql-alert-remediation",
+      "title": "Bounded Link Arena and CodeQL alert remediation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/84"
+      ],
+      "reference": "docs/test-cases/codeql-alerts.md",
+      "status": "current",
+      "required_cases": [
+        "TC-SIO-084",
+        "TC-CODEQL-084"
+      ]
     }
   ],
   "cases": [
@@ -312,12 +501,12 @@
       "purpose": "Exercise the stable catalog schema and checker integration that future feature cases extend.",
       "prerequisites": "Start from the repository root with docs/test-cases and scripts/check_docs.py present; no save state is needed.",
       "actions": "Inspect the catalog index, template, and registry; run the focused docs-checker unit test and the checker command named below.",
-      "expected_result": "The registry exposes separate feature and case records, the procedure is indexed, and both commands accept the valid foundation data.",
+      "expected_result": "The registry exposes separate feature and case records, the procedure is indexed, and both commands accept the valid complete catalog.",
       "negative_control": "Focused fixtures reject malformed or duplicate IDs, unknown ownership, missing links or anchors, placeholders, unnamed automation, missing exclusion rationale, and a missing complete-mode feature.",
-      "interactions": "Depends on issue #53's tester-case contract. The feature backfill is deliberately deferred to issues #55 through #58.",
+      "interactions": "Depends on issue #53's tester-case contract. The #55 through #58 feature-family entries are present and complete coverage is enforced.",
       "save_compatibility": "No save bytes, migration, compatibility epoch, or runtime profile changes.",
       "cleanup": "No cleanup is required.",
-      "limitations": "This foundation validates the schema and extension seam only; it does not yet assert full current-feature coverage.",
+      "limitations": "This foundation validates the schema, extension seam, and fail-closed current-feature coverage guard.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs -v",
@@ -354,7 +543,7 @@
       "limitations": "The registry is a battle-stat seam, not a content catalog, option menu, or persisted setting.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_mechanics.MechanicsRegistryHostTests -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_expansion_mechanics.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_mechanics.py"
         },
         {
@@ -388,7 +577,7 @@
       "limitations": "The content-free sample has no player-facing toggle and is not a downstream ruleset.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_mechanics.MechanicsRegistryHostTests.test_sample_exact_effect_and_clamp -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_expansion_mechanics.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_mechanics.py"
         },
         {
@@ -422,7 +611,7 @@
       "limitations": "Semantic probe values automate range behavior; no extra threat UI or AI behavior is included.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_danger_overlay -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_expansion_danger_overlay.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_danger_overlay.py"
         },
         {
@@ -456,7 +645,7 @@
       "limitations": "Only the name is shown in game; help text is intentionally unset and this is one example, not a content pack.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_starter_content -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_expansion_starter_content.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_starter_content.py"
         },
         {
@@ -490,7 +679,7 @@
       "limitations": "The framework ships no campaign-specific scripted-death chapter; the real policy host driver is the deterministic tester surface.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_casual_mode -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_expansion_casual_mode.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_casual_mode.py"
         },
         {
@@ -524,7 +713,7 @@
       "limitations": "The reference is not a spell/item pack; downstream projects own item routes and UI.",
       "automation": [
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_aoe -v",
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_expansion_aoe.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_aoe.py"
         },
         {
@@ -926,6 +1115,44 @@
       ]
     },
     {
+      "id": "TC-CUSTOM-SPELL-061-001",
+      "title": "Custom spell dispatch completes one bounded effect",
+      "feature_id": "custom-spell-runtime",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/61",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/77"
+      ],
+      "document": "docs/custom_spell_effects.md",
+      "anchor": "tc-custom-spell-061-001-custom-spell-dispatch-completes-one-bounded-effect",
+      "profiles": [
+        "Isolated modern AAPCS debug test ROM with EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+        "Isolated modern AAPCS release test ROM with EXPANSION_CUSTOM_SPELL_EFFECTS=1"
+      ],
+      "purpose": "Exercise the public StartSpellAnimation dispatch ABI, typed descriptor, timing, hit, resource ownership, and cleanup on real libmGBA.",
+      "prerequisites": "Repository root with arm-none-eabi GCC, libmGBA, and distinct issue-77 build roots; no save, chapter, event script, or external package.",
+      "actions": "Run the custom-spell host suite, then the documented enabled debug and release expansion-modern-custom-spell-check commands.",
+      "expected_result": "The registered 0x80 descriptor starts once, uploads all six visual resources exactly once per frame (two complete sets), plays every ordered boundary sound, applies one hit, keeps the final child for its last display tick, creates and deletes one child, cleans once, and leaves no owner, semaphore, spell-cast Proc, or active spell state.",
+      "negative_control": "The same ROM dispatches vanilla index 24 through the unchanged LUT without incrementing the custom-dispatch counter.",
+      "interactions": "Depends on the existing C05/StartSpellAnimation, spell-FX, Proc, and presentation-policy seams; #78 is the sole dependent adapter. No starter, casual, AoE, localization, or BGM dependency.",
+      "save_compatibility": "The isolated effect ends with zero transient ownership and introduces no save field, item encoding, migration, or epoch change.",
+      "cleanup": "Remove only the named build/issue77-*-enabled roots if artifacts are no longer needed.",
+      "limitations": "The foundation descriptor reuses bounded vanilla Fire assets; package parsing and generated project bindings belong to #78.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_custom_spell_effect -v",
+          "evidence": "tools/gba-playtest/tests/test_custom_spell_effect.py"
+        },
+        {
+          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=debug MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-debug-enabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+          "evidence": "tools/gba-playtest/run_custom_spell_effect_checks.py"
+        },
+        {
+          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=release MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-release-enabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+          "evidence": "tools/gba-playtest/run_custom_spell_effect_checks.py"
+        }
+      ]
+    },
+    {
       "id": "TC-BANIM-001",
       "title": "Apply standard, reduced, and off battle presentation",
       "feature_id": "battle-animation-presentation",
@@ -1014,6 +1241,45 @@
       ]
     },
     {
+      "id": "TC-CUSTOM-SPELL-061-002",
+      "title": "Default-off custom spell profile preserves vanilla dispatch",
+      "feature_id": "custom-spell-runtime",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/61",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/77"
+      ],
+      "document": "docs/custom_spell_effects.md",
+      "anchor": "tc-custom-spell-061-002-default-off-custom-spell-profile-preserves-vanilla-dispatch",
+      "profiles": [
+        "Isolated modern AAPCS debug test ROM with EXPANSION_CUSTOM_SPELL_EFFECTS=0",
+        "Isolated modern AAPCS release test ROM with EXPANSION_CUSTOM_SPELL_EFFECTS=0",
+        "Archival macro-zero object boundary"
+      ],
+      "purpose": "Prove the permanent default remains vanilla and the disabled/archival lanes link no custom runtime.",
+      "prerequisites": "Repository root with arm-none-eabi GCC and libmGBA; no custom package or save fixture.",
+      "actions": "Run the documented disabled debug and release custom-spell checks and the host ARM object-boundary test.",
+      "expected_result": "Vanilla LUT index 24 dispatches once, no custom dispatch occurs, and the exact disabled ELF/object contains none of the public CustomSpellEffect runtime symbols.",
+      "negative_control": "The enabled test ROMs from TC-CUSTOM-SPELL-061-001 contain the public symbols and dispatch the registered 0x80 descriptor.",
+      "interactions": "The default is independent of every other optional feature. The archival lane fixes both custom-spell macros at zero and has no package support.",
+      "save_compatibility": "The default fingerprint and save compatibility epoch remain unchanged; no save bytes are added.",
+      "cleanup": "Remove only the named build/issue77-*-disabled roots if artifacts are no longer needed.",
+      "limitations": "The test-only harness remains present only in explicitly flagged probe ROMs; ordinary disabled ROMs contain neither the harness nor runtime.",
+      "automation": [
+        {
+          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=debug MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-debug-disabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=0",
+          "evidence": "tools/gba-playtest/run_custom_spell_effect_checks.py"
+        },
+        {
+          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=release MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-release-disabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=0",
+          "evidence": "tools/gba-playtest/run_custom_spell_effect_checks.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_custom_spell_effect.CustomSpellArmTests -v",
+          "evidence": "tools/gba-playtest/tests/test_custom_spell_effect.py"
+        }
+      ]
+    },
+    {
       "id": "TC-UTILITY-001",
       "title": "Persist available utility preferences without record interference",
       "feature_id": "unified-utility-preferences",
@@ -1033,7 +1299,7 @@
       "interactions": "Uses the one descriptor registry and existing map-menu command; does not add a second settings screen.",
       "save_compatibility": "Reuses the fixed 12-byte preference record and does not reuse sound-room or casual bytes.",
       "cleanup": "No persistent fixture, ROM, or save is created.",
-      "limitations": "The catalog remains foundation mode and the case does not score subjective UX preference.",
+      "limitations": "The case does not score subjective UX preference.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.modernize.tests.test_ui_registry_contract scripts.modernize.tests.test_expansion_user_prefs_native -v",
@@ -1042,6 +1308,386 @@
         {
           "command": "python3 scripts/modernize/expansion_config.py resolve --config debug --abi aapcs --rom-size 16M --danger-overlay-menu 0",
           "evidence": "scripts/modernize/expansion_config.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-CUSTOM-SPELL-061-004",
+      "title": "Custom spell conflicts fall back without leaking resources",
+      "feature_id": "custom-spell-runtime",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/61",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/77"
+      ],
+      "document": "docs/custom_spell_effects.md",
+      "anchor": "tc-custom-spell-061-004-custom-spell-conflicts-fall-back-without-leaking-resources",
+      "profiles": [
+        "Isolated modern AAPCS debug and release test ROMs with EXPANSION_CUSTOM_SPELL_EFFECTS=1"
+      ],
+      "purpose": "Exercise missing and invalid descriptors, reentrancy, a post-acquisition failure, WITH_BACKGROUNDS, a foreign semaphore, and forced owner termination.",
+      "prerequisites": "Use a fresh enabled issue-77 test root; the test ROM supplies only bounded Anim fixtures and scalar probes.",
+      "actions": "Run either documented enabled custom-spell check and inspect its semantic probe result.",
+      "expected_result": "Every conflict records the exact fallback reason and vanilla fallback 22 before unsafe allocation; reentrancy starts only one owner; injected post-acquisition failure and forced end clean once; foreign semaphore value 1 is preserved; final ownership is zero.",
+      "negative_control": "The normal DEFAULT-policy case in the same run acquires resources and completes one custom effect.",
+      "interactions": "WITH_BACKGROUNDS is an explicit runtime conflict. DEFAULT, REDUCED, and SOLO remain admissible when their published OAM/VRAM budgets fit.",
+      "save_compatibility": "All failure and cleanup paths are transient and finish before any normal save boundary.",
+      "cleanup": "No fixture reset is needed; the harness resets counters and verifies zero state between cases.",
+      "limitations": "The fault selector exists only behind FE8_EXPANSION_CUSTOM_SPELL_TEST and cannot be enabled by a production configure profile.",
+      "automation": [
+        {
+          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=debug MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-debug-enabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+          "evidence": "tools/gba-playtest/run_custom_spell_effect_checks.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_custom_spell_effect.CustomSpellLifecycleTests -v",
+          "evidence": "tools/gba-playtest/tests/c/custom_spell_effect_host_driver.c"
+        }
+      ]
+    },
+    {
+      "id": "TC-CORE-001",
+      "title": "Modern default build and archival split",
+      "feature_id": "modern-framework-build",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/3",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/4",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/28",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-core-001-modern-default-build-and-archival-split",
+      "profiles": [
+        "Supported-host modern AAPCS default release",
+        "Explicit archival target for the negative lane boundary"
+      ],
+      "purpose": "Prove the supported default build selects and boot-verifies only the modern release lane.",
+      "prerequisites": "Repository root with the modern toolchain and libmGBA installed; no ROM or save fixture is required.",
+      "actions": "Run the toolchain probe, bare make, release linker gate, and explicit archival dry-run described in the procedure.",
+      "expected_result": "The modern release ROM links and boots while the archival target stays explicit.",
+      "negative_control": "Missing or invalid modern tools fail clearly and bare make never resolves agbcc.",
+      "interactions": "Optional profiles are independent; the archival lane remains default-cap-only.",
+      "save_compatibility": "No save bytes, layout, migration, or compatibility epoch change.",
+      "cleanup": "Use make clean_fast only for generated build artifacts.",
+      "limitations": "Modern behavior is not a vanilla byte-identity claim.",
+      "automation": [
+        {
+          "command": "python3 -m unittest discover -s scripts/modernize/tests -p \"test_build_default_lane.py\" -v",
+          "evidence": "scripts/modernize/tests/test_build_default_lane.py"
+        },
+        {
+          "command": "make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/boot.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-CORE-002",
+      "title": "Configuration identity rejects invalid values",
+      "feature_id": "configuration-identity",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/8",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-core-002-configuration-identity-rejects-invalid-values",
+      "profiles": [
+        "Modern AAPCS debug profile",
+        "Modern AAPCS release profile"
+      ],
+      "purpose": "Prove configured and one-off identity resolution, metadata, and pre-build validation.",
+      "prerequisites": "Repository root with no unwanted persistent configuration override.",
+      "actions": "Configure a supported profile, build both ROM presets, and run the configuration suite.",
+      "expected_result": "Debug and release carry valid distinct deterministic identities.",
+      "negative_control": "Malformed or incompatible values fail before compilation or linking.",
+      "interactions": "Optional feature dependencies remain owned by the existing resolver.",
+      "save_compatibility": "Identity does not alter the existing save format or epoch.",
+      "cleanup": "Use make distclean only for Autoconf output and make clean_fast for builds.",
+      "limitations": "This is not a runtime feature gate.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_expansion_config -v",
+          "evidence": "scripts/modernize/tests/test_expansion_config.py"
+        },
+        {
+          "command": "make expansion-modern-rom MODERN_CONFIG=debug MODERN_ABI=aapcs && make expansion-modern-rom MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "scripts/modernize/verify_rom_header.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-CORE-003",
+      "title": "Save compatibility preserves data",
+      "feature_id": "save-compatibility",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/2",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-core-003-save-compatibility-preserves-data",
+      "profiles": [
+        "Modern AAPCS debug with synthetic SRAM",
+        "Modern AAPCS release with synthetic SRAM"
+      ],
+      "purpose": "Exercise classifier, Back, confirmed Erase, migration, save/load, and Suspend/Resume behavior.",
+      "prerequisites": "Repository root with no committed ROM, save, or savestate fixture.",
+      "actions": "Run the migration and scenario suites plus both save-format runtime gates.",
+      "expected_result": "Valid saves load and migration is out-of-place while all supported routes are semantically verified.",
+      "negative_control": "Back preserves data and invalid states diagnose rather than silently wipe.",
+      "interactions": "Existing profile choices preserve the documented format and epoch.",
+      "save_compatibility": "This case exercises the current save contract without changing it.",
+      "cleanup": "Remove only ignored synthetic SRAM and build artifacts.",
+      "limitations": "In-console structural migration remains intentionally unsupported.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_save_format_tool -v && GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_save_compat_scenarios.py\" -v",
+          "evidence": "tools/gba-playtest/tests/test_save_compat_scenarios.py"
+        },
+        {
+          "command": "make expansion-modern-savefmt-check MODERN_CONFIG=debug MODERN_ABI=aapcs && make expansion-modern-savefmt-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_save_compat_checks.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-CORE-004",
+      "title": "Generated data loop reports diagnostics",
+      "feature_id": "generated-data-platform",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/5",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-core-004-generated-data-loop-reports-diagnostics",
+      "profiles": [
+        "Clean source checkout with Python 3",
+        "Disposable authoring worktree"
+      ],
+      "purpose": "Prove deterministic authoring generation and actionable cross-table diagnostics.",
+      "prerequisites": "Use a disposable source edit and leave generated output build-local.",
+      "actions": "Run validate, generate, check, test, and one invalid disposable reference.",
+      "expected_result": "Valid source round-trips deterministically and invalid source reports location and breadcrumb.",
+      "negative_control": "Invalid or drifting data fails rather than creating a partial generated success.",
+      "interactions": "Typed ID expansion remains a separate cap contract.",
+      "save_compatibility": "Authoring a valid table changes no save format or epoch by itself.",
+      "cleanup": "Reset the disposable source edit and use make clean_fast for artifacts.",
+      "limitations": "The platform is not a content pack or second event router.",
+      "automation": [
+        {
+          "command": "make generated-data-validate && make generated-data-generate && make generated-data-check && make generated-data-test",
+          "evidence": "scripts/generated_data/tests/test_validators.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_cli scripts.generated_data.tests.test_cli_new_tables scripts.generated_data.tests.test_validators -v",
+          "evidence": "scripts/generated_data/tests/test_cli_new_tables.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-CORE-005",
+      "title": "Typed ID cap preserves default boundary",
+      "feature_id": "typed-id-item-cap",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/10",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-core-005-typed-id-cap-preserves-default-boundary",
+      "profiles": [
+        "Modern AAPCS default item cap",
+        "Modern AAPCS expanded item cap 0xCE"
+      ],
+      "purpose": "Prove DEFAULT versus ACTIVE contracts and the expanded item route.",
+      "prerequisites": "Repository root with a clean build directory.",
+      "actions": "Run active-contract gates, inspect both contracts, and execute the expanded runtime gate.",
+      "expected_result": "Expanded records round-trip while the committed default contract remains unchanged.",
+      "negative_control": "Default and archival widened-cap requests fail at their documented boundaries.",
+      "interactions": "Starter content requires its documented cap and mechanics dependencies.",
+      "save_compatibility": "Item encoding, packed layout, checksum, and epoch remain unchanged.",
+      "cleanup": "Use make clean_fast for active generated artifacts.",
+      "limitations": "Only the item-cap pilot is covered; other ID domains are not widened.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_idspace scripts.generated_data.tests.test_idspace_active -v",
+          "evidence": "scripts/generated_data/tests/test_idspace_active.py"
+        },
+        {
+          "command": "FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_item_expansion_checks.py"
+        },
+        {
+          "command": "FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_item_expansion_checks.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-CORE-006",
+      "title": "Debug tools are debug only",
+      "feature_id": "debug-tools",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/11",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-core-006-debug-tools-are-debug-only",
+      "profiles": [
+        "Modern AAPCS debug ROM",
+        "Modern AAPCS release ROM"
+      ],
+      "purpose": "Prove the bounded live debug hub and release symbol/probe inertness.",
+      "prerequisites": "Clean boot with libmGBA; no savestate is used.",
+      "actions": "Run host registration tests and debug/release tools runtime gates.",
+      "expected_result": "Debug tools act through the real hub and return to an interactive map.",
+      "negative_control": "Release compiles the hub and tools out and its probe remains zero.",
+      "interactions": "The feature reuses existing menu and Proc seams and is independent of generated data.",
+      "save_compatibility": "No debug state is persisted and no save format or epoch changes.",
+      "cleanup": "Exit the hub and use make clean_fast for artifacts.",
+      "limitations": "This is not an arbitrary memory editor or release feature.",
+      "automation": [
+        {
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_debugtools_registry.py\" -v",
+          "evidence": "tools/gba-playtest/tests/test_debugtools_registry.py"
+        },
+        {
+          "command": "make expansion-modern-debugtools-tools-check MODERN_CONFIG=debug MODERN_ABI=aapcs && make expansion-modern-debugtools-tools-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/tests/test_tools_scenario.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-CORE-007",
+      "title": "Runtime harness detects mismatch",
+      "feature_id": "runtime-playtest-harness",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/13",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-core-007-runtime-harness-detects-mismatch",
+      "profiles": [
+        "Host-only Python suite",
+        "Modern AAPCS debug and release runtime gates"
+      ],
+      "purpose": "Prove semantic scenario verification, provenance, and no baseline auto-refresh.",
+      "prerequisites": "Clean boot with no committed save, savestate, or external baseline.",
+      "actions": "Run host-only tests, a behavior capture/verify route, and a deliberate mismatch fixture.",
+      "expected_result": "Valid scenarios verify and mismatches report the precise observed difference.",
+      "negative_control": "Verify cannot rewrite an expected fingerprint and host-only mode is explicit.",
+      "interactions": "The shared harness observes scenarios without changing their feature contracts.",
+      "save_compatibility": "Scenarios start clean and do not alter save layout or epoch.",
+      "cleanup": "Remove ignored captures with make clean_fast.",
+      "limitations": "Screenshots are supplementary; semantic probes are the oracle.",
+      "automation": [
+        {
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_baseline_no_autorefresh.py\" -v && python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_host_only_mode.py\" -v",
+          "evidence": "tools/gba-playtest/tests/test_baseline_no_autorefresh.py"
+        },
+        {
+          "command": "make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/gba_playtest.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-CORE-008",
+      "title": "Upstream scan records a human decision",
+      "feature_id": "upstream-port-tooling",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/12",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-core-008-upstream-scan-records-a-human-decision",
+      "profiles": [
+        "Local checkout with canonical decomp remote",
+        "Ignored build/upstream-port report output"
+      ],
+      "purpose": "Prove read-only scan/report safety and the explicit decision-record boundary.",
+      "prerequisites": "No pending state update; use a locally available canonical ref or explicit fetch.",
+      "actions": "Scan, drift, report selected non-merge SHAs, then record a manually reviewed decision.",
+      "expected_result": "Read-only commands do not alter source and decisions require rationale and evidence.",
+      "negative_control": "Unsafe output, wrong refs, merges, and missing evidence are rejected.",
+      "interactions": "The tool never executes or mutates upstream source.",
+      "save_compatibility": "No runtime, generated-data, ROM, RAM, or save impact.",
+      "cleanup": "Remove only the named ignored report directory.",
+      "limitations": "Whether a reviewed upstream commit belongs here is a precise human decision, never an automated approval.",
+      "automation": [
+        {
+          "command": "python3 -m unittest discover -s tests/upstream_port -v",
+          "evidence": "tests/upstream_port/test_cli_readonly.py"
+        },
+        {
+          "command": "python3 -m scripts.upstream_port verify --dry-run",
+          "evidence": "scripts/upstream_port/verify.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-CORE-009",
+      "title": "Reproduce default release from a successful Build CI run",
+      "feature_id": "build-ci-default-release-reproduction",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/20",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-core-009-reproduce-default-release-from-a-successful-build-ci-run",
+      "profiles": [
+        "Successful Build CI URL and head SHA",
+        "Clean checkout at that SHA with a locally reproduced default modern AAPCS release"
+      ],
+      "purpose": "Bind a successful Build CI run to a locally reproduced default release and its header verification.",
+      "prerequisites": "Record the Build CI run URL and head SHA, then use a clean local checkout at that SHA.",
+      "actions": "Inspect the successful run identity, compare its head SHA with local HEAD, build the default release, and verify its header.",
+      "expected_result": "The successful Build CI run identifies the reproduced source and the local release ROM passes header verification.",
+      "negative_control": "Failed, stale, wrong-workflow, wrong-SHA, or malformed local-ROM inputs are rejected.",
+      "interactions": "This procedure does not claim a default published artifact; issue #49 owns the separate maximal BPS artifact.",
+      "save_compatibility": "The default release reproduction makes no save migration claim.",
+      "cleanup": "Use make clean_fast to remove local build artifacts.",
+      "limitations": "Build CI does not publish a default modern ROM/map artifact; local source reproduction is required.",
+      "automation": [
+        {
+          "command": "python3 -m unittest discover -s tests/workflows -p \"test_*.py\" -v",
+          "evidence": ".github/workflows/build.yml"
+        },
+        {
+          "command": "make assets-clean && make assets-generate && make expansion-modern-rom MODERN_CONFIG=release MODERN_ABI=aapcs && python3 scripts/modernize/verify_rom_header.py build/expansion-modern/release/aapcs/fireemblem8.gba",
+          "evidence": "scripts/modernize/verify_rom_header.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-CORE-010",
+      "title": "Typed authoring lowers through existing routes",
+      "feature_id": "typed-authoring-conveniences",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/45",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/46",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-core-010-typed-authoring-lowers-through-existing-routes",
+      "profiles": [
+        "Disposable source worktree with Python 3",
+        "Default Chapter 2 generated-data bundle"
+      ],
+      "purpose": "Prove typed class, unit, event, and helper lowering through existing schemas.",
+      "prerequisites": "Copy source edits to a disposable worktree and never edit generated C directly.",
+      "actions": "Run chapter checks and semantic/round-trip suites with one valid and one invalid disposable record.",
+      "expected_result": "Valid records lower through existing routes and default Chapter 2 stays unchanged.",
+      "negative_control": "Unknown helpers, references, arity, types, and ranges report a source diagnostic.",
+      "interactions": "Existing class, unit, eventscripts, and eventlists schemas remain the only routes.",
+      "save_compatibility": "No save representation, migration, or epoch change.",
+      "cleanup": "Reset disposable edits and use make clean_fast only for build artifacts.",
+      "limitations": "This is not a new event language, campaign, or ruleset.",
+      "automation": [
+        {
+          "command": "make generated-data-ch2-check",
+          "evidence": "scripts/generated_data/tests/test_chapterbundle_schema.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_classes_schema scripts.generated_data.tests.test_units_schema scripts.generated_data.tests.test_eventlists_schema scripts.generated_data.tests.test_eventlists_roundtrip -v",
+          "evidence": "scripts/generated_data/tests/test_eventlists_roundtrip.py"
         }
       ]
     },
@@ -1079,6 +1725,44 @@
         {
           "command": "make expansion-modern-localization-runtime-release-check MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/scenarios/locale-auto-select-single-locale-modern-release.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-CUSTOM-SPELL-061-005",
+      "title": "Custom spell runtime remains save-neutral",
+      "feature_id": "custom-spell-runtime",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/61",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/77"
+      ],
+      "document": "docs/custom_spell_effects.md",
+      "anchor": "tc-custom-spell-061-005-custom-spell-runtime-remains-save-neutral",
+      "profiles": [
+        "Modern AAPCS debug and release production ROMs with EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+        "Modern AAPCS default profile with EXPANSION_CUSTOM_SPELL_EFFECTS=0"
+      ],
+      "purpose": "Prove config identity distinguishes behavior while save layout, epoch, and save/suspend runtime behavior remain unchanged.",
+      "prerequisites": "Repository root with the modern toolchain and libmGBA; use ordinary production builds, never the isolated lifecycle ROM, for save-runtime checks.",
+      "actions": "Run the custom-spell identity test and the enabled debug/release save-format gates.",
+      "expected_result": "Enabled and disabled config fingerprints differ, EXPANSION_SAVE_COMPAT_EPOCH is identical, save-format checks pass, and the lifecycle probe ends with no Proc or state that could cross a save boundary.",
+      "negative_control": "The default profile retains the current save epoch and contains no custom runtime symbols.",
+      "interactions": "No serialized item ID, preference, package state, Proc pointer, or resource reservation is added.",
+      "save_compatibility": "No migration; save epoch remains 2 and existing game/suspend compatibility scenarios remain authoritative.",
+      "cleanup": "Use make clean_fast only if production build artifacts must be removed.",
+      "limitations": "Battle Procs cannot be saved mid-effect; the contract covers saves before and after an ordinarily completed battle.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_custom_spell_effect.CustomSpellConfigTests.test_identity_tracks_enabled_state_and_preserves_save_epoch -v",
+          "evidence": "tools/gba-playtest/tests/test_custom_spell_effect.py"
+        },
+        {
+          "command": "make expansion-modern-savefmt-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+          "evidence": "tools/gba-playtest/run_save_compat_checks.py"
+        },
+        {
+          "command": "make expansion-modern-savefmt-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+          "evidence": "tools/gba-playtest/run_save_compat_checks.py"
         }
       ]
     },
@@ -1336,6 +2020,66 @@
         {
           "command": "make expansion-modern-localization-profile-all MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "modern.mk"
+        }
+      ]
+    },
+    {
+      "id": "TC-SIO-084",
+      "title": "Bounded Link Arena transfer",
+      "feature_id": "codeql-alert-remediation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/84"
+      ],
+      "document": "docs/test-cases/codeql-alerts.md",
+      "anchor": "tc-sio-084-bounded-link-arena-transfer",
+      "profiles": [
+        "Modern AAPCS debug and release ROMs plus the native production-source packet harness"
+      ],
+      "purpose": "Prove that peer-controlled sender and length fields cannot escape physical payload, queue, destination, or XMAP bounds.",
+      "prerequisites": "Repository root with host C compiler, sanitizers, libpng development files, and the supported ARM toolchain; reset link state between manual cases.",
+      "actions": "Run make codeql-alerts-test and the modern debug/release gates; exercise valid 4, 40, and 122-byte packets, exact 0xC00 XMAP, truncated and oversized claims, undersized destinations, invalid/spoofed senders, full queues, and verifier rejection.",
+      "expected_result": "Valid bytes round-trip exactly; every invalid input fails before partial writes, verifier use, success ACK, sequence advance, or queue corruption; XMAP writes exactly 0xC00 bytes.",
+      "negative_control": "Base cc1e14c overwrites a guarded four-byte destination from a 16-byte queued record, receives a 40-byte team record into 36 bytes, and computes a 3194-byte XMAP receive.",
+      "interactions": "Applies to all locales and feature profiles; valid protocol representation is unchanged and malformed peers fail closed.",
+      "save_compatibility": "No save field, migration, layout, or compatibility-epoch change.",
+      "cleanup": "Use make clean_fast only if build artifacts need removal.",
+      "limitations": "Deterministic protocol semantics are automated; physical-console radio timing is outside this memory-safety contract.",
+      "automation": [
+        {
+          "command": "make codeql-alerts-test",
+          "evidence": "tests/codeql/sio_protocol_host_test.c"
+        }
+      ]
+    },
+    {
+      "id": "TC-CODEQL-084",
+      "title": "Remaining confirmed alert boundaries",
+      "feature_id": "codeql-alert-remediation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/84"
+      ],
+      "document": "docs/test-cases/codeql-alerts.md",
+      "anchor": "tc-codeql-084-remaining-confirmed-alert-boundaries",
+      "profiles": [
+        "Native host tools and modern AAPCS debug, release, and default builds"
+      ],
+      "purpose": "Exercise the confirmed regex, PNG arithmetic, MIDI formatting, map-change, event-queue, and scripted-hit boundaries.",
+      "prerequisites": "Repository root with normal host-tool and modern build dependencies; sanitizer/runtime checks support the selected host compiler, while Build CI requires a successful GCC -fanalyzer compile probe.",
+      "actions": "Run make codeql-alerts-test, the modernization suite, documentation checker, and modern build gates.",
+      "expected_result": "Adversarial qualifiers remain bounded by process CPU time, unsafe PNG products are rejected, format checking passes, invalid map/event extents do not mutate state, invalid event-slot queue operands, an empty dequeue, or a 31st queue push fail safely, and six hits plus sentinel fit without overwrite.",
+      "negative_control": "The fixtures exercise the exact pre-fix ambiguous regex, narrowed products, format mismatch, wrapping indices, unchecked event-slot indexing, queue underflow, and one-past-end sentinel write.",
+      "interactions": "No dependencies or conflicts with starter features, localization, generated data, item caps, configuration identity, or saves.",
+      "save_compatibility": "No save field, migration, layout, or compatibility-epoch change.",
+      "cleanup": "Use make clean_fast for ROM artifacts; host test outputs are ignored under build/tests/codeql.",
+      "limitations": "GitHub source-alert state updates only after remote analysis; false positives are dismissed in GitHub without source suppression, and supported non-GCC hosts explicitly skip analyzer-only checks after runtime harnesses pass.",
+      "automation": [
+        {
+          "command": "make codeql-alerts-test",
+          "evidence": "tests/codeql/runtime_bounds_host_test.c"
+        },
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_audit -v",
+          "evidence": "scripts/modernize/tests/test_audit.py"
         }
       ]
     }

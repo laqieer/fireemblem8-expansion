@@ -37,6 +37,7 @@
 #include "EAstdlib.h"
 #include "constants/backgrounds.h"
 #include "eventcall.h"
+#include "banim_package_runtime_test.h"
 #include "bmdifficulty.h"
 #include "bmfx.h"
 #include "colorfade.h"
@@ -254,17 +255,29 @@ u8 Event07_SlotQueueOperations(struct EventEngineProc * proc)
     switch (sub_cmd) {
     case EVSUBCMD_SENQUEUE:
         slot = EVT_CMD_ARGV(scr)[0];
-        SlotQueuePush(gEventSlots[slot]);
+        if (slot < 0 || slot >= EVENT_SLOT_COUNT)
+            return EVC_ERROR;
+
+        if (!SlotQueuePush(gEventSlots[slot]))
+            return EVC_ERROR;
         break;
 
     case EVSUBCMD_SENQUEUE_S1:
-        SlotQueuePush(gEventSlots[0x1]);
+        if (!SlotQueuePush(gEventSlots[0x1]))
+            return EVC_ERROR;
         break;
 
     case EVSUBCMD_SDEQUEUE:
         slot = EVT_CMD_ARGV(scr)[0];
-        gEventSlots[slot] = SlotQueuePop();
+        if (slot < 0 || slot >= EVENT_SLOT_COUNT)
+            return EVC_ERROR;
+
+        if (!SlotQueuePop(&gEventSlots[slot]))
+            return EVC_ERROR;
         break;
+
+    default:
+        return EVC_ERROR;
     }
     return EVC_ADVANCE_CONTINUE;
 }
@@ -3905,25 +3918,14 @@ u8 Event3E_PrepScreenCall(struct EventEngineProc * proc)
 //! FE8U = 0x0801098C
 struct BattleHit * GenerateScriptBattleHitFormEventQueue(void)
 {
-    u8 i;
-    u32 * queueIt = gEventSlotQueue;
-    struct BattleHit * bhIt = gActionData.script_hits;
-
-    for (i = 0; i < gEventSlots[0xd] && ((u8 *)(queueIt))[0] != 0xff; bhIt++, queueIt++, i++)
+    if (BuildScriptBattleHits(
+            gEventSlotQueue,
+            gEventSlots[0xD],
+            gActionData.script_hits,
+            ARRAY_COUNT(gActionData.script_hits)) < 0)
     {
-        bhIt->attributes = ((u16 *)(queueIt))[1];
-        bhIt->info = 0;
-
-        if (i == 0)
-            bhIt->info |= BATTLE_HIT_INFO_BEGIN;
-
-        if (((u8 *)(queueIt))[0] == 1)
-            bhIt->info |= BATTLE_HIT_INFO_RETALIATION;
-
-        bhIt->hpChange = ((u8 *)(queueIt))[1];
+        gActionData.script_hits[0].info = BATTLE_HIT_INFO_END;
     }
-
-    bhIt->info = BATTLE_HIT_INFO_END;
     return gActionData.script_hits;
 }
 
@@ -3978,11 +3980,20 @@ u8 Event3F_ScriptBattle(struct EventEngineProc * proc)
         unitA = GetUnitStructFromEventParameter(charIdA);
         unitB = GetUnitStructFromEventParameter(charIdB);
 
+#if FE8_BANIM_PACKAGE_RUNTIME_TEST
+        if (BanimPackageRuntimeTest_ForceFirstScriptedBattle())
+        {
+            scripted = 1;
+        }
+        else
+#endif
         if (EVENT_IS_SKIPPING(proc) || (proc->evStateBits & EV_STATE_FADEDIN))
             scripted = 0;
         else
-        {
             scripted = 1;
+
+        if (scripted)
+        {
             childProc = Proc_StartBlocking(ProcScr_ScriptBattleDeamon, proc);
             childProc->evtproc = proc;
             childProc->lock = GetGameLock();

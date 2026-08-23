@@ -689,11 +689,14 @@ void BlankTilesetConfigTiles(void) {
 
 void RevertMapChange(int id) {
     const struct MapChange* mapChange;
-    u8 ix, iy;
-
-    Decompress(GetChapterMapPointer(gPlaySt.chapterIndex), gBmMapBuffer);
+    int ix, iy;
 
     mapChange = GetMapChange(id);
+
+    if (!IsMapChangeInBounds(mapChange))
+        return;
+
+    Decompress(GetChapterMapPointer(gPlaySt.chapterIndex), gBmMapBuffer);
 
     for (iy = mapChange->yOrigin; iy < (mapChange->yOrigin + mapChange->ySize); ++iy) {
         u16* itSource = (iy * gBmMapSize.x) + mapChange->xOrigin + (gBmMapBuffer + 1);

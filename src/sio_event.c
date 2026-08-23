@@ -176,7 +176,12 @@ bool XMapTransfer_0(ProcPtr proc)
     if ((gSioSt->selfId == 0) && !IsExtraMapAvailable())
     {
         buf[0] = 1;
-        SioEmitData(buf, sizeof(buf));
+        if (SioEmitData(buf, sizeof(buf)) < 0)
+        {
+            Nop_Scene_0(proc, 0);
+            return false;
+        }
+
         Nop_Scene_0(proc, 3);
         return false;
     }
@@ -226,7 +231,11 @@ void XMapTransfer_2(ProcPtr proc)
     }
 
     buf[0] = gUnk_Sio_15;
-    SioEmitData(buf, sizeof(buf));
+    if (SioEmitData(buf, sizeof(buf)) < 0)
+    {
+        Nop_Scene_0(proc, 0);
+        return;
+    }
 
     if (gUnk_Sio_15 != 0)
     {
@@ -239,7 +248,7 @@ void XMapTransfer_2(ProcPtr proc)
 //! FE8U = 0x08048460
 bool XMapTransfer_3(ProcPtr proc)
 {
-    u16 got;
+    int got;
     int i;
     u8 buf[4];
     u8 bufSenderId[4];
@@ -260,9 +269,15 @@ bool XMapTransfer_3(ProcPtr proc)
         return 0;
     }
 
-    got = SioReceiveData(buf, bufSenderId, NULL);
+    got = SioReceiveData(buf, sizeof(buf), sizeof(buf), bufSenderId, NULL);
 
-    if (got != 0)
+    if (got < 0)
+    {
+        Nop_Scene_0(proc, 0);
+        return false;
+    }
+
+    if (got > 0)
     {
         if (buf[0] != 0)
         {
@@ -359,22 +374,30 @@ void StartXMapTransfer(struct SioBigSendProc * proc)
     if (gSioSt->selfId == 0)
     {
         ReadSramFast(CART_SRAM + SRAM_OFFSET_XMAP, gUnk_Sio_0, SRAM_SIZE_XMAP);
-        StartSioBigSend(gUnk_Sio_0, SRAM_SIZE_XMAP, DrawXMapSendProgress, 0, proc);
+        if (StartSioBigSend(gUnk_Sio_0, SRAM_SIZE_XMAP, DrawXMapSendProgress, 0, proc) < 0)
+            Nop_Scene_0(proc, 0);
     }
     else
     {
-        StartSioBigReceive(gUnk_Sio_0, DrawXMapReceiveProgress, proc);
+        if (StartSioBigReceive(gUnk_Sio_0, SRAM_SIZE_XMAP, DrawXMapReceiveProgress, proc) < 0)
+            Nop_Scene_0(proc, 0);
     }
 
     return;
 }
 
 //! FE8U = 0x0804867C
-bool XMapTransfer_AwaitCompletion(void)
+bool XMapTransfer_AwaitCompletion(ProcPtr proc)
 {
     if (IsSioBigTransferActive())
     {
         return true;
+    }
+
+    if (GetSioBigTransferStatus() != SIO_BIG_TRANSFER_COMPLETE)
+    {
+        Nop_Scene_0(proc, 0);
+        return false;
     }
 
     PlaySoundEffect(SONG_7E);

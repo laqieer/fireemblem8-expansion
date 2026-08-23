@@ -141,6 +141,12 @@ EXPANSION_DANGER_OVERLAY_MENU ?= 0
 EXPANSION_STARTER_CONTENT     ?= 0
 EXPANSION_AOE_REFERENCE       ?= 0
 
+# EXPANSION_CUSTOM_SPELL_EFFECTS -- permanent, default-off battle-only
+# custom spell-effect runtime foundation (issue #77). It reserves a typed
+# descriptor/index seam for the later asset adapter; it does not add a
+# manifest record, package parser, item binding, or save data by itself.
+EXPANSION_CUSTOM_SPELL_EFFECTS ?= 0
+
 # EXPANSION_LOCALIZED_TEXT_AUTO_WRAP -- opt-in runtime safety net for real
 # CJK profiles. When 1, the dialogue engine measures the next VWF glyph
 # against the active Text allocation and advances to the next line before it

@@ -4,6 +4,8 @@
 #include "global.h"
 #include "bmunit.h"
 
+struct BattleHit;
+
 typedef uintptr_t EventListScr;
 typedef uintptr_t EventScr;
 
@@ -248,8 +250,18 @@ void SetEventTriggerState(u16 triggerId, bool8 value);
 s8 GetEventTriggerState(u16 triggerId);
 ProcPtr MergeGenericProc(ProcPtr parent, ProcFunc init, ProcFunc loop, ProcFunc dest);
 void Event_NullFunc_1(void);
-void SlotQueuePush(unsigned value);
-unsigned SlotQueuePop(void);
+enum
+{
+    EVENT_SLOT_QUEUE_COUNT = 0x1E,
+};
+
+bool SlotQueuePush(u32 value);
+bool SlotQueuePop(u32 * out);
+int BuildScriptBattleHits(
+    const u32 * queue,
+    u32 queueCount,
+    struct BattleHit * hits,
+    int capacity);
 void SetEventSlotCounter(unsigned value);
 unsigned GetEventSlotCounter(void);
 
