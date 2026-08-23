@@ -79,8 +79,8 @@ or campaign mechanic beyond the selected callbacks.
 1. Run
    `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_mechanics.py" -v`.
 2. Run `make expansion-modern-starter-hook-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
-3. Repeat step 1 with the registry disabled path:
-   `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_mechanics.py" -v`.
+3. Confirm the step 1 invocation also passes its disabled-registry assertions; it
+   builds the disabled driver with no mechanics defines and verifies the probe is inert.
 
 ### Expected result
 
