@@ -13,6 +13,7 @@
       "aoe-reference-module",
       "optional-gameplay-combinations",
       "transient-blue-computer-control",
+      "bounded-semantic-run-until",
       "custom-spell-runtime",
       "hq-pcm-mixer",
       "patch-release-artifact",
