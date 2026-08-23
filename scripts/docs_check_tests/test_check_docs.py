@@ -94,6 +94,30 @@ class StripFencedBlocksTests(unittest.TestCase):
                         "```\n[fake](nope.md)\n```" + trailing
                     )
 
+    def test_fence_markers_allow_only_ascii_leading_whitespace(self):
+        for leading in ("\u00A0", "\u2003"):
+            with self.subTest(leading=repr(leading)):
+                literal = (
+                    f"{leading}```\n"
+                    "[fake](nope.md)\n"
+                    f"{leading}```\n"
+                )
+                self.assertEqual(
+                    check_docs.strip_fenced_blocks(literal),
+                    literal,
+                )
+                self.assertEqual(
+                    list(check_docs.iter_fenced_block_bodies(literal)),
+                    [],
+                )
+                with self.assertRaisesRegex(
+                    check_docs.DocsCheckError,
+                    r"unterminated fenced code block opened at line 1 with ```",
+                ):
+                    check_docs.strip_fenced_blocks(
+                        "```\n[fake](nope.md)\n" + f"{leading}```\n"
+                    )
+
     def test_unterminated_fence_fails_with_opening_location(self):
         with self.assertRaisesRegex(
             check_docs.DocsCheckError,

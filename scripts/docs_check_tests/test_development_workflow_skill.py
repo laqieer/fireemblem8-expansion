@@ -148,7 +148,63 @@ FENCED_COMMAND_BLOCK = re.compile(
     r"```(?:bash|sh|shell|text)?\n(?P<commands>.*?)```",
     re.DOTALL,
 )
-HTML_COMMENT_LINE = re.compile(r"^[ \t]*<!--.*-->[ \t]*$")
+
+
+def strip_html_comments(text):
+    """Blank HTML comments while preserving layout and rejecting ambiguity."""
+    visible = []
+    comment_line_indexes = set()
+    in_comment = False
+    opening_line = None
+    line_number = 1
+    cursor = 0
+
+    while cursor < len(text):
+        if text.startswith("<!--", cursor):
+            if in_comment:
+                raise AssertionError(
+                    f"nested HTML comment opener at line {line_number}"
+                )
+            in_comment = True
+            opening_line = line_number
+            comment_line_indexes.add(line_number - 1)
+            visible.extend(" " * 4)
+            cursor += 4
+            continue
+
+        if text.startswith("--!>", cursor):
+            raise AssertionError(
+                f"malformed HTML comment closer at line {line_number}"
+            )
+
+        if text.startswith("-->", cursor):
+            if not in_comment:
+                raise AssertionError(
+                    f"stray HTML comment closer at line {line_number}"
+                )
+            comment_line_indexes.add(line_number - 1)
+            visible.extend(" " * 3)
+            in_comment = False
+            opening_line = None
+            cursor += 3
+            continue
+
+        char = text[cursor]
+        if in_comment:
+            comment_line_indexes.add(line_number - 1)
+            visible.append(char if char in "\r\n" else " ")
+        else:
+            visible.append(char)
+        if char == "\n":
+            line_number += 1
+        cursor += 1
+
+    if in_comment:
+        raise AssertionError(
+            f"unterminated HTML comment opened at line {opening_line}"
+        )
+
+    return "".join(visible), frozenset(comment_line_indexes)
 
 
 def normalize_policy(text):
@@ -200,35 +256,34 @@ def read_skill():
 
 
 def read_markdown_section(text, heading):
-    lines = strip_fenced_blocks(text).splitlines()
-    in_comment = False
+    unfenced_text = strip_fenced_blocks(text)
+    raw_lines = unfenced_text.split("\n")
+    visible_text, comment_line_indexes = strip_html_comments(unfenced_text)
+    visible_lines = visible_text.split("\n")
+    if len(raw_lines) != len(visible_lines):
+        raise AssertionError("HTML comment scanner changed Markdown line count")
+
     heading_lines = []
-    for index, line in enumerate(lines):
-        match = MARKDOWN_HEADING.match(line)
+    for index, raw_line in enumerate(raw_lines):
+        visible_line = visible_lines[index]
+        raw_match = MARKDOWN_HEADING.match(raw_line)
+        visible_match = MARKDOWN_HEADING.match(visible_line)
         if (
-            in_comment
-            and match
-            and match.group("heading").strip() == heading
+            index in comment_line_indexes
+            and raw_match
+            and raw_match.group("heading").strip() == heading
         ):
             raise AssertionError("policy heading appears inside an HTML comment")
 
-        cursor = 0
-        while cursor < len(line):
-            if in_comment:
-                end = line.find("-->", cursor)
-                if end == -1:
-                    cursor = len(line)
-                    continue
-                in_comment = False
-                cursor = end + 3
-                continue
-            start = line.find("<!--", cursor)
-            if start == -1:
-                break
-            in_comment = True
-            cursor = start + 4
-        if match and match.group("heading").strip() == heading:
-            heading_lines.append((index, len(match.group("level"))))
+        if index in comment_line_indexes:
+            continue
+        if (
+            visible_match
+            and visible_match.group("heading").strip() == heading
+        ):
+            heading_lines.append(
+                (index, len(visible_match.group("level")))
+            )
     if len(heading_lines) != 1:
         raise AssertionError(
             f"expected exactly one Markdown section {heading!r}, "
@@ -238,15 +293,26 @@ def read_markdown_section(text, heading):
     end_line = next(
         (
             index
-            for index in range(heading_lines[0][0] + 1, len(lines))
+            for index in range(heading_lines[0][0] + 1, len(visible_lines))
             if (
-                (match := MARKDOWN_HEADING.match(lines[index]))
+                index not in comment_line_indexes
+                and (match := MARKDOWN_HEADING.match(visible_lines[index]))
                 and len(match.group("level")) <= heading_lines[0][1]
             )
         ),
-        len(lines),
+        len(visible_lines),
     )
-    return lines[heading_lines[0][0] + 1:end_line]
+    for index in range(heading_lines[0][0] + 1, end_line):
+        if (
+            index in comment_line_indexes
+            and raw_lines[index].strip()
+            and visible_lines[index].strip()
+        ):
+            raise AssertionError(
+                "HTML comments in the policy section must occupy "
+                f"standalone lines (line {index + 1})"
+            )
+    return visible_lines[heading_lines[0][0] + 1:end_line]
 
 
 def normalize_policy_atom(text):
@@ -350,10 +416,6 @@ def parse_meaningful_test_policy(text):
     current_item = None
     for line in read_markdown_section(text, MEANINGFUL_TEST_POLICY_HEADING):
         if not line.strip():
-            continue
-        if HTML_COMMENT_LINE.match(line):
-            if current_clause is None:
-                raise AssertionError(f"unexpected policy content: {line.strip()}")
             continue
         if match := MEANINGFUL_TEST_POLICY_CLAUSE.match(line):
             clause_name = normalize_policy_atom(match.group("name"))
@@ -715,13 +777,93 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             with self.subTest(mutation=mutation_name):
                 with self.assertRaises(AssertionError):
                     self.assert_meaningful_test_policy(mutation)
-        harmless_comment = policy_text.replace(
+        harmless_single_line_comment = policy_text.replace(
             "  - **behavior:** required",
             "  - **behavior:** required\n  <!-- explanatory note -->",
         )
         self.assertEqual(
             CANONICAL_POLICY_AST,
-            self.assert_meaningful_test_policy(harmless_comment),
+            self.assert_meaningful_test_policy(harmless_single_line_comment),
+        )
+        harmless_multiline_comment = policy_text.replace(
+            "  - **behavior:** required",
+            "  - **behavior:** required\n"
+            "  <!-- explanatory note\n"
+            "       continued on another line -->",
+        )
+        self.assertEqual(
+            CANONICAL_POLICY_AST,
+            self.assert_meaningful_test_policy(harmless_multiline_comment),
+        )
+
+        hidden_boundary_mutation = (
+            policy_text
+            + "\n<!--\n"
+            + "# hidden boundary\n"
+            + "-->\n"
+            + "Text-only tests are permitted.\n"
+        )
+        with self.assertRaisesRegex(
+            AssertionError,
+            "unexpected policy content: Text-only tests are permitted",
+        ):
+            self.assert_meaningful_test_policy(hidden_boundary_mutation)
+
+        for mutation_name, mutation, error in (
+            (
+                "unterminated comment",
+                policy_text + "\n<!-- explanatory note\n",
+                r"unterminated HTML comment opened at line",
+            ),
+            (
+                "nested comment",
+                policy_text + "\n<!-- outer <!-- nested -->\n",
+                r"nested HTML comment opener at line",
+            ),
+            (
+                "stray comment closer",
+                policy_text + "\n-->\n",
+                r"stray HTML comment closer at line",
+            ),
+            (
+                "HTML end-bang comment closer",
+                policy_text + "\n<!-- explanatory note --!>\n",
+                r"malformed HTML comment closer at line",
+            ),
+        ):
+            with self.subTest(mutation=mutation_name):
+                with self.assertRaisesRegex(AssertionError, error):
+                    self.assert_meaningful_test_policy(mutation)
+
+        for leading in ("\u00A0", "\u2003"):
+            with self.subTest(unicode_fence_leading=repr(leading)):
+                with self.assertRaises(AssertionError):
+                    self.assert_meaningful_test_policy(
+                        policy_text
+                        + f"\n{leading}```\n"
+                        + "Text-only tests are permitted.\n"
+                        + f"{leading}```\n"
+                    )
+
+        extracted_section = read_markdown_section(
+            "## Target\n"
+            "visible before\n"
+            "<!--\n"
+            "# hidden comment boundary\n"
+            "comment-only text\n"
+            "-->\n"
+            "```markdown\n"
+            "# fenced boundary\n"
+            "hidden fenced prose\n"
+            "```\n"
+            "visible after\n"
+            "## Next\n"
+            "outside\n",
+            "Target",
+        )
+        self.assertEqual(
+            ["visible before", "visible after"],
+            [line for line in extracted_section if line.strip()],
         )
 
         top_level_terminator = policy_text + "\n# Separate document section\n"
