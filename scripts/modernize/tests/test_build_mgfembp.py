@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scripts.modernize.tests.make_database import make_database_variable
+
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "modernize" / "build_mgfembp.py"
@@ -23,7 +25,7 @@ spec.loader.exec_module(builder)
 class BuildMgfembpTests(unittest.TestCase):
 
     @staticmethod
-    def make_database_variable(name):
+    def resolved_make_database_variable(name):
         result = subprocess.run(
             [
                 "make",
@@ -40,16 +42,31 @@ class BuildMgfembpTests(unittest.TestCase):
         )
         if result.returncode == 0:
             raise AssertionError("the nonexistent Make probe unexpectedly succeeded")
-        prefix = f"{name} := "
-        value = next(
-            (line[len(prefix):] for line in result.stdout.splitlines() if line.startswith(prefix)),
-            None,
-        )
+        value = make_database_variable(result.stdout, name)
         if value is None:
             raise AssertionError(
                 f"{name} absent from Make database:\n{result.stdout[-4000:]}"
             )
         return value
+
+    def test_make_database_variable_collects_continuations(self):
+        fixture = "\n".join(
+            (
+                "MODERN_MGFEMBP_EMBED_ASSETS := mgfembp/data/debug_font.png \\",
+                "    mgfembp/data/message_gfx.png \\",
+                "    mgfembp/data/message_tm_1.bin",
+                "# environment",
+            )
+        )
+        manifest = make_database_variable(fixture, "MODERN_MGFEMBP_EMBED_ASSETS")
+        self.assertEqual(
+            manifest.split(),
+            [
+                "mgfembp/data/debug_font.png",
+                "mgfembp/data/message_gfx.png",
+                "mgfembp/data/message_tm_1.bin",
+            ],
+        )
 
     def tool_paths(self):
         cc = os.environ.get("MODERN_CC") or shutil.which("arm-none-eabi-gcc")
@@ -164,12 +181,14 @@ class BuildMgfembpTests(unittest.TestCase):
 
     def test_modern_mk_embed_list_matches_script(self):
         """The resolved modern embed manifest matches the builder contract."""
-        manifest = self.make_database_variable("MODERN_MGFEMBP_EMBED_ASSETS").split()
+        manifest = self.resolved_make_database_variable(
+            "MODERN_MGFEMBP_EMBED_ASSETS"
+        ).split()
         builder.validate_embed_manifest(manifest)
 
     def test_fe6sio_dep_included_in_modern_mk(self):
         """The resolved FE6 SIO object is wired into the modern ELF graph."""
-        object_path = self.make_database_variable("MODERN_FE6SIO_OBJ")
+        object_path = self.resolved_make_database_variable("MODERN_FE6SIO_OBJ")
         result = subprocess.run(
             [
                 "make",

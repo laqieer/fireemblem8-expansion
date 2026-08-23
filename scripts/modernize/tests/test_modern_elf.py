@@ -15,6 +15,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scripts.modernize.tests.make_database import (
+    make_database_rule,
+    make_database_rule_header,
+)
+
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -31,15 +36,33 @@ class ModernElfTargetTests(unittest.TestCase):
             check=False,
         )
 
-    def make_database_rule(self, target):
+    def resolved_make_database_rule(self, target):
         result = self.make("-rR", "-p", "__issue102_modern_elf_probe__")
         self.assertNotEqual(result.returncode, 0)
-        marker = f"\n{target}:"
-        start = result.stdout.find(marker)
-        self.assertNotEqual(start, -1, result.stdout[-4000:])
-        end = result.stdout.find("\n\n", start + 1)
-        self.assertNotEqual(end, -1, result.stdout[-4000:])
-        return result.stdout[start + 1:end]
+        rule = make_database_rule(result.stdout, target)
+        self.assertIsNotNone(rule, result.stdout[-4000:])
+        return rule
+
+    def test_make_database_rule_header_collects_continuations(self):
+        fixture = "\n".join(
+            (
+                "expansion-modern-link-prepare: first-prerequisite \\",
+                "    expansion-modern-legacy-ready \\",
+                "    final-prerequisite",
+                "#  recipe to execute",
+            )
+        )
+        header = make_database_rule_header(
+            fixture,
+            "expansion-modern-link-prepare",
+        )
+        self.assertEqual(
+            header,
+            (
+                "expansion-modern-link-prepare: first-prerequisite "
+                "expansion-modern-legacy-ready final-prerequisite"
+            ),
+        )
 
     def tool_overrides(self):
         prefix = os.environ.get("PREFIX", "arm-none-eabi-")
@@ -166,11 +189,19 @@ class ModernElfTargetTests(unittest.TestCase):
 
     def test_legacy_ready_step_uses_nodep_zero(self):
         """The resolved Make graph refreshes legacy objects before linking."""
-        ready_rule = self.make_database_rule("expansion-modern-legacy-ready")
-        prepare_rule = self.make_database_rule("expansion-modern-link-prepare")
+        ready_rule = self.resolved_make_database_rule(
+            "expansion-modern-legacy-ready"
+        )
+        prepare_rule = self.resolved_make_database_rule(
+            "expansion-modern-link-prepare"
+        )
+        prepare_header = make_database_rule_header(
+            prepare_rule,
+            "expansion-modern-link-prepare",
+        )
         self.assertIn("NODEP=0", ready_rule)
         self.assertNotIn("+$(MAKE) NODEP=0", ready_rule)
-        self.assertIn("expansion-modern-legacy-ready", prepare_rule.splitlines()[0])
+        self.assertIn("expansion-modern-legacy-ready", prepare_header)
 
     # -- Dry-run safety -----------------------------------------------------
 

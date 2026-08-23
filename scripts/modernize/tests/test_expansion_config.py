@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "modernize"))
 
 import expansion_config as ec  # noqa: E402
+from scripts.modernize.tests.make_database import make_database_variable
 
 
 def assert_rejects_wrong_length(test_case, validator, values):
@@ -1626,15 +1627,20 @@ class StarterContentCompileTimeContractTests(unittest.TestCase):
             check=False,
         )
         self.assertNotEqual(result.returncode, 0)
-        cflags = next(
-            (
-                line.split(":=", 1)[1].strip()
-                for line in result.stdout.splitlines()
-                if line.startswith("MODERN_CFLAGS :=")
-            ),
-            None,
-        )
+        cflags = make_database_variable(result.stdout, "MODERN_CFLAGS")
         self.assertIsNotNone(cflags, result.stdout[-4000:])
+        self.assertIn("-DFE8_EXPANSION_STARTER_CONTENT=1", cflags)
+        self.assertIn("-DFE8_ITEM_ID_CAP=0xCE", cflags)
+
+    def test_make_database_variable_collects_cflags_continuations(self):
+        fixture = "\n".join(
+            (
+                "MODERN_CFLAGS := -DFE8_EXPANSION_STARTER_CONTENT=1 \\",
+                "    -DFE8_ITEM_ID_CAP=0xCE",
+                "# automatic",
+            )
+        )
+        cflags = make_database_variable(fixture, "MODERN_CFLAGS")
         self.assertIn("-DFE8_EXPANSION_STARTER_CONTENT=1", cflags)
         self.assertIn("-DFE8_ITEM_ID_CAP=0xCE", cflags)
 
