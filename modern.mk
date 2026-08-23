@@ -149,6 +149,12 @@ MODERN_BANIM_OVERLAY_LAYOUT_FLAGS := -fno-toplevel-reorder
 # BUGFIX undefined to preserve byte-identical original behavior.
 MODERN_DEFINE_FLAGS := -DMODERN=1 -DNONMATCHING=1 -DBUGFIX=1
 
+# Private test instrumentation is accepted only through a dedicated target
+# below. It is intentionally outside the configured feature surface and
+# default-empty, so supported debug/release/profile builds have no test state.
+MODERN_INTERNAL_TEST_DEFINES ?=
+MODERN_DEFINE_FLAGS += $(MODERN_INTERNAL_TEST_DEFINES)
+
 # Internal-only battle-presentation runtime evidence. The probe is compiled
 # solely by expansion-modern-banim-presentation-check's dedicated debug
 # profiles; ordinary debug and every release/production build omit it.
@@ -2623,6 +2629,19 @@ expansion-modern-debugtools-tools-check: expansion-modern-boot-preflight expansi
 		--policy behavior
 	@printf 'Modern ROM debugtools-tools-check passed (five bounded tools live+confirmed in debug, compiled-out all-zero in release): %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT := \
+	build/expansion-modern-portrait-package-runtime
+
+.PHONY: expansion-modern-portrait-package-runtime-check
+expansion-modern-portrait-package-runtime-check:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_BUILD_ROOT="$(MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT)" \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		MODERN_INTERNAL_TEST_DEFINES="-DFE8_PORTRAIT_PACKAGE_RUNTIME_TEST=1"
+	FE8_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT="$(MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT)" \
+		PYTHONPATH="tools/gba-playtest:tools/gba-playtest/tests" "$(PYTHON)" -c \
+		'import unittest; from test_portrait_package_runtime import PortraitPackageRuntimeTests; unittest.main(defaultTest="PortraitPackageRuntimeTests.test_debug_unit_inspect_renders_eirika_minimug")'
 
 # Issue #11 closure: the "Fast Boot: Ch4 Prep" launcher's own pending-
 # request/boot-commit lifecycle -- a second, independent launcher target

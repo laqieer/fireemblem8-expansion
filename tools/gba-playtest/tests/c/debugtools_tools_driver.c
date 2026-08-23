@@ -22,6 +22,8 @@
 #include <string.h>
 
 #include "global.h"
+#include "hardware.h"
+#include "face.h"
 #include "uimenu.h"
 #include "expansion_debugtools.h"
 #include "debugtools_internal.h"
@@ -39,6 +41,18 @@
 
 extern int gDebugToolsToolsHostStub_StartOrphanMenuCallCount;
 extern const struct MenuDef* gDebugToolsToolsHostStub_LastMenuDef;
+extern int gDebugToolsToolsHostStubPutFaceChibiCallCount;
+extern int gDebugToolsToolsHostStubLastFaceChibiId;
+extern int gDebugToolsToolsHostStubLastFaceChibiChr;
+extern int gDebugToolsToolsHostStubLastFaceChibiPal;
+extern int gDebugToolsToolsHostStubLastFaceChibiFlipped;
+extern int gDebugToolsToolsHostStubBgSyncCallCount;
+extern int gDebugToolsToolsHostStubLastBgSyncMask;
+extern int gDebugToolsToolsHostStubStartFace2CallCount;
+extern int gDebugToolsToolsHostStubLastStartFaceId;
+extern int gDebugToolsToolsHostStubLastEyeControl;
+extern int gDebugToolsToolsHostStubFaceMouthInitCount;
+extern int gDebugToolsToolsHostStubFaceMouthLoopCount;
 extern void DebugToolsHostStub_SetFakeUnit(int present, int curHp, int maxHp);
 extern void DebugToolsHostStub_SetFakeConvoy(int count, int full);
 extern void DebugToolsHostStub_ClearFakeFlags(void);
@@ -97,6 +111,45 @@ int main(void)
     CHECK(gDebugToolsProbe.unitInspectLastCurHp == 5, "inspect must sample curHP");
     CHECK(gDebugToolsProbe.unitInspectLastMaxHp == 20, "inspect must sample maxHP");
     CHECK(gDebugToolsProbe.unitHealTransactionCount == 0, "inspect alone must never apply a heal transaction");
+#if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
+    CHECK(gDebugToolsToolsHostStubPutFaceChibiCallCount == 1,
+          "valid Unit Inspect must render exactly one minimug");
+    CHECK(gDebugToolsToolsHostStubLastFaceChibiId == 2
+          && gDebugToolsToolsHostStubLastFaceChibiChr == 0x280
+          && gDebugToolsToolsHostStubLastFaceChibiPal == 2
+          && gDebugToolsToolsHostStubLastFaceChibiFlipped == FALSE,
+          "Unit Inspect must use the documented Eirika minimug parameters");
+    CHECK(gDebugToolsToolsHostStubBgSyncCallCount == 1
+          && gDebugToolsToolsHostStubLastBgSyncMask == BG2_SYNC_BIT,
+          "minimug rendering must synchronize BG2 exactly once");
+    CHECK(gPortraitPackageRuntimeProbe.faceId == 2
+          && gPortraitPackageRuntimeProbe.minimugRenderCount == 1,
+          "valid Unit Inspect must record Eirika minimug evidence");
+    CHECK(gPortraitPackageRuntimeProbe.minimugVramWord == 0xE1A2B3C4
+          && gPortraitPackageRuntimeProbe.minimugPaletteWord == 0x56781234,
+          "minimug probe must sample the rendered VRAM and palette state");
+    CHECK(gDebugToolsToolsHostStubStartFace2CallCount == 1
+          && gDebugToolsToolsHostStubLastStartFaceId == 2
+          && gPortraitPackageRuntimeProbe.fullFaceRenderCount == 1,
+          "valid Unit Inspect must render the documented full face once");
+    CHECK(gDebugToolsToolsHostStubLastEyeControl == 2
+          && gPortraitPackageRuntimeProbe.eyeControl == 2,
+          "full-face probe must exercise eye control state 2");
+    CHECK(gPortraitPackageRuntimeProbe.mouthDisplayBits == FACE_DISP_TALK_1,
+          "full-face probe must preserve the requested talk display bit");
+    CHECK(gDebugToolsToolsHostStubFaceMouthInitCount == 1
+          && gDebugToolsToolsHostStubFaceMouthLoopCount == 2,
+          "full-face probe must initialize and render both mouth states");
+    CHECK(gPortraitPackageRuntimeProbe.mouthFrame0 != 0
+          && gPortraitPackageRuntimeProbe.mouthFrame2 != 0
+          && gPortraitPackageRuntimeProbe.mouthFrame0
+              != gPortraitPackageRuntimeProbe.mouthFrame2,
+          "mouth probe must record distinct nonzero frame evidence");
+#else
+    CHECK(gDebugToolsToolsHostStubPutFaceChibiCallCount == 0
+          && gDebugToolsToolsHostStubStartFace2CallCount == 0,
+          "supported Unit Inspect builds must omit portrait test instrumentation");
+#endif
 
     CHECK(strcmp(gDebugToolsUnitMenuDef.menuItems[0].name, "Confirm Heal to Full") == 0, "unit submenu item 0 must be the Confirm item");
     CHECK(strcmp(gDebugToolsUnitMenuDef.menuItems[1].name, "Back") == 0, "unit submenu item 1 must be Back");

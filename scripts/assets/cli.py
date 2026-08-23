@@ -30,7 +30,15 @@ def _parser():
         help="ignored generated-output directory (default: %(default)s)",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("validate", "generate", "check", "sources", "tmx-incbin-consumers", "clean"):
+    for name in (
+        "validate",
+        "generate",
+        "check",
+        "sources",
+        "portrait-incbin-consumers",
+        "tmx-incbin-consumers",
+        "clean",
+    ):
         subparsers.add_parser(name)
     return parser
 
@@ -56,9 +64,17 @@ def main(argv=None):
             print("OK: {} generated asset record(s) are current".format(len(records)))
         elif args.command == "sources":
             records = manifest.load_and_validate(args.manifest)
+            sources = {"assets/portrait_registry.json"}
             for record in records:
-                for source in record.sources:
-                    print(source)
+                sources.update(record.sources)
+                kind = manifest.KIND_REGISTRY.resolve(record.kind)
+                sources.update(kind.source_dependencies(record))
+            for source in sorted(sources):
+                print(source)
+        elif args.command == "portrait-incbin-consumers":
+            records = manifest.load_and_validate(args.manifest)
+            for record_id in manifest.portrait_incbin_consumer_ids(records):
+                print(record_id)
         elif args.command == "tmx-incbin-consumers":
             records = manifest.load_and_validate(args.manifest)
             for record_id in manifest.tmx_incbin_consumer_ids(records):

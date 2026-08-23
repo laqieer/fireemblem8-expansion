@@ -1947,6 +1947,11 @@ class DebugToolsExtendedToolsHostTests(unittest.TestCase):
                 defines=["FE8_EXPANSION_DEBUGTOOLS_ENABLED=1"],
             )
             self.assertEqual(rc, 0, f"compiling src/debugtools_tools.c (enabled) failed:\n{out}")
+            self.assertNotIn(
+                "gPortraitPackageRuntimeProbe",
+                _defined_symbol_names(tools_obj),
+                "the normal debug-tools object must omit portrait test state",
+            )
 
             # src/debugtools_tools.c calls into the real diagnostics
             # foundation (DebugTools_LogEvent/DebugTools_RecordAssertFailure) --
@@ -1976,6 +1981,49 @@ class DebugToolsExtendedToolsHostTests(unittest.TestCase):
 
             rc, out = _run(exe)
             self.assertEqual(rc, 0, f"host extended-tools test failed:\n{out}")
+            self.assertIn("DEBUGTOOLS_TOOLS_HOST_TEST: PASS", out)
+
+    def test_portrait_runtime_probe_is_test_only_and_host_executed(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            defines = [
+                "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                "FE8_PORTRAIT_PACKAGE_RUNTIME_TEST=1",
+            ]
+            rc, out, registry_obj = _compile(
+                work, REGISTRY_SRC, "registry_enabled.o", defines=defines
+            )
+            self.assertEqual(rc, 0, f"compiling registry with portrait probe failed:\n{out}")
+            rc, out, tools_obj = _compile(
+                work, TOOLS_SRC, "tools_portrait_runtime.o", defines=defines
+            )
+            self.assertEqual(rc, 0, f"compiling portrait probe tools failed:\n{out}")
+            self.assertIn(
+                "gPortraitPackageRuntimeProbe",
+                _defined_symbol_names(tools_obj),
+                "the dedicated test build must define portrait probe state",
+            )
+            rc, out, diag_obj = _compile(
+                work, DIAG_SRC, "diag_enabled_for_tools.o", defines=defines
+            )
+            self.assertEqual(rc, 0, f"compiling diagnostics with portrait probe failed:\n{out}")
+            rc, out, stubs_obj = _compile(
+                work, C_FIXTURES_DIR / "debugtools_tools_host_stubs.c", "tools_stubs.o",
+                defines=defines
+            )
+            self.assertEqual(rc, 0, f"compiling portrait probe stubs failed:\n{out}")
+            rc, out, driver_obj = _compile(
+                work, C_FIXTURES_DIR / "debugtools_tools_driver.c", "tools_driver.o",
+                defines=defines
+            )
+            self.assertEqual(rc, 0, f"compiling portrait probe driver failed:\n{out}")
+            rc, out, exe = _link(
+                work, [registry_obj, tools_obj, diag_obj, stubs_obj, driver_obj], "portrait_probe_test"
+            )
+            self.assertEqual(rc, 0, f"linking portrait probe host test failed:\n{out}")
+            rc, out = _run(exe)
+            self.assertEqual(rc, 0, f"portrait probe host test failed:\n{out}")
             self.assertIn("DEBUGTOOLS_TOOLS_HOST_TEST: PASS", out)
 
     def test_extended_tools_disabled_path_is_noop_and_omits_every_symbol(self):

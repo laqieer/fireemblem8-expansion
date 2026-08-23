@@ -15,9 +15,9 @@
         "table_symbol": "frontier_df4_banim_b_070_901138"
       },
       "fe8u": {
-        "path": "src/portrait_data.c",
+        "path": "assets/portrait_registry.json",
         "revision": "6e76046609cc3074c6b7c12e8767b005b14854ce",
-        "sha256": "6f44d1cc2a237eb8c62765030a4c14c37bd0dd635e16130b34e8766f8778fe2a",
+        "sha256": "96dea96833df6093bd7c6c0c0924cac17e8b9ee3a1a05e57b9398c51c490809d",
         "table_symbol": "portrait_data"
       }
     }

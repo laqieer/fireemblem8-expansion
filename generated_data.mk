@@ -418,7 +418,10 @@ GENERATED_DATA_CONFIG_INPUTS_characters := \
 	include/bmitem.h \
 	include/constants/msg.h \
 	src/portrait_data.c \
-	src/face.c
+	src/face.c \
+	assets/manifest.json \
+	assets/portrait_registry.json \
+	$(wildcard scripts/assets/*.py)
 
 # Shared (every table) generator scripts. Test files/fixtures are
 # deliberately excluded -- they never affect generated output.
