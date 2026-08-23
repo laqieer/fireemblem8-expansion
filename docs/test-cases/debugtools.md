@@ -42,7 +42,10 @@ rapid selection keeps one owner and increments
 exact prior typed context, song/override state, playing or silent state, and
 channel mode; it increments `gDebugToolsMusicProbe.restoreCount` once and
 clears owner state. The title/map remains interactive, and the pre/post
-whole-SRAM hashes are identical.
+SRAM hashes are identical. The title fixture hashes the complete deterministic
+image; the blank-SRAM map fixture normalizes only the established
+build-commit/checksum diagnostic bytes, whose source-controlled value changes
+between candidate commits.
 
 Locked or secret sound-room rows are intentionally previewable when their
 catalog entry is otherwise valid. Preview never reads or changes unlock bits,
