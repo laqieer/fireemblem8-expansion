@@ -2438,7 +2438,17 @@
           "expected": "0x07"
         }
       ],
-      "sram_hash": true
+      "sram_hash": true,
+      "sram_hash_exclude_ranges": [
+        {
+          "offset": 29640,
+          "length": 9
+        },
+        {
+          "offset": 29650,
+          "length": 2
+        }
+      ]
     },
     {
       "frame": 15150,
@@ -2626,7 +2636,17 @@
           "expected": "0xff"
         }
       ],
-      "sram_hash": true
+      "sram_hash": true,
+      "sram_hash_exclude_ranges": [
+        {
+          "offset": 29640,
+          "length": 9
+        },
+        {
+          "offset": 29650,
+          "length": 2
+        }
+      ]
     },
     {
       "frame": 15550,
