@@ -486,3 +486,9 @@ checksum, or epoch changes. Legacy decoders keep reading old values. Widening
 class/chapter/unit is deliberately NOT done here; those require a versioned
 save/runtime change and a future epoch bump, documented as non-goals in
 `reports/issue10_closure.md`.
+
+## Tester-facing procedure
+
+[`TC-CORE-005`](test-cases/core-framework.md#tc-core-005-typed-id-cap-preserves-default-boundary)
+covers DEFAULT versus ACTIVE contracts, the `0xCE` item route, default-cap
+and archival refusal controls, and the save-neutral pilot boundary.
