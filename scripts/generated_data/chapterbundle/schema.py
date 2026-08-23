@@ -98,7 +98,7 @@ BUNDLE_TABLE_NAMES = ("units", "shops", "traps", "eventscripts", "eventlists")
 # validation (see `dependency_tables()`/`cli.py`); `supports` is included
 # for the support-owner reciprocal check even though it isn't one of the
 # 5 `BUNDLE_TABLE_NAMES`.
-DEPENDENCY_TABLE_NAMES = BUNDLE_TABLE_NAMES + ("supports",)
+DEPENDENCY_TABLE_NAMES = BUNDLE_TABLE_NAMES + ("supports", "chapterobjectives")
 
 
 class ChapterInfo:
@@ -188,7 +188,8 @@ class Dependencies:
 class ChapterBundleRecord:
     """The full parsed ``ch2_bundle.json`` document."""
 
-    def __init__(self, chapter, manifest, tables, support_owners, external_references, dependencies, loc):
+    def __init__(self, chapter, manifest, tables, support_owners, external_references, dependencies,
+                 chapter_objectives, loc):
         self.chapter = chapter
         self.manifest = manifest
         self.tables = tables
@@ -196,6 +197,7 @@ class ChapterBundleRecord:
         self.support_owners = support_owners
         self.external_references = external_references
         self.dependencies = dependencies
+        self.chapter_objectives = chapter_objectives
         self.loc = loc
 
     def __len__(self):
@@ -294,10 +296,25 @@ def load_records(source_path):
         loc=deps_node.loc,
     )
 
+    objectives_node = root.get("chapterObjectives")
+    chapter_objectives = None
+    if objectives_node is not None:
+        source_node = objectives_node.require("source")
+        symbols_node = objectives_node.require("symbols")
+        symbol_nodes = symbols_node.as_list()
+        chapter_objectives = TableRef(
+            name="chapterobjectives",
+            source=source_node.as_str(),
+            source_loc=source_node.loc,
+            symbols=[node.as_str() for node in symbol_nodes],
+            symbol_locs=[node.loc for node in symbol_nodes],
+            loc=objectives_node.loc,
+        )
+
     return ChapterBundleRecord(
         chapter=chapter, manifest=manifest, tables=tables,
         support_owners=support_owners, external_references=external_references,
-        dependencies=dependencies, loc=root.loc,
+        dependencies=dependencies, chapter_objectives=chapter_objectives, loc=root.loc,
     )
 
 
@@ -440,6 +457,39 @@ def validate(records, diagnostics, dependency_records=None,
                 manifest.symbol_loc, "manifest.symbol",
             )
         )
+
+    objective_records = dependency_records.get("chapterobjectives")
+    if records.chapter_objectives is not None and objective_records is not None:
+        objective_ref = records.chapter_objectives
+        actual_objective_symbols = {
+            objective.symbol for objective in objective_records if objective.chapter == chapter.id
+        }
+        diagnostics.extend(
+            validate_unique(
+                zip(objective_ref.symbols, objective_ref.symbol_locs),
+                "duplicate symbol '{key}' declared in chapterObjectives.symbols "
+                "(first at {first_loc})",
+                "chapterObjectives.symbols[{key}]",
+            )
+        )
+        for symbol, loc in zip(objective_ref.symbols, objective_ref.symbol_locs):
+            if symbol not in actual_objective_symbols:
+                diagnostics.add(
+                    _err(
+                        "chapter objective bundle '{}' is not reachable from chapter '{}'".format(
+                            symbol, chapter.id
+                        ),
+                        loc, "chapterObjectives.symbols[{}]".format(symbol),
+                    )
+                )
+        for symbol in sorted(actual_objective_symbols - set(objective_ref.symbols)):
+            diagnostics.add(
+                _err(
+                    "chapter objective bundle '{}' is reachable for chapter '{}' but missing from "
+                    "chapterObjectives.symbols".format(symbol, chapter.id),
+                    objective_ref.loc, "chapterObjectives.symbols[{}]".format(symbol),
+                )
+            )
 
     # -- 3. declared table symbol sets vs. actual dependency-table records --
     diagnostics.extend(

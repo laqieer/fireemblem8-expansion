@@ -14,6 +14,7 @@
       "optional-gameplay-combinations",
       "transient-blue-computer-control",
       "bounded-semantic-run-until",
+      "typed-chapter-autoplay-objectives",
       "custom-spell-runtime",
       "hq-pcm-mixer",
       "patch-release-artifact",
@@ -453,6 +454,18 @@
       "status": "current",
       "required_cases": [
         "TC-AUTOPLAY-BOUNDS-001"
+      ]
+    },
+    {
+      "id": "typed-chapter-autoplay-objectives",
+      "title": "Typed chapter autoplay objectives and AI groups",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/89"
+      ],
+      "reference": "docs/autoplay.md",
+      "status": "current",
+      "required_cases": [
+        "TC-AUTOPLAY-OBJECTIVE-001"
       ]
     },
     {
@@ -1887,6 +1900,44 @@
         {
           "command": "make expansion-modern-autoplay-bounds-check MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/fingerprints/autoplay-bounded-player-default-modern-release.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-AUTOPLAY-OBJECTIVE-001",
+      "title": "Typed authored objective lifecycle",
+      "feature_id": "typed-chapter-autoplay-objectives",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/89"
+      ],
+      "document": "docs/test-cases/autoplay.md",
+      "anchor": "tc-autoplay-objective-001-typed-authored-objective-lifecycle",
+      "profiles": [
+        "Default generated-data source with no objective records",
+        "Disposable generated Chapter 2 fixture",
+        "Modern AAPCS debug ROM with #86 bounded default-PLAYER route"
+      ],
+      "purpose": "Prove typed generic objective lifecycle evaluation, chapter-bundle ownership, pointer-free telemetry, and unchanged-chapter inertness.",
+      "prerequisites": "Repository root with Python 3 and a host C compiler; the bounded debug ROM negative also requires the modern ARM toolchain and libmGBA. Start without a save or savestate.",
+      "actions": "Run the focused generated-data/objective host selectors, then the bounded debug objective target.",
+      "expected_result": "All five generic kinds produce deterministic pending/success/failure state and progress; reset/reload reconstructs state from chapter data; the unchanged debug route exposes zero objective telemetry.",
+      "negative_control": "Malformed references, duplicate/capacity/area/turn/flag/dependency/cycle errors fail closed; clearing transient telemetry cannot preserve hidden objective state; the existing chapter terminates at max_frames with no active objective.",
+      "interactions": "Depends on #85/#86 only for semantic telemetry/probe transport and reuses the generated-data registry, chapter bundle, unit groups, event flags, and helper catalog. It does not define AI strategy or a second router.",
+      "save_compatibility": "No save bytes, migration, preference, compatibility epoch, or serialized objective state. Runtime status is derived from existing chapter/event state.",
+      "cleanup": "The host fixture is temporary under build/. Use make clean_fast only for ignored artifacts.",
+      "limitations": "No project strategy, route, balance claim, player-visible text, natural-language goal, or general event language.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_chapterobjectives_schema scripts.generated_data.tests.test_chapterbundle_schema.ChapterObjectivesBundleTests scripts.generated_data.tests.test_cli_new_tables.CliChapterObjectivesTests -v",
+          "evidence": "scripts/generated_data/tests/test_chapterobjectives_schema.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_chapter_objectives -v",
+          "evidence": "tools/gba-playtest/tests/test_chapter_objectives.py"
+        },
+        {
+          "command": "make expansion-modern-chapter-objectives-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_chapter_objective_checks.py"
         }
       ]
     },

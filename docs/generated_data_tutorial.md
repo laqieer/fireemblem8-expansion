@@ -277,6 +277,69 @@ reachable, support owners are reciprocal, referenced character/class/item
 IDs exist). It is metadata-only (no generated C) -- its job is the
 whole-bundle drift gate `make generated-data-ch2-check`.
 
+### Add typed **chapter objectives and AI groups** (`--table chapterobjectives`)
+
+Source: `src/data/chapter_objectives.json`. This modern-only generated table
+is empty by default: existing chapters have no objective/group record and keep
+their behavior unchanged. A future chapter adds one bundle with a stable
+symbol, uppercase machine IDs, bounded `aiGroups`, and bounded `objectives`:
+
+```json
+{
+  "chapter": "CHAPTER_L_2",
+  "symbol": "ChapterObjectives_ProjectChapter2",
+  "aiGroups": [{
+    "id": "AI_GROUP_PROJECT_ESCORT",
+    "members": [{
+      "character": "CHARACTER_EIRIKA",
+      "unitGroup": "UnitDef_Event_Ch2Ally"
+    }]
+  }],
+  "objectives": [{
+    "id": "OBJECTIVE_PROJECT_REACH",
+    "kind": "reach_area",
+    "group": "AI_GROUP_PROJECT_ESCORT",
+    "area": { "xMin": 4, "yMin": 2, "xMax": 6, "yMax": 4 }
+  }],
+  "dependencies": {
+    "characters": ["CHARACTER_EIRIKA"],
+    "eventFlags": [],
+    "unitGroups": ["UnitDef_Event_Ch2Ally"]
+  }
+}
+```
+
+The only initial kinds are `protect` (a character plus another objective),
+`reach_area`, `defeat_group`, `event_flag`, and `hold_until_turn`. Each
+chapter is limited to eight objectives, eight AI groups, and 16 members per
+group. A group member names both a `CHARACTER_*` and a Chapter-2 `UnitDef_*`
+symbol, so validation rejects a dangling or mismatched unit/character
+reference. The required `dependencies` lists are exact declarations: missing,
+duplicate, stale, empty, over-capacity, contradictory, cyclic, invalid-area,
+or unknown references fail with a source location and JSON breadcrumb.
+
+`activationFlag` and `deactivationFlag` use existing `EVFLAG_*` state. Set
+or clear those values only through the existing `helperScripts` `flag.set` /
+`flag.clear` operations or established event scripts; objectives introduce no
+event language, chapter manifest, router, or hidden runtime activation bit.
+`chapterObjectives` in `src/data/ch2_bundle.json` is the ownership and
+reachability declaration for the bundle symbol. Keep it empty when the
+chapter has no authored records.
+
+```sh
+python3 -m scripts.generated_data validate --table chapterobjectives
+python3 -m scripts.generated_data generate --table chapterobjectives
+python3 -m scripts.generated_data check --table chapterobjectives
+make generated-data-ch2-check
+```
+
+Generated C is linked only by the modern framework. It emits a 12-byte bundle
+record per authored chapter, 12 bytes per AI group plus one byte per member,
+and 28 bytes per objective; the default empty table contains only its
+12-byte sentinel. Runtime state is one 16-byte IWRAM telemetry record, never
+save data. IDs are source-owned uppercase machine IDs; their checked FNV-1a
+value is telemetry-only and needs no localization.
+
 ---
 
 ## Custom C symbols / callbacks (escape hatch)

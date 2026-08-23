@@ -174,3 +174,62 @@ objectives, choose AI actions, accelerate engine logic, score strategies,
 claim balance, or prove arbitrary chapter completion. Explicit
 `controller_exhausted` telemetry must come from the controller/objective
 contract being tested and is not inferred from inactivity.
+
+## TC-AUTOPLAY-OBJECTIVE-001: Typed authored objective lifecycle
+
+- **Feature / originating issue:** `typed-chapter-autoplay-objectives` /
+  [#89](https://github.com/laqieer/fireemblem8-expansion/issues/89).
+- **Supported configuration or artifact:** default generated-data source and
+  a disposable generated Chapter 2 fixture; modern AAPCS debug ROM for the
+  unchanged-chapter bounded negative.
+- **Prerequisites and clean starting state:** repository root, Python 3, host
+  C compiler, modern ARM toolchain, and libmGBA for the runtime negative. Do
+  not reuse a save or savestate. The fixture output is build-local.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.generated_data.tests.test_chapterobjectives_schema scripts.generated_data.tests.test_chapterbundle_schema.ChapterObjectivesBundleTests scripts.generated_data.tests.test_cli_new_tables.CliChapterObjectivesTests -v`.
+2. Run `python3 -m unittest tools.gba-playtest.tests.test_chapter_objectives -v`.
+3. Run
+   `make expansion-modern-chapter-objectives-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+
+### Expected result
+
+The generated fixture resolves every initial generic kind: event-flag
+pending/success, group reach progress, group defeat progress, bounded
+hold-until-turn, and protected-unit failure/completion through its referenced
+objective. The evaluator publishes a deterministic selected state and
+progress. Resetting transient telemetry and refreshing it reproduces the same
+live state, proving no objective lifecycle state is hidden outside chapter
+units, flags, and turn state.
+
+The bounded debug ROM negative follows #86's default PLAYER route. Its one
+terminal checkpoint is `max_frames` and all four objective telemetry words
+are zero: no existing chapter was opted into an objective/group bundle.
+
+### Negative controls
+
+Empty or oversized groups, duplicate IDs, unknown/mismatched
+chapter-unit/character references, invalid rectangles or turns, missing or
+stale dependency declarations, contradictory flags, protect cycles, and an
+unreachable chapter-bundle symbol fail with source locations and JSON
+breadcrumbs. The host reset/reconstruction assertion is the suspend/load
+negative: it clears only transient telemetry, then derives the same state
+without serializing an objective field.
+
+### Interactions and save compatibility
+
+The table depends on #85/#86 telemetry only as an ELF-probe consumer and
+uses existing generated-data, chapter-bundle, `UnitDefinition`, and event
+flag/helper seams. It conflicts with a second manifest, router, event
+language, strategy policy, or save field; none is present. Existing chapters
+without records stay inactive. No save bytes, preference, migration,
+compatibility epoch, localization ID, or configuration identity changes.
+
+### Cleanup and limitations
+
+The host test removes its repository-local temporary fixture. Use
+`make clean_fast` only to remove ignored build artifacts. This case does not
+prove strategy quality, balance, a project route, recruitment/village/chest
+policy, player-facing text, or a general expression language.

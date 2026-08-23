@@ -173,6 +173,64 @@ turn 1 and zero starts, completions, actions, failures, or debug activations.
 The generated homebrew fixture independently reaches every terminal reason
 and proves objective failure is selected before stall classification.
 
+## Typed chapter objectives and AI groups
+
+Issue [#89](https://github.com/laqieer/fireemblem8-expansion/issues/89)
+adds the generic authored-data seam that supplies objective state to bounded
+autoplay. It does not add a strategy policy, a route, an AI assignment
+precedence rule, player-visible objective text, or a project-specific chapter
+record. The default `src/data/chapter_objectives.json` has no chapter records;
+every existing chapter therefore remains objective-inactive.
+
+The `chapterobjectives` generated-data table is owned by the existing
+`chapterbundle` declaration and validates against the existing unit groups,
+character constants, event flags, and typed event-helper catalog. Its only
+initial kinds are:
+
+- `protect`: keep one referenced character alive until another typed
+  objective completes;
+- `reach_area`: every live member of one AI group reaches an inclusive,
+  bounded rectangle;
+- `defeat_group`: every live member of one AI group is absent or defeated;
+- `event_flag`: observe a named existing `EVFLAG_*`; and
+- `hold_until_turn`: keep one group in an inclusive rectangle through a
+  bounded chapter turn.
+
+AI groups expose validated membership only. They do not choose targets,
+movement, actions, scoring, or precedence; those decisions remain for the
+later strategy layer. Group members reference both a symbolic character and
+an existing chapter unit-group symbol, so an author cannot silently attach an
+objective to a similarly named or unrelated unit.
+
+Activation and deactivation are derived exclusively from existing event flags.
+Event scripts set/clear those flags through the existing `flag.set` and
+`flag.clear` helper operations (or existing hand-authored events); no
+objective opcode, event router, or alternate manifest exists. The evaluator
+recomputes pending/success/failure from the current chapter, flags, units,
+and turn on every battle-map task tick and phase start. It stores no history: an authored event
+that must remember a transition must latch that decision in an existing event
+flag. Suspend/load is therefore safe by reconstruction and adds no hidden or
+serialized state.
+
+`gExpansionChapterObjectiveTelemetry` is a separate 16-byte IWRAM,
+pointer-free record with the selected stable objective ID, state, progress,
+and active-objective count. The generic #86 ELF probe resolver can bind all
+four fields directly; this keeps #85/#86's existing 64-byte telemetry layout,
+fixed fingerprints, and terminal contracts unchanged. A failure wins telemetry
+selection over pending, which wins over success, with source order breaking
+ties deterministically.
+
+The generated table budgets are 32 chapter bundles, eight objectives and
+eight groups per chapter, and 16 members per group. Modern generated data
+uses 12 bytes per bundle, 12 bytes plus members per group, and 28 bytes per
+objective; the default empty table is one 12-byte sentinel. The runtime adds
+16 IWRAM bytes and no EWRAM, save, migration, compatibility epoch,
+localization, configuration identity, or feature gate. It is excluded from
+the archival lane.
+
+The canonical procedure is
+[`TC-AUTOPLAY-OBJECTIVE-001`](test-cases/autoplay.md#tc-autoplay-objective-001-typed-authored-objective-lifecycle).
+
 This is host/runtime-test infrastructure only:
 
 - **Dependencies:** #85's public control/telemetry contract,

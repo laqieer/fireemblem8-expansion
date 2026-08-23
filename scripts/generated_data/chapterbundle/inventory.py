@@ -69,6 +69,13 @@ def build_inventory(records):
             _table_digest(records.support_owners.source),
         )
     )
+    if records.chapter_objectives is not None:
+        objectives = records.chapter_objectives
+        lines.append(
+            "| chapterobjectives | {} | {} | {} |\n".format(
+                objectives.source, len(objectives.symbols), _table_digest(objectives.source)
+            )
+        )
     lines.append("\n")
 
     lines.append("## External references (authored citations into hand source, out of typed-macro scope)\n")
@@ -104,6 +111,10 @@ def build_inventory(records):
                 for name in BUNDLE_TABLE_NAMES if name in records.tables_by_name
             },
             "supportOwners": sorted(records.support_owners.required),
+            "chapterObjectives": (
+                sorted(records.chapter_objectives.symbols)
+                if records.chapter_objectives is not None else []
+            ),
             "dependencies": {
                 "characters": sorted(records.dependencies.characters),
                 "classes": sorted(records.dependencies.classes),

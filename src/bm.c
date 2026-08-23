@@ -38,6 +38,7 @@
 #include "expansion_itemtest.h"
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_autoplay_internal.h"
+#include "expansion_chapter_objectives.h"
 #endif
 
 struct PalFadeSt EWRAM_DATA sPalFadeSt[0x20] = { 0 };
@@ -446,6 +447,10 @@ bool BmMain_CheckBeginPhaseEvent(void)
 //! FE8U = 0x08015450
 void BmMain_StartPhase(ProcPtr proc)
 {
+#ifndef FE8_ARCHIVAL_BUILD
+    ExpansionChapterObjectives_RefreshTelemetry();
+#endif
+
     switch (gPlaySt.faction) {
     case FACTION_BLUE:
 #if FE8_EXPANSION_AOE_REFERENCE

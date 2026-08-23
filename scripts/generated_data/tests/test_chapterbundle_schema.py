@@ -16,6 +16,7 @@ import unittest
 
 from scripts.generated_data.diagnostics import DiagnosticCollector, GeneratedDataError
 from scripts.generated_data.chapterbundle import schema as chapterbundle_schema
+from scripts.generated_data.chapterobjectives import schema as chapterobjectives_schema
 from scripts.generated_data.eventlists import schema as eventlists_schema
 from scripts.generated_data.eventscripts import schema as eventscripts_schema
 from scripts.generated_data.schema import DependencyGraph
@@ -39,6 +40,7 @@ DEFAULT_DEP_SOURCES = {
     "eventscripts": "deps_eventscripts.json",
     "eventlists": "deps_eventlists.json",
     "supports": "deps_supports.json",
+    "chapterobjectives": "deps_chapterobjectives.json",
 }
 
 DEP_LOADERS = {
@@ -48,6 +50,7 @@ DEP_LOADERS = {
     "eventscripts": eventscripts_schema.load_records,
     "eventlists": eventlists_schema.load_records,
     "supports": supports_schema.load_records,
+    "chapterobjectives": chapterobjectives_schema.load_records,
 }
 
 
@@ -349,6 +352,44 @@ class DependencyGraphAcyclicTests(unittest.TestCase):
             graph.topo_order()
 
 
+class ChapterObjectivesBundleTests(unittest.TestCase):
+    def test_chapter_objective_symbols_are_reachable_only_from_their_chapter_bundle(self):
+        records = chapterbundle_schema.load_records(cb_fixture("valid.json"))
+        records.chapter_objectives = chapterbundle_schema.TableRef(
+            "chapterobjectives",
+            "scripts/generated_data/tests/fixtures/chapterbundle/deps_chapterobjectives.json",
+            records.loc,
+            ["ChapterObjectives_EL"],
+            [records.loc],
+            records.loc,
+        )
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            _load_dependency_records(),
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C.c"),
+        )
+        self.assertTrue(diagnostics.ok, msg=_messages(diagnostics))
+
+        records.chapter_objectives.symbols = []
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            _load_dependency_records(),
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C.c"),
+        )
+        self.assertFalse(diagnostics.ok)
+        self.assertTrue(
+            any("missing from chapterObjectives.symbols" in message for message in _messages(diagnostics)),
+            _messages(diagnostics),
+        )
+
 class EndToEndRealBundleTests(unittest.TestCase):
     """Loads all 7 currently-registered tables (units/shops/traps/
     eventscripts/eventlists/supports/chapterbundle) plus the real,
@@ -364,6 +405,9 @@ class EndToEndRealBundleTests(unittest.TestCase):
             "eventscripts": eventscripts_schema.load_records(repo_path("src", "data", "ch2_eventscripts.json")),
             "eventlists": eventlists_schema.load_records(repo_path("src", "data", "ch2_eventlists.json")),
             "supports": supports_schema.load_records(repo_path("src", "data", "supports.json")),
+            "chapterobjectives": chapterobjectives_schema.load_records(
+                repo_path("src", "data", "chapter_objectives.json")
+            ),
         }
         diagnostics = DiagnosticCollector()
         chapterbundle_schema.validate(records, diagnostics, dependency_records)
@@ -384,6 +428,9 @@ class EndToEndRealBundleTests(unittest.TestCase):
             "eventscripts": eventscripts_schema.load_records(repo_path("src", "data", "ch2_eventscripts.json")),
             "eventlists": eventlists_schema.load_records(repo_path("src", "data", "ch2_eventlists.json")),
             "supports": supports_schema.load_records(repo_path("src", "data", "supports.json")),
+            "chapterobjectives": chapterobjectives_schema.load_records(
+                repo_path("src", "data", "chapter_objectives.json")
+            ),
         }
         diagnostics = DiagnosticCollector()
         chapterbundle_schema.validate(records, diagnostics, dependency_records)

@@ -27,8 +27,8 @@
 
 GENERATED_DATA_PY       := $(PYTHON) -m scripts.generated_data
 GENERATED_DATA_OUT_DIR  := build/generated/data
-GENERATED_DATA_TABLES   := supports units shops traps items classes characters eventscripts eventlists chapterbundle terrainstats movecost weapontriangle ui_presentation
-GENERATED_DATA_CH2_TABLES := units shops traps eventscripts eventlists chapterbundle
+GENERATED_DATA_TABLES   := supports units shops traps items classes characters eventscripts eventlists chapterbundle chapterobjectives terrainstats movecost weapontriangle ui_presentation
+GENERATED_DATA_CH2_TABLES := units shops traps eventscripts eventlists chapterobjectives chapterbundle
 
 .PHONY: generated-data-validate generated-data-generate generated-data-check generated-data-test \
         generated-data-ch2-check generated-data-bundle-validate generated-data-bundle-check \
@@ -426,6 +426,25 @@ GENERATED_DATA_CONFIG_INPUTS_characters := \
 # Shared (every table) generator scripts. Test files/fixtures are
 # deliberately excluded -- they never affect generated output.
 GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)
+
+# Typed chapter objectives are a modern-only generated table.  The archival
+# lane retains its historical source/object set, while modern builds link this
+# additive generated record table and the pointer-free evaluator.
+GENERATED_DATA_CHAPTEROBJECTIVES_C := $(GENERATED_DATA_OUT_DIR)/data_chapter_objectives.c
+GENERATED_DATA_CONFIG_INPUTS_chapterobjectives := \
+	include/constants/chapters.h \
+	include/constants/characters.h \
+	include/constants/event-flags.h \
+	include/bmunit.h \
+	src/data/ch2_units.json
+
+$(GENERATED_DATA_CHAPTEROBJECTIVES_C): src/data/chapter_objectives.json \
+	$(GENERATED_DATA_SHARED_PY_SOURCES) \
+	$(wildcard scripts/generated_data/chapterobjectives/*.py) \
+	$(GENERATED_DATA_CONFIG_INPUTS_chapterobjectives)
+	@mkdir -p $(@D)
+	$(GENERATED_DATA_PY) generate --table chapterobjectives --out-dir $(GENERATED_DATA_OUT_DIR)
+	@test -e $@ || { echo "error: generated-data table 'chapterobjectives' did not produce $@" >&2; exit 1; }
 
 # --- Issue #6 config-gated CONTENT text -----------------------------------
 # Placed AFTER GENERATED_DATA_SHARED_PY_SOURCES above on purpose: make

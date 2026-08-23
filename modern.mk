@@ -51,6 +51,7 @@ MODERN_GOALS := \
 	expansion-modern-autoplay-check \
 	expansion-modern-banim-package-runtime-check \
 	expansion-modern-autoplay-bounds-check \
+	expansion-modern-chapter-objectives-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-idspace-active-check \
@@ -619,6 +620,10 @@ ifneq ($(strip $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)),)
 MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o
 endif
 
+ifneq ($(strip $(GENERATED_DATA_CHAPTEROBJECTIVES_C)),)
+MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o
+endif
+
 # Issue #5 Batch 1 (mechanics): $(GENERATED_DATA_TERRAINSTATS_OBJECT)
 # (generated_data.mk) is the same kind of additive object as units/
 # traps/shops/eventlists just above -- src/data_terrains.c has no
@@ -977,6 +982,10 @@ $(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o: $(GENERATED_DATA_CH2_SHOPS_C)
 # reachable, since nothing adds this path to MODERN_ALL_C_OBJECTS in that
 # case.
 $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o: $(GENERATED_DATA_CH2_EVENTLISTS_C)
+	@mkdir -p $(@D)
+	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+$(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o: $(GENERATED_DATA_CHAPTEROBJECTIVES_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 
@@ -3357,6 +3366,8 @@ expansion-modern-autoplay-check: expansion-modern-boot-preflight expansion-moder
 # unchanged.
 MODERN_AUTOPLAY_BOUNDS_RUNTIME_SCRIPT := tools/gba-playtest/run_autoplay_bounds_checks.py
 MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/autoplay-bounds-runtime-check
+MODERN_CHAPTER_OBJECTIVES_RUNTIME_SCRIPT := tools/gba-playtest/run_chapter_objective_checks.py
+MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/chapter-objectives-runtime-check
 
 expansion-modern-autoplay-bounds-check: expansion-modern-boot-preflight expansion-modern-rom
 	@mkdir -p "$(MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR)/tmp"
@@ -3367,6 +3378,21 @@ expansion-modern-autoplay-bounds-check: expansion-modern-boot-preflight expansio
 		--elf "$(MODERN_ELF)" \
 		--config "$(MODERN_CONFIG)" \
 		--out-dir "$(MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR)"
+
+ifeq ($(MODERN_CONFIG),debug)
+expansion-modern-chapter-objectives-check: expansion-modern-boot-preflight expansion-modern-rom
+	@mkdir -p "$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR)/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_SCRIPT)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--out-dir "$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR)"
+else
+expansion-modern-chapter-objectives-check:
+	@echo "error: expansion-modern-chapter-objectives-check requires MODERN_CONFIG=debug" >&2
+	@exit 2
+endif
 
 # Normal save/load runtime scenario (issue #13 closure). Reuses new-game.json's
 # clean-boot SaveMenu New Game -> slot 0 write, then a real A+B+SELECT+START

@@ -289,6 +289,33 @@ class CliChapterBundleTests(unittest.TestCase):
             self.assertIn("DRIFT", err)
 
 
+class CliChapterObjectivesTests(unittest.TestCase):
+    def test_validate_real_default_source_passes(self):
+        code, out, err = run_cli(["validate", "--table", "chapterobjectives"])
+        self.assertEqual(code, 0, msg=out + err)
+
+    def test_validate_fixture_and_invalid_dependency_diagnostics(self):
+        code, out, err = run_cli([
+            "validate", "--table", "chapterobjectives",
+            "--source", fixture_path("chapterobjectives", "valid.json"),
+            "--no-roundtrip",
+        ])
+        self.assertEqual(code, 0, msg=out + err)
+
+        code, out, err = run_cli([
+            "validate", "--table", "chapterobjectives",
+            "--source", fixture_path("chapterobjectives", "missing_dependency.json"),
+            "--no-roundtrip",
+        ])
+        self.assertEqual(code, 1)
+        self.assertIn("missing_dependency.json", err)
+        self.assertIn("is used by this chapter objective bundle", err)
+
+    def test_check_real_default_source_has_no_drift(self):
+        code, out, err = run_cli(["check", "--table", "chapterobjectives"])
+        self.assertEqual(code, 0, msg=out + err)
+
+
 class CliItemsTests(unittest.TestCase):
     def test_validate_invalid_fixture_fails(self):
         code, out, err = run_cli([

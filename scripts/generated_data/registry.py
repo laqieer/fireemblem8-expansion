@@ -21,6 +21,7 @@ from .terrainstats.schema import TerrainStatsTableSchema
 from .movecost.schema import MovecostTableSchema
 from .weapontriangle.schema import WeaponTriangleTableSchema
 from .ui_presentation.schema import UiPresentationTableSchema
+from .chapterobjectives.schema import ChapterObjectivesTableSchema
 
 REGISTRY.register(SupportsTableSchema())
 REGISTRY.register(UnitsTableSchema())
@@ -54,3 +55,4 @@ REGISTRY.register(MovecostTableSchema())
 # docstring for the full write-up.
 REGISTRY.register(WeaponTriangleTableSchema())
 REGISTRY.register(UiPresentationTableSchema())
+REGISTRY.register(ChapterObjectivesTableSchema())

@@ -2173,6 +2173,14 @@
       "category": "lookup-table",
       "reason": null
     },
+    "include/expansion_chapter_objectives.h|struct-field|chapter|ExpansionChapterObjectiveBundle.chapterId": {
+      "category": "lookup-table",
+      "reason": null
+    },
+    "tools/gba-playtest/tests/test_chapter_objectives.py|tool-symbol|item|inventory": {
+      "category": "reviewed-exclusion",
+      "reason": "Temporary generated-data inventory path used only by the host test; it is not an item ID consumer."
+    },
     "include/expansion_bgm.h|struct-field|character|ExpansionBgmActionSelector.characterId": {
       "category": "lookup-table",
       "reason": null

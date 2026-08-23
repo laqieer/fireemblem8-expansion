@@ -249,3 +249,12 @@ __localized_msg_transform_scratch_end = .;
 __expansion_autoplay_regular_iwram_start = .;
 *src/expansion_autoplay.o(iwram_data)
 __expansion_autoplay_regular_iwram_end = .;
+
+/*
+ * Issue #89's objective telemetry is likewise transient and reconstructible
+ * from chapter/event state. Keep it adjacent to autoplay's probe surfaces.
+ */
+. = ALIGN(4);
+__expansion_chapter_objectives_iwram_start = .;
+*src/expansion_chapter_objectives.o(iwram_data)
+__expansion_chapter_objectives_iwram_end = .;
