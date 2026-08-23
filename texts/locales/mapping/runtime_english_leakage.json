@@ -12295,9 +12295,9 @@
   },
   "inputs": {
     "en_expansion": {
-      "byte_count": 3102,
+      "byte_count": 3512,
       "path": "texts/expansion/catalog.en.json",
-      "sha256": "c3aecd10ef9f33d271e5132711b32b3220d4a9653565fc96cadabe279b8559b8"
+      "sha256": "82452cf8984ccb982a6fff8603739849c9c76d6e9c95cfc8affea93a0c0cc3cc"
     },
     "english_definitions": {
       "byte_count": 4648,
@@ -12320,9 +12320,9 @@
       "sha256": "f7b419886b702132c518845df4036872f994b7ef969addda391474710422e339"
     },
     "ja_expansion": {
-      "byte_count": 3267,
+      "byte_count": 3654,
       "path": "texts/expansion/catalog.ja.json",
-      "sha256": "ac0adedc2f81612e73ca93713107bdbeccf01349693610d2e56cf47060578378"
+      "sha256": "7a614bf192267879b3e205e3803ab8b63e1d8b51feb0158ad86139ed6077d501"
     },
     "ja_indexed": {
       "byte_count": 1719222,
@@ -12366,9 +12366,9 @@
       "sha256": "04bdf7ec490cfe4b165aa4d3d9358144473998b0dc55be93506751fed7976a85"
     },
     "zh-Hans_expansion": {
-      "byte_count": 3134,
+      "byte_count": 3576,
       "path": "texts/expansion/catalog.zh-Hans.json",
-      "sha256": "6d91188c5a2309a113425df4f6137666e1b0cf9d8e8481bd4fdff6f7c879bf83"
+      "sha256": "a8266542abc5bb7511461cac53661e001693cc8209dff97a15b8f75b98d9e5b8"
     },
     "zh_hans_indexed": {
       "byte_count": 1375551,
