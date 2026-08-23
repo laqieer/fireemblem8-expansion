@@ -719,6 +719,15 @@ class ExpansionIdentity:
         because a locale or feature-flag setting changed -- proven by
         scripts/modernize/tests/test_expansion_config.py. See
         docs/config_identity.md and docs/starter_features.md."""
+        features = {
+            "mechanics_hooks": self.mechanics_hooks,
+            "mechanics_sample": self.mechanics_sample,
+            "danger_overlay_menu": self.danger_overlay_menu,
+            "starter_content": self.starter_content,
+            "aoe_reference": self.aoe_reference,
+            "localized_text_auto_wrap": self.localized_text_auto_wrap,
+            "casual_mode": self.casual_mode,
+        }
         fields = {
             "version": [self.version_major, self.version_minor, self.version_patch],
             "abi": self.abi,
@@ -732,20 +741,12 @@ class ExpansionIdentity:
             "enabled_locales": list(self.enabled_locales),
             "default_locale": self.default_locale,
             "pseudo_locale_enabled": self.pseudo_locale_enabled,
-            "features": {
-                "mechanics_hooks": self.mechanics_hooks,
-                "mechanics_sample": self.mechanics_sample,
-                "danger_overlay_menu": self.danger_overlay_menu,
-                "starter_content": self.starter_content,
-                "aoe_reference": self.aoe_reference,
-                "custom_spell_effects": self.custom_spell_effects,
-                "localized_text_auto_wrap": self.localized_text_auto_wrap,
-                "casual_mode": self.casual_mode,
-            },
+            "features": features,
             "bgm_continuation_policy": self.bgm_continuation_policy,
             "item_id_cap": self.item_id_cap,
         }
         if self.custom_spell_effects:
+            features["custom_spell_effects"] = self.custom_spell_effects
             fields["custom_spell_effect_contract"] = {
                 "runtime_abi": self.custom_spell_effect_runtime_abi,
                 "inventory_digest": self.custom_spell_effect_inventory_digest,

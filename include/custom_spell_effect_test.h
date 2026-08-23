@@ -101,6 +101,10 @@ struct CustomSpellEffectTestProbe
     /* 0FC */ u32 finalSpellCastActive;
     /* 100 */ u32 finalSemaphore;
     /* 104 */ u32 finalSpellState;
+
+    /* 108 */ u32 animAllocationFailures;
+    /* 10C */ u32 procAllocationFailures;
+    /* 110 */ u32 allocationFailureCleanups;
 };
 
 extern struct CustomSpellEffectTestProbe gCustomSpellEffectTestProbe;

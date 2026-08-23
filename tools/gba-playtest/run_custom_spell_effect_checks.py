@@ -88,6 +88,9 @@ PROBE_FIELDS = (
     "finalSpellCastActive",
     "finalSemaphore",
     "finalSpellState",
+    "animAllocationFailures",
+    "procAllocationFailures",
+    "allocationFailureCleanups",
 )
 
 
@@ -214,6 +217,9 @@ def expected_values(enabled: int) -> dict[str, int]:
             "completedMask": ENABLED_CASES if enabled else DISABLED_CASES,
             "harnessEnded": 1,
             "vanillaDispatches": 1,
+            "animAllocationFailures": 1,
+            "procAllocationFailures": 1,
+            "allocationFailureCleanups": 2,
         }
     )
     if not enabled:
@@ -320,7 +326,8 @@ def main(argv: list[str] | None = None) -> int:
                 "  registered dispatch, vanilla route, missing/invalid fallback, "
                 "reentrancy, post-acquire failure cleanup, WITH_BACKGROUNDS, "
                 "foreign semaphore preservation, forced end, and final zero "
-                "ownership all matched"
+                "ownership all matched; Anim/Proc allocation failures were "
+                "recorded and cleaned without a crash"
             )
         else:
             print(

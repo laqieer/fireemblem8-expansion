@@ -67,6 +67,47 @@ class CustomSpellConfigTests(unittest.TestCase):
         self.assertNotIn(
             "custom_spell_effect_contract", disabled.fingerprint_fields()
         )
+        self.assertNotIn(
+            "custom_spell_effects", disabled.fingerprint_fields()["features"]
+        )
+        expected_pre_feature_fields = {
+            "version": [
+                disabled.version_major,
+                disabled.version_minor,
+                disabled.version_patch,
+            ],
+            "abi": disabled.abi,
+            "config_preset": disabled.config_preset,
+            "rom_size_bytes": disabled.rom_size_bytes,
+            "text_shift": disabled.text_shift,
+            "rom_title": disabled.rom_title,
+            "rom_game_code": disabled.rom_game_code,
+            "rom_maker_code": disabled.rom_maker_code,
+            "rom_revision": disabled.rom_revision,
+            "enabled_locales": list(disabled.enabled_locales),
+            "default_locale": disabled.default_locale,
+            "pseudo_locale_enabled": disabled.pseudo_locale_enabled,
+            "features": {
+                "mechanics_hooks": disabled.mechanics_hooks,
+                "mechanics_sample": disabled.mechanics_sample,
+                "danger_overlay_menu": disabled.danger_overlay_menu,
+                "starter_content": disabled.starter_content,
+                "aoe_reference": disabled.aoe_reference,
+                "localized_text_auto_wrap": disabled.localized_text_auto_wrap,
+                "casual_mode": disabled.casual_mode,
+            },
+            "bgm_continuation_policy": disabled.bgm_continuation_policy,
+            "item_id_cap": disabled.item_id_cap,
+        }
+        self.assertEqual(disabled.fingerprint_fields(), expected_pre_feature_fields)
+        self.assertEqual(
+            disabled.config_fingerprint,
+            ec.compute_fingerprint(expected_pre_feature_fields),
+        )
+        self.assertEqual(
+            enabled.fingerprint_fields()["features"]["custom_spell_effects"],
+            1,
+        )
         self.assertEqual(
             enabled.fingerprint_fields()["custom_spell_effect_contract"],
             {
@@ -118,7 +159,12 @@ class CustomSpellContractTests(unittest.TestCase):
             "gEkrSpellAnimLutCount = ARRAY_COUNT(gEkrSpellAnimLut);",
             dispatch,
         )
-        self.assertIn("extern const u32 gEkrSpellAnimLutCount;", efxmagic_header)
+        self.assertIn(
+            "#if BUGFIX\n"
+            "extern const u32 gEkrSpellAnimLutCount;\n"
+            "#endif",
+            efxmagic_header,
+        )
         self.assertNotIn("CUSTOM_SPELL_EFFECT_VANILLA_ANIM_COUNT", custom_header)
         self.assertEqual(custom_source.count("fallback >= gEkrSpellAnimLutCount"), 1)
         self.assertEqual(
@@ -146,6 +192,10 @@ class CustomSpellContractTests(unittest.TestCase):
         self.assertIn("#define FE8_EXPANSION_CUSTOM_SPELL_TEST 0", header)
         self.assertIn("#if FE8_EXPANSION_CUSTOM_SPELL_TEST", source)
         self.assertIn("CustomSpellEffectTest_PrepareAnims", source)
+        self.assertIn("CustomSpellEffectTest_RecordSetupFailure", source)
+        self.assertIn("if (!CustomSpellEffectTest_PrepareAnims())", source)
+        self.assertIn("if (proc == NULL)", source)
+        self.assertIn("allocationFailureCleanups", runner)
         self.assertIn("StartSpellAnimation(gAnims[0]);", source)
         self.assertIn("SetMainUpdateRoutine(OnMain);", main)
         self.assertIn("CustomSpellEffectTest_Start();", main)
@@ -219,6 +269,7 @@ class CustomSpellLifecycleTests(unittest.TestCase):
         self.assertIn("EfxCreateFrontAnim", source)
         self.assertIn("CUSTOM_SPELL_EFFECT_OBJ_PALETTE_LINE", source)
         self.assertIn("CUSTOM_SPELL_EFFECT_BG_PALETTE_LINE", source)
+        self.assertIn("STRUCT_PAD(0x0A, 0x0C)", header)
 
     def test_descriptor_layout_and_fallback_are_c89_safe(self):
         header = HEADER.read_text(encoding="utf-8")
@@ -229,6 +280,16 @@ class CustomSpellLifecycleTests(unittest.TestCase):
         self.assertIn("if (target != NULL)", source)
         self.assertIn("if (gEfxBgSemaphore != 0)", source)
         self.assertIn("Proc_Find(sProcScrCustomSpellEffect)", source)
+        self.assertIn(
+            "gEkrSpellAnimLut[effect->fallbackAnimationId] == NULL",
+            source,
+        )
+        self.assertIn(
+            "if (fallback >= gEkrSpellAnimLutCount\n"
+            "        || gEkrSpellAnimLut[fallback] == NULL)\n"
+            "        return;",
+            source,
+        )
         stripped = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
         self.assertNotIn("//", stripped)
 
@@ -263,6 +324,7 @@ class CustomSpellArmTests(unittest.TestCase):
             work = Path(tmp)
             enabled = work / "custom-enabled.o"
             disabled = work / "custom-disabled.o"
+            legacy_dispatch = work / "banim-efxmagic-legacy.o"
             for value, output in ((1, enabled), (0, disabled)):
                 completed = run(
                     [
@@ -283,6 +345,21 @@ class CustomSpellArmTests(unittest.TestCase):
             self.assertIn("gCustomSpellEffectDebugProbe", enabled_symbols)
             self.assertNotIn("CustomSpellEffect_", disabled_symbols)
             self.assertNotIn("sCustomSpellEffectActive", disabled_symbols)
+
+            legacy_common = [flag for flag in common if flag != "-DBUGFIX=1"]
+            completed = run(
+                [
+                    *legacy_common,
+                    "-DFE8_EXPANSION_CUSTOM_SPELL_EFFECTS=0",
+                    "-c",
+                    str(DISPATCH),
+                    "-o",
+                    str(legacy_dispatch),
+                ]
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            legacy_symbols = run([ARM_NM, "-S", str(legacy_dispatch)]).stdout
+            self.assertNotIn("gEkrSpellAnimLutCount", legacy_symbols)
 
 
 if __name__ == "__main__":

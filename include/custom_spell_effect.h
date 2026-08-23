@@ -37,6 +37,7 @@ struct CustomSpellEffectResources
     /* 07 */ u8 bgPaletteLine;
     /* 08 */ u8 objOamEntries;
     /* 09 */ u8 soundEvents;
+    /* 0A */ STRUCT_PAD(0x0A, 0x0C);
     /* 0C */ u32 romBytes;
 };
 

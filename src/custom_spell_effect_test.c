@@ -58,6 +58,13 @@ enum CustomSpellEffectTestPhase
     CUSTOM_SPELL_TEST_PHASE_FINISH,
 };
 
+enum CustomSpellEffectTestSetupFailure
+{
+    CUSTOM_SPELL_TEST_SETUP_FAILURE_NONE,
+    CUSTOM_SPELL_TEST_SETUP_FAILURE_ANIM,
+    CUSTOM_SPELL_TEST_SETUP_FAILURE_PROC,
+};
+
 struct CustomSpellEffectTestCounters
 {
     u32 customDispatches;
@@ -86,6 +93,7 @@ EWRAM_DATA static struct CustomSpellEffectTestCounters sCounters;
 EWRAM_DATA static struct CustomSpellEffect sInvalidEffect;
 EWRAM_DATA static u8 sInvalidLookupEnabled;
 EWRAM_DATA static u8 sFailResourceLoad;
+EWRAM_DATA static u8 sSetupFailureMode;
 
 static void CustomSpellEffectTest_Loop(struct ProcCustomSpellEffectTestHarness *proc);
 static void CustomSpellEffectTest_OnEnd(struct ProcCustomSpellEffectTestHarness *proc);
@@ -101,6 +109,73 @@ static CONST_DATA struct ProcCmd sProcScrCustomSpellEffectTestHarness[] =
 static void CustomSpellEffectTest_ResetCounters(void)
 {
     memset(&sCounters, 0, sizeof(sCounters));
+}
+
+static void CustomSpellEffectTest_CleanupAnims(void)
+{
+    int i;
+
+    AnimClearAll();
+    for (i = 0; i < 4; ++i)
+        gAnims[i] = NULL;
+
+    gEfxBgSemaphore = 0;
+    gEfxSpellAnimExists = FALSE;
+    gpProcEfxSpellCast = NULL;
+}
+
+static bool8 CustomSpellEffectTest_SetupStateClean(void)
+{
+    int i;
+
+    for (i = 0; i < 4; ++i)
+        if (gAnims[i] != NULL)
+            return FALSE;
+
+    return gEfxBgSemaphore == 0
+        && gEfxSpellAnimExists == FALSE
+        && gpProcEfxSpellCast == NULL;
+}
+
+static void CustomSpellEffectTest_RecordSetupFailure(u8 mode)
+{
+    if (mode == CUSTOM_SPELL_TEST_SETUP_FAILURE_ANIM)
+        gCustomSpellEffectTestProbe.animAllocationFailures++;
+    else if (mode == CUSTOM_SPELL_TEST_SETUP_FAILURE_PROC)
+        gCustomSpellEffectTestProbe.procAllocationFailures++;
+
+    CustomSpellEffectTest_CleanupAnims();
+    if (CustomSpellEffectTest_SetupStateClean())
+        gCustomSpellEffectTestProbe.allocationFailureCleanups++;
+    else
+        gCustomSpellEffectTestProbe.failureMask |= 0x20000000;
+}
+
+static void CustomSpellEffectTest_FinalizeSetupFailure(u8 mode)
+{
+    CustomSpellEffectTest_RecordSetupFailure(mode);
+    gCustomSpellEffectTestProbe.failureMask |= 0x40000000;
+    gCustomSpellEffectTestProbe.finalSpellCastActive = gpProcEfxSpellCast != NULL;
+    gCustomSpellEffectTestProbe.finalSemaphore = gEfxBgSemaphore;
+    gCustomSpellEffectTestProbe.finalSpellState = gEfxSpellAnimExists;
+    gCustomSpellEffectTestProbe.magic = CUSTOM_SPELL_EFFECT_TEST_PROBE_MAGIC;
+    gCustomSpellEffectTestProbe.harnessEnded = TRUE;
+}
+
+static struct Anim *CustomSpellEffectTest_CreateAnim(int index)
+{
+    if (sSetupFailureMode == CUSTOM_SPELL_TEST_SETUP_FAILURE_ANIM && index == 2)
+        return NULL;
+
+    return AnimCreate(FramScr_Unk5D4F90, 0);
+}
+
+static struct ProcCustomSpellEffectTestHarness *CustomSpellEffectTest_StartHarnessProc(void)
+{
+    if (sSetupFailureMode == CUSTOM_SPELL_TEST_SETUP_FAILURE_PROC)
+        return NULL;
+
+    return Proc_Start(sProcScrCustomSpellEffectTestHarness, PROC_TREE_3);
 }
 
 static void CustomSpellEffectTest_SetAnimation(u8 animationId)
@@ -153,18 +228,18 @@ static bool8 CustomSpellEffectTest_StateClean(void)
     return gEfxBgSemaphore == 0 && gEfxSpellAnimExists == FALSE;
 }
 
-static void CustomSpellEffectTest_PrepareAnims(void)
+static bool8 CustomSpellEffectTest_PrepareAnims(void)
 {
     int i;
 
-    AnimClearAll();
+    CustomSpellEffectTest_CleanupAnims();
     for (i = 0; i < 4; ++i)
     {
-        gAnims[i] = AnimCreate(FramScr_Unk5D4F90, 0);
+        gAnims[i] = CustomSpellEffectTest_CreateAnim(i);
         if (gAnims[i] == NULL)
         {
-            CustomSpellEffectTest_Fail(CUSTOM_SPELL_TEST_CASE_NORMAL);
-            continue;
+            CustomSpellEffectTest_CleanupAnims();
+            return FALSE;
         }
 
         gAnims[i]->xPosition = (i < 2) ? 64 : 176;
@@ -181,6 +256,7 @@ static void CustomSpellEffectTest_PrepareAnims(void)
     gEfxSpellAnimExists = FALSE;
     gpProcEfxSpellCast = NULL;
     BanimPresentationPolicy_Select(BANIM_PRESENTATION_POLICY_DEFAULT);
+    return TRUE;
 }
 
 #if FE8_EXPANSION_CUSTOM_SPELL_EFFECTS
@@ -475,8 +551,46 @@ void CustomSpellEffectTest_Start(void)
     memset(&gCustomSpellEffectTestProbe, 0, sizeof(gCustomSpellEffectTestProbe));
     memset(&sCounters, 0, sizeof(sCounters));
     gCustomSpellEffectTestProbe.enabled = FE8_EXPANSION_CUSTOM_SPELL_EFFECTS;
-    CustomSpellEffectTest_PrepareAnims();
-    proc = Proc_Start(sProcScrCustomSpellEffectTestHarness, PROC_TREE_3);
+
+    sSetupFailureMode = CUSTOM_SPELL_TEST_SETUP_FAILURE_ANIM;
+    if (CustomSpellEffectTest_PrepareAnims())
+    {
+        CustomSpellEffectTest_FinalizeSetupFailure(CUSTOM_SPELL_TEST_SETUP_FAILURE_ANIM);
+        return;
+    }
+    CustomSpellEffectTest_RecordSetupFailure(CUSTOM_SPELL_TEST_SETUP_FAILURE_ANIM);
+
+    sSetupFailureMode = CUSTOM_SPELL_TEST_SETUP_FAILURE_NONE;
+    if (!CustomSpellEffectTest_PrepareAnims())
+    {
+        CustomSpellEffectTest_FinalizeSetupFailure(CUSTOM_SPELL_TEST_SETUP_FAILURE_ANIM);
+        return;
+    }
+
+    sSetupFailureMode = CUSTOM_SPELL_TEST_SETUP_FAILURE_PROC;
+    proc = CustomSpellEffectTest_StartHarnessProc();
+    if (proc != NULL)
+    {
+        Proc_End(proc);
+        CustomSpellEffectTest_FinalizeSetupFailure(CUSTOM_SPELL_TEST_SETUP_FAILURE_PROC);
+        return;
+    }
+    CustomSpellEffectTest_RecordSetupFailure(CUSTOM_SPELL_TEST_SETUP_FAILURE_PROC);
+
+    sSetupFailureMode = CUSTOM_SPELL_TEST_SETUP_FAILURE_NONE;
+    if (!CustomSpellEffectTest_PrepareAnims())
+    {
+        CustomSpellEffectTest_FinalizeSetupFailure(CUSTOM_SPELL_TEST_SETUP_FAILURE_ANIM);
+        return;
+    }
+
+    proc = CustomSpellEffectTest_StartHarnessProc();
+    if (proc == NULL)
+    {
+        CustomSpellEffectTest_FinalizeSetupFailure(CUSTOM_SPELL_TEST_SETUP_FAILURE_PROC);
+        return;
+    }
+
     proc->phase = CUSTOM_SPELL_TEST_PHASE_INIT;
     proc->timer = 0;
 }

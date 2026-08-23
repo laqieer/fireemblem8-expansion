@@ -1,9 +1,12 @@
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "../../../../src/custom_spell_effect.c"
 
-#define TEST_VANILLA_ANIM_LAST 72
+#define TEST_VANILLA_ANIM_LAST_VALID 71
+#define TEST_VANILLA_ANIM_NULL_PLACEHOLDER 72
+#define TEST_VANILLA_ANIM_INTERNAL_NULL 50
 #define TEST_VANILLA_ANIM_COUNT 73
 
 static void VanillaFallback(struct Anim *anim);
@@ -45,9 +48,15 @@ struct Anim *gAnims[4];
 SpellAnimFunc gEkrSpellAnimLut[] =
 {
     [CUSTOM_SPELL_EFFECT_REFERENCE_FALLBACK] = VanillaFallback,
-    [TEST_VANILLA_ANIM_LAST] = VanillaBoundaryFallback,
+    [TEST_VANILLA_ANIM_LAST_VALID] = VanillaBoundaryFallback,
+    [TEST_VANILLA_ANIM_NULL_PLACEHOLDER] = NULL,
 };
 const u32 gEkrSpellAnimLutCount = ARRAY_COUNT(gEkrSpellAnimLut);
+
+typedef char CustomSpellEffectResourcesRomOffset[
+    offsetof(struct CustomSpellEffectResources, romBytes) == 0x0C ? 1 : -1];
+typedef char CustomSpellEffectResourcesSize[
+    sizeof(struct CustomSpellEffectResources) == 0x10 ? 1 : -1];
 
 static int sFallbacks;
 static int sBoundaryFallbacks;
@@ -417,15 +426,37 @@ int main(void)
         return 1;
 
     invalid = *effect;
-    invalid.fallbackAnimationId = TEST_VANILLA_ANIM_LAST;
+    invalid.fallbackAnimationId = TEST_VANILLA_ANIM_LAST_VALID;
     if (!Check(CustomSpellEffect_Validate(&invalid),
-               "last vanilla LUT animation 72 was rejected"))
+               "last non-NULL vanilla LUT animation 71 was rejected"))
         return 1;
     invalid.resources.objPaletteLine = 0;
     ResetState();
     CustomSpellEffect_Start(&invalid, &attacker);
     if (!Check(sBoundaryFallbacks == 1 && sFallbacks == 0,
-               "last vanilla LUT animation 72 was not dispatched"))
+               "last non-NULL vanilla LUT animation 71 was not dispatched"))
+        return 1;
+
+    invalid = *effect;
+    invalid.fallbackAnimationId = TEST_VANILLA_ANIM_INTERNAL_NULL;
+    if (!Check(!CustomSpellEffect_Validate(&invalid),
+               "in-range NULL vanilla LUT placeholder 50 was accepted"))
+        return 1;
+    ResetState();
+    CustomSpellEffect_Start(&invalid, &attacker);
+    if (!Check(sFallbacks == 0 && sBoundaryFallbacks == 0,
+               "NULL placeholder silently selected the reference fallback"))
+        return 1;
+
+    invalid = *effect;
+    invalid.fallbackAnimationId = TEST_VANILLA_ANIM_NULL_PLACEHOLDER;
+    if (!Check(!CustomSpellEffect_Validate(&invalid),
+               "last NULL vanilla LUT placeholder 72 was accepted"))
+        return 1;
+    ResetState();
+    CustomSpellEffect_Start(&invalid, &attacker);
+    if (!Check(sFallbacks == 0 && sBoundaryFallbacks == 0,
+               "last NULL placeholder silently selected the reference fallback"))
         return 1;
 
     invalid = *effect;
@@ -435,8 +466,8 @@ int main(void)
         return 1;
     ResetState();
     CustomSpellEffect_Start(&invalid, &attacker);
-    if (!Check(sFallbacks == 1 && sBoundaryFallbacks == 0,
-               "out-of-range fallback indexed past the vanilla LUT"))
+    if (!Check(sFallbacks == 0 && sBoundaryFallbacks == 0,
+               "out-of-range fallback silently selected the reference fallback"))
         return 1;
 
     ResetState();

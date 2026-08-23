@@ -55,6 +55,9 @@ vanilla fallback animation, frame/hit timing, explicit resource metadata, and
 typed references to the existing spell OBJ/BG/TSA/palette/OAM animation
 helpers. The runtime accepts OBJ palette line 2 and BG palette line 1 only; a
 descriptor that names another lane is invalid before it can reserve anything.
+The fallback ID must be both inside the source-derived vanilla LUT bounds and
+bound to a non-NULL LUT entry. A malformed fallback is rejected and is never
+silently replaced by the synthetic reference fallback.
 The foundation's compiled synthetic descriptor proves the ABI without a
 manifest record or external asset. `CustomSpellEffect_Lookup()` accepts only
 the closed custom range. `StartSpellAnimation()` checks that range before
@@ -63,10 +66,12 @@ indexing the vanilla LUT; every other animation ID keeps its prior
 
 Missing or invalid custom descriptors, a reentrant custom owner, an occupied
 spell semaphore, invalid presentation metadata, or `WITH_BACKGROUNDS` select
-the descriptor's valid vanilla fallback before custom allocation. No partial
-custom write occurs. The `OFF` presentation policy takes the same clean
-fallback path; only `DEFAULT`, `REDUCED`, and `SOLO` may acquire the custom
-spell lanes.
+the descriptor's validated vanilla fallback before custom allocation. A
+missing descriptor uses the foundation's known-valid reference fallback; an
+invalid descriptor may use its declared fallback only when that LUT entry is
+itself valid. No partial custom write occurs. The `OFF` presentation policy
+takes the same clean fallback path; only `DEFAULT`, `REDUCED`, and `SOLO` may
+acquire the custom spell lanes.
 
 ## Resource and lifecycle contract
 
@@ -143,6 +148,11 @@ prove the vanilla route and assert that the linked ELF has no public custom
 dispatcher/runtime symbols. The host lifecycle driver separately executes the
 same production runtime with stubbed spell helpers, so the test-only hooks are
 observers and fault selectors rather than a replacement implementation.
+Every isolated ROM also injects one Anim allocation failure and one harness
+Proc allocation failure before the ordinary scenarios, records both in the
+scalar probe, clears every partial Anim/global allocation, and only then
+continues. A real unexpected allocation failure records the same fail-closed
+probe instead of dereferencing NULL.
 
 Dependencies are #60's sole future manifest seam, the existing spell
 association/`C05` path, spell-FX helpers, Proc scheduler, presentation policy,

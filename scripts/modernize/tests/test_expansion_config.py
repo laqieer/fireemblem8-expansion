@@ -1284,6 +1284,38 @@ class LoadIdentityFeatureFlagTests(unittest.TestCase):
         self.assertIn("features", base.fingerprint_fields())
         self.assertNotIn("save_compat_epoch", base.fingerprint_fields())
 
+    def test_custom_spell_default_preserves_pre_feature_fingerprint_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            implicit_default = self._identity(tmp)
+            explicit_default = self._identity(tmp, custom_spell_effects="0")
+            enabled = self._identity(tmp, custom_spell_effects="1")
+
+        self.assertEqual(
+            implicit_default.fingerprint_fields(),
+            explicit_default.fingerprint_fields(),
+        )
+        self.assertEqual(
+            implicit_default.config_fingerprint,
+            explicit_default.config_fingerprint,
+        )
+        self.assertNotIn(
+            "custom_spell_effects",
+            implicit_default.fingerprint_fields()["features"],
+        )
+        self.assertNotIn(
+            "custom_spell_effect_contract",
+            implicit_default.fingerprint_fields(),
+        )
+        self.assertEqual(
+            enabled.fingerprint_fields()["features"]["custom_spell_effects"],
+            1,
+        )
+        self.assertIn("custom_spell_effect_contract", enabled.fingerprint_fields())
+        self.assertNotEqual(
+            implicit_default.config_fingerprint,
+            enabled.config_fingerprint,
+        )
+
     def test_sample_without_hooks_rejected_in_load_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ec.ConfigError):

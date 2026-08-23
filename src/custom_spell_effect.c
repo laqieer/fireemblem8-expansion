@@ -58,6 +58,7 @@ static const struct CustomSpellEffect sReferenceEffect =
         CUSTOM_SPELL_EFFECT_BG_PALETTE_LINE,
         1,
         1,
+        { 0, 0 },
         0,
     },
     {
@@ -121,7 +122,7 @@ static void CustomSpellEffect_StartVanillaFallback(
 
     if (fallback >= gEkrSpellAnimLutCount
         || gEkrSpellAnimLut[fallback] == NULL)
-        fallback = CUSTOM_SPELL_EFFECT_REFERENCE_FALLBACK;
+        return;
 
 #if FE8_EXPANSION_CUSTOM_SPELL_TEST
     if (CustomSpellEffectTest_InterceptFallback(fallback, reason))
@@ -143,7 +144,8 @@ bool8 CustomSpellEffect_Validate(const struct CustomSpellEffect *effect)
     if (effect->animationId < CUSTOM_SPELL_EFFECT_BASE
         || effect->animationId > CUSTOM_SPELL_EFFECT_LAST)
         return FALSE;
-    if (effect->fallbackAnimationId >= gEkrSpellAnimLutCount)
+    if (effect->fallbackAnimationId >= gEkrSpellAnimLutCount
+        || gEkrSpellAnimLut[effect->fallbackAnimationId] == NULL)
         return FALSE;
     if (effect->frameCount == 0 || effect->frameCount > CUSTOM_SPELL_EFFECT_MAX_FRAMES)
         return FALSE;
