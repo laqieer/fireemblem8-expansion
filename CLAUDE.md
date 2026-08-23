@@ -84,6 +84,16 @@ after the run is terminal to inspect logs or reviews. Do not repeatedly wake an
 agent to poll, do not create duplicate watchers, and cancel superseded
 candidate runs before dispatching replacement checks.
 
+For a fleet with multiple active pull requests, designate one delivery
+coordinator. It owns the run/PR ledger, starts or records exactly one direct
+shell watcher per active run, receives terminal watcher notifications, triages
+CI and review failures, routes local-only fixes to one owner, performs each
+final merge gate and autonomous merge, and initiates the post-merge conflict
+sweep. The coordinator must not poll, sleep, or keep a reasoning turn alive
+solely to wait. Other agents must not duplicate watchers, fix ownership, or
+merge decisions; they return validated local commits to the coordinator for
+the trusted owner-context push.
+
 After each merge, immediately inspect every open PR. Merge current `master`
 only into PRs with real conflicts or shared-contract changes; refresh
 independent conflicts concurrently and rerun only conflict-affected checks

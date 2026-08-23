@@ -31,6 +31,7 @@ TRUSTED_PUSH_GUIDANCE_PATHS = (
     ROOT / ".github" / "copilot-instructions.md",
     CLAUDE_PATH,
 )
+FLEET_COORDINATOR_GUIDANCE_PATHS = TRUSTED_PUSH_GUIDANCE_PATHS
 RETIRED_MATRIX_SPELLINGS = (
     "full" + " matrix",
     "full" + "-matrix",
@@ -227,6 +228,40 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "May use privileged pull_request_target",
         )
         for path in TRUSTED_PUSH_GUIDANCE_PATHS:
+            assert_normalized_policy(
+                self,
+                str(path),
+                path.read_text(encoding="utf-8"),
+                required_policy,
+                stale_policy,
+            )
+
+    def test_fleet_delivery_coordinator_is_mirrored(self):
+        required_policy = (
+            (
+                "single fleet coordinator",
+                (
+                    "designate one delivery coordinator",
+                    "run/PR ledger",
+                    "exactly one direct shell watcher per active run",
+                    "receives terminal watcher notifications",
+                    "triages CI and review failures",
+                    "routes local-only fixes to one owner",
+                    "final merge gate and autonomous merge",
+                    "post-merge conflict sweep",
+                    "must not poll, sleep",
+                    "must not duplicate watchers, fix ownership, or merge decisions",
+                    "trusted owner-context push",
+                ),
+            ),
+        )
+        stale_policy = (
+            "designate one delivery coordinator per pull request",
+            "the delivery coordinator polls CI",
+            "other agents may duplicate watchers",
+            "implementation agents push their own replacement commits",
+        )
+        for path in FLEET_COORDINATOR_GUIDANCE_PATHS:
             assert_normalized_policy(
                 self,
                 str(path),
