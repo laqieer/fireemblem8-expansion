@@ -311,6 +311,36 @@
         "ja": "チャプター",
         "key": "ui.presentation.chapter_title_default",
         "zh-Hans": "章节"
+      },
+      {
+        "ja": "章/魔物戦",
+        "key": "debug.action.chapter_skirmish",
+        "zh-Hans": "章节/魔物战"
+      },
+      {
+        "ja": "章",
+        "key": "debug.selector.chapter",
+        "zh-Hans": "章节"
+      },
+      {
+        "ja": "魔物戦",
+        "key": "debug.selector.skirmish",
+        "zh-Hans": "魔物战"
+      },
+      {
+        "ja": "エイリーク",
+        "key": "debug.selector.eirika",
+        "zh-Hans": "艾瑞珂"
+      },
+      {
+        "ja": "エフラム",
+        "key": "debug.selector.ephraim",
+        "zh-Hans": "伊弗列姆"
+      },
+      {
+        "ja": "対象なし",
+        "key": "debug.selector.unavailable",
+        "zh-Hans": "目标不可用"
       }
     ],
     "reason": "Expansion registry keys have no original FE8J/FE8CN indexed source."
