@@ -1041,7 +1041,7 @@ class AssetManifestTests(unittest.TestCase):
             tiled_dependencies,
         )
 
-    def test_asset_makefile_guards_only_tmx_incbin_consumers(self):
+    def test_asset_makefile_guards_output_override_for_default_manifest(self):
         guarded = subprocess.run(
             [
                 "make",
@@ -1083,6 +1083,25 @@ class AssetManifestTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(allowed.returncode, 0, allowed.stderr)
+
+    def test_make_rejects_output_override_with_banim_incbin_consumer(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            document = json.load(handle)
+        document["assets"] = [
+            record for record in document["assets"] if record["kind"] == "battle-animation-package"
+        ]
+        source = self.write_document(document)
+        result = self.run_assets_make(
+            source,
+            "build/generated/assets/test-work/banim-output-override",
+            "assets-generate",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "ASSET_OUTPUT_DIR must be build/generated/assets while battle-animation package "
+            "INCBIN consumer(s) LORM_SP1_PROOF are declared",
+            result.stdout + result.stderr,
+        )
 
     def test_check_detects_orphans_through_a_relative_output_path(self):
         source = self.write_manifest([valid_record()])
@@ -1629,6 +1648,49 @@ class BattleAnimationPackageTests(unittest.TestCase):
             "$(ASSET_BANIM_COMBINED_LINKER_SCRIPT) &: $(ASSET_OUTPUT_MK)",
             manifest.render_makefile(package_records),
         )
+
+    def test_grouped_banim_output_rule_rejects_missing_sibling(self):
+        records = manifest.load_and_validate(
+            os.path.join(REPO_ROOT, "assets", "manifest.json")
+        )
+        package = next(record.banim_package for record in records if record.id == "LORM_SP1_PROOF")
+        _outputs, paths, _metadata = banim.runtime_outputs(
+            package, "$(ASSET_OUTPUT_DIR)"
+        )
+        output = os.path.join(TEST_ROOT, "grouped")
+        output_mk = os.path.join(output, "asset_manifest.mk")
+        target = os.path.join(output, "banim", os.path.basename(paths["motion"]))
+        os.makedirs(os.path.dirname(target))
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write("partial output\n")
+        with open(output_mk, "w", encoding="utf-8") as handle:
+            handle.write("# stale manifest fragment\n")
+        newer = os.stat(target).st_mtime_ns + 2_000_000_000
+        os.utime(output_mk, ns=(newer, newer))
+        makefile = os.path.join(TEST_ROOT, "grouped.mk")
+        with open(makefile, "w", encoding="utf-8") as handle:
+            handle.write(
+                "ASSET_OUTPUT_DIR := {output}\n"
+                "ASSET_OUTPUT_MK := {output_mk}\n"
+                "ASSET_BANIM_COMBINED_LINKER_SCRIPT := {combined}\n"
+                "ASSET_TOOL := true\n"
+                "{fragment}".format(
+                    output=output,
+                    output_mk=output_mk,
+                    combined=os.path.join(output, "banim", "linker_script_banim.txt"),
+                    fragment=manifest.render_makefile(records),
+                )
+            )
+        result = subprocess.run(
+            ["make", "--no-print-directory", "-f", makefile, target],
+            cwd=REPO_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn(os.path.basename(target), result.stdout)
 
     def test_side_specific_frames_emit_distinct_aligned_oam_payloads(self):
         package = banim.load_package(
