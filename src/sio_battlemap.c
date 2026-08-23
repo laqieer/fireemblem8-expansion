@@ -1726,7 +1726,12 @@ void LABattleMap_ReceiveAttackDeclaration(struct SioProc85AA4CC * proc)
 {
     u8 buf[4];
 
-    int got = SioReceiveData(gUnk_45, sizeof(gUnk_45), buf, LABattleMap_IsAttackOrSurrenderMsg);
+    int got = SioReceiveData(
+        gUnk_45,
+        sizeof(gUnk_45),
+        sizeof(gUnk_45),
+        buf,
+        LABattleMap_IsAttackOrSurrenderMsg);
 
     if (got < 0)
     {
@@ -1789,7 +1794,12 @@ void LABattleMap_ReceiveTargetSelection(struct SioProc85AA4CC * proc)
     struct Unit * unit;
     u8 buf[4];
 
-    int got = SioReceiveData(gUnk_45, sizeof(gUnk_45), buf, LABattleMap_IsSelectOrCancelMsg);
+    int got = SioReceiveData(
+        gUnk_45,
+        sizeof(gUnk_45),
+        sizeof(gUnk_45),
+        buf,
+        LABattleMap_IsSelectOrCancelMsg);
 
     if (got < 0)
     {
@@ -1869,7 +1879,12 @@ void LABattleMap_ReceiveForecastResponse(struct SioProc85AA4CC * proc)
     struct Unit * unitB;
     u8 buf[4];
 
-    int got = SioReceiveData(gUnk_45, sizeof(gUnk_45), buf, LABattleMap_IsForecastMsg);
+    int got = SioReceiveData(
+        gUnk_45,
+        sizeof(gUnk_45),
+        sizeof(gUnk_45),
+        buf,
+        LABattleMap_IsForecastMsg);
 
     if (got < 0)
     {

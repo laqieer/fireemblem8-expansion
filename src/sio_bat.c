@@ -476,7 +476,7 @@ void SioBat_SetupLoop(struct SioBatProc * proc)
 
     if (((gSioSt->selfId != 0) && (Sio_IsPlayerConnected(gSioSt->selfId) != 0)))
     {
-        got = SioReceiveData(buf, sizeof(buf), recvBuf, NULL);
+        got = SioReceiveData(buf, sizeof(buf), sizeof(buf), recvBuf, NULL);
         if (got < 0)
         {
             StartSioErrorScreen();
@@ -618,7 +618,7 @@ void SioBat_ReceiveFirstMover(struct SioBatProc * proc)
     {
         if ((GetGameClock() % 38) == 0)
         {
-            got = SioReceiveData(buf, sizeof(buf), outSenderId, NULL);
+            got = SioReceiveData(buf, sizeof(buf), sizeof(buf), outSenderId, NULL);
 
             if (got < 0)
             {
@@ -795,7 +795,7 @@ void SioBat_TeamTransferLoop(struct SioBatProc * proc)
 
     if ((GetGameClock() % 38) == 0)
     {
-        got = SioReceiveData(buf, sizeof(buf), outSenderId, NULL);
+        got = SioReceiveData(buf, sizeof(buf), sizeof(buf), outSenderId, NULL);
 
         if (got < 0)
         {

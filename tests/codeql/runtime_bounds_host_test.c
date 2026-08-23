@@ -85,6 +85,7 @@ static void TestScriptBattleSentinelCapacity(void)
 {
     int i;
     int count;
+    struct BattleHit beforeHits[SCRIPT_BATTLE_HIT_COUNT];
     struct
     {
         struct BattleHit hits[SCRIPT_BATTLE_HIT_COUNT];
@@ -112,6 +113,17 @@ static void TestScriptBattleSentinelCapacity(void)
         CHECK(!(guarded.hits[i].info & BATTLE_HIT_INFO_END));
 
     CHECK(guarded.hits[SCRIPT_BATTLE_HIT_COUNT - 1].info == BATTLE_HIT_INFO_END);
+    CHECK(guarded.guard == 0xA5A5A5A5);
+
+    memset(&guarded, 0xA5, sizeof(guarded));
+    memcpy(beforeHits, guarded.hits, sizeof(beforeHits));
+    count = BuildScriptBattleHits(
+        gEventSlotQueue,
+        EVENT_SLOT_QUEUE_COUNT + 1,
+        guarded.hits,
+        ARRAY_COUNT(guarded.hits));
+    CHECK(count < 0);
+    CHECK(memcmp(guarded.hits, beforeHits, sizeof(beforeHits)) == 0);
     CHECK(guarded.guard == 0xA5A5A5A5);
 }
 

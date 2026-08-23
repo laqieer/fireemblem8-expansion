@@ -172,7 +172,12 @@ bool Sio_IsValidDataPacket(const struct SioData * data, u16 packetLen, u8 physic
 int SioQueuePendingRecvData(const struct SioData * data, u16 packetLen);
 struct SioData * Sio_PeekPendingSendData(u32 * out);
 int SioEmitData(const u8 * src, u16 len);
-int SioReceiveData(void * dst, u16 dstCapacity, u8 * outSenderId, bool (*verify)(void *));
+int SioReceiveData(
+    void * dst,
+    u16 dstCapacity,
+    u16 expectedLen,
+    u8 * outSenderId,
+    bool (*verify)(void *));
 bool SioGetBigTransferLayout(u32 len, u16 * blockCount, u8 * lastBlockLen);
 bool SioValidateBigTransferLayout(u16 blockCount, u8 lastBlockLen, u32 capacity, u32 * totalSize);
 void Sio_Halt(void);

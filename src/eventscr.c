@@ -3911,11 +3911,14 @@ u8 Event3E_PrepScreenCall(struct EventEngineProc * proc)
 //! FE8U = 0x0801098C
 struct BattleHit * GenerateScriptBattleHitFormEventQueue(void)
 {
-    BuildScriptBattleHits(
-        gEventSlotQueue,
-        gEventSlots[0xD],
-        gActionData.script_hits,
-        ARRAY_COUNT(gActionData.script_hits));
+    if (BuildScriptBattleHits(
+            gEventSlotQueue,
+            gEventSlots[0xD],
+            gActionData.script_hits,
+            ARRAY_COUNT(gActionData.script_hits)) < 0)
+    {
+        gActionData.script_hits[0].info = BATTLE_HIT_INFO_END;
+    }
     return gActionData.script_hits;
 }
 

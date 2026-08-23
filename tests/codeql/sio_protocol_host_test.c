@@ -150,7 +150,7 @@ static void CheckValidReceive(u16 len)
         &packet,
         offsetof(struct SioData, bytes) + len) == 0);
 
-    got = SioReceiveData(&destination[1], len, &sender, NULL);
+    got = SioReceiveData(&destination[1], len, len, &sender, NULL);
     CHECK(got == len);
     CHECK(sender == 1);
     CHECK(destination[0] == 0xA5);
@@ -178,7 +178,7 @@ static void TestReceiveCapacityAndVerification(void)
     memcpy(before, destination, sizeof(before));
     FillPacket(&packet, 1, 0, 6, 0x50);
     CHECK(SioQueuePendingRecvData(&packet, offsetof(struct SioData, bytes) + 6) == 0);
-    got = SioReceiveData(&destination[4], 4, &sender, RejectPayload);
+    got = SioReceiveData(&destination[4], 4, 4, &sender, RejectPayload);
     CHECK(got < 0);
     CHECK(memcmp(before, destination, sizeof(destination)) == 0);
     CHECK(sVerifyCalls == 0);
@@ -191,7 +191,7 @@ static void TestReceiveCapacityAndVerification(void)
     memcpy(before, destination, sizeof(before));
     FillPacket(&packet, 1, 0, 4, 0x60);
     CHECK(SioQueuePendingRecvData(&packet, offsetof(struct SioData, bytes) + 4) == 0);
-    got = SioReceiveData(&destination[4], 4, &sender, RejectPayload);
+    got = SioReceiveData(&destination[4], 4, 4, &sender, RejectPayload);
     CHECK(got == 0);
     CHECK(memcmp(before, destination, sizeof(destination)) == 0);
     CHECK(sVerifyCalls == 1);
@@ -202,7 +202,7 @@ static void TestReceiveCapacityAndVerification(void)
     memcpy(before, destination, sizeof(before));
     FillPacket(&packet, 4, 0, 4, 0x70);
     gSioSt->pendingRecv[0].packet = packet;
-    got = SioReceiveData(&destination[4], 4, &sender, RejectPayload);
+    got = SioReceiveData(&destination[4], 4, 4, &sender, RejectPayload);
     CHECK(got < 0);
     CHECK(memcmp(before, destination, sizeof(destination)) == 0);
     CHECK(sVerifyCalls == 0);

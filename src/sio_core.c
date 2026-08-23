@@ -1089,7 +1089,12 @@ int SioEmitData(u8 const * src, u16 len)
     return result;
 }
 
-int SioReceiveData(void * dst, u16 dstCapacity, u8 * outSenderId, bool (*verify)(void *))
+int SioReceiveData(
+    void * dst,
+    u16 dstCapacity,
+    u16 expectedLen,
+    u8 * outSenderId,
+    bool (*verify)(void *))
 {
     for (;;)
     {
@@ -1105,7 +1110,8 @@ int SioReceiveData(void * dst, u16 dstCapacity, u8 * outSenderId, bool (*verify)
 
         if (senderId >= ARRAY_COUNT(gSioSt->seq) || senderId == gSioSt->selfId ||
             dat->len == 0 || dat->len > SIO_MAX_DATA || dst == NULL ||
-            outSenderId == NULL || dat->len > dstCapacity || (dat->len & 1) != 0)
+            outSenderId == NULL || expectedLen == 0 || expectedLen > dstCapacity ||
+            dat->len != expectedLen || (dat->len & 1) != 0)
         {
             dat->head.kind = 0;
             gSioSt->nextPendingRead += 1;
@@ -1365,7 +1371,7 @@ void SioBigReceive_RecvHeader(struct SioBigReceiveProc * proc)
     u8 id;
     u32 totalSize;
 
-    int got = SioReceiveData(data, sizeof(data), &id, NULL);
+    int got = SioReceiveData(data, sizeof(data), sizeof(data), &id, NULL);
 
     if (got < 0)
     {
@@ -1409,9 +1415,9 @@ void SioBigReceive_Loop(struct SioBigReceiveProc * proc)
     u8 * buf = gGenericBuffer;
 
     expectedLen = proc->currentBlock == proc->blockCount - 1 ? proc->lastBlockLen : SIO_MAX_DATA;
-    got = SioReceiveData(buf, SIO_MAX_DATA, &id, NULL);
+    got = SioReceiveData(buf, SIO_MAX_DATA, expectedLen, &id, NULL);
 
-    if (got < 0 || (got > 0 && got != expectedLen))
+    if (got < 0)
     {
         gSioSt->unk_01F = SIO_BIG_TRANSFER_ERROR;
         Proc_End(proc);

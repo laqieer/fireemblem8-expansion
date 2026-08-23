@@ -269,7 +269,7 @@ bool XMapTransfer_3(ProcPtr proc)
         return 0;
     }
 
-    got = SioReceiveData(buf, sizeof(buf), bufSenderId, NULL);
+    got = SioReceiveData(buf, sizeof(buf), sizeof(buf), bufSenderId, NULL);
 
     if (got < 0)
     {

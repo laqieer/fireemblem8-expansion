@@ -521,7 +521,7 @@ int BuildScriptBattleHits(
 {
     u32 count;
 
-    if (queue == NULL || hits == NULL || capacity <= 0)
+    if (queue == NULL || queueCount > EVENT_SLOT_QUEUE_COUNT || hits == NULL || capacity <= 0)
         return -1;
 
     for (count = 0; count + 1 < (u32)capacity && count < queueCount; count++)
