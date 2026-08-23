@@ -65,6 +65,15 @@
     "framework.locale_short_name.it": "IT",
     "ui.presentation.chapter_title_default": "Capítulo",
     "autoplay.charge.label": "Carga",
-    "autoplay.charge.help": "Delegar las unidades restantes a la IA este turno."
+    "autoplay.charge.help": "Delegar las unidades restantes a la IA este turno.",
+    "debug.confirm.turn_increment": "Aplicar turno +1",
+    "debug.confirm.turn_decrement": "Aplicar turno -1",
+    "debug.confirm.red_computer": "Aplicar CPU roja",
+    "debug.confirm.red_blocked": "Bloquear roja",
+    "debug.confirm.green_computer": "Aplicar CPU verde",
+    "debug.confirm.green_blocked": "Bloquear verde",
+    "debug.status.turn": "TURNO",
+    "debug.mode.computer": "CPU",
+    "debug.mode.blocked": "BLOQ"
   }
 }

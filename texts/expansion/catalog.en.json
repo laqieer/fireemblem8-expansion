@@ -65,6 +65,15 @@
     "framework.locale_short_name.it": "IT",
     "ui.presentation.chapter_title_default": "Chapter",
     "autoplay.charge.label": "Charge",
-    "autoplay.charge.help": "Delegate remaining units for this phase."
+    "autoplay.charge.help": "Delegate remaining units for this phase.",
+    "debug.confirm.turn_increment": "Apply Turn +1",
+    "debug.confirm.turn_decrement": "Apply Turn -1",
+    "debug.confirm.red_computer": "Apply R CPU",
+    "debug.confirm.red_blocked": "Apply R Block",
+    "debug.confirm.green_computer": "Apply G CPU",
+    "debug.confirm.green_blocked": "Apply G Block",
+    "debug.status.turn": "TURN",
+    "debug.mode.computer": "CPU",
+    "debug.mode.blocked": "BLOCK"
   }
 }

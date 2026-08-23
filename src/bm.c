@@ -38,6 +38,7 @@
 #include "expansion_itemtest.h"
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_autoplay_internal.h"
+#include "expansion_debugtools.h"
 #endif
 
 struct PalFadeSt EWRAM_DATA sPalFadeSt[0x20] = { 0 };
@@ -465,10 +466,20 @@ void BmMain_StartPhase(ProcPtr proc)
         break;
 
     case FACTION_RED:
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+        if (DebugToolsPhaseControl_ApplyAtPhaseStart(gPlaySt.faction)
+            == DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED)
+            break;
+#endif
         Proc_StartBlocking(gProcScr_CpPhase, proc);
         break;
 
     case FACTION_GREEN:
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+        if (DebugToolsPhaseControl_ApplyAtPhaseStart(gPlaySt.faction)
+            == DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED)
+            break;
+#endif
         Proc_StartBlocking(gProcScr_CpPhase, proc);
         break;
     }

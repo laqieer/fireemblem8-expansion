@@ -643,6 +643,56 @@ u32 DebugTools_GetLastAssertCode(void);
 #define DEBUGTOOLS_ASSERT(cond, code) \
     do { if (!(cond)) DebugTools_RecordAssertFailure((u32)(code)); } while (0)
 
+/* --- Transient turn/faction phase control (issue #124) ------------------
+ * This is a debug-only request surface over the existing BmMain_StartPhase
+ * router. It never writes the persistent prototype debug-control option
+ * bits. Requests may be queued only from a stable blue PLAYER phase and are
+ * consumed once when the existing router reaches the requested red/green
+ * phase boundary. PLAYER is intentionally a typed rejection: the existing
+ * PlayerPhase commit path is blue-only. BLOCKED is supported because the
+ * existing router can complete an otherwise empty red/green phase normally.
+ */
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+enum DebugToolsPhaseControlMode
+{
+    DEBUGTOOLS_PHASE_CONTROL_COMPUTER = 0,
+    DEBUGTOOLS_PHASE_CONTROL_PLAYER = 1,
+    DEBUGTOOLS_PHASE_CONTROL_BLOCKED = 2,
+};
+
+enum DebugToolsPhaseControlRequestKind
+{
+    DEBUGTOOLS_PHASE_CONTROL_REQUEST_NONE = 0,
+    DEBUGTOOLS_PHASE_CONTROL_REQUEST_TURN = 1,
+    DEBUGTOOLS_PHASE_CONTROL_REQUEST_FACTION = 2,
+};
+
+enum DebugToolsPhaseControlResult
+{
+    DEBUGTOOLS_PHASE_CONTROL_OK = 0,
+    DEBUGTOOLS_PHASE_CONTROL_ERR_INVALID_TURN = 1,
+    DEBUGTOOLS_PHASE_CONTROL_ERR_INVALID_FACTION = 2,
+    DEBUGTOOLS_PHASE_CONTROL_ERR_UNSUPPORTED_MODE = 3,
+    DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY = 4,
+    DEBUGTOOLS_PHASE_CONTROL_ERR_PENDING = 5,
+    DEBUGTOOLS_PHASE_CONTROL_EXPIRED = 6,
+};
+
+enum DebugToolsPhaseControlStartAction
+{
+    DEBUGTOOLS_PHASE_CONTROL_START_NORMAL = 0,
+    DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED = 1,
+};
+
+enum DebugToolsPhaseControlResult DebugToolsPhaseControl_RequestTurn(int turn);
+enum DebugToolsPhaseControlResult DebugToolsPhaseControl_RequestFactionMode(
+    int faction,
+    enum DebugToolsPhaseControlMode mode);
+enum DebugToolsPhaseControlStartAction DebugToolsPhaseControl_ApplyAtPhaseStart(int faction);
+void DebugToolsPhaseControl_Reset(void);
+void DebugToolsPhaseControl_Sample(void);
+#endif /* FE8_EXPANSION_DEBUGTOOLS_ENABLED */
+
 /* --- Five bounded validated tools ------------------------------------
  * Issue #11 closure requirement 5. Each is a single registry action (see
  * src/debugtools_tools.c) that samples/displays read-only state on
@@ -811,6 +861,22 @@ struct DebugToolsProbe
                                   * SaveCompatState) */
     u32 saveCompatInspectCount; /* increments once per inspect */
 
+    /* --- Transient turn/faction phase control (issue #124) ---
+     * The request state itself is debug-only and physically omitted from
+     * release builds. These always-linked probe fields stay zero there,
+     * preserving the debugtools release-negative contract. */
+    u32 phaseControlTurnSample;
+    u32 phaseControlRedModeSample;
+    u32 phaseControlGreenModeSample;
+    u32 phaseControlRequestedCount;
+    u32 phaseControlAppliedCount;
+    u32 phaseControlRejectedCount;
+    u32 phaseControlExpiredCount;
+    u32 phaseControlRestoredCount;
+    u32 phaseControlLastResult;
+    u32 phaseControlLastRequestKind;
+    u32 phaseControlLastFaction;
+    u32 phaseControlLastMode;
 };
 
 enum

@@ -65,6 +65,15 @@
     "framework.locale_short_name.it": "IT",
     "ui.presentation.chapter_title_default": "チャプター",
     "autoplay.charge.label": "進撃",
-    "autoplay.charge.help": "残りのユニットをこのフェイズだけAIに任せる"
+    "autoplay.charge.help": "残りのユニットをこのフェイズだけAIに任せる",
+    "debug.confirm.turn_increment": "ターン+1",
+    "debug.confirm.turn_decrement": "ターン-1",
+    "debug.confirm.red_computer": "R CPU",
+    "debug.confirm.red_blocked": "R BLOCK",
+    "debug.confirm.green_computer": "G CPU",
+    "debug.confirm.green_blocked": "G BLOCK",
+    "debug.status.turn": "ターン",
+    "debug.mode.computer": "CPU",
+    "debug.mode.blocked": "BLOCK"
   }
 }

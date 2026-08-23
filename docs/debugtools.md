@@ -1572,3 +1572,94 @@ measured by the normal linker budget check.
 [`TC-CORE-006`](test-cases/core-framework.md#tc-core-006-debug-tools-are-debug-only)
 records the clean-boot debug-hub procedure, each bounded tool's semantic
 effect, safe map return, and the release compiled-out negative control.
+
+## Transient turn and faction control (issue #124)
+
+Issue [#124](https://github.com/laqieer/fireemblem8-expansion/issues/124)
+is a **framework capability** layered directly on the existing debugtools
+session and the #85/#87 phase-control contract. It extends the existing
+localized **Flag/Chapter** submenu rather than adding a hub, phase router,
+prototype callback, or persistent configuration surface.
+
+The submenu samples the current turn and red/green mode in its status line.
+Its bounded, explicit confirmation rows queue exactly one request:
+
+- **Apply Turn +1** and **Apply Turn -1** accept only the engine range
+  `1..999`.
+- **Apply Red/Green CPU** records an explicit one-phase ordinary computer
+  route.
+- **Apply Red/Green Block** suppresses only the requested next red or green
+  computer phase, then restores the ordinary computer route before the next
+  phase begins.
+
+Requests are accepted only while the map is in the stable interactive blue
+`PLAYER` phase: the map and player-phase Procs must be live; no player action,
+computer/berserk phase, event, fade, or camera Proc may own the map; and #85
+must report no failure. The request is not applied from the menu callback.
+`BmMain_StartPhase` remains the sole phase router and consumes it at the
+matching red/green boundary. A turn request applies on the next such boundary;
+a `BLOCKED` request deliberately starts no child computer Proc, so the
+existing map-main script performs the ordinary phase transition.
+
+`PLAYER` is a closed typed rejection for red and green. The existing
+`PlayerPhase_CommitActiveUnitMove` only commits blue units, so routing another
+faction through it would not have proved safe semantics. Blue is likewise a
+closed rejection: #85 is the sole blue controller and #87 remains its
+one-phase delegation adapter. A live #85/#87 blue computer phase therefore
+rejects this submenu's request rather than creating overlapping owners.
+
+The request is fixed-size EWRAM state with no pointers or heap allocation.
+It is cleared by the same fresh-map, restart, and resume lifecycle calls that
+reset #85. Resetting a queued request records expiration/restoration and
+cannot carry it into a save, suspend, chapter change, or soft reset. The
+always-linked `gDebugToolsProbe` records sampled turn/modes plus requested,
+applied, rejected, expired, and restored counters with the last typed request
+and result; release builds retain zero probe fields while physically omitting
+the request state and all `DebugToolsPhaseControl*` code. No
+`gPlaySt.config.debugControlRed`/`debugControlGreen` bit is read or written,
+so save layout, epoch, configuration identity, generated data, and archival
+behavior are unchanged.
+
+The existing submenu remains bounded: it has eight live rows plus its
+terminator, below `MENU_ITEM_MAX == 11`. All nine new message IDs (65--73)
+are in the expansion catalog for every authored locale. The debug-only
+request state is bounded to 16 bytes by the ARM object check; the permanent
+probe extension is 48 bytes and exists only to preserve the established
+release-zero diagnostic contract.
+
+### TC-DEBUGTOOLS-PROTOTYPE-002: transient turn and faction control
+
+- **Feature / originating issue:** `transient-debugtools-phase-control` /
+  [#124](https://github.com/laqieer/fireemblem8-expansion/issues/124).
+- **Supported configuration or artifact:** modern AAPCS debug ROM for the
+  positive path; matching modern AAPCS release ROM for the omission negative.
+- **Prerequisites and clean starting state:** start a clean live map in an
+  ordinary blue `PLAYER` phase, with no event, battle, fade, camera move, or
+  active unit action. No save or savestate is required.
+- **Actions:** open the map debug hub, open **Flag/Chapter**, inspect the
+  turn/red/green status, select one localized **Apply** row, close the hub,
+  and complete the current blue phase. For `BLOCKED`, observe the requested
+  red or green phase pass without a computer action, then observe the next
+  same-faction phase return to ordinary computer control.
+- **Expected result:** one confirmed request produces one requested, applied,
+  and restored telemetry transition. Turn changes only at the router
+  boundary; a blocked faction is skipped once; red/green CPU remains the
+  existing route; map input returns after the submenu/hub close.
+- **Negative control:** Back/cancel leaves state unchanged. Out-of-range turn,
+  blue/unknown faction, `PLAYER` mode, active event/battle/camera state,
+  pending request, live #85/#87 blue computer ownership, forced lifecycle
+  reset, and release input reject/expire without a persistent write. Release
+  objects omit the request symbols and leave probe fields zero.
+- **Interactions and save compatibility:** depends on #85 and is a stacked
+  child of #87; it has no independent controller, no conflict with the #87
+  blue marker, no feature flag, no save field, migration, epoch, or config
+  identity input.
+- **Automation:** `test_debugtools_phase_control.py` executes the real
+  request functions and `BmMain_StartPhase` with valid/adversarial states,
+  verifies ARM request-state bounds and release symbol omission, and validates
+  every authored locale. The existing debugtools tools debug/release ROM
+  artifacts ensure the expanded bounded submenu compiles in the supported
+  profiles.
+- **Cleanup and limitations:** exit with Back; use `make clean_fast` only for
+  ignored artifacts. This is not red/green manual play, persistent AI policy,
+  arbitrary turn editing, a strategy system, or a raw prototype menu import.

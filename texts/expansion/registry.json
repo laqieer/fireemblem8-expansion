@@ -537,6 +537,78 @@
       "max_decoded_bytes": 96,
       "pseudo_policy": "compact",
       "notes": "Issue #87 one-phase blue delegation map-menu help."
+    },
+    {
+      "id": 65,
+      "key": "debug.confirm.turn_increment",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 66,
+      "key": "debug.confirm.turn_decrement",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 67,
+      "key": "debug.confirm.red_computer",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 68,
+      "key": "debug.confirm.red_blocked",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 69,
+      "key": "debug.confirm.green_computer",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 70,
+      "key": "debug.confirm.green_blocked",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 71,
+      "key": "debug.status.turn",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24
+    },
+    {
+      "id": 72,
+      "key": "debug.mode.computer",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24
+    },
+    {
+      "id": 73,
+      "key": "debug.mode.blocked",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24
     }
   ]
 }

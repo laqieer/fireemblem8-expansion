@@ -30,10 +30,15 @@
 #include "proc.h"
 #include "bmunit.h"
 #include "bmcontainer.h"
+#include "bm.h"
+#include "cp_common.h"
 #include "eventinfo.h"
+#include "event.h"
+#include "playerphase.h"
 #include "rng.h"
 #include "bmsave.h"
 #include "save_format.h"
+#include "expansion_autoplay.h"
 #include "expansion_debugtools.h"
 #include "debugtools_internal.h"
 
@@ -250,6 +255,48 @@ void DebugTools_RegisterWeatherFogActions(void)
  * this driver's own Flag-tool inspect assertions read
  * gPlaySt.chapterStateBits/chapterIndex. --------------------------------- */
 struct PlaySt gPlaySt = {0};
+
+/* The issue #124 request functions are linked into this existing
+ * extended-tools fixture but not selected by its legacy tool cases. These
+ * inert stable-player-phase seams keep the real source linkable without
+ * turning this fixture into a second controller test. */
+struct ProcCmd CONST_DATA gProc_BMapMain[] = { { 0 } };
+struct ProcCmd gProcScr_PlayerPhase[] = { { 0 } };
+struct ProcCmd gProcScr_Playerphase_0[] = { { 0 } };
+struct ProcCmd CONST_DATA gProcScr_CpPhase[] = { { 0 } };
+struct ProcCmd CONST_DATA gProcScr_BerserkCpPhase[] = { { 0 } };
+struct ProcCmd CONST_DATA ProcScr_CamMove[] = { { 0 } };
+static struct ExpansionAutoplayTelemetry sDebugToolsToolsAutoplayTelemetry = {
+    EXPANSION_BLUE_CONTROL_PLAYER,
+    EXPANSION_AUTOPLAY_STATE_PLAYER_PHASE,
+    EXPANSION_AUTOPLAY_FAILURE_NONE,
+};
+
+ProcPtr Proc_Find(const struct ProcCmd* script)
+{
+    (void)script;
+    return NULL;
+}
+
+s8 EventEngineExists(void)
+{
+    return 0;
+}
+
+bool8 DoesBMXFADEExist(void)
+{
+    return 0;
+}
+
+enum ExpansionBlueControl ExpansionAutoplay_GetBlueControl(void)
+{
+    return EXPANSION_BLUE_CONTROL_PLAYER;
+}
+
+const struct ExpansionAutoplayTelemetry* ExpansionAutoplay_GetTelemetry(void)
+{
+    return &sDebugToolsToolsAutoplayTelemetry;
+}
 
 /* --- Unit inspector fakes -----------------------------------------------
  * GetUnitMaxHp/GetUnitCurrentHp/SetUnitHp/SetUnitStatus mirror

@@ -237,6 +237,29 @@ int main(void)
     CHECK(gDebugToolsProbe.chapterIndexSample == 2, "inspect must sample gPlaySt.chapterIndex");
     CHECK(gDebugToolsProbe.debugFlagLastValue == 0, "a freshly cleared debug flag must sample as 0");
     CHECK(gDebugToolsProbe.debugFlagToggleCount == 0, "inspect alone must never apply a toggle transaction");
+    CHECK(strcmp(gDebugToolsFlagMenuDef.menuItems[1].name, "Apply Turn +1") == 0,
+          "Flag/Chapter must expose the bounded turn increment confirmation");
+    CHECK(strcmp(gDebugToolsFlagMenuDef.menuItems[2].name, "Apply Turn -1") == 0,
+          "Flag/Chapter must expose the bounded turn decrement confirmation");
+    CHECK(strcmp(gDebugToolsFlagMenuDef.menuItems[3].name, "Apply R CPU") == 0,
+          "Flag/Chapter must expose the typed red CPU confirmation");
+    CHECK(strcmp(gDebugToolsFlagMenuDef.menuItems[4].name, "Apply R Block") == 0,
+          "Flag/Chapter must expose the typed red blocked confirmation");
+    CHECK(strcmp(gDebugToolsFlagMenuDef.menuItems[5].name, "Apply G CPU") == 0,
+          "Flag/Chapter must expose the typed green CPU confirmation");
+    CHECK(strcmp(gDebugToolsFlagMenuDef.menuItems[6].name, "Apply G Block") == 0,
+          "Flag/Chapter must expose the typed green blocked confirmation");
+    CHECK(strcmp(gDebugToolsFlagMenuDef.menuItems[7].name, "Back") == 0
+              && gDebugToolsFlagMenuDef.menuItems[8].name == NULL,
+          "the expanded phase submenu must stay bounded and terminate after Back");
+    {
+        u32 requestsBeforeCancel = gDebugToolsProbe.phaseControlRequestedCount;
+
+        rc = gDebugToolsFlagMenuDef.menuItems[7].onSelected(NULL, NULL);
+        CHECK(rc == 0, "phase submenu Back must use the non-mutating cancel result");
+        CHECK(gDebugToolsProbe.phaseControlRequestedCount == requestsBeforeCancel,
+              "cancelling the phase submenu must not queue an override");
+    }
 
     {
         u32 assertCountBeforeToggle = DebugTools_GetAssertFailureCount();

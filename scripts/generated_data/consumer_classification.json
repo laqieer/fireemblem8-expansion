@@ -2185,6 +2185,10 @@
       "category": "lookup-table",
       "reason": null
     },
+    "include/expansion_debugtools.h|function-signature|unit|DebugToolsPhaseControl_ApplyAtPhaseStart": {
+      "category": "external-interface",
+      "reason": null
+    },
     "include/expansion_debugtools.h|function-signature|chapter|DebugTools_ConsumePendingChapter2Launch": {
       "category": "external-interface",
       "reason": null
@@ -4359,6 +4363,10 @@
     },
     "src/worldmap_shop_data.c|data-symbol|item|ItemList_WM_ZaalbulMarsh_Vendor": {
       "category": "lookup-table",
+      "reason": null
+    },
+    "src/debugtools_tools.c|struct-field|unit|DebugToolsPhaseControlRequest.faction": {
+      "category": "runtime-struct",
       "reason": null
     },
     "src/worldmap_shop_data.c|data-symbol|item|ItemList_WM_ZahaWoods_Armory": {

@@ -39,6 +39,12 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             "Confirm Add Item": 1,
             "Confirm Toggle Flag": 1,
             "Confirm Reseed": 1,
+            "Apply Turn +1": 1,
+            "Apply Turn -1": 1,
+            "Apply R CPU": 1,
+            "Apply R Block": 1,
+            "Apply G CPU": 1,
+            "Apply G Block": 1,
             "Weather": 1,
             "Fog": 1,
         }
@@ -49,13 +55,17 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         "Confirm Add Item": "debug.confirm.add_item",
         "Confirm Toggle Flag": "debug.confirm.toggle_flag",
         "Confirm Reseed": "debug.confirm.reseed",
+        "Apply Turn +1": "debug.confirm.turn_increment",
+        "Apply Turn -1": "debug.confirm.turn_decrement",
+        "Apply R CPU": "debug.confirm.red_computer",
+        "Apply R Block": "debug.confirm.red_blocked",
+        "Apply G CPU": "debug.confirm.green_computer",
+        "Apply G Block": "debug.confirm.green_blocked",
         "DBGTOOLS": "debug.status.hub",
         "DBGTOOLS ERR": "debug.status.hub_error",
         "UNIT HP": "debug.status.unit_hp",
         "UNIT N/A": "debug.status.unit_unavailable",
         "CONVOY": "debug.status.convoy",
-        "CH": "debug.status.chapter",
-        "FLAG": "debug.status.flag",
         "RNG SEED": "debug.status.rng_seed",
         "SAVE STATE": "debug.status.save_state",
     }
@@ -193,13 +203,20 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             "CONFIRM_ADD_ITEM",
             "CONFIRM_TOGGLE_FLAG",
             "CONFIRM_RESEED",
+            "CONFIRM_TURN_INCREMENT",
+            "CONFIRM_TURN_DECREMENT",
+            "CONFIRM_RED_COMPUTER",
+            "CONFIRM_RED_BLOCKED",
+            "CONFIRM_GREEN_COMPUTER",
+            "CONFIRM_GREEN_BLOCKED",
             "STATUS_UNIT_HP",
             "STATUS_UNIT_UNAVAILABLE",
             "STATUS_CONVOY",
-            "STATUS_CHAPTER",
-            "STATUS_FLAG",
             "STATUS_RNG_SEED",
             "STATUS_SAVE_STATE",
+            "STATUS_TURN",
+            "MODE_COMPUTER",
+            "MODE_BLOCKED",
         ):
             self.assertIn(f"EXP_MSG_DEBUG_{key_suffix}", tools)
 
@@ -321,6 +338,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             "debug.status.convoy": " 100/100",
             "debug.status.rng_seed": " FFFF",
             "debug.status.save_state": " -99",
+            "debug.status.turn": " 999 R:BLOCK G:BLOCK",
         }
         for locale in ("en", "ja", "zh-Hans", "qps-ploc"):
             strings = self.loaded_catalog.strings_for(locale)

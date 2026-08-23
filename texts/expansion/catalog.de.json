@@ -65,6 +65,15 @@
     "framework.locale_short_name.it": "IT",
     "ui.presentation.chapter_title_default": "Kapitel",
     "autoplay.charge.label": "Angriff",
-    "autoplay.charge.help": "Übrige Einheiten in dieser Phase der KI überlassen."
+    "autoplay.charge.help": "Übrige Einheiten in dieser Phase der KI überlassen.",
+    "debug.confirm.turn_increment": "Runde +1 anwenden",
+    "debug.confirm.turn_decrement": "Runde -1 anwenden",
+    "debug.confirm.red_computer": "Rot CPU anwenden",
+    "debug.confirm.red_blocked": "Rot blockieren",
+    "debug.confirm.green_computer": "Grün CPU anwenden",
+    "debug.confirm.green_blocked": "Grün blockieren",
+    "debug.status.turn": "RUNDE",
+    "debug.mode.computer": "CPU",
+    "debug.mode.blocked": "BLOCK"
   }
 }

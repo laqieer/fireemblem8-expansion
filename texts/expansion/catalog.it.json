@@ -65,6 +65,15 @@
     "framework.locale_short_name.it": "IT",
     "ui.presentation.chapter_title_default": "Capitolo",
     "autoplay.charge.label": "Carica",
-    "autoplay.charge.help": "Affida le unità rimaste all'IA per questo turno."
+    "autoplay.charge.help": "Affida le unità rimaste all'IA per questo turno.",
+    "debug.confirm.turn_increment": "Applica turno +1",
+    "debug.confirm.turn_decrement": "Applica turno -1",
+    "debug.confirm.red_computer": "Applica CPU rossa",
+    "debug.confirm.red_blocked": "Blocca rossa",
+    "debug.confirm.green_computer": "Applica CPU verde",
+    "debug.confirm.green_blocked": "Blocca verde",
+    "debug.status.turn": "TURNO",
+    "debug.mode.computer": "CPU",
+    "debug.mode.blocked": "BLOCCO"
   }
 }

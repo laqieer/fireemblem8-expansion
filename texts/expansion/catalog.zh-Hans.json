@@ -65,6 +65,15 @@
     "framework.locale_short_name.it": "IT",
     "ui.presentation.chapter_title_default": "章节",
     "autoplay.charge.label": "冲锋",
-    "autoplay.charge.help": "仅在本回合将剩余单位交给电脑控制"
+    "autoplay.charge.help": "仅在本回合将剩余单位交给电脑控制",
+    "debug.confirm.turn_increment": "应用回合+1",
+    "debug.confirm.turn_decrement": "应用回合-1",
+    "debug.confirm.red_computer": "应用红军电脑",
+    "debug.confirm.red_blocked": "应用红军阻止",
+    "debug.confirm.green_computer": "应用绿军电脑",
+    "debug.confirm.green_blocked": "应用绿军阻止",
+    "debug.status.turn": "回合",
+    "debug.mode.computer": "电脑",
+    "debug.mode.blocked": "阻止"
   }
 }
