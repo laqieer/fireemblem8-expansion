@@ -937,6 +937,68 @@ class BattleAnimationPackageTests(unittest.TestCase):
                 manifest.load_and_validate(path)
         self.assertIn("generated frame data", str(raised.exception))
 
+    def test_zero_package_manifest_regenerates_base_banim_linker_script(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            document = json.load(handle)
+        document["assets"] = [
+            record for record in document["assets"] if record["kind"] != "battle-animation-package"
+        ]
+        manifest_path = os.path.join(TEST_ROOT, "manifest.json")
+        output = os.path.join(TEST_ROOT, "rollback")
+        with open(manifest_path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        records = manifest.generate(manifest_path, output)
+        rendered = manifest.render_makefile(records)
+        combined = os.path.join(output, "banim", "linker_script_banim.txt")
+        with open(os.path.join(REPO_ROOT, "linker_script_banim.txt"), "rb") as handle:
+            base = handle.read()
+        with open(combined, "rb") as handle:
+            self.assertEqual(handle.read(), base + b"# AUTO-GENERATED package runtime entries; do not edit.\n")
+        self.assertIn(
+            "$(ASSET_BANIM_COMBINED_LINKER_SCRIPT): $(ASSET_OUTPUT_MK)",
+            rendered,
+        )
+
+        os.unlink(combined)
+        makefile = os.path.join(TEST_ROOT, "rollback.mk")
+        with open(makefile, "w", encoding="utf-8") as handle:
+            handle.write(
+                "PYTHON := {}\n"
+                "ASSET_MANIFEST := {}\n"
+                "ASSET_OUTPUT_DIR := {}\n"
+                "ASSET_OUTPUT_MK := {}/asset_manifest.mk\n"
+                "ASSET_BANIM_COMBINED_LINKER_SCRIPT := {}\n"
+                "ASSET_TOOL := $(PYTHON) -m scripts.assets\n"
+                "include {}/asset_manifest.mk\n"
+                "banim/data_banim.o: $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)\n"
+                "\t@test -f $<\n".format(
+                    sys.executable,
+                    manifest_path,
+                    output,
+                    output,
+                    combined,
+                    output,
+                )
+            )
+        result = subprocess.run(
+            ["make", "--no-print-directory", "-f", makefile, "banim/data_banim.o"],
+            cwd=REPO_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertTrue(os.path.isfile(combined))
+
+        package_records = manifest.load_and_validate(
+            os.path.join(REPO_ROOT, "assets", "manifest.json")
+        )
+        self.assertIn(
+            "$(ASSET_BANIM_COMBINED_LINKER_SCRIPT) &: $(ASSET_OUTPUT_MK)",
+            manifest.render_makefile(package_records),
+        )
+
     def test_side_specific_frames_emit_distinct_aligned_oam_payloads(self):
         package = banim.load_package(
             REPO_ROOT,

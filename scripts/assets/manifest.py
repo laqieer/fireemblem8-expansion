@@ -1113,38 +1113,40 @@ def render_makefile(records):
     packages = [
         record for record in records if record.kind == BattleAnimationPackageKind.name
     ]
-    if packages:
-        generated = []
-        for record in packages:
-            _outputs, paths, _metadata = banim.runtime_outputs(
-                record.banim_package, "$(ASSET_OUTPUT_DIR)"
-            )
-            generated.extend(paths.values())
-        generated.append("$(ASSET_BANIM_COMBINED_LINKER_SCRIPT)")
-        lines.append("\n{} &: $(ASSET_OUTPUT_MK)\n".format(" ".join(generated)))
-        lines.append(
-            '\t$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate\n'
+    generated = []
+    for record in packages:
+        _outputs, paths, _metadata = banim.runtime_outputs(
+            record.banim_package, "$(ASSET_OUTPUT_DIR)"
         )
-        lines.append("\t@test -f $@\n")
-        for record in packages:
-            _outputs, paths, _metadata = banim.runtime_outputs(
-                record.banim_package, "$(ASSET_OUTPUT_DIR)"
+        generated.extend(paths.values())
+    generated.append("$(ASSET_BANIM_COMBINED_LINKER_SCRIPT)")
+    if packages:
+        lines.append("\n{} &: $(ASSET_OUTPUT_MK)\n".format(" ".join(generated)))
+    else:
+        lines.append("\n{}: $(ASSET_OUTPUT_MK)\n".format(generated[0]))
+    lines.append(
+        '\t$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate\n'
+    )
+    lines.append("\t@test -f $@\n")
+    for record in packages:
+        _outputs, paths, _metadata = banim.runtime_outputs(
+            record.banim_package, "$(ASSET_OUTPUT_DIR)"
+        )
+        motion_object = paths["motion"][:-1] + "o"
+        lines.append("\n{}: {}\n".format(motion_object, paths["motion"]))
+        lines.append("\t$(AS) $(ASFLAGS) $< -o $@\n")
+        lines.append(
+            "banim/data_banim.o: {} {} {} {} {} {}\n".format(
+                motion_object,
+                paths["modes"],
+                paths["oam_left"],
+                paths["oam_right"],
+                paths["palette"],
+                " ".join(
+                    paths["frame_" + frame_id] for frame_id in record.banim_package.frames
+                ),
             )
-            motion_object = paths["motion"][:-1] + "o"
-            lines.append("\n{}: {}\n".format(motion_object, paths["motion"]))
-            lines.append("\t$(AS) $(ASFLAGS) $< -o $@\n")
-            lines.append(
-                "banim/data_banim.o: {} {} {} {} {} {}\n".format(
-                    motion_object,
-                    paths["modes"],
-                    paths["oam_left"],
-                    paths["oam_right"],
-                    paths["palette"],
-                    " ".join(
-                        paths["frame_" + frame_id] for frame_id in record.banim_package.frames
-                    ),
-                )
-            )
+        )
     return "".join(lines)
 
 
