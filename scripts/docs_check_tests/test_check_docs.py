@@ -118,6 +118,36 @@ class StripFencedBlocksTests(unittest.TestCase):
                         "```\n[fake](nope.md)\n" + f"{leading}```\n"
                     )
 
+    def test_backtick_fence_info_string_rejects_backticks(self):
+        invalid = "```markdown `policy`\nvisible prose\n```\n"
+        with self.assertRaisesRegex(
+            check_docs.DocsCheckError,
+            r"invalid backtick fenced code opener at line 1: "
+            r"info string contains a backtick",
+        ):
+            check_docs.strip_fenced_blocks(invalid)
+        with self.assertRaisesRegex(
+            check_docs.DocsCheckError,
+            r"invalid backtick fenced code opener at line 1",
+        ):
+            list(check_docs.iter_fenced_block_bodies(invalid))
+
+        tilde_fence = "~~~markdown `policy`\nvisible prose\n~~~\n"
+        self.assertNotIn(
+            "visible prose",
+            check_docs.strip_fenced_blocks(tilde_fence),
+        )
+        self.assertEqual(
+            list(check_docs.iter_fenced_block_bodies(tilde_fence)),
+            ["visible prose"],
+        )
+
+        fenced_literal = "```\n```markdown `policy`\n```\n"
+        self.assertEqual(
+            list(check_docs.iter_fenced_block_bodies(fenced_literal)),
+            ["```markdown `policy`"],
+        )
+
     def test_unterminated_fence_fails_with_opening_location(self):
         with self.assertRaisesRegex(
             check_docs.DocsCheckError,
@@ -173,6 +203,8 @@ class HeadingSlugTests(unittest.TestCase):
             ("   ## Setup ###\t", (2, "Setup")),
             ("## Setup###", (2, "Setup###")),
             ("## ###", (2, "")),
+            ("#\r", (1, "")),
+            (" ## Setup ##\r", (2, "Setup")),
         ):
             with self.subTest(line=line):
                 self.assertEqual(check_docs.parse_atx_heading(line), expected)
@@ -194,6 +226,10 @@ class HeadingSlugTests(unittest.TestCase):
                 "    ## indented code\n"
             ),
             ["one", "two", "three"],
+        )
+        self.assertEqual(
+            check_docs.compute_heading_slugs("#\r\n## Ordinary\r\n"),
+            ["", "ordinary"],
         )
 
     def test_inline_code_and_punctuation_stripped(self):

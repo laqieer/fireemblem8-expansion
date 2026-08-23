@@ -572,13 +572,23 @@ def read_text(path):
 # Markdown structure helpers (stdlib only -- no third-party parser)
 # ---------------------------------------------------------------------------
 
-def parse_fence_opening(line):
+def parse_fence_opening(line, line_number=None):
     """Return ``(marker, length)`` for a CommonMark fenced-code opener."""
     fence_text = line.rstrip(" \t\r")
     match = FENCE_RE.match(fence_text)
     if match is None:
         return None
     marker = match.group(1)
+    if marker[0] == "`" and "`" in fence_text[match.end():]:
+        location = (
+            " at line %d" % line_number
+            if line_number is not None
+            else ""
+        )
+        raise DocsCheckError(
+            "invalid backtick fenced code opener%s: "
+            "info string contains a backtick" % location
+        )
     return marker[0], len(marker)
 
 
@@ -602,6 +612,9 @@ def is_fence_closing(line, marker, minimum_length):
 
 def parse_atx_heading(line):
     """Return ``(level, text)`` for a CommonMark ATX heading."""
+    if line.endswith("\r"):
+        line = line[:-1]
+
     cursor = 0
     while cursor < len(line) and line[cursor] == " ":
         cursor += 1
@@ -647,16 +660,16 @@ def strip_fenced_blocks(text):
     fence_len = 0
     fence_line = None
     for lineno, line in enumerate(lines, start=1):
-        opening = parse_fence_opening(line)
-        if not in_fence and opening is not None:
-            in_fence = True
-            fence_char, fence_len = opening
-            fence_line = lineno
-            out.append("")
-            continue
         if in_fence:
             if is_fence_closing(line, fence_char, fence_len):
                 in_fence = False
+            out.append("")
+            continue
+        opening = parse_fence_opening(line, lineno)
+        if opening is not None:
+            in_fence = True
+            fence_char, fence_len = opening
+            fence_line = lineno
             out.append("")
             continue
         out.append(line)
@@ -691,19 +704,19 @@ def iter_fenced_block_bodies(text):
     fence_char = None
     fence_len = 0
     body = []
-    for line in lines:
-        opening = parse_fence_opening(line)
-        if not in_fence and opening is not None:
-            in_fence = True
-            fence_char, fence_len = opening
-            body = []
-            continue
+    for lineno, line in enumerate(lines, start=1):
         if in_fence:
             if is_fence_closing(line, fence_char, fence_len):
                 in_fence = False
                 yield "\n".join(body)
             else:
                 body.append(line)
+            continue
+        opening = parse_fence_opening(line, lineno)
+        if opening is not None:
+            in_fence = True
+            fence_char, fence_len = opening
+            body = []
             continue
 
 

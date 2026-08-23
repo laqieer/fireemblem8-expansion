@@ -284,6 +284,82 @@ def find_html_comment_end(line, cursor, line_number):
     )
 
 
+def backtick_run_length(line, cursor):
+    end = cursor
+    while end < len(line) and line[end] == "`":
+        end += 1
+    return end - cursor
+
+
+def find_matching_backtick_run(line, cursor, run_length):
+    while cursor < len(line):
+        match = line.find("`", cursor)
+        if match < 0:
+            return None
+        candidate_length = backtick_run_length(line, match)
+        if candidate_length == run_length:
+            return match
+        cursor = match + candidate_length
+    return None
+
+
+def find_inline_raw_text_opener(line):
+    """Return an inline raw-text tag outside complete backtick code spans."""
+    cursor = 0
+    while cursor < len(line):
+        if line[cursor] == "`":
+            run_length = backtick_run_length(line, cursor)
+            closing = find_matching_backtick_run(
+                line,
+                cursor + run_length,
+                run_length,
+            )
+            if closing is None:
+                cursor += run_length
+            else:
+                cursor = closing + run_length
+            continue
+
+        if line[cursor] != "<" or cursor + 1 >= len(line):
+            cursor += 1
+            continue
+        if line[cursor + 1] == "/":
+            cursor += 2
+            continue
+
+        name_start = cursor + 1
+        if not is_ascii_letter(line[name_start]):
+            cursor += 1
+            continue
+        name_end = name_start + 1
+        while name_end < len(line):
+            char = line[name_end]
+            if not (
+                is_ascii_letter(char)
+                or "0" <= char <= "9"
+                or char == "-"
+            ):
+                break
+            name_end += 1
+
+        tag_name = line[name_start:name_end].casefold()
+        if tag_name not in RAW_HTML_TEXT_TAGS:
+            cursor = name_end
+            continue
+        if (
+            name_end < len(line)
+            and line[name_end] not in HTML_BLOCK_WHITESPACE + ">/"
+        ):
+            cursor = name_end
+            continue
+        if ">" not in line[name_end:]:
+            cursor = name_end
+            continue
+        return tag_name
+
+    return None
+
+
 def scan_policy_markdown(text):
     """Scan policy Markdown with mutually exclusive block contexts."""
     raw_lines = tuple(text.split("\n"))
@@ -326,7 +402,7 @@ def scan_policy_markdown(text):
             visible_lines.append(line)
             continue
 
-        opening = parse_fence_opening(line)
+        opening = parse_fence_opening(line, line_number)
         if opening is not None:
             fence_marker, fence_length = opening
             fence_line = line_number
@@ -371,6 +447,12 @@ def scan_policy_markdown(text):
         if kind is not None:
             raise AssertionError(
                 f"raw HTML block ({kind}) starts at line {line_number}"
+            )
+        inline_raw_text_tag = find_inline_raw_text_opener(line)
+        if inline_raw_text_tag is not None:
+            raise AssertionError(
+                "inline raw-text tag "
+                f"<{inline_raw_text_tag}> starts at line {line_number}"
             )
 
         visible_lines.append(line)
@@ -595,7 +677,7 @@ def parse_meaningful_test_policy(text):
     for line in read_markdown_section(text, MEANINGFUL_TEST_POLICY_HEADING):
         if not line.strip():
             continue
-        if match := MEANINGFUL_TEST_POLICY_CLAUSE.match(line):
+        if match := MEANINGFUL_TEST_POLICY_CLAUSE.fullmatch(line):
             clause_name = normalize_policy_atom(match.group("name"))
             if clause_name in raw_clauses:
                 raise AssertionError(f"duplicate policy clause: {match.group('name')}")
@@ -607,7 +689,7 @@ def parse_meaningful_test_policy(text):
             current_clause = clause_name
             current_item = None
             continue
-        if match := MEANINGFUL_TEST_POLICY_ITEM.match(line):
+        if match := MEANINGFUL_TEST_POLICY_ITEM.fullmatch(line):
             if current_clause is None:
                 raise AssertionError(f"orphaned policy item: {match.group('name')}")
             item_name = normalize_policy_atom(match.group("name"))
@@ -1050,6 +1132,27 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     ),
                 )
 
+        invalid_backtick_fence = (
+            policy_text
+            + "\n```markdown `policy`\n"
+            + "Text-only tests are permitted.\n"
+            + "```\n"
+        )
+        with self.assertRaisesRegex(
+            DocsCheckError,
+            r"invalid backtick fenced code opener at line",
+        ):
+            self.assert_meaningful_test_policy(invalid_backtick_fence)
+        self.assertEqual(
+            CANONICAL_POLICY_AST,
+            self.assert_meaningful_test_policy(
+                policy_text
+                + "\n~~~markdown `policy`\n"
+                + "Text-only tests are permitted.\n"
+                + "~~~\n"
+            ),
+        )
+
         for indentation in ("    ", "\t"):
             with self.subTest(indented_comment=repr(indentation)):
                 literal_scan = scan_policy_markdown(
@@ -1140,6 +1243,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "```html\n<script>\n<pre>\n</pre>\n</script>\n```\n",
             "<!--\n<script>\n<pre>\n</pre>\n</script>\n-->\n",
             "    <script>\n",
+            "Use `<script>` and ``<StYle>`` as literal examples.\n",
         )
         for prefix in safe_html_contexts:
             with self.subTest(safe_html_context=prefix.splitlines()[0]):
@@ -1147,6 +1251,15 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     CANONICAL_POLICY_AST,
                     self.assert_meaningful_test_policy(prefix + policy_text),
                 )
+        with self.assertRaisesRegex(
+            AssertionError,
+            r"inline raw-text tag <script> starts at line 1",
+        ):
+            self.assert_meaningful_test_policy(
+                "Visible prose before <ScRiPt type=\"text/javascript\">\n"
+                + policy_text
+            )
+
 
         hidden_boundary_mutation = (
             policy_text
@@ -1235,6 +1348,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             " ## Meaningful test evidence #",
             "  ## Meaningful test evidence ##",
             "   ## Meaningful test evidence ###\t",
+            " ## Meaningful test evidence ##\r",
         ):
             with self.subTest(policy_heading=policy_heading):
                 self.assertEqual(
@@ -1367,6 +1481,16 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "  - **behavior:** required",
                 "  - **behavior:** required\n"
                 "  - **arbitrary strings:** permitted",
+            ),
+            "clause trailing contradictory prose": policy_text.replace(
+                "- **Evidence standard:** required",
+                "- **Evidence standard:** required "
+                "Text-only tests are permitted.",
+            ),
+            "item trailing contradictory prose": policy_text.replace(
+                "  - **behavior:** required",
+                "  - **behavior:** required "
+                "Text-only tests are permitted.",
             ),
         }
         for category in PROHIBITED_EVIDENCE_CATEGORIES:
