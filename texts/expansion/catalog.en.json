@@ -63,6 +63,12 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "Chapter"
+    "ui.presentation.chapter_title_default": "Chapter",
+    "debug.action.chapter_skirmish": "Chapter/Skirmish",
+    "debug.selector.chapter": "Chapter",
+    "debug.selector.skirmish": "Skirmish",
+    "debug.selector.eirika": "Eirika",
+    "debug.selector.ephraim": "Ephraim",
+    "debug.selector.unavailable": "Target unavailable"
   }
 }

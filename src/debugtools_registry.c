@@ -209,7 +209,7 @@ static const ExpansionMsgId sBuiltinActionLabelMsgIds[DEBUGTOOLS_BUILTIN_ACTION_
     EXP_MSG_DEBUG_ACTION_FASTBOOT_CH2,      /* id 1 */
     EXP_MSG_DEBUG_ACTION_WEATHER,           /* id 2 */
     EXP_MSG_DEBUG_ACTION_FOG,               /* id 3 */
-    EXP_MSG_DEBUG_ACTION_FASTBOOT_CH4PREP,  /* id 4 */
+    EXP_MSG_DEBUG_ACTION_CHAPTER_SKIRMISH,  /* id 4 */
     EXP_MSG_DEBUG_ACTION_UNIT_INSPECT,      /* id 5 */
     EXP_MSG_DEBUG_ACTION_CONVOY_INSPECT,    /* id 6 */
     EXP_MSG_DEBUG_ACTION_FLAG_CHAPTER,      /* id 7 */
@@ -637,6 +637,21 @@ void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
         return;
 
     DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_HUB, NULL, 0);
+}
+
+void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu)
+{
+    if (!(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE)
+        || (sDebugMenuState
+        & (DEBUGTOOLS_STATE_HUB_ACTIVE | DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
+    )
+        return;
+
+    DebugTools_StartMenuTransition(
+        menu,
+        DEBUGTOOLS_TRANSITION_CLEANUP,
+        NULL,
+        0);
 }
 
 static enum DebugToolsResult DebugTools_OpenHubInternal(void)

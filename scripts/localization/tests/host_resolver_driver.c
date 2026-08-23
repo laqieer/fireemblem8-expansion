@@ -200,7 +200,7 @@ int main(void)
     CHECK(gameCacheInvalidations == 9);
 
     ExpansionLocale_GetCatalogStats(&stats);
-    CHECK(stats.activeMessageCount == 62);
+    CHECK(stats.activeMessageCount == 68);
     CHECK(stats.tombstoneCount == 1);
     CHECK(stats.populatedLocaleCount == 8);
     CHECK(stats.populatedLocaleCount == gExpansionLocalePopulatedCount);

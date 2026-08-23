@@ -32,24 +32,24 @@
   "regions_headroom": {
     "ewram": {
       "capacity_bytes": 262144,
-      "free_bytes": 1704,
-      "occupied_bytes": 260440,
+      "free_bytes": 1700,
+      "occupied_bytes": 260444,
       "overflow": false,
-      "physical_free_bytes": 1704
+      "physical_free_bytes": 1700
     },
     "iwram": {
       "capacity_bytes": 32768,
-      "free_bytes": 5720,
+      "free_bytes": 5719,
       "minimum_user_stack_margin_bytes": 4096,
-      "occupied_bytes": 26536,
+      "occupied_bytes": 26537,
       "overflow": false,
-      "physical_free_bytes": 6232,
+      "physical_free_bytes": 6231,
       "reserved_stack_bytes": 512,
       "stack_margin_violation": false,
-      "static_growth_headroom_bytes": 1624,
+      "static_growth_headroom_bytes": 1623,
       "static_overflow": false,
       "static_usable_capacity_bytes": 32256,
-      "usable_static_headroom_bytes": 5720
+      "usable_static_headroom_bytes": 5719
     },
     "rom": {
       "capacity_bytes": 16777216,
@@ -71,42 +71,42 @@
     "missing": [],
     "symbols": {
       "gExpansionLocaleMsgCount": 2,
-      "gExpansionLocaleMsgIds": 124,
+      "gExpansionLocaleMsgIds": 136,
       "gExpansionLocaleTombstoneCount": 2
     },
-    "total_bytes": 128
+    "total_bytes": 140
   },
   "rom_catalog_strings": {
     "missing": [],
     "symbols": {
-      "gExpansionCatalog_de": 248,
-      "gExpansionCatalog_en": 248,
-      "gExpansionCatalog_es": 248,
-      "gExpansionCatalog_fr": 248,
-      "gExpansionCatalog_it": 248,
-      "gExpansionCatalog_ja": 248,
-      "gExpansionCatalog_qps_ploc": 248,
-      "gExpansionCatalog_zh_Hans": 248
+      "gExpansionCatalog_de": 272,
+      "gExpansionCatalog_en": 272,
+      "gExpansionCatalog_es": 272,
+      "gExpansionCatalog_fr": 272,
+      "gExpansionCatalog_it": 272,
+      "gExpansionCatalog_ja": 272,
+      "gExpansionCatalog_qps_ploc": 272,
+      "gExpansionCatalog_zh_Hans": 272
     },
-    "total_bytes": 1984,
+    "total_bytes": 2176,
     "unexpected": []
   },
   "schema_version": 1,
   "source_catalog_budget": {
-    "active_message_count": 62,
-    "catalog_index_bytes": 2204,
+    "active_message_count": 68,
+    "catalog_index_bytes": 2408,
     "catalog_string_bytes": {
-      "de": 746,
-      "en": 659,
-      "es": 755,
-      "fr": 798,
-      "it": 743,
-      "ja": 802,
-      "qps-ploc": 1045,
-      "total": 6226,
-      "zh-Hans": 678
+      "de": 815,
+      "en": 727,
+      "es": 833,
+      "fr": 874,
+      "it": 826,
+      "ja": 872,
+      "qps-ploc": 1160,
+      "total": 6858,
+      "zh-Hans": 751
     },
-    "glyphs_used_count": 282,
+    "glyphs_used_count": 296,
     "locales_generated": [
       "en",
       "ja",
@@ -120,7 +120,7 @@
     "pseudo_policy_counts": {
       "compact": 2,
       "preserve": 6,
-      "transform": 54
+      "transform": 60
     },
     "scratch_budget_bytes": 96,
     "scratch_headroom_bytes": 63,
