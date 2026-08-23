@@ -209,10 +209,10 @@ ROM byte identity.
 
 ## Tester-facing procedure
 
-[`TC-CORE-009`](test-cases/core-framework.md#tc-core-009-build-artifact-has-exact-identity)
-documents how to bind the published `modern-release-aapcs-rom-map` artifact
-to one successful Build CI head SHA, verify its header, and distinguish it
-from issue #49's proposed maximal artifact.
+[`TC-CORE-009`](test-cases/core-framework.md#tc-core-009-reproduce-default-release-from-a-successful-build-ci-run)
+documents how to bind a successful Build CI URL/head SHA to a locally
+reproduced default AAPCS release, verify its header, and distinguish that
+reproduction from issue #49's published maximal BPS artifact.
 
 ## Future versioned release work (issue #9)
 

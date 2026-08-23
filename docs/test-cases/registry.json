@@ -26,7 +26,7 @@
       "debug-tools",
       "runtime-playtest-harness",
       "upstream-port-tooling",
-      "build-ci-default-artifact",
+      "build-ci-default-release-reproduction",
       "typed-authoring-conveniences",
       "expansion-locale-selection",
       "full-game-localization",
@@ -333,8 +333,8 @@
       ]
     },
     {
-      "id": "build-ci-default-artifact",
-      "title": "Published default Build CI artifact",
+      "id": "build-ci-default-release-reproduction",
+      "title": "Reproduce default release from a successful Build CI run",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/20",
         "https://github.com/laqieer/fireemblem8-expansion/issues/57"
@@ -444,12 +444,12 @@
       "purpose": "Exercise the stable catalog schema and checker integration that future feature cases extend.",
       "prerequisites": "Start from the repository root with docs/test-cases and scripts/check_docs.py present; no save state is needed.",
       "actions": "Inspect the catalog index, template, and registry; run the focused docs-checker unit test and the checker command named below.",
-      "expected_result": "The registry exposes separate feature and case records, the procedure is indexed, and both commands accept the valid foundation data.",
+      "expected_result": "The registry exposes separate feature and case records, the procedure is indexed, and both commands accept the valid complete catalog.",
       "negative_control": "Focused fixtures reject malformed or duplicate IDs, unknown ownership, missing links or anchors, placeholders, unnamed automation, missing exclusion rationale, and a missing complete-mode feature.",
-      "interactions": "Depends on issue #53's tester-case contract. The feature backfill is deliberately deferred to issues #55 through #58.",
+      "interactions": "Depends on issue #53's tester-case contract. The #55 through #58 feature-family entries are present and complete coverage is enforced.",
       "save_compatibility": "No save bytes, migration, compatibility epoch, or runtime profile changes.",
       "cleanup": "No cleanup is required.",
-      "limitations": "This foundation validates the schema and extension seam only; it does not yet assert full current-feature coverage.",
+      "limitations": "This foundation validates the schema, extension seam, and fail-closed current-feature coverage guard.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs -v",
@@ -1086,7 +1086,7 @@
       "interactions": "Uses the one descriptor registry and existing map-menu command; does not add a second settings screen.",
       "save_compatibility": "Reuses the fixed 12-byte preference record and does not reuse sound-room or casual bytes.",
       "cleanup": "No persistent fixture, ROM, or save is created.",
-      "limitations": "The catalog remains foundation mode and the case does not score subjective UX preference.",
+      "limitations": "The case does not score subjective UX preference.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.modernize.tests.test_ui_registry_contract scripts.modernize.tests.test_expansion_user_prefs_native -v",
@@ -1378,34 +1378,34 @@
     },
     {
       "id": "TC-CORE-009",
-      "title": "Build artifact has exact identity",
-      "feature_id": "build-ci-default-artifact",
+      "title": "Reproduce default release from a successful Build CI run",
+      "feature_id": "build-ci-default-release-reproduction",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/20",
         "https://github.com/laqieer/fireemblem8-expansion/issues/57"
       ],
       "document": "docs/test-cases/core-framework.md",
-      "anchor": "tc-core-009-build-artifact-has-exact-identity",
+      "anchor": "tc-core-009-reproduce-default-release-from-a-successful-build-ci-run",
       "profiles": [
-        "Successful Build CI modern-release-aapcs-rom-map artifact",
-        "Default modern AAPCS release identity"
+        "Successful Build CI URL and head SHA",
+        "Clean checkout at that SHA with a locally reproduced default modern AAPCS release"
       ],
-      "purpose": "Bind the published default artifact to one successful exact Build CI commit.",
-      "prerequisites": "Record the Build CI run URL and head SHA before an ignored artifact download.",
-      "actions": "Inspect run identity, download the named artifact, verify its header, and record its hash.",
-      "expected_result": "The release ROM and map belong to the intended successful Build CI commit.",
-      "negative_control": "Failed, stale, wrong-SHA, missing, or malformed artifacts are rejected.",
-      "interactions": "This is not issue #49's proposed maximal artifact.",
-      "save_compatibility": "The default release artifact makes no save migration claim.",
-      "cleanup": "Remove only build/issue57-artifact after inspection.",
-      "limitations": "GitHub access is required to download; source builds remain supported.",
+      "purpose": "Bind a successful Build CI run to a locally reproduced default release and its header verification.",
+      "prerequisites": "Record the Build CI run URL and head SHA, then use a clean local checkout at that SHA.",
+      "actions": "Inspect the successful run identity, compare its head SHA with local HEAD, build the default release, and verify its header.",
+      "expected_result": "The successful Build CI run identifies the reproduced source and the local release ROM passes header verification.",
+      "negative_control": "Failed, stale, wrong-workflow, wrong-SHA, or malformed local-ROM inputs are rejected.",
+      "interactions": "This procedure does not claim a default published artifact; issue #49 owns the separate maximal BPS artifact.",
+      "save_compatibility": "The default release reproduction makes no save migration claim.",
+      "cleanup": "Use make clean_fast to remove local build artifacts.",
+      "limitations": "Build CI does not publish a default modern ROM/map artifact; local source reproduction is required.",
       "automation": [
         {
           "command": "python3 -m unittest discover -s tests/workflows -p \"test_*.py\" -v",
           "evidence": ".github/workflows/build.yml"
         },
         {
-          "command": "python3 scripts/modernize/verify_rom_header.py build/issue57-artifact/fireemblem8.gba",
+          "command": "make assets-clean && make assets-generate && make expansion-modern-rom MODERN_CONFIG=release MODERN_ABI=aapcs && python3 scripts/modernize/verify_rom_header.py build/expansion-modern/release/aapcs/fireemblem8.gba",
           "evidence": "scripts/modernize/verify_rom_header.py"
         }
       ]

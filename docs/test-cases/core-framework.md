@@ -98,7 +98,7 @@ epoch; optional feature dependencies remain validated by their own resolver.
 - `make expansion-modern-rom MODERN_CONFIG=debug MODERN_ABI=aapcs`
   — `scripts/modernize/verify_rom_header.py`.
 - `make expansion-modern-rom MODERN_CONFIG=release MODERN_ABI=aapcs`
-  — `scripts/modernize/expansion_config.py`.
+  — `scripts/modernize/verify_rom_header.py`.
 
 ### Cleanup and limitations
 
@@ -444,53 +444,63 @@ whether an actual reviewed upstream commit belongs in this project is the
 precise human decision; automation validates the recorded decision contract
 but never infers acceptance.
 
-## TC-CORE-009: Build artifact has exact identity
+## TC-CORE-009: Reproduce default release from a successful Build CI run
 
-- **Feature / originating issue:** `build-ci-default-artifact` /
+- **Feature / originating issue:** `build-ci-default-release-reproduction` /
   [#20](https://github.com/laqieer/fireemblem8-expansion/issues/20).
-- **Supported configuration or artifact:** successful Build CI artifact
-  `modern-release-aapcs-rom-map` for one exact commit on GitHub.
-- **Prerequisites and clean starting state:** record a successful Build CI run
-  URL and head SHA; create an ignored artifact directory before download.
+- **Supported configuration or artifact:** successful Build CI run URL and head
+  SHA, plus a clean checkout at that exact SHA for a local modern AAPCS
+  release reproduction.
+- **Prerequisites and clean starting state:** record the successful Build CI
+  run URL and head SHA; use a clean source checkout at that head with the
+  modern toolchain installed.
 
 ### Actions
 
 1. Run `gh run view <run-id> --json url,headSha,conclusion,workflowName`.
 2. Confirm `workflowName` is `Build CI`, `conclusion` is `success`, and
-   `headSha` is the intended commit; then run
-   `gh run download <run-id> -n modern-release-aapcs-rom-map -D build/issue57-artifact`.
-3. Run `python3 scripts/modernize/verify_rom_header.py build/issue57-artifact/fireemblem8.gba`
-   and record the artifact SHA-256 with the run URL and head SHA.
+   `headSha` equals `git rev-parse HEAD` in the clean local checkout.
+3. Reproduce and verify the default release locally:
+
+   ```sh
+   make assets-clean
+   make assets-generate
+   make expansion-modern-rom MODERN_CONFIG=release MODERN_ABI=aapcs
+   python3 scripts/modernize/verify_rom_header.py \
+     build/expansion-modern/release/aapcs/fireemblem8.gba
+   ```
 
 ### Expected result
 
-The downloaded release/AAPCS ROM and map are bound to the exact successful
-Build CI commit and have a valid project header/checksum.
+The Build CI URL and head SHA identify the source that passed CI. The local
+default AAPCS release rebuild passes the same header/checksum verification at
+`build/expansion-modern/release/aapcs/fireemblem8.gba`.
 
 ### Negative control
 
-A failed, stale, wrong-workflow, wrong-SHA, missing, or malformed artifact is
-rejected. This default artifact is not the maximal combined artifact proposed
-by issue #49.
+A failed, stale, wrong-workflow, or wrong-SHA run is rejected before local
+reproduction; a malformed local ROM fails header verification. This procedure
+does not claim the default Build workflow publishes an artifact, and it is not
+issue #49's maximal BPS artifact.
 
 ### Interactions and save compatibility
 
-The artifact represents the default release profile only. It introduces no
-new feature flags, save migration, generated-data output, or archival-lane
-claim.
+The locally reproduced default release introduces no new feature flags, save
+migration, generated-data output, or archival-lane claim. Issue #49's
+separate BPS artifact contract remains the only published artifact path.
 
 ### Automation
 
 - `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`
   — `.github/workflows/build.yml`.
-- `python3 scripts/modernize/verify_rom_header.py build/issue57-artifact/fireemblem8.gba`
+- `make assets-clean && make assets-generate && make expansion-modern-rom MODERN_CONFIG=release MODERN_ABI=aapcs && python3 scripts/modernize/verify_rom_header.py build/expansion-modern/release/aapcs/fireemblem8.gba`
   — `scripts/modernize/verify_rom_header.py`.
 
 ### Cleanup and limitations
 
-Remove only `build/issue57-artifact` after inspection. GitHub access is needed
-to download an artifact; a source build remains the supported reproducible
-path.
+Use `make clean_fast` to remove locally reproduced build artifacts. Build CI
+does not publish a default modern ROM/map artifact; the run URL/head SHA and
+local source build are the supported reproducibility boundary.
 
 ## TC-CORE-010: Typed authoring lowers through existing routes
 
