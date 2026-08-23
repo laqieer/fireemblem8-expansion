@@ -448,49 +448,49 @@ but never infers acceptance.
 
 - **Feature / originating issue:** `build-ci-default-artifact` /
   [#20](https://github.com/laqieer/fireemblem8-expansion/issues/20).
-- **Supported configuration or artifact:** successful Build CI artifact
-  `modern-release-aapcs-rom-map` for one exact commit on GitHub.
+- **Supported configuration or artifact:** one exact successful Build CI run on
+  GitHub, where the default ROM/map artifact is intentionally unpublished.
 - **Prerequisites and clean starting state:** record a successful Build CI run
-  URL and head SHA; create an ignored artifact directory before download.
+  URL and head SHA.
 
 ### Actions
 
 1. Run `gh run view <run-id> --json url,headSha,conclusion,workflowName`.
 2. Confirm `workflowName` is `Build CI`, `conclusion` is `success`, and
-   `headSha` is the intended commit; then run
-   `gh run download <run-id> -n modern-release-aapcs-rom-map -D build/issue57-artifact`.
-3. Run `python3 scripts/modernize/verify_rom_header.py build/issue57-artifact/fireemblem8.gba`
-   and record the artifact SHA-256 with the run URL and head SHA.
+   `headSha` is the intended commit.
+3. Run
+   `gh run download <run-id> -n modern-release-aapcs-rom-map -D build/issue57-artifact`
+   and confirm the command fails because this default ROM/map artifact is not
+   published by the current Build CI workflow.
 
 ### Expected result
 
-The downloaded release/AAPCS ROM and map are bound to the exact successful
-Build CI commit and have a valid project header/checksum.
+The exact successful Build CI run identity is confirmed by URL/head SHA, and
+`modern-release-aapcs-rom-map` is confirmed absent for that run.
 
 ### Negative control
 
-A failed, stale, wrong-workflow, wrong-SHA, missing, or malformed artifact is
-rejected. This default artifact is not the maximal combined artifact proposed
-by issue #49.
+A failed, stale, wrong-workflow, or wrong-SHA run is rejected. Treating the
+master-only patch artifact (`modern-release-all-locales-all-features-aapcs-bps`)
+as the default ROM/map artifact is invalid.
 
 ### Interactions and save compatibility
 
-The artifact represents the default release profile only. It introduces no
-new feature flags, save migration, generated-data output, or archival-lane
-claim.
+This check validates Build CI identity and publication boundaries only. It
+introduces no feature flags, save migration, generated-data output, or
+archival-lane claim.
 
 ### Automation
 
 - `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`
   — `.github/workflows/build.yml`.
-- `python3 scripts/modernize/verify_rom_header.py build/issue57-artifact/fireemblem8.gba`
-  — `scripts/modernize/verify_rom_header.py`.
+- `python3 -m unittest discover -s tests/workflows -p "test_patch_release_workflow.py" -v`
+  — `tests/workflows/test_patch_release_workflow.py`.
 
 ### Cleanup and limitations
 
-Remove only `build/issue57-artifact` after inspection. GitHub access is needed
-to download an artifact; a source build remains the supported reproducible
-path.
+Remove only `build/issue57-artifact` if it was created. GitHub access is
+needed to inspect runs; a source build remains the supported reproducible path.
 
 ## TC-CORE-010: Typed authoring lowers through existing routes
 

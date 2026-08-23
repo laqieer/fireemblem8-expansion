@@ -1387,26 +1387,26 @@
       "document": "docs/test-cases/core-framework.md",
       "anchor": "tc-core-009-build-artifact-has-exact-identity",
       "profiles": [
-        "Successful Build CI modern-release-aapcs-rom-map artifact",
-        "Default modern AAPCS release identity"
+        "Successful Build CI run identity for one exact commit",
+        "Default ROM/map artifact intentionally unpublished"
       ],
-      "purpose": "Bind the published default artifact to one successful exact Build CI commit.",
-      "prerequisites": "Record the Build CI run URL and head SHA before an ignored artifact download.",
-      "actions": "Inspect run identity, download the named artifact, verify its header, and record its hash.",
-      "expected_result": "The release ROM and map belong to the intended successful Build CI commit.",
-      "negative_control": "Failed, stale, wrong-SHA, missing, or malformed artifacts are rejected.",
-      "interactions": "This is not issue #49's proposed maximal artifact.",
+      "purpose": "Bind Build CI run identity to one exact commit and confirm default ROM/map artifact publication boundaries.",
+      "prerequisites": "Record the Build CI run URL and head SHA.",
+      "actions": "Inspect run identity, then verify the modern-release-aapcs-rom-map download is absent for that successful run.",
+      "expected_result": "The intended successful Build CI run is confirmed by URL/head SHA, and modern-release-aapcs-rom-map is absent.",
+      "negative_control": "Failed, stale, wrong-workflow, wrong-SHA, or wrong-artifact assertions are rejected.",
+      "interactions": "Do not treat issue #49's master-only patch artifact as this default ROM/map artifact.",
       "save_compatibility": "The default release artifact makes no save migration claim.",
-      "cleanup": "Remove only build/issue57-artifact after inspection.",
-      "limitations": "GitHub access is required to download; source builds remain supported.",
+      "cleanup": "Remove only build/issue57-artifact if it was created.",
+      "limitations": "GitHub access is required to inspect/download run artifacts; source builds remain supported.",
       "automation": [
         {
           "command": "python3 -m unittest discover -s tests/workflows -p \"test_*.py\" -v",
           "evidence": ".github/workflows/build.yml"
         },
         {
-          "command": "python3 scripts/modernize/verify_rom_header.py build/issue57-artifact/fireemblem8.gba",
-          "evidence": "scripts/modernize/verify_rom_header.py"
+          "command": "python3 -m unittest discover -s tests/workflows -p \"test_patch_release_workflow.py\" -v",
+          "evidence": "tests/workflows/test_patch_release_workflow.py"
         }
       ]
     },
