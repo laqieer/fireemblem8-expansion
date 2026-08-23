@@ -1532,26 +1532,36 @@ def _table_cells(line):
     )
 
 
+def _build_target_header_index(lines):
+    for index, line in enumerate(lines):
+        try:
+            cells = _table_cells(line)
+        except AssertionError:
+            continue
+        if cells == BUILD_TARGET_TABLE_COLUMNS:
+            return index
+    return None
+
+
 def parse_build_target_table(text):
     lines = text.splitlines()
-    try:
-        heading_index = lines.index("## Build targets and outputs")
-    except ValueError as exc:
-        raise AssertionError("missing build-target table heading") from exc
-
-    header = _table_cells(lines[heading_index + 2])
-    if header != BUILD_TARGET_TABLE_COLUMNS:
+    header_index = _build_target_header_index(lines)
+    if header_index is None:
         raise AssertionError("build-target table header differs")
+    if header_index + 1 >= len(lines):
+        raise AssertionError("build-target table separator is invalid")
 
-    separator = _table_cells(lines[heading_index + 3])
+    separator = _table_cells(lines[header_index + 1])
     if len(separator) != len(BUILD_TARGET_TABLE_COLUMNS) or not all(
         re.fullmatch(r":?-{3,}:?", cell) for cell in separator
     ):
         raise AssertionError("build-target table separator is invalid")
 
     rows = []
-    for line in lines[heading_index + 4:]:
+    for line in lines[header_index + 2:]:
         if not line.strip():
+            break
+        if not line.strip().startswith("|"):
             break
         cells = _table_cells(line)
         if len(cells) != len(BUILD_TARGET_TABLE_COLUMNS):
@@ -1622,14 +1632,29 @@ class DocumentationBuildContractTests(unittest.TestCase):
             ),
         )
 
-        rows = parse_build_target_table(framework_support)
-        table_start = framework_support.index("| Command |")
-        table_end = framework_support.index("\n\n", table_start)
-        table_lines = framework_support[table_start:table_end].splitlines()
-        reordered = framework_support[:table_start] + "\n".join(
-            [*table_lines[:2], *reversed(table_lines[2:])]
-        ) + framework_support[table_end:]
-        assert_documented_build_contract(self, quickstart, reordered)
+        lines = framework_support.splitlines()
+        header_index = _build_target_header_index(lines)
+        self.assertIsNotNone(header_index)
+        table_end = header_index + 2
+        while table_end < len(lines) and lines[table_end].strip().startswith("|"):
+            table_end += 1
+        moved_table = [
+            *lines[header_index:header_index + 2],
+            *reversed(lines[header_index + 2:table_end]),
+            "",
+            *lines[:header_index],
+            *lines[table_end:],
+        ]
+        for index, line in enumerate(moved_table):
+            if line == "## Build targets and outputs":
+                moved_table[index] = "## Toolchain target reference"
+                moved_table.insert(index + 2, "The table above remains authoritative.")
+                break
+        assert_documented_build_contract(
+            self,
+            quickstart,
+            "\n".join(moved_table),
+        )
 
         with self.assertRaisesRegex(AssertionError, "must require AAPCS"):
             assert_documented_build_contract(
@@ -1649,6 +1674,14 @@ class DocumentationBuildContractTests(unittest.TestCase):
                     1,
                 )
             )
+        malformed_separator = list(framework_support.splitlines())
+        malformed_header_index = _build_target_header_index(malformed_separator)
+        self.assertIsNotNone(malformed_header_index)
+        malformed_separator[malformed_header_index + 1] = (
+            "| --- | --- | --- | not-a-separator |"
+        )
+        with self.assertRaisesRegex(AssertionError, "separator is invalid"):
+            parse_build_target_table("\n".join(malformed_separator))
 
 
 class StructuralObjectCountClaimTests(unittest.TestCase):
