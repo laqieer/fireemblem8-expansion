@@ -58,4 +58,6 @@ The core framework and authoring procedures are in
 [`optional-gameplay.md`](optional-gameplay.md); presentation, audio, and
 utility procedures are in
 [`presentation-audio-utility.md`](presentation-audio-utility.md); localization
-procedures are in [`localization.md`](localization.md).
+procedures are in [`localization.md`](localization.md); and the optional HQ
+PCM mixer procedure is
+[`TC-AUDIO-HQMIX-001`](audio.md#tc-audio-hqmix-001-hq-pcm-mixer-produces-bounded-stereo-output).

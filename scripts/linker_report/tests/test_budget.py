@@ -530,11 +530,11 @@ Linker script and memory map
         self.assertEqual(peaks, {0x2018C})
         iwram = next(reg for reg in report["regions"] if reg["name"] == "iwram")
         self.assertTrue(iwram["static_budget_available"])
-        self.assertEqual(iwram["physical_free_bytes"], 0x1858)
+        self.assertEqual(iwram["physical_free_bytes"], 0x1857)
         self.assertEqual(iwram["reserved_stack_bytes"], 0x200)
-        self.assertEqual(iwram["usable_static_headroom_bytes"], 0x1658)
+        self.assertEqual(iwram["usable_static_headroom_bytes"], 0x1657)
         self.assertEqual(iwram["minimum_user_stack_margin_bytes"], 0x1000)
-        self.assertEqual(iwram["static_growth_headroom_bytes"], 0x658)
+        self.assertEqual(iwram["static_growth_headroom_bytes"], 0x657)
 
     @unittest.skipUnless(
         REAL_CJK_MAP.exists() and REAL_CJK_ELF.exists(),

@@ -4,6 +4,10 @@
 
 	.syntax unified
 
+	.ifndef FE8_EXPANSION_HQ_MIXER
+	.equ FE8_EXPANSION_HQ_MIXER, 0
+	.endif
+
 	.bss
 
 @	.global gUnknown_030007B8
@@ -95,6 +99,7 @@ lt_PCM_DMA_BUF_SIZE:      .word PCM_DMA_BUF_SIZE
 
 	thumb_func_end SoundMain
 
+	.if FE8_EXPANSION_HQ_MIXER == 0
 	thumb_func_start SoundMainRAM
 SoundMainRAM:
 	ldrb r3, [r0, o_SoundInfo_reverb]
@@ -467,6 +472,7 @@ _081DD25E:
 	thumb_func_end SoundMainRAM
 
 	thumb_func_end SoundMainRAM
+	.endif
 
 	thumb_func_start SoundMainBTM
 SoundMainBTM:
