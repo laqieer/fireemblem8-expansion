@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "name": "debug-save-fixture-interruption-modern-debug",
+  "description": "TC-DEBUGSAVE-001 interruption control: prepare the volatile latest-suspend preview and perform a real soft reset before Arm. EWRAM reset discards the image and token, no continue is consumed, and exact source SRAM survives.",
+  "frames": [
+    {"start": 90, "end": 95, "keys": ["A"]},
+    {"start": 150, "end": 155, "keys": ["START"]},
+    {"start": 210, "end": 215, "keys": ["A"]},
+    {"start": 270, "end": 275, "keys": ["START"]},
+    {"start": 330, "end": 335, "keys": ["A"]},
+    {"start": 390, "end": 395, "keys": ["START"]},
+    {"start": 450, "end": 455, "keys": ["A"]},
+    {"start": 600, "end": 606, "keys": ["SELECT", "R"]},
+    {"start": 660, "end": 664, "keys": ["DOWN"]},
+    {"start": 700, "end": 704, "keys": ["DOWN"]},
+    {"start": 740, "end": 744, "keys": ["DOWN"]},
+    {"start": 780, "end": 784, "keys": ["DOWN"]},
+    {"start": 820, "end": 824, "keys": ["DOWN"]},
+    {"start": 860, "end": 864, "keys": ["DOWN"]},
+    {"start": 900, "end": 904, "keys": ["DOWN"]},
+    {"start": 940, "end": 944, "keys": ["DOWN"]},
+    {"start": 980, "end": 984, "keys": ["A"]},
+    {"start": 1040, "end": 1044, "keys": ["DOWN"]},
+    {"start": 1080, "end": 1084, "keys": ["DOWN"]},
+    {"start": 1120, "end": 1124, "keys": ["DOWN"]},
+    {"start": 1160, "end": 1164, "keys": ["A"]},
+    {"start": 1220, "end": 1300, "keys": ["A", "B", "SELECT", "START"]}
+  ],
+  "checkpoints": [
+    {
+      "frame": 1200,
+      "name": "interruption-preview-ready",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": [
+        {"address": "0x0203f478", "size": 4, "expected": "0x00000001"},
+        {"address": "0x0203f484", "size": 4, "expected": "0x00000001"}
+      ]
+    },
+    {
+      "frame": 1450,
+      "name": "interruption-reset-cleared",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": [
+        {"address": "0x0203f478", "size": 4, "expected": "0x00000000"},
+        {"address": "0x0203f48c", "size": 4, "expected": "0x00000000"},
+        {"address": "0x02000000", "size": 4, "expected": "0x00000000"}
+      ]
+    }
+  ]
+}

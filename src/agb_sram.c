@@ -1,5 +1,8 @@
 #include "global.h"
 #include "agb_sram.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "debug_save_fixture_internal.h"
+#endif
 
 const char AgbLibSramVersion[] = "SRAM_F_V103";
 
@@ -34,6 +37,12 @@ void ReadSramFast_Core(const u8 *src, u8 *dest, u32 size)
 
 void WriteSramFast(const u8 *src, u8 *dest, u32 size)
 {
+#ifndef FE8_ARCHIVAL_BUILD
+    if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED
+        && DebugSaveFixture_ShouldBlockSramWrite(dest, size))
+        return;
+#endif
+
     REG_WAITCNT = (REG_WAITCNT & ~3) | 3;
     while (--size != -1)
         *dest++ = *src++;

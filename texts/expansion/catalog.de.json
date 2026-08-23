@@ -63,6 +63,20 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "Kapitel"
+    "ui.presentation.chapter_title_default": "Kapitel",
+    "debug.save_fixture.game0": "Spielstand 0",
+    "debug.save_fixture.game1": "Spielstand 1",
+    "debug.save_fixture.game2": "Spielstand 2",
+    "debug.save_fixture.latest_suspend": "Letzte Pause",
+    "debug.save_fixture.completion": "Abschlüsse:",
+    "debug.save_fixture.tactician": "Taktiker:",
+    "debug.save_fixture.keep": "Behalten",
+    "debug.save_fixture.marker": "Test",
+    "debug.save_fixture.arm": "RAM bereit",
+    "debug.save_fixture.continue": "RAM starten",
+    "debug.save_fixture.preview": "RAM-Kopie",
+    "debug.save_fixture.title_only": "Nur Titel",
+    "debug.save_fixture.invalid": "Ungültig",
+    "debug.save_fixture.blocked": "Speichern aus"
   }
 }

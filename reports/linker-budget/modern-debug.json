@@ -5,10 +5,10 @@
       "name": "ewram",
       "origin": 33554432,
       "capacity_bytes": 262144,
-      "occupied_bytes": 260440,
-      "physical_free_bytes": 1704,
-      "free_bytes": 1704,
-      "utilization_percent": 99.35,
+      "occupied_bytes": 261136,
+      "physical_free_bytes": 1008,
+      "free_bytes": 1008,
+      "utilization_percent": 99.62,
       "overflow": false
     },
     {
@@ -104,13 +104,13 @@
     {
       "name": "ewram_data",
       "address": 33685900,
-      "size_bytes": 127796,
+      "size_bytes": 128492,
       "is_overlay": false,
       "region": "ewram"
     },
     {
       "name": ".bss",
-      "address": 33813696,
+      "address": 33814392,
       "size_bytes": 1176,
       "is_overlay": false,
       "region": "ewram"
@@ -258,9 +258,15 @@
     },
     {
       "name": "__ewram_used_end",
-      "address": 33814872,
+      "address": 33815568,
       "expression": ".",
       "region": "ewram"
+    },
+    {
+      "name": "__hq_mixer_layout_shift",
+      "address": 50331648,
+      "expression": "(__hq_mixer_enabled * 0x6c0)",
+      "region": "iwram"
     },
     {
       "name": "__iwram_start",
@@ -923,60 +929,6 @@
       "region": "iwram"
     },
     {
-      "name": "gMPlayInfo_SE4_BMP2",
-      "address": 50357184,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE5_BMP3",
-      "address": 50357248,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_BGM1",
-      "address": 50357312,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE6_BMP4",
-      "address": 50357776,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_BGM2",
-      "address": 50357840,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE1_SYS1",
-      "address": 50357904,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE3_BMP1",
-      "address": 50357968,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE7_EVT",
-      "address": 50358048,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE2_SYS2",
-      "address": 50358112,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
       "name": "__localized_msg_transform_scratch_end",
       "address": 50358184,
       "expression": ".",
@@ -992,6 +944,12 @@
       "name": "__iwram_static_end",
       "address": 50358185,
       "expression": "(ADDR (IWRAM) + SIZEOF (IWRAM))",
+      "region": "iwram"
+    },
+    {
+      "name": "__hq_mixer_layout_anchor",
+      "address": 50358912,
+      "expression": "0x6a80",
       "region": "iwram"
     },
     {
@@ -1051,7 +1009,7 @@
     },
     {
       "name": "__floating_end",
-      "address": 145932212,
+      "address": 145941836,
       "expression": ".",
       "region": "rom"
     },
@@ -1144,13 +1102,13 @@
         "name": "ewram_data",
         "type": "NOBITS",
         "address": 33685900,
-        "size_bytes": 127796,
+        "size_bytes": 128492,
         "flags": "WA"
       },
       {
         "name": ".bss",
         "type": "NOBITS",
-        "address": 33813696,
+        "address": 33814392,
         "size_bytes": 1176,
         "flags": "WA"
       },

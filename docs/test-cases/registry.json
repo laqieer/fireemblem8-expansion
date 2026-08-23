@@ -282,6 +282,18 @@
       "required_cases": [
         "TC-LOCALIZATION-008"
       ]
+    },
+    {
+      "id": "debug-save-fixtures",
+      "title": "Isolated volatile debug save fixtures",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/128"
+      ],
+      "reference": "docs/debug_save_fixtures.md",
+      "status": "current",
+      "required_cases": [
+        "TC-DEBUGSAVE-001"
+      ]
     }
   ],
   "cases": [
@@ -1283,6 +1295,42 @@
         {
           "command": "make expansion-modern-localization-profile-all MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "modern.mk"
+        }
+      ]
+    },
+    {
+      "id": "TC-DEBUGSAVE-001",
+      "title": "Volatile save-fixture isolation and recovery",
+      "feature_id": "debug-save-fixtures",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/128"
+      ],
+      "document": "docs/test-cases/debug-save-fixtures.md",
+      "anchor": "tc-debugsave-001-volatile-save-fixture-isolation-and-recovery",
+      "profiles": [
+        "Modern AAPCS debug English 16 MiB source build; modern AAPCS release negative"
+      ],
+      "purpose": "Prove a valid suspend can be cloned, changed, continued, write-blocked, and reset entirely in volatile memory.",
+      "prerequisites": "ARM toolchain and libmGBA; use only the check-time-generated CURRENT game-0/latest-suspend image loaded with temporary=true.",
+      "actions": "Open title debugtools Save State, select Suspend, preview completion 3 and FIXTURE, Arm RAM, move from default Back to Run RAM and press fresh L+R+A, observe resumed play and blocked automatic save, then soft reset.",
+      "expected_result": "Typed game-control continue restores fixture state while every physical SRAM checkpoint remains byte-for-byte identical and reset clears all fixture ownership.",
+      "negative_control": "Cancel, invalid target, wrong epoch, pre-Arm reset, stale target, blocked writer, map/prep, release, and archival controls all fail closed.",
+      "interactions": "Reuses debugtools ID 9, the existing compatibility classifier, game control, localization, and gamestartsave overlay; raw external writers and another overlay owner conflict.",
+      "save_compatibility": "No persistent byte, layout, schema, checksum domain, format version, epoch, preference, or migration change.",
+      "cleanup": "Reset or return to title; all fixture state is volatile and generated SRAM artifacts remain ignored.",
+      "limitations": "Valid CURRENT game/suspend sources only; no blank initializer, export, save-back, map/prep preparation, reserved SRAM, or externally backed runtime image.",
+      "automation": [
+        {
+          "command": "make expansion-modern-debug-save-fixture-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/debug-save-fixture-positive-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-debug-save-fixture-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/debug-save-fixture-modern-release.json"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_debug_save_fixture tools.gba-playtest.tests.test_sram_fixture tools.gba-playtest.tests.test_debugtools_registry.DebugSaveFixtureHostTests -v",
+          "evidence": "tools/gba-playtest/tests/test_debug_save_fixture.py"
         }
       ]
     }

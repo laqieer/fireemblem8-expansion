@@ -29,8 +29,13 @@
 #include "hardware.h"
 #include "fontgrp.h"
 #include "uimenu.h"
+#include "expansion_debug_save_fixture.h"
 
 struct PlaySt gPlaySt;
+
+void DebugSaveFixture_NotifyTitleScreenStarting(void)
+{
+}
 
 /* src/debugtools_registry.c (the real, unmodified hub/registry owner of
  * gDebugToolsProbe and DebugTools_RegisterAction) is linked alongside

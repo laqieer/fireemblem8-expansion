@@ -63,6 +63,20 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "Chapter"
+    "ui.presentation.chapter_title_default": "Chapter",
+    "debug.save_fixture.game0": "Game 0",
+    "debug.save_fixture.game1": "Game 1",
+    "debug.save_fixture.game2": "Game 2",
+    "debug.save_fixture.latest_suspend": "Suspend",
+    "debug.save_fixture.completion": "Clears:",
+    "debug.save_fixture.tactician": "Name:",
+    "debug.save_fixture.keep": "Keep",
+    "debug.save_fixture.marker": "Fixture",
+    "debug.save_fixture.arm": "Arm RAM",
+    "debug.save_fixture.continue": "Run RAM",
+    "debug.save_fixture.preview": "RAM Fixture",
+    "debug.save_fixture.title_only": "Title Only",
+    "debug.save_fixture.invalid": "Invalid",
+    "debug.save_fixture.blocked": "Save Blocked"
   }
 }

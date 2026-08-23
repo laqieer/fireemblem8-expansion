@@ -34,13 +34,21 @@ class DebugToolsLocalizationTests(unittest.TestCase):
     }
     DIRECT_MENU_LABELS = Counter(
         {
-            "Back": 6,
+            "Back": 8,
             "Confirm Heal to Full": 1,
             "Confirm Add Item": 1,
             "Confirm Toggle Flag": 1,
             "Confirm Reseed": 1,
             "Weather": 1,
             "Fog": 1,
+            "Game 0": 1,
+            "Game 1": 1,
+            "Game 2": 1,
+            "Suspend": 1,
+            "Clears:": 1,
+            "Name:": 1,
+            "Arm RAM": 1,
+            "Run RAM": 1,
         }
     )
     EXPANSION_ADAPTERS = {
@@ -58,6 +66,20 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         "FLAG": "debug.status.flag",
         "RNG SEED": "debug.status.rng_seed",
         "SAVE STATE": "debug.status.save_state",
+        "Game 0": "debug.save_fixture.game0",
+        "Game 1": "debug.save_fixture.game1",
+        "Game 2": "debug.save_fixture.game2",
+        "Suspend": "debug.save_fixture.latest_suspend",
+        "Clears:": "debug.save_fixture.completion",
+        "Name:": "debug.save_fixture.tactician",
+        "Keep": "debug.save_fixture.keep",
+        "Fixture": "debug.save_fixture.marker",
+        "Arm RAM": "debug.save_fixture.arm",
+        "Run RAM": "debug.save_fixture.continue",
+        "RAM Fixture": "debug.save_fixture.preview",
+        "Title Only": "debug.save_fixture.title_only",
+        "Invalid": "debug.save_fixture.invalid",
+        "Save Blocked": "debug.save_fixture.blocked",
     }
 
     @classmethod
@@ -200,10 +222,24 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             "STATUS_FLAG",
             "STATUS_RNG_SEED",
             "STATUS_SAVE_STATE",
+            "SAVE_FIXTURE_GAME0",
+            "SAVE_FIXTURE_GAME1",
+            "SAVE_FIXTURE_GAME2",
+            "SAVE_FIXTURE_LATEST_SUSPEND",
+            "SAVE_FIXTURE_COMPLETION",
+            "SAVE_FIXTURE_TACTICIAN",
+            "SAVE_FIXTURE_KEEP",
+            "SAVE_FIXTURE_MARKER",
+            "SAVE_FIXTURE_ARM",
+            "SAVE_FIXTURE_CONTINUE",
+            "SAVE_FIXTURE_PREVIEW",
+            "SAVE_FIXTURE_TITLE_ONLY",
+            "SAVE_FIXTURE_INVALID",
+            "SAVE_FIXTURE_BLOCKED",
         ):
             self.assertIn(f"EXP_MSG_DEBUG_{key_suffix}", tools)
 
-        self.assertEqual(tools.count("EXP_MSG_FRAMEWORK_BACK"), 5)
+        self.assertEqual(tools.count("EXP_MSG_FRAMEWORK_BACK"), 7)
         self.assertIn("DebugToolsTools_LocalizedMenuItemDraw", tools)
         self.assertIn("ExpansionLocale_ResolveCurrent", tools)
         self.assertIn("PutDrawText(", tools)
@@ -245,7 +281,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             menu_sources,
             flags=re.DOTALL,
         )
-        self.assertEqual(len(menu_width_tokens), 8)
+        self.assertEqual(len(menu_width_tokens), 10)
         self.assertEqual(
             set(menu_width_tokens),
             {"DEBUGTOOLS_MENU_WIDTH_TILES"},
@@ -259,6 +295,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
                 key
                 for key in self.EXPANSION_ADAPTERS.values()
                 if key.startswith("debug.confirm.")
+                or key.startswith("debug.save_fixture.")
             ),
         }
         for locale in ("en", "ja", "zh-Hans", "qps-ploc"):

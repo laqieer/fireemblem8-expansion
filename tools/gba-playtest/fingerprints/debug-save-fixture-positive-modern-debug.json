@@ -1,0 +1,202 @@
+{
+  "checkpoints": [
+    {
+      "frame": 1200,
+      "framebuffer_hash": "fnv1a64-rgb24:5b408285548a231e",
+      "name": "volatile-preview",
+      "probes": [
+        {
+          "address": "0x0203f478",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x0203f484",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x0203f4a0",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x0203f4a4",
+          "size": 4,
+          "value": "0x000000ff"
+        },
+        {
+          "address": "0x0203f4a8",
+          "size": 4,
+          "value": "0x00000004"
+        },
+        {
+          "address": "0x0203f4ac",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203f4bc",
+          "size": 4,
+          "value": "0x00000004"
+        },
+        {
+          "address": "0x0203f4c0",
+          "size": 4,
+          "value": "0x00000003"
+        },
+        {
+          "address": "0x0203f4c4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203f4c8",
+          "size": 4,
+          "value": "0x56415346"
+        },
+        {
+          "address": "0x0203f4cc",
+          "size": 4,
+          "value": "0x00020002"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+    },
+    {
+      "frame": 1330,
+      "framebuffer_hash": "fnv1a64-rgb24:44c69d17c89a37f8",
+      "name": "volatile-armed",
+      "probes": [
+        {
+          "address": "0x0203f478",
+          "size": 4,
+          "value": "0x00000002"
+        },
+        {
+          "address": "0x0203f488",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x0203f48c",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+    },
+    {
+      "frame": 1800,
+      "framebuffer_hash": "fnv1a64-rgb24:93762c381824c418",
+      "name": "volatile-active",
+      "probes": [
+        {
+          "address": "0x020210b2",
+          "size": 1,
+          "value": "0x02"
+        },
+        {
+          "address": "0x020210b6",
+          "size": 1,
+          "value": "0x09"
+        },
+        {
+          "address": "0x020210b7",
+          "size": 1,
+          "value": "0x04"
+        },
+        {
+          "address": "0x020210c4",
+          "size": 4,
+          "value": "0x54584946"
+        },
+        {
+          "address": "0x020210c8",
+          "size": 4,
+          "value": "0x00455255"
+        },
+        {
+          "address": "0x0203f478",
+          "size": 4,
+          "value": "0x00000004"
+        },
+        {
+          "address": "0x0203f48c",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x0203f490",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x0203f498",
+          "size": 4,
+          "value": "0x00000009"
+        },
+        {
+          "address": "0x0203f4c4",
+          "size": 4,
+          "value": "0x00000003"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+    },
+    {
+      "frame": 3000,
+      "framebuffer_hash": "fnv1a64-rgb24:9bcd480b34bbc738",
+      "name": "volatile-write-blocked",
+      "probes": [
+        {
+          "address": "0x0203f478",
+          "size": 4,
+          "value": "0x00000004"
+        },
+        {
+          "address": "0x0203f498",
+          "size": 4,
+          "value": "0x00000009"
+        },
+        {
+          "address": "0x0203f49c",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+    },
+    {
+      "frame": 3500,
+      "framebuffer_hash": "fnv1a64-rgb24:2d9ab45bcfc84b25",
+      "name": "soft-reset-cleared-fixture",
+      "probes": [
+        {
+          "address": "0x0203f478",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203f48c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203f498",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+    }
+  ],
+  "format_version": 2,
+  "rom": {
+    "game_code": "BE8E",
+    "sha1": "d396659754172e0b070133d26bec8025577f7dd8",
+    "size": 16777216,
+    "title": "FIREEMBLEM2E"
+  },
+  "scenario": "debug-save-fixture-positive-modern-debug"
+}

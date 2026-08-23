@@ -18,6 +18,7 @@
 #include "eventinfo.h"
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_ui_prefs.h"
+#include "debug_save_fixture_internal.h"
 #endif
 
 /* variables */
@@ -183,8 +184,16 @@ void WriteGameSave(int slot)
     struct SaveBlockInfo chunk;
     struct GlobalSaveInfo info;
     struct Dungeon dungeon[2];
+    struct GameSaveBlock *dest;
 
-    struct GameSaveBlock *dest = GetSaveWriteAddr(slot);
+#ifndef FE8_ARCHIVAL_BUILD
+    if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED
+        && DebugSaveFixture_RecordBlockedWrite(
+            DEBUG_SAVE_FIXTURE_WRITE_GAME))
+        return;
+#endif
+
+    dest = GetSaveWriteAddr(slot);
     InvalidateSuspendSave(SAVE_ID_SUSPEND);
     gPlaySt.gameSaveSlot = slot;
     gPlaySt.time_saved = GetGameClock();
@@ -215,6 +224,7 @@ void WriteGameSave(int slot)
     WriteLastGameSaveId(slot);
 }
 
+#if defined(FE8_ARCHIVAL_BUILD) || !FE8_EXPANSION_DEBUGTOOLS_ENABLED
 void ReadGameSave(int slot)
 {
     int i;
@@ -245,6 +255,56 @@ void ReadGameSave(int slot)
     WriteLastGameSaveId(slot);
     ApplySavedGlobalUiPrefsAfterLoad();
 }
+#else
+static void ReadGameSaveCore(
+    int slot,
+    const struct GameSaveBlock *src,
+    int writePhysicalState)
+{
+    int i;
+    struct Dungeon dungeon[2];
+
+    ReadSramFast(src, &gPlaySt, sizeof(gPlaySt));
+    SetGameTime(gPlaySt.time_saved);
+    gPlaySt.gameSaveSlot = slot;
+
+    InitUnits();
+
+    for (i = 0; i < UNIT_SAVE_AMOUNT_BLUE; i++)
+        LoadSavedUnit(src->units + i, &gUnitArrayBlue[i]);
+
+    ReadGMMonsterRnState(&src->gmUnit);
+    ReadSupplyItems(src->supplyItems);
+    ReadPermanentFlags(src->permanentFlags);
+    ReadPidStats(src->pidStats);
+    ReadChapterStats(src->chapterStats);
+    ReadBonusContentClaimFlags(src);
+    ReadWorldMapStuff(&src->wmStuff, &gGMData);
+    ReadSramFast(src->dungeons, dungeon, sizeof(dungeon));
+    LoadDungeonRecords(dungeon);
+
+    if (writePhysicalState)
+    {
+        WriteLastGameSaveId(slot);
+        ApplySavedGlobalUiPrefsAfterLoad();
+    }
+}
+
+void ReadGameSave(int slot)
+{
+    struct GameSaveBlock *src = GetSaveReadAddr(slot);
+
+    if (!(PLAY_FLAG_HARD & gBmSt.gameStateBits))
+        InvalidateSuspendSave(SAVE_ID_SUSPEND);
+
+    ReadGameSaveCore(slot, src, TRUE);
+}
+
+void ReadGameSaveFromImage(int slot, const struct GameSaveBlock *src)
+{
+    ReadGameSaveCore(slot, src, FALSE);
+}
+#endif
 
 bool IsSaveValid(int index)
 {
@@ -509,6 +569,13 @@ void WriteSuspendSave(int slot)
     int i, val;
     struct SuspendSavePackedUnit *buf;
 
+#ifndef FE8_ARCHIVAL_BUILD
+    if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED
+        && DebugSaveFixture_RecordBlockedWrite(
+            DEBUG_SAVE_FIXTURE_WRITE_SUSPEND))
+        return;
+#endif
+
     if (PLAY_FLAG_TUTORIAL & gPlaySt.chapterStateBits)
         return;
 
@@ -569,6 +636,7 @@ void WriteSuspendSave(int slot)
     WriteSwappedSuspendSaveId();
 }
 
+#if defined(FE8_ARCHIVAL_BUILD) || !FE8_EXPANSION_DEBUGTOOLS_ENABLED
 void ReadSuspendSave(int slot)
 {
     int i, val;
@@ -616,6 +684,78 @@ void ReadSuspendSave(int slot)
     SetBonusContentClaimFlags(LoadSavedBonusClaimFlags(gPlaySt.gameSaveSlot));
     ApplySavedGlobalUiPrefsAfterLoad();
 }
+#else
+static void ReadSuspendSaveCore(
+    const struct SuspendSaveBlock *src)
+{
+    int i, val;
+    u8 list[MENU_OVERRIDE_MAX];
+    struct Dungeon dungeon[2];
+
+    ReadSramFast(&src->playSt, &gPlaySt, sizeof(gPlaySt));
+    SetGameTime(gPlaySt.time_saved);
+
+    ReadSramFast(&src->action, &gActionData, sizeof(struct ActionData));
+    LoadRNStateFromActionStruct();
+    InitUnits();
+
+    for (i = 0; i < UNIT_SAVE_AMOUNT_BLUE; i++)
+        ReadSuspendSavePackedUnit(&src->blueUnits[i], &gUnitArrayBlue[i]);
+
+    for (i = 0; i < UNIT_SAVE_AMOUNT_RED; i++)
+        ReadSuspendSavePackedUnit(&src->redUnits[i], &gUnitArrayRed[i]);
+
+    for (i = 0; i < UNIT_SAVE_AMOUNT_GREEN; i++)
+        ReadSuspendSavePackedUnit(&src->greenUnits[i], &gUnitArrayGreen[i]);
+
+    ReadPidStats(src->pidStats);
+    ReadChapterStats(src->chapterStats);
+    ReadSupplyItems(src->supplyItems);
+    ReadPermanentFlags(src->permanentFlags);
+    ReadChapterFlags(src->chapterFlags);
+    ReadTraps(src->traps);
+
+    ReadSramFast(src->menuOverride, list, sizeof(list));
+    SetForceDisabledMenuItems(list);
+
+    ReadWorldMapStuff(&src->wmStuff, &gGMData);
+
+    ReadSramFast(&src->wmMonsterUnit, dungeon, sizeof(dungeon));
+    LoadDungeonRecords(dungeon);
+
+    ReadSramFast(&src->dungeon, dungeon, sizeof(struct Dungeon));
+    LoadDungeonState(dungeon);
+
+    ReadSramFast(&src->eventSlotCnt, &val, sizeof(int));
+    SetEventSlotCounter(val);
+}
+
+void ReadSuspendSave(int slot)
+{
+    struct SuspendSaveBlock *src =
+        GetSaveReadAddr(slot + gSuspendSaveIdOffset);
+
+    ReadSuspendSaveCore(src);
+    SetBonusContentClaimFlags(LoadSavedBonusClaimFlags(gPlaySt.gameSaveSlot));
+    ApplySavedGlobalUiPrefsAfterLoad();
+}
+
+void ReadSuspendSaveFromImage(
+    int resolvedSlot,
+    const struct SuspendSaveBlock *src,
+    const struct GameSaveBlock *backingGame)
+{
+    u32 bonusClaimFlags;
+
+    gSuspendSaveIdOffset = resolvedSlot - SAVE_ID_SUSPEND;
+    ReadSramFast(
+        &backingGame->bonusClaimFlags,
+        &bonusClaimFlags,
+        sizeof(bonusClaimFlags));
+    ReadSuspendSaveCore(src);
+    SetBonusContentClaimFlags(bonusClaimFlags);
+}
+#endif
 
 u8 IsValidSuspendSave(int slot)
 {

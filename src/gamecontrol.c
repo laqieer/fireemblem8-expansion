@@ -24,6 +24,7 @@
 #include "constants/event-flags.h"
 #include "constants/songs.h"
 #include "expansion_debugtools.h"
+#include "debug_save_fixture_internal.h"
 #include "expansion_language_menu.h"
 #include "expansion_itemtest.h"
 
@@ -437,6 +438,31 @@ void GameControl_PostIntro(struct GameCtrlProc * proc)
         break;
 
     case GAME_ACTION_EVENT_RETURN:
+#ifndef FE8_ARCHIVAL_BUILD
+        {
+            enum DebugSaveFixtureContinueResult fixtureContinue =
+                DebugSaveFixture_ConsumePendingContinue();
+
+            if (fixtureContinue == DEBUG_SAVE_FIXTURE_CONTINUE_GAME)
+            {
+                Proc_Goto(proc, LGAMECTRL_EXEC_BM);
+                break;
+            }
+
+            if (fixtureContinue == DEBUG_SAVE_FIXTURE_CONTINUE_SUSPEND)
+            {
+                Proc_Goto(proc, 8);
+                break;
+            }
+
+            if (fixtureContinue == DEBUG_SAVE_FIXTURE_CONTINUE_FAILED)
+            {
+                Proc_Goto(proc, LGAMECTRL_TITLE_DIRECT);
+                break;
+            }
+        }
+#endif
+
 #if FE8_EXPANSION_ITEMTEST_ENABLED
         /* Issue #10 opt-in runtime item-expansion probe (compiled out, and
          * this whole block absent, in every ordinary build -- see

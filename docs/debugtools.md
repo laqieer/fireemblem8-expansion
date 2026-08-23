@@ -31,7 +31,7 @@ non-goals -- `mgba_printf`/full debugger/arbitrary memory editor).
 | `tools/gba-playtest/scenarios/debugtools-{map,prep}-hub-modern-release.json` (slice 2) | Release mirrors proving both new hotkeys are compiled out (`gDebugToolsProbe` stays all-zero) atop the live opening world map -- semantic `gPlaySt`/cursor progress probes, no framebuffer oracle |
 | `tools/gba-playtest/fingerprints/debugtools-{hub,map-hub,prep-hub}-modern-{debug,release}.json` | Captured fingerprints for the scenarios above |
 | `src/debugtools_diag.c` (closure) | Diagnostics foundation: bounded log ring (`DebugTools_LogEvent`/`GetLogEntry`/`GetLogCount`) and non-fatal assert record (`DEBUGTOOLS_ASSERT`/`DebugTools_RecordAssertFailure`) |
-| `src/debugtools_tools.c` (closure) | The five bounded validated tools: Unit Inspect (heal-to-full), Convoy Inspect (bounded add), Flag/Chapter (bounded flag toggle), RNG Inspect (bounded reseed), Save State (read-only) |
+| `src/debugtools_tools.c` (closure + #128) | The five bounded validated tools: Unit Inspect (heal-to-full), Convoy Inspect (bounded add), Flag/Chapter (bounded flag toggle), RNG Inspect (bounded reseed), Save State (read-only inspection everywhere; isolated title-only volatile fixture flow) |
 | `src/gamecontrol.c` (closure) | `GameControl_PostIntro` also consumes the second, independent Ch4-Prep pending request and commits the deterministic Chapter 4 boot |
 | `tools/gba-playtest/scenarios/debugtools-ch4-prep-launch-modern-{debug,release}.json` (closure) | The Ch4-Prep launcher's own boot-commit lifecycle scenario + release mirror (see "Fast Boot: Chapter 4 (Prep)" below; the live prep-screen arrival itself is proven by the prep-positive scenario in the next row) |
 | `tools/gba-playtest/scenarios/debugtools-ch4-prep-positive-modern-debug.json` (closure) | Live prep-screen arrival (debug-only): drives the Chapter 4 world-map traversal + the real `PREP` opcode to a live `PrepScreenProc_MapIdle`, then fires the SELECT+B prep hotkey; proves `prepScreenObservedCount` 0->1 and `PLAY_FLAG_PREPSCREEN` held throughout. Gate: DEBUG branch of `expansion-modern-debugtools-prep-check` |
@@ -1069,9 +1069,11 @@ unvalidated numeric index from outside this one fixed source file: every
 target is either a fixed, documented, in-range constant, or produced by an
 existing engine lookup helper that itself returns `NULL`/a safe sentinel on
 failure, re-checked via `UNIT_IS_VALID`/`DEBUGTOOLS_ASSERT` immediately
-before any mutation. None of the five ever touches SRAM or any save-block
-struct directly (RNG/flags/units/convoy are ordinary EWRAM runtime state;
-the fifth tool is read-only).
+before any mutation. None of the five UI callbacks performs a persistent
+write or raw save-block access (RNG/flags/units/convoy are ordinary EWRAM
+runtime state; Save State inspection is read-only). Issue #128's optional
+title subflow delegates its validated source read and sanitized EWRAM image
+to `src/debug_save_fixture.c`; it never writes SRAM.
 
 1. **Unit Inspect** (id 5) -- target `GetUnitFromCharId(CHARACTER_EIRIKA)`
    (a fixed, well-known character, always present on the Chapter 2 map this
@@ -1121,15 +1123,17 @@ the fifth tool is read-only).
    constant from `DEBUGTOOLS_FASTBOOT_RNG_SEED`, so the two are never
    confused in logs/tests) -- incrementing
    `gDebugToolsProbe.rngReseedTransactionCount`.
-5. **Save State** (id 9) -- **read-only**, no Confirm item at all (nothing
-   to confirm): calls `ClassifySramSaveCompat()` (`src/bmsave-lib.c`),
+5. **Save State** (id 9) -- its compatibility inspection remains
+   **read-only**: calls `ClassifySramSaveCompat()` (`src/bmsave-lib.c`),
    which only inspects the global save header/expansion metadata record and
    never mutates SRAM or any save-block struct, sampling the result into
    `gDebugToolsProbe.saveCompatLastState` and incrementing
    `gDebugToolsProbe.saveCompatInspectCount`. This tool never calls
    `BuildCurrentExpansionSaveMeta` against a live SRAM target,
-   `InitGlobalSaveInfodata`, or any writer -- the safest of the five by
-   construction.
+   `InitGlobalSaveInfodata`, or any writer. Issue #128 extends this same
+   stable row at title only with a validated RAM-clone/preview/Arm/final
+   `L+R+A`/one-shot continue flow. Map/prep retain only the read-only Back
+   submenu. See [`debug_save_fixtures.md`](debug_save_fixtures.md).
 
 ### Host-executed evidence
 
@@ -1148,8 +1152,9 @@ deterministic order, idempotent); each tool's inspect semantics; each
 mutating tool's confirm transaction actually applying (and incrementing its
 own probe counter exactly once); the two invalid/edge-case paths (missing
 Unit target, full Convoy) resulting in a safe, logged, assert-recorded
-no-op with the transaction counter unchanged; and Save State's read-only
-contract (no Confirm item, `Back` only). A second test compiles the
+no-op with the transaction counter unchanged; and Save State's map/prep
+read-only contract. Issue #128's title-only fixture state machine has its own
+real-source host and libmGBA suites. A second test compiles the
 disabled path and proves both behavior and physical symbol omission -- the
 disabled object defines exactly the one no-op
 `DebugTools_RegisterExtendedToolActions()` entry point and links clean with

@@ -209,6 +209,11 @@ SECTIONS
         . = ALIGN(4);
         *(debugtools_contributor_data)
 
+        /* Issue #128: append volatile-fixture state after every established
+         * persistent/debug probe address. */
+        . = ALIGN(4);
+        *(debug_save_fixture_data)
+
         . = ALIGN(4);
         PROVIDE(gLoadUnitBuffer = .);
         PROVIDE(end = .);

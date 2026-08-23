@@ -7,6 +7,7 @@
 #include "soundwrapper.h"
 #include "gamecontrol.h"
 #include "expansion_debugtools.h"
+#include "expansion_debug_save_fixture.h"
 #include "expansion_itemtest.h"
 #include "localized_ui_graphics.h"
 #include "bmlib.h"
@@ -948,6 +949,13 @@ void Title_IDLE(struct TitleScreenProc * proc)
      * state -- a release-and-repress of the hotkey can never spawn a
      * second concurrent hub MenuProc. */
     DebugTools_TitleHotkeyCheck();
+
+    if (DebugSaveFixture_IsContinuePending())
+    {
+        SetNextGameActionId(GAME_ACTION_EVENT_RETURN);
+        Proc_Break(proc);
+        return;
+    }
 
     /* The Chapter 2 action sets this request from its menu callback before
      * MENU_ACT_END tears down the hub. Check it before the broader session

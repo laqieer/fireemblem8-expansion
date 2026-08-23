@@ -35,6 +35,7 @@
 #include "bmsave.h"
 #include "save_format.h"
 #include "expansion_debugtools.h"
+#include "expansion_debug_save_fixture.h"
 #include "debugtools_internal.h"
 
 /* --- Hardware/menu stand-ins (mirrors debugtools_actions_host_stubs.c) - */
@@ -168,6 +169,18 @@ void PrintDebugStringToBG(u16* bg, const char* asciiStr)
     (void)asciiStr;
 }
 
+void Text_DrawString(struct Text* text, const char* str)
+{
+    (void)text;
+    (void)str;
+}
+
+void PutText(struct Text* text, u16* dest)
+{
+    (void)text;
+    (void)dest;
+}
+
 u8 MenuAlwaysEnabled(const struct MenuItemDef* def, int number)
 {
     (void)def;
@@ -244,6 +257,65 @@ void DebugTools_RegisterChapter4PrepAction(void)
 
 void DebugTools_RegisterWeatherFogActions(void)
 {
+}
+
+enum DebugSaveFixtureResult DebugSaveFixture_PrepareGame(
+    enum DebugSaveFixtureGameSlot slot,
+    const struct DebugSaveFixtureOverrides* overrides,
+    struct DebugSaveFixturePreview* preview)
+{
+    (void)slot;
+    (void)overrides;
+    (void)preview;
+    return DEBUG_SAVE_FIXTURE_ERR_NOT_TITLE;
+}
+
+enum DebugSaveFixtureResult DebugSaveFixture_PrepareLatestSuspend(
+    const struct DebugSaveFixtureOverrides* overrides,
+    struct DebugSaveFixturePreview* preview)
+{
+    (void)overrides;
+    (void)preview;
+    return DEBUG_SAVE_FIXTURE_ERR_NOT_TITLE;
+}
+
+enum DebugSaveFixtureResult DebugSaveFixture_Arm(
+    const struct DebugSaveFixtureTarget* target)
+{
+    (void)target;
+    return DEBUG_SAVE_FIXTURE_ERR_CONFIRMATION_ORDER;
+}
+
+enum DebugSaveFixtureResult DebugSaveFixture_RequestContinue(
+    const struct DebugSaveFixtureTarget* target)
+{
+    (void)target;
+    return DEBUG_SAVE_FIXTURE_ERR_CONFIRMATION_ORDER;
+}
+
+void DebugSaveFixture_Abort(enum DebugSaveFixtureAbortReason reason)
+{
+    (void)reason;
+}
+
+int DebugSaveFixture_CanPrepare(void)
+{
+    return FALSE;
+}
+
+int DebugSaveFixture_IsPersistenceBlocked(void)
+{
+    return FALSE;
+}
+
+enum DebugSaveFixtureResult DebugSaveFixture_GetLastResult(void)
+{
+    return DEBUG_SAVE_FIXTURE_ERR_NOT_TITLE;
+}
+
+const struct DebugSaveFixturePreview* DebugSaveFixture_GetPreview(void)
+{
+    return NULL;
 }
 
 /* --- gPlaySt: DebugTools_PrepHotkeyCheck (src/debugtools_registry.c) and

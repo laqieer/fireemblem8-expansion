@@ -617,8 +617,7 @@ static int DebugTools_StartMenuTransition(
 void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuDef* menuDef)
 {
     if (menuDef == NULL
-        || !(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE)
-        || !(sDebugMenuState & DEBUGTOOLS_STATE_HUB_ACTIVE))
+        || !(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE))
         return;
 
     DebugTools_StartMenuTransition(
@@ -637,6 +636,21 @@ void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
         return;
 
     DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_HUB, NULL, 0);
+}
+
+void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu)
+{
+    if (!(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE)
+        || (sDebugMenuState
+        & (DEBUGTOOLS_STATE_HUB_ACTIVE | DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
+    )
+        return;
+
+    DebugTools_StartMenuTransition(
+        menu,
+        DEBUGTOOLS_TRANSITION_CLEANUP,
+        NULL,
+        0);
 }
 
 static enum DebugToolsResult DebugTools_OpenHubInternal(void)
@@ -822,6 +836,11 @@ void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuD
 }
 
 void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
+{
+    (void)menu;
+}
+
+void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu)
 {
     (void)menu;
 }
