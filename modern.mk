@@ -152,13 +152,11 @@ MODERN_BANIM_OVERLAY_LAYOUT_FLAGS := -fno-toplevel-reorder
 # BUGFIX undefined to preserve byte-identical original behavior.
 MODERN_DEFINE_FLAGS := -DMODERN=1 -DNONMATCHING=1 -DBUGFIX=1
 
-# Internal test-fixture selector for issue #83's isolated HQ mixer profiles.
-# It is never a user configuration option or compatibility input: it starts
-# one existing multi-voice song after MP2K initialization solely so libmGBA
-# can capture real PCM from both mixer implementations.
-ifeq ($(FE8_HQ_MIXER_TEST_FIXTURE),1)
-MODERN_DEFINE_FLAGS += -DFE8_HQ_MIXER_TEST_FIXTURE=1
-endif
+# Private test instrumentation is accepted only through a dedicated target
+# below. It is intentionally outside the configured feature surface and
+# default-empty, so supported debug/release/profile builds have no test state.
+MODERN_INTERNAL_TEST_DEFINES ?=
+MODERN_DEFINE_FLAGS += $(MODERN_INTERNAL_TEST_DEFINES)
 
 # Internal-only battle-presentation runtime evidence. The probe is compiled
 # solely by expansion-modern-banim-presentation-check's dedicated debug
@@ -1976,7 +1974,7 @@ ifneq (,$(MODERN_EXPANSION_DEFINES_ACTIVE))
 		printf '%s\n' 'aoe_reference=$(EXPANSION_AOE_REFERENCE)'; \
 		printf '%s\n' 'casual_mode=$(EXPANSION_CASUAL_MODE)'; \
 		printf '%s\n' 'hq_mixer=$(EXPANSION_HQ_MIXER)'; \
-		printf '%s\n' 'hq_mixer_test_fixture=$(FE8_HQ_MIXER_TEST_FIXTURE)'; \
+		printf '%s\n' 'internal_test_defines=$(MODERN_INTERNAL_TEST_DEFINES)'; \
 		printf '%s\n' 'bgm_continuation_policy=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)'; \
 		printf '%s\n' 'modern_build=1'; \
 		printf '%s\n' 'item_id_cap=$(FE8_ITEM_ID_CAP)'; \
@@ -2657,6 +2655,19 @@ expansion-modern-debugtools-tools-check: expansion-modern-boot-preflight expansi
 	@printf 'Modern ROM debugtools-tools-check passed (five bounded tools live+confirmed in debug, compiled-out all-zero in release): %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
+MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT := \
+	build/expansion-modern-portrait-package-runtime
+
+.PHONY: expansion-modern-portrait-package-runtime-check
+expansion-modern-portrait-package-runtime-check:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_BUILD_ROOT="$(MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT)" \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		MODERN_INTERNAL_TEST_DEFINES="-DFE8_PORTRAIT_PACKAGE_RUNTIME_TEST=1"
+	FE8_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT="$(MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT)" \
+		PYTHONPATH="tools/gba-playtest:tools/gba-playtest/tests" "$(PYTHON)" -c \
+		'import unittest; from test_portrait_package_runtime import PortraitPackageRuntimeTests; unittest.main(defaultTest="PortraitPackageRuntimeTests.test_debug_unit_inspect_renders_eirika_minimug")'
+
 # Issue #11 closure: the "Fast Boot: Ch4 Prep" launcher's own pending-
 # request/boot-commit lifecycle -- a second, independent launcher target
 # alongside Chapter 2's, added specifically because Chapter 2's own event
@@ -3222,13 +3233,15 @@ expansion-modern-hq-mixer-profile-rom:
 	+$(MAKE) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_HQ_MIXER_PROFILE_ROOT) \
-		EXPANSION_HQ_MIXER=1 FE8_HQ_MIXER_TEST_FIXTURE=1
+		EXPANSION_HQ_MIXER=1 \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_HQ_MIXER_TEST_FIXTURE=1
 
 expansion-modern-hq-mixer-disabled-profile-rom:
 	+$(MAKE) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_HQ_MIXER_DISABLED_ROOT) \
-		EXPANSION_HQ_MIXER=0 FE8_HQ_MIXER_TEST_FIXTURE=1
+		EXPANSION_HQ_MIXER=0 \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_HQ_MIXER_TEST_FIXTURE=1
 
 expansion-modern-hq-mixer-check: expansion-modern-boot-preflight \
 		expansion-modern-hq-mixer-profile-rom \

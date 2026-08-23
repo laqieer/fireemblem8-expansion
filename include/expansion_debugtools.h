@@ -810,6 +810,7 @@ struct DebugToolsProbe
                                   * most recent inspect (enum
                                   * SaveCompatState) */
     u32 saveCompatInspectCount; /* increments once per inspect */
+
 };
 
 enum

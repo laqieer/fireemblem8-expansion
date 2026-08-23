@@ -7,6 +7,13 @@
 ASSET_MANIFEST ?= assets/manifest.json
 ASSET_OUTPUT_DIR ?= build/generated/assets
 ASSET_TOOL := $(PYTHON) -m scripts.assets
+ASSET_PORTRAIT_INCBIN_CONSUMERS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" portrait-incbin-consumers)
+ifneq ($(strip $(ASSET_PORTRAIT_INCBIN_CONSUMERS)),)
+ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
+$(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while portrait package INCBIN consumer(s) $(ASSET_PORTRAIT_INCBIN_CONSUMERS) are declared)
+endif
+endif
+
 ASSET_TMX_INCBIN_CONSUMERS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" tmx-incbin-consumers)
 ifneq ($(strip $(ASSET_TMX_INCBIN_CONSUMERS)),)
 ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
@@ -39,6 +46,12 @@ assets-test:
 # emitted fragment lists every declared source directly on the existing
 # chapter-table objects, including the configured modern output path.
 $(ASSET_OUTPUT_MK): $(ASSET_MANIFEST) $(ASSET_MANIFEST_SOURCES) $(ASSET_TOOL_INPUTS)
+	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
+
+# A normal build can request the derived TMX `.mar`/metadata pair after a
+# clean or an interrupted asset generation. Regenerate both together before
+# Make reaches the ordinary `.mar -> .bin -> .bin.lz` conversion chain.
+$(ASSET_OUTPUT_DIR)/tmx/%.mar $(ASSET_OUTPUT_DIR)/tmx/%.json &: $(ASSET_OUTPUT_MK)
 	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
 
 # A strict maintenance/check command must report a missing or stale output
