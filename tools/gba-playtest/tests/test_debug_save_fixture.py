@@ -12,8 +12,10 @@ ROOT = Path(__file__).resolve().parents[3]
 SCENARIOS = ROOT / "tools" / "gba-playtest" / "scenarios"
 FINGERPRINTS = ROOT / "tools" / "gba-playtest" / "fingerprints"
 sys.path.insert(0, str(ROOT / "tools" / "gba-playtest"))
+sys.path.insert(0, str(ROOT / "tools" / "gba-playtest" / "tests"))
 
 import gba_playtest  # noqa: E402
+import host_mode  # noqa: E402
 import run_debug_save_fixture_checks  # noqa: E402
 import sram_hash_mirror  # noqa: E402
 
@@ -251,6 +253,7 @@ class DebugSaveFixtureContractTests(unittest.TestCase):
         self.assertNotIn("FE8_EXPANSION_SAVE_COMPAT_EPOCH =", source)
 
 
+@host_mode.live_artifact_testcase("debug save-fixture layout coverage")
 class DebugSaveFixtureLayoutEmissionTests(unittest.TestCase):
     def test_retained_anchor_and_fixture_budget_layout(self):
         elf = (
