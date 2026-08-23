@@ -556,7 +556,9 @@ static void DebugTools_EnsureBuiltinActionsRegistered(void)
     DebugTools_RegisterWeatherFogActions();
     DebugTools_RegisterChapter4PrepAction();
     DebugTools_RegisterExtendedToolActions();
+#ifndef FE8_ARCHIVAL_BUILD
     DebugTools_RegisterMusicPreviewAction();
+#endif
     sDebugMenuState |= DEBUGTOOLS_STATE_BUILTINS_INITIALIZED;
 }
 
@@ -719,7 +721,9 @@ void DebugTools_RunMenuTransition(ProcPtr proc)
     }
 
     sHubPage = 0;
+#ifndef FE8_ARCHIVAL_BUILD
     DebugTools_CleanupMusicPreview();
+#endif
     sDebugMenuState &= ~(DEBUGTOOLS_STATE_SESSION_ACTIVE | DEBUGTOOLS_STATE_HUB_ACTIVE);
 }
 
@@ -760,7 +764,9 @@ int DebugTools_IsHubActive(void)
 
 void DebugTools_ForceSessionCleanup(void)
 {
+#ifndef FE8_ARCHIVAL_BUILD
     DebugTools_CleanupMusicPreview();
+#endif
 
     if (!(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE))
         return;
