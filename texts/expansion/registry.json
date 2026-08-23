@@ -517,6 +517,26 @@
       "max_decoded_bytes": 32,
       "pseudo_policy": "preserve",
       "notes": "Issue #43 typed chapter-title manifest fallback label."
+    },
+    {
+      "id": 63,
+      "key": "autoplay.charge.label",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 8,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact",
+      "notes": "Issue #87 one-phase blue delegation map-menu label."
+    },
+    {
+      "id": 64,
+      "key": "autoplay.charge.help",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 64,
+      "max_decoded_bytes": 96,
+      "pseudo_policy": "compact",
+      "notes": "Issue #87 one-phase blue delegation map-menu help."
     }
   ]
 }
