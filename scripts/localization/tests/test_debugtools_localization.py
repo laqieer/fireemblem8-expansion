@@ -31,16 +31,18 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         "Flag/Chapter": "debug.action.flag_chapter",
         "RNG Inspect": "debug.action.rng_inspect",
         "Save State": "debug.action.save_state",
+        "Music Preview": "debug.action.music_preview",
     }
     DIRECT_MENU_LABELS = Counter(
         {
-            "Back": 6,
+            "Back": 7,
             "Confirm Heal to Full": 1,
             "Confirm Add Item": 1,
             "Confirm Toggle Flag": 1,
             "Confirm Reseed": 1,
             "Weather": 1,
             "Fog": 1,
+            "Music": 1,
         }
     )
     EXPANSION_ADAPTERS = {
@@ -69,6 +71,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
                 "debugtools_actions.c",
                 "debugtools_launcher.c",
                 "debugtools_tools.c",
+                "debugtools_music.c",
             )
         }
         cls.registry = json.loads(
@@ -128,6 +131,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             "debugtools_launcher.c",
             "debugtools_actions.c",
             "debugtools_tools.c",
+            "debugtools_music.c",
         ):
             action_labels.extend(
                 re.findall(
@@ -145,6 +149,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             "debugtools_registry.c",
             "debugtools_actions.c",
             "debugtools_tools.c",
+            "debugtools_music.c",
         ):
             menu_labels.extend(
                 re.findall(r"\.name\s*=\s*\"([^\"]+)\"", self.sources[name])
@@ -180,6 +185,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             "FLAG_CHAPTER",
             "RNG_INSPECT",
             "SAVE_STATE",
+            "MUSIC_PREVIEW",
         ):
             self.assertIn(f"EXP_MSG_DEBUG_ACTION_{key_suffix}", registry)
 
@@ -237,6 +243,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
                 "debugtools_registry.c",
                 "debugtools_actions.c",
                 "debugtools_tools.c",
+                "debugtools_music.c",
             )
         )
         menu_width_tokens = re.findall(
@@ -245,7 +252,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             menu_sources,
             flags=re.DOTALL,
         )
-        self.assertEqual(len(menu_width_tokens), 8)
+        self.assertEqual(len(menu_width_tokens), 9)
         self.assertEqual(
             set(menu_width_tokens),
             {"DEBUGTOOLS_MENU_WIDTH_TILES"},
@@ -280,10 +287,10 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         capacity = self._constant("DEBUGTOOLS_TEXT_ALLOC_CAPACITY")
 
         expected_budget = (page_action_max + 1) * (menu_width - 1) + status_width
-        self.assertEqual(action_max, 18)
+        self.assertEqual(action_max, 19)
         self.assertEqual(contributor_max, 9)
         self.assertEqual(page_action_max, 9)
-        self.assertEqual(page_max, 2)
+        self.assertEqual(page_max, 3)
         self.assertEqual(expected_budget, 204)
         self.assertLessEqual(expected_budget, capacity)
 
@@ -314,7 +321,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         )
 
         suffixes = {
-            "debug.status.hub": " 18/18 2/2",
+            "debug.status.hub": " 19/19 3/3",
             "debug.status.hub_error": " -99",
             "debug.status.unit_hp": " 255/255",
             "debug.status.unit_unavailable": "",

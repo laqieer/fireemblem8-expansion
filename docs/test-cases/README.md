@@ -74,3 +74,5 @@ procedures are in [`workflow-governance.md`](workflow-governance.md).
 Issue #84's security/correctness procedures are
 [`TC-SIO-084`](codeql-alerts.md#tc-sio-084-bounded-link-arena-transfer) and
 [`TC-CODEQL-084`](codeql-alerts.md#tc-codeql-084-remaining-confirmed-alert-boundaries).
+The bounded debugtools music-preview procedure is
+[`TC-DEBUGTOOLS-PROTOTYPE-004`](debugtools.md#tc-debugtools-prototype-004-preview-bounded-music-and-restore-its-owner).

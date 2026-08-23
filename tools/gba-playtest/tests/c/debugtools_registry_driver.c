@@ -46,16 +46,16 @@ int main(void)
     printf("DEBUGTOOLS_ACTION_MAX=%d\n", (int)DEBUGTOOLS_ACTION_MAX);
     printf("DEBUGTOOLS_HUB_MENU_SLOTS=%d\n", (int)DEBUGTOOLS_HUB_MENU_SLOTS);
 
-    CHECK(DEBUGTOOLS_BUILTIN_ACTION_MAX == 9,
-          "DEBUGTOOLS_BUILTIN_ACTION_MAX must be 9");
+    CHECK(DEBUGTOOLS_BUILTIN_ACTION_MAX == 10,
+          "DEBUGTOOLS_BUILTIN_ACTION_MAX must be 10");
     CHECK(DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX == 9,
           "DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX must preserve nine public registrations");
-    CHECK(DEBUGTOOLS_ACTION_MAX == 18,
+    CHECK(DEBUGTOOLS_ACTION_MAX == 19,
           "DEBUGTOOLS_ACTION_MAX must cover all built-ins and contributors");
     CHECK(DEBUGTOOLS_HUB_PAGE_ACTION_MAX == 9,
           "each hub page must render at most nine actions");
-    CHECK(DEBUGTOOLS_HUB_PAGE_MAX == 2,
-          "the full registry must fit exactly two bounded pages");
+    CHECK(DEBUGTOOLS_HUB_PAGE_MAX == 3,
+          "the full registry must fit at most three bounded pages");
     CHECK(DEBUGTOOLS_HUB_MENU_SLOTS == 11,
           "each page must reserve nine action rows, Back, and a terminator");
 

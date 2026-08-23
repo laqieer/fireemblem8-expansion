@@ -48,6 +48,7 @@ struct SoundRoomEnt
 // ??? SoundRoom_RetFalse(???);
 int CountTotalSoundRoomSongs(void);
 bool IsSoundRoomCatalogValid(void);
+bool IsSoundRoomCatalogEntryValid(int index);
 // ??? CountSecretSoundRoomSongs(???);
 // ??? IsSoundRoomSongPlayable(???);
 // ??? CountDisplayedSoundRoomSongs(???);

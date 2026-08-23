@@ -156,6 +156,7 @@ and
 | [`test-cases/asset-authoring.md`](test-cases/asset-authoring.md) | Current | Source-asset adapter procedures, controls, runtime evidence, and cleanup (issue #62) |
 | [`test-cases/workflow-governance.md`](test-cases/workflow-governance.md) | Current | Trusted-push and centralized CI-wait orchestration procedure (issue #93) |
 | [`test-cases/localization.md`](test-cases/localization.md) | Current | Localization and locale-persistence procedures, semantic runtime mappings, and negative controls (issue #56) |
+| [`test-cases/debugtools.md`](test-cases/debugtools.md) | Current | Bounded debugtools music-preview procedure, teardown negatives, and save-neutral semantic evidence (issue #126) |
 | [`test-cases/patch-release.md`](test-cases/patch-release.md) | Current | Trusted BPS artifact validation/application and malformed-input procedures (issue #49) |
 | [`test-cases/autoplay.md`](test-cases/autoplay.md) | Current | TC-AUTOPLAY-001 blue computer-phase smoke and default PLAYER negatives (issue #85) |
 | [`test-cases/codeql-alerts.md`](test-cases/codeql-alerts.md) | Current | Link Arena and confirmed CodeQL alert regression procedures (issue #84) |
