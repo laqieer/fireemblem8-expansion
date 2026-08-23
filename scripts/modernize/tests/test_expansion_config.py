@@ -1551,14 +1551,41 @@ class StarterContentCompileTimeContractTests(unittest.TestCase):
         for line in output.splitlines():
             if not line.startswith("#define "):
                 continue
-            _, name, value = line.split(maxsplit=2)
-            values[name] = value
+            definition = line[len("#define "):].split(maxsplit=1)
+            name = definition[0]
+            values[name] = definition[1] if len(definition) == 2 else ""
         return values
+
+    def test_macros_accepts_valued_and_value_less_definitions(self):
+        fixture = "\n".join(
+            (
+                "#define FE8_EXPANSION_STARTER_CONTENT 0",
+                "#define CPP_IMPLEMENTATION",
+            )
+        )
+        values = self.macros(fixture)
+        self.assertEqual(values["FE8_EXPANSION_STARTER_CONTENT"], "0")
+        self.assertEqual(values["CPP_IMPLEMENTATION"], "")
+
+    def test_macros_treats_a_value_less_mutation_as_empty(self):
+        fixture = "#define FE8_EXPANSION_STARTER_CONTENT 1"
+        mutated = fixture.replace(" 1", "")
+        self.assertEqual(
+            self.macros(fixture)["FE8_EXPANSION_STARTER_CONTENT"],
+            "1",
+        )
+        self.assertEqual(
+            self.macros(mutated)["FE8_EXPANSION_STARTER_CONTENT"],
+            "",
+        )
 
     def test_config_header_defaults_the_flag_off(self):
         result = self.preprocess("expansion_config.h")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.macros(result.stdout)["FE8_EXPANSION_STARTER_CONTENT"], "0")
+        self.assertEqual(
+            self.macros(result.stdout)["FE8_EXPANSION_STARTER_CONTENT"],
+            "0",
+        )
 
     def test_config_header_errors_without_hooks(self):
         result = self.preprocess(
