@@ -233,3 +233,61 @@ The host test removes its repository-local temporary fixture. Use
 `make clean_fast` only to remove ignored build artifacts. This case does not
 prove strategy quality, balance, a project route, recruitment/village/chest
 policy, player-facing text, or a general expression language.
+
+## TC-AUTOPLAY-STRATEGY-001: Deterministic strategy assignment and precedence
+
+- **Feature / originating issue:** `typed-autoplay-strategy-profiles` /
+  [#90](https://github.com/laqieer/fireemblem8-expansion/issues/90).
+- **Supported configuration or artifact:** modern AAPCS debug and release
+  artifacts with `EXPANSION_AUTOPLAY_STRATEGIES=0` and `=1`; the generated
+  host fixture supplies the two reference profiles and one reach-area group.
+- **Prerequisites and clean state:** Python 3, host C compiler, modern ARM
+  toolchain, no save or savestate. The fixture starts one unit outside an
+  inclusive objective rectangle with a fixed zero-RNG test double.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.generated_data.tests.test_autoplaystrategies_schema scripts.generated_data.tests.test_chapterbundle_schema.ChapterAutoplayStrategiesBundleTests -v`.
+2. Run
+   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_strategies -v`.
+3. Build the bounded debug/release enabled and disabled objects with
+   `make expansion-modern-autoplay-strategies-objects MODERN_CONFIG=<debug|release> MODERN_ABI=aapcs EXPANSION_AUTOPLAY_STRATEGIES=<0|1> MODERN_BUILD_ROOT=<isolated-root>`.
+
+### Expected result
+
+Aggressive chooses the immediate legal combat decision. Objective-first chooses
+the deterministic nearest in-rectangle movement decision. A unit assignment
+overrides the group and chapter assignments, a group overrides chapter, and
+the profiles repeat the same action trace without an RNG draw. The typed event
+helper accepts only its declared activation flag and defers active-blue-phase
+changes. Unknown IDs, duplicate/missing callbacks, invalid capability bits,
+capacity overflow, and Objective-first with an unsupported objective kind
+fail explicitly before an action commits.
+
+### Negative control
+
+With profiles disabled and the default empty assignment source,
+`ExpansionAutoplayStrategies_TryDecide()` returns fallback and creates no
+action; the original `Unit.ai[]` decision path remains authoritative. The
+ARM selector confirms reference callback symbols are absent from the disabled
+object set and both profile states allocate zero EWRAM.
+
+### Interactions and save compatibility
+
+The case depends on the #85 blue computer executor and #89 typed
+objective/group records. It has no known feature conflicts, no player UI,
+locale text, save field, migration, compatibility-epoch change, or archival
+behavior. Generated activation flags are existing event state, so suspend/load
+reconstructs assignment selection without hidden runtime storage.
+
+### Automation
+
+- `test_autoplaystrategies_schema` validates the typed generated registry,
+  assignments, frozen reference capability contracts, and malformed
+  negatives.
+- `ChapterAutoplayStrategiesBundleTests` proves assignment bundles remain
+  reachable only through the existing chapter bundle.
+- `test_autoplay_strategies` executes the real callback/dispatch API for
+  chapter/group/unit precedence, event-boundary, unsupported-profile, disabled
+  fallback, and ARM ROM/RAM assertions.

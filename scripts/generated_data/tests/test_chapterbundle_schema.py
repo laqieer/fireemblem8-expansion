@@ -17,6 +17,7 @@ import unittest
 from scripts.generated_data.diagnostics import DiagnosticCollector, GeneratedDataError
 from scripts.generated_data.chapterbundle import schema as chapterbundle_schema
 from scripts.generated_data.chapterobjectives import schema as chapterobjectives_schema
+from scripts.generated_data.autoplaystrategies import schema as autoplaystrategies_schema
 from scripts.generated_data.eventlists import schema as eventlists_schema
 from scripts.generated_data.eventscripts import schema as eventscripts_schema
 from scripts.generated_data.schema import DependencyGraph
@@ -41,6 +42,7 @@ DEFAULT_DEP_SOURCES = {
     "eventlists": "deps_eventlists.json",
     "supports": "deps_supports.json",
     "chapterobjectives": "deps_chapterobjectives.json",
+    "autoplaystrategies": "deps_autoplaystrategies.json",
 }
 
 DEP_LOADERS = {
@@ -51,6 +53,7 @@ DEP_LOADERS = {
     "eventlists": eventlists_schema.load_records,
     "supports": supports_schema.load_records,
     "chapterobjectives": chapterobjectives_schema.load_records,
+    "autoplaystrategies": autoplaystrategies_schema.load_records,
 }
 
 
@@ -390,6 +393,45 @@ class ChapterObjectivesBundleTests(unittest.TestCase):
             _messages(diagnostics),
         )
 
+
+class ChapterAutoplayStrategiesBundleTests(unittest.TestCase):
+    def test_strategy_symbols_are_reachable_only_from_their_chapter_bundle(self):
+        records = chapterbundle_schema.load_records(cb_fixture("valid.json"))
+        records.autoplay_strategies = chapterbundle_schema.TableRef(
+            "autoplaystrategies",
+            "scripts/generated_data/tests/fixtures/chapterbundle/deps_autoplaystrategies.json",
+            records.loc,
+            ["AutoplayStrategies_EL"],
+            [records.loc],
+            records.loc,
+        )
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            _load_dependency_records(),
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C.c"),
+        )
+        self.assertTrue(diagnostics.ok, _messages(diagnostics))
+
+        records.autoplay_strategies.symbols = []
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            _load_dependency_records(),
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C.c"),
+        )
+        self.assertFalse(diagnostics.ok)
+        self.assertTrue(
+            any("missing from autoplayStrategies.symbols" in message for message in _messages(diagnostics)),
+            _messages(diagnostics),
+        )
+
 class EndToEndRealBundleTests(unittest.TestCase):
     """Loads all 7 currently-registered tables (units/shops/traps/
     eventscripts/eventlists/supports/chapterbundle) plus the real,
@@ -407,6 +449,9 @@ class EndToEndRealBundleTests(unittest.TestCase):
             "supports": supports_schema.load_records(repo_path("src", "data", "supports.json")),
             "chapterobjectives": chapterobjectives_schema.load_records(
                 repo_path("src", "data", "chapter_objectives.json")
+            ),
+            "autoplaystrategies": autoplaystrategies_schema.load_records(
+                repo_path("src", "data", "autoplay_strategies.json")
             ),
         }
         diagnostics = DiagnosticCollector()
@@ -430,6 +475,9 @@ class EndToEndRealBundleTests(unittest.TestCase):
             "supports": supports_schema.load_records(repo_path("src", "data", "supports.json")),
             "chapterobjectives": chapterobjectives_schema.load_records(
                 repo_path("src", "data", "chapter_objectives.json")
+            ),
+            "autoplaystrategies": autoplaystrategies_schema.load_records(
+                repo_path("src", "data", "autoplay_strategies.json")
             ),
         }
         diagnostics = DiagnosticCollector()

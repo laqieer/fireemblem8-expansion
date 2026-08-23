@@ -98,7 +98,7 @@ BUNDLE_TABLE_NAMES = ("units", "shops", "traps", "eventscripts", "eventlists")
 # validation (see `dependency_tables()`/`cli.py`); `supports` is included
 # for the support-owner reciprocal check even though it isn't one of the
 # 5 `BUNDLE_TABLE_NAMES`.
-DEPENDENCY_TABLE_NAMES = BUNDLE_TABLE_NAMES + ("supports", "chapterobjectives")
+DEPENDENCY_TABLE_NAMES = BUNDLE_TABLE_NAMES + ("supports", "chapterobjectives", "autoplaystrategies")
 
 
 class ChapterInfo:
@@ -189,7 +189,7 @@ class ChapterBundleRecord:
     """The full parsed ``ch2_bundle.json`` document."""
 
     def __init__(self, chapter, manifest, tables, support_owners, external_references, dependencies,
-                 chapter_objectives, loc):
+                 chapter_objectives, autoplay_strategies, loc):
         self.chapter = chapter
         self.manifest = manifest
         self.tables = tables
@@ -198,6 +198,7 @@ class ChapterBundleRecord:
         self.external_references = external_references
         self.dependencies = dependencies
         self.chapter_objectives = chapter_objectives
+        self.autoplay_strategies = autoplay_strategies
         self.loc = loc
 
     def __len__(self):
@@ -311,10 +312,26 @@ def load_records(source_path):
             loc=objectives_node.loc,
         )
 
+    strategies_node = root.get("autoplayStrategies")
+    autoplay_strategies = None
+    if strategies_node is not None:
+        source_node = strategies_node.require("source")
+        symbols_node = strategies_node.require("symbols")
+        symbol_nodes = symbols_node.as_list()
+        autoplay_strategies = TableRef(
+            name="autoplaystrategies",
+            source=source_node.as_str(),
+            source_loc=source_node.loc,
+            symbols=[node.as_str() for node in symbol_nodes],
+            symbol_locs=[node.loc for node in symbol_nodes],
+            loc=strategies_node.loc,
+        )
+
     return ChapterBundleRecord(
         chapter=chapter, manifest=manifest, tables=tables,
         support_owners=support_owners, external_references=external_references,
-        dependencies=dependencies, chapter_objectives=chapter_objectives, loc=root.loc,
+        dependencies=dependencies, chapter_objectives=chapter_objectives,
+        autoplay_strategies=autoplay_strategies, loc=root.loc,
     )
 
 
@@ -488,6 +505,41 @@ def validate(records, diagnostics, dependency_records=None,
                     "chapter objective bundle '{}' is reachable for chapter '{}' but missing from "
                     "chapterObjectives.symbols".format(symbol, chapter.id),
                     objective_ref.loc, "chapterObjectives.symbols[{}]".format(symbol),
+                )
+            )
+
+    strategy_records = dependency_records.get("autoplaystrategies")
+    if records.autoplay_strategies is not None and strategy_records is not None:
+        strategy_ref = records.autoplay_strategies
+        actual_strategy_symbols = {
+            chapter_record.symbol
+            for chapter_record in strategy_records["chapters"]
+            if chapter_record.chapter == chapter.id
+        }
+        diagnostics.extend(
+            validate_unique(
+                zip(strategy_ref.symbols, strategy_ref.symbol_locs),
+                "duplicate symbol '{key}' declared in autoplayStrategies.symbols "
+                "(first at {first_loc})",
+                "autoplayStrategies.symbols[{key}]",
+            )
+        )
+        for symbol, loc in zip(strategy_ref.symbols, strategy_ref.symbol_locs):
+            if symbol not in actual_strategy_symbols:
+                diagnostics.add(
+                    _err(
+                        "autoplay strategy bundle '{}' is not reachable from chapter '{}'".format(
+                            symbol, chapter.id
+                        ),
+                        loc, "autoplayStrategies.symbols[{}]".format(symbol),
+                    )
+                )
+        for symbol in sorted(actual_strategy_symbols - set(strategy_ref.symbols)):
+            diagnostics.add(
+                _err(
+                    "autoplay strategy bundle '{}' is reachable for chapter '{}' but missing from "
+                    "autoplayStrategies.symbols".format(symbol, chapter.id),
+                    strategy_ref.loc, "autoplayStrategies.symbols[{}]".format(symbol),
                 )
             )
 

@@ -4,6 +4,7 @@
 #include "cp_common.h"
 
 #include "expansion_autoplay_internal.h"
+#include "expansion_autoplay_strategies.h"
 
 typedef char ExpansionAutoplayTelemetrySizeCheck[
     sizeof(struct ExpansionAutoplayTelemetry) == EXPANSION_AUTOPLAY_TELEMETRY_SIZE ? 1 : -1];
@@ -271,4 +272,18 @@ void ExpansionAutoplay_RecordSuspendSuppressed(void)
 {
     if (ExpansionAutoplay_IsBlueComputerPhase())
         IncrementBounded(&gExpansionAutoplayTelemetry.suspendWriteSuppressedCount);
+}
+
+void ExpansionAutoplay_RecordStrategyFailure(int result)
+{
+    if (!ExpansionAutoplay_IsBlueComputerPhase())
+        return;
+
+    IncrementBounded(&gExpansionAutoplayTelemetry.invalidRecordCount);
+    if (result == EXPANSION_AUTOPLAY_STRATEGY_ERR_UNSUPPORTED_OBJECTIVE)
+        SetFailure(EXPANSION_AUTOPLAY_FAILURE_STRATEGY_OBJECTIVE);
+    else if (result == EXPANSION_AUTOPLAY_STRATEGY_ERR_PROFILE_DISABLED)
+        SetFailure(EXPANSION_AUTOPLAY_FAILURE_STRATEGY_PROFILE_DISABLED);
+    else
+        SetFailure(EXPANSION_AUTOPLAY_FAILURE_STRATEGY_REGISTRY);
 }

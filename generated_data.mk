@@ -27,8 +27,8 @@
 
 GENERATED_DATA_PY       := $(PYTHON) -m scripts.generated_data
 GENERATED_DATA_OUT_DIR  := build/generated/data
-GENERATED_DATA_TABLES   := supports units shops traps items classes characters eventscripts eventlists chapterbundle chapterobjectives terrainstats movecost weapontriangle ui_presentation
-GENERATED_DATA_CH2_TABLES := units shops traps eventscripts eventlists chapterobjectives chapterbundle
+GENERATED_DATA_TABLES   := supports units shops traps items classes characters eventscripts eventlists chapterbundle chapterobjectives autoplaystrategies terrainstats movecost weapontriangle ui_presentation
+GENERATED_DATA_CH2_TABLES := units shops traps eventscripts eventlists chapterobjectives autoplaystrategies chapterbundle
 
 .PHONY: generated-data-validate generated-data-generate generated-data-check generated-data-test \
         generated-data-ch2-check generated-data-bundle-validate generated-data-bundle-check \
@@ -445,6 +445,27 @@ $(GENERATED_DATA_CHAPTEROBJECTIVES_C): src/data/chapter_objectives.json \
 	@mkdir -p $(@D)
 	$(GENERATED_DATA_PY) generate --table chapterobjectives --out-dir $(GENERATED_DATA_OUT_DIR)
 	@test -e $@ || { echo "error: generated-data table 'chapterobjectives' did not produce $@" >&2; exit 1; }
+
+# Typed autoplay strategies are modern-only generated data. The default
+# source has no profiles or assignments, preserving the existing Unit.ai
+# decision path without a profile gate or hidden runtime state.
+GENERATED_DATA_AUTOPLAYSTRATEGIES_C := $(GENERATED_DATA_OUT_DIR)/data_autoplay_strategies.c
+GENERATED_DATA_CONFIG_INPUTS_autoplaystrategies := \
+	include/constants/chapters.h \
+	include/constants/characters.h \
+	include/constants/event-flags.h \
+	include/expansion_autoplay_strategies.h \
+	include/expansion_chapter_objectives.h \
+	src/data/chapter_objectives.json
+
+$(GENERATED_DATA_AUTOPLAYSTRATEGIES_C): src/data/autoplay_strategies.json \
+	$(GENERATED_DATA_SHARED_PY_SOURCES) \
+	$(wildcard scripts/generated_data/autoplaystrategies/*.py) \
+	$(wildcard scripts/generated_data/chapterobjectives/*.py) \
+	$(GENERATED_DATA_CONFIG_INPUTS_autoplaystrategies)
+	@mkdir -p $(@D)
+	$(GENERATED_DATA_PY) generate --table autoplaystrategies --out-dir $(GENERATED_DATA_OUT_DIR)
+	@test -e $@ || { echo "error: generated-data table 'autoplaystrategies' did not produce $@" >&2; exit 1; }
 
 # --- Issue #6 config-gated CONTENT text -----------------------------------
 # Placed AFTER GENERATED_DATA_SHARED_PY_SOURCES above on purpose: make

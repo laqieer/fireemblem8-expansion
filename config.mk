@@ -175,3 +175,10 @@ EXPANSION_BGM_CONTINUATION_POLICY ?= preserve
 # It changes neither save data nor the save-compatibility epoch, and the
 # archival agbcc lane rejects it before compilation.
 EXPANSION_HQ_MIXER ?= 0
+
+# EXPANSION_AUTOPLAY_STRATEGIES -- permanent, default-off reference profiles
+# for the typed autoplay strategy registry. The registry and generated
+# assignment data stay available for downstream strategies; this flag only
+# compiles Aggressive and Objective-first. It changes config identity but not
+# save data or the save-compatibility epoch.
+EXPANSION_AUTOPLAY_STRATEGIES ?= 0

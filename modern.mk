@@ -52,6 +52,7 @@ MODERN_GOALS := \
 	expansion-modern-banim-package-runtime-check \
 	expansion-modern-autoplay-bounds-check \
 	expansion-modern-chapter-objectives-check \
+	expansion-modern-autoplay-strategies-objects \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-idspace-active-check \
@@ -624,6 +625,10 @@ ifneq ($(strip $(GENERATED_DATA_CHAPTEROBJECTIVES_C)),)
 MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o
 endif
 
+ifneq ($(strip $(GENERATED_DATA_AUTOPLAYSTRATEGIES_C)),)
+MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies-data.o
+endif
+
 # Issue #5 Batch 1 (mechanics): $(GENERATED_DATA_TERRAINSTATS_OBJECT)
 # (generated_data.mk) is the same kind of additive object as units/
 # traps/shops/eventlists just above -- src/data_terrains.c has no
@@ -988,6 +993,21 @@ $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o: $(GENERATED_DATA_CH2_EVENTLIS
 $(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o: $(GENERATED_DATA_CHAPTEROBJECTIVES_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies-data.o: $(GENERATED_DATA_AUTOPLAYSTRATEGIES_C)
+	@mkdir -p $(@D)
+	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+.PHONY: expansion-modern-autoplay-strategies-objects
+expansion-modern-autoplay-strategies-objects: \
+	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay.o \
+	$(MODERN_OUTPUT_DIR)/src/cp_decide.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies-data.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o
+	@printf 'Modern autoplay strategy objects built (config=%s abi=%s profiles=%s)\n' \
+		'$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(EXPANSION_AUTOPLAY_STRATEGIES)'
 
 # Issue #5 Batch 1 (mechanics): same reasoning as the units/traps/shops/
 # eventlists synthetic-slot rules above, for the terrainstats table's
@@ -1603,6 +1623,7 @@ ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 		--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 		--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 		--hq-mixer "$(EXPANSION_HQ_MIXER)" \
+		--autoplay-strategies "$(EXPANSION_AUTOPLAY_STRATEGIES)" \
 		--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 		--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 		--output-dir "$(MODERN_GENERATED_DIR)"
@@ -1669,6 +1690,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 	--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 	--hq-mixer "$(EXPANSION_HQ_MIXER)" \
+	--autoplay-strategies "$(EXPANSION_AUTOPLAY_STRATEGIES)" \
 	--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 	--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 	--save-compat-epoch "$(EXPANSION_SAVE_COMPAT_EPOCH)" 2>&1)
@@ -1701,6 +1723,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
   MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS := $(patsubst MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS=%,%,$(filter MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_CASUAL_MODE := $(patsubst MODERN_EXPANSION_CASUAL_MODE=%,%,$(filter MODERN_EXPANSION_CASUAL_MODE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_HQ_MIXER := $(patsubst MODERN_EXPANSION_HQ_MIXER=%,%,$(filter MODERN_EXPANSION_HQ_MIXER=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_EXPANSION_AUTOPLAY_STRATEGIES := $(patsubst MODERN_EXPANSION_AUTOPLAY_STRATEGIES=%,%,$(filter MODERN_EXPANSION_AUTOPLAY_STRATEGIES=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_BGM_CONTINUATION_POLICY := $(patsubst MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,%,$(filter MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),preserve)
     MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 0
@@ -1754,6 +1777,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	-DFE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP=$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP) \
 	-DFE8_EXPANSION_CASUAL_MODE=$(EXPANSION_CASUAL_MODE) \
 	-DFE8_EXPANSION_HQ_MIXER=$(EXPANSION_HQ_MIXER) \
+	-DFE8_EXPANSION_AUTOPLAY_STRATEGIES=$(EXPANSION_AUTOPLAY_STRATEGIES) \
 	-DFE8_EXPANSION_BGM_CONTINUATION_POLICY=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID)
 
   # Internal modern-build provenance discriminator (NOT a user feature flag,
@@ -2006,6 +2030,7 @@ ifneq (,$(MODERN_EXPANSION_DEFINES_ACTIVE))
 		printf '%s\n' 'custom_spell_effects=$(EXPANSION_CUSTOM_SPELL_EFFECTS)'; \
 		printf '%s\n' 'casual_mode=$(EXPANSION_CASUAL_MODE)'; \
 		printf '%s\n' 'hq_mixer=$(EXPANSION_HQ_MIXER)'; \
+		printf '%s\n' 'autoplay_strategies=$(EXPANSION_AUTOPLAY_STRATEGIES)'; \
 		printf '%s\n' 'internal_test_defines=$(MODERN_INTERNAL_TEST_DEFINES)'; \
 		printf '%s\n' 'bgm_continuation_policy=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)'; \
 		printf '%s\n' 'modern_build=1'; \

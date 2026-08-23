@@ -223,6 +223,41 @@ static int ObjectivePriority(enum ExpansionChapterObjectiveState state)
     }
 }
 
+static const struct ExpansionChapterObjective* GetSelectedObjective(
+    const struct ExpansionChapterObjectiveBundle* bundle,
+    struct ObjectiveResult* resultOut)
+{
+    const struct ExpansionChapterObjective* selected = NULL;
+    struct ObjectiveResult selectedResult = { EXPANSION_CHAPTER_OBJECTIVE_INACTIVE, 0 };
+    int selectedPriority = 0;
+    int index;
+
+    if (bundle == NULL)
+    {
+        if (resultOut != NULL)
+            *resultOut = selectedResult;
+        return NULL;
+    }
+
+    for (index = 0; index < bundle->objectiveCount; index++)
+    {
+        const struct ExpansionChapterObjective* objective = &bundle->objectives[index];
+        struct ObjectiveResult result = EvaluateObjective(bundle, objective, 0);
+        int priority = ObjectivePriority(result.state);
+
+        if (priority > selectedPriority)
+        {
+            selected = objective;
+            selectedResult = result;
+            selectedPriority = priority;
+        }
+    }
+
+    if (resultOut != NULL)
+        *resultOut = selectedResult;
+    return selected;
+}
+
 void ExpansionChapterObjectives_ResetTelemetry(void)
 {
     gExpansionChapterObjectiveTelemetry.objectiveId = 0;
@@ -234,9 +269,8 @@ void ExpansionChapterObjectives_ResetTelemetry(void)
 void ExpansionChapterObjectives_RefreshTelemetry(void)
 {
     const struct ExpansionChapterObjectiveBundle* bundle = GetCurrentBundle();
-    struct ObjectiveResult selected = { EXPANSION_CHAPTER_OBJECTIVE_INACTIVE, 0 };
-    u32 selectedId = 0;
-    int selectedPriority = 0;
+    const struct ExpansionChapterObjective* selected;
+    struct ObjectiveResult result;
     int index;
 
     ExpansionChapterObjectives_ResetTelemetry();
@@ -245,24 +279,18 @@ void ExpansionChapterObjectives_RefreshTelemetry(void)
 
     for (index = 0; index < bundle->objectiveCount; index++)
     {
-        const struct ExpansionChapterObjective* objective = &bundle->objectives[index];
-        struct ObjectiveResult result = EvaluateObjective(bundle, objective, 0);
-        int priority = ObjectivePriority(result.state);
-
-        if (result.state != EXPANSION_CHAPTER_OBJECTIVE_INACTIVE)
+        if (EvaluateObjective(bundle, &bundle->objectives[index], 0).state
+            != EXPANSION_CHAPTER_OBJECTIVE_INACTIVE)
             gExpansionChapterObjectiveTelemetry.activeCount++;
-
-        if (priority > selectedPriority)
-        {
-            selected = result;
-            selectedId = objective->id;
-            selectedPriority = priority;
-        }
     }
 
-    gExpansionChapterObjectiveTelemetry.objectiveId = selectedId;
-    gExpansionChapterObjectiveTelemetry.state = selected.state;
-    gExpansionChapterObjectiveTelemetry.progress = selected.progress;
+    selected = GetSelectedObjective(bundle, &result);
+    if (selected == NULL)
+        return;
+
+    gExpansionChapterObjectiveTelemetry.objectiveId = selected->id;
+    gExpansionChapterObjectiveTelemetry.state = result.state;
+    gExpansionChapterObjectiveTelemetry.progress = result.progress;
 }
 
 enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetStatus(u32 objectiveId, u32* progressOut)
@@ -289,4 +317,39 @@ enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetStatus(u32 obj
     }
 
     return EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
+}
+
+const struct ExpansionChapterObjective* ExpansionChapterObjectives_GetActiveObjective(void)
+{
+    return GetSelectedObjective(GetCurrentBundle(), NULL);
+}
+
+const struct ExpansionChapterAiGroup* ExpansionChapterObjectives_FindGroup(u32 groupId)
+{
+    const struct ExpansionChapterObjectiveBundle* bundle = GetCurrentBundle();
+    int index;
+
+    if (bundle == NULL)
+        return NULL;
+
+    for (index = 0; index < bundle->groupCount; index++)
+        if (bundle->groups[index].id == groupId)
+            return &bundle->groups[index];
+
+    return NULL;
+}
+
+bool ExpansionChapterObjectives_GroupContains(u32 groupId, u8 character)
+{
+    const struct ExpansionChapterAiGroup* group = ExpansionChapterObjectives_FindGroup(groupId);
+    int index;
+
+    if (group == NULL)
+        return false;
+
+    for (index = 0; index < group->memberCount; index++)
+        if (group->members[index] == character)
+            return true;
+
+    return false;
 }

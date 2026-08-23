@@ -77,5 +77,8 @@ extern struct ExpansionChapterObjectiveTelemetry gExpansionChapterObjectiveTelem
 void ExpansionChapterObjectives_ResetTelemetry(void);
 void ExpansionChapterObjectives_RefreshTelemetry(void);
 enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetStatus(u32 objectiveId, u32* progressOut);
+const struct ExpansionChapterObjective* ExpansionChapterObjectives_GetActiveObjective(void);
+const struct ExpansionChapterAiGroup* ExpansionChapterObjectives_FindGroup(u32 groupId);
+bool ExpansionChapterObjectives_GroupContains(u32 groupId, u8 character);
 
 #endif /* GUARD_EXPANSION_CHAPTER_OBJECTIVES_H */

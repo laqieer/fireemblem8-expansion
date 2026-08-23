@@ -252,6 +252,67 @@ This is host/runtime-test infrastructure only:
 
 ## Compatibility and budgets
 
+## Typed autoplay strategy profiles
+
+Issue [#90](https://github.com/laqieer/fireemblem8-expansion/issues/90)
+adds one bounded generated registry and dispatch seam for reusable autoplay
+policy. It is an optional reusable module: the registry/assignment types are
+generic, while **Aggressive** and **Objective-first** are the two permanent
+default-off references selected by `EXPANSION_AUTOPLAY_STRATEGIES=1`.
+The default `src/data/autoplay_strategies.json` contains no strategy or
+assignment records, preserving the existing `Unit.ai[]` computer decision
+path exactly.
+
+The generated `autoplaystrategies` table is owned by `chapterbundle` alongside
+typed objectives. It has at most eight descriptors and eight group plus eight
+unit assignments per chapter. A descriptor carries a stable FNV-1a symbolic
+ID, callback, objective/action capabilities, and reference-profile marker.
+The dispatcher chooses the first active assignment in this fixed order:
+**unit, group, chapter, existing low-level `Unit.ai[]` fallback**. Source
+order is never a tie-breaker between assignment scopes; duplicate targets are
+rejected during generation. Active objective selection retains the existing
+failure/pending/success priority and authored-record-order tie rule, never a
+pointer or link address.
+
+Aggressive calls the existing legal combat selector first, then leaves the
+unchanged low-level AI to pursue or fall back. Objective-first handles only
+the active `reach_area` or `hold_until_turn` group member: it projects the
+unit onto the inclusive rectangle, uses the existing movement selector, then
+falls back to Aggressive and the existing AI. The projection is coordinate
+only (clamp X then Y); combat uses existing slot/item/map scans. Neither
+profile consumes RNG or derives a decision from pointer/link addresses, so a
+fixed seed/configuration repeats its trace exactly. Existing low-level
+fallback behavior retains its own established RNG contract.
+
+`ExpansionAutoplayStrategies_ValidateRegistry()` rejects capacity overflow,
+zero/duplicate IDs, missing callbacks, and undeclared capability bits.
+`ExpansionAutoplayStrategies_ValidateObjectiveSupport()` makes an
+unknown/unsupported profile-objective pair explicit. Before a selected
+strategy can commit a computer-phase action, dispatch checks those contracts.
+It records a typed autoplay failure and terminates the strategy path rather
+than selecting a success-shaped fallback. The typed event helper
+`ExpansionAutoplayStrategies_ActivateAssignment()` validates a generated
+strategy-ID/activation-flag pair, changes only that existing event flag, and
+rejects calls during the active blue computer phase; the next phase is its
+safe boundary. It introduces no event language, hidden state, save byte,
+epoch, migration, localization string, or player UI.
+
+For a third strategy, define one callback with the public context signature,
+declare its stable ID/capabilities in `autoplay_strategies.json`, and add its
+chapter/group/unit assignment. The generated registry emits its typed callback
+reference; the shared dispatcher remains unchanged. The default references
+are not a taxonomy: Balanced, EXP, Treasure, Support, campaign, and
+project-specific character/chapter policies remain out of scope.
+
+The runtime creates no EWRAM or IWRAM state. The empty generated registry and
+bundle sentinels occupy 40 ROM bytes (20 bytes each). In the focused AAPCS
+objects, profiles-off/on text is 1016/1196 bytes in debug and 1268/1468 bytes
+in release; the reference callbacks therefore add 180 debug or 200 release
+text bytes. Strategy activation reconstructs from existing generated data and
+event flags. The strategy host/ARM selector enforces zero EWRAM and a 4 KiB
+aggregate object-text ceiling for both profile states. The archival lane
+excludes the runtime and generated table.
+
 - **Dependencies:** `BmMain_StartPhase`, `gProcScr_CpPhase`,
   `BuildAiUnitList`, `Unit.ai[]`, `AreUnitsAllied`, `gba-playtest`, and the
   tester-case catalog.

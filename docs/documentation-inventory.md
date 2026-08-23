@@ -70,7 +70,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/generated_data_tutorial.md | laqieer | current | Contributor-facing generated-data authoring walkthrough
 - docs/starter_features.md | laqieer | current | Four default-off starter flags, typed mechanics/content API, QoL, and runtime matrices (issue #6)
 - docs/aoe.md | laqieer | current | Typed bounded AoE targeting/effects, shared item/action/AI seam, and default-off reference (issue #42)
-- docs/autoplay.md | laqieer | current | Transient typed blue controller/telemetry and bounded semantic run-until outcomes (issues #85/#86)
+- docs/autoplay.md | laqieer | current | Transient typed blue controller, objectives, and default-off strategy profiles (issues #85/#86/#89/#90)
 - docs/custom_spell_effects.md | laqieer | current | Default-off typed battle spell-effect runtime foundation and resource contract (issue #77)
 - docs/portrait_resolver.md | laqieer | current | Typed character/class/chapter/flag portrait and minimug resolver with legacy fallback (issue #35)
 - docs/community_asset_coverage.md | laqieer | current | Authoritative community asset-family ownership, build/runtime seam, provenance boundary, and gap catalog (issue #59)
@@ -125,6 +125,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - reports/generated_data_manifest.md | laqieer | generated | Auto-generated generated-data platform table/record manifest
 - reports/generated_data_bundle_inventory.md | laqieer | generated | Auto-generated chapterbundle table inventory
 - reports/generated_data_chapterobjectives_inventory.md | laqieer | generated | Auto-generated chapterobjectives table inventory
+- reports/generated_data_autoplaystrategies_inventory.md | laqieer | generated | Auto-generated autoplay strategy registry and assignment inventory
 - reports/generated_data_characters_inventory.md | laqieer | generated | Auto-generated characters table inventory
 - reports/generated_data_classes_inventory.md | laqieer | generated | Auto-generated classes table inventory
 - reports/generated_data_eventlists_inventory.md | laqieer | generated | Auto-generated eventlists table inventory

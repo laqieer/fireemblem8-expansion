@@ -1,0 +1,45 @@
+{
+  "$schema": "fe8.chapterobjectives.v1",
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "ChapterObjectives_StrategyFixture",
+      "aiGroups": [
+        {
+          "id": "AI_GROUP_FIXTURE_EIRIKA",
+          "members": [
+            {
+              "character": "CHARACTER_EIRIKA",
+              "unitGroup": "UnitDef_Event_Ch2Ally"
+            }
+          ]
+        }
+      ],
+      "objectives": [
+        {
+          "id": "OBJECTIVE_STRATEGY_REACH",
+          "kind": "reach_area",
+          "group": "AI_GROUP_FIXTURE_EIRIKA",
+          "activationFlag": "EVFLAG_GAMEOVER",
+          "area": {
+            "xMin": 0,
+            "yMin": 0,
+            "xMax": 3,
+            "yMax": 3
+          }
+        }
+      ],
+      "dependencies": {
+        "characters": [
+          "CHARACTER_EIRIKA"
+        ],
+        "eventFlags": [
+          "EVFLAG_GAMEOVER"
+        ],
+        "unitGroups": [
+          "UnitDef_Event_Ch2Ally"
+        ]
+      }
+    }
+  ]
+}

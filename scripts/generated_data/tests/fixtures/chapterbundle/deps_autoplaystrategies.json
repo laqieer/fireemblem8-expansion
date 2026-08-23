@@ -1,0 +1,12 @@
+{
+  "$schema": "fe8.autoplaystrategies.v1",
+  "strategies": [],
+  "chapters": [
+    {
+      "chapter": "CHAPTER_EL",
+      "symbol": "AutoplayStrategies_EL",
+      "groupAssignments": [],
+      "unitAssignments": []
+    }
+  ]
+}

@@ -43,6 +43,7 @@ def write_config_mk(
     mechanics_hooks=None,
     mechanics_sample=None,
     danger_overlay_menu=None,
+    autoplay_strategies=None,
 ) -> Path:
     path = directory / "config.mk"
     # The issue #6 starter-feature flags are optional config.mk keys: a
@@ -56,6 +57,10 @@ def write_config_mk(
     if danger_overlay_menu is not None:
         feature_lines.append(
             f"EXPANSION_DANGER_OVERLAY_MENU := {danger_overlay_menu}"
+        )
+    if autoplay_strategies is not None:
+        feature_lines.append(
+            f"EXPANSION_AUTOPLAY_STRATEGIES := {autoplay_strategies}"
         )
     path.write_text(
         "\n".join(
@@ -1258,6 +1263,25 @@ class LoadIdentityFeatureFlagTests(unittest.TestCase):
         self.assertEqual(data["mechanics_hooks"], 1)
         self.assertEqual(data["mechanics_sample"], 0)
         self.assertEqual(data["danger_overlay_menu"], 1)
+
+    def test_autoplay_profile_flag_changes_identity_without_save_migration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._identity(tmp)
+            enabled = self._identity(tmp, autoplay_strategies="1")
+            configured = ec.load_identity(
+                config_mk_path=write_config_mk(Path(tmp), autoplay_strategies="1"),
+                config_preset="debug",
+                abi="aapcs",
+                rom_size="16M",
+                repo_root=Path(tmp),
+            )
+        self.assertEqual(base.autoplay_strategies, 0)
+        self.assertEqual(enabled.autoplay_strategies, 1)
+        self.assertEqual(configured.autoplay_strategies, 1)
+        self.assertNotEqual(base.config_fingerprint, enabled.config_fingerprint)
+        self.assertEqual(base.save_compat_epoch, enabled.save_compat_epoch)
+        with self.assertRaises(ec.ConfigError):
+            ec.validate_feature_flag("EXPANSION_AUTOPLAY_STRATEGIES", "2")
 
     def test_flag_change_changes_fingerprint_but_not_epoch_or_layout(self):
         with tempfile.TemporaryDirectory() as tmp:

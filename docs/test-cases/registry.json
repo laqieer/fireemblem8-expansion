@@ -15,6 +15,7 @@
       "transient-blue-computer-control",
       "bounded-semantic-run-until",
       "typed-chapter-autoplay-objectives",
+      "typed-autoplay-strategy-profiles",
       "custom-spell-runtime",
       "hq-pcm-mixer",
       "patch-release-artifact",
@@ -466,6 +467,18 @@
       "status": "current",
       "required_cases": [
         "TC-AUTOPLAY-OBJECTIVE-001"
+      ]
+    },
+    {
+      "id": "typed-autoplay-strategy-profiles",
+      "title": "Typed autoplay strategy registry and reference profiles",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/90"
+      ],
+      "reference": "docs/autoplay.md",
+      "status": "current",
+      "required_cases": [
+        "TC-AUTOPLAY-STRATEGY-001"
       ]
     },
     {
@@ -1938,6 +1951,56 @@
         {
           "command": "make expansion-modern-chapter-objectives-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/run_chapter_objective_checks.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-AUTOPLAY-STRATEGY-001",
+      "title": "Deterministic strategy assignment and precedence",
+      "feature_id": "typed-autoplay-strategy-profiles",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/90"
+      ],
+      "document": "docs/test-cases/autoplay.md",
+      "anchor": "tc-autoplay-strategy-001-deterministic-strategy-assignment-and-precedence",
+      "profiles": [
+        "Modern AAPCS debug and release with EXPANSION_AUTOPLAY_STRATEGIES=0",
+        "Modern AAPCS debug and release with EXPANSION_AUTOPLAY_STRATEGIES=1",
+        "Generated host fixture with Aggressive and Objective-first"
+      ],
+      "purpose": "Prove typed registry validation, deterministic chapter/group/unit precedence, capability failures, safe event activation, and default Unit.ai fallback.",
+      "prerequisites": "Repository root with Python 3, host C compiler, and modern ARM toolchain; no save or savestate.",
+      "actions": "Run the focused strategy schema/bundle and host/ARM selectors, then build the four isolated enabled/disabled debug/release strategy-object artifacts.",
+      "expected_result": "Aggressive selects legal combat, Objective-first advances the active reach objective deterministically, and unit overrides group before chapter.",
+      "negative_control": "Default empty/disabled data returns fallback without an action; malformed registry/assignment records and unsupported objectives fail explicitly before action commit.",
+      "interactions": "Depends on #85 blue computer execution and #89 objectives/groups; no player UI, project chapter policy, alternate router, or extra taxonomy is introduced.",
+      "save_compatibility": "No save bytes, migration, epoch, preference, or hidden state; assignments reconstruct from generated data and existing event flags.",
+      "cleanup": "Host fixtures stay under build/ and are removed automatically; use make clean_fast only for ignored build output.",
+      "limitations": "Does not claim balance, campaign planning, optimal play, or profiles beyond Aggressive and Objective-first.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_autoplaystrategies_schema scripts.generated_data.tests.test_chapterbundle_schema.ChapterAutoplayStrategiesBundleTests -v",
+          "evidence": "scripts/generated_data/tests/test_autoplaystrategies_schema.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_strategies -v",
+          "evidence": "tools/gba-playtest/tests/test_autoplay_strategies.py"
+        },
+        {
+          "command": "make expansion-modern-autoplay-strategies-objects MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_AUTOPLAY_STRATEGIES=0 MODERN_BUILD_ROOT=build/issue90-debug-disabled",
+          "evidence": "build/issue90-debug-disabled/debug/aapcs/src/expansion_autoplay_strategies.o"
+        },
+        {
+          "command": "make expansion-modern-autoplay-strategies-objects MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_AUTOPLAY_STRATEGIES=1 MODERN_BUILD_ROOT=build/issue90-debug-enabled",
+          "evidence": "build/issue90-debug-enabled/debug/aapcs/src/expansion_autoplay_strategies.o"
+        },
+        {
+          "command": "make expansion-modern-autoplay-strategies-objects MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_AUTOPLAY_STRATEGIES=0 MODERN_BUILD_ROOT=build/issue90-release-disabled",
+          "evidence": "build/issue90-release-disabled/release/aapcs/src/expansion_autoplay_strategies.o"
+        },
+        {
+          "command": "make expansion-modern-autoplay-strategies-objects MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_AUTOPLAY_STRATEGIES=1 MODERN_BUILD_ROOT=build/issue90-release-enabled",
+          "evidence": "build/issue90-release-enabled/release/aapcs/src/expansion_autoplay_strategies.o"
         }
       ]
     },

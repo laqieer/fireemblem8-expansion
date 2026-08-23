@@ -360,6 +360,15 @@
 #error "FE8_EXPANSION_HQ_MIXER requires an en or en,qps-ploc profile to retain IWRAM stack headroom"
 #endif
 
+#ifndef FE8_EXPANSION_AUTOPLAY_STRATEGIES
+#define FE8_EXPANSION_AUTOPLAY_STRATEGIES 0
+#endif
+
+#if (FE8_EXPANSION_AUTOPLAY_STRATEGIES != 0) \
+    && (FE8_EXPANSION_AUTOPLAY_STRATEGIES != 1)
+#error "FE8_EXPANSION_AUTOPLAY_STRATEGIES must be 0 or 1"
+#endif
+
 /*
  * Permanent BGM continuation policy (issues #37/#39). The modern build
  * supplies the numeric value resolved from config.mk; the legacy build uses

@@ -626,6 +626,7 @@ FE8_CFG_DEFAULT_LOCALE
 FE8_CFG_ENABLED_LOCALES
 FE8_CFG_PSEUDO_LOCALE
 FE8_CFG_BGM_CONTINUATION_POLICY
+FE8_CFG_AUTOPLAY_STRATEGIES
 FE8_CFG_HQ_MIXER
 FE8_CFG_CASUAL_MODE
 FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP
@@ -687,6 +688,7 @@ enable_custom_spell_effects
 enable_localized_text_auto_wrap
 enable_casual_mode
 enable_hq_mixer
+enable_autoplay_strategies
 with_bgm_continuation_policy
 enable_pseudo_locale
 with_enabled_locales
@@ -1337,6 +1339,9 @@ Optional Features:
                           boundaries
   --enable-hq-mixer       select the optional high-resolution MP2K PCM mixer
                           (modern AAPCS only)
+  --enable-autoplay-strategies
+                          enable Aggressive and Objective-first autoplay
+                          strategy references
   --enable-pseudo-locale  enable qps-ploc (also include it in
                           --with-enabled-locales)
 
@@ -2009,6 +2014,22 @@ else $as_nop
 fi
 
 
+# Check whether --enable-autoplay-strategies was given.
+if test ${enable_autoplay_strategies+y}
+then :
+  enableval=$enable_autoplay_strategies; case $enableval in #(
+  yes) :
+    fe8_autoplay_strategies=1 ;; #(
+  no) :
+    fe8_autoplay_strategies=0 ;; #(
+  *) :
+    as_fn_error $? "--enable-autoplay-strategies accepts only yes or no" "$LINENO" 5 ;;
+esac
+else $as_nop
+  fe8_autoplay_strategies=
+fi
+
+
 
 # Check whether --with-bgm-continuation-policy was given.
 if test ${with_bgm_continuation_policy+y}
@@ -2173,6 +2194,12 @@ then :
 else $as_nop
   FE8_CFG_HQ_MIXER=
 fi
+if test -n "$fe8_autoplay_strategies"
+then :
+  FE8_CFG_AUTOPLAY_STRATEGIES="EXPANSION_AUTOPLAY_STRATEGIES := $fe8_autoplay_strategies"
+else $as_nop
+  FE8_CFG_AUTOPLAY_STRATEGIES=
+fi
 if test -n "$fe8_bgm_continuation_policy"
 then :
   FE8_CFG_BGM_CONTINUATION_POLICY="EXPANSION_BGM_CONTINUATION_POLICY := $fe8_bgm_continuation_policy"
@@ -2232,6 +2259,8 @@ fi
 
 
 
+
+
 fe8_validate_rom_size=${fe8_rom_size:-16M}
 fe8_validate_text_shift=${fe8_text_shift:-0}
 fe8_abs_srcdir=`cd "$srcdir" && pwd`
@@ -2258,6 +2287,7 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --localized-text-auto-wrap "$fe8_localized_text_auto_wrap" \
     --casual-mode "$fe8_casual_mode" \
     --hq-mixer "$fe8_hq_mixer" \
+    --autoplay-strategies "$fe8_autoplay_strategies" \
     --bgm-continuation-policy "$fe8_bgm_continuation_policy" \
     --item-id-cap "$fe8_item_id_cap" 2>&1`
 fe8_config_status=$?

@@ -318,6 +318,34 @@ reference. The required `dependencies` lists are exact declarations: missing,
 duplicate, stale, empty, over-capacity, contradictory, cyclic, invalid-area,
 or unknown references fail with a source location and JSON breadcrumb.
 
+### Add typed **autoplay strategy profiles and assignments** (`--table autoplaystrategies`)
+
+Source: `src/data/autoplay_strategies.json`. This modern-only table is empty
+by default, so existing `Unit.ai[]` values continue to drive the existing
+low-level computer AI. It owns one registry and one assignment bundle per
+chapter; it does not add a campaign router, player selector, save field, or
+project-specific policy.
+
+Each strategy has an uppercase stable ID, one C callback implementing
+`bool Callback(const struct ExpansionAutoplayStrategyContext*)`, explicit
+`objectiveKinds`, and explicit `actionKinds`. The built-in reference IDs are
+`AUTOPLAY_STRATEGY_AGGRESSIVE` and `AUTOPLAY_STRATEGY_OBJECTIVE_FIRST`.
+Reference profiles are callable only with
+`EXPANSION_AUTOPLAY_STRATEGIES=1`; a downstream profile may add a third
+callback and JSON record without editing the dispatcher. The generator rejects
+duplicate/unknown IDs, invalid callback symbols/capabilities, capacity
+overflow, unknown objective groups/characters/event flags, and stale chapter
+bundle references.
+
+Assignments have deterministic `unit > group > chapter > Unit.ai[]`
+precedence. An optional `activationFlag` is an existing `EVFLAG_*`; authored
+event scripts continue to change it through the existing `flag.set` helper.
+`ExpansionAutoplayStrategies_ActivateAssignment(strategyId, activationFlag)`
+is the one typed event bridge: it accepts only a declared assignment, writes
+only that existing flag outside an active blue computer phase, and stores no
+separate runtime or save state. A selected strategy/objective capability
+mismatch stops before an AI action rather than falling back silently.
+
 `activationFlag` and `deactivationFlag` use existing `EVFLAG_*` state. Set
 or clear those values only through the existing `helperScripts` `flag.set` /
 `flag.clear` operations or established event scripts; objectives introduce no

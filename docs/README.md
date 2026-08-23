@@ -21,6 +21,7 @@ the authoritative technical documentation and are checked by CI.
 | Add a bounded area-of-effect target/effect or item route | [`aoe.md`](aoe.md) |
 | Drive blue units and stop automated scenarios on bounded semantic outcomes | [`autoplay.md`](autoplay.md) |
 | Author typed chapter objectives and AI-group membership for bounded autoplay | [`generated_data_tutorial.md`](generated_data_tutorial.md), [`autoplay.md`](autoplay.md) |
+| Author a bounded autoplay strategy assignment or downstream profile | [`generated_data_tutorial.md`](generated_data_tutorial.md), [`autoplay.md`](autoplay.md) |
 | Enable the typed custom battle spell-effect runtime foundation | [`custom_spell_effects.md`](custom_spell_effects.md) |
 | Configure casual defeat restoration | [`starter_features.md`](starter_features.md#optional-casual-defeat-policy-issue-34) |
 | Enable the optional high-resolution MP2K PCM mixer | [`audio.md`](audio.md) |
@@ -85,6 +86,7 @@ numbers mark merged (closed) contracts only:
 | Transient blue computer control (issue #85) | `include/expansion_autoplay.h`; `PLAYER`/`COMPUTER` control and pointer-free semantic telemetry | [`autoplay.md`](autoplay.md) |
 | Bounded semantic run-until scenarios (issue #86) | `tools/gba-playtest` schema v2, fingerprint format v3, seven typed terminal reasons, and fixed-frame compatibility | [`autoplay.md`](autoplay.md), [`../tools/gba-playtest/README.md`](../tools/gba-playtest/README.md) |
 | Typed chapter objectives and AI groups (issue #89) | `include/expansion_chapter_objectives.h`; generated `chapterobjectives` records, chapter-bundle ownership, and semantic telemetry | [`generated_data_tutorial.md`](generated_data_tutorial.md), [`autoplay.md`](autoplay.md) |
+| Typed autoplay strategy profiles (issue #90) | `include/expansion_autoplay_strategies.h`; generated `autoplaystrategies` registry and chapter/group/unit assignments | [`generated_data_tutorial.md`](generated_data_tutorial.md), [`autoplay.md`](autoplay.md) |
 | Custom battle spell effects (issue #77) | `include/custom_spell_effect.h`; typed descriptor lookup/start API and `0x80..0x8F` generated-private range | [`custom_spell_effects.md`](custom_spell_effects.md) |
 | Portrait/minimug resolver (issue #35) | Typed character/class/chapter/flag registry with legacy fallback | [`portrait_resolver.md`](portrait_resolver.md) |
 | Community asset coverage (issue #59) | Asset-family ownership/gap catalog; not an importer or runtime API | [`community_asset_coverage.md`](community_asset_coverage.md) |
