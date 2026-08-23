@@ -130,12 +130,11 @@ def read_indexed_png(path):
         if (
             len(alpha) > len(palette) // 3
             or alpha.count(0) != 1
+            or alpha[0] != 0
             or any(value not in (0, 255) for value in alpha)
         ):
             raise ValueError(
-                "{} tRNS entries must be 0 or 255 with exactly one transparent palette entry".format(
-                    path
-                )
+                "{} tRNS must make only palette index 0 transparent using binary alpha".format(path)
             )
     encoded = next(data for name, data in chunks if name == b"IDAT")
     try:
@@ -309,15 +308,17 @@ def load_package(root, package_source, script_source, declared_sources):
         data = json.load(handle)
     _exact_keys(
         data,
-        ("schemaVersion", "id", "abbreviation", "animConf", "class", "frames", "paletteVariants",
-         "resources"),
+        ("schemaVersion", "id", "abbreviation", "animConf", "class", "weaponType", "frames",
+         "paletteVariants", "resources"),
         package_source,
     )
     if data["schemaVersion"] != PACKAGE_SCHEMA:
         raise ValueError("{} has unsupported schemaVersion".format(package_source))
-    for name in ("id", "abbreviation", "animConf", "class"):
+    for name in ("id", "abbreviation", "animConf", "class", "weaponType"):
         if not isinstance(data[name], str) or not IDENTIFIER_RE.fullmatch(data[name]):
             raise ValueError("{}.{} must be a C identifier".format(package_source, name))
+    if len(data["abbreviation"]) >= 12:
+        raise ValueError("{}.abbreviation must fit char abbr[12] with a terminator".format(package_source))
     _exact_keys(data["resources"], ("maxFrames", "maxSheetTiles", "maxOamPerFrame", "maxPaletteColors"), "resources")
     for key in data["resources"]:
         _positive_int(data["resources"][key], "resources.{}".format(key))
@@ -345,7 +346,8 @@ def load_package(root, package_source, script_source, declared_sources):
     _validate_shared_palette(pngs)
     if len(frame_paths) > data["resources"]["maxFrames"]:
         raise ValueError("frame count exceeds resources.maxFrames")
-    if sum(png["tiles"] for png in pngs.values()) > data["resources"]["maxSheetTiles"]:
+    unique_tiles = {_frame_tiles(png) for png in pngs.values()}
+    if sum(len(payload) // 32 for payload in unique_tiles) > data["resources"]["maxSheetTiles"]:
         raise ValueError("frame sheet tiles exceed resources.maxSheetTiles")
     if max(png["colors"] for png in pngs.values()) > data["resources"]["maxPaletteColors"]:
         raise ValueError("frame palette colors exceed resources.maxPaletteColors")
@@ -427,6 +429,7 @@ def _oam_data(package):
     left = bytearray()
     right = bytearray()
     max_entries = 0
+    total_entries = 0
     pairs = []
     fallback_frame = next(iter(package.frames))
     for mode in MODES:
@@ -448,10 +451,11 @@ def _oam_data(package):
             )
         offsets[key] = len(left)
         max_entries = max(max_entries, entries)
+        total_entries += entries * (2 if side == "both" else 1)
         blank = struct.pack("<3I", 1, 0, 0) + b"\0" * (len(frame) - 12)
         left.extend(frame if side in ("left", "both") else blank)
         right.extend(frame if side in ("right", "both") else blank)
-    return bytes(left), bytes(right), offsets, max_entries
+    return bytes(left), bytes(right), offsets, max_entries, total_entries
 
 
 def _script_word_count(entries):
@@ -508,7 +512,7 @@ def runtime_outputs(package, out_dir):
             aliases[frame_id] = frame_id
             unique_frames[payload] = frame_id
     paths = runtime_paths(package, out_dir, aliases)
-    oam_left, oam_right, offsets, max_oam_entries = _oam_data(package)
+    oam_left, oam_right, offsets, max_oam_entries, total_oam_entries = _oam_data(package)
     mode_offsets = {}
     offset = 0
     for mode in MODES:
@@ -543,6 +547,7 @@ def runtime_outputs(package, out_dir):
     )
     metadata = {
         "max_oam_entries": max_oam_entries,
+        "total_oam_entries": total_oam_entries,
         "palette_color_1": struct.unpack("<H", outputs[paths["palette"]][2:4])[0],
         "script_word_count": offset // 4,
         "sound_opcode": sounds[0] if sounds else 0,

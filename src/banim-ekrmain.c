@@ -273,6 +273,13 @@ void UpdateBanimFrame(void)
         EnablePaletteSync();
         LZ77UnCompWram(banim[bid].oam_r, gBanimOamr2);
         gBanimOamr2[0x57F0 / 4] = 1;
+#if FE8_BANIM_PACKAGE_RUNTIME_TEST
+        BanimPackageRuntimeTest_MarkRuntimeDataConsumed(
+            (const u32 *)gBanimScrRight,
+            gBanimOamr2,
+            gBanimPaletteRight
+        );
+#endif
     }
 
     if (gpEkrTriangleUnits[0] != NULL) {

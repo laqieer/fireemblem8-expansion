@@ -48,19 +48,14 @@ class BanimPackageRuntimeLifecycleTests(unittest.TestCase):
             "BanimPackageRuntimeTest_BeginScriptedBattle",
             function_body(self.commands, "SetBattleScripted"),
         )
-        self.assertIn(
-            """#if FE8_BANIM_PACKAGE_RUNTIME_TEST
-    if (CheckBattleScripted() == true)
-    {
-        BanimPackageRuntimeTest_BeginScriptedBattle();
-    }
-#endif""",
-            self.intro,
-        )
+        self.assertIn("if (CheckBattleScripted() == true)", self.intro)
+        self.assertIn("BanimPackageRuntimeTest_BeginScriptedBattle(", self.intro)
         begin = function_body(self.probe, "BanimPackageRuntimeTest_BeginScriptedBattle")
+        self.assertIn("CheckBattleScripted() == false", begin)
+        self.assertIn("unitLeft->pClassData->number == CLASS_MOGALL", begin)
+        self.assertIn("unitRight->pClassData->number == CLASS_MOGALL", begin)
         self.assertIn(
-            """if (CheckBattleScripted() == false)
-        return;""",
+            "GetBattleAnimationId(unit, BanimPackage_LORM_SP1_PROOF, weapon, &animDefEntry)",
             begin,
         )
         self.assertIn(

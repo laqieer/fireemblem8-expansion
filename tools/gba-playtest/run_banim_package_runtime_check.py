@@ -136,7 +136,7 @@ def main() -> int:
 
     expect(values, "magic", 0x42505431, "scripted battle")
     expect(values, "selectionCount", 1, "scripted battle")
-    expect(values, "defaultClassId", 1, "scripted battle")
+    expect(values, "defaultClassId", 0x5F, "scripted battle")
     expect(values, "aliasIndex", alias_index, "scripted battle")
     expect(values, "modeCount", len(package.mode_durations), "scripted battle")
     expect(values, "normalDuration", package.mode_durations["normal"], "scripted battle")

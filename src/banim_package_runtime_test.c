@@ -9,6 +9,7 @@
 #include "banim_data.h"
 #include "ekrbattle.h"
 
+#include "build/generated/assets/banim/banim_defs.h"
 #include "build/generated/assets/banim/banim_runtime_test_defs.h"
 
 EWRAM_DATA struct BanimPackageRuntimeTestProbe gBanimPackageRuntimeTestProbe = {0};
@@ -18,23 +19,59 @@ bool BanimPackageRuntimeTest_ForceFirstScriptedBattle(void)
     return gBanimPackageRuntimeTestProbe.selectionCount == 0;
 }
 
-void BanimPackageRuntimeTest_BeginScriptedBattle(void)
+void BanimPackageRuntimeTest_BeginScriptedBattle(
+    struct Unit * unitLeft,
+    u16 weaponLeft,
+    struct Unit * unitRight,
+    u16 weaponRight
+)
 {
     const struct BattleAnim * animation;
+    struct Unit * unit;
+    u32 animDefEntry;
+    int aliasIndex;
     int originalIndex;
+    int position;
+    u16 weapon;
 
     if (CheckBattleScripted() == false)
         return;
 
-    animation = &banim_data[BANIM_PACKAGE_LORM_SP1_PROOF_INDEX];
-    originalIndex = AnimConf_0[0].index - 1;
+    if (unitLeft->pClassData->number == CLASS_MOGALL)
+    {
+        unit = unitLeft;
+        weapon = weaponLeft;
+        position = EKR_POS_L;
+    }
+    else if (unitRight->pClassData->number == CLASS_MOGALL)
+    {
+        unit = unitRight;
+        weapon = weaponRight;
+        position = EKR_POS_R;
+    }
+    else
+    {
+        return;
+    }
 
-    if (gBanimPackageRuntimeTestProbe.selectionCount == 0)
+    animation = &banim_data[BANIM_PACKAGE_LORM_SP1_PROOF_INDEX];
+    aliasIndex = GetBattleAnimationId(unit, BanimPackage_LORM_SP1_PROOF, weapon, &animDefEntry);
+    originalIndex = GetBattleAnimationId(
+        unit,
+        unit->pClassData->pBattleAnimDef,
+        weapon,
+        &animDefEntry
+    );
+
+    if (
+        gBanimPackageRuntimeTestProbe.selectionCount == 0
+        && aliasIndex == BANIM_PACKAGE_LORM_SP1_PROOF_INDEX
+    )
     {
         gBanimPackageRuntimeTestProbe.selectionCount++;
         gBanimPackageRuntimeTestProbe.originalIndex = (u32)originalIndex;
-        gBanimPackageRuntimeTestProbe.defaultClassId = CLASS_EPHRAIM_LORD;
-        gBanimPackageRuntimeTestProbe.aliasIndex = BANIM_PACKAGE_LORM_SP1_PROOF_INDEX;
+        gBanimPackageRuntimeTestProbe.defaultClassId = CLASS_MOGALL;
+        gBanimPackageRuntimeTestProbe.aliasIndex = (u32)aliasIndex;
         gBanimPackageRuntimeTestProbe.modeCount = BANIM_PACKAGE_LORM_SP1_PROOF_MODE_COUNT;
         gBanimPackageRuntimeTestProbe.normalDuration = BANIM_PACKAGE_LORM_SP1_PROOF_NORMAL_DURATION;
         gBanimPackageRuntimeTestProbe.totalDuration = BANIM_PACKAGE_LORM_SP1_PROOF_TOTAL_DURATION;
@@ -44,9 +81,9 @@ void BanimPackageRuntimeTest_BeginScriptedBattle(void)
             (animation->oam_r != NULL ? 4 : 0) |
             (animation->oam_l != NULL ? 8 : 0) |
             (animation->pal != NULL ? 16 : 0);
-        gBanimIdx[EKR_POS_L] = BANIM_PACKAGE_LORM_SP1_PROOF_INDEX;
-        gBanimIdx_bak[EKR_POS_L] = BANIM_PACKAGE_LORM_SP1_PROOF_INDEX;
-        gBanimPackageRuntimeTestProbe.selectedBattleIndex = gBanimIdx[EKR_POS_L];
+        gBanimIdx[position] = BANIM_PACKAGE_LORM_SP1_PROOF_INDEX;
+        gBanimIdx_bak[position] = BANIM_PACKAGE_LORM_SP1_PROOF_INDEX;
+        gBanimPackageRuntimeTestProbe.selectedBattleIndex = gBanimIdx[position];
     }
 }
 
@@ -55,7 +92,10 @@ void BanimPackageRuntimeTest_MarkBattleEntry(void)
     if (
         gBanimPackageRuntimeTestProbe.selectionCount == 1
         && gBanimPackageRuntimeTestProbe.battleEntryCount == 0
-        && gBanimIdx[EKR_POS_L] == BANIM_PACKAGE_LORM_SP1_PROOF_INDEX
+        && (
+            gBanimIdx[EKR_POS_L] == BANIM_PACKAGE_LORM_SP1_PROOF_INDEX
+            || gBanimIdx[EKR_POS_R] == BANIM_PACKAGE_LORM_SP1_PROOF_INDEX
+        )
         && gBanimPackageRuntimeTestProbe.selectedBattleIndex
             == BANIM_PACKAGE_LORM_SP1_PROOF_INDEX
     )

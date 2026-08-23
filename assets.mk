@@ -64,7 +64,8 @@ $(ASSET_BANIM_RUNTIME_SYMBOLS)
 
 src/data_banimconf.o $(MODERN_OUTPUT_DIR)/src/data_banimconf.o: $(ASSET_BANIM_DEFS)
 
-$(MODERN_OUTPUT_DIR)/src/banim_package_runtime_test.o: $(ASSET_BANIM_RUNTIME_TEST_DEFS)
+$(MODERN_OUTPUT_DIR)/src/banim_package_runtime_test.o: $(ASSET_BANIM_DEFS_HEADER) \
+$(ASSET_BANIM_RUNTIME_TEST_DEFS)
 
 # A strict maintenance/check command must report a missing or stale output
 # instead of Make remaking this include before the target runs. Any ordinary
