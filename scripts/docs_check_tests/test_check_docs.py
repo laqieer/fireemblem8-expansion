@@ -1,5 +1,6 @@
 import copy
 import importlib.util
+import io
 import json
 import os
 import re
@@ -68,10 +69,168 @@ class StripFencedBlocksTests(unittest.TestCase):
         stripped = check_docs.strip_fenced_blocks(text)
         self.assertNotIn("link", stripped)
 
+    def test_only_three_leading_spaces_open_or_close_a_fence(self):
+        fenced = "   ```\n[fake](nope.md)\n   ```\n"
+        self.assertNotIn("fake", check_docs.strip_fenced_blocks(fenced))
+        self.assertEqual(
+            list(check_docs.iter_fenced_block_bodies(fenced)),
+            ["[fake](nope.md)"],
+        )
+
+        indented_literal = "    ```\n[fake](nope.md)\n    ```\n"
+        self.assertEqual(check_docs.strip_fenced_blocks(indented_literal), indented_literal)
+        self.assertEqual(list(check_docs.iter_fenced_block_bodies(indented_literal)), [])
+
+    def test_fence_closers_allow_only_ascii_trailing_whitespace(self):
+        ascii_closer = "```\n[fake](nope.md)\n``` \t\r"
+        self.assertNotIn("fake", check_docs.strip_fenced_blocks(ascii_closer))
+        for trailing in ("\u00A0", "\u2003"):
+            with self.subTest(trailing=repr(trailing)):
+                with self.assertRaisesRegex(
+                    check_docs.DocsCheckError,
+                    r"unterminated fenced code block opened at line 1 with ```",
+                ):
+                    check_docs.strip_fenced_blocks(
+                        "```\n[fake](nope.md)\n```" + trailing
+                    )
+
+    def test_fence_markers_allow_only_ascii_leading_whitespace(self):
+        for leading in ("\u00A0", "\u2003"):
+            with self.subTest(leading=repr(leading)):
+                literal = (
+                    f"{leading}```\n"
+                    "[fake](nope.md)\n"
+                    f"{leading}```\n"
+                )
+                self.assertEqual(
+                    check_docs.strip_fenced_blocks(literal),
+                    literal,
+                )
+                self.assertEqual(
+                    list(check_docs.iter_fenced_block_bodies(literal)),
+                    [],
+                )
+                with self.assertRaisesRegex(
+                    check_docs.DocsCheckError,
+                    r"unterminated fenced code block opened at line 1 with ```",
+                ):
+                    check_docs.strip_fenced_blocks(
+                        "```\n[fake](nope.md)\n" + f"{leading}```\n"
+                    )
+
+    def test_backtick_fence_info_string_rejects_backticks(self):
+        invalid = "```markdown `policy`\nvisible prose\n```\n"
+        with self.assertRaisesRegex(
+            check_docs.DocsCheckError,
+            r"invalid backtick fenced code opener at line 1: "
+            r"info string contains a backtick",
+        ):
+            check_docs.strip_fenced_blocks(invalid)
+        with self.assertRaisesRegex(
+            check_docs.DocsCheckError,
+            r"invalid backtick fenced code opener at line 1",
+        ):
+            list(check_docs.iter_fenced_block_bodies(invalid))
+
+        tilde_fence = "~~~markdown `policy`\nvisible prose\n~~~\n"
+        self.assertNotIn(
+            "visible prose",
+            check_docs.strip_fenced_blocks(tilde_fence),
+        )
+        self.assertEqual(
+            list(check_docs.iter_fenced_block_bodies(tilde_fence)),
+            ["visible prose"],
+        )
+
+        fenced_literal = "```\n```markdown `policy`\n```\n"
+        self.assertEqual(
+            list(check_docs.iter_fenced_block_bodies(fenced_literal)),
+            ["```markdown `policy`"],
+        )
+
+    def test_unterminated_fence_fails_with_opening_location(self):
+        with self.assertRaisesRegex(
+            check_docs.DocsCheckError,
+            r"unterminated fenced code block opened at line 2 with ```",
+        ):
+            check_docs.strip_fenced_blocks("before\n```\n[fake](nope.md)")
+        with self.assertRaisesRegex(
+            check_docs.DocsCheckError,
+            r"unterminated fenced code block opened at line 2 with ```",
+        ):
+            list(check_docs.iter_fenced_block_bodies("before\n```\nmake all"))
+
+    def test_run_checks_reports_unterminated_fence_by_path_and_cli_returns_one(self):
+        with TempRepo() as repo:
+            write(
+                repo.root,
+                "broken.md",
+                "before\n```\n"
+                "MODERN_ALL_OBJECTS=450\n",
+            )
+            repo.add_all()
+            findings, _, _ = check_docs.run_checks(repo.root)
+            fence_findings = [
+                finding
+                for finding in findings
+                if finding.file == "broken.md"
+                and "unterminated fenced code block opened at line 2 with ```"
+                in finding.message
+            ]
+            self.assertEqual(len(fence_findings), 1)
+            self.assertTrue(
+                any(
+                    finding.file == "broken.md"
+                    and "hardcoded MODERN_COHORT_*/MODERN_ALL_* resolved value"
+                    in finding.message
+                    for finding in findings
+                )
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as output:
+                self.assertEqual(check_docs.main(["--root", repo.root]), 1)
+            self.assertIn("broken.md: unterminated fenced code block", output.getvalue())
+
 
 class HeadingSlugTests(unittest.TestCase):
     def test_simple_heading(self):
         self.assertEqual(check_docs.github_heading_slug("Prerequisites"), "prerequisites")
+
+    def test_commonmark_atx_heading_indentation_and_closing_sequence(self):
+        for line, expected in (
+            ("## Setup", (2, "Setup")),
+            (" ## Setup #", (2, "Setup")),
+            ("  ## Setup ##  ", (2, "Setup")),
+            ("   ## Setup ###\t", (2, "Setup")),
+            ("## Setup###", (2, "Setup###")),
+            ("## ###", (2, "")),
+            ("#\r", (1, "")),
+            (" ## Setup ##\r", (2, "Setup")),
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(check_docs.parse_atx_heading(line), expected)
+
+        for line in (
+            "    ## indented code",
+            "\t## indented code",
+            "####### too many markers",
+            "##missing separator",
+        ):
+            with self.subTest(line=line):
+                self.assertIsNone(check_docs.parse_atx_heading(line))
+
+        self.assertEqual(
+            check_docs.compute_heading_slugs(
+                " ## One #\n"
+                "  ### Two ##\n"
+                "   #### Three ###\n"
+                "    ## indented code\n"
+            ),
+            ["one", "two", "three"],
+        )
+        self.assertEqual(
+            check_docs.compute_heading_slugs("#\r\n## Ordinary\r\n"),
+            ["", "ordinary"],
+        )
 
     def test_inline_code_and_punctuation_stripped(self):
         self.assertEqual(
@@ -748,8 +907,79 @@ class TesterCaseRegistryTests(unittest.TestCase):
     def test_valid_foundation_registry_passes(self):
         self.assertEqual(self._messages(self._valid_registry()), [])
 
-    def test_real_repository_foundation_registry_passes(self):
+    def test_real_repository_complete_registry_passes(self):
         self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
+
+    def test_late_shipped_contracts_are_complete_and_fail_closed(self):
+        registry_path = os.path.join(REAL_REPO_ROOT, check_docs.TEST_CASE_REGISTRY_PATH)
+        with open(registry_path, encoding="utf-8") as stream:
+            registry = json.load(stream)
+
+        coverage = registry["coverage"]
+        self.assertEqual(coverage["mode"], "complete")
+        self.assertEqual(coverage["deferred_issues"], [])
+
+        expected_feature_ids = coverage["expected_feature_ids"]
+        feature_ids = [entry["id"] for entry in registry["features"]]
+        current_feature_ids = [
+            entry["id"] for entry in registry["features"] if entry["status"] == "current"
+        ]
+        case_ids = [entry["id"] for entry in registry["cases"]]
+        self.assertEqual(len(feature_ids), len(set(feature_ids)))
+        self.assertEqual(len(expected_feature_ids), len(set(expected_feature_ids)))
+        self.assertEqual(len(current_feature_ids), len(set(current_feature_ids)))
+        self.assertCountEqual(expected_feature_ids, current_feature_ids)
+        self.assertEqual(len(case_ids), len(set(case_ids)))
+
+        features = {entry["id"]: entry for entry in registry["features"]}
+        cases = {entry["id"]: entry for entry in registry["cases"]}
+        contracts = {
+            "battle-animation-package": {
+                "case_id": "TC-BANIM-PACKAGE-062",
+                "reference": "docs/battle_animation_packages.md",
+                "document": "docs/test-cases/asset-authoring.md",
+                "commands": {
+                    "python3 -m unittest scripts.assets.tests.test_manifest -v",
+                    "make expansion-modern-banim-package-runtime-check",
+                },
+            },
+            "workflow-governance": {
+                "case_id": "TC-WORKFLOW-CI-WAIT-001",
+                "reference": ".github/skills/development-workflow/SKILL.md",
+                "document": "docs/test-cases/workflow-governance.md",
+                "commands": {
+                    "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+                },
+            },
+        }
+
+        for feature_id, contract in contracts.items():
+            with self.subTest(feature_id=feature_id):
+                self.assertIn(feature_id, expected_feature_ids)
+                feature = features[feature_id]
+                self.assertEqual(feature["reference"], contract["reference"])
+                self.assertEqual(feature["required_cases"], [contract["case_id"]])
+                case = cases[contract["case_id"]]
+                self.assertEqual(case["feature_id"], feature_id)
+                self.assertEqual(case["document"], contract["document"])
+                self.assertTrue(
+                    contract["commands"].issubset({
+                        record["command"] for record in case["automation"]
+                    })
+                )
+                procedure = check_docs.read_text(
+                    os.path.join(REAL_REPO_ROOT, case["document"])
+                )
+                self.assertIn("## " + contract["case_id"] + ":", procedure)
+                for heading in (
+                    "### Actions",
+                    "### Expected result",
+                    "### Negative control",
+                    "### Interactions and save compatibility",
+                    "### Automation",
+                    "### Cleanup and limitations",
+                ):
+                    self.assertIn(heading, procedure)
 
     def test_patch_release_cases_are_indexed_with_complete_procedures(self):
         registry_path = os.path.join(REAL_REPO_ROOT, check_docs.TEST_CASE_REGISTRY_PATH)
@@ -920,6 +1150,15 @@ class TesterCaseRegistryTests(unittest.TestCase):
         complete["coverage"]["expected_feature_ids"] = ["sample-feature", "missing-feature"]
         self.assertTrue(any("absent from the registry" in message
                             for message in self._messages(complete)))
+
+        duplicate = self._valid_registry()
+        duplicate["coverage"]["mode"] = "complete"
+        duplicate["coverage"]["deferred_issues"] = []
+        duplicate["coverage"]["expected_feature_ids"] = [
+            "sample-feature", "sample-feature"
+        ]
+        self.assertTrue(any("contains duplicates" in message
+                            for message in self._messages(duplicate)))
 
         omitted = self._valid_registry()
         omitted["coverage"]["mode"] = "complete"
