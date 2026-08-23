@@ -80,19 +80,20 @@ save fixture is required.
 4. Run the modern debug, release, and default release gates.
 
 **Expected result:** The bitfield matcher accepts valid qualified
-declarations and rejects 5000 repeated qualifiers within one second. PNG
-buffer arithmetic accepts a normal image and rejects dimensions or products
-that cannot fit before allocation/libpng writes. The format-checked MIDI tool
-build accepts the fixed-width pattern label argument. Valid map changes are
-in bounds; overflowing extents are rejected. Empty event dequeue and a 31st
-queue push fail without state corruption. Six scripted hits plus the
-required end marker fit in seven entries; a seventh payload cannot overwrite
-the guard.
+declarations and rejects 5000 repeated qualifiers within its five-second
+process-CPU budget. PNG buffer arithmetic accepts a normal image and rejects
+dimensions or products that cannot fit before allocation/libpng writes. The
+format-checked MIDI tool build accepts the fixed-width pattern label argument.
+Valid map changes are in bounds; overflowing extents are rejected. Empty event
+dequeue, a 31st queue push, and negative or out-of-range event-slot queue
+operands fail without state corruption. Six scripted hits plus the required end
+marker fit in seven entries; a seventh payload cannot overwrite the guard.
 
 **Negative control:** These cases correspond to the pre-fix ambiguous nested
 regex, narrowed PNG products, mismatched `%lu` argument, wrapping `u8` map
-indices, empty-queue decrement, and seven-payload-plus-sentinel overwrite.
-Sanitizer guards and explicit state comparisons detect partial writes.
+indices, unchecked event-slot indexing, empty-queue decrement, and
+seven-payload-plus-sentinel overwrite. Sanitizer guards and explicit state
+comparisons detect partial writes.
 
 **Interactions and compatibility:** There are no dependencies or conflicts
 with starter features, localization, generated data, item caps, configuration

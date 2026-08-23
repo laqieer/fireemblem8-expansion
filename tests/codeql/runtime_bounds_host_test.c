@@ -7,6 +7,7 @@
 #include "bmmind.h"
 #include "bmtrick.h"
 #include "event.h"
+#include "eventscript.h"
 
 struct Vec2 gBmMapSize;
 u32 gEventSlots[EVENT_SLOT_COUNT];
@@ -81,6 +82,65 @@ static void TestEventQueueBounds(void)
     CHECK(gEventSlotQueue[0] == 0x101);
 }
 
+static u8 RunSlotQueueOperation(u8 subCommand, s16 slot)
+{
+    struct EventEngineProc proc;
+    u16 script[] = {
+        _EvtCmd(EV_CMD_QUEUE_OPS, 2, subCommand),
+        (u16)slot,
+    };
+
+    memset(&proc, 0, sizeof(proc));
+    proc.pEventCurrent = script;
+    return Event07_SlotQueueOperations(&proc);
+}
+
+static void ResetSlotQueueOperationState(void)
+{
+    int i;
+
+    for (i = 0; i < EVENT_SLOT_COUNT; i++)
+        gEventSlots[i] = 0x11000000 + i;
+
+    for (i = 0; i < EVENT_SLOT_QUEUE_COUNT; i++)
+        gEventSlotQueue[i] = 0x22000000 + i;
+
+    gEventSlots[EVT_SLOT_D] = 1;
+}
+
+static void CheckInvalidSlotQueueOperation(u8 subCommand, s16 slot)
+{
+    u32 slotsBefore[EVENT_SLOT_COUNT];
+    u32 queueBefore[EVENT_SLOT_QUEUE_COUNT];
+
+    ResetSlotQueueOperationState();
+    memcpy(slotsBefore, gEventSlots, sizeof(slotsBefore));
+    memcpy(queueBefore, gEventSlotQueue, sizeof(queueBefore));
+
+    CHECK(RunSlotQueueOperation(subCommand, slot) == EVC_ERROR);
+    CHECK(memcmp(gEventSlots, slotsBefore, sizeof(slotsBefore)) == 0);
+    CHECK(memcmp(gEventSlotQueue, queueBefore, sizeof(queueBefore)) == 0);
+}
+
+static void TestEventQueueSlotBounds(void)
+{
+    CheckInvalidSlotQueueOperation(EVSUBCMD_SENQUEUE, -1);
+    CheckInvalidSlotQueueOperation(EVSUBCMD_SENQUEUE, EVENT_SLOT_COUNT);
+    CheckInvalidSlotQueueOperation(EVSUBCMD_SDEQUEUE, -1);
+    CheckInvalidSlotQueueOperation(EVSUBCMD_SDEQUEUE, EVENT_SLOT_COUNT);
+
+    ResetSlotQueueOperationState();
+    CHECK(RunSlotQueueOperation(EVSUBCMD_SENQUEUE, EVENT_SLOT_COUNT - 1) == EVC_ADVANCE_CONTINUE);
+    CHECK(gEventSlots[EVT_SLOT_D] == 2);
+    CHECK(gEventSlotQueue[0] == 0x22000000);
+    CHECK(gEventSlotQueue[1] == 1);
+
+    ResetSlotQueueOperationState();
+    CHECK(RunSlotQueueOperation(EVSUBCMD_SDEQUEUE, 0) == EVC_ADVANCE_CONTINUE);
+    CHECK(gEventSlots[0] == 0x22000000);
+    CHECK(gEventSlots[EVT_SLOT_D] == 0);
+}
+
 static void TestScriptBattleSentinelCapacity(void)
 {
     int i;
@@ -131,6 +191,7 @@ int main(void)
 {
     TestMapChangeBounds();
     TestEventQueueBounds();
+    TestEventQueueSlotBounds();
     TestScriptBattleSentinelCapacity();
 
     if (sFailures == 0)

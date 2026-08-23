@@ -674,7 +674,9 @@ codeql-alerts-test:
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
 	    $(CODEQL_TEST_DIR)/sio_protocol_host_test
 	$(HOST_CC) $(CODEQL_TEST_CFLAGS) \
-	    tests/codeql/runtime_bounds_host_test.c src/bmtrick.c src/event.c \
+	    -DNONMATCHING=1 -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast \
+	    -Wno-tautological-compare \
+	    tests/codeql/runtime_bounds_host_test.c src/bmtrick.c src/event.c src/eventscr.c \
 	    $(CODEQL_TEST_LDFLAGS) -o $(CODEQL_TEST_DIR)/runtime_bounds_host_test
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
 	    $(CODEQL_TEST_DIR)/runtime_bounds_host_test

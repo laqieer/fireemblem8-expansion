@@ -255,6 +255,9 @@ u8 Event07_SlotQueueOperations(struct EventEngineProc * proc)
     switch (sub_cmd) {
     case EVSUBCMD_SENQUEUE:
         slot = EVT_CMD_ARGV(scr)[0];
+        if (slot < 0 || slot >= EVENT_SLOT_COUNT)
+            return EVC_ERROR;
+
         if (!SlotQueuePush(gEventSlots[slot]))
             return EVC_ERROR;
         break;
@@ -266,6 +269,9 @@ u8 Event07_SlotQueueOperations(struct EventEngineProc * proc)
 
     case EVSUBCMD_SDEQUEUE:
         slot = EVT_CMD_ARGV(scr)[0];
+        if (slot < 0 || slot >= EVENT_SLOT_COUNT)
+            return EVC_ERROR;
+
         if (!SlotQueuePop(&gEventSlots[slot]))
             return EVC_ERROR;
         break;
