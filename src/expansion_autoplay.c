@@ -4,6 +4,7 @@
 #include "cp_common.h"
 
 #include "expansion_autoplay_internal.h"
+#include "expansion_autoplay_planner.h"
 #include "expansion_autoplay_strategies.h"
 
 typedef char ExpansionAutoplayTelemetrySizeCheck[
@@ -43,6 +44,9 @@ void ExpansionAutoplay_Reset(void)
 
     sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
     gExpansionAutoplayTelemetry.controller = EXPANSION_BLUE_CONTROL_PLAYER;
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    ExpansionAutoplayPlanner_Reset();
+#endif
 }
 
 enum ExpansionAutoplayResult ExpansionAutoplay_SetBlueControl(enum ExpansionBlueControl control)
@@ -150,6 +154,9 @@ void ExpansionAutoplay_OnPlayerPhaseStart(void)
 {
     if (gExpansionAutoplayTelemetry.state != EXPANSION_AUTOPLAY_STATE_FAILURE)
         gExpansionAutoplayTelemetry.state = EXPANSION_AUTOPLAY_STATE_PLAYER_PHASE;
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+#endif
 }
 
 void ExpansionAutoplay_OnBlueComputerPhaseStart(void)

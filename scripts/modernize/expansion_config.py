@@ -177,6 +177,7 @@ CONFIG_MK_FEATURE_KEYS = (
     "EXPANSION_CASUAL_MODE",
     "EXPANSION_HQ_MIXER",
     "EXPANSION_AUTOPLAY_STRATEGIES",
+    "EXPANSION_AUTOPLAY_PLANNER",
     "EXPANSION_BGM_CONTINUATION_POLICY",
 )
 
@@ -723,6 +724,7 @@ class ExpansionIdentity:
     casual_mode: int = 0
     hq_mixer: int = 0
     autoplay_strategies: int = 0
+    autoplay_planner: int = 0
     bgm_continuation_policy: str = "preserve"
     item_id_cap: int = ITEM_ID_DEFAULT_CAP
     config_fingerprint: str = field(default="")
@@ -765,6 +767,7 @@ class ExpansionIdentity:
             "casual_mode": self.casual_mode,
             "hq_mixer": self.hq_mixer,
             "autoplay_strategies": self.autoplay_strategies,
+            "autoplay_planner": self.autoplay_planner,
         }
         fields = {
             "version": [self.version_major, self.version_minor, self.version_patch],
@@ -831,6 +834,7 @@ def load_identity(
     casual_mode=None,
     hq_mixer=None,
     autoplay_strategies=None,
+    autoplay_planner=None,
     bgm_continuation_policy=None,
     item_id_cap=None,
 ) -> ExpansionIdentity:
@@ -941,6 +945,12 @@ def load_identity(
         if autoplay_strategies not in (None, "")
         else cfg.get("EXPANSION_AUTOPLAY_STRATEGIES", "0"),
     )
+    resolved_autoplay_planner = validate_feature_flag(
+        "EXPANSION_AUTOPLAY_PLANNER",
+        autoplay_planner
+        if autoplay_planner not in (None, "")
+        else cfg.get("EXPANSION_AUTOPLAY_PLANNER", "0"),
+    )
     resolved_bgm_continuation_policy = validate_bgm_continuation_policy(
         bgm_continuation_policy
         if bgm_continuation_policy not in (None, "")
@@ -949,6 +959,11 @@ def load_identity(
     resolved_rom_size = validate_rom_size(rom_size)
     validate_locale_rom_size(resolved_enabled_locales, resolved_rom_size)
     resolved_preset = validate_preset(config_preset)
+    if resolved_autoplay_planner and resolved_preset != "debug":
+        raise ConfigError(
+            "EXPANSION_AUTOPLAY_PLANNER is modern-debug-only and requires MODERN_CONFIG=debug: "
+            "the local planner mailbox is never present in a release ROM"
+        )
     resolved_abi = validate_abi(abi)
     resolved_text_shift = validate_text_shift(text_shift)
 
@@ -996,6 +1011,7 @@ def load_identity(
         casual_mode=resolved_casual_mode,
         hq_mixer=resolved_hq_mixer,
         autoplay_strategies=resolved_autoplay_strategies,
+        autoplay_planner=resolved_autoplay_planner,
         bgm_continuation_policy=resolved_bgm_continuation_policy,
         item_id_cap=resolved_item_id_cap,
     )
@@ -1052,6 +1068,7 @@ def generate_metadata_files(output_dir: Path, identity: ExpansionIdentity) -> Di
         f"MODERN_EXPANSION_CASUAL_MODE := {identity.casual_mode}",
         f"MODERN_EXPANSION_HQ_MIXER := {identity.hq_mixer}",
         f"MODERN_EXPANSION_AUTOPLAY_STRATEGIES := {identity.autoplay_strategies}",
+        f"MODERN_EXPANSION_AUTOPLAY_PLANNER := {identity.autoplay_planner}",
         f"MODERN_EXPANSION_BGM_CONTINUATION_POLICY := {identity.bgm_continuation_policy}",
         "",
     ]
@@ -1157,6 +1174,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="override EXPANSION_AUTOPLAY_STRATEGIES (0 or 1)",
     )
     parser.add_argument(
+        "--autoplay-planner",
+        default=None,
+        help="override EXPANSION_AUTOPLAY_PLANNER (0 or 1; debug only)",
+    )
+    parser.add_argument(
         "--bgm-continuation-policy",
         default=None,
         help="override EXPANSION_BGM_CONTINUATION_POLICY (preserve, resume, or restart)",
@@ -1176,6 +1198,7 @@ def _resolve_tokens(identity: ExpansionIdentity) -> str:
         f" MODERN_EXPANSION_CASUAL_MODE={identity.casual_mode}"
         f" MODERN_EXPANSION_HQ_MIXER={identity.hq_mixer}"
         f" MODERN_EXPANSION_AUTOPLAY_STRATEGIES={identity.autoplay_strategies}"
+        f" MODERN_EXPANSION_AUTOPLAY_PLANNER={identity.autoplay_planner}"
         f" MODERN_EXPANSION_AOE_REFERENCE={identity.aoe_reference}"
         f" MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS={identity.custom_spell_effects}"
         f" MODERN_EXPANSION_BGM_CONTINUATION_POLICY={identity.bgm_continuation_policy}"
@@ -1235,6 +1258,7 @@ def main(argv=None) -> int:
             casual_mode=args.casual_mode,
             hq_mixer=args.hq_mixer,
             autoplay_strategies=args.autoplay_strategies,
+            autoplay_planner=args.autoplay_planner,
             bgm_continuation_policy=args.bgm_continuation_policy,
         )
     except ConfigError as error:

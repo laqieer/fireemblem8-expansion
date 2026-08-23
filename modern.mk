@@ -53,6 +53,7 @@ MODERN_GOALS := \
 	expansion-modern-autoplay-bounds-check \
 	expansion-modern-chapter-objectives-check \
 	expansion-modern-autoplay-strategies-objects \
+	expansion-modern-autoplay-planner-objects \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-idspace-active-check \
@@ -1009,6 +1010,18 @@ expansion-modern-autoplay-strategies-objects: \
 	@printf 'Modern autoplay strategy objects built (config=%s abi=%s profiles=%s)\n' \
 		'$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(EXPANSION_AUTOPLAY_STRATEGIES)'
 
+.PHONY: expansion-modern-autoplay-planner-objects
+expansion-modern-autoplay-planner-objects: \
+	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_planner.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives.o \
+	$(MODERN_OUTPUT_DIR)/src/cp_decide.o \
+	$(MODERN_OUTPUT_DIR)/src/playerphase.o \
+	$(MODERN_OUTPUT_DIR)/src/rng.o
+	@printf 'Modern local autoplay planner objects built (config=%s abi=%s planner=%s)\n' \
+		'$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(EXPANSION_AUTOPLAY_PLANNER)'
+
 # Issue #5 Batch 1 (mechanics): same reasoning as the units/traps/shops/
 # eventlists synthetic-slot rules above, for the terrainstats table's
 # synthetic slot object. A safe no-op target when
@@ -1624,6 +1637,7 @@ ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 		--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 		--hq-mixer "$(EXPANSION_HQ_MIXER)" \
 		--autoplay-strategies "$(EXPANSION_AUTOPLAY_STRATEGIES)" \
+		--autoplay-planner "$(EXPANSION_AUTOPLAY_PLANNER)" \
 		--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 		--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 		--output-dir "$(MODERN_GENERATED_DIR)"
@@ -1691,6 +1705,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 	--hq-mixer "$(EXPANSION_HQ_MIXER)" \
 	--autoplay-strategies "$(EXPANSION_AUTOPLAY_STRATEGIES)" \
+	--autoplay-planner "$(EXPANSION_AUTOPLAY_PLANNER)" \
 	--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 	--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 	--save-compat-epoch "$(EXPANSION_SAVE_COMPAT_EPOCH)" 2>&1)
@@ -1724,6 +1739,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
   MODERN_EXPANSION_CASUAL_MODE := $(patsubst MODERN_EXPANSION_CASUAL_MODE=%,%,$(filter MODERN_EXPANSION_CASUAL_MODE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_HQ_MIXER := $(patsubst MODERN_EXPANSION_HQ_MIXER=%,%,$(filter MODERN_EXPANSION_HQ_MIXER=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_AUTOPLAY_STRATEGIES := $(patsubst MODERN_EXPANSION_AUTOPLAY_STRATEGIES=%,%,$(filter MODERN_EXPANSION_AUTOPLAY_STRATEGIES=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_EXPANSION_AUTOPLAY_PLANNER := $(patsubst MODERN_EXPANSION_AUTOPLAY_PLANNER=%,%,$(filter MODERN_EXPANSION_AUTOPLAY_PLANNER=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_BGM_CONTINUATION_POLICY := $(patsubst MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,%,$(filter MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),preserve)
     MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 0
@@ -1778,6 +1794,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	-DFE8_EXPANSION_CASUAL_MODE=$(EXPANSION_CASUAL_MODE) \
 	-DFE8_EXPANSION_HQ_MIXER=$(EXPANSION_HQ_MIXER) \
 	-DFE8_EXPANSION_AUTOPLAY_STRATEGIES=$(EXPANSION_AUTOPLAY_STRATEGIES) \
+	-DFE8_EXPANSION_AUTOPLAY_PLANNER=$(EXPANSION_AUTOPLAY_PLANNER) \
 	-DFE8_EXPANSION_BGM_CONTINUATION_POLICY=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID)
 
   # Internal modern-build provenance discriminator (NOT a user feature flag,

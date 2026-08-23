@@ -31,6 +31,7 @@
 #include "expansion_itemtest.h"
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_autoplay_internal.h"
+#include "expansion_autoplay_planner.h"
 #endif
 
 #include "playerphase.h"
@@ -295,6 +296,15 @@ void PlayerPhase_MainIdle(ProcPtr proc)
     DebugTools_MapHotkeyCheck();
     if (DebugTools_IsHubActive())
         return;
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (ExpansionAutoplayPlanner_PollStart())
+    {
+        EndPlayerPhaseSideWindows();
+        Proc_Goto(proc, 3);
+        return;
+    }
+#endif
 
     if (ExpansionAutoplay_TryActivateScenario(
             gKeyStatusPtr->newKeys, gKeyStatusPtr->heldKeys))

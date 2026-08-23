@@ -369,6 +369,19 @@
 #error "FE8_EXPANSION_AUTOPLAY_STRATEGIES must be 0 or 1"
 #endif
 
+#ifndef FE8_EXPANSION_AUTOPLAY_PLANNER
+#define FE8_EXPANSION_AUTOPLAY_PLANNER 0
+#endif
+
+#if (FE8_EXPANSION_AUTOPLAY_PLANNER != 0) \
+    && (FE8_EXPANSION_AUTOPLAY_PLANNER != 1)
+#error "FE8_EXPANSION_AUTOPLAY_PLANNER must be 0 or 1"
+#endif
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && !FE8_EXPANSION_DEBUG
+#error "FE8_EXPANSION_AUTOPLAY_PLANNER is modern-debug-only"
+#endif
+
 /*
  * Permanent BGM continuation policy (issues #37/#39). The modern build
  * supplies the numeric value resolved from config.mk; the legacy build uses

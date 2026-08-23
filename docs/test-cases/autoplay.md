@@ -344,3 +344,64 @@ Use
 `make clean_fast` for other build outputs. Three seeds prove report
 determinism, complete per-run visibility, and comparison structure only; they
 do not establish statistical power, difficulty, campaign quality, or balance.
+
+## TC-AUTOPLAY-PLANNER-001: Local external planner step and replay contract
+
+- **Feature / originating issue:** `local-external-autoplay-planner` /
+  [#92](https://github.com/laqieer/fireemblem8-expansion/issues/92).
+- **Supported configuration or artifact:** modern AAPCS debug with
+  `EXPANSION_AUTOPLAY_PLANNER=1`; local generated libmGBA transport fixture.
+  Release and archival builds are unsupported and omit the bridge.
+- **Prerequisites and clean state:** Python 3, host C compiler, ARM toolchain,
+  libmGBA development files, exact debug ROM/config provenance, and a fresh
+  in-memory blank SRAM. No save fixture, savestate, network, or external
+  service is permitted.
+
+### Actions
+
+1. Run
+   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests -v`.
+2. Run
+   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_two_chapter_fixture_replays_from_clean_boot_without_save_or_snapshot -v`.
+3. Start a typed mailbox run, read its observation page, and commit only the
+   returned action token. Replay from a fresh boot through chapter one and the
+   semantic chapter-two checkpoint.
+
+### Expected result
+
+The scripted reference chooser and bounded search chooser consume the same
+pointer-free observation/action records and produce a deterministic
+two-chapter trace. The C adapter holds a #90-produced legal decision until its
+matching token commits it through the #85 computer action route. The clean
+libmGBA transport fixture reaches its second chapter and replays byte-for-byte
+without loading a save or snapshot.
+
+### Negative control
+
+Stale observation IDs, unknown ordinals, forged tokens, unavailable
+capabilities, malformed mailbox headers, cancellation, provenance mismatch,
+and resource overflow fail with explicit typed outcomes and no action commit.
+The mailbox has no raw address/write method. Release configuration rejects
+`EXPANSION_AUTOPLAY_PLANNER=1`; no bridge state is present when disabled.
+
+### Interactions and save compatibility
+
+This is a stacked child of #91 and hard-depends on #85, #86, #89, #90, and
+#91. #87 is unrelated; #88 is an optional later accelerated-fidelity
+comparison. The bridge reuses production controller/strategy paths and makes
+no save-byte, preference, migration, compatibility-epoch, generated-data, or
+localization change.
+
+### Automation
+
+The focused host selector validates schema bounds, unavailable states, token
+rejections, mailbox exclusivity, C/ARM adapter linkage, scripted/search
+interoperability, cancellation, and read-only RNG/campaign checkpoints. The
+single libmGBA selector validates fresh two-chapter clean boot/replay. No
+manual-only criterion remains.
+
+### Cleanup and limitations
+
+The generated fixture is removed from ignored `build/test-artifacts`. This
+case proves only the bounded local contract; it does not ship a policy model,
+claim human-like play, or establish campaign balance or solvability.

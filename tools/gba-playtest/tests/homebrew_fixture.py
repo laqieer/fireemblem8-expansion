@@ -92,3 +92,50 @@ def build_seed_batch_rom(path: Path) -> None:
 
     rom[0xBD] = (-sum(rom[0xA0:0xBD]) - 0x19) & 0xFF
     path.write_bytes(rom)
+
+
+def build_two_chapter_planner_rom(path: Path) -> None:
+    """Build a clean-boot two-step planner transport fixture.
+
+    EWRAM words are stage, chapter, and terminal respectively. A single A
+    press advances one normal fixture chapter; no save, savestate, or host
+    memory write is needed to reset or continue the route.
+    """
+    rom = bytearray(ROM_SIZE)
+
+    _word(rom, 0, 0xEA000000 | ((ENTRY - 8) // 4))
+    rom[0xA0:0xAC] = b"GPTPLAN2".ljust(12, b"\0")
+    rom[0xAC:0xB0] = b"GPP2"
+    rom[0xB0:0xB2] = b"00"
+    rom[0xB2] = 0x96
+
+    instructions = (
+        0xE59F004C,  # ldr r0, =0x02000000
+        0xE3A01000,  # mov r1, #0
+        0xE5801000,  # str r1, [r0]             (fresh clean boot state)
+        0xE5901000,  # loop: ldr r1, [r0]       (stage)
+        0xE59F2040,  # ldr r2, =0x04000130
+        0xE1D230B0,  # ldrh r3, [r2]            (KEYINPUT)
+        0xE3130001,  # tst r3, #1               (A is active-low)
+        0x1A000003,  # bne no_input
+        0xE3510002,  # cmp r1, #2
+        0x2A000001,  # bhs no_input
+        0xE2811001,  # add r1, r1, #1
+        0xE5801000,  # str r1, [r0]
+        0xE3510000,  # no_input: cmp r1, #0
+        0x03A04001,  # moveq r4, #1
+        0x13A04002,  # movne r4, #2
+        0xE5804004,  # str r4, [r0, #4]         (chapter)
+        0xE3510002,  # cmp r1, #2
+        0x23A04001,  # movhs r4, #1
+        0x33A04000,  # movlo r4, #0
+        0xE5804008,  # str r4, [r0, #8]         (terminal)
+        0xEAFFFFED,  # b loop
+    )
+    for index, instruction in enumerate(instructions):
+        _word(rom, ENTRY + index * 4, instruction)
+    _word(rom, ENTRY + len(instructions) * 4, 0x02000000)
+    _word(rom, ENTRY + len(instructions) * 4 + 4, 0x04000130)
+
+    rom[0xBD] = (-sum(rom[0xA0:0xBD]) - 0x19) & 0xFF
+    path.write_bytes(rom)

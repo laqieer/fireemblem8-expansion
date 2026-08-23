@@ -3,12 +3,19 @@
 
 static u16 gRNSeeds[3];
 static int gLCGRNValue;
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+static u32 sRNConsumptionCount;
+#endif
 
 int NextRN(void) {
     // This generates a pseudorandom string of 16 bits
     // In other words, a pseudorandom integer that can range from 0 to 65535
 
     u16 rn = (gRNSeeds[1] << 11) + (gRNSeeds[0] >> 5);
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    sRNConsumptionCount++;
+#endif
 
     // Shift state[2] one bit
     gRNSeeds[2] *= 2;
@@ -43,6 +50,10 @@ void InitRN(s32 seed) {
     };
 
     int mod = seed % 7;
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    sRNConsumptionCount = 0;
+#endif
 
     gRNSeeds[0] = initTable[(mod++ & 7)];
     gRNSeeds[1] = initTable[(mod++ & 7)];
@@ -106,3 +117,13 @@ unsigned AdvanceGetLCGRNValue(void) {
     gLCGRNValue = rn >> 2;
     return gLCGRNValue;
 }
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+unsigned GetLCGRNValue(void) {
+    return gLCGRNValue;
+}
+
+u32 GetRNConsumptionCount(void) {
+    return sRNConsumptionCount;
+}
+#endif

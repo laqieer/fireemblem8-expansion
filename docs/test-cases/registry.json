@@ -286,6 +286,18 @@
       ]
     },
     {
+      "id": "local-external-autoplay-planner",
+      "title": "Local external autoplay planner bridge",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/92"
+      ],
+      "reference": "docs/autoplay.md",
+      "status": "current",
+      "required_cases": [
+        "TC-AUTOPLAY-PLANNER-001"
+      ]
+    },
+    {
       "id": "custom-spell-runtime",
       "title": "Typed custom battle spell-effect runtime",
       "issue_urls": [
@@ -2046,6 +2058,39 @@
         {
           "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_batch.AutoplayBatchLibmGBAIntegrationTests.test_three_seed_clean_boot_fixture_is_serial_parallel_identical -v",
           "evidence": "tools/gba-playtest/tests/test_autoplay_batch.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-AUTOPLAY-PLANNER-001",
+      "title": "Local external planner step and replay contract",
+      "feature_id": "local-external-autoplay-planner",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/92"
+      ],
+      "document": "docs/test-cases/autoplay.md",
+      "anchor": "tc-autoplay-planner-001-local-external-planner-step-and-replay-contract",
+      "profiles": [
+        "Modern AAPCS debug with EXPANSION_AUTOPLAY_PLANNER=1",
+        "Clean-boot generated two-chapter libmGBA transport fixture"
+      ],
+      "purpose": "Prove the typed local mailbox, paged pointer-free observations, legal token commit/rejection, two-chapter semantic replay, and replaceable scripted/search planners.",
+      "prerequisites": "Repository root with Python 3, host C compiler, ARM toolchain, libmGBA development files, exact debug provenance, and blank in-memory SRAM; no save fixture, savestate, or network.",
+      "actions": "Run the focused PlannerBridgeTests selector and the exact two-chapter PlannerLibmGBAIntegrationTests selector.",
+      "expected_result": "Scripted and bounded-search planners use the same token protocol, the production decision adapter accepts only a matching token, and a clean two-chapter fixture replays deterministically.",
+      "negative_control": "Stale, unknown, forged, unavailable, malformed, cancelled, mismatched-provenance, and over-budget requests fail explicitly; mailbox exposes no arbitrary-memory write surface; release rejects the gate.",
+      "interactions": "Hard stack parents are #85, #86, #89, #90, and #91; #87 is unrelated and #88 is optional. The bridge adds no second router or policy model.",
+      "save_compatibility": "Fresh in-memory SRAM only; no save field, loaded save fixture, savestate, migration, preference, or compatibility-epoch change.",
+      "cleanup": "The generated fixture is removed under ignored build/test-artifacts.",
+      "limitations": "Proves a bounded local interface and replay, not human-like play, optimality, balance, or campaign viability.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests -v",
+          "evidence": "tools/gba-playtest/tests/test_autoplay_planner.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_two_chapter_fixture_replays_from_clean_boot_without_save_or_snapshot -v",
+          "evidence": "tools/gba-playtest/tests/test_autoplay_planner.py"
         }
       ]
     },

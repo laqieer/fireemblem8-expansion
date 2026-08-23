@@ -20,7 +20,8 @@ Run `./configure --help` to see the persistent feature/profile interface.
 `scripts/modernize/expansion_config.py` implementation used by the build, then
 writes ignored `config.autotools.mk` and `GNUmakefile` files. Supported options
 cover the starter flags, AoE reference, casual-mode policy, HQ mixer,
-localized-text auto-wrap, autoplay strategy references, enabled/default/pseudo
+localized-text auto-wrap, autoplay strategy references, the debug-only
+autoplay planner bridge, enabled/default/pseudo
 locales, ROM size, item ID cap, and link-time text shift.
 
 Only options explicitly passed to `configure` are written, so unspecified
@@ -61,6 +62,7 @@ regenerate the committed `configure` script with `autoreconf -fi`.
 | `EXPANSION_CASUAL_MODE` | `0` or `1` | `0` | issue #34 optional ordinary player-defeat restoration (fingerprint); combat/arena defeats are restored at the next chapter boundary, while scripted deaths and explicit removals remain permanent |
 | `EXPANSION_HQ_MIXER` | `0` or `1`; only `en` or `en,qps-ploc` locale profiles | `0` | issue #83 optional modern-only high-resolution MP2K PCM mixer (fingerprint); archival and real-localized-game requests fail before compilation and save compatibility is unchanged |
 | `EXPANSION_AUTOPLAY_STRATEGIES` | `0` or `1` | `0` | issue #90 permanent default-off Aggressive and Objective-first reference profiles (fingerprint); the generic registry remains available, no save state or migration is added |
+| `EXPANSION_AUTOPLAY_PLANNER` | `0` or `1`; `1` requires `MODERN_CONFIG=debug` | `0` | issue #92 default-off local external planner bridge (fingerprint); exports only typed mailbox/observation records, is absent from release/archival builds, and has no save impact |
 | `EXPANSION_BGM_CONTINUATION_POLICY` | `preserve`, `resume`, or `restart` | `preserve` | issues #37/#39 typed BGM continuation policy (fingerprint); never save-compatible |
 
 Every value has a `?=` default, so an explicit `./configure` option, `make`

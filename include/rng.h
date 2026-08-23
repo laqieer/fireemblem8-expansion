@@ -12,5 +12,9 @@ s8 Roll1RN(int threshold);
 s8 Roll2RN(int threshold);
 void SetLCGRNValue(s32 Seed);
 unsigned AdvanceGetLCGRNValue(void);
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+unsigned GetLCGRNValue(void);
+u32 GetRNConsumptionCount(void);
+#endif
 
 #endif
