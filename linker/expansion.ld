@@ -328,6 +328,24 @@ SECTIONS
         "IWRAM data leaves no user stack")
     ASSERT(__iwram_static_end <= __iwram_static_limit,
         "IWRAM data leaves less than 0x1000 bytes for the user stack")
+    ASSERT(
+        (__expansion_autoplay_hq_iwram_end
+            - __expansion_autoplay_hq_iwram_start)
+        + (__expansion_autoplay_regular_iwram_end
+            - __expansion_autoplay_regular_iwram_start) == 0x44,
+        "Autoplay telemetry and controller must occupy exactly 0x44 IWRAM bytes")
+    ASSERT(__hq_mixer_enabled == 0
+        || __expansion_autoplay_hq_iwram_end
+            == __iwram_start + 0x2C60,
+        "HQ autoplay state must end at the fixed SoundMainRAM buffer boundary")
+    ASSERT(__hq_mixer_enabled == 0
+        || __expansion_autoplay_regular_iwram_end
+            == __expansion_autoplay_regular_iwram_start,
+        "HQ autoplay state must not also occupy the regular tail section")
+    ASSERT(__hq_mixer_enabled != 0
+        || __expansion_autoplay_regular_iwram_end
+            - __expansion_autoplay_regular_iwram_start == 0x44,
+        "Regular autoplay state must remain in its persistent tail section")
     ASSERT(__hq_mixer_enabled == 0
         || (DEFINED(SoundMainRAM_End)
             ? (SoundMainRAM_End - SoundMainRAM) == 0xAC0

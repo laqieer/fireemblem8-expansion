@@ -6,7 +6,12 @@ const char AgbLibSramVersion[] = "SRAM_F_V103";
 static u16 verifySramFast_Work[80]; // buffer to hold code of VerifySramFast_Core
 static u16 readSramFast_Work[64];  // buffer to hold code of ReadSramFast_Core
 #ifdef MODERN
-static u16 verifySramValueFast_Work[80];
+/*
+ * The current copied routine is 0x90 bytes. Keep two halfwords of growth
+ * room; SetSramFastFunc falls back to the ROM routine if it ever grows past
+ * this buffer.
+ */
+static u16 verifySramValueFast_Work[74];
 #endif
 
 #if FE8_EXPANSION_HQ_MIXER
