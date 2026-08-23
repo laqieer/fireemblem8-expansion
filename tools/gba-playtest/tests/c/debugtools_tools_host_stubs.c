@@ -215,6 +215,19 @@ ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
     return (ProcPtr)1;
 }
 
+ProcPtr Proc_Find(const struct ProcCmd* script)
+{
+    if (script == gProcScr_DebugToolsMenuTransition)
+        return sDebugToolsToolsPendingTransition;
+
+    return NULL;
+}
+
+void Proc_End(ProcPtr proc)
+{
+    (void)proc;
+}
+
 void DebugToolsHostStub_RunPendingTransition(void)
 {
     ProcPtr proc = sDebugToolsToolsPendingTransition;
@@ -243,6 +256,14 @@ void DebugTools_RegisterChapter4PrepAction(void)
 }
 
 void DebugTools_RegisterWeatherFogActions(void)
+{
+}
+
+void DebugTools_RegisterMusicPreviewAction(void)
+{
+}
+
+void DebugTools_CleanupMusicPreview(void)
 {
 }
 

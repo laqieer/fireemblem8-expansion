@@ -83,9 +83,16 @@ class BuildOutputsTests(unittest.TestCase):
 
     def test_budget_reports_pseudo_policy_counts(self):
         budget = build_budget(self.catalog)
+        expected = {
+            policy: sum(
+                entry.pseudo_policy == policy
+                for entry in self.catalog.active_entries
+            )
+            for policy in schema.PSEUDO_POLICIES
+        }
         self.assertEqual(
             budget["pseudo_policy_counts"],
-            {"transform": 54, "compact": 2, "preserve": 6},
+            expected,
         )
 
     def test_generated_qps_catalog_preserves_build_timestamp(self):

@@ -46,12 +46,21 @@ EWRAM_DATA struct DebugToolsProbe gDebugToolsProbe = {0};
 
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
 
+enum
+{
+    DEBUGTOOLS_STABLE_BUILTIN_ACTION_MAX = 9,
+    DEBUGTOOLS_ADDITIONAL_BUILTIN_ACTION_MAX =
+        DEBUGTOOLS_BUILTIN_ACTION_MAX - DEBUGTOOLS_STABLE_BUILTIN_ACTION_MAX
+};
+
 /* Keep added contributor/page state in a dedicated input section that the
  * linker appends after the pre-existing EWRAM layout. This adds bounded
  * capacity without moving gDebugToolsProbe or any later probe/state symbol
  * whose address is consumed by runtime scenarios. */
 SECTION("debugtools_contributor_data") static struct DebugToolsAction
     sContributorActions[DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX] = {0};
+SECTION("debugtools_contributor_data") static struct DebugToolsAction
+    sAdditionalBuiltinActions[DEBUGTOOLS_ADDITIONAL_BUILTIN_ACTION_MAX] = {0};
 SECTION("debugtools_contributor_data") static int sContributorActionCount = 0;
 SECTION("debugtools_contributor_data") static int sHubPage = 0;
 SECTION("debugtools_contributor_data") static u32 sDebugMenuState = 0;
@@ -83,7 +92,7 @@ struct DebugToolsRegistryState
     /* 000 */ u32 hubActive;
     /* 004 */ enum DebugToolsResult lastResult;
     /* 008 */ int builtinActionCount;
-    /* 00C */ struct DebugToolsAction builtinActions[DEBUGTOOLS_BUILTIN_ACTION_MAX];
+    /* 00C */ struct DebugToolsAction builtinActions[DEBUGTOOLS_STABLE_BUILTIN_ACTION_MAX];
     /* 078 */ struct MenuItemDef hubMenuItemDefs[DEBUGTOOLS_HUB_MENU_SLOTS];
 };
 
@@ -176,6 +185,9 @@ static void DebugToolsHub_OnEnd(struct MenuProc* proc)
     sHubActive = 0;
     sDebugMenuState &= ~DEBUGTOOLS_STATE_HUB_ACTIVE;
 
+    if (!(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE))
+        return;
+
     if (!(sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
         DebugTools_StartMenuTransition(
             proc,
@@ -197,9 +209,9 @@ CONST_DATA struct MenuDef gDebugToolsHubMenuDef = {
 };
 
 #ifdef MODERN
-/* Parallel-indexed by builtin action id (1-9); id 0 is never a real
+/* Parallel-indexed by builtin action id (1-10); id 0 is never a real
  * action (see DEBUGTOOLS_ERR_ID_INVALID), so slot 0 is an unused
- * placeholder. Every entry here is one of the nine builtin ids -- a
+ * placeholder. Every entry here is one of the ten builtin ids -- a
  * contributor/third-party registration always uses some other id and
  * therefore is never looked up in this table (see
  * DebugToolsHub_ResolveBuiltinLabelMsgId below). */
@@ -215,6 +227,7 @@ static const ExpansionMsgId sBuiltinActionLabelMsgIds[DEBUGTOOLS_BUILTIN_ACTION_
     EXP_MSG_DEBUG_ACTION_FLAG_CHAPTER,      /* id 7 */
     EXP_MSG_DEBUG_ACTION_RNG_INSPECT,       /* id 8 */
     EXP_MSG_DEBUG_ACTION_SAVE_STATE,        /* id 9 */
+    EXP_MSG_DEBUG_ACTION_MUSIC_PREVIEW,     /* id 10 */
 };
 
 /* Returns EXPANSION_MSG_ID_INVALID for any id outside the builtin
@@ -396,20 +409,36 @@ static int DebugTools_GetActionCount(void)
     return sBuiltinActionCount + sContributorActionCount;
 }
 
+static struct DebugToolsAction* DebugTools_GetBuiltinSlot(u16 id)
+{
+    int slot = id - DEBUGTOOLS_BUILTIN_ID_MIN;
+
+    if (id < DEBUGTOOLS_BUILTIN_ID_MIN || id > DEBUGTOOLS_BUILTIN_ID_MAX)
+        return NULL;
+
+    if (slot < DEBUGTOOLS_STABLE_BUILTIN_ACTION_MAX)
+        return &sBuiltinActions[slot];
+
+    return &sAdditionalBuiltinActions[
+        slot - DEBUGTOOLS_STABLE_BUILTIN_ACTION_MAX];
+}
+
 static const struct DebugToolsAction* DebugTools_GetBuiltinAction(int index)
 {
-    int slot;
+    struct DebugToolsAction* action;
+    int id;
 
     if (index < 0 || index >= sBuiltinActionCount)
         return NULL;
 
-    for (slot = 0; slot < DEBUGTOOLS_BUILTIN_ACTION_MAX; ++slot)
+    for (id = DEBUGTOOLS_BUILTIN_ID_MIN; id <= DEBUGTOOLS_BUILTIN_ID_MAX; ++id)
     {
-        if (sBuiltinActions[slot].id == 0)
+        action = DebugTools_GetBuiltinSlot((u16)id);
+        if (action->id == 0)
             continue;
 
         if (index == 0)
-            return &sBuiltinActions[slot];
+            return action;
 
         index--;
     }
@@ -466,9 +495,7 @@ static int DebugTools_RegisterActionCore(const struct DebugToolsAction* action, 
 
     if (isBuiltin)
     {
-        int slot = action->id - DEBUGTOOLS_BUILTIN_ID_MIN;
-
-        registered = &sBuiltinActions[slot];
+        registered = DebugTools_GetBuiltinSlot(action->id);
         if (registered->id != 0)
         {
             if (registered->id == action->id
@@ -491,12 +518,12 @@ static int DebugTools_RegisterActionCore(const struct DebugToolsAction* action, 
 
     if (isBuiltin)
     {
-        int slot = action->id - DEBUGTOOLS_BUILTIN_ID_MIN;
+        struct DebugToolsAction* slot = DebugTools_GetBuiltinSlot(action->id);
 
         if (sBuiltinActionCount >= DEBUGTOOLS_BUILTIN_ACTION_MAX)
             return DebugTools_SetLastResult(DEBUGTOOLS_ERR_CAPACITY_FULL);
 
-        sBuiltinActions[slot] = *action;
+        *slot = *action;
         sBuiltinActionCount++;
     }
     else
@@ -527,6 +554,7 @@ static void DebugTools_EnsureBuiltinActionsRegistered(void)
     DebugTools_RegisterWeatherFogActions();
     DebugTools_RegisterChapter4PrepAction();
     DebugTools_RegisterExtendedToolActions();
+    DebugTools_RegisterMusicPreviewAction();
     sDebugMenuState |= DEBUGTOOLS_STATE_BUILTINS_INITIALIZED;
 }
 
@@ -689,6 +717,7 @@ void DebugTools_RunMenuTransition(ProcPtr proc)
     }
 
     sHubPage = 0;
+    DebugTools_CleanupMusicPreview();
     sDebugMenuState &= ~(DEBUGTOOLS_STATE_SESSION_ACTIVE | DEBUGTOOLS_STATE_HUB_ACTIVE);
 }
 
@@ -727,6 +756,27 @@ int DebugTools_IsHubActive(void)
     return sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE;
 }
 
+void DebugTools_ForceSessionCleanup(void)
+{
+    DebugTools_CleanupMusicPreview();
+
+    if (!(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE))
+        return;
+
+    if (sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED)
+    {
+        ProcPtr transition = Proc_Find(gProcScr_DebugToolsMenuTransition);
+
+        if (transition != NULL)
+            Proc_End(transition);
+    }
+
+    gLCDControlBuffer.dispcnt.bg2_on = 0;
+    sHubActive = 0;
+    sHubPage = 0;
+    sDebugMenuState &= DEBUGTOOLS_STATE_BUILTINS_INITIALIZED;
+}
+
 void DebugTools_TitleHotkeyCheck(void)
 {
     u16 mask = FE8_EXPANSION_DEBUGTOOLS_HOTKEY_MASK;
@@ -739,7 +789,10 @@ void DebugTools_TitleHotkeyCheck(void)
      * authoritative reentrancy guard (returns DEBUGTOOLS_ERR_ALREADY_ACTIVE,
      * a no-op, rather than starting a second concurrent MenuProc). */
     if ((gKeyStatusPtr->heldKeys & mask) == mask && (gKeyStatusPtr->newKeys & mask) != 0)
-        DebugTools_OpenHub();
+    {
+        if (DebugTools_OpenHub() == DEBUGTOOLS_ERR_ALREADY_ACTIVE)
+            gKeyStatusPtr->newKeys &= (u16)~mask;
+    }
 }
 
 /* Issue #11 slice 2: map-phase and prep-screen hub entry points. Same
@@ -751,7 +804,10 @@ void DebugTools_MapHotkeyCheck(void)
     u16 mask = FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK;
 
     if ((gKeyStatusPtr->heldKeys & mask) == mask && (gKeyStatusPtr->newKeys & mask) != 0)
-        DebugTools_OpenHub();
+    {
+        if (DebugTools_OpenHub() == DEBUGTOOLS_ERR_ALREADY_ACTIVE)
+            gKeyStatusPtr->newKeys &= (u16)~mask;
+    }
 }
 
 void DebugTools_PrepHotkeyCheck(void)
@@ -772,7 +828,8 @@ void DebugTools_PrepHotkeyCheck(void)
         if (gPlaySt.chapterStateBits & PLAY_FLAG_PREPSCREEN)
             gDebugToolsProbe.prepScreenObservedCount++;
 
-        DebugTools_OpenHub();
+        if (DebugTools_OpenHub() == DEBUGTOOLS_ERR_ALREADY_ACTIVE)
+            gKeyStatusPtr->newKeys &= (u16)~mask;
     }
 }
 
@@ -829,6 +886,10 @@ void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
 int DebugTools_IsHubActive(void)
 {
     return 0;
+}
+
+void DebugTools_ForceSessionCleanup(void)
+{
 }
 
 void DebugTools_TitleHotkeyCheck(void)
