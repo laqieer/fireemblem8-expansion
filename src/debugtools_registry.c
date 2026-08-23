@@ -13,9 +13,10 @@
 
 #ifdef MODERN
 /* Issue #18 sprint 3: render-time-only ExpansionMsgId mapping for the
- * nine title/map/prep-reachable *builtin* action ids (1-9, see
+ * title/map/prep-reachable *builtin* action ids
+ * (1..DEBUGTOOLS_BUILTIN_ID_MAX, see
  * src/debugtools_launcher.c/src/debugtools_actions.c/
- * src/debugtools_tools.c) -- purely additive to how those specific
+ * src/debugtools_tools.c/src/debugtools_music.c) -- purely additive to how those specific
  * rows are *drawn*; struct DebugToolsAction/DebugToolsResult/
  * DebugTools_RegisterAction's ABI and every registered action's own
  * `id`/`label`/`onSelected` fields are completely untouched. Any
@@ -231,7 +232,8 @@ static const ExpansionMsgId sBuiltinActionLabelMsgIds[DEBUGTOOLS_BUILTIN_ACTION_
 };
 
 /* Returns EXPANSION_MSG_ID_INVALID for any id outside the builtin
- * 1-9 range (every third-party/contributor id included) -- never an
+ * 1..DEBUGTOOLS_BUILTIN_ID_MAX range (every third-party/contributor id
+ * included) -- never an
  * out-of-bounds table read. */
 static ExpansionMsgId DebugToolsHub_ResolveBuiltinLabelMsgId(
     const struct DebugToolsAction* action)
