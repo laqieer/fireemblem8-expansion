@@ -12,10 +12,11 @@ import subprocess
 import sys
 import time
 import unittest
-from unittest import mock
 import zlib
+from unittest import mock
+from types import SimpleNamespace
 
-from scripts.assets import manifest, tmx
+from scripts.assets import banim, manifest, tmx
 from scripts.generated_data.diagnostics import GeneratedDataError, GeneratedDataValidationError
 
 
@@ -1040,7 +1041,7 @@ class AssetManifestTests(unittest.TestCase):
             tiled_dependencies,
         )
 
-    def test_asset_makefile_guards_only_tmx_incbin_consumers(self):
+    def test_asset_makefile_guards_output_override_for_default_manifest(self):
         guarded = subprocess.run(
             [
                 "make",
@@ -1082,6 +1083,25 @@ class AssetManifestTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(allowed.returncode, 0, allowed.stderr)
+
+    def test_make_rejects_output_override_with_banim_incbin_consumer(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            document = json.load(handle)
+        document["assets"] = [
+            record for record in document["assets"] if record["kind"] == "battle-animation-package"
+        ]
+        source = self.write_document(document)
+        result = self.run_assets_make(
+            source,
+            "build/generated/assets/test-work/banim-output-override",
+            "assets-generate",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "ASSET_OUTPUT_DIR must be build/generated/assets while battle-animation package "
+            "INCBIN consumer(s) LORM_SP1_PROOF are declared",
+            result.stdout + result.stderr,
+        )
 
     def test_check_detects_orphans_through_a_relative_output_path(self):
         source = self.write_manifest([valid_record()])
@@ -1188,6 +1208,607 @@ class AssetManifestTests(unittest.TestCase):
             with open(os.path.join(out_dir, name), encoding="utf-8") as handle:
                 outputs[name] = handle.read()
         return outputs
+
+
+class BattleAnimationPackageTests(unittest.TestCase):
+    def setUp(self):
+        if os.path.exists(TEST_ROOT):
+            shutil.rmtree(TEST_ROOT)
+        os.makedirs(TEST_ROOT)
+
+    def tearDown(self):
+        if os.path.exists(TEST_ROOT):
+            shutil.rmtree(TEST_ROOT)
+
+    def test_real_package_generates_runtime_symbols_and_payloads(self):
+        records = manifest.load_and_validate(os.path.join(REPO_ROOT, "assets", "manifest.json"))
+        output = os.path.join(TEST_ROOT, "out")
+        manifest.generate(os.path.join(REPO_ROOT, "assets", "manifest.json"), output)
+        with open(os.path.join(output, "banim", "banim_data_entries.inc"), encoding="utf-8") as handle:
+            entry = handle.read()
+        with open(os.path.join(output, "banim", "banim_defs.inc"), encoding="utf-8") as handle:
+            definition = handle.read()
+        self.assertIn('{"lorm_sp1", &banim_package_lorm_sp1_proof_modes_bin', entry)
+        self.assertIn("BanimPackage_LORM_SP1_PROOF", definition)
+        self.assertIn(".wtype = 0x100 | ITYPE_DARK", definition)
+        with open(
+            os.path.join(output, "banim", "banim_package_lorm_sp1_proof_motion.s"),
+            encoding="utf-8",
+        ) as handle:
+            motion = handle.read()
+        self.assertIn("banim_code_sound_sword_swing_short", motion)
+        self.assertNotIn("banim_lorm_sp1_motion", motion)
+        self.assertEqual(
+            os.path.getsize(
+                os.path.join(output, "banim", "banim_package_lorm_sp1_proof_idle.4bpp")
+            ),
+            8192,
+        )
+        self.assertEqual(
+            os.path.getsize(
+                os.path.join(output, "banim", "banim_package_lorm_sp1_proof_modes.bin")
+            ),
+            96,
+        )
+        with open(os.path.join(output, "banim", "linker_script_banim.txt"), encoding="utf-8") as handle:
+            linker = handle.read()
+        self.assertIn("banim_package_lorm_sp1_proof_motion.o|.data.script>lz", linker)
+        self.assertIn("banim_package_lorm_sp1_proof_palette.pal>lz", linker)
+        self.assertEqual(len([record for record in records if record.kind == "battle-animation-package"]), 1)
+        manifest.check(os.path.join(REPO_ROOT, "assets", "manifest.json"), output)
+
+    def test_png_contract_and_script_commands_fail_closed(self):
+        png = os.path.join(REPO_ROOT, "graphics", "banim", "banim_lorm_sp1_sheet_0.png")
+        self.assertEqual(banim.read_indexed_png(png)["tiles"], 256)
+        corrupt_png = os.path.join(TEST_ROOT, "invalid.png")
+        with open(png, "rb") as source, open(corrupt_png, "wb") as destination:
+            data = bytearray(source.read())
+            data[29] ^= 1
+            destination.write(data)
+        with self.assertRaisesRegex(ValueError, "invalid PNG chunk CRC"):
+            banim.read_indexed_png(corrupt_png)
+
+        script = os.path.join(TEST_ROOT, "invalid.txt")
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write("BANIM 1\nmode normal\nframe 1 idle\ncommand call_spell\nend\n")
+        with self.assertRaisesRegex(ValueError, "unsupported vanilla command"):
+            banim.parse_script(script, {"idle": "fixture.png"})
+
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write("BANIM 1\nmode normal\nframe 1 idle\nend\n")
+        with self.assertRaisesRegex(ValueError, "must define every v1 mode"):
+            banim.parse_script(script, {"idle": "fixture.png"})
+
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(
+                "BANIM 1\nmode normal\nframe 256 idle\nend\n"
+                "mode critical\nwait 1\nend\nmode ranged\nwait 1\nend\n"
+                "mode dodge\nwait 1\nend\nmode standing\nwait 1\nend\n"
+            )
+        with self.assertRaisesRegex(ValueError, "within 1..255"):
+            banim.parse_script(script, {"idle": "fixture.png"})
+
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(
+                "BANIM 1\nmode normal\nwait 1\ncommand start_attack_1\nloop 1\nend\n"
+                "mode critical\nwait 1\nend\nmode ranged\nwait 1\nend\n"
+                "mode dodge\nwait 1\nend\nmode standing\nwait 1\nend\n"
+            )
+        with self.assertRaisesRegex(ValueError, "loop without a preceding timed group"):
+            banim.parse_script(script, {"idle": "fixture.png"})
+
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(
+                "BANIM 1\nmode normal\nframe 1 idle\nsound unknown\nend\n"
+                "mode critical\nwait 1\nend\nmode ranged\nwait 1\nend\n"
+                "mode dodge\nwait 1\nend\nmode standing\nwait 1\nend\n"
+            )
+        with self.assertRaisesRegex(ValueError, "unsupported sound command"):
+            banim.parse_script(script, {"idle": "fixture.png"})
+
+    @staticmethod
+    def write_indexed_png(path, alpha, width=32, height=32, palette=b"\x00\x00\x00\xff\xff\xff"):
+        def chunk(name, data):
+            return (
+                struct.pack(">I", len(data))
+                + name
+                + data
+                + struct.pack(">I", zlib.crc32(name + data) & 0xFFFFFFFF)
+            )
+
+        pixels = b"".join(b"\x00" + b"\x00" * (width // 2) for _ in range(height))
+        payload = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 4, 3, 0, 0, 0))
+            + chunk(b"PLTE", palette)
+            + chunk(b"tRNS", alpha)
+            + chunk(b"IDAT", zlib.compress(pixels))
+            + chunk(b"IEND", b"")
+        )
+        with open(path, "wb") as handle:
+            handle.write(payload)
+
+    def test_png_transparency_is_binary_and_has_one_transparent_index(self):
+        valid = os.path.join(TEST_ROOT, "binary-alpha.png")
+        self.write_indexed_png(valid, b"\x00\xff")
+        self.assertEqual(banim.read_indexed_png(valid)["colors"], 2)
+
+        partial = os.path.join(TEST_ROOT, "partial-alpha.png")
+        self.write_indexed_png(partial, b"\x00\x80")
+        with self.assertRaisesRegex(ValueError, "only palette index 0 transparent"):
+            banim.read_indexed_png(partial)
+
+        opaque = os.path.join(TEST_ROOT, "opaque-alpha.png")
+        self.write_indexed_png(opaque, b"\xff\xff")
+        with self.assertRaisesRegex(ValueError, "only palette index 0 transparent"):
+            banim.read_indexed_png(opaque)
+
+        wrong_index = os.path.join(TEST_ROOT, "wrong-index.png")
+        self.write_indexed_png(wrong_index, b"\xff\x00")
+        with self.assertRaisesRegex(ValueError, "only palette index 0 transparent"):
+            banim.read_indexed_png(wrong_index)
+
+        non_block = os.path.join(TEST_ROOT, "forty-pixels.png")
+        self.write_indexed_png(non_block, b"\x00\xff", width=40, height=32)
+        with self.assertRaisesRegex(ValueError, "multiples of 32"):
+            banim.read_indexed_png(non_block)
+
+    def test_script_diagnostics_preserve_original_source_line_numbers(self):
+        script = os.path.join(TEST_ROOT, "line-numbers.txt")
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(
+                "# comment before the header\n\nBANIM 1\n\nmode normal\nframe 1 idle\nend\n"
+                "# diagnostics must retain this line\ninvalid_command\n"
+            )
+        with self.assertRaisesRegex(ValueError, r"line-numbers\.txt:9 has unknown command"):
+            banim.parse_script(script, {"idle": "fixture.png"})
+
+    def test_manifest_ids_remain_collision_free_generated_symbols(self):
+        package = banim.load_package(
+            REPO_ROOT,
+            "assets/banim/lorm_sp1/package.json",
+            "assets/banim/lorm_sp1/script.txt",
+            {
+                "assets/banim/lorm_sp1/package.json",
+                "assets/banim/lorm_sp1/script.txt",
+                "graphics/banim/banim_lorm_sp1_sheet_0.png",
+            },
+        )
+        records = [
+            SimpleNamespace(
+                id=record_id,
+                kind=manifest.BattleAnimationPackageKind.name,
+                banim_package=copy.deepcopy(package),
+            )
+            for record_id in ("A_B", "A__B")
+        ]
+        for record in records:
+            record.banim_package.data["id"] = record.id
+        entries = manifest.banim_expected_outputs(records, TEST_ROOT)[
+            os.path.join(TEST_ROOT, "banim", "banim_data_entries.inc")
+        ]
+        self.assertIn("banim_package_a_b_modes_bin", entries)
+        self.assertIn("banim_package_a__b_modes_bin", entries)
+
+    def test_banim_ownership_and_resource_conflicts_fail(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            document = json.load(handle)
+        proof = next(record for record in document["assets"] if record["kind"] == "battle-animation-package")
+        duplicate = copy.deepcopy(proof)
+        duplicate["id"] = "LORM_SP1_DUPLICATE"
+        document["assets"].append(duplicate)
+        path = os.path.join(TEST_ROOT, "manifest.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        package = banim.load_package(
+            REPO_ROOT,
+            proof["sources"][0],
+            proof["sources"][1],
+            set(proof["sources"]),
+        )
+        package.data = copy.deepcopy(package.data)
+        duplicate_package = copy.deepcopy(package)
+        duplicate_package.data["id"] = duplicate["id"]
+        with mock.patch.object(banim, "load_package", side_effect=[package, duplicate_package]):
+            with self.assertRaises(GeneratedDataValidationError) as raised:
+                manifest.load_and_validate(path)
+        self.assertIn("ownership conflict", str(raised.exception))
+
+        proof["resources"]["oamEntries"] = 129
+        document["assets"] = [record for record in document["assets"] if record["id"] != "LORM_SP1_DUPLICATE"]
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        with self.assertRaises(GeneratedDataValidationError) as raised:
+            manifest.load_and_validate(path)
+        self.assertIn("resources.oamEntries", str(raised.exception))
+
+    def test_generated_runtime_budgets_fail_closed(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            document = json.load(handle)
+        proof = next(record for record in document["assets"] if record["kind"] == "battle-animation-package")
+        path = os.path.join(TEST_ROOT, "manifest.json")
+
+        proof["resources"]["oamEntries"] = 1
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        with self.assertRaises(GeneratedDataValidationError) as raised:
+            manifest.load_and_validate(path)
+        self.assertIn("generated OAM count", str(raised.exception))
+
+        proof["resources"]["oamEntries"] = 32
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        package = banim.load_package(
+            REPO_ROOT,
+            proof["sources"][0],
+            proof["sources"][1],
+            set(proof["sources"]),
+        )
+        package.modes["critical"][0] = ("frame", 1, "idle", "left")
+        with mock.patch.object(banim, "load_package", return_value=package):
+            with self.assertRaises(GeneratedDataValidationError) as raised:
+                manifest.load_and_validate(path)
+        self.assertIn("generated OAM count", str(raised.exception))
+
+        proof["resources"]["romBytes"] = 1
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        with self.assertRaises(GeneratedDataValidationError) as raised:
+            manifest.load_and_validate(path)
+        self.assertIn("generated runtime data", str(raised.exception))
+
+    def test_runtime_test_declarations_are_generated_from_package_data(self):
+        records = manifest.load_and_validate(os.path.join(REPO_ROOT, "assets", "manifest.json"))
+        output = os.path.join(TEST_ROOT, "out")
+        manifest.generate(os.path.join(REPO_ROOT, "assets", "manifest.json"), output)
+        with open(
+            os.path.join(output, "banim", "banim_runtime_test_defs.h"), encoding="utf-8"
+        ) as handle:
+            definitions = handle.read()
+        package = next(record.banim_package for record in records if record.id == "LORM_SP1_PROOF")
+        self.assertIn("#define BANIM_PACKAGE_LORM_SP1_PROOF_MODE_COUNT 5", definitions)
+        self.assertIn("#define BANIM_PACKAGE_LORM_SP1_PROOF_SOUND_OPCODE 0x85000022", definitions)
+        self.assertIn(
+            "#define BANIM_PACKAGE_LORM_SP1_PROOF_TOTAL_DURATION {}".format(
+                sum(package.mode_durations.values())
+            ),
+            definitions,
+        )
+
+    def test_identical_frames_share_one_generated_sheet(self):
+        package = banim.load_package(
+            REPO_ROOT,
+            "assets/banim/lorm_sp1/package.json",
+            "assets/banim/lorm_sp1/script.txt",
+            {
+                "assets/banim/lorm_sp1/package.json",
+                "assets/banim/lorm_sp1/script.txt",
+                "graphics/banim/banim_lorm_sp1_sheet_0.png",
+            },
+        )
+        package.frames["duplicate"] = package.frames["idle"]
+        package.pngs["duplicate"] = package.pngs["idle"]
+        outputs, paths, _metadata = banim.runtime_outputs(package, TEST_ROOT)
+        self.assertEqual(paths["frame_idle"], paths["frame_duplicate"])
+        self.assertEqual(
+            len(
+                [
+                    path
+                    for path in outputs
+                    if path.endswith(".4bpp")
+                ]
+            ),
+            1,
+        )
+
+    def test_sheet_tile_budget_uses_deduplicated_frame_payloads(self):
+        package_path = os.path.join(TEST_ROOT, "package.json")
+        script_path = os.path.join(TEST_ROOT, "script.txt")
+        first_path = os.path.join(TEST_ROOT, "first.png")
+        second_path = os.path.join(TEST_ROOT, "second.png")
+        with open(
+            os.path.join(REPO_ROOT, "assets", "banim", "lorm_sp1", "package.json"),
+            encoding="utf-8",
+        ) as handle:
+            package = json.load(handle)
+        with open(
+            os.path.join(REPO_ROOT, "assets", "banim", "lorm_sp1", "script.txt"),
+            encoding="utf-8",
+        ) as source, open(script_path, "w", encoding="utf-8", newline="\n") as destination:
+            destination.write(source.read())
+        package["frames"] = [
+            {"id": "idle", "path": "first.png"},
+            {"id": "duplicate", "path": "second.png"},
+        ]
+        package["resources"]["maxFrames"] = 2
+        package["resources"]["maxSheetTiles"] = 16
+        self.write_indexed_png(first_path, b"\x00\xff")
+        shutil.copyfile(first_path, second_path)
+        with open(package_path, "w", encoding="utf-8") as handle:
+            json.dump(package, handle)
+
+        loaded = banim.load_package(
+            TEST_ROOT,
+            "package.json",
+            "script.txt",
+            {"package.json", "script.txt", "first.png", "second.png"},
+        )
+        self.assertEqual(len(loaded.frames), 2)
+
+    def test_obj_vram_budget_uses_deduplicated_runtime_payloads(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            document = json.load(handle)
+        proof = next(record for record in document["assets"] if record["kind"] == "battle-animation-package")
+        path = os.path.join(TEST_ROOT, "manifest.json")
+        package = banim.load_package(
+            REPO_ROOT,
+            "assets/banim/lorm_sp1/package.json",
+            "assets/banim/lorm_sp1/script.txt",
+            {
+                "assets/banim/lorm_sp1/package.json",
+                "assets/banim/lorm_sp1/script.txt",
+                "graphics/banim/banim_lorm_sp1_sheet_0.png",
+            },
+        )
+        duplicate = copy.deepcopy(package)
+        duplicate.data = copy.deepcopy(package.data)
+        duplicate.data["resources"]["maxFrames"] = 2
+        duplicate.data["resources"]["maxSheetTiles"] = 512
+        duplicate.frames["duplicate"] = duplicate.frames["idle"]
+        duplicate.pngs["duplicate"] = duplicate.pngs["idle"]
+        _outputs, _paths, duplicate_metadata = banim.runtime_outputs(duplicate, TEST_ROOT)
+        proof["resources"]["objVramBytes"] = duplicate_metadata["unique_frame_bytes"]
+        proof["resources"]["romBytes"] = duplicate_metadata["runtime_bytes"]
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        with mock.patch.object(banim, "load_package", return_value=duplicate):
+            manifest.load_and_validate(path)
+
+        proof["resources"]["romBytes"] = duplicate_metadata["runtime_bytes"] - 1
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        with mock.patch.object(banim, "load_package", return_value=duplicate):
+            with self.assertRaises(GeneratedDataValidationError) as raised:
+                manifest.load_and_validate(path)
+        self.assertIn("generated runtime data", str(raised.exception))
+
+        unique = copy.deepcopy(duplicate)
+        unique.pngs["duplicate"] = copy.deepcopy(package.pngs["idle"])
+        unique.pngs["duplicate"]["pixels"] = (
+            b"\x11" + unique.pngs["duplicate"]["pixels"][1:]
+        )
+        _outputs, _paths, unique_metadata = banim.runtime_outputs(unique, TEST_ROOT)
+        proof["resources"]["romBytes"] = unique_metadata["runtime_bytes"]
+        proof["resources"]["objVramBytes"] = duplicate_metadata["unique_frame_bytes"]
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        with mock.patch.object(banim, "load_package", return_value=unique):
+            with self.assertRaises(GeneratedDataValidationError) as raised:
+                manifest.load_and_validate(path)
+        self.assertIn("generated frame data", str(raised.exception))
+
+    def test_zero_package_manifest_regenerates_base_banim_linker_script(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            document = json.load(handle)
+        document["assets"] = [
+            record for record in document["assets"] if record["kind"] != "battle-animation-package"
+        ]
+        manifest_path = os.path.join(TEST_ROOT, "manifest.json")
+        output = os.path.join(TEST_ROOT, "rollback")
+        with open(manifest_path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        records = manifest.generate(manifest_path, output)
+        rendered = manifest.render_makefile(records)
+        combined = os.path.join(output, "banim", "linker_script_banim.txt")
+        with open(os.path.join(REPO_ROOT, "linker_script_banim.txt"), "rb") as handle:
+            base = handle.read()
+        with open(combined, "rb") as handle:
+            self.assertEqual(handle.read(), base + b"# AUTO-GENERATED package runtime entries; do not edit.\n")
+        self.assertIn(
+            "$(ASSET_BANIM_COMBINED_LINKER_SCRIPT): $(ASSET_OUTPUT_MK)",
+            rendered,
+        )
+
+        os.unlink(combined)
+        makefile = os.path.join(TEST_ROOT, "rollback.mk")
+        with open(makefile, "w", encoding="utf-8") as handle:
+            handle.write(
+                "PYTHON := {}\n"
+                "ASSET_MANIFEST := {}\n"
+                "ASSET_OUTPUT_DIR := {}\n"
+                "ASSET_OUTPUT_MK := {}/asset_manifest.mk\n"
+                "ASSET_BANIM_COMBINED_LINKER_SCRIPT := {}\n"
+                "ASSET_TOOL := $(PYTHON) -m scripts.assets\n"
+                "include {}/asset_manifest.mk\n"
+                "banim/data_banim.o: $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)\n"
+                "\t@test -f $<\n".format(
+                    sys.executable,
+                    manifest_path,
+                    output,
+                    output,
+                    combined,
+                    output,
+                )
+            )
+        result = subprocess.run(
+            ["make", "--no-print-directory", "-f", makefile, "banim/data_banim.o"],
+            cwd=REPO_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertTrue(os.path.isfile(combined))
+
+        package_records = manifest.load_and_validate(
+            os.path.join(REPO_ROOT, "assets", "manifest.json")
+        )
+        self.assertIn(
+            "$(ASSET_BANIM_COMBINED_LINKER_SCRIPT) &: $(ASSET_OUTPUT_MK)",
+            manifest.render_makefile(package_records),
+        )
+
+    def test_grouped_banim_output_rule_rejects_missing_sibling(self):
+        records = manifest.load_and_validate(
+            os.path.join(REPO_ROOT, "assets", "manifest.json")
+        )
+        package = next(record.banim_package for record in records if record.id == "LORM_SP1_PROOF")
+        _outputs, paths, _metadata = banim.runtime_outputs(
+            package, "$(ASSET_OUTPUT_DIR)"
+        )
+        output = os.path.join(TEST_ROOT, "grouped")
+        output_mk = os.path.join(output, "asset_manifest.mk")
+        target = os.path.join(output, "banim", os.path.basename(paths["motion"]))
+        os.makedirs(os.path.dirname(target))
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write("partial output\n")
+        with open(output_mk, "w", encoding="utf-8") as handle:
+            handle.write("# stale manifest fragment\n")
+        newer = os.stat(target).st_mtime_ns + 2_000_000_000
+        os.utime(output_mk, ns=(newer, newer))
+        makefile = os.path.join(TEST_ROOT, "grouped.mk")
+        with open(makefile, "w", encoding="utf-8") as handle:
+            handle.write(
+                "ASSET_OUTPUT_DIR := {output}\n"
+                "ASSET_OUTPUT_MK := {output_mk}\n"
+                "ASSET_BANIM_COMBINED_LINKER_SCRIPT := {combined}\n"
+                "ASSET_TOOL := true\n"
+                "{fragment}".format(
+                    output=output,
+                    output_mk=output_mk,
+                    combined=os.path.join(output, "banim", "linker_script_banim.txt"),
+                    fragment=manifest.render_makefile(records),
+                )
+            )
+        result = subprocess.run(
+            ["make", "--no-print-directory", "-f", makefile, target],
+            cwd=REPO_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn(os.path.basename(target), result.stdout)
+
+    def test_side_specific_frames_emit_distinct_aligned_oam_payloads(self):
+        package = banim.load_package(
+            REPO_ROOT,
+            "assets/banim/lorm_sp1/package.json",
+            "assets/banim/lorm_sp1/script.txt",
+            {
+                "assets/banim/lorm_sp1/package.json",
+                "assets/banim/lorm_sp1/script.txt",
+                "graphics/banim/banim_lorm_sp1_sheet_0.png",
+            },
+        )
+        package.modes["normal"][0] = ("frame", 1, "idle", "left")
+        package.modes["critical"][0] = ("frame", 1, "idle", "right")
+        outputs, paths, _metadata = banim.runtime_outputs(package, TEST_ROOT)
+        left = outputs[paths["oam_left"]]
+        right = outputs[paths["oam_right"]]
+        self.assertNotEqual(left, right)
+        self.assertEqual(len(left), len(right))
+        self.assertEqual(left[0:12], right[408:420])
+        self.assertEqual(right[0:12], left[408:420])
+
+    def test_palette_variant_and_frame_palette_mismatches_fail_closed(self):
+        package_path = os.path.join(TEST_ROOT, "package.json")
+        script_path = os.path.join(TEST_ROOT, "script.txt")
+        frame_path = os.path.join(TEST_ROOT, "frame.png")
+        second_path = os.path.join(TEST_ROOT, "second.png")
+        with open(os.path.join(REPO_ROOT, "assets/banim/lorm_sp1/package.json"), encoding="utf-8") as handle:
+            package = json.load(handle)
+        with open(os.path.join(REPO_ROOT, "assets/banim/lorm_sp1/script.txt"), encoding="utf-8") as source:
+            script = source.read()
+        shutil.copyfile(os.path.join(REPO_ROOT, "graphics/banim/banim_lorm_sp1_sheet_0.png"), frame_path)
+        package["frames"][0]["path"] = "frame.png"
+        package["abbreviation"] = "way_too_long"
+        with open(package_path, "w", encoding="utf-8") as handle:
+            json.dump(package, handle)
+        with open(script_path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(script)
+        with self.assertRaisesRegex(ValueError, r"fit char abbr\[12\]"):
+            banim.load_package(
+                TEST_ROOT,
+                "package.json",
+                "script.txt",
+                {"package.json", "script.txt", "frame.png"},
+            )
+
+        package["abbreviation"] = "lorm_sp1"
+        package["paletteVariants"] = ["default", "alternate"]
+        with open(package_path, "w", encoding="utf-8") as handle:
+            json.dump(package, handle)
+        with open(script_path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(script)
+        with self.assertRaisesRegex(ValueError, "exactly \\['default'\\]"):
+            banim.load_package(TEST_ROOT, "package.json", "script.txt", {"package.json", "script.txt", "frame.png"})
+
+        package["paletteVariants"] = ["default"]
+        package["frames"].append({"id": "second", "path": "second.png"})
+        self.write_indexed_png(second_path, b"\x00\xff")
+        with open(package_path, "w", encoding="utf-8") as handle:
+            json.dump(package, handle)
+        with self.assertRaisesRegex(ValueError, "identical PLTE and tRNS"):
+            banim.load_package(
+                TEST_ROOT,
+                "package.json",
+                "script.txt",
+                {"package.json", "script.txt", "frame.png", "second.png"},
+            )
+
+    def test_generated_linker_derivatives_are_not_orphans(self):
+        manifest_path = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        output = os.path.join(TEST_ROOT, "out")
+        records = manifest.generate(manifest_path, output)
+        package = next(record.banim_package for record in records if record.id == "LORM_SP1_PROOF")
+        _outputs, paths, _metadata = banim.runtime_outputs(package, output)
+        with open(paths["motion"][:-1] + "o", "wb") as handle:
+            handle.write(b"test object")
+        with open(paths["frame_idle"] + ".lz.o", "wb") as handle:
+            handle.write(b"test compressed object")
+        manifest.check(manifest_path, output)
+
+    def test_generated_banim_includes_are_root_relative(self):
+        expected = {
+            "src/banim_data.c": "build/generated/assets/banim/banim_data_entries.inc",
+            "src/data_banimconf.c": "build/generated/assets/banim/banim_defs.inc",
+            "src/banim_package_runtime_test.c":
+                "build/generated/assets/banim/banim_runtime_test_defs.h",
+        }
+        for source, generated in expected.items():
+            with self.subTest(source=source):
+                with open(os.path.join(REPO_ROOT, source), encoding="utf-8") as handle:
+                    text = handle.read()
+                self.assertIn('#include "{}"'.format(generated), text)
+                self.assertNotIn("../build/generated/assets", text)
+        with open(os.path.join(REPO_ROOT, "src", "banim_data.c"), encoding="utf-8") as handle:
+            self.assertIn(
+                '#include "build/generated/assets/banim/banim_runtime_symbols.h"',
+                handle.read(),
+            )
+        with open(os.path.join(REPO_ROOT, "include", "ekrbattle.h"), encoding="utf-8") as handle:
+            self.assertNotIn("build/generated/assets", handle.read())
+
+    def test_partial_banim_output_clean_regenerates_all_grouped_outputs(self):
+        with open(os.path.join(REPO_ROOT, "assets.mk"), encoding="utf-8") as handle:
+            rules = handle.read()
+        self.assertIn("$(ASSET_BANIM_RUNTIME_SYMBOLS) &: $(ASSET_OUTPUT_MK)", rules)
+        self.assertNotIn("\t@test -f $@", rules)
+        for output in (
+            "ASSET_BANIM_DATA_ENTRIES",
+            "ASSET_BANIM_DEFS",
+            "ASSET_BANIM_DEFS_HEADER",
+            "ASSET_BANIM_RUNTIME_TEST_DEFS",
+            "ASSET_BANIM_RUNTIME_SYMBOLS",
+        ):
+            self.assertIn("\t@test -f $({})".format(output), rules)
+        self.assertIn(
+            '$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate',
+            rules,
+        )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "fe8.community-banim.v1",
+  "id": "LORM_SP1_PROOF",
+  "abbreviation": "lorm_sp1",
+  "animConf": "AnimConf_90",
+  "class": "CLASS_MOGALL",
+  "weaponType": "ITYPE_DARK",
+  "frames": [
+    {
+      "id": "idle",
+      "path": "graphics/banim/banim_lorm_sp1_sheet_0.png"
+    }
+  ],
+  "paletteVariants": [
+    "default"
+  ],
+  "resources": {
+    "maxFrames": 1,
+    "maxSheetTiles": 256,
+    "maxOamPerFrame": 32,
+    "maxPaletteColors": 16
+  }
+}

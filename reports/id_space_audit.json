@@ -67,7 +67,7 @@
       }
     ]
   },
-  "census_digest": "6c3d7348842ce98ff69127407f9059d46640763cef030d3b02d8ed81a5b32141",
+  "census_digest": "4056e86fc5134648ac30c6aa53c089a3dc3f0d5f7cb1474dc0ba8d7ad26533f9",
   "consumers": [
     {
       "category": "event-operand",
@@ -4722,6 +4722,25 @@
       "storage_bits": 7,
       "surface": "public-header",
       "symbol": "CLASS_ID_TECHNICAL_MAX",
+      "technical_max": 127
+    },
+    {
+      "category": "runtime-struct",
+      "configured_cap": 127,
+      "declaration": "u32 defaultClassId;",
+      "domain": "class",
+      "key": "include/banim_package_runtime_test.h|struct-field|class|BanimPackageRuntimeTestProbe.defaultClassId",
+      "kind": "struct-field",
+      "line": 18,
+      "path": "include/banim_package_runtime_test.h",
+      "reason": null,
+      "record_count": 127,
+      "sentinel": 0,
+      "signed": 0,
+      "status": "frozen",
+      "storage_bits": 7,
+      "surface": "public-header",
+      "symbol": "BanimPackageRuntimeTestProbe.defaultClassId",
       "technical_max": 127
     },
     {
@@ -10450,7 +10469,7 @@
       "domain": "item",
       "key": "include/ekrbattle.h|function-signature|item|EkrCheckWeaponSieglindeSiegmund",
       "kind": "function-signature",
-      "line": 890,
+      "line": 889,
       "path": "include/ekrbattle.h",
       "reason": null,
       "record_count": 206,
@@ -10469,7 +10488,7 @@
       "domain": "item",
       "key": "include/ekrbattle.h|function-signature|item|IsItemDisplayedInBattle",
       "kind": "function-signature",
-      "line": 888,
+      "line": 887,
       "path": "include/ekrbattle.h",
       "reason": null,
       "record_count": 206,
@@ -10488,7 +10507,7 @@
       "domain": "item",
       "key": "include/ekrbattle.h|function-signature|item|IsWeaponLegency",
       "kind": "function-signature",
-      "line": 889,
+      "line": 888,
       "path": "include/ekrbattle.h",
       "reason": null,
       "record_count": 206,
@@ -20917,7 +20936,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "deca408ff7c20b644d7854a220d05ee8a0b6887cd9ce7d5eff1ef2ec5b212880",
+  "digest": "b0c3229536db5dd9d3602a1bd333870d180714fa822252eef4b6602dbe7bdd2f",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,

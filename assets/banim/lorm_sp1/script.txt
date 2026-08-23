@@ -1,0 +1,29 @@
+BANIM 1
+mode normal
+frame 1 idle both
+command start_attack_1
+sound sword_swing_short
+wait 1
+loop 1
+end
+mode critical
+frame 1 idle both
+command hit_critical_1
+wait 1
+end
+mode ranged
+frame 1 idle both
+command range_attack
+wait 1
+end
+mode dodge
+frame 1 idle both
+command start_dodge
+wait 1
+command end_dodge
+end
+mode standing
+frame 1 idle both
+command wait_hp_deplete
+wait 1
+end
