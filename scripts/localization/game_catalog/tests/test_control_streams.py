@@ -1,8 +1,11 @@
 import json
+import hashlib
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
@@ -132,6 +135,52 @@ class FinalControlStreamTests(unittest.TestCase):
                 "target_operand": "0x016F",
             }
         ])
+
+    def test_portrait_operand_map_rejects_boolean_and_duplicate_registry_ids(self):
+        map_data = json.loads(self.portrait_map.path.read_text(encoding="utf-8"))
+        registry_path = Path("assets/portrait_registry.json")
+        registry_data = json.loads(registry_path.read_text(encoding="utf-8"))
+        real_read_bytes = Path.read_bytes
+        real_read_text = Path.read_text
+
+        def assert_rejected(entries, message):
+            registry = dict(registry_data)
+            registry["entries"] = entries
+            registry_text = json.dumps(registry, sort_keys=True)
+            adjusted_map = json.loads(json.dumps(map_data))
+            adjusted_map["derivation"]["sources"]["fe8u"]["sha256"] = hashlib.sha256(
+                registry_text.encode("utf-8")
+            ).hexdigest()
+
+            with tempfile.TemporaryDirectory() as temporary:
+                map_path = Path(temporary) / "portrait-map.json"
+                map_path.write_text(json.dumps(adjusted_map), encoding="utf-8")
+
+                def read_bytes(candidate):
+                    if candidate == registry_path:
+                        return registry_text.encode("utf-8")
+                    return real_read_bytes(candidate)
+
+                def read_text(candidate, *args, **kwargs):
+                    if candidate == registry_path:
+                        return registry_text
+                    return real_read_text(candidate, *args, **kwargs)
+
+                with mock.patch.object(Path, "read_bytes", new=read_bytes), mock.patch.object(
+                    Path, "read_text", new=read_text
+                ):
+                    with self.assertRaisesRegex(ControlStreamError, message):
+                        load_portrait_operand_map(map_path)
+
+        for value in (True, False):
+            with self.subTest(value=value):
+                entries = json.loads(json.dumps(registry_data["entries"]))
+                entries[0]["id"] = value
+                assert_rejected(entries, r"entries\[0\]\.id must be an integer")
+
+        entries = json.loads(json.dumps(registry_data["entries"]))
+        entries[1]["id"] = entries[0]["id"]
+        assert_rejected(entries, r"duplicate id")
 
     def test_anna_regression_and_provider_domain_prevent_double_remap(self):
         for locale in ("ja", "zh-Hans"):
