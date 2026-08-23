@@ -79,14 +79,31 @@ dependent todos for commit, push, CI, and issue closure at the start of such a
 task. Memory is advisory context; these executable gates are the completion
 authority.
 
-CI waiting must not occupy a reasoning subagent. The subagent that dispatches
-a workflow records its exact SHA and run ID, then returns immediately. The
-orchestrator runs exactly one bounded direct shell watcher:
+Implementation subagents validate and commit locally but do not push. The
+orchestrator pushes the exact commit under repository-owner context so Build
+does not become `action_required`. If an already-pushed run for that same SHA
+is `action_required`, the orchestrator reruns it with `gh run rerun <run-id>`
+under owner context. Never create empty commits, weaken Actions approvals, or
+use privileged `pull_request_target` just to bypass approval.
+
+CI waiting must not occupy a reasoning subagent. The orchestrator that
+dispatches a workflow records its exact SHA and run ID, then returns
+immediately. The orchestrator runs exactly one bounded direct shell watcher:
 `timeout 90m gh run watch <run-id> --interval 30 --exit-status`. Rely on the
 shell runtime's completion notification, and invoke a reasoning agent only
 after the run is terminal to inspect logs or reviews. Do not repeatedly wake an
 agent to poll, do not create duplicate watchers, and cancel superseded
 candidate runs before dispatching replacement checks.
+
+For a fleet with multiple active pull requests, designate one delivery
+coordinator. It owns the run/PR ledger, starts or records exactly one direct
+shell watcher per active run, receives terminal watcher notifications, triages
+CI and review failures, routes local-only fixes to one owner, performs each
+final merge gate and autonomous merge, and initiates the post-merge conflict
+sweep. The coordinator must not poll, sleep, or keep a reasoning turn alive
+solely to wait. Other agents must not duplicate watchers, fix ownership, or
+merge decisions; they return validated local commits to the coordinator for
+the trusted owner-context push.
 
 After each merge, immediately inspect every open PR. Merge current `master`
 only into PRs with real conflicts or shared-contract changes; refresh
