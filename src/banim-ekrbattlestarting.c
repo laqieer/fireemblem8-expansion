@@ -10,6 +10,7 @@
 #include "ekrbattle.h"
 #include "efxbattle.h"
 #include "ekrdragon.h"
+#include "banim_package_runtime_test.h"
 
 bool EkrBattleStarting_IsBattleAnimEnabled(void)
 {
@@ -36,6 +37,9 @@ void BeginAnimsOnBattleAnimations(void)
     }
 
     NewEkrBattleDeamon();
+#if FE8_BANIM_PACKAGE_RUNTIME_TEST
+    BanimPackageRuntimeTest_MarkBattleEntry();
+#endif
     AnimClearAll();
     ret = GetBanimInitPosReal();
     gEkrInitPosReal = ret;
@@ -55,6 +59,10 @@ void BeginAnimsOnBattleAnimations(void)
 
 void EkrMainEndExec(void)
 {
+#if FE8_BANIM_PACKAGE_RUNTIME_TEST
+    BanimPackageRuntimeTest_MarkBattleComplete();
+#endif
+
     if (GetBattleAnimArenaFlag() == true) {
         ExecBattleAnimArenaExit();
         return;
