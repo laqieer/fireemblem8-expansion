@@ -123,7 +123,10 @@ class SchemaEvidenceTests(unittest.TestCase):
                 self.assertFalse(diagnostics.ok)
                 self.assertTrue(any(expected_error in message for message in messages), messages)
                 if fixture_name == "bad_range.json":
-                    self.assertTrue(any("out of range" in message for message in messages), messages)
+                    self.assertTrue(
+                        any("200" in message and "out of range" in message for message in messages),
+                        messages,
+                    )
 
     def test_generated_outputs_are_repeatable(self):
         cases = (
