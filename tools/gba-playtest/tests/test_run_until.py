@@ -333,6 +333,45 @@ class RunUntilFingerprintTests(unittest.TestCase):
             any(difference.startswith("terminal.reason:") for difference in differences)
         )
 
+    def test_backend_output_rejects_impossible_terminal_outcomes(self):
+        def output(
+            reason,
+            frame,
+            turn_present=0,
+            turn_value=0,
+            action_present=0,
+            action_value=0,
+        ):
+            return (
+                f"TERMINAL\t{reason}\t{frame}\t{turn_present}\t{turn_value}"
+                f"\t{action_present}\t{action_value}\n"
+                f"CHECKPOINT\t0\t{frame}\t0000000000000000\n"
+                "PROBE\t0\t0\t0\n"
+            )
+
+        cases = (
+            (run_until_data(), output("objective_failure", 0), "not declared"),
+            (run_until_data(), output("engine_stall", 0), "not configured"),
+            (run_until_data(), output("max_frames", 0), "final bounded frame"),
+            (run_until_data(), output("max_turns", 0), "not configured"),
+            (run_until_data(), output("max_actions", 0), "not configured"),
+            (
+                run_until_data(success_value=1, turn_limit=2),
+                output("max_turns", 0, turn_present=1, turn_value=1),
+                "configured limit",
+            ),
+            (
+                run_until_data(success_value=1, action_limit=2),
+                output("max_actions", 0, action_present=1, action_value=1),
+                "configured limit",
+            ),
+        )
+        for data, backend_output, error in cases:
+            with self.subTest(error=error):
+                scenario = gba_playtest.parse_scenario_data(data)
+                with self.assertRaisesRegex(gba_playtest.PlaytestError, error):
+                    gba_playtest._parse_backend_output(backend_output, scenario)
+
 
 class AutoplayBoundsEvidenceTests(unittest.TestCase):
     def test_checked_real_rom_evidence_satisfies_semantic_contract(self):

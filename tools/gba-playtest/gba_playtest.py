@@ -1430,6 +1430,26 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
                         0 <= value < 1 << (limit.probe.size * 8)
                     ):
                         raise ValueError(f"terminal {label} value exceeds probe width")
+                declared_reasons = {
+                    condition.reason
+                    for condition in scenario.run_until.terminal_conditions
+                }
+                if reason in TERMINAL_CONDITION_REASONS and reason not in declared_reasons:
+                    raise ValueError("terminal reason is not declared by the scenario")
+                if reason == "engine_stall" and scenario.run_until.stall is None:
+                    raise ValueError("engine_stall is not configured by the scenario")
+                if reason == "max_frames" and frame != scenario.run_until.max_frames - 1:
+                    raise ValueError("max_frames did not occur at the final bounded frame")
+                if reason == "max_turns":
+                    if scenario.run_until.turn_limit is None:
+                        raise ValueError("max_turns is not configured by the scenario")
+                    if turn_value < scenario.run_until.turn_limit.maximum:
+                        raise ValueError("max_turns did not reach the configured limit")
+                if reason == "max_actions":
+                    if scenario.run_until.action_limit is None:
+                        raise ValueError("max_actions is not configured by the scenario")
+                    if action_value < scenario.run_until.action_limit.maximum:
+                        raise ValueError("max_actions did not reach the configured limit")
                 terminal = (
                     reason,
                     frame,
