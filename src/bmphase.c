@@ -66,7 +66,8 @@ s8 AreUnitsAllied(int left, int right) {
 #else
     s8 result = IsAllegianceAllied(left, right);
 
-    ExpansionAutoplay_RecordRelationCheck(left, right, result);
+    if (gExpansionAutoplayTelemetry.state == EXPANSION_AUTOPLAY_STATE_COMPUTER_PHASE)
+        ExpansionAutoplay_RecordRelationCheck(left, right, result);
 
     return result;
 #endif

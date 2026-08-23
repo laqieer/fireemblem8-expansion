@@ -133,6 +133,7 @@ class AutoplayHostTests(unittest.TestCase):
                     "-std=gnu89",
                     "-ffreestanding",
                     "-fno-builtin",
+                    "-O2",
                     "-Werror=declaration-after-statement",
                     "-Werror=implicit-function-declaration",
                     "-Werror=implicit-int",

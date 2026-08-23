@@ -593,21 +593,25 @@ void CpPerform_WaitAction(struct CpPerformProc* proc) {
 
 void CpPerform_Cleanup(struct CpPerformProc* proc) {
 #ifndef FE8_ARCHIVAL_BUILD
-    enum ExpansionAutoplayTargetRelation relation = EXPANSION_AUTOPLAY_TARGET_NONE;
-
-    if (gAiDecision.targetId != 0)
+    if (gPlaySt.faction == FACTION_BLUE
+        && gExpansionAutoplayTelemetry.state == EXPANSION_AUTOPLAY_STATE_COMPUTER_PHASE)
     {
-        relation = IsAllegianceAllied(gAiDecision.unitId, gAiDecision.targetId)
-            ? EXPANSION_AUTOPLAY_TARGET_ALLIED
-            : EXPANSION_AUTOPLAY_TARGET_HOSTILE;
-    }
+        enum ExpansionAutoplayTargetRelation relation = EXPANSION_AUTOPLAY_TARGET_NONE;
 
-    ExpansionAutoplay_RecordCommittedAction(
-        gPlaySt.faction,
-        gAiDecision.unitId,
-        gAiDecision.actionId,
-        gAiDecision.targetId,
-        relation);
+        if (gAiDecision.targetId != 0)
+        {
+            relation = IsAllegianceAllied(gAiDecision.unitId, gAiDecision.targetId)
+                ? EXPANSION_AUTOPLAY_TARGET_ALLIED
+                : EXPANSION_AUTOPLAY_TARGET_HOSTILE;
+        }
+
+        ExpansionAutoplay_RecordCommittedAction(
+            gPlaySt.faction,
+            gAiDecision.unitId,
+            gAiDecision.actionId,
+            gAiDecision.targetId,
+            relation);
+    }
 #endif
 
     UpdateAllPhaseHealingAIStatus();
