@@ -40,10 +40,30 @@ struct ProcCustomSpellEffect
     /* 3E */ u8 _pad[2];
 };
 
+static const struct CustomSpellEffectFrameAssets sReferenceFrameAssets[] =
+{
+    {
+        Img_FireSpellSprites,
+        Img_FireSpellBg,
+        Tsa_Banim_0,
+        Tsa_efxFireBG_0,
+        Pal_FireSpellSprites,
+        Pal_FireSpellBg,
+    },
+    {
+        Img_FireSpellSprites,
+        Img_FireSpellBg,
+        Tsa_Banim_0,
+        Tsa_efxFireBG_0,
+        Pal_FireSpellSprites,
+        Pal_FireSpellBg,
+    },
+};
+
 static const struct CustomSpellEffectFrame sReferenceFrames[] =
 {
-    { 2, 0, 0xF1 },
-    { 2, 0, 0 },
+    { 2, 0, 0xF1, &sReferenceFrameAssets[0] },
+    { 2, 0, 0, &sReferenceFrameAssets[1] },
 };
 
 static const struct CustomSpellEffect sReferenceEffect =
@@ -62,12 +82,6 @@ static const struct CustomSpellEffect sReferenceEffect =
         0,
     },
     {
-        Img_FireSpellSprites,
-        Img_FireSpellBg,
-        Tsa_Banim_0,
-        Tsa_efxFireBG_0,
-        Pal_FireSpellSprites,
-        Pal_FireSpellBg,
         FramScr_Unk5D4F90,
         FramScr_Unk5D4F90,
         FramScr_Unk5D4F90,
@@ -92,7 +106,10 @@ static void CustomSpellEffect_StartVanillaFallback(
     const struct CustomSpellEffect *effect,
     struct Anim *anim,
     u8 reason);
-static bool8 CustomSpellEffect_LoadResources(struct ProcCustomSpellEffect *proc);
+static void CustomSpellEffect_ApplyFrameAssets(
+    struct ProcCustomSpellEffect *proc,
+    const struct CustomSpellEffectFrameAssets *assets);
+static bool8 CustomSpellEffect_LoadInitialResources(struct ProcCustomSpellEffect *proc);
 
 static CONST_DATA struct ProcCmd sProcScrCustomSpellEffect[] =
 {
@@ -135,6 +152,8 @@ static void CustomSpellEffect_StartVanillaFallback(
 bool8 CustomSpellEffect_Validate(const struct CustomSpellEffect *effect)
 {
     const struct CustomSpellEffectResources *resources;
+    const struct CustomSpellEffectFrame *frameData;
+    const struct CustomSpellEffectFrameAssets *assets;
     u8 frame;
     u16 totalFrames = 0;
     u8 soundEvents = 0;
@@ -168,24 +187,27 @@ bool8 CustomSpellEffect_Validate(const struct CustomSpellEffect *effect)
     if (resources->soundEvents > CUSTOM_SPELL_EFFECT_MAX_SOUND_EVENTS
         || resources->romBytes > CUSTOM_SPELL_EFFECT_MAX_ROM_BYTES)
         return FALSE;
-    if (effect->assets.objGfx == NULL
-        || effect->assets.bgGfx == NULL
-        || effect->assets.bgTsaLeft == NULL
-        || effect->assets.bgTsaRight == NULL
-        || effect->assets.objPalette == NULL
-        || effect->assets.bgPalette == NULL
-        || effect->assets.objAnimRightFront == NULL
-        || effect->assets.objAnimLeftFront == NULL
-        || effect->assets.objAnimRightBack == NULL
-        || effect->assets.objAnimLeftBack == NULL)
+    if (effect->oamScripts.rightFront == NULL
+        || effect->oamScripts.leftFront == NULL
+        || effect->oamScripts.rightBack == NULL
+        || effect->oamScripts.leftBack == NULL)
         return FALSE;
 
     for (frame = 0; frame < effect->frameCount; ++frame)
     {
-        if (effect->frames[frame].duration == 0)
+        frameData = &effect->frames[frame];
+        assets = frameData->assets;
+        if (frameData->duration == 0 || assets == NULL)
             return FALSE;
-        totalFrames += effect->frames[frame].duration;
-        if (effect->frames[frame].soundId != 0)
+        if (assets->objGfx == NULL
+            || assets->bgGfx == NULL
+            || assets->bgTsaLeft == NULL
+            || assets->bgTsaRight == NULL
+            || assets->objPalette == NULL
+            || assets->bgPalette == NULL)
+            return FALSE;
+        totalFrames += frameData->duration;
+        if (frameData->soundId != 0)
             soundEvents++;
     }
 
@@ -283,7 +305,7 @@ void CustomSpellEffect_Start(const struct CustomSpellEffect *effect, struct Anim
     SpellFx_ClearBG1Position();
     SpellFx_SetSomeColorEffect();
 
-    if (!CustomSpellEffect_LoadResources(proc))
+    if (!CustomSpellEffect_LoadInitialResources(proc))
     {
         Proc_End(proc);
         CustomSpellEffect_StartVanillaFallback(effect, anim, CUSTOM_SPELL_EFFECT_FALLBACK_PROC);
@@ -299,10 +321,10 @@ void CustomSpellEffect_Start(const struct CustomSpellEffect *effect, struct Anim
 #endif
 }
 
-static bool8 CustomSpellEffect_LoadResources(struct ProcCustomSpellEffect *proc)
+static void CustomSpellEffect_ApplyFrameAssets(
+    struct ProcCustomSpellEffect *proc,
+    const struct CustomSpellEffectFrameAssets *assets)
 {
-    const struct CustomSpellEffectAssets *assets = &proc->effect->assets;
-
     SpellFx_RegisterBgPal(assets->bgPalette, 0x20);
     SpellFx_RegisterBgGfx(assets->bgGfx, proc->effect->resources.bgBytes);
     SpellFx_RegisterObjPal(assets->objPalette, 0x20);
@@ -311,16 +333,26 @@ static bool8 CustomSpellEffect_LoadResources(struct ProcCustomSpellEffect *proc)
 
 #if FE8_EXPANSION_CUSTOM_SPELL_TEST
     CustomSpellEffectTest_RecordResourceLoad();
+#endif
+}
+
+static bool8 CustomSpellEffect_LoadInitialResources(struct ProcCustomSpellEffect *proc)
+{
+    const struct CustomSpellEffectOamScripts *scripts = &proc->effect->oamScripts;
+
+    CustomSpellEffect_ApplyFrameAssets(proc, proc->effect->frames[0].assets);
+
+#if FE8_EXPANSION_CUSTOM_SPELL_TEST
     if (CustomSpellEffectTest_ShouldFailResourceLoad())
         return FALSE;
 #endif
 
     proc->childAnim = EfxCreateFrontAnim(
         proc->anim,
-        assets->objAnimRightFront,
-        assets->objAnimLeftFront,
-        assets->objAnimRightBack,
-        assets->objAnimLeftBack);
+        scripts->rightFront,
+        scripts->leftFront,
+        scripts->rightBack,
+        scripts->leftBack);
 
 #if FE8_EXPANSION_CUSTOM_SPELL_TEST
     if (proc->childAnim != NULL)
@@ -369,6 +401,9 @@ static void CustomSpellEffect_Loop(struct ProcCustomSpellEffect *proc)
     {
         proc->frameTimer = 0;
         proc->frameIndex++;
+        if (proc->frameIndex < proc->effect->frameCount)
+            CustomSpellEffect_ApplyFrameAssets(
+                proc, proc->effect->frames[proc->frameIndex].assets);
     }
 
     if (proc->frameIndex >= proc->effect->frameCount)

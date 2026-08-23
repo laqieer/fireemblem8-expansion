@@ -71,11 +71,16 @@ static int sBgGfxLoads;
 static int sObjPalLoads;
 static int sBgPalLoads;
 static int sTsaWrites;
+static int sChildCreates;
 static int sChildDeletes;
 static int sHits;
 static int sHitSounds;
 static int sFrameSounds;
 static int sProcEnds;
+static u32 sObjGfxSize;
+static u32 sBgGfxSize;
+static int sObjGfxSizeMismatch;
+static int sBgGfxSizeMismatch;
 
 static void ResetState(void)
 {
@@ -97,11 +102,16 @@ static void ResetState(void)
     sObjPalLoads = 0;
     sBgPalLoads = 0;
     sTsaWrites = 0;
+    sChildCreates = 0;
     sChildDeletes = 0;
     sHits = 0;
     sHitSounds = 0;
     sFrameSounds = 0;
     sProcEnds = 0;
+    sObjGfxSize = 0;
+    sBgGfxSize = 0;
+    sObjGfxSizeMismatch = 0;
+    sBgGfxSizeMismatch = 0;
     sPolicy.id = BANIM_PRESENTATION_POLICY_DEFAULT;
     sPolicy.backgroundMode = BANIM_PRESENTATION_BACKGROUND_NONE;
     sPolicy.oamEntries = 96;
@@ -212,6 +222,7 @@ struct Anim *EfxCreateFrontAnim(
     (void)leftFront;
     (void)rightBack;
     (void)leftBack;
+    sChildCreates++;
     return &sChildAnim;
 }
 
@@ -249,7 +260,9 @@ void SpellFx_RegisterBgPal(const u16 *palette, u32 size)
 void SpellFx_RegisterBgGfx(const u16 *graphics, u32 size)
 {
     (void)graphics;
-    (void)size;
+    if (sBgGfxLoads != 0 && sBgGfxSize != size)
+        sBgGfxSizeMismatch = 1;
+    sBgGfxSize = size;
     sBgGfxLoads++;
 }
 
@@ -263,7 +276,9 @@ void SpellFx_RegisterObjPal(const u16 *palette, u32 size)
 void SpellFx_RegisterObjGfx(const u16 *graphics, u32 size)
 {
     (void)graphics;
-    (void)size;
+    if (sObjGfxLoads != 0 && sObjGfxSize != size)
+        sObjGfxSizeMismatch = 1;
+    sObjGfxSize = size;
     sObjGfxLoads++;
 }
 
@@ -321,7 +336,12 @@ int main(void)
 {
     const struct CustomSpellEffect *effect;
     struct CustomSpellEffect invalid;
+    struct CustomSpellEffectFrame frames[2];
+    struct CustomSpellEffectFrameAssets frameAssets[2];
     struct Anim attacker;
+    const u16 **assetSlots[6];
+    const u16 *savedAsset;
+    int asset;
     int frame;
 
     memset(&attacker, 0, sizeof(attacker));
@@ -349,10 +369,21 @@ int main(void)
 
     if (!Check(!CustomSpellEffect_IsActive() && gEfxBgSemaphore == 0,
                "normal completion did not release ownership")
+        || !Check(sObjGfxLoads == effect->frameCount
+                  && sBgGfxLoads == effect->frameCount
+                  && sObjPalLoads == effect->frameCount
+                  && sBgPalLoads == effect->frameCount
+                  && sTsaWrites == effect->frameCount,
+                  "each frame did not upload exactly one complete visual set")
+        || !Check(sObjGfxSize == effect->resources.objBytes
+                  && sBgGfxSize == effect->resources.bgBytes
+                  && sObjGfxSizeMismatch == 0 && sBgGfxSizeMismatch == 0,
+                  "per-frame graphics uploads did not use the global padded sizes")
         || !Check(sHits == 1 && sHitSounds == 1 && sFrameSounds == 1,
                   "custom effect did not apply exactly one hit and declared sound")
-        || !Check(sChildDeletes == 1 && sBgClears == 1 && sBgPositionClears == 2,
-                  "normal completion did not clean child and BG1")
+        || !Check(sChildCreates == 1 && sChildDeletes == 1
+                  && sBgClears == 1 && sBgPositionClears == 2,
+                  "normal completion did not preserve one child and clean BG1")
         || !Check(sColorRestores == 1 && sFinishes == 1 && sRegistrations == 1,
                   "normal completion did not restore spell lifecycle")
         || !Check(gCustomSpellEffectDebugProbe.starts == 1
@@ -423,6 +454,50 @@ int main(void)
     invalid = *effect;
     invalid.resources.romBytes = CUSTOM_SPELL_EFFECT_MAX_ROM_BYTES + 1;
     if (!Check(!CustomSpellEffect_Validate(&invalid), "ROM resource overflow was accepted"))
+        return 1;
+
+    memcpy(frames, effect->frames, sizeof(frames));
+    frameAssets[0] = *frames[0].assets;
+    frameAssets[1] = *frames[1].assets;
+    frames[0].assets = &frameAssets[0];
+    frames[1].assets = &frameAssets[1];
+    invalid = *effect;
+    invalid.frames = frames;
+
+    frames[0].assets = NULL;
+    if (!Check(!CustomSpellEffect_Validate(&invalid),
+               "NULL frame-0 visual set was accepted"))
+        return 1;
+    frames[0].assets = &frameAssets[0];
+
+    assetSlots[0] = &frameAssets[1].objGfx;
+    assetSlots[1] = &frameAssets[1].bgGfx;
+    assetSlots[2] = &frameAssets[1].bgTsaLeft;
+    assetSlots[3] = &frameAssets[1].bgTsaRight;
+    assetSlots[4] = &frameAssets[1].objPalette;
+    assetSlots[5] = &frameAssets[1].bgPalette;
+    for (asset = 0; asset < 6; ++asset)
+    {
+        savedAsset = *assetSlots[asset];
+        *assetSlots[asset] = NULL;
+        if (!Check(!CustomSpellEffect_Validate(&invalid),
+                   "frame-1 visual pointer was not preflighted"))
+            return 1;
+        *assetSlots[asset] = savedAsset;
+    }
+
+    frameAssets[1].bgPalette = NULL;
+    ResetState();
+    CustomSpellEffect_Start(&invalid, &attacker);
+    if (!Check(sFallbacks == 1 && sObjGfxLoads == 0 && sBgGfxLoads == 0
+               && sObjPalLoads == 0 && sBgPalLoads == 0 && sTsaWrites == 0,
+               "invalid later-frame assets wrote partial custom resources"))
+        return 1;
+
+    invalid = *effect;
+    invalid.oamScripts.leftBack = NULL;
+    if (!Check(!CustomSpellEffect_Validate(&invalid),
+               "NULL effect-wide OAM script was accepted"))
         return 1;
 
     invalid = *effect;

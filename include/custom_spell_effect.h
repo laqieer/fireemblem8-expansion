@@ -4,6 +4,7 @@
 #include "global.h"
 
 struct Anim;
+struct CustomSpellEffectFrameAssets;
 
 #define CUSTOM_SPELL_EFFECT_BASE 0x80
 #define CUSTOM_SPELL_EFFECT_COUNT 16
@@ -26,6 +27,7 @@ struct CustomSpellEffectFrame
     /* 00 */ u8 duration;
     /* 01 */ u8 flags;
     /* 02 */ u16 soundId;
+    /* 04 */ const struct CustomSpellEffectFrameAssets *assets;
 };
 
 struct CustomSpellEffectResources
@@ -41,7 +43,7 @@ struct CustomSpellEffectResources
     /* 0C */ u32 romBytes;
 };
 
-struct CustomSpellEffectAssets
+struct CustomSpellEffectFrameAssets
 {
     /* 00 */ const u16 *objGfx;
     /* 04 */ const u16 *bgGfx;
@@ -49,10 +51,14 @@ struct CustomSpellEffectAssets
     /* 0C */ const u16 *bgTsaRight;
     /* 10 */ const u16 *objPalette;
     /* 14 */ const u16 *bgPalette;
-    /* 18 */ const u32 *objAnimRightFront;
-    /* 1C */ const u32 *objAnimLeftFront;
-    /* 20 */ const u32 *objAnimRightBack;
-    /* 24 */ const u32 *objAnimLeftBack;
+};
+
+struct CustomSpellEffectOamScripts
+{
+    /* 00 */ const u32 *rightFront;
+    /* 04 */ const u32 *leftFront;
+    /* 08 */ const u32 *rightBack;
+    /* 0C */ const u32 *leftBack;
 };
 
 struct CustomSpellEffect
@@ -60,13 +66,13 @@ struct CustomSpellEffect
     /* 00 */ const char *symbol;
     /* 04 */ const struct CustomSpellEffectFrame *frames;
     /* 08 */ struct CustomSpellEffectResources resources;
-    /* 18 */ struct CustomSpellEffectAssets assets;
-    /* 40 */ u8 animationId;
-    /* 41 */ u8 fallbackAnimationId;
-    /* 42 */ u8 frameCount;
-    /* 43 */ u8 totalFrames;
-    /* 44 */ u8 hitFrame;
-    /* 45 */ u8 _pad[3];
+    /* 18 */ struct CustomSpellEffectOamScripts oamScripts;
+    /* 28 */ u8 animationId;
+    /* 29 */ u8 fallbackAnimationId;
+    /* 2A */ u8 frameCount;
+    /* 2B */ u8 totalFrames;
+    /* 2C */ u8 hitFrame;
+    /* 2D */ u8 _pad[3];
 };
 
 const struct CustomSpellEffect *CustomSpellEffect_Lookup(u8 animationId);

@@ -260,6 +260,17 @@ static bool8 CustomSpellEffectTest_PrepareAnims(void)
 }
 
 #if FE8_EXPANSION_CUSTOM_SPELL_EFFECTS
+static u8 CustomSpellEffectTest_ReferenceFrameCount(void)
+{
+    const struct CustomSpellEffect *effect =
+        CustomSpellEffect_Lookup(CUSTOM_SPELL_EFFECT_BASE);
+
+    if (effect == NULL)
+        return 0;
+
+    return effect->frameCount;
+}
+
 static void CustomSpellEffectTest_StartDispatch(u8 animationId)
 {
     CustomSpellEffectTest_SetAnimation(animationId);
@@ -281,7 +292,8 @@ static void CustomSpellEffectTest_RecordNormal(void)
     probe->normalFinalSemaphore = gEfxBgSemaphore;
     probe->normalFinalSpellState = gEfxSpellAnimExists;
     if (sCounters.customDispatches != 1 || sCounters.starts != 1
-        || sCounters.resourceLoads != 1 || sCounters.hits != 1
+        || sCounters.resourceLoads != CustomSpellEffectTest_ReferenceFrameCount()
+        || sCounters.hits != 1
         || sCounters.cleanups != 1 || sCounters.childCreates != 1
         || sCounters.childDeletes != 1 || !CustomSpellEffectTest_StateClean())
         CustomSpellEffectTest_Fail(CUSTOM_SPELL_TEST_CASE_NORMAL);
@@ -337,7 +349,8 @@ static void CustomSpellEffectTest_RecordReentrant(void)
     if (sCounters.customDispatches != 2 || sCounters.starts != 1
         || sCounters.fallbacks != 1
         || sCounters.fallbackReason != CUSTOM_SPELL_EFFECT_TEST_FALLBACK_REENTRANT
-        || sCounters.resourceLoads != 1 || sCounters.cleanups != 1
+        || sCounters.resourceLoads != CustomSpellEffectTest_ReferenceFrameCount()
+        || sCounters.cleanups != 1
         || !CustomSpellEffectTest_StateClean())
         CustomSpellEffectTest_Fail(CUSTOM_SPELL_TEST_CASE_REENTRANT);
     probe->completedMask |= CUSTOM_SPELL_TEST_CASE_REENTRANT;

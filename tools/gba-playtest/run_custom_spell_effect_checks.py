@@ -229,7 +229,7 @@ def expected_values(enabled: int) -> dict[str, int]:
         {
             "normalCustomDispatches": 1,
             "normalStarts": 1,
-            "normalResourceLoads": 1,
+            "normalResourceLoads": 2,
             "normalHits": 1,
             "normalCleanups": 1,
             "normalChildCreates": 1,
@@ -244,7 +244,7 @@ def expected_values(enabled: int) -> dict[str, int]:
             "reentrantStarts": 1,
             "reentrantFallbacks": 1,
             "reentrantFallbackReason": 2,
-            "reentrantResourceLoads": 1,
+            "reentrantResourceLoads": 2,
             "reentrantCleanups": 1,
             "resourceFailureCustomDispatches": 1,
             "resourceFailureFallbacks": 1,

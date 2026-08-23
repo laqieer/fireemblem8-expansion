@@ -905,7 +905,7 @@
       "purpose": "Exercise the public StartSpellAnimation dispatch ABI, typed descriptor, timing, hit, resource ownership, and cleanup on real libmGBA.",
       "prerequisites": "Repository root with arm-none-eabi GCC, libmGBA, and distinct issue-77 build roots; no save, chapter, event script, or external package.",
       "actions": "Run the custom-spell host suite, then the documented enabled debug and release expansion-modern-custom-spell-check commands.",
-      "expected_result": "The registered 0x80 descriptor starts once, loads each reserved lane once, applies one hit, creates and deletes one child, cleans once, and leaves no owner, semaphore, spell-cast Proc, or active spell state.",
+      "expected_result": "The registered 0x80 descriptor starts once, uploads all six visual resources exactly once per frame (two complete sets), applies one hit, creates and deletes one child, cleans once, and leaves no owner, semaphore, spell-cast Proc, or active spell state.",
       "negative_control": "The same ROM dispatches vanilla index 24 through the unchanged LUT without incrementing the custom-dispatch counter.",
       "interactions": "Depends on the existing C05/StartSpellAnimation, spell-FX, Proc, and presentation-policy seams; #78 is the sole dependent adapter. No starter, casual, AoE, localization, or BGM dependency.",
       "save_compatibility": "The isolated effect ends with zero transient ownership and introduces no save field, item encoding, migration, or epoch change.",

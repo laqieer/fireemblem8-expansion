@@ -101,7 +101,20 @@ CUSTOM_SPELL_EFFECT_REFERENCE_INVENTORY_DIGEST = hashlib.sha256(
                     "animation_id": 0x80,
                     "fallback_animation_id": 22,
                     "frame_count": 2,
+                    "frames": [
+                        {
+                            "duration": 2,
+                            "sound_id": 0xF1,
+                            "visual_set": "FIRE_REFERENCE",
+                        },
+                        {
+                            "duration": 2,
+                            "sound_id": 0,
+                            "visual_set": "FIRE_REFERENCE",
+                        },
+                    ],
                     "hit_frame": 2,
+                    "oam_scripts": "FIRE_REFERENCE_ALL_ORIENTATIONS",
                     "symbol": "CUSTOM_SPELL_REFERENCE",
                     "total_frames": 4,
                 }

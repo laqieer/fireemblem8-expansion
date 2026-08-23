@@ -15,6 +15,10 @@ EFXMAGIC_HEADER = ROOT / "include" / "efxmagic.h"
 TEST_HEADER = ROOT / "include" / "custom_spell_effect_test.h"
 TEST_SOURCE = ROOT / "src" / "custom_spell_effect_test.c"
 MAIN_SOURCE = ROOT / "src" / "main.c"
+LAYOUT_DRIVER = (
+    ROOT / "tools" / "gba-playtest" / "tests" / "c"
+    / "custom_spell_effect_layout_driver.c"
+)
 RUNTIME_RUNNER = ROOT / "tools" / "gba-playtest" / "run_custom_spell_effect_checks.py"
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_NM = shutil.which("arm-none-eabi-nm")
@@ -259,7 +263,8 @@ class CustomSpellLifecycleTests(unittest.TestCase):
             "#define CUSTOM_SPELL_EFFECT_MAX_SOUND_EVENTS 8",
             "struct CustomSpellEffectFrame",
             "struct CustomSpellEffectResources",
-            "struct CustomSpellEffectAssets",
+            "struct CustomSpellEffectFrameAssets",
+            "struct CustomSpellEffectOamScripts",
             "struct CustomSpellEffect",
         ):
             self.assertIn(text, header)
@@ -280,8 +285,15 @@ class CustomSpellLifecycleTests(unittest.TestCase):
     def test_descriptor_layout_and_fallback_are_c89_safe(self):
         header = HEADER.read_text(encoding="utf-8")
         source = SOURCE.read_text(encoding="utf-8")
-        self.assertIn("/* 18 */ struct CustomSpellEffectAssets assets;", header)
-        self.assertIn("/* 40 */ u8 animationId;", header)
+        self.assertIn(
+            "/* 04 */ const struct CustomSpellEffectFrameAssets *assets;",
+            header,
+        )
+        self.assertIn(
+            "/* 18 */ struct CustomSpellEffectOamScripts oamScripts;",
+            header,
+        )
+        self.assertIn("/* 28 */ u8 animationId;", header)
         self.assertIn("if (anim == NULL)", source)
         self.assertIn("if (target != NULL)", source)
         self.assertIn("if (gEfxBgSemaphore != 0)", source)
@@ -379,6 +391,7 @@ class CustomSpellArmTests(unittest.TestCase):
             enabled = work / "custom-enabled.o"
             disabled = work / "custom-disabled.o"
             legacy_dispatch = work / "banim-efxmagic-legacy.o"
+            layout = work / "custom-spell-layout.o"
             for value, output in ((1, enabled), (0, disabled)):
                 completed = run(
                     [
@@ -414,6 +427,11 @@ class CustomSpellArmTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             legacy_symbols = run([ARM_NM, "-S", str(legacy_dispatch)]).stdout
             self.assertNotIn("gEkrSpellAnimLutCount", legacy_symbols)
+
+            completed = run(
+                [*common, "-c", str(LAYOUT_DRIVER), "-o", str(layout)]
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
 
 if __name__ == "__main__":

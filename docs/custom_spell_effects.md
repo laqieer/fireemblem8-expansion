@@ -52,9 +52,11 @@ void CustomSpellEffect_Start(
 
 `struct CustomSpellEffect` contains a symbol, typed frame records, a valid
 vanilla fallback animation, frame/hit timing, explicit resource metadata, and
-typed references to the existing spell OBJ/BG/TSA/palette/OAM animation
-helpers. The runtime accepts OBJ palette line 2 and BG palette line 1 only; a
-descriptor that names another lane is invalid before it can reserve anything.
+one effect-wide `CustomSpellEffectOamScripts` orientation set. Every
+`CustomSpellEffectFrame` points to a `CustomSpellEffectFrameAssets` record
+containing that frame's BG/OBJ graphics, BG1 TSA pair, and BG/OBJ palettes.
+The runtime accepts OBJ palette line 2 and BG palette line 1 only; a descriptor
+that names another lane is invalid before it can reserve anything.
 The fallback ID must be both inside the source-derived vanilla LUT bounds and
 bound to a non-NULL LUT entry. A malformed fallback is rejected and is never
 silently replaced by the synthetic reference fallback.
@@ -75,24 +77,27 @@ acquire the custom spell lanes.
 
 ## Resource and lifecycle contract
 
-The one owner Proc is in `PROC_TREE_3`. It uses existing spell-FX lifecycle
-helpers, reserves one spell semaphore, uploads the descriptor's bounded OBJ
-and BG data through the existing spell lanes, installs the descriptor's BG1
-TSA, and creates its one bounded child animation. It applies one hit at
-`hitFrame` and releases all ownership through its normal and forced-end
-callback. Cleanup clears BG1 and its position, restores color/window state,
-ends spell-cast registration, deletes the child animation, and releases the
-reservation. The enabled debug profile exports `gCustomSpellEffectDebugProbe` from the
-existing debugtools probe section. Release retains the same validation and
-cleanup without that diagnostic object.
+The one owner Proc is in `PROC_TREE_3`. Before allocation it validates every
+frame record and all six visual pointers, plus all four effect-wide OAM script
+pointers. It then reserves one spell semaphore, uploads frame 0's complete
+visual set, and creates one bounded child animation. At each later frame
+boundary it uploads that frame's complete visual set exactly once without
+recreating the child; generated OAM scripts encode all frame/duration changes.
+It applies one hit at `hitFrame` and releases all ownership through its normal
+and forced-end callback. Cleanup clears BG1 and its position, restores
+color/window state, ends spell-cast registration, deletes the one child
+animation, and releases the reservation. The enabled debug profile exports
+`gCustomSpellEffectDebugProbe` from the existing debugtools probe section.
+Release retains the same validation and cleanup without that diagnostic
+object.
 
 | Resource | Bound |
 | --- | --- |
-| OBJ spell lane | at most `0x1000` bytes |
-| BG spell lane | at most `0x2000` bytes |
+| OBJ spell lane | exact padded upload size for every frame, at most `0x1000` bytes |
+| BG spell lane | exact padded upload size for every frame, at most `0x2000` bytes |
 | BG1 TSA | exactly 30x20 / 1200 bytes |
 | Palette lanes | OBJ line 2 and BG line 1 |
-| OAM | at most 16 records |
+| OAM | generated effect-wide scripts; at most 16 records in any frame |
 | Sound | at most 8 events |
 | Runtime | one Proc, one hit, no concurrent custom effect |
 | Compressed module payload | at most `0x40000` bytes |
@@ -174,7 +179,8 @@ required; all runtime failures already use a vanilla fallback.
 - **Actions:** run the host suite, then both enabled
   `expansion-modern-custom-spell-check` commands.
 - **Expected result:** custom ID `0x80` traverses the public
-  `StartSpellAnimation()` ABI, starts once, loads each lane once, applies one
+  `StartSpellAnimation()` ABI, starts once, uploads all six visual resources
+  once per frame (two complete sets in the synthetic descriptor), applies one
   hit, creates/deletes one child, cleans once, and ends with no owner,
   semaphore, spell-cast Proc, or active spell state. Vanilla ID `24` still
   traverses the LUT and never increments custom dispatch.
