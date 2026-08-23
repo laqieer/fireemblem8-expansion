@@ -59,9 +59,10 @@ release-time artifact hashes remain required where consumed.
 
 For any task that changes tracked files, local implementation and tests are
 not completion. Unless the user explicitly says not to commit or push, commit
-and push all intended changes, wait for Build CI and Full Matrix CI on the
-exact pushed `master` commit, and require `make remote-completion-check` to
-pass before reporting completion.
+and push all intended changes, require clean candidate Build CI and Copilot
+review, merge, then require the same combined Build CI on the exact `master`
+revision before `make remote-completion-check` can pass. Only the technically
+used patch publisher is master-only.
 
 For an objective to resolve all repository issues, also close the resolved
 issues and require `make all-issues-completion-check` to pass. Track commit,
@@ -76,28 +77,27 @@ after the run is terminal to inspect logs or reviews. Do not repeatedly wake an
 agent to poll, do not create duplicate watchers, and cancel superseded
 candidate runs before dispatching replacement checks.
 
-Every candidate PR requires exact-candidate Build CI and concurrent Copilot
-review, each with its own bounded direct watcher. Inspect review threads as
-soon as review is terminal. A valid review finding supersedes the candidate
-and cancels all candidate checks. Do not run Full Matrix for a candidate PR or
-stacked child. Once candidate Build and review are terminal and clean and
-objective acceptance is complete, merge directly without candidate or local
-Full Matrix. Full Matrix CI runs only on `master`; it never runs on a pull
-request or feature branch, manually or automatically.
+After each merge, immediately inspect every open PR. Merge current `master`
+only into PRs with real conflicts or shared-contract changes; refresh
+independent conflicts concurrently and rerun only conflict-affected checks
+plus replacement Build/review. Never pause or cancel unaffected PR CI because
+of priority or unrelated `master` movement; cancel superseded CI only when its
+candidate actually changes.
 
-Immediately after each merge or intentional independent merge batch, monitor
-Build CI and dispatch Full Matrix CI on the exact pushed `master` commit and
-branch. Use attached, nonblocking asynchronous shell watchers and continue
-every unrelated dependency-ready task. These exact pushed-`master` checks are
-nonblocking only for unrelated independent PR merges. Their failures interrupt
-ordinary work for fix-forward or revert immediately. Issue closure and remote
-completion wait for both checks for that exact pushed `master` commit to
-succeed.
+After each PR opens or updates, concurrently monitor exact-head Build CI,
+Copilot comments/threads, and mergeability; triage review findings
+immediately. Refresh real conflicts with a normal `master` merge. Monitor master-branch CI after every merge.
+That means the exact-master combined Build CI and an open-PR conflict rescan.
+Fix forward or revert a broken `master`;
+unrelated PRs do not wait on healthy master runs.
 
-Independent PRs may validate and merge in parallel. Do not queue them by age,
-issue number, shared initiative, or another independent PR's post-merge CI.
-Refresh a candidate only for a real dependency, merge conflict, candidate-tree
-change, shared-contract change, or demonstrated interaction.
+All exact-head Build CI, Copilot-review, and post-merge master-branch CI
+monitoring uses attached asynchronous shell watchers and is nonblocking.
+Continue unrelated dependency-ready work while those watchers run; never
+occupy a reasoning agent or stop with a waiting-only response. Cancel only a
+superseded candidate run after that candidate actually changes. A broken
+master Build requires an immediate fix-forward or revert and blocks that
+issue's closure and remote completion, but not unrelated independent PRs.
 
 First-time setup: `./scripts/quickstart.sh` installs/probes the modern
 toolchain, an ARM GDB debugger, the mGBA GDB-server frontend, and libmGBA by
