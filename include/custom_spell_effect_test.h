@@ -105,6 +105,8 @@ struct CustomSpellEffectTestProbe
     /* 108 */ u32 animAllocationFailures;
     /* 10C */ u32 procAllocationFailures;
     /* 110 */ u32 allocationFailureCleanups;
+    /* 114 */ u32 normalFinalDisplayLatches;
+    /* 118 */ u32 reentrantFinalDisplayLatches;
 };
 
 extern struct CustomSpellEffectTestProbe gCustomSpellEffectTestProbe;
@@ -122,6 +124,7 @@ void CustomSpellEffectTest_RecordResourceLoad(void);
 void CustomSpellEffectTest_RecordCleanup(void);
 void CustomSpellEffectTest_RecordChildCreate(void);
 void CustomSpellEffectTest_RecordChildDelete(void);
+void CustomSpellEffectTest_RecordFinalDisplayLatch(void);
 void CustomSpellEffectTest_ForceEndOwner(void);
 
 #endif /* FE8_EXPANSION_CUSTOM_SPELL_TEST */

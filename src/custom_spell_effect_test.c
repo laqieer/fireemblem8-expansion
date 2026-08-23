@@ -78,6 +78,7 @@ struct CustomSpellEffectTestCounters
     u32 cleanups;
     u32 childCreates;
     u32 childDeletes;
+    u32 finalDisplayLatches;
 };
 
 struct ProcCustomSpellEffectTestHarness
@@ -288,6 +289,7 @@ static void CustomSpellEffectTest_RecordNormal(void)
     probe->normalCleanups = sCounters.cleanups;
     probe->normalChildCreates = sCounters.childCreates;
     probe->normalChildDeletes = sCounters.childDeletes;
+    probe->normalFinalDisplayLatches = sCounters.finalDisplayLatches;
     probe->normalFinalActive = CustomSpellEffect_IsActive();
     probe->normalFinalSemaphore = gEfxBgSemaphore;
     probe->normalFinalSpellState = gEfxSpellAnimExists;
@@ -295,7 +297,8 @@ static void CustomSpellEffectTest_RecordNormal(void)
         || sCounters.resourceLoads != CustomSpellEffectTest_ReferenceFrameCount()
         || sCounters.hits != 1
         || sCounters.cleanups != 1 || sCounters.childCreates != 1
-        || sCounters.childDeletes != 1 || !CustomSpellEffectTest_StateClean())
+        || sCounters.childDeletes != 1 || sCounters.finalDisplayLatches != 1
+        || !CustomSpellEffectTest_StateClean())
         CustomSpellEffectTest_Fail(CUSTOM_SPELL_TEST_CASE_NORMAL);
     probe->completedMask |= CUSTOM_SPELL_TEST_CASE_NORMAL;
 }
@@ -344,13 +347,14 @@ static void CustomSpellEffectTest_RecordReentrant(void)
     probe->reentrantFallbackReason = sCounters.fallbackReason;
     probe->reentrantResourceLoads = sCounters.resourceLoads;
     probe->reentrantCleanups = sCounters.cleanups;
+    probe->reentrantFinalDisplayLatches = sCounters.finalDisplayLatches;
     probe->reentrantFinalActive = CustomSpellEffect_IsActive();
     probe->reentrantFinalSemaphore = gEfxBgSemaphore;
     if (sCounters.customDispatches != 2 || sCounters.starts != 1
         || sCounters.fallbacks != 1
         || sCounters.fallbackReason != CUSTOM_SPELL_EFFECT_TEST_FALLBACK_REENTRANT
         || sCounters.resourceLoads != CustomSpellEffectTest_ReferenceFrameCount()
-        || sCounters.cleanups != 1
+        || sCounters.cleanups != 1 || sCounters.finalDisplayLatches != 1
         || !CustomSpellEffectTest_StateClean())
         CustomSpellEffectTest_Fail(CUSTOM_SPELL_TEST_CASE_REENTRANT);
     probe->completedMask |= CUSTOM_SPELL_TEST_CASE_REENTRANT;
@@ -674,6 +678,11 @@ void CustomSpellEffectTest_RecordChildCreate(void)
 void CustomSpellEffectTest_RecordChildDelete(void)
 {
     sCounters.childDeletes++;
+}
+
+void CustomSpellEffectTest_RecordFinalDisplayLatch(void)
+{
+    sCounters.finalDisplayLatches++;
 }
 
 #endif /* FE8_EXPANSION_CUSTOM_SPELL_TEST */

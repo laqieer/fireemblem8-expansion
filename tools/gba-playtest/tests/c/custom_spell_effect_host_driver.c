@@ -76,6 +76,7 @@ static int sChildDeletes;
 static int sHits;
 static int sHitSounds;
 static int sFrameSounds;
+static int sPlayedSounds[CUSTOM_SPELL_EFFECT_MAX_SOUND_EVENTS];
 static int sProcEnds;
 static u32 sObjGfxSize;
 static u32 sBgGfxSize;
@@ -107,6 +108,7 @@ static void ResetState(void)
     sHits = 0;
     sHitSounds = 0;
     sFrameSounds = 0;
+    memset(sPlayedSounds, 0, sizeof(sPlayedSounds));
     sProcEnds = 0;
     sObjGfxSize = 0;
     sBgGfxSize = 0;
@@ -325,10 +327,11 @@ void EfxPlayHittedSFX(struct Anim *anim)
 
 void PlaySFX(int songId, int volume, int xPosition, int usePan)
 {
-    (void)songId;
     (void)volume;
     (void)xPosition;
     (void)usePan;
+    if (sFrameSounds < CUSTOM_SPELL_EFFECT_MAX_SOUND_EVENTS)
+        sPlayedSounds[sFrameSounds] = songId;
     sFrameSounds++;
 }
 
@@ -336,11 +339,13 @@ int main(void)
 {
     const struct CustomSpellEffect *effect;
     struct CustomSpellEffect invalid;
+    struct CustomSpellEffect multiSound;
     struct CustomSpellEffectFrame frames[2];
     struct CustomSpellEffectFrameAssets frameAssets[2];
     struct Anim attacker;
     const u16 **assetSlots[6];
     const u16 *savedAsset;
+    u16 soundIds[3];
     int asset;
     int frame;
 
@@ -367,6 +372,14 @@ int main(void)
     for (frame = 0; frame < effect->totalFrames; ++frame)
         CustomSpellEffect_Loop(&sProc);
 
+    if (!Check(CustomSpellEffect_IsActive() && gEfxBgSemaphore == 1,
+               "final display latch did not retain ownership for one tick")
+        || !Check(sProc.finalDisplayLatch == 1 && sChildDeletes == 0,
+                  "final child was deleted before its last display tick"))
+        return 1;
+
+    CustomSpellEffect_Loop(&sProc);
+
     if (!Check(!CustomSpellEffect_IsActive() && gEfxBgSemaphore == 0,
                "normal completion did not release ownership")
         || !Check(sObjGfxLoads == effect->frameCount
@@ -379,7 +392,8 @@ int main(void)
                   && sBgGfxSize == effect->resources.bgBytes
                   && sObjGfxSizeMismatch == 0 && sBgGfxSizeMismatch == 0,
                   "per-frame graphics uploads did not use the global padded sizes")
-        || !Check(sHits == 1 && sHitSounds == 1 && sFrameSounds == 1,
+        || !Check(sHits == 1 && sHitSounds == 1 && sFrameSounds == 1
+                  && sPlayedSounds[0] == 0xF1,
                   "custom effect did not apply exactly one hit and declared sound")
         || !Check(sChildCreates == 1 && sChildDeletes == 1
                   && sBgClears == 1 && sBgPositionClears == 2,
@@ -454,6 +468,62 @@ int main(void)
     invalid = *effect;
     invalid.resources.romBytes = CUSTOM_SPELL_EFFECT_MAX_ROM_BYTES + 1;
     if (!Check(!CustomSpellEffect_Validate(&invalid), "ROM resource overflow was accepted"))
+        return 1;
+
+    memcpy(frames, effect->frames, sizeof(frames));
+    soundIds[0] = 0xF1;
+    soundIds[1] = 0xF2;
+    soundIds[2] = 0xF3;
+    frames[0].soundStart = 0;
+    frames[0].soundCount = 2;
+    frames[1].soundStart = 2;
+    frames[1].soundCount = 1;
+    multiSound = *effect;
+    multiSound.frames = frames;
+    multiSound.soundIds = soundIds;
+    multiSound.resources.soundEvents = 3;
+    if (!Check(CustomSpellEffect_Validate(&multiSound),
+               "multiple ordered boundary sounds were rejected"))
+        return 1;
+    ResetState();
+    CustomSpellEffect_Start(&multiSound, &attacker);
+    for (frame = 0; frame <= multiSound.totalFrames; ++frame)
+        CustomSpellEffect_Loop(&sProc);
+    if (!Check(sFrameSounds == 3
+               && sPlayedSounds[0] == 0xF1
+               && sPlayedSounds[1] == 0xF2
+               && sPlayedSounds[2] == 0xF3,
+               "boundary sounds did not play in generated order")
+        || !Check(sObjGfxLoads == multiSound.frameCount
+                  && sChildCreates == 1 && sChildDeletes == 1,
+                  "multiple sounds changed frame uploads or child lifecycle"))
+        return 1;
+
+    memcpy(frames, effect->frames, sizeof(frames));
+    invalid = *effect;
+    invalid.frames = frames;
+    frames[0].flags = 1;
+    if (!Check(!CustomSpellEffect_Validate(&invalid), "nonzero v1 frame flags accepted"))
+        return 1;
+    frames[0].flags = 0;
+    frames[1].soundStart = 0;
+    if (!Check(!CustomSpellEffect_Validate(&invalid), "noncontiguous sound range accepted"))
+        return 1;
+    frames[1].soundStart = 1;
+    frames[0].soundCount = 2;
+    if (!Check(!CustomSpellEffect_Validate(&invalid), "out-of-bounds sound range accepted"))
+        return 1;
+    frames[0].soundCount = 1;
+    invalid.soundIds = NULL;
+    if (!Check(!CustomSpellEffect_Validate(&invalid), "NULL sound table accepted"))
+        return 1;
+    invalid.soundIds = soundIds;
+    soundIds[0] = 0;
+    if (!Check(!CustomSpellEffect_Validate(&invalid), "zero sound event accepted"))
+        return 1;
+    soundIds[0] = 0xF1;
+    invalid.resources.soundEvents = 2;
+    if (!Check(!CustomSpellEffect_Validate(&invalid), "sound total mismatch accepted"))
         return 1;
 
     memcpy(frames, effect->frames, sizeof(frames));

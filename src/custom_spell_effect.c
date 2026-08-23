@@ -37,7 +37,8 @@ struct ProcCustomSpellEffect
     /* 3B */ u8 hitted;
     /* 3C */ u8 hitApplied;
     /* 3D */ u8 acquired;
-    /* 3E */ u8 _pad[2];
+    /* 3E */ u8 finalDisplayLatch;
+    /* 3F */ u8 _pad;
 };
 
 static const struct CustomSpellEffectFrameAssets sReferenceFrameAssets[] =
@@ -62,9 +63,11 @@ static const struct CustomSpellEffectFrameAssets sReferenceFrameAssets[] =
 
 static const struct CustomSpellEffectFrame sReferenceFrames[] =
 {
-    { 2, 0, 0xF1, &sReferenceFrameAssets[0] },
-    { 2, 0, 0, &sReferenceFrameAssets[1] },
+    { 2, 0, 0, 1, &sReferenceFrameAssets[0] },
+    { 2, 0, 1, 0, &sReferenceFrameAssets[1] },
 };
+
+static const u16 sReferenceSoundIds[] = { 0xF1 };
 
 static const struct CustomSpellEffect sReferenceEffect =
 {
@@ -87,6 +90,7 @@ static const struct CustomSpellEffect sReferenceEffect =
         FramScr_Unk5D4F90,
         FramScr_Unk5D4F90,
     },
+    sReferenceSoundIds,
     CUSTOM_SPELL_EFFECT_BASE,
     CUSTOM_SPELL_EFFECT_REFERENCE_FALLBACK,
     2,
@@ -155,8 +159,10 @@ bool8 CustomSpellEffect_Validate(const struct CustomSpellEffect *effect)
     const struct CustomSpellEffectFrame *frameData;
     const struct CustomSpellEffectFrameAssets *assets;
     u8 frame;
+    u8 soundIndex;
+    u8 validatedSoundEvents = 0;
+    u16 soundEnd;
     u16 totalFrames = 0;
-    u8 soundEvents = 0;
 
     if (effect == NULL || effect->symbol == NULL || effect->frames == NULL)
         return FALSE;
@@ -187,6 +193,8 @@ bool8 CustomSpellEffect_Validate(const struct CustomSpellEffect *effect)
     if (resources->soundEvents > CUSTOM_SPELL_EFFECT_MAX_SOUND_EVENTS
         || resources->romBytes > CUSTOM_SPELL_EFFECT_MAX_ROM_BYTES)
         return FALSE;
+    if (resources->soundEvents != 0 && effect->soundIds == NULL)
+        return FALSE;
     if (effect->oamScripts.rightFront == NULL
         || effect->oamScripts.leftFront == NULL
         || effect->oamScripts.rightBack == NULL
@@ -197,8 +205,16 @@ bool8 CustomSpellEffect_Validate(const struct CustomSpellEffect *effect)
     {
         frameData = &effect->frames[frame];
         assets = frameData->assets;
-        if (frameData->duration == 0 || assets == NULL)
+        if (frameData->duration == 0 || frameData->flags != 0 || assets == NULL)
             return FALSE;
+        if (frameData->soundStart != validatedSoundEvents)
+            return FALSE;
+        soundEnd = (u16)frameData->soundStart + frameData->soundCount;
+        if (soundEnd > resources->soundEvents)
+            return FALSE;
+        for (soundIndex = frameData->soundStart; soundIndex < soundEnd; ++soundIndex)
+            if (effect->soundIds[soundIndex] == 0)
+                return FALSE;
         if (assets->objGfx == NULL
             || assets->bgGfx == NULL
             || assets->bgTsaLeft == NULL
@@ -207,11 +223,11 @@ bool8 CustomSpellEffect_Validate(const struct CustomSpellEffect *effect)
             || assets->bgPalette == NULL)
             return FALSE;
         totalFrames += frameData->duration;
-        if (frameData->soundId != 0)
-            soundEvents++;
+        validatedSoundEvents = soundEnd;
     }
 
-    return totalFrames == effect->totalFrames && soundEvents == resources->soundEvents;
+    return totalFrames == effect->totalFrames
+        && validatedSoundEvents == resources->soundEvents;
 }
 
 const struct CustomSpellEffect *CustomSpellEffect_Lookup(u8 animationId)
@@ -299,6 +315,7 @@ void CustomSpellEffect_Start(const struct CustomSpellEffect *effect, struct Anim
     proc->hitted = CheckRoundMiss(GetAnimRoundTypeAnotherSide(anim));
     proc->hitApplied = 0;
     proc->acquired = 1;
+    proc->finalDisplayLatch = 0;
     gEfxBgSemaphore++;
     SpellFx_Begin();
     NewEfxSpellCast();
@@ -366,10 +383,22 @@ static void CustomSpellEffect_Loop(struct ProcCustomSpellEffect *proc)
 {
     const struct CustomSpellEffectFrame *frame;
     struct Anim *target;
+    u8 sound;
+
+    if (proc->finalDisplayLatch != 0)
+    {
+        Proc_Break(proc);
+        return;
+    }
 
     frame = &proc->effect->frames[proc->frameIndex];
-    if (proc->frameTimer == 0 && frame->soundId != 0)
-        PlaySFX(frame->soundId, 0x100, proc->anim->xPosition, 1);
+    if (proc->frameTimer == 0)
+        for (sound = 0; sound < frame->soundCount; ++sound)
+            PlaySFX(
+                proc->effect->soundIds[frame->soundStart + sound],
+                0x100,
+                proc->anim->xPosition,
+                1);
 
     if (proc->elapsedFrames == proc->effect->hitFrame && proc->hitApplied == 0)
     {
@@ -407,7 +436,12 @@ static void CustomSpellEffect_Loop(struct ProcCustomSpellEffect *proc)
     }
 
     if (proc->frameIndex >= proc->effect->frameCount)
-        Proc_Break(proc);
+    {
+        proc->finalDisplayLatch = 1;
+#if FE8_EXPANSION_CUSTOM_SPELL_TEST
+        CustomSpellEffectTest_RecordFinalDisplayLatch();
+#endif
+    }
 }
 
 static void CustomSpellEffect_OnEnd(struct ProcCustomSpellEffect *proc)

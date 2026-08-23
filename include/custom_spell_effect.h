@@ -26,7 +26,8 @@ struct CustomSpellEffectFrame
 {
     /* 00 */ u8 duration;
     /* 01 */ u8 flags;
-    /* 02 */ u16 soundId;
+    /* 02 */ u8 soundStart;
+    /* 03 */ u8 soundCount;
     /* 04 */ const struct CustomSpellEffectFrameAssets *assets;
 };
 
@@ -67,12 +68,13 @@ struct CustomSpellEffect
     /* 04 */ const struct CustomSpellEffectFrame *frames;
     /* 08 */ struct CustomSpellEffectResources resources;
     /* 18 */ struct CustomSpellEffectOamScripts oamScripts;
-    /* 28 */ u8 animationId;
-    /* 29 */ u8 fallbackAnimationId;
-    /* 2A */ u8 frameCount;
-    /* 2B */ u8 totalFrames;
-    /* 2C */ u8 hitFrame;
-    /* 2D */ u8 _pad[3];
+    /* 28 */ const u16 *soundIds;
+    /* 2C */ u8 animationId;
+    /* 2D */ u8 fallbackAnimationId;
+    /* 2E */ u8 frameCount;
+    /* 2F */ u8 totalFrames;
+    /* 30 */ u8 hitFrame;
+    /* 31 */ u8 _pad[3];
 };
 
 const struct CustomSpellEffect *CustomSpellEffect_Lookup(u8 animationId);

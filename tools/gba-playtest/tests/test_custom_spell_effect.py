@@ -289,11 +289,14 @@ class CustomSpellLifecycleTests(unittest.TestCase):
             "/* 04 */ const struct CustomSpellEffectFrameAssets *assets;",
             header,
         )
+        self.assertIn("/* 02 */ u8 soundStart;", header)
+        self.assertIn("/* 03 */ u8 soundCount;", header)
         self.assertIn(
             "/* 18 */ struct CustomSpellEffectOamScripts oamScripts;",
             header,
         )
-        self.assertIn("/* 28 */ u8 animationId;", header)
+        self.assertIn("/* 28 */ const u16 *soundIds;", header)
+        self.assertIn("/* 2C */ u8 animationId;", header)
         self.assertIn("if (anim == NULL)", source)
         self.assertIn("if (target != NULL)", source)
         self.assertIn("if (gEfxBgSemaphore != 0)", source)
@@ -308,6 +311,10 @@ class CustomSpellLifecycleTests(unittest.TestCase):
             "        return;",
             source,
         )
+        self.assertIn("frameData->flags != 0", source)
+        self.assertIn("frameData->soundStart != validatedSoundEvents", source)
+        self.assertIn("effect->soundIds[soundIndex] == 0", source)
+        self.assertIn("proc->finalDisplayLatch = 1;", source)
         stripped = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
         self.assertNotIn("//", stripped)
 

@@ -91,6 +91,8 @@ PROBE_FIELDS = (
     "animAllocationFailures",
     "procAllocationFailures",
     "allocationFailureCleanups",
+    "normalFinalDisplayLatches",
+    "reentrantFinalDisplayLatches",
 )
 
 
@@ -234,6 +236,7 @@ def expected_values(enabled: int) -> dict[str, int]:
             "normalCleanups": 1,
             "normalChildCreates": 1,
             "normalChildDeletes": 1,
+            "normalFinalDisplayLatches": 1,
             "missingCustomDispatches": 1,
             "missingFallbackReason": 1,
             "missingFallbackAnimation": 22,
@@ -246,6 +249,7 @@ def expected_values(enabled: int) -> dict[str, int]:
             "reentrantFallbackReason": 2,
             "reentrantResourceLoads": 2,
             "reentrantCleanups": 1,
+            "reentrantFinalDisplayLatches": 1,
             "resourceFailureCustomDispatches": 1,
             "resourceFailureFallbacks": 1,
             "resourceFailureFallbackReason": 6,

@@ -55,6 +55,9 @@ vanilla fallback animation, frame/hit timing, explicit resource metadata, and
 one effect-wide `CustomSpellEffectOamScripts` orientation set. Every
 `CustomSpellEffectFrame` points to a `CustomSpellEffectFrameAssets` record
 containing that frame's BG/OBJ graphics, BG1 TSA pair, and BG/OBJ palettes.
+The effect owns one generated `soundIds` table; each frame owns a contiguous
+`soundStart`/`soundCount` range into it. All listed sounds play in source order
+at that frame's start. Frame `flags` must be zero in runtime ABI v1.
 The runtime accepts OBJ palette line 2 and BG palette line 1 only; a descriptor
 that names another lane is invalid before it can reserve anything.
 The fallback ID must be both inside the source-derived vanilla LUT bounds and
@@ -83,10 +86,13 @@ pointers. It then reserves one spell semaphore, uploads frame 0's complete
 visual set, and creates one bounded child animation. At each later frame
 boundary it uploads that frame's complete visual set exactly once without
 recreating the child; generated OAM scripts encode all frame/duration changes.
-It applies one hit at `hitFrame` and releases all ownership through its normal
-and forced-end callback. Cleanup clears BG1 and its position, restores
-color/window state, ends spell-cast registration, deletes the one child
-animation, and releases the reservation. The enabled debug profile exports
+It plays every generated boundary sound in order, applies one hit at
+`hitFrame`, and holds the final child display for one additional update tick
+after the last frame boundary so its last OAM state reaches `AnimUpdateAll`
+before cleanup. It then releases all ownership through its normal and
+forced-end callback. Cleanup clears BG1 and its position, restores color/window
+state, ends spell-cast registration, deletes the one child animation, and
+releases the reservation. The enabled debug profile exports
 `gCustomSpellEffectDebugProbe` from the existing debugtools probe section.
 Release retains the same validation and cleanup without that diagnostic
 object.
@@ -98,7 +104,7 @@ object.
 | BG1 TSA | exactly 30x20 / 1200 bytes |
 | Palette lanes | OBJ line 2 and BG line 1 |
 | OAM | generated effect-wide scripts; at most 16 records in any frame |
-| Sound | at most 8 events |
+| Sound | one contiguous generated table; at most 8 ordered boundary events |
 | Runtime | one Proc, one hit, no concurrent custom effect |
 | Compressed module payload | at most `0x40000` bytes |
 
@@ -111,7 +117,8 @@ generated output.
 ## Tester cases and rollback
 
 `TC-CUSTOM-SPELL-061-001` covers enabled debug/release typed lookup, frame
-timing, one hit/SFX, termination, cleanup, and a subsequent vanilla LUT path.
+timing, ordered boundary SFX, one hit, final-display latch, termination,
+cleanup, and a subsequent vanilla LUT path.
 `TC-CUSTOM-SPELL-061-002` covers default-disabled builds and confirms no
 custom object symbols or dispatch are reachable. `TC-CUSTOM-SPELL-061-004`
 covers `WITH_BACKGROUNDS`, reentrancy, and resource-conflict fallback.
@@ -181,7 +188,8 @@ required; all runtime failures already use a vanilla fallback.
 - **Expected result:** custom ID `0x80` traverses the public
   `StartSpellAnimation()` ABI, starts once, uploads all six visual resources
   once per frame (two complete sets in the synthetic descriptor), applies one
-  hit, creates/deletes one child, cleans once, and ends with no owner,
+  ordered synthetic sound and one hit, keeps the final child through its last
+  display tick, creates/deletes one child, cleans once, and ends with no owner,
   semaphore, spell-cast Proc, or active spell state. Vanilla ID `24` still
   traverses the LUT and never increments custom dispatch.
 - **Interactions/save:** #78 is the only package adapter dependent. No starter,

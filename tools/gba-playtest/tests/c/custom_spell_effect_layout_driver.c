@@ -21,6 +21,10 @@ typedef char CustomSpellEffectFrameAssetsSize[
 
 typedef char CustomSpellEffectFrameAssetsOffset[
     offsetof(struct CustomSpellEffectFrame, assets) == 0x04 ? 1 : -1];
+typedef char CustomSpellEffectFrameSoundStartOffset[
+    offsetof(struct CustomSpellEffectFrame, soundStart) == 0x02 ? 1 : -1];
+typedef char CustomSpellEffectFrameSoundCountOffset[
+    offsetof(struct CustomSpellEffectFrame, soundCount) == 0x03 ? 1 : -1];
 typedef char CustomSpellEffectFrameSize[
     sizeof(struct CustomSpellEffectFrame) == 0x08 ? 1 : -1];
 
@@ -39,12 +43,14 @@ typedef char CustomSpellEffectResourcesOffset[
     offsetof(struct CustomSpellEffect, resources) == 0x08 ? 1 : -1];
 typedef char CustomSpellEffectOamScriptsOffset[
     offsetof(struct CustomSpellEffect, oamScripts) == 0x18 ? 1 : -1];
+typedef char CustomSpellEffectSoundIdsOffset[
+    offsetof(struct CustomSpellEffect, soundIds) == 0x28 ? 1 : -1];
 typedef char CustomSpellEffectAnimationIdOffset[
-    offsetof(struct CustomSpellEffect, animationId) == 0x28 ? 1 : -1];
+    offsetof(struct CustomSpellEffect, animationId) == 0x2C ? 1 : -1];
 typedef char CustomSpellEffectHitFrameOffset[
-    offsetof(struct CustomSpellEffect, hitFrame) == 0x2C ? 1 : -1];
+    offsetof(struct CustomSpellEffect, hitFrame) == 0x30 ? 1 : -1];
 typedef char CustomSpellEffectSize[
-    sizeof(struct CustomSpellEffect) == 0x30 ? 1 : -1];
+    sizeof(struct CustomSpellEffect) == 0x34 ? 1 : -1];
 
 int CustomSpellEffectLayoutCompileProbe(void)
 {
