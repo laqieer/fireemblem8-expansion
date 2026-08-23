@@ -1,8 +1,9 @@
 # Asset-authoring cases
 
 These procedures cover shipped source-asset adapters that generate through
-the existing manifest and runtime ownership seams. They do not introduce a
-second asset registry or project-owned content requirement.
+the existing manifest and runtime ownership seams. They require no additional
+downstream or project content and use the already committed project-owned
+`LORM_SP1_PROOF` fixture rather than introducing a second asset registry.
 
 ## TC-BANIM-PACKAGE-062: Generate and exercise a community battle-animation package
 

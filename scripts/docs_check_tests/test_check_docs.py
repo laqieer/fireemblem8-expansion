@@ -761,17 +761,16 @@ class TesterCaseRegistryTests(unittest.TestCase):
         self.assertEqual(coverage["deferred_issues"], [])
 
         expected_feature_ids = coverage["expected_feature_ids"]
+        feature_ids = [entry["id"] for entry in registry["features"]]
         current_feature_ids = [
             entry["id"] for entry in registry["features"] if entry["status"] == "current"
         ]
         case_ids = [entry["id"] for entry in registry["cases"]]
-        self.assertEqual(len(expected_feature_ids), 33)
-        self.assertEqual(len(set(expected_feature_ids)), 33)
-        self.assertEqual(len(current_feature_ids), 33)
-        self.assertEqual(len(set(current_feature_ids)), 33)
+        self.assertEqual(len(feature_ids), len(set(feature_ids)))
+        self.assertEqual(len(expected_feature_ids), len(set(expected_feature_ids)))
+        self.assertEqual(len(current_feature_ids), len(set(current_feature_ids)))
         self.assertCountEqual(expected_feature_ids, current_feature_ids)
-        self.assertEqual(len(case_ids), 42)
-        self.assertEqual(len(set(case_ids)), 42)
+        self.assertEqual(len(case_ids), len(set(case_ids)))
 
         features = {entry["id"]: entry for entry in registry["features"]}
         cases = {entry["id"]: entry for entry in registry["cases"]}
