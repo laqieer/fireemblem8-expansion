@@ -28,6 +28,7 @@ LAUNCHER_SRC = REPO_ROOT / "src" / "debugtools_launcher.c"
 ACTIONS_SRC = REPO_ROOT / "src" / "debugtools_actions.c"
 DIAG_SRC = REPO_ROOT / "src" / "debugtools_diag.c"
 TOOLS_SRC = REPO_ROOT / "src" / "debugtools_tools.c"
+MUSIC_SRC = REPO_ROOT / "src" / "debugtools_music.c"
 GAMECONTROL_SRC = REPO_ROOT / "src" / "gamecontrol.c"
 HEADER = REPO_ROOT / "include" / "expansion_debugtools.h"
 TITLESCREEN_SRC = REPO_ROOT / "src" / "titlescreen.c"
@@ -76,6 +77,7 @@ def _write_debugtools_msg_id_header(work_dir: Path):
         "EXP_MSG_DEBUG_ACTION_FLAG_CHAPTER": "debug.action.flag_chapter",
         "EXP_MSG_DEBUG_ACTION_RNG_INSPECT": "debug.action.rng_inspect",
         "EXP_MSG_DEBUG_ACTION_SAVE_STATE": "debug.action.save_state",
+        "EXP_MSG_DEBUG_ACTION_MUSIC_PREVIEW": "debug.action.music_preview",
         "EXP_MSG_DEBUG_STATUS_HUB": "debug.status.hub",
         "EXP_MSG_DEBUG_STATUS_HUB_ERROR": "debug.status.hub_error",
     }
@@ -168,9 +170,9 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
             )
             self.assertEqual(rc, 0, f"host registry test failed:\n{out}")
             self.assertIn("DEBUGTOOLS_HOST_TEST: PASS", out)
-            self.assertIn("DEBUGTOOLS_BUILTIN_ACTION_MAX=9", out)
+            self.assertIn("DEBUGTOOLS_BUILTIN_ACTION_MAX=10", out)
             self.assertIn("DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX=9", out)
-            self.assertIn("DEBUGTOOLS_ACTION_MAX=18", out)
+            self.assertIn("DEBUGTOOLS_ACTION_MAX=19", out)
             self.assertIn("DEBUGTOOLS_HUB_MENU_SLOTS=11", out)
 
     def test_registry_id_and_label_validation(self):
@@ -195,8 +197,8 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
 
     def test_builtin_identity_and_text_allocator_lifecycle(self):
         """A valid contributor-before-init registration must coexist with
-        identity-safe IDs 1-9. The ninth contributor succeeds, the tenth
-        fails, R pages between the two full action pages, and 64 maximum
+        identity-safe IDs 1-10. The ninth contributor succeeds, the tenth
+        fails, R pages across the three bounded pages, and 64 maximum
         page/contributor-submenu cycles reuse one bounded text allocation
         scope. The contributor callback uses only the public submenu handoff
         API, returns ordinary MENU_ACT_END, and its real MenuDef::onEnd uses
@@ -275,7 +277,7 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
 
-            for first in range(1, 5):
+            for first in range(1, 6):
                 with self.subTest(first_initializer=first):
                     work = root / f"first-{first}"
                     work.mkdir()
@@ -336,7 +338,7 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
         registry = _strip_c_comments(REGISTRY_SRC.read_text(encoding="utf-8"))
         builtin_sources = "\n".join(
             _strip_c_comments(path.read_text(encoding="utf-8"))
-            for path in (LAUNCHER_SRC, ACTIONS_SRC, TOOLS_SRC)
+            for path in (LAUNCHER_SRC, ACTIONS_SRC, TOOLS_SRC, MUSIC_SRC)
         )
 
         self.assertIn(
@@ -363,7 +365,7 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
                     builtin_sources,
                 )
             ),
-            9,
+            10,
         )
 
     def test_contributor_storage_is_appended_after_stable_ewram_layout(self):
@@ -2107,7 +2109,7 @@ class DebugToolsMapPrepScenarioSchemaTests(unittest.TestCase):
     def test_map_debug_scenario_is_schema_valid(self):
         scenario, data = self._load("debugtools-map-hub-modern-debug.json")
         self.assertEqual(scenario.name, "debugtools-map-hub-modern-debug")
-        self.assertEqual(len(data["checkpoints"]), 13)
+        self.assertEqual(len(data["checkpoints"]), 22)
         by_name = {c["name"]: c for c in data["checkpoints"]}
         for expected_name in (
             "map-hub-opened-after-first-pulse",

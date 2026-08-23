@@ -168,6 +168,11 @@ void Proc_EndEach(const struct ProcCmd* script)
     sMonitorAlive = 0;
 }
 
+void Proc_End(ProcPtr proc)
+{
+    (void)proc;
+}
+
 /* --- Dormant src/bmdebug.c bodies: this driver only proves the adapter
  * wires these exact function pointers into its one live MenuItemDef, so
  * it never needs to link the real bmdebug.c (a huge, engine-dependent
@@ -257,4 +262,12 @@ void DebugTools_RegisterExtendedToolActions(void)
      * here (out of scope for this Weather/Fog-focused driver), so its
      * lazy-registration call site (from DebugTools_OpenHub) still needs a
      * stand-in. */
+}
+
+void DebugTools_RegisterMusicPreviewAction(void)
+{
+}
+
+void DebugTools_CleanupMusicPreview(void)
+{
 }

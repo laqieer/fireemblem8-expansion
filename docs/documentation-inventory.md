@@ -83,6 +83,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/test-cases/foundation.md | laqieer | current | Tester procedure for the catalog and checker foundation (issue #54)
 - docs/test-cases/localization.md | laqieer | current | Indexed localization and locale-persistence procedures, profiles, negatives, and semantic automation (issue #56)
 - docs/test-cases/presentation-audio-utility.md | laqieer | current | Tester procedures for portrait, sound-room, BGM, presentation, manifest, and utility seams (issue #58)
+- docs/test-cases/debugtools.md | laqieer | current | Bounded reversible music-preview procedure, negatives, save expectations, and semantic automation (issue #126)
 - docs/test-cases/optional-gameplay.md | laqieer | current | Indexed optional gameplay procedures, profiles, negatives, save expectations, and automation (issue #55)
 - docs/test-cases/audio.md | laqieer | current | Indexed optional HQ PCM mixer procedure, profiles, negatives, and audio criterion (issue #83)
 - docs/test-cases/patch-release.md | laqieer | current | Indexed BPS artifact validation/application and fail-closed input procedures (issue #49)

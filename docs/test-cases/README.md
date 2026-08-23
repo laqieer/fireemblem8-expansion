@@ -63,3 +63,5 @@ python3 scripts/check_docs.py --check
 The foundation procedure is [`TC-CATALOG-001`](foundation.md#tc-catalog-001-tester-case-catalog-foundation).
 The optional audio module procedure is
 [`TC-AUDIO-HQMIX-001`](audio.md#tc-audio-hqmix-001-hq-pcm-mixer-produces-bounded-stereo-output).
+The bounded debugtools music-preview procedure is
+[`TC-DEBUGTOOLS-PROTOTYPE-004`](debugtools.md#tc-debugtools-prototype-004-preview-bounded-music-and-restore-its-owner).
