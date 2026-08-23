@@ -3,6 +3,12 @@
 
 #include "../../../../src/custom_spell_effect.c"
 
+#define TEST_VANILLA_ANIM_LAST 72
+#define TEST_VANILLA_ANIM_COUNT 73
+
+static void VanillaFallback(struct Anim *anim);
+static void VanillaBoundaryFallback(struct Anim *anim);
+
 static struct ProcCustomSpellEffect sProc;
 static struct Anim sChildAnim;
 static struct Anim sTargetAnim;
@@ -36,9 +42,15 @@ u32 AnimScr_EfxFireOBJ_R_Back[1];
 u32 FramScr_Unk5D4F90[2];
 u32 gEfxBgSemaphore;
 struct Anim *gAnims[4];
-SpellAnimFunc gEkrSpellAnimLut[CUSTOM_SPELL_EFFECT_VANILLA_ANIM_COUNT];
+SpellAnimFunc gEkrSpellAnimLut[] =
+{
+    [CUSTOM_SPELL_EFFECT_REFERENCE_FALLBACK] = VanillaFallback,
+    [TEST_VANILLA_ANIM_LAST] = VanillaBoundaryFallback,
+};
+const u32 gEkrSpellAnimLutCount = ARRAY_COUNT(gEkrSpellAnimLut);
 
 static int sFallbacks;
+static int sBoundaryFallbacks;
 static int sBegins;
 static int sFinishes;
 static int sBgClears;
@@ -64,6 +76,7 @@ static void ResetState(void)
     memset(&gCustomSpellEffectDebugProbe, 0, sizeof(gCustomSpellEffectDebugProbe));
     gEfxBgSemaphore = 0;
     sFallbacks = 0;
+    sBoundaryFallbacks = 0;
     sBegins = 0;
     sFinishes = 0;
     sBgClears = 0;
@@ -101,6 +114,12 @@ static void VanillaFallback(struct Anim *anim)
 {
     (void)anim;
     sFallbacks++;
+}
+
+static void VanillaBoundaryFallback(struct Anim *anim)
+{
+    (void)anim;
+    sBoundaryFallbacks++;
 }
 
 void StartSpellAnimation(struct Anim *anim)
@@ -297,7 +316,6 @@ int main(void)
     int frame;
 
     memset(&attacker, 0, sizeof(attacker));
-    gEkrSpellAnimLut[CUSTOM_SPELL_EFFECT_REFERENCE_FALLBACK] = VanillaFallback;
     effect = CustomSpellEffect_Lookup(CUSTOM_SPELL_EFFECT_BASE);
     if (!Check(effect != NULL, "reference lookup failed"))
         return 1;
@@ -397,6 +415,31 @@ int main(void)
     invalid.resources.romBytes = CUSTOM_SPELL_EFFECT_MAX_ROM_BYTES + 1;
     if (!Check(!CustomSpellEffect_Validate(&invalid), "ROM resource overflow was accepted"))
         return 1;
+
+    invalid = *effect;
+    invalid.fallbackAnimationId = TEST_VANILLA_ANIM_LAST;
+    if (!Check(CustomSpellEffect_Validate(&invalid),
+               "last vanilla LUT animation 72 was rejected"))
+        return 1;
+    invalid.resources.objPaletteLine = 0;
+    ResetState();
+    CustomSpellEffect_Start(&invalid, &attacker);
+    if (!Check(sBoundaryFallbacks == 1 && sFallbacks == 0,
+               "last vanilla LUT animation 72 was not dispatched"))
+        return 1;
+
+    invalid = *effect;
+    invalid.fallbackAnimationId = TEST_VANILLA_ANIM_COUNT;
+    if (!Check(!CustomSpellEffect_Validate(&invalid),
+               "out-of-range vanilla LUT animation 73 was accepted"))
+        return 1;
+    ResetState();
+    CustomSpellEffect_Start(&invalid, &attacker);
+    if (!Check(sFallbacks == 1 && sBoundaryFallbacks == 0,
+               "out-of-range fallback indexed past the vanilla LUT"))
+        return 1;
+
+    ResetState();
     invalid = *effect;
     invalid.resources.objPaletteLine = 0;
     CustomSpellEffect_Start(&invalid, &attacker);

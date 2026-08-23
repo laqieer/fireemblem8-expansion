@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "src" / "custom_spell_effect.c"
 DISPATCH = ROOT / "src" / "banim-efxmagic.c"
 HEADER = ROOT / "include" / "custom_spell_effect.h"
+EFXMAGIC_HEADER = ROOT / "include" / "efxmagic.h"
 TEST_HEADER = ROOT / "include" / "custom_spell_effect_test.h"
 TEST_SOURCE = ROOT / "src" / "custom_spell_effect_test.c"
 RUNTIME_RUNNER = ROOT / "tools" / "gba-playtest" / "run_custom_spell_effect_checks.py"
@@ -107,12 +108,32 @@ class CustomSpellConfigTests(unittest.TestCase):
 class CustomSpellContractTests(unittest.TestCase):
     def test_closed_index_dispatch_preserves_vanilla_lut_path(self):
         dispatch = DISPATCH.read_text(encoding="utf-8")
+        custom_source = SOURCE.read_text(encoding="utf-8")
+        custom_header = HEADER.read_text(encoding="utf-8")
+        efxmagic_header = EFXMAGIC_HEADER.read_text(encoding="utf-8")
         self.assertIn("index >= CUSTOM_SPELL_EFFECT_BASE", dispatch)
         self.assertIn("index <= CUSTOM_SPELL_EFFECT_LAST", dispatch)
         self.assertIn("CustomSpellEffect_Lookup((u8)index)", dispatch)
+        self.assertIn(
+            "gEkrSpellAnimLutCount = ARRAY_COUNT(gEkrSpellAnimLut);",
+            dispatch,
+        )
+        self.assertIn("extern const u32 gEkrSpellAnimLutCount;", efxmagic_header)
+        self.assertNotIn("CUSTOM_SPELL_EFFECT_VANILLA_ANIM_COUNT", custom_header)
+        self.assertEqual(custom_source.count("fallback >= gEkrSpellAnimLutCount"), 1)
+        self.assertEqual(
+            custom_source.count(
+                "effect->fallbackAnimationId >= gEkrSpellAnimLutCount"
+            ),
+            1,
+        )
+        self.assertIn(
+            "index < 0 || (u32)index >= gEkrSpellAnimLutCount",
+            dispatch,
+        )
         self.assertIn("gEkrSpellAnimLut[index](anim);", dispatch)
         self.assertLess(
-            dispatch.index("CustomSpellEffect_Lookup((u8)index)"),
+            dispatch.index("index < 0 || (u32)index >= gEkrSpellAnimLutCount"),
             dispatch.index("gEkrSpellAnimLut[index](anim);"),
         )
         self.assertNotIn("SpellAssoc", dispatch)

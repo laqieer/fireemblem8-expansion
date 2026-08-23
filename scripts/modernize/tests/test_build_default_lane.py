@@ -53,6 +53,7 @@ ROOT = Path(__file__).resolve().parents[3]
 MAKEFILE = ROOT / "Makefile"
 QUICKSTART = ROOT / "scripts" / "quickstart.sh"
 CONFIGURE = ROOT / "configure"
+GNUMAKEFILE_IN = ROOT / "GNUmakefile.in"
 COPILOT_INSTRUCTIONS = ROOT / ".github" / "copilot-instructions.md"
 CLAUDE_INSTRUCTIONS = ROOT / "CLAUDE.md"
 
@@ -396,6 +397,55 @@ class AutotoolsConfigureTests(unittest.TestCase):
             )
             self.assertIn(
                 "GENERATED_DATA_ITEM_CAP is a simple variable set to [0xCE]",
+                make_result.stdout,
+            )
+
+    def test_recursive_wrapper_options_precede_makeoverrides(self):
+        wrapper = GNUMAKEFILE_IN.read_text(encoding="utf-8")
+        recipe = next(
+            line for line in wrapper.splitlines()
+            if line.startswith("\t+$(MAKE)")
+        )
+        separator = recipe.index("$(MAKEOVERRIDES)")
+        self.assertLess(recipe.index("--no-print-directory"), separator)
+        self.assertLess(recipe.index("-C "), separator)
+        self.assertLess(recipe.index("-f Makefile"), separator)
+
+    def test_configured_wrapper_recurses_with_command_line_overrides(self):
+        build_root = ROOT / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as build_dir:
+            result = self.run_configure(build_dir, "--disable-custom-spell-effects")
+            self.assertEqual(result.returncode, 0, result.stdout[-4000:])
+            fragment = (Path(build_dir) / "config.autotools.mk").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("EXPANSION_CUSTOM_SPELL_EFFECTS := 0", fragment)
+
+            make_result = subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-C",
+                    build_dir,
+                    "print-EXPANSION_CUSTOM_SPELL_EFFECTS",
+                    "print-MODERN_CONFIG",
+                    "EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+                    "MODERN_CONFIG=release",
+                ],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(make_result.returncode, 0, make_result.stdout[-4000:])
+            self.assertIn(
+                "EXPANSION_CUSTOM_SPELL_EFFECTS is a recursive variable set to [1]",
+                make_result.stdout,
+            )
+            self.assertIn(
+                "MODERN_CONFIG is a recursive variable set to [release]",
                 make_result.stdout,
             )
 
