@@ -259,6 +259,28 @@ void DebugTools_RegisterWeatherFogActions(void)
 {
 }
 
+static int sFakeSaveFixtureCanPrepare;
+static int sFakeSaveFixtureContinueRequestCount;
+static enum DebugSaveFixturePhase sFakeSaveFixturePhase =
+    DEBUG_SAVE_FIXTURE_EMPTY;
+static enum DebugSaveFixtureResult sFakeSaveFixtureResult =
+    DEBUG_SAVE_FIXTURE_ERR_NOT_TITLE;
+static struct DebugSaveFixturePreview sFakeSaveFixturePreview;
+
+void DebugToolsHostStub_SetFakeSaveFixtureEnabled(int enabled)
+{
+    sFakeSaveFixtureCanPrepare = enabled;
+    sFakeSaveFixtureContinueRequestCount = 0;
+    sFakeSaveFixturePhase = DEBUG_SAVE_FIXTURE_EMPTY;
+    sFakeSaveFixtureResult = DEBUG_SAVE_FIXTURE_ERR_NOT_TITLE;
+    memset(&sFakeSaveFixturePreview, 0, sizeof(sFakeSaveFixturePreview));
+}
+
+int DebugToolsHostStub_GetFakeSaveFixtureContinueRequestCount(void)
+{
+    return sFakeSaveFixtureContinueRequestCount;
+}
+
 enum DebugSaveFixtureResult DebugSaveFixture_PrepareGame(
     enum DebugSaveFixtureGameSlot slot,
     const struct DebugSaveFixtureOverrides* overrides,
@@ -274,33 +296,63 @@ enum DebugSaveFixtureResult DebugSaveFixture_PrepareLatestSuspend(
     const struct DebugSaveFixtureOverrides* overrides,
     struct DebugSaveFixturePreview* preview)
 {
-    (void)overrides;
-    (void)preview;
-    return DEBUG_SAVE_FIXTURE_ERR_NOT_TITLE;
+    if (!sFakeSaveFixtureCanPrepare)
+        return DEBUG_SAVE_FIXTURE_ERR_NOT_TITLE;
+
+    memset(&sFakeSaveFixturePreview, 0, sizeof(sFakeSaveFixturePreview));
+    sFakeSaveFixturePreview.target.generation = 1;
+    sFakeSaveFixturePreview.target.sourceKind =
+        DEBUG_SAVE_FIXTURE_SOURCE_SUSPEND;
+    sFakeSaveFixturePreview.target.sourceGameSlot =
+        DEBUG_SAVE_FIXTURE_GAME_NONE;
+    sFakeSaveFixturePreview.target.resolvedSuspendSlot =
+        DEBUG_SAVE_FIXTURE_SUSPEND_ALTERNATE;
+    sFakeSaveFixturePreview.overrides = *overrides;
+    *preview = sFakeSaveFixturePreview;
+    sFakeSaveFixturePhase = DEBUG_SAVE_FIXTURE_PREVIEW;
+    sFakeSaveFixtureResult = DEBUG_SAVE_FIXTURE_OK;
+    return DEBUG_SAVE_FIXTURE_OK;
 }
 
 enum DebugSaveFixtureResult DebugSaveFixture_Arm(
     const struct DebugSaveFixtureTarget* target)
 {
-    (void)target;
-    return DEBUG_SAVE_FIXTURE_ERR_CONFIRMATION_ORDER;
+    if (sFakeSaveFixturePhase != DEBUG_SAVE_FIXTURE_PREVIEW
+        || target == NULL
+        || target->generation
+            != sFakeSaveFixturePreview.target.generation)
+        return DEBUG_SAVE_FIXTURE_ERR_CONFIRMATION_ORDER;
+
+    sFakeSaveFixturePhase = DEBUG_SAVE_FIXTURE_ARMED;
+    sFakeSaveFixtureResult = DEBUG_SAVE_FIXTURE_OK;
+    return DEBUG_SAVE_FIXTURE_OK;
 }
 
 enum DebugSaveFixtureResult DebugSaveFixture_RequestContinue(
     const struct DebugSaveFixtureTarget* target)
 {
-    (void)target;
-    return DEBUG_SAVE_FIXTURE_ERR_CONFIRMATION_ORDER;
+    if (sFakeSaveFixturePhase != DEBUG_SAVE_FIXTURE_ARMED
+        || target == NULL
+        || target->generation
+            != sFakeSaveFixturePreview.target.generation)
+        return DEBUG_SAVE_FIXTURE_ERR_CONFIRMATION_ORDER;
+
+    sFakeSaveFixtureContinueRequestCount++;
+    sFakeSaveFixturePhase = DEBUG_SAVE_FIXTURE_PENDING_CONTINUE;
+    sFakeSaveFixtureResult = DEBUG_SAVE_FIXTURE_OK;
+    return DEBUG_SAVE_FIXTURE_OK;
 }
 
 void DebugSaveFixture_Abort(enum DebugSaveFixtureAbortReason reason)
 {
     (void)reason;
+    sFakeSaveFixturePhase = DEBUG_SAVE_FIXTURE_EMPTY;
+    sFakeSaveFixtureResult = DEBUG_SAVE_FIXTURE_OK;
 }
 
 int DebugSaveFixture_CanPrepare(void)
 {
-    return FALSE;
+    return sFakeSaveFixtureCanPrepare;
 }
 
 int DebugSaveFixture_IsPersistenceBlocked(void)
@@ -310,17 +362,20 @@ int DebugSaveFixture_IsPersistenceBlocked(void)
 
 enum DebugSaveFixturePhase DebugSaveFixture_GetPhase(void)
 {
-    return DEBUG_SAVE_FIXTURE_EMPTY;
+    return sFakeSaveFixturePhase;
 }
 
 enum DebugSaveFixtureResult DebugSaveFixture_GetLastResult(void)
 {
-    return DEBUG_SAVE_FIXTURE_ERR_NOT_TITLE;
+    return sFakeSaveFixtureResult;
 }
 
 const struct DebugSaveFixturePreview* DebugSaveFixture_GetPreview(void)
 {
-    return NULL;
+    if (sFakeSaveFixturePhase == DEBUG_SAVE_FIXTURE_EMPTY)
+        return NULL;
+
+    return &sFakeSaveFixturePreview;
 }
 
 /* --- gPlaySt: DebugTools_PrepHotkeyCheck (src/debugtools_registry.c) and

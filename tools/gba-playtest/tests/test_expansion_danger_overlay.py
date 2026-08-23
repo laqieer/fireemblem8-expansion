@@ -222,6 +222,18 @@ class DangerOverlayWrapperTests(unittest.TestCase):
         self.assertIn("ExpansionDangerOverlay_MenuSelect", refs)
 
 
+class MapMenuSuspendHelpTests(unittest.TestCase):
+    def test_tutorial_disabled_suspend_uses_msg_846(self):
+        source = BMMENU_SRC.read_text(encoding="utf-8")
+        body = source.split("u8 MapMenu_SuspendCommand(", 1)[1].split(
+            "u8 CommandEffectEndPlayerPhase(", 1
+        )[0]
+
+        self.assertIn('#include "constants/msg.h"', source)
+        self.assertIn("MenuFrozenHelpBox(menu, MSG_846)", body)
+        self.assertNotRegex(body, r"MenuFrozenHelpBox\(menu,\s*0x[0-9A-Fa-f]+")
+
+
 class DangerOverlayWiringTests(unittest.TestCase):
     def test_modern_mk_wires_the_flag_define(self):
         modern_mk = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
