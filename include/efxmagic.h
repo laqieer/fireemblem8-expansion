@@ -37,6 +37,9 @@ struct ProcEfxEclipseBG
 
 typedef void (*SpellAnimFunc)(struct Anim * anim);
 extern CONST_DATA SpellAnimFunc gEkrSpellAnimLut[];
+#if BUGFIX
+extern const u32 gEkrSpellAnimLutCount;
+#endif
 
 extern u32 FramScr_Unk5D4F90[];
 extern CONST_DATA struct ProcCmd ProcScr_efxRestRST[];

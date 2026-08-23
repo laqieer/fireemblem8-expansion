@@ -284,6 +284,15 @@ const struct MapChange* GetMapChange(int id)
     return NULL;
 }
 
+bool IsMapChangeInBounds(const struct MapChange * mapChange)
+{
+    if (mapChange == NULL)
+        return false;
+
+    return mapChange->xOrigin + mapChange->xSize <= gBmMapSize.x &&
+        mapChange->yOrigin + mapChange->ySize <= gBmMapSize.y;
+}
+
 int GetMapChangeIdAt(int x, int y)
 {
     int result = -1;
@@ -312,7 +321,12 @@ void ApplyMapChangesById(int id)
     int ix = 0, iy = 0;
 
     const struct MapChange* mapChange = GetMapChange(id);
-    const u16* tileDataIt = mapChange->data;
+    const u16* tileDataIt;
+
+    if (!IsMapChangeInBounds(mapChange))
+        return;
+
+    tileDataIt = mapChange->data;
 
     for (iy = 0; iy < mapChange->ySize; ++iy)
     {

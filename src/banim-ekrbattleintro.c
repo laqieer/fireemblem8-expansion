@@ -11,6 +11,7 @@
 #include "bmlib.h"
 #include "bmunit.h"
 #include "bmbattle.h"
+#include "banim_package_runtime_test.h"
 #include "chapterdata.h"
 #include "spellassoc.h"
 
@@ -1021,6 +1022,18 @@ bool PrepareBattleGraphicsMaybe(void)
             gBanimIdx[POS_R] = gBanimIdx_bak[POS_R] = GetBattleAnimationId(unit_bu2, animdef2, bu2->weaponBefore, &animid2);
         }
     }
+
+#if FE8_BANIM_PACKAGE_RUNTIME_TEST
+    if (CheckBattleScripted() == true)
+    {
+        BanimPackageRuntimeTest_BeginScriptedBattle(
+            unit_bu1,
+            gEkrDistanceType == EKR_DISTANCE_PROMOTION ? bu1->weapon : bu1->weaponBefore,
+            unit_bu2,
+            gEkrDistanceType == EKR_DISTANCE_PROMOTION ? bu2->weapon : bu2->weaponBefore
+        );
+    }
+#endif
 
     pid = unit_bu1->pCharacterData->number - 1;
     jid = unit_bu1->pClassData->number;

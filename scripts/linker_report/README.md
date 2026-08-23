@@ -67,10 +67,11 @@ For IWRAM, `capacity_bytes` remains the physical 32 KiB region size while
 `physical_free_bytes` retains the hardware-region view. The linker exports
 `__iwram_static_end`, `__iwram_static_limit`, and `__sp_usr`. `crt0` initializes
 the downward-growing system/user stack at `__sp_usr`; the historical fixed
-layout left `0x1658` bytes below it and the current CJK scratch leaves `0x1158`.
-The linker therefore preserves a `0x1000` minimum user-stack margin, leaving
-`0x158` bytes of current static-growth headroom. Both the linker assertion and
-`--require-positive-headroom iwram` enforce that floor.
+layout left `0x1658` bytes below it, while the current CJK scratch plus the
+presentation probe leaves `0x1157`. The linker therefore preserves a `0x1000`
+minimum user-stack margin, leaving `0x157` bytes of current static-growth
+headroom. Both the linker assertion and `--require-positive-headroom iwram`
+enforce that floor.
 
 ## Exit codes
 

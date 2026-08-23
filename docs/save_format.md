@@ -1045,3 +1045,9 @@ check + runtime scenarios, both debug and release):
 make expansion-modern-savefmt-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-savefmt-check MODERN_CONFIG=release MODERN_ABI=aapcs
 ```
+
+## Tester-facing procedure
+
+[`TC-CORE-003`](test-cases/core-framework.md#tc-core-003-save-compatibility-preserves-data)
+documents synthetic-SRAM CURRENT, Back, confirmed Erase, migration,
+save/load, and Suspend/Resume checks with their host and live-ROM controls.

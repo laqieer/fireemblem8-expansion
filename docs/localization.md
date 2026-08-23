@@ -202,9 +202,10 @@ its trilingual libmGBA scenarios. The 0x1600 decoded-message cache remains in
 EWRAM; the separate 0x500 private transformation workspace is transient and
 linked after the fixed IWRAM layout. `crt0` initializes the downward-growing
 system/user stack at `__sp_usr`; the historical fixed layout left 0x1658 bytes
-below it and the CJK workspace leaves 0x1158, so the linker and budget gate
-preserve a 0x1000 minimum while retaining 0x158 bytes of static-growth
-headroom. No generated maximum or transform capacity is reduced.
+below it, while the CJK workspace plus the presentation probe leaves 0x1157.
+The linker and budget gate preserve a 0x1000 minimum while retaining 0x157
+bytes of static-growth headroom. No generated maximum or transform capacity is
+reduced.
 
 These are baked into the ROM's embedded `ExpansionMetadata` (build-commit,
 enabled-locale mask, default-locale id, pseudo-locale flag) so a given ROM's

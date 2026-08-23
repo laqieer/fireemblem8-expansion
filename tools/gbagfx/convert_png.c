@@ -2,6 +2,8 @@
 
 #include <stdio.h>
 #include <setjmp.h>
+#include <limits.h>
+#include <stdint.h>
 #include <png.h>
 #include "global.h"
 #include "convert_png.h"
@@ -45,16 +47,30 @@ static FILE *PngReadOpen(char *path, png_structp *pngStruct, png_infop *pngInfo)
     return fp;
 }
 
-static unsigned char *ConvertBitDepth(unsigned char *src, int srcBitDepth, int destBitDepth, int numPixels)
+static unsigned char *ConvertBitDepth(
+    unsigned char *src,
+    int srcBitDepth,
+    int destBitDepth,
+    size_t numPixels)
 {
     // Round the number of bits up to the next 8 and divide by 8 to get the number of bytes.
-    int srcSize = ((numPixels * srcBitDepth + 7) & ~7) / 8;
-    int destSize = ((numPixels * destBitDepth + 7) & ~7) / 8;
+    size_t srcSize;
+    size_t destSize;
+    size_t i;
+
+    if (numPixels > (SIZE_MAX - 7) / srcBitDepth ||
+        numPixels > (SIZE_MAX - 7) / destBitDepth)
+        FATAL_ERROR("Image dimensions are too large to convert safely.\n");
+
+    srcSize = ((numPixels * srcBitDepth + 7) & ~(size_t)7) / 8;
+    destSize = ((numPixels * destBitDepth + 7) & ~(size_t)7) / 8;
     unsigned char *output = calloc(destSize, 1);
     unsigned char *dest = output;
-    int i;
     int j;
     int destBit = 8 - destBitDepth;
+
+    if (output == NULL)
+        FATAL_ERROR("Failed to allocate converted pixel buffer.\n");
 
     for (i = 0; i < srcSize; i++)
     {
@@ -76,16 +92,50 @@ static unsigned char *ConvertBitDepth(unsigned char *src, int srcBitDepth, int d
     return output;
 }
 
+bool ComputePngBufferSizes(
+    size_t width,
+    size_t height,
+    size_t rowbytes,
+    size_t *pixelBufferSize,
+    size_t *rowPointerSize)
+{
+    if (pixelBufferSize == NULL || rowPointerSize == NULL || width == 0 || height == 0)
+        return false;
+
+    if (width > INT_MAX || height > INT_MAX || width > INT_MAX / height)
+        return false;
+
+    if (rowbytes == 0 || rowbytes > SIZE_MAX / height || height > SIZE_MAX / sizeof(png_bytep))
+        return false;
+
+    *pixelBufferSize = height * rowbytes;
+    *rowPointerSize = height * sizeof(png_bytep);
+    return true;
+}
+
+bool IsSupportedPngBitDepth(int bitDepth)
+{
+    return bitDepth == 1 || bitDepth == 2 || bitDepth == 4 || bitDepth == 8;
+}
+
 void ReadPng(char *path, struct Image *image)
 {
     png_structp png_ptr;
     png_infop info_ptr;
+    png_uint_32 width;
+    png_uint_32 height;
+    png_size_t rowbytes;
+    size_t pixelBufferSize;
+    size_t rowPointerSize;
 
     FILE *fp = PngReadOpen(path, &png_ptr, &info_ptr);
 
     int bit_depth = png_get_bit_depth(png_ptr, info_ptr);
 
     int color_type = png_get_color_type(png_ptr, info_ptr);
+
+    if (!IsSupportedPngBitDepth(image->bitDepth))
+        FATAL_ERROR("Requested bit depth must be 1, 2, 4, or 8.\n");
 
     if (color_type != PNG_COLOR_TYPE_GRAY && color_type != PNG_COLOR_TYPE_PALETTE)
         FATAL_ERROR("\"%s\" has an unsupported color type.\n", path);
@@ -94,23 +144,27 @@ void ReadPng(char *path, struct Image *image)
     // Don't read the palette because it's not needed for now.
     image->hasPalette = (color_type == PNG_COLOR_TYPE_PALETTE);
 
-    image->width = png_get_image_width(png_ptr, info_ptr);
-    image->height = png_get_image_height(png_ptr, info_ptr);
+    width = png_get_image_width(png_ptr, info_ptr);
+    height = png_get_image_height(png_ptr, info_ptr);
+    rowbytes = png_get_rowbytes(png_ptr, info_ptr);
 
-    int rowbytes = png_get_rowbytes(png_ptr, info_ptr);
+    if (!ComputePngBufferSizes(width, height, rowbytes, &pixelBufferSize, &rowPointerSize))
+        FATAL_ERROR("\"%s\" has dimensions too large to convert safely.\n", path);
 
-    image->pixels = malloc(image->height * rowbytes);
+    image->width = width;
+    image->height = height;
+    image->pixels = malloc(pixelBufferSize);
 
     if (image->pixels == NULL)
         FATAL_ERROR("Failed to allocate pixel buffer.\n");
 
-    png_bytepp row_pointers = malloc(image->height * sizeof(png_bytep));
+    png_bytepp row_pointers = malloc(rowPointerSize);
 
     if (row_pointers == NULL)
         FATAL_ERROR("Failed to allocate row pointers.\n");
 
-    for (int i = 0; i < image->height; i++)
-        row_pointers[i] = (png_bytep)(image->pixels + (i * rowbytes));
+    for (size_t i = 0; i < height; i++)
+        row_pointers[i] = (png_bytep)(image->pixels + i * rowbytes);
 
     if (setjmp(png_jmpbuf(png_ptr)))
         FATAL_ERROR("Error reading from \"%s\".\n", path);
@@ -126,11 +180,11 @@ void ReadPng(char *path, struct Image *image)
     {
         unsigned char *src = image->pixels;
 
-        if (bit_depth != 1 && bit_depth != 2 && bit_depth != 4 && bit_depth != 8)
+        if (!IsSupportedPngBitDepth(bit_depth))
             FATAL_ERROR("Bit depth of image must be 1, 2, 4, or 8.\n");
-        image->pixels = ConvertBitDepth(image->pixels, bit_depth, image->bitDepth, image->width * image->height);
+        image->pixels =
+            ConvertBitDepth(image->pixels, bit_depth, image->bitDepth, width * (size_t)height);
         free(src);
-        image->bitDepth = bit_depth;
     }
 }
 

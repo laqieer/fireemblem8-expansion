@@ -511,3 +511,9 @@ compiler/library prerequisites. `expansion-modern-linker-check` adds
 configuration-specific title fingerprints, deterministic budget drift,
 retained-relocation cross-overlay analysis, raw-address scans, and a shifted
 `+0x40000` boot/title run while keeping startup and battle-animation pins fixed.
+
+## Tester-facing procedure
+
+[`TC-CORE-001`](test-cases/core-framework.md#tc-core-001-modern-default-build-and-archival-split)
+records the supported modern default-build procedure, its explicit archival
+boundary, and the mapped semantic toolchain/linker automation.

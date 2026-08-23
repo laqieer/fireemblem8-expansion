@@ -378,7 +378,7 @@
           "value": "0x00000009"
         }
       ],
-      "sram_hash": "fnv1a64-sram:829318264d280122"
+      "sram_hash": "fnv1a64-sram:5ea8e26289d6156d"
     },
     {
       "frame": 18200,
@@ -630,13 +630,13 @@
           "value": "0x11"
         }
       ],
-      "sram_hash": "fnv1a64-sram:829318264d280122"
+      "sram_hash": "fnv1a64-sram:5ea8e26289d6156d"
     }
   ],
   "format_version": 2,
   "rom": {
     "game_code": "BE8E",
-    "sha1": "71b846150c39bae3ccec65abda102db5f23b9a43",
+    "sha1": "960e5f4fb7a8ba62d48d23aa43211b7247a1da04",
     "size": 16777216,
     "title": "FIREEMBLEM2E"
   },
