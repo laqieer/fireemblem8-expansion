@@ -91,7 +91,7 @@ def _cli_args(table, fixture_name):
 
 class SchemaEvidenceTests(unittest.TestCase):
     def test_schema_fixtures(self):
-        valid_cases = (("characters", 3), ("items", 3), ("supports", 3))
+        valid_cases = (("characters", 3), ("classes", 2), ("items", 3), ("supports", 3))
         failure_cases = (
             ("characters", "bad_base_ranks_itype_ref.json", "ITYPE_NOT_A_REAL_TYPE"),
             ("classes", "bad_base_ranks_itype_ref.json", "ITYPE_NOT_A_REAL_TYPE"),
