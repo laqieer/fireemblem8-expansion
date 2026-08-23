@@ -588,7 +588,7 @@ def strip_fenced_blocks(text):
     fence_len = 0
     fence_line = None
     for lineno, line in enumerate(lines, start=1):
-        fence_text = line.rstrip()
+        fence_text = line.rstrip(" \t\r")
         m = FENCE_RE.match(fence_text)
         if not in_fence and m:
             in_fence = True
@@ -640,7 +640,7 @@ def iter_fenced_block_bodies(text):
     fence_len = 0
     body = []
     for line in lines:
-        fence_text = line.rstrip()
+        fence_text = line.rstrip(" \t\r")
         m = FENCE_RE.match(fence_text)
         if not in_fence and m:
             in_fence = True

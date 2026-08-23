@@ -81,6 +81,19 @@ class StripFencedBlocksTests(unittest.TestCase):
         self.assertEqual(check_docs.strip_fenced_blocks(indented_literal), indented_literal)
         self.assertEqual(list(check_docs.iter_fenced_block_bodies(indented_literal)), [])
 
+    def test_fence_closers_allow_only_ascii_trailing_whitespace(self):
+        ascii_closer = "```\n[fake](nope.md)\n``` \t\r"
+        self.assertNotIn("fake", check_docs.strip_fenced_blocks(ascii_closer))
+        for trailing in ("\u00A0", "\u2003"):
+            with self.subTest(trailing=repr(trailing)):
+                with self.assertRaisesRegex(
+                    check_docs.DocsCheckError,
+                    r"unterminated fenced code block opened at line 1 with ```",
+                ):
+                    check_docs.strip_fenced_blocks(
+                        "```\n[fake](nope.md)\n```" + trailing
+                    )
+
     def test_unterminated_fence_fails_with_opening_location(self):
         with self.assertRaisesRegex(
             check_docs.DocsCheckError,

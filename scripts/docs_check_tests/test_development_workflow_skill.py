@@ -148,6 +148,7 @@ FENCED_COMMAND_BLOCK = re.compile(
     r"```(?:bash|sh|shell|text)?\n(?P<commands>.*?)```",
     re.DOTALL,
 )
+HTML_COMMENT_LINE = re.compile(r"^[ \t]*<!--.*-->[ \t]*$")
 
 
 def normalize_policy(text):
@@ -201,11 +202,17 @@ def read_skill():
 def read_markdown_section(text, heading):
     lines = strip_fenced_blocks(text).splitlines()
     in_comment = False
-    visible_lines = []
-    hidden_policy_heading = False
-    for line in lines:
+    heading_lines = []
+    for index, line in enumerate(lines):
+        match = MARKDOWN_HEADING.match(line)
+        if (
+            in_comment
+            and match
+            and match.group("heading").strip() == heading
+        ):
+            raise AssertionError("policy heading appears inside an HTML comment")
+
         cursor = 0
-        visible = ""
         while cursor < len(line):
             if in_comment:
                 end = line.find("-->", cursor)
@@ -217,29 +224,11 @@ def read_markdown_section(text, heading):
                 continue
             start = line.find("<!--", cursor)
             if start == -1:
-                visible += line[cursor:]
                 break
-            visible += line[cursor:start]
             in_comment = True
             cursor = start + 4
-        if (
-            in_comment
-            and (match := MARKDOWN_HEADING.match(line))
-            and match.group("heading").strip() == heading
-        ):
-            hidden_policy_heading = True
-        visible_lines.append(visible)
-    if hidden_policy_heading:
-        raise AssertionError("policy heading appears inside an HTML comment")
-    lines = visible_lines
-    heading_lines = [
-        (index, len(match.group("level")))
-        for index, line in enumerate(lines)
-        if (
-            (match := MARKDOWN_HEADING.match(line))
-            and match.group("heading").strip() == heading
-        )
-    ]
+        if match and match.group("heading").strip() == heading:
+            heading_lines.append((index, len(match.group("level"))))
     if len(heading_lines) != 1:
         raise AssertionError(
             f"expected exactly one Markdown section {heading!r}, "
@@ -361,6 +350,10 @@ def parse_meaningful_test_policy(text):
     current_item = None
     for line in read_markdown_section(text, MEANINGFUL_TEST_POLICY_HEADING):
         if not line.strip():
+            continue
+        if HTML_COMMENT_LINE.match(line):
+            if current_clause is None:
+                raise AssertionError(f"unexpected policy content: {line.strip()}")
             continue
         if match := MEANINGFUL_TEST_POLICY_CLAUSE.match(line):
             clause_name = normalize_policy_atom(match.group("name"))
@@ -703,6 +696,33 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "policy heading appears inside an HTML comment",
         ):
             self.assert_meaningful_test_policy(hidden_policy_section)
+        for mutation_name, mutation in (
+            (
+                "comment inserted in heading syntax",
+                policy_text.replace(
+                    "## Meaningful test evidence",
+                    "##<!-- --> Meaningful test evidence",
+                ),
+            ),
+            (
+                "comment inserted in list-marker syntax",
+                policy_text.replace(
+                    "- **Evidence standard:** required",
+                    "-<!-- --> **Evidence standard:** required",
+                ),
+            ),
+        ):
+            with self.subTest(mutation=mutation_name):
+                with self.assertRaises(AssertionError):
+                    self.assert_meaningful_test_policy(mutation)
+        harmless_comment = policy_text.replace(
+            "  - **behavior:** required",
+            "  - **behavior:** required\n  <!-- explanatory note -->",
+        )
+        self.assertEqual(
+            CANONICAL_POLICY_AST,
+            self.assert_meaningful_test_policy(harmless_comment),
+        )
 
         top_level_terminator = policy_text + "\n# Separate document section\n"
         self.assertEqual(
