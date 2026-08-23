@@ -175,6 +175,9 @@ struct MapChangeInfo
 };
 
 extern struct ROMChapterData CONST_DATA gChapterDataTable[];
+#if FE8_EXPANSION_DEBUG && !defined(FE8_ARCHIVAL_BUILD)
+extern const unsigned gChapterDataCount;
+#endif
 extern const void* gChapterDataAssetTable[];
 
 const struct ROMChapterData* GetROMChapterStruct(unsigned chIndex);

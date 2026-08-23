@@ -63,6 +63,12 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "Kapitel"
+    "ui.presentation.chapter_title_default": "Kapitel",
+    "debug.action.chapter_skirmish": "Kapitel/Gefecht",
+    "debug.selector.chapter": "Kapitel",
+    "debug.selector.skirmish": "Gefecht",
+    "debug.selector.eirika": "Eirika",
+    "debug.selector.ephraim": "Ephraim",
+    "debug.selector.unavailable": "Ziel nicht verfügbar"
   }
 }

@@ -63,6 +63,12 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "Capitolo"
+    "ui.presentation.chapter_title_default": "Capitolo",
+    "debug.action.chapter_skirmish": "Capitolo/Schermaglia",
+    "debug.selector.chapter": "Capitolo",
+    "debug.selector.skirmish": "Schermaglia",
+    "debug.selector.eirika": "Eirika",
+    "debug.selector.ephraim": "Ephraim",
+    "debug.selector.unavailable": "Obiettivo non disponibile"
   }
 }

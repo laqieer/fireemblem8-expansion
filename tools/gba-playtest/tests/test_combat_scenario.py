@@ -3,15 +3,15 @@
 Scenario:    tools/gba-playtest/scenarios/combat.json
 Fingerprint: tools/gba-playtest/fingerprints/combat-modern-debug.json
 
-Boots the debug-only "Fast Boot: Ch4 Prep" launcher from a clean (blank-SRAM)
-boot, traverses the Chapter 4 world map, and reaches EventScr_Ch4_Beginning-
-Scene's own FIGHT(CHARACTER_ARTUR, ...) tutorial battle. The target enemy
+Boots the debug-only selector's default Chapter 4 target from a clean
+(blank-SRAM) boot and reaches EventScr_Ch4_BeginningScene's own
+FIGHT(CHARACTER_ARTUR, ...) tutorial battle. The target enemy
 gUnitArrayRed[0]'s curHP (0x0202eba7) transitions 15 -> 0 at the SCRIPT_BATTLE
 opcode (Event3F_ScriptBattle, the real battle engine -- proven by the P8 to
 occur one opcode before the following KILL), then the unit's pCharacterData
 (0x0202eb94) is cleared as it is removed. Exact pre/post HP plus death, all
 via fixed EWRAM unit probes -- never framebuffer/timing. Debug-only: the
-launcher is compiled out of a release build (see modern.mk's
+selector is compiled out of a release build (see modern.mk's
 expansion-modern-combat-check).
 """
 
