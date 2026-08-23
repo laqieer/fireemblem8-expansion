@@ -199,7 +199,7 @@ ID expansion must use the separate typed-ID contract.
   — `scripts/generated_data/tests/test_cli.py`.
 - `make generated-data-test`
   — `scripts/generated_data/tests/test_validators.py`.
-- `python3 -m unittest scripts.generated_data.tests.test_cli scripts.generated_data.tests.test_validators -v`
+- `python3 -m unittest scripts.generated_data.tests.test_cli scripts.generated_data.tests.test_cli_new_tables scripts.generated_data.tests.test_validators -v`
   — `scripts/generated_data/tests/test_cli_new_tables.py`.
 
 ### Cleanup and limitations

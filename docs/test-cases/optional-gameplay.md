@@ -78,9 +78,12 @@ or campaign mechanic beyond the selected callbacks.
 
 1. Run
    `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_mechanics.py" -v`.
+   This single discovery run executes both
+   `MechanicsRegistryHostTests.test_sample_exact_effect_and_clamp` for the
+   enabled sample and
+   `MechanicsRegistryHostTests.test_disabled_path_is_inert_and_probe_stays_zero`
+   for the disabled path; retain both named assertions in its output.
 2. Run `make expansion-modern-starter-hook-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
-3. Repeat step 1 with the registry disabled path:
-   `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_mechanics.py" -v`.
 
 ### Expected result
 
