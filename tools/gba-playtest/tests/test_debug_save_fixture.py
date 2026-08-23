@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "tools" / "gba-playtest"))
 
 import gba_playtest  # noqa: E402
 import run_debug_save_fixture_checks  # noqa: E402
+import sram_hash_mirror  # noqa: E402
 
 DEBUG_SCENARIOS = (
     "debug-save-fixture-positive-modern-debug.json",
@@ -69,6 +70,84 @@ class DebugSaveFixtureContractTests(unittest.TestCase):
         for checkpoint in scenario["checkpoints"]:
             self.assertNotIn("sram_hash_exclude_ranges", checkpoint)
 
+    def test_positive_case_drives_manual_suspend_through_map_menu_input(self):
+        scenario = json.loads(
+            (
+                SCENARIOS
+                / "debug-save-fixture-positive-modern-debug.json"
+            ).read_text(encoding="utf-8")
+        )
+        actual = [
+            (frame["start"], frame["keys"])
+            for frame in scenario["frames"]
+            if 2100 <= frame["start"] <= 2460
+        ]
+        self.assertEqual(
+            actual,
+            [
+                (2100, ["A"]),
+                (2200, ["DOWN"]),
+                (2260, ["DOWN"]),
+                (2320, ["DOWN"]),
+                (2380, ["DOWN"]),
+                (2460, ["A"]),
+            ],
+        )
+        blocked = next(
+            checkpoint
+            for checkpoint in scenario["checkpoints"]
+            if checkpoint["name"] == "volatile-write-blocked"
+        )
+        expected_probes = {
+            probe["address"]: probe["expected"]
+            for probe in blocked["probes"]
+        }
+        self.assertEqual(
+            expected_probes["gDebugSaveFixtureProbe+0x20"],
+            "0x00000005",
+        )
+        self.assertEqual(
+            expected_probes["gDebugSaveFixtureProbe+0x24"],
+            "0x00000002",
+        )
+
+    def test_generated_suspend_has_minimal_interactive_roster(self):
+        fixture = (
+            run_debug_save_fixture_checks.sram_fixture
+            .build_debug_save_fixture_source_image(ROOT)
+        )
+        suspend_start = (
+            run_debug_save_fixture_checks.sram_fixture
+            .DEBUG_SAVE_SUSPEND_ALT_OFFSET
+        )
+        blue = (
+            suspend_start
+            + run_debug_save_fixture_checks.sram_fixture
+            .DEBUG_SAVE_SUSPEND_BLUE_UNITS_OFFSET
+        )
+        red = (
+            suspend_start
+            + run_debug_save_fixture_checks.sram_fixture
+            .DEBUG_SAVE_SUSPEND_RED_UNITS_OFFSET
+        )
+        self.assertEqual(fixture[blue:blue + 2], b"\x01\x02")
+        self.assertEqual(fixture[blue + 0x0E:blue + 0x10], b"\x10\x10")
+        self.assertEqual(fixture[red:red + 2], b"\x47\x41")
+        self.assertEqual(fixture[red + 0x0E:red + 0x10], b"\x14\x14")
+
+    def test_release_negative_keeps_its_noninteractive_source_baseline(self):
+        fixture = (
+            run_debug_save_fixture_checks.sram_fixture
+            .build_debug_save_fixture_source_image(
+                ROOT,
+                include_runtime_roster=False,
+            )
+        )
+        self.assertEqual(
+            sram_hash_mirror.compute_sram_hash(fixture),
+            "fnv1a64-sram:4c0f364a34fd1659",
+        )
+
     def test_cancel_invalid_incompatible_and_interruption_are_exact(self):
         for name in DEBUG_SCENARIOS[1:]:
             with self.subTest(name=name):
@@ -92,8 +171,6 @@ class DebugSaveFixtureContractTests(unittest.TestCase):
             "WriteAndVerifySramFast(",
             "WipeSram(",
             "InitGlobalSaveInfodata(",
-            "WriteGameSave(",
-            "WriteSuspendSave(",
             "RestartGameAndGoto",
             "SoftReset(",
             "DEBUGONLY_Startup",
@@ -101,6 +178,11 @@ class DebugSaveFixtureContractTests(unittest.TestCase):
             "DebugChuudanMenu_",
         ):
             self.assertNotIn(banned, source)
+        for banned_name in ("WriteGameSave", "WriteSuspendSave"):
+            self.assertNotRegex(
+                source,
+                rf"\b{re.escape(banned_name)}\s*\(",
+            )
         self.assertNotRegex(source, r"\bgSram\s*=")
         self.assertIn("BuildCurrentExpansionSaveMeta(", source)
         self.assertIn("ClassifySaveCompatRaw(", source)
@@ -141,8 +223,8 @@ class DebugSaveFixtureContractTests(unittest.TestCase):
         self.assertIn("DebugSaveFixture_ConsumePendingContinue(", gamecontrol)
         self.assertIn("DebugSaveFixture_IsContinuePending(", title)
         self.assertLess(
-            tools.index('sSaveFixtureFinalMenuItemDefs[0].name = "Back"'),
-            tools.index('sSaveFixtureFinalMenuItemDefs[1].name = "Run RAM"'),
+            tools.index('sSaveFixtureMenuItemDefs[0].name = "Back"'),
+            tools.index('sSaveFixtureMenuItemDefs[1].name = "Run RAM"'),
         )
         self.assertIn(
             "gKeyStatusPtr->heldKeys & required",

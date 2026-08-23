@@ -164,6 +164,7 @@ def main() -> int:
     source = sram_fixture.write_debug_save_fixture_source(
         args.out_dir / "debug-save-fixture-source.sav",
         REPO_ROOT,
+        include_runtime_roster=args.config == "debug",
     )
 
     _check_symbols(args.elf, args.config)

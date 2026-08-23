@@ -2140,7 +2140,7 @@
       ],
       "purpose": "Prove a valid suspend can be cloned, changed, continued, write-blocked, and reset entirely in volatile memory.",
       "prerequisites": "ARM toolchain and libmGBA; use only the check-time-generated CURRENT game-0/latest-suspend image loaded with temporary=true.",
-      "actions": "Open title debugtools Save State, select Suspend, preview completion 3 and FIXTURE, Arm RAM, move from default Back to Run RAM and press fresh L+R+A, observe resumed play and blocked automatic save, then soft reset.",
+      "actions": "Open title debugtools Save State, select Suspend, preview completion 3 and FIXTURE, Arm RAM, move from default Back to Run RAM and press fresh L+R+A, observe resumed play and blocked automatic save, use ordinary Map Menu input to attempt disabled Suspend, then soft reset.",
       "expected_result": "Typed game-control continue restores fixture state while every physical SRAM checkpoint remains byte-for-byte identical and reset clears all fixture ownership.",
       "negative_control": "Cancel, invalid target, wrong epoch, pre-Arm reset, stale target, blocked writer, map/prep, release, and archival controls all fail closed.",
       "interactions": "Reuses debugtools ID 9, the existing compatibility classifier, game control, localization, and gamestartsave overlay; raw external writers and another overlay owner conflict.",

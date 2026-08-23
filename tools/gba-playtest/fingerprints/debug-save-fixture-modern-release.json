@@ -48,11 +48,5 @@
     }
   ],
   "format_version": 2,
-  "rom": {
-    "game_code": "BE8E",
-    "sha1": "a1e7653e58e15856d0e0110e20f27a486193c3b3",
-    "size": 16777216,
-    "title": "FIREEMBLEM2E"
-  },
   "scenario": "debug-save-fixture-modern-release"
 }

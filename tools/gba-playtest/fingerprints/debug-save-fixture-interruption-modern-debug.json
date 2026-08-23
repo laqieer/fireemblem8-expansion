@@ -6,17 +6,17 @@
       "name": "interruption-preview-ready",
       "probes": [
         {
-          "address": "0x0203f478",
+          "address": "gDebugSaveFixtureProbe+0x00",
           "size": 4,
           "value": "0x00000001"
         },
         {
-          "address": "0x0203f484",
+          "address": "gDebugSaveFixtureProbe+0x0c",
           "size": 4,
           "value": "0x00000001"
         }
       ],
-      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+      "sram_hash": "fnv1a64-sram:21f5b86eb60f31c6"
     },
     {
       "frame": 1450,
@@ -29,25 +29,19 @@
           "value": "0x00000000"
         },
         {
-          "address": "0x0203f478",
+          "address": "gDebugSaveFixtureProbe+0x00",
           "size": 4,
           "value": "0x00000000"
         },
         {
-          "address": "0x0203f48c",
+          "address": "gDebugSaveFixtureProbe+0x14",
           "size": 4,
           "value": "0x00000000"
         }
       ],
-      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+      "sram_hash": "fnv1a64-sram:21f5b86eb60f31c6"
     }
   ],
   "format_version": 2,
-  "rom": {
-    "game_code": "BE8E",
-    "sha1": "80d736ddb40b7be79eb26d2b56a57ddf4fc45143",
-    "size": 16777216,
-    "title": "FIREEMBLEM2E"
-  },
   "scenario": "debug-save-fixture-interruption-modern-debug"
 }

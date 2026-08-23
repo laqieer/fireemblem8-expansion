@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "debug-save-fixture-positive-modern-debug",
-  "description": "TC-DEBUGSAVE-001 positive and soft-reset recovery: from a check-time-generated CURRENT image containing valid game-0 and latest alternate suspend blocks, open the title debug hub, select built-in Save State row 9, select latest Suspend, retain the default completion=3/FIXTURE overrides, arm on the preview screen, then provide a fresh L+R+A final confirmation. The existing GameCtrlProc consumes the typed request, loads the volatile alternate suspend, activates hard SRAM write blocking, and starts the resumed chapter. The source SRAM hash is exact and unchanged at every checkpoint. The ordinary phase-start suspend attempt is blocked, then a real soft reset clears the volatile image/token/guard while preserving the source image.",
+  "description": "TC-DEBUGSAVE-001 positive and soft-reset recovery: from a check-time-generated CURRENT image containing valid game-0 and latest alternate suspend blocks, open the title debug hub, select built-in Save State row 9, select latest Suspend, retain the default completion=3/FIXTURE overrides, arm on the preview screen, then provide a fresh L+R+A final confirmation. The existing GameCtrlProc consumes the typed request, loads the volatile alternate suspend, activates hard SRAM write blocking, and starts the resumed chapter. The source SRAM hash is exact and unchanged at every checkpoint. The ordinary phase-start suspend attempt is blocked; ordinary UI input then opens the live Map Menu, moves to Suspend, and confirms that the disabled command records a second blocked suspend attempt without writing. A real soft reset clears the volatile image/token/guard while preserving the source image.",
   "frames": [
     {"start": 90, "end": 95, "keys": ["A"]},
     {"start": 150, "end": 155, "keys": ["START"]},
@@ -29,6 +29,14 @@
     {"start": 1300, "end": 1304, "keys": ["A"]},
     {"start": 1340, "end": 1344, "keys": ["DOWN"]},
     {"start": 1380, "end": 1386, "keys": ["L", "R", "A"]},
+    {"start": 2100, "end": 2106, "keys": ["A"]},
+    {"start": 2200, "end": 2206, "keys": ["DOWN"]},
+    {"start": 2260, "end": 2266, "keys": ["DOWN"]},
+    {"start": 2320, "end": 2326, "keys": ["DOWN"]},
+    {"start": 2380, "end": 2386, "keys": ["DOWN"]},
+    {"start": 2460, "end": 2466, "keys": ["A"]},
+    {"start": 2580, "end": 2586, "keys": ["B"]},
+    {"start": 2700, "end": 2706, "keys": ["B"]},
     {"start": 3200, "end": 3280, "keys": ["A", "B", "SELECT", "START"]}
   ],
   "checkpoints": [
@@ -38,17 +46,17 @@
       "framebuffer": true,
       "sram_hash": true,
       "probes": [
-        {"address": "0x0203f478", "size": 4, "expected": "0x00000001"},
-        {"address": "0x0203f484", "size": 4, "expected": "0x00000001"},
-        {"address": "0x0203f4a0", "size": 4, "expected": "0x00000001"},
-        {"address": "0x0203f4a4", "size": 4, "expected": "0x000000ff"},
-        {"address": "0x0203f4a8", "size": 4, "expected": "0x00000004"},
-        {"address": "0x0203f4ac", "size": 4, "expected": "0x00000000"},
-        {"address": "0x0203f4bc", "size": 4, "expected": "0x00000004"},
-        {"address": "0x0203f4c0", "size": 4, "expected": "0x00000003"},
-        {"address": "0x0203f4c4", "size": 4, "expected": "0x00000000"},
-        {"address": "0x0203f4c8", "size": 4, "expected": "0x56415346"},
-        {"address": "0x0203f4cc", "size": 4, "expected": "0x00020002"}
+        {"address": "gDebugSaveFixtureProbe+0x00", "size": 4, "expected": "0x00000001"},
+        {"address": "gDebugSaveFixtureProbe+0x0c", "size": 4, "expected": "0x00000001"},
+        {"address": "gDebugSaveFixtureProbe+0x28", "size": 4, "expected": "0x00000001"},
+        {"address": "gDebugSaveFixtureProbe+0x2c", "size": 4, "expected": "0x000000ff"},
+        {"address": "gDebugSaveFixtureProbe+0x30", "size": 4, "expected": "0x00000004"},
+        {"address": "gDebugSaveFixtureProbe+0x34", "size": 4, "expected": "0x00000000"},
+        {"address": "gDebugSaveFixtureProbe+0x44", "size": 4, "expected": "0x00000004"},
+        {"address": "gDebugSaveFixtureProbe+0x48", "size": 4, "expected": "0x00000003"},
+        {"address": "gDebugSaveFixtureProbe+0x4c", "size": 4, "expected": "0x00000000"},
+        {"address": "gDebugSaveFixtureProbe+0x50", "size": 4, "expected": "0x56415346"},
+        {"address": "gDebugSaveFixtureProbe+0x54", "size": 4, "expected": "0x00020002"}
       ]
     },
     {
@@ -57,9 +65,9 @@
       "framebuffer": true,
       "sram_hash": true,
       "probes": [
-        {"address": "0x0203f478", "size": 4, "expected": "0x00000002"},
-        {"address": "0x0203f488", "size": 4, "expected": "0x00000001"},
-        {"address": "0x0203f48c", "size": 4, "expected": "0x00000000"}
+        {"address": "gDebugSaveFixtureProbe+0x00", "size": 4, "expected": "0x00000002"},
+        {"address": "gDebugSaveFixtureProbe+0x10", "size": 4, "expected": "0x00000001"},
+        {"address": "gDebugSaveFixtureProbe+0x14", "size": 4, "expected": "0x00000000"}
       ]
     },
     {
@@ -68,11 +76,11 @@
       "framebuffer": true,
       "sram_hash": true,
       "probes": [
-        {"address": "0x0203f478", "size": 4, "expected": "0x00000004"},
-        {"address": "0x0203f48c", "size": 4, "expected": "0x00000001"},
-        {"address": "0x0203f490", "size": 4, "expected": "0x00000001"},
-        {"address": "0x0203f498", "size": 4, "expected": "0x00000009"},
-        {"address": "0x0203f4c4", "size": 4, "expected": "0x00000003"},
+        {"address": "gDebugSaveFixtureProbe+0x00", "size": 4, "expected": "0x00000004"},
+        {"address": "gDebugSaveFixtureProbe+0x14", "size": 4, "expected": "0x00000001"},
+        {"address": "gDebugSaveFixtureProbe+0x18", "size": 4, "expected": "0x00000001"},
+        {"address": "gDebugSaveFixtureProbe+0x20", "size": 4, "expected": "0x00000004"},
+        {"address": "gDebugSaveFixtureProbe+0x4c", "size": 4, "expected": "0x00000003"},
         {"address": "0x020210b2", "size": 1, "expected": "0x02"},
         {"address": "0x020210b6", "size": 1, "expected": "0x09"},
         {"address": "0x020210b7", "size": 1, "expected": "0x04"},
@@ -86,9 +94,9 @@
       "framebuffer": true,
       "sram_hash": true,
       "probes": [
-        {"address": "0x0203f478", "size": 4, "expected": "0x00000004"},
-        {"address": "0x0203f498", "size": 4, "expected": "0x00000009"},
-        {"address": "0x0203f49c", "size": 4, "expected": "0x00000000"}
+        {"address": "gDebugSaveFixtureProbe+0x00", "size": 4, "expected": "0x00000004"},
+        {"address": "gDebugSaveFixtureProbe+0x20", "size": 4, "expected": "0x00000005"},
+        {"address": "gDebugSaveFixtureProbe+0x24", "size": 4, "expected": "0x00000002"}
       ]
     },
     {
@@ -97,9 +105,9 @@
       "framebuffer": true,
       "sram_hash": true,
       "probes": [
-        {"address": "0x0203f478", "size": 4, "expected": "0x00000000"},
-        {"address": "0x0203f48c", "size": 4, "expected": "0x00000000"},
-        {"address": "0x0203f498", "size": 4, "expected": "0x00000000"}
+        {"address": "gDebugSaveFixtureProbe+0x00", "size": 4, "expected": "0x00000000"},
+        {"address": "gDebugSaveFixtureProbe+0x14", "size": 4, "expected": "0x00000000"},
+        {"address": "gDebugSaveFixtureProbe+0x20", "size": 4, "expected": "0x00000000"}
       ]
     }
   ]

@@ -30,7 +30,9 @@ make expansion-modern-debug-save-fixture-check \
    `temporary=true`.
 3. The source contains valid game 0 and latest alternate suspend blocks,
    source tactician bytes `USER`, source completion count 1, chapter 2, and
-   cursor `(9,4)`.
+   cursor `(9,4)`. Its generated suspend roster contains Eirika at `(8,4)`
+   and one enemy at `(5,5)`, keeping the resumed map interactive without
+   importing an external save image.
 4. Record the source image as baseline `U[0x0000..0x7FFF]` after the normal
    boot SRAM probe.
 
@@ -45,7 +47,10 @@ make expansion-modern-debug-save-fixture-check \
    then press fresh `L+R+A`.
 6. Wait for resumed chapter state and the automatic phase-start suspend
    attempt.
-7. Perform the ordinary soft-reset combo.
+7. Open the ordinary in-game Map Menu, move down four rows to **Suspend**,
+   and press **A**. Confirm the disabled command refuses the manual suspend
+   attempt, then close its help box and the menu with **B**.
+8. Perform the ordinary soft-reset combo.
 
 **Expected fixture bytes before consume:**
 
@@ -59,13 +64,18 @@ make expansion-modern-debug-save-fixture-check \
   suspend kind, offset `0x204C`, size `0x1F78`, recomputed checksum;
 - suspend name at `0x206C` and backing game-0 name at `0x3FE4`:
   `46 49 58 54 55 52 45 00 00 00 00`.
+- first blue packed unit at `0x20D0`: PID/JID `01 02`, with HP bytes
+  `10 10` at `0x20DE..0x20DF`;
+- first red packed unit at `0x2B60`: PID/JID `47 41`, with HP bytes
+  `14 14` at `0x2B6E..0x2B6F`.
 
 **Expected observable result:**
 
 - The existing game-control proc consumes one suspend target.
 - Live chapter/cursor/tactician state is chapter 2, `(9,4)`, `FIXTURE`.
 - Fixture completion queries return 3.
-- Automatic save attempts are blocked and recorded.
+- Automatic and ordinary-UI manual suspend attempts are blocked and recorded;
+  the manual attempt is the final recorded kind.
 - At preview, Arm, active play, blocked write, and post-reset:
   `SRAM[0x0000..0x7FFF] == U[0x0000..0x7FFF]`.
 - This exact comparison includes header/global, every block-info record, both

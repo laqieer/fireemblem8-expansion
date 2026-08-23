@@ -196,6 +196,42 @@ DEBUG_SAVE_PLAYST_CURSOR_OFFSET = 0x12
 DEBUG_SAVE_PLAYST_IDENTIFIER_OFFSET = 0x18
 DEBUG_SAVE_PLAYST_MODE_OFFSET = 0x1B
 DEBUG_SAVE_PLAYST_NAME_OFFSET = 0x20
+DEBUG_SAVE_SUSPEND_BLUE_UNITS_OFFSET = 0x84
+DEBUG_SAVE_SUSPEND_RED_UNITS_OFFSET = 0xB14
+DEBUG_SAVE_SUSPEND_PACKED_UNIT_SIZE = 0x34
+
+
+def _write_debug_suspend_unit(
+    suspend: bytearray,
+    offset: int,
+    *,
+    pid: int,
+    jid: int,
+    level: int,
+    x: int,
+    y: int,
+    max_hp: int,
+    pow_: int,
+    skl: int,
+    spd: int,
+    def_: int,
+    res: int,
+    lck: int,
+) -> None:
+    suspend[offset] = pid
+    suspend[offset + 1] = jid
+    suspend[offset + 0x0E] = max_hp
+    suspend[offset + 0x0F] = max_hp
+    word_24 = (
+        level
+        | (x << 5)
+        | (y << 11)
+        | (pow_ << 17)
+        | (skl << 22)
+        | (spd << 27)
+    )
+    word_28 = def_ | (res << 5) | (lck << 10)
+    struct.pack_into("<II", suspend, offset + 0x24, word_24, word_28)
 
 
 def _save_checksum32(data: bytes) -> int:
@@ -232,6 +268,8 @@ def _write_debug_save_block_info(
 
 def build_debug_save_fixture_source_image(
     repo_root: Path = _REPO_ROOT,
+    *,
+    include_runtime_roster: bool = True,
 ) -> bytes:
     """Build a disposable CURRENT image with valid game-0 and latest
     alternate-suspend blocks for TC-DEBUGSAVE-001.
@@ -277,6 +315,39 @@ def build_debug_save_fixture_source_image(
         DEBUG_SAVE_PLAYST_NAME_OFFSET:
         DEBUG_SAVE_PLAYST_NAME_OFFSET + 11
     ] = b"USER\x00" + b"\x00" * 6
+    if include_runtime_roster:
+        _write_debug_suspend_unit(
+            suspend,
+            DEBUG_SAVE_SUSPEND_BLUE_UNITS_OFFSET,
+            pid=0x01,
+            jid=0x02,
+            level=5,
+            x=8,
+            y=4,
+            max_hp=16,
+            pow_=4,
+            skl=8,
+            spd=9,
+            def_=3,
+            res=1,
+            lck=5,
+        )
+        _write_debug_suspend_unit(
+            suspend,
+            DEBUG_SAVE_SUSPEND_RED_UNITS_OFFSET,
+            pid=0x47,
+            jid=0x41,
+            level=5,
+            x=5,
+            y=5,
+            max_hp=20,
+            pow_=6,
+            skl=4,
+            spd=5,
+            def_=3,
+            res=0,
+            lck=1,
+        )
     image[
         DEBUG_SAVE_SUSPEND_ALT_OFFSET:
         DEBUG_SAVE_SUSPEND_ALT_OFFSET + DEBUG_SAVE_SUSPEND_SIZE
@@ -310,9 +381,16 @@ def build_debug_save_fixture_source_image(
 def write_debug_save_fixture_source(
     path: Path,
     repo_root: Path = _REPO_ROOT,
+    *,
+    include_runtime_roster: bool = True,
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(build_debug_save_fixture_source_image(repo_root))
+    path.write_bytes(
+        build_debug_save_fixture_source_image(
+            repo_root,
+            include_runtime_roster=include_runtime_roster,
+        )
+    )
     return path
 
 

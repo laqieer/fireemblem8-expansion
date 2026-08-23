@@ -6,89 +6,89 @@
       "name": "volatile-preview",
       "probes": [
         {
-          "address": "0x0203f478",
+          "address": "gDebugSaveFixtureProbe+0x00",
           "size": 4,
           "value": "0x00000001"
         },
         {
-          "address": "0x0203f484",
+          "address": "gDebugSaveFixtureProbe+0x0c",
           "size": 4,
           "value": "0x00000001"
         },
         {
-          "address": "0x0203f4a0",
+          "address": "gDebugSaveFixtureProbe+0x28",
           "size": 4,
           "value": "0x00000001"
         },
         {
-          "address": "0x0203f4a4",
+          "address": "gDebugSaveFixtureProbe+0x2c",
           "size": 4,
           "value": "0x000000ff"
         },
         {
-          "address": "0x0203f4a8",
+          "address": "gDebugSaveFixtureProbe+0x30",
           "size": 4,
           "value": "0x00000004"
         },
         {
-          "address": "0x0203f4ac",
+          "address": "gDebugSaveFixtureProbe+0x34",
           "size": 4,
           "value": "0x00000000"
         },
         {
-          "address": "0x0203f4bc",
+          "address": "gDebugSaveFixtureProbe+0x44",
           "size": 4,
           "value": "0x00000004"
         },
         {
-          "address": "0x0203f4c0",
+          "address": "gDebugSaveFixtureProbe+0x48",
           "size": 4,
           "value": "0x00000003"
         },
         {
-          "address": "0x0203f4c4",
+          "address": "gDebugSaveFixtureProbe+0x4c",
           "size": 4,
           "value": "0x00000000"
         },
         {
-          "address": "0x0203f4c8",
+          "address": "gDebugSaveFixtureProbe+0x50",
           "size": 4,
           "value": "0x56415346"
         },
         {
-          "address": "0x0203f4cc",
+          "address": "gDebugSaveFixtureProbe+0x54",
           "size": 4,
           "value": "0x00020002"
         }
       ],
-      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+      "sram_hash": "fnv1a64-sram:21f5b86eb60f31c6"
     },
     {
       "frame": 1330,
-      "framebuffer_hash": "fnv1a64-rgb24:44c69d17c89a37f8",
+      "framebuffer_hash": "fnv1a64-rgb24:79262cd2825ddc7f",
       "name": "volatile-armed",
       "probes": [
         {
-          "address": "0x0203f478",
+          "address": "gDebugSaveFixtureProbe+0x00",
           "size": 4,
           "value": "0x00000002"
         },
         {
-          "address": "0x0203f488",
+          "address": "gDebugSaveFixtureProbe+0x10",
           "size": 4,
           "value": "0x00000001"
         },
         {
-          "address": "0x0203f48c",
+          "address": "gDebugSaveFixtureProbe+0x14",
           "size": 4,
           "value": "0x00000000"
         }
       ],
-      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+      "sram_hash": "fnv1a64-sram:21f5b86eb60f31c6"
     },
     {
       "frame": 1800,
-      "framebuffer_hash": "fnv1a64-rgb24:93762c381824c418",
+      "framebuffer_hash": "fnv1a64-rgb24:a85ba909868bad29",
       "name": "volatile-active",
       "probes": [
         {
@@ -117,55 +117,55 @@
           "value": "0x00455255"
         },
         {
-          "address": "0x0203f478",
+          "address": "gDebugSaveFixtureProbe+0x00",
           "size": 4,
           "value": "0x00000004"
         },
         {
-          "address": "0x0203f48c",
+          "address": "gDebugSaveFixtureProbe+0x14",
           "size": 4,
           "value": "0x00000001"
         },
         {
-          "address": "0x0203f490",
+          "address": "gDebugSaveFixtureProbe+0x18",
           "size": 4,
           "value": "0x00000001"
         },
         {
-          "address": "0x0203f498",
+          "address": "gDebugSaveFixtureProbe+0x20",
           "size": 4,
-          "value": "0x00000009"
+          "value": "0x00000004"
         },
         {
-          "address": "0x0203f4c4",
+          "address": "gDebugSaveFixtureProbe+0x4c",
           "size": 4,
           "value": "0x00000003"
         }
       ],
-      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+      "sram_hash": "fnv1a64-sram:21f5b86eb60f31c6"
     },
     {
       "frame": 3000,
-      "framebuffer_hash": "fnv1a64-rgb24:9bcd480b34bbc738",
+      "framebuffer_hash": "fnv1a64-rgb24:6e29163aeb5905d5",
       "name": "volatile-write-blocked",
       "probes": [
         {
-          "address": "0x0203f478",
+          "address": "gDebugSaveFixtureProbe+0x00",
           "size": 4,
           "value": "0x00000004"
         },
         {
-          "address": "0x0203f498",
+          "address": "gDebugSaveFixtureProbe+0x20",
           "size": 4,
-          "value": "0x00000009"
+          "value": "0x00000005"
         },
         {
-          "address": "0x0203f49c",
+          "address": "gDebugSaveFixtureProbe+0x24",
           "size": 4,
-          "value": "0x00000000"
+          "value": "0x00000002"
         }
       ],
-      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+      "sram_hash": "fnv1a64-sram:21f5b86eb60f31c6"
     },
     {
       "frame": 3500,
@@ -173,30 +173,24 @@
       "name": "soft-reset-cleared-fixture",
       "probes": [
         {
-          "address": "0x0203f478",
+          "address": "gDebugSaveFixtureProbe+0x00",
           "size": 4,
           "value": "0x00000000"
         },
         {
-          "address": "0x0203f48c",
+          "address": "gDebugSaveFixtureProbe+0x14",
           "size": 4,
           "value": "0x00000000"
         },
         {
-          "address": "0x0203f498",
+          "address": "gDebugSaveFixtureProbe+0x20",
           "size": 4,
           "value": "0x00000000"
         }
       ],
-      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+      "sram_hash": "fnv1a64-sram:21f5b86eb60f31c6"
     }
   ],
   "format_version": 2,
-  "rom": {
-    "game_code": "BE8E",
-    "sha1": "d396659754172e0b070133d26bec8025577f7dd8",
-    "size": 16777216,
-    "title": "FIREEMBLEM2E"
-  },
   "scenario": "debug-save-fixture-positive-modern-debug"
 }
