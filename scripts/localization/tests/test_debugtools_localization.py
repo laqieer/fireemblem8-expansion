@@ -34,13 +34,29 @@ class DebugToolsLocalizationTests(unittest.TestCase):
     }
     DIRECT_MENU_LABELS = Counter(
         {
-            "Back": 6,
+            "Back": 7,
             "Confirm Heal to Full": 1,
             "Confirm Add Item": 1,
             "Confirm Toggle Flag": 1,
             "Confirm Reseed": 1,
             "Weather": 1,
             "Fog": 1,
+            "Edit HP": 1,
+            "Edit Stats": 1,
+            "Edit AI": 1,
+            "Confirm Clear Status": 1,
+            "Unit/Class": 1,
+            "State": 1,
+            "Current HP": 1,
+            "Max HP": 1,
+            "Power": 1,
+            "Skill": 1,
+            "Speed": 1,
+            "Defense": 1,
+            "Resistance": 1,
+            "Luck": 1,
+            "AI A": 1,
+            "AI B": 1,
         }
     )
     EXPANSION_ADAPTERS = {
@@ -58,6 +74,22 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         "FLAG": "debug.status.flag",
         "RNG SEED": "debug.status.rng_seed",
         "SAVE STATE": "debug.status.save_state",
+        "Edit HP": "debug.unit.edit_hp",
+        "Edit Stats": "debug.unit.edit_stats",
+        "Edit AI": "debug.unit.edit_ai",
+        "Confirm Clear Status": "debug.unit.clear_status",
+        "Unit/Class": "debug.unit.identity",
+        "State": "debug.unit.state",
+        "Current HP": "debug.unit.current_hp",
+        "Max HP": "debug.unit.max_hp",
+        "Power": "debug.unit.power",
+        "Skill": "debug.unit.skill",
+        "Speed": "debug.unit.speed",
+        "Defense": "debug.unit.defense",
+        "Resistance": "debug.unit.resistance",
+        "Luck": "debug.unit.luck",
+        "AI A": "debug.unit.ai_a",
+        "AI B": "debug.unit.ai_b",
     }
 
     @classmethod
@@ -149,6 +181,14 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             menu_labels.extend(
                 re.findall(r"\.name\s*=\s*\"([^\"]+)\"", self.sources[name])
             )
+        menu_labels.extend(
+            re.findall(
+                r"DebugToolsUnit_Set(?:Value)?MenuItem\(\s*"
+                r"[^,]+,\s*\"([^\"]+)\"",
+                self.sources["debugtools_tools.c"],
+                flags=re.DOTALL,
+            )
+        )
         self.assertEqual(Counter(menu_labels), self.DIRECT_MENU_LABELS)
 
         registry = {
@@ -203,7 +243,27 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         ):
             self.assertIn(f"EXP_MSG_DEBUG_{key_suffix}", tools)
 
-        self.assertEqual(tools.count("EXP_MSG_FRAMEWORK_BACK"), 5)
+        for key_suffix in (
+            "UNIT_EDIT_HP",
+            "UNIT_EDIT_STATS",
+            "UNIT_EDIT_AI",
+            "UNIT_CLEAR_STATUS",
+            "UNIT_IDENTITY",
+            "UNIT_STATE",
+            "UNIT_CURRENT_HP",
+            "UNIT_MAX_HP",
+            "UNIT_POWER",
+            "UNIT_SKILL",
+            "UNIT_SPEED",
+            "UNIT_DEFENSE",
+            "UNIT_RESISTANCE",
+            "UNIT_LUCK",
+            "UNIT_AI_A",
+            "UNIT_AI_B",
+        ):
+            self.assertIn(f"EXP_MSG_DEBUG_{key_suffix}", tools)
+
+        self.assertEqual(tools.count("EXP_MSG_FRAMEWORK_BACK"), 6)
         self.assertIn("DebugToolsTools_LocalizedMenuItemDraw", tools)
         self.assertIn("ExpansionLocale_ResolveCurrent", tools)
         self.assertIn("PutDrawText(", tools)
@@ -241,11 +301,11 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         )
         menu_width_tokens = re.findall(
             r"CONST_DATA struct MenuDef gDebugTools\w+MenuDef\s*=\s*\{\s*"
-            r"\{\s*1\s*,\s*1\s*,\s*([^,\s]+)\s*,\s*0\s*\}",
+            r"\{\s*\d+\s*,\s*\d+\s*,\s*([^,\s]+)\s*,\s*0\s*\}",
             menu_sources,
             flags=re.DOTALL,
         )
-        self.assertEqual(len(menu_width_tokens), 8)
+        self.assertEqual(len(menu_width_tokens), 11)
         self.assertEqual(
             set(menu_width_tokens),
             {"DEBUGTOOLS_MENU_WIDTH_TILES"},
@@ -258,7 +318,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             *(
                 key
                 for key in self.EXPANSION_ADAPTERS.values()
-                if key.startswith("debug.confirm.")
+                if key.startswith(("debug.confirm.", "debug.unit."))
             ),
         }
         for locale in ("en", "ja", "zh-Hans", "qps-ploc"):
@@ -269,6 +329,24 @@ class DebugToolsLocalizationTests(unittest.TestCase):
                         self._pixel_width(strings[key], locale),
                         allocation_pixels,
                     )
+
+            value_x = {
+                "debug.unit.identity": 96,
+                "debug.unit.state": 72,
+                "debug.unit.current_hp": 112,
+                "debug.unit.max_hp": 112,
+                "debug.unit.power": 112,
+                "debug.unit.skill": 112,
+                "debug.unit.speed": 112,
+                "debug.unit.defense": 112,
+                "debug.unit.resistance": 112,
+                "debug.unit.luck": 112,
+                "debug.unit.ai_a": 112,
+                "debug.unit.ai_b": 112,
+            }
+            for key, x in value_x.items():
+                with self.subTest(locale=locale, key=f"{key}+value"):
+                    self.assertLessEqual(self._pixel_width(strings[key], locale), x)
 
     def test_maximum_hub_rows_and_qps_labels_fit_allocator_budget(self):
         action_max = self._constant("DEBUGTOOLS_ACTION_MAX")

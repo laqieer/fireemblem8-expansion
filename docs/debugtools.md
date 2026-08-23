@@ -7,11 +7,11 @@ all explicitly validated); title/map/prep-screen hub hotkeys; two
 deterministic launchers (Chapter 2, and Chapter 4 for reaching a real prep
 screen); the Weather/Fog actions; a bounded diagnostics foundation (log
 ring + non-fatal assert record); five bounded validated tools (unit,
-convoy, flag/chapter, RNG, save-state); and the playtest/host-test evidence
-that proves all of it. See `reports/debugtools_issue11_closure.md` for the
-frozen-checklist-to-code-to-test closure mapping, and "Remaining #11 scope"
-at the end of this document for what otherwise remains (only the true
-non-goals -- `mgba_printf`/full debugger/arbitrary memory editor).
+convoy, flag/chapter, RNG, save-state); issue #125's cursor-selected typed
+unit inspector/editor; and the playtest/host-test evidence that proves all of
+it. See `reports/debugtools_issue11_closure.md` for issue #11's original
+frozen-checklist mapping. The issue #125 tester procedure is
+[`TC-DEBUGTOOLS-PROTOTYPE-003`](test-cases/debugtools.md#tc-debugtools-prototype-003-cursor-selected-bounded-unit-inspectoreditor).
 
 ## Files
 
@@ -31,7 +31,7 @@ non-goals -- `mgba_printf`/full debugger/arbitrary memory editor).
 | `tools/gba-playtest/scenarios/debugtools-{map,prep}-hub-modern-release.json` (slice 2) | Release mirrors proving both new hotkeys are compiled out (`gDebugToolsProbe` stays all-zero) atop the live opening world map -- semantic `gPlaySt`/cursor progress probes, no framebuffer oracle |
 | `tools/gba-playtest/fingerprints/debugtools-{hub,map-hub,prep-hub}-modern-{debug,release}.json` | Captured fingerprints for the scenarios above |
 | `src/debugtools_diag.c` (closure) | Diagnostics foundation: bounded log ring (`DebugTools_LogEvent`/`GetLogEntry`/`GetLogCount`) and non-fatal assert record (`DEBUGTOOLS_ASSERT`/`DebugTools_RecordAssertFailure`) |
-| `src/debugtools_tools.c` (closure) | The five bounded validated tools: Unit Inspect (heal-to-full), Convoy Inspect (bounded add), Flag/Chapter (bounded flag toggle), RNG Inspect (bounded reseed), Save State (read-only) |
+| `src/debugtools_tools.c` (closure + issue #125) | The five bounded validated tools. Unit Inspect resolves the live cursor target and exposes typed HP/stat/AI/status edits; Convoy Inspect, Flag/Chapter, RNG Inspect, and read-only Save State retain their issue #11 contracts |
 | `src/gamecontrol.c` (closure) | `GameControl_PostIntro` also consumes the second, independent Ch4-Prep pending request and commits the deterministic Chapter 4 boot |
 | `tools/gba-playtest/scenarios/debugtools-ch4-prep-launch-modern-{debug,release}.json` (closure) | The Ch4-Prep launcher's own boot-commit lifecycle scenario + release mirror (see "Fast Boot: Chapter 4 (Prep)" below; the live prep-screen arrival itself is proven by the prep-positive scenario in the next row) |
 | `tools/gba-playtest/scenarios/debugtools-ch4-prep-positive-modern-debug.json` (closure) | Live prep-screen arrival (debug-only): drives the Chapter 4 world-map traversal + the real `PREP` opcode to a live `PrepScreenProc_MapIdle`, then fires the SELECT+B prep hotkey; proves `prepScreenObservedCount` 0->1 and `PLAY_FLAG_PREPSCREEN` held throughout. Gate: DEBUG branch of `expansion-modern-debugtools-prep-check` |
@@ -44,7 +44,8 @@ Weather/Fog actions only ever reference their existing
 pointer** from `src/debugtools_actions.c`. `src/debugtools_diag.c` and
 `src/debugtools_tools.c` (issue #11 closure) follow the identical
 by-pointer/never-copy discipline for the engine helpers they call
-(`SetUnitHp`, `AddItemToConvoy`, `SetFlag`/`ClearFlag`, `SetLCGRNValue`,
+(`SetUnitHp`, `UnitCheckStatCaps`, `ChangeUnitAi`, `SetUnitStatus`,
+`AddItemToConvoy`, `SetFlag`/`ClearFlag`, `SetLCGRNValue`,
 `ClassifySramSaveCompat`, etc. -- see "Five bounded validated tools" below).
 
 ## Config gate
@@ -70,9 +71,9 @@ by-pointer/never-copy discipline for the engine helpers they call
   release ELF (no `DebugToolsHub_*`/`gDebugToolsHubMenuDef`/
   `DebugToolsLauncher_*` symbols) and by an equivalent host-compiled check
   (`test_registry_disabled_path_behavior_and_symbol_omission`).
-- The legacy agbcc build never defines `NDEBUG`, so it keeps compiling with
-  the subsystem enabled -- same as every other `FE8_EXPANSION_*` gate today.
-  This is not a new or contradictory release model.
+- The archival agbcc lane excludes the supported subsystem behind
+  `FE8_ARCHIVAL_BUILD`; issue #125 adds no archival runtime behavior or
+  byte-match requirement.
 
 `gDebugToolsProbe` (see "Playtest probe surface" below) is the one exception:
 it is always linked, in every build, so a release scenario can assert it
@@ -1040,11 +1041,10 @@ the plain introspection functions above, which is sufficient for both host
 tests (`DebugToolsDiagHostTests`, `tools/gba-playtest/tests/test_debugtools_registry.py`)
 and future runtime scenarios to assert against.
 
-Every one of the five bounded tools below calls `DebugTools_LogEvent`
-for both its inspect and (if applicable) confirm steps, and
-`DEBUGTOOLS_ASSERT` immediately before any mutation whose target/index
-needs a defensive bounds re-check beyond what its own fixed constant
-already guarantees at compile time (the Unit and Flag tools; see below).
+Every bounded tool calls `DebugTools_LogEvent` for inspect and applicable
+confirmation steps. Flag uses `DEBUGTOOLS_ASSERT` for its fixed index; the
+unit editor uses typed rejection outcomes plus non-fatal assert records for
+commit-time target/conflict/value failures.
 
 Release-inert: every function in `src/debugtools_diag.c` compiles to a
 trivial disabled stub (returning 0/`NULL`, recording nothing) when
@@ -1059,36 +1059,63 @@ Issue #11 closure requirement 5. Each is a single registry action
 (ids 5-9) -- no direct edits to `gDebugToolsHubMenuDef`/
 `sHubMenuItemDefs`. Each samples/displays
 read-only state immediately on selection (logged via
-`DEBUGTOOLS_LOG_*_INSPECT`), then -- for the four that can mutate anything
--- opens a bounded two-item "Confirm `<action>`" / "Back" submenu (the
-exact same `StartOrphanMenu` idiom Weather/Fog already use in
-`src/debugtools_actions.c`) so a mutation only ever happens after an
-explicit, separate confirmation input, never on the initial hub selection
-alone. No tool ever performs a raw/arbitrary address write or accepts an
-unvalidated numeric index from outside this one fixed source file: every
-target is either a fixed, documented, in-range constant, or produced by an
-existing engine lookup helper that itself returns `NULL`/a safe sentinel on
-failure, re-checked via `UNIT_IS_VALID`/`DEBUGTOOLS_ASSERT` immediately
-before any mutation. None of the five ever touches SRAM or any save-block
-struct directly (RNG/flags/units/convoy are ordinary EWRAM runtime state;
-the fifth tool is read-only).
+`DEBUGTOOLS_LOG_*_INSPECT`). Convoy, Flag, and RNG use their original bounded
+Confirm/Back menus. Unit uses one fixed root plus fixed HP/stat/AI menus;
+left/right changes preview state only and A is the separate confirmation.
+No tool performs a raw/arbitrary address write or accepts an unvalidated
+index. Fixed operations use documented constants; Unit resolves and
+revalidates the cursor target through typed engine helpers. None touches SRAM
+or a save-block struct directly (RNG/flags/units/convoy are ordinary EWRAM
+runtime state; Save State is read-only).
 
-1. **Unit Inspect** (id 5) -- target `GetUnitFromCharId(CHARACTER_EIRIKA)`
-   (a fixed, well-known character, always present on the Chapter 2 map this
-   session's launcher proves; `NULL` when not deployed/present on the
-   current map). Inspect samples `GetUnitCurrentHp`/`GetUnitMaxHp` into
-   `gDebugToolsProbe.unitInspectLastCurHp`/`unitInspectLastMaxHp`/
-   `unitInspectTargetFound`. Confirm re-checks `UNIT_IS_VALID` via
-   `DEBUGTOOLS_ASSERT(..., DEBUGTOOLS_ASSERT_UNIT_TARGET_INVALID)`
-   immediately before mutating; on a valid target it calls
-   `SetUnitHp(unit, GetUnitMaxHp(unit))` (the exact same full-heal idiom
-   already used by `src/bmsave.c`/`src/bmio.c`/`src/bmarena.c`/
-   `src/eventcall.c`/`src/bmusemind.c`) and `SetUnitStatus(unit, 0)`
-   (clears any status ailment), incrementing
-   `gDebugToolsProbe.unitHealTransactionCount`. On an invalid/missing
-   target, it is a safe, logged (`DEBUGTOOLS_LOG_UNIT_HEAL_SKIPPED_INVALID`),
-   assert-recorded no-op -- never a crash, never a mutation of an invalid
-   pointer.
+1. **Unit Inspect** (id 5, extended by issue #125) -- resolves only the unit
+   at the real live-map cursor: bounds-check `gBmSt.playerCursor`, read the
+   slot from `gBmMapUnit`, then resolve it through `GetUnit`. The action
+   rejects an empty tile, purple/link-arena slot, missing/noncanonical
+   character or class pointer, mismatched slot/coordinates/map cell,
+   hidden/rescued/not-deployed/dead/zero-HP unit, title/prep context, and an
+   active standard event, battle event, or battle daemon. A valid inspect is
+   read-only and snapshots slot, character/class numbers, position, full
+   `Unit::state`, current/max HP, status, and AI A/B.
+
+   The fixed root menu keeps **Confirm Heal to Full**, adds bounded HP, stat,
+   and AI submenus, exposes character/class/state as disabled read-only rows,
+   and enables **Confirm Clear Status** only for the named temporary statuses
+   Poison, Sleep, Silence, Berserk, Attack, Defense, Crit, Avoid, Sick, and
+   Petrify. `UNIT_STATUS_RECOVER`, `UNIT_STATUS_12`, and `UNIT_STATUS_13`
+   remain unavailable: the tool never guesses prototype Recovery/Condition
+   semantics.
+
+   Each editable row uses left/right only to change an EWRAM preview. A
+   distinct A confirmation revalidates the live-map context, complete target
+   identity, original field value, current class cap, and enum range before
+   the first write. Current HP is `1..GetUnitMaxHp(unit)` through
+   `SetUnitHp`; raw max HP/power/skill/speed/defense/resistance/luck use the
+   current class/engine limits and then `UnitCheckStatCaps`; AI A/B are
+   restricted to `AI_A_00..AI_A_INVALID-1` and
+   `AI_B_00..AI_B_INVALID-1` and go through `ChangeUnitAi`; status clearing
+   goes through `SetUnitStatus(..., UNIT_STATUS_NONE)`. Lowering raw max HP
+   below current HP is rejected rather than silently editing two fields.
+   Heal changes current HP only--it no longer hides a status clear.
+
+   Successful mutations call `RefreshEntityBmMaps`, `RenderBmMap`, and
+   `RefreshUnitSprites`. Appended probe fields and closed structured log
+   codes record operation, field, exact old/new values, and outcome
+   (previewed, applied, no-change, cancelled, forced cleanup, or a typed
+   rejection) without moving issue #11's existing probe offsets. Cancel,
+   target movement/replacement/value drift, a newly active event/battle,
+   out-of-range preview, unsupported status, and forced teardown are all
+   no-write paths. Forced teardown schedules final session cleanup rather than
+   reopening the hub. The implementation allocates no heap memory, never
+   writes SRAM, never edits class/items/inventory/supports, and never accepts
+   an address, offset, raw structure, arbitrary class, or arbitrary item.
+
+   The reviewed modern-debug budget delta against issue #125's exact base is
+   +8,256 linked floating ROM bytes and +672 EWRAM bytes (1,032 EWRAM bytes
+   still free; IWRAM unchanged). The mutually exclusive HP/stat/AI submenus
+   share one nine-slot `MenuItemDef` array. Modern release retains its prior
+   budget exactly because the editor code, menus, state, and telemetry probe
+   are omitted.
 2. **Convoy Inspect** (id 6) -- inspect samples `GetConvoyItemCount()` into
    `gDebugToolsProbe.convoyLastItemCount`. Confirm calls
    `AddItemToConvoy(ITEM_VULNERARY)` (a fixed, safe consumable constant);
@@ -1138,18 +1165,20 @@ compiles+links+executes the real, unmodified `src/debugtools_tools.c`
 together with the real `src/debugtools_registry.c` and `src/debugtools_diag.c`
 against `tools/gba-playtest/tests/c/debugtools_tools_driver.c` and
 `debugtools_tools_host_stubs.c` (small, test-controllable fakes for the
-engine subsystems each tool calls into -- `GetUnitFromCharId`,
+engine subsystems each tool calls into -- cursor/map/context ownership,
 `GetConvoyItemCount`/`AddItemToConvoy`, `SetFlag`/`ClearFlag`/`CheckFlag`,
 `StoreRNState`/`SetLCGRNValue`/`InitRN`, `ClassifySramSaveCompat` -- mirroring
-`GetUnitMaxHp`/`SetUnitHp`/`SetUnitStatus`'s own real, simple clamping logic
-from `src/bmunit.c` exactly, so the host test proves real behavioral
-semantics, not just call wiring), proving: registration (ids 5-9,
-deterministic order, idempotent); each tool's inspect semantics; each
-mutating tool's confirm transaction actually applying (and incrementing its
-own probe counter exactly once); the two invalid/edge-case paths (missing
-Unit target, full Convoy) resulting in a safe, logged, assert-recorded
-no-op with the transaction counter unchanged; and Save State's read-only
-contract (no Confirm item, `Back` only). A second test compiles the
+the relevant helper semantics and recording exact call effects). The unit
+driver executes every HP/stat/AI/status callback and covers empty, dead,
+purple, noncanonical, stale, value-drift, range, Recovery/Condition,
+event/battle conflict, cancel, no-change, and forced-teardown controls.
+`test_unit_editor_executes_authoritative_engine_helpers` separately links
+the real `src/bmunit.c` and `src/eventscr3.c` with section garbage
+collection and host-executes `SetUnitHp`, `UnitCheckStatCaps`,
+`SetUnitStatus[Ext]`, and `ChangeUnitAi` themselves--not fixture copies.
+The same suite proves registration (ids 5-9, deterministic and idempotent),
+the remaining tools' semantics, full-Convoy rejection, and Save State's
+read-only contract. A disabled-path test compiles the
 disabled path and proves both behavior and physical symbol omission -- the
 disabled object defines exactly the one no-op
 `DebugTools_RegisterExtendedToolActions()` entry point and links clean with
@@ -1159,11 +1188,11 @@ runtime scenario driving all five tools through the map hub (mirroring
 `debugtools-map-hub-modern-debug.json`'s own live Weather/Fog proof) is now
 included: `debugtools-tools-modern-debug.json` (gate
 `expansion-modern-debugtools-tools-check`, host test
-`tools/gba-playtest/tests/test_tools_scenario.py`) drives all five tools live
-from the real Chapter 2 map hub, each with an asserted semantic state effect
-and a safe return to the hub -- see "Remaining #11 scope" below for the
-per-tool mapping. The host-executed evidence above remains the byte-exact
-mutation proof (e.g. a wounded unit healed to full) that complements it.
+`tools/gba-playtest/tests/test_tools_scenario.py`) now also proves a real
+cursor target, HP `17 -> 16 -> 17`, empty-tile rejection, matching whole-SRAM
+hashes, release-zero behavior, and post-cleanup map interactivity. The
+canonical human procedure and automation mapping are
+`TC-DEBUGTOOLS-PROTOTYPE-003`.
 
 
 ## Host tests
@@ -1404,8 +1433,8 @@ part of the shipped feature.
   other) hotkey call site -- this slice's one entry path is a hard
   constraint, not a starting convention.
 - `src/bmdebug.c`, `src/uidebug.c`, and `src/menu_def.c` remain untouched and
-  unreachable in this slice. No save/gold/unit/convoy/flag/event/RNG editors
-  are exposed.
+  unreachable. The supported unit/convoy/flag/RNG tools are typed, bounded,
+  debug-only actions; there is no save/gold/raw-memory editor.
 - No gameplay proc is ever torn down/recreated by this feature (no
   `Proc_EndEach`/`Proc_Start` on `gProcScr_GameControl`, no `gProc_BMapMain`
   redirect). The only added proc is the bounded one-yield menu-transition
