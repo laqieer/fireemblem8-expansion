@@ -48,6 +48,9 @@ current, or lacks a required owned case. A retired or excluded record is not
 coverage: it requires an explicit reason and cannot satisfy a complete-mode
 current feature.
 
+The localization and locale-persistence procedures are
+[`TC-LOCALIZATION-001` through `TC-LOCALIZATION-008`](localization.md).
+
 ## Running catalog checks
 
 Run the focused schema fixtures and the repository checker from the root:
@@ -61,3 +64,5 @@ The foundation procedures are
 [`TC-CATALOG-001`](foundation.md#tc-catalog-001-tester-case-catalog-foundation)
 and
 [`TC-TEST-QUALITY-001`](foundation.md#tc-test-quality-001-meaningful-test-evidence-policy-rejects-semantic-mutations).
+The optional audio module procedure is
+[`TC-AUDIO-HQMIX-001`](audio.md#tc-audio-hqmix-001-hq-pcm-mixer-produces-bounded-stereo-output).

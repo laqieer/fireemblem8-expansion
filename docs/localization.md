@@ -16,6 +16,15 @@ This is an architecture/authoring/testing reference, not a remote GitHub
 issue-state claim; branch-local closure evidence remains in
 `reports/issue18_localization_closure.md`.
 
+## Tester-facing procedures
+
+The canonical procedures for the shipped locale selector, catalogs,
+preferences, UTF-8 consumers, tactician entry, localized graphics, and
+profiles are [`TC-LOCALIZATION-001` through
+`TC-LOCALIZATION-008`](test-cases/localization.md). They map each
+deterministic assertion to existing host-native or libmGBA semantic evidence;
+they do not create a second registry or change this framework contract.
+
 ## Architecture
 
 The framework is layered, each layer independently testable:
