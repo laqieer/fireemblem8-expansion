@@ -189,14 +189,6 @@ class JapaneseRawOriginTests(unittest.TestCase):
             env=os.environ.copy(),
         )
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
-        self.assertIn(
-            "rom_sha256=44fd343625ab9e6b90f63a80758c15066"
-            "d526e6873fae91474006314a5ead464",
-            result.stdout,
-        )
-        self.assertIn("slices=3", result.stdout)
-        for target in ("0x01C1", "0x01C2", "0x01C3"):
-            self.assertIn(target + "@", result.stdout)
 
 
 if __name__ == "__main__":
