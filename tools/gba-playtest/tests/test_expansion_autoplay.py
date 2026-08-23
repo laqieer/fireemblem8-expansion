@@ -32,6 +32,38 @@ def run(command):
 
 
 class AutoplayHostTests(unittest.TestCase):
+    def test_archival_bmphase_omits_autoplay_relation_helper(self):
+        if ARM_CC is None or ARM_NM is None:
+            self.skipTest("arm-none-eabi compiler/binutils unavailable")
+        build_root = ROOT / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            obj = Path(temporary) / "bmphase-archival.o"
+            completed = run(
+                [
+                    ARM_CC,
+                    "-mcpu=arm7tdmi",
+                    "-mthumb",
+                    "-mthumb-interwork",
+                    "-std=gnu89",
+                    "-ffreestanding",
+                    "-fno-builtin",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    *INCLUDES,
+                    "-DFE8_ARCHIVAL_BUILD=1",
+                    "-c",
+                    str(BMPHASE_SOURCE),
+                    "-o",
+                    str(obj),
+                ]
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            symbols = run([ARM_NM, str(obj)])
+            self.assertEqual(symbols.returncode, 0, symbols.stdout + symbols.stderr)
+            self.assertNotIn("IsAllegianceAllied", symbols.stdout)
+            self.assertNotIn("ExpansionAutoplay", symbols.stdout)
+
     def test_debug_activation_closes_side_windows_before_phase_exit(self):
         text = PLAYER_PHASE.read_text(encoding="utf-8")
         activation = text.index("if (ExpansionAutoplay_TryActivateScenario(")
