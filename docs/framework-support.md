@@ -208,6 +208,13 @@ The archival agbcc lane remains explicit and default-only for these expansion
 features. Modern output is judged by link/boot/runtime behavior, never vanilla
 ROM byte identity.
 
+## Tester-facing procedure
+
+[`TC-CORE-009`](test-cases/core-framework.md#tc-core-009-reproduce-default-release-from-a-successful-build-ci-run)
+documents how to bind a successful Build CI URL/head SHA to a locally
+reproduced default AAPCS release, verify its header, and distinguish that
+reproduction from issue #49's published maximal BPS artifact.
+
 ## Future versioned release work (issue #9)
 
 No release automation, semantic-version/tag/changelog contract, versioned

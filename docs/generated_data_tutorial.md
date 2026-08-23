@@ -304,3 +304,11 @@ CI runs `make generated-data-check` on every push (`.github/workflows/build.yml`
 so a stale inventory, a broken reference, a capacity/budget overflow, or a
 manifest drift fails fast with an actionable diagnostic before the slower
 ROM linker gate runs.
+
+## Tester-facing procedures
+
+[`TC-CORE-004`](test-cases/core-framework.md#tc-core-004-generated-data-loop-reports-diagnostics)
+covers the disposable authoring validate/generate/check/test loop and its
+cross-table diagnostic control. [`TC-CORE-010`](test-cases/core-framework.md#tc-core-010-typed-authoring-lowers-through-existing-routes)
+covers the typed class, unit, event-list, and helper lowering routes without
+changing the default Chapter 2 source behavior.
