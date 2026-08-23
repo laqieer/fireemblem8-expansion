@@ -381,3 +381,9 @@ identities/dates via `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE`, never
 `datetime.now()`) built with plain local `git` subprocess calls — no
 network access, and upstream "commits" in the fixtures are never executed,
 only read.
+
+## Tester-facing procedure
+
+[`TC-CORE-008`](test-cases/core-framework.md#tc-core-008-upstream-scan-records-a-human-decision)
+covers read-only scan/drift/report safety, the ignored-output boundary, and
+the explicit human port-decision record that automation must never infer.
