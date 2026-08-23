@@ -204,19 +204,22 @@ class LocalizedUiGraphicsTests(unittest.TestCase):
         build_root.mkdir(exist_ok=True)
         probes = {
             "implicit-declaration.c": (
+                '#include "localized_ui_graphics.h"\n'
+                "\n"
                 "int Probe(void)\n"
                 "{\n"
                 "    return LocalizedUiGraphics_Missing();\n"
                 "}\n"
             ),
             "incompatible-pointer.c": (
+                '#include "localized_ui_graphics.h"\n'
+                "\n"
                 "int Probe(void)\n"
                 "{\n"
-                "    int value;\n"
-                "    const char *text;\n"
+                "    const struct LocalizedUiGraphicsTitle *title;\n"
                 "\n"
-                "    text = &value;\n"
-                "    return text != 0;\n"
+                "    title = LocalizedUiGraphics_GetChapterTitle(0);\n"
+                "    return title != 0;\n"
                 "}\n"
             ),
         }
@@ -232,6 +235,8 @@ class LocalizedUiGraphicsTests(unittest.TestCase):
                     [
                         cc,
                         *self.HOST_COMPILE_FLAGS,
+                        "-I",
+                        str(ROOT / "include"),
                         "-fsyntax-only",
                         str(path),
                     ],
