@@ -113,6 +113,11 @@ bool ComputePngBufferSizes(
     return true;
 }
 
+bool IsSupportedPngBitDepth(int bitDepth)
+{
+    return bitDepth == 1 || bitDepth == 2 || bitDepth == 4 || bitDepth == 8;
+}
+
 void ReadPng(char *path, struct Image *image)
 {
     png_structp png_ptr;
@@ -128,6 +133,9 @@ void ReadPng(char *path, struct Image *image)
     int bit_depth = png_get_bit_depth(png_ptr, info_ptr);
 
     int color_type = png_get_color_type(png_ptr, info_ptr);
+
+    if (!IsSupportedPngBitDepth(image->bitDepth))
+        FATAL_ERROR("Requested bit depth must be 1, 2, 4, or 8.\n");
 
     if (color_type != PNG_COLOR_TYPE_GRAY && color_type != PNG_COLOR_TYPE_PALETTE)
         FATAL_ERROR("\"%s\" has an unsupported color type.\n", path);
@@ -172,7 +180,7 @@ void ReadPng(char *path, struct Image *image)
     {
         unsigned char *src = image->pixels;
 
-        if (bit_depth != 1 && bit_depth != 2 && bit_depth != 4 && bit_depth != 8)
+        if (!IsSupportedPngBitDepth(bit_depth))
             FATAL_ERROR("Bit depth of image must be 1, 2, 4, or 8.\n");
         image->pixels =
             ConvertBitDepth(image->pixels, bit_depth, image->bitDepth, width * (size_t)height);

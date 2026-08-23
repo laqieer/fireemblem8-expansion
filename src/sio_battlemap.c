@@ -1365,8 +1365,6 @@ void LABattleMap_StartCombatantWarpFx(struct SioBattleMapProc * proc)
     return;
 }
 
-extern u8 gUnk_45[];
-
 extern u8 sLinkArenaCombatantMoveRightScript[];
 
 //! FE8U = 0x0804A5A4

@@ -33,6 +33,13 @@ int main(void)
     CHECK(!ComputePngBufferSizes(1, 2, SIZE_MAX, &pixelBufferSize, &rowPointerSize));
     CHECK(!ComputePngBufferSizes(0, 1, 1, &pixelBufferSize, &rowPointerSize));
     CHECK(!ComputePngBufferSizes(1, 1, 1, NULL, &rowPointerSize));
+    CHECK(IsSupportedPngBitDepth(1));
+    CHECK(IsSupportedPngBitDepth(2));
+    CHECK(IsSupportedPngBitDepth(4));
+    CHECK(IsSupportedPngBitDepth(8));
+    CHECK(!IsSupportedPngBitDepth(0));
+    CHECK(!IsSupportedPngBitDepth(3));
+    CHECK(!IsSupportedPngBitDepth(16));
 
     memset(&source, 0, sizeof(source));
     source.width = 8;
