@@ -369,9 +369,14 @@ Follow the repository conventions in
 
 ## Phase 5: validate
 
-During iteration, run the smallest focused host checks and the one relevant
-modern ROM profile. Before delivery, expand validation to the exact acceptance
-surface described in [`CONTRIBUTING.md`](../../../CONTRIBUTING.md).
+Local validation is change-focused by default. Run only the smallest tests
+that directly cover the changed behavior and the one necessary compile or
+runtime scenario. Do not run broad catalog validation, full repository test
+suites, all-locale/all-feature profiles, broad archival builds, or every
+supported profile locally unless the changed surface directly owns that gate
+or focused evidence cannot answer the acceptance criterion. Combined Build CI
+is the comprehensive final integration gate. Stop after focused checks pass,
+commit the candidate, and hand it off.
 
 For a bug fix, first reproduce the original symptom or preserve equivalent
 structural failure evidence, then prove the symptom is gone and the new

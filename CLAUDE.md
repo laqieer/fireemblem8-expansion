@@ -75,6 +75,15 @@ is `action_required`, the orchestrator reruns it with `gh run rerun <run-id>`
 under owner context. Never create empty commits, weaken Actions approvals, or
 use privileged `pull_request_target` just to bypass approval.
 
+Local validation is change-focused by default. Run only the smallest tests
+that directly cover the changed behavior and the one necessary compile or
+runtime scenario. Do not run broad catalog validation, full repository test
+suites, all-locale/all-feature profiles, broad archival builds, or every
+supported profile locally unless the changed surface directly owns that gate
+or focused evidence cannot answer the acceptance criterion. Combined Build CI
+is the comprehensive final integration gate. Stop after focused checks pass,
+commit the candidate, and hand it off.
+
 CI waiting must not occupy a reasoning subagent. The orchestrator that
 dispatches a workflow records its exact SHA and run ID, then returns
 immediately. The orchestrator runs exactly one bounded direct shell watcher:
