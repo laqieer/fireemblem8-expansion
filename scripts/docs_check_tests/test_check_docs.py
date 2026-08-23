@@ -69,6 +69,18 @@ class StripFencedBlocksTests(unittest.TestCase):
         stripped = check_docs.strip_fenced_blocks(text)
         self.assertNotIn("link", stripped)
 
+    def test_only_three_leading_spaces_open_or_close_a_fence(self):
+        fenced = "   ```\n[fake](nope.md)\n   ```\n"
+        self.assertNotIn("fake", check_docs.strip_fenced_blocks(fenced))
+        self.assertEqual(
+            list(check_docs.iter_fenced_block_bodies(fenced)),
+            ["[fake](nope.md)"],
+        )
+
+        indented_literal = "    ```\n[fake](nope.md)\n    ```\n"
+        self.assertEqual(check_docs.strip_fenced_blocks(indented_literal), indented_literal)
+        self.assertEqual(list(check_docs.iter_fenced_block_bodies(indented_literal)), [])
+
     def test_unterminated_fence_fails_with_opening_location(self):
         with self.assertRaisesRegex(
             check_docs.DocsCheckError,
@@ -83,7 +95,12 @@ class StripFencedBlocksTests(unittest.TestCase):
 
     def test_run_checks_reports_unterminated_fence_by_path_and_cli_returns_one(self):
         with TempRepo() as repo:
-            write(repo.root, "broken.md", "before\n```\nText-only tests are permitted.\n")
+            write(
+                repo.root,
+                "broken.md",
+                "before\n```\n"
+                "MODERN_ALL_OBJECTS=450\n",
+            )
             repo.add_all()
             findings, _, _ = check_docs.run_checks(repo.root)
             fence_findings = [
@@ -94,6 +111,14 @@ class StripFencedBlocksTests(unittest.TestCase):
                 in finding.message
             ]
             self.assertEqual(len(fence_findings), 1)
+            self.assertTrue(
+                any(
+                    finding.file == "broken.md"
+                    and "hardcoded MODERN_COHORT_*/MODERN_ALL_* resolved value"
+                    in finding.message
+                    for finding in findings
+                )
+            )
             with mock.patch("sys.stdout", new_callable=io.StringIO) as output:
                 self.assertEqual(check_docs.main(["--root", repo.root]), 1)
             self.assertIn("broken.md: unterminated fenced code block", output.getvalue())
@@ -1395,63 +1420,6 @@ class StaleFrameworkSupportABIRegressionTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Full Matrix CI README badge contract
-# ---------------------------------------------------------------------------
-
-class FullMatrixBadgeContractTests(unittest.TestCase):
-    def _write_valid_contract(self, root):
-        write(root, "README.md", "# Project\n\n" + check_docs.FULL_MATRIX_BADGE + "\n")
-        write(
-            root,
-            check_docs.FULL_MATRIX_WORKFLOW_PATH,
-            "name: Full Matrix CI\n\non:\n  workflow_dispatch: {}\n",
-        )
-
-    def test_exact_badge_and_workflow_name_pass(self):
-        with TempRepo() as repo:
-            self._write_valid_contract(repo.root)
-            self.assertEqual(check_docs.check_full_matrix_badge(repo.root), [])
-
-    def test_missing_badge_fails(self):
-        with TempRepo() as repo:
-            self._write_valid_contract(repo.root)
-            write(repo.root, "README.md", "# Project\n")
-            findings = check_docs.check_full_matrix_badge(repo.root)
-            self.assertEqual(len(findings), 1)
-            self.assertIn("exactly one canonical Full Matrix CI badge", findings[0].message)
-
-    def test_badge_image_or_link_path_drift_fails(self):
-        for stale in (
-            check_docs.FULL_MATRIX_BADGE.replace("full-matrix.yml/badge.svg", "full-ci.yml/badge.svg"),
-            check_docs.FULL_MATRIX_BADGE.replace(
-                "actions/workflows/full-matrix.yml)",
-                "actions/workflows/full-ci.yml)",
-            ),
-        ):
-            with self.subTest(stale=stale), TempRepo() as repo:
-                self._write_valid_contract(repo.root)
-                write(repo.root, "README.md", stale + "\n")
-                findings = check_docs.check_full_matrix_badge(repo.root)
-                self.assertEqual(len(findings), 1)
-                self.assertIn("full-matrix.yml", findings[0].message)
-
-    def test_workflow_display_name_drift_fails(self):
-        with TempRepo() as repo:
-            self._write_valid_contract(repo.root)
-            write(
-                repo.root,
-                check_docs.FULL_MATRIX_WORKFLOW_PATH,
-                "name: Full CI\n\non:\n  workflow_dispatch: {}\n",
-            )
-            findings = check_docs.check_full_matrix_badge(repo.root)
-            self.assertEqual(len(findings), 1)
-            self.assertIn("display name", findings[0].message)
-
-    def test_real_repository_contract_passes(self):
-        self.assertEqual(check_docs.check_full_matrix_badge(REAL_REPO_ROOT), [])
-
-
-# ---------------------------------------------------------------------------
 # Issues #7/#17 independent-verifier finding: two stale current-facts
 # reintroduced after the #7/#17 docs integration --
 #
@@ -1460,16 +1428,16 @@ class FullMatrixBadgeContractTests(unittest.TestCase):
 #      now CLOSED (closed 2026-07-25), with completion commit
 #      ac0ee5d7f17eb8e70175576cb46d9f320d8013cd merged into master.
 #   2. docs/framework-support.md said the item-ID-expansion checks were
-#      "gates 11-12" of the upstream verify gate set; the real, current
-#      scripts/upstream_port/verify.py gates() puts them at gates 12-13
-#      of exactly 14.
+#      "gates 17-18" of the upstream verify gate set; the real, current
+#      scripts/upstream_port/verify.py gates() puts them at gates 17-18
+#      of exactly 25.
 #
 # These tests prove: (a) every old phrase is flagged stale if it reappears,
 # (b) the current live doc/report text is stale-clean, (c) the historical,
 # batch-scoped technical boundary wording (which looks similar but is not a
 # live current-status claim) is NOT flagged, (d) the current docs/report
 # state #5 CLOSED with the real completion commit as merged evidence, and
-# (e) the "gates 12-13" claim is source-backed against the real
+# (e) the "gates 17-18" claim is source-backed against the real
 # scripts/upstream_port/verify.py gates() ordering -- never a hardcoded
 # fake substitute.
 # ---------------------------------------------------------------------------
@@ -1552,17 +1520,16 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         self.assertNotIn("is still **OPEN**", generated_data_text)
         self.assertNotIn("OPEN at time of writing", closure_report_text)
 
-    def test_framework_support_states_item_expansion_gates_12_13(self):
+    def test_framework_support_states_item_expansion_gates_17_18(self):
         framework_support_text = check_docs.read_text(
             os.path.join(REAL_REPO_ROOT, "docs", "framework-support.md")
         )
-        self.assertIn("gates 12-13 of", framework_support_text)
-        self.assertNotIn("gates 10-11 of", framework_support_text)
-        self.assertNotIn("gates 11-12 of", framework_support_text)
+        self.assertIn("gates 17-18 of", framework_support_text)
+        self.assertNotIn("gates 12-13 of", framework_support_text)
 
-    def test_verify_gates_item_expansion_entries_are_indexes_12_and_13_of_14(self):
+    def test_verify_gates_item_expansion_entries_precede_patch_profile(self):
         # Safe, standalone, no-network import of the live verify module
-        # straight off disk -- proves "gates 11-12" against the real,
+        # straight off disk -- proves "gates 17-18" against the real,
         # current scripts/upstream_port/verify.py gates() ordering rather
         # than a hardcoded fake substitute.
         verify_path = os.path.join(
@@ -1579,15 +1546,14 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         finally:
             sys.modules.pop(spec.name, None)
 
-        self.assertEqual(len(all_gates), 14)
-        # Gates are 1-indexed in the docs ("gates 12-13"); Python lists are
-        # 0-indexed, so that's positions [11] and [12].
-        self.assertIn("itemexpansion", all_gates[11].name)
-        self.assertIn("itemexpansion", all_gates[12].name)
-        for gate in all_gates[:11]:
-            self.assertNotIn("itemexpansion", gate.name)
+        self.assertEqual(len(all_gates), 25)
+        self.assertIn("itemexpansion", all_gates[16].name)
+        self.assertIn("itemexpansion", all_gates[17].name)
+        for index, gate in enumerate(all_gates):
+            if index not in (16, 17):
+                self.assertNotIn("itemexpansion", gate.name)
         self.assertEqual(
-            all_gates[13].name,
+            all_gates[18].name,
             "modern-all-locales-all-features-profile",
         )
 

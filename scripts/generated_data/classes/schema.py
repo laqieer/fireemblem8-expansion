@@ -279,9 +279,11 @@ def _count_numbered_array_entries(source):
 
 
 def read_portrait_count(source=PORTRAIT_DATA_SOURCE):
-    """Derive the number of playable portrait slots from the live,
-    numbered ``portrait_data[]`` array in ``src/portrait_data.c`` (each
-    entry carries its own index as a trailing ``// N`` comment)."""
+    """Derive the number of playable portrait slots from the live generated
+    asset-manifest registration, retaining a source override for fixtures."""
+    if os.path.abspath(source) == PORTRAIT_DATA_SOURCE:
+        from scripts.assets.manifest import portrait_registration_ids
+        return len(portrait_registration_ids())
     return _count_numbered_array_entries(source)
 
 

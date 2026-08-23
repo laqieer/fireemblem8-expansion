@@ -45,10 +45,6 @@ explicit, documented set of recognized Markdown extensions
      exemption). Only a live ``make print-<VARIABLE>`` reproduction command
      is allowed to stand in for these counts, since they drift as source
      files are added/removed.
-  6. The main README's ``Full Matrix CI`` badge uses the exact workflow
-     filename for both its badge image and Actions-page link, and the
-     referenced workflow retains its canonical display name.
-
 Exit codes: 0 clean, 1 findings, 2 invocation/environment error.
 
 This script performs no network access and never executes a Makefile
@@ -76,16 +72,6 @@ INVENTORY_PATH = "docs/documentation-inventory.md"
 REGISTRY_PATH = "docs/external-link-registry.md"
 TEST_CASE_REGISTRY_PATH = "docs/test-cases/registry.json"
 TEST_CASE_SCHEMA_VERSION = 1
-FULL_MATRIX_WORKFLOW_PATH = ".github/workflows/full-matrix.yml"
-FULL_MATRIX_WORKFLOW_NAME = "Full Matrix CI"
-FULL_MATRIX_BADGE = (
-    "[![Full Matrix CI]"
-    "(https://github.com/laqieer/fireemblem8-expansion/actions/workflows/"
-    "full-matrix.yml/badge.svg)]"
-    "(https://github.com/laqieer/fireemblem8-expansion/actions/workflows/"
-    "full-matrix.yml)"
-)
-
 # Recognized Markdown file extensions -- a small, explicit, documented set,
 # matched case-insensitively via ``str.casefold()`` on each candidate
 # path's ``os.path.splitext()`` suffix (Git permits case-sensitive paths on
@@ -329,12 +315,12 @@ STALE_PHRASE_RULES = [
     # verify gate set. The actual, current scripts/upstream_port/verify.py
     # gates() ordering (mirrored by docs/upstream-porting.md) puts the two
     # item-expansion gates (modern-itemexpansion-check-debug/-release) at
-    # indexes 12-13 of exactly 14 gates, not 11-12. This exact stale gate
+    # indexes 17-18 of exactly 25 gates, not 10-11. This exact stale gate
     # numbering must never reappear verbatim.
     (
         re.compile(re.escape("gates 10-11 of the current-master")),
-        "stale claim: the item-ID-expansion checks are gates 12-13 of the "
-        "exact 14-gate scripts/upstream_port/verify.py gates() set, not "
+        "stale claim: the item-ID-expansion checks are gates 17-18 of the "
+        "exact 25-gate scripts/upstream_port/verify.py gates() set, not "
         "gates 10-11 -- see docs/upstream-porting.md",
     ),
 ]
@@ -492,7 +478,7 @@ OBJECT_COUNT_SPELLED_ENUM_RE = re.compile(
     re.IGNORECASE,
 )
 
-FENCE_RE = re.compile(r"^(```+|~~~+)")
+FENCE_RE = re.compile(r"^[ ]{0,3}(```+|~~~+)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 LINK_START_RE = re.compile(r'!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]\(')
 INLINE_CODE_RE = re.compile(r"(?<!`)`([^`]+)`(?!`)")
@@ -602,8 +588,8 @@ def strip_fenced_blocks(text):
     fence_len = 0
     fence_line = None
     for lineno, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        m = FENCE_RE.match(stripped)
+        fence_text = line.rstrip()
+        m = FENCE_RE.match(fence_text)
         if not in_fence and m:
             in_fence = True
             fence_char = m.group(1)[0]
@@ -612,7 +598,11 @@ def strip_fenced_blocks(text):
             out.append("")
             continue
         if in_fence:
-            closing = re.match(r"^(" + re.escape(fence_char) + r"{%d,})\s*$" % fence_len, stripped)
+            closing = re.match(
+                r"^[ ]{0,3}(" + re.escape(fence_char) + r"{%d,})[ \t]*$"
+                % fence_len,
+                fence_text,
+            )
             if closing:
                 in_fence = False
             out.append("")
@@ -650,8 +640,8 @@ def iter_fenced_block_bodies(text):
     fence_len = 0
     body = []
     for line in lines:
-        stripped = line.strip()
-        m = FENCE_RE.match(stripped)
+        fence_text = line.rstrip()
+        m = FENCE_RE.match(fence_text)
         if not in_fence and m:
             in_fence = True
             fence_char = m.group(1)[0]
@@ -659,7 +649,11 @@ def iter_fenced_block_bodies(text):
             body = []
             continue
         if in_fence:
-            closing = re.match(r"^(" + re.escape(fence_char) + r"{%d,})\s*$" % fence_len, stripped)
+            closing = re.match(
+                r"^[ ]{0,3}(" + re.escape(fence_char) + r"{%d,})[ \t]*$"
+                % fence_len,
+                fence_text,
+            )
             if closing:
                 in_fence = False
                 yield "\n".join(body)
@@ -2092,58 +2086,6 @@ def check_internal_links(markdown_files, root):
 
 
 # ---------------------------------------------------------------------------
-# Main README workflow-badge contract
-# ---------------------------------------------------------------------------
-
-def check_full_matrix_badge(root):
-    findings = []
-    readme_path = os.path.join(root, "README.md")
-    workflow_path = os.path.join(root, FULL_MATRIX_WORKFLOW_PATH)
-
-    try:
-        readme = read_text(readme_path)
-    except OSError as exc:
-        return [Finding("README.md", 0, "cannot verify Full Matrix CI badge: %s" % exc)]
-
-    try:
-        workflow = read_text(workflow_path)
-    except OSError as exc:
-        findings.append(Finding(
-            FULL_MATRIX_WORKFLOW_PATH,
-            0,
-            "README Full Matrix CI badge references a missing workflow: %s" % exc,
-        ))
-        workflow = ""
-
-    if not re.search(
-        r"^name:\s*%s\s*$" % re.escape(FULL_MATRIX_WORKFLOW_NAME),
-        workflow,
-        re.MULTILINE,
-    ):
-        findings.append(Finding(
-            FULL_MATRIX_WORKFLOW_PATH,
-            1,
-            "workflow display name must remain exactly %r for the README badge"
-            % FULL_MATRIX_WORKFLOW_NAME,
-        ))
-
-    badge_lines = [
-        (lineno, line)
-        for lineno, line in enumerate(readme.splitlines(), start=1)
-        if "[![Full Matrix CI]" in line
-    ]
-    if badge_lines != [(lineno, FULL_MATRIX_BADGE) for lineno, _ in badge_lines] or len(badge_lines) != 1:
-        line = badge_lines[0][0] if badge_lines else 1
-        findings.append(Finding(
-            "README.md",
-            line,
-            "README must contain exactly one canonical Full Matrix CI badge whose "
-            "image and link both use .github/workflows/full-matrix.yml",
-        ))
-    return findings
-
-
-# ---------------------------------------------------------------------------
 # Safe, explicitly allowlisted example-command execution
 # ---------------------------------------------------------------------------
 
@@ -2244,8 +2186,7 @@ def run_checks(root, check_examples=False):
     findings.extend(check_internal_links(structure_safe_files, root))
     findings.extend(check_reference_style_links(structure_safe_files, root))
     findings.extend(check_stale_phrases(structure_safe_files, root))
-    findings.extend(check_object_count_claims(structure_safe_files, root))
-    findings.extend(check_full_matrix_badge(root))
+    findings.extend(check_object_count_claims(markdown_files, root))
 
     literal_targets, pattern_targets = parse_make_targets(root)
     findings.extend(check_make_targets(
