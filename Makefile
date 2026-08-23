@@ -49,6 +49,18 @@ AUTOTOOLS_CONFIG_MK ?= config.autotools.mk
 AUTOTOOLS_BUILD_DIR ?= .
 -include $(wildcard $(AUTOTOOLS_CONFIG_MK))
 
+# Keep the archival guard default-disabled before modern.mk has included the
+# committed config.mk. Command-line and configured values still override this.
+EXPANSION_HQ_MIXER ?= 0
+
+# The HQ mixer has a modern GCC/GAS/linker contract and its IWRAM layout is
+# intentionally unavailable to the archival decompilation lane.
+ifneq (,$(filter legacy fireemblem8.gba,$(MAKECMDGOALS)))
+ifneq ($(or $(strip $(EXPANSION_HQ_MIXER)),0),0)
+$(error EXPANSION_HQ_MIXER=$(EXPANSION_HQ_MIXER) is unsupported by the archival lane; use the modern AAPCS build or set EXPANSION_HQ_MIXER=0)
+endif
+endif
+
 # A command-line FE8_ITEM_ID_CAP already reaches recipe subprocesses; a value
 # loaded from config.autotools.mk must have identical behavior so every Python
 # generator and the compiler observe one cap.
