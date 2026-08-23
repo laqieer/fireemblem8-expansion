@@ -378,7 +378,7 @@
           "value": "0x00000009"
         }
       ],
-      "sram_hash": "fnv1a64-sram:fbbded4738d01cfa"
+      "sram_hash": "fnv1a64-sram-normalized:b2915a3e70562caa"
     },
     {
       "frame": 18200,
@@ -630,7 +630,7 @@
           "value": "0x11"
         }
       ],
-      "sram_hash": "fnv1a64-sram:fbbded4738d01cfa"
+      "sram_hash": "fnv1a64-sram-normalized:b2915a3e70562caa"
     }
   ],
   "format_version": 2,

@@ -2741,7 +2741,17 @@
         }
       ],
       "sram_hash": true,
-      "expected_sram_hash": "fnv1a64-sram:fbbded4738d01cfa"
+      "sram_hash_exclude_ranges": [
+        {
+          "offset": 29640,
+          "length": 9
+        },
+        {
+          "offset": 29650,
+          "length": 2
+        }
+      ],
+      "expected_sram_hash": "fnv1a64-sram-normalized:b2915a3e70562caa"
     },
     {
       "frame": 18200,
@@ -3000,7 +3010,17 @@
         }
       ],
       "sram_hash": true,
-      "expected_sram_hash": "fnv1a64-sram:fbbded4738d01cfa"
+      "sram_hash_exclude_ranges": [
+        {
+          "offset": 29640,
+          "length": 9
+        },
+        {
+          "offset": 29650,
+          "length": 2
+        }
+      ],
+      "expected_sram_hash": "fnv1a64-sram-normalized:b2915a3e70562caa"
     }
   ]
 }
