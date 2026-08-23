@@ -103,6 +103,15 @@ solely to wait. Other agents must not duplicate watchers, fix ownership, or
 merge decisions; they return validated local commits to the coordinator for
 the trusted owner-context push.
 
+Every delegated reasoning agent must be launched in background mode. Never use
+a synchronous subagent invocation that blocks the main orchestrator. After
+launching background work, continue every independent dependency-ready task
+immediately. If the result is a true dependency and no independent work
+remains, end the turn and rely on the automatic completion notification
+instead of waiting synchronously or polling. Keep simple work that needs only
+two to five direct tool calls in the main orchestrator rather than delegating
+it.
+
 After each merge, immediately inspect every open PR. Merge current `master`
 only into PRs with real conflicts or shared-contract changes; refresh
 independent conflicts concurrently and rerun only conflict-affected checks
