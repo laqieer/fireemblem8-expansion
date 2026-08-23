@@ -39,17 +39,17 @@
     },
     "iwram": {
       "capacity_bytes": 32768,
-      "free_bytes": 5720,
+      "free_bytes": 5719,
       "minimum_user_stack_margin_bytes": 4096,
-      "occupied_bytes": 26536,
+      "occupied_bytes": 26537,
       "overflow": false,
-      "physical_free_bytes": 6232,
+      "physical_free_bytes": 6231,
       "reserved_stack_bytes": 512,
       "stack_margin_violation": false,
-      "static_growth_headroom_bytes": 1624,
+      "static_growth_headroom_bytes": 1623,
       "static_overflow": false,
       "static_usable_capacity_bytes": 32256,
-      "usable_static_headroom_bytes": 5720
+      "usable_static_headroom_bytes": 5719
     },
     "rom": {
       "capacity_bytes": 16777216,
@@ -71,42 +71,42 @@
     "missing": [],
     "symbols": {
       "gExpansionLocaleMsgCount": 2,
-      "gExpansionLocaleMsgIds": 124,
+      "gExpansionLocaleMsgIds": 156,
       "gExpansionLocaleTombstoneCount": 2
     },
-    "total_bytes": 128
+    "total_bytes": 160
   },
   "rom_catalog_strings": {
     "missing": [],
     "symbols": {
-      "gExpansionCatalog_de": 248,
-      "gExpansionCatalog_en": 248,
-      "gExpansionCatalog_es": 248,
-      "gExpansionCatalog_fr": 248,
-      "gExpansionCatalog_it": 248,
-      "gExpansionCatalog_ja": 248,
-      "gExpansionCatalog_qps_ploc": 248,
-      "gExpansionCatalog_zh_Hans": 248
+      "gExpansionCatalog_de": 312,
+      "gExpansionCatalog_en": 312,
+      "gExpansionCatalog_es": 312,
+      "gExpansionCatalog_fr": 312,
+      "gExpansionCatalog_it": 312,
+      "gExpansionCatalog_ja": 312,
+      "gExpansionCatalog_qps_ploc": 312,
+      "gExpansionCatalog_zh_Hans": 312
     },
-    "total_bytes": 1984,
+    "total_bytes": 2496,
     "unexpected": []
   },
   "schema_version": 1,
   "source_catalog_budget": {
-    "active_message_count": 62,
-    "catalog_index_bytes": 2204,
+    "active_message_count": 78,
+    "catalog_index_bytes": 2748,
     "catalog_string_bytes": {
-      "de": 746,
-      "en": 659,
-      "es": 755,
-      "fr": 798,
-      "it": 743,
-      "ja": 802,
-      "qps-ploc": 1045,
-      "total": 6226,
-      "zh-Hans": 678
+      "de": 914,
+      "en": 794,
+      "es": 911,
+      "fr": 952,
+      "it": 895,
+      "ja": 938,
+      "qps-ploc": 1285,
+      "total": 7512,
+      "zh-Hans": 823
     },
-    "glyphs_used_count": 282,
+    "glyphs_used_count": 305,
     "locales_generated": [
       "en",
       "ja",
@@ -120,7 +120,7 @@
     "pseudo_policy_counts": {
       "compact": 2,
       "preserve": 6,
-      "transform": 54
+      "transform": 70
     },
     "scratch_budget_bytes": 96,
     "scratch_headroom_bytes": 63,
