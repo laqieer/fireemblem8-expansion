@@ -1796,6 +1796,15 @@ class BattleAnimationPackageTests(unittest.TestCase):
         with open(os.path.join(REPO_ROOT, "assets.mk"), encoding="utf-8") as handle:
             rules = handle.read()
         self.assertIn("$(ASSET_BANIM_RUNTIME_SYMBOLS) &: $(ASSET_OUTPUT_MK)", rules)
+        self.assertNotIn("\t@test -f $@", rules)
+        for output in (
+            "ASSET_BANIM_DATA_ENTRIES",
+            "ASSET_BANIM_DEFS",
+            "ASSET_BANIM_DEFS_HEADER",
+            "ASSET_BANIM_RUNTIME_TEST_DEFS",
+            "ASSET_BANIM_RUNTIME_SYMBOLS",
+        ):
+            self.assertIn("\t@test -f $({})".format(output), rules)
         self.assertIn(
             '$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate',
             rules,
