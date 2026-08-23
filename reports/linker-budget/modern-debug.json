@@ -5,10 +5,10 @@
       "name": "ewram",
       "origin": 33554432,
       "capacity_bytes": 262144,
-      "occupied_bytes": 261136,
-      "physical_free_bytes": 1008,
-      "free_bytes": 1008,
-      "utilization_percent": 99.62,
+      "occupied_bytes": 260440,
+      "physical_free_bytes": 1704,
+      "free_bytes": 1704,
+      "utilization_percent": 99.35,
       "overflow": false
     },
     {
@@ -83,7 +83,7 @@
     {
       "name": "ewram_overlay_gamestartsave",
       "address": 33554432,
-      "size_bytes": 32768,
+      "size_bytes": 33248,
       "is_overlay": true,
       "region": "ewram"
     },
@@ -104,13 +104,13 @@
     {
       "name": "ewram_data",
       "address": 33685900,
-      "size_bytes": 128492,
+      "size_bytes": 127796,
       "is_overlay": false,
       "region": "ewram"
     },
     {
       "name": ".bss",
-      "address": 33814392,
+      "address": 33813696,
       "size_bytes": 1176,
       "is_overlay": false,
       "region": "ewram"
@@ -176,7 +176,7 @@
     {
       "name": "ewram_overlay_gamestartsave",
       "address": 33554432,
-      "size_bytes": 32768,
+      "size_bytes": 33248,
       "peak_bytes": 131468,
       "region": "ewram"
     },
@@ -222,7 +222,7 @@
     },
     {
       "name": "__ewram_overlay_gamestartsave_end",
-      "address": 33587200,
+      "address": 33587680,
       "expression": ".",
       "region": "ewram"
     },
@@ -258,7 +258,7 @@
     },
     {
       "name": "__ewram_used_end",
-      "address": 33815568,
+      "address": 33814872,
       "expression": ".",
       "region": "ewram"
     },
@@ -1033,7 +1033,7 @@
     },
     {
       "name": "__floating_end",
-      "address": 145944220,
+      "address": 145944284,
       "expression": ".",
       "region": "rom"
     },
@@ -1105,7 +1105,7 @@
         "name": "ewram_overlay_gamestartsave",
         "type": "NOBITS",
         "address": 33554432,
-        "size_bytes": 32768,
+        "size_bytes": 33248,
         "flags": "WA"
       },
       {
@@ -1126,13 +1126,13 @@
         "name": "ewram_data",
         "type": "NOBITS",
         "address": 33685900,
-        "size_bytes": 128492,
+        "size_bytes": 127796,
         "flags": "WA"
       },
       {
         "name": ".bss",
         "type": "NOBITS",
-        "address": 33814392,
+        "address": 33813696,
         "size_bytes": 1176,
         "flags": "WA"
       },
