@@ -14,6 +14,7 @@ HEADER = ROOT / "include" / "custom_spell_effect.h"
 EFXMAGIC_HEADER = ROOT / "include" / "efxmagic.h"
 TEST_HEADER = ROOT / "include" / "custom_spell_effect_test.h"
 TEST_SOURCE = ROOT / "src" / "custom_spell_effect_test.c"
+MAIN_SOURCE = ROOT / "src" / "main.c"
 RUNTIME_RUNNER = ROOT / "tools" / "gba-playtest" / "run_custom_spell_effect_checks.py"
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_NM = shutil.which("arm-none-eabi-nm")
@@ -199,6 +200,10 @@ class CustomSpellContractTests(unittest.TestCase):
         self.assertIn("StartSpellAnimation(gAnims[0]);", source)
         self.assertIn("SetMainUpdateRoutine(OnMain);", main)
         self.assertIn("CustomSpellEffectTest_Start();", main)
+        self.assertLess(
+            main.index('#include "custom_spell_effect_test.h"'),
+            main.index("#ifdef MODERN"),
+        )
         self.assertNotIn("CHAPTER_", source)
         self.assertNotIn("CallEvent", source)
         self.assertIn('"StartGame and all chapter scripts, invokes the public "', runner)
@@ -295,6 +300,54 @@ class CustomSpellLifecycleTests(unittest.TestCase):
 
 
 class CustomSpellArmTests(unittest.TestCase):
+    def test_nonmodern_test_enable_fails_fast_and_default_compiles_away(self):
+        if ARM_CC is None or ARM_NM is None:
+            self.skipTest("arm-none-eabi compiler/binutils unavailable")
+
+        common = [
+            ARM_CC,
+            "-mcpu=arm7tdmi",
+            "-mthumb",
+            "-mthumb-interwork",
+            "-std=gnu89",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-fno-common",
+            "-Iinclude",
+            "-I.",
+            "-DFE8_ARCHIVAL_BUILD=1",
+            "-Werror=implicit-function-declaration",
+            "-Werror=implicit-int",
+        ]
+        build_root = ROOT / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as tmp:
+            work = Path(tmp)
+            rejected = work / "main-nonmodern-test-enabled.o"
+            completed = run(
+                [
+                    *common,
+                    "-DFE8_EXPANSION_CUSTOM_SPELL_TEST=1",
+                    "-c",
+                    str(MAIN_SOURCE),
+                    "-o",
+                    str(rejected),
+                ]
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(
+                "FE8_EXPANSION_CUSTOM_SPELL_TEST is available only in the modern test lane",
+                completed.stdout + completed.stderr,
+            )
+
+            default = work / "main-nonmodern-default.o"
+            completed = run(
+                [*common, "-c", str(MAIN_SOURCE), "-o", str(default)]
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            default_symbols = run([ARM_NM, "-S", str(default)]).stdout
+            self.assertNotIn("CustomSpellEffectTest", default_symbols)
+
     def test_enabled_and_disabled_arm_objects_obey_linkage_boundary(self):
         if ARM_CC is None or ARM_NM is None:
             self.skipTest("arm-none-eabi compiler/binutils unavailable")

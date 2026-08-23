@@ -7,8 +7,8 @@
 #include "mu.h"
 #include "soundwrapper.h"
 #include "gamecontrol.h"
-#ifdef MODERN
 #include "custom_spell_effect_test.h"
+#ifdef MODERN
 #include "expansion_language_menu.h"
 #include "expansion_log.h"
 #endif
