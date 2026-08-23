@@ -2741,7 +2741,7 @@
         }
       ],
       "sram_hash": true,
-      "expected_sram_hash": "fnv1a64-sram:5ea8e26289d6156d"
+      "expected_sram_hash": "fnv1a64-sram:6a7f76a2cff83f4e"
     },
     {
       "frame": 18200,
@@ -3000,7 +3000,7 @@
         }
       ],
       "sram_hash": true,
-      "expected_sram_hash": "fnv1a64-sram:5ea8e26289d6156d"
+      "expected_sram_hash": "fnv1a64-sram:6a7f76a2cff83f4e"
     }
   ]
 }
