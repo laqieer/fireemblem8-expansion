@@ -129,39 +129,8 @@ stale, and orphan products.
 5. Do not manually edit `src/banim_data.c`, class tables, declarations, or
    `linker_script_banim.txt` for a package. Extend the adapter instead.
 
-**TC-BANIM-PACKAGE-062** uses `LORM_SP1_PROOF` in a clean checkout. The
-positive host automation validates its v1 text/PNG/package/class/linker
-binding and asserts generated 4bpp/palette/OAM/mode/motion/linker payloads;
-the default control retains `CLASS_EPHRAIM_LORD -> AnimConf_0` and its
-original battle entry. Host negatives cover unsupported commands and sounds,
-missing mode structure,
-nonconforming PNGs, invalid resource declarations, duplicate ownership,
-unsafe source paths, stale/orphan output, and atomic replacement.
-
-`make expansion-modern-banim-package-runtime-check` exercises the dedicated
-test-only `FE8_BANIM_PACKAGE_RUNTIME_TEST` seam. Its clean isolated ROM enters
-Chapter 4's real `FIGHT` through the engine's scripted-animation lifecycle.
-The test-only build makes that route scripted once so the shared combat input
-can retain its ordinary event-skip timing; this macro is absent from every
-normal build. A checkpoint immediately before `FIGHT` is the default negative
-control: every test-only probe remains zero, so no normal boot/setup path can
-select the alias. The real scripted route then selects `LORM_SP1_PROOF` exactly
-once after the ordinary resolver has chosen its default mapping, records entry
-only when the battle-animation lifecycle starts, and records completion only
-from `EkrMainEndExec`. It asserts that selected alias index, five modes,
-normal/total timing, generated script sound opcode, decompressed OAM and
-palette payloads, the actual
-`CLASS_MOGALL` class ID (`0x5F`), the unchanged
-`CLASS_MOGALL -> AnimConf_90` default mapping, and one selection,
-entry, generated-data consumption, and completion. The macro is absent from ordinary debug/release builds, so it
-cannot create a production mapping or router. The generated alias remains
-additive and the ordinary resolver remains unmodified.
-
-For a local visual check, enter an Ephraim Lord lance battle in a modern debug
-ROM and compare the standing, attack, critical, ranged, and dodge presentation
-to the default build; no palette or frame layout may change. Screenshots are
-supplementary only.
-
-Rollback removes the manifest/package record and disposable generated
-products together. No save migration, default behavior, or external editor
-dependency is involved.
+The canonical host/libmGBA procedure, default control, fail-closed package
+negatives, cleanup, and supplementary visual comparison are indexed as
+[`TC-BANIM-PACKAGE-062`](test-cases/asset-authoring.md#tc-banim-package-062-generate-and-exercise-a-community-battle-animation-package).
+Its generated alias remains additive, ordinary class mappings stay unchanged,
+and screenshots never replace deterministic acceptance evidence.

@@ -421,6 +421,8 @@ SECTIONS
         src/banim-ekrmainmini.o(.text);
         src/banim-ekrarena.o(.text);
         src/banim-efxmagic.o(.text);
+        src/custom_spell_effect.o(.text);
+        src/custom_spell_effect_test.o(.text);
         src/banim-efxmagic-phywpn.o(.text);
         src/banim-efxmagic-refresh.o(.text);
         src/banim-efxmagic-ballista.o(.text);
@@ -748,6 +750,8 @@ SECTIONS
         . = ALIGN(4); src/banim-ekrarena.o(.rodata);
         . = ALIGN(4); src/data/const_data_DB034.o(.rodata);
         . = ALIGN(4); src/banim-efxmagic.o(.rodata);
+        . = ALIGN(4); src/custom_spell_effect.o(.rodata);
+        . = ALIGN(4); src/custom_spell_effect_test.o(.rodata);
         . = ALIGN(4); src/banim-efxmagic-phywpn.o(.rodata);
         . = ALIGN(4); src/banim-efxmagic-refresh.o(.rodata);
         . = ALIGN(4); src/banim-efxmagic-ballista.o(.rodata);
@@ -1041,6 +1045,8 @@ SECTIONS
         . = ALIGN(4); src/data/banim-efxhitobj.o(.data);
         . = ALIGN(4); src/data/banim-ekrbattleintro.o(.data);
         . = ALIGN(4); src/banim-efxmagic.o(.data);
+        . = ALIGN(4); src/custom_spell_effect.o(.data);
+        . = ALIGN(4); src/custom_spell_effect_test.o(.data);
         . = ALIGN(4); src/banim-efxmagic-phywpn.o(.data);
         . = ALIGN(4); src/banim-efxmagic-refresh.o(.data);
         . = ALIGN(4); src/banim-efxmagic-ballista.o(.data);

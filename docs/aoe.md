@@ -190,7 +190,7 @@ symbol to be absent rather than spending EWRAM on a zero-filled diagnostic.
 
 ```bash
 TMPDIR="$PWD/build/issue42-tmp" \
-  python3 -m unittest tools.gba-playtest.tests.test_expansion_aoe -v
+  python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_aoe.py" -v
 
 make expansion-modern-aoe-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-aoe-check MODERN_CONFIG=release MODERN_ABI=aapcs

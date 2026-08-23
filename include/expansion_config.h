@@ -294,6 +294,20 @@
 #endif
 
 /*
+ * Optional issue #77 custom battle spell-effect runtime. This permanent
+ * project choice is available only in the modern AAPCS lane; the archival
+ * lane retains this zero fallback and links no custom dispatcher or assets.
+ */
+#ifndef FE8_EXPANSION_CUSTOM_SPELL_EFFECTS
+#define FE8_EXPANSION_CUSTOM_SPELL_EFFECTS 0
+#endif
+
+#if (FE8_EXPANSION_CUSTOM_SPELL_EFFECTS != 0) \
+    && (FE8_EXPANSION_CUSTOM_SPELL_EFFECTS != 1)
+#error "FE8_EXPANSION_CUSTOM_SPELL_EFFECTS must be 0 or 1"
+#endif
+
+/*
  * Opt-in CJK runtime overflow guard. Generated locale catalogs are wrapped
  * deterministically at build time regardless of this flag; enabling it adds
  * a second, allocation-aware guard for dynamic substitutions. It defaults to
