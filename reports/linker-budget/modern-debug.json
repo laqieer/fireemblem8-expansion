@@ -263,6 +263,12 @@
       "region": "ewram"
     },
     {
+      "name": "__hq_mixer_layout_shift",
+      "address": 50331648,
+      "expression": "(__hq_mixer_enabled * 0x6c0)",
+      "region": "iwram"
+    },
+    {
       "name": "__iwram_start",
       "address": 50331648,
       "expression": "ORIGIN (iwram)",
@@ -599,6 +605,18 @@
       "region": "iwram"
     },
     {
+      "name": "__expansion_autoplay_hq_iwram_end",
+      "address": 50342940,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "__expansion_autoplay_hq_iwram_start",
+      "address": 50342940,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
       "name": "gUnk_63",
       "address": 50344032,
       "expression": ".",
@@ -923,60 +941,6 @@
       "region": "iwram"
     },
     {
-      "name": "gMPlayInfo_SE4_BMP2",
-      "address": 50357184,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE5_BMP3",
-      "address": 50357248,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_BGM1",
-      "address": 50357312,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE6_BMP4",
-      "address": 50357776,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_BGM2",
-      "address": 50357840,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE1_SYS1",
-      "address": 50357904,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE3_BMP1",
-      "address": 50357968,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE7_EVT",
-      "address": 50358048,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
-      "name": "gMPlayInfo_SE2_SYS2",
-      "address": 50358112,
-      "expression": ".",
-      "region": "iwram"
-    },
-    {
       "name": "__localized_msg_transform_scratch_end",
       "address": 50358184,
       "expression": ".",
@@ -989,9 +953,27 @@
       "region": "iwram"
     },
     {
+      "name": "__expansion_autoplay_regular_iwram_start",
+      "address": 50358188,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "__expansion_autoplay_regular_iwram_end",
+      "address": 50358256,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
       "name": "__iwram_static_end",
       "address": 50358256,
       "expression": "(ADDR (IWRAM) + SIZEOF (IWRAM))",
+      "region": "iwram"
+    },
+    {
+      "name": "__hq_mixer_layout_anchor",
+      "address": 50358912,
+      "expression": "0x6a80",
       "region": "iwram"
     },
     {
@@ -1051,7 +1033,7 @@
     },
     {
       "name": "__floating_end",
-      "address": 145934412,
+      "address": 145935716,
       "expression": ".",
       "region": "rom"
     },
