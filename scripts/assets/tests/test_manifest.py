@@ -1041,7 +1041,7 @@ class AssetManifestTests(unittest.TestCase):
             tiled_dependencies,
         )
 
-    def test_asset_makefile_guards_only_tmx_incbin_consumers(self):
+    def test_asset_makefile_guards_output_override_for_default_manifest(self):
         guarded = subprocess.run(
             [
                 "make",
@@ -1083,6 +1083,25 @@ class AssetManifestTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(allowed.returncode, 0, allowed.stderr)
+
+    def test_make_rejects_output_override_with_banim_incbin_consumer(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            document = json.load(handle)
+        document["assets"] = [
+            record for record in document["assets"] if record["kind"] == "battle-animation-package"
+        ]
+        source = self.write_document(document)
+        result = self.run_assets_make(
+            source,
+            "build/generated/assets/test-work/banim-output-override",
+            "assets-generate",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "ASSET_OUTPUT_DIR must be build/generated/assets while battle-animation package "
+            "INCBIN consumer(s) LORM_SP1_PROOF are declared",
+            result.stdout + result.stderr,
+        )
 
     def test_check_detects_orphans_through_a_relative_output_path(self):
         source = self.write_manifest([valid_record()])

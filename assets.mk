@@ -21,6 +21,13 @@ $(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while TMX map
 endif
 endif
 
+ASSET_BANIM_INCBIN_CONSUMERS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" banim-incbin-consumers)
+ifneq ($(strip $(ASSET_BANIM_INCBIN_CONSUMERS)),)
+ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
+$(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while battle-animation package INCBIN consumer(s) $(ASSET_BANIM_INCBIN_CONSUMERS) are declared)
+endif
+endif
+
 ASSET_OUTPUT_MK := $(ASSET_OUTPUT_DIR)/asset_manifest.mk
 ASSET_BANIM_DATA_ENTRIES := $(ASSET_OUTPUT_DIR)/banim/banim_data_entries.inc
 ASSET_BANIM_DEFS := $(ASSET_OUTPUT_DIR)/banim/banim_defs.inc
