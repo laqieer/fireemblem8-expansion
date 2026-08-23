@@ -61,3 +61,6 @@ utility procedures are in
 procedures are in [`localization.md`](localization.md); and the optional HQ
 PCM mixer procedure is
 [`TC-AUDIO-HQMIX-001`](audio.md#tc-audio-hqmix-001-hq-pcm-mixer-produces-bounded-stereo-output).
+Issue #84's security/correctness procedures are
+[`TC-SIO-084`](codeql-alerts.md#tc-sio-084-bounded-link-arena-transfer) and
+[`TC-CODEQL-084`](codeql-alerts.md#tc-codeql-084-remaining-confirmed-alert-boundaries).

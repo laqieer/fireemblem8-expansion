@@ -34,7 +34,8 @@
       "full-game-localization",
       "locale-preference-persistence",
       "localized-text-input-ui",
-      "localization-profile-validation"
+      "localization-profile-validation",
+      "codeql-alert-remediation"
     ],
     "deferred_issues": []
   },
@@ -455,6 +456,19 @@
       "status": "current",
       "required_cases": [
         "TC-LOCALIZATION-008"
+      ]
+    },
+    {
+      "id": "codeql-alert-remediation",
+      "title": "Bounded Link Arena and CodeQL alert remediation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/84"
+      ],
+      "reference": "docs/test-cases/codeql-alerts.md",
+      "status": "current",
+      "required_cases": [
+        "TC-SIO-084",
+        "TC-CODEQL-084"
       ]
     }
   ],
@@ -1952,6 +1966,66 @@
         {
           "command": "make expansion-modern-localization-profile-all MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "modern.mk"
+        }
+      ]
+    },
+    {
+      "id": "TC-SIO-084",
+      "title": "Bounded Link Arena transfer",
+      "feature_id": "codeql-alert-remediation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/84"
+      ],
+      "document": "docs/test-cases/codeql-alerts.md",
+      "anchor": "tc-sio-084-bounded-link-arena-transfer",
+      "profiles": [
+        "Modern AAPCS debug and release ROMs plus the native production-source packet harness"
+      ],
+      "purpose": "Prove that peer-controlled sender and length fields cannot escape physical payload, queue, destination, or XMAP bounds.",
+      "prerequisites": "Repository root with host C compiler, sanitizers, libpng development files, and the supported ARM toolchain; reset link state between manual cases.",
+      "actions": "Run make codeql-alerts-test and the modern debug/release gates; exercise valid 4, 40, and 122-byte packets, exact 0xC00 XMAP, truncated and oversized claims, undersized destinations, invalid/spoofed senders, full queues, and verifier rejection.",
+      "expected_result": "Valid bytes round-trip exactly; every invalid input fails before partial writes, verifier use, success ACK, sequence advance, or queue corruption; XMAP writes exactly 0xC00 bytes.",
+      "negative_control": "Base cc1e14c overwrites a guarded four-byte destination from a 16-byte queued record, receives a 40-byte team record into 36 bytes, and computes a 3194-byte XMAP receive.",
+      "interactions": "Applies to all locales and feature profiles; valid protocol representation is unchanged and malformed peers fail closed.",
+      "save_compatibility": "No save field, migration, layout, or compatibility-epoch change.",
+      "cleanup": "Use make clean_fast only if build artifacts need removal.",
+      "limitations": "Deterministic protocol semantics are automated; physical-console radio timing is outside this memory-safety contract.",
+      "automation": [
+        {
+          "command": "make codeql-alerts-test",
+          "evidence": "tests/codeql/sio_protocol_host_test.c"
+        }
+      ]
+    },
+    {
+      "id": "TC-CODEQL-084",
+      "title": "Remaining confirmed alert boundaries",
+      "feature_id": "codeql-alert-remediation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/84"
+      ],
+      "document": "docs/test-cases/codeql-alerts.md",
+      "anchor": "tc-codeql-084-remaining-confirmed-alert-boundaries",
+      "profiles": [
+        "Native host tools and modern AAPCS debug, release, and default builds"
+      ],
+      "purpose": "Exercise the confirmed regex, PNG arithmetic, MIDI formatting, map-change, event-queue, and scripted-hit boundaries.",
+      "prerequisites": "Repository root with normal host-tool and modern build dependencies; sanitizer/runtime checks support the selected host compiler, while Build CI requires a successful GCC -fanalyzer compile probe.",
+      "actions": "Run make codeql-alerts-test, the modernization suite, documentation checker, and modern build gates.",
+      "expected_result": "Adversarial qualifiers remain bounded by process CPU time, unsafe PNG products are rejected, format checking passes, invalid map/event extents do not mutate state, invalid event-slot queue operands, an empty dequeue, or a 31st queue push fail safely, and six hits plus sentinel fit without overwrite.",
+      "negative_control": "The fixtures exercise the exact pre-fix ambiguous regex, narrowed products, format mismatch, wrapping indices, unchecked event-slot indexing, queue underflow, and one-past-end sentinel write.",
+      "interactions": "No dependencies or conflicts with starter features, localization, generated data, item caps, configuration identity, or saves.",
+      "save_compatibility": "No save field, migration, layout, or compatibility-epoch change.",
+      "cleanup": "Use make clean_fast for ROM artifacts; host test outputs are ignored under build/tests/codeql.",
+      "limitations": "GitHub source-alert state updates only after remote analysis; false positives are dismissed in GitHub without source suppression, and supported non-GCC hosts explicitly skip analyzer-only checks after runtime harnesses pass.",
+      "automation": [
+        {
+          "command": "make codeql-alerts-test",
+          "evidence": "tests/codeql/runtime_bounds_host_test.c"
+        },
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_audit -v",
+          "evidence": "scripts/modernize/tests/test_audit.py"
         }
       ]
     }

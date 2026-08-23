@@ -8,6 +8,7 @@
 #include "bm.h"
 #include "bmio.h"
 #include "bmunit.h"
+#include "bmbattle.h"
 #include "bmmap.h"
 #include "uimenu.h"
 #include "scene.h"
@@ -487,23 +488,58 @@ ProcPtr MergeGenericProc(ProcPtr parent, ProcFunc init, ProcFunc loop, ProcFunc 
 
 void Event_NullFunc_1(void) {} // nullsub
 
-void SlotQueuePush(unsigned value) {
+bool SlotQueuePush(u32 value) {
+    if (gEventSlots[0xD] >= EVENT_SLOT_QUEUE_COUNT)
+        return false;
+
     gEventSlotQueue[gEventSlots[0xD]] = value;
     gEventSlots[0xD]++;
+    return true;
 }
 
-unsigned SlotQueuePop(void) {
-    s16 i;
-    unsigned result;
+bool SlotQueuePop(u32 * out) {
+    u32 i;
 
-    result = gEventSlotQueue[0];
+    if (out == NULL || gEventSlots[0xD] == 0 || gEventSlots[0xD] > EVENT_SLOT_QUEUE_COUNT)
+        return false;
+
+    *out = gEventSlotQueue[0];
 
     gEventSlots[0xD]--;
 
     for (i = 0; i < gEventSlots[0xD]; ++i)
         gEventSlotQueue[i] = gEventSlotQueue[i+1];
 
-    return result;
+    return true;
+}
+
+int BuildScriptBattleHits(
+    const u32 * queue,
+    u32 queueCount,
+    struct BattleHit * hits,
+    int capacity)
+{
+    u32 count;
+
+    if (queue == NULL || queueCount > EVENT_SLOT_QUEUE_COUNT || hits == NULL || capacity <= 0)
+        return -1;
+
+    for (count = 0; count + 1 < (u32)capacity && count < queueCount; count++)
+    {
+        if (((const u8 *)&queue[count])[0] == 0xFF)
+            break;
+
+        hits[count].attributes = ((const u16 *)&queue[count])[1];
+        hits[count].info = count == 0 ? BATTLE_HIT_INFO_BEGIN : 0;
+
+        if (((const u8 *)&queue[count])[0] == 1)
+            hits[count].info |= BATTLE_HIT_INFO_RETALIATION;
+
+        hits[count].hpChange = ((const u8 *)&queue[count])[1];
+    }
+
+    hits[count].info = BATTLE_HIT_INFO_END;
+    return (int)count;
 }
 
 void SetEventSlotCounter(unsigned value) {

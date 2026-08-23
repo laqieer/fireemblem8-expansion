@@ -17,9 +17,10 @@ PROVIDE(__hq_mixer_enabled = 0);
 /*
  * crt0 initializes the downward-growing system/user stack at __sp_usr.
  * The historical fixed IWRAM layout ended at 0x030067A8, leaving 0x1658
- * bytes below that pointer. The modern CJK scratch ends at 0x03006CA8,
- * leaving 0x1158. Preserve a 0x1000-byte user-stack floor while retaining
- * 0x158 bytes of current static-growth headroom.
+ * bytes below that pointer. The modern CJK scratch ends at 0x03006CA8 and
+ * the presentation probe sets the static end to 0x03006CA9, leaving 0x1157.
+ * Preserve a 0x1000-byte user-stack floor while retaining 0x157 bytes of
+ * current static-growth headroom.
  */
 __iwram_static_limit = __sp_usr - 0x1000;
 __irq_flags   = 0x03007ff8;

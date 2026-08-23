@@ -173,10 +173,13 @@ jobs:
         python3 scripts/check_docs.py --check --check-examples
 
     - name: Install dependencies
-      run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev && python -m pip install ttp numpy pillow
+      run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev && python -m pip install ttp numpy pillow
 
     - name: Build tools
       run: ./build_tools.sh
+
+    - name: Run CodeQL alert regression suite (issue #84)
+      run: make codeql-alerts-test CODEQL_REQUIRE_FANALYZER=1
 
     # Issue #15 closure: a bare `make`/`make all` must unconditionally
     # resolve to the modern release AAPCS boot-check chain, with the
@@ -385,7 +388,7 @@ jobs:
         submodules: recursive
         persist-credentials: false
 
-    - run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev && python3 -m pip install ttp numpy pillow
+    - run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev && python3 -m pip install ttp numpy pillow
 
     - run: ./build_tools.sh
 
