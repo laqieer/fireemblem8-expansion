@@ -280,8 +280,8 @@ static void DebugToolsTools_ShowStatusLine(const char* text)
 struct DebugToolsUnitEditorState
 {
     u32 targetState;
-    s16 oldValues[DEBUGTOOLS_UNIT_EDIT_FIELD_COUNT];
-    s16 previewValues[DEBUGTOOLS_UNIT_EDIT_FIELD_COUNT];
+    s8 oldValues[DEBUGTOOLS_UNIT_EDIT_FIELD_COUNT];
+    s8 previewValues[DEBUGTOOLS_UNIT_EDIT_FIELD_COUNT];
     u8 active;
     u8 closeExpected;
     u8 targetSlot;
@@ -291,6 +291,11 @@ struct DebugToolsUnitEditorState
     u8 targetY;
     u8 previewField;
 };
+
+typedef char DebugToolsUnitEditorStateLayoutAssert[
+    sizeof(struct DebugToolsUnitEditorState) == 0x24 ? 1 : -1];
+typedef char DebugToolsUnitEditorProbeLayoutAssert[
+    sizeof(struct DebugToolsUnitEditorProbe) == 0x48 ? 1 : -1];
 
 EWRAM_DATA static struct DebugToolsUnitEditorState sUnitEditor = {0};
 EWRAM_DATA static struct MenuItemDef sUnitMenuItemDefs[9] = {{0}};
@@ -628,7 +633,7 @@ static void DebugToolsUnit_LoadValues(struct Unit* unit)
          field < DEBUGTOOLS_UNIT_EDIT_FIELD_COUNT;
          field++)
     {
-        sUnitEditor.oldValues[field] = (s16)DebugToolsUnit_ReadField(unit, field);
+        sUnitEditor.oldValues[field] = (s8)DebugToolsUnit_ReadField(unit, field);
         sUnitEditor.previewValues[field] = sUnitEditor.oldValues[field];
     }
 
@@ -1085,7 +1090,7 @@ static u8 DebugToolsUnit_AdjustValue(
     if (newPreview == oldPreview)
         return 0;
 
-    sUnitEditor.previewValues[field] = (s16)newPreview;
+    sUnitEditor.previewValues[field] = (s8)newPreview;
     sUnitEditor.previewField = field;
 
     operation = DebugToolsUnit_IsStatField(field)
