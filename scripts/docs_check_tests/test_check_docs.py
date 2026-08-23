@@ -165,6 +165,37 @@ class HeadingSlugTests(unittest.TestCase):
     def test_simple_heading(self):
         self.assertEqual(check_docs.github_heading_slug("Prerequisites"), "prerequisites")
 
+    def test_commonmark_atx_heading_indentation_and_closing_sequence(self):
+        for line, expected in (
+            ("## Setup", (2, "Setup")),
+            (" ## Setup #", (2, "Setup")),
+            ("  ## Setup ##  ", (2, "Setup")),
+            ("   ## Setup ###\t", (2, "Setup")),
+            ("## Setup###", (2, "Setup###")),
+            ("## ###", (2, "")),
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(check_docs.parse_atx_heading(line), expected)
+
+        for line in (
+            "    ## indented code",
+            "\t## indented code",
+            "####### too many markers",
+            "##missing separator",
+        ):
+            with self.subTest(line=line):
+                self.assertIsNone(check_docs.parse_atx_heading(line))
+
+        self.assertEqual(
+            check_docs.compute_heading_slugs(
+                " ## One #\n"
+                "  ### Two ##\n"
+                "   #### Three ###\n"
+                "    ## indented code\n"
+            ),
+            ["one", "two", "three"],
+        )
+
     def test_inline_code_and_punctuation_stripped(self):
         self.assertEqual(
             check_docs.github_heading_slug("`config.mk` (root, committed)"),

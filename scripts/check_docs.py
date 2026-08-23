@@ -479,7 +479,6 @@ OBJECT_COUNT_SPELLED_ENUM_RE = re.compile(
 )
 
 FENCE_RE = re.compile(r"^[ ]{0,3}(```+|~~~+)")
-HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 LINK_START_RE = re.compile(r'!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]\(')
 INLINE_CODE_RE = re.compile(r"(?<!`)`([^`]+)`(?!`)")
 URL_RE = re.compile(r"https?://[^\s)>\]\"'`]+", re.IGNORECASE)
@@ -573,6 +572,66 @@ def read_text(path):
 # Markdown structure helpers (stdlib only -- no third-party parser)
 # ---------------------------------------------------------------------------
 
+def parse_fence_opening(line):
+    """Return ``(marker, length)`` for a CommonMark fenced-code opener."""
+    fence_text = line.rstrip(" \t\r")
+    match = FENCE_RE.match(fence_text)
+    if match is None:
+        return None
+    marker = match.group(1)
+    return marker[0], len(marker)
+
+
+def is_fence_closing(line, marker, minimum_length):
+    """Return whether ``line`` closes the active CommonMark fence."""
+    fence_text = line.rstrip(" \t\r")
+    cursor = 0
+    while cursor < len(fence_text) and fence_text[cursor] == " ":
+        cursor += 1
+    if cursor > 3:
+        return False
+
+    marker_start = cursor
+    while cursor < len(fence_text) and fence_text[cursor] == marker:
+        cursor += 1
+    return (
+        cursor - marker_start >= minimum_length
+        and cursor == len(fence_text)
+    )
+
+
+def parse_atx_heading(line):
+    """Return ``(level, text)`` for a CommonMark ATX heading."""
+    cursor = 0
+    while cursor < len(line) and line[cursor] == " ":
+        cursor += 1
+    if cursor > 3:
+        return None
+
+    marker_start = cursor
+    while cursor < len(line) and line[cursor] == "#":
+        cursor += 1
+    level = cursor - marker_start
+    if level < 1 or level > 6:
+        return None
+    if cursor < len(line) and line[cursor] not in " \t":
+        return None
+
+    while cursor < len(line) and line[cursor] in " \t":
+        cursor += 1
+    heading = line[cursor:].rstrip(" \t\r")
+
+    closing_start = len(heading)
+    while closing_start > 0 and heading[closing_start - 1] == "#":
+        closing_start -= 1
+    if closing_start < len(heading) and (
+        closing_start == 0 or heading[closing_start - 1] in " \t"
+    ):
+        heading = heading[:closing_start].rstrip(" \t")
+
+    return level, heading
+
+
 def strip_fenced_blocks(text):
     """Blank out the contents (and fence lines) of fenced code blocks.
 
@@ -588,22 +647,15 @@ def strip_fenced_blocks(text):
     fence_len = 0
     fence_line = None
     for lineno, line in enumerate(lines, start=1):
-        fence_text = line.rstrip(" \t\r")
-        m = FENCE_RE.match(fence_text)
-        if not in_fence and m:
+        opening = parse_fence_opening(line)
+        if not in_fence and opening is not None:
             in_fence = True
-            fence_char = m.group(1)[0]
-            fence_len = len(m.group(1))
+            fence_char, fence_len = opening
             fence_line = lineno
             out.append("")
             continue
         if in_fence:
-            closing = re.match(
-                r"^[ ]{0,3}(" + re.escape(fence_char) + r"{%d,})[ \t]*$"
-                % fence_len,
-                fence_text,
-            )
-            if closing:
+            if is_fence_closing(line, fence_char, fence_len):
                 in_fence = False
             out.append("")
             continue
@@ -640,21 +692,14 @@ def iter_fenced_block_bodies(text):
     fence_len = 0
     body = []
     for line in lines:
-        fence_text = line.rstrip(" \t\r")
-        m = FENCE_RE.match(fence_text)
-        if not in_fence and m:
+        opening = parse_fence_opening(line)
+        if not in_fence and opening is not None:
             in_fence = True
-            fence_char = m.group(1)[0]
-            fence_len = len(m.group(1))
+            fence_char, fence_len = opening
             body = []
             continue
         if in_fence:
-            closing = re.match(
-                r"^[ ]{0,3}(" + re.escape(fence_char) + r"{%d,})[ \t]*$"
-                % fence_len,
-                fence_text,
-            )
-            if closing:
+            if is_fence_closing(line, fence_char, fence_len):
                 in_fence = False
                 yield "\n".join(body)
             else:
@@ -702,10 +747,10 @@ def compute_heading_slugs(stripped_text):
     next_suffix = {}
     slugs = []
     for line in stripped_text.split("\n"):
-        m = HEADING_RE.match(line)
-        if not m:
+        heading = parse_atx_heading(line)
+        if heading is None:
             continue
-        base = github_heading_slug(m.group(2))
+        base = github_heading_slug(heading[1])
         if base not in used:
             slug = base
         else:
