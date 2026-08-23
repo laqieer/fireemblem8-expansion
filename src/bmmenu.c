@@ -112,10 +112,9 @@ u8 MapMenu_IsSuspendCommandAvailable(const struct MenuItemDef* def, int number) 
 u8 MapMenu_SuspendCommand(struct MenuProc* menu, struct MenuItemProc* menuItem) {
     if (menuItem->availability == MENU_DISABLED) {
 #ifndef FE8_ARCHIVAL_BUILD
-        if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED
-            && DebugSaveFixture_RecordBlockedWrite(
-                DEBUG_SAVE_FIXTURE_WRITE_SUSPEND))
-            return MENU_ACT_SND6B;
+        if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED)
+            DebugSaveFixture_RecordBlockedWrite(
+                DEBUG_SAVE_FIXTURE_WRITE_SUSPEND);
 #endif
 
         MenuFrozenHelpBox(menu, MSG_846);
