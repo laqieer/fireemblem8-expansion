@@ -14,6 +14,7 @@ FINGERPRINTS = ROOT / "tools" / "gba-playtest" / "fingerprints"
 sys.path.insert(0, str(ROOT / "tools" / "gba-playtest"))
 
 import gba_playtest  # noqa: E402
+import run_debug_save_fixture_checks  # noqa: E402
 
 DEBUG_SCENARIOS = (
     "debug-save-fixture-positive-modern-debug.json",
@@ -165,6 +166,20 @@ class DebugSaveFixtureContractTests(unittest.TestCase):
         )
         self.assertNotIn("SAVE_FORMAT_VERSION_CURRENT =", source)
         self.assertNotIn("FE8_EXPANSION_SAVE_COMPAT_EPOCH =", source)
+
+
+class DebugSaveFixtureLayoutEmissionTests(unittest.TestCase):
+    def test_retained_anchor_has_frozen_object_and_elf_addresses(self):
+        elf = (
+            ROOT
+            / "build"
+            / "expansion-modern"
+            / "debug"
+            / "aapcs"
+            / "fireemblem8.elf"
+        )
+        self.assertTrue(elf.is_file(), f"focused debug ELF is missing: {elf}")
+        run_debug_save_fixture_checks.check_layout_anchor(elf)
 
 
 if __name__ == "__main__":
