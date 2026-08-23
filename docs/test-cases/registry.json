@@ -291,7 +291,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/3",
         "https://github.com/laqieer/fireemblem8-expansion/issues/4",
         "https://github.com/laqieer/fireemblem8-expansion/issues/28",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/102"
       ],
       "reference": "docs/quickstart.md",
       "status": "current",
@@ -1414,7 +1415,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/3",
         "https://github.com/laqieer/fireemblem8-expansion/issues/4",
         "https://github.com/laqieer/fireemblem8-expansion/issues/28",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/102"
       ],
       "document": "docs/test-cases/core-framework.md",
       "anchor": "tc-core-001-modern-default-build-and-archival-split",
@@ -1435,6 +1437,18 @@
         {
           "command": "python3 -m unittest discover -s scripts/modernize/tests -p \"test_build_default_lane.py\" -v",
           "evidence": "scripts/modernize/tests/test_build_default_lane.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s scripts/modernize/tests -p \"test_modern_elf.py\" -v",
+          "evidence": "scripts/modernize/tests/test_modern_elf.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s scripts/modernize/tests -p \"test_build_mgfembp.py\" -v",
+          "evidence": "scripts/modernize/tests/test_build_mgfembp.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s scripts/modernize/tests -p \"test_expansion_config.py\" -v",
+          "evidence": "scripts/modernize/tests/test_expansion_config.py"
         },
         {
           "command": "make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs",

@@ -31,6 +31,16 @@ class ModernElfTargetTests(unittest.TestCase):
             check=False,
         )
 
+    def make_database_rule(self, target):
+        result = self.make("-rR", "-p", "__issue102_modern_elf_probe__")
+        self.assertNotEqual(result.returncode, 0)
+        marker = f"\n{target}:"
+        start = result.stdout.find(marker)
+        self.assertNotEqual(start, -1, result.stdout[-4000:])
+        end = result.stdout.find("\n\n", start + 1)
+        self.assertNotEqual(end, -1, result.stdout[-4000:])
+        return result.stdout[start + 1:end]
+
     def tool_overrides(self):
         prefix = os.environ.get("PREFIX", "arm-none-eabi-")
         cc = os.environ.get("MODERN_CC", "")
@@ -155,27 +165,17 @@ class ModernElfTargetTests(unittest.TestCase):
     # -- Legacy freshness via NODEP=0 recursive make ------------------------
 
     def test_legacy_ready_step_uses_nodep_zero(self):
-        """modern.mk must declare NODEP=0 in the legacy-ready step."""
-        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("expansion-modern-legacy-ready", mk)
-        self.assertIn("$(MAKE) NODEP=0", mk)
-        self.assertNotIn("+$(MAKE) NODEP=0", mk)
-        # link-prepare must depend on legacy-ready (may span lines)
-        self.assertIn("expansion-modern-legacy-ready", mk)
-        prep_idx = mk.index("expansion-modern-link-prepare:")
-        ready_idx = mk.index("expansion-modern-legacy-ready", prep_idx)
-        self.assertGreater(ready_idx, prep_idx)
+        """The resolved Make graph refreshes legacy objects before linking."""
+        ready_rule = self.make_database_rule("expansion-modern-legacy-ready")
+        prepare_rule = self.make_database_rule("expansion-modern-link-prepare")
+        self.assertIn("NODEP=0", ready_rule)
+        self.assertNotIn("+$(MAKE) NODEP=0", ready_rule)
+        self.assertIn("expansion-modern-legacy-ready", prepare_rule.splitlines()[0])
 
     # -- Dry-run safety -----------------------------------------------------
 
     def test_dry_run_does_not_fail_on_missing_sidecar(self):
         """make -n with a guaranteed-missing sidecar must exit 0."""
-        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("for flag in $(MAKEFLAGS); do", mk)
-        self.assertIn("--) break ;;", mk)
-        self.assertIn("*n*) dry_run=1 ;;", mk)
-        self.assertNotIn("$(findstring n,$(MAKEFLAGS))", mk)
-        self.assertNotIn('+@if [ ! -f "$(MODERN_ELF_BANIM_SYM)"', mk)
         with tempfile.TemporaryDirectory() as tmp:
             missing_sym = Path(tmp) / "dir with spaces" / "banim.o.sym.o"
             banim_obj = Path(ROOT / "banim" / "data_banim.o")

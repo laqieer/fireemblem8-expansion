@@ -13,6 +13,7 @@ combinations before any file is written).
 """
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,6 +25,13 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "modernize"))
 
 import expansion_config as ec  # noqa: E402
+
+
+def assert_rejects_wrong_length(test_case, validator, values):
+    for value in values:
+        with test_case.subTest(value=value):
+            with test_case.assertRaises(ec.ConfigError):
+                validator(value)
 
 
 def write_config_mk(
@@ -107,10 +115,7 @@ class ValidateGameCodeTests(unittest.TestCase):
         self.assertEqual(ec.validate_game_code("BE8E"), "BE8E")
 
     def test_wrong_length_rejected(self):
-        with self.assertRaises(ec.ConfigError):
-            ec.validate_game_code("ABC")
-        with self.assertRaises(ec.ConfigError):
-            ec.validate_game_code("ABCDE")
+        assert_rejects_wrong_length(self, ec.validate_game_code, ("ABC", "ABCDE"))
 
     def test_non_ascii_rejected(self):
         with self.assertRaises(ec.ConfigError):
@@ -122,10 +127,7 @@ class ValidateMakerCodeTests(unittest.TestCase):
         self.assertEqual(ec.validate_maker_code("01"), "01")
 
     def test_wrong_length_rejected(self):
-        with self.assertRaises(ec.ConfigError):
-            ec.validate_maker_code("0")
-        with self.assertRaises(ec.ConfigError):
-            ec.validate_maker_code("012")
+        assert_rejects_wrong_length(self, ec.validate_maker_code, ("0", "012"))
 
 
 class ValidateRevisionTests(unittest.TestCase):
@@ -1520,27 +1522,94 @@ class StarterContentFlagTests(unittest.TestCase):
 class StarterContentCompileTimeContractTests(unittest.TestCase):
     """The same two dependencies must also be hard C compile errors."""
 
+    @staticmethod
+    def preprocess(header, *defines):
+        compiler = shutil.which("arm-none-eabi-cpp")
+        if compiler is None:
+            raise unittest.SkipTest("arm-none-eabi-cpp is not available")
+        return subprocess.run(
+            [
+                compiler,
+                "-dM",
+                "-I",
+                str(ROOT / "include"),
+                *(f"-D{definition}" for definition in defines),
+                "-x",
+                "c",
+                "-",
+            ],
+            input=f'#include "{header}"\n',
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+    @staticmethod
+    def macros(output):
+        values = {}
+        for line in output.splitlines():
+            if not line.startswith("#define "):
+                continue
+            _, name, value = line.split(maxsplit=2)
+            values[name] = value
+        return values
+
     def test_config_header_defaults_the_flag_off(self):
-        text = (ROOT / "include" / "expansion_config.h").read_text(encoding="utf-8")
-        self.assertIn("#ifndef FE8_EXPANSION_STARTER_CONTENT", text)
-        self.assertIn("#define FE8_EXPANSION_STARTER_CONTENT 0", text)
+        result = self.preprocess("expansion_config.h")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.macros(result.stdout)["FE8_EXPANSION_STARTER_CONTENT"], "0")
 
     def test_config_header_errors_without_hooks(self):
-        text = (ROOT / "include" / "expansion_config.h").read_text(encoding="utf-8")
-        self.assertIn(
-            "#if FE8_EXPANSION_STARTER_CONTENT && !FE8_EXPANSION_MECHANICS_HOOKS", text)
+        result = self.preprocess(
+            "expansion_config.h",
+            "FE8_EXPANSION_STARTER_CONTENT=1",
+            "FE8_EXPANSION_MECHANICS_HOOKS=0",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires FE8_EXPANSION_MECHANICS_HOOKS=1", result.stderr)
 
     def test_content_header_errors_below_the_expansion_cap(self):
-        text = (ROOT / "include" / "expansion_starter_content.h").read_text(
-            encoding="utf-8")
-        self.assertIn("#if ITEM_ID_CONFIGURED_CAP < ITEM_ID_EXPANSION_FIRST", text)
+        result = self.preprocess(
+            "expansion_starter_content.h",
+            "FE8_EXPANSION_STARTER_CONTENT=1",
+            "FE8_EXPANSION_MECHANICS_HOOKS=1",
+            "FE8_ITEM_ID_CAP=0xCD",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires an expanded item cap", result.stderr)
 
     def test_modern_mk_flows_the_flag_and_cap(self):
-        text = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("-DFE8_EXPANSION_STARTER_CONTENT=$(EXPANSION_STARTER_CONTENT)", text)
-        self.assertIn('--starter-content "$(EXPANSION_STARTER_CONTENT)"', text)
-        self.assertIn('--item-id-cap "$(FE8_ITEM_ID_CAP)"', text)
-        self.assertIn("starter_content=$(EXPANSION_STARTER_CONTENT)", text)
+        result = subprocess.run(
+            [
+                "make",
+                "--no-print-directory",
+                "-rR",
+                "-p",
+                "__issue102_config_probe__",
+                "MODERN_CONFIG_RESOLVE_GOALS=__issue102_config_probe__",
+                "EXPANSION_STARTER_CONTENT=1",
+                "EXPANSION_MECHANICS_HOOKS=1",
+                "FE8_ITEM_ID_CAP=0xCE",
+            ],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        cflags = next(
+            (
+                line.split(":=", 1)[1].strip()
+                for line in result.stdout.splitlines()
+                if line.startswith("MODERN_CFLAGS :=")
+            ),
+            None,
+        )
+        self.assertIsNotNone(cflags, result.stdout[-4000:])
+        self.assertIn("-DFE8_EXPANSION_STARTER_CONTENT=1", cflags)
+        self.assertIn("-DFE8_ITEM_ID_CAP=0xCE", cflags)
 
 
 if __name__ == "__main__":
