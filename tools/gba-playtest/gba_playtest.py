@@ -1017,18 +1017,34 @@ def _parse_run_until_scenario_data(
             f"{run_path} uses {len(unique_bindings)} semantic probes, exceeding "
             f"the {MAX_RUN_UNTIL_PROBES}-probe limit"
         )
-    resolved_bindings: dict[tuple[int, int], str] = {}
+    resolved_spans: dict[tuple[str, int], tuple[int, int]] = {}
     for probe in semantic_probes:
         if probe.address is None:
             continue
-        address_identity = (probe.address, probe.size)
-        previous_binding = resolved_bindings.get(address_identity)
-        if previous_binding is not None and previous_binding != probe.binding:
-            raise PlaytestError(
-                f"{run_path} semantic probes {previous_binding!r} and "
-                f"{probe.binding!r} resolve to the same address/size"
-            )
-        resolved_bindings[address_identity] = probe.binding
+        identity = (probe.binding, probe.size)
+        start = probe.address
+        end = start + probe.size
+        previous_span = resolved_spans.get(identity)
+        if previous_span is not None:
+            if previous_span != (start, end):
+                raise PlaytestError(
+                    f"{run_path} semantic probe {probe.binding!r}/{probe.size} "
+                    "resolved inconsistently"
+                )
+            continue
+        for (previous_binding, previous_size), (
+            previous_start,
+            previous_end,
+        ) in resolved_spans.items():
+            if start < previous_end and previous_start < end:
+                raise PlaytestError(
+                    f"{run_path} semantic probe {probe.binding!r}/{probe.size} "
+                    f"span [0x{start:08x}, 0x{end:08x}) overlaps "
+                    f"{previous_binding!r}/{previous_size} span "
+                    f"[0x{previous_start:08x}, 0x{previous_end:08x}); "
+                    "overlapping resolved byte spans require an explicit model"
+                )
+        resolved_spans[identity] = (start, end)
 
     checkpoint_data = _expect_object(
         run_data["checkpoint"],
@@ -2070,6 +2086,14 @@ def _validate_run_until_fingerprint(
 
     validate_counter(terminal["turn"], f"{terminal_path}.turn")
     validate_counter(terminal["actions"], f"{terminal_path}.actions")
+    if reason == "max_turns" and terminal["turn"] is None:
+        raise PlaytestError(
+            f"{terminal_path}.turn must be non-null when reason is 'max_turns'"
+        )
+    if reason == "max_actions" and terminal["actions"] is None:
+        raise PlaytestError(
+            f"{terminal_path}.actions must be non-null when reason is 'max_actions'"
+        )
     return root
 
 

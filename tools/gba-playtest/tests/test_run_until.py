@@ -266,11 +266,68 @@ class RunUntilSchemaTests(unittest.TestCase):
             return (0x02000000, 4)
 
         with self.assertRaisesRegex(
-            gba_playtest.PlaytestError, "resolve to the same address"
+            gba_playtest.PlaytestError, "overlapping resolved byte spans"
         ):
             gba_playtest.parse_scenario_data(
                 aliasing, symbol_resolver=resolver
             )
+
+    def test_overlapping_resolved_probe_spans_fail_closed(self):
+        same_start = run_until_data()
+        first = same_start["run_until"]["terminal_conditions"][0]["all"][0]
+        first["size"] = 1
+        first["value"] = "0x00"
+        same_start["run_until"]["terminal_conditions"][0]["all"].append(
+            {
+                "address": PROBE_ADDRESS,
+                "size": 2,
+                "operator": "eq",
+                "value": "0xffff",
+            }
+        )
+        with self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            r"'0x02000000'/2 span \[0x02000000, 0x02000002\) overlaps "
+            r"'0x02000000'/1 span \[0x02000000, 0x02000001\)",
+        ):
+            gba_playtest.parse_scenario_data(same_start)
+
+        partial = run_until_data()
+        partial["run_until"]["terminal_conditions"][0]["all"].append(
+            {
+                "address": "0x02000002",
+                "size": 2,
+                "operator": "eq",
+                "value": "0x0000",
+            }
+        )
+        with self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            r"'0x02000002'/2 span \[0x02000002, 0x02000004\) overlaps "
+            r"'0x02000000'/4 span \[0x02000000, 0x02000004\)",
+        ):
+            gba_playtest.parse_scenario_data(partial)
+
+    def test_adjacent_resolved_probe_spans_remain_valid(self):
+        data = run_until_data()
+        data["run_until"]["terminal_conditions"][0]["all"].append(
+            {
+                "address": "0x02000004",
+                "size": 2,
+                "operator": "eq",
+                "value": "0x0000",
+            }
+        )
+        scenario = gba_playtest.parse_scenario_data(data)
+        self.assertEqual(
+            [
+                (comparison.probe.address, comparison.probe.size)
+                for comparison in scenario.run_until.terminal_conditions[
+                    0
+                ].comparisons
+            ],
+            [(0x02000000, 4), (0x02000004, 2)],
+        )
 
     def test_plan_versions_preserve_fixed_mode(self):
         fixed = gba_playtest.parse_scenario_data(
@@ -332,6 +389,47 @@ class RunUntilFingerprintTests(unittest.TestCase):
         self.assertTrue(
             any(difference.startswith("terminal.reason:") for difference in differences)
         )
+
+    def test_budget_reasons_require_only_their_corresponding_counter(self):
+        missing_turn = fingerprint_data()
+        missing_turn["terminal"]["reason"] = "max_turns"
+        with self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            r"\.terminal\.turn must be non-null when reason is 'max_turns'",
+        ):
+            gba_playtest.validate_fingerprint(missing_turn, "<fingerprint>")
+
+        missing_actions = fingerprint_data()
+        missing_actions["terminal"]["reason"] = "max_actions"
+        with self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            r"\.terminal\.actions must be non-null when reason is 'max_actions'",
+        ):
+            gba_playtest.validate_fingerprint(missing_actions, "<fingerprint>")
+
+        max_turns = fingerprint_data()
+        max_turns["terminal"]["reason"] = "max_turns"
+        max_turns["terminal"]["turn"] = {
+            "address": PROBE_ADDRESS,
+            "size": 4,
+            "value": "0x00000003",
+        }
+        validated = gba_playtest.validate_fingerprint(
+            max_turns, "<fingerprint>"
+        )
+        self.assertIsNone(validated["terminal"]["actions"])
+
+        max_actions = fingerprint_data()
+        max_actions["terminal"]["reason"] = "max_actions"
+        max_actions["terminal"]["actions"] = {
+            "address": PROBE_ADDRESS,
+            "size": 4,
+            "value": "0x00000006",
+        }
+        validated = gba_playtest.validate_fingerprint(
+            max_actions, "<fingerprint>"
+        )
+        self.assertIsNone(validated["terminal"]["turn"])
 
     def test_backend_output_rejects_impossible_terminal_outcomes(self):
         def output(
