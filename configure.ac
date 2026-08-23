@@ -78,6 +78,18 @@ AC_ARG_ENABLE(
     [fe8_aoe_reference=])
 
 AC_ARG_ENABLE(
+    [custom-spell-effects],
+    [AS_HELP_STRING(
+        [--enable-custom-spell-effects],
+        [enable the bounded typed custom battle spell-effect runtime])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_custom_spell_effects=1],
+        [no], [fe8_custom_spell_effects=0],
+        [AC_MSG_ERROR([--enable-custom-spell-effects accepts only yes or no])])],
+    [fe8_custom_spell_effects=])
+
+AC_ARG_ENABLE(
     [localized-text-auto-wrap],
     [AS_HELP_STRING(
         [--enable-localized-text-auto-wrap],
@@ -214,6 +226,10 @@ AS_IF(
     [FE8_CFG_AOE_REFERENCE="EXPANSION_AOE_REFERENCE := $fe8_aoe_reference"],
     [FE8_CFG_AOE_REFERENCE=])
 AS_IF(
+    [test -n "$fe8_custom_spell_effects"],
+    [FE8_CFG_CUSTOM_SPELL_EFFECTS="EXPANSION_CUSTOM_SPELL_EFFECTS := $fe8_custom_spell_effects"],
+    [FE8_CFG_CUSTOM_SPELL_EFFECTS=])
+AS_IF(
     [test -n "$fe8_localized_text_auto_wrap"],
     [FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP="EXPANSION_LOCALIZED_TEXT_AUTO_WRAP := $fe8_localized_text_auto_wrap"],
     [FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP=])
@@ -259,6 +275,7 @@ AC_SUBST([FE8_CFG_MECHANICS_SAMPLE])
 AC_SUBST([FE8_CFG_DANGER_OVERLAY_MENU])
 AC_SUBST([FE8_CFG_STARTER_CONTENT])
 AC_SUBST([FE8_CFG_AOE_REFERENCE])
+AC_SUBST([FE8_CFG_CUSTOM_SPELL_EFFECTS])
 AC_SUBST([FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP])
 AC_SUBST([FE8_CFG_CASUAL_MODE])
 AC_SUBST([FE8_CFG_HQ_MIXER])
@@ -291,6 +308,7 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --danger-overlay-menu "$fe8_danger_overlay_menu" \
     --starter-content "$fe8_starter_content" \
     --aoe-reference "$fe8_aoe_reference" \
+    --custom-spell-effects "$fe8_custom_spell_effects" \
     --localized-text-auto-wrap "$fe8_localized_text_auto_wrap" \
     --casual-mode "$fe8_casual_mode" \
     --hq-mixer "$fe8_hq_mixer" \

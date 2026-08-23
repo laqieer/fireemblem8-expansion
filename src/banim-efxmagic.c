@@ -3,6 +3,8 @@
 #include "ekrbattle.h"
 #include "efxbattle.h"
 #include "efxmagic.h"
+#include "custom_spell_effect.h"
+#include "custom_spell_effect_test.h"
 #include "hardware.h"
 #include "bmlib.h"
 #include "ekrdragon.h"
@@ -83,6 +85,10 @@ CONST_DATA SpellAnimFunc gEkrSpellAnimLut[] = {
     (void *)NULL
 };
 
+#if BUGFIX
+const u32 gEkrSpellAnimLutCount = ARRAY_COUNT(gEkrSpellAnimLut);
+#endif
+
 u32 FramScr_Unk5D4F84[] = {
     0x1, 0x0, 0x0
 };
@@ -96,8 +102,24 @@ void StartSpellAnimation(struct Anim *anim)
 {
     s16 index = gEkrSpellAnimIndex[GetAnimPosition(anim)];
 
+#if FE8_EXPANSION_MODERN_BUILD && FE8_EXPANSION_CUSTOM_SPELL_EFFECTS
+    if (index >= CUSTOM_SPELL_EFFECT_BASE && index <= CUSTOM_SPELL_EFFECT_LAST)
+    {
+#if FE8_EXPANSION_CUSTOM_SPELL_TEST
+        CustomSpellEffectTest_RecordDispatch(index, TRUE);
+#endif
+        CustomSpellEffect_Start(CustomSpellEffect_Lookup((u8)index), anim);
+        return;
+    }
+#endif
+
+#if FE8_EXPANSION_CUSTOM_SPELL_TEST
+    CustomSpellEffectTest_RecordDispatch(index, FALSE);
+#endif
+
 #if BUGFIX
-    if (gEkrSpellAnimLut[index] == NULL)
+    if (index < 0 || (u32)index >= gEkrSpellAnimLutCount
+        || gEkrSpellAnimLut[index] == NULL)
         return;
 #endif
 

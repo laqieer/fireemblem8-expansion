@@ -19,6 +19,7 @@ the authoritative technical documentation and are checked by CI.
 | Author game content (characters/classes/items/etc.) | [`generated_data_tutorial.md`](generated_data_tutorial.md) |
 | Enable/extend starter content, mechanics, or Threat Range QoL | [`starter_features.md`](starter_features.md) |
 | Add a bounded area-of-effect target/effect or item route | [`aoe.md`](aoe.md) |
+| Enable the typed custom battle spell-effect runtime foundation | [`custom_spell_effects.md`](custom_spell_effects.md) |
 | Configure casual defeat restoration | [`starter_features.md`](starter_features.md#optional-casual-defeat-policy-issue-34) |
 | Enable the optional high-resolution MP2K PCM mixer | [`audio.md`](audio.md) |
 | Configure portrait/minimug rules | [`portrait_resolver.md`](portrait_resolver.md) |
@@ -79,6 +80,7 @@ numbers mark merged (closed) contracts only:
 | Release-safe mGBA logging (issue #68) | Bounded typed API (`include/expansion_log.h`), existing `FE8_EXPANSION_LOGGING_ENABLED` debug profile gate | [`debugtools.md`](debugtools.md#release-safe-mgba-logging-issue-68) |
 | Starter features (issue #6) | Four default-off flags; `include/expansion_mechanics.h`; `include/expansion_starter_content.h`; danger-overlay menu | [`starter_features.md`](starter_features.md) |
 | Typed area-of-effect actions (issue #42) | `include/expansion_aoe.h`; bounded target/effect API and shared item/action/AI route registry | [`aoe.md`](aoe.md) |
+| Custom battle spell effects (issue #77) | `include/custom_spell_effect.h`; typed descriptor lookup/start API and `0x80..0x8F` generated-private range | [`custom_spell_effects.md`](custom_spell_effects.md) |
 | Portrait/minimug resolver (issue #35) | Typed character/class/chapter/flag registry with legacy fallback | [`portrait_resolver.md`](portrait_resolver.md) |
 | Community asset coverage (issue #59) | Asset-family ownership/gap catalog; not an importer or runtime API | [`community_asset_coverage.md`](community_asset_coverage.md) |
 | Asset manifest (issue #60) | Versioned source-owned asset records and generated existing-seam dependencies | [`asset_manifest.md`](asset_manifest.md) |
@@ -132,6 +134,7 @@ and
 | [`generated_data_tutorial.md`](generated_data_tutorial.md) | Current, tutorial | Contributor-facing generated-data walkthrough |
 | [`starter_features.md`](starter_features.md) | Current | Four opt-in flags, typed mechanics/content API, QoL and matrices (issue #6) |
 | [`aoe.md`](aoe.md) | Current | Typed bounded AoE targeting/effects, shared item seam, and default-off reference (issue #42) |
+| [`custom_spell_effects.md`](custom_spell_effects.md) | Current | Default-off typed battle spell-effect runtime foundation and resource contract (issue #77) |
 | [`portrait_resolver.md`](portrait_resolver.md) | Current | Typed data-driven portrait/minimug resolver and validation contract (issue #35) |
 | [`community_asset_coverage.md`](community_asset_coverage.md) | Current | Authoritative community asset family ownership, build/runtime seam, and gap catalog (issue #59) |
 | [`asset_manifest.md`](asset_manifest.md) | Current | Versioned asset manifest, generated existing-seam dependencies, and adapter contract (issue #60) |
