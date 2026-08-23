@@ -144,6 +144,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - reports/gba_playtest_issue13_closure.md | laqieer | evidence | Candidate closure-mapping evidence for issue #13, not a closure claim
 - reports/issue7_documentation_foundation.md | laqieer | evidence | Candidate closure-mapping evidence for issue #7, not a closure claim
 - reports/issue17_documentation_audit.md | laqieer | evidence | Candidate closure-mapping evidence for issue #17, not a closure claim
+- reports/issue101_documentation_workflow_evidence.md | laqieer | evidence | Local candidate evidence for issue #101 documentation/workflow-policy test migration
 - reports/issue6_closure.md | laqieer | evidence | Historical issue #6 Sprint 2 candidate closure evidence; current contract is docs/starter_features.md
 - reports/issue6_foundation_evidence.md | laqieer | evidence | Historical issue #6 Sprint 1 foundation/runtime evidence
 - reports/issue18_idspace_active_cap_dag_closure.md | laqieer | evidence | Issue #18 active-cap dependency-DAG remediation evidence
