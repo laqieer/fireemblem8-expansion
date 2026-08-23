@@ -118,18 +118,18 @@ def check_layout_anchor(elf: Path) -> None:
     ).stdout
 
     object_anchor = re.search(
-        r"^000001b0 00000048 \w sSaveStateStableLayout$",
+        r"^00000000 00000048 \w sSaveStateStableLayout$",
         object_symbols,
         re.MULTILINE,
     )
     object_section = re.search(
-        r"^000001b0\s+\w+\s+O\s+ewram_data\s+00000048 "
+        r"^00000000\s+\w+\s+O\s+ewram_data\s+00000048 "
         r"sSaveStateStableLayout$",
         object_table,
         re.MULTILINE,
     )
     elf_anchor = re.search(
-        r"^02031a4c 00000048 \w sSaveStateStableLayout$",
+        r"^0203189c 00000048 \w sSaveStateStableLayout$",
         elf_symbols,
         re.MULTILINE,
     )
@@ -139,13 +139,13 @@ def check_layout_anchor(elf: Path) -> None:
         re.MULTILINE,
     )
     shared_menu_storage = re.search(
-        r"^00000008 000000d8 \w sSaveFixtureMenuItemDefs$",
+        r"^00000048 000000d8 \w sDebugToolsMenuItemDefs$",
         object_symbols,
         re.MULTILINE,
     )
     shared_menu_section = re.search(
-        r"^00000008\s+\w+\s+O\s+debug_save_fixture_data\s+000000d8 "
-        r"sSaveFixtureMenuItemDefs$",
+        r"^00000048\s+\w+\s+O\s+ewram_data\s+000000d8 "
+        r"sDebugToolsMenuItemDefs$",
         object_table,
         re.MULTILINE,
     )
@@ -171,7 +171,7 @@ def check_layout_anchor(elf: Path) -> None:
         fixture_object_table,
         re.MULTILINE,
     )
-    recovered_menu_bytes = (6 + 5 + 3) * 0x24 - 0xD8
+    recovered_menu_bytes = (3 * 4 + 6) * 0x24 - 0xD8
 
     if not all(
         (
@@ -191,9 +191,9 @@ def check_layout_anchor(elf: Path) -> None:
             "debug Save State layout, shared menu storage, or the 0x100-byte "
             "fixture state/probe contract drifted"
         )
-    if recovered_menu_bytes < 0x10:
+    if recovered_menu_bytes < 0x1B0:
         raise RuntimeError(
-            "shared save-fixture menu storage recovered less than 16 bytes "
+            "shared debugtools menu storage recovered less than 432 bytes "
             "of persistent EWRAM"
         )
 

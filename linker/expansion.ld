@@ -64,12 +64,6 @@ SECTIONS
     ewram_overlay_gamestartsave __ewram_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_overlay_gamestartsave)
-
-        /* Issue #128: fixture state and debug menus share the title/GameControl
-         * lifetime of sGameStartSaveBuf but follow its 32 KiB image. */
-        . = ALIGN(4);
-        *(debug_save_fixture_data)
-
         __ewram_overlay_gamestartsave_end = .;
     } > ewram AT> ewram
     __ewram_overlay_gamestartsave_size = __ewram_overlay_gamestartsave_end - __ewram_start;
@@ -215,6 +209,11 @@ SECTIONS
          * debug/playtest probe addresses remain stable. */
         . = ALIGN(4);
         *(debugtools_contributor_data)
+
+        /* Issue #128: fixture state stays persistent because save-write guards
+         * remain active after the title-only image is consumed. */
+        . = ALIGN(4);
+        *(debug_save_fixture_data)
 
         . = ALIGN(4);
         PROVIDE(gLoadUnitBuffer = .);

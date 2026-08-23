@@ -279,14 +279,43 @@ static void DebugToolsTools_ShowStatusLine(const char* text)
     gLCDControlBuffer.dispcnt.bg2_on = 1;
 }
 
-/* Keep the pre-#128 Save State storage at its frozen ewram_data offset.
- * The referenced persistent menus below retain this whole input section. */
-EWRAM_DATA static struct MenuItemDef sSaveStateStableLayout[2]
-    __attribute__((used)) = {{0}};
+/* Every submenu transition ends the current menu first, so all five tools and
+ * the Save State flow can share one six-item persistent buffer. */
+EWRAM_DATA static struct MenuItemDef sDebugToolsMenuItemDefs[6] = {{0}};
+
+#define sUnitMenuItemDefs sDebugToolsMenuItemDefs
+#define sConvoyMenuItemDefs sDebugToolsMenuItemDefs
+#define sFlagMenuItemDefs sDebugToolsMenuItemDefs
+#define sRngMenuItemDefs sDebugToolsMenuItemDefs
+#define sSaveFixtureMenuItemDefs sDebugToolsMenuItemDefs
+
+/* Retain the pre-#128 72-byte Save State capacity while reusing it for the
+ * title-only fixture menu controls instead of allocating another EWRAM item. */
+union DebugToolsSaveStateStableLayout
+{
+    struct MenuItemDef retained[2];
+    struct
+    {
+        struct DebugSaveFixtureOverrides overrides;
+        u8 sourceKind;
+        u8 sourceGameSlot;
+        u8 openingPreview;
+        u8 openingFinal;
+        u8 handoff;
+    } fixture;
+};
+
+EWRAM_DATA static union DebugToolsSaveStateStableLayout sSaveStateStableLayout
+    __attribute__((used)) = {0};
+
+#define sSaveFixtureOverrides sSaveStateStableLayout.fixture.overrides
+#define sSaveFixtureSourceKind sSaveStateStableLayout.fixture.sourceKind
+#define sSaveFixtureSourceGameSlot sSaveStateStableLayout.fixture.sourceGameSlot
+#define sSaveFixtureOpeningPreview sSaveStateStableLayout.fixture.openingPreview
+#define sSaveFixtureOpeningFinal sSaveStateStableLayout.fixture.openingFinal
+#define sSaveFixtureHandoff sSaveStateStableLayout.fixture.handoff
 
 /* --- 5. Unit inspection/edit -------------------------------------------- */
-
-EWRAM_DATA static struct MenuItemDef sUnitMenuItemDefs[3] = {{0}}; /* confirm + back + terminator */
 
 static void DebugToolsUnit_OnEnd(struct MenuProc* menu)
 {
@@ -452,8 +481,6 @@ CONST_DATA static struct DebugToolsAction sUnitInspectAction = {
 
 /* --- 6. Convoy inspection/edit ------------------------------------------ */
 
-EWRAM_DATA static struct MenuItemDef sConvoyMenuItemDefs[3] = {{0}};
-
 static void DebugToolsConvoy_OnEnd(struct MenuProc* menu)
 {
     DebugTools_ReturnToHubAfterMenuEnd(menu);
@@ -546,8 +573,6 @@ CONST_DATA static struct DebugToolsAction sConvoyInspectAction = {
 };
 
 /* --- 7. Flag/chapter/event state action ---------------------------------- */
-
-EWRAM_DATA static struct MenuItemDef sFlagMenuItemDefs[3] = {{0}};
 
 static void DebugToolsFlag_OnEnd(struct MenuProc* menu)
 {
@@ -660,8 +685,6 @@ CONST_DATA static struct DebugToolsAction sFlagInspectAction = {
 
 /* --- 8. RNG inspection/control ------------------------------------------ */
 
-EWRAM_DATA static struct MenuItemDef sRngMenuItemDefs[3] = {{0}};
-
 static void DebugToolsRng_OnEnd(struct MenuProc* menu)
 {
     DebugTools_ReturnToHubAfterMenuEnd(menu);
@@ -756,18 +779,6 @@ enum
     DEBUGTOOLS_SAVE_ARM_OVERRIDE_ID = 0xEC,
     DEBUGTOOLS_SAVE_CONTINUE_OVERRIDE_ID = 0xED
 };
-
-/* Menu transitions end the current menu before starting the next one, so all
- * Save State submenus can reuse one buffer without entering an overlay. */
-SECTION("debug_save_fixture_data") static struct MenuItemDef
-    sSaveFixtureMenuItemDefs[6] = {{0}};
-SECTION("debug_save_fixture_data") static struct DebugSaveFixtureOverrides
-    sSaveFixtureOverrides = {0};
-SECTION("debug_save_fixture_data") static u8 sSaveFixtureSourceKind = 0;
-SECTION("debug_save_fixture_data") static u8 sSaveFixtureSourceGameSlot = 0;
-SECTION("debug_save_fixture_data") static u8 sSaveFixtureOpeningPreview = 0;
-SECTION("debug_save_fixture_data") static u8 sSaveFixtureOpeningFinal = 0;
-SECTION("debug_save_fixture_data") static u8 sSaveFixtureHandoff = 0;
 
 static void DebugToolsSaveFixtureSource_BuildMenuItems(void);
 static void DebugToolsSaveFixturePreview_BuildMenuItems(void);
