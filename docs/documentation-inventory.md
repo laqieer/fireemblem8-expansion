@@ -105,6 +105,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/public_api_policy.md | laqieer | current | Public API/SemVer scope and branch/tag conventions for this pre-1.0 project (issue #9)
 - docs/migration_registry.md | laqieer | current | EXPANSION_SAVE_COMPAT_EPOCH transition registry: mechanical-vs-manual migrations (issue #9)
 - docs/release_closure_candidate.md | laqieer | evidence | Issue #9 closure-candidate evidence report; not a closure claim or publication approval
+- docs/gba-playtest-semantic-evidence.md | laqieer | evidence | Issue #105 mapping from audited source checks to compiled, generated, host-driver, and scenario-state evidence
 - docs/dump_extraction_plan.md | laqieer | historical | Now-completed dump/ raw-blob-to-source extraction workflow
 - docs/lz_suffix_diagnostic.md | laqieer | historical | Point-in-time hidden-asset LZ diagnostic technique
 - docs/tsa_audit.md | laqieer | historical | Point-in-time tilemap (TSA) data audit snapshot
