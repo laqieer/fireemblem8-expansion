@@ -73,17 +73,37 @@
         {
           "address": "0x0203186c",
           "size": 4,
-          "value": "0x00000010"
+          "value": "0x00000011"
         },
         {
           "address": "0x02031870",
           "size": 4,
-          "value": "0x00000010"
+          "value": "0x00000011"
         },
         {
           "address": "0x02031874",
           "size": 4,
           "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x00",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x04",
+          "size": 4,
+          "value": "0x00000006"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x08",
+          "size": 4,
+          "value": "0x00000048"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x40",
+          "size": 4,
+          "value": "0x00000001"
         }
       ]
     },
@@ -357,9 +377,268 @@
           "size": 4,
           "value": "0x00000009"
         }
+      ],
+      "sram_hash": "fnv1a64-sram:829318264d280122"
+    },
+    {
+      "frame": 18200,
+      "name": "unit-editor-cursor-target-inspected",
+      "probes": [
+        {
+          "address": "0x02031614",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gDebugToolsProbe+0x50",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x00",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x04",
+          "size": 4,
+          "value": "0x00000006"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x08",
+          "size": 4,
+          "value": "0x00000048"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x40",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gUnitArrayBlue+0x13",
+          "size": 1,
+          "value": "0x11"
+        }
       ]
+    },
+    {
+      "frame": 18380,
+      "name": "unit-current-hp-previewed",
+      "probes": [
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x1c",
+          "size": 4,
+          "value": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x20",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x38",
+          "size": 4,
+          "value": "0x00000011"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x3c",
+          "size": 4,
+          "value": "0x00000010"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x40",
+          "size": 4,
+          "value": "0x00000002"
+        },
+        {
+          "address": "gUnitArrayBlue+0x13",
+          "size": 1,
+          "value": "0x11"
+        }
+      ]
+    },
+    {
+      "frame": 18440,
+      "name": "unit-current-hp-confirmed",
+      "probes": [
+        {
+          "address": "0x02031614",
+          "size": 1,
+          "value": "0x01"
+        },
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "value": "0x0000000b"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x20",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x34",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x38",
+          "size": 4,
+          "value": "0x00000011"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x3c",
+          "size": 4,
+          "value": "0x00000010"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x40",
+          "size": 4,
+          "value": "0x00000003"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x44",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gUnitArrayBlue+0x13",
+          "size": 1,
+          "value": "0x10"
+        }
+      ]
+    },
+    {
+      "frame": 18800,
+      "name": "unit-heal-restored-full-hp",
+      "probes": [
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "value": "0x0000000c"
+        },
+        {
+          "address": "gDebugToolsProbe+0x5c",
+          "size": 4,
+          "value": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x20",
+          "size": 4,
+          "value": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x30",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x38",
+          "size": 4,
+          "value": "0x00000010"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x3c",
+          "size": 4,
+          "value": "0x00000011"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x40",
+          "size": 4,
+          "value": "0x00000003"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x44",
+          "size": 4,
+          "value": "0x00000002"
+        },
+        {
+          "address": "gUnitArrayBlue+0x13",
+          "size": 1,
+          "value": "0x11"
+        }
+      ]
+    },
+    {
+      "frame": 19300,
+      "name": "unit-empty-tile-rejected",
+      "probes": [
+        {
+          "address": "0x02031614",
+          "size": 1,
+          "value": "0x01"
+        },
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "value": "0x0000000d"
+        },
+        {
+          "address": "gDebugToolsProbe+0x50",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x20",
+          "size": 4,
+          "value": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x28",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x40",
+          "size": 4,
+          "value": "0x00000007"
+        },
+        {
+          "address": "gUnitArrayBlue+0x13",
+          "size": 1,
+          "value": "0x11"
+        }
+      ]
+    },
+    {
+      "frame": 19440,
+      "name": "unit-editor-final-map-interactive",
+      "probes": [
+        {
+          "address": "0x02031614",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gBmSt+0x14",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x20",
+          "size": 4,
+          "value": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x28",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gUnitArrayBlue+0x13",
+          "size": 1,
+          "value": "0x11"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:829318264d280122"
     }
   ],
   "format_version": 2,
+  "rom": {
+    "game_code": "BE8E",
+    "sha1": "71b846150c39bae3ccec65abda102db5f23b9a43",
+    "size": 16777216,
+    "title": "FIREEMBLEM2E"
+  },
   "scenario": "debugtools-tools-modern-debug"
 }

@@ -9,7 +9,13 @@
 #include "fontgrp.h"
 #include "hardware.h"
 #include "bmunit.h"
+#include "bmmap.h"
+#include "bmudisp.h"
 #include "bmcontainer.h"
+#include "event.h"
+#include "ekrbattle.h"
+#include "playerphase.h"
+#include "cp_common.h"
 #include "eventinfo.h"
 #include "rng.h"
 #include "bmsave.h"
@@ -40,24 +46,15 @@
  *   8. RNG inspection/control
  *   9. Save compatibility/state inspection
  *
- * Each is a single registry action, following the exact same
- * StartOrphanMenu submenu idiom src/debugtools_actions.c's Weather/Fog
- * actions already use. Every mutating tool (5-8) opens a bounded
- * two-item "Confirm <action>" / "Back" submenu -- a mutation only ever
- * happens after that explicit, separate confirmation input, never on the
- * initial hub selection alone. Tool 9 is read-only (no Confirm item at
- * all: nothing to confirm). See include/expansion_debugtools.h's "Five
- * bounded validated tools" block comment, docs/debugtools.md, and
- * reports/debugtools_issue11_closure.md.
+ * Each is a single registry action using the shared deferred submenu owner.
+ * Every mutation requires a bounded preview and a separate confirmation
+ * input; tool 9 remains read-only. Issue #125 extends action 5 through the
+ * same seam with cursor selection and typed HP/stat/AI/status editors.
  *
- * No tool ever performs a raw/arbitrary address write, nor accepts an
- * unvalidated numeric index from outside this file: every target is
- * either a fixed in-range constant (DEBUGTOOLS_UNIT_TARGET_CHARACTER,
- * DEBUGTOOLS_CONVOY_TEST_ITEM, DEBUGTOOLS_DEBUG_EVENT_FLAG_ID,
- * DEBUGTOOLS_TOOLS_RNG_SEED below) or produced by an existing engine
- * lookup helper (GetUnitFromCharId) that itself returns NULL on failure
- * -- callers below always re-check via UNIT_IS_VALID/DEBUGTOOLS_ASSERT
- * immediately before any mutation. This file never edits
+ * No tool performs a raw/arbitrary address write. Fixed constants remain for
+ * convoy/flag/RNG operations; the unit editor resolves a canonical live-map
+ * unit through gBmMapUnit/GetUnit and revalidates its complete typed identity
+ * immediately before each mutation. This file never edits
  * src/bmdebug.c, src/menu_def.c, or src/uidebug.c, and never touches
  * SRAM/any save-block struct directly.
  */
@@ -77,12 +74,25 @@ enum
     DEBUGTOOLS_UNIT_OVERRIDE_ID = 0xE2,
     DEBUGTOOLS_CONVOY_OVERRIDE_ID = 0xE3,
     DEBUGTOOLS_FLAG_OVERRIDE_ID = 0xE4,
-    DEBUGTOOLS_RNG_OVERRIDE_ID = 0xE5
+    DEBUGTOOLS_RNG_OVERRIDE_ID = 0xE5,
+    DEBUGTOOLS_UNIT_CURRENT_HP_OVERRIDE_ID = 0xE6,
+    DEBUGTOOLS_UNIT_MAX_HP_OVERRIDE_ID = 0xE7,
+    DEBUGTOOLS_UNIT_POWER_OVERRIDE_ID = 0xE8,
+    DEBUGTOOLS_UNIT_SKILL_OVERRIDE_ID = 0xE9,
+    DEBUGTOOLS_UNIT_SPEED_OVERRIDE_ID = 0xEA,
+    DEBUGTOOLS_UNIT_DEFENSE_OVERRIDE_ID = 0xEB,
+    DEBUGTOOLS_UNIT_RESISTANCE_OVERRIDE_ID = 0xEC,
+    DEBUGTOOLS_UNIT_LUCK_OVERRIDE_ID = 0xED,
+    DEBUGTOOLS_UNIT_AI_A_OVERRIDE_ID = 0xEE,
+    DEBUGTOOLS_UNIT_AI_B_OVERRIDE_ID = 0xEF,
+    DEBUGTOOLS_UNIT_EDIT_HP_OVERRIDE_ID = 0xF0,
+    DEBUGTOOLS_UNIT_EDIT_STATS_OVERRIDE_ID = 0xF1,
+    DEBUGTOOLS_UNIT_EDIT_AI_OVERRIDE_ID = 0xF2,
+    DEBUGTOOLS_UNIT_CLEAR_STATUS_OVERRIDE_ID = 0xF3,
+    DEBUGTOOLS_UNIT_IDENTITY_OVERRIDE_ID = 0xF4,
+    DEBUGTOOLS_UNIT_STATE_OVERRIDE_ID = 0xF5
 };
 
-/* Fixed, documented, always-in-range targets -- never a contributor- or
- * player-supplied numeric index. */
-#define DEBUGTOOLS_UNIT_TARGET_CHARACTER CHARACTER_EIRIKA
 #define DEBUGTOOLS_CONVOY_TEST_ITEM ITEM_VULNERARY
 
 /* Highest valid chapter-scoped event-flag bit: GetChapterFlagBitsSize()
@@ -267,77 +277,1458 @@ static void DebugToolsTools_ShowStatusLine(const char* text)
 
 /* --- 5. Unit inspection/edit -------------------------------------------- */
 
-EWRAM_DATA static struct MenuItemDef sUnitMenuItemDefs[3] = {{0}}; /* confirm + back + terminator */
-
-static void DebugToolsUnit_OnEnd(struct MenuProc* menu)
+struct DebugToolsUnitEditorState
 {
-    DebugTools_ReturnToHubAfterMenuEnd(menu);
-}
-
-CONST_DATA struct MenuDef gDebugToolsUnitMenuDef = {
-    {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
-    0,
-    sUnitMenuItemDefs,
-    DEBUGTOOLS_UNIT_MENU_ON_INIT,
-    DebugToolsUnit_OnEnd,
-    0,
-    MenuCancelSelect,
-    0,
-    0
+    u32 targetState;
+    s16 oldValues[DEBUGTOOLS_UNIT_EDIT_FIELD_COUNT];
+    s16 previewValues[DEBUGTOOLS_UNIT_EDIT_FIELD_COUNT];
+    u8 active;
+    u8 closeExpected;
+    u8 targetSlot;
+    u8 targetCharacterNumber;
+    u8 targetClassNumber;
+    u8 targetX;
+    u8 targetY;
+    u8 previewField;
 };
 
-static u8 DebugToolsUnit_ConfirmSelected(struct MenuProc* menu, struct MenuItemProc* item)
+EWRAM_DATA static struct DebugToolsUnitEditorState sUnitEditor = {0};
+EWRAM_DATA static struct MenuItemDef sUnitMenuItemDefs[9] = {{0}};
+/* HP, stats, and AI are mutually exclusive owned submenus. Reuse one array
+ * sized for the largest (stats) menu instead of reserving three EWRAM tables. */
+EWRAM_DATA static struct MenuItemDef sUnitValueMenuItemDefs[9] = {{0}};
+
+extern CONST_DATA struct MenuDef gDebugToolsUnitMenuDef;
+extern CONST_DATA struct MenuDef gDebugToolsUnitHpMenuDef;
+extern CONST_DATA struct MenuDef gDebugToolsUnitStatsMenuDef;
+extern CONST_DATA struct MenuDef gDebugToolsUnitAiMenuDef;
+
+static void DebugToolsUnit_BuildMenuItems(void);
+static void DebugToolsUnit_BuildHpMenuItems(void);
+static void DebugToolsUnit_BuildStatsMenuItems(void);
+static void DebugToolsUnit_BuildAiMenuItems(void);
+
+static u8 DebugToolsUnit_CloseFlags(void)
+{
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
+}
+
+static int DebugToolsUnit_HasConflict(void)
+{
+    if (Proc_Find(gProcScr_PlayerPhase) == NULL)
+        return 1;
+
+    return EventEngineExists() || BattleEventEngineExists() || IsBattleDeamonActive();
+}
+
+static enum DebugToolsUnitEditOutcome DebugToolsUnit_ResolveCursorTarget(
+    struct Unit** unitOut)
 {
     struct Unit* unit;
+    int x;
+    int y;
+    int targetSlot;
+    int characterNumber;
+    int classNumber;
+    int maxHp;
 
-    (void)item;
+    *unitOut = NULL;
 
-    unit = GetUnitFromCharId(DEBUGTOOLS_UNIT_TARGET_CHARACTER);
+    if (DebugToolsUnit_HasConflict())
+        return DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_CONFLICT;
 
-    DEBUGTOOLS_ASSERT(UNIT_IS_VALID(unit), DEBUGTOOLS_ASSERT_UNIT_TARGET_INVALID);
+    if (gBmMapUnit == NULL || gBmMapSize.x <= 0 || gBmMapSize.y <= 0)
+        return DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_INVALID;
 
-    if (UNIT_IS_VALID(unit))
+    x = gBmSt.playerCursor.x;
+    y = gBmSt.playerCursor.y;
+
+    if (x < 0 || y < 0 || x >= gBmMapSize.x || y >= gBmMapSize.y)
+        return DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_INVALID;
+
+    targetSlot = gBmMapUnit[y][x];
+    if (targetSlot == 0)
+        return DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_EMPTY;
+
+    if ((targetSlot & 0xC0) == FACTION_PURPLE)
+        return DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_UNSUPPORTED;
+
+    unit = GetUnit(targetSlot);
+    if (!UNIT_IS_VALID(unit) || unit->pClassData == NULL)
+        return DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_INVALID;
+
+    if ((u8)unit->index != targetSlot || unit->xPos != x || unit->yPos != y)
+        return DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_INVALID;
+
+    if (unit->state & (US_HIDDEN | US_UNAVAILABLE | US_RESCUED))
+        return DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_DEAD;
+
+    if (unit->curHP <= 0)
+        return DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_DEAD;
+
+    characterNumber = UNIT_CHAR_ID(unit);
+    classNumber = UNIT_CLASS_ID(unit);
+    if (characterNumber <= 0 || classNumber <= 0
+        || GetCharacterData(characterNumber) != unit->pCharacterData
+        || GetClassData(classNumber) != unit->pClassData)
+        return DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_UNSUPPORTED;
+
+    maxHp = GetUnitMaxHp(unit);
+    if (maxHp < 1 || maxHp > 0x7F || unit->curHP > maxHp)
+        return DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_INVALID;
+
+    *unitOut = unit;
+    return DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED;
+}
+
+static int DebugToolsUnit_ReadField(
+    const struct Unit* unit,
+    enum DebugToolsUnitEditField field)
+{
+    switch (field)
     {
-        SetUnitHp(unit, GetUnitMaxHp(unit));
-        SetUnitStatus(unit, 0);
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP:
+            return unit->curHP;
 
-        gDebugToolsProbe.unitHealTransactionCount++;
-        DebugTools_LogEvent(DEBUGTOOLS_LOG_UNIT_HEAL_APPLIED,
-            (u32)GetUnitCurrentHp(unit), (u32)GetUnitMaxHp(unit));
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_MAX_HP:
+            return unit->maxHP;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_POWER:
+            return unit->pow;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_SKILL:
+            return unit->skl;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_SPEED:
+            return unit->spd;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_DEFENSE:
+            return unit->def;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_RESISTANCE:
+            return unit->res;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_LUCK:
+            return unit->lck;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_AI_A:
+            return unit->ai1;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_AI_B:
+            return unit->ai2;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_STATUS:
+            return unit->statusIndex;
+
+        default:
+            return 0;
+    }
+}
+
+static int DebugToolsUnit_GetFieldBounds(
+    struct Unit* unit,
+    enum DebugToolsUnitEditField field,
+    int* minOut,
+    int* maxOut)
+{
+    int min = 0;
+    int max;
+
+    switch (field)
+    {
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP:
+            min = 1;
+            max = GetUnitMaxHp(unit);
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_MAX_HP:
+            min = unit->curHP;
+            if (min < 1)
+                min = 1;
+            max = unit->pClassData->maxHP;
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_POWER:
+            max = UNIT_POW_MAX(unit);
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_SKILL:
+            max = UNIT_SKL_MAX(unit);
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_SPEED:
+            max = UNIT_SPD_MAX(unit);
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_DEFENSE:
+            max = UNIT_DEF_MAX(unit);
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_RESISTANCE:
+            max = UNIT_RES_MAX(unit);
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_LUCK:
+            max = UNIT_LCK_MAX(unit);
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_AI_A:
+            max = AI_A_INVALID - 1;
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_AI_B:
+            max = AI_B_INVALID - 1;
+            break;
+
+        default:
+            return 0;
+    }
+
+    if (max < min || max > 0x7F)
+        return 0;
+
+    *minOut = min;
+    *maxOut = max;
+    return 1;
+}
+
+static int DebugToolsUnit_IsStatField(enum DebugToolsUnitEditField field)
+{
+    return field >= DEBUGTOOLS_UNIT_EDIT_FIELD_MAX_HP
+        && field <= DEBUGTOOLS_UNIT_EDIT_FIELD_LUCK;
+}
+
+static int DebugToolsUnit_IsClearableStatus(int status)
+{
+    switch (status)
+    {
+        case UNIT_STATUS_POISON:
+        case UNIT_STATUS_SLEEP:
+        case UNIT_STATUS_SILENCED:
+        case UNIT_STATUS_BERSERK:
+        case UNIT_STATUS_ATTACK:
+        case UNIT_STATUS_DEFENSE:
+        case UNIT_STATUS_CRIT:
+        case UNIT_STATUS_AVOID:
+        case UNIT_STATUS_SICK:
+        case UNIT_STATUS_PETRIFY:
+            return 1;
+
+        default:
+            return 0;
+    }
+}
+
+static u32 DebugToolsUnit_PackOld(
+    enum DebugToolsUnitEditOperation operation,
+    enum DebugToolsUnitEditField field,
+    int oldValue)
+{
+    return ((u32)operation << 24) | ((u32)field << 16) | ((u32)oldValue & 0xFFFF);
+}
+
+static u32 DebugToolsUnit_PackNew(
+    enum DebugToolsUnitEditOutcome outcome,
+    int newValue)
+{
+    return ((u32)outcome << 24) | ((u32)newValue & 0x00FFFFFF);
+}
+
+static void DebugToolsUnit_RecordTelemetry(
+    enum DebugToolsLogCode code,
+    enum DebugToolsUnitEditOperation operation,
+    enum DebugToolsUnitEditField field,
+    int oldValue,
+    int newValue,
+    enum DebugToolsUnitEditOutcome outcome)
+{
+    gDebugToolsUnitEditorProbe.unitEditLastOperation = operation;
+    gDebugToolsUnitEditorProbe.unitEditLastField = field;
+    gDebugToolsUnitEditorProbe.unitEditLastOldValue = (u32)oldValue;
+    gDebugToolsUnitEditorProbe.unitEditLastNewValue = (u32)newValue;
+    gDebugToolsUnitEditorProbe.unitEditLastOutcome = outcome;
+
+    if (outcome == DEBUGTOOLS_UNIT_EDIT_OUTCOME_PREVIEWED)
+        gDebugToolsUnitEditorProbe.unitEditPreviewCount++;
+    else if (outcome == DEBUGTOOLS_UNIT_EDIT_OUTCOME_APPLIED)
+        gDebugToolsUnitEditorProbe.unitEditTransactionCount++;
+    else if (outcome == DEBUGTOOLS_UNIT_EDIT_OUTCOME_CANCELLED)
+        gDebugToolsUnitEditorProbe.unitEditCancelCount++;
+    else if (outcome == DEBUGTOOLS_UNIT_EDIT_OUTCOME_FORCED_CLEANUP)
+        gDebugToolsUnitEditorProbe.unitEditForcedCleanupCount++;
+    else if (outcome >= DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_EMPTY)
+        gDebugToolsUnitEditorProbe.unitEditRejectCount++;
+
+    DebugTools_LogEvent(
+        code,
+        DebugToolsUnit_PackOld(operation, field, oldValue),
+        DebugToolsUnit_PackNew(outcome, newValue));
+}
+
+static u32 DebugToolsUnit_GetAssertCode(enum DebugToolsUnitEditOutcome outcome)
+{
+    switch (outcome)
+    {
+        case DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_DEAD:
+            return DEBUGTOOLS_ASSERT_UNIT_TARGET_DEAD;
+
+        case DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_STALE:
+            return DEBUGTOOLS_ASSERT_UNIT_TARGET_STALE;
+
+        case DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_CONFLICT:
+            return DEBUGTOOLS_ASSERT_UNIT_EDIT_CONFLICT;
+
+        case DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_RANGE:
+            return DEBUGTOOLS_ASSERT_UNIT_EDIT_VALUE_OUT_OF_RANGE;
+
+        case DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_UNSUPPORTED:
+            return DEBUGTOOLS_ASSERT_UNIT_EDIT_UNSUPPORTED;
+
+        default:
+            return DEBUGTOOLS_ASSERT_UNIT_TARGET_INVALID;
+    }
+}
+
+static void DebugToolsUnit_RecordCommitReject(
+    enum DebugToolsUnitEditOperation operation,
+    enum DebugToolsUnitEditField field,
+    int oldValue,
+    int newValue,
+    enum DebugToolsUnitEditOutcome outcome)
+{
+    DebugTools_RecordAssertFailure(DebugToolsUnit_GetAssertCode(outcome));
+    DebugToolsUnit_RecordTelemetry(
+        DEBUGTOOLS_LOG_UNIT_EDIT_REJECTED,
+        operation,
+        field,
+        oldValue,
+        newValue,
+        outcome);
+}
+
+static void DebugToolsUnit_ClearProbeTarget(void)
+{
+    gDebugToolsProbe.unitInspectTargetFound = 0;
+    gDebugToolsProbe.unitInspectLastCurHp = 0;
+    gDebugToolsProbe.unitInspectLastMaxHp = 0;
+    gDebugToolsUnitEditorProbe.unitInspectTargetSlot = 0;
+    gDebugToolsUnitEditorProbe.unitInspectLastCharacterNumber = 0;
+    gDebugToolsUnitEditorProbe.unitInspectLastClassNumber = 0;
+    gDebugToolsUnitEditorProbe.unitInspectLastState = 0;
+    gDebugToolsUnitEditorProbe.unitInspectLastStatus = 0;
+    gDebugToolsUnitEditorProbe.unitInspectLastAiA = 0;
+    gDebugToolsUnitEditorProbe.unitInspectLastAiB = 0;
+}
+
+static void DebugToolsUnit_LoadValues(struct Unit* unit)
+{
+    int field;
+
+    for (field = DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP;
+         field < DEBUGTOOLS_UNIT_EDIT_FIELD_COUNT;
+         field++)
+    {
+        sUnitEditor.oldValues[field] = (s16)DebugToolsUnit_ReadField(unit, field);
+        sUnitEditor.previewValues[field] = sUnitEditor.oldValues[field];
+    }
+
+    sUnitEditor.previewField = DEBUGTOOLS_UNIT_EDIT_FIELD_NONE;
+}
+
+static void DebugToolsUnit_SnapshotTarget(struct Unit* unit)
+{
+    sUnitEditor.active = 1;
+    sUnitEditor.closeExpected = 0;
+    sUnitEditor.targetSlot = (u8)unit->index;
+    sUnitEditor.targetCharacterNumber = UNIT_CHAR_ID(unit);
+    sUnitEditor.targetClassNumber = UNIT_CLASS_ID(unit);
+    sUnitEditor.targetX = unit->xPos;
+    sUnitEditor.targetY = unit->yPos;
+    sUnitEditor.targetState = unit->state;
+    DebugToolsUnit_LoadValues(unit);
+
+    gDebugToolsProbe.unitInspectTargetFound = 1;
+    gDebugToolsProbe.unitInspectLastCurHp = unit->curHP;
+    gDebugToolsProbe.unitInspectLastMaxHp = GetUnitMaxHp(unit);
+    gDebugToolsUnitEditorProbe.unitInspectTargetSlot = sUnitEditor.targetSlot;
+    gDebugToolsUnitEditorProbe.unitInspectLastCharacterNumber =
+        sUnitEditor.targetCharacterNumber;
+    gDebugToolsUnitEditorProbe.unitInspectLastClassNumber = sUnitEditor.targetClassNumber;
+    gDebugToolsUnitEditorProbe.unitInspectLastState = unit->state;
+    gDebugToolsUnitEditorProbe.unitInspectLastStatus = unit->statusIndex;
+    gDebugToolsUnitEditorProbe.unitInspectLastAiA = unit->ai1;
+    gDebugToolsUnitEditorProbe.unitInspectLastAiB = unit->ai2;
+    gDebugToolsUnitEditorProbe.unitEditLastOperation = DEBUGTOOLS_UNIT_EDIT_OPERATION_NONE;
+    gDebugToolsUnitEditorProbe.unitEditLastField = DEBUGTOOLS_UNIT_EDIT_FIELD_NONE;
+    gDebugToolsUnitEditorProbe.unitEditLastOldValue = 0;
+    gDebugToolsUnitEditorProbe.unitEditLastNewValue = 0;
+    gDebugToolsUnitEditorProbe.unitEditLastOutcome =
+        DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED;
+}
+
+static enum DebugToolsUnitEditOutcome DebugToolsUnit_RevalidateTarget(
+    struct Unit** unitOut)
+{
+    struct Unit* unit;
+    enum DebugToolsUnitEditOutcome outcome;
+
+    outcome = DebugToolsUnit_ResolveCursorTarget(&unit);
+    if (outcome == DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_CONFLICT)
+        return outcome;
+
+    if (outcome == DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_DEAD)
+        return outcome;
+
+    if (outcome != DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED)
+        return DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_STALE;
+
+    if (!sUnitEditor.active
+        || (u8)unit->index != sUnitEditor.targetSlot
+        || UNIT_CHAR_ID(unit) != sUnitEditor.targetCharacterNumber
+        || UNIT_CLASS_ID(unit) != sUnitEditor.targetClassNumber
+        || unit->xPos != sUnitEditor.targetX
+        || unit->yPos != sUnitEditor.targetY
+        || unit->state != sUnitEditor.targetState)
+        return DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_STALE;
+
+    *unitOut = unit;
+    return DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED;
+}
+
+static void DebugToolsUnit_RefreshMap(void)
+{
+    RefreshEntityBmMaps();
+    RenderBmMap();
+    RefreshUnitSprites();
+    gDebugToolsUnitEditorProbe.unitEditRefreshCount++;
+}
+
+static void DebugToolsUnit_WriteStatField(
+    struct Unit* unit,
+    enum DebugToolsUnitEditField field,
+    int value)
+{
+    switch (field)
+    {
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_MAX_HP:
+            unit->maxHP = value;
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_POWER:
+            unit->pow = value;
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_SKILL:
+            unit->skl = value;
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_SPEED:
+            unit->spd = value;
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_DEFENSE:
+            unit->def = value;
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_RESISTANCE:
+            unit->res = value;
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_FIELD_LUCK:
+            unit->lck = value;
+            break;
+
+        default:
+            break;
+    }
+}
+
+static int DebugToolsUnit_ApplyStatField(
+    struct Unit* unit,
+    enum DebugToolsUnitEditField field,
+    int newValue)
+{
+    struct Unit checked = *unit;
+    enum DebugToolsUnitEditField checkField;
+
+    DebugToolsUnit_WriteStatField(&checked, field, newValue);
+    UnitCheckStatCaps(&checked);
+
+    for (checkField = DEBUGTOOLS_UNIT_EDIT_FIELD_MAX_HP;
+         checkField <= DEBUGTOOLS_UNIT_EDIT_FIELD_LUCK;
+         checkField++)
+    {
+        int expected = checkField == field
+            ? newValue
+            : DebugToolsUnit_ReadField(unit, checkField);
+
+        if (DebugToolsUnit_ReadField(&checked, checkField) != expected)
+            return 0;
+    }
+
+    if (checked.conBonus != unit->conBonus || checked.movBonus != unit->movBonus)
+        return 0;
+
+    DebugToolsUnit_WriteStatField(unit, field, newValue);
+    UnitCheckStatCaps(unit);
+    return DebugToolsUnit_ReadField(unit, field) == newValue;
+}
+
+static enum DebugToolsUnitEditField DebugToolsUnit_GetFieldForOverride(
+    u8 overrideId)
+{
+    switch (overrideId)
+    {
+        case DEBUGTOOLS_UNIT_CURRENT_HP_OVERRIDE_ID:
+            return DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP;
+
+        case DEBUGTOOLS_UNIT_MAX_HP_OVERRIDE_ID:
+            return DEBUGTOOLS_UNIT_EDIT_FIELD_MAX_HP;
+
+        case DEBUGTOOLS_UNIT_POWER_OVERRIDE_ID:
+            return DEBUGTOOLS_UNIT_EDIT_FIELD_POWER;
+
+        case DEBUGTOOLS_UNIT_SKILL_OVERRIDE_ID:
+            return DEBUGTOOLS_UNIT_EDIT_FIELD_SKILL;
+
+        case DEBUGTOOLS_UNIT_SPEED_OVERRIDE_ID:
+            return DEBUGTOOLS_UNIT_EDIT_FIELD_SPEED;
+
+        case DEBUGTOOLS_UNIT_DEFENSE_OVERRIDE_ID:
+            return DEBUGTOOLS_UNIT_EDIT_FIELD_DEFENSE;
+
+        case DEBUGTOOLS_UNIT_RESISTANCE_OVERRIDE_ID:
+            return DEBUGTOOLS_UNIT_EDIT_FIELD_RESISTANCE;
+
+        case DEBUGTOOLS_UNIT_LUCK_OVERRIDE_ID:
+            return DEBUGTOOLS_UNIT_EDIT_FIELD_LUCK;
+
+        case DEBUGTOOLS_UNIT_AI_A_OVERRIDE_ID:
+            return DEBUGTOOLS_UNIT_EDIT_FIELD_AI_A;
+
+        case DEBUGTOOLS_UNIT_AI_B_OVERRIDE_ID:
+            return DEBUGTOOLS_UNIT_EDIT_FIELD_AI_B;
+
+        default:
+            return DEBUGTOOLS_UNIT_EDIT_FIELD_NONE;
+    }
+}
+
+static enum DebugToolsUnitEditField DebugToolsUnit_GetFieldForItem(
+    const struct MenuItemProc* item)
+{
+    return DebugToolsUnit_GetFieldForOverride(item->def->overrideId);
+}
+
+#ifdef MODERN
+static int DebugToolsUnit_ValueMenuItemDraw(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    enum DebugToolsUnitEditField field = DebugToolsUnit_GetFieldForItem(item);
+
+    ClearText(&item->text);
+    if (item->availability == MENU_DISABLED)
+        Text_SetColor(&item->text, TEXT_COLOR_SYSTEM_GRAY);
+
+    Text_DrawString(
+        &item->text,
+        ExpansionLocale_ResolveCurrent((ExpansionMsgId)item->def->helpMsgId));
+    Text_InsertDrawNumberOrBlank(
+        &item->text,
+        112,
+        TEXT_COLOR_SYSTEM_BLUE,
+        sUnitEditor.previewValues[field]);
+    PutText(
+        &item->text,
+        TILEMAP_LOCATED(
+            BG_GetMapBuffer(menu->frontBg),
+            item->xTile,
+            item->yTile));
+
+    return 0;
+}
+
+static int DebugToolsUnit_ReadOnlyMenuItemDraw(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    char value[16];
+
+    ClearText(&item->text);
+    Text_SetColor(&item->text, TEXT_COLOR_SYSTEM_GRAY);
+    Text_DrawString(
+        &item->text,
+        ExpansionLocale_ResolveCurrent((ExpansionMsgId)item->def->helpMsgId));
+
+    if (item->def->overrideId == DEBUGTOOLS_UNIT_IDENTITY_OVERRIDE_ID)
+    {
+        sprintf(
+            value,
+            "%d/%d",
+            (int)sUnitEditor.targetCharacterNumber,
+            (int)sUnitEditor.targetClassNumber);
+        Text_InsertDrawString(&item->text, 96, TEXT_COLOR_SYSTEM_BLUE, value);
     }
     else
     {
-        DebugTools_LogEvent(DEBUGTOOLS_LOG_UNIT_HEAL_SKIPPED_INVALID, 0, 0);
+        sprintf(value, "%08X", (unsigned int)sUnitEditor.targetState);
+        Text_InsertDrawString(&item->text, 72, TEXT_COLOR_SYSTEM_BLUE, value);
     }
 
-    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
+    PutText(
+        &item->text,
+        TILEMAP_LOCATED(
+            BG_GetMapBuffer(menu->frontBg),
+            item->xTile,
+            item->yTile));
+
+    return 0;
+}
+
+#define DEBUGTOOLS_UNIT_SET_DRAW(item, draw) ((item)->onDraw = (draw))
+#else
+#define DEBUGTOOLS_UNIT_SET_DRAW(item, draw) ((void)0)
+#endif
+
+static void DebugToolsUnit_ResetSession(void)
+{
+    memset(&sUnitEditor, 0, sizeof(sUnitEditor));
+}
+
+static void DebugToolsUnit_OnEnd(struct MenuProc* menu)
+{
+    if (!DebugTools_IsMenuTransitionScheduled())
+    {
+        int forcedCleanup = sUnitEditor.active && !sUnitEditor.closeExpected;
+
+        if (sUnitEditor.active && !sUnitEditor.closeExpected)
+        {
+            enum DebugToolsUnitEditField field = sUnitEditor.previewField;
+
+            DebugToolsUnit_RecordTelemetry(
+                DEBUGTOOLS_LOG_UNIT_EDIT_FORCED_CLEANUP,
+                DEBUGTOOLS_UNIT_EDIT_OPERATION_NONE,
+                field,
+                sUnitEditor.oldValues[field],
+                sUnitEditor.previewValues[field],
+                DEBUGTOOLS_UNIT_EDIT_OUTCOME_FORCED_CLEANUP);
+        }
+
+        DebugToolsUnit_ResetSession();
+        if (forcedCleanup)
+        {
+            DebugTools_EndSessionAfterMenuEnd(menu);
+            return;
+        }
+    }
+
+    DebugTools_ReturnToHubAfterMenuEnd(menu);
+}
+
+static u8 DebugToolsUnit_CloseSelected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)menu;
+    (void)item;
+
+    DebugToolsUnit_RecordTelemetry(
+        DEBUGTOOLS_LOG_UNIT_EDIT_CANCELLED,
+        DEBUGTOOLS_UNIT_EDIT_OPERATION_NONE,
+        DEBUGTOOLS_UNIT_EDIT_FIELD_NONE,
+        0,
+        0,
+        DEBUGTOOLS_UNIT_EDIT_OUTCOME_CANCELLED);
+    sUnitEditor.closeExpected = 1;
+    return DebugToolsUnit_CloseFlags();
+}
+
+static void DebugToolsUnit_RecordPreviewCancellation(void)
+{
+    enum DebugToolsUnitEditField field = sUnitEditor.previewField;
+
+    if (field == DEBUGTOOLS_UNIT_EDIT_FIELD_NONE)
+        return;
+
+    if (sUnitEditor.previewValues[field] != sUnitEditor.oldValues[field])
+    {
+        DebugToolsUnit_RecordTelemetry(
+            DEBUGTOOLS_LOG_UNIT_EDIT_CANCELLED,
+            DebugToolsUnit_IsStatField(field)
+                ? DEBUGTOOLS_UNIT_EDIT_OPERATION_SET_STAT
+                : (field == DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP
+                    ? DEBUGTOOLS_UNIT_EDIT_OPERATION_SET_HP
+                    : DEBUGTOOLS_UNIT_EDIT_OPERATION_SET_AI),
+            field,
+            sUnitEditor.oldValues[field],
+            sUnitEditor.previewValues[field],
+            DEBUGTOOLS_UNIT_EDIT_OUTCOME_CANCELLED);
+    }
+
+    sUnitEditor.previewValues[field] = sUnitEditor.oldValues[field];
+    sUnitEditor.previewField = DEBUGTOOLS_UNIT_EDIT_FIELD_NONE;
+}
+
+static u8 DebugToolsUnit_ReturnToRootSelected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    struct Unit* unit;
+    enum DebugToolsUnitEditOutcome outcome;
+
+    (void)item;
+
+    DebugToolsUnit_RecordPreviewCancellation();
+    outcome = DebugToolsUnit_RevalidateTarget(&unit);
+    if (outcome != DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED)
+    {
+        DebugToolsUnit_RecordCommitReject(
+            DEBUGTOOLS_UNIT_EDIT_OPERATION_NONE,
+            DEBUGTOOLS_UNIT_EDIT_FIELD_NONE,
+            0,
+            0,
+            outcome);
+        sUnitEditor.closeExpected = 1;
+        return DebugToolsUnit_CloseFlags();
+    }
+
+    DebugToolsUnit_LoadValues(unit);
+    DebugToolsUnit_BuildMenuItems();
+    DebugTools_QueueSubmenuTransition(menu, &gDebugToolsUnitMenuDef);
+    if (!DebugTools_IsMenuTransitionScheduled())
+        return MENU_ACT_SND6B;
+
+    return DebugToolsUnit_CloseFlags();
+}
+
+static u8 DebugToolsUnit_ClearStatusAvailable(
+    const struct MenuItemDef* item,
+    int number)
+{
+    (void)item;
+    (void)number;
+
+    if (!sUnitEditor.active)
+        return MENU_DISABLED;
+
+    return DebugToolsUnit_IsClearableStatus(
+        sUnitEditor.oldValues[DEBUGTOOLS_UNIT_EDIT_FIELD_STATUS])
+        ? MENU_ENABLED
+        : MENU_DISABLED;
+}
+
+static u8 DebugToolsUnit_ValueAvailable(
+    const struct MenuItemDef* item,
+    int number)
+{
+    struct Unit* unit;
+    enum DebugToolsUnitEditField field;
+    enum DebugToolsUnitEditOutcome outcome;
+    int min;
+    int max;
+
+    (void)number;
+
+    field = DebugToolsUnit_GetFieldForOverride(item->overrideId);
+    outcome = DebugToolsUnit_RevalidateTarget(&unit);
+    if (outcome != DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED)
+        return MENU_DISABLED;
+
+    return DebugToolsUnit_GetFieldBounds(unit, field, &min, &max)
+        ? MENU_ENABLED
+        : MENU_DISABLED;
+}
+
+static u8 DebugToolsUnit_AdjustValue(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    struct Unit* unit;
+    enum DebugToolsUnitEditField field;
+    enum DebugToolsUnitEditOperation operation;
+    enum DebugToolsUnitEditOutcome outcome;
+    int min;
+    int max;
+    int oldPreview;
+    int newPreview;
+
+    if (!(gKeyStatusPtr->repeatedKeys & (DPAD_LEFT | DPAD_RIGHT)))
+        return 0;
+
+    field = DebugToolsUnit_GetFieldForItem(item);
+    outcome = DebugToolsUnit_RevalidateTarget(&unit);
+    if (outcome != DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED
+        || !DebugToolsUnit_GetFieldBounds(unit, field, &min, &max))
+    {
+        if (outcome == DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED)
+            outcome = DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_UNSUPPORTED;
+
+        DebugToolsUnit_RecordTelemetry(
+            DEBUGTOOLS_LOG_UNIT_EDIT_REJECTED,
+            DEBUGTOOLS_UNIT_EDIT_OPERATION_NONE,
+            field,
+            sUnitEditor.oldValues[field],
+            sUnitEditor.previewValues[field],
+            outcome);
+        return MENU_ACT_SND6B;
+    }
+
+    oldPreview = sUnitEditor.previewValues[field];
+    newPreview = oldPreview;
+
+    if ((gKeyStatusPtr->repeatedKeys & DPAD_LEFT) && newPreview > min)
+        newPreview--;
+    if ((gKeyStatusPtr->repeatedKeys & DPAD_RIGHT) && newPreview < max)
+        newPreview++;
+
+    if (newPreview == oldPreview)
+        return 0;
+
+    sUnitEditor.previewValues[field] = (s16)newPreview;
+    sUnitEditor.previewField = field;
+
+    operation = DebugToolsUnit_IsStatField(field)
+        ? DEBUGTOOLS_UNIT_EDIT_OPERATION_SET_STAT
+        : (field == DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP
+            ? DEBUGTOOLS_UNIT_EDIT_OPERATION_SET_HP
+            : DEBUGTOOLS_UNIT_EDIT_OPERATION_SET_AI);
+
+    DebugToolsUnit_RecordTelemetry(
+        DEBUGTOOLS_LOG_UNIT_EDIT_PREVIEW,
+        operation,
+        field,
+        sUnitEditor.oldValues[field],
+        newPreview,
+        DEBUGTOOLS_UNIT_EDIT_OUTCOME_PREVIEWED);
+
+#ifdef MODERN
+    DebugToolsUnit_ValueMenuItemDraw(menu, item);
+#else
+    (void)menu;
+#endif
+
+    return 0;
+}
+
+static u8 DebugToolsUnit_CommitValueSelected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    struct Unit* unit;
+    enum DebugToolsUnitEditField field;
+    enum DebugToolsUnitEditOperation operation;
+    enum DebugToolsUnitEditOutcome outcome;
+    int min;
+    int max;
+    int oldValue;
+    int newValue;
+    int applied = 0;
+
+    (void)menu;
+
+    field = DebugToolsUnit_GetFieldForItem(item);
+    operation = DebugToolsUnit_IsStatField(field)
+        ? DEBUGTOOLS_UNIT_EDIT_OPERATION_SET_STAT
+        : (field == DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP
+            ? DEBUGTOOLS_UNIT_EDIT_OPERATION_SET_HP
+            : DEBUGTOOLS_UNIT_EDIT_OPERATION_SET_AI);
+    oldValue = sUnitEditor.oldValues[field];
+    newValue = sUnitEditor.previewValues[field];
+
+    outcome = DebugToolsUnit_RevalidateTarget(&unit);
+    if (outcome != DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED)
+    {
+        DebugToolsUnit_RecordCommitReject(
+            operation, field, oldValue, newValue, outcome);
+        sUnitEditor.closeExpected = 1;
+        return DebugToolsUnit_CloseFlags();
+    }
+
+    if (DebugToolsUnit_ReadField(unit, field) != oldValue)
+    {
+        DebugToolsUnit_RecordCommitReject(
+            operation,
+            field,
+            oldValue,
+            newValue,
+            DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_STALE);
+        sUnitEditor.closeExpected = 1;
+        return DebugToolsUnit_CloseFlags();
+    }
+
+    if (!DebugToolsUnit_GetFieldBounds(unit, field, &min, &max)
+        || newValue < min || newValue > max)
+    {
+        DebugToolsUnit_RecordCommitReject(
+            operation,
+            field,
+            oldValue,
+            newValue,
+            DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_RANGE);
+        sUnitEditor.closeExpected = 1;
+        return DebugToolsUnit_CloseFlags();
+    }
+
+    DebugToolsUnit_RecordTelemetry(
+        DEBUGTOOLS_LOG_UNIT_EDIT_PREVIEW,
+        operation,
+        field,
+        oldValue,
+        newValue,
+        DEBUGTOOLS_UNIT_EDIT_OUTCOME_PREVIEWED);
+
+    if (oldValue == newValue)
+    {
+        DebugToolsUnit_RecordTelemetry(
+            DEBUGTOOLS_LOG_UNIT_EDIT_APPLIED,
+            operation,
+            field,
+            oldValue,
+            newValue,
+            DEBUGTOOLS_UNIT_EDIT_OUTCOME_NO_CHANGE);
+        sUnitEditor.closeExpected = 1;
+        return DebugToolsUnit_CloseFlags();
+    }
+
+    if (field == DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP)
+    {
+        SetUnitHp(unit, newValue);
+        applied = unit->curHP == newValue;
+    }
+    else if (DebugToolsUnit_IsStatField(field))
+    {
+        applied = DebugToolsUnit_ApplyStatField(unit, field, newValue);
+    }
+    else if (field == DEBUGTOOLS_UNIT_EDIT_FIELD_AI_A)
+    {
+        ChangeUnitAi(unit, newValue, AI_B_INVALID, 0);
+        applied = unit->ai1 == newValue && unit->ai_a_pc == 0;
+    }
+    else if (field == DEBUGTOOLS_UNIT_EDIT_FIELD_AI_B)
+    {
+        ChangeUnitAi(unit, AI_A_INVALID, newValue, 0);
+        applied = unit->ai2 == newValue && unit->ai_b_pc == 0;
+    }
+
+    if (!applied)
+    {
+        DebugToolsUnit_RecordCommitReject(
+            operation,
+            field,
+            oldValue,
+            newValue,
+            DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_UNSUPPORTED);
+        sUnitEditor.closeExpected = 1;
+        return DebugToolsUnit_CloseFlags();
+    }
+
+    DebugToolsUnit_RefreshMap();
+    DebugToolsUnit_RecordTelemetry(
+        DEBUGTOOLS_LOG_UNIT_EDIT_APPLIED,
+        operation,
+        field,
+        oldValue,
+        newValue,
+        DEBUGTOOLS_UNIT_EDIT_OUTCOME_APPLIED);
+    sUnitEditor.closeExpected = 1;
+    return DebugToolsUnit_CloseFlags();
+}
+
+static u8 DebugToolsUnit_HealSelected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    struct Unit* unit;
+    enum DebugToolsUnitEditOutcome outcome;
+    int oldValue;
+    int newValue;
+
+    (void)menu;
+    (void)item;
+
+    oldValue = sUnitEditor.oldValues[DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP];
+    newValue = sUnitEditor.oldValues[DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP];
+    outcome = DebugToolsUnit_RevalidateTarget(&unit);
+    if (outcome == DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED)
+        newValue = GetUnitMaxHp(unit);
+
+    if (outcome != DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED
+        || unit->curHP != oldValue)
+    {
+        if (outcome == DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED)
+            outcome = DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_STALE;
+
+        DebugTools_LogEvent(DEBUGTOOLS_LOG_UNIT_HEAL_SKIPPED_INVALID, oldValue, newValue);
+        DebugToolsUnit_RecordCommitReject(
+            DEBUGTOOLS_UNIT_EDIT_OPERATION_HEAL,
+            DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP,
+            oldValue,
+            newValue,
+            outcome);
+        sUnitEditor.closeExpected = 1;
+        return DebugToolsUnit_CloseFlags();
+    }
+
+    DebugToolsUnit_RecordTelemetry(
+        DEBUGTOOLS_LOG_UNIT_EDIT_PREVIEW,
+        DEBUGTOOLS_UNIT_EDIT_OPERATION_HEAL,
+        DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP,
+        oldValue,
+        newValue,
+        DEBUGTOOLS_UNIT_EDIT_OUTCOME_PREVIEWED);
+
+    if (oldValue != newValue)
+    {
+        SetUnitHp(unit, newValue);
+        if (unit->curHP != newValue)
+        {
+            DebugToolsUnit_RecordCommitReject(
+                DEBUGTOOLS_UNIT_EDIT_OPERATION_HEAL,
+                DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP,
+                oldValue,
+                newValue,
+                DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_RANGE);
+            sUnitEditor.closeExpected = 1;
+            return DebugToolsUnit_CloseFlags();
+        }
+
+        DebugToolsUnit_RefreshMap();
+        DebugTools_LogEvent(DEBUGTOOLS_LOG_UNIT_HEAL_APPLIED, oldValue, newValue);
+        DebugToolsUnit_RecordTelemetry(
+            DEBUGTOOLS_LOG_UNIT_EDIT_APPLIED,
+            DEBUGTOOLS_UNIT_EDIT_OPERATION_HEAL,
+            DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP,
+            oldValue,
+            newValue,
+            DEBUGTOOLS_UNIT_EDIT_OUTCOME_APPLIED);
+    }
+    else
+    {
+        DebugTools_LogEvent(DEBUGTOOLS_LOG_UNIT_HEAL_APPLIED, oldValue, newValue);
+        DebugToolsUnit_RecordTelemetry(
+            DEBUGTOOLS_LOG_UNIT_EDIT_APPLIED,
+            DEBUGTOOLS_UNIT_EDIT_OPERATION_HEAL,
+            DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP,
+            oldValue,
+            newValue,
+            DEBUGTOOLS_UNIT_EDIT_OUTCOME_NO_CHANGE);
+    }
+
+    gDebugToolsProbe.unitHealTransactionCount++;
+    sUnitEditor.closeExpected = 1;
+    return DebugToolsUnit_CloseFlags();
+}
+
+static u8 DebugToolsUnit_ClearStatusSelected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    struct Unit* unit;
+    enum DebugToolsUnitEditOutcome outcome;
+    int oldValue = sUnitEditor.oldValues[DEBUGTOOLS_UNIT_EDIT_FIELD_STATUS];
+
+    (void)menu;
+    (void)item;
+
+    outcome = DebugToolsUnit_RevalidateTarget(&unit);
+    if (outcome != DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED)
+    {
+        DebugToolsUnit_RecordCommitReject(
+            DEBUGTOOLS_UNIT_EDIT_OPERATION_CLEAR_STATUS,
+            DEBUGTOOLS_UNIT_EDIT_FIELD_STATUS,
+            oldValue,
+            UNIT_STATUS_NONE,
+            outcome);
+        sUnitEditor.closeExpected = 1;
+        return DebugToolsUnit_CloseFlags();
+    }
+
+    if (unit->statusIndex != oldValue
+        || !DebugToolsUnit_IsClearableStatus(oldValue))
+    {
+        DebugToolsUnit_RecordCommitReject(
+            DEBUGTOOLS_UNIT_EDIT_OPERATION_CLEAR_STATUS,
+            DEBUGTOOLS_UNIT_EDIT_FIELD_STATUS,
+            oldValue,
+            UNIT_STATUS_NONE,
+            unit->statusIndex != oldValue
+                ? DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_STALE
+                : DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_UNSUPPORTED);
+        sUnitEditor.closeExpected = 1;
+        return DebugToolsUnit_CloseFlags();
+    }
+
+    DebugToolsUnit_RecordTelemetry(
+        DEBUGTOOLS_LOG_UNIT_EDIT_PREVIEW,
+        DEBUGTOOLS_UNIT_EDIT_OPERATION_CLEAR_STATUS,
+        DEBUGTOOLS_UNIT_EDIT_FIELD_STATUS,
+        oldValue,
+        UNIT_STATUS_NONE,
+        DEBUGTOOLS_UNIT_EDIT_OUTCOME_PREVIEWED);
+    SetUnitStatus(unit, UNIT_STATUS_NONE);
+
+    if (unit->statusIndex != UNIT_STATUS_NONE || unit->statusDuration != 0)
+    {
+        DebugToolsUnit_RecordCommitReject(
+            DEBUGTOOLS_UNIT_EDIT_OPERATION_CLEAR_STATUS,
+            DEBUGTOOLS_UNIT_EDIT_FIELD_STATUS,
+            oldValue,
+            UNIT_STATUS_NONE,
+            DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_UNSUPPORTED);
+        sUnitEditor.closeExpected = 1;
+        return DebugToolsUnit_CloseFlags();
+    }
+
+    DebugToolsUnit_RefreshMap();
+    DebugToolsUnit_RecordTelemetry(
+        DEBUGTOOLS_LOG_UNIT_EDIT_APPLIED,
+        DEBUGTOOLS_UNIT_EDIT_OPERATION_CLEAR_STATUS,
+        DEBUGTOOLS_UNIT_EDIT_FIELD_STATUS,
+        oldValue,
+        UNIT_STATUS_NONE,
+        DEBUGTOOLS_UNIT_EDIT_OUTCOME_APPLIED);
+    sUnitEditor.closeExpected = 1;
+    return DebugToolsUnit_CloseFlags();
+}
+
+static u8 DebugToolsUnit_OpenEditorSelected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    struct Unit* unit;
+    const struct MenuDef* menuDef = NULL;
+    enum DebugToolsUnitEditOutcome outcome;
+
+    outcome = DebugToolsUnit_RevalidateTarget(&unit);
+    if (outcome != DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED)
+    {
+        DebugToolsUnit_RecordCommitReject(
+            DEBUGTOOLS_UNIT_EDIT_OPERATION_NONE,
+            DEBUGTOOLS_UNIT_EDIT_FIELD_NONE,
+            0,
+            0,
+            outcome);
+        sUnitEditor.closeExpected = 1;
+        return DebugToolsUnit_CloseFlags();
+    }
+
+    DebugToolsUnit_LoadValues(unit);
+
+    switch (item->def->overrideId)
+    {
+        case DEBUGTOOLS_UNIT_EDIT_HP_OVERRIDE_ID:
+            DebugToolsUnit_BuildHpMenuItems();
+            menuDef = &gDebugToolsUnitHpMenuDef;
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_STATS_OVERRIDE_ID:
+            DebugToolsUnit_BuildStatsMenuItems();
+            menuDef = &gDebugToolsUnitStatsMenuDef;
+            break;
+
+        case DEBUGTOOLS_UNIT_EDIT_AI_OVERRIDE_ID:
+            DebugToolsUnit_BuildAiMenuItems();
+            menuDef = &gDebugToolsUnitAiMenuDef;
+            break;
+
+        default:
+            DebugToolsUnit_RecordCommitReject(
+                DEBUGTOOLS_UNIT_EDIT_OPERATION_NONE,
+                DEBUGTOOLS_UNIT_EDIT_FIELD_NONE,
+                0,
+                0,
+                DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_UNSUPPORTED);
+            sUnitEditor.closeExpected = 1;
+            return DebugToolsUnit_CloseFlags();
+    }
+
+    DebugTools_QueueSubmenuTransition(menu, menuDef);
+    if (!DebugTools_IsMenuTransitionScheduled())
+        return MENU_ACT_SND6B;
+
+    return DebugToolsUnit_CloseFlags();
+}
+
+static void DebugToolsUnit_SetMenuItem(
+    struct MenuItemDef* item,
+    const char* name,
+    u8 overrideId,
+    MenuAvailabilityFunc isAvailable,
+    MenuSelectFunc onSelected)
+{
+    item->name = name;
+    item->overrideId = overrideId;
+    item->isAvailable = isAvailable;
+    item->onSelected = onSelected;
 }
 
 static void DebugToolsUnit_BuildMenuItems(void)
 {
     memset(sUnitMenuItemDefs, 0, sizeof(sUnitMenuItemDefs));
 
-    sUnitMenuItemDefs[0].name = "Confirm Heal to Full";
-    sUnitMenuItemDefs[0].overrideId = DEBUGTOOLS_UNIT_OVERRIDE_ID;
-    sUnitMenuItemDefs[0].isAvailable = MenuAlwaysEnabled;
-    sUnitMenuItemDefs[0].onSelected = DebugToolsUnit_ConfirmSelected;
+    DebugToolsUnit_SetMenuItem(
+        &sUnitMenuItemDefs[0],
+        "Confirm Heal to Full",
+        DEBUGTOOLS_UNIT_OVERRIDE_ID,
+        MenuAlwaysEnabled,
+        DebugToolsUnit_HealSelected);
     DEBUGTOOLS_LOCALIZE_ITEM(
         &sUnitMenuItemDefs[0],
         EXP_MSG_DEBUG_CONFIRM_HEAL_FULL);
 
-    sUnitMenuItemDefs[1].name = "Back";
-    sUnitMenuItemDefs[1].isAvailable = MenuAlwaysEnabled;
-    sUnitMenuItemDefs[1].onSelected = MenuCancelSelect;
+    DebugToolsUnit_SetMenuItem(
+        &sUnitMenuItemDefs[1],
+        "Edit HP",
+        DEBUGTOOLS_UNIT_EDIT_HP_OVERRIDE_ID,
+        MenuAlwaysEnabled,
+        DebugToolsUnit_OpenEditorSelected);
     DEBUGTOOLS_LOCALIZE_ITEM(
         &sUnitMenuItemDefs[1],
-        EXP_MSG_FRAMEWORK_BACK);
+        EXP_MSG_DEBUG_UNIT_EDIT_HP);
 
-    /* sUnitMenuItemDefs[2] stays all-zero: the terminator. */
+    DebugToolsUnit_SetMenuItem(
+        &sUnitMenuItemDefs[2],
+        "Edit Stats",
+        DEBUGTOOLS_UNIT_EDIT_STATS_OVERRIDE_ID,
+        MenuAlwaysEnabled,
+        DebugToolsUnit_OpenEditorSelected);
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sUnitMenuItemDefs[2],
+        EXP_MSG_DEBUG_UNIT_EDIT_STATS);
+
+    DebugToolsUnit_SetMenuItem(
+        &sUnitMenuItemDefs[3],
+        "Edit AI",
+        DEBUGTOOLS_UNIT_EDIT_AI_OVERRIDE_ID,
+        MenuAlwaysEnabled,
+        DebugToolsUnit_OpenEditorSelected);
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sUnitMenuItemDefs[3],
+        EXP_MSG_DEBUG_UNIT_EDIT_AI);
+
+    DebugToolsUnit_SetMenuItem(
+        &sUnitMenuItemDefs[4],
+        "Confirm Clear Status",
+        DEBUGTOOLS_UNIT_CLEAR_STATUS_OVERRIDE_ID,
+        DebugToolsUnit_ClearStatusAvailable,
+        DebugToolsUnit_ClearStatusSelected);
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sUnitMenuItemDefs[4],
+        EXP_MSG_DEBUG_UNIT_CLEAR_STATUS);
+
+    DebugToolsUnit_SetMenuItem(
+        &sUnitMenuItemDefs[5],
+        "Unit/Class",
+        DEBUGTOOLS_UNIT_IDENTITY_OVERRIDE_ID,
+        MenuAlwaysDisabled,
+        NULL);
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sUnitMenuItemDefs[5],
+        EXP_MSG_DEBUG_UNIT_IDENTITY);
+    DEBUGTOOLS_UNIT_SET_DRAW(
+        &sUnitMenuItemDefs[5],
+        DebugToolsUnit_ReadOnlyMenuItemDraw);
+
+    DebugToolsUnit_SetMenuItem(
+        &sUnitMenuItemDefs[6],
+        "State",
+        DEBUGTOOLS_UNIT_STATE_OVERRIDE_ID,
+        MenuAlwaysDisabled,
+        NULL);
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sUnitMenuItemDefs[6],
+        EXP_MSG_DEBUG_UNIT_STATE);
+    DEBUGTOOLS_UNIT_SET_DRAW(
+        &sUnitMenuItemDefs[6],
+        DebugToolsUnit_ReadOnlyMenuItemDraw);
+
+    DebugToolsUnit_SetMenuItem(
+        &sUnitMenuItemDefs[7],
+        "Back",
+        0,
+        MenuAlwaysEnabled,
+        DebugToolsUnit_CloseSelected);
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sUnitMenuItemDefs[7],
+        EXP_MSG_FRAMEWORK_BACK);
 }
+
+static void DebugToolsUnit_SetValueMenuItem(
+    struct MenuItemDef* item,
+    const char* name,
+    u8 overrideId)
+{
+    DebugToolsUnit_SetMenuItem(
+        item,
+        name,
+        overrideId,
+        DebugToolsUnit_ValueAvailable,
+        DebugToolsUnit_CommitValueSelected);
+    item->onIdle = DebugToolsUnit_AdjustValue;
+}
+
+#define DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(item, message) \
+    do \
+    { \
+        DEBUGTOOLS_LOCALIZE_ITEM((item), (message)); \
+        DEBUGTOOLS_UNIT_SET_DRAW((item), DebugToolsUnit_ValueMenuItemDraw); \
+    } while (0)
+
+static void DebugToolsUnit_SetBackMenuItem(struct MenuItemDef* item)
+{
+    DebugToolsUnit_SetMenuItem(
+        item,
+        "Back",
+        0,
+        MenuAlwaysEnabled,
+        DebugToolsUnit_ReturnToRootSelected);
+    DEBUGTOOLS_LOCALIZE_ITEM(item, EXP_MSG_FRAMEWORK_BACK);
+}
+
+static void DebugToolsUnit_BuildHpMenuItems(void)
+{
+    memset(sUnitValueMenuItemDefs, 0, sizeof(sUnitValueMenuItemDefs));
+
+    DebugToolsUnit_SetValueMenuItem(
+        &sUnitValueMenuItemDefs[0],
+        "Current HP",
+        DEBUGTOOLS_UNIT_CURRENT_HP_OVERRIDE_ID);
+    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
+        &sUnitValueMenuItemDefs[0],
+        EXP_MSG_DEBUG_UNIT_CURRENT_HP);
+    DebugToolsUnit_SetBackMenuItem(&sUnitValueMenuItemDefs[1]);
+}
+
+static void DebugToolsUnit_BuildStatsMenuItems(void)
+{
+    memset(sUnitValueMenuItemDefs, 0, sizeof(sUnitValueMenuItemDefs));
+
+    DebugToolsUnit_SetValueMenuItem(
+        &sUnitValueMenuItemDefs[0],
+        "Max HP",
+        DEBUGTOOLS_UNIT_MAX_HP_OVERRIDE_ID);
+    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
+        &sUnitValueMenuItemDefs[0],
+        EXP_MSG_DEBUG_UNIT_MAX_HP);
+    DebugToolsUnit_SetValueMenuItem(
+        &sUnitValueMenuItemDefs[1],
+        "Power",
+        DEBUGTOOLS_UNIT_POWER_OVERRIDE_ID);
+    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
+        &sUnitValueMenuItemDefs[1],
+        EXP_MSG_DEBUG_UNIT_POWER);
+    DebugToolsUnit_SetValueMenuItem(
+        &sUnitValueMenuItemDefs[2],
+        "Skill",
+        DEBUGTOOLS_UNIT_SKILL_OVERRIDE_ID);
+    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
+        &sUnitValueMenuItemDefs[2],
+        EXP_MSG_DEBUG_UNIT_SKILL);
+    DebugToolsUnit_SetValueMenuItem(
+        &sUnitValueMenuItemDefs[3],
+        "Speed",
+        DEBUGTOOLS_UNIT_SPEED_OVERRIDE_ID);
+    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
+        &sUnitValueMenuItemDefs[3],
+        EXP_MSG_DEBUG_UNIT_SPEED);
+    DebugToolsUnit_SetValueMenuItem(
+        &sUnitValueMenuItemDefs[4],
+        "Defense",
+        DEBUGTOOLS_UNIT_DEFENSE_OVERRIDE_ID);
+    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
+        &sUnitValueMenuItemDefs[4],
+        EXP_MSG_DEBUG_UNIT_DEFENSE);
+    DebugToolsUnit_SetValueMenuItem(
+        &sUnitValueMenuItemDefs[5],
+        "Resistance",
+        DEBUGTOOLS_UNIT_RESISTANCE_OVERRIDE_ID);
+    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
+        &sUnitValueMenuItemDefs[5],
+        EXP_MSG_DEBUG_UNIT_RESISTANCE);
+    DebugToolsUnit_SetValueMenuItem(
+        &sUnitValueMenuItemDefs[6],
+        "Luck",
+        DEBUGTOOLS_UNIT_LUCK_OVERRIDE_ID);
+    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
+        &sUnitValueMenuItemDefs[6],
+        EXP_MSG_DEBUG_UNIT_LUCK);
+    DebugToolsUnit_SetBackMenuItem(&sUnitValueMenuItemDefs[7]);
+}
+
+static void DebugToolsUnit_BuildAiMenuItems(void)
+{
+    memset(sUnitValueMenuItemDefs, 0, sizeof(sUnitValueMenuItemDefs));
+
+    DebugToolsUnit_SetValueMenuItem(
+        &sUnitValueMenuItemDefs[0],
+        "AI A",
+        DEBUGTOOLS_UNIT_AI_A_OVERRIDE_ID);
+    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
+        &sUnitValueMenuItemDefs[0],
+        EXP_MSG_DEBUG_UNIT_AI_A);
+    DebugToolsUnit_SetValueMenuItem(
+        &sUnitValueMenuItemDefs[1],
+        "AI B",
+        DEBUGTOOLS_UNIT_AI_B_OVERRIDE_ID);
+    DEBUGTOOLS_UNIT_LOCALIZE_VALUE_ITEM(
+        &sUnitValueMenuItemDefs[1],
+        EXP_MSG_DEBUG_UNIT_AI_B);
+    DebugToolsUnit_SetBackMenuItem(&sUnitValueMenuItemDefs[2]);
+}
+
+CONST_DATA struct MenuDef gDebugToolsUnitMenuDef = {
+    {1, 2, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
+    0,
+    sUnitMenuItemDefs,
+    DEBUGTOOLS_UNIT_MENU_ON_INIT,
+    DebugToolsUnit_OnEnd,
+    0,
+    DebugToolsUnit_CloseSelected,
+    0,
+    0
+};
+
+CONST_DATA struct MenuDef gDebugToolsUnitHpMenuDef = {
+    {1, 2, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
+    0,
+    sUnitValueMenuItemDefs,
+    DEBUGTOOLS_UNIT_MENU_ON_INIT,
+    DebugToolsUnit_OnEnd,
+    0,
+    DebugToolsUnit_ReturnToRootSelected,
+    0,
+    0
+};
+
+CONST_DATA struct MenuDef gDebugToolsUnitStatsMenuDef = {
+    {1, 2, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
+    0,
+    sUnitValueMenuItemDefs,
+    DEBUGTOOLS_UNIT_MENU_ON_INIT,
+    DebugToolsUnit_OnEnd,
+    0,
+    DebugToolsUnit_ReturnToRootSelected,
+    0,
+    0
+};
+
+CONST_DATA struct MenuDef gDebugToolsUnitAiMenuDef = {
+    {1, 2, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
+    0,
+    sUnitValueMenuItemDefs,
+    DEBUGTOOLS_UNIT_MENU_ON_INIT,
+    DebugToolsUnit_OnEnd,
+    0,
+    DebugToolsUnit_ReturnToRootSelected,
+    0,
+    0
+};
 
 static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct MenuItemProc* item)
 {
     struct Unit* unit;
+    enum DebugToolsUnitEditOutcome outcome;
 #if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
     struct FaceProc* face;
     struct FaceBlinkProc* mouth;
@@ -347,10 +1738,12 @@ static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct Me
 
     (void)item;
 
-    unit = GetUnitFromCharId(DEBUGTOOLS_UNIT_TARGET_CHARACTER);
+    DebugToolsUnit_ResetSession();
+    outcome = DebugToolsUnit_ResolveCursorTarget(&unit);
 
-    if (UNIT_IS_VALID(unit))
+    if (outcome == DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED)
     {
+        DebugToolsUnit_SnapshotTarget(unit);
 #if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
         PutFaceChibi(
             DEBUGTOOLS_PORTRAIT_PROBE_FACE_ID,
@@ -360,10 +1753,6 @@ static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct Me
             FALSE);
         BG_EnableSyncByMask(BG2_SYNC_BIT);
 #endif
-
-        gDebugToolsProbe.unitInspectTargetFound = 1;
-        gDebugToolsProbe.unitInspectLastCurHp = (u32)GetUnitCurrentHp(unit);
-        gDebugToolsProbe.unitInspectLastMaxHp = (u32)GetUnitMaxHp(unit);
 
 #if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
         gPortraitPackageRuntimeProbe.faceId = DEBUGTOOLS_PORTRAIT_PROBE_FACE_ID;
@@ -406,13 +1795,18 @@ static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct Me
 #endif
         sprintf(buf, "%s %d/%d",
             DEBUGTOOLS_LOCALIZED_TEXT(EXP_MSG_DEBUG_STATUS_UNIT_HP, "UNIT HP"),
-            GetUnitCurrentHp(unit), GetUnitMaxHp(unit));
+            unit->curHP, GetUnitMaxHp(unit));
     }
     else
     {
-        gDebugToolsProbe.unitInspectTargetFound = 0;
-        gDebugToolsProbe.unitInspectLastCurHp = 0;
-        gDebugToolsProbe.unitInspectLastMaxHp = 0;
+        DebugToolsUnit_ClearProbeTarget();
+        DebugToolsUnit_RecordTelemetry(
+            DEBUGTOOLS_LOG_UNIT_EDIT_REJECTED,
+            DEBUGTOOLS_UNIT_EDIT_OPERATION_NONE,
+            DEBUGTOOLS_UNIT_EDIT_FIELD_NONE,
+            0,
+            0,
+            outcome);
         sprintf(buf, "%s", DEBUGTOOLS_LOCALIZED_TEXT(
             EXP_MSG_DEBUG_STATUS_UNIT_UNAVAILABLE, "UNIT N/A"));
     }
@@ -420,6 +1814,9 @@ static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct Me
     DebugTools_LogEvent(DEBUGTOOLS_LOG_UNIT_INSPECT,
         gDebugToolsProbe.unitInspectLastCurHp, gDebugToolsProbe.unitInspectLastMaxHp);
     DebugToolsTools_ShowStatusLine(buf);
+
+    if (outcome != DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED)
+        return MENU_ACT_SND6B;
 
     DebugToolsUnit_BuildMenuItems();
     DebugTools_QueueSubmenuTransition(menu, &gDebugToolsUnitMenuDef);
