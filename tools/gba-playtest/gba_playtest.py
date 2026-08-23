@@ -24,8 +24,12 @@ from probe_bindings import (
 )
 
 
-SCENARIO_SCHEMA_VERSION = 1
-FINGERPRINT_FORMAT_VERSION = 2
+FIXED_SCENARIO_SCHEMA_VERSION = 1
+RUN_UNTIL_SCENARIO_SCHEMA_VERSION = 2
+SCENARIO_SCHEMA_VERSION = FIXED_SCENARIO_SCHEMA_VERSION
+FIXED_FINGERPRINT_FORMAT_VERSION = 2
+RUN_UNTIL_FINGERPRINT_FORMAT_VERSION = 3
+FINGERPRINT_FORMAT_VERSION = FIXED_FINGERPRINT_FORMAT_VERSION
 PKG_CONFIG_TIMEOUT_SECONDS = 10
 COMPILER_TIMEOUT_SECONDS = 60
 MIN_BACKEND_TIMEOUT_SECONDS = 10
@@ -89,6 +93,26 @@ SRAM_IMAGE_SIZE = 0x8000
 # with a clear PlaytestError instead of being rejected deep inside the
 # backend after a plan file has already been generated.
 MAX_SRAM_HASH_EXCLUDE_RANGES = 64
+MAX_RUN_UNTIL_COMPARISONS = 64
+MAX_RUN_UNTIL_PROBES = 128
+COMPARISON_OPERATORS = ("eq", "ne", "lt", "le", "gt", "ge")
+TERMINAL_CONDITION_REASONS = (
+    "success",
+    "objective_failure",
+    "controller_exhausted",
+)
+TERMINAL_REASONS = TERMINAL_CONDITION_REASONS + (
+    "engine_stall",
+    "max_frames",
+    "max_turns",
+    "max_actions",
+)
+PLAN_OPERATOR_CODES = {
+    operator: index for index, operator in enumerate(COMPARISON_OPERATORS)
+}
+PLAN_TERMINAL_REASON_CODES = {
+    reason: index + 1 for index, reason in enumerate(TERMINAL_CONDITION_REASONS)
+}
 
 
 class PlaytestError(Exception):
@@ -233,6 +257,41 @@ class Probe:
 
 
 @dataclass(frozen=True)
+class Comparison:
+    probe: Probe
+    operator: str
+    value: int
+
+
+@dataclass(frozen=True)
+class TerminalCondition:
+    reason: str
+    comparisons: tuple[Comparison, ...]
+
+
+@dataclass(frozen=True)
+class CounterLimit:
+    maximum: int
+    probe: Probe
+
+
+@dataclass(frozen=True)
+class StallLimit:
+    max_unchanged_frames: int
+    progress: Probe
+    work_expected: Comparison
+
+
+@dataclass(frozen=True)
+class RunUntil:
+    max_frames: int
+    terminal_conditions: tuple[TerminalCondition, ...]
+    stall: StallLimit | None
+    turn_limit: CounterLimit | None
+    action_limit: CounterLimit | None
+
+
+@dataclass(frozen=True)
 class Region:
     name: str
     x: int
@@ -282,9 +341,11 @@ class Scenario:
     blocker: str | None
     inputs: tuple[InputRange, ...]
     checkpoints: tuple[Checkpoint, ...]
+    schema_version: int = FIXED_SCENARIO_SCHEMA_VERSION
+    run_until: RunUntil | None = None
 
 
-def parse_scenario_data(
+def _parse_fixed_scenario_data(
     data: Any,
     source: str = "<scenario>",
     symbol_resolver: Callable[[str], tuple[int, int]] | None = None,
@@ -629,6 +690,411 @@ def parse_scenario_data(
         blocker,
         tuple(inputs),
         tuple(sorted(checkpoints, key=lambda checkpoint: (checkpoint.frame, checkpoint.name))),
+        FIXED_SCENARIO_SCHEMA_VERSION,
+        None,
+    )
+
+
+def _parse_run_probe(
+    raw: Any,
+    path: str,
+    symbol_resolver: Callable[[str], tuple[int, int]] | None,
+) -> Probe:
+    data = _expect_object(raw, path, {"address", "size"})
+    size = data["size"]
+    if not _is_int(size) or size not in (1, 2, 4):
+        raise PlaytestError(f"{path}.size must be integer 1, 2, or 4")
+    binding, address = _parse_address(
+        data["address"],
+        size,
+        f"{path}.address",
+        symbol_resolver,
+    )
+    return Probe(binding, address, size, None)
+
+
+def _parse_comparison(
+    raw: Any,
+    path: str,
+    symbol_resolver: Callable[[str], tuple[int, int]] | None,
+) -> Comparison:
+    data = _expect_object(raw, path, {"address", "size", "operator", "value"})
+    probe = _parse_run_probe(
+        {"address": data["address"], "size": data["size"]},
+        path,
+        symbol_resolver,
+    )
+    operator = data["operator"]
+    if not isinstance(operator, str) or operator not in COMPARISON_OPERATORS:
+        raise PlaytestError(
+            f"{path}.operator must be one of {', '.join(COMPARISON_OPERATORS)}"
+        )
+    pattern = re.compile(rf"^0x[0-9a-f]{{{probe.size * 2}}}$")
+    value = data["value"]
+    if not isinstance(value, str) or not pattern.fullmatch(value):
+        raise PlaytestError(
+            f"{path}.value must be lowercase 0x plus {probe.size * 2} hex digits"
+        )
+    return Comparison(probe, operator, int(value, 16))
+
+
+def _parse_counter_limit(
+    raw: Any,
+    path: str,
+    symbol_resolver: Callable[[str], tuple[int, int]] | None,
+) -> CounterLimit:
+    data = _expect_object(raw, path, {"maximum", "address", "size"})
+    probe = _parse_run_probe(
+        {"address": data["address"], "size": data["size"]},
+        path,
+        symbol_resolver,
+    )
+    maximum = data["maximum"]
+    maximum_value = (1 << (probe.size * 8)) - 1
+    if not _is_int(maximum) or maximum < 1 or maximum > maximum_value:
+        raise PlaytestError(
+            f"{path}.maximum must be an integer from 1 through {maximum_value} "
+            f"for a {probe.size}-byte probe"
+        )
+    return CounterLimit(maximum, probe)
+
+
+def _comparison_identity(comparison: Comparison) -> tuple[str, int, str, int]:
+    return (
+        comparison.probe.binding,
+        comparison.probe.size,
+        comparison.operator,
+        comparison.value,
+    )
+
+
+def _comparisons_satisfiable(
+    comparisons: Iterable[Comparison],
+    limits: dict[tuple[str, int], int] | None = None,
+) -> bool:
+    constraints: dict[tuple[str, int], list[Any]] = {}
+    for comparison in comparisons:
+        identity = (comparison.probe.binding, comparison.probe.size)
+        if identity not in constraints:
+            constraints[identity] = [
+                0,
+                (1 << (comparison.probe.size * 8)) - 1,
+                set(),
+            ]
+        lower, upper, excluded = constraints[identity]
+        value = comparison.value
+        if comparison.operator == "eq":
+            lower = max(lower, value)
+            upper = min(upper, value)
+        elif comparison.operator == "ne":
+            excluded.add(value)
+        elif comparison.operator == "lt":
+            upper = min(upper, value - 1)
+        elif comparison.operator == "le":
+            upper = min(upper, value)
+        elif comparison.operator == "gt":
+            lower = max(lower, value + 1)
+        else:
+            lower = max(lower, value)
+        constraints[identity] = [lower, upper, excluded]
+
+    for identity, maximum in (limits or {}).items():
+        size = identity[1]
+        if identity not in constraints:
+            constraints[identity] = [0, (1 << (size * 8)) - 1, set()]
+        constraints[identity][1] = min(constraints[identity][1], maximum)
+
+    for lower, upper, excluded in constraints.values():
+        if lower > upper:
+            return False
+        excluded_count = sum(lower <= value <= upper for value in excluded)
+        if upper - lower + 1 <= excluded_count:
+            return False
+    return True
+
+
+def _parse_run_until_scenario_data(
+    data: Any,
+    source: str,
+    symbol_resolver: Callable[[str], tuple[int, int]] | None,
+) -> Scenario:
+    root = _expect_object(
+        data,
+        source,
+        {"schema_version", "name", "frames", "run_until"},
+        {"description"},
+    )
+    name = _expect_name(root["name"], f"{source}.name")
+    description = root.get("description", "")
+    if not isinstance(description, str):
+        raise PlaytestError(f"{source}.description must be a string")
+    run_path = f"{source}.run_until"
+    run_data = _expect_object(
+        root["run_until"],
+        run_path,
+        {"max_frames", "terminal_conditions", "checkpoint"},
+        {"stall", "turn_limit", "action_limit"},
+    )
+    max_frames = run_data["max_frames"]
+    if not _is_int(max_frames) or max_frames < 1 or max_frames > 10_000_001:
+        raise PlaytestError(
+            f"{run_path}.max_frames must be an integer from 1 through 10000001"
+        )
+
+    conditions_data = run_data["terminal_conditions"]
+    if not isinstance(conditions_data, list) or not conditions_data:
+        raise PlaytestError(f"{run_path}.terminal_conditions must be a non-empty array")
+    if len(conditions_data) > len(TERMINAL_CONDITION_REASONS):
+        raise PlaytestError(
+            f"{run_path}.terminal_conditions has {len(conditions_data)} entries; "
+            f"at most {len(TERMINAL_CONDITION_REASONS)} unique terminal reasons are supported"
+        )
+    terminal_conditions: list[TerminalCondition] = []
+    seen_reasons: set[str] = set()
+    comparison_count = 0
+    for index, raw_condition in enumerate(conditions_data):
+        condition_path = f"{run_path}.terminal_conditions[{index}]"
+        condition_data = _expect_object(
+            raw_condition, condition_path, {"reason", "all"}
+        )
+        reason = condition_data["reason"]
+        if not isinstance(reason, str) or reason not in TERMINAL_CONDITION_REASONS:
+            raise PlaytestError(
+                f"{condition_path}.reason must be one of "
+                f"{', '.join(TERMINAL_CONDITION_REASONS)}"
+            )
+        if reason in seen_reasons:
+            raise PlaytestError(
+                f"{condition_path}.reason duplicates terminal reason {reason!r}"
+            )
+        seen_reasons.add(reason)
+        all_data = condition_data["all"]
+        if not isinstance(all_data, list) or not all_data:
+            raise PlaytestError(f"{condition_path}.all must be a non-empty array")
+        comparisons = [
+            _parse_comparison(
+                raw_comparison,
+                f"{condition_path}.all[{comparison_index}]",
+                symbol_resolver,
+            )
+            for comparison_index, raw_comparison in enumerate(all_data)
+        ]
+        comparison_count += len(comparisons)
+        identities = [_comparison_identity(comparison) for comparison in comparisons]
+        if len(identities) != len(set(identities)):
+            raise PlaytestError(f"{condition_path}.all contains a duplicate condition")
+        if not _comparisons_satisfiable(comparisons):
+            raise PlaytestError(
+                f"{condition_path}.all is internally contradictory and can never match"
+            )
+        terminal_conditions.append(
+            TerminalCondition(
+                reason,
+                tuple(
+                    sorted(
+                        comparisons,
+                        key=lambda comparison: (
+                            _probe_binding_sort_key(
+                                comparison.probe.binding,
+                                comparison.probe.size,
+                            ),
+                            COMPARISON_OPERATORS.index(comparison.operator),
+                            comparison.value,
+                        ),
+                    )
+                ),
+            )
+        )
+    if "success" not in seen_reasons:
+        raise PlaytestError(
+            f"{run_path}.terminal_conditions must define exactly one success condition"
+        )
+    if comparison_count > MAX_RUN_UNTIL_COMPARISONS:
+        raise PlaytestError(
+            f"{run_path}.terminal_conditions contains {comparison_count} comparisons, "
+            f"exceeding the {MAX_RUN_UNTIL_COMPARISONS}-comparison limit"
+        )
+
+    reason_order = {
+        reason: index for index, reason in enumerate(TERMINAL_CONDITION_REASONS)
+    }
+    terminal_conditions.sort(key=lambda condition: reason_order[condition.reason])
+    for left_index, left in enumerate(terminal_conditions):
+        for right in terminal_conditions[left_index + 1 :]:
+            if _comparisons_satisfiable(left.comparisons + right.comparisons):
+                raise PlaytestError(
+                    f"{run_path}.terminal_conditions for {left.reason!r} and "
+                    f"{right.reason!r} overlap; terminal definitions must be "
+                    "mutually exclusive"
+                )
+
+    stall: StallLimit | None = None
+    if "stall" in run_data:
+        stall_path = f"{run_path}.stall"
+        stall_data = _expect_object(
+            run_data["stall"],
+            stall_path,
+            {"max_unchanged_frames", "progress", "work_expected"},
+        )
+        max_unchanged_frames = stall_data["max_unchanged_frames"]
+        if (
+            not _is_int(max_unchanged_frames)
+            or max_unchanged_frames < 1
+            or max_unchanged_frames >= max_frames
+        ):
+            raise PlaytestError(
+                f"{stall_path}.max_unchanged_frames must be an integer from 1 "
+                f"through {max_frames - 1}, strictly below max_frames"
+            )
+        stall = StallLimit(
+            max_unchanged_frames,
+            _parse_run_probe(
+                stall_data["progress"],
+                f"{stall_path}.progress",
+                symbol_resolver,
+            ),
+            _parse_comparison(
+                stall_data["work_expected"],
+                f"{stall_path}.work_expected",
+                symbol_resolver,
+            ),
+        )
+
+    turn_limit = (
+        _parse_counter_limit(
+            run_data["turn_limit"],
+            f"{run_path}.turn_limit",
+            symbol_resolver,
+        )
+        if "turn_limit" in run_data
+        else None
+    )
+    action_limit = (
+        _parse_counter_limit(
+            run_data["action_limit"],
+            f"{run_path}.action_limit",
+            symbol_resolver,
+        )
+        if "action_limit" in run_data
+        else None
+    )
+
+    success = next(
+        condition for condition in terminal_conditions if condition.reason == "success"
+    )
+    counter_limits: dict[tuple[str, int], int] = {}
+    for counter in (turn_limit, action_limit):
+        if counter is None:
+            continue
+        identity = (counter.probe.binding, counter.probe.size)
+        counter_limits[identity] = min(
+            counter.maximum,
+            counter_limits.get(identity, counter.maximum),
+        )
+    if not _comparisons_satisfiable(success.comparisons, counter_limits):
+        raise PlaytestError(
+            f"{run_path} success condition cannot occur within the declared "
+            "turn/action bounds"
+        )
+
+    semantic_probes = [
+        comparison.probe
+        for condition in terminal_conditions
+        for comparison in condition.comparisons
+    ]
+    if stall is not None:
+        semantic_probes.extend((stall.progress, stall.work_expected.probe))
+    semantic_probes.extend(
+        counter.probe
+        for counter in (turn_limit, action_limit)
+        if counter is not None
+    )
+    unique_bindings = {
+        (probe.binding, probe.size) for probe in semantic_probes
+    }
+    if len(unique_bindings) > MAX_RUN_UNTIL_PROBES:
+        raise PlaytestError(
+            f"{run_path} uses {len(unique_bindings)} semantic probes, exceeding "
+            f"the {MAX_RUN_UNTIL_PROBES}-probe limit"
+        )
+    resolved_bindings: dict[tuple[int, int], str] = {}
+    for probe in semantic_probes:
+        if probe.address is None:
+            continue
+        address_identity = (probe.address, probe.size)
+        previous_binding = resolved_bindings.get(address_identity)
+        if previous_binding is not None and previous_binding != probe.binding:
+            raise PlaytestError(
+                f"{run_path} semantic probes {previous_binding!r} and "
+                f"{probe.binding!r} resolve to the same address/size"
+            )
+        resolved_bindings[address_identity] = probe.binding
+
+    checkpoint_data = _expect_object(
+        run_data["checkpoint"],
+        f"{run_path}.checkpoint",
+        {"name", "framebuffer", "probes"},
+        {
+            "expected_framebuffer_hash",
+            "sram_hash",
+            "expected_sram_hash",
+            "sram_hash_exclude_ranges",
+            "regions",
+            "pixel_probes",
+        },
+    )
+    fixed_data = {
+        "schema_version": FIXED_SCENARIO_SCHEMA_VERSION,
+        "name": name,
+        "description": description,
+        "frames": root["frames"],
+        "checkpoints": [
+            {
+                **checkpoint_data,
+                "frame": max_frames - 1,
+            }
+        ],
+    }
+    fixed = _parse_fixed_scenario_data(fixed_data, source, symbol_resolver)
+    return Scenario(
+        fixed.name,
+        fixed.description,
+        False,
+        None,
+        fixed.inputs,
+        fixed.checkpoints,
+        RUN_UNTIL_SCENARIO_SCHEMA_VERSION,
+        RunUntil(
+            max_frames,
+            tuple(terminal_conditions),
+            stall,
+            turn_limit,
+            action_limit,
+        ),
+    )
+
+
+def parse_scenario_data(
+    data: Any,
+    source: str = "<scenario>",
+    symbol_resolver: Callable[[str], tuple[int, int]] | None = None,
+) -> Scenario:
+    if not isinstance(data, dict):
+        raise PlaytestError(f"{source} must be an object")
+    schema_version = data.get("schema_version")
+    if not _is_int(schema_version):
+        raise PlaytestError(
+            f"{source}.schema_version must be integer "
+            f"{FIXED_SCENARIO_SCHEMA_VERSION} or "
+            f"{RUN_UNTIL_SCENARIO_SCHEMA_VERSION}"
+        )
+    if schema_version == FIXED_SCENARIO_SCHEMA_VERSION:
+        return _parse_fixed_scenario_data(data, source, symbol_resolver)
+    if schema_version == RUN_UNTIL_SCENARIO_SCHEMA_VERSION:
+        return _parse_run_until_scenario_data(data, source, symbol_resolver)
+    raise PlaytestError(
+        f"{source}.schema_version must be integer "
+        f"{FIXED_SCENARIO_SCHEMA_VERSION} or {RUN_UNTIL_SCENARIO_SCHEMA_VERSION}"
     )
 
 
@@ -785,17 +1251,12 @@ def build_backend(output: Path, retries: int = 0) -> None:
 
 
 def _write_plan(path: Path, scenario: Scenario) -> None:
-    # Plan format version 3 adds a per-checkpoint region-count/pixel-probe-
-    # count pair (after the SRAM-hash-exclude-range count) plus the region
-    # (x, y, width, height) and pixel-probe (x, y) record lists (after the
-    # probe list) to support `regions`/`pixel_probes` -- real screen-region
-    # hash and single-pixel proof, distinct from the existing whole-frame
-    # `framebuffer_hash`. This plan file is generated and consumed within
-    # the same `capture()`/`verify` invocation only (never persisted across
-    # gba_playtest.py/backend.c versions), so there is no backward
-    # compatibility to preserve here -- backend.c's read_plan() is updated
-    # in lockstep.
-    lines = ["GBA_PLAYTEST_PLAN 3", f"RANGES {len(scenario.inputs)}"]
+    # Fixed scenarios retain plan format 3 exactly. Format 4 appends the
+    # bounded semantic run-until records after the same checkpoint payload.
+    # Plans are generated and consumed within one capture/verify invocation;
+    # scenario and fingerprint compatibility lives in their JSON versions.
+    plan_version = 4 if scenario.run_until is not None else 3
+    lines = [f"GBA_PLAYTEST_PLAN {plan_version}", f"RANGES {len(scenario.inputs)}"]
     lines.extend(
         f"{frame_range.start} {frame_range.end} {frame_range.key_mask}"
         for frame_range in scenario.inputs
@@ -823,15 +1284,86 @@ def _write_plan(path: Path, scenario: Scenario) -> None:
             for region in checkpoint.regions
         )
         lines.extend(f"{pixel.x} {pixel.y}" for pixel in checkpoint.pixel_probes)
+    if scenario.run_until is not None:
+        run_until = scenario.run_until
+        run_probes: list[Probe] = []
+        probe_indexes: dict[tuple[str, int], int] = {}
+
+        def add_probe(probe: Probe) -> int:
+            identity = (probe.binding, probe.size)
+            if identity not in probe_indexes:
+                if probe.address is None:
+                    raise PlaytestError(
+                        f"scenario {scenario.name!r} run-until probe "
+                        f"{probe.binding!r} has no resolved execution address; "
+                        "supply the exact linked ELF with --elf"
+                    )
+                probe_indexes[identity] = len(run_probes)
+                run_probes.append(probe)
+            return probe_indexes[identity]
+
+        for condition in run_until.terminal_conditions:
+            for comparison in condition.comparisons:
+                add_probe(comparison.probe)
+        if run_until.stall is not None:
+            add_probe(run_until.stall.progress)
+            add_probe(run_until.stall.work_expected.probe)
+        for counter in (run_until.turn_limit, run_until.action_limit):
+            if counter is not None:
+                add_probe(counter.probe)
+
+        lines.append(f"RUN_UNTIL {run_until.max_frames}")
+        lines.append(f"RUN_PROBES {len(run_probes)}")
+        lines.extend(f"{probe.address} {probe.size}" for probe in run_probes)
+        lines.append(f"TERMINALS {len(run_until.terminal_conditions)}")
+        for condition in run_until.terminal_conditions:
+            lines.append(
+                f"{PLAN_TERMINAL_REASON_CODES[condition.reason]} "
+                f"{len(condition.comparisons)}"
+            )
+            for comparison in condition.comparisons:
+                lines.append(
+                    f"{add_probe(comparison.probe)} "
+                    f"{PLAN_OPERATOR_CODES[comparison.operator]} "
+                    f"{comparison.value}"
+                )
+        if run_until.stall is None:
+            lines.append("STALL 0")
+        else:
+            stall = run_until.stall
+            lines.extend(
+                (
+                    "STALL 1",
+                    f"{add_probe(stall.progress)} "
+                    f"{add_probe(stall.work_expected.probe)} "
+                    f"{PLAN_OPERATOR_CODES[stall.work_expected.operator]} "
+                    f"{stall.work_expected.value} {stall.max_unchanged_frames}",
+                )
+            )
+        for label, counter in (
+            ("TURN_LIMIT", run_until.turn_limit),
+            ("ACTION_LIMIT", run_until.action_limit),
+        ):
+            if counter is None:
+                lines.append(f"{label} 0")
+            else:
+                lines.extend(
+                    (
+                        f"{label} 1",
+                        f"{add_probe(counter.probe)} {counter.maximum}",
+                    )
+                )
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
 def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
     hashes: dict[int, str] = {}
+    checkpoint_frames: dict[int, int] = {}
     sram_hashes: dict[int, str] = {}
     values: dict[tuple[int, int], int] = {}
     region_hashes: dict[tuple[int, int], str] = {}
     pixel_values: dict[tuple[int, int], int] = {}
+    terminal: tuple[str, int, bool, int, bool, int] | None = None
     for line_number, line in enumerate(stdout.splitlines(), 1):
         fields = line.split("\t")
         try:
@@ -842,11 +1374,70 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
                     raise ValueError("duplicate checkpoint")
                 if not (0 <= checkpoint_index < len(scenario.checkpoints)):
                     raise ValueError("checkpoint index out of range")
-                if frame != scenario.checkpoints[checkpoint_index].frame:
-                    raise ValueError("checkpoint frame does not match plan")
+                if scenario.run_until is None:
+                    if frame != scenario.checkpoints[checkpoint_index].frame:
+                        raise ValueError("checkpoint frame does not match plan")
+                elif (
+                    checkpoint_index != 0
+                    or frame < 0
+                    or frame >= scenario.run_until.max_frames
+                ):
+                    raise ValueError("terminal checkpoint frame is outside run-until bounds")
                 if not re.fullmatch(r"[0-9a-f]{16}", fields[3]):
                     raise ValueError("malformed hash")
+                checkpoint_frames[checkpoint_index] = frame
                 hashes[checkpoint_index] = f"fnv1a64-rgb24:{fields[3]}"
+            elif len(fields) == 7 and fields[0] == "TERMINAL":
+                if scenario.run_until is None:
+                    raise ValueError("unexpected terminal record for fixed-frame scenario")
+                if terminal is not None:
+                    raise ValueError("duplicate terminal record")
+                reason = fields[1]
+                frame = int(fields[2])
+                turn_present = int(fields[3])
+                turn_value = int(fields[4])
+                action_present = int(fields[5])
+                action_value = int(fields[6])
+                if reason not in TERMINAL_REASONS:
+                    raise ValueError("unknown terminal reason")
+                if frame < 0 or frame >= scenario.run_until.max_frames:
+                    raise ValueError("terminal frame is outside run-until bounds")
+                if turn_present not in (0, 1) or action_present not in (0, 1):
+                    raise ValueError("terminal counter presence flag is not 0 or 1")
+                if bool(turn_present) != (scenario.run_until.turn_limit is not None):
+                    raise ValueError("terminal turn presence does not match the plan")
+                if bool(action_present) != (
+                    scenario.run_until.action_limit is not None
+                ):
+                    raise ValueError("terminal action presence does not match the plan")
+                for present, value, limit, label in (
+                    (
+                        turn_present,
+                        turn_value,
+                        scenario.run_until.turn_limit,
+                        "turn",
+                    ),
+                    (
+                        action_present,
+                        action_value,
+                        scenario.run_until.action_limit,
+                        "action",
+                    ),
+                ):
+                    if not present and value != 0:
+                        raise ValueError(f"absent terminal {label} value must be zero")
+                    if limit is not None and not (
+                        0 <= value < 1 << (limit.probe.size * 8)
+                    ):
+                        raise ValueError(f"terminal {label} value exceeds probe width")
+                terminal = (
+                    reason,
+                    frame,
+                    bool(turn_present),
+                    turn_value,
+                    bool(action_present),
+                    action_value,
+                )
             elif len(fields) == 3 and fields[0] == "SRAMHASH":
                 checkpoint_index = int(fields[1])
                 if checkpoint_index in sram_hashes:
@@ -878,6 +1469,9 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
                     raise ValueError("probe checkpoint index out of range")
                 if not (0 <= probe_index < len(scenario.checkpoints[checkpoint_index].probes)):
                     raise ValueError("probe index out of range")
+                probe_size = scenario.checkpoints[checkpoint_index].probes[probe_index].size
+                if not (0 <= value < 1 << (probe_size * 8)):
+                    raise ValueError("probe value exceeds declared width")
                 values[identity] = value
             elif len(fields) == 4 and fields[0] == "REGIONHASH":
                 checkpoint_index = int(fields[1])
@@ -923,6 +1517,18 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
         raise PlaytestError(
             f"backend returned {len(hashes)} of {len(scenario.checkpoints)} checkpoints"
         )
+    if scenario.run_until is None:
+        if terminal is not None:
+            raise PlaytestError("backend returned a terminal record for a fixed scenario")
+    else:
+        if terminal is None:
+            raise PlaytestError("backend returned no run-until terminal record")
+        if len(scenario.checkpoints) != 1:
+            raise PlaytestError("run-until scenario must have exactly one checkpoint")
+        if checkpoint_frames.get(0) != terminal[1]:
+            raise PlaytestError(
+                "backend terminal and checkpoint frames do not match exactly"
+            )
     expected_sram_hash_count = sum(
         1 for checkpoint in scenario.checkpoints if checkpoint.sram_hash
     )
@@ -950,7 +1556,7 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
     checkpoints: list[dict[str, Any]] = []
     for checkpoint_index, checkpoint in enumerate(scenario.checkpoints):
         captured: dict[str, Any] = {
-            "frame": checkpoint.frame,
+            "frame": checkpoint_frames[checkpoint_index],
             "name": checkpoint.name,
             "probes": [],
         }
@@ -988,11 +1594,45 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
                 for pixel_index, pixel in enumerate(checkpoint.pixel_probes)
             ]
         checkpoints.append(captured)
-    return {
+    fingerprint: dict[str, Any] = {
         "checkpoints": checkpoints,
-        "format_version": FINGERPRINT_FORMAT_VERSION,
+        "format_version": (
+            RUN_UNTIL_FINGERPRINT_FORMAT_VERSION
+            if scenario.run_until is not None
+            else FIXED_FINGERPRINT_FORMAT_VERSION
+        ),
         "scenario": scenario.name,
     }
+    if scenario.run_until is not None:
+        assert terminal is not None
+        reason, frame, turn_present, turn_value, action_present, action_value = terminal
+
+        def captured_counter(
+            limit: CounterLimit | None, present: bool, value: int
+        ) -> dict[str, Any] | None:
+            if limit is None:
+                if present:
+                    raise AssertionError("backend counter presence was already validated")
+                return None
+            if not present:
+                raise AssertionError("backend counter presence was already validated")
+            return {
+                "address": limit.probe.binding,
+                "size": limit.probe.size,
+                "value": f"0x{value:0{limit.probe.size * 2}x}",
+            }
+
+        fingerprint["terminal"] = {
+            "reason": reason,
+            "frame": frame,
+            "turn": captured_counter(
+                scenario.run_until.turn_limit, turn_present, turn_value
+            ),
+            "actions": captured_counter(
+                scenario.run_until.action_limit, action_present, action_value
+            ),
+        }
+    return fingerprint
 
 
 def capture(
@@ -1042,7 +1682,11 @@ def capture(
         provenance = rom_provenance(execution_rom)
         build_backend(backend, retries)
         _write_plan(plan, scenario)
-        last_frame = scenario.checkpoints[-1].frame
+        last_frame = (
+            scenario.run_until.max_frames - 1
+            if scenario.run_until is not None
+            else scenario.checkpoints[-1].frame
+        )
         backend_timeout = min(
             MAX_BACKEND_TIMEOUT_SECONDS,
             max(MIN_BACKEND_TIMEOUT_SECONDS, 10 + last_frame / 30),
@@ -1086,7 +1730,7 @@ def compare_inline_expectations(
     differences: list[str] = []
     actual_checkpoints = fingerprint["checkpoints"]
     for checkpoint, actual in zip(scenario.checkpoints, actual_checkpoints):
-        prefix = f"checkpoint {checkpoint.name!r} (frame {checkpoint.frame})"
+        prefix = f"checkpoint {checkpoint.name!r} (frame {actual['frame']})"
         if (
             checkpoint.expected_framebuffer_hash is not None
             and actual.get("framebuffer_hash") != checkpoint.expected_framebuffer_hash
@@ -1143,6 +1787,28 @@ def validate_fingerprint(
 ) -> dict[str, Any]:
     if policy not in ("exact-rom", "behavior"):
         raise ValueError(f"unknown verification policy: {policy}")
+    if not isinstance(data, dict):
+        raise PlaytestError(f"{source} must be an object")
+    format_version = data.get("format_version")
+    if format_version == FIXED_FINGERPRINT_FORMAT_VERSION:
+        return _validate_fixed_fingerprint(data, source, symbol_resolver, policy)
+    if format_version == RUN_UNTIL_FINGERPRINT_FORMAT_VERSION:
+        return _validate_run_until_fingerprint(data, source, symbol_resolver, policy)
+    raise PlaytestError(
+        f"{source}.format_version must be integer "
+        f"{FIXED_FINGERPRINT_FORMAT_VERSION} or "
+        f"{RUN_UNTIL_FINGERPRINT_FORMAT_VERSION}"
+    )
+
+
+def _validate_fixed_fingerprint(
+    data: Any,
+    source: str,
+    symbol_resolver: Callable[[str], tuple[int, int]] | None = None,
+    policy: str = "exact-rom",
+) -> dict[str, Any]:
+    if policy not in ("exact-rom", "behavior"):
+        raise ValueError(f"unknown verification policy: {policy}")
     required_fields = {"format_version", "scenario", "checkpoints"}
     optional_fields: set[str] = set()
     if policy == "exact-rom":
@@ -1152,10 +1818,11 @@ def validate_fingerprint(
     root = _expect_object(data, source, required_fields, optional_fields)
     if (
         not _is_int(root["format_version"])
-        or root["format_version"] != FINGERPRINT_FORMAT_VERSION
+        or root["format_version"] != FIXED_FINGERPRINT_FORMAT_VERSION
     ):
         raise PlaytestError(
-            f"{source}.format_version must be integer {FINGERPRINT_FORMAT_VERSION}"
+            f"{source}.format_version must be integer "
+            f"{FIXED_FINGERPRINT_FORMAT_VERSION}"
         )
     _expect_name(root["scenario"], f"{source}.scenario")
     if "rom" in root:
@@ -1305,6 +1972,87 @@ def validate_fingerprint(
     return root
 
 
+def _validate_run_until_fingerprint(
+    data: Any,
+    source: str,
+    symbol_resolver: Callable[[str], tuple[int, int]] | None,
+    policy: str,
+) -> dict[str, Any]:
+    required_fields = {"format_version", "scenario", "terminal", "checkpoints"}
+    optional_fields: set[str] = set()
+    if policy == "exact-rom":
+        required_fields.add("rom")
+    else:
+        optional_fields.add("rom")
+    root = _expect_object(data, source, required_fields, optional_fields)
+    if (
+        not _is_int(root["format_version"])
+        or root["format_version"] != RUN_UNTIL_FINGERPRINT_FORMAT_VERSION
+    ):
+        raise PlaytestError(
+            f"{source}.format_version must be integer "
+            f"{RUN_UNTIL_FINGERPRINT_FORMAT_VERSION}"
+        )
+
+    fixed_shape = {
+        "format_version": FIXED_FINGERPRINT_FORMAT_VERSION,
+        "scenario": root["scenario"],
+        "checkpoints": root["checkpoints"],
+    }
+    if "rom" in root:
+        fixed_shape["rom"] = root["rom"]
+    _validate_fixed_fingerprint(
+        fixed_shape,
+        source,
+        symbol_resolver,
+        policy,
+    )
+    if len(root["checkpoints"]) != 1:
+        raise PlaytestError(
+            f"{source}.checkpoints must contain exactly one terminal checkpoint"
+        )
+
+    terminal_path = f"{source}.terminal"
+    terminal = _expect_object(
+        root["terminal"],
+        terminal_path,
+        {"reason", "frame", "turn", "actions"},
+    )
+    reason = terminal["reason"]
+    if not isinstance(reason, str) or reason not in TERMINAL_REASONS:
+        raise PlaytestError(
+            f"{terminal_path}.reason must be one of {', '.join(TERMINAL_REASONS)}"
+        )
+    frame = _expect_frame(terminal["frame"], f"{terminal_path}.frame")
+    if root["checkpoints"][0]["frame"] != frame:
+        raise PlaytestError(
+            f"{source}.checkpoints[0].frame must equal {terminal_path}.frame"
+        )
+
+    def validate_counter(value: Any, path: str) -> None:
+        if value is None:
+            return
+        counter = _expect_object(value, path, {"address", "size", "value"})
+        size = counter["size"]
+        if not _is_int(size) or size not in (1, 2, 4):
+            raise PlaytestError(f"{path}.size must be integer 1, 2, or 4")
+        _parse_address(
+            counter["address"],
+            size,
+            f"{path}.address",
+            symbol_resolver,
+        )
+        pattern = re.compile(rf"^0x[0-9a-f]{{{size * 2}}}$")
+        if not isinstance(counter["value"], str) or not pattern.fullmatch(
+            counter["value"]
+        ):
+            raise PlaytestError(f"{path}.value is malformed for size {size}")
+
+    validate_counter(terminal["turn"], f"{terminal_path}.turn")
+    validate_counter(terminal["actions"], f"{terminal_path}.actions")
+    return root
+
+
 def _recursive_differences(expected: Any, actual: Any, path: str = "") -> Iterable[str]:
     if type(expected) is not type(actual):
         yield f"{path or '<root>'}: expected type {type(expected).__name__}, actual {type(actual).__name__}"
@@ -1335,10 +2083,10 @@ def compare_fingerprints(
         return list(_recursive_differences(expected, actual))
     if policy == "behavior":
         expected_behavior = {
-            key: expected[key] for key in ("format_version", "scenario", "checkpoints")
+            key: value for key, value in expected.items() if key != "rom"
         }
         actual_behavior = {
-            key: actual[key] for key in ("format_version", "scenario", "checkpoints")
+            key: value for key, value in actual.items() if key != "rom"
         }
         return list(_recursive_differences(expected_behavior, actual_behavior))
     raise ValueError(f"unknown verification policy: {policy}")

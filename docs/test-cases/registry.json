@@ -443,6 +443,18 @@
       ]
     },
     {
+      "id": "bounded-semantic-run-until",
+      "title": "Bounded semantic run-until scenarios",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/86"
+      ],
+      "reference": "docs/autoplay.md",
+      "status": "current",
+      "required_cases": [
+        "TC-AUTOPLAY-BOUNDS-001"
+      ]
+    },
+    {
       "id": "expansion-locale-selection",
       "title": "Expansion locale selection and pseudo-locale routing",
       "issue_urls": [
@@ -1836,6 +1848,44 @@
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
           "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-AUTOPLAY-BOUNDS-001",
+      "title": "Bounded semantic autoplay termination",
+      "feature_id": "bounded-semantic-run-until",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/86"
+      ],
+      "document": "docs/test-cases/autoplay.md",
+      "anchor": "tc-autoplay-bounds-001-bounded-semantic-autoplay-termination",
+      "profiles": [
+        "Generated homebrew fixture with libmGBA for all terminal reasons",
+        "Modern AAPCS debug ROM with issue #85 COMPUTER telemetry",
+        "Modern AAPCS debug and release ROMs with default PLAYER control"
+      ],
+      "purpose": "Prove bounded first-match semantic termination, typed outcomes and counters, explicit stall/exhaustion/failure distinctions, and fixed-frame compatibility.",
+      "prerequisites": "Repository root with Python 3.10+, a host C compiler, libmGBA development files, and the modern ARM toolchain for real-ROM checks; no committed ROM, save, or savestate.",
+      "actions": "Run the run-until host/libmGBA suite, then the debug and release expansion-modern-autoplay-bounds-check targets.",
+      "expected_result": "The generated fixture emits each of seven reasons exactly once; real debug COMPUTER stops at first success with bounded counters and one terminal checkpoint.",
+      "negative_control": "Malformed, unbounded, overlapping, impossible, unresolved, frozen, or regressing inputs fail deterministically; default debug/release PLAYER routes stop at max_frames with zero actions; semantic failures are not retried.",
+      "interactions": "The real positive depends on #85 telemetry; fixed-frame scenarios have no conflict. Objective, acceleration, strategy, batch, and planner layers are dependents rather than bundled behavior.",
+      "save_compatibility": "Probe-only host/runtime infrastructure; no save field, preference, migration, compatibility epoch, target ROM/RAM, generated data, localization, or configuration identity change.",
+      "cleanup": "Use make clean_fast only to remove ignored build artifacts.",
+      "limitations": "Classifies supplied semantic state only; it does not define objectives, infer exhaustion from inactivity, choose actions, accelerate logic, score strategies, or claim chapter completion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_run_until -v",
+          "evidence": "tools/gba-playtest/tests/test_run_until.py"
+        },
+        {
+          "command": "make expansion-modern-autoplay-bounds-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_autoplay_bounds_checks.py"
+        },
+        {
+          "command": "make expansion-modern-autoplay-bounds-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/fingerprints/autoplay-bounded-player-default-modern-release.json"
         }
       ]
     },
