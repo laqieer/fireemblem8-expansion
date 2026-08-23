@@ -281,7 +281,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             menu_sources,
             flags=re.DOTALL,
         )
-        self.assertEqual(len(menu_width_tokens), 10)
+        self.assertEqual(len(menu_width_tokens), 11)
         self.assertEqual(
             set(menu_width_tokens),
             {"DEBUGTOOLS_MENU_WIDTH_TILES"},

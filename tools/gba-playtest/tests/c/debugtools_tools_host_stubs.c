@@ -308,6 +308,11 @@ int DebugSaveFixture_IsPersistenceBlocked(void)
     return FALSE;
 }
 
+enum DebugSaveFixturePhase DebugSaveFixture_GetPhase(void)
+{
+    return DEBUG_SAVE_FIXTURE_EMPTY;
+}
+
 enum DebugSaveFixtureResult DebugSaveFixture_GetLastResult(void)
 {
     return DEBUG_SAVE_FIXTURE_ERR_NOT_TITLE;

@@ -1,7 +1,9 @@
 #include "global.h"
 #include "bmunit.h"
 #include "muctrl.h"
+#define EVENTCALL_UDEFS_DATA_OWNER
 #include "eventcall.h"
+#undef EVENTCALL_UDEFS_DATA_OWNER
 #include "eventscript.h"
 #include "EAstdlib.h"
 #include "constants/characters.h"
