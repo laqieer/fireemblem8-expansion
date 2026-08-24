@@ -197,6 +197,22 @@ class ProbeBindingToolTests(unittest.TestCase):
                     ),
                 },
             ),
+            (
+                "release",
+                "expansion-modern-starter-qol-check",
+                {
+                    (
+                        "tools/gba-playtest/scenarios/starter-danger-overlay-modern-release.json",
+                        "tools/gba-playtest/fingerprints/starter-danger-overlay-modern-release.json",
+                        "gExpansionDangerOverlayProbe",
+                    ),
+                    (
+                        "tools/gba-playtest/scenarios/starter-danger-overlay-negative-modern-release.json",
+                        "tools/gba-playtest/fingerprints/starter-danger-overlay-negative-modern-release.json",
+                        "gExpansionDangerOverlayProbe",
+                    ),
+                },
+            ),
         )
 
         for config, target, expected_bindings in expected_runs:

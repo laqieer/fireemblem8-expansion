@@ -259,9 +259,13 @@ enum DebugToolsResult DebugTools_GetLastRegistrationResult(void);
  * final session cleanup or rewind Text storage while its MenuItemProc
  * objects are still live.
  *
- * The contributor submenu's MenuDef::onEnd callback must call
- * DebugTools_ReturnToHubAfterMenuEnd(menu). That schedules the matching
- * deferred rewind only after the submenu and its Text objects have ended.
+ * An owned submenu may use the same queue function to hand off to another
+ * bounded submenu while the debugtools session remains active. Queueing is
+ * rejected while another transition is pending. On ordinary completion, an
+ * owned submenu's MenuDef::onEnd callback calls
+ * DebugTools_ReturnToHubAfterMenuEnd(menu); a validated forced-teardown path
+ * may instead end the session. Both paths defer the matching rewind until
+ * after the submenu and its Text objects have ended.
  * The row-allocation font and counter baseline are captured immediately
  * before StartOrphanMenu, before MenuDef::onInit can switch gActiveFont.
  * Cleanup rewinds only that exact owner, restores the previously active
@@ -576,7 +580,17 @@ enum DebugToolsLogCode
     DEBUGTOOLS_LOG_FLAG_TOGGLE_APPLIED,
     DEBUGTOOLS_LOG_RNG_INSPECT,
     DEBUGTOOLS_LOG_RNG_RESEED_APPLIED,
-    DEBUGTOOLS_LOG_SAVESTATE_INSPECT
+    DEBUGTOOLS_LOG_SAVESTATE_INSPECT,
+
+    /* Issue #125: cursor-selected unit editor telemetry. Payload `a`
+     * packs operation:field:old as 8:8:16 bits; payload `b` packs
+     * outcome:new as 8:24 bits. Exact values also mirror into the
+     * appended gDebugToolsProbe fields below. */
+    DEBUGTOOLS_LOG_UNIT_EDIT_PREVIEW,
+    DEBUGTOOLS_LOG_UNIT_EDIT_APPLIED,
+    DEBUGTOOLS_LOG_UNIT_EDIT_CANCELLED,
+    DEBUGTOOLS_LOG_UNIT_EDIT_REJECTED,
+    DEBUGTOOLS_LOG_UNIT_EDIT_FORCED_CLEANUP
 };
 
 /* Named assert codes -- checked by DEBUGTOOLS_ASSERT at each tool's own
@@ -586,7 +600,61 @@ enum DebugToolsAssertCode
     DEBUGTOOLS_ASSERT_NONE = 0,
     DEBUGTOOLS_ASSERT_FLAG_ID_OUT_OF_RANGE,
     DEBUGTOOLS_ASSERT_UNIT_TARGET_INVALID,
-    DEBUGTOOLS_ASSERT_CONVOY_INDEX_OUT_OF_RANGE
+    DEBUGTOOLS_ASSERT_CONVOY_INDEX_OUT_OF_RANGE,
+    DEBUGTOOLS_ASSERT_UNIT_TARGET_DEAD,
+    DEBUGTOOLS_ASSERT_UNIT_TARGET_STALE,
+    DEBUGTOOLS_ASSERT_UNIT_EDIT_CONFLICT,
+    DEBUGTOOLS_ASSERT_UNIT_EDIT_VALUE_OUT_OF_RANGE,
+    DEBUGTOOLS_ASSERT_UNIT_EDIT_UNSUPPORTED
+};
+
+/* Issue #125: closed, typed identities for the cursor-selected unit editor.
+ * Values are append-only telemetry ABI: runtime scenarios read them as raw
+ * integers from gDebugToolsProbe. */
+enum DebugToolsUnitEditOperation
+{
+    DEBUGTOOLS_UNIT_EDIT_OPERATION_NONE = 0,
+    DEBUGTOOLS_UNIT_EDIT_OPERATION_HEAL,
+    DEBUGTOOLS_UNIT_EDIT_OPERATION_SET_HP,
+    DEBUGTOOLS_UNIT_EDIT_OPERATION_SET_STAT,
+    DEBUGTOOLS_UNIT_EDIT_OPERATION_SET_AI,
+    DEBUGTOOLS_UNIT_EDIT_OPERATION_CLEAR_STATUS
+};
+
+enum DebugToolsUnitEditField
+{
+    DEBUGTOOLS_UNIT_EDIT_FIELD_NONE = 0,
+    DEBUGTOOLS_UNIT_EDIT_FIELD_CURRENT_HP,
+    DEBUGTOOLS_UNIT_EDIT_FIELD_MAX_HP,
+    DEBUGTOOLS_UNIT_EDIT_FIELD_POWER,
+    DEBUGTOOLS_UNIT_EDIT_FIELD_SKILL,
+    DEBUGTOOLS_UNIT_EDIT_FIELD_SPEED,
+    DEBUGTOOLS_UNIT_EDIT_FIELD_DEFENSE,
+    DEBUGTOOLS_UNIT_EDIT_FIELD_RESISTANCE,
+    DEBUGTOOLS_UNIT_EDIT_FIELD_LUCK,
+    DEBUGTOOLS_UNIT_EDIT_FIELD_AI_A,
+    DEBUGTOOLS_UNIT_EDIT_FIELD_AI_B,
+    DEBUGTOOLS_UNIT_EDIT_FIELD_STATUS,
+
+    DEBUGTOOLS_UNIT_EDIT_FIELD_COUNT
+};
+
+enum DebugToolsUnitEditOutcome
+{
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_NONE = 0,
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_INSPECTED,
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_PREVIEWED,
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_APPLIED,
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_NO_CHANGE,
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_CANCELLED,
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_FORCED_CLEANUP,
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_EMPTY,
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_INVALID,
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_DEAD,
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_STALE,
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_CONFLICT,
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_RANGE,
+    DEBUGTOOLS_UNIT_EDIT_OUTCOME_REJECTED_UNSUPPORTED
 };
 
 struct DebugToolsLogEntry
@@ -646,20 +714,15 @@ u32 DebugTools_GetLastAssertCode(void);
 /* --- Five bounded validated tools ------------------------------------
  * Issue #11 closure requirement 5. Each is a single registry action (see
  * src/debugtools_tools.c) that samples/displays read-only state on
- * selection, then -- for the four that can mutate anything -- opens a
- * bounded two-item "Confirm <action>" / "Back" submenu (same
- * StartOrphanMenu idiom as Weather/Fog, src/debugtools_actions.c) so a
- * mutation only ever happens after an explicit, separate confirmation
- * input. No tool ever performs a raw/arbitrary address write or accepts
- * an unvalidated numeric index from outside this fixed source file: every
- * target/index/id is either a fixed, documented, in-range constant, or
- * produced by an existing engine lookup helper (e.g. GetUnitFromCharId)
- * that itself returns NULL/a safe sentinel on failure. Persistent SRAM
- * state is never mutated by any of the five (RNG/flags/units/convoy are
- * ordinary EWRAM runtime state; the fifth tool is read-only and never
- * mutates anything). Registers all five through the internal built-in
- * path (ids 5-9), never through the contributor API and never through
- * direct edits to gDebugToolsHubMenuDef/sHubMenuItemDefs. */
+ * selection. Convoy, Flag, and RNG retain their bounded Confirm/Back menus.
+ * Issue #125 gives Unit one fixed root plus HP/stat/AI preview menus; A is
+ * still a separate confirmation after inspection/preview. No tool performs
+ * a raw/arbitrary address write or accepts an unvalidated index: fixed
+ * operations use documented constants, while Unit resolves and revalidates
+ * the live cursor target through engine helpers. Persistent SRAM is never
+ * mutated (RNG/flags/units/convoy are ordinary EWRAM runtime state; Save
+ * State is read-only). Registers ids 5-9 through the internal built-in path,
+ * never through the contributor API or direct hub-menu edits. */
 void DebugTools_RegisterExtendedToolActions(void);
 
 /* --- Playtest / host probe surface -----------------------------------
@@ -767,18 +830,17 @@ struct DebugToolsProbe
                               * assert failure, DEBUGTOOLS_ASSERT_NONE if
                               * none has ever fired */
 
-    /* --- Unit inspector (issue #11 closure) --- */
-    u32 unitInspectTargetFound;   /* 1 if
-                                    * GetUnitFromCharId(CHARACTER_EIRIKA)
-                                    * resolved to a UNIT_IS_VALID unit at
+    /* --- Unit inspector (issue #11, cursor target from issue #125) --- */
+    u32 unitInspectTargetFound;   /* 1 if the bounded live cursor/map/GetUnit
+                                    * resolution produced a valid target at
                                     * the most recent inspect, else 0 */
     u32 unitInspectLastCurHp;     /* curHP sampled at the most recent
                                     * inspect (0 if no valid target) */
     u32 unitInspectLastMaxHp;     /* maxHP sampled at the most recent
                                     * inspect (0 if no valid target) */
-    u32 unitHealTransactionCount; /* increments once per confirmed "Heal
-                                    * to Full" transaction actually applied
-                                    * to a valid target */
+    u32 unitHealTransactionCount; /* increments once per valid confirmed
+                                    * "Heal to Full" request, including an
+                                    * already-full no-change outcome */
 
     /* --- Convoy inspector (issue #11 closure) --- */
     u32 convoyLastItemCount;       /* GetConvoyItemCount() sampled at the
@@ -810,7 +872,32 @@ struct DebugToolsProbe
                                   * most recent inspect (enum
                                   * SaveCompatState) */
     u32 saveCompatInspectCount; /* increments once per inspect */
+};
 
+/* Cursor-selected unit inspector/editor telemetry (issue #125). This is a
+ * separate appended-section probe so growing the feature cannot move issue
+ * #11's gDebugToolsProbe or the established registry state that follows it.
+ * No pointer is exposed. */
+struct DebugToolsUnitEditorProbe
+{
+    u32 unitInspectTargetSlot;    /* canonical Unit::index, or 0 */
+    u32 unitInspectLastCharacterNumber; /* CharacterData::number, or 0 */
+    u32 unitInspectLastClassNumber; /* ClassData::number, or 0 */
+    u32 unitInspectLastState;     /* read-only Unit::state sample */
+    u32 unitInspectLastStatus;    /* read-only Unit::statusIndex sample */
+    u32 unitInspectLastAiA;       /* read-only Unit::ai1 sample */
+    u32 unitInspectLastAiB;       /* read-only Unit::ai2 sample */
+    u32 unitEditPreviewCount;     /* preview telemetry records */
+    u32 unitEditTransactionCount; /* actual one-field mutations */
+    u32 unitEditCancelCount;      /* explicit Back/B cancellations */
+    u32 unitEditRejectCount;      /* fail-closed target/value rejects */
+    u32 unitEditForcedCleanupCount; /* menu ended without apply/cancel */
+    u32 unitEditLastOperation;    /* enum DebugToolsUnitEditOperation */
+    u32 unitEditLastField;        /* enum DebugToolsUnitEditField */
+    u32 unitEditLastOldValue;     /* exact pre-transaction value */
+    u32 unitEditLastNewValue;     /* exact preview/requested value */
+    u32 unitEditLastOutcome;      /* enum DebugToolsUnitEditOutcome */
+    u32 unitEditRefreshCount;     /* authoritative map refreshes */
 };
 
 enum
@@ -820,6 +907,7 @@ enum
 };
 
 extern struct DebugToolsProbe gDebugToolsProbe;
+extern struct DebugToolsUnitEditorProbe gDebugToolsUnitEditorProbe;
 
 #endif
 

@@ -20,6 +20,7 @@ DISABLED_DRIVER = (
 CC = shutil.which("gcc") or shutil.which("cc")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_NM = shutil.which("arm-none-eabi-nm")
+ARM_READELF = shutil.which("arm-none-eabi-readelf")
 ARM_SIZE = shutil.which("arm-none-eabi-size")
 PRODUCTION_DISPATCH_CALLERS = (
     ROOT / "src" / "bmitemuse.c",
@@ -38,6 +39,17 @@ def _undefined_symbols(obj: Path) -> set[str]:
     if completed.returncode != 0:
         raise AssertionError(completed.stdout + completed.stderr)
     return {line.split()[-1] for line in completed.stdout.splitlines() if line.split()}
+
+
+def _relocation_count(obj: Path, symbol: str) -> int:
+    completed = run([ARM_READELF, "-rW", str(obj)])
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return sum(
+        1
+        for line in completed.stdout.splitlines()
+        if re.search(r"\b" + re.escape(symbol) + r"\b", line)
+    )
 
 
 class AoEHostTests(unittest.TestCase):
@@ -249,7 +261,10 @@ class AoEArmAndBudgetTests(unittest.TestCase):
                 self.assertIn(name, completed.stderr)
 
 
-@unittest.skipIf(ARM_CC is None or ARM_NM is None, "no arm-none-eabi compiler/binutils")
+@unittest.skipIf(
+    ARM_CC is None or ARM_READELF is None,
+    "no arm-none-eabi compiler/readelf",
+)
 class AoEProductionDispatchObjectTests(unittest.TestCase):
     """Every production item/AI route must retain the public dispatch seam."""
 
@@ -278,14 +293,24 @@ class AoEProductionDispatchObjectTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         return obj
 
-    def test_every_production_dispatch_caller_relocates_to_public_dispatch(self):
+    def test_every_production_dispatch_caller_has_the_expected_dispatch_relocations(self):
+        expected_counts = {
+            "bmitemuse.c": 2,
+            "bmusemind.c": 1,
+            "cp_staff.c": 1,
+            "cpextra_80407F0.c": 1,
+        }
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             for source in PRODUCTION_DISPATCH_CALLERS:
                 with self.subTest(source=source.name):
-                    self.assertIn(
-                        "ExpansionAoE_DispatchItem",
-                        _undefined_symbols(self._compile_enabled(work, source)),
+                    self.assertEqual(
+                        _relocation_count(
+                            self._compile_enabled(work, source),
+                            "ExpansionAoE_DispatchItem",
+                        ),
+                        expected_counts[source.name],
+                        "each production dispatch call must retain its own relocation",
                     )
 
 

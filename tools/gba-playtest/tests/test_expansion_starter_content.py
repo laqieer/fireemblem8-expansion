@@ -26,6 +26,7 @@ depends on:
 
 import os
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -109,23 +110,55 @@ def _arm_compile(work_dir, src, obj_name, defines=(), extra_includes=()):
 class ItemExpansionProbeAbiTests(unittest.TestCase):
     """Compile a separate consumer against the public probe ABI."""
 
-    def test_probe_has_scalar_layout_for_symbolic_runner_offsets(self):
+    def test_probe_matches_every_runner_field_offset_and_width(self):
         import tempfile
+
+        runner = runpy.run_path(str(RUNNER))
+        fields = tuple(runner["PROBE_FIELDS"])
+        expected_layout = {
+            field: (4 * index, 4)
+            for index, field in enumerate(fields)
+        }
+        base = 0x02000000
+        runner_probes = runner["build_scenario"](base, 1)["checkpoints"][0]["probes"]
+        self.assertEqual(len(runner_probes), len(fields))
+        runner_layout = {
+            field: (int(probe["address"], 16) - base, probe["size"])
+            for field, probe in zip(fields, runner_probes)
+        }
+        self.assertEqual(runner_layout, expected_layout)
 
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             source = work / "item_probe_abi.c"
+            field_rows = "\n".join(
+                "    {{ \"{0}\", offsetof(struct ItemExpansionProbe, {0}), "
+                "sizeof(((struct ItemExpansionProbe *)0)->{0}) }},".format(field)
+                for field in fields
+            )
             source.write_text(
                 "#define FE8_EXPANSION_ITEMTEST_ENABLED 1\n"
                 "#define FE8_ITEM_ID_CAP 0xCE\n"
                 "#include <stddef.h>\n"
                 "#include <stdio.h>\n"
                 "#include \"expansion_itemtest.h\"\n"
+                "struct ProbeFieldLayout\n"
+                "{\n"
+                "    const char *name;\n"
+                "    size_t offset;\n"
+                "    size_t width;\n"
+                "};\n"
+                "static const struct ProbeFieldLayout sProbeFields[] =\n"
+                "{\n"
+                + field_rows
+                + "\n};\n"
                 "int main(void)\n"
                 "{\n"
-                "    printf(\"%zu %zu %zu\\n\", sizeof(struct ItemExpansionProbe),\n"
-                "        offsetof(struct ItemExpansionProbe, magic),\n"
-                "        offsetof(struct ItemExpansionProbe, uiNameHash));\n"
+                "    size_t index;\n"
+                "    printf(\"size %zu\\n\", sizeof(struct ItemExpansionProbe));\n"
+                "    for (index = 0; index < sizeof(sProbeFields) / sizeof(sProbeFields[0]); index++)\n"
+                "        printf(\"%s %zu %zu\\n\", sProbeFields[index].name,\n"
+                "            sProbeFields[index].offset, sProbeFields[index].width);\n"
                 "    return 0;\n"
                 "}\n",
                 encoding="utf-8",
@@ -140,8 +173,14 @@ class ItemExpansionProbeAbiTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             completed = subprocess.run([str(executable)], capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-        size, magic, name_hash = (int(value) for value in completed.stdout.split())
-        self.assertEqual((size, magic, name_hash), (0x114, 0, 0x110))
+        lines = completed.stdout.splitlines()
+        self.assertEqual(lines[0], "size {}".format(4 * len(fields)))
+        consumer_layout = {}
+        for line in lines[1:]:
+            field, offset, width = line.split()
+            self.assertNotIn(field, consumer_layout)
+            consumer_layout[field] = (int(offset), int(width))
+        self.assertEqual(consumer_layout, runner_layout)
 
 
 @unittest.skipIf(ARM_CC is None or SIZE is None, "no arm-none-eabi toolchain")

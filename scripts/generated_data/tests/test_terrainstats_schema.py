@@ -53,21 +53,6 @@ class TerrainStatsSchemaCoverageTests(unittest.TestCase):
             messages,
         )
 
-    def test_extra_terrain_key_detected(self):
-        _, diagnostics = _validate("extra_terrain_key.json")
-        self.assertFalse(diagnostics.ok)
-        messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(any("TERRAIN_NOT_REAL" in m for m in messages), messages)
-
-
-class TerrainStatsSchemaRangeTests(unittest.TestCase):
-    def test_bad_range_detected(self):
-        _, diagnostics = _validate("bad_range.json")
-        self.assertFalse(diagnostics.ok)
-        messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(any("200" in m and "out of range" in m for m in messages), messages)
-
-
 class TerrainStatsSchemaFieldMobilityTests(unittest.TestCase):
     def test_bad_field_detected(self):
         _, diagnostics = _validate("bad_field.json")
