@@ -52,6 +52,7 @@ MODERN_GOALS := \
 	expansion-modern-banim-package-runtime-check \
 	expansion-modern-autoplay-bounds-check \
 	expansion-modern-chapter-objectives-profile-rom \
+	expansion-modern-chapter-objectives-profile-boot-check \
 	expansion-modern-chapter-objectives-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
@@ -3403,6 +3404,13 @@ expansion-modern-chapter-objectives-profile-rom:
 		GENERATED_DATA_OUT_DIR=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR) \
 		GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_FIXTURE)
 
+expansion-modern-chapter-objectives-profile-boot-check:
+	+$(MAKE) expansion-modern-boot-check \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT) \
+		GENERATED_DATA_OUT_DIR=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_FIXTURE)
+
 ifeq ($(MODERN_CONFIG),debug)
 expansion-modern-chapter-objectives-check: expansion-modern-boot-preflight expansion-modern-rom \
 		expansion-modern-chapter-objectives-profile-rom
@@ -3416,9 +3424,9 @@ expansion-modern-chapter-objectives-check: expansion-modern-boot-preflight expan
 		--fixture-elf "$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ELF)" \
 		--out-dir "$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR)"
 else
-expansion-modern-chapter-objectives-check:
-	@echo "error: expansion-modern-chapter-objectives-check requires MODERN_CONFIG=debug" >&2
-	@exit 2
+expansion-modern-chapter-objectives-check: expansion-modern-chapter-objectives-profile-boot-check
+	@printf 'Modern chapter-objectives runtime check skipped: the authored Suspend -> reset -> Resume scenario is debug-calibrated; the enabled authored-data profile was built and boot-verified for config=%s\n' \
+		'$(MODERN_CONFIG)'
 endif
 
 # Normal save/load runtime scenario (issue #13 closure). Reuses new-game.json's
