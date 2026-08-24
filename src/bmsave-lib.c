@@ -525,10 +525,12 @@ static bool8 ExpansionUserPrefs_StoreRecord(
 {
     u32 errorAddr;
 
+#ifndef FE8_ARCHIVAL_BUILD
     if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED
         && DebugSaveFixture_RecordBlockedWrite(
             DEBUG_SAVE_FIXTURE_WRITE_PREFS))
         return FALSE;
+#endif
 
     if (localeId >= EXPANSION_LOCALE_COUNT)
         return FALSE;

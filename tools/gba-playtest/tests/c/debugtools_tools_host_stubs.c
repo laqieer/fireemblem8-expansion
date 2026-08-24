@@ -414,6 +414,11 @@ int DebugSaveFixture_CanPrepare(void)
     return sFakeSaveFixtureCanPrepare;
 }
 
+int DebugSaveFixture_IsActive(void)
+{
+    return sFakeSaveFixturePhase == DEBUG_SAVE_FIXTURE_ACTIVE;
+}
+
 int DebugSaveFixture_IsPersistenceBlocked(void)
 {
     return FALSE;

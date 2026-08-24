@@ -838,22 +838,6 @@ enum DebugToolsResult DebugTools_OpenHub(void)
     return DEBUGTOOLS_ERR_DISABLED;
 }
 
-void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuDef* menuDef)
-{
-    (void)menu;
-    (void)menuDef;
-}
-
-void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
-{
-    (void)menu;
-}
-
-void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu)
-{
-    (void)menu;
-}
-
 int DebugTools_IsHubActive(void)
 {
     return 0;

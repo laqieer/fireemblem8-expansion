@@ -276,9 +276,10 @@ enum DebugToolsResult DebugTools_GetLastRegistrationResult(void);
  * finally released only when the reopened hub itself ends without another
  * queued transition.
  *
- * Both functions are inert when debug tools are disabled. Calls outside an
- * active hub/submenu session, duplicate transition requests, and a NULL
- * submenuDef are also safe no-ops. */
+ * Calls outside an active hub/submenu session, duplicate transition requests,
+ * and a NULL submenuDef are also safe no-ops. These internal session
+ * handoffs are declared only when debug tools are enabled. */
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
 void DebugTools_QueueSubmenuTransition(
     struct MenuProc* menu,
     const struct MenuDef* submenuDef);
@@ -289,6 +290,7 @@ void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu);
  * ownership; game-control handoffs may then consume their already-queued
  * typed request. Calls outside an active submenu session are safe no-ops. */
 void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu);
+#endif
 
 /* Opens the debug hub menu (a StartOrphanMenu-based menu, same idiom as
  * the existing dormant debug menus in src/menu_def.c). Lazily registers

@@ -216,9 +216,6 @@ SECTIONS
         *(debug_save_fixture_data)
 
         . = ALIGN(4);
-        *(ewram_data.debugtools_unit_editor)
-
-        . = ALIGN(4);
         PROVIDE(gLoadUnitBuffer = .);
         PROVIDE(end = .);
     } > ewram AT> ewram

@@ -290,28 +290,10 @@ static void DebugToolsTools_ShowStatusLine(const char* text)
     gLCDControlBuffer.dispcnt.bg2_on = 1;
 }
 
-struct DebugToolsUnitEditorState
-{
-    u32 targetState;
-    s8 oldValues[DEBUGTOOLS_UNIT_EDIT_FIELD_COUNT];
-    s8 previewValues[DEBUGTOOLS_UNIT_EDIT_FIELD_COUNT];
-    u8 active;
-    u8 closeExpected;
-    u8 targetSlot;
-    u8 targetCharacterNumber;
-    u8 targetClassNumber;
-    u8 targetX;
-    u8 targetY;
-    u8 previewField;
-};
-
 typedef char DebugToolsUnitEditorStateLayoutAssert[
     sizeof(struct DebugToolsUnitEditorState) == 0x24 ? 1 : -1];
 typedef char DebugToolsUnitEditorProbeLayoutAssert[
     sizeof(struct DebugToolsUnitEditorProbe) == 0x48 ? 1 : -1];
-
-SECTION("ewram_data.debugtools_unit_editor")
-static struct DebugToolsUnitEditorState sUnitEditor = {0};
 
 /* Every submenu transition ends the current menu first, so all five tools and
  * the Save State flow can share one six-item persistent buffer. */
@@ -327,6 +309,8 @@ EWRAM_DATA static struct MenuItemDef sDebugToolsMenuItemDefs[6] = {{0}};
  * fixture preview and title-only menu controls. */
 EWRAM_DATA union DebugSaveFixtureStableStorage sSaveStateStableLayout
     __attribute__((used)) = {0};
+extern struct DebugToolsUnitEditorState sUnitEditor
+    __attribute__((alias("sSaveStateStableLayout")));
 
 #define sSaveFixtureOverrides sSaveStateStableLayout.fixture.preview.overrides
 #define sSaveFixtureSourceKind sSaveStateStableLayout.fixture.preview.target.sourceKind
@@ -350,7 +334,10 @@ static int DebugToolsUnit_HasConflict(void)
     if (Proc_Find(gProcScr_PlayerPhase) == NULL)
         return 1;
 
-    return EventEngineExists() || BattleEventEngineExists() || IsBattleDeamonActive();
+    return DebugSaveFixture_IsActive()
+        || EventEngineExists()
+        || BattleEventEngineExists()
+        || IsBattleDeamonActive();
 }
 
 static enum DebugToolsUnitEditOutcome DebugToolsUnit_ResolveCursorTarget(
