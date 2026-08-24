@@ -37,10 +37,8 @@ static const struct ExpansionChapterObjectiveBundle* GetCurrentBundle(void)
     return NULL;
 }
 
-static enum UnitObjectiveState GetUnitObjectiveState(u8 character)
+static enum UnitObjectiveState GetUnitObjectiveStateFromUnit(const struct Unit* unit)
 {
-    struct Unit* unit = GetUnitFromCharId(character);
-
     if (unit == NULL || unit->pCharacterData == NULL)
         return UNIT_OBJECTIVE_MISSING;
 
@@ -51,6 +49,11 @@ static enum UnitObjectiveState GetUnitObjectiveState(u8 character)
         return UNIT_OBJECTIVE_MISSING;
 
     return UNIT_OBJECTIVE_ALIVE;
+}
+
+static enum UnitObjectiveState GetUnitObjectiveState(u8 character)
+{
+    return GetUnitObjectiveStateFromUnit(GetUnitFromCharId(character));
 }
 
 static struct ObjectiveResult GetGroupAreaResult(
@@ -66,7 +69,7 @@ static struct ObjectiveResult GetGroupAreaResult(
     for (index = 0; index < group->memberCount; index++)
     {
         struct Unit* unit = GetUnitFromCharId(group->members[index]);
-        enum UnitObjectiveState unitState = GetUnitObjectiveState(group->members[index]);
+        enum UnitObjectiveState unitState = GetUnitObjectiveStateFromUnit(unit);
 
         if (unitState == UNIT_OBJECTIVE_DEAD)
         {
@@ -233,12 +236,24 @@ void ExpansionChapterObjectives_ResetTelemetry(void)
 
 void ExpansionChapterObjectives_RefreshTelemetry(void)
 {
-    const struct ExpansionChapterObjectiveBundle* bundle = GetCurrentBundle();
+    const struct ExpansionChapterObjectiveBundle* bundle;
     struct ObjectiveResult selected = { EXPANSION_CHAPTER_OBJECTIVE_INACTIVE, 0 };
     u32 selectedId = 0;
     int selectedPriority = 0;
     int index;
 
+    /*
+     * The default generated table is only its sentinel. Do not touch
+     * telemetry or walk chapter state from the per-frame map task unless a
+     * chapter actually authored an objective bundle.
+     */
+    if (gExpansionChapterObjectiveBundles[0].chapterId
+        == EXPANSION_CHAPTER_OBJECTIVE_CHAPTER_NONE)
+    {
+        return;
+    }
+
+    bundle = GetCurrentBundle();
     ExpansionChapterObjectives_ResetTelemetry();
     if (bundle == NULL)
         return;

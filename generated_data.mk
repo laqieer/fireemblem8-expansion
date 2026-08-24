@@ -431,6 +431,12 @@ GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)
 # lane retains its historical source/object set, while modern builds link this
 # additive generated record table and the pointer-free evaluator.
 GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE ?= src/data/chapter_objectives.json
+GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED := $(shell $(PYTHON) -c \
+	'import json, sys; print(int(bool(json.load(open(sys.argv[1], encoding="utf-8"))["chapters"])))' \
+	"$(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE)" 2>/dev/null)
+ifeq ($(GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED),)
+GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED := 0
+endif
 GENERATED_DATA_CHAPTEROBJECTIVES_C := $(GENERATED_DATA_OUT_DIR)/data_chapter_objectives.c
 GENERATED_DATA_CONFIG_INPUTS_chapterobjectives := \
 	include/constants/chapters.h \

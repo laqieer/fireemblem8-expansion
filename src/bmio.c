@@ -153,7 +153,7 @@ PROC_LABEL(0),
     PROC_CALL(PutUnitSpritesOam),
     PROC_CALL(WfxUpdate),
     PROC_CALL(UpdateBmMapDisplay),
-#ifndef FE8_ARCHIVAL_BUILD
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
     PROC_CALL(ExpansionChapterObjectives_RefreshTelemetry),
 #endif
 
@@ -982,6 +982,8 @@ void StartBattleMap(struct GameCtrlProc* gameCtrl) {
 
 #ifndef FE8_ARCHIVAL_BUILD
     ExpansionAutoplay_Reset();
+#endif
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
     ExpansionChapterObjectives_ResetTelemetry();
 #endif
 
@@ -1054,6 +1056,8 @@ void StartBattleMap(struct GameCtrlProc* gameCtrl) {
 void RestartBattleMap(void) {
 #ifndef FE8_ARCHIVAL_BUILD
     ExpansionAutoplay_Reset();
+#endif
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
     ExpansionChapterObjectives_ResetTelemetry();
 #endif
 
@@ -1102,6 +1106,8 @@ void GameCtrl_StartResumedGame(struct GameCtrlProc* gameCtrl) {
 
 #ifndef FE8_ARCHIVAL_BUILD
     ExpansionAutoplay_Reset();
+#endif
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
     ExpansionChapterObjectives_ResetTelemetry();
 #endif
 
@@ -1228,6 +1234,8 @@ void EndBMapMain(void) {
 
 #ifndef FE8_ARCHIVAL_BUILD
     ExpansionAutoplay_Reset();
+#endif
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
     ExpansionChapterObjectives_ResetTelemetry();
 #endif
 

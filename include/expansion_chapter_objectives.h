@@ -3,6 +3,14 @@
 
 #include "global.h"
 
+#ifndef FE8_CHAPTER_OBJECTIVES_ENABLED
+#define FE8_CHAPTER_OBJECTIVES_ENABLED 0
+#endif
+
+#if (FE8_CHAPTER_OBJECTIVES_ENABLED != 0) && (FE8_CHAPTER_OBJECTIVES_ENABLED != 1)
+#error "FE8_CHAPTER_OBJECTIVES_ENABLED must be 0 or 1"
+#endif
+
 enum ExpansionChapterObjectiveKind
 {
     EXPANSION_CHAPTER_OBJECTIVE_PROTECT = 1,

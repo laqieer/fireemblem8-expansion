@@ -526,6 +526,13 @@ def validate(records, diagnostics, dependency_records=None,
                                        objective_ref + ".protectedCharacter", kind="character")
                 )
                 used_characters.add(objective.protected_character)
+                if objective.protected_character == "CHARACTER_NONE":
+                    diagnostics.add(
+                        _err(
+                            "protectedCharacter must not be CHARACTER_NONE",
+                            objective.protected_character_loc, objective_ref + ".protectedCharacter",
+                        )
+                    )
             if objective.completion_objective is not None:
                 diagnostics.extend(
                     validate_reference(objective.completion_objective, objectives_by_id,
