@@ -152,17 +152,55 @@ class ChapterObjectivesInputTests(unittest.TestCase):
                 os.utime(module, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
 
         manifest = ROOT / "assets" / "manifest.json"
-        original = manifest.read_bytes()
-        original_stat = manifest.stat()
+        tmx = ROOT / "assets" / "tmx" / "Ch2Map.tmx"
+        manifest_original = manifest.read_bytes()
+        tmx_original = tmx.read_bytes()
+        objectives_original = self.objectives.read_bytes()
+        manifest_stat = manifest.stat()
+        tmx_stat = tmx.stat()
+        objectives_stat = self.objectives.stat()
         try:
-            manifest.write_bytes(original.replace(b'"mapWidth": 15', b'"mapWidth": 14', 1))
+            text = tmx_original.decode("utf-8")
+            text = text.replace('width="15"', 'width="14"', 2)
+            resized_lines = []
+            for line in text.splitlines():
+                stripped = line.strip()
+                if stripped and stripped[0].isdigit():
+                    values = stripped.rstrip(",").split(",")
+                    if len(values) == 15:
+                        suffix = "," if stripped.endswith(",") else ""
+                        line = line[:len(line) - len(stripped)] + ",".join(values[:-1]) + suffix
+                resized_lines.append(line)
+            tmx.write_text("\n".join(resized_lines) + "\n", encoding="utf-8")
+            manifest_mismatch = self._make()
+            self.assertNotEqual(manifest_mismatch.returncode, 0)
+            self.assertIn("generate --table chapterobjectives", manifest_mismatch.stdout)
+            self.assertIn("manifest dimensions 15x15 do not match TMX 14x15", manifest_mismatch.stdout)
+
+            manifest.write_bytes(manifest_original.replace(b'"mapWidth": 15', b'"mapWidth": 14', 1))
+            objective_data = json.loads(objectives_original.decode("utf-8"))
+            objective_data["chapters"][0]["objectives"][0]["area"]["xMax"] = 13
+            self.objectives.write_text(json.dumps(objective_data), encoding="utf-8")
+            matching_resize = self._make()
+            self.assertEqual(matching_resize.returncode, 0, matching_resize.stdout)
+            self.assertIn("generate --table chapterobjectives", matching_resize.stdout)
+
+            objective_data["chapters"][0]["objectives"][0]["area"]["xMax"] = 14
+            self.objectives.write_text(json.dumps(objective_data), encoding="utf-8")
             stale_area = self._make()
             self.assertNotEqual(stale_area.returncode, 0)
             self.assertIn("generate --table chapterobjectives", stale_area.stdout)
             self.assertIn("xMax 14 out of range [0, 13]", stale_area.stdout)
         finally:
-            manifest.write_bytes(original)
-            os.utime(manifest, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+            manifest.write_bytes(manifest_original)
+            tmx.write_bytes(tmx_original)
+            self.objectives.write_bytes(objectives_original)
+            os.utime(manifest, ns=(manifest_stat.st_atime_ns, manifest_stat.st_mtime_ns))
+            os.utime(tmx, ns=(tmx_stat.st_atime_ns, tmx_stat.st_mtime_ns))
+            os.utime(
+                self.objectives,
+                ns=(objectives_stat.st_atime_ns, objectives_stat.st_mtime_ns),
+            )
 
 
 if __name__ == "__main__":
