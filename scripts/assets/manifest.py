@@ -1653,6 +1653,8 @@ def validate(records):
         if len(normalized_sources) == len(record.sources):
             record.sources = normalized_sources
         _validate_provenance(record, diagnostics)
+        if len(normalized_sources) != len(record.sources):
+            continue
         metadata = kind.validate(record, diagnostics)
         if record.kind == FormattedPortraitPackageKind.name:
             portrait_metadata[id(record)] = metadata

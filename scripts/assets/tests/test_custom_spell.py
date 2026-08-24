@@ -64,6 +64,44 @@ def _write_png(
         handle.write(payload)
 
 
+def _reference_gba_lz77(data):
+    output = bytearray(b"\x10")
+    output.extend(len(data).to_bytes(3, "little"))
+    position = 0
+    while position < len(data):
+        flag_offset = len(output)
+        output.append(0)
+        flags = 0
+        for bit in range(8):
+            if position >= len(data):
+                break
+            best_length = 0
+            best_distance = 0
+            for candidate in range(max(0, position - 0x1000), position):
+                length = 0
+                while (
+                    length < 18
+                    and position + length < len(data)
+                    and data[candidate + length] == data[position + length]
+                ):
+                    length += 1
+                    if candidate + length >= position:
+                        break
+                if length > best_length:
+                    best_length = length
+                    best_distance = position - candidate
+            if best_length >= 3:
+                flags |= 0x80 >> bit
+                output.append(((best_length - 3) << 4) | ((best_distance - 1) >> 8))
+                output.append((best_distance - 1) & 0xFF)
+                position += best_length
+            else:
+                output.append(data[position])
+                position += 1
+        output[flag_offset] = flags
+    return bytes(output)
+
+
 class CustomSpellAdapterTests(unittest.TestCase):
     def setUp(self):
         if os.path.isdir(TEST_ROOT):
@@ -459,6 +497,31 @@ class CustomSpellAdapterTests(unittest.TestCase):
             ):
                 manifest.load_and_validate(path)
 
+    def test_rejected_sources_never_load_custom_package(self):
+        with open(REFERENCE_MANIFEST, encoding="utf-8") as handle:
+            document = json.load(handle)
+        path = os.path.join(TEST_ROOT, "manifest.json")
+        for rejected_source in ("/outside/spell.json", "../outside/spell.json"):
+            with self.subTest(source=rejected_source):
+                changed = copy.deepcopy(document)
+                record = next(
+                    row for row in changed["assets"]
+                    if row["kind"] == "custom-spell-effect"
+                )
+                record["sources"][0] = rejected_source
+                with open(path, "w", encoding="utf-8") as handle:
+                    json.dump(changed, handle)
+                with (
+                    mock.patch.object(custom_spell, "load_package") as loader,
+                    mock.patch.object(
+                        custom_spell, "read_indexed_png"
+                    ) as image_reader,
+                ):
+                    with self.assertRaises(GeneratedDataValidationError):
+                        manifest.load_and_validate(path, 1)
+                loader.assert_not_called()
+                image_reader.assert_not_called()
+
     def test_check_rejects_missing_stale_and_orphan_custom_outputs(self):
         output = os.path.join(TEST_ROOT, "out")
         manifest.generate(REFERENCE_MANIFEST, output, 1)
@@ -802,6 +865,28 @@ class CustomSpellAdapterTests(unittest.TestCase):
         ]
         with self.assertRaisesRegex(ValueError, "duplicate custom spell item"):
             custom_spell.validate_collection(duplicate_item)
+
+    def test_lz77_matches_reference_vectors_within_profile_bound(self):
+        vectors = (
+            b"",
+            b"A",
+            b"ABCABCABCABCABCABC",
+            bytes(range(32)) * 4,
+            b"ABCD" * 128 + b"EFGH" * 128,
+        )
+        for vector in vectors:
+            with self.subTest(size=len(vector)):
+                self.assertEqual(
+                    custom_spell.gba_lz77(vector), _reference_gba_lz77(vector)
+                )
+
+        payload = bytes(range(256)) * 16
+        expected = custom_spell.gba_lz77(payload)
+        started = time.monotonic()
+        for _effect in range(custom_spell.MAX_EFFECTS):
+            for _frame in range(custom_spell.MAX_FRAMES):
+                self.assertEqual(custom_spell.gba_lz77(payload), expected)
+        self.assertLess(time.monotonic() - started, 20)
 
 
 if __name__ == "__main__":

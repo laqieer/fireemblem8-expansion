@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 import hashlib
 import json
 import os
@@ -614,8 +615,20 @@ def _palette_bytes(png):
     return bytes(output)
 
 
+def _lz77_prefix_index(data):
+    indexes = [None] * 19
+    for length in range(3, 19):
+        index = {}
+        for start in range(len(data) - length + 1):
+            index.setdefault(data[start:start + length], []).append(start)
+        indexes[length] = index
+    return indexes
+
+
 def gba_lz77(data):
-    """Encode a deterministic GBA LZ77 stream."""
+    """Encode deterministic GBA LZ77 with exact longest/earliest tie behavior."""
+    data = bytes(data)
+    indexes = _lz77_prefix_index(data)
     output = bytearray(b"\x10")
     output.extend(len(data).to_bytes(3, "little"))
     position = 0
@@ -629,19 +642,17 @@ def gba_lz77(data):
             best_length = 0
             best_distance = 0
             start = max(0, position - 0x1000)
-            for candidate in range(start, position):
-                length = 0
-                while (
-                    length < 18
-                    and position + length < len(data)
-                    and data[candidate + length] == data[position + length]
-                ):
-                    length += 1
-                    if candidate + length >= position:
-                        break
-                if length > best_length:
+            max_length = min(18, len(data) - position)
+            for length in range(max_length, 2, -1):
+                candidates = indexes[length].get(data[position:position + length])
+                if candidates is None:
+                    continue
+                first = bisect_left(candidates, start)
+                last = bisect_right(candidates, position - length)
+                if first < last:
                     best_length = length
-                    best_distance = position - candidate
+                    best_distance = position - candidates[first]
+                    break
             if best_length >= 3:
                 flags |= 0x80 >> bit
                 output.append(((best_length - 3) << 4) | ((best_distance - 1) >> 8))
