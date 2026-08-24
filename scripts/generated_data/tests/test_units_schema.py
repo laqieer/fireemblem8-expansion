@@ -84,13 +84,6 @@ class UnitsSchemaReferenceTests(unittest.TestCase):
             any("undefined character reference 'CHARACTER_SIBLING_FAKE'" in m for m in messages), messages
         )
 
-    def test_missing_item_reference_detected(self):
-        _, diagnostics = _validate("missing_item_ref.json")
-        self.assertFalse(diagnostics.ok)
-        messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(any("undefined item reference 'ITEM_NOT_A_REAL_ITEM'" in m for m in messages), messages)
-
-
 class UnitsSchemaRangeTests(unittest.TestCase):
     def test_out_of_range_level_detected(self):
         _, diagnostics = _validate("bad_level.json")

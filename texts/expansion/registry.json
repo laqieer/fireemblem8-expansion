@@ -520,6 +520,134 @@
     },
     {
       "id": 63,
+      "key": "debug.unit.edit_hp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 64,
+      "key": "debug.unit.edit_stats",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 65,
+      "key": "debug.unit.edit_ai",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 66,
+      "key": "debug.unit.clear_status",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 67,
+      "key": "debug.unit.identity",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 68,
+      "key": "debug.unit.state",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 69,
+      "key": "debug.unit.current_hp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 70,
+      "key": "debug.unit.max_hp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 71,
+      "key": "debug.unit.power",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 72,
+      "key": "debug.unit.skill",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 73,
+      "key": "debug.unit.speed",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 74,
+      "key": "debug.unit.defense",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 75,
+      "key": "debug.unit.resistance",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 76,
+      "key": "debug.unit.luck",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 77,
+      "key": "debug.unit.ai_a",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24
+    },
+    {
+      "id": 78,
+      "key": "debug.unit.ai_b",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24
+    },
+    {
+      "id": 79,
       "key": "debug.save_fixture.game0",
       "status": "active",
       "surface": "debug_overlay",
@@ -527,7 +655,7 @@
       "max_decoded_bytes": 32
     },
     {
-      "id": 64,
+      "id": 80,
       "key": "debug.save_fixture.game1",
       "status": "active",
       "surface": "debug_overlay",
@@ -535,7 +663,7 @@
       "max_decoded_bytes": 32
     },
     {
-      "id": 65,
+      "id": 81,
       "key": "debug.save_fixture.game2",
       "status": "active",
       "surface": "debug_overlay",
@@ -543,7 +671,7 @@
       "max_decoded_bytes": 32
     },
     {
-      "id": 66,
+      "id": 82,
       "key": "debug.save_fixture.latest_suspend",
       "status": "active",
       "surface": "debug_overlay",
@@ -551,7 +679,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 67,
+      "id": 83,
       "key": "debug.save_fixture.completion",
       "status": "active",
       "surface": "debug_overlay",
@@ -559,7 +687,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 68,
+      "id": 84,
       "key": "debug.save_fixture.tactician",
       "status": "active",
       "surface": "debug_overlay",
@@ -567,7 +695,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 69,
+      "id": 85,
       "key": "debug.save_fixture.keep",
       "status": "active",
       "surface": "debug_overlay",
@@ -575,7 +703,7 @@
       "max_decoded_bytes": 20
     },
     {
-      "id": 70,
+      "id": 86,
       "key": "debug.save_fixture.marker",
       "status": "active",
       "surface": "debug_overlay",
@@ -583,7 +711,7 @@
       "max_decoded_bytes": 20
     },
     {
-      "id": 71,
+      "id": 87,
       "key": "debug.save_fixture.arm",
       "status": "active",
       "surface": "debug_overlay",
@@ -591,7 +719,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 72,
+      "id": 88,
       "key": "debug.save_fixture.continue",
       "status": "active",
       "surface": "debug_overlay",
@@ -599,7 +727,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 73,
+      "id": 89,
       "key": "debug.save_fixture.preview",
       "status": "active",
       "surface": "debug_overlay",
@@ -607,7 +735,7 @@
       "max_decoded_bytes": 32
     },
     {
-      "id": 74,
+      "id": 90,
       "key": "debug.save_fixture.title_only",
       "status": "active",
       "surface": "debug_overlay",
@@ -615,7 +743,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 75,
+      "id": 91,
       "key": "debug.save_fixture.invalid",
       "status": "active",
       "surface": "debug_overlay",
@@ -623,7 +751,7 @@
       "max_decoded_bytes": 32
     },
     {
-      "id": 76,
+      "id": 92,
       "key": "debug.save_fixture.blocked",
       "status": "active",
       "surface": "debug_overlay",

@@ -46,6 +46,9 @@ EWRAM_DATA struct DebugToolsProbe gDebugToolsProbe = {0};
 
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
 
+SECTION("debugtools_contributor_data") struct DebugToolsUnitEditorProbe
+    gDebugToolsUnitEditorProbe = {0};
+
 /* Keep added contributor/page state in a dedicated input section that the
  * linker appends after the pre-existing EWRAM layout. This adds bounded
  * capacity without moving gDebugToolsProbe or any later probe/state symbol
@@ -617,7 +620,8 @@ static int DebugTools_StartMenuTransition(
 void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuDef* menuDef)
 {
     if (menuDef == NULL
-        || !(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE))
+        || !(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE)
+        || (sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
         return;
 
     DebugTools_StartMenuTransition(
@@ -625,6 +629,11 @@ void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuD
         DEBUGTOOLS_TRANSITION_SUBMENU,
         menuDef,
         0);
+}
+
+int DebugTools_IsMenuTransitionScheduled(void)
+{
+    return sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED;
 }
 
 void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
