@@ -410,6 +410,9 @@ void EndProcIfNotMarkedB(ProcPtr proc)
 
 void GameControl_ClearPaletteAndReset(ProcPtr proc)
 {
+#ifndef FE8_ARCHIVAL_BUILD
+    DebugTools_ForceSessionCleanup();
+#endif
     CpuFastFill16(0, gPaletteBuffer, 0x400);
     EnablePaletteSync();
     Proc_ForAll(EndProcIfNotMarkedB);
@@ -837,6 +840,10 @@ void GameControlHandlePostNormalOrExtraChapter(struct GameCtrlProc* proc) {
 
 void GameControl_ChapterSwitch(struct GameCtrlProc* proc) {
     int i;
+
+#ifndef FE8_ARCHIVAL_BUILD
+    DebugTools_ForceSessionCleanup();
+#endif
 
     for (i = 0; i <= 2; i++) {
         NextRN();

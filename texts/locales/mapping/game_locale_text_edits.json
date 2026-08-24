@@ -393,6 +393,11 @@
         "zh-Hans": "AI2"
       },
       {
+        "ja": "BGM確認",
+        "key": "debug.action.music_preview",
+        "zh-Hans": "BGM查看"
+      },
+      {
         "ja": "章/魔物戦",
         "key": "debug.action.chapter_skirmish",
         "zh-Hans": "章节/魔物战"

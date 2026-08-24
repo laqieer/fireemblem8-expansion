@@ -648,6 +648,15 @@
     },
     {
       "id": 79,
+      "key": "debug.action.music_preview",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40,
+      "notes": "Issue #126 bounded debugtools music-preview action."
+    },
+    {
+      "id": 80,
       "key": "debug.action.chapter_skirmish",
       "status": "active",
       "surface": "debug_overlay",
@@ -655,7 +664,7 @@
       "max_decoded_bytes": 64
     },
     {
-      "id": 80,
+      "id": 81,
       "key": "debug.selector.chapter",
       "status": "active",
       "surface": "debug_overlay",
@@ -663,7 +672,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 81,
+      "id": 82,
       "key": "debug.selector.skirmish",
       "status": "active",
       "surface": "debug_overlay",
@@ -671,7 +680,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 82,
+      "id": 83,
       "key": "debug.selector.eirika",
       "status": "active",
       "surface": "debug_overlay",
@@ -679,7 +688,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 83,
+      "id": 84,
       "key": "debug.selector.ephraim",
       "status": "active",
       "surface": "debug_overlay",
@@ -687,7 +696,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 84,
+      "id": 85,
       "key": "debug.selector.unavailable",
       "status": "active",
       "surface": "debug_overlay",

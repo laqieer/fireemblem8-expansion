@@ -272,6 +272,14 @@ ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
     return (ProcPtr)1;
 }
 
+ProcPtr Proc_Find(const struct ProcCmd* script)
+{
+    if (script == gProcScr_DebugToolsMenuTransition)
+        return sDebugToolsLifecyclePendingTransition;
+
+    return NULL;
+}
+
 void DebugToolsLifecycle_RunPendingTransition(void)
 {
     ProcPtr proc = sDebugToolsLifecyclePendingTransition;
@@ -343,6 +351,13 @@ u8 DebugToolsLifecycle_Builtin9Selected(struct MenuProc* menu, struct MenuItemPr
     return 9;
 }
 
+u8 DebugToolsLifecycle_Builtin10Selected(struct MenuProc* menu, struct MenuItemProc* item)
+{
+    (void)menu;
+    (void)item;
+    return 10;
+}
+
 static const struct DebugToolsAction sBuiltinActions[] =
 {
     {1, "Fast Boot: Chapter 2", DebugToolsLifecycle_Builtin1Selected},
@@ -354,6 +369,7 @@ static const struct DebugToolsAction sBuiltinActions[] =
     {7, "Flag/Chapter", DebugToolsLifecycle_Builtin7Selected},
     {8, "RNG Inspect", DebugToolsLifecycle_Builtin8Selected},
     {9, "Save State", DebugToolsLifecycle_Builtin9Selected},
+    {10, "Music Preview", DebugToolsLifecycle_Builtin10Selected},
 };
 
 void DebugTools_RegisterBuiltinActions(void)
@@ -379,3 +395,14 @@ void DebugTools_RegisterExtendedToolActions(void)
     for (i = 4; i < 9; ++i)
         DebugTools_RegisterBuiltinAction(&sBuiltinActions[i]);
 }
+
+#if !DEBUGTOOLS_LIFECYCLE_USE_REAL_MUSIC
+void DebugTools_RegisterMusicPreviewAction(void)
+{
+    DebugTools_RegisterBuiltinAction(&sBuiltinActions[9]);
+}
+
+void DebugTools_CleanupMusicPreview(void)
+{
+}
+#endif

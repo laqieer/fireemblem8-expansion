@@ -4,7 +4,7 @@
       "frame": 880,
       "name": "selector-open-chapter4-default",
       "probes": [
-        {"address": "gDebugToolsProbe+0x04", "size": 4, "value": "0x00000009"},
+        {"address": "gDebugToolsProbe+0x04", "size": 4, "value": "0x0000000a"},
         {"address": "gDebugToolsProbe+0x08", "size": 4, "value": "0x00000000"},
         {"address": "sSelectorState", "size": 2, "value": "0x1104"},
         {"address": "sSelectorState+0x02", "size": 1, "value": "0x00"}

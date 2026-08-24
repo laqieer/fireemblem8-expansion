@@ -7,7 +7,7 @@
 #include "expansion_debugtools.h"
 
 #ifndef DEBUGTOOLS_INITIALIZER_FIRST
-#error "DEBUGTOOLS_INITIALIZER_FIRST must select one public initializer (1-4)"
+#error "DEBUGTOOLS_INITIALIZER_FIRST must select one public initializer (1-5)"
 #endif
 
 #define CHECK(cond, msg) \
@@ -31,6 +31,7 @@ extern u8 DebugToolsLifecycle_Builtin6Selected(struct MenuProc*, struct MenuItem
 extern u8 DebugToolsLifecycle_Builtin7Selected(struct MenuProc*, struct MenuItemProc*);
 extern u8 DebugToolsLifecycle_Builtin8Selected(struct MenuProc*, struct MenuItemProc*);
 extern u8 DebugToolsLifecycle_Builtin9Selected(struct MenuProc*, struct MenuItemProc*);
+extern u8 DebugToolsLifecycle_Builtin10Selected(struct MenuProc*, struct MenuItemProc*);
 
 static u8 ContributorSelected(struct MenuProc* menu, struct MenuItemProc* item)
 {
@@ -58,13 +59,17 @@ static void CallInitializer(int group)
     case 4:
         DebugTools_RegisterExtendedToolActions();
         break;
+
+    case 5:
+        DebugTools_RegisterMusicPreviewAction();
+        break;
     }
 }
 
 int main(void)
 {
-    static const u16 expectedIds[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
-    static const char* const expectedLabels[9] =
+    static const u16 expectedIds[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    static const char* const expectedLabels[10] =
     {
         "Fast Boot: Chapter 2",
         "Weather",
@@ -74,9 +79,10 @@ int main(void)
         "Convoy Inspect",
         "Flag/Chapter",
         "RNG Inspect",
-        "Save State"
+        "Save State",
+        "Music Preview"
     };
-    static u8 (*const expectedCallbacks[9])(struct MenuProc*, struct MenuItemProc*) =
+    static u8 (*const expectedCallbacks[10])(struct MenuProc*, struct MenuItemProc*) =
     {
         DebugToolsLifecycle_Builtin1Selected,
         DebugToolsLifecycle_Builtin2Selected,
@@ -86,23 +92,25 @@ int main(void)
         DebugToolsLifecycle_Builtin6Selected,
         DebugToolsLifecycle_Builtin7Selected,
         DebugToolsLifecycle_Builtin8Selected,
-        DebugToolsLifecycle_Builtin9Selected
+        DebugToolsLifecycle_Builtin9Selected,
+        DebugToolsLifecycle_Builtin10Selected
     };
-    static const u16 firstGroupIds[4][5] =
+    static const u16 firstGroupIds[5][5] =
     {
         {1, 0, 0, 0, 0},
         {2, 3, 0, 0, 0},
         {4, 0, 0, 0, 0},
-        {5, 6, 7, 8, 9}
+        {5, 6, 7, 8, 9},
+        {10, 0, 0, 0, 0}
     };
-    static const int firstGroupCounts[4] = {1, 2, 1, 5};
+    static const int firstGroupCounts[5] = {1, 2, 1, 5, 1};
     struct DebugToolsAction contributor;
     const struct DebugToolsAction* action;
     int first = DEBUGTOOLS_INITIALIZER_FIRST;
     int group;
     int i;
 
-    CHECK(first >= 1 && first <= 4,
+    CHECK(first >= 1 && first <= 5,
           "the test must select a valid public initializer");
     CHECK(DebugTools_GetRegisteredCount() == 0,
           "the registry must start empty");
@@ -122,14 +130,14 @@ int main(void)
               "sparse built-in introspection must retain callback identity");
     }
 
-    for (group = 4; group >= 1; --group)
+    for (group = 5; group >= 1; --group)
     {
         if (group != first)
             CallInitializer(group);
     }
 
     CHECK(DebugTools_GetRegisteredCount() == DEBUGTOOLS_BUILTIN_ACTION_MAX,
-          "all public initializer orders must produce nine built-ins");
+          "all public initializer orders must produce ten built-ins");
 
     for (i = 0; i < DEBUGTOOLS_BUILTIN_ACTION_MAX; ++i)
     {
@@ -137,7 +145,7 @@ int main(void)
         CHECK(action != NULL,
               "every fully initialized built-in row must exist");
         CHECK(action->id == expectedIds[i],
-              "full built-in introspection must remain in stable ID order 1-9");
+              "full built-in introspection must remain in stable ID order 1-10");
         CHECK(strcmp(action->label, expectedLabels[i]) == 0,
               "each stable built-in ID must retain its matching label");
         CHECK(action->onSelected == expectedCallbacks[i],

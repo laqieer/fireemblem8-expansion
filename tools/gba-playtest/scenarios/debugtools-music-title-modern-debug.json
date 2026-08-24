@@ -1,0 +1,335 @@
+{
+  "schema_version": 1,
+  "name": "debugtools-music-title-modern-debug",
+  "description": "TC-DEBUGTOOLS-PROTOTYPE-004 title fixture. From the live modern-debug title screen, opens the bounded hub, pages once to built-in ID 10 Music Preview, previews the first authoritative song, wraps left to the last valid song, rapidly replaces it with the first song, and backs out. Semantic probes assert one owner, selected IDs 1/0x46/1, exact preview/restoration counts, prior title song 0x43, restored gSoundSt, and zero rejection. Whole-SRAM hashes before preview and after restoration must match. Audio recognizability is supplementary only.",
+  "frames": [
+    {
+      "start": 90,
+      "end": 95,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 150,
+      "end": 155,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 210,
+      "end": 215,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 270,
+      "end": 275,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 330,
+      "end": 335,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 390,
+      "end": 395,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 450,
+      "end": 455,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 600,
+      "end": 606,
+      "keys": [
+        "SELECT",
+        "R"
+      ]
+    },
+    {
+      "start": 660,
+      "end": 666,
+      "keys": [
+        "R"
+      ]
+    },
+    {
+      "start": 720,
+      "end": 726,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 780,
+      "end": 786,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 840,
+      "end": 846,
+      "keys": [
+        "LEFT"
+      ]
+    },
+    {
+      "start": 900,
+      "end": 906,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 960,
+      "end": 966,
+      "keys": [
+        "RIGHT"
+      ]
+    },
+    {
+      "start": 980,
+      "end": 986,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 1040,
+      "end": 1046,
+      "keys": [
+        "B"
+      ]
+    },
+    {
+      "start": 1100,
+      "end": 1106,
+      "keys": [
+        "B"
+      ]
+    }
+  ],
+  "checkpoints": [
+    {
+      "frame": 650,
+      "framebuffer": false,
+      "name": "music-title-hub-open",
+      "probes": [
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsProbe+0x04",
+          "size": 4,
+          "expected": "0x0000000a"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x10",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "gSoundSt+0x04",
+          "size": 2,
+          "expected": "0x0043"
+        },
+        {
+          "address": "gSoundSt+0x06",
+          "size": 1,
+          "expected": "0x01"
+        }
+      ],
+      "sram_hash": true
+    },
+    {
+      "frame": 750,
+      "framebuffer": false,
+      "name": "music-title-owner-acquired",
+      "probes": [
+        {
+          "address": "gDebugToolsMusicProbe+0x10",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x14",
+          "size": 4,
+          "expected": "0x00000043"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x18",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x1c",
+          "size": 4,
+          "expected": "0x0000000a"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x04",
+          "size": 4,
+          "expected": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 810,
+      "framebuffer": false,
+      "name": "music-title-first-preview",
+      "probes": [
+        {
+          "address": "gDebugToolsMusicProbe+0x00",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x04",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x10",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gSoundSt+0x04",
+          "size": 2,
+          "expected": "0x0001"
+        }
+      ]
+    },
+    {
+      "frame": 930,
+      "framebuffer": false,
+      "name": "music-title-boundary-preview",
+      "probes": [
+        {
+          "address": "gDebugToolsMusicProbe+0x00",
+          "size": 4,
+          "expected": "0x00000046"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x04",
+          "size": 4,
+          "expected": "0x00000002"
+        },
+        {
+          "address": "gSoundSt+0x04",
+          "size": 2,
+          "expected": "0x0046"
+        }
+      ]
+    },
+    {
+      "frame": 1010,
+      "framebuffer": false,
+      "name": "music-title-rapid-replacement",
+      "probes": [
+        {
+          "address": "gDebugToolsMusicProbe+0x00",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x04",
+          "size": 4,
+          "expected": "0x00000003"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x0c",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "gSoundSt+0x04",
+          "size": 2,
+          "expected": "0x0001"
+        }
+      ]
+    },
+    {
+      "frame": 1070,
+      "framebuffer": false,
+      "name": "music-title-restored",
+      "probes": [
+        {
+          "address": "gDebugToolsMusicProbe+0x08",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x10",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "gSoundSt+0x02",
+          "size": 2,
+          "expected": "0x0000"
+        },
+        {
+          "address": "gSoundSt+0x04",
+          "size": 2,
+          "expected": "0x0043"
+        },
+        {
+          "address": "gSoundSt+0x06",
+          "size": 1,
+          "expected": "0x01"
+        },
+        {
+          "address": "gSoundSt+0x07",
+          "size": 1,
+          "expected": "0x00"
+        }
+      ],
+      "sram_hash": true
+    },
+    {
+      "frame": 1130,
+      "framebuffer": false,
+      "name": "music-title-session-closed",
+      "probes": [
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "expected": "0x00000003"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x08",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x10",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "gSoundSt+0x04",
+          "size": 2,
+          "expected": "0x0043"
+        }
+      ]
+    }
+  ]
+}

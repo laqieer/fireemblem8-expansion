@@ -28259,6 +28259,14 @@
           ]
         },
         {
+          "id": "expansion:debug.action.music_preview",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "expansion:debug.action.chapter_skirmish",
           "mapping_source_kind": "expansion",
           "reason": "expansion UI registry system-font consumer",
@@ -28326,12 +28334,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2009,
+          "system": 2010,
           "talk": 1172
         },
-        "expansion_key_count": 84,
+        "expansion_key_count": 85,
         "game_target_count": 3414,
-        "record_count": 3500,
+        "record_count": 3501,
         "unclassified_count": 0
       }
     },
@@ -56593,6 +56601,14 @@
           ]
         },
         {
+          "id": "expansion:debug.action.music_preview",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "expansion:debug.action.chapter_skirmish",
           "mapping_source_kind": "expansion",
           "reason": "expansion UI registry system-font consumer",
@@ -56660,12 +56676,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2009,
+          "system": 2010,
           "talk": 1172
         },
-        "expansion_key_count": 84,
+        "expansion_key_count": 85,
         "game_target_count": 3414,
-        "record_count": 3500,
+        "record_count": 3501,
         "unclassified_count": 0
       }
     }

@@ -78,3 +78,5 @@ The bounded debug chapter/skirmish procedure is
 [`TC-DEBUGTOOLS-PROTOTYPE-001`](debugtools.md#tc-debugtools-prototype-001-bounded-chapter-and-skirmish-selector).
 The cursor-selected unit debug editor procedure is
 [`TC-DEBUGTOOLS-PROTOTYPE-003`](debugtools.md#tc-debugtools-prototype-003-cursor-selected-bounded-unit-inspectoreditor).
+The bounded debugtools music-preview procedure is
+[`TC-DEBUGTOOLS-PROTOTYPE-004`](debugtools.md#tc-debugtools-prototype-004-preview-bounded-music-and-restore-its-owner).
