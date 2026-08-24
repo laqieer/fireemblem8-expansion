@@ -37,10 +37,10 @@ EXPECTED_HASHED_REQUIREMENTS = {
         "sha256:2c8bc871f7740b690c6df6fb8c9633be58fcda123eea3e53be40a79e4af54b83",
     ),
 }
-PIP_INSTALL_RE = re.compile(
+PIP_INVOCATION_RE = re.compile(
     r"(?<![A-Za-z0-9_.-])"
     r"(?:python(?:3(?:\.[0-9]+)?)?\s+-m\s+pip|pip(?:3(?:\.[0-9]+)?)?)"
-    r"\s+install\b"
+    r"(?=\s|$)"
 )
 PULL_REQUEST_TRIGGER = 'pull_request:\n    branches: [ "master" ]'
 PUSH_TRIGGER = 'push:\n    branches: [ "master" ]'
@@ -188,17 +188,17 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             words = set(command.split())
             if "apt-get" in words and "libpng-dev" in words and "pkg-config" not in words:
                 errors.append(f"{job_name} installs libpng-dev without pkg-config")
-        pip_installs = [
+        pip_invocations = [
             command
             for command in _run_block_commands(job)
-            for _match in PIP_INSTALL_RE.finditer(command)
+            for _match in PIP_INVOCATION_RE.finditer(command)
         ]
         if job_name in ("build", "patch-release"):
-            if len(pip_installs) != 1 or _normalise(pip_installs[0]) != _normalise(
+            if len(pip_invocations) != 1 or _normalise(pip_invocations[0]) != _normalise(
                 HASHED_PIP_INSTALL
             ):
                 errors.append(f"{job_name} must use the reviewed hash-locked Python requirements")
-        elif pip_installs:
+        elif pip_invocations:
             errors.append(f"{job_name} adds an unreviewed Python package install")
 
     for job_name in COMBINED_WORKERS:
@@ -375,6 +375,24 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_separate_bare_or_versioned_pip_install_fails(self):
         for command in ("pip install evil", "pip3.12 install evil"):
+            with self.subTest(command=command):
+                changed = self.text.replace(
+                    "    - name: Build tools\n",
+                    f"    - run: {command}\n\n    - name: Build tools\n",
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "must use the reviewed hash-locked Python requirements" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_pip_global_options_before_install_fail(self):
+        for command in (
+            "python3 -m pip --isolated install evil",
+            "pip --proxy https://example.invalid install evil",
+        ):
             with self.subTest(command=command):
                 changed = self.text.replace(
                     "    - name: Build tools\n",
