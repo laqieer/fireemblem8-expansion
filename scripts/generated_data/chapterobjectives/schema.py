@@ -435,12 +435,22 @@ def _owner_unit_groups(owner, diagnostics, record):
     }
 
 
-def _owner_map_dimensions(owner):
+def _owner_map_dimensions(owner, diagnostics, record):
     from ..chapterbundle import schema as chapterbundle_schema
 
-    return chapterbundle_schema.read_chapter_map_dimensions(
-        owner.chapter.chapter_settings_index
-    )
+    try:
+        return chapterbundle_schema.read_chapter_map_dimensions(
+            owner.chapter.chapter_settings_index
+        )
+    except GeneratedDataError as error:
+        diagnostics.add(
+            _err(
+                str(error),
+                record.chapter_loc,
+                "bundles[chapter={}].map".format(record.chapter),
+            )
+        )
+        return None
 
 
 def validate(records, diagnostics, dependency_records=None,
@@ -551,7 +561,7 @@ def validate(records, diagnostics, dependency_records=None,
         else:
             chapter_bundle = owners[0]
             unit_groups = _owner_unit_groups(chapter_bundle, diagnostics, record)
-            map_dimensions = _owner_map_dimensions(chapter_bundle)
+            map_dimensions = _owner_map_dimensions(chapter_bundle, diagnostics, record)
             objective_owner = chapter_bundle.chapter_objectives
             if objective_owner is None:
                 diagnostics.add(
