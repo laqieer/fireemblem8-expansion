@@ -28283,6 +28283,54 @@
           ]
         },
         {
+          "id": "expansion:debug.action.chapter_skirmish",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.chapter",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.skirmish",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.eirika",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.ephraim",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.unavailable",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "static:sTacticianGridJaHiragana",
           "mapping_source_kind": "static_ui",
           "reason": "tactician name-entry grid system-font consumer",
@@ -28302,12 +28350,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2006,
+          "system": 2012,
           "talk": 1172
         },
-        "expansion_key_count": 81,
+        "expansion_key_count": 87,
         "game_target_count": 3414,
-        "record_count": 3497,
+        "record_count": 3503,
         "unclassified_count": 0
       }
     },
@@ -56593,6 +56641,54 @@
           ]
         },
         {
+          "id": "expansion:debug.action.chapter_skirmish",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.chapter",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.skirmish",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.eirika",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.ephraim",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.unavailable",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "static:sTacticianGridZhHansFrequent",
           "mapping_source_kind": "static_ui",
           "reason": "tactician name-entry grid system-font consumer",
@@ -56612,12 +56708,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2006,
+          "system": 2012,
           "talk": 1172
         },
-        "expansion_key_count": 81,
+        "expansion_key_count": 87,
         "game_target_count": 3414,
-        "record_count": 3497,
+        "record_count": 3503,
         "unclassified_count": 0
       }
     }

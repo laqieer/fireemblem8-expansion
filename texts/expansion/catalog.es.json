@@ -81,6 +81,12 @@
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
     "ui.presentation.chapter_title_default": "Capítulo",
+    "debug.action.chapter_skirmish": "Capítulo/Encuentro",
+    "debug.selector.chapter": "Capítulo",
+    "debug.selector.skirmish": "Encuentro",
+    "debug.selector.eirika": "Eirika",
+    "debug.selector.ephraim": "Ephraim",
+    "debug.selector.unavailable": "Objetivo no disponible",
     "autoplay.charge.label": "Carga",
     "autoplay.charge.help": "Delegar las unidades restantes a la IA este turno."
   }
