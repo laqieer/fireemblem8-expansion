@@ -5,6 +5,7 @@
 #include "expansion_debugtools.h"
 
 struct DebugToolsAction;
+struct MenuProc;
 
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
 
