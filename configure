@@ -633,6 +633,7 @@ FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP
 FE8_CFG_CUSTOM_SPELL_EFFECTS
 FE8_CFG_AOE_REFERENCE
 FE8_CFG_STARTER_CONTENT
+FE8_CFG_BLUE_PHASE_DELEGATE
 FE8_CFG_DANGER_OVERLAY_MENU
 FE8_CFG_MECHANICS_SAMPLE
 FE8_CFG_MECHANICS_HOOKS
@@ -682,6 +683,7 @@ enable_option_checking
 enable_mechanics_hooks
 enable_mechanics_sample
 enable_danger_overlay_menu
+enable_blue_phase_delegate
 enable_starter_content
 enable_aoe_reference
 enable_custom_spell_effects
@@ -1326,6 +1328,8 @@ Optional Features:
                           mechanics hooks)
   --enable-danger-overlay-menu
                           expose the player Threat Range map-menu entry
+  --enable-blue-phase-delegate
+                          add one-phase Charge delegation to the map menu
   --enable-starter-content
                           link the generated starter item and mechanic
   --enable-aoe-reference  enable the bounded typed-AoE reference probe/effect
@@ -1918,6 +1922,22 @@ else $as_nop
 fi
 
 
+# Check whether --enable-blue-phase-delegate was given.
+if test ${enable_blue_phase_delegate+y}
+then :
+  enableval=$enable_blue_phase_delegate; case $enableval in #(
+  yes) :
+    fe8_blue_phase_delegate=1 ;; #(
+  no) :
+    fe8_blue_phase_delegate=0 ;; #(
+  *) :
+    as_fn_error $? "--enable-blue-phase-delegate accepts only yes or no" "$LINENO" 5 ;;
+esac
+else $as_nop
+  fe8_blue_phase_delegate=
+fi
+
+
 # Check whether --enable-starter-content was given.
 if test ${enable_starter_content+y}
 then :
@@ -2158,6 +2178,12 @@ then :
 else $as_nop
   FE8_CFG_DANGER_OVERLAY_MENU=
 fi
+if test -n "$fe8_blue_phase_delegate"
+then :
+  FE8_CFG_BLUE_PHASE_DELEGATE="EXPANSION_BLUE_PHASE_DELEGATE := $fe8_blue_phase_delegate"
+else $as_nop
+  FE8_CFG_BLUE_PHASE_DELEGATE=
+fi
 if test -n "$fe8_starter_content"
 then :
   FE8_CFG_STARTER_CONTENT="EXPANSION_STARTER_CONTENT := $fe8_starter_content"
@@ -2281,6 +2307,7 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --mechanics-hooks "$fe8_mechanics_hooks" \
     --mechanics-sample "$fe8_mechanics_sample" \
     --danger-overlay-menu "$fe8_danger_overlay_menu" \
+    --blue-phase-delegate "$fe8_blue_phase_delegate" \
     --starter-content "$fe8_starter_content" \
     --aoe-reference "$fe8_aoe_reference" \
     --custom-spell-effects "$fe8_custom_spell_effects" \

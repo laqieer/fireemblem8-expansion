@@ -7,7 +7,7 @@ from .schema import KIND_TO_C, stable_id_value
 
 
 def _group_members_name(record, group):
-    return "s{}_{}Members".format(record.symbol, group.id)
+    return "s{}_Group{:08X}Members".format(record.symbol, stable_id_value(group.id))
 
 
 def _groups_name(record):

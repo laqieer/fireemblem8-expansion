@@ -7,6 +7,9 @@
 
 bool ExpansionAutoplay_TryActivateScenario(u16 newKeys, u16 heldKeys);
 bool ExpansionAutoplay_IsBlueComputerPhase(void);
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
+bool ExpansionAutoplay_TryRestorePlayerControlAfterPhase(void);
+#endif
 void ExpansionAutoplay_OnPlayerPhaseStart(void);
 void ExpansionAutoplay_OnBlueComputerPhaseStart(void);
 void ExpansionAutoplay_OnBlueComputerPhaseComplete(void);

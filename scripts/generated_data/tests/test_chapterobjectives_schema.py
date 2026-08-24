@@ -1,6 +1,7 @@
 """Semantic schema/generator coverage for issue #89 chapter objectives."""
 
 import os
+import re
 import unittest
 
 from scripts.generated_data.chapterobjectives import generate, schema
@@ -73,6 +74,14 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             schema.stable_id_value("AI_GROUP_FIXTURE_EIRIKA"),
         )
 
+    def test_group_member_symbols_are_delimited_by_stable_id_hash(self):
+        records, diagnostics = _validate("symbol_collision.json")
+        self.assertTrue(diagnostics.ok, diagnostics.render())
+        output = generate.generate_c_source(records, objective_fixture("symbol_collision.json"))
+        members = re.findall(r"static const u8 (s[A-Za-z0-9_]+Members)\[\]", output)
+        self.assertEqual(len(members), 2)
+        self.assertEqual(len(set(members)), 2)
+
     def test_kind_specific_extras_and_protect_defeat_contradictions_fail_closed(self):
         records, diagnostics = _validate("valid.json")
         objectives = {objective.id: objective for objective in records[0].objectives}
@@ -105,6 +114,19 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
         })
         self.assertFalse(diagnostics.ok)
         self.assertIn("must use uppercase stable identifier spelling", diagnostics.render())
+
+    def test_trailing_newlines_are_rejected_from_symbols_and_stable_ids(self):
+        records, diagnostics = _validate("valid.json")
+        records[0].symbol += "\n"
+        records[0].groups[0].id += "\n"
+        records[0].objectives[0].id += "\n"
+        schema.validate(records, diagnostics, {
+            "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json"))
+        })
+        rendered = diagnostics.render()
+        self.assertFalse(diagnostics.ok)
+        self.assertIn("bundle symbol", rendered)
+        self.assertIn("must use uppercase stable identifier spelling", rendered)
 
     def test_protect_objective_rejects_null_character_sentinel(self):
         records, diagnostics = _validate("valid.json")

@@ -27,6 +27,7 @@
     "debug.action.flag_chapter": "标记/章节",
     "debug.action.rng_inspect": "RNG查看",
     "debug.action.save_state": "保存状态",
+    "debug.action.music_preview": "BGM查看",
     "framework.locale_short_name.en": "EN",
     "framework.locale_short_name.qps_ploc": "QPS",
     "language.settings_more": "更多",
@@ -79,6 +80,8 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "章节"
+    "ui.presentation.chapter_title_default": "章节",
+    "autoplay.charge.label": "冲锋",
+    "autoplay.charge.help": "仅在本回合将剩余单位交给电脑控制"
   }
 }

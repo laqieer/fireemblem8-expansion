@@ -322,14 +322,15 @@ void StartSongDelayed(int songId, int delay, struct MusicPlayerInfo *player)
     }
 }
 
-void PlaySong(int songId, struct MusicPlayerInfo *player)
+static void PlaySongCore(int songId, struct MusicPlayerInfo * player, bool unlockSong)
 {
     if (IsSoundRoomSongIdValid(songId))
     {
         Sound_SetupMaxChannelsForSong(songId);
 
 #ifdef FE8_ARCHIVAL_BUILD
-        UnlockSoundRoomSong(0, songId);
+        if (unlockSong)
+            UnlockSoundRoomSong(0, songId);
 #else
         /* Skipped only while the debugtools bootstrap suppression is
          * active (see include/expansion_debugtools.h) -- the one-shot
@@ -337,7 +338,7 @@ void PlaySong(int songId, struct MusicPlayerInfo *player)
          * committing and its bootstrap observer proc detecting the first
          * stable Player Phase. Always 0 outside that window, so ordinary
          * song-room unlock tracking keeps writing normally. */
-        if (!DebugTools_IsBootstrapSuppressionActive())
+        if (unlockSong && !DebugTools_IsBootstrapSuppressionActive())
             UnlockSoundRoomSong(0, songId);
 #endif
     }
@@ -346,6 +347,11 @@ void PlaySong(int songId, struct MusicPlayerInfo *player)
         MPlayStart(player, gSongTable[songId].header);
     else
         m4aSongNumStart(songId);
+}
+
+void PlaySong(int songId, struct MusicPlayerInfo *player)
+{
+    PlaySongCore(songId, player, TRUE);
 }
 
 void Sound_SetDefaultMaxNumChannels(void)
@@ -481,3 +487,84 @@ void Sound_StopBgmImmediate(void)
     gSoundSt.unk2 = 0;
     gSoundSt.songId = 0;
 }
+
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_EXPANSION_DEBUGTOOLS_ENABLED
+static void Sound_CancelBgmTransitions(void)
+{
+    if (sMusicProc1 != NULL)
+        Proc_End(sMusicProc1);
+
+    if (sMusicProc2 != NULL)
+        Proc_End(sMusicProc2);
+
+    Proc_EndEach(gMusicProc3Script);
+    sMusicProc1 = NULL;
+    sMusicProc2 = NULL;
+}
+
+static void Sound_StopBgmPlayersImmediate(void)
+{
+    m4aMPlayStop(&gMPlayInfo_BGM1);
+    m4aMPlayStop(&gMPlayInfo_BGM2);
+}
+
+void Sound_CaptureBgmContext(struct SoundBgmContext * context)
+{
+    if (context != NULL)
+        context->state = gSoundSt;
+}
+
+bool Sound_StartTransientBgm(int songId, struct MusicPlayerInfo * player)
+{
+    if (songId == SONG_NONE || !IsSoundRoomSongIdValid(songId))
+        return FALSE;
+
+    if (gPlaySt.config.disableBgm != 0)
+        return FALSE;
+
+    Sound_CancelBgmTransitions();
+    Sound_StopBgmPlayersImmediate();
+
+    gSoundSt.unk2 = SONG_NONE;
+    gSoundSt.songId = songId;
+    gSoundSt.is_song_playing = TRUE;
+    gSoundSt.unk7 = 0;
+
+    PlaySongCore(songId, player, FALSE);
+    m4aMPlayImmInit(&gMPlayInfo_BGM1);
+    m4aMPlayImmInit(&gMPlayInfo_BGM2);
+
+    return TRUE;
+}
+
+bool Sound_RestoreBgmContext(
+    const struct SoundBgmContext * context,
+    struct MusicPlayerInfo * player)
+{
+    if (context == NULL)
+        return FALSE;
+
+    if (context->state.is_song_playing
+        && (context->state.songId == SONG_NONE
+            || !IsSoundRoomSongIdValid(context->state.songId)))
+        return FALSE;
+
+    Sound_CancelBgmTransitions();
+    Sound_StopBgmPlayersImmediate();
+
+    if (context->state.is_song_playing)
+    {
+        PlaySongCore(context->state.songId, player, FALSE);
+        m4aMPlayImmInit(&gMPlayInfo_BGM1);
+        m4aMPlayImmInit(&gMPlayInfo_BGM2);
+    }
+
+    if (context->state.maxChannels < 0)
+        Sound_SetDefaultMaxNumChannels();
+    else if (context->state.maxChannels > 0)
+        Sound_SetMaxNumChannels(context->state.maxChannels);
+
+    gSoundSt = context->state;
+    return TRUE;
+}
+#endif

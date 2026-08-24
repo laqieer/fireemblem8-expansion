@@ -16,6 +16,7 @@ MODERN_GOALS := \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
+	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
@@ -50,6 +51,8 @@ MODERN_GOALS := \
 	expansion-modern-bgm-registry-check \
 	expansion-modern-autoplay-check \
 	expansion-modern-banim-package-runtime-check \
+	expansion-modern-blue-phase-delegate-profile-rom \
+	expansion-modern-blue-phase-delegate-check \
 	expansion-modern-autoplay-bounds-check \
 	expansion-modern-chapter-objectives-profile-rom \
 	expansion-modern-chapter-objectives-profile-boot-check \
@@ -303,7 +306,8 @@ MODERN_COHORT_SOURCES ?= \
 	src/debugtools_launcher.c \
 	src/debugtools_actions.c \
 	src/debugtools_diag.c \
-	src/debugtools_tools.c
+	src/debugtools_tools.c \
+	src/debugtools_music.c
 
 # Handwritten assembly that must not be decompiled (see CONTRIBUTING.md).
 # libagbsyscall.s is a self-contained set of BIOS SWI trampolines; arm.s and
@@ -780,6 +784,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
+	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
@@ -1464,6 +1469,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
+	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
@@ -1472,6 +1478,8 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-saveload-check \
 	expansion-modern-autoplay-check \
 	expansion-modern-hq-mixer-check \
+	expansion-modern-blue-phase-delegate-profile-rom \
+	expansion-modern-blue-phase-delegate-check \
 	expansion-modern-autoplay-bounds-check \
 	expansion-modern-chapter-objectives-check \
 	expansion-modern-aoe-profile-rom \
@@ -1623,6 +1631,7 @@ ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 		--mechanics-hooks "$(EXPANSION_MECHANICS_HOOKS)" \
 		--mechanics-sample "$(EXPANSION_MECHANICS_SAMPLE)" \
 		--danger-overlay-menu "$(EXPANSION_DANGER_OVERLAY_MENU)" \
+		--blue-phase-delegate "$(EXPANSION_BLUE_PHASE_DELEGATE)" \
 		--starter-content "$(EXPANSION_STARTER_CONTENT)" \
 		--aoe-reference "$(EXPANSION_AOE_REFERENCE)" \
 		--custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
@@ -1690,6 +1699,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	--mechanics-hooks "$(EXPANSION_MECHANICS_HOOKS)" \
 	--mechanics-sample "$(EXPANSION_MECHANICS_SAMPLE)" \
 	--danger-overlay-menu "$(EXPANSION_DANGER_OVERLAY_MENU)" \
+	--blue-phase-delegate "$(EXPANSION_BLUE_PHASE_DELEGATE)" \
 	--starter-content "$(EXPANSION_STARTER_CONTENT)" \
 	--aoe-reference "$(EXPANSION_AOE_REFERENCE)" \
 	--custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
@@ -1777,6 +1787,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	-DFE8_EXPANSION_MECHANICS_HOOKS=$(EXPANSION_MECHANICS_HOOKS) \
 	-DFE8_EXPANSION_MECHANICS_SAMPLE=$(EXPANSION_MECHANICS_SAMPLE) \
 	-DFE8_EXPANSION_DANGER_OVERLAY_MENU=$(EXPANSION_DANGER_OVERLAY_MENU) \
+	-DFE8_EXPANSION_BLUE_PHASE_DELEGATE=$(EXPANSION_BLUE_PHASE_DELEGATE) \
 	-DFE8_EXPANSION_STARTER_CONTENT=$(EXPANSION_STARTER_CONTENT) \
 	-DFE8_EXPANSION_AOE_REFERENCE=$(EXPANSION_AOE_REFERENCE) \
 	-DFE8_EXPANSION_CUSTOM_SPELL_EFFECTS=$(EXPANSION_CUSTOM_SPELL_EFFECTS) \
@@ -1853,6 +1864,7 @@ MODERN_PATCH_RELEASE_FLAGS := \
 	EXPANSION_MECHANICS_HOOKS=1 \
 	EXPANSION_MECHANICS_SAMPLE=1 \
 	EXPANSION_DANGER_OVERLAY_MENU=1 \
+	EXPANSION_BLUE_PHASE_DELEGATE=1 \
 	EXPANSION_STARTER_CONTENT=1 \
 	EXPANSION_AOE_REFERENCE=1 \
 	EXPANSION_LOCALIZED_TEXT_AUTO_WRAP=1 \
@@ -2031,6 +2043,7 @@ ifneq (,$(MODERN_EXPANSION_DEFINES_ACTIVE))
 		printf '%s\n' 'mechanics_hooks=$(EXPANSION_MECHANICS_HOOKS)'; \
 		printf '%s\n' 'mechanics_sample=$(EXPANSION_MECHANICS_SAMPLE)'; \
 		printf '%s\n' 'danger_overlay_menu=$(EXPANSION_DANGER_OVERLAY_MENU)'; \
+		printf '%s\n' 'blue_phase_delegate=$(EXPANSION_BLUE_PHASE_DELEGATE)'; \
 		printf '%s\n' 'starter_content=$(EXPANSION_STARTER_CONTENT)'; \
 		printf '%s\n' 'aoe_reference=$(EXPANSION_AOE_REFERENCE)'; \
 		printf '%s\n' 'custom_spell_effects=$(EXPANSION_CUSTOM_SPELL_EFFECTS)'; \
@@ -2479,6 +2492,8 @@ MODERN_DEBUGTOOLS_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-hub-
 # MODERN_DEBUGTOOLS_SCENARIO above.
 MODERN_DEBUGTOOLS_MAP_SCENARIO := tools/gba-playtest/scenarios/debugtools-map-hub-modern-$(MODERN_CONFIG).json
 MODERN_DEBUGTOOLS_MAP_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-map-hub-modern-$(MODERN_CONFIG).json
+MODERN_DEBUGTOOLS_MUSIC_SCENARIO := tools/gba-playtest/scenarios/debugtools-music-title-modern-$(MODERN_CONFIG).json
+MODERN_DEBUGTOOLS_MUSIC_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-music-title-modern-$(MODERN_CONFIG).json
 MODERN_PLAYTEST := tools/gba-playtest/gba_playtest.py
 
 # Convert the linked ELF to a flat, padded ROM image, patch the configured
@@ -2556,7 +2571,9 @@ expansion-modern-boot-preflight:
 		[ ! -f "$(MODERN_DEBUGTOOLS_SCENARIO)" ] || \
 		[ ! -f "$(MODERN_DEBUGTOOLS_FINGERPRINT)" ] || \
 		[ ! -f "$(MODERN_DEBUGTOOLS_MAP_SCENARIO)" ] || \
-		[ ! -f "$(MODERN_DEBUGTOOLS_MAP_FINGERPRINT)" ]; then \
+		[ ! -f "$(MODERN_DEBUGTOOLS_MAP_FINGERPRINT)" ] || \
+		[ ! -f "$(MODERN_DEBUGTOOLS_MUSIC_SCENARIO)" ] || \
+		[ ! -f "$(MODERN_DEBUGTOOLS_MUSIC_FINGERPRINT)" ]; then \
 		printf '%s\n' \
 			"error: missing boot scenario or fingerprint (including title progression and debugtools)" >&2; \
 		printf '  boot scenario:        %s\n' "$(MODERN_BOOT_SCENARIO)" >&2; \
@@ -2567,6 +2584,8 @@ expansion-modern-boot-preflight:
 		printf '  debugtools fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_FINGERPRINT)" >&2; \
 		printf '  debugtools map scenario:  %s\n' "$(MODERN_DEBUGTOOLS_MAP_SCENARIO)" >&2; \
 		printf '  debugtools map fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_MAP_FINGERPRINT)" >&2; \
+		printf '  debugtools music scenario: %s\n' "$(MODERN_DEBUGTOOLS_MUSIC_SCENARIO)" >&2; \
+		printf '  debugtools music fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_MUSIC_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
 	@if ! "$(PYTHON)" "$(MODERN_PLAYTEST)" backend-check; then \
@@ -2681,10 +2700,30 @@ expansion-modern-debugtools-check: expansion-modern-boot-preflight expansion-mod
 expansion-modern-debugtools-map-check: expansion-modern-boot-preflight expansion-modern-rom
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
 		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_DEBUGTOOLS_MAP_SCENARIO)" \
 		--expected "$(MODERN_DEBUGTOOLS_MAP_FINGERPRINT)" \
 		--policy behavior
 	@printf 'Modern ROM debugtools-map-check passed: %s (config=%s abi=%s)\n' \
+		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+# Issue #126 / TC-DEBUGTOOLS-PROTOTYPE-004. The focused title fixture proves
+# first/boundary/rapid preview and exact restoration against deterministic
+# SRAM. The existing map gate is a dependency because its debug fixture also
+# drives the same action from a live PlayerPhase map and proves post-close
+# cursor interactivity; its release mirror retains the all-zero hotkey path.
+expansion-modern-debugtools-music-check: expansion-modern-debugtools-map-check \
+		$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--nm "$(MODERN_NM)" \
+		--scenario "$(MODERN_DEBUGTOOLS_MUSIC_SCENARIO)" \
+		--sram-image "$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)" \
+		--expected "$(MODERN_DEBUGTOOLS_MUSIC_FINGERPRINT)" \
+		--policy behavior
+	@printf 'Modern ROM debugtools-music-check passed: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
 # Issues #11/#125: proves all five shipped bounded tools (Unit Inspect/Edit,
@@ -2696,7 +2735,7 @@ expansion-modern-debugtools-map-check: expansion-modern-boot-preflight expansion
 # deltas), the read-only Save inspector never writes, every submenu returns
 # safely to the hub, and the map is still interactive after the hub closes.
 # The issue #125 tail then applies cursor-unit HP 17->16, heals 16->17,
-# rejects an empty tile, and proves exact SRAM equality plus final map
+# rejects an empty tile, and proves metadata-normalized SRAM equality plus final map
 # interactivity. The config-parametrized release scenario replays identical
 # input with the established probe all-zero and editor symbols omitted. See
 # docs/debugtools.md and docs/test-cases/debugtools.md.
@@ -3392,6 +3431,40 @@ expansion-modern-autoplay-check: expansion-modern-boot-preflight expansion-moder
 		--elf "$(MODERN_ELF)" \
 		--config "$(MODERN_CONFIG)" \
 		--out-dir "$(MODERN_AUTOPLAY_RUNTIME_OUTDIR)"
+
+# Issue #87 optional one-phase Charge command. The enabled build has its own
+# root; the matching ordinary build is the disabled PLAYER/menu negative.
+MODERN_BLUE_PHASE_DELEGATE_ROOT := build/expansion-modern-blue-phase-delegate
+MODERN_BLUE_PHASE_DELEGATE_OUTPUT_DIR := \
+	$(MODERN_BLUE_PHASE_DELEGATE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+MODERN_BLUE_PHASE_DELEGATE_ROM := \
+	$(MODERN_BLUE_PHASE_DELEGATE_OUTPUT_DIR)/fireemblem8.gba
+MODERN_BLUE_PHASE_DELEGATE_ELF := \
+	$(MODERN_BLUE_PHASE_DELEGATE_OUTPUT_DIR)/fireemblem8.elf
+MODERN_BLUE_PHASE_DELEGATE_RUNTIME_SCRIPT := \
+	tools/gba-playtest/run_blue_phase_delegate_checks.py
+MODERN_BLUE_PHASE_DELEGATE_RUNTIME_OUTDIR := \
+	$(MODERN_BLUE_PHASE_DELEGATE_OUTPUT_DIR)/runtime-check
+
+expansion-modern-blue-phase-delegate-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_BLUE_PHASE_DELEGATE_ROOT) \
+		EXPANSION_BLUE_PHASE_DELEGATE=1
+
+expansion-modern-blue-phase-delegate-check: expansion-modern-boot-preflight \
+		expansion-modern-rom \
+		expansion-modern-blue-phase-delegate-profile-rom
+	@mkdir -p "$(MODERN_BLUE_PHASE_DELEGATE_RUNTIME_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_BLUE_PHASE_DELEGATE_RUNTIME_OUTDIR)/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_BLUE_PHASE_DELEGATE_RUNTIME_SCRIPT)" \
+		--enabled-rom "$(MODERN_BLUE_PHASE_DELEGATE_ROM)" \
+		--enabled-elf "$(MODERN_BLUE_PHASE_DELEGATE_ELF)" \
+		--disabled-rom "$(MODERN_ROM)" \
+		--disabled-elf "$(MODERN_ELF)" \
+		--config "$(MODERN_CONFIG)" \
+		--out-dir "$(MODERN_BLUE_PHASE_DELEGATE_RUNTIME_OUTDIR)"
 
 # Issue #86 bounded semantic run-until classification. This reuses the #85
 # routes and telemetry while keeping fixed-frame scenarios and fingerprints
@@ -4098,12 +4171,14 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-autoplay-check \
 		expansion-modern-autoplay-bounds-check \
 		expansion-modern-chapter-objectives-check \
+		expansion-modern-blue-phase-delegate-check \
 		expansion-modern-starter-runtime-check \
 		expansion-modern-boot-check \
 		expansion-modern-title-check \
 		expansion-modern-debugtools-check \
 		expansion-modern-debugtools-timer-check \
 		expansion-modern-debugtools-map-check \
+		expansion-modern-debugtools-music-check \
 		expansion-modern-debugtools-tools-check \
 		expansion-modern-debugtools-prep-check \
 		expansion-modern-debugtools-ch4prep-check \
@@ -4134,6 +4209,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
+	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
