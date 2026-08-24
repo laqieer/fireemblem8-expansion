@@ -4075,10 +4075,18 @@ expansion-modern-custom-spell-check: expansion-modern-rom
 		--enabled "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
 		--out-dir "$(MODERN_CUSTOM_SPELL_TEST_DIR)"
 
+ifeq ($(MODERN_CONFIG),debug)
+MODERN_LINKER_CHECK_ACCELERATED_FIDELITY := \
+		expansion-modern-autoplay-accelerated-fidelity-check
+else
+MODERN_LINKER_CHECK_ACCELERATED_FIDELITY :=
+endif
+
 expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-overlay-audit \
 		expansion-modern-autoplay-check \
 		expansion-modern-autoplay-bounds-check \
+		$(MODERN_LINKER_CHECK_ACCELERATED_FIDELITY) \
 		expansion-modern-starter-runtime-check \
 		expansion-modern-boot-check \
 		expansion-modern-title-check \
