@@ -67,7 +67,7 @@
       }
     ]
   },
-  "census_digest": "c20f8fcc2c311a3190f37ae617409d1c1e8309668e923a46b4e63498d3015ecb",
+  "census_digest": "56318b8b29c47d466ec2dc903e7dbc0653e0b2727ed69689eeb9fdaf2c602d94",
   "consumers": [
     {
       "category": "event-operand",
@@ -8373,6 +8373,25 @@
       "technical_max": 65535
     },
     {
+      "category": "reviewed-exclusion",
+      "configured_cap": 255,
+      "declaration": "def test_profile_covers_all_factions_events_flags_and_objective_result(self):",
+      "domain": "event",
+      "key": "tools/gba-playtest/tests/test_accelerated_fidelity.py|tool-symbol|event|test_profile_covers_all_factions_events_flags_and_objective_result",
+      "kind": "tool-symbol",
+      "line": 165,
+      "path": "tools/gba-playtest/tests/test_accelerated_fidelity.py",
+      "reason": "a unittest method name containing 'events' for profile coverage; it neither stores nor consumes an event ID",
+      "record_count": null,
+      "sentinel": null,
+      "signed": 0,
+      "status": "adequate",
+      "storage_bits": 16,
+      "surface": "external-tool",
+      "symbol": "test_profile_covers_all_factions_events_flags_and_objective_result",
+      "technical_max": 65535
+    },
+    {
       "category": "save-field",
       "configured_cap": 255,
       "declaration": "int eventSlotCnt;",
@@ -12293,7 +12312,7 @@
       "domain": "item",
       "key": "tools/gba-playtest/gba_playtest.py|tool-symbol|item|item",
       "kind": "tool-symbol",
-      "line": 388,
+      "line": 426,
       "path": "tools/gba-playtest/gba_playtest.py",
       "reason": null,
       "record_count": 206,
@@ -21050,7 +21069,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "63918d351f41294246979669dea461f838ae8497d1f10249f9532828a7f1ec56",
+  "digest": "2a1550f2295f0f29913e942ebb19adbbda14bdaa0f128f279ac8ba8c9db9037d",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,

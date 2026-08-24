@@ -15,6 +15,7 @@
       "transient-blue-computer-control",
       "one-phase-blue-delegation",
       "bounded-semantic-run-until",
+      "accelerated-fidelity-harness",
       "custom-spell-runtime",
       "hq-pcm-mixer",
       "patch-release-artifact",
@@ -483,6 +484,18 @@
       "status": "current",
       "required_cases": [
         "TC-AUTOPLAY-BOUNDS-001"
+      ]
+    },
+    {
+      "id": "accelerated-fidelity-harness",
+      "title": "Accelerated-fidelity semantic harness profile",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/88"
+      ],
+      "reference": "docs/autoplay.md",
+      "status": "current",
+      "required_cases": [
+        "TC-AUTOPLAY-ACCEL-001"
       ]
     },
     {
@@ -2045,6 +2058,38 @@
         {
           "command": "make expansion-modern-autoplay-bounds-check MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/fingerprints/autoplay-bounded-player-default-modern-release.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-AUTOPLAY-ACCEL-001",
+      "title": "Accelerated-fidelity equivalence",
+      "feature_id": "accelerated-fidelity-harness",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/88"
+      ],
+      "document": "docs/test-cases/autoplay.md",
+      "anchor": "tc-autoplay-accel-001-accelerated-fidelity-equivalence",
+      "profiles": [
+        "Dedicated modern AAPCS debug accelerated-fidelity test ROM and exact linked ELF, paired normal-fidelity and accelerated-fidelity runs"
+      ],
+      "purpose": "Prove every emulated frame remains real core execution while existing game-speed/BANIM-off settings reduce the focused fixture's frame count without changing its semantic outcome.",
+      "prerequisites": "Repository root with Python 3.10+, host C compiler, libmGBA development files, and modern ARM toolchain; clean boot with no save or savestate.",
+      "actions": "Run the focused profile/backend test and the debug-only accelerated-fidelity Make target, then inspect its ignored benchmark JSON.",
+      "expected_result": "The same ROM reaches equal terminal semantic state, ordered action/RNG trace plus bounded append-only event-command and named objective-flag records (WIN, DEFEAT_ALL, GAMEOVER), every pointer-free gameplay field for active blue/red/green units, objective result, and turn/action counts; BanimPresentationPolicy_GetCurrent()->id is OFF for accelerated fidelity; every repeated same-profile sample has identical terminal and trace frames; baseline is 17135 frames and accelerated is 16869 frames.",
+      "negative_control": "Malformed/duplicate profile fields, accelerated framebuffer/region/pixel evidence, terminal-impossible profile/trace timestamps, ROM/VRAM/palette/OAM/SRAM or ignored-write configuration bindings, over-budget trace output, event-transition overflow, a non-OFF cached presentation policy, or unexpected semantic checkpoint framebuffer output fail; deliberately perturbed trace or same-profile frame data is rejected even when a candidate is faster.",
+      "interactions": "Depends on #85 telemetry, #86 bounded terminal semantics, and tester-case catalog #54. #91 consumes this profile for deterministic batch reports; later external planner and campaign experiments may also consume it. Conflicts with visual, audio, or presentation-timing acceptance cases, which remain normal fidelity.",
+      "save_compatibility": "The dedicated accelerated debug test ROM alone adds 1,316 EWRAM bytes for transition/policy telemetry; ordinary debug/release, starter/HQ, and archival builds omit it. No saved field, preference, migration, epoch, generated data, localization, configuration identity, or archival behavior changes.",
+      "cleanup": "The benchmark writes only ignored build output; use make clean_fast when that output must be removed.",
+      "limitations": "No gameplay simulation, frame skipping, savestate, player-facing setting, visual/audio/timing proof, or wall-clock pass/fail threshold.",
+      "automation": [
+        {
+          "command": "python3 tools/gba-playtest/tests/test_accelerated_fidelity.py -v",
+          "evidence": "tools/gba-playtest/tests/test_accelerated_fidelity.py"
+        },
+        {
+          "command": "make expansion-modern-autoplay-accelerated-fidelity-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_accelerated_fidelity_checks.py"
         }
       ]
     },
