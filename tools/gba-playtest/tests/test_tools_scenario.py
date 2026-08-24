@@ -8,9 +8,10 @@ Boots the debug-only Fast Boot: Chapter 2 map hub, then triggers each of the
 five bounded tools from its real hub row and proves an asserted semantic state
 effect plus a safe return to the hub. Issue #125 then reselects the unit under
 the cursor, previews and confirms an actual 17 -> 16 HP edit, heals 16 -> 17,
-rejects an empty tile, proves exact SRAM equality, and returns to an
-interactive map. Evidence is semantic probes and exact SRAM hashes, never a
-framebuffer or relocated-pointer oracle.
+rejects an empty tile, proves SRAM equality apart from documented
+build-variable metadata fields, and returns to an interactive map. Evidence is
+semantic probes and normalized SRAM hashes, never a framebuffer or
+relocated-pointer oracle.
 
   5 Unit Inspect/Edit -- inspect resolves live cursor slot 1, character 6,
     class 0x48 at 17/17 HP. A separate editor preview leaves HP unchanged,
@@ -81,6 +82,11 @@ UNIT_NEW = "gDebugToolsUnitEditorProbe+0x3c"
 UNIT_OUTCOME = "gDebugToolsUnitEditorProbe+0x40"
 UNIT_REFRESH_COUNT = "gDebugToolsUnitEditorProbe+0x44"
 CURSOR_UNIT_HP = "gUnitArrayBlue+0x13"
+SRAM_METADATA_NORMALIZATION_RANGES = (
+    (29620, 17),
+    (29640, 9),
+    (29650, 2),
+)
 
 _POINTER_RANGES = (
     (0x02000000, 0x0203FFFF),
@@ -255,6 +261,17 @@ class ToolsScenarioFilesTests(unittest.TestCase):
         self.assertTrue(before.sram_hash)
         self.assertTrue(after.sram_hash)
         self.assertEqual(before.expected_sram_hash, after.expected_sram_hash)
+        self.assertEqual(
+            tuple((item.offset, item.length) for item in before.sram_hash_exclude_ranges),
+            SRAM_METADATA_NORMALIZATION_RANGES,
+        )
+        self.assertEqual(
+            tuple((item.offset, item.length) for item in after.sram_hash_exclude_ranges),
+            SRAM_METADATA_NORMALIZATION_RANGES,
+        )
+        self.assertTrue(
+            before.expected_sram_hash.startswith("fnv1a64-sram-normalized:"),
+        )
 
         final = self._cp("unit-editor-final-map-interactive")
         self.assertEqual(final[S_HUB], "0x00")
@@ -311,6 +328,17 @@ class ToolsReleaseNegativeFilesTests(unittest.TestCase):
         self.assertTrue(before.sram_hash)
         self.assertTrue(after.sram_hash)
         self.assertEqual(before.expected_sram_hash, after.expected_sram_hash)
+        self.assertEqual(
+            tuple((item.offset, item.length) for item in before.sram_hash_exclude_ranges),
+            SRAM_METADATA_NORMALIZATION_RANGES,
+        )
+        self.assertEqual(
+            tuple((item.offset, item.length) for item in after.sram_hash_exclude_ranges),
+            SRAM_METADATA_NORMALIZATION_RANGES,
+        )
+        self.assertTrue(
+            before.expected_sram_hash.startswith("fnv1a64-sram-normalized:"),
+        )
 
 
 @host_mode.live_artifact_testcase("debugtools-tools runtime coverage")

@@ -126,8 +126,10 @@ provenance to differ. Its expected baseline may omit the otherwise-unused
 print the captured candidate identity. Use it only when changed ROM bytes are
 expected; it never silently turns off capture identity reporting. Capture JSON
 always contains provenance under `"rom"` regardless of the later verification
-policy. Scenario schema version remains 1; exact-ROM expected fingerprints
-require valid provenance in format version 2.
+policy. Fixed-frame scenarios use schema version 1 and exact-ROM expected fingerprints
+require valid provenance in format version 2. Bounded semantic run-until
+scenarios use schema version 2 and fingerprint format version 3, including one
+typed terminal outcome plus its dynamic checkpoint frame.
 
 ## Host-only test mode
 

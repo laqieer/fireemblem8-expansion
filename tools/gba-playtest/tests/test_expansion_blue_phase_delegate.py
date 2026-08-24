@@ -245,7 +245,11 @@ class BluePhaseDelegateMenuTests(unittest.TestCase):
         self.assertNotIn("MenuStdHelpBox", function.group(0))
         self.assertIn("ExpansionBluePhaseDelegate_MenuHelpBox", bmmenu)
         self.assertIn("StartHelpBoxString(", bmmenu)
-        self.assertIn("ExpansionLocale_ResolveCurrent(EXP_MSG_AUTOPLAY_CHARGE_HELP)", bmmenu)
+        self.assertIn(
+            "ExpansionLocale_ResolveCurrentPersistent(EXP_MSG_AUTOPLAY_CHARGE_HELP)",
+            bmmenu,
+        )
+        self.assertNotIn("sBluePhaseDelegateHelpText", bmmenu)
         self.assertIn("EXP_MSG_AUTOPLAY_CHARGE_HELP", menu_def)
         self.assertIn("ExpansionBluePhaseDelegate_MenuRPress", menu_def)
         self.assertIn("ExpansionBluePhaseDelegate_MenuHelpBox", menu_def)

@@ -171,6 +171,10 @@ is active, and at least one blue unit passes the same eligibility predicate
 used by `BuildAiUnitList`. Sleeping, berserk, hidden, unselectable/already
 moved, dead, rescued, and empty slots are excluded.
 
+Charge help passes the resolver's persistent ROM-catalog pointer directly to
+the asynchronous helpbox. It therefore remains valid through later menu-label
+resolves without allocating a second EWRAM scratch buffer.
+
 Selection revalidates that state, sets `COMPUTER` through
 `ExpansionAutoplay_SetBlueControl`, and redirects the already-blocked
 `gProc_BMapMain` to its existing `BmMain_StartPhase` label without rerunning
