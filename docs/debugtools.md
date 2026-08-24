@@ -1,4 +1,4 @@
-# Debug-tools subsystem (issue #11 closure)
+# Debug-tools subsystem (issues #11, #125, and #126)
 
 This document is the single reference for the debug-tools subsystem built
 for issue #11: a release-safe config gate; a fixed-capacity, hardened
@@ -8,10 +8,13 @@ deterministic launchers (Chapter 2, and Chapter 4 for reaching a real prep
 screen); the Weather/Fog actions; a bounded diagnostics foundation (log
 ring + non-fatal assert record); five bounded validated tools (unit,
 convoy, flag/chapter, RNG, save-state); issue #125's cursor-selected typed
-unit inspector/editor; and the playtest/host-test evidence that proves all of
-it. See `reports/debugtools_issue11_closure.md` for issue #11's original
-frozen-checklist mapping. The issue #125 tester procedure is
-[`TC-DEBUGTOOLS-PROTOTYPE-003`](test-cases/debugtools.md#tc-debugtools-prototype-003-cursor-selected-bounded-unit-inspectoreditor).
+unit inspector/editor; issue #126's bounded reversible music-preview action;
+and the playtest/host-test evidence that proves all of it. See
+`reports/debugtools_issue11_closure.md` for issue #11's original
+frozen-checklist mapping. The tester procedures are
+[`TC-DEBUGTOOLS-PROTOTYPE-003`](test-cases/debugtools.md#tc-debugtools-prototype-003-cursor-selected-bounded-unit-inspectoreditor)
+and
+[`TC-DEBUGTOOLS-PROTOTYPE-004`](test-cases/debugtools.md#tc-debugtools-prototype-004-preview-bounded-music-and-restore-its-owner).
 
 ## Files
 
@@ -32,6 +35,7 @@ frozen-checklist mapping. The issue #125 tester procedure is
 | `tools/gba-playtest/fingerprints/debugtools-{hub,map-hub,prep-hub}-modern-{debug,release}.json` | Captured fingerprints for the scenarios above |
 | `src/debugtools_diag.c` (closure) | Diagnostics foundation: bounded log ring (`DebugTools_LogEvent`/`GetLogEntry`/`GetLogCount`) and non-fatal assert record (`DEBUGTOOLS_ASSERT`/`DebugTools_RecordAssertFailure`) |
 | `src/debugtools_tools.c` (closure + issue #125) | The five bounded validated tools. Unit Inspect resolves the live cursor target and exposes typed HP/stat/AI/status edits; Convoy Inspect, Flag/Chapter, RNG Inspect, and read-only Save State retain their issue #11 contracts |
+| `src/debugtools_music.c` (issue #126) | Built-in ID 10: authoritative song navigation, localized names, one typed preview owner, exact restoration, telemetry, and forced cleanup |
 | `src/gamecontrol.c` (closure) | `GameControl_PostIntro` also consumes the second, independent Ch4-Prep pending request and commits the deterministic Chapter 4 boot |
 | `tools/gba-playtest/scenarios/debugtools-ch4-prep-launch-modern-{debug,release}.json` (closure) | The Ch4-Prep launcher's own boot-commit lifecycle scenario + release mirror (see "Fast Boot: Chapter 4 (Prep)" below; the live prep-screen arrival itself is proven by the prep-positive scenario in the next row) |
 | `tools/gba-playtest/scenarios/debugtools-ch4-prep-positive-modern-debug.json` (closure) | Live prep-screen arrival (debug-only): drives the Chapter 4 world-map traversal + the real `PREP` opcode to a live `PrepScreenProc_MapIdle`, then fires the SELECT+B prep hotkey; proves `prepScreenObservedCount` 0->1 and `PLAY_FLAG_PREPSCREEN` held throughout. Gate: DEBUG branch of `expansion-modern-debugtools-prep-check` |
@@ -63,17 +67,19 @@ by-pointer/never-copy discipline for the engine helpers they call
   `FE8_EXPANSION_DEBUG=1`) enables the subsystem by default.
 - A supported modern **release** build (`MODERN_CONFIG=release`, `-DNDEBUG`,
   `FE8_EXPANSION_DEBUG=0`) disables it: every function in
-  `src/debugtools_registry.c`/`src/debugtools_launcher.c` compiles to a
+  `src/debugtools_registry.c`/`src/debugtools_launcher.c`/
+  `src/debugtools_music.c` compiles to a
   trivial disabled-result stub under `#else /* !FE8_EXPANSION_DEBUGTOOLS_ENABLED */`,
   and the hub menu table (`gDebugToolsHubMenuDef`), every hub-internal static
   function, and the launcher's action body **do not exist in the link at
   all** -- not merely unreachable at runtime. Verified by `nm` on the linked
   release ELF (no `DebugToolsHub_*`/`gDebugToolsHubMenuDef`/
-  `DebugToolsLauncher_*` symbols) and by an equivalent host-compiled check
+  `DebugToolsLauncher_*`/`DebugToolsMusic_*`/typed preview-owner and transient
+  sound-helper symbols) and by an equivalent host-compiled check
   (`test_registry_disabled_path_behavior_and_symbol_omission`).
 - The archival agbcc lane excludes the supported subsystem behind
-  `FE8_ARCHIVAL_BUILD`; issue #125 adds no archival runtime behavior or
-  byte-match requirement.
+  `FE8_ARCHIVAL_BUILD`; issues #125 and #126 add no archival runtime behavior
+  or byte-match requirement.
 
 `gDebugToolsProbe` (see "Playtest probe surface" below) is the one exception:
 it is always linked, in every build, so a release scenario can assert it
@@ -104,25 +110,25 @@ Fits the existing `MenuProc`/`MenuItemDef` engine (`include/uimenu.h`,
   every time the hub opens. Built-in actions, Back/Confirm rows,
   transfer progress, and status diagnostics resolve stable expansion message
   IDs for `en`/`ja`/`zh-Hans`; CJK diagnostics use the UTF-8-aware system text
-  renderer. IDs 1-9 are reserved built-in identities and can only enter
+  renderer. IDs 1-10 are reserved built-in identities and can only enter
   through the private built-in registration path, so localized label lookup
   cannot be selected by a contributor-controlled ID. Contributor IDs are
-  explicitly limited to 10-65535 and keep the original raw-string
+  explicitly limited to 11-65535 and keep the original raw-string
   ABI/rendering path.
 - The array is fully zeroed before every rebuild, so the first unused slot
   (and everything after it) reads as an all-zero `MenuItemsEnd` -- exactly
   what stops `StartMenuCore`'s scan loop. The reserved Back entry is always
   written immediately after the last action visible on that page; the
   terminator is the slot after Back.
-- Storage is two fixed-size EWRAM arrays: nine immutable-identity built-in
+- Storage is two fixed-size EWRAM arrays: ten immutable-identity built-in
   slots (`DEBUGTOOLS_BUILTIN_ACTION_MAX`) and nine public contributor slots
   (`DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX`). `DEBUGTOOLS_ACTION_MAX` is their
-  combined introspection capacity (18). The added contributor/page state is
+  combined introspection capacity (19). The added contributor/page state is
   linked at the end of the existing EWRAM layout so public probes and later
   runtime state keep their established addresses. There is no heap allocation.
 - Built-in storage is ID-indexed: ID `N` always occupies slot `N-1`.
   Introspection scans sparse slots in ascending ID order, so built-ins stay in
-  ID/menu order 1-9 even when any public built-in initializer
+  ID/menu order 1-10 even when any public built-in initializer
   (`DebugTools_RegisterBuiltinActions`, `DebugTools_RegisterWeatherFogActions`,
   `DebugTools_RegisterChapter4PrepAction`, or
   `DebugTools_RegisterExtendedToolActions`) is called first. Weather and Fog
@@ -144,9 +150,9 @@ a registration failure is never silently dropped:
 | `DEBUGTOOLS_ERR_DUPLICATE` | `id` or `label` already registered |
 | `DEBUGTOOLS_ERR_CAPACITY_FULL` | The nine-slot contributor storage (or private built-in storage) is already full |
 | `DEBUGTOOLS_ERR_ALREADY_ACTIVE` | `DebugTools_OpenHub()` called while the hub is already open |
-| `DEBUGTOOLS_ERR_ID_INVALID` (closure) | `action->id == 0` (reserved/uninitialized-looking sentinel; every shipped action uses ids 1-9) |
+| `DEBUGTOOLS_ERR_ID_INVALID` (closure) | `action->id == 0` (reserved/uninitialized-looking sentinel; every shipped action uses ids 1-10) |
 | `DEBUGTOOLS_ERR_LABEL_INVALID` (closure) | `label` is empty (`""`) or longer than `DEBUGTOOLS_LABEL_MAX_LENGTH` (24) |
-| `DEBUGTOOLS_ERR_ID_RESERVED` | Public contributor attempted to claim built-in ID 1-9; valid contributor IDs are 10-65535 |
+| `DEBUGTOOLS_ERR_ID_RESERVED` | Public contributor attempted to claim built-in ID 1-10; valid contributor IDs are 11-65535 |
 | `DEBUGTOOLS_ERR_TEXT_CAPACITY` | The active font cannot fit one maximum hub/status allocation |
 
 All added closure codes are appended at the **end** of `enum DebugToolsResult` so
@@ -169,12 +175,12 @@ accepted, one character over is rejected).
 `gDebugToolsProbe.lastRegisterResult` mirrors the same value for playtest
 probes.
 
-Built-ins are initialized exactly once, in menu/ID order 1-9, before a
+Built-ins are initialized exactly once, in menu/ID order 1-10, before a
 valid public contributor registration is admitted. A contributor call made
 before the first hub open therefore cannot occupy a built-in slot and later
 acquire that built-in's localized label while retaining a different
-callback. The first valid contributor ID (10 or greater) succeeds, all nine
-documented contributor slots can coexist with all nine built-ins, and only
+callback. The first valid contributor ID (11 or greater) succeeds, all nine
+documented contributor slots can coexist with all ten built-ins, and only
 the tenth contributor receives `DEBUGTOOLS_ERR_CAPACITY_FULL`.
 
 ## Text allocator lifecycle
@@ -264,7 +270,7 @@ calls outside an active debug session are safe no-ops.
 
 `DebugTools_GetRegisteredCount()` / `DebugTools_GetRegisteredAction(index)`
 (bounds-checked, `NULL` outside `[0, count)`) expose the combined sequence:
-the nine built-ins first, then contributors in registration order.
+the ten built-ins first, then contributors in registration order.
 
 ## Diagnostics / visible feedback
 
@@ -924,9 +930,38 @@ map/prep-hub scenario's own input script keeps working unmodified; "Fast
 Boot: Ch4 Prep" and the five bounded tools below land at indices 3-8. The
 first hub page remains: Chapter 2 (0), Weather (1), Fog (2), Ch4 Prep (3),
 Unit Inspect (4), Convoy Inspect (5), Flag/Chapter (6), RNG Inspect (7),
-Save State (8), Back (9). Up to nine contributors occupy page two in their
-registration order; R cycles pages without changing any action's label or
+Save State (8), Back (9). Issue #126 preserves that entire first page, then
+places Music Preview (built-in ID 10) at page-two row 0, followed by the
+first eight contributors. The ninth contributor occupies page three with
+Back. R cycles at most three pages without changing any action's label or
 callback identity.
+
+## Bounded music preview (issue #126)
+
+`src/debugtools_music.c` registers one action through the same private
+built-in path as every other shipped row. Its submenu has exactly two live
+rows: the selected song and localized Back. `LEFT`/`RIGHT` wraps through
+`gSoundRoomTable`; `A` previews; `B`/Back returns through the existing
+deferred submenu lifecycle. It never calls the dormant `DebugMenu_BgmDraw`
+or `DebugMenu_BgmIdle`, accepts no raw numeric ID, allocates no heap memory,
+and does not add a gameplay router.
+
+`IsSoundRoomCatalogEntryValid()` is the authoritative bound shared with the
+sound room. Valid secret/locked rows are intentionally included because this
+is an author-facing catalog inspector, while malformed rows are skipped and
+record `DEBUGTOOLS_LOG_MUSIC_REJECTED`. Neither enumeration nor preview reads,
+changes, or writes sound-room unlock bits.
+
+The preview acquires
+`EXPANSION_BGM_PREVIEW_OWNER_DEBUGTOOLS_MUSIC` and captures the complete typed
+BGM context plus playing/stopped, song, override, fade, and channel state.
+Rapid selections retain that one snapshot. Back/cancel restores it and clears
+the owner; cancel before preview only releases ownership; an initially silent
+context returns to exact silence. Final debug-session cleanup, title reset,
+and chapter transitions call `DebugTools_ForceSessionCleanup`, which restores
+preview audio once, cancels a queued transition, and releases the session
+guard. The appended `gDebugToolsMusicProbe` and bounded diagnostic events
+provide semantic correctness evidence; audio recognizability is supplementary.
 
 ### Playtest evidence and its explicit, honest scope boundary
 
@@ -1033,7 +1068,7 @@ it provides instead:
   so it is structurally impossible to use it as an arbitrary memory reader.
 
 No dedicated hub menu row is spent on a "Diagnostics" viewer: the first page
-remains the nine built-ins listed in "Hub menu ordering" above, preserving
+remains the original nine built-ins listed in "Hub menu ordering" above, preserving
 their established row identities and existing framebuffer/navigation
 expectations. The ring/
 assert state is instead exposed purely through `gDebugToolsProbe` fields and
@@ -1227,7 +1262,7 @@ tools" above for what each proves.
   a registration or changing the count on a rejected call.
   Its lifecycle case also links the real, unmodified `src/uimenu.c`
   `ProcessMenuSelectInput()`/`Menu_OnIdle()`/`EndMenu()` path and executes
-  under `qps-ploc`: all nine built-ins and all nine contributors retain
+  under `qps-ploc`: all ten built-ins and all nine contributors retain
   capacity/order/callback identity; QPS adapts only built-in rows while
   contributor labels remain on the raw renderer; R dispatch completes with
   the old menu alive and only the yielded Proc ends it; and 64
@@ -1426,7 +1461,7 @@ part of the shipped feature.
 ## Safety boundaries / extension rules
 
 - Contributors add debug actions **exclusively** through
-  `DebugTools_RegisterAction()` using IDs 10-65535; IDs 1-9 are reserved
+  `DebugTools_RegisterAction()` using IDs 11-65535; IDs 1-10 are reserved
   built-ins and return `DEBUGTOOLS_ERR_ID_RESERVED`. Never edit
   `gDebugToolsHubMenuDef` or
   `sHubMenuItemDefs` directly, and never add a second title-screen (or any
@@ -1507,7 +1542,7 @@ explicitly, honestly open is narrow:
   `expansion-modern-debugtools-tools-check`, host test
   `tools/gba-playtest/tests/test_tools_scenario.py`) reuses the proven Fast
   Boot: Chapter 2 map-hub prefix, opens the real map hub
-  (`registeredActionCount == 9`), and drives every tool from its real hub row,
+  (`registeredActionCount == 10`), and drives every tool from its real hub row,
   each with an asserted semantic effect AND a safe hub return (all
   relocation-independent `gDebugToolsProbe`/`gPlaySt`/`gBmSt` scalars):
   Unit inspect resolves Eirika (16/16) then a separate confirm applies

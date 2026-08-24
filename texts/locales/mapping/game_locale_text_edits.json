@@ -391,6 +391,11 @@
         "ja": "AI2",
         "key": "debug.unit.ai_b",
         "zh-Hans": "AI2"
+      },
+      {
+        "ja": "BGM確認",
+        "key": "debug.action.music_preview",
+        "zh-Hans": "BGM查看"
       }
     ],
     "reason": "Expansion registry keys have no original FE8J/FE8CN indexed source."

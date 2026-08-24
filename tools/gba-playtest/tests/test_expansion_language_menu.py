@@ -938,11 +938,11 @@ class DebugToolsRegistryAbiUnchangedAfterLocalizationTests(unittest.TestCase):
         )
 
     def test_debugtools_capacity_is_separate_and_paginated(self):
-        self.assertIn("DEBUGTOOLS_BUILTIN_ACTION_MAX = 9,", self.header_text)
+        self.assertIn("DEBUGTOOLS_BUILTIN_ACTION_MAX = 10,", self.header_text)
         self.assertIn("DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX = 9,", self.header_text)
-        self.assertIn("DEBUGTOOLS_ACTION_MAX = 18,", self.header_text)
+        self.assertIn("DEBUGTOOLS_ACTION_MAX = 19,", self.header_text)
         self.assertIn("DEBUGTOOLS_HUB_PAGE_ACTION_MAX = 9,", self.header_text)
-        self.assertIn("DEBUGTOOLS_HUB_PAGE_MAX = 2,", self.header_text)
+        self.assertIn("DEBUGTOOLS_HUB_PAGE_MAX = 3,", self.header_text)
 
     def test_builtin_label_mapping_is_modern_guarded_and_third_party_fallback_intact(self):
         guard_match = re.search(
