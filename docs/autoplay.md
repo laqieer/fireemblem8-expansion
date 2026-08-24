@@ -14,6 +14,10 @@ The canonical tester procedure is
 The optional command has the separate
 [`TC-AUTOPLAY-CHARGE-001`](test-cases/autoplay.md#tc-autoplay-charge-001-one-phase-charge-delegation)
 procedure.
+Issue [#86](https://github.com/laqieer/fireemblem8-expansion/issues/86)
+builds on this telemetry with bounded semantic run-until scenarios; its
+canonical procedure is
+[`TC-AUTOPLAY-BOUNDS-001`](test-cases/autoplay.md#tc-autoplay-bounds-001-bounded-semantic-autoplay-termination).
 
 ## Public API
 
@@ -189,6 +193,83 @@ eight visible rows, either option adds one, and both together use ten of
 must make its capacity/order choice explicitly rather than silently displacing
 either command.
 
+## Bounded semantic run-until scenarios
+
+`tools/gba-playtest` schema version 2 adds one opt-in `run_until` profile. It
+does not change schema-version-1 fixed-frame scenarios or their
+format-version-2 fingerprints. A bounded scenario declares:
+
+- one unconditional positive `max_frames` count;
+- one required `success` condition and optional mutually exclusive
+  `objective_failure` / `controller_exhausted` conditions;
+- conjunctions of `eq`, `ne`, `lt`, `le`, `gt`, or `ge` comparisons over
+  bounded 1/2/4-byte literal or ELF-symbol probes;
+- optional named turn/action counters with positive maxima;
+- an optional monotonic progress epoch, a separate semantic
+  `work_expected` comparison, and a positive unchanged-frame stall bound; and
+- one terminal checkpoint template with the existing framebuffer, SRAM,
+  region, pixel, and semantic-probe capture fields but no authored frame.
+
+The backend evaluates state after every emulated frame. Explicit terminal
+conditions win first, followed by `engine_stall`, `max_turns`, `max_actions`,
+and `max_frames`. Success observed exactly at a hard bound remains success.
+The resulting format-version-3 fingerprint captures one checkpoint and one
+typed terminal record containing the reason, dynamic frame, and bound
+turn/action values alongside normal scenario and ROM provenance.
+
+The seven terminal reasons are deliberately not interchangeable:
+
+- `success` means the authored objective state became observable;
+- `objective_failure` means the ROM explicitly reported objective loss;
+- `controller_exhausted` requires explicit no-legal-action telemetry;
+- `engine_stall` means a ROM-supplied monotonic epoch stopped changing while
+  work was explicitly expected; and
+- `max_frames`, `max_turns`, and `max_actions` identify the exact exhausted
+  budget.
+
+Unit coordinates, pointers, source text, wall-clock duration, and framebuffer
+similarity are not progress proxies. A stationary defend/wait state reports
+work not expected and therefore does not accrue stall frames. Epoch regression
+is a deterministic error. Malformed, duplicate, overlapping, impossible, or
+unresolved conditions fail before ROM execution. Semantic failure and budget
+outcomes are captured once and never retried; the existing retry option
+remains limited to host process timeouts.
+
+The real debug scenario reuses #85's clean Chapter 2 activation route and
+pointer-free telemetry. It binds progress and action count to
+`committedActionCount`, work expected to `COMPUTER_PHASE`, turn count to
+`gPlaySt.chapterTurnNumber`, objective failure to the typed failure state, and
+success to the first failure-free `COMPUTER_PHASE_COMPLETE`. The checked
+capture stops at frame 17134 with turn 2, six actions, one start/completion,
+104 red-hostile checks, 56 green-allied checks, and no invalid/failure record.
+The equivalent fixed scenario previously observed its later checkpoint at
+frame 18000.
+
+Debug and release default-PLAYER controls use the same bounded schema but
+never activate COMPUTER. Both terminate as `max_frames` at frame 3950 with
+turn 1 and zero starts, completions, actions, failures, or debug activations.
+The generated homebrew fixture independently reaches every terminal reason
+and proves objective failure is selected before stall classification.
+
+This is host/runtime-test infrastructure only:
+
+- **Dependencies:** #85's public control/telemetry contract,
+  `tools/gba-playtest`, existing ELF probe bindings, libmGBA, and the
+  tester-case catalog.
+- **Dependents:** authored objectives (#88), accelerated-fidelity work (#89),
+  and later strategy/batch/planner layers through their own contracts.
+- **Conflicts:** none; fixed-frame scenarios and fingerprints remain valid and
+  are exercised unchanged.
+- **Profiles:** generated homebrew/libmGBA host integration, modern AAPCS debug
+  positive, and modern AAPCS debug/release default negatives. Linux/libmGBA
+  remains the CI runtime.
+- **Save/config/data:** no save field, migration, compatibility epoch,
+  configuration identity, Autoconf/Make feature flag, generated game data, or
+  localization change.
+- **ROM/RAM/archival:** no target source, ROM bytes, RAM allocation, linker
+  budget, or archival runtime behavior changes. The legacy lane remains a
+  compile-compatibility check only.
+
 ## Compatibility and budgets
 
 - **Dependencies:** `BmMain_StartPhase`, `gProcScr_CpPhase`,
@@ -235,6 +316,8 @@ make expansion-modern-autoplay-check MODERN_CONFIG=release MODERN_ABI=aapcs
 python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v
 make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=release MODERN_ABI=aapcs
+make expansion-modern-autoplay-bounds-check MODERN_CONFIG=debug MODERN_ABI=aapcs
+make expansion-modern-autoplay-bounds-check MODERN_CONFIG=release MODERN_ABI=aapcs
 make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=release MODERN_ABI=aapcs
 ```

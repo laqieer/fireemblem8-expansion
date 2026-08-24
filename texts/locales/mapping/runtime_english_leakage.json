@@ -12322,7 +12322,7 @@
     "ja_expansion": {
       "byte_count": 3267,
       "path": "texts/expansion/catalog.ja.json",
-      "sha256": "ac0adedc2f81612e73ca93713107bdbeccf01349693610d2e56cf47060578378"
+      "sha256": "55fc9b552a9707d7a5e930010e76d8276ff96e32e9b13b6f59f6af40f572c5d7"
     },
     "ja_indexed": {
       "byte_count": 1719222,

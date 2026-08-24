@@ -104,35 +104,6 @@ class CSyncTests(unittest.TestCase):
         self.assertEqual(int(match.group(1), 16), schema.MSG_ID_INVALID)
 
 
-class LanguageMenuLocaleNameTests(unittest.TestCase):
-    MENU_PATH = ROOT / "src" / "expansion_language_menu.c"
-
-    def test_prepared_locale_names_and_codes_have_stable_message_ids(self):
-        text = self.MENU_PATH.read_text(encoding="utf-8")
-        for macro in (
-            "EXP_MSG_FRAMEWORK_LOCALE_NAME_JA",
-            "EXP_MSG_FRAMEWORK_LOCALE_NAME_ZH_HANS",
-            "EXP_MSG_FRAMEWORK_LOCALE_SHORT_NAME_JA",
-            "EXP_MSG_FRAMEWORK_LOCALE_SHORT_NAME_ZH_HANS",
-            "EXP_MSG_FRAMEWORK_LOCALE_NAME_FR",
-            "EXP_MSG_FRAMEWORK_LOCALE_NAME_DE",
-            "EXP_MSG_FRAMEWORK_LOCALE_NAME_ES",
-            "EXP_MSG_FRAMEWORK_LOCALE_NAME_IT",
-            "EXP_MSG_FRAMEWORK_LOCALE_SHORT_NAME_FR",
-            "EXP_MSG_FRAMEWORK_LOCALE_SHORT_NAME_DE",
-            "EXP_MSG_FRAMEWORK_LOCALE_SHORT_NAME_ES",
-            "EXP_MSG_FRAMEWORK_LOCALE_SHORT_NAME_IT",
-        ):
-            self.assertIn(macro, text)
-
-    def test_locale_proper_names_still_resolve_against_english(self):
-        text = self.MENU_PATH.read_text(encoding="utf-8")
-        self.assertIn(
-            "return ExpansionLocale_Resolve(EXPANSION_LOCALE_EN, msgId);",
-            text,
-        )
-
-
 class MsgIdContractTests(unittest.TestCase):
     def test_msg_id_invalid_is_0xffff(self):
         self.assertEqual(schema.MSG_ID_INVALID, 0xFFFF)

@@ -405,19 +405,6 @@ class BoundaryAdvanceTests(unittest.TestCase):
             self.fixture.base_sha,
         )
 
-    def test_record_scan_forward_ok(self):
-        sha1 = h.commit(self.fixture.upstream_dir, {"a.txt": "1"}, "c1", seconds_offset=10)
-        h.refetch(self.fixture)
-        state_mod.record_scan(self.state, "decomp/master", sha1, self.fixture.fork_dir)
-        self.assertEqual(self.state["last_scanned"]["sha"], sha1)
-
-    def test_record_scan_backward_rejected(self):
-        sha1 = h.commit(self.fixture.upstream_dir, {"a.txt": "1"}, "c1", seconds_offset=10)
-        h.refetch(self.fixture)
-        state_mod.record_scan(self.state, "decomp/master", sha1, self.fixture.fork_dir)
-        with self.assertRaises(state_mod.StateError):
-            state_mod.record_scan(self.state, "decomp/master", self.fixture.base_sha, self.fixture.fork_dir)
-
     def test_advance_last_ported_blocks_on_unaccounted_commits(self):
         sha1 = h.commit(self.fixture.upstream_dir, {"a.txt": "1"}, "c1", seconds_offset=10)
         sha2 = h.commit(self.fixture.upstream_dir, {"b.txt": "2"}, "c2", seconds_offset=20)

@@ -369,9 +369,14 @@ Follow the repository conventions in
 
 ## Phase 5: validate
 
-During iteration, run the smallest focused host checks and the one relevant
-modern ROM profile. Before delivery, expand validation to the exact acceptance
-surface described in [`CONTRIBUTING.md`](../../../CONTRIBUTING.md).
+Local validation is change-focused by default. Run only the smallest tests
+that directly cover the changed behavior and the one necessary compile or
+runtime scenario. Do not run broad catalog validation, full repository test
+suites, all-locale/all-feature profiles, broad archival builds, or every
+supported profile locally unless the changed surface directly owns that gate
+or focused evidence cannot answer the acceptance criterion. Combined Build CI
+is the comprehensive final integration gate. Stop after focused checks pass,
+commit the candidate, and hand it off.
 
 For a bug fix, first reproduce the original symptom or preserve equivalent
 structural failure evidence, then prove the symptom is gone and the new
@@ -513,6 +518,15 @@ sweep. The coordinator must not poll, sleep, or keep a reasoning turn alive
 solely to wait. Other agents must not duplicate watchers, fix ownership, or
 merge decisions; they return validated local commits to the coordinator for
 the trusted owner-context push.
+
+Every delegated reasoning agent must be launched in background mode. Never use
+a synchronous subagent invocation that blocks the main orchestrator. After
+launching background work, continue every independent dependency-ready task
+immediately. If the result is a true dependency and no independent work
+remains, end the turn and rely on the automatic completion notification
+instead of waiting synchronously or polling. Keep simple work that needs only
+two to five direct tool calls in the main orchestrator rather than delegating
+it.
 
 Reasoning subagents must not remain alive merely to wait for a remote workflow.
 The orchestrator that pushes or dispatches a workflow records the exact candidate

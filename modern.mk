@@ -52,6 +52,7 @@ MODERN_GOALS := \
 	expansion-modern-banim-package-runtime-check \
 	expansion-modern-blue-phase-delegate-profile-rom \
 	expansion-modern-blue-phase-delegate-check \
+	expansion-modern-autoplay-bounds-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-idspace-active-check \
@@ -1441,6 +1442,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-hq-mixer-check \
 	expansion-modern-blue-phase-delegate-profile-rom \
 	expansion-modern-blue-phase-delegate-check \
+	expansion-modern-autoplay-bounds-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-budget \
@@ -3392,6 +3394,22 @@ expansion-modern-blue-phase-delegate-check: expansion-modern-boot-preflight \
 		--disabled-elf "$(MODERN_ELF)" \
 		--config "$(MODERN_CONFIG)" \
 		--out-dir "$(MODERN_BLUE_PHASE_DELEGATE_RUNTIME_OUTDIR)"
+
+# Issue #86 bounded semantic run-until classification. This reuses the #85
+# routes and telemetry while keeping fixed-frame scenarios and fingerprints
+# unchanged.
+MODERN_AUTOPLAY_BOUNDS_RUNTIME_SCRIPT := tools/gba-playtest/run_autoplay_bounds_checks.py
+MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/autoplay-bounds-runtime-check
+
+expansion-modern-autoplay-bounds-check: expansion-modern-boot-preflight expansion-modern-rom
+	@mkdir -p "$(MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR)/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_AUTOPLAY_BOUNDS_RUNTIME_SCRIPT)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--config "$(MODERN_CONFIG)" \
+		--out-dir "$(MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR)"
 
 # Normal save/load runtime scenario (issue #13 closure). Reuses new-game.json's
 # clean-boot SaveMenu New Game -> slot 0 write, then a real A+B+SELECT+START

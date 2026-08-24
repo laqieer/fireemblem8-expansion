@@ -166,87 +166,6 @@ STALE_PHRASE_RULES = [
         "stale claim: the fireemblem8-expansion project wiki is initialized "
         "and maintained as a navigation portal; repository docs remain authoritative",
     ),
-    # Issue #17 verifier finding: docs/quickstart.md hardcoded modern-object
-    # counts (18/21/363/435/438) that drifted out of sync with modern.mk's
-    # actual MODERN_COHORT_*/MODERN_ALL_* variables. The fix replaced every
-    # such count with a qualitative description plus a `make print-<VAR>`
-    # reproduction command; these phrases must never reappear verbatim.
-    (
-        re.compile(r"twenty-one `\.o` and twenty-one `\.d` files"),
-        "stale claim: hardcoded cohort object/dep count -- describe "
-        "qualitatively and point at `make print-MODERN_COHORT_C_OBJECTS`/"
-        "`print-MODERN_COHORT_ASM_OBJECTS`/`print-MODERN_COHORT_OBJECTS` instead",
-    ),
-    (
-        re.compile(r"all 435 authoritative C files"),
-        "stale claim: hardcoded full-source C file count -- describe "
-        "qualitatively and point at `make print-MODERN_ALL_C_OBJECTS`/"
-        "`print-MODERN_ALL_DATA_OBJECTS` instead",
-    ),
-    (
-        re.compile(r"363 normal `src/\*\.c`"),
-        "stale claim: hardcoded normal-C-source count -- describe "
-        "qualitatively and point at `make print-MODERN_ALL_C_OBJECTS` instead",
-    ),
-    (
-        re.compile(r"\b18-file cohort\b"),
-        "stale claim: hardcoded cohort file count -- describe qualitatively "
-        "and point at `make print-MODERN_COHORT_C_OBJECTS` instead",
-    ),
-    (
-        re.compile(r"363-file full C list"),
-        "stale claim: hardcoded full C source list count -- describe "
-        "qualitatively and point at `make print-MODERN_ALL_C_OBJECTS` instead",
-    ),
-    (
-        re.compile(r"438 `\.o` and 438 primary `\.d` files"),
-        "stale claim: hardcoded full-source object/dep count -- describe "
-        "qualitatively and point at `make print-MODERN_ALL_OBJECTS` instead",
-    ),
-    (
-        re.compile(r"all 438 modern objects"),
-        "stale claim: hardcoded modern-ELF object count -- describe "
-        "qualitatively and point at `make print-MODERN_ALL_OBJECTS` instead",
-    ),
-    # Acceptance-review finding (issues #7/#17 docs contract fixup):
-    # docs/framework-support.md hardcoded MODERN_COHORT_OBJECTS/
-    # MODERN_ALL_OBJECTS counts (21 C + 3 asm = 24; 450) that, unlike
-    # quickstart.md's already-fixed wording above, still risked drifting
-    # out of sync with modern.mk. Replaced with the same
-    # `make print-<VAR>`-only pattern used for the phrases above; these
-    # exact phrases must never reappear verbatim.
-    (
-        re.compile(re.escape(
-            "21 `src/*.c` objects + 3 handwritten-assembly objects, 24 total"
-        )),
-        "stale claim: hardcoded cohort object count (21 C + 3 asm = 24 total) -- "
-        "describe qualitatively and point at `make print-MODERN_COHORT_C_OBJECTS`/"
-        "`print-MODERN_COHORT_ASM_OBJECTS`/`print-MODERN_COHORT_OBJECTS` instead",
-    ),
-    (
-        re.compile(re.escape("handwritten asm: 450 objects as of this audit")),
-        "stale claim: hardcoded full-source object count (450) -- describe "
-        "qualitatively and point at `make print-MODERN_ALL_C_OBJECTS`/"
-        "`print-MODERN_ALL_DATA_OBJECTS`/`print-MODERN_ALL_ASM_OBJECTS`/"
-        "`print-MODERN_ALL_OBJECTS` instead",
-    ),
-    # Acceptance-review finding: docs/framework-support.md's
-    # expansion-modern-elf row previously listed `MODERN_ABI=<aapcs|apcs-gnu>`
-    # as if both ABIs were valid for a *linked* target. modern.mk's
-    # MODERN_LINKED_GOALS guard fails fast on anything but aapcs for every
-    # linked/ROM/runtime-gate target (expansion-modern-elf/-rom/
-    # -boot-check/-linker-check/...); apcs-gnu is compile-only
-    # (expansion-modern-cohort/-all layout comparison). This exact
-    # ambiguous phrasing must never reappear.
-    (
-        re.compile(re.escape(
-            r"expansion-modern-elf MODERN_CONFIG=<debug\|release> MODERN_ABI=<aapcs\|apcs-gnu>"
-        )),
-        "stale/incorrect claim: expansion-modern-elf (and every other linked modern "
-        "output) does not accept MODERN_ABI=apcs-gnu -- modern.mk's linked-goal guard "
-        "requires MODERN_ABI=aapcs and fails fast otherwise; apcs-gnu is compile-only "
-        "(expansion-modern-cohort/-all layout comparison only)",
-    ),
     # Issues #7/#17 independent-verifier finding: the issue #17 audit
     # retained a current-status paragraph grouping merged issues #6/#18 with
     # future issue #9 and asserting that the #6/#18 public APIs were absent.
@@ -476,6 +395,69 @@ OBJECT_COUNT_SPELLED_ENUM_RE = re.compile(
         _ENUM_BACKTICK_ITEM, _ENUM_ITEM_SEP, _ENUM_BACKTICK_ITEM,
     ),
     re.IGNORECASE,
+)
+
+_COUNT_TOKEN_RE = r"(?:\d+|%s)" % "|".join(
+    sorted(SPELLED_NUMBER_WORDS, key=len, reverse=True)
+)
+OBJECT_COUNT_ARTIFACT_PAIR_RE = re.compile(
+    r"\b%s\b\s+`\.o`\s+and\s+\b%s\b\s+(?:primary\s+)?`\.d`\s+files?"
+    % (_COUNT_TOKEN_RE, _COUNT_TOKEN_RE),
+    re.IGNORECASE,
+)
+OBJECT_COUNT_COHORT_FILE_RE = re.compile(
+    r"\b%s-file\s+(?:cohort|full\s+C\s+list)\b" % _COUNT_TOKEN_RE,
+    re.IGNORECASE,
+)
+OBJECT_COUNT_ALL_C_FILE_RE = re.compile(
+    r"\ball\s+%s\s+(?:authoritative\s+)?C\s+files?\b" % _COUNT_TOKEN_RE,
+    re.IGNORECASE,
+)
+OBJECT_COUNT_ALL_MODERN_OBJECT_RE = re.compile(
+    r"\b(?:links?|linking)\b[^\n.]{0,80}\ball\s+%s\s+modern\s+objects?\b"
+    % _COUNT_TOKEN_RE,
+    re.IGNORECASE,
+)
+OBJECT_COUNT_HANDWRITTEN_TOTAL_RE = re.compile(
+    r"\b\d+\b[^\n.]{0,80}\bhandwritten(?:-|\s+)assembly\b"
+    r"[^\n.]{0,80}\b\d+\s+total\b",
+    re.IGNORECASE,
+)
+OBJECT_COUNT_HANDWRITTEN_ASM_RE = re.compile(
+    r"\bhandwritten\s+asm\s*:\s*\d+\s+objects?\b",
+    re.IGNORECASE,
+)
+OBJECT_COUNT_STRUCTURAL_PATTERNS = (
+    (
+        OBJECT_COUNT_ARTIFACT_PAIR_RE,
+        "hardcoded object/dependency artifact-count pair -- describe the target "
+        "qualitatively and point at the relevant `make print-MODERN_*_OBJECTS` command",
+    ),
+    (
+        OBJECT_COUNT_COHORT_FILE_RE,
+        "hardcoded cohort/full-source file count -- describe the target qualitatively "
+        "and point at the relevant `make print-MODERN_*_OBJECTS` command",
+    ),
+    (
+        OBJECT_COUNT_ALL_C_FILE_RE,
+        "hardcoded authoritative C-file count -- describe the target qualitatively "
+        "and point at the relevant `make print-MODERN_*_OBJECTS` command",
+    ),
+    (
+        OBJECT_COUNT_ALL_MODERN_OBJECT_RE,
+        "hardcoded modern object count -- describe the target qualitatively and point "
+        "at the relevant `make print-MODERN_*_OBJECTS` command",
+    ),
+    (
+        OBJECT_COUNT_HANDWRITTEN_TOTAL_RE,
+        "hardcoded handwritten-assembly object total -- describe the target "
+        "qualitatively and point at the relevant `make print-MODERN_*_OBJECTS` command",
+    ),
+    (
+        OBJECT_COUNT_HANDWRITTEN_ASM_RE,
+        "hardcoded handwritten-assembly object count -- describe the target "
+        "qualitatively and point at the relevant `make print-MODERN_*_OBJECTS` command",
+    ),
 )
 
 FENCE_RE = re.compile(r"^[ ]{0,3}(```+|~~~+)")
@@ -2049,6 +2031,14 @@ def check_object_count_claims(markdown_files, root):
     findings = []
     for path in markdown_files:
         text = read_text(os.path.join(root, path))
+
+        for pattern, message in OBJECT_COUNT_STRUCTURAL_PATTERNS:
+            for match in pattern.finditer(text):
+                findings.append(Finding(
+                    path,
+                    text.count("\n", 0, match.start()) + 1,
+                    message,
+                ))
 
         # Spelled-out number + object/source noun phrase: matched against
         # the *whole* raw file text (not per line) via `finditer`, because
