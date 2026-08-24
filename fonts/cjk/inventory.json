@@ -2,36 +2,36 @@
   "font_asset_scope": "non-ASCII visible Unicode scalars",
   "inputs": {
     "texts/expansion/catalog.de.json": {
-      "byte_count": 4161,
-      "sha256": "c778a1b33068ba8948c20253d3bd523192a696f76a6670e2a0f44f6a5668e119"
+      "byte_count": 5343,
+      "sha256": "080dd0725be19cb1b68fb83ea7a753c0c1252295199715489a77483343207de5"
     },
     "texts/expansion/catalog.en.json": {
-      "byte_count": 4026,
-      "sha256": "d545120943986b57e1050d1a16ed7446cf4a5d34e0477639d0952224804b6e9a"
+      "byte_count": 5208,
+      "sha256": "61017de86582923db20420823f1415cde6c52ebbfd2107b6f4daabf0f3851d27"
     },
     "texts/expansion/catalog.es.json": {
-      "byte_count": 4169,
-      "sha256": "f458821a3513b6aa97471ee627ab383c647207b657b18b6e9b891877ea10ee5d"
+      "byte_count": 5351,
+      "sha256": "ae28aeb30a14ab13b9c2e301fb4ab6a93dd4e31243429b4d850274718d43f9e5"
     },
     "texts/expansion/catalog.fr.json": {
-      "byte_count": 4205,
-      "sha256": "041cbc4c7bc31335545efa984f5ea8d4e0e76ab81203391a51ef77c7549f7958"
+      "byte_count": 5387,
+      "sha256": "cf8d3ead3188aca4ad10f4eb54f31bc05d46bc2aa32f86b5bac1f862ab804a6b"
     },
     "texts/expansion/catalog.it.json": {
-      "byte_count": 4154,
-      "sha256": "acdd1abae70c826af6834e31e2123bc3c80804a27f3b8d9b6c34b67040c306e7"
+      "byte_count": 5336,
+      "sha256": "c80ce395e9a3d880fdf88166f3714c93606abcf7da50f39a4c8193ffb8efabf7"
     },
     "texts/expansion/catalog.ja.json": {
-      "byte_count": 4190,
-      "sha256": "99234e3ce13b1b7327d6f2f4303616a3682eccc19f33c918f9aa0af392168610"
+      "byte_count": 5469,
+      "sha256": "53019e850f476d890a41d7c53d8f0db59a09c563ce37a61a3e75144916cbc048"
     },
     "texts/expansion/catalog.zh-Hans.json": {
-      "byte_count": 4069,
-      "sha256": "b895c69b82e8cbfc39eaf8b9d0938ce4011cce1f01c98c967dc339da924e3e80"
+      "byte_count": 5331,
+      "sha256": "6ef831dc282e9399431985ccf1e9a905145fd178d9a083ada7be0049daead772"
     },
     "texts/expansion/registry.json": {
-      "byte_count": 17831,
-      "sha256": "e87b4f78f05a44cfb804446bedc8e01570aebef5c65e75139107d783693e474e"
+      "byte_count": 24880,
+      "sha256": "56fb3c6b9c2e66555ce2a16ecb2ee968b5b6fdc59475417dc7825f78288fbcea"
     },
     "texts/locales/authored/catalog.ja.json": {
       "byte_count": 53070,
@@ -75,8 +75,8 @@
       },
       "contributions": {
         "system": {
-          "non_ascii_scalar_count": 1175,
-          "record_count": 2331
+          "non_ascii_scalar_count": 1178,
+          "record_count": 2364
         },
         "talk": {
           "non_ascii_scalar_count": 1732,
@@ -84,7 +84,7 @@
         }
       },
       "expansion": {
-        "active_key_count": 87,
+        "active_key_count": 120,
         "catalogs": [
           "texts/expansion/catalog.de.json",
           "texts/expansion/catalog.en.json",
@@ -103,12 +103,12 @@
       "runtime_usage": {
         "classifications": {
           "both": 319,
-          "system": 2012,
+          "system": 2045,
           "talk": 1172
         },
-        "expansion_key_count": 87,
+        "expansion_key_count": 120,
         "game_target_count": 3414,
-        "record_count": 3503,
+        "record_count": 3536,
         "unclassified_count": 0
       },
       "source_non_ascii_scalar_count": 1786,
@@ -118,7 +118,7 @@
       "styles": {
         "system": {
           "corpus": "fonts/cjk/corpora/ja.system.txt",
-          "glyph_scalar_count": 1174,
+          "glyph_scalar_count": 1177,
           "runtime_contract": "system/item"
         },
         "talk": {
@@ -136,8 +136,8 @@
       },
       "contributions": {
         "system": {
-          "non_ascii_scalar_count": 1460,
-          "record_count": 2331
+          "non_ascii_scalar_count": 1461,
+          "record_count": 2364
         },
         "talk": {
           "non_ascii_scalar_count": 2383,
@@ -145,7 +145,7 @@
         }
       },
       "expansion": {
-        "active_key_count": 87,
+        "active_key_count": 120,
         "catalogs": [
           "texts/expansion/catalog.de.json",
           "texts/expansion/catalog.en.json",
@@ -164,12 +164,12 @@
       "runtime_usage": {
         "classifications": {
           "both": 319,
-          "system": 2012,
+          "system": 2045,
           "talk": 1172
         },
-        "expansion_key_count": 87,
+        "expansion_key_count": 120,
         "game_target_count": 3414,
-        "record_count": 3503,
+        "record_count": 3536,
         "unclassified_count": 0
       },
       "source_non_ascii_scalar_count": 2442,
@@ -179,7 +179,7 @@
       "styles": {
         "system": {
           "corpus": "fonts/cjk/corpora/zh-Hans.system.txt",
-          "glyph_scalar_count": 1459,
+          "glyph_scalar_count": 1460,
           "runtime_contract": "system/item"
         },
         "talk": {
@@ -193,8 +193,8 @@
   "normalization": "NFC",
   "outputs": {
     "fonts/cjk/corpora/ja.system.txt": {
-      "byte_count": 3521,
-      "sha256": "a804f7fed00ef5976591ddc6767fc2c412fc40beb6401b3fe21cb0ca1f159f0f"
+      "byte_count": 3530,
+      "sha256": "97d558bb64524ab5eed07a83b27857fbb56114875a33c87bbfa990bd7780bcd2"
     },
     "fonts/cjk/corpora/ja.talk.txt": {
       "byte_count": 5192,
@@ -205,8 +205,8 @@
       "sha256": "1cc85beec05e487680a34b1df921793b3ade4b0be24cd6fe360eab8240ae20d8"
     },
     "fonts/cjk/corpora/zh-Hans.system.txt": {
-      "byte_count": 4375,
-      "sha256": "4d25d6a901669878be6c84a0039854abbfadd7d0aaac3b9d9fc513a30f02a538"
+      "byte_count": 4378,
+      "sha256": "fc7770f158eca3e13c240f041d148909a37e517d05ee45760254315b1ce2c47a"
     },
     "fonts/cjk/corpora/zh-Hans.talk.txt": {
       "byte_count": 7144,
@@ -214,7 +214,7 @@
     },
     "fonts/cjk/febuilder-manifest.json": {
       "byte_count": 5363,
-      "sha256": "680fb56bd6beeec09336b906096f73d5bfb38b5ca25b476a5881d49194ad3825"
+      "sha256": "91fa5356844a5c302442e367fae0d450f06d53ccebc29ef01508b29a2a981e8a"
     },
     "fonts/cjk/font-sources.json": {
       "byte_count": 2491,
@@ -233,8 +233,8 @@
       "sha256": "a58c41c11d3c387f9884b0c8539ba729bfdcc26bf6a0540bf3f38e74d6f991d6"
     },
     "fonts/cjk/runtime_usage.json": {
-      "byte_count": 1508205,
-      "sha256": "568efac22cfd9402704123db77f880cef1b4b8f566092cb601ae3815da307b42"
+      "byte_count": 1523913,
+      "sha256": "6138f64a7792df17575c872d0acef64d397415fd1f2a82ac0e05e149d14e1549"
     }
   },
   "schema_version": 1,

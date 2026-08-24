@@ -4393,6 +4393,34 @@
       "category": "lookup-table",
       "reason": null
     },
+    "include/expansion_debugtools.h|struct-field|chapter|DebugToolsDiagnosticsSnapshot.chapterIndex": {
+      "category": "external-interface",
+      "reason": "typed read-only debugtools diagnostics snapshot field; it reports the active engine chapter index and does not own or generate chapter IDs"
+    },
+    "include/expansion_debugtools.h|struct-field|character|DebugToolsDiagnosticsSnapshot.characterId": {
+      "category": "external-interface",
+      "reason": "typed read-only debugtools diagnostics snapshot field; it reports a validated cursor unit's character ID and does not own or generate character IDs"
+    },
+    "include/expansion_debugtools.h|struct-field|class|DebugToolsDiagnosticsSnapshot.classId": {
+      "category": "external-interface",
+      "reason": "typed read-only debugtools diagnostics snapshot field; it reports a validated cursor unit's class ID and does not own or generate class IDs"
+    },
+    "include/debugtools_internal.h|function-signature|item|DebugTools_CancelMenu": {
+      "category": "reviewed-exclusion",
+      "reason": "internal MenuProc cancellation callback signature; MenuItemProc is a UI process type and this function stores no gameplay item ID"
+    },
+    "include/debugtools_internal.h|struct-field|unit|DebugToolsDiagnosticsProbe.lastCursorUnitId": {
+      "category": "external-interface",
+      "reason": "scalar playtest probe for a validated map-unit slot; it does not own or generate unit IDs"
+    },
+    "include/expansion_debugtools.h|struct-field|unit|DebugToolsDiagnosticsSnapshot.cursorUnitId": {
+      "category": "external-interface",
+      "reason": "typed read-only diagnostics field for a validated map-unit slot; it does not own or generate unit IDs"
+    },
+    "include/expansion_debugtools.h|struct-field|unit|DebugToolsDiagnosticsSnapshot.faction": {
+      "category": "external-interface",
+      "reason": "typed read-only diagnostics field for the current phase faction; it does not own or generate unit IDs"
+    },
     "tools/gba-playtest/gba_playtest.py|tool-symbol|item|item": {
       "category": "external-interface",
       "reason": null
