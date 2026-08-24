@@ -89,6 +89,17 @@ ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
     return (ProcPtr)1;
 }
 
+ProcPtr Proc_Find(const struct ProcCmd* script)
+{
+    (void)script;
+    return NULL;
+}
+
+void Proc_End(ProcPtr proc)
+{
+    (void)proc;
+}
+
 void DebugTools_RegisterBuiltinActions(void)
 {
     /* The real implementation (src/debugtools_launcher.c) depends on the
@@ -120,4 +131,12 @@ void DebugTools_RegisterExtendedToolActions(void)
      * has its own dedicated host tests; this registration-focused driver
      * only needs DebugTools_OpenHub() to remain linkable, not to actually
      * register the five extended tools. */
+}
+
+void DebugTools_RegisterMusicPreviewAction(void)
+{
+}
+
+void DebugTools_CleanupMusicPreview(void)
+{
 }

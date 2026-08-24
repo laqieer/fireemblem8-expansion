@@ -3,12 +3,17 @@
 Issue [#85](https://github.com/laqieer/fireemblem8-expansion/issues/85)
 adds the framework root for blue-army automation. It exposes the existing
 computer-phase executor to blue units through one typed runtime control and a
-fixed-size semantic telemetry record. It does not add a strategy system,
-chapter objective model, menu, persisted preference, or claim that the
-existing AI can complete arbitrary chapters.
+fixed-size semantic telemetry record. The optional issue
+[#87](https://github.com/laqieer/fireemblem8-expansion/issues/87) module adds
+one default-off, one-phase map-menu command on top of that API. Neither layer
+adds a strategy system, chapter objective model, persisted ownership setting,
+or claim that the existing AI can complete arbitrary chapters.
 
 The canonical tester procedure is
 [`TC-AUTOPLAY-001`](test-cases/autoplay.md#tc-autoplay-001-blue-computer-phase-smoke).
+The optional command has the separate
+[`TC-AUTOPLAY-CHARGE-001`](test-cases/autoplay.md#tc-autoplay-charge-001-one-phase-charge-delegation)
+procedure.
 Issue [#86](https://github.com/laqieer/fireemblem8-expansion/issues/86)
 builds on this telemetry with bounded semantic run-until scenarios; its
 canonical procedure is
@@ -114,6 +119,84 @@ through `BmMain_StartPhase`.
 Release builds compile this activation path as an inert return. The chord is
 deliberately a developer-facing scenario seam: it has no label, menu entry,
 save bit, preference, or release behavior.
+
+## Optional one-phase Charge command
+
+Issue #87 is an **optional reusable module/reference implementation**, not a
+change to the controller default. Enable it persistently with:
+
+```bash
+./configure --enable-blue-phase-delegate
+make
+```
+
+or for one invocation:
+
+```bash
+make expansion-modern-rom EXPANSION_BLUE_PHASE_DELEGATE=1
+```
+
+| Surface | Contract |
+| --- | --- |
+| Autoconf | `--enable-blue-phase-delegate` / `--disable-blue-phase-delegate` |
+| Make | `EXPANSION_BLUE_PHASE_DELEGATE=0|1` |
+| C | `FE8_EXPANSION_BLUE_PHASE_DELEGATE=0|1` |
+| Default/lifecycle | `0`; permanent project choice |
+| Dependency | Modern issue #85 controller/telemetry; enabling without the modern controller is a compile-time error |
+| Identity | Included in the deterministic configuration fingerprint and metadata |
+| Save | No field, preference, epoch, migration, or serialized controller |
+
+Enabled C builds may include
+[`expansion_blue_phase_delegate.h`](../include/expansion_blue_phase_delegate.h).
+`ExpansionBluePhaseDelegate_GetAvailability()` returns a typed result for the
+current map-menu state; `ExpansionBluePhaseDelegate_Start()` revalidates and
+starts only an `OK` state; `ExpansionBluePhaseDelegate_IsPending()` identifies
+the one transient restoration marker; and
+`ExpansionBluePhaseDelegate_CountEligibleBlueUnits()` reports the bounded
+shared-AI count. Rejections distinguish wrong faction, lock/event state,
+another blocking action, no eligible unit, and a controller failure. No
+rejected call changes the controller or phase.
+
+When enabled, the map menu appends one localized **Charge** row. Its label and
+help metadata use stable expansion message IDs `autoplay.charge.label` (80)
+and `autoplay.charge.help` (81). The vanilla map-menu help renderer accepts
+vanilla message IDs rather than independent `ExpansionMsgId` values, so `R`
+on Charge invokes the custom expansion helpbox handler. That handler resolves
+ID 81 through the expansion ROM catalog and opens `StartHelpBoxString`; it
+never passes the expansion ID through the vanilla catalog or changes the
+command contract. The row is shown
+only while the ordinary map menu
+owns the sole game lock in a live interactive blue `PLAYER` phase, no event,
+fade, camera, action child, computer phase, berserk phase, or prior delegation
+is active, and at least one blue unit passes the same eligibility predicate
+used by `BuildAiUnitList`. Sleeping, berserk, hidden, unselectable/already
+moved, dead, rescued, and empty slots are excluded.
+
+Charge help passes the resolver's persistent ROM-catalog pointer directly to
+the asynchronous helpbox. It therefore remains valid through later menu-label
+resolves without allocating a second EWRAM scratch buffer.
+
+Selection revalidates that state, sets `COMPUTER` through
+`ExpansionAutoplay_SetBlueControl`, and redirects the already-blocked
+`gProc_BMapMain` to its existing `BmMain_StartPhase` label without rerunning
+phase-start events, healing, or turn increments. The current faction therefore
+stays blue and only the remaining eligible units enter `gProcScr_CpPhase`.
+A base `Proc` marker watches the parent telemetry; after the computer Proc
+exits on success or explicit failure, the internal validated restore hook
+returns the controller and telemetry controller field to `PLAYER` and ends the
+marker. The next blue phase is the ordinary interactive player phase.
+
+The marker uses an existing Proc-pool slot and adds no static EWRAM or IWRAM.
+It is never serialized. A reset, suspend-resume, restart, or map cleanup uses
+the issue #85 lifecycle reset and therefore resumes as `PLAYER`. The feature
+does not add `NOBODY`, persistent autoplay, a settings screen, authored
+strategy/objective data, chapter rules, or a second phase router.
+
+The optional Threat Range row composes with Charge: the base map menu has
+eight visible rows, either option adds one, and both together use ten of
+`MENU_ITEM_MAX == 11`. A downstream project adding or replacing another row
+must make its capacity/order choice explicitly rather than silently displacing
+either command.
 
 ## Bounded semantic run-until scenarios
 
@@ -327,10 +410,12 @@ excludes the runtime and generated table.
   competing observation/action seam.
 - **Conflicts:** none known. The default `PLAYER` path is the required
   conflict-free negative.
-- **Configuration:** no Autoconf option, Make variable, C feature macro, or
-  configuration-identity field.
+- **Configuration:** the #85 foundation has no build flag. The optional #87
+  command adds the strict default-off Autoconf/Make/C surface documented
+  above and folds it into configuration identity.
 - **Data/UI:** no generated-data, localization, menu, objective, or strategy
-  record.
+  record in the #85 foundation. The optional #87 module adds only two
+  expansion-catalog messages and one gated map-menu row.
 - **Save:** no field, migration, preference, or compatibility-epoch change.
 - **Archival:** `src/expansion_autoplay.c` and all hooks are excluded from
   `FE8_ARCHIVAL_BUILD`; the agbcc lane is unchanged.
@@ -342,14 +427,25 @@ excludes the runtime and generated table.
   Default debug/release EWRAM remains unchanged from the immediate base. The
   module contributes 768 bytes of debug Thumb text and 692 bytes of release
   Thumb text.
+- **Issue #87 budget:** the two stable catalog messages add 528 debug / 544
+  release linked ROM bytes to the disabled build. Enabling Charge adds another
+  840 debug / 808 release linked ROM bytes, including the dedicated module's
+  400/420 bytes of Thumb text and 24 bytes of ROM-resident Proc script data.
+  It adds zero static EWRAM/IWRAM: enabled/default builds retain 1,704/3,128
+  EWRAM bytes free (debug/release) and 1,552 IWRAM static-growth bytes above
+  the 4 KiB stack margin. The named all-locales/all-features release profile
+  enables Charge and Threat Range together and retains 732 EWRAM bytes plus
+  272 IWRAM static-growth bytes.
 
 ## Validation
 
 ```bash
 python3 -m unittest tools.gba-playtest.tests.test_expansion_autoplay -v
-python3 -m unittest tools.gba-playtest.tests.test_run_until -v
 make expansion-modern-autoplay-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-autoplay-check MODERN_CONFIG=release MODERN_ABI=aapcs
+python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v
+make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=aapcs
+make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=release MODERN_ABI=aapcs
 make expansion-modern-autoplay-bounds-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-autoplay-bounds-check MODERN_CONFIG=release MODERN_ABI=aapcs
 make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=debug MODERN_ABI=aapcs
@@ -365,6 +461,17 @@ actions, red-hostility and green-alliance checks, and normal turn/faction
 progression. The debug and release negatives use an ordinary clean Prologue
 route and retain `PLAYER` with zero blue computer-phase starts, completions,
 or actions.
+
+The Charge positive follows the proven Chapter 2 dialogue route, opens the
+real map menu, wraps to the last localized row, exercises its safe inert
+`R` guard, and selects it without the #85 debug chord. Five eligible blue
+actors commit five legal actions in the current phase; telemetry records one
+start, one completion, 76 red-hostile checks, 17 green-allied checks, zero
+invalid/failure records, and five suppressed suspend writes. Turn 2 then
+reaches blue `PLAYER` control. The host fixture separately proves one
+already-moved unit plus sleeping, berserk, rescued, dead,
+hidden/unselectable, and empty slots do not enter the same shared eligibility
+predicate.
 
 ## Limitations and rollback
 

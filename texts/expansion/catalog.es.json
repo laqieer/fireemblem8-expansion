@@ -27,6 +27,7 @@
     "debug.action.flag_chapter": "Flag/Capítulo",
     "debug.action.rng_inspect": "Revisar RNG",
     "debug.action.save_state": "Estado guardado",
+    "debug.action.music_preview": "Vista previa musical",
     "framework.locale_short_name.en": "EN",
     "framework.locale_short_name.qps_ploc": "QPS",
     "language.settings_more": "Más",
@@ -79,6 +80,8 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "Capítulo"
+    "ui.presentation.chapter_title_default": "Capítulo",
+    "autoplay.charge.label": "Carga",
+    "autoplay.charge.help": "Delegar las unidades restantes a la IA este turno."
   }
 }

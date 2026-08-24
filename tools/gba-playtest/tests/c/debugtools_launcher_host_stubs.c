@@ -190,6 +190,14 @@ void DebugTools_RegisterExtendedToolActions(void)
      * itself calls OpenHub. */
 }
 
+void DebugTools_RegisterMusicPreviewAction(void)
+{
+}
+
+void DebugTools_CleanupMusicPreview(void)
+{
+}
+
 /* DebugToolsObserver_WaitForStablePlayerPhase is a PROC_REPEAT callback:
  * this host test drives it directly (see debugtools_launcher_driver.c),
  * so gProcScr_PlayerPhase only needs to exist as a distinguishable

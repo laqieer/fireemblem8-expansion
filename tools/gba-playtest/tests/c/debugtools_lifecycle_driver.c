@@ -36,6 +36,7 @@ extern u8 DebugToolsLifecycle_Builtin6Selected(struct MenuProc*, struct MenuItem
 extern u8 DebugToolsLifecycle_Builtin7Selected(struct MenuProc*, struct MenuItemProc*);
 extern u8 DebugToolsLifecycle_Builtin8Selected(struct MenuProc*, struct MenuItemProc*);
 extern u8 DebugToolsLifecycle_Builtin9Selected(struct MenuProc*, struct MenuItemProc*);
+extern u8 DebugToolsLifecycle_Builtin10Selected(struct MenuProc*, struct MenuItemProc*);
 
 extern struct MenuDef CONST_DATA gDebugToolsHubMenuDef;
 extern struct Font* gActiveFont;
@@ -167,7 +168,7 @@ static u8 Contributor0Selected(struct MenuProc* menu, struct MenuItemProc* item)
 
 int main(void)
 {
-    static const char* const expectedLabels[9] =
+    static const char* const expectedLabels[10] =
     {
         "Fast Boot: Chapter 2",
         "Weather",
@@ -177,9 +178,10 @@ int main(void)
         "Convoy Inspect",
         "Flag/Chapter",
         "RNG Inspect",
-        "Save State"
+        "Save State",
+        "Music Preview"
     };
-    static u8 (*const expectedCallbacks[9])(struct MenuProc*, struct MenuItemProc*) =
+    static u8 (*const expectedCallbacks[10])(struct MenuProc*, struct MenuItemProc*) =
     {
         DebugToolsLifecycle_Builtin1Selected,
         DebugToolsLifecycle_Builtin2Selected,
@@ -189,7 +191,8 @@ int main(void)
         DebugToolsLifecycle_Builtin6Selected,
         DebugToolsLifecycle_Builtin7Selected,
         DebugToolsLifecycle_Builtin8Selected,
-        DebugToolsLifecycle_Builtin9Selected
+        DebugToolsLifecycle_Builtin9Selected,
+        DebugToolsLifecycle_Builtin10Selected
     };
     static const char* const contributorLabels[9] =
     {
@@ -224,20 +227,20 @@ int main(void)
     int i;
     int cycle;
 
-    CHECK(DEBUGTOOLS_BUILTIN_ID_MIN == 1 && DEBUGTOOLS_BUILTIN_ID_MAX == 9,
-          "built-in IDs must remain the closed range 1-9");
-    CHECK(DEBUGTOOLS_CONTRIBUTOR_ID_MIN == 10
+    CHECK(DEBUGTOOLS_BUILTIN_ID_MIN == 1 && DEBUGTOOLS_BUILTIN_ID_MAX == 10,
+          "built-in IDs must remain the closed range 1-10");
+    CHECK(DEBUGTOOLS_CONTRIBUTOR_ID_MIN == 11
           && DEBUGTOOLS_CONTRIBUTOR_ID_MAX == 0xFFFF,
-          "contributor IDs must remain the explicit range 10-65535");
-    CHECK(DEBUGTOOLS_BUILTIN_ACTION_MAX == 9,
-          "built-in storage must remain exactly nine actions");
+          "contributor IDs must remain the explicit range 11-65535");
+    CHECK(DEBUGTOOLS_BUILTIN_ACTION_MAX == 10,
+          "built-in storage must contain exactly ten actions");
     CHECK(DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX == 9,
           "public contributor storage must preserve nine actions");
-    CHECK(DEBUGTOOLS_ACTION_MAX == 18,
-          "combined introspection capacity must be 18");
+    CHECK(DEBUGTOOLS_ACTION_MAX == 19,
+          "combined introspection capacity must be 19");
     CHECK(DEBUGTOOLS_HUB_PAGE_ACTION_MAX == 9
-          && DEBUGTOOLS_HUB_PAGE_MAX == 2,
-          "the full registry must render as two bounded nine-action pages");
+          && DEBUGTOOLS_HUB_PAGE_MAX == 3,
+          "the full registry must render as at most three bounded pages");
     CHECK(DEBUGTOOLS_TEXT_ALLOC_CAPACITY == 448,
           "the default BG text allocator capacity must remain 448 columns");
     CHECK(DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET == 204,
@@ -260,10 +263,18 @@ int main(void)
     CHECK(DebugTools_GetRegisteredCount() == 0,
           "a rejected reserved-ID collision must not initialize or mutate the registry");
 
+    contributor.id = 10;
+    contributor.label = "Former Contributor Boundary";
+    contributor.onSelected = ContributorCollisionSelected;
+    CHECK(DebugTools_RegisterAction(&contributor) == DEBUGTOOLS_ERR_ID_RESERVED,
+          "built-in music id 10 must be reserved before lazy initialization");
+    CHECK(DebugTools_GetRegisteredCount() == 0,
+          "rejecting id 10 must not initialize or mutate the registry");
+
     CHECK(DebugTools_RegisterAction(&contributors[0]) == DEBUGTOOLS_OK,
           "the first valid contributor-before-init registration must succeed");
     CHECK(DebugTools_GetRegisteredCount() == DEBUGTOOLS_BUILTIN_ACTION_MAX + 1,
-          "lazy initialization must install nine built-ins without consuming contributor storage");
+          "lazy initialization must install ten built-ins without consuming contributor storage");
 
     contributor.id = contributors[0].id;
     contributor.label = "Duplicate Id";
@@ -290,13 +301,13 @@ int main(void)
     CHECK(DebugTools_RegisterAction(&contributor) == DEBUGTOOLS_ERR_CAPACITY_FULL,
           "contributor capacity plus one must fail explicitly");
     CHECK(DebugTools_GetRegisteredCount() == DEBUGTOOLS_ACTION_MAX,
-          "capacity failure must leave all nine built-ins and contributors intact");
+          "capacity failure must leave all ten built-ins and contributors intact");
 
     for (i = 0; i < DEBUGTOOLS_BUILTIN_ACTION_MAX; ++i)
     {
         action = DebugTools_GetRegisteredAction(i);
         CHECK(action != NULL, "every built-in registry row must exist");
-        CHECK(action->id == (u16)(i + 1), "built-in IDs must remain in deterministic 1-9 order");
+        CHECK(action->id == (u16)(i + 1), "built-in IDs must remain in deterministic 1-10 order");
         CHECK(strcmp(action->label, expectedLabels[i]) == 0,
               "each built-in ID must retain its matching label");
         CHECK(action->onSelected == expectedCallbacks[i],
@@ -338,7 +349,7 @@ int main(void)
              * (DEBUGTOOLS_MENU_WIDTH_TILES - 1),
           "each maximum hub page must allocate exactly 180 text columns");
 
-    for (i = 0; i < DEBUGTOOLS_BUILTIN_ACTION_MAX; ++i)
+    for (i = 0; i < DEBUGTOOLS_HUB_PAGE_ACTION_MAX; ++i)
     {
         CHECK(strcmp(gDebugToolsHubMenuDef.menuItems[i].name, expectedLabels[i]) == 0,
               "page one must preserve built-in label order");
@@ -381,14 +392,19 @@ int main(void)
               == DEBUGTOOLS_HUB_PAGE_ACTION_MAX + 1,
               "a full contributor page must contain nine actions plus Back");
 
-        for (i = 0; i < DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX; ++i)
+        CHECK(strcmp(gDebugToolsHubMenuDef.menuItems[0].name, "Music Preview") == 0,
+              "page two must begin with the localized music-preview built-in");
+        CHECK(gDebugToolsHubMenuDef.menuItems[0].onDraw != NULL,
+              "the music-preview built-in must retain localized drawing");
+
+        for (i = 0; i < DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX - 1; ++i)
         {
-            CHECK(gDebugToolsHubMenuDef.menuItems[i].name == contributors[i].label,
+            CHECK(gDebugToolsHubMenuDef.menuItems[i + 1].name == contributors[i].label,
                   "page two must preserve contributor label pointer identity");
-            CHECK(gDebugToolsHubMenuDef.menuItems[i].onSelected
+            CHECK(gDebugToolsHubMenuDef.menuItems[i + 1].onSelected
                   == contributors[i].onSelected,
                   "page two must preserve contributor callback identity");
-            CHECK(gDebugToolsHubMenuDef.menuItems[i].onDraw == NULL,
+            CHECK(gDebugToolsHubMenuDef.menuItems[i + 1].onDraw == NULL,
                   "QPS must preserve contributor rows on the raw label renderer");
         }
 
@@ -408,9 +424,10 @@ int main(void)
         action = DebugTools_GetRegisteredAction(DEBUGTOOLS_BUILTIN_ACTION_MAX);
         CHECK(action != NULL && action->onSelected == Contributor0Selected,
               "the first contributor row must expose the real submenu callback");
-        CHECK(gDebugToolsLifecycleLastMenuDef->menuItems[0].onSelected
+        CHECK(gDebugToolsLifecycleLastMenuDef->menuItems[1].onSelected
               == Contributor0Selected,
               "the rendered contributor row must retain the registered callback");
+        gDebugToolsLifecycleLastMenuProc->itemCurrent = 1;
         DispatchMenuKey(A_BUTTON);
         CHECK(DebugToolsLifecycle_GetTextCounter() == hubCounter,
               "ordinary A dispatch must not rewind live hub Text before deferred handoff");
@@ -462,6 +479,20 @@ int main(void)
         DebugToolsLifecycle_RunPendingTransition();
         InitText(&statusText, DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES);
         CHECK(gDebugToolsLifecycleLastMenuItemCount
+              == 2,
+              "page three must contain the final contributor plus Back");
+        CHECK(DebugToolsLifecycle_GetTextCounter()
+              == textBase + 2 * (DEBUGTOOLS_MENU_WIDTH_TILES - 1)
+                 + DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES,
+              "page three must use only its bounded live-row allocation");
+
+        hubCounter = DebugToolsLifecycle_GetTextCounter();
+        DispatchMenuKey(R_BUTTON);
+        CHECK(DebugToolsLifecycle_GetTextCounter() == hubCounter,
+              "page-three onEnd must not rewind its live Text rows");
+        DebugToolsLifecycle_RunPendingTransition();
+        InitText(&statusText, DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES);
+        CHECK(gDebugToolsLifecycleLastMenuItemCount
               == DEBUGTOOLS_HUB_PAGE_ACTION_MAX + 1,
               "page one must stay bounded after repeated cycles");
         CHECK(DebugToolsLifecycle_GetTextCounter()
@@ -482,7 +513,7 @@ int main(void)
               "page two must reuse the same allocation scope");
     }
 
-    CHECK(gDebugToolsLifecycleTransitionProcCount == 1 + 64 * 4,
+    CHECK(gDebugToolsLifecycleTransitionProcCount == 1 + 64 * 5,
           "initial paging plus each page/submenu cycle must schedule exact deferred transitions");
     CHECK(sFakeSubmenuFont.chr_counter
           == SUBMENU_FONT_TEXT_BASE + 64 * SUBMENU_FONT_TEXT_WIDTH,
@@ -515,6 +546,24 @@ int main(void)
               "a text-capacity failure must not start a menu");
         CHECK(DebugTools_IsHubActive() == 0,
               "a text-capacity failure must not leave the session guard active");
+    }
+
+    {
+        int transitionsBefore;
+
+        DebugToolsLifecycle_SetTextCounter(textBase);
+        CHECK(DebugTools_OpenHub() == DEBUGTOOLS_OK,
+              "forced-cleanup fixture must open one final session");
+        transitionsBefore = gDebugToolsLifecycleTransitionProcCount;
+        DebugTools_ForceSessionCleanup();
+        CHECK(DebugTools_IsHubActive() == 0,
+              "forced cleanup must synchronously release the session guard");
+        gDebugToolsHubMenuDef.onEnd(gDebugToolsLifecycleLastMenuProc);
+        CHECK(gDebugToolsLifecycleTransitionProcCount == transitionsBefore,
+              "a forced hub teardown must not queue a cleanup/reopen transition");
+        DebugTools_ForceSessionCleanup();
+        CHECK(DebugTools_IsHubActive() == 0,
+              "forced cleanup must remain idempotent");
     }
 
     printf("DEBUGTOOLS_LIFECYCLE_HOST_TEST: PASS\n");

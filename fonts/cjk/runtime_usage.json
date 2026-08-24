@@ -28259,6 +28259,30 @@
           ]
         },
         {
+          "id": "expansion:debug.action.music_preview",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:autoplay.charge.label",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:autoplay.charge.help",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "static:sTacticianGridJaHiragana",
           "mapping_source_kind": "static_ui",
           "reason": "tactician name-entry grid system-font consumer",
@@ -28278,12 +28302,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2003,
+          "system": 2006,
           "talk": 1172
         },
-        "expansion_key_count": 78,
+        "expansion_key_count": 81,
         "game_target_count": 3414,
-        "record_count": 3494,
+        "record_count": 3497,
         "unclassified_count": 0
       }
     },
@@ -56545,6 +56569,30 @@
           ]
         },
         {
+          "id": "expansion:debug.action.music_preview",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:autoplay.charge.label",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:autoplay.charge.help",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "static:sTacticianGridZhHansFrequent",
           "mapping_source_kind": "static_ui",
           "reason": "tactician name-entry grid system-font consumer",
@@ -56564,12 +56612,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2003,
+          "system": 2006,
           "talk": 1172
         },
-        "expansion_key_count": 78,
+        "expansion_key_count": 81,
         "game_target_count": 3414,
-        "record_count": 3494,
+        "record_count": 3497,
         "unclassified_count": 0
       }
     }
