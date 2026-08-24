@@ -230,6 +230,11 @@ ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
     return (ProcPtr)1;
 }
 
+void Proc_End(ProcPtr proc)
+{
+    (void)proc;
+}
+
 void DebugToolsHostStub_RunPendingTransition(void)
 {
     ProcPtr proc = sDebugToolsToolsPendingTransition;
@@ -251,6 +256,9 @@ static int sDebugToolsToolsBattleActive = 0;
 
 ProcPtr Proc_Find(const struct ProcCmd* script)
 {
+    if (script == gProcScr_DebugToolsMenuTransition)
+        return sDebugToolsToolsPendingTransition;
+
     if (script == gProcScr_PlayerPhase && sDebugToolsToolsPlayerPhaseActive)
         return (ProcPtr)1;
 
@@ -304,6 +312,14 @@ void DebugTools_RegisterChapter4PrepAction(void)
 }
 
 void DebugTools_RegisterWeatherFogActions(void)
+{
+}
+
+void DebugTools_RegisterMusicPreviewAction(void)
+{
+}
+
+void DebugTools_CleanupMusicPreview(void)
 {
 }
 

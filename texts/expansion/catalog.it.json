@@ -27,6 +27,7 @@
     "debug.action.flag_chapter": "Flag/Capitolo",
     "debug.action.rng_inspect": "Controlla RNG",
     "debug.action.save_state": "Stato salvataggio",
+    "debug.action.music_preview": "Anteprima musica",
     "framework.locale_short_name.en": "EN",
     "framework.locale_short_name.qps_ploc": "QPS",
     "language.settings_more": "Altro",

@@ -158,8 +158,8 @@ class BluePhaseDelegateMenuTests(unittest.TestCase):
         path.write_text(
             "#define EXP_MSG_RAW_SURFACE_UNIT_ACTION_SUMMON 33u\n"
             "#define EXP_MSG_RAW_SURFACE_UNIT_ACTION_CALL_MONSTER 34u\n"
-            "#define EXP_MSG_AUTOPLAY_CHARGE_LABEL 79u\n"
-            "#define EXP_MSG_AUTOPLAY_CHARGE_HELP 80u\n",
+            "#define EXP_MSG_AUTOPLAY_CHARGE_LABEL 80u\n"
+            "#define EXP_MSG_AUTOPLAY_CHARGE_HELP 81u\n",
             encoding="utf-8",
         )
         return path
@@ -232,6 +232,16 @@ class BluePhaseDelegateMenuTests(unittest.TestCase):
                         completed.stdout + completed.stderr,
                     )
 
+        statscreen = STATSCREEN_SOURCE.read_text(encoding="utf-8")
+        function = re.search(
+            r"void StartHelpBoxString\(.*?\n\}",
+            statscreen,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(function)
+        self.assertIn("if (string == NULL)", function.group(0))
+        self.assertIn('string = "";', function.group(0))
+
     def test_expansion_help_id_never_enters_the_vanilla_catalog(self):
         bmmenu = BMMENU_SOURCE.read_text(encoding="utf-8")
         menu_def = MENU_DEF_SOURCE.read_text(encoding="utf-8")
@@ -263,8 +273,8 @@ class BluePhaseDelegateLocalizationTests(unittest.TestCase):
             )
         )
         entries = {entry["key"]: entry for entry in registry["messages"]}
-        self.assertEqual(entries["autoplay.charge.label"]["id"], 79)
-        self.assertEqual(entries["autoplay.charge.help"]["id"], 80)
+        self.assertEqual(entries["autoplay.charge.label"]["id"], 80)
+        self.assertEqual(entries["autoplay.charge.help"]["id"], 81)
         for locale in ("en", "ja", "zh-Hans", "fr", "de", "es", "it"):
             catalog = json.loads(
                 (

@@ -12,6 +12,7 @@
 #include "bmsave.h"
 
 #include "soundroom.h"
+#include "constants/msg.h"
 #include "constants/songs.h"
 
 // TODO: Implicit declarations
@@ -104,9 +105,30 @@ bool IsSoundRoomCatalogValid(void)
 
     for (i = 0; i < gSoundRoomTableCount; i++)
     {
-        if (!IsSoundRoomSongIdValid(gSoundRoomTable[i].bgmId))
+        if (!IsSoundRoomCatalogEntryValid(i))
             return FALSE;
     }
+
+    return TRUE;
+}
+
+bool IsSoundRoomCatalogEntryValid(int index)
+{
+    const struct SoundRoomEnt * ent;
+
+    if (gSoundRoomTableCount > SOUND_ROOM_CATALOG_CAPACITY)
+        return FALSE;
+
+    if (index < 0 || (u32)index >= gSoundRoomTableCount)
+        return FALSE;
+
+    ent = &gSoundRoomTable[index];
+
+    if (ent->bgmId == SONG_NONE || !IsSoundRoomSongIdValid(ent->bgmId))
+        return FALSE;
+
+    if (ent->nameTextId <= 0 || ent->nameTextId >= MSG_COUNT)
+        return FALSE;
 
     return TRUE;
 }

@@ -30,15 +30,15 @@ DEBUG_DEFINES = (
 )
 
 MESSAGE_KEYS = {
-    "debug.confirm.turn_increment": 81,
-    "debug.confirm.turn_decrement": 82,
-    "debug.confirm.red_computer": 83,
-    "debug.confirm.red_blocked": 84,
-    "debug.confirm.green_computer": 85,
-    "debug.confirm.green_blocked": 86,
-    "debug.status.turn": 87,
-    "debug.mode.computer": 88,
-    "debug.mode.blocked": 89,
+    "debug.confirm.turn_increment": 82,
+    "debug.confirm.turn_decrement": 83,
+    "debug.confirm.red_computer": 84,
+    "debug.confirm.red_blocked": 85,
+    "debug.confirm.green_computer": 86,
+    "debug.confirm.green_blocked": 87,
+    "debug.status.turn": 88,
+    "debug.mode.computer": 89,
+    "debug.mode.blocked": 90,
 }
 
 

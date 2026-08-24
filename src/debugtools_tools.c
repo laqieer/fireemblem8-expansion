@@ -2064,7 +2064,15 @@ CONST_DATA static struct DebugToolsAction sUnitInspectAction = {
 
 /* --- 6. Convoy inspection/edit ------------------------------------------ */
 
-EWRAM_DATA static struct MenuItemDef sConvoyMenuItemDefs[3] = {{0}};
+/* Convoy and RNG submenus cannot coexist, so they share one three-item
+ * buffer. The Flag/Chapter submenu additionally owns #124's five
+ * transient phase rows and therefore requires its separate nine-item
+ * buffer. */
+EWRAM_DATA static struct MenuItemDef sDebugToolsToolMenuItemDefs[3] = {{0}};
+EWRAM_DATA static struct MenuItemDef sFlagMenuItemDefs[9] = {{0}};
+
+#define sConvoyMenuItemDefs sDebugToolsToolMenuItemDefs
+#define sRngMenuItemDefs sDebugToolsToolMenuItemDefs
 
 static void DebugToolsConvoy_OnEnd(struct MenuProc* menu)
 {
@@ -2158,8 +2166,6 @@ CONST_DATA static struct DebugToolsAction sConvoyInspectAction = {
 };
 
 /* --- 7. Flag/chapter/turn/faction state action --------------------------- */
-
-EWRAM_DATA static struct MenuItemDef sFlagMenuItemDefs[9] = {{0}};
 
 static void DebugToolsFlag_OnEnd(struct MenuProc* menu)
 {
@@ -2324,8 +2330,6 @@ CONST_DATA static struct DebugToolsAction sFlagInspectAction = {
 };
 
 /* --- 8. RNG inspection/control ------------------------------------------ */
-
-EWRAM_DATA static struct MenuItemDef sRngMenuItemDefs[3] = {{0}};
 
 static void DebugToolsRng_OnEnd(struct MenuProc* menu)
 {

@@ -648,6 +648,15 @@
     },
     {
       "id": 79,
+      "key": "debug.action.music_preview",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40,
+      "notes": "Issue #126 bounded debugtools music-preview action."
+    },
+    {
+      "id": 80,
       "key": "autoplay.charge.label",
       "status": "active",
       "surface": "framework_generic",
@@ -657,7 +666,7 @@
       "notes": "Issue #87 one-phase blue delegation map-menu label."
     },
     {
-      "id": 80,
+      "id": 81,
       "key": "autoplay.charge.help",
       "status": "active",
       "surface": "framework_generic",
@@ -667,7 +676,7 @@
       "notes": "Issue #87 one-phase blue delegation map-menu help."
     },
     {
-      "id": 81,
+      "id": 82,
       "key": "debug.confirm.turn_increment",
       "status": "active",
       "surface": "debug_overlay",
@@ -675,7 +684,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 82,
+      "id": 83,
       "key": "debug.confirm.turn_decrement",
       "status": "active",
       "surface": "debug_overlay",
@@ -683,7 +692,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 83,
+      "id": 84,
       "key": "debug.confirm.red_computer",
       "status": "active",
       "surface": "debug_overlay",
@@ -691,7 +700,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 84,
+      "id": 85,
       "key": "debug.confirm.red_blocked",
       "status": "active",
       "surface": "debug_overlay",
@@ -699,7 +708,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 85,
+      "id": 86,
       "key": "debug.confirm.green_computer",
       "status": "active",
       "surface": "debug_overlay",
@@ -707,7 +716,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 86,
+      "id": 87,
       "key": "debug.confirm.green_blocked",
       "status": "active",
       "surface": "debug_overlay",
@@ -715,7 +724,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 87,
+      "id": 88,
       "key": "debug.status.turn",
       "status": "active",
       "surface": "debug_overlay",
@@ -723,7 +732,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 88,
+      "id": 89,
       "key": "debug.mode.computer",
       "status": "active",
       "surface": "debug_overlay",
@@ -731,7 +740,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 89,
+      "id": 90,
       "key": "debug.mode.blocked",
       "status": "active",
       "surface": "debug_overlay",

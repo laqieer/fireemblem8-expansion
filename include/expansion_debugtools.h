@@ -139,8 +139,8 @@
 #endif
 
 /* --- Registration capacity -------------------------------------------------
- * Built-ins and contributors use separate bounded EWRAM arrays. IDs 1-9
- * occupy the nine built-in slots; contributors retain the originally
+ * Built-ins and contributors use separate bounded EWRAM arrays. IDs 1-10
+ * occupy the ten built-in slots; contributors retain the originally
  * documented nine successful registrations in their own slots.
  *
  * MENU_ITEM_MAX is 11 (include/uimenu.h) and StartMenuCore (src/uimenu.c)
@@ -153,17 +153,17 @@
  * all-zero MenuItemsEnd terminator, which is not a live row. */
 enum
 {
-    DEBUGTOOLS_BUILTIN_ACTION_MAX = 9,
+    DEBUGTOOLS_BUILTIN_ACTION_MAX = 10,
     DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX = 9,
-    DEBUGTOOLS_ACTION_MAX = 18,
+    DEBUGTOOLS_ACTION_MAX = 19,
     DEBUGTOOLS_HUB_PAGE_ACTION_MAX = 9,
-    DEBUGTOOLS_HUB_PAGE_MAX = 2,
+    DEBUGTOOLS_HUB_PAGE_MAX = 3,
     DEBUGTOOLS_HUB_MENU_SLOTS = 11, /* nine actions + Back + terminator */
     DEBUGTOOLS_MENU_WIDTH_TILES = 19,
     DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES = 24,
     DEBUGTOOLS_BUILTIN_ID_MIN = 1,
-    DEBUGTOOLS_BUILTIN_ID_MAX = 9,
-    DEBUGTOOLS_CONTRIBUTOR_ID_MIN = 10,
+    DEBUGTOOLS_BUILTIN_ID_MAX = 10,
+    DEBUGTOOLS_CONTRIBUTOR_ID_MIN = 11,
     DEBUGTOOLS_CONTRIBUTOR_ID_MAX = 0xFFFF,
 
     /* The default BG text font starts at tile 0x80 and Text uses two
@@ -207,12 +207,12 @@ enum DebugToolsResult
      * renumbered). */
     DEBUGTOOLS_ERR_ID_INVALID,      /* action->id == 0 (reserved/uninitialized-looking sentinel) */
     DEBUGTOOLS_ERR_LABEL_INVALID,   /* label is empty, or longer than DEBUGTOOLS_LABEL_MAX_LENGTH */
-    DEBUGTOOLS_ERR_ID_RESERVED,     /* contributor attempted to claim built-in id 1-9 */
+    DEBUGTOOLS_ERR_ID_RESERVED,     /* contributor attempted to claim built-in id 1-10 */
     DEBUGTOOLS_ERR_TEXT_CAPACITY    /* active font cannot fit one maximum hub allocation */
 };
 
 /* A single contributor-registered debug action. label remains a raw C string
- * for ABI compatibility and third-party actions. IDs 1-9 are reserved for
+ * for ABI compatibility and third-party actions. IDs 1-10 are reserved for
  * immutable built-in identities; contributors must choose an ID in
  * [DEBUGTOOLS_CONTRIBUTOR_ID_MIN, DEBUGTOOLS_CONTRIBUTOR_ID_MAX]. Built-ins
  * have render-time expansion-message adapters; contributor IDs keep the
@@ -227,9 +227,9 @@ struct DebugToolsAction
     u8 (*onSelected)(struct MenuProc* menu, struct MenuItemProc* item);
 };
 
-/* Registers a new contributor debug action. IDs 1-9 are rejected with
+/* Registers a new contributor debug action. IDs 1-10 are rejected with
  * DEBUGTOOLS_ERR_ID_RESERVED; ID 0 remains DEBUGTOOLS_ERR_ID_INVALID.
- * Valid contributor IDs are 10-65535. Exactly
+ * Valid contributor IDs are 11-65535. Exactly
  * DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX contributor registrations can coexist
  * with all DEBUGTOOLS_BUILTIN_ACTION_MAX built-ins. Before accepting one,
  * the shipped built-ins are initialized once in deterministic ID/menu order
@@ -581,7 +581,6 @@ enum DebugToolsLogCode
     DEBUGTOOLS_LOG_RNG_INSPECT,
     DEBUGTOOLS_LOG_RNG_RESEED_APPLIED,
     DEBUGTOOLS_LOG_SAVESTATE_INSPECT,
-
     /* Issue #125: cursor-selected unit editor telemetry. Payload `a`
      * packs operation:field:old as 8:8:16 bits; payload `b` packs
      * outcome:new as 8:24 bits. Exact values also mirror into the
@@ -590,7 +589,10 @@ enum DebugToolsLogCode
     DEBUGTOOLS_LOG_UNIT_EDIT_APPLIED,
     DEBUGTOOLS_LOG_UNIT_EDIT_CANCELLED,
     DEBUGTOOLS_LOG_UNIT_EDIT_REJECTED,
-    DEBUGTOOLS_LOG_UNIT_EDIT_FORCED_CLEANUP
+    DEBUGTOOLS_LOG_UNIT_EDIT_FORCED_CLEANUP,
+    DEBUGTOOLS_LOG_MUSIC_PREVIEW,
+    DEBUGTOOLS_LOG_MUSIC_RESTORE,
+    DEBUGTOOLS_LOG_MUSIC_REJECTED
 };
 
 /* Named assert codes -- checked by DEBUGTOOLS_ASSERT at each tool's own
@@ -774,6 +776,23 @@ void DebugToolsPhaseControl_Sample(void);
  * State is read-only). Registers ids 5-9 through the internal built-in path,
  * never through the contributor API or direct hub-menu edits. */
 void DebugTools_RegisterExtendedToolActions(void);
+
+/* Registers the bounded music-preview action (built-in id 10). The action
+ * enumerates only validated gSoundRoomTable entries, owns at most one
+ * transient preview through the typed BGM seam, and never writes unlock or
+ * save state. */
+void DebugTools_RegisterMusicPreviewAction(void);
+
+/* Idempotently releases the music-preview owner and restores the exact
+ * captured playing/stopped BGM context. Called by the submenu, final debug
+ * session cleanup, title/proc teardown, and chapter transitions. */
+void DebugTools_CleanupMusicPreview(void);
+
+/* Forced lifecycle boundary for chapter/title/proc teardown. Restores any
+ * music preview, cancels a queued debug-menu transition, and releases the
+ * shared session guard without reopening a menu. Ordinary Back continues to
+ * use the deferred allocator-safe cleanup path instead. */
+void DebugTools_ForceSessionCleanup(void);
 
 /* --- Playtest / host probe surface -----------------------------------
  * A small, stable, always-linked (both enabled and disabled builds)
@@ -974,6 +993,23 @@ enum
 
 extern struct DebugToolsProbe gDebugToolsProbe;
 extern struct DebugToolsUnitEditorProbe gDebugToolsUnitEditorProbe;
+
+/* Kept separate from gDebugToolsProbe so issue #126 does not move any
+ * established EWRAM symbol that follows the original probe. Its dedicated
+ * input section is appended after the stable runtime layout. */
+struct DebugToolsMusicProbe
+{
+    u32 selectedSongId;
+    u32 previewCount;
+    u32 restoreCount;
+    u32 rejectedEntryCount;
+    u32 ownerActive;
+    u32 priorSongId;
+    u32 priorWasPlaying;
+    u32 priorContext;
+};
+
+extern struct DebugToolsMusicProbe gDebugToolsMusicProbe;
 
 #endif
 
