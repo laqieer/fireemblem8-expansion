@@ -27,6 +27,7 @@ What is proven here:
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import importlib
 import os
@@ -63,8 +64,41 @@ _STAGED_ARTIFACT_RELATIVE_PATHS = (
 )
 
 # A repository ROM/ELF path may only be constructed in host_mode.py.
-_ROM_PATH_CONSTRUCTION_RE = re.compile(r"REPO_ROOT[^#\n]*fireemblem8\.(gba|elf)")
-_HOST_MODE_ROM_USE_RE = re.compile(r"host_mode\.(modern_rom|modern_elf|LIVE_ROMS|LIVE_ARTIFACTS)")
+_LIVE_ARTIFACT_APIS = frozenset(
+    {
+        "modern_rom",
+        "modern_elf",
+        "require_built_rom",
+        "capture_live_or_skip",
+    }
+)
+
+
+def _artifact_users(path: Path) -> set[str]:
+    """Discover host_mode artifact consumers from parsed Python syntax."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    users: set[str] = set()
+    class_stack: list[str] = []
+
+    class Visitor(ast.NodeVisitor):
+        def visit_ClassDef(self, node):
+            class_stack.append(node.name)
+            self.generic_visit(node)
+            class_stack.pop()
+
+        def visit_Call(self, node):
+            func = node.func
+            if (
+                isinstance(func, ast.Attribute)
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "host_mode"
+                and func.attr in _LIVE_ARTIFACT_APIS
+            ):
+                users.add(class_stack[-1] if class_stack else "<module>")
+            self.generic_visit(node)
+
+    Visitor().visit(tree)
+    return users
 
 
 def _run_case(test_class) -> unittest.TestResult:
@@ -204,6 +238,39 @@ class HostOnlyClassificationTests(unittest.TestCase):
                             f"{test} skipped as live but is not registered in "
                             f"host_mode.LIVE_TEST_CLASSES",
                         )
+
+    def test_ast_discovery_registers_every_artifact_test_module(self):
+        registered = set(host_mode.LIVE_TEST_CLASSES)
+        registered_modules = set(host_mode.LIVE_TEST_MODULES)
+        for path in sorted(TESTS_DIR.glob("test_*.py")):
+            if path.name == Path(__file__).name:
+                continue
+            users = _artifact_users(path)
+            if not users:
+                continue
+            module = path.stem
+            with self.subTest(module=module, users=sorted(users)):
+                self.assertIn(
+                    module,
+                    registered_modules,
+                    "parsed artifact usage must be owned by a registered live module",
+                )
+                for class_name in users - {"<module>"}:
+                    module_object = importlib.import_module(module)
+                    artifact_class = getattr(module_object, class_name, None)
+                    if artifact_class is None:
+                        continue
+                    self.assertTrue(
+                        any(
+                            registered_module == module
+                            and issubclass(
+                                getattr(importlib.import_module(registered_module), registered_class),
+                                artifact_class,
+                            )
+                            for registered_module, registered_class in registered
+                        ),
+                        "parsed artifact usage must be owned by a registered live class",
+                    )
 
     def test_category_a_tests_still_run_in_host_only_mode(self):
         """Pure host/schema classes inside live modules keep running: the fix

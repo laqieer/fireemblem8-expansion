@@ -22,6 +22,9 @@ behavior is separately proven by tools/gba-playtest scenarios):
 """
 
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -30,6 +33,14 @@ SAVEMENU_C = ROOT / "src" / "savemenu.c"
 SAVE_COMPAT_MENU_C = ROOT / "src" / "save_compat_menu.c"
 SAVE_COMPAT_MENU_H = ROOT / "include" / "save_compat_menu.h"
 SRC_DIR = ROOT / "src"
+ARM_CC = shutil.which("arm-none-eabi-gcc")
+ARM_NM = shutil.which("arm-none-eabi-nm")
+INCLUDE_FLAGS = ["-I", str(ROOT / "include"), "-I", str(ROOT / "include" / "generated")]
+SAVE_MENU_BOUNDARY_OBJECTS = (
+    SAVEMENU_C,
+    SAVE_COMPAT_MENU_C,
+    ROOT / "src" / "gamecontrol.c",
+)
 
 # Slot/block/current-struct accessors the compatibility proc must never
 # call, per the issue's guardrails. Matched as whole-word identifiers so
@@ -50,6 +61,45 @@ def _strip_comments(text: str) -> str:
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
     text = re.sub(r"//[^\n]*", "", text)
     return text
+
+
+def _compile_arm(work: Path, source: Path, name: str) -> Path:
+    obj = work / name
+    completed = subprocess.run(
+        [
+            ARM_CC,
+            "-mcpu=arm7tdmi",
+            "-mthumb",
+            "-mthumb-interwork",
+            "-mabi=aapcs",
+            "-std=gnu89",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-w",
+            *INCLUDE_FLAGS,
+            "-c",
+            str(source),
+            "-o",
+            str(obj),
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return obj
+
+
+def _undefined_symbols(obj: Path) -> set[str]:
+    completed = subprocess.run(
+        [ARM_NM, "--undefined-only", str(obj)],
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return {line.split()[-1] for line in completed.stdout.splitlines() if line.split()}
 
 
 class StartSaveMenuGateStructureTests(unittest.TestCase):
@@ -131,6 +181,57 @@ class CompatMenuNeverTouchesSlotOrBlockApisTests(unittest.TestCase):
         )
         self.assertIsNotNone(do_back_match)
         self.assertNotIn("InitGlobalSaveInfodata", do_back_match.group(1))
+
+
+@unittest.skipIf(ARM_CC is None or ARM_NM is None, "no arm-none-eabi compiler/binutils")
+class SaveCompatCompiledBoundaryTests(unittest.TestCase):
+    """The gate boundary is enforced from relocations, not source spelling."""
+
+    def test_compat_proc_has_no_forbidden_save_api_relocation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            refs = _undefined_symbols(
+                _compile_arm(Path(tmp), SAVE_COMPAT_MENU_C, "save_compat_menu.o")
+            )
+        forbidden = set(_FORBIDDEN_IDENTIFIERS) - {"struct SaveBlockInfo"}
+        self.assertFalse(
+            refs & forbidden,
+            "compatibility proc must classify globally before any slot/block API: %r"
+            % sorted(refs & forbidden),
+        )
+
+    def test_only_savemenu_object_can_reference_the_normal_menu_proc(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            callers = []
+            for source in SAVE_MENU_BOUNDARY_OBJECTS:
+                refs = _undefined_symbols(_compile_arm(work, source, source.stem + ".o"))
+                if "ProcScr_SaveMenu" in refs:
+                    callers.append(source.name)
+        self.assertEqual(
+            callers,
+            [],
+            "a direct ProcScr_SaveMenu reference bypasses StartSaveMenu's SRAM gate: %r"
+            % callers,
+        )
+
+    def test_public_diagnostic_probe_declarations_link_for_a_consumer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            consumer = work / "save_compat_probe_consumer.c"
+            consumer.write_text(
+                '#include "global.h"\n'
+                '#include "save_compat_menu.h"\n'
+                'u8 ReadSaveCompatProbe(void)\n'
+                '{\n'
+                '    return gSaveCompatMenuActive | gSaveCompatMenuLastState;\n'
+                '}\n',
+                encoding="utf-8",
+            )
+            refs = _undefined_symbols(_compile_arm(work, consumer, "consumer.o"))
+        self.assertTrue(
+            {"gSaveCompatMenuActive", "gSaveCompatMenuLastState"}.issubset(refs),
+            "public header must declare both diagnostic probes for external consumers",
+        )
 
 class EraseConfirmWarningActiveTests(unittest.TestCase):
     """Proves the authored irreversible-erase warning

@@ -21,10 +21,23 @@ CC = shutil.which("gcc") or shutil.which("cc")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_NM = shutil.which("arm-none-eabi-nm")
 ARM_SIZE = shutil.which("arm-none-eabi-size")
+PRODUCTION_DISPATCH_CALLERS = (
+    ROOT / "src" / "bmitemuse.c",
+    ROOT / "src" / "bmusemind.c",
+    ROOT / "src" / "cp_staff.c",
+    ROOT / "src" / "cpextra_80407F0.c",
+)
 
 
 def run(command, cwd=ROOT):
     return subprocess.run(command, cwd=str(cwd), capture_output=True, text=True)
+
+
+def _undefined_symbols(obj: Path) -> set[str]:
+    completed = run([ARM_NM, "--undefined-only", str(obj)])
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return {line.split()[-1] for line in completed.stdout.splitlines() if line.split()}
 
 
 class AoEHostTests(unittest.TestCase):
@@ -234,6 +247,47 @@ class AoEArmAndBudgetTests(unittest.TestCase):
                     + completed.stderr,
                 )
                 self.assertIn(name, completed.stderr)
+
+
+@unittest.skipIf(ARM_CC is None or ARM_NM is None, "no arm-none-eabi compiler/binutils")
+class AoEProductionDispatchObjectTests(unittest.TestCase):
+    """Every production item/AI route must retain the public dispatch seam."""
+
+    def _compile_enabled(self, work: Path, source: Path) -> Path:
+        obj = work / (source.stem + "-on.o")
+        completed = run(
+            [
+                ARM_CC,
+                "-mcpu=arm7tdmi",
+                "-mthumb",
+                "-mthumb-interwork",
+                "-mabi=aapcs",
+                "-std=gnu89",
+                "-ffreestanding",
+                "-fno-builtin",
+                "-w",
+                *INCLUDES,
+                "-DFE8_EXPANSION_MODERN_BUILD=1",
+                "-DFE8_EXPANSION_AOE_REFERENCE=1",
+                "-c",
+                str(source),
+                "-o",
+                str(obj),
+            ]
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        return obj
+
+    def test_every_production_dispatch_caller_relocates_to_public_dispatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            for source in PRODUCTION_DISPATCH_CALLERS:
+                with self.subTest(source=source.name):
+                    self.assertIn(
+                        "ExpansionAoE_DispatchItem",
+                        _undefined_symbols(self._compile_enabled(work, source)),
+                    )
+
 
 class AoEConfigAndSeamTests(unittest.TestCase):
     def test_config_identity_tracks_reference_flag_and_rejects_invalid_value(self):

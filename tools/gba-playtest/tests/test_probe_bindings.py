@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -143,6 +144,25 @@ class ProbeBindingToolTests(unittest.TestCase):
         self.assertEqual(result, 2)
         self.assertIn("gba-playtest: cannot launch ELF symbol tool", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_make_dry_run_forwards_configured_nm_to_all_starter_bindings(self):
+        configured_nm = "/semantic/toolchain/arm-none-eabi-nm"
+        recipe = self.work / "semantic-nm.mk"
+        recipe.write_text(
+            "include " + str(REPO_ROOT / "modern.mk") + "\n"
+            "semantic-nm:\n"
+            "\t$(call modern_starter_probe_binding,semantic.elf,semantic.json,semantic.json)\n",
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            ["make", "-n", "-f", str(recipe), "semantic-nm", "MODERN_NM=" + configured_nm],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("check_starter_probe_addresses.py", completed.stdout)
+        self.assertIn('--nm "' + configured_nm + '"', completed.stdout)
 
 if __name__ == "__main__":
     unittest.main()

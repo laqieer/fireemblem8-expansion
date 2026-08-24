@@ -30,7 +30,6 @@ is not part of the release fingerprint set.
 from __future__ import annotations
 
 import json
-import re
 import sys
 import tempfile
 import unittest
@@ -251,38 +250,6 @@ class SavesuspendResumeRuntimeTests(unittest.TestCase):
             "SRAM must have changed from the initial fixture after the "
             "manual Suspend write",
         )
-
-
-# ---------------------------------------------------------------------
-# Static proof (no ROM/execution required): this task adds no new direct
-# C call site into the save-internal write/read functions -- the manual
-# Suspend in the scenario above goes exclusively through the ordinary Map
-# Menu UI's existing call site, never a new test-only hook.
-# ---------------------------------------------------------------------
-
-SRC_DIR = REPO_ROOT / "src"
-_SAVE_INTERNAL_CALL_RE = re.compile(
-    r"\b(WriteSuspendSave|ReadSuspendSave|WriteGameSave|ReadGameSave)\s*\("
-)
-
-# The exact, pre-existing call sites as of this task (src/bmsave.c itself,
-# which defines these functions, is excluded). Recorded once here so any
-# future diff that adds a *new* call site anywhere in src/ fails loudly --
-# proving this task did not add one, and guarding against a silent one
-# being added later without deliberate review of this list.
-_EXPECTED_CALL_SITE_COUNTS = {
-    "src/bm.c": 1,
-    "src/bmarena.c": 1,
-    "src/bmbattle.c": 1,
-    "src/bmdebug.c": 6,
-    "src/bmtrap.c": 1,
-    "src/bonusclaim.c": 1,
-    "src/cp_decide.c": 1,
-    "src/playerphase.c": 2,
-    "src/savemenu.c": 7,
-    "src/sio_term.c": 1,
-    "src/uiarena.c": 1,
-}
 
 
 if __name__ == "__main__":

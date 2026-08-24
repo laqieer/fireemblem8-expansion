@@ -15,8 +15,8 @@ depends on:
   * the disabled translation unit emits NO data at all, so a default build's
     EWRAM/BSS layout -- and therefore every committed scenario probe address
     -- is untouched by adding this feature;
-  * the issue #6 implementation sources name the content item symbolically
-    (ITEM_EXPANSION_CE), never as a raw numeric ID; and
+  * the enabled probe's public ABI is fixed-width and independently
+    consumable by the scenario runner; and
   * the ORIGINAL authored display text is config-gated end to end: the
     generator writes nothing at EXPANSION_STARTER_CONTENT=0, the default
     objects contain no such string and no call into the content seam, and the
@@ -103,6 +103,45 @@ def _arm_compile(work_dir, src, obj_name, defines=(), extra_includes=()):
     cmd += [str(src), "-o", str(obj)]
     proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
     return proc.returncode, proc.stdout + proc.stderr, obj
+
+
+@unittest.skipIf(CC is None, "no host C compiler")
+class ItemExpansionProbeAbiTests(unittest.TestCase):
+    """Compile a separate consumer against the public probe ABI."""
+
+    def test_probe_has_scalar_layout_for_symbolic_runner_offsets(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            source = work / "item_probe_abi.c"
+            source.write_text(
+                "#define FE8_EXPANSION_ITEMTEST_ENABLED 1\n"
+                "#define FE8_ITEM_ID_CAP 0xCE\n"
+                "#include <stddef.h>\n"
+                "#include <stdio.h>\n"
+                "#include \"expansion_itemtest.h\"\n"
+                "int main(void)\n"
+                "{\n"
+                "    printf(\"%zu %zu %zu\\n\", sizeof(struct ItemExpansionProbe),\n"
+                "        offsetof(struct ItemExpansionProbe, magic),\n"
+                "        offsetof(struct ItemExpansionProbe, uiNameHash));\n"
+                "    return 0;\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            executable = work / "item_probe_abi"
+            completed = subprocess.run(
+                [CC, "-std=gnu89", "-w", *_include_flags(), str(source), "-o", str(executable)],
+                cwd=str(REPO_ROOT),
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            completed = subprocess.run([str(executable)], capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        size, magic, name_hash = (int(value) for value in completed.stdout.split())
+        self.assertEqual((size, magic, name_hash), (0x114, 0, 0x110))
 
 
 @unittest.skipIf(ARM_CC is None or SIZE is None, "no arm-none-eabi toolchain")

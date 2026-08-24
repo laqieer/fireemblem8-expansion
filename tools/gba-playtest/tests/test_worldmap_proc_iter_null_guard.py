@@ -50,6 +50,21 @@ INCLUDE_DIRS = [REPO_ROOT / "include", REPO_ROOT / "include" / "generated"]
 
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_OBJDUMP = shutil.which("arm-none-eabi-objdump")
+ITERATOR_HELPERS = {
+    "worldmap_rm.c": (
+        "StartGmapRmBorder1",
+        "EndGmapRmBorder1",
+        "GmapRmBorder1Exists",
+        "RequestGmapRmBorder1Remove",
+        "EndWmPlaceDotByIndex",
+        "IsWmPlaceDotActiveAtIndex",
+        "SetWmPlaceDotFlagForIndex",
+    ),
+    "worldmap_automu.c": (
+        "EndGmAutoMuFor",
+        "IsGmAutoMuActiveFor",
+    ),
+}
 
 def _include_flags():
     flags = []
@@ -81,29 +96,29 @@ class ProcFindNextCodegenTests(unittest.TestCase):
                          "objdump failed:\n%s" % (proc.stdout + proc.stderr))
         return proc.stdout
 
-    def test_release_build_can_still_leave_the_iterator_loop(self):
+    def test_every_release_iterator_checks_null_before_dereference(self):
         if ARM_CC is None or ARM_OBJDUMP is None:
             raise unittest.SkipTest(
                 "arm-none-eabi-gcc/objdump not available")
         with tempfile.TemporaryDirectory() as tmp:
-            obj = self._compile_o2(tmp, SRC_DIR / "worldmap_rm.c")
-            text = self._disassemble(obj, "GmapRmBorder1Exists")
-            self.assertIn(
-                "GmapRmBorder1Exists", text,
-                "GmapRmBorder1Exists missing from the -O2 object")
-            # The "no such proc" answer must survive optimisation. Without the
-            # NULL guard, -O2 proved the loop endless and emitted only the
-            # `movs r0, #1` answer.
-            self.assertIn(
-                "#0", text,
-                "GmapRmBorder1Exists lost every compare/return against 0 at "
-                "-O2: the loop can no longer terminate and the world-map "
-                "opening event will yield forever")
-            returns_zero = re.search(r"\bmovs?\s+r0,\s*#0\b", text)
-            self.assertIsNotNone(
-                returns_zero,
-                "GmapRmBorder1Exists has no 'return 0' path at -O2; the "
-                "undefined-behaviour NULL dereference has come back")
+            for source_name, functions in ITERATOR_HELPERS.items():
+                obj = self._compile_o2(tmp, SRC_DIR / source_name)
+                for function in functions:
+                    with self.subTest(source=source_name, function=function):
+                        text = self._disassemble(obj, function)
+                        calls = re.findall(
+                            r"bl\s+0\s+<Proc_FindNext>\s*\n"
+                            r"(?:\s*.*R_ARM.*\n)?"
+                            r"\s*[0-9a-f]+:\s+[0-9a-f ]+\s+cmp\s+r0,\s*#0\s*\n"
+                            r"\s*[0-9a-f]+:\s+[0-9a-f ]+\s+b(?:eq|ne)\S*",
+                            text,
+                            flags=re.DOTALL,
+                        )
+                        self.assertTrue(
+                            calls,
+                            "%s must branch on Proc_FindNext()'s NULL result "
+                            "before reading the returned proc" % function,
+                        )
 
 
 if __name__ == "__main__":

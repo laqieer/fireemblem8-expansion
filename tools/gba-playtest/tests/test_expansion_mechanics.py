@@ -178,6 +178,11 @@ class MechanicsSeamWiringTests(unittest.TestCase):
             self.assertEqual(rc, 0, "compiling bmbattle.c (enabled) failed:\n" + out)
             refs = _referenced_symbol_names(obj)
         self.assertIn("ExpansionMechanicsApplyBattleStats", refs)
+        self.assertFalse(
+            any(name.startswith("ExpansionStarterContent") for name in refs),
+            "bmbattle must remain generic and reach bundled content only through "
+            "ExpansionMechanicsApplyBattleStats",
+        )
 
 
 class MechanicsBuildWiringTests(unittest.TestCase):

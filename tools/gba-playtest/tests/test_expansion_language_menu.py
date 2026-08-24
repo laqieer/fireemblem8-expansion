@@ -28,6 +28,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -54,6 +55,7 @@ CJK_SETTINGS_FINGERPRINT = (
 TEST_WORK_ROOT = REPO_ROOT / ".test-work"
 
 CC = shutil.which("gcc") or shutil.which("cc")
+NM = shutil.which("nm")
 
 
 def _skip_if_no_host_compiler():
@@ -68,14 +70,29 @@ def _include_flags():
     return flags
 
 
-def _compile(work_dir: Path, src: Path, obj_name: str, defines=()):
+def _compile(work_dir: Path, src: Path, obj_name: str, defines=(), extra_includes=()):
     obj = work_dir / obj_name
     cmd = [CC, "-c", "-w"] + _include_flags()
+    for directory in extra_includes:
+        cmd += ["-I", str(directory)]
     for d in defines:
         cmd += ["-D", d]
     cmd += [str(src), "-o", str(obj)]
     proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
     return proc.returncode, proc.stdout + proc.stderr, obj
+
+
+def _generate_message_ids(work_dir: Path) -> Path:
+    generated = work_dir / "generated"
+    completed = subprocess.run(
+        [sys.executable, "-m", "scripts.localization.cli", "generate", "--out-dir", str(generated)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return generated
 
 
 def _link(work_dir: Path, objects, exe_name: str):
@@ -88,6 +105,15 @@ def _link(work_dir: Path, objects, exe_name: str):
 def _run(exe: Path):
     proc = subprocess.run([str(exe)], capture_output=True, text=True)
     return proc.returncode, proc.stdout + proc.stderr
+
+
+def _undefined_symbols(obj: Path) -> set[str]:
+    completed = subprocess.run(
+        [NM, "--undefined-only", str(obj)], capture_output=True, text=True
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return {line.split()[-1] for line in completed.stdout.splitlines() if line.split()}
 
 
 def _temporary_directory():
@@ -128,6 +154,60 @@ class ExpansionLanguageMenuDecisionHostTests(unittest.TestCase):
             rc, out = _run(exe)
             self.assertEqual(rc, 0, out)
             self.assertIn("EXPANSION_LANGUAGE_MENU_DECISION_HOST_TEST: PASS", out)
+
+
+@unittest.skipIf(NM is None, "no host nm")
+class ExpansionLanguageMenuProductionObjectTests(unittest.TestCase):
+    """The >4-locale decision table must remain wired into the Config object."""
+
+    def test_modern_config_calls_public_more_menu_decisions(self):
+        required = {
+            "ExpansionLanguageMenu_DecideSettingsAction",
+            "ExpansionLanguageMenu_IsMoreSelected",
+            "ExpansionLanguageMenu_OpenSettings",
+            "ExpansionLanguageMenu_SelectSettingsLocale",
+        }
+        with _temporary_directory() as tmp:
+            work = Path(tmp)
+            generated = _generate_message_ids(work)
+            rc, out, enabled = _compile(
+                work, UICONFIG_SRC, "uiconfig-modern.o", ["MODERN=1"], [generated]
+            )
+            self.assertEqual(rc, 0, out)
+            rc, out, disabled = _compile(work, UICONFIG_SRC, "uiconfig-legacy.o")
+            self.assertEqual(rc, 0, out)
+            enabled_refs = _undefined_symbols(enabled)
+            disabled_refs = _undefined_symbols(disabled)
+        self.assertTrue(
+            required.issubset(enabled_refs),
+            "modern Config object must retain all public inline/More selection paths",
+        )
+        self.assertFalse(
+            required & disabled_refs,
+            "legacy Config object must not acquire language-menu references",
+        )
+
+    def test_owned_locale_objects_do_not_link_vanilla_language_state(self):
+        forbidden = {"GetLang", "SetLang", "gLanguageMode", "XMAP"}
+        sources = (
+            REPO_ROOT / "src" / "expansion_locale.c",
+            REPO_ROOT / "src" / "expansion_save_prefs.c",
+            LANGUAGE_MENU_SRC,
+            UICONFIG_SRC,
+        )
+        with _temporary_directory() as tmp:
+            work = Path(tmp)
+            generated = _generate_message_ids(work)
+            for source in sources:
+                with self.subTest(source=source.name):
+                    rc, out, obj = _compile(
+                        work, source, source.stem + ".o", ["MODERN=1"], [generated]
+                    )
+                    self.assertEqual(rc, 0, out)
+                    self.assertFalse(
+                        forbidden & _undefined_symbols(obj),
+                        "%s must remain independent of vanilla language/XMAP state" % source.name,
+                    )
 
 
 class ExpansionLanguageMenuHeaderHostCompileTests(unittest.TestCase):
