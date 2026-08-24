@@ -322,8 +322,7 @@ class ToolsRuntimeTests(unittest.TestCase):
         host_mode.require_built_rom(rom, f"modern ROM for {name}")
         config = "release" if "release" in name else "debug"
         elf = host_mode.modern_elf(config)
-        if not elf.exists():
-            raise unittest.SkipTest(f"modern ELF for {name} not built: {elf}")
+        self.assertTrue(elf.is_file(), f"modern ELF for {name} not built: {elf}")
         scenario = gba_playtest.load_scenario(
             scenario_path,
             gba_playtest.ElfSymbolResolver(elf),
