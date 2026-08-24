@@ -42,6 +42,28 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
             ],
         )
 
+    def test_authored_fixture_runtime_reuses_the_suspend_resume_route(self):
+        scenario = gba_playtest.parse_scenario_data(runtime_check.fixture_scenario_data())
+        self.assertEqual(
+            [checkpoint.name for checkpoint in scenario.checkpoints],
+            ["suspend-confirmed", "post-soft-reset-boot", "resumed-chapter2"],
+        )
+        for checkpoint in (scenario.checkpoints[0], scenario.checkpoints[2]):
+            bindings = [
+                probe.binding
+                for probe in checkpoint.probes
+                if probe.binding.startswith("gExpansionChapterObjectiveTelemetry")
+            ]
+            self.assertEqual(
+                bindings,
+                [
+                    "gExpansionChapterObjectiveTelemetry",
+                    "gExpansionChapterObjectiveTelemetry+0x04",
+                    "gExpansionChapterObjectiveTelemetry+0x08",
+                    "gExpansionChapterObjectiveTelemetry+0x0c",
+                ],
+            )
+
     def test_generated_fixture_evaluates_all_kinds_and_reconstructs_after_reset(self):
         if CC is None:
             self.skipTest("no host C compiler")

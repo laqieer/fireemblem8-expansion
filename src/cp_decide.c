@@ -16,7 +16,9 @@
 #include "cp_common.h"
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_autoplay_internal.h"
+#if FE8_EXPANSION_AUTOPLAY_STRATEGIES
 #include "expansion_autoplay_strategies.h"
+#endif
 #endif
 
 static void CpDecide_Suspend(ProcPtr proc);
@@ -115,6 +117,7 @@ next_unit:
 
             AiClearDecision();
 #ifndef FE8_ARCHIVAL_BUILD
+#if FE8_EXPANSION_AUTOPLAY_STRATEGIES
             if (ExpansionAutoplay_IsBlueComputerPhase())
             {
                 enum ExpansionAutoplayStrategyResult strategyResult =
@@ -132,6 +135,7 @@ next_unit:
                     AiDecideMainFunc();
             }
             else
+#endif
 #endif
             AiDecideMainFunc();
 

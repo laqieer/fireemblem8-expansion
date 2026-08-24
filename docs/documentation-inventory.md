@@ -85,6 +85,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/test-cases/template.md | laqieer | template | Reusable tester-facing case procedure template
 - docs/test-cases/foundation.md | laqieer | current | Tester procedure for the catalog and checker foundation (issue #54)
 - docs/test-cases/core-framework.md | laqieer | current | Core framework and authoring procedures, profiles, negatives, save expectations, and automation (issue #57)
+- docs/test-cases/debugtools.md | laqieer | current | Cursor-selected bounded unit inspector/editor procedure, typed negatives, save neutrality, and automation (issue #125)
 - docs/test-cases/localization.md | laqieer | current | Indexed localization and locale-persistence procedures, profiles, negatives, and semantic automation (issue #56)
 - docs/test-cases/presentation-audio-utility.md | laqieer | current | Tester procedures for portrait, sound-room, BGM, presentation, manifest, and utility seams (issue #58)
 - docs/test-cases/optional-gameplay.md | laqieer | current | Indexed optional gameplay procedures, profiles, negatives, save expectations, and automation (issue #55)
@@ -146,6 +147,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - reports/gba_playtest_issue13_closure.md | laqieer | evidence | Candidate closure-mapping evidence for issue #13, not a closure claim
 - reports/issue7_documentation_foundation.md | laqieer | evidence | Candidate closure-mapping evidence for issue #7, not a closure claim
 - reports/issue17_documentation_audit.md | laqieer | evidence | Candidate closure-mapping evidence for issue #17, not a closure claim
+- reports/issue101_documentation_workflow_evidence.md | laqieer | evidence | Local candidate evidence for issue #101 documentation/workflow-policy test migration
 - reports/issue6_closure.md | laqieer | evidence | Historical issue #6 Sprint 2 candidate closure evidence; current contract is docs/starter_features.md
 - reports/issue6_foundation_evidence.md | laqieer | evidence | Historical issue #6 Sprint 1 foundation/runtime evidence
 - reports/issue18_idspace_active_cap_dag_closure.md | laqieer | evidence | Issue #18 active-cap dependency-DAG remediation evidence
