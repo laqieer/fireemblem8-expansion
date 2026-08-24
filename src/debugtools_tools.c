@@ -216,6 +216,10 @@ static void DebugToolsTools_FormatFlagStatus(
     char* values,
     char* redMode,
     char* greenMode);
+static void DebugToolsTools_DrawFlagStatus(
+    const char* values,
+    const char* redMode,
+    const char* greenMode);
 
 static void DebugToolsTools_UnitMenuOnInit(struct MenuProc* menu)
 {
@@ -258,10 +262,8 @@ static void DebugToolsTools_FlagMenuOnInit(struct MenuProc* menu)
     char greenMode[32];
 
     DebugToolsTools_MenuOnInit(menu);
-    if (!DebugToolsTools_UsesCjkText())
-        return;
     DebugToolsTools_FormatFlagStatus(values, redMode, greenMode);
-    DebugToolsTools_DrawCjkFlagStatus(values, redMode, greenMode);
+    DebugToolsTools_DrawFlagStatus(values, redMode, greenMode);
 }
 
 static void DebugToolsTools_RngMenuOnInit(struct MenuProc* menu)
@@ -2314,7 +2316,7 @@ CONST_DATA struct MenuDef gDebugToolsFlagMenuDef = {
     {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sFlagMenuItemDefs,
-    DebugToolsTools_MenuOnInit,
+    DEBUGTOOLS_FLAG_MENU_ON_INIT,
     DebugToolsFlag_OnEnd,
     0,
     DebugTools_CancelMenu,

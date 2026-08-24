@@ -133,6 +133,9 @@ def _write_debugtools_msg_id_header(work_dir: Path):
         "EXP_MSG_DEBUG_VALUE_PHASE_NPC": "debug.value.phase_npc",
         "EXP_MSG_DEBUG_VALUE_PHASE_OTHER": "debug.value.phase_other",
     }
+    for key in ids:
+        macro = "EXP_MSG_" + re.sub(r"[^A-Za-z0-9]+", "_", key).upper()
+        macros.setdefault(macro, key)
     lines = ["#ifndef TEST_EXPANSION_MSG_IDS_H", "#define TEST_EXPANSION_MSG_IDS_H"]
     lines += [f"#define {macro} {ids[key]}" for macro, key in macros.items()]
     lines += ["#endif", ""]
@@ -2270,6 +2273,46 @@ class DebugToolsExtendedToolsHostTests(unittest.TestCase):
             rc, out = _run(exe)
             self.assertEqual(rc, 0, f"host extended-tools test failed:\n{out}")
             self.assertIn("DEBUGTOOLS_TOOLS_HOST_TEST: PASS", out)
+
+    def test_flag_menu_initializer_host_executed_modern(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            defines = ["FE8_EXPANSION_DEBUGTOOLS_ENABLED=1", "MODERN=1"]
+            extra_flags = ["-I", str(work)]
+            _write_debugtools_msg_id_header(work)
+            objects = []
+
+            for source, name in (
+                (REGISTRY_SRC, "registry_flag_init.o"),
+                (TOOLS_SRC, "tools_flag_init.o"),
+                (DIAG_SRC, "diag_flag_init.o"),
+                (
+                    C_FIXTURES_DIR / "debugtools_tools_host_stubs.c",
+                    "stubs_flag_init.o",
+                ),
+                (
+                    C_FIXTURES_DIR / "debugtools_registry_support_stubs.c",
+                    "support_flag_init.o",
+                ),
+                (
+                    C_FIXTURES_DIR / "debugtools_flag_menu_init_driver.c",
+                    "driver_flag_init.o",
+                ),
+            ):
+                rc, out, obj = _compile(
+                    work, source, name, defines=defines, extra_flags=extra_flags
+                )
+                self.assertEqual(rc, 0, f"compiling {source.name} failed:\n{out}")
+                objects.append(obj)
+
+            rc, out, exe = _link(work, objects, "flag_menu_init_test_exe")
+            self.assertEqual(rc, 0, f"linking Flag menu initializer test failed:\n{out}")
+
+            rc, out = _run(exe)
+            self.assertEqual(rc, 0, f"Flag menu initializer test failed:\n{out}")
+            self.assertIn("DEBUGTOOLS_FLAG_MENU_INIT_HOST_TEST: PASS", out)
 
     def test_unit_editor_executes_authoritative_engine_helpers(self):
         """Retain and execute the real bmunit.c/eventscr3.c helper bodies.

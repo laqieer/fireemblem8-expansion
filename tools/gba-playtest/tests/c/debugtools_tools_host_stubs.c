@@ -115,6 +115,7 @@ int gDebugToolsToolsHostStubFaceMouthLoopCount = 0;
 char gDebugToolsToolsHostStubLastStatusLine[64] = {0};
 char gDebugToolsToolsHostStubStatusLines[3][64] = {{0}};
 int gDebugToolsToolsHostStubStatusLineCount = 0;
+int gDebugToolsToolsHostStubPutDrawTextCallCount = 0;
 #ifdef MODERN
 static ExpansionLocaleId sDebugToolsToolsLocale = EXPANSION_LOCALE_EN;
 #endif
@@ -142,6 +143,12 @@ static void DebugToolsHostStub_MapVram(void)
 u16* BG_GetMapBuffer(int bg)
 {
     return sToolsStubBgMaps[bg & 3];
+}
+
+void BG_Fill(void* tm, int fill)
+{
+    (void)tm;
+    (void)fill;
 }
 
 void BG_EnableSyncByMask(int bgMask)
@@ -254,7 +261,32 @@ void PutDrawText(
     (void)colorId;
     (void)x;
     (void)tileWidth;
+    gDebugToolsToolsHostStubPutDrawTextCallCount++;
     PrintDebugStringToBG(NULL, string);
+}
+
+void Text_InsertDrawString(
+    struct Text* text,
+    int x,
+    int colorId,
+    const char* string)
+{
+    (void)text;
+    (void)x;
+    (void)colorId;
+    (void)string;
+}
+
+void Text_InsertDrawNumberOrBlank(
+    struct Text* text,
+    int x,
+    int colorId,
+    int number)
+{
+    (void)text;
+    (void)x;
+    (void)colorId;
+    (void)number;
 }
 
 #ifdef MODERN
@@ -296,6 +328,7 @@ void DebugToolsHostStub_ResetStatusLines(void)
     memset(gDebugToolsToolsHostStubStatusLines, 0,
         sizeof(gDebugToolsToolsHostStubStatusLines));
     gDebugToolsToolsHostStubStatusLineCount = 0;
+    gDebugToolsToolsHostStubPutDrawTextCallCount = 0;
 }
 
 u8 MenuAlwaysEnabled(const struct MenuItemDef* def, int number)
