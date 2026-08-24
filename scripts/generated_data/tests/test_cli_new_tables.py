@@ -230,6 +230,18 @@ class CliChapterObjectivesTests(unittest.TestCase):
         self.assertEqual(code, 0, msg=out + err)
         self.assertIn("2 record(s)", out)
 
+    def test_rejects_owner_with_an_unrelated_objective_source(self):
+        code, out, err = run_cli([
+            "validate", "--table", "chapterobjectives",
+            "--source", fixture_path("chapterobjectives", "unrelated_objectives.json"),
+            "--no-roundtrip",
+            "--dep-source",
+            "chapterbundle={}".format(fixture_path("chapterobjectives", "ch2_bundle.json")),
+        ])
+        self.assertEqual(code, 1)
+        self.assertIn("chapterObjectives.source", err)
+        self.assertIn("unrelated_objectives.json", err)
+
     def test_check_real_default_source_has_no_drift(self):
         code, out, err = run_cli(["check", "--table", "chapterobjectives"])
         self.assertEqual(code, 0, msg=out + err)
