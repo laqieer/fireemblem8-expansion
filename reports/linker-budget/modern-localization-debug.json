@@ -71,42 +71,42 @@
     "missing": [],
     "symbols": {
       "gExpansionLocaleMsgCount": 2,
-      "gExpansionLocaleMsgIds": 190,
+      "gExpansionLocaleMsgIds": 222,
       "gExpansionLocaleTombstoneCount": 2
     },
-    "total_bytes": 194
+    "total_bytes": 226
   },
   "rom_catalog_strings": {
     "missing": [],
     "symbols": {
-      "gExpansionCatalog_de": 380,
-      "gExpansionCatalog_en": 380,
-      "gExpansionCatalog_es": 380,
-      "gExpansionCatalog_fr": 380,
-      "gExpansionCatalog_it": 380,
-      "gExpansionCatalog_ja": 380,
-      "gExpansionCatalog_qps_ploc": 380,
-      "gExpansionCatalog_zh_Hans": 380
+      "gExpansionCatalog_de": 444,
+      "gExpansionCatalog_en": 444,
+      "gExpansionCatalog_es": 444,
+      "gExpansionCatalog_fr": 444,
+      "gExpansionCatalog_it": 444,
+      "gExpansionCatalog_ja": 444,
+      "gExpansionCatalog_qps_ploc": 444,
+      "gExpansionCatalog_zh_Hans": 444
     },
-    "total_bytes": 3040,
+    "total_bytes": 3552,
     "unexpected": []
   },
   "schema_version": 1,
   "source_catalog_budget": {
-    "active_message_count": 95,
-    "catalog_index_bytes": 3326,
+    "active_message_count": 111,
+    "catalog_index_bytes": 3870,
     "catalog_string_bytes": {
-      "de": 906,
-      "en": 819,
-      "es": 915,
-      "fr": 958,
-      "it": 903,
-      "ja": 1059,
-      "qps-ploc": 1150,
-      "total": 7628,
-      "zh-Hans": 918
+      "de": 1074,
+      "en": 954,
+      "es": 1071,
+      "fr": 1112,
+      "it": 1055,
+      "ja": 1195,
+      "qps-ploc": 1445,
+      "total": 8969,
+      "zh-Hans": 1063
     },
-    "glyphs_used_count": 344,
+    "glyphs_used_count": 362,
     "locales_generated": [
       "en",
       "ja",
@@ -118,9 +118,9 @@
       "qps-ploc"
     ],
     "pseudo_policy_counts": {
-      "compact": 44,
+      "compact": 35,
       "preserve": 6,
-      "transform": 45
+      "transform": 70
     },
     "scratch_budget_bytes": 96,
     "scratch_headroom_bytes": 63,

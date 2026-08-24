@@ -1,6 +1,7 @@
 import json
 import re
 import unittest
+from collections import Counter
 from pathlib import Path
 
 from scripts.localization.catalog import load_catalog
@@ -31,6 +32,34 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         "RNG Inspect": "debug.action.rng_inspect",
         "Save State": "debug.action.save_state",
     }
+    DIRECT_MENU_LABELS = Counter(
+        {
+            "Back": 10,
+            "Refresh": 1,
+            "Confirm Heal to Full": 1,
+            "Confirm Add Item": 1,
+            "Confirm Toggle Flag": 1,
+            "Confirm Reseed": 1,
+            "Weather": 1,
+            "Fog": 1,
+            "Edit HP": 1,
+            "Edit Stats": 1,
+            "Edit AI": 1,
+            "Confirm Clear Status": 1,
+            "Unit/Class": 1,
+            "State": 1,
+            "Current HP": 1,
+            "Max HP": 1,
+            "Power": 1,
+            "Skill": 1,
+            "Speed": 1,
+            "Defense": 1,
+            "Resistance": 1,
+            "Luck": 1,
+            "AI A": 1,
+            "AI B": 1,
+        }
+    )
     EXPANSION_ADAPTERS = {
         "Back": "framework.back",
         "Confirm Heal to Full": "debug.confirm.heal_full",
@@ -46,10 +75,35 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         "FLAG": "debug.status.flag",
         "RNG SEED": "debug.status.rng_seed",
         "SAVE STATE": "debug.status.save_state",
+        "Edit HP": "debug.unit.edit_hp",
+        "Edit Stats": "debug.unit.edit_stats",
+        "Edit AI": "debug.unit.edit_ai",
+        "Confirm Clear Status": "debug.unit.clear_status",
+        "Unit/Class": "debug.unit.identity",
+        "State": "debug.unit.state",
+        "Current HP": "debug.unit.current_hp",
+        "Max HP": "debug.unit.max_hp",
+        "Power": "debug.unit.power",
+        "Skill": "debug.unit.skill",
+        "Speed": "debug.unit.speed",
+        "Defense": "debug.unit.defense",
+        "Resistance": "debug.unit.resistance",
+        "Luck": "debug.unit.luck",
+        "AI A": "debug.unit.ai_a",
+        "AI B": "debug.unit.ai_b",
     }
 
     @classmethod
     def setUpClass(cls):
+        cls.sources = {
+            name: (ROOT / f"src/{name}").read_text(encoding="utf-8")
+            for name in (
+                "debugtools_registry.c",
+                "debugtools_actions.c",
+                "debugtools_launcher.c",
+                "debugtools_tools.c",
+            )
+        }
         cls.registry = json.loads(
             (ROOT / "texts/expansion/registry.json").read_text(encoding="utf-8")
         )
@@ -68,6 +122,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         cls.header = (ROOT / "include/expansion_debugtools.h").read_text(
             encoding="utf-8"
         )
+        cls.uimenu = (ROOT / "src/uimenu.c").read_text(encoding="utf-8")
         cls.ascii_widths = _ascii_widths(ROOT)
         cls.cjk_widths = {
             locale: _cjk_widths(ROOT, locale)[0]
@@ -100,6 +155,121 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             raise AssertionError(f"{name} is missing from expansion_debugtools.h")
         return int(match.group(1))
 
+    def test_direct_debug_ui_literal_inventory_is_exact_and_closed(self):
+        action_labels = []
+        for name in (
+            "debugtools_launcher.c",
+            "debugtools_actions.c",
+            "debugtools_tools.c",
+        ):
+            action_labels.extend(
+                re.findall(
+                    r"DebugToolsAction\s+\w+\s*=\s*\{\s*\d+,\s*\"([^\"]+)\"",
+                    self.sources[name],
+                )
+            )
+        self.assertEqual(
+            Counter(action_labels),
+            Counter(self.ACTION_LABELS.keys()),
+        )
+
+        menu_labels = []
+        for name in (
+            "debugtools_registry.c",
+            "debugtools_actions.c",
+            "debugtools_tools.c",
+        ):
+            menu_labels.extend(
+                re.findall(r"\.name\s*=\s*\"([^\"]+)\"", self.sources[name])
+            )
+        self.assertEqual(Counter(menu_labels), self.DIRECT_MENU_LABELS)
+
+        registry = {
+            row["key"]: row
+            for row in self.registry["messages"]
+            if row["status"] == "active"
+        }
+        for literal, key in {
+            **self.ACTION_LABELS,
+            **self.EXPANSION_ADAPTERS,
+        }.items():
+            with self.subTest(literal=literal, key=key):
+                self.assertIn(key, registry)
+                self.assertEqual(self.catalogs["en"][key], literal)
+                self.assertIn(key, self.catalogs["ja"])
+                self.assertIn(key, self.catalogs["zh-Hans"])
+
+    def test_every_direct_debug_literal_has_the_expected_runtime_adapter(self):
+        registry = self.sources["debugtools_registry.c"]
+        tools = self.sources["debugtools_tools.c"]
+
+        for key_suffix in (
+            "FASTBOOT_CH2",
+            "WEATHER",
+            "FOG",
+            "FASTBOOT_CH4PREP",
+            "UNIT_INSPECT",
+            "CONVOY_INSPECT",
+            "FLAG_CHAPTER",
+            "RNG_INSPECT",
+            "SAVE_STATE",
+        ):
+            self.assertIn(f"EXP_MSG_DEBUG_ACTION_{key_suffix}", registry)
+
+        self.assertIn("EXP_MSG_FRAMEWORK_BACK", registry)
+        self.assertIn("DebugToolsHub_BuiltinActionRowDraw", registry)
+        self.assertIn("EXP_MSG_DEBUG_STATUS_HUB", registry)
+        self.assertIn("EXP_MSG_DEBUG_STATUS_HUB_ERROR", registry)
+
+        for key_suffix in (
+            "CONFIRM_HEAL_FULL",
+            "CONFIRM_ADD_ITEM",
+            "CONFIRM_TOGGLE_FLAG",
+            "CONFIRM_RESEED",
+            "STATUS_UNIT_HP",
+            "STATUS_UNIT_UNAVAILABLE",
+            "STATUS_CONVOY",
+            "STATUS_CHAPTER",
+            "STATUS_FLAG",
+            "STATUS_RNG_SEED",
+            "STATUS_SAVE_STATE",
+        ):
+            self.assertIn(f"EXP_MSG_DEBUG_{key_suffix}", tools)
+
+        for key_suffix in (
+            "UNIT_EDIT_HP",
+            "UNIT_EDIT_STATS",
+            "UNIT_EDIT_AI",
+            "UNIT_CLEAR_STATUS",
+            "UNIT_IDENTITY",
+            "UNIT_STATE",
+            "UNIT_CURRENT_HP",
+            "UNIT_MAX_HP",
+            "UNIT_POWER",
+            "UNIT_SKILL",
+            "UNIT_SPEED",
+            "UNIT_DEFENSE",
+            "UNIT_RESISTANCE",
+            "UNIT_LUCK",
+            "UNIT_AI_A",
+            "UNIT_AI_B",
+        ):
+            self.assertIn(f"EXP_MSG_DEBUG_{key_suffix}", tools)
+
+        self.assertEqual(tools.count("EXP_MSG_FRAMEWORK_BACK"), 8)
+        self.assertIn("DebugToolsTools_LocalizedMenuItemDraw", tools)
+        self.assertIn("ExpansionLocale_ResolveCurrent", tools)
+        self.assertIn("PutDrawText(", tools)
+
+        self.assertEqual(
+            re.findall(
+                r"PrintDebugStringToBG\([^;]*ExpansionLocale_ResolveCurrent",
+                registry + tools,
+                flags=re.DOTALL,
+            ),
+            [],
+        )
+
     def test_japanese_and_chinese_debug_adapters_do_not_fall_back_to_english(self):
         for key in self.EXPANSION_ADAPTERS.values():
             with self.subTest(key=key):
@@ -112,6 +282,27 @@ class DebugToolsLocalizationTests(unittest.TestCase):
     def test_every_generated_debug_menu_label_fits_actual_text_allocation(self):
         menu_width_tiles = self._constant("DEBUGTOOLS_MENU_WIDTH_TILES")
         allocation_pixels = (menu_width_tiles - 1) * 8
+        self.assertIn("InitText(&item->text, rect.w - 1);", self.uimenu)
+
+        menu_sources = "\n".join(
+            self.sources[name]
+            for name in (
+                "debugtools_registry.c",
+                "debugtools_actions.c",
+                "debugtools_tools.c",
+            )
+        )
+        menu_width_tokens = re.findall(
+            r"CONST_DATA struct MenuDef gDebugTools\w+MenuDef\s*=\s*\{\s*"
+            r"\{\s*\d+\s*,\s*\d+\s*,\s*([^,\s]+)\s*,\s*0\s*\}",
+            menu_sources,
+            flags=re.DOTALL,
+        )
+        self.assertEqual(len(menu_width_tokens), 11)
+        self.assertEqual(
+            set(menu_width_tokens),
+            {"DEBUGTOOLS_MENU_WIDTH_TILES"},
+        )
         self.assertLessEqual(1 + menu_width_tiles, 30)
 
         menu_keys = {
@@ -120,7 +311,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             *(
                 key
                 for key in self.EXPANSION_ADAPTERS.values()
-                if key.startswith("debug.confirm.")
+                if key.startswith(("debug.confirm.", "debug.unit."))
             ),
         }
         for locale in ("en", "ja", "zh-Hans", "qps-ploc"):
@@ -131,6 +322,24 @@ class DebugToolsLocalizationTests(unittest.TestCase):
                         self._pixel_width(strings[key], locale),
                         allocation_pixels,
                     )
+
+            value_x = {
+                "debug.unit.identity": 96,
+                "debug.unit.state": 72,
+                "debug.unit.current_hp": 112,
+                "debug.unit.max_hp": 112,
+                "debug.unit.power": 112,
+                "debug.unit.skill": 112,
+                "debug.unit.speed": 112,
+                "debug.unit.defense": 112,
+                "debug.unit.resistance": 112,
+                "debug.unit.luck": 112,
+                "debug.unit.ai_a": 112,
+                "debug.unit.ai_b": 112,
+            }
+            for key, x in value_x.items():
+                with self.subTest(locale=locale, key=f"{key}+value"):
+                    self.assertLessEqual(self._pixel_width(strings[key], locale), x)
 
     def test_maximum_hub_rows_and_qps_labels_fit_allocator_budget(self):
         action_max = self._constant("DEBUGTOOLS_ACTION_MAX")
@@ -163,6 +372,9 @@ class DebugToolsLocalizationTests(unittest.TestCase):
                 )
 
     def test_every_generated_debug_status_row_fits_actual_surface_geometry(self):
+        status_width_tiles = self._constant(
+            "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES"
+        )
         suffixes = {
             "debug.status.hub": " 18 2/2",
             "debug.status.hub_error": " -99",
@@ -175,8 +387,10 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         for locale in ("en", "ja", "zh-Hans", "qps-ploc"):
             strings = self.loaded_catalog.strings_for(locale)
             allocation_pixels = (
-                self._constant("DEBUGTOOLS_MENU_WIDTH_TILES") - 1
-            ) * 8
+                status_width_tiles * 8
+                if locale in ("ja", "zh-Hans")
+                else 29 * 8
+            )
             for key, suffix in suffixes.items():
                 text = strings[key] + suffix
                 width = (

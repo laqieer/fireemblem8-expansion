@@ -373,7 +373,6 @@
       "key": "debug.status.hub",
       "status": "active",
       "surface": "debug_overlay",
-      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -382,7 +381,6 @@
       "key": "debug.status.hub_error",
       "status": "active",
       "surface": "debug_overlay",
-      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -391,7 +389,6 @@
       "key": "debug.status.unit_hp",
       "status": "active",
       "surface": "debug_overlay",
-      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -400,7 +397,6 @@
       "key": "debug.status.unit_unavailable",
       "status": "active",
       "surface": "debug_overlay",
-      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -409,7 +405,6 @@
       "key": "debug.status.convoy",
       "status": "active",
       "surface": "debug_overlay",
-      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -418,7 +413,6 @@
       "key": "debug.status.chapter",
       "status": "active",
       "surface": "debug_overlay",
-      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -427,7 +421,6 @@
       "key": "debug.status.flag",
       "status": "active",
       "surface": "debug_overlay",
-      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -436,7 +429,6 @@
       "key": "debug.status.rng_seed",
       "status": "active",
       "surface": "debug_overlay",
-      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -445,7 +437,6 @@
       "key": "debug.status.save_state",
       "status": "active",
       "surface": "debug_overlay",
-      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -529,6 +520,134 @@
     },
     {
       "id": 63,
+      "key": "debug.unit.edit_hp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 64,
+      "key": "debug.unit.edit_stats",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 65,
+      "key": "debug.unit.edit_ai",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 66,
+      "key": "debug.unit.clear_status",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 67,
+      "key": "debug.unit.identity",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 68,
+      "key": "debug.unit.state",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 69,
+      "key": "debug.unit.current_hp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 70,
+      "key": "debug.unit.max_hp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 71,
+      "key": "debug.unit.power",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 72,
+      "key": "debug.unit.skill",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 73,
+      "key": "debug.unit.speed",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 74,
+      "key": "debug.unit.defense",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 75,
+      "key": "debug.unit.resistance",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 76,
+      "key": "debug.unit.luck",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 77,
+      "key": "debug.unit.ai_a",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24
+    },
+    {
+      "id": 78,
+      "key": "debug.unit.ai_b",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24
+    },
+    {
+      "id": 79,
       "key": "debug.view.state",
       "status": "active",
       "surface": "debug_overlay",
@@ -537,7 +656,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 64,
+      "id": 80,
       "key": "debug.view.engine",
       "status": "active",
       "surface": "debug_overlay",
@@ -546,7 +665,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 65,
+      "id": 81,
       "key": "debug.action.refresh",
       "status": "active",
       "surface": "debug_overlay",
@@ -555,7 +674,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 66,
+      "id": 82,
       "key": "debug.value.unavailable",
       "status": "active",
       "surface": "debug_overlay",
@@ -564,7 +683,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 67,
+      "id": 83,
       "key": "debug.field.context",
       "status": "active",
       "surface": "debug_overlay",
@@ -573,7 +692,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 68,
+      "id": 84,
       "key": "debug.field.clock",
       "status": "active",
       "surface": "debug_overlay",
@@ -582,7 +701,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 69,
+      "id": 85,
       "key": "debug.field.chapter",
       "status": "active",
       "surface": "debug_overlay",
@@ -591,7 +710,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 70,
+      "id": 86,
       "key": "debug.field.turn",
       "status": "active",
       "surface": "debug_overlay",
@@ -600,7 +719,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 71,
+      "id": 87,
       "key": "debug.field.phase",
       "status": "active",
       "surface": "debug_overlay",
@@ -609,7 +728,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 72,
+      "id": 88,
       "key": "debug.field.cursor",
       "status": "active",
       "surface": "debug_overlay",
@@ -618,7 +737,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 73,
+      "id": 89,
       "key": "debug.field.unit",
       "status": "active",
       "surface": "debug_overlay",
@@ -627,7 +746,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 74,
+      "id": 90,
       "key": "debug.field.character",
       "status": "active",
       "surface": "debug_overlay",
@@ -636,7 +755,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 75,
+      "id": 91,
       "key": "debug.field.class",
       "status": "active",
       "surface": "debug_overlay",
@@ -645,7 +764,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 76,
+      "id": 92,
       "key": "debug.field.hp",
       "status": "active",
       "surface": "debug_overlay",
@@ -654,7 +773,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 77,
+      "id": 93,
       "key": "debug.field.weather",
       "status": "active",
       "surface": "debug_overlay",
@@ -663,7 +782,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 78,
+      "id": 94,
       "key": "debug.field.fog",
       "status": "active",
       "surface": "debug_overlay",
@@ -672,7 +791,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 79,
+      "id": 95,
       "key": "debug.field.rng",
       "status": "active",
       "surface": "debug_overlay",
@@ -681,7 +800,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 80,
+      "id": 96,
       "key": "debug.field.proc_count",
       "status": "active",
       "surface": "debug_overlay",
@@ -690,7 +809,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 81,
+      "id": 97,
       "key": "debug.field.event",
       "status": "active",
       "surface": "debug_overlay",
@@ -699,7 +818,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 82,
+      "id": 98,
       "key": "debug.field.actions",
       "status": "active",
       "surface": "debug_overlay",
@@ -708,7 +827,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 83,
+      "id": 99,
       "key": "debug.field.log_retained",
       "status": "active",
       "surface": "debug_overlay",
@@ -717,7 +836,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 84,
+      "id": 100,
       "key": "debug.field.log_writes",
       "status": "active",
       "surface": "debug_overlay",
@@ -726,7 +845,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 85,
+      "id": 101,
       "key": "debug.field.log_last",
       "status": "active",
       "surface": "debug_overlay",
@@ -735,7 +854,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 86,
+      "id": 102,
       "key": "debug.field.assert_count",
       "status": "active",
       "surface": "debug_overlay",
@@ -744,7 +863,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 87,
+      "id": 103,
       "key": "debug.field.assert_last",
       "status": "active",
       "surface": "debug_overlay",
@@ -753,7 +872,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 88,
+      "id": 104,
       "key": "debug.value.context_title",
       "status": "active",
       "surface": "debug_overlay",
@@ -762,7 +881,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 89,
+      "id": 105,
       "key": "debug.value.context_map",
       "status": "active",
       "surface": "debug_overlay",
@@ -771,7 +890,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 90,
+      "id": 106,
       "key": "debug.value.context_prep",
       "status": "active",
       "surface": "debug_overlay",
@@ -780,7 +899,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 91,
+      "id": 107,
       "key": "debug.value.context_battle",
       "status": "active",
       "surface": "debug_overlay",
@@ -789,7 +908,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 92,
+      "id": 108,
       "key": "debug.value.phase_player",
       "status": "active",
       "surface": "debug_overlay",
@@ -798,7 +917,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 93,
+      "id": 109,
       "key": "debug.value.phase_enemy",
       "status": "active",
       "surface": "debug_overlay",
@@ -807,7 +926,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 94,
+      "id": 110,
       "key": "debug.value.phase_npc",
       "status": "active",
       "surface": "debug_overlay",
@@ -816,7 +935,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 95,
+      "id": 111,
       "key": "debug.value.phase_other",
       "status": "active",
       "surface": "debug_overlay",
