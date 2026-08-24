@@ -5,8 +5,9 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+import sys
 
-from . import schema as objectives_schema
+from . import enabled, generate, inventory, schema as objectives_schema
 from ..chapterbundle import schema as bundle_schema
 
 
@@ -18,6 +19,22 @@ def _owner_source(source):
     if os.path.isabs(source):
         return _canonical(source)
     return _canonical(os.path.join(bundle_schema.REPO_ROOT, source))
+
+
+def _implementation_module_paths():
+    """Return every loaded generated-data implementation module, excluding tests."""
+    package_root = _canonical(os.path.join(bundle_schema.REPO_ROOT, "scripts", "generated_data"))
+    modules = (objectives_schema, generate, inventory, enabled, bundle_schema)
+    bundle_schema.dependency_module_paths()
+    paths = set()
+    for module in (*modules, *tuple(sys.modules.values())):
+        module_path = getattr(module, "__file__", None)
+        if module_path is None:
+            continue
+        module_path = _canonical(module_path)
+        if module_path.startswith(package_root + os.sep) and "/tests/" not in module_path:
+            paths.add(module_path)
+    return tuple(sorted(paths))
 
 
 def collect_input_paths(objectives_source, bundle_source):
@@ -38,6 +55,7 @@ def collect_input_paths(objectives_source, bundle_source):
             _canonical(bundle_schema.ASSET_MANIFEST_PATH),
         )
     )
+    paths.update(_implementation_module_paths())
     for bundle in bundles:
         for table in bundle.tables:
             paths.add(_owner_source(table.source))

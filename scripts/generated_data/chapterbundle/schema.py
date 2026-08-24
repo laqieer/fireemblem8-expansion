@@ -66,6 +66,7 @@ slice (see "Remaining Issue #5 scope" in the docs).
 from __future__ import annotations
 
 import glob
+import importlib
 import json
 import os
 
@@ -102,6 +103,14 @@ BUNDLE_TABLE_NAMES = ("units", "shops", "traps", "eventscripts", "eventlists")
 # for the support-owner reciprocal check even though it isn't one of the
 # 5 `BUNDLE_TABLE_NAMES`.
 DEPENDENCY_TABLE_NAMES = BUNDLE_TABLE_NAMES + ("supports",)
+DEPENDENCY_SCHEMA_MODULES = {
+    "units": "scripts.generated_data.units.schema",
+    "shops": "scripts.generated_data.shops.schema",
+    "traps": "scripts.generated_data.traps.schema",
+    "eventscripts": "scripts.generated_data.eventscripts.schema",
+    "eventlists": "scripts.generated_data.eventlists.schema",
+    "supports": "scripts.generated_data.supports.schema",
+}
 
 
 class ChapterInfo:
@@ -370,21 +379,21 @@ def _source_path(source):
 
 
 def _dependency_loader(table_name):
-    if table_name == "units":
-        from ..units import schema
-    elif table_name == "shops":
-        from ..shops import schema
-    elif table_name == "traps":
-        from ..traps import schema
-    elif table_name == "eventscripts":
-        from ..eventscripts import schema
-    elif table_name == "eventlists":
-        from ..eventlists import schema
-    elif table_name == "supports":
-        from ..supports import schema
-    else:
+    module_name = DEPENDENCY_SCHEMA_MODULES.get(table_name)
+    if module_name is None:
         raise GeneratedDataError("unknown chapter bundle dependency '{}'".format(table_name))
+    schema = importlib.import_module(module_name)
     return schema.load_records
+
+
+def dependency_module_paths():
+    """Return deterministic source paths for every registered bundle loader."""
+    paths = {os.path.realpath(__file__)}
+    for module_name in sorted(DEPENDENCY_SCHEMA_MODULES.values()):
+        module = importlib.import_module(module_name)
+        if getattr(module, "__file__", None):
+            paths.add(os.path.realpath(module.__file__))
+    return tuple(sorted(paths))
 
 
 def resolve_bundle_dependencies(record, diagnostics=None, dependency_records=None,
