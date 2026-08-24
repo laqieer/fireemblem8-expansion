@@ -67,7 +67,7 @@
       }
     ]
   },
-  "census_digest": "4056e86fc5134648ac30c6aa53c089a3dc3f0d5f7cb1474dc0ba8d7ad26533f9",
+  "census_digest": "3f7e2d4752893870247dce1c2c1a77747e678b9905c56322e5d7d8082182a07e",
   "consumers": [
     {
       "category": "event-operand",
@@ -8256,6 +8256,25 @@
       "storage_bits": 16,
       "surface": "runtime-source",
       "symbol": "GENERATED_DATA_EVENTLISTS_CH2_LINKED",
+      "technical_max": 65535
+    },
+    {
+      "category": "external-interface",
+      "configured_cap": 255,
+      "declaration": "def test_profile_covers_all_factions_events_flags_and_objective_result(self):",
+      "domain": "event",
+      "key": "tools/gba-playtest/tests/test_accelerated_fidelity.py|tool-symbol|event|test_profile_covers_all_factions_events_flags_and_objective_result",
+      "kind": "tool-symbol",
+      "line": 148,
+      "path": "tools/gba-playtest/tests/test_accelerated_fidelity.py",
+      "reason": null,
+      "record_count": null,
+      "sentinel": null,
+      "signed": 0,
+      "status": "adequate",
+      "storage_bits": 16,
+      "surface": "external-tool",
+      "symbol": "test_profile_covers_all_factions_events_flags_and_objective_result",
       "technical_max": 65535
     },
     {
@@ -20936,7 +20955,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "d45e39230f3781000de77e616d53613e440d2767593b1d71db2b070aefa26a74",
+  "digest": "2bce073ff6d320dffbee0805942be9c1573d86a9fb707b169cdad77632f4bcc4",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,

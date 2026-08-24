@@ -4381,6 +4381,10 @@
       "category": "external-interface",
       "reason": null
     },
+    "tools/gba-playtest/tests/test_accelerated_fidelity.py|tool-symbol|event|test_profile_covers_all_factions_events_flags_and_objective_result": {
+      "category": "external-interface",
+      "reason": null
+    },
     "tools/gba-playtest/tests/test_debugtools_registry.py|tool-symbol|chapter|chapter_index": {
       "category": "external-interface",
       "reason": null
