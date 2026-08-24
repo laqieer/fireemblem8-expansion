@@ -235,6 +235,7 @@ def validate(records, diagnostics, dependency_records=None,
     objectives = {
         record.chapter: record for record in dependency_records.get("chapterobjectives", ())
     }
+    chapter_bundle = dependency_records.get("chapterbundle")
 
     diagnostics.extend(
         validate_fixed_capacity(
@@ -369,6 +370,36 @@ def validate(records, diagnostics, dependency_records=None,
                     ref + ".symbol",
                 )
             )
+        if chapter_bundle is None or chapter_bundle.chapter.id != chapter.chapter:
+            diagnostics.add(
+                _error(
+                    "strategy assignment bundle '{}' for chapter '{}' has no owning chapter bundle".format(
+                        chapter.symbol, chapter.chapter
+                    ),
+                    chapter.chapter_loc,
+                    ref + ".chapter",
+                )
+            )
+        elif chapter_bundle.autoplay_strategies is None:
+            diagnostics.add(
+                _error(
+                    "strategy assignment bundle '{}' has no autoplayStrategies ownership declaration".format(
+                        chapter.symbol
+                    ),
+                    chapter.symbol_loc,
+                    ref + ".symbol",
+                )
+            )
+        elif chapter.symbol not in chapter_bundle.autoplay_strategies.symbols:
+            diagnostics.add(
+                _error(
+                    "strategy assignment bundle '{}' is not declared by its owning chapter bundle".format(
+                        chapter.symbol
+                    ),
+                    chapter.symbol_loc,
+                    ref + ".symbol",
+                )
+            )
         diagnostics.extend(
             validate_fixed_capacity(
                 len(chapter.group_assignments), ASSIGNMENT_CAPACITY, chapter.loc,
@@ -419,6 +450,30 @@ def validate(records, diagnostics, dependency_records=None,
             )
             _validate_assignment(assignment, assignment_ref, strategy_ids, event_flags, diagnostics)
 
+    if chapter_bundle is not None and chapter_bundle.autoplay_strategies is not None:
+        actual_symbols = {
+            chapter.symbol for chapter in chapters if chapter.chapter == chapter_bundle.chapter.id
+        }
+        owner = chapter_bundle.autoplay_strategies
+        diagnostics.extend(
+            validate_unique(
+                zip(owner.symbols, owner.symbol_locs),
+                "duplicate symbol '{key}' declared in autoplayStrategies.symbols "
+                "(first at {first_loc})",
+                "autoplayStrategies.symbols[{key}]",
+            )
+        )
+        for symbol, loc in zip(owner.symbols, owner.symbol_locs):
+            if symbol not in actual_symbols:
+                diagnostics.add(
+                    _error(
+                        "strategy assignment bundle '{}' is declared by chapter '{}' but absent from "
+                        "its strategy source".format(symbol, chapter_bundle.chapter.id),
+                        loc,
+                        "autoplayStrategies.symbols[{}]".format(symbol),
+                    )
+                )
+
 
 class AutoplayStrategiesTableSchema(TableSchema):
     name = SCHEMA_NAME
@@ -432,10 +487,16 @@ class AutoplayStrategiesTableSchema(TableSchema):
     record_budget_reason = "the runtime registry has a fixed eight-strategy capacity"
 
     def dependencies(self):
-        return ("constants.chapters", "constants.characters", "constants.event-flags", "chapterobjectives")
+        return (
+            "constants.chapters",
+            "constants.characters",
+            "constants.event-flags",
+            "chapterobjectives",
+            "chapterbundle",
+        )
 
     def dependency_tables(self):
-        return ("chapterobjectives",)
+        return ("chapterobjectives", "chapterbundle")
 
     def load_records(self, source_path):
         return load_records(source_path)

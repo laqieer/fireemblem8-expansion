@@ -28,6 +28,7 @@
 #include "bmsave.h"
 #include "eventinfo.h"
 #include "expansion_debugtools.h"
+#include "debugtools_internal.h"
 #include "expansion_itemtest.h"
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_autoplay_internal.h"
@@ -296,6 +297,11 @@ void PlayerPhase_MainIdle(ProcPtr proc)
     DebugTools_MapHotkeyCheck();
     if (DebugTools_IsHubActive())
         return;
+
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+    if (DebugTools_QueueMapLaunchHandoff())
+        return;
+#endif
 
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
     if (ExpansionAutoplayPlanner_PollStart())

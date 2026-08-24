@@ -25,7 +25,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         "Fast Boot: Chapter 2": "debug.action.fastboot_ch2",
         "Weather": "debug.action.weather",
         "Fog": "debug.action.fog",
-        "Fast Boot: Ch4 Prep": "debug.action.fastboot_ch4prep",
+        "Chapter/Skirmish": "debug.action.chapter_skirmish",
         "Unit Inspect": "debug.action.unit_inspect",
         "Convoy Inspect": "debug.action.convoy_inspect",
         "Flag/Chapter": "debug.action.flag_chapter",
@@ -76,6 +76,11 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         "FLAG": "debug.status.flag",
         "RNG SEED": "debug.status.rng_seed",
         "SAVE STATE": "debug.status.save_state",
+        "Chapter": "debug.selector.chapter",
+        "Skirmish": "debug.selector.skirmish",
+        "Eirika": "debug.selector.eirika",
+        "Ephraim": "debug.selector.ephraim",
+        "Target unavailable": "debug.selector.unavailable",
         "Edit HP": "debug.unit.edit_hp",
         "Edit Stats": "debug.unit.edit_stats",
         "Edit AI": "debug.unit.edit_ai",
@@ -102,6 +107,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
                 "debugtools_registry.c",
                 "debugtools_actions.c",
                 "debugtools_launcher.c",
+                "debugtools_selector.c",
                 "debugtools_tools.c",
                 "debugtools_music.c",
             )
@@ -162,6 +168,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         for name in (
             "debugtools_launcher.c",
             "debugtools_actions.c",
+            "debugtools_selector.c",
             "debugtools_tools.c",
             "debugtools_music.c",
         ):
@@ -211,7 +218,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             "FASTBOOT_CH2",
             "WEATHER",
             "FOG",
-            "FASTBOOT_CH4PREP",
+            "CHAPTER_SKIRMISH",
             "UNIT_INSPECT",
             "CONVOY_INSPECT",
             "FLAG_CHAPTER",
@@ -240,6 +247,16 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             "STATUS_SAVE_STATE",
         ):
             self.assertIn(f"EXP_MSG_DEBUG_{key_suffix}", tools)
+
+        selector = self.sources["debugtools_selector.c"]
+        for key_suffix in (
+            "SELECTOR_CHAPTER",
+            "SELECTOR_SKIRMISH",
+            "SELECTOR_EIRIKA",
+            "SELECTOR_EPHRAIM",
+            "SELECTOR_UNAVAILABLE",
+        ):
+            self.assertIn(f"EXP_MSG_DEBUG_{key_suffix}", selector)
 
         for key_suffix in (
             "UNIT_EDIT_HP",
@@ -294,6 +311,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             for name in (
                 "debugtools_registry.c",
                 "debugtools_actions.c",
+                "debugtools_selector.c",
                 "debugtools_tools.c",
                 "debugtools_music.c",
             )
@@ -304,7 +322,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             menu_sources,
             flags=re.DOTALL,
         )
-        self.assertEqual(len(menu_width_tokens), 12)
+        self.assertEqual(len(menu_width_tokens), 13)
         self.assertEqual(
             set(menu_width_tokens),
             {"DEBUGTOOLS_MENU_WIDTH_TILES"},

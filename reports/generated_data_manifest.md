@@ -6,14 +6,14 @@ Aggregate, discoverable registry of every table the platform registers: record c
 
 - Registered tables: 16
 - Total records: 726
-- Dependency topological order: eventscripts, items, movecost, shops, supports, terrainstats, classes, characters, traps, ui_presentation, units, chapterobjectives, autoplaystrategies, eventlists, chapterbundle, weapontriangle
-- Aggregate dependency graph digest (sha256): `721bb93cfb4afef68e1cba38c5d5ace48affd1e38b70214c7a6ce2ca982ff277`
+- Dependency topological order: eventscripts, items, movecost, shops, supports, terrainstats, classes, characters, traps, ui_presentation, units, eventlists, chapterbundle, chapterobjectives, autoplaystrategies, weapontriangle
+- Aggregate dependency graph digest (sha256): `b00f924bb0ca3fc67bd9096b5c53a5d4dbe058939b848baa61fa99a31b195987`
 
 | Table | Version | Records | Budget | Output symbol | Table dependencies |
 |---|---|---|---|---|---|
-| autoplaystrategies | 1 | 2 | 2/8 | data_autoplay_strategies.c | chapterobjectives |
-| chapterbundle | 1 | 1 | - | (metadata-only) | units, shops, traps, eventscripts, eventlists, supports, chapterobjectives, autoplaystrategies |
-| chapterobjectives | 1 | 0 | 0/32 | data_chapter_objectives.c | units |
+| autoplaystrategies | 1 | 2 | 2/8 | data_autoplay_strategies.c | chapterobjectives, chapterbundle |
+| chapterbundle | 1 | 1 | - | (metadata-only) | units, shops, traps, eventscripts, eventlists, supports |
+| chapterobjectives | 1 | 0 | 0/32 | data_chapter_objectives.c | units, chapterbundle |
 | characters | 1 | 256 | 256/256 | data_characters.c | classes, supports |
 | classes | 1 | 127 | - | data_classes.c | terrainstats, movecost |
 | eventlists | 1 | 9 | - | data_ch2_eventlists.c | units, shops, traps, eventscripts |

@@ -106,7 +106,7 @@ class Objective:
         "deactivation_flag", "deactivation_flag_loc", "group", "group_loc",
         "protected_character", "protected_character_loc", "completion_objective",
         "completion_objective_loc", "event_flag", "event_flag_loc", "until_turn",
-        "until_turn_loc", "area", "loc",
+        "until_turn_loc", "failure_flag", "failure_flag_loc", "area", "loc",
     )
 
     def __init__(
@@ -114,7 +114,7 @@ class Objective:
         deactivation_flag, deactivation_flag_loc, group, group_loc,
         protected_character, protected_character_loc, completion_objective,
         completion_objective_loc, event_flag, event_flag_loc, until_turn,
-        until_turn_loc, area, loc,
+        until_turn_loc, failure_flag, failure_flag_loc, area, loc,
     ):
         self.id = id_
         self.id_loc = id_loc
@@ -134,6 +134,8 @@ class Objective:
         self.event_flag_loc = event_flag_loc
         self.until_turn = until_turn
         self.until_turn_loc = until_turn_loc
+        self.failure_flag = failure_flag
+        self.failure_flag_loc = failure_flag_loc
         self.area = area
         self.loc = loc
 
@@ -235,13 +237,15 @@ def load_records(source_path):
             )
             event_flag, event_flag_loc = _optional_string(objective_node, "eventFlag")
             until_turn, until_turn_loc = _optional_int(objective_node, "untilTurn")
+            failure_flag, failure_flag_loc = _optional_string(objective_node, "failureFlag")
             objectives.append(
                 Objective(
                     id_node.as_str(), id_node.loc, kind_node.as_str(), kind_node.loc,
                     activation_flag, activation_flag_loc, deactivation_flag, deactivation_flag_loc,
                     group, group_loc, protected_character, protected_character_loc,
                     completion_objective, completion_objective_loc, event_flag, event_flag_loc,
-                    until_turn, until_turn_loc, _parse_area(objective_node.get("area")), objective_node.loc,
+                    until_turn, until_turn_loc, failure_flag, failure_flag_loc,
+                    _parse_area(objective_node.get("area")), objective_node.loc,
                 )
             )
 
@@ -356,11 +360,35 @@ def validate(records, diagnostics, dependency_records=None,
     event_flags = extract_enum_constants(event_flags_header, name_prefix="EVFLAG_")
     unit_groups = {group.symbol: group for group in dependency_records.get("units", ())}
 
+    capacity_loc = records[BUNDLE_CAPACITY].loc if len(records) > BUNDLE_CAPACITY else None
+    capacity_ref = "chapters[{}]".format(BUNDLE_CAPACITY) if capacity_loc is not None else "chapters"
     diagnostics.extend(
         validate_fixed_capacity(
-            len(records), BUNDLE_CAPACITY, None, "chapters", what="chapter objective bundles"
+            len(records), BUNDLE_CAPACITY, capacity_loc, capacity_ref, what="chapter objective bundles"
         )
     )
+    chapter_bundle = dependency_records.get("chapterbundle")
+    if chapter_bundle is not None and chapter_bundle.chapter_objectives is not None:
+        owner = chapter_bundle.chapter_objectives
+        actual_symbols = {record.symbol for record in records if record.chapter == chapter_bundle.chapter.id}
+        diagnostics.extend(
+            validate_unique(
+                zip(owner.symbols, owner.symbol_locs),
+                "duplicate symbol '{key}' declared in chapterObjectives.symbols "
+                "(first at {first_loc})",
+                "chapterObjectives.symbols[{key}]",
+            )
+        )
+        for symbol, loc in zip(owner.symbols, owner.symbol_locs):
+            if symbol not in actual_symbols:
+                diagnostics.add(
+                    _err(
+                        "chapter objective bundle '{}' is declared by chapter '{}' but absent from "
+                        "its objective source".format(symbol, chapter_bundle.chapter.id),
+                        loc, "chapterObjectives.symbols[{}]".format(symbol),
+                    )
+                )
+
     diagnostics.extend(
         validate_unique(
             ((record.chapter, record.chapter_loc) for record in records),
@@ -379,6 +407,31 @@ def validate(records, diagnostics, dependency_records=None,
     all_ids = []
     for record in records:
         record_ref = "chapters[symbol={}]".format(record.symbol)
+        owned_unit_groups = set()
+        if chapter_bundle is None or chapter_bundle.chapter.id != record.chapter:
+            diagnostics.add(
+                _err(
+                    "chapter objective bundle '{}' for chapter '{}' has no owning chapter bundle".format(
+                        record.symbol, record.chapter
+                    ),
+                    record.chapter_loc, record_ref + ".chapter",
+                )
+            )
+        else:
+            objective_owner = chapter_bundle.chapter_objectives
+            if objective_owner is None or record.symbol not in objective_owner.symbols:
+                diagnostics.add(
+                    _err(
+                        "chapter objective bundle '{}' is not declared by its owning chapter bundle".format(
+                            record.symbol
+                        ),
+                        record.symbol_loc, record_ref + ".symbol",
+                    )
+                )
+            unit_owner = chapter_bundle.tables_by_name.get("units")
+            if unit_owner is not None:
+                owned_unit_groups = set(unit_owner.symbols)
+
         diagnostics.extend(validate_reference(record.chapter, chapters, record.chapter_loc,
                                                record_ref + ".chapter", kind="chapter"))
         if not _C_SYMBOL_RE.match(record.symbol):
@@ -462,6 +515,15 @@ def validate(records, diagnostics, dependency_records=None,
                             member.unit_group_loc, member_ref + ".unitGroup",
                         )
                     )
+                elif member.unit_group not in owned_unit_groups:
+                    diagnostics.add(
+                        _err(
+                            "unit group '{}' is not owned by chapter '{}'".format(
+                                member.unit_group, record.chapter
+                            ),
+                            member.unit_group_loc, member_ref + ".unitGroup",
+                        )
+                    )
                 else:
                     source_group = unit_groups[member.unit_group]
                     if member.character not in {
@@ -494,6 +556,7 @@ def validate(records, diagnostics, dependency_records=None,
                 (objective.activation_flag, objective.activation_flag_loc, "activationFlag"),
                 (objective.deactivation_flag, objective.deactivation_flag_loc, "deactivationFlag"),
                 (objective.event_flag, objective.event_flag_loc, "eventFlag"),
+                (objective.failure_flag, objective.failure_flag_loc, "failureFlag"),
             ):
                 if flag is None:
                     continue
@@ -521,6 +584,20 @@ def validate(records, diagnostics, dependency_records=None,
                 diagnostics.add(
                     _err("eventFlag and deactivationFlag are contradictory", objective.deactivation_flag_loc,
                          objective_ref + ".deactivationFlag")
+                )
+            if objective.failure_flag == "EVFLAG_ALWAYS_FALSE":
+                diagnostics.add(
+                    _err("failureFlag must not be EVFLAG_ALWAYS_FALSE", objective.failure_flag_loc,
+                         objective_ref + ".failureFlag")
+                )
+            if objective.failure_flag is not None and objective.failure_flag in (
+                objective.activation_flag, objective.deactivation_flag, objective.event_flag,
+            ):
+                diagnostics.add(
+                    _err(
+                        "failureFlag must be distinct from activationFlag, deactivationFlag, and eventFlag",
+                        objective.failure_flag_loc, objective_ref + ".failureFlag",
+                    )
                 )
 
             if objective.group is not None:
@@ -570,7 +647,7 @@ def validate(records, diagnostics, dependency_records=None,
                              objective.loc, objective_ref)
                     )
                 if objective.group is not None or objective.area is not None or objective.event_flag is not None \
-                        or objective.until_turn is not None:
+                        or objective.until_turn is not None or objective.failure_flag is not None:
                     diagnostics.add(
                         _err("protect objective accepts only protectedCharacter and completionObjective",
                              objective.loc, objective_ref)
@@ -580,7 +657,8 @@ def validate(records, diagnostics, dependency_records=None,
                     diagnostics.add(_err("reach_area objective requires group and area",
                                          objective.loc, objective_ref))
                 if objective.protected_character is not None or objective.completion_objective is not None \
-                        or objective.event_flag is not None or objective.until_turn is not None:
+                        or objective.event_flag is not None or objective.until_turn is not None \
+                        or objective.failure_flag is not None:
                     diagnostics.add(
                         _err("reach_area objective accepts only group and area", objective.loc, objective_ref)
                     )
@@ -589,7 +667,7 @@ def validate(records, diagnostics, dependency_records=None,
                     diagnostics.add(_err("defeat_group objective requires group", objective.loc, objective_ref))
                 if objective.protected_character is not None or objective.completion_objective is not None \
                         or objective.event_flag is not None or objective.until_turn is not None \
-                        or objective.area is not None:
+                        or objective.area is not None or objective.failure_flag is not None:
                     diagnostics.add(
                         _err("defeat_group objective accepts only group", objective.loc, objective_ref)
                     )
@@ -598,11 +676,12 @@ def validate(records, diagnostics, dependency_records=None,
                     diagnostics.add(_err("event_flag objective requires eventFlag", objective.loc, objective_ref))
                 if objective.group is not None or objective.protected_character is not None \
                         or objective.completion_objective is not None or objective.area is not None \
-                        or objective.until_turn is not None:
+                        or objective.until_turn is not None or objective.failure_flag is not None:
                     diagnostics.add(_err("event_flag objective accepts only eventFlag", objective.loc, objective_ref))
             elif objective.kind == "hold_until_turn":
-                if objective.group is None or objective.area is None or objective.until_turn is None:
-                    diagnostics.add(_err("hold_until_turn objective requires group, area, and untilTurn",
+                if objective.group is None or objective.area is None or objective.until_turn is None \
+                        or objective.failure_flag is None:
+                    diagnostics.add(_err("hold_until_turn objective requires group, area, untilTurn, and failureFlag",
                                          objective.loc, objective_ref))
                 elif objective.until_turn is not None:
                     diagnostics.extend(
@@ -612,7 +691,7 @@ def validate(records, diagnostics, dependency_records=None,
                 if objective.protected_character is not None or objective.completion_objective is not None \
                         or objective.event_flag is not None:
                     diagnostics.add(
-                        _err("hold_until_turn objective accepts only group, area, and untilTurn",
+                        _err("hold_until_turn objective accepts only group, area, untilTurn, and failureFlag",
                              objective.loc, objective_ref)
                     )
 
@@ -688,10 +767,10 @@ class ChapterObjectivesTableSchema(TableSchema):
     record_budget_reason = "the generated bundle table has a fixed 32-chapter capacity"
 
     def dependencies(self):
-        return ("constants.chapters", "constants.characters", "constants.event-flags", "units")
+        return ("constants.chapters", "constants.characters", "constants.event-flags", "units", "chapterbundle")
 
     def dependency_tables(self):
-        return ("units",)
+        return ("units", "chapterbundle")
 
     def load_records(self, source_path):
         return load_records(source_path)

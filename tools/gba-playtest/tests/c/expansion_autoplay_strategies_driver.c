@@ -52,6 +52,13 @@ struct Unit* GetUnitFromCharId(int character)
     return NULL;
 }
 
+struct Unit* GetUnit(int unitId)
+{
+    if (unitId == gActiveUnitId)
+        return &sEirika;
+    return NULL;
+}
+
 void AiSetDecision(s16 xMove, s16 yMove, u8 actionId, u8 targetId, u8 itemSlot, u8 xTarget, u8 yTarget)
 {
     gAiDecision.xMove = xMove;
@@ -96,6 +103,11 @@ static bool DummyStrategy(const struct ExpansionAutoplayStrategyContext* context
 {
     (void)context;
     return false;
+}
+
+static void RefreshObjectiveTelemetry(void)
+{
+    ExpansionChapterObjectives_RefreshTelemetry();
 }
 
 static void ResetFixture(void)
@@ -167,6 +179,7 @@ static int TestReferenceProfiles(void)
 
     ResetFixture();
     sFlags[EVFLAG_GAMEOVER] = true;
+    RefreshObjectiveTelemetry();
     result = ExpansionAutoplayStrategies_TryDecide();
     CHECK(result == EXPANSION_AUTOPLAY_STRATEGY_OK, "chapter Aggressive must dispatch");
     CHECK(
@@ -177,6 +190,7 @@ static int TestReferenceProfiles(void)
     ResetFixture();
     sFlags[EVFLAG_GAMEOVER] = true;
     sFlags[EVFLAG_HIDE_BLINKING_ICON] = true;
+    RefreshObjectiveTelemetry();
     result = ExpansionAutoplayStrategies_TryDecide();
     CHECK(result == EXPANSION_AUTOPLAY_STRATEGY_OK, "group Objective-first must dispatch");
     CHECK(
@@ -189,6 +203,7 @@ static int TestReferenceProfiles(void)
     );
 
     sFlags[EVFLAG_BATTLE_QUOTES] = true;
+    RefreshObjectiveTelemetry();
     gAiDecision.actionPerformed = false;
     sCombatCalls = 0;
     sMoveCalls = 0;
@@ -201,6 +216,7 @@ static int TestReferenceProfiles(void)
 
     ResetFixture();
     sFlags[EVFLAG_GAMEOVER] = true;
+    RefreshObjectiveTelemetry();
     CHECK(
         ExpansionAutoplayStrategies_ActivateAssignment(
             EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID, EVFLAG_HIDE_BLINKING_ICON)

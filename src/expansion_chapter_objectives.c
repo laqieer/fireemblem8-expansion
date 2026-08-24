@@ -23,6 +23,16 @@ enum UnitObjectiveState
     UNIT_OBJECTIVE_RESCUED,
 };
 
+enum
+{
+    EXPANSION_CHAPTER_OBJECTIVE_UNIT_SLOT_COUNT = 0x100,
+};
+
+struct ObjectiveEvaluationContext
+{
+    struct Unit* unitByCharacter[EXPANSION_CHAPTER_OBJECTIVE_UNIT_SLOT_COUNT];
+};
+
 static const struct ExpansionChapterObjectiveBundle* GetCurrentBundle(void)
 {
     const struct ExpansionChapterObjectiveBundle* bundle;
@@ -55,12 +65,43 @@ static enum UnitObjectiveState GetUnitObjectiveStateFromUnit(const struct Unit* 
     return UNIT_OBJECTIVE_ALIVE;
 }
 
-static enum UnitObjectiveState GetUnitObjectiveState(u8 character)
+static void BuildObjectiveEvaluationContext(struct ObjectiveEvaluationContext* context)
 {
-    return GetUnitObjectiveStateFromUnit(GetUnitFromCharId(character));
+    int unitId;
+
+    /*
+     * GetUnitFromCharId scans all 255 slots. Index the current roster once
+     * for the map-task refresh so every authored group member is O(1).
+     */
+    for (unitId = 1; unitId < EXPANSION_CHAPTER_OBJECTIVE_UNIT_SLOT_COUNT; unitId++)
+    {
+        struct Unit* unit = GetUnit(unitId);
+
+        if (unit != NULL && unit->pCharacterData != NULL
+            && context->unitByCharacter[unit->pCharacterData->number] == NULL)
+        {
+            context->unitByCharacter[unit->pCharacterData->number] = unit;
+        }
+    }
+}
+
+static struct Unit* GetObjectiveUnit(
+    const struct ObjectiveEvaluationContext* context, u8 character)
+{
+    if (context != NULL)
+        return context->unitByCharacter[character];
+
+    return GetUnitFromCharId(character);
+}
+
+static enum UnitObjectiveState GetUnitObjectiveState(
+    const struct ObjectiveEvaluationContext* context, u8 character)
+{
+    return GetUnitObjectiveStateFromUnit(GetObjectiveUnit(context, character));
 }
 
 static struct ObjectiveResult GetGroupAreaResult(
+    const struct ObjectiveEvaluationContext* context,
     const struct ExpansionChapterAiGroup* group,
     const struct ExpansionChapterObjective* objective)
 {
@@ -72,7 +113,7 @@ static struct ObjectiveResult GetGroupAreaResult(
 
     for (index = 0; index < group->memberCount; index++)
     {
-        struct Unit* unit = GetUnitFromCharId(group->members[index]);
+        struct Unit* unit = GetObjectiveUnit(context, group->members[index]);
         enum UnitObjectiveState unitState = GetUnitObjectiveStateFromUnit(unit);
 
         if (unitState == UNIT_OBJECTIVE_DEAD)
@@ -98,6 +139,7 @@ static struct ObjectiveResult GetGroupAreaResult(
 }
 
 static struct ObjectiveResult EvaluateObjective(
+    const struct ObjectiveEvaluationContext* context,
     const struct ExpansionChapterObjectiveBundle* bundle,
     const struct ExpansionChapterObjective* objective,
     int depth)
@@ -124,7 +166,7 @@ static struct ObjectiveResult EvaluateObjective(
     {
         const struct ExpansionChapterObjective* completion = NULL;
         enum UnitObjectiveState protectedState =
-            GetUnitObjectiveState(objective->protectedCharacter);
+            GetUnitObjectiveState(context, objective->protectedCharacter);
         int index;
 
         if (protectedState == UNIT_OBJECTIVE_DEAD)
@@ -153,14 +195,14 @@ static struct ObjectiveResult EvaluateObjective(
             return result;
         }
 
-        result = EvaluateObjective(bundle, completion, depth + 1);
+        result = EvaluateObjective(context, bundle, completion, depth + 1);
         if (result.state == EXPANSION_CHAPTER_OBJECTIVE_INACTIVE)
             result.state = EXPANSION_CHAPTER_OBJECTIVE_PENDING;
         return result;
     }
 
     case EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA:
-        return GetGroupAreaResult(objective->group, objective);
+        return GetGroupAreaResult(context, objective->group, objective);
 
     case EXPANSION_CHAPTER_OBJECTIVE_DEFEAT_GROUP:
     {
@@ -176,7 +218,7 @@ static struct ObjectiveResult EvaluateObjective(
         result.progress = objective->group->memberCount;
         for (index = 0; index < objective->group->memberCount; index++)
         {
-            unitState = GetUnitObjectiveState(objective->group->members[index]);
+            unitState = GetUnitObjectiveState(context, objective->group->members[index]);
             if (unitState == UNIT_OBJECTIVE_ALIVE || unitState == UNIT_OBJECTIVE_RESCUED)
                 result.progress--;
         }
@@ -193,20 +235,21 @@ static struct ObjectiveResult EvaluateObjective(
         return result;
 
     case EXPANSION_CHAPTER_OBJECTIVE_HOLD_UNTIL_TURN:
-        result = GetGroupAreaResult(objective->group, objective);
-        if (result.state == EXPANSION_CHAPTER_OBJECTIVE_FAILURE)
-            return result;
-
-        if (gPlaySt.chapterTurnNumber >= objective->untilTurn)
+        if (CheckFlag(objective->eventFlag))
         {
-            if (result.state == EXPANSION_CHAPTER_OBJECTIVE_SUCCESS)
-                return result;
-
             result.state = EXPANSION_CHAPTER_OBJECTIVE_FAILURE;
             return result;
         }
 
-        if (result.state == EXPANSION_CHAPTER_OBJECTIVE_SUCCESS)
+        result = GetGroupAreaResult(context, objective->group, objective);
+        if (result.state != EXPANSION_CHAPTER_OBJECTIVE_SUCCESS)
+        {
+            SetFlag(objective->eventFlag);
+            result.state = EXPANSION_CHAPTER_OBJECTIVE_FAILURE;
+            return result;
+        }
+
+        if (gPlaySt.chapterTurnNumber < objective->untilTurn)
             result.state = EXPANSION_CHAPTER_OBJECTIVE_PENDING;
         return result;
 
@@ -232,41 +275,6 @@ static int ObjectivePriority(enum ExpansionChapterObjectiveState state)
     default:
         return 0;
     }
-}
-
-static const struct ExpansionChapterObjective* GetSelectedObjective(
-    const struct ExpansionChapterObjectiveBundle* bundle,
-    struct ObjectiveResult* resultOut)
-{
-    const struct ExpansionChapterObjective* selected = NULL;
-    struct ObjectiveResult selectedResult = { EXPANSION_CHAPTER_OBJECTIVE_INACTIVE, 0 };
-    int selectedPriority = 0;
-    int index;
-
-    if (bundle == NULL)
-    {
-        if (resultOut != NULL)
-            *resultOut = selectedResult;
-        return NULL;
-    }
-
-    for (index = 0; index < bundle->objectiveCount; index++)
-    {
-        const struct ExpansionChapterObjective* objective = &bundle->objectives[index];
-        struct ObjectiveResult result = EvaluateObjective(bundle, objective, 0);
-        int priority = ObjectivePriority(result.state);
-
-        if (priority > selectedPriority)
-        {
-            selected = objective;
-            selectedResult = result;
-            selectedPriority = priority;
-        }
-    }
-
-    if (resultOut != NULL)
-        *resultOut = selectedResult;
-    return selected;
 }
 
 #if FE8_CHAPTER_OBJECTIVES_RUNTIME_TEST
@@ -296,6 +304,7 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
     const struct ExpansionChapterObjective* eventObjective;
     const struct ExpansionChapterObjective* reachObjective;
     const struct ExpansionChapterObjective* defeatObjective;
+    const struct ExpansionChapterObjective* holdObjective;
     const struct ExpansionChapterObjective* protectObjective;
     struct Unit* protectedUnit;
     enum ExpansionChapterObjectiveState state;
@@ -303,7 +312,9 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
     u32 originalUnitState;
     int originalX;
     int originalY;
+    int originalTurn;
     bool8 eventFlagWasSet;
+    bool8 holdFailureFlagWasSet;
 
     if (sExpansionChapterObjectiveRuntimeProbeComplete)
         return;
@@ -311,8 +322,9 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
     eventObjective = FindObjectiveByKind(bundle, EXPANSION_CHAPTER_OBJECTIVE_EVENT_FLAG);
     reachObjective = FindObjectiveByKind(bundle, EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA);
     defeatObjective = FindObjectiveByKind(bundle, EXPANSION_CHAPTER_OBJECTIVE_DEFEAT_GROUP);
+    holdObjective = FindObjectiveByKind(bundle, EXPANSION_CHAPTER_OBJECTIVE_HOLD_UNTIL_TURN);
     protectObjective = FindObjectiveByKind(bundle, EXPANSION_CHAPTER_OBJECTIVE_PROTECT);
-    if (eventObjective == NULL || reachObjective == NULL || defeatObjective == NULL
+    if (eventObjective == NULL || reachObjective == NULL || defeatObjective == NULL || holdObjective == NULL
         || protectObjective == NULL)
     {
         return;
@@ -327,6 +339,8 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
     originalUnitState = protectedUnit->state;
     originalX = protectedUnit->xPos;
     originalY = protectedUnit->yPos;
+    originalTurn = gPlaySt.chapterTurnNumber;
+    holdFailureFlagWasSet = CheckFlag(holdObjective->eventFlag);
 
     ClearFlag(eventObjective->eventFlag);
     state = ExpansionChapterObjectives_GetStatus(eventObjective->id, &progress);
@@ -355,13 +369,30 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
     state = ExpansionChapterObjectives_GetStatus(defeatObjective->id, &progress);
     gExpansionChapterObjectiveRuntimeProbe.defeatSuccessState = state;
 
+    ClearFlag(holdObjective->eventFlag);
+    protectedUnit->xPos = 63;
+    protectedUnit->yPos = 63;
+    state = ExpansionChapterObjectives_GetStatus(holdObjective->id, &progress);
+    gExpansionChapterObjectiveRuntimeProbe.holdViolationState = state;
+
+    protectedUnit->xPos = holdObjective->xMin;
+    protectedUnit->yPos = holdObjective->yMin;
+    gPlaySt.chapterTurnNumber = holdObjective->untilTurn;
+    state = ExpansionChapterObjectives_GetStatus(holdObjective->id, &progress);
+    gExpansionChapterObjectiveRuntimeProbe.holdReentryState = state;
+
     protectedUnit->state = originalUnitState;
     protectedUnit->xPos = originalX;
     protectedUnit->yPos = originalY;
+    gPlaySt.chapterTurnNumber = originalTurn;
     if (eventFlagWasSet)
         SetFlag(eventObjective->eventFlag);
     else
         ClearFlag(eventObjective->eventFlag);
+    if (holdFailureFlagWasSet)
+        SetFlag(holdObjective->eventFlag);
+    else
+        ClearFlag(holdObjective->eventFlag);
 
     gExpansionChapterObjectiveRuntimeProbe.magic = EXPANSION_CHAPTER_OBJECTIVE_RUNTIME_PROBE_MAGIC;
 }
@@ -379,8 +410,10 @@ void ExpansionChapterObjectives_ResetTelemetry(void)
 void ExpansionChapterObjectives_RefreshTelemetry(void)
 {
     const struct ExpansionChapterObjectiveBundle* bundle;
-    const struct ExpansionChapterObjective* selected;
-    struct ObjectiveResult result;
+    struct ObjectiveEvaluationContext context = { { NULL } };
+    struct ObjectiveResult selected = { EXPANSION_CHAPTER_OBJECTIVE_INACTIVE, 0 };
+    u32 selectedId = 0;
+    int selectedPriority = 0;
     int index;
 
     /*
@@ -399,24 +432,32 @@ void ExpansionChapterObjectives_RefreshTelemetry(void)
     if (bundle == NULL)
         return;
 
+    BuildObjectiveEvaluationContext(&context);
+
 #if FE8_CHAPTER_OBJECTIVES_RUNTIME_TEST
     RunChapterObjectiveRuntimeProbe(bundle);
 #endif
 
     for (index = 0; index < bundle->objectiveCount; index++)
     {
-        if (EvaluateObjective(bundle, &bundle->objectives[index], 0).state
-            != EXPANSION_CHAPTER_OBJECTIVE_INACTIVE)
+        const struct ExpansionChapterObjective* objective = &bundle->objectives[index];
+        struct ObjectiveResult result = EvaluateObjective(&context, bundle, objective, 0);
+        int priority = ObjectivePriority(result.state);
+
+        if (result.state != EXPANSION_CHAPTER_OBJECTIVE_INACTIVE)
             gExpansionChapterObjectiveTelemetry.activeCount++;
+
+        if (priority > selectedPriority)
+        {
+            selected = result;
+            selectedId = objective->id;
+            selectedPriority = priority;
+        }
     }
 
-    selected = GetSelectedObjective(bundle, &result);
-    if (selected == NULL)
-        return;
-
-    gExpansionChapterObjectiveTelemetry.objectiveId = selected->id;
-    gExpansionChapterObjectiveTelemetry.state = result.state;
-    gExpansionChapterObjectiveTelemetry.progress = result.progress;
+    gExpansionChapterObjectiveTelemetry.objectiveId = selectedId;
+    gExpansionChapterObjectiveTelemetry.state = selected.state;
+    gExpansionChapterObjectiveTelemetry.progress = selected.progress;
 }
 
 enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetStatus(u32 objectiveId, u32* progressOut)
@@ -434,7 +475,7 @@ enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetStatus(u32 obj
     {
         if (bundle->objectives[index].id == objectiveId)
         {
-            struct ObjectiveResult result = EvaluateObjective(bundle, &bundle->objectives[index], 0);
+            struct ObjectiveResult result = EvaluateObjective(NULL, bundle, &bundle->objectives[index], 0);
 
             if (progressOut != NULL)
                 *progressOut = result.progress;
@@ -447,7 +488,17 @@ enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetStatus(u32 obj
 
 const struct ExpansionChapterObjective* ExpansionChapterObjectives_GetActiveObjective(void)
 {
-    return GetSelectedObjective(GetCurrentBundle(), NULL);
+    const struct ExpansionChapterObjectiveBundle* bundle = GetCurrentBundle();
+    int index;
+
+    if (bundle == NULL || gExpansionChapterObjectiveTelemetry.objectiveId == 0)
+        return NULL;
+
+    for (index = 0; index < bundle->objectiveCount; index++)
+        if (bundle->objectives[index].id == gExpansionChapterObjectiveTelemetry.objectiveId)
+            return &bundle->objectives[index];
+
+    return NULL;
 }
 
 const struct ExpansionChapterAiGroup* ExpansionChapterObjectives_FindGroup(u32 groupId)

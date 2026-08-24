@@ -22,19 +22,35 @@
 
 struct PlaySt gPlaySt;
 
+static struct CharacterData sEirikaData;
 static struct Unit sEirika;
 static bool sFlags[0x100];
+static int sGetUnitCallCount;
+static int sGetUnitFromCharIdCallCount;
 
 bool CheckFlag(int flag)
 {
     return flag >= 0 && flag < (int)ARRAY_COUNT(sFlags) && sFlags[flag];
 }
 
+void SetFlag(int flag)
+{
+    if (flag >= 0 && flag < (int)ARRAY_COUNT(sFlags))
+        sFlags[flag] = true;
+}
+
 struct Unit* GetUnitFromCharId(int character)
 {
+    sGetUnitFromCharIdCallCount++;
     if (character == CHARACTER_EIRIKA)
         return &sEirika;
     return NULL;
+}
+
+struct Unit* GetUnit(int unitId)
+{
+    sGetUnitCallCount++;
+    return unitId == 1 ? &sEirika : NULL;
 }
 
 static u32 ObjectiveId(int index)
@@ -49,12 +65,15 @@ static void ResetFixture(void)
     for (index = 0; index < (int)ARRAY_COUNT(sFlags); index++)
         sFlags[index] = false;
 
-    sEirika.pCharacterData = (const struct CharacterData*)1;
+    sEirikaData.number = CHARACTER_EIRIKA;
+    sEirika.pCharacterData = &sEirikaData;
     sEirika.state = US_NONE;
     sEirika.xPos = 1;
     sEirika.yPos = 1;
     gPlaySt.chapterIndex = CHAPTER_L_2;
     gPlaySt.chapterTurnNumber = 1;
+    sGetUnitCallCount = 0;
+    sGetUnitFromCharIdCallCount = 0;
     ExpansionChapterObjectives_ResetTelemetry();
 }
 
@@ -129,6 +148,25 @@ int main(void)
         "hold objective must complete at its bounded turn"
     );
 
+    ResetFixture();
+    sEirika.xPos = 63;
+    sEirika.yPos = 63;
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(3), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_FAILURE,
+        "hold objective must latch the first pre-deadline area violation"
+    );
+    sEirika.xPos = 1;
+    sEirika.yPos = 1;
+    gPlaySt.chapterTurnNumber = 2;
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(3), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_FAILURE,
+        "hold objective must reject leave-and-reenter at its bounded turn"
+    );
+
+    ResetFixture();
+    sFlags[EVFLAG_BATTLE_QUOTES] = true;
     sEirika.state = US_DEAD;
     CHECK(
         ExpansionChapterObjectives_GetStatus(ObjectiveId(2), &progress)
@@ -144,6 +182,8 @@ int main(void)
 
     ResetFixture();
     sFlags[EVFLAG_BATTLE_QUOTES] = true;
+    sGetUnitCallCount = 0;
+    sGetUnitFromCharIdCallCount = 0;
     ExpansionChapterObjectives_RefreshTelemetry();
     CHECK(
         gExpansionChapterObjectiveTelemetry.objectiveId == ObjectiveId(2)
@@ -151,6 +191,10 @@ int main(void)
             && gExpansionChapterObjectiveTelemetry.progress == 0
             && gExpansionChapterObjectiveTelemetry.activeCount == 5,
         "telemetry must deterministically select active pending objective state"
+    );
+    CHECK(
+        sGetUnitCallCount == 255 && sGetUnitFromCharIdCallCount == 0,
+        "one telemetry refresh must index 255 slots once without member rescans"
     );
 
     ExpansionChapterObjectives_ResetTelemetry();

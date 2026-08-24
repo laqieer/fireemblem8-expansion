@@ -22,6 +22,9 @@ STRATEGY_FIXTURE = (
 OBJECTIVE_FIXTURE = (
     ROOT / "scripts" / "generated_data" / "tests" / "fixtures" / "chapterobjectives" / "strategy_valid.json"
 )
+CHAPTER_BUNDLE_FIXTURE = (
+    ROOT / "scripts" / "generated_data" / "tests" / "fixtures" / "chapterobjectives" / "strategy_bundle.json"
+)
 
 
 def run(command):
@@ -36,12 +39,17 @@ def generate(temporary_path, enabled):
     objective = generated_dir / "data_chapter_objectives.c"
     strategy = generated_dir / "data_autoplay_strategies.c"
 
+    bundle_args = ["--dep-source", "chapterbundle={}".format(CHAPTER_BUNDLE_FIXTURE)] if enabled else []
     for table, source, extra_args in (
-        ("chapterobjectives", objective_source, []),
+        ("chapterobjectives", objective_source, bundle_args),
         (
             "autoplaystrategies",
             strategy_source,
-            ["--dep-source", "chapterobjectives={}".format(objective_source)],
+            [
+                "--dep-source",
+                "chapterobjectives={}".format(objective_source),
+                *bundle_args,
+            ],
         ),
     ):
         completed = run(

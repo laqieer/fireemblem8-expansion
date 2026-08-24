@@ -101,6 +101,8 @@ struct ExpansionChapterObjectiveRuntimeProbe
     u32 reachSuccessProgress;
     u32 protectFailureState;
     u32 defeatSuccessState;
+    u32 holdViolationState;
+    u32 holdReentryState;
 };
 
 extern struct ExpansionChapterObjectiveRuntimeProbe gExpansionChapterObjectiveRuntimeProbe;

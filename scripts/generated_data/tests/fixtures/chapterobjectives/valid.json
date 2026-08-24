@@ -43,6 +43,7 @@
           "kind": "hold_until_turn",
           "group": "AI_GROUP_FIXTURE_EIRIKA",
           "untilTurn": 2,
+          "failureFlag": "EVFLAG_5",
           "area": {
             "xMin": 0,
             "yMin": 0,
@@ -62,6 +63,7 @@
           "CHARACTER_EIRIKA"
         ],
         "eventFlags": [
+          "EVFLAG_5",
           "EVFLAG_BATTLE_QUOTES"
         ],
         "unitGroups": [

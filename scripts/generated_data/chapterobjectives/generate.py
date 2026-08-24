@@ -73,7 +73,11 @@ def generate_c_source(records, source_path):
                 parts.append("        .group = {},\n".format(group_ref))
                 parts.append("        .activationFlag = {},\n".format(_flag(objective.activation_flag)))
                 parts.append("        .deactivationFlag = {},\n".format(_flag(objective.deactivation_flag)))
-                parts.append("        .eventFlag = {},\n".format(_flag(objective.event_flag)))
+                parts.append(
+                    "        .eventFlag = {},\n".format(
+                        _flag(objective.failure_flag or objective.event_flag)
+                    )
+                )
                 parts.append("        .untilTurn = {},\n".format(objective.until_turn or 0))
                 parts.append("        .kind = {},\n".format(KIND_TO_C[objective.kind]))
                 parts.append("        .protectedCharacter = {},\n".format(objective.protected_character or 0))
