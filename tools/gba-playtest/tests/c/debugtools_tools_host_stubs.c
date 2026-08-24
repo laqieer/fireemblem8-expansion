@@ -228,14 +228,6 @@ ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
     return (ProcPtr)1;
 }
 
-ProcPtr Proc_Find(const struct ProcCmd* script)
-{
-    if (script == gProcScr_DebugToolsMenuTransition)
-        return sDebugToolsToolsPendingTransition;
-
-    return NULL;
-}
-
 void Proc_End(ProcPtr proc)
 {
     (void)proc;
@@ -262,6 +254,9 @@ static int sDebugToolsToolsBattleActive = 0;
 
 ProcPtr Proc_Find(const struct ProcCmd* script)
 {
+    if (script == gProcScr_DebugToolsMenuTransition)
+        return sDebugToolsToolsPendingTransition;
+
     if (script == gProcScr_PlayerPhase && sDebugToolsToolsPlayerPhaseActive)
         return (ProcPtr)1;
 
