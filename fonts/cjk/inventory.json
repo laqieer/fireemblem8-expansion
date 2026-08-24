@@ -2,32 +2,32 @@
   "font_asset_scope": "non-ASCII visible Unicode scalars",
   "inputs": {
     "texts/expansion/catalog.de.json": {
-      "byte_count": 4837,
-      "sha256": "1c3931c43f4588f491da673d53c647f59e94cc631baf2b7f85f7b62f52baf63a"
+      "byte_count": 4838,
+      "sha256": "4b0edf8ffb0333db9c863f7798dbe7b1ca519019e5572870e90600452df68cba"
     },
     "texts/expansion/catalog.en.json": {
-      "byte_count": 4662,
-      "sha256": "2d784702ad0e273116565c774970336629b5c7dd9088054879892e7939a3420b"
+      "byte_count": 4663,
+      "sha256": "caa34cd2c0c6c8dcea952d842bc13450ddc41875d58c0b937b58e0442181237b"
     },
     "texts/expansion/catalog.es.json": {
-      "byte_count": 4835,
-      "sha256": "b219edd501ddbe453a5eb16d385ab0cf07f0ee103a35bd68d615688a8d4fe7fe"
+      "byte_count": 4836,
+      "sha256": "c27e47f925206a517ee612c46e521a44ea337148b3c2ceff42cf73c1831533a5"
     },
     "texts/expansion/catalog.fr.json": {
-      "byte_count": 4857,
-      "sha256": "20541ab6a76e2573428ad5577daaedf5b2eeb520fc718bbaa6f51eee62cc6ada"
+      "byte_count": 4858,
+      "sha256": "1f070fc7a6d3392ab978feca6d2fd7577d5d54aa941e3592c190cee37dabef6f"
     },
     "texts/expansion/catalog.it.json": {
-      "byte_count": 4828,
-      "sha256": "9fe256150c24a4daf63ccada8c6bfa1815fb416691804560b843c25404c31a74"
+      "byte_count": 4829,
+      "sha256": "8cb330527802cfd6e4d158ed1fc573ff0184ca187c35aaa26fb87e4ad3bb7071"
     },
     "texts/expansion/catalog.ja.json": {
-      "byte_count": 4966,
-      "sha256": "9c17cd10a81c7e18131a7b3b2c9ee52b9de1b48433419505068ae1740a89a8e6"
+      "byte_count": 4967,
+      "sha256": "37acf67e56633efaf128532d66016488026d8eb09862a1a986885bf8426c19b8"
     },
     "texts/expansion/catalog.zh-Hans.json": {
-      "byte_count": 4773,
-      "sha256": "4b7bcd341b3dcf22ae16378152d1694017f4d8abe6324905f36f6da27ca5bc00"
+      "byte_count": 4774,
+      "sha256": "6c03720731185b5ae489d277bef484f6ef6778361843aab6df143d8684c0d99e"
     },
     "texts/expansion/registry.json": {
       "byte_count": 20425,
