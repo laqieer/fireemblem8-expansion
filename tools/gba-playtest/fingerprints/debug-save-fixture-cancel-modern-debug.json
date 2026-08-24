@@ -16,7 +16,7 @@
           "value": "0x00000001"
         }
       ],
-      "sram_hash": "fnv1a64-sram:264eec3fc680ed11"
+      "sram_hash": "fnv1a64-sram:21f5b86eb60f31c6"
     },
     {
       "frame": 1420,
@@ -49,7 +49,7 @@
           "value": "0x00000003"
         }
       ],
-      "sram_hash": "fnv1a64-sram:264eec3fc680ed11"
+      "sram_hash": "fnv1a64-sram:21f5b86eb60f31c6"
     }
   ],
   "format_version": 2,

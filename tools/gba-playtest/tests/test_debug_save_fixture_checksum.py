@@ -61,6 +61,15 @@ class DebugSaveFixtureChecksumTests(unittest.TestCase):
                     )
                     self.assertEqual(int(native.stdout.strip(), 16), expected)
 
+            for invalid in ("aa", "aabbcc"):
+                with self.subTest(invalid_bytes_hex=invalid):
+                    native = subprocess.run(
+                        [str(executable), invalid],
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(native.returncode, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

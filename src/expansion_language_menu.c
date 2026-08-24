@@ -358,7 +358,7 @@ static const ExpansionMsgId sLocaleShortNameMsgIds[EXPANSION_LOCALE_COUNT] =
 * the selector finishes before title input begins, and OpenSettings rejects
 * an active debug hub. Each build path fully rewrites its rows before
 * StartMenu, so no caller depends on prior contents. */
-#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
 #define sLanguageMenuItemDefs sDebugToolsMenuItemDefs
 #else
 EWRAM_DATA static struct MenuItemDef
@@ -813,7 +813,7 @@ void ExpansionLanguageMenu_OpenSettings(ProcPtr parent)
     u8 rowCount;
     u8 skippedRows;
 
-#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
     if (DebugTools_IsHubActive())
         return;
 #endif

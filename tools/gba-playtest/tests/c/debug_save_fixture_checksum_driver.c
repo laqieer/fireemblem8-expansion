@@ -28,7 +28,7 @@ int main(int argc, char **argv)
         return 2;
 
     length = strlen(argv[1]);
-    if ((length & 1) || length > sizeof(words) * 2)
+    if ((length & 3) || length > sizeof(words) * 2)
         return 3;
 
     for (i = 0; i < length; i += 2)

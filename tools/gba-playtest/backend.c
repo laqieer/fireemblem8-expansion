@@ -671,18 +671,14 @@ static uint64_t hash_sram(struct mCore* core, const struct ByteRange* exclude_ra
 	bool use_bus = false;
 	uint64_t hash = UINT64_C(14695981039346656037);
 
+	(void)initial_sram;
+
 	if (save_data == NULL || save_size != GBA_SRAM_SIZE) {
 		free(save_data);
-		if (initial_sram == NULL) {
-			use_bus = true;
-			owns_save_data = false;
-			save_data = NULL;
-			save_size = GBA_SRAM_SIZE;
-		} else {
-			save_data = (void*)initial_sram;
-			save_size = GBA_SRAM_SIZE;
-			owns_save_data = false;
-		}
+		use_bus = true;
+		owns_save_data = false;
+		save_data = NULL;
+		save_size = GBA_SRAM_SIZE;
 	}
 
 	for (uint32_t offset = 0; offset < GBA_SRAM_SIZE; ++offset) {

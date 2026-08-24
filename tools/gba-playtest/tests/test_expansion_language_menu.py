@@ -129,6 +129,26 @@ class ExpansionLanguageMenuDecisionHostTests(unittest.TestCase):
             self.assertEqual(rc, 0, out)
             self.assertIn("EXPANSION_LANGUAGE_MENU_DECISION_HOST_TEST: PASS", out)
 
+    def test_archival_debugtools_build_uses_private_language_rows(self):
+        with _temporary_directory() as tmp:
+            work = Path(tmp)
+            rc, out, _ = _compile(
+                work,
+                LANGUAGE_MENU_SRC,
+                "archival_debugtools.o",
+                defines=(
+                    "MODERN=1",
+                    "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                    "FE8_ARCHIVAL_BUILD=1",
+                ),
+            )
+            self.assertEqual(
+                rc,
+                0,
+                "archival debugtools build must not reference the omitted "
+                f"shared debug menu buffer:\n{out}",
+            )
+
 
 class ExpansionLanguageMenuHeaderHostCompileTests(unittest.TestCase):
     """include/expansion_language_menu.h must stay strict-C89/agbcc
