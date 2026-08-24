@@ -1,6 +1,7 @@
 """Semantic schema/generator coverage for issue #89 chapter objectives."""
 
 import os
+import re
 import unittest
 
 from scripts.generated_data.chapterobjectives import generate, schema
@@ -72,6 +73,14 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             schema.stable_id_value("OBJECTIVE_FIXTURE_EVENT"),
             schema.stable_id_value("AI_GROUP_FIXTURE_EIRIKA"),
         )
+
+    def test_group_member_symbols_are_delimited_by_stable_id_hash(self):
+        records, diagnostics = _validate("symbol_collision.json")
+        self.assertTrue(diagnostics.ok, diagnostics.render())
+        output = generate.generate_c_source(records, objective_fixture("symbol_collision.json"))
+        members = re.findall(r"static const u8 (s[A-Za-z0-9_]+Members)\[\]", output)
+        self.assertEqual(len(members), 2)
+        self.assertEqual(len(set(members)), 2)
 
     def test_kind_specific_extras_and_protect_defeat_contradictions_fail_closed(self):
         records, diagnostics = _validate("valid.json")

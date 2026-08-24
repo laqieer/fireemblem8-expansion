@@ -1807,7 +1807,13 @@ CONST_DATA static struct DebugToolsAction sUnitInspectAction = {
 
 /* --- 6. Convoy inspection/edit ------------------------------------------ */
 
-EWRAM_DATA static struct MenuItemDef sConvoyMenuItemDefs[3] = {{0}};
+/* These tool submenus cannot coexist, so one three-item buffer serves all
+ * three builders without consuming three copies of persistent EWRAM. */
+EWRAM_DATA static struct MenuItemDef sDebugToolsToolMenuItemDefs[3] = {{0}};
+
+#define sConvoyMenuItemDefs sDebugToolsToolMenuItemDefs
+#define sFlagMenuItemDefs sDebugToolsToolMenuItemDefs
+#define sRngMenuItemDefs sDebugToolsToolMenuItemDefs
 
 static void DebugToolsConvoy_OnEnd(struct MenuProc* menu)
 {
@@ -1901,8 +1907,6 @@ CONST_DATA static struct DebugToolsAction sConvoyInspectAction = {
 };
 
 /* --- 7. Flag/chapter/event state action ---------------------------------- */
-
-EWRAM_DATA static struct MenuItemDef sFlagMenuItemDefs[3] = {{0}};
 
 static void DebugToolsFlag_OnEnd(struct MenuProc* menu)
 {
@@ -2014,8 +2018,6 @@ CONST_DATA static struct DebugToolsAction sFlagInspectAction = {
 };
 
 /* --- 8. RNG inspection/control ------------------------------------------ */
-
-EWRAM_DATA static struct MenuItemDef sRngMenuItemDefs[3] = {{0}};
 
 static void DebugToolsRng_OnEnd(struct MenuProc* menu)
 {

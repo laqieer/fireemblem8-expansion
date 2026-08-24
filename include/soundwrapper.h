@@ -4,6 +4,10 @@
 #include "global.h"
 #include "proc.h"
 
+#ifndef FE8_EXPANSION_DEBUGTOOLS_ENABLED
+#define FE8_EXPANSION_DEBUGTOOLS_ENABLED FE8_EXPANSION_DEBUG
+#endif
+
 struct SoundSt {
     u8 filler0[2];
     u16 unk2;
@@ -14,6 +18,13 @@ struct SoundSt {
 };
 
 extern struct SoundSt gSoundSt;
+
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_EXPANSION_DEBUGTOOLS_ENABLED
+struct SoundBgmContext
+{
+    struct SoundSt state;
+};
+#endif
 
 int GetCurrentBgmSong(void);
 s8 IsBgmPlaying(void);
@@ -48,6 +59,14 @@ s8 MusicProc4Exists(void);
 // ??? Sound_ForceChangeBgm(???);
 void DeleteAll6CWaitMusicRelated(void);
 void Sound_StopBgmImmediate(void);
+
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_EXPANSION_DEBUGTOOLS_ENABLED
+void Sound_CaptureBgmContext(struct SoundBgmContext * context);
+bool Sound_StartTransientBgm(int songId, struct MusicPlayerInfo * player);
+bool Sound_RestoreBgmContext(
+    const struct SoundBgmContext * context,
+    struct MusicPlayerInfo * player);
+#endif
 
 #define PlaySoundEffect(id) \
     if (!gPlaySt.config.disableSoundEffects) \
