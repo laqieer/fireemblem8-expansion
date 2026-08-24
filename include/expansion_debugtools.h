@@ -261,10 +261,11 @@ enum DebugToolsResult DebugTools_GetLastRegistrationResult(void);
  *
  * An owned submenu may use the same queue function to hand off to another
  * bounded submenu while the debugtools session remains active. Queueing is
- * rejected while another transition is pending. Every owned submenu's
- * MenuDef::onEnd callback must call
- * DebugTools_ReturnToHubAfterMenuEnd(menu). That schedules the matching
- * deferred rewind only after the submenu and its Text objects have ended.
+ * rejected while another transition is pending. On ordinary completion, an
+ * owned submenu's MenuDef::onEnd callback calls
+ * DebugTools_ReturnToHubAfterMenuEnd(menu); a validated forced-teardown path
+ * may instead end the session. Both paths defer the matching rewind until
+ * after the submenu and its Text objects have ended.
  * The row-allocation font and counter baseline are captured immediately
  * before StartOrphanMenu, before MenuDef::onInit can switch gActiveFont.
  * Cleanup rewinds only that exact owner, restores the previously active
