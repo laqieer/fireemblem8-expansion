@@ -193,6 +193,9 @@ reserved third letter. It accepts `cHRM`/`gAMA`/`iCCP`/`sBIT`/`sRGB` only before
 before `IDAT`; and text (`tEXt`/`zTXt`/`iTXt`) or `tIME` on either side of the
 consecutive `IDAT` run. Other syntactically valid ancillary chunks may appear
 in legal non-interrupting positions; their payloads are not runtime inputs.
+Known ancillary payloads still validate their PNG-defined lengths, methods,
+ranges, keywords, and terminators. `sPLT` may repeat only with distinct
+suggested-palette names.
 Unknown critical chunks, malformed/reserved chunk-type bits, duplicate or
 misordered required/known ancillary chunks, nonconsecutive `IDAT`, trailing
 bytes, and missing or malformed `IEND` fail. The runtime never parses source

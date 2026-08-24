@@ -36,9 +36,9 @@ def _parser():
         help="ignored generated-output directory (default: %(default)s)",
     )
     parser.add_argument(
-        "--source-stamp",
+        "--discovery-makefile",
         default=None,
-        help="build-local discovery source stamp output",
+        help="build-local discovery Make artifact output",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name in (
@@ -46,7 +46,7 @@ def _parser():
         "generate",
         "check",
         "sources",
-        "source-stamp",
+        "discovery-makefile",
         "portrait-incbin-consumers",
         "tmx-incbin-consumers",
         "banim-incbin-consumers",
@@ -85,11 +85,19 @@ def main(argv=None):
             records = manifest.load_discovery(args.manifest)
             for source in manifest.discovery_sources(records):
                 print(source)
-        elif args.command == "source-stamp":
-            if args.source_stamp is None:
-                raise GeneratedDataError("source-stamp requires --source-stamp")
-            records = manifest.write_source_stamp(args.manifest, args.source_stamp)
-            print("OK: wrote source stamp for {} asset record(s)".format(len(records)))
+        elif args.command == "discovery-makefile":
+            if args.discovery_makefile is None:
+                raise GeneratedDataError(
+                    "discovery-makefile requires --discovery-makefile"
+                )
+            records = manifest.write_discovery_makefile(
+                args.manifest, args.discovery_makefile
+            )
+            print(
+                "OK: wrote discovery Make artifact for {} asset record(s)".format(
+                    len(records)
+                )
+            )
         elif args.command == "portrait-incbin-consumers":
             records = manifest.load_discovery(args.manifest)
             for record_id in manifest.portrait_incbin_consumer_ids(records):

@@ -204,10 +204,96 @@ PNG_ANCILLARY_AFTER_PLTE = {b"bKGD", b"hIST"}
 PNG_ANCILLARY_TEXT_OR_TIME = {b"tEXt", b"zTXt", b"iTXt", b"tIME"}
 PNG_SINGLETON_ANCILLARY = (
     PNG_ANCILLARY_BEFORE_PLTE
-    | PNG_ANCILLARY_BEFORE_IDAT
+    | (PNG_ANCILLARY_BEFORE_IDAT - {b"sPLT"})
     | PNG_ANCILLARY_AFTER_PLTE
     | {b"tRNS", b"tIME"}
 )
+
+
+def _validate_png_keyword(path, chunk, payload):
+    terminator = payload.find(b"\0")
+    if terminator <= 0 or terminator > 79:
+        raise ValueError("{} {} has an invalid keyword terminator".format(path, chunk))
+    keyword = payload[:terminator]
+    if (
+        keyword[:1] == b" "
+        or keyword[-1:] == b" "
+        or b"  " in keyword
+        or any(not (32 <= byte <= 126 or 161 <= byte <= 255) for byte in keyword)
+    ):
+        raise ValueError("{} {} has an invalid keyword".format(path, chunk))
+    return keyword, payload[terminator + 1:]
+
+
+def _validate_known_ancillary(path, name, payload, palette_count, splt_names):
+    chunk = name.decode("ascii")
+    if name == b"gAMA":
+        if len(payload) != 4 or struct.unpack(">I", payload)[0] == 0:
+            raise ValueError("{} gAMA must contain one nonzero u32".format(path))
+    elif name == b"cHRM":
+        if len(payload) != 32:
+            raise ValueError("{} cHRM must contain eight u32 values".format(path))
+    elif name == b"sRGB":
+        if len(payload) != 1 or payload[0] > 3:
+            raise ValueError("{} sRGB rendering intent must be 0..3".format(path))
+    elif name == b"iCCP":
+        _keyword, remainder = _validate_png_keyword(path, chunk, payload)
+        if len(remainder) < 2 or remainder[0] != 0 or not remainder[1:]:
+            raise ValueError("{} iCCP must use method 0 with profile data".format(path))
+    elif name == b"sBIT":
+        if len(payload) != 3 or any(value < 1 or value > 8 for value in payload):
+            raise ValueError("{} sBIT values must be three values in 1..8".format(path))
+    elif name == b"pHYs":
+        if len(payload) != 9 or payload[8] not in (0, 1):
+            raise ValueError("{} pHYs must contain two u32 values and unit 0 or 1".format(path))
+    elif name == b"sPLT":
+        palette_name, remainder = _validate_png_keyword(path, chunk, payload)
+        if palette_name in splt_names:
+            raise ValueError("{} sPLT suggested-palette name is duplicated".format(path))
+        if len(remainder) < 2 or remainder[0] not in (8, 16):
+            raise ValueError("{} sPLT sample depth must be 8 or 16".format(path))
+        entry_size = 6 if remainder[0] == 8 else 10
+        if not remainder[1:] or len(remainder[1:]) % entry_size:
+            raise ValueError("{} sPLT entries do not match its sample depth".format(path))
+        splt_names.add(palette_name)
+    elif name == b"bKGD":
+        if len(payload) != 1 or palette_count is None or payload[0] >= palette_count:
+            raise ValueError("{} bKGD index must name a PLTE entry".format(path))
+    elif name == b"hIST":
+        if palette_count is None or len(payload) != palette_count * 2:
+            raise ValueError("{} hIST must contain one u16 per PLTE entry".format(path))
+    elif name == b"tEXt":
+        _validate_png_keyword(path, chunk, payload)
+    elif name == b"zTXt":
+        _keyword, remainder = _validate_png_keyword(path, chunk, payload)
+        if len(remainder) < 2 or remainder[0] != 0 or not remainder[1:]:
+            raise ValueError("{} zTXt must use method 0 with text data".format(path))
+    elif name == b"iTXt":
+        _keyword, remainder = _validate_png_keyword(path, chunk, payload)
+        if len(remainder) < 3 or remainder[0] not in (0, 1) or remainder[1] != 0:
+            raise ValueError("{} iTXt has invalid compression fields".format(path))
+        language_end = remainder.find(b"\0", 2)
+        if language_end < 2:
+            raise ValueError("{} iTXt is missing a language terminator".format(path))
+        language = remainder[2:language_end]
+        if any(byte < 32 or byte > 126 for byte in language):
+            raise ValueError("{} iTXt language tag must be ASCII".format(path))
+        translated_end = remainder.find(b"\0", language_end + 1)
+        if translated_end < 0:
+            raise ValueError("{} iTXt is missing a translated-keyword terminator".format(path))
+        text = remainder[translated_end + 1:]
+        if remainder[0] and not text:
+            raise ValueError("{} compressed iTXt must contain text data".format(path))
+    elif name == b"tIME":
+        if (
+            len(payload) != 7
+            or not 1 <= payload[2] <= 12
+            or not 1 <= payload[3] <= 31
+            or payload[4] > 23
+            or payload[5] > 59
+            or payload[6] > 60
+        ):
+            raise ValueError("{} tIME has an invalid UTC timestamp".format(path))
 
 
 def _validate_png_chunk_type(path, name):
@@ -231,6 +317,7 @@ def read_indexed_png(path, width, height):
     idat_parts = []
     idat_finished = False
     seen_ancillary = set()
+    splt_names = set()
     for index, (name, payload) in enumerate(chunks):
         _validate_png_chunk_type(path, name)
         if name == b"IHDR":
@@ -283,6 +370,13 @@ def read_indexed_png(path, width, height):
                     )
             elif name in PNG_ANCILLARY_TEXT_OR_TIME:
                 pass
+            _validate_known_ancillary(
+                path,
+                name,
+                payload,
+                len(palette_bytes) // 3 if palette_bytes is not None else None,
+                splt_names,
+            )
             if idat_parts:
                 idat_finished = True
     if palette_bytes is None:

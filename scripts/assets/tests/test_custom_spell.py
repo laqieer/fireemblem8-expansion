@@ -279,6 +279,22 @@ class CustomSpellAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not a declared ITEM"):
             custom_spell._active_item_record(ROOT, "ITEM_NOT_REAL")
 
+    def test_manifest_normalizes_invalid_item_caps(self):
+        for item_id_cap, environment, message in (
+            (None, {"FE8_ITEM_ID_CAP": "not-a-cap"}, "is not an integer"),
+            (0x100, {}, "exceeds the technical maximum"),
+        ):
+            with self.subTest(item_id_cap=item_id_cap, environment=environment):
+                with mock.patch.dict(os.environ, environment, clear=False):
+                    with self.assertRaises(GeneratedDataValidationError) as raised:
+                        manifest.load_and_validate(
+                            REFERENCE_MANIFEST,
+                            1,
+                            item_id_cap=item_id_cap,
+                        )
+                self.assertIn(message, str(raised.exception))
+                self.assertIn("CUSTOM_SPELL_REFERENCE.package", str(raised.exception))
+
     def test_generated_magic_item_can_own_runtime_binding(self):
         ownership = copy.deepcopy(self.reference_record()["ownership"])
         ownership["item"] = "ITEM_EXPANSION_CE"
@@ -689,6 +705,95 @@ class CustomSpellAdapterTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     custom_spell.read_indexed_png(path, width, height)
 
+    def test_known_ancillary_payloads_are_validated(self):
+        path = os.path.join(TEST_ROOT, "known-ancillary.png")
+        compressed = zlib.compress(b"profile")
+        valid_cases = (
+            (b"cHRM", b"\0" * 32, "before"),
+            (b"gAMA", struct.pack(">I", 45455), "before"),
+            (b"iCCP", b"profile\0\0" + compressed, "before"),
+            (b"sBIT", b"\x08\x08\x08", "before"),
+            (b"sRGB", b"\0", "before"),
+            (b"pHYs", struct.pack(">IIB", 2835, 2835, 1), "between"),
+            (b"bKGD", b"\1", "between"),
+            (b"hIST", b"\0\1\0\2", "between"),
+            (b"tEXt", b"note\0text", "between"),
+            (b"zTXt", b"note\0\0" + zlib.compress(b"text"), "between"),
+            (b"iTXt", b"note\0\0\0en\0title\0text", "between"),
+            (b"tIME", b"\x07\xe8\x01\x01\0\0\0", "after"),
+        )
+        for name, payload, placement in valid_cases:
+            with self.subTest(name=name):
+                kwargs = {
+                    "ancillary_before_plte": ((name, payload),)
+                    if placement == "before"
+                    else (),
+                    "ancillary_before_idat": ((name, payload),)
+                    if placement == "between"
+                    else (),
+                    "ancillary_after_idat": ((name, payload),)
+                    if placement == "after"
+                    else (),
+                }
+                _write_png(path, 240, 64, **kwargs)
+                custom_spell.read_indexed_png(path, 240, 64)
+
+        splt_one = b"one\0\x08\x01\x02\x03\xff\0\1"
+        splt_two = b"two\0\x10\0\x01\0\x02\0\x03\0\xff\0\1"
+        _write_png(
+            path,
+            240,
+            64,
+            ancillary_before_idat=((b"sPLT", splt_one), (b"sPLT", splt_two)),
+        )
+        custom_spell.read_indexed_png(path, 240, 64)
+
+        invalid_cases = (
+            (b"gAMA", b"\0\0\0\0", "before", "nonzero u32"),
+            (b"cHRM", b"\0" * 31, "before", "eight u32"),
+            (b"iCCP", b"profile\0\1data", "before", "method 0"),
+            (b"sBIT", b"\0\x08\x08", "before", "1..8"),
+            (b"sRGB", b"\4", "before", "0..3"),
+            (b"pHYs", struct.pack(">IIB", 1, 1, 2), "between", "unit 0 or 1"),
+            (b"sPLT", b"name\0\x08\x01", "between", "entries"),
+            (b"bKGD", b"\2", "between", "PLTE entry"),
+            (b"hIST", b"\0\1", "between", "one u16"),
+            (b"tEXt", b"keyword", "between", "keyword terminator"),
+            (b"zTXt", b"key\0\1text", "between", "method 0"),
+            (b"iTXt", b"key\0\2\0en\0title\0text", "between", "compression fields"),
+            (b"tIME", b"\x07\xe8\0\x01\0\0\0", "after", "UTC timestamp"),
+        )
+        for name, payload, placement, message in invalid_cases:
+            with self.subTest(name=name):
+                kwargs = {
+                    "ancillary_before_plte": ((name, payload),)
+                    if placement == "before"
+                    else (),
+                    "ancillary_before_idat": ((name, payload),)
+                    if placement == "between"
+                    else (),
+                    "ancillary_after_idat": ((name, payload),)
+                    if placement == "after"
+                    else (),
+                }
+                _write_png(path, 240, 64, **kwargs)
+                with self.assertRaisesRegex(ValueError, message):
+                    custom_spell.read_indexed_png(path, 240, 64)
+
+        _write_png(
+            path,
+            240,
+            64,
+            ancillary_before_idat=((b"sPLT", splt_one), (b"sPLT", splt_one)),
+        )
+        with self.assertRaisesRegex(ValueError, "suggested-palette name is duplicated"):
+            custom_spell.read_indexed_png(path, 240, 64)
+
+        width = 240
+        height = 64
+        compressed = zlib.compress(b"\0" * (height * (width // 2 + 1)))
+        ihdr = struct.pack(">IIBBBBB", width, height, 4, 3, 0, 0, 0)
+        palette = b"\0\0\0\xff\xff\xff"
         cases = (
             (
                 "gamma-after-plte",
@@ -771,6 +876,7 @@ class CustomSpellAdapterTests(unittest.TestCase):
             "ends with a zero-payload `IEND`",
             "uppercase reserved third letter",
             "`cHRM`/`gAMA`/`iCCP`/`sBIT`/`sRGB` only before `PLTE`",
+            "`sPLT` may repeat only with distinct suggested-palette names",
         ):
             self.assertIn(phrase, documentation)
 
@@ -843,9 +949,15 @@ class CustomSpellAdapterTests(unittest.TestCase):
         source_manifest = os.path.join(TEST_ROOT, "special-path-manifest.json")
         with open(source_manifest, "w", encoding="utf-8") as handle:
             json.dump({"schemaVersion": 1, "assets": [record]}, handle)
-        with mock.patch.object(
-            manifest.subprocess, "run", return_value=SimpleNamespace(returncode=0)
-        ):
+        def tracked_paths(command, **_kwargs):
+            paths = command[command.index("--") + 1:]
+            return SimpleNamespace(
+                returncode=0,
+                stdout=b"\0".join(path.encode("utf-8") for path in paths) + b"\0",
+                stderr=b"",
+            )
+
+        with mock.patch.object(manifest.subprocess, "run", side_effect=tracked_paths):
             records = manifest.load_and_validate(source_manifest, 1)
 
         out_dir = os.path.join(TEST_ROOT, "special-path-output")
@@ -917,6 +1029,14 @@ class CustomSpellAdapterTests(unittest.TestCase):
                 "#!/bin/sh\n"
                 "for arg in \"$@\"; do\n"
                 "    if [ \"$arg\" = \"ls-files\" ]; then\n"
+                "        after_separator=0\n"
+                "        for path in \"$@\"; do\n"
+                "            if [ \"$path\" = \"--\" ]; then\n"
+                "                after_separator=1\n"
+                "            elif [ \"$after_separator\" = 1 ]; then\n"
+                "                printf '%s\\000' \"$path\"\n"
+                "            fi\n"
+                "        done\n"
                 "        exit 0\n"
                 "    fi\n"
                 "done\n"
@@ -1227,48 +1347,153 @@ class CustomSpellAdapterTests(unittest.TestCase):
         with open(manifest_path, "w", encoding="utf-8") as handle:
             json.dump(document, handle)
 
-        commands = (
-            "sources",
-            "portrait-incbin-consumers",
-            "tmx-incbin-consumers",
-            "banim-incbin-consumers",
-            "custom-spell-incbin-consumers",
-        )
+        artifact = os.path.join(TEST_ROOT, "query-profile.mk")
         with (
             mock.patch.object(
                 manifest, "load_manifest", wraps=manifest.load_manifest
             ) as discover,
             mock.patch.object(
-                manifest, "_repo_path", side_effect=lambda path, *_: path
+                manifest, "_repo_path", side_effect=lambda path, *_, **__: path
+            ),
+            mock.patch.object(manifest, "_validate_tracked_paths"),
+            mock.patch.object(
+                manifest,
+                "render_source_stamp",
+                return_value='{"sources": []}\n',
             ),
             mock.patch.object(custom_spell, "load_package") as convert,
         ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
-                for command in commands:
-                    self.assertEqual(
-                        cli.main(
-                            [
-                                "--custom-spell-effects",
-                                "1",
-                                "--manifest",
-                                manifest_path,
-                                command,
-                            ]
-                        ),
-                        0,
-                    )
-        self.assertEqual(discover.call_count, len(commands))
+                self.assertEqual(
+                    cli.main(
+                        [
+                            "--custom-spell-effects",
+                            "1",
+                            "--manifest",
+                            manifest_path,
+                            "--discovery-makefile",
+                            artifact,
+                            "discovery-makefile",
+                        ]
+                    ),
+                    0,
+                )
+        self.assertEqual(discover.call_count, 1)
         convert.assert_not_called()
+        with open(artifact, encoding="utf-8") as handle:
+            discovery = handle.read()
         self.assertEqual(
             len(
                 [
-                    line for line in output.getvalue().splitlines()
-                    if line.startswith("CUSTOM_SPELL_QUERY_")
+                    record_id for record_id in discovery.split()
+                    if record_id.startswith("CUSTOM_SPELL_QUERY_")
                 ]
             ),
             16,
         )
+
+    def test_discovery_makefile_batches_real_16x64_profile_sources(self):
+        fixture_root = os.path.join(
+            ROOT, "scripts", "assets", "tests", ".discovery-16x64-profile"
+        )
+        artifact = os.path.join(TEST_ROOT, "discovery.mk")
+        manifest_path = os.path.join(TEST_ROOT, "discovery.json")
+        git_wrapper = os.path.join(TEST_ROOT, "git")
+        git_calls = os.path.join(TEST_ROOT, "git-calls")
+        real_git = shutil.which("git")
+        self.assertIsNotNone(real_git)
+        ref_images = os.path.join(ROOT, "graphics", "custom_spell", "reference", "images")
+        document = {"schemaVersion": 1, "assets": []}
+        template = self.reference_record()
+
+        for index in range(16):
+            package = os.path.join(fixture_root, "effect_{:02d}".format(index))
+            images = os.path.join(package, "images")
+            os.makedirs(images)
+            with open(os.path.join(package, "spell.json"), "w", encoding="utf-8") as handle:
+                json.dump({"schemaVersion": 1, "soundTable": []}, handle)
+            with open(os.path.join(package, "animation.txt"), "w", encoding="utf-8") as handle:
+                for frame in range(64):
+                    handle.write(
+                        "O p- obj_{0:02d}.png\nB p- bg_{0:02d}.png\n1\n".format(frame)
+                    )
+                handle.write("~~~\n")
+            record = copy.deepcopy(template)
+            record["id"] = "CUSTOM_SPELL_DISCOVERY_{:02d}".format(index)
+            record["ownership"]["item"] = "ITEM_DISCOVERY_{:02d}".format(index)
+            record["ownership"]["effectSymbol"] = record["id"]
+            relative = os.path.relpath(package, ROOT).replace(os.sep, "/")
+            record["sources"] = [relative + "/spell.json", relative + "/animation.txt"]
+            for frame in range(64):
+                for role, source in (
+                    ("obj", "reference_obj_00.png"),
+                    ("bg", "reference_bg_00.png"),
+                ):
+                    name = "{}_{:02d}.png".format(role, frame)
+                    os.link(os.path.join(ref_images, source), os.path.join(images, name))
+                    record["sources"].append(relative + "/images/" + name)
+            document["assets"].append(record)
+
+        with open(manifest_path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        with open(git_wrapper, "w", encoding="utf-8") as handle:
+            handle.write(
+                "#!/bin/sh\n"
+                "for arg in \"$@\"; do\n"
+                "    if [ \"$arg\" = \"ls-files\" ]; then\n"
+                "        printf 'x\\n' >> \"{}\"\n"
+                "        after_separator=0\n"
+                "        for path in \"$@\"; do\n"
+                "            if [ \"$path\" = \"--\" ]; then\n"
+                "                after_separator=1\n"
+                "            elif [ \"$after_separator\" = 1 ]; then\n"
+                "                printf '%s\\000' \"$path\"\n"
+                "            fi\n"
+                "        done\n"
+                "        exit 0\n"
+                "    fi\n"
+                "done\n"
+                "exec \"{}\" \"$@\"\n".format(git_calls, real_git)
+            )
+        os.chmod(git_wrapper, 0o755)
+        environment = os.environ.copy()
+        environment["PATH"] = TEST_ROOT + os.pathsep + environment["PATH"]
+
+        try:
+            started = time.monotonic()
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "scripts.assets",
+                    "--manifest",
+                    manifest_path,
+                    "--discovery-makefile",
+                    artifact,
+                    "discovery-makefile",
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            elapsed = time.monotonic() - started
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertLess(elapsed, 10)
+            with open(git_calls, encoding="utf-8") as handle:
+                self.assertEqual(handle.read().splitlines(), ["x"])
+            with open(artifact, encoding="utf-8") as handle:
+                discovery = handle.read()
+            self.assertIn("ASSET_MANIFEST_SOURCE_DIGEST :=", discovery)
+            for index in range(16):
+                self.assertIn(
+                    "CUSTOM_SPELL_DISCOVERY_{:02d}".format(index),
+                    discovery,
+                )
+        finally:
+            shutil.rmtree(fixture_root, ignore_errors=True)
 
     def test_default_to_reference_warm_build_regenerates_custom_bindings(self):
         output = os.path.join(ROOT, "build", "generated", "assets")
@@ -1353,7 +1578,7 @@ class CustomSpellAdapterTests(unittest.TestCase):
     def test_custom_dependency_touch_regenerates_outputs(self):
         output = os.path.join(ROOT, "build", "generated", "assets")
         fragment = os.path.join(output, "asset_manifest.mk")
-        source_stamp = output + ".manifest-sources"
+        source_stamp = output + ".manifest-discovery.mk"
         custom_dir = os.path.join(output, "custom_spell")
         data_include = os.path.join(
             custom_dir, "custom_spell_effect_data.inc"
@@ -1385,11 +1610,7 @@ class CustomSpellAdapterTests(unittest.TestCase):
                 generated.returncode, 0, generated.stdout + generated.stderr
             )
             with open(source_stamp, encoding="utf-8") as handle:
-                stamp = json.load(handle)
-            self.assertIn(
-                "include/spellassoc.h",
-                [entry["path"] for entry in stamp["sources"]],
-            )
+                self.assertIn("ASSET_MANIFEST_SOURCE_DIGEST :=", handle.read())
 
             os.utime(
                 dependency,

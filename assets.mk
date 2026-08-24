@@ -8,41 +8,44 @@ ASSET_MANIFEST ?= assets/manifest.json
 ASSET_OUTPUT_DIR ?= build/generated/assets
 EXPANSION_CUSTOM_SPELL_EFFECTS ?= 0
 ASSET_TOOL := $(PYTHON) -m scripts.assets --custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)"
-ASSET_PORTRAIT_INCBIN_CONSUMERS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" portrait-incbin-consumers)
+ASSET_OUTPUT_MK := $(ASSET_OUTPUT_DIR)/asset_manifest.mk
+ASSET_DISCOVERY_MK := $(ASSET_OUTPUT_DIR).manifest-discovery.mk
+ASSET_MANIFEST_SOURCE_STAMP := $(ASSET_DISCOVERY_MK)
+ASSET_PORTRAIT_INCBIN_CONSUMERS ?=
+ASSET_TMX_INCBIN_CONSUMERS ?=
+ASSET_BANIM_INCBIN_CONSUMERS ?=
+ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS ?=
+-include $(ASSET_DISCOVERY_MK)
+
 ifneq ($(strip $(ASSET_PORTRAIT_INCBIN_CONSUMERS)),)
 ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
 $(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while portrait package INCBIN consumer(s) $(ASSET_PORTRAIT_INCBIN_CONSUMERS) are declared)
 endif
 endif
 
-ASSET_TMX_INCBIN_CONSUMERS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" tmx-incbin-consumers)
 ifneq ($(strip $(ASSET_TMX_INCBIN_CONSUMERS)),)
 ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
 $(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while TMX map-layout INCBIN consumer(s) $(ASSET_TMX_INCBIN_CONSUMERS) are declared)
 endif
 endif
 
-ASSET_BANIM_INCBIN_CONSUMERS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" banim-incbin-consumers)
 ifneq ($(strip $(ASSET_BANIM_INCBIN_CONSUMERS)),)
 ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
 $(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while battle-animation package INCBIN consumer(s) $(ASSET_BANIM_INCBIN_CONSUMERS) are declared)
 endif
 endif
 
-ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" custom-spell-incbin-consumers)
 ifneq ($(strip $(ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS)),)
 ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
 $(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while custom-spell-effect INCBIN consumer(s) $(ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS) are declared)
 endif
 endif
 
-ASSET_OUTPUT_MK := $(ASSET_OUTPUT_DIR)/asset_manifest.mk
 # The generated fragment shares a stable path because consumers include it
 # directly. Record the active manifest/profile outside the checked output
 # tree so switching profiles rebuilds that fragment even when both manifests
 # predate it.
 ASSET_SELECTION_STAMP := $(ASSET_OUTPUT_DIR).manifest-selection
-ASSET_MANIFEST_SOURCE_STAMP := $(ASSET_OUTPUT_DIR).manifest-sources
 ASSET_BANIM_DATA_ENTRIES := $(ASSET_OUTPUT_DIR)/banim/banim_data_entries.inc
 ASSET_BANIM_DEFS := $(ASSET_OUTPUT_DIR)/banim/banim_defs.inc
 ASSET_BANIM_DEFS_HEADER := $(ASSET_OUTPUT_DIR)/banim/banim_defs.h
@@ -64,7 +67,7 @@ assets-check:
 
 assets-clean:
 	$(PYTHON) -m scripts.assets --out-dir "$(ASSET_OUTPUT_DIR)" clean
-	$(RM) -f "$(ASSET_SELECTION_STAMP)" "$(ASSET_MANIFEST_SOURCE_STAMP)"
+	$(RM) -f "$(ASSET_SELECTION_STAMP)" "$(ASSET_DISCOVERY_MK)"
 
 assets-test:
 	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES \
@@ -92,9 +95,13 @@ $(ASSET_SELECTION_STAMP): FORCE_ASSET_SELECTION
 		mv -f "$@.tmp" "$@"; \
 	fi
 
-$(ASSET_MANIFEST_SOURCE_STAMP): FORCE_ASSET_SOURCES
+ifeq ($(MAKE_RESTARTS),)
+$(ASSET_DISCOVERY_MK): FORCE_ASSET_SOURCES
 	@mkdir -p "$(dir $@)"
-	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --source-stamp "$@" source-stamp
+	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --discovery-makefile "$@" discovery-makefile
+else
+$(ASSET_DISCOVERY_MK): ;
+endif
 
 $(ASSET_OUTPUT_MK): $(ASSET_SELECTION_STAMP) $(ASSET_MANIFEST_SOURCE_STAMP) $(ASSET_MANIFEST) $(ASSET_TOOL_INPUTS)
 	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
