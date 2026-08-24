@@ -1526,11 +1526,16 @@ class StarterContentCompileTimeContractTests(unittest.TestCase):
     @staticmethod
     def preprocess(header, *defines):
         compiler = shutil.which("arm-none-eabi-cpp")
+        driver_args = []
         if compiler is None:
-            raise unittest.SkipTest("arm-none-eabi-cpp is not available")
+            compiler = shutil.which("arm-none-eabi-gcc")
+            driver_args = ["-E"]
+        if compiler is None:
+            raise unittest.SkipTest("arm-none-eabi-cpp/-gcc is not available")
         return subprocess.run(
             [
                 compiler,
+                *driver_args,
                 "-dM",
                 "-I",
                 str(ROOT / "include"),
@@ -1545,6 +1550,29 @@ class StarterContentCompileTimeContractTests(unittest.TestCase):
             stderr=subprocess.PIPE,
             check=False,
         )
+
+    @mock.patch("subprocess.run")
+    @mock.patch("shutil.which")
+    def test_preprocess_falls_back_to_gcc_driver(self, which, run):
+        which.side_effect = lambda name: (
+            "/toolchain/arm-none-eabi-gcc"
+            if name == "arm-none-eabi-gcc"
+            else None
+        )
+
+        self.preprocess("expansion_config.h")
+
+        self.assertEqual(
+            which.call_args_list,
+            [
+                mock.call("arm-none-eabi-cpp"),
+                mock.call("arm-none-eabi-gcc"),
+            ],
+        )
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], "/toolchain/arm-none-eabi-gcc")
+        self.assertIn("-E", command)
+        self.assertIn("-dM", command)
 
     @staticmethod
     def macros(output):
