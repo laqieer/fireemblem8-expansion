@@ -776,22 +776,32 @@ static void emit_checkpoint(struct mCore* core, const color_t* buffer,
 	}
 }
 
-static void apply_accelerated_fidelity_config(struct mCore* core,
+static bool apply_accelerated_fidelity_config(struct mCore* core,
                                               const struct Plan* plan,
                                               uint32_t frame)
 {
 	uint32_t before;
 	uint32_t after;
+	uint32_t observed;
 
 	if (plan->execution_profile != 1 || frame != plan->config_apply_frame)
-		return;
+		return true;
 	before = core->busRead32(core, plan->play_state_config_address);
 	after = before | PLAYST_CONFIG_GAME_SPEED_MASK;
 	after &= ~PLAYST_CONFIG_ANIMATION_TYPE_MASK;
 	after |= PLAYST_CONFIG_ANIMATION_TYPE_OFF;
 	core->busWrite32(core, plan->play_state_config_address, after);
+	observed = core->busRead32(core, plan->play_state_config_address);
+	if (observed != after) {
+		fprintf(stderr,
+		        "accelerated config write was not applied at %08" PRIx32
+		        ": expected %08" PRIx32 ", read %08" PRIx32 "\n",
+		        plan->play_state_config_address, after, observed);
+		return false;
+	}
 	printf("PROFILE\t%" PRIu32 "\t%08" PRIx32 "\t%08" PRIx32 "\n",
-	       frame, before, after);
+	       frame, before, observed);
+	return true;
 }
 
 static void emit_trace(struct mCore* core, const struct Plan* plan,
@@ -869,7 +879,8 @@ static int run_until(struct mCore* core, const struct Plan* plan,
 		uint32_t action_value = 0;
 		bool work_expected = false;
 
-		apply_accelerated_fidelity_config(core, plan, frame);
+		if (!apply_accelerated_fidelity_config(core, plan, frame))
+			return 2;
 		apply_frame_input(core, plan, &range_index, frame);
 		if (plan->trace_probe_count != 0)
 			emit_trace(core, plan, frame, trace_values, &have_trace_values);

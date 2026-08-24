@@ -80,6 +80,8 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "Kapitel"
+    "ui.presentation.chapter_title_default": "Kapitel",
+    "autoplay.charge.label": "Angriff",
+    "autoplay.charge.help": "Übrige Einheiten in dieser Phase der KI überlassen."
   }
 }

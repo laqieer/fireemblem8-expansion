@@ -89,6 +89,10 @@ RAM_RANGES = (
     (0x08000000, 0x0A000000),
     (0x0E000000, 0x0E008000),
 )
+WRITABLE_WORK_RAM_RANGES = (
+    (0x02000000, 0x02040000),
+    (0x03000000, 0x03008000),
+)
 SRAM_IMAGE_SIZE = 0x8000
 # Matches backend.c's read_plan() rejection of checkpoint->exclude_range_count
 # > 64 -- validated here too so a scenario with too many ranges fails fast
@@ -1219,6 +1223,15 @@ def _parse_execution_profile(
     )
     if play_state_config.size != 4:
         raise PlaytestError(f"{path}.play_state_config.size must be 4")
+    if play_state_config.address is not None and not any(
+        start <= play_state_config.address
+        and play_state_config.address + play_state_config.size <= end
+        for start, end in WRITABLE_WORK_RAM_RANGES
+    ):
+        raise PlaytestError(
+            f"{path}.play_state_config must resolve to aligned writable EWRAM "
+            "or IWRAM"
+        )
     return ExecutionProfile(
         name,
         config_apply_frame,

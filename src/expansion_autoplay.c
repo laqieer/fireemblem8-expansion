@@ -145,6 +145,21 @@ bool ExpansionAutoplay_IsBlueComputerPhase(void)
             || gExpansionAutoplayTelemetry.state == EXPANSION_AUTOPLAY_STATE_FAILURE);
 }
 
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
+bool ExpansionAutoplay_TryRestorePlayerControlAfterPhase(void)
+{
+    if (sExpansionBlueControl == EXPANSION_BLUE_CONTROL_PLAYER)
+        return true;
+
+    if (gPlaySt.faction == FACTION_BLUE && Proc_Find(gProcScr_CpPhase))
+        return false;
+
+    sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
+    gExpansionAutoplayTelemetry.controller = EXPANSION_BLUE_CONTROL_PLAYER;
+    return true;
+}
+#endif
+
 bool ExpansionAutoplay_IsActionSupported(u8 actionId)
 {
     switch (actionId)

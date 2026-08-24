@@ -80,6 +80,8 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "章节"
+    "ui.presentation.chapter_title_default": "章节",
+    "autoplay.charge.label": "冲锋",
+    "autoplay.charge.help": "仅在本回合将剩余单位交给电脑控制"
   }
 }

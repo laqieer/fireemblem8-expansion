@@ -126,9 +126,10 @@ provenance to differ. Its expected baseline may omit the otherwise-unused
 print the captured candidate identity. Use it only when changed ROM bytes are
 expected; it never silently turns off capture identity reporting. Capture JSON
 always contains provenance under `"rom"` regardless of the later verification
-policy. Fixed-frame schema version 1 uses fingerprint format version 2;
-bounded run-until schema version 2 uses fingerprint format version 3.
-Exact-ROM expected fingerprints in either format require valid provenance.
+policy. Fixed-frame scenarios use schema version 1 and exact-ROM expected fingerprints
+require valid provenance in format version 2. Bounded semantic run-until
+scenarios use schema version 2 and fingerprint format version 3, including one
+typed terminal outcome plus its dynamic checkpoint frame.
 
 ## Host-only test mode
 
@@ -186,8 +187,6 @@ regression fails.
 A scenario is one strict JSON object. Unknown fields, duplicate JSON keys,
 overlapping/out-of-order frame ranges, duplicate checkpoints/probes, malformed
 expectations, and invalid key/address names are errors.
-
-### Fixed-frame schema version 1
 
 ```json
 {
@@ -376,7 +375,10 @@ The accelerated profile has one explicit `play_state_config` binding and
 `config_apply_frame`. At that frame, only the existing `gPlaySt.config`
 game-speed bit and the animation option selected by
 `BANIM_PRESENTATION_POLICY_OFF` are applied inside the disposable libmGBA
-core. Normal fidelity accepts no configuration write. The profile also owns a
+core. The binding must be an aligned writable EWRAM/IWRAM word; ROM, VRAM,
+palette, OAM, and SRAM bindings are rejected, and the backend readback must
+equal the requested value before it emits `PROFILE`. Normal fidelity accepts
+no configuration write. The profile also owns a
 non-empty `trace` array of normal 1/2/4-byte semantic probes, canonicalized by
 binding and size so input order cannot change the fingerprint shape. The
 backend samples it each emulated frame and emits a full snapshot only on a
@@ -460,6 +462,7 @@ similarity alone.
 | `debugtools-ch4-prep-positive-modern-debug.json` (issue #11) | Live prep-screen arrival + SELECT+B prep hotkey: rests `gProcScr_SALLYCURSOR` in `PrepScreenProc_MapIdle` and fires the hotkey; `prepScreenObservedCount` (`0x02031854`) `0 -> 1` (reachable only from MapIdle, so it is the relocation-independent proof the hotkey fired live), `PLAY_FLAG_PREPSCREEN` held throughout, idempotent 2nd press, safe return to prep -- no proc ROM-pointer oracle | debug only (debug-only launcher + hotkey) |
 | `debugtools-tools-modern-{debug,release}.json` (issues #11/#125) | The five shipped bounded tools driven **live** from the real Chapter 2 map hub. Issue #125 adds cursor slot/character/class inspection, a read-only HP preview, exact confirmed HP `17 -> 16`, heal `16 -> 17`, typed empty-tile rejection, matching before/after SRAM hashes, and post-cleanup cursor movement. Existing Convoy `0 -> 1`, Flag `0 -> 1`, RNG reseed, and read-only Save assertions remain. Symbol-bound semantic probes only; release replays identical input with the established probe zero while editor code/state/probe symbols are omitted | debug (live) / release (negative) |
 | `run_autoplay_checks.py` generated scenarios (issue #85) | `TC-AUTOPLAY-001`: a clean Chapter 2 debug-only activation chord drives a full blue phase through the existing AI and records legal actions, faction-relation checks, completion, and progression; clean Prologue debug/release defaults remain PLAYER with zero blue AI actions | debug (positive + negative) / release (negative) |
+| `run_blue_phase_delegate_checks.py` generated scenarios (issue #87) | `TC-AUTOPLAY-CHARGE-001`: the enabled debug ROM selects the real localized Charge map-menu row, delegates the current blue phase, and reaches the next interactive blue phase with PLAYER restored; matching default debug/release ROMs retain zero blue AI actions | debug (positive + negative) / release (negative) |
 | `run_autoplay_bounds_checks.py` generated scenarios (issue #86) | `TC-AUTOPLAY-BOUNDS-001`: the same debug COMPUTER route stops at its first semantic completion (frame 17134 in the checked candidate), while clean debug/release PLAYER controls reach `max_frames` at frame 3950 with zero actions; the generated homebrew fixture separately covers all seven terminal reasons | debug (positive + negative) / release (negative) |
 | `run_accelerated_fidelity_checks.py` generated paired scenarios (issue #88) | `TC-AUTOPLAY-ACCEL-001`: same-ROM normal/accelerated Chapter 2 profiles preserve terminal probes, ordered telemetry/RNG trace, active-unit state/items, objective result, and turn/action counts while reducing 17,135 frames to 16,869; the benchmark reports non-gating wall-clock samples and the perturbation control rejects divergence | debug only |
 

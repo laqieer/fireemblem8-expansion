@@ -80,6 +80,87 @@ Use `make clean_fast` only if build artifacts must be removed. This case proves
 the reusable low-level executor and telemetry, not seize, recruitment,
 village, chest, resource, strategy, objective, balance, or campaign behavior.
 
+## TC-AUTOPLAY-CHARGE-001: One-phase Charge delegation
+
+- **Feature / originating issue:** `one-phase-blue-delegation` /
+  [#87](https://github.com/laqieer/fireemblem8-expansion/issues/87).
+- **Supported configuration or artifact:** modern AAPCS debug or release with
+  `EXPANSION_BLUE_PHASE_DELEGATE=1`; the semantic positive uses debug, while
+  matching debug/release default-disabled ROMs are the runtime negatives.
+  Catalog validation covers every authored locale, including Japanese.
+- **Prerequisites and clean starting state:** repository root, libmGBA, no
+  save or savestate. For manual execution, use a deterministic map with one
+  already-moved blue unit, at least two other eligible blue units, and red and
+  green actors. The automated Chapter 2 run supplies all three factions; the
+  real-source host driver independently fixes the moved/sleep/berserk/
+  hidden/unselectable/dead/rescued exclusion matrix.
+
+### Actions
+
+1. Run
+   `python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v`.
+2. Run
+   `make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+3. Run
+   `make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
+4. In an enabled ROM, finish one blue unit's action, move the cursor to an
+   empty tile, open the map menu, move to the localized **Charge** row, press
+   `R` once to exercise the expansion/vanilla help-ID guard, then select the
+   row and provide no unit commands until the next blue phase.
+
+### Expected result
+
+Charge is visible only in the valid interactive blue state. The already-moved
+unit and every unavailable/rescued/dead/sleeping/berserk unit are absent from
+the delegated actor list. Each remaining actor receives at most one action
+from the existing bounded AI list, all committed actions use supported IDs,
+red is hostile, green is allied, and the current blue phase completes once.
+The next blue phase is interactive; controller and telemetry controller both
+read `PLAYER`. The host driver also injects an unsupported blue escape and
+proves failure telemetry is preserved while control still restores.
+The checked Chapter 2 run records five eligible actors, five committed legal
+actions, 76 red-hostile checks, 17 green-allied checks, one start/completion,
+zero failures, and `PLAYER` on blue turn 2. `R` on Charge leaves the menu and
+controller state intact rather than treating the expansion help ID as a
+vanilla message ID.
+
+### Negative control
+
+With `EXPANSION_BLUE_PHASE_DELEGATE=0`, the compiled map-menu table adds no
+row, the module exports no delegate symbol, and combining neither/one/both
+Charge and Threat Range gives exactly 8/9/10 visible rows within the
+11-row capacity. Clean debug and release Prologue runs remain idle in
+`PLAYER`, with zero blue computer starts, completions, or actions.
+Invalid `-1`, `2`, or textual config values and an enabled non-modern C
+profile fail before producing a ROM.
+
+### Interactions and save compatibility
+
+The only code dependency is issue #85. Threat Range is explicitly supported
+at the same time; there are no other known feature conflicts or required
+dependents. A downstream map-menu replacement must resolve row order/capacity
+explicitly. Charge adds no save field, preference, migration, or compatibility
+epoch; reset/suspend-resume returns through issue #85's `PLAYER` reset.
+
+### Automation
+
+- `tools/gba-playtest/tests/test_expansion_blue_phase_delegate.py` and its
+  real C driver cover configuration identity, dependency failures, exact menu
+  capacity, every localized label/help entry, shared AI eligibility, valid and
+  invalid map states, current-phase routing, success/failure restoration, no
+  static RAM, and disabled symbol absence.
+- `tools/gba-playtest/run_blue_phase_delegate_checks.py` drives the real
+  Chapter 2 map menu and checked
+  `autoplay-charge-modern-debug.json` fingerprint, then reuses the issue #85
+  debug/release `PLAYER` fingerprints as disabled runtime controls.
+
+### Cleanup and limitations
+
+Use `make clean_fast` only to remove build outputs. The command controls one
+phase only. It adds no `NOBODY`, persistent ownership, strategy selector,
+authored objective, campaign mode, fast-forward behavior, or claim that the
+existing low-level AI can complete arbitrary chapters.
+
 ## TC-AUTOPLAY-BOUNDS-001: Bounded semantic autoplay termination
 
 - **Feature / originating issue:** `bounded-semantic-run-until` /
@@ -242,7 +323,9 @@ configuration/trace timestamps, and over-budget trace output. The paired
 runner flips one committed semantic trace value after capture and requires the
 comparator to reject it; same-profile samples with shifted terminal or trace
 frames, an event-telemetry overflow, or a non-OFF cached presentation policy
-also fail. A faster divergent action/event/RNG/flag route is therefore never
+also fail. ROM, VRAM, palette, OAM, SRAM, or ignored-write configuration
+bindings also fail before any success-shaped profile record is emitted. A
+faster divergent action/event/RNG/flag route is therefore never
 accepted. Normal visual, audio, and presentation-timing scenarios remain on
 their existing normal-fidelity paths and fingerprints.
 

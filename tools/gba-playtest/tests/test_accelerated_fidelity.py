@@ -115,6 +115,23 @@ class AcceleratedFidelitySchemaTests(unittest.TestCase):
         ):
             gba_playtest.parse_scenario_data(missing_accelerated_config)
 
+        for address in (
+            "0x08000000",
+            "0x06000000",
+            "0x05000000",
+            "0x07000000",
+            "0x0e000000",
+        ):
+            invalid_binding = profile_data(
+                gba_playtest.EXECUTION_PROFILE_ACCELERATED_FIDELITY
+            )
+            invalid_binding["execution_profile"]["play_state_config"]["address"] = address
+            with self.assertRaisesRegex(
+                gba_playtest.PlaytestError,
+                "writable EWRAM or IWRAM",
+            ):
+                gba_playtest.parse_scenario_data(invalid_binding)
+
         duplicate_trace = profile_data(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
         duplicate_trace["execution_profile"]["trace"].append(
             {"address": PROBE_ADDRESS, "size": 4}
@@ -254,6 +271,33 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 2)
         self.assertIn("trace record budget exceeds", result.stderr)
+
+    def test_backend_rejects_ignored_profile_write(self):
+        with temporary_directory("gba-accelerated-fidelity-") as temporary:
+            scenario = gba_playtest.parse_scenario_data(
+                profile_data(gba_playtest.EXECUTION_PROFILE_ACCELERATED_FIDELITY)
+            )
+            plan = Path(temporary) / "ignored-profile-write.plan"
+            backend = Path(temporary) / "gba-playtest-backend"
+            rom = Path(temporary) / "fixture.gba"
+            gba_playtest._write_plan(plan, scenario)
+            plan.write_text(
+                plan.read_text(encoding="ascii").replace(
+                    f"PROFILE 1 1 {int(CONFIG_ADDRESS, 16)}",
+                    "PROFILE 1 1 134217728",
+                ),
+                encoding="ascii",
+            )
+            build_homebrew_rom(rom)
+            gba_playtest.build_backend(backend)
+            result = subprocess.run(
+                [str(backend), str(rom), str(plan)],
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("accelerated config write was not applied", result.stderr)
 
     def test_accelerated_profile_keeps_all_frames_and_skips_unused_hash(self):
         normal = self._capture(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)

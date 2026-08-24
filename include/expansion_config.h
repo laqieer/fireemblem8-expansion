@@ -251,7 +251,8 @@
 
 /* --- Starter-feature opt-in switches (issue #6) ------------------------- */
 /* See config.mk EXPANSION_MECHANICS_HOOKS, EXPANSION_MECHANICS_SAMPLE,
- * EXPANSION_DANGER_OVERLAY_MENU, and EXPANSION_STARTER_CONTENT. */
+ * EXPANSION_DANGER_OVERLAY_MENU, EXPANSION_BLUE_PHASE_DELEGATE, and
+ * EXPANSION_STARTER_CONTENT. */
 /*
  * Independent 0/1 build flags for the issue #6 starter features. Each
  * defaults to 0, so the legacy agbcc build (which never receives the modern
@@ -279,6 +280,24 @@
  * the existing danger-zone range path (src/playerphase.c). */
 #ifndef FE8_EXPANSION_DANGER_OVERLAY_MENU
 #define FE8_EXPANSION_DANGER_OVERLAY_MENU 0
+#endif
+
+/*
+ * One-phase Charge-style blue delegation (issue #87). This permanent
+ * project choice is modern-only because it consumes issue #85's transient
+ * blue controller and semantic telemetry.
+ */
+#ifndef FE8_EXPANSION_BLUE_PHASE_DELEGATE
+#define FE8_EXPANSION_BLUE_PHASE_DELEGATE 0
+#endif
+
+#if (FE8_EXPANSION_BLUE_PHASE_DELEGATE != 0) \
+    && (FE8_EXPANSION_BLUE_PHASE_DELEGATE != 1)
+#error "FE8_EXPANSION_BLUE_PHASE_DELEGATE must be 0 or 1"
+#endif
+
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE && !FE8_EXPANSION_MODERN_BUILD
+#error "FE8_EXPANSION_BLUE_PHASE_DELEGATE=1 requires the modern issue #85 blue controller"
 #endif
 
 /* Link the bundled generated-data content example: the framework-authored
