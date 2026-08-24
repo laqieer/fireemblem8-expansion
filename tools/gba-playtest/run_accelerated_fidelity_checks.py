@@ -449,36 +449,42 @@ def _write_benchmark(
     accelerated: dict,
     samples: list[dict],
 ) -> None:
-    path.write_text(
-        json.dumps(
-            {
-                **_benchmark_metadata(),
-                "configuration": configuration,
-                "rom_commit": rom_commit,
-                "rom": baseline["rom"],
-                "same_rom_provenance": baseline["rom"] == accelerated["rom"],
-                "scenario": {
-                    "baseline": baseline["scenario"],
-                    "accelerated": accelerated["scenario"],
-                },
-                "emulated_frames": {
-                    "baseline": baseline["terminal"]["frame"] + 1,
-                    "accelerated": accelerated["terminal"]["frame"] + 1,
-                    "reduction": baseline["terminal"]["frame"]
-                    - accelerated["terminal"]["frame"],
-                },
-                "frozen_target": {
-                    "baseline": FROZEN_BASELINE_FRAME_COUNT,
-                    "accelerated": FROZEN_ACCELERATED_FRAME_COUNT,
-                },
-                "wall_clock_samples_seconds": samples,
+    payload = json.dumps(
+        {
+            **_benchmark_metadata(),
+            "configuration": configuration,
+            "rom_commit": rom_commit,
+            "rom": baseline["rom"],
+            "same_rom_provenance": baseline["rom"] == accelerated["rom"],
+            "scenario": {
+                "baseline": baseline["scenario"],
+                "accelerated": accelerated["scenario"],
             },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+            "emulated_frames": {
+                "baseline": baseline["terminal"]["frame"] + 1,
+                "accelerated": accelerated["terminal"]["frame"] + 1,
+                "reduction": baseline["terminal"]["frame"]
+                - accelerated["terminal"]["frame"],
+            },
+            "frozen_target": {
+                "baseline": FROZEN_BASELINE_FRAME_COUNT,
+                "accelerated": FROZEN_ACCELERATED_FRAME_COUNT,
+            },
+            "wall_clock_samples_seconds": samples,
+        },
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
+    temporary = path.with_name(f".{path.name}.tmp")
+    try:
+        temporary.write_text(payload, encoding="utf-8")
+        os.replace(temporary, path)
+    except OSError:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -508,6 +514,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.samples < 1 or args.samples > 20:
             raise CheckError("--samples must be between 1 and 20")
         args.out_dir.mkdir(parents=True, exist_ok=True)
+        benchmark_path = args.out_dir / "accelerated-fidelity-benchmark.json"
+        try:
+            benchmark_path.unlink()
+        except FileNotFoundError:
+            pass
         os.environ.setdefault("TMPDIR", str(args.out_dir / "tmp"))
         Path(os.environ["TMPDIR"]).mkdir(parents=True, exist_ok=True)
         backend = args.out_dir / "gba-playtest-accelerated-fidelity-backend"
@@ -574,16 +585,16 @@ def main(argv: list[str] | None = None) -> int:
             failures.append("perturbed semantic trace was accepted")
         if not args.measure_only:
             failures += _require_frozen_frame_counts(baseline, accelerated)
+        if failures:
+            raise CheckError("\n".join(failures))
         _write_benchmark(
-            args.out_dir / "accelerated-fidelity-benchmark.json",
+            benchmark_path,
             args.configuration,
             args.rom_commit,
             baseline,
             accelerated,
             samples,
         )
-        if failures:
-            raise CheckError("\n".join(failures))
     except (CheckError, OSError, ValueError, KeyError, gba_playtest.PlaytestError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

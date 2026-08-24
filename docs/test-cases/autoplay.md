@@ -286,7 +286,9 @@ contract being tested and is not inferred from inactivity.
 3. Inspect
    `build/expansion-modern/debug/aapcs/autoplay-accelerated-fidelity-check/accelerated-fidelity-benchmark.json`
    for the reported libmGBA version, host/runner identity, ROM provenance,
-   source commit, profile names, and three non-gating wall-clock samples.
+   source commit, profile names, and three non-gating wall-clock samples. This
+   success-only artifact is removed before each invocation and atomically
+   replaced only after all semantic and frame checks pass.
 
 Both profiles execute every frame through `core->runFrame()` and use the same
 clean Chapter 2 route and debug-only COMPUTER activation. The accelerated

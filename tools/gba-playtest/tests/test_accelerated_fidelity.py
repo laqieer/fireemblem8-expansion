@@ -426,6 +426,131 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
                 policy="behavior",
             )
 
+    def test_external_accelerated_fingerprint_rejects_visual_evidence(self):
+        accelerated = self._capture(gba_playtest.EXECUTION_PROFILE_ACCELERATED_FIDELITY)
+        accelerated["checkpoints"][0]["framebuffer_hash"] = "fnv1a64-rgb24:0000000000000000"
+        accelerated["checkpoints"][0]["regions"] = [
+            {
+                "name": "visible",
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 1,
+                "hash": "fnv1a64-region:0000000000000000",
+            }
+        ]
+        accelerated["checkpoints"][0]["pixel_probes"] = [
+            {"x": 0, "y": 0, "value": "0x000000"}
+        ]
+        with self.assertRaisesRegex(gba_playtest.PlaytestError, "forbids"):
+            gba_playtest.validate_fingerprint(
+                accelerated,
+                "<accelerated-visual-evidence>",
+                policy="behavior",
+            )
+
+        normal = self._capture(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
+        normal["checkpoints"][0]["framebuffer_hash"] = "fnv1a64-rgb24:0000000000000000"
+        normal["checkpoints"][0]["regions"] = [
+            {
+                "name": "visible",
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 1,
+                "hash": "fnv1a64-region:0000000000000000",
+            }
+        ]
+        normal["checkpoints"][0]["pixel_probes"] = [
+            {"x": 0, "y": 0, "value": "0x000000"}
+        ]
+        gba_playtest.validate_fingerprint(normal, "<normal-visual-evidence>", policy="behavior")
+
+    def test_benchmark_failure_clears_stale_output_before_capture(self):
+        with temporary_directory("gba-accelerated-fidelity-benchmark-") as temporary:
+            output = Path(temporary)
+            benchmark = output / "accelerated-fidelity-benchmark.json"
+            benchmark.write_text("{\"stale\": true}\n", encoding="utf-8")
+            with mock.patch.object(
+                gba_playtest,
+                "build_backend",
+                side_effect=accelerated_fidelity_checks.CheckError("capture failed"),
+            ):
+                result = accelerated_fidelity_checks.main(
+                    [
+                        "--rom",
+                        str(output / "missing.gba"),
+                        "--elf",
+                        str(output / "missing.elf"),
+                        "--out-dir",
+                        str(output),
+                        "--rom-commit",
+                        "0" * 40,
+                        "--configuration",
+                        "test",
+                        "--samples",
+                        "1",
+                    ]
+                )
+        self.assertEqual(result, 1)
+        self.assertFalse(benchmark.exists())
+
+    def test_benchmark_failure_never_publishes_success_json(self):
+        capture = {
+            "rom": {"sha1": "0" * 40, "size": 1, "title": "", "game_code": ""},
+            "scenario": "fixture",
+            "terminal": {"frame": 0, "reason": "success", "turn": None, "actions": None},
+            "checkpoints": [{"probes": []}],
+            "trace": [{"probes": []}],
+        }
+        with temporary_directory("gba-accelerated-fidelity-benchmark-") as temporary:
+            output = Path(temporary)
+            benchmark = output / "accelerated-fidelity-benchmark.json"
+            with mock.patch.object(gba_playtest, "build_backend"), \
+                mock.patch.object(accelerated_fidelity_checks, "_capture", side_effect=[capture, capture]), \
+                mock.patch.object(accelerated_fidelity_checks, "_check_capture", return_value=["semantic failure"]), \
+                mock.patch.object(accelerated_fidelity_checks, "compare_semantics", return_value=[]), \
+                mock.patch.object(accelerated_fidelity_checks, "_perturbed_trace_is_rejected", return_value=True), \
+                mock.patch.object(accelerated_fidelity_checks, "_write_benchmark") as write_benchmark:
+                result = accelerated_fidelity_checks.main(
+                    [
+                        "--rom",
+                        str(output / "fixture.gba"),
+                        "--elf",
+                        str(output / "fixture.elf"),
+                        "--out-dir",
+                        str(output),
+                        "--rom-commit",
+                        "0" * 40,
+                        "--configuration",
+                        "test",
+                        "--samples",
+                        "1",
+                    ]
+                )
+        self.assertEqual(result, 1)
+        write_benchmark.assert_not_called()
+        self.assertFalse(benchmark.exists())
+
+    def test_benchmark_success_replaces_output_atomically(self):
+        capture = {
+            "rom": {"sha1": "0" * 40, "size": 1, "title": "", "game_code": ""},
+            "scenario": "fixture",
+            "terminal": {"frame": 0},
+        }
+        with temporary_directory("gba-accelerated-fidelity-benchmark-") as temporary:
+            benchmark = Path(temporary) / "accelerated-fidelity-benchmark.json"
+            accelerated_fidelity_checks._write_benchmark(
+                benchmark,
+                "test",
+                "0" * 40,
+                capture,
+                capture,
+                [],
+            )
+            self.assertTrue(benchmark.is_file())
+            self.assertFalse((Path(temporary) / f".{benchmark.name}.tmp").exists())
+
     def test_event_transition_endpoint_divergence_is_not_equivalent(self):
         baseline = self._capture(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
         changed = copy.deepcopy(baseline)

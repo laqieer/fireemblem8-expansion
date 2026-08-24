@@ -2543,6 +2543,17 @@ def _validate_accelerated_fidelity_fingerprint(
                 r"0x[0-9a-f]{8}", profile[field]
             ):
                 raise PlaytestError(f"{source}.profile.{field} must be 32-bit lowercase hex")
+        for index, checkpoint in enumerate(root["checkpoints"]):
+            forbidden = {
+                field
+                for field in ("framebuffer_hash", "regions", "pixel_probes")
+                if field in checkpoint
+            }
+            if forbidden:
+                raise PlaytestError(
+                    f"{source}.checkpoints[{index}] accelerated-fidelity forbids "
+                    f"{', '.join(sorted(forbidden))}"
+                )
 
     trace = root["trace"]
     if not isinstance(trace, list) or not trace:

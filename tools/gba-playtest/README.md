@@ -418,7 +418,10 @@ same profile compare complete format-4 fingerprints, including terminal and
 trace frames; format-4 validation rejects profile or trace frames after the
 terminal. The accelerated runtime also verifies that the existing presentation
 policy seam reports `BANIM_PRESENTATION_POLICY_OFF`, not merely matching config
-bits. Visual/audio/timing cases stay on their normal-fidelity scenarios.
+bits. A prior benchmark artifact is removed before capture, and a fresh report
+is atomically published only after every semantic, reproducibility, and frozen
+frame check passes. Visual/audio/timing cases stay on their normal-fidelity
+scenarios.
 
 ## Initial coverage and limits
 
