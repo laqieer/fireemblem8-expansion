@@ -72,13 +72,17 @@ class ChapterObjectivesInputTests(unittest.TestCase):
             self.objectives,
             self.work / "bundles" / "l2_bundle.json",
             self.work / "bundles" / "l3_bundle.json",
+            self.work / "bundles",
             self.l2_units,
             self.l3_units,
             ROOT / "src" / "data" / "chapter_settings.json",
             ROOT / "src" / "data" / "data_8B363C.c",
             ROOT / "assets" / "manifest.json",
+            ROOT / "assets",
             ROOT / "assets" / "tmx" / "Ch2Map.tmx",
+            ROOT / "assets" / "tmx",
             ROOT / "graphics" / "map" / "layout" / "Ch3Map.json",
+            ROOT / "graphics" / "map" / "layout",
             ROOT / "scripts" / "generated_data" / "chapterobjectives" / "schema.py",
             ROOT / "scripts" / "generated_data" / "chapterobjectives" / "generate.py",
             ROOT / "scripts" / "generated_data" / "chapterbundle" / "schema.py",
@@ -106,6 +110,30 @@ class ChapterObjectivesInputTests(unittest.TestCase):
         shutil.copyfile(FIXTURES / "deps_units_l3.json", self.l3_units)
         restored = self._make()
         self.assertEqual(restored.returncode, 0, restored.stdout)
+
+        layout_dir = ROOT / "graphics" / "map" / "layout"
+        layout = layout_dir / "Ch3Map.json"
+        membership = layout_dir / "chapterobjectives_dependency_membership.json"
+        layout_original = layout.read_bytes()
+        layout_stat = layout.stat()
+        layout_dir_stat = layout_dir.stat()
+        try:
+            membership.write_text('{"id":"membership","width":1,"height":1}', encoding="utf-8")
+            added_member = self._make()
+            self.assertEqual(added_member.returncode, 0, added_member.stdout)
+            self.assertIn("generate --table chapterobjectives", added_member.stdout)
+
+            layout.unlink()
+            missing_layout = self._make()
+            self.assertNotEqual(missing_layout.returncode, 0)
+            self.assertIn("generate --table chapterobjectives", missing_layout.stdout)
+            self.assertIn("could not resolve the owning chapter map dimensions", missing_layout.stdout)
+        finally:
+            layout.write_bytes(layout_original)
+            os.utime(layout, ns=(layout_stat.st_atime_ns, layout_stat.st_mtime_ns))
+            if membership.exists():
+                membership.unlink()
+            os.utime(layout_dir, ns=(layout_dir_stat.st_atime_ns, layout_dir_stat.st_mtime_ns))
 
         for module in (
             ROOT / "scripts" / "generated_data" / "chapterbundle" / "schema.py",
