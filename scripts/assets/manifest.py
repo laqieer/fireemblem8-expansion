@@ -1595,11 +1595,14 @@ class CustomSpellEffectKind:
         del record
         return (
             "include/constants/songs.h",
+            "include/constants/items.h",
+            "include/constants/items_expansion.h",
             "include/custom_spell_effect.h",
             "include/spellassoc.h",
             "src/banim-efxmagic.c",
             "src/data/custom_spell_effect_data.c",
-            "src/data_items.c",
+            "src/data/items.json",
+            "src/data/items_expansion.json",
             "src/spellassoc-data.c",
         )
 
@@ -2409,17 +2412,46 @@ def expected_outputs(records, out_dir):
     return outputs
 
 
+def _prune_obsolete_custom_spell_outputs(out_dir, expected_paths):
+    custom_spell_dir = os.path.join(out_dir, "custom_spell")
+    if not os.path.lexists(custom_spell_dir):
+        return
+    if os.path.islink(custom_spell_dir) or not os.path.isdir(custom_spell_dir):
+        raise ValueError(
+            "custom spell generated output path must be a real directory"
+        )
+    expected = {
+        os.path.abspath(path)
+        for path in expected_paths
+        if os.path.commonpath(
+            (os.path.abspath(path), os.path.abspath(custom_spell_dir))
+        ) == os.path.abspath(custom_spell_dir)
+    }
+    for directory, directories, files in os.walk(custom_spell_dir, topdown=False):
+        for name in files:
+            path = os.path.abspath(os.path.join(directory, name))
+            if path in expected:
+                continue
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+        for name in directories:
+            try:
+                os.rmdir(os.path.join(directory, name))
+            except OSError:
+                pass
+    try:
+        os.rmdir(custom_spell_dir)
+    except OSError:
+        pass
+
+
 def generate(manifest_path, out_dir, custom_spell_effects=None):
     records = load_and_validate(manifest_path, custom_spell_effects)
     out_dir = safe_output_dir(out_dir)
-    custom_spell_dir = os.path.join(out_dir, "custom_spell")
-    if os.path.lexists(custom_spell_dir):
-        if os.path.islink(custom_spell_dir) or not os.path.isdir(custom_spell_dir):
-            raise ValueError(
-                "custom spell generated output path must be a real directory"
-            )
-        shutil.rmtree(custom_spell_dir)
     outputs = expected_outputs(records, out_dir)
+    _prune_obsolete_custom_spell_outputs(out_dir, outputs)
     for path in outputs:
         _safe_output_path(path, out_dir)
     for path, content in outputs.items():

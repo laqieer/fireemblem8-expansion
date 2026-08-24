@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from concurrent.futures import ThreadPoolExecutor
 import contextlib
 import io
 import json
@@ -633,6 +634,22 @@ class CustomSpellAdapterTests(unittest.TestCase):
             GeneratedDataValidationError, "orphan generated output"
         ):
             manifest.check(REFERENCE_MANIFEST, output, 1)
+
+    def test_parallel_generation_shares_one_custom_output_owner(self):
+        output = os.path.join(TEST_ROOT, "parallel")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(
+                    manifest.generate,
+                    REFERENCE_MANIFEST,
+                    output,
+                    1,
+                )
+                for _ in range(2)
+            ]
+            for future in futures:
+                future.result()
+        manifest.check(REFERENCE_MANIFEST, output, 1)
 
     def test_custom_incbin_consumer_rejects_output_override(self):
         with open(REFERENCE_MANIFEST, encoding="utf-8") as handle:

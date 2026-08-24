@@ -82,7 +82,8 @@ $(ASSET_SELECTION_STAMP): FORCE_ASSET_SELECTION
 	@mkdir -p "$(dir $@)"
 	@printf '%s\n' \
 		'manifest=$(abspath $(ASSET_MANIFEST))' \
-		'custom_spell_effects=$(EXPANSION_CUSTOM_SPELL_EFFECTS)' > "$@.tmp"
+		'custom_spell_effects=$(EXPANSION_CUSTOM_SPELL_EFFECTS)' \
+		'item_id_cap=$(FE8_ITEM_ID_CAP)' > "$@.tmp"
 	@if test -f "$@" && cmp -s "$@.tmp" "$@"; then \
 		rm -f "$@.tmp"; \
 	else \

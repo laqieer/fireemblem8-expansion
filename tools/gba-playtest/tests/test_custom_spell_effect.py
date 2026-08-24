@@ -37,16 +37,10 @@ def run(command):
 def generate_reference_assets():
     completed = run(
         [
-            "python3",
-            "-m",
-            "scripts.assets",
-            "--custom-spell-effects",
-            "1",
-            "--manifest",
-            str(REFERENCE_MANIFEST),
-            "--out-dir",
-            "build/generated/assets",
-            "generate",
+            "make",
+            "build/generated/assets/asset_manifest.mk",
+            "ASSET_MANIFEST={}".format(REFERENCE_MANIFEST),
+            "EXPANSION_CUSTOM_SPELL_EFFECTS=1",
         ]
     )
     if completed.returncode != 0:
