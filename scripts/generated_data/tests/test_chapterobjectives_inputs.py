@@ -79,6 +79,15 @@ class ChapterObjectivesInputTests(unittest.TestCase):
             ROOT / "assets" / "manifest.json",
             ROOT / "assets" / "tmx" / "Ch2Map.tmx",
             ROOT / "graphics" / "map" / "layout" / "Ch3Map.json",
+            ROOT / "scripts" / "generated_data" / "chapterobjectives" / "schema.py",
+            ROOT / "scripts" / "generated_data" / "chapterobjectives" / "generate.py",
+            ROOT / "scripts" / "generated_data" / "chapterbundle" / "schema.py",
+            ROOT / "scripts" / "generated_data" / "units" / "schema.py",
+            ROOT / "scripts" / "generated_data" / "shops" / "schema.py",
+            ROOT / "scripts" / "generated_data" / "traps" / "schema.py",
+            ROOT / "scripts" / "generated_data" / "eventscripts" / "schema.py",
+            ROOT / "scripts" / "generated_data" / "eventlists" / "schema.py",
+            ROOT / "scripts" / "generated_data" / "supports" / "schema.py",
         ):
             self.assertIn(os.path.realpath(required), inputs)
 
@@ -97,6 +106,22 @@ class ChapterObjectivesInputTests(unittest.TestCase):
         shutil.copyfile(FIXTURES / "deps_units_l3.json", self.l3_units)
         restored = self._make()
         self.assertEqual(restored.returncode, 0, restored.stdout)
+
+        for module in (
+            ROOT / "scripts" / "generated_data" / "chapterbundle" / "schema.py",
+            ROOT / "scripts" / "generated_data" / "units" / "schema.py",
+        ):
+            original_stat = module.stat()
+            try:
+                os.utime(
+                    module,
+                    ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns + 1_000_000_000),
+                )
+                refreshed = self._make()
+                self.assertEqual(refreshed.returncode, 0, refreshed.stdout)
+                self.assertIn("generate --table chapterobjectives", refreshed.stdout)
+            finally:
+                os.utime(module, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
 
         manifest = ROOT / "assets" / "manifest.json"
         original = manifest.read_bytes()
