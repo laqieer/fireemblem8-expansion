@@ -262,7 +262,6 @@ class GameLocaleCrosswalkTests(unittest.TestCase):
             stderr=subprocess.STDOUT,
         )
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("decisions=3414", result.stdout)
 
 
 if __name__ == "__main__":

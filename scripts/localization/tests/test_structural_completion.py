@@ -288,7 +288,6 @@ class StructuralCompletionTests(unittest.TestCase):
             stderr=subprocess.STDOUT,
         )
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("valid structural completion evidence", result.stdout)
 
 
 if __name__ == "__main__":

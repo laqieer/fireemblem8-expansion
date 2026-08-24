@@ -155,6 +155,8 @@ TRUSTED_PUSH_GUIDANCE_PATHS = (
     CLAUDE_PATH,
 )
 FLEET_COORDINATOR_GUIDANCE_PATHS = TRUSTED_PUSH_GUIDANCE_PATHS
+FOCUSED_LOCAL_VALIDATION_PATHS = TRUSTED_PUSH_GUIDANCE_PATHS
+BACKGROUND_AGENT_GUIDANCE_PATHS = TRUSTED_PUSH_GUIDANCE_PATHS
 RETIRED_MATRIX_SPELLINGS = (
     "full" + " matrix",
     "full" + "-matrix",
@@ -908,6 +910,68 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "implementation agents push their own replacement commits",
         )
         for path in FLEET_COORDINATOR_GUIDANCE_PATHS:
+            assert_normalized_policy(
+                self,
+                str(path),
+                path.read_text(encoding="utf-8"),
+                required_policy,
+                stale_policy,
+            )
+
+    def test_local_validation_stays_focused_and_ci_owns_broad_gate(self):
+        required_policy = (
+            (
+                "focused local validation",
+                (
+                    "Local validation is change-focused by default",
+                    "smallest tests that directly cover the changed behavior",
+                    "one necessary compile or runtime scenario",
+                    "Do not run broad catalog validation",
+                    "full repository test suites",
+                    "all-locale/all-feature profiles",
+                    "broad archival builds",
+                    "unless the changed surface directly owns that gate",
+                    "Combined Build CI is the comprehensive final integration gate",
+                    "Stop after focused checks pass",
+                    "commit the candidate, and hand it off",
+                ),
+            ),
+        )
+        stale_policy = (
+            "Before delivery, expand validation",
+            "Run the full catalog locally",
+            "Run every supported profile locally",
+            "Local validation is the comprehensive final integration gate",
+        )
+        for path in FOCUSED_LOCAL_VALIDATION_PATHS:
+            assert_normalized_policy(
+                self,
+                str(path),
+                path.read_text(encoding="utf-8"),
+                required_policy,
+                stale_policy,
+            )
+
+    def test_delegated_agents_are_background_only(self):
+        required_policy = (
+            (
+                "background-only delegation",
+                (
+                    "Every delegated reasoning agent must be launched in background mode",
+                    "Never use a synchronous subagent invocation",
+                    "continue every independent dependency-ready task immediately",
+                    "rely on the automatic completion notification",
+                    "instead of waiting synchronously or polling",
+                    "two to five direct tool calls in the main orchestrator",
+                ),
+            ),
+        )
+        stale_policy = (
+            "launch the subagent synchronously",
+            "wait synchronously for the subagent",
+            "poll the background agent",
+        )
+        for path in BACKGROUND_AGENT_GUIDANCE_PATHS:
             assert_normalized_policy(
                 self,
                 str(path),
