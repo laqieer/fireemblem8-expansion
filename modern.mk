@@ -55,6 +55,7 @@ MODERN_GOALS := \
 	expansion-modern-blue-phase-delegate-profile-rom \
 	expansion-modern-blue-phase-delegate-check \
 	expansion-modern-autoplay-bounds-check \
+	expansion-modern-autoplay-accelerated-fidelity-check \
 	expansion-modern-chapter-objectives-profile-rom \
 	expansion-modern-chapter-objectives-profile-boot-check \
 	expansion-modern-chapter-objectives-check \
@@ -1486,6 +1487,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-blue-phase-delegate-check \
 	expansion-modern-autoplay-bounds-check \
 	expansion-modern-chapter-objectives-check \
+	expansion-modern-autoplay-accelerated-fidelity-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-budget \
@@ -3487,6 +3489,48 @@ expansion-modern-autoplay-bounds-check: expansion-modern-boot-preflight expansio
 		--config "$(MODERN_CONFIG)" \
 		--out-dir "$(MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR)"
 
+# Issue #88 accelerated-fidelity comparison. This is intentionally a
+# debug-only, direct target: it runs paired profiles against one exact ROM and
+# never becomes a broad visual/audio/timing scenario gate.
+MODERN_AUTOPLAY_ACCELERATED_RUNTIME_SCRIPT := \
+	tools/gba-playtest/run_accelerated_fidelity_checks.py
+MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT := \
+	build/expansion-modern-autoplay-accelerated-fidelity
+MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROM := \
+	$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_AUTOPLAY_ACCELERATED_PROFILE_ELF := \
+	$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_AUTOPLAY_ACCELERATED_RUNTIME_OUTDIR := \
+	$(MODERN_OUTPUT_DIR)/autoplay-accelerated-fidelity-check
+
+CLEAN_DIRS += $(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT)
+
+ifeq ($(MODERN_CONFIG),debug)
+expansion-modern-autoplay-accelerated-fidelity-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT) \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_AUTOPLAY_EVENT_TRACE_TEST=1
+
+expansion-modern-autoplay-accelerated-fidelity-check: \
+		expansion-modern-boot-preflight \
+		expansion-modern-autoplay-accelerated-fidelity-profile-rom
+	@mkdir -p "$(MODERN_AUTOPLAY_ACCELERATED_RUNTIME_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_AUTOPLAY_ACCELERATED_RUNTIME_OUTDIR)/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_AUTOPLAY_ACCELERATED_RUNTIME_SCRIPT)" \
+		--rom "$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROM)" \
+		--elf "$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ELF)" \
+		--rom-commit "$(MODERN_BUILD_COMMIT)" \
+		--configuration "modern-$(MODERN_CONFIG)/$(MODERN_ABI)" \
+		--out-dir "$(MODERN_AUTOPLAY_ACCELERATED_RUNTIME_OUTDIR)"
+else
+expansion-modern-autoplay-accelerated-fidelity-check:
+	@printf '%s\n' \
+		"error: expansion-modern-autoplay-accelerated-fidelity-check requires MODERN_CONFIG=debug" >&2
+	@exit 1
+endif
+
 expansion-modern-chapter-objectives-profile-rom:
 	+$(MAKE) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
@@ -4158,11 +4202,19 @@ expansion-modern-custom-spell-check: expansion-modern-rom
 		--enabled "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
 		--out-dir "$(MODERN_CUSTOM_SPELL_TEST_DIR)"
 
+ifeq ($(MODERN_CONFIG),debug)
+MODERN_LINKER_CHECK_ACCELERATED_FIDELITY := \
+		expansion-modern-autoplay-accelerated-fidelity-check
+else
+MODERN_LINKER_CHECK_ACCELERATED_FIDELITY :=
+endif
+
 expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-overlay-audit \
 		expansion-modern-autoplay-check \
 		expansion-modern-autoplay-bounds-check \
 		expansion-modern-chapter-objectives-check \
+		$(MODERN_LINKER_CHECK_ACCELERATED_FIDELITY) \
 		expansion-modern-blue-phase-delegate-check \
 		expansion-modern-starter-runtime-check \
 		expansion-modern-boot-check \

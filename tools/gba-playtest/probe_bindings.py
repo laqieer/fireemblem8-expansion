@@ -33,11 +33,10 @@ def configured_nm(nm: str | os.PathLike[str] | None = None) -> str:
     return os.environ.get("NM", "arm-none-eabi-nm")
 
 
-def resolve_elf_symbol(
+def _read_elf_symbol_table(
     elf: Path,
-    symbol: str,
     nm: str | os.PathLike[str] | None = None,
-) -> tuple[int, int]:
+) -> str:
     nm_command = configured_nm(nm)
     try:
         completed = subprocess.run(
@@ -63,16 +62,46 @@ def resolve_elf_symbol(
             or f"exit status {completed.returncode}"
         )
         raise ProbeBindingError(f"{nm_command} failed on {elf}: {detail}")
+    return completed.stdout
 
+
+def _find_elf_symbol(
+    table: str,
+    symbol: str,
+) -> tuple[int, int | None] | None:
     pattern = re.compile(
-        r"^([0-9a-fA-F]+)\s+([0-9a-fA-F]+)\s+\S\s+"
+        r"^([0-9a-fA-F]+)(?:\s+([0-9a-fA-F]+))?\s+\S\s+"
         + re.escape(symbol)
         + r"$"
     )
-    for line in completed.stdout.splitlines():
+    for line in table.splitlines():
         match = pattern.match(line.strip())
         if match:
-            return int(match.group(1), 16), int(match.group(2), 16)
+            size = int(match.group(2), 16) if match.group(2) is not None else None
+            return int(match.group(1), 16), size
+    return None
+
+
+def resolve_elf_symbol(
+    elf: Path,
+    symbol: str,
+    nm: str | os.PathLike[str] | None = None,
+) -> tuple[int, int]:
+    found = _find_elf_symbol(_read_elf_symbol_table(elf, nm), symbol)
+    if found is not None and found[1] is not None:
+        return found[0], found[1]
+    raise ProbeBindingError(f"{symbol} is missing from {elf}")
+
+
+def resolve_elf_symbol_address(
+    elf: Path,
+    symbol: str,
+    nm: str | os.PathLike[str] | None = None,
+) -> int:
+    """Resolve an ELF symbol whose producer does not emit a size field."""
+    found = _find_elf_symbol(_read_elf_symbol_table(elf, nm), symbol)
+    if found is not None:
+        return found[0]
     raise ProbeBindingError(f"{symbol} is missing from {elf}")
 
 

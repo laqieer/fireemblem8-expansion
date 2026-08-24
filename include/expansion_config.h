@@ -124,6 +124,22 @@
 #define FE8_EXPANSION_LOGGING_ENABLED FE8_EXPANSION_DEBUG
 #endif
 
+/* Internal accelerated-fidelity event-transition instrumentation. This is
+ * never a supported feature/profile setting: only the dedicated modern
+ * autoplay test ROM supplies it through MODERN_INTERNAL_TEST_DEFINES. */
+#ifndef FE8_AUTOPLAY_EVENT_TRACE_TEST
+#define FE8_AUTOPLAY_EVENT_TRACE_TEST 0
+#endif
+
+#if (FE8_AUTOPLAY_EVENT_TRACE_TEST != 0) && (FE8_AUTOPLAY_EVENT_TRACE_TEST != 1)
+#error "FE8_AUTOPLAY_EVENT_TRACE_TEST must be 0 or 1"
+#endif
+
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST \
+    && (!defined(MODERN) || !FE8_EXPANSION_DEBUG)
+#error "FE8_AUTOPLAY_EVENT_TRACE_TEST requires a modern debug test profile"
+#endif
+
 /* --- Save-format compatibility (see config.mk EXPANSION_SAVE_COMPAT_EPOCH,
  * issue #2 slice 1) -------------------------------------------------------- */
 /*

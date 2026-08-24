@@ -24,5 +24,8 @@ void ExpansionAutoplay_RecordRelationCheck(int leftSlot, int rightSlot, bool all
 void ExpansionAutoplay_RecordUnsupportedEscape(void);
 void ExpansionAutoplay_RecordSuspendSuppressed(void);
 void ExpansionAutoplay_RecordStrategyFailure(int result);
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
+void ExpansionAutoplay_RecordEventCommand(u8 command);
+#endif
 
 #endif /* GUARD_EXPANSION_AUTOPLAY_INTERNAL_H */
