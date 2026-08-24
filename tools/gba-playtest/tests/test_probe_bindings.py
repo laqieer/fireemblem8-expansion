@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -20,6 +21,24 @@ sys.path.insert(0, str(PLAYTEST_DIR))
 
 import gba_playtest  # noqa: E402
 import probe_bindings  # noqa: E402
+
+
+MODERN_MAKEFILE = REPO_ROOT / "modern.mk"
+
+
+def _playtest_verify_recipes():
+    """Parse each complete public make recipe that invokes `verify`."""
+    lines = MODERN_MAKEFILE.read_text(encoding="utf-8").splitlines()
+    recipes = []
+    for index, line in enumerate(lines):
+        if '"$(PYTHON)" "$(MODERN_PLAYTEST)" verify' not in line:
+            continue
+        recipe = [line.strip()]
+        while recipe[-1].endswith("\\"):
+            index += 1
+            recipe.append(lines[index].strip())
+        recipes.append(" ".join(recipe))
+    return recipes
 
 
 class ProbeBindingToolTests(unittest.TestCase):
@@ -270,6 +289,14 @@ class ProbeBindingToolTests(unittest.TestCase):
                         )
                     )
                 self.assertSetEqual(bindings, expected_bindings)
+
+    def test_every_debug_release_playtest_verify_recipe_forwards_modern_nm(self):
+        recipes = _playtest_verify_recipes()
+        self.assertTrue(recipes)
+        self.assertGreater(len(recipes), 30)
+        for recipe in recipes:
+            with self.subTest(recipe=recipe):
+                self.assertIn('--nm "$(MODERN_NM)"', recipe)
 
 if __name__ == "__main__":
     unittest.main()

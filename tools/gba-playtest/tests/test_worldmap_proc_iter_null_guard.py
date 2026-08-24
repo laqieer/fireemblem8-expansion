@@ -32,9 +32,10 @@ map during the opening tour and never reached a battle map.  The ``-Og`` debug
 configuration and the archival agbcc build kept the test and therefore did not
 lock, which is why this only ever reproduced on release builds.
 
-These tests pin the fix from both ends: the source-level invariant (never use
-the iterator result before the NULL check) and the codegen consequence (the
-optimised release build must still be able to leave the loop).
+These tests derive every `Proc_FindNext` relocation from the optimized
+world-map objects and require a one-to-one immediate NULL branch for each
+call. That object/control-flow evidence proves the optimized release build
+can still leave every iterator loop.
 """
 
 import re
@@ -50,21 +51,7 @@ INCLUDE_DIRS = [REPO_ROOT / "include", REPO_ROOT / "include" / "generated"]
 
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_OBJDUMP = shutil.which("arm-none-eabi-objdump")
-ITERATOR_HELPERS = {
-    "worldmap_rm.c": (
-        "StartGmapRmBorder1",
-        "EndGmapRmBorder1",
-        "GmapRmBorder1Exists",
-        "RequestGmapRmBorder1Remove",
-        "EndWmPlaceDotByIndex",
-        "IsWmPlaceDotActiveAtIndex",
-        "SetWmPlaceDotFlagForIndex",
-    ),
-    "worldmap_automu.c": (
-        "EndGmAutoMuFor",
-        "IsGmAutoMuActiveFor",
-    ),
-}
+WORLD_MAP_SOURCES = tuple(sorted(SRC_DIR.glob("worldmap*.c")))
 
 def _include_flags():
     flags = []
@@ -88,37 +75,45 @@ class ProcFindNextCodegenTests(unittest.TestCase):
                          % (source.name, proc.stdout + proc.stderr))
         return obj
 
-    def _disassemble(self, obj, function):
+    def _disassemble(self, obj):
         proc = subprocess.run(
-            [ARM_OBJDUMP, "-d", "--disassemble=" + function, str(obj)],
+            [ARM_OBJDUMP, "-dr", str(obj)],
             capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0,
                          "objdump failed:\n%s" % (proc.stdout + proc.stderr))
         return proc.stdout
 
-    def test_every_release_iterator_checks_null_before_dereference(self):
+    def test_every_release_iterator_call_has_one_immediate_null_branch(self):
         if ARM_CC is None or ARM_OBJDUMP is None:
             raise unittest.SkipTest(
                 "arm-none-eabi-gcc/objdump not available")
         with tempfile.TemporaryDirectory() as tmp:
-            for source_name, functions in ITERATOR_HELPERS.items():
-                obj = self._compile_o2(tmp, SRC_DIR / source_name)
-                for function in functions:
-                    with self.subTest(source=source_name, function=function):
-                        text = self._disassemble(obj, function)
-                        calls = re.findall(
-                            r"bl\s+0\s+<Proc_FindNext>\s*\n"
-                            r"(?:\s*.*R_ARM.*\n)?"
-                            r"\s*[0-9a-f]+:\s+[0-9a-f ]+\s+cmp\s+r0,\s*#0\s*\n"
-                            r"\s*[0-9a-f]+:\s+[0-9a-f ]+\s+b(?:eq|ne)\S*",
-                            text,
-                            flags=re.DOTALL,
-                        )
-                        self.assertTrue(
-                            calls,
-                            "%s must branch on Proc_FindNext()'s NULL result "
-                            "before reading the returned proc" % function,
-                        )
+            calls = []
+            guards = []
+            for source in WORLD_MAP_SOURCES:
+                text = self._disassemble(self._compile_o2(tmp, source))
+                calls.extend(
+                    (source.name, match.start())
+                    for match in re.finditer(r"\bbl\s+0\s+<Proc_FindNext>", text)
+                )
+                guards.extend(
+                    (source.name, match.start())
+                    for match in re.finditer(
+                        r"\bbl\s+0\s+<Proc_FindNext>\s*\n"
+                        r"\s*[0-9a-f]+:\s+R_ARM_[A-Z_]+\s+Proc_FindNext\s*\n"
+                        r"\s*[0-9a-f]+:\s+[0-9a-f ]+\s+cmp\s+r0,\s*#0\s*\n"
+                        r"\s*[0-9a-f]+:\s+[0-9a-f ]+\s+b(?:eq|ne)\S*",
+                        text,
+                        flags=re.DOTALL,
+                    )
+                )
+        self.assertTrue(calls, "no world-map Proc_FindNext relocations found")
+        self.assertEqual(
+            len(guards),
+            len(calls),
+            "every Proc_FindNext relocation must immediately compare and branch on NULL: "
+            "calls=%r guards=%r" % (calls, guards),
+        )
 
 
 if __name__ == "__main__":

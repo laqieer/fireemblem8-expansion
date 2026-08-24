@@ -52,6 +52,14 @@ CJK_SETTINGS_FINGERPRINT = (
     REPO_ROOT / "tools" / "gba-playtest" / "fingerprints"
     / "locale-cjk-settings-inline-modern-debug.json"
 )
+MORE_SETTINGS_SCENARIO = (
+    REPO_ROOT / "tools" / "gba-playtest" / "scenarios"
+    / "locale-settings-more-eu-modern-debug.json"
+)
+MORE_SETTINGS_FINGERPRINT = (
+    REPO_ROOT / "tools" / "gba-playtest" / "fingerprints"
+    / "locale-settings-more-eu-modern-debug.json"
+)
 TEST_WORK_ROOT = REPO_ROOT / ".test-work"
 
 CC = shutil.which("gcc") or shutil.which("cc")
@@ -156,7 +164,7 @@ class ExpansionLanguageMenuDecisionHostTests(unittest.TestCase):
             self.assertIn("EXPANSION_LANGUAGE_MENU_DECISION_HOST_TEST: PASS", out)
 
 
-@unittest.skipIf(NM is None, "no host nm")
+@unittest.skipIf(CC is None or NM is None, "no host compiler/nm")
 class ExpansionLanguageMenuProductionObjectTests(unittest.TestCase):
     """The >4-locale decision table must remain wired into the Config object."""
 
@@ -685,6 +693,53 @@ class CjkSettingsFingerprintContractTests(unittest.TestCase):
                 fingerprint_checkpoint["regions"],
                 [{**expected_region, "hash": expected_region_hashes[index]}],
             )
+
+
+class MoreSettingsFingerprintContractTests(unittest.TestCase):
+    """The five-locale profile must exercise the full More lifecycle live."""
+
+    def test_more_opens_selects_closes_and_redraws(self):
+        scenario = json.loads(MORE_SETTINGS_SCENARIO.read_text(encoding="utf-8"))
+        fingerprint = json.loads(MORE_SETTINGS_FINGERPRINT.read_text(encoding="utf-8"))
+        self.assertEqual(scenario["name"], fingerprint["scenario"])
+        self.assertEqual(
+            [checkpoint["name"] for checkpoint in scenario["checkpoints"]],
+            [
+                "five-locale-row-ready",
+                "more-open-after-third-inline-slot",
+                "more-selected-parent-redrawn",
+            ],
+        )
+        self.assertEqual(
+            [checkpoint["frame"] for checkpoint in fingerprint["checkpoints"]],
+            [5550, 6400, 7000],
+        )
+        self.assertTrue(
+            all(checkpoint["framebuffer_hash"] for checkpoint in fingerprint["checkpoints"])
+        )
+        values = {
+            checkpoint["name"]: {
+                probe["address"]: probe["value"]
+                for probe in checkpoint["probes"]
+            }
+            for checkpoint in fingerprint["checkpoints"]
+        }
+        self.assertEqual(
+            values["five-locale-row-ready"]["gExpansionLanguageMenuProbe+0x08"],
+            "0x05",
+        )
+        self.assertEqual(
+            values["more-open-after-third-inline-slot"]["gExpansionLanguageMenuProbe+0x01"],
+            "0x01",
+        )
+        self.assertEqual(
+            values["more-selected-parent-redrawn"]["gExpansionLanguageMenuProbe+0x01"],
+            "0x00",
+        )
+        self.assertEqual(
+            values["more-selected-parent-redrawn"]["gExpansionLanguageMenuProbe+0x07"],
+            "0x06",
+        )
 
 
 class LanguageSettingsLifecycleStructureTests(unittest.TestCase):

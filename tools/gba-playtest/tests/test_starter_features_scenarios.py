@@ -19,10 +19,14 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 PLAYTEST_DIR = REPO_ROOT / "tools" / "gba-playtest"
 SCENARIOS_DIR = PLAYTEST_DIR / "scenarios"
 FINGERPRINTS_DIR = PLAYTEST_DIR / "fingerprints"
-sys.path.insert(0, str(PLAYTEST_DIR))
+TESTS_DIR = Path(__file__).resolve().parent
+for path in (PLAYTEST_DIR, TESTS_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 import gba_playtest  # noqa: E402
 import check_starter_probe_addresses  # noqa: E402
+import host_mode  # noqa: E402
 
 POSITIVE = "starter-hook-modern-debug"
 NEGATIVE = "starter-hook-negative-modern-debug"
@@ -191,6 +195,7 @@ class StarterHookScenarioSchemaTests(unittest.TestCase):
                              "%s enemy must actually die in real combat" % name)
 
 
+@host_mode.live_artifact_testcase("starter-hook runtime coverage")
 class StarterHookRuntimeTests(unittest.TestCase):
     """Runtime libmGBA verification against built profile ROMs (skips unless a
     caller supplies them)."""
@@ -206,7 +211,11 @@ class StarterHookRuntimeTests(unittest.TestCase):
             scenario_name,
             policy="behavior",
         )
-        actual = gba_playtest.capture(Path(rom), scenario, None, 0)
+        actual = host_mode.capture_live_or_skip(
+            Path(rom),
+            scenario,
+            label="starter-hook runtime coverage",
+        )
         diffs = gba_playtest.compare_fingerprints(expected, actual, policy="behavior")
         self.assertEqual(diffs, [], "runtime mismatch for %s:\n%s" % (scenario_name, "\n".join(diffs)))
 

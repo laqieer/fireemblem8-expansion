@@ -134,6 +134,7 @@ LIVE_TEST_CLASSES = (
     ("test_save_compat_scenarios", "SaveCompatScenarioTests_modern_release"),
     ("test_save_load_scenario", "SaveLoadRuntimeTests"),
     ("test_savesuspend_resume_scenario", "SavesuspendResumeRuntimeTests"),
+    ("test_starter_features_scenarios", "StarterHookRuntimeTests"),
     ("test_tools_scenario", "ToolsRuntimeTests"),
 )
 

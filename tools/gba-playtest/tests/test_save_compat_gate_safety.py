@@ -24,6 +24,7 @@ behavior is separately proven by tools/gba-playtest scenarios):
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,7 +64,7 @@ def _strip_comments(text: str) -> str:
     return text
 
 
-def _compile_arm(work: Path, source: Path, name: str) -> Path:
+def _compile_arm(work: Path, source: Path, name: str, defines=(), extra_includes=()) -> Path:
     obj = work / name
     completed = subprocess.run(
         [
@@ -77,6 +78,8 @@ def _compile_arm(work: Path, source: Path, name: str) -> Path:
             "-fno-builtin",
             "-w",
             *INCLUDE_FLAGS,
+            *(value for path in extra_includes for value in ("-I", str(path))),
+            *defines,
             "-c",
             str(source),
             "-o",
@@ -89,6 +92,26 @@ def _compile_arm(work: Path, source: Path, name: str) -> Path:
     if completed.returncode != 0:
         raise AssertionError(completed.stdout + completed.stderr)
     return obj
+
+
+def _generate_message_ids(work: Path) -> Path:
+    generated = work / "generated"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.localization.cli",
+            "generate",
+            "--out-dir",
+            str(generated),
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return generated
 
 
 def _undefined_symbols(obj: Path) -> set[str]:
@@ -171,6 +194,47 @@ class StartSaveMenuGateStructureTests(unittest.TestCase):
             "the compat-menu diversion must appear before the real "
             "save-menu Proc_StartBlocking() call in source order",
         )
+
+
+class NoBypassOfTheGateTests(unittest.TestCase):
+    """Inventory every production source in both preprocessor modes."""
+
+    def test_procscr_savemenu_is_only_started_inside_startsavemenu(self):
+        offenders = []
+        for c_file in sorted(SRC_DIR.glob("*.c")):
+            text = _strip_comments(c_file.read_text(encoding="utf-8", errors="replace"))
+            for match in re.finditer(r"Proc_StartBlocking\s*\(\s*ProcScr_SaveMenu\b", text):
+                if c_file.name != "savemenu.c":
+                    offenders.append(c_file.name)
+        self.assertEqual(
+            offenders,
+            [],
+            "ProcScr_SaveMenu started outside StartSaveMenu's SRAM gate: %r" % offenders,
+        )
+        starts = re.findall(
+            r"Proc_StartBlocking\s*\(\s*ProcScr_SaveMenu\b",
+            _strip_comments(SAVEMENU_C.read_text(encoding="utf-8")),
+        )
+        self.assertEqual(
+            len(starts),
+            1,
+            "savemenu.c must retain exactly one normal-save-menu start",
+        )
+
+    def test_startsavemenu_has_only_ordinary_and_compat_reentry_consumers(self):
+        call_sites = []
+        for c_file in sorted(SRC_DIR.glob("*.c")):
+            if c_file.name in ("savemenu.c", "save_compat_menu.c"):
+                continue
+            text = _strip_comments(c_file.read_text(encoding="utf-8", errors="replace"))
+            if re.search(r"\bStartSaveMenu\b", text):
+                call_sites.append(c_file.name)
+        self.assertEqual(
+            call_sites,
+            ["gamecontrol.c"],
+            "unexpected StartSaveMenu consumer(s): %r" % call_sites,
+        )
+
 
 class CompatMenuNeverTouchesSlotOrBlockApisTests(unittest.TestCase):
     """Proves src/save_compat_menu.c's compiled code never references any
@@ -257,6 +321,22 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
             "a direct ProcScr_SaveMenu reference bypasses StartSaveMenu's SRAM gate: %r"
             % callers,
         )
+
+    def test_gate_translation_units_compile_in_legacy_and_modern_modes(self):
+        sources = (SAVEMENU_C, SAVE_COMPAT_MENU_C, ROOT / "src" / "gamecontrol.c")
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            for mode, defines in (("legacy", ()), ("modern", ("-DMODERN=1",))):
+                generated = _generate_message_ids(work) if defines else None
+                for source in sources:
+                    with self.subTest(mode=mode, source=source.name):
+                        _compile_arm(
+                            work,
+                            source,
+                            mode + "-" + source.stem + ".o",
+                            defines,
+                            (generated,) if generated is not None else (),
+                        )
 
     def test_public_diagnostic_probe_declarations_link_for_a_consumer(self):
         with tempfile.TemporaryDirectory() as tmp:

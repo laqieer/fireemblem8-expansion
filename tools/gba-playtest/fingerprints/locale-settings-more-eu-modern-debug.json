@@ -1,0 +1,98 @@
+{
+  "checkpoints": [
+    {
+      "frame": 5550,
+      "framebuffer_hash": "fnv1a64-rgb24:d0c2e0d48eea2f0c",
+      "name": "five-locale-row-ready",
+      "probes": [
+        {
+          "address": "gExpansionLanguageMenuProbe+0x07",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionLanguageMenuProbe+0x08",
+          "size": 1,
+          "value": "0x05"
+        },
+        {
+          "address": "gExpansionLanguageMenuProbe+0x0e",
+          "size": 2,
+          "value": "0x0000"
+        }
+      ]
+    },
+    {
+      "frame": 6400,
+      "framebuffer_hash": "fnv1a64-rgb24:2b6669b679dd9c62",
+      "name": "more-open-after-third-inline-slot",
+      "probes": [
+        {
+          "address": "gExpansionLanguageMenuProbe+0x01",
+          "size": 1,
+          "value": "0x01"
+        },
+        {
+          "address": "gExpansionLanguageMenuProbe+0x07",
+          "size": 1,
+          "value": "0x04"
+        },
+        {
+          "address": "gExpansionLanguageMenuProbe+0x0e",
+          "size": 2,
+          "value": "0x0001"
+        },
+        {
+          "address": "gExpansionLanguageMenuProbe+0x10",
+          "size": 2,
+          "value": "0x0002"
+        }
+      ]
+    },
+    {
+      "frame": 7000,
+      "framebuffer_hash": "fnv1a64-rgb24:1c1256b6406030dd",
+      "name": "more-selected-parent-redrawn",
+      "probes": [
+        {
+          "address": "gExpansionLanguageMenuProbe+0x01",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionLanguageMenuProbe+0x06",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "gExpansionLanguageMenuProbe+0x07",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "gExpansionLanguageMenuProbe+0x0e",
+          "size": 2,
+          "value": "0x0001"
+        },
+        {
+          "address": "gExpansionLanguageMenuProbe+0x10",
+          "size": 2,
+          "value": "0x0003"
+        },
+        {
+          "address": "0x0e0073d6",
+          "size": 1,
+          "value": "0x06"
+        }
+      ]
+    }
+  ],
+  "format_version": 2,
+  "rom": {
+    "game_code": "BE8E",
+    "sha1": "ef14fd36b395c1565959de328ff1d06db04f55fa",
+    "size": 33554432,
+    "title": "FIREEMBLEM2E"
+  },
+  "scenario": "locale-settings-more-eu-modern-debug"
+}

@@ -2544,7 +2544,7 @@ expansion-modern-boot-preflight:
 # exact-rom would additionally require ROM identity, which this target does
 # not claim.
 expansion-modern-boot-check: expansion-modern-boot-preflight expansion-modern-rom
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--scenario "$(MODERN_BOOT_SCENARIO)" \
 		--expected "$(MODERN_BOOT_FINGERPRINT)" \
@@ -2561,7 +2561,7 @@ expansion-modern-debuglog-check: expansion-modern-boot-preflight expansion-moder
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
 expansion-modern-title-check: expansion-modern-boot-preflight expansion-modern-rom
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--scenario "$(MODERN_TITLE_SCENARIO)" \
 		--expected "$(MODERN_TITLE_FINGERPRINT)" \
@@ -2619,7 +2619,7 @@ $(MODERN_DEBUGTOOLS_SRAM_FIXTURE): $(MODERN_DEBUGTOOLS_SRAM_FIXTURE_DEPS)
 # compiled out, gDebugToolsProbe stays all-zero). See docs/debugtools.md.
 expansion-modern-debugtools-check: expansion-modern-boot-preflight expansion-modern-rom \
 		$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--scenario "$(MODERN_DEBUGTOOLS_SCENARIO)" \
 		--sram-image "$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)" \
@@ -2638,7 +2638,7 @@ expansion-modern-debugtools-check: expansion-modern-boot-preflight expansion-mod
 # `sram_hash` checkpoints, so it is not seeded with
 # MODERN_DEBUGTOOLS_SRAM_FIXTURE. See docs/debugtools.md.
 expansion-modern-debugtools-map-check: expansion-modern-boot-preflight expansion-modern-rom
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--scenario "$(MODERN_DEBUGTOOLS_MAP_SCENARIO)" \
 		--expected "$(MODERN_DEBUGTOOLS_MAP_FINGERPRINT)" \
@@ -2670,7 +2670,7 @@ expansion-modern-debugtools-tools-check: expansion-modern-boot-preflight expansi
 		printf '  fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_TOOLS_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_DEBUGTOOLS_TOOLS_SCENARIO)" \
@@ -2727,7 +2727,7 @@ expansion-modern-debugtools-ch4prep-check: expansion-modern-boot-preflight expan
 		printf '  fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_CH4PREP_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--scenario "$(MODERN_DEBUGTOOLS_CH4PREP_SCENARIO)" \
 		--sram-image "$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)" \
@@ -2745,7 +2745,7 @@ expansion-modern-debugtools-ch4prep-check: expansion-modern-boot-preflight expan
 		printf '  fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_CH4PREP_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--scenario "$(MODERN_DEBUGTOOLS_CH4PREP_SCENARIO)" \
 		--expected "$(MODERN_DEBUGTOOLS_CH4PREP_FINGERPRINT)" \
@@ -2793,7 +2793,7 @@ expansion-modern-debugtools-prep-check: expansion-modern-boot-preflight expansio
 		printf '  fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_PREP_RELEASE_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--scenario "$(MODERN_DEBUGTOOLS_PREP_RELEASE_SCENARIO)" \
 		--expected "$(MODERN_DEBUGTOOLS_PREP_RELEASE_FINGERPRINT)" \
@@ -2810,7 +2810,7 @@ expansion-modern-debugtools-prep-check: expansion-modern-boot-preflight expansio
 		printf '  fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_PREP_POSITIVE_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--scenario "$(MODERN_DEBUGTOOLS_PREP_POSITIVE_SCENARIO)" \
 		--expected "$(MODERN_DEBUGTOOLS_PREP_POSITIVE_FINGERPRINT)" \
@@ -2854,7 +2854,7 @@ expansion-modern-debugtools-timer-check: expansion-modern-boot-preflight expansi
 		printf '  fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_TIMER_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--scenario "$(MODERN_DEBUGTOOLS_TIMER_SCENARIO)" \
 		--expected "$(MODERN_DEBUGTOOLS_TIMER_FINGERPRINT)" \
@@ -2893,7 +2893,7 @@ expansion-modern-newgame-check: expansion-modern-boot-preflight expansion-modern
 		printf '  fingerprint: %s\n' "$(MODERN_NEWGAME_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--scenario "$(MODERN_NEWGAME_SCENARIO)" \
 		--sram-image "$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)" \
@@ -3025,7 +3025,7 @@ expansion-modern-combat-check: expansion-modern-boot-preflight expansion-modern-
 		printf '  fingerprint: %s\n' "$(MODERN_COMBAT_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--scenario "$(MODERN_COMBAT_SCENARIO)" \
 		--expected "$(MODERN_COMBAT_FINGERPRINT)" \
@@ -3171,13 +3171,13 @@ expansion-modern-starter-hook-check: expansion-modern-boot-preflight \
 	$(call modern_starter_require_pair,$(MODERN_STARTER_HOOK_NEG_SCENARIO),$(MODERN_STARTER_HOOK_NEG_FINGERPRINT))
 	$(call modern_starter_probe_binding,$(MODERN_STARTER_PROFILE_ELF),$(MODERN_STARTER_HOOK_SCENARIO),$(MODERN_STARTER_HOOK_FINGERPRINT))
 	$(call modern_starter_probe_binding,$(MODERN_ELF),$(MODERN_STARTER_HOOK_NEG_SCENARIO),$(MODERN_STARTER_HOOK_NEG_FINGERPRINT))
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_STARTER_PROFILE_ROM)" \
 		--elf "$(MODERN_STARTER_PROFILE_ELF)" --nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_STARTER_HOOK_SCENARIO)" \
 		--expected "$(MODERN_STARTER_HOOK_FINGERPRINT)" \
 		--policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--elf "$(MODERN_ELF)" --nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_STARTER_HOOK_NEG_SCENARIO)" \
@@ -3193,13 +3193,13 @@ expansion-modern-starter-hook-check: expansion-modern-boot-preflight \
 	$(call modern_starter_require_pair,$(MODERN_STARTER_HOOK_CLEAN_NEG_SCENARIO),$(MODERN_STARTER_HOOK_CLEAN_NEG_FINGERPRINT))
 	$(call modern_starter_probe_binding,$(MODERN_STARTER_PROFILE_ELF),$(MODERN_STARTER_HOOK_CLEAN_SCENARIO),$(MODERN_STARTER_HOOK_CLEAN_FINGERPRINT))
 	$(call modern_starter_probe_binding,$(MODERN_ELF),$(MODERN_STARTER_HOOK_CLEAN_NEG_SCENARIO),$(MODERN_STARTER_HOOK_CLEAN_NEG_FINGERPRINT))
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_STARTER_PROFILE_ROM)" \
 		--elf "$(MODERN_STARTER_PROFILE_ELF)" --nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_STARTER_HOOK_CLEAN_SCENARIO)" \
 		--expected "$(MODERN_STARTER_HOOK_CLEAN_FINGERPRINT)" \
 		--policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--elf "$(MODERN_ELF)" --nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_STARTER_HOOK_CLEAN_NEG_SCENARIO)" \
@@ -3223,13 +3223,13 @@ expansion-modern-starter-qol-check: expansion-modern-boot-preflight \
 	$(call modern_starter_require_pair,$(MODERN_STARTER_QOL_NEG_SCENARIO),$(MODERN_STARTER_QOL_NEG_FINGERPRINT))
 	$(call modern_starter_probe_binding,$(MODERN_STARTER_PROFILE_ELF),$(MODERN_STARTER_QOL_SCENARIO),$(MODERN_STARTER_QOL_FINGERPRINT),--symbol gExpansionDangerOverlayProbe)
 	$(call modern_starter_probe_binding,$(MODERN_ELF),$(MODERN_STARTER_QOL_NEG_SCENARIO),$(MODERN_STARTER_QOL_NEG_FINGERPRINT),--symbol gExpansionDangerOverlayProbe)
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_STARTER_PROFILE_ROM)" \
 		--elf "$(MODERN_STARTER_PROFILE_ELF)" --nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_STARTER_QOL_SCENARIO)" \
 		--expected "$(MODERN_STARTER_QOL_FINGERPRINT)" \
 		--policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--elf "$(MODERN_ELF)" --nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_STARTER_QOL_NEG_SCENARIO)" \
@@ -3393,7 +3393,7 @@ expansion-modern-saveload-check: expansion-modern-boot-preflight expansion-moder
 		printf '  fingerprint: %s\n' "$(MODERN_SAVELOAD_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--scenario "$(MODERN_SAVELOAD_SCENARIO)" \
 		--sram-image "$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)" \
@@ -3625,12 +3625,12 @@ expansion-modern-localization-runtime-debug-check: expansion-modern-boot-preflig
 		$(MODERN_LOCALE_FIXTURE_DIR)/blank.sav \
 		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav
 ifeq ($(MODERN_CONFIG),debug)
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_ROM)" \
 		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-blank-sram-no-selector-default-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-blank-sram-no-selector-default-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/blank.sav" --policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_ROM)" \
 		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-auto-select-single-locale-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-auto-select-single-locale-modern-debug.json" \
@@ -3648,17 +3648,17 @@ expansion-modern-localization-runtime-release-check: expansion-modern-boot-prefl
 		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav \
 		$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav
 ifeq ($(MODERN_CONFIG),release)
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_ROM)" \
 		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-blank-sram-no-selector-default-modern-release.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-blank-sram-no-selector-default-modern-release.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/blank.sav" --policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_ROM)" \
 		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-auto-select-single-locale-modern-release.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-auto-select-single-locale-modern-release.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_ROM)" \
 		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-settings-inline-single-modern-release.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-settings-inline-single-modern-release.json" \
@@ -3709,7 +3709,7 @@ expansion-modern-localization-runtime-multi-check: expansion-modern-boot-preflig
 	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) \
 		MODERN_BUILD_ROOT=$(MODERN_LOCALE_MULTI_BUILD_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,qps-ploc EXPANSION_PSEUDO_LOCALE=1
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_MULTI_ROM)" \
 		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-blank-sram-selector-multi-modern-$(MODERN_CONFIG).json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-blank-sram-selector-multi-modern-$(MODERN_CONFIG).json" \
@@ -3726,38 +3726,38 @@ expansion-modern-localization-runtime-multi-check: expansion-modern-boot-preflig
 	# proves persistence + re-prompt suppression across a real
 	# A+B+SELECT+START soft reset. See tools/gba-playtest/scenarios/
 	# locale-repair-*-multi-modern-*.json and docs/localization.md.
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_MULTI_ROM)" \
 		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-repair-unset-multi-modern-$(MODERN_CONFIG).json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-repair-unset-multi-modern-$(MODERN_CONFIG).json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_MULTI_ROM)" \
 		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-repair-corrupt-multi-modern-$(MODERN_CONFIG).json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-repair-corrupt-multi-modern-$(MODERN_CONFIG).json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/corrupt.sav" --policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_MULTI_ROM)" \
 		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-repair-unknown-multi-modern-$(MODERN_CONFIG).json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-repair-unknown-multi-modern-$(MODERN_CONFIG).json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unknown.sav" --policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_MULTI_ROM)" \
 		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-repair-disabled-multi-modern-$(MODERN_CONFIG).json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-repair-disabled-multi-modern-$(MODERN_CONFIG).json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/disabled_on_multi.sav" --policy behavior
 ifeq ($(MODERN_CONFIG),debug)
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_MULTI_ROM)" \
 		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-selector-multi-switch-qps-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-selector-multi-switch-qps-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_MULTI_ROM)" \
 		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-settings-real-navigation-multi-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-settings-real-navigation-multi-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav" --policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_MULTI_ROM)" \
 		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-softreset-persistence-multi-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-softreset-persistence-multi-modern-debug.json" \
@@ -3780,22 +3780,22 @@ expansion-modern-localization-runtime-cjk-check: expansion-modern-boot-preflight
 		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav \
 		$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav
 ifeq ($(MODERN_CONFIG),debug)
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_CJK_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_CJK_ROM)" \
 		--elf "$(MODERN_LOCALE_CJK_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-cjk-first-start-ja-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-cjk-first-start-ja-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_CJK_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_CJK_ROM)" \
 		--elf "$(MODERN_LOCALE_CJK_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-cjk-first-start-zh-hans-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-cjk-first-start-zh-hans-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_CJK_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_CJK_ROM)" \
 		--elf "$(MODERN_LOCALE_CJK_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-cjk-settings-inline-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-cjk-settings-inline-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav" --policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_CJK_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_CJK_ROM)" \
 		--elf "$(MODERN_LOCALE_CJK_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-cjk-softreset-persistence-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-cjk-softreset-persistence-modern-debug.json" \
@@ -3814,13 +3814,19 @@ MODERN_LOCALE_EU_ELF := \
 
 expansion-modern-localization-runtime-eu-check: expansion-modern-boot-preflight \
 		expansion-modern-localization-profile-en-fr-de-es-it \
-		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav
+		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav \
+		$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav
 ifeq ($(MODERN_CONFIG),debug)
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_EU_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_EU_ROM)" \
 		--elf "$(MODERN_LOCALE_EU_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-eu-first-start-fr-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-eu-first-start-fr-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_EU_ROM)" \
+		--elf "$(MODERN_LOCALE_EU_ELF)" \
+		--scenario "$(MODERN_LOCALE_SCEN)/locale-settings-more-eu-modern-debug.json" \
+		--expected "$(MODERN_LOCALE_FP)/locale-settings-more-eu-modern-debug.json" \
+		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav" --policy behavior
 	@printf 'Modern ROM localization-runtime EU check passed: %s\n' "$(MODERN_LOCALE_EU_ROM)"
 else
 	@printf 'Modern ROM localization-runtime EU check skipped for config=%s (debug fingerprint only)\n' '$(MODERN_CONFIG)'
@@ -3847,17 +3853,17 @@ expansion-modern-localization-runtime-prefs-check: expansion-modern-boot-preflig
 		$(MODERN_LOCALE_FIXTURE_DIR)/unknown.sav \
 		$(MODERN_LOCALE_FIXTURE_DIR)/disabled_on_default.sav
 ifeq ($(MODERN_CONFIG),debug)
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_ROM)" \
 		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-prefs-corrupt-no-wipe-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-prefs-corrupt-no-wipe-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/corrupt.sav" --policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_ROM)" \
 		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-prefs-unknown-locale-no-wipe-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-prefs-unknown-locale-no-wipe-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unknown.sav" --policy behavior
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_ROM)" \
 		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-prefs-disabled-locale-no-wipe-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-prefs-disabled-locale-no-wipe-modern-debug.json" \

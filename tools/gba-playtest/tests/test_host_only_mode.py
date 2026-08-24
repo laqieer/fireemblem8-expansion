@@ -72,6 +72,7 @@ _LIVE_ARTIFACT_APIS = frozenset(
         "capture_live_or_skip",
     }
 )
+_LIVE_ARTIFACT_ATTRIBUTES = frozenset({"LIVE_ROMS", "LIVE_ARTIFACTS"})
 
 
 def _artifact_users(path: Path) -> set[str]:
@@ -93,6 +94,15 @@ def _artifact_users(path: Path) -> set[str]:
                 and isinstance(func.value, ast.Name)
                 and func.value.id == "host_mode"
                 and func.attr in _LIVE_ARTIFACT_APIS
+            ):
+                users.add(class_stack[-1] if class_stack else "<module>")
+            self.generic_visit(node)
+
+        def visit_Attribute(self, node):
+            if (
+                isinstance(node.value, ast.Name)
+                and node.value.id == "host_mode"
+                and node.attr in _LIVE_ARTIFACT_ATTRIBUTES
             ):
                 users.add(class_stack[-1] if class_stack else "<module>")
             self.generic_visit(node)
