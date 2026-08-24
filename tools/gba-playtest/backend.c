@@ -24,6 +24,29 @@
 #define GBA_SRAM_BASE 0x0E000000u
 #define GBA_SRAM_SIZE 0x8000u
 #define MAX_INPUT_RANGES 1000000u
+#define MAX_RUN_PROBES 128u
+#define MAX_TERMINALS 3u
+#define MAX_TERMINAL_COMPARISONS 64u
+
+enum ComparisonOperator {
+	COMPARE_EQ = 0,
+	COMPARE_NE = 1,
+	COMPARE_LT = 2,
+	COMPARE_LE = 3,
+	COMPARE_GT = 4,
+	COMPARE_GE = 5,
+};
+
+enum TerminalReason {
+	TERMINAL_NONE = 0,
+	TERMINAL_SUCCESS = 1,
+	TERMINAL_OBJECTIVE_FAILURE = 2,
+	TERMINAL_CONTROLLER_EXHAUSTED = 3,
+	TERMINAL_ENGINE_STALL = 4,
+	TERMINAL_MAX_FRAMES = 5,
+	TERMINAL_MAX_TURNS = 6,
+	TERMINAL_MAX_ACTIONS = 7,
+};
 
 struct InputRange {
 	uint32_t start;
@@ -34,6 +57,31 @@ struct InputRange {
 struct Probe {
 	uint32_t address;
 	unsigned size;
+};
+
+struct Comparison {
+	size_t probe_index;
+	unsigned operator;
+	uint32_t value;
+};
+
+struct TerminalCondition {
+	enum TerminalReason reason;
+	size_t comparison_count;
+	struct Comparison* comparisons;
+};
+
+struct CounterLimit {
+	bool enabled;
+	size_t probe_index;
+	uint32_t maximum;
+};
+
+struct StallLimit {
+	bool enabled;
+	size_t progress_probe_index;
+	struct Comparison work_expected;
+	uint32_t max_unchanged_frames;
 };
 
 /* A [offset, offset+length) byte range within the 0x8000-byte SRAM image
@@ -84,9 +132,25 @@ struct Plan {
 	struct InputRange* ranges;
 	size_t checkpoint_count;
 	struct Checkpoint* checkpoints;
+	bool run_until;
+	uint32_t max_frames;
+	size_t run_probe_count;
+	struct Probe* run_probes;
+	size_t terminal_count;
+	struct TerminalCondition* terminals;
+	struct StallLimit stall;
+	struct CounterLimit turn_limit;
+	struct CounterLimit action_limit;
 };
 
 static FILE* sLogCapture;
+
+static bool probe_value_fits(unsigned size, uint32_t value)
+{
+	if (size == 4)
+		return true;
+	return value < (UINT32_C(1) << (size * 8));
+}
 
 static void capture_log(struct mLogger* logger, int category,
                         enum mLogLevel level, const char* format, va_list args)
@@ -114,8 +178,14 @@ static void free_plan(struct Plan* plan)
 			free(plan->checkpoints[i].pixel_probes);
 		}
 	}
+	if (plan->terminals) {
+		for (size_t i = 0; i < plan->terminal_count; ++i)
+			free(plan->terminals[i].comparisons);
+	}
 	free(plan->checkpoints);
 	free(plan->ranges);
+	free(plan->run_probes);
+	free(plan->terminals);
 	memset(plan, 0, sizeof(*plan));
 }
 
@@ -129,7 +199,8 @@ static bool read_plan(const char* path, struct Plan* plan)
 	char word[32];
 	unsigned version;
 	if (fscanf(file, "%31s %u", word, &version) != 2 ||
-	    strcmp(word, "GBA_PLAYTEST_PLAN") != 0 || version != 3) {
+	    strcmp(word, "GBA_PLAYTEST_PLAN") != 0 ||
+	    (version != 3 && version != 4)) {
 		fprintf(stderr, "malformed plan header\n");
 		goto fail;
 	}
@@ -242,6 +313,175 @@ static bool read_plan(const char* path, struct Plan* plan)
 				fprintf(stderr, "malformed pixel probe %zu at checkpoint %zu\n", j, i);
 				goto fail;
 			}
+		}
+	}
+	if (version == 4) {
+		unsigned reason_mask = 0;
+		unsigned enabled;
+
+		plan->run_until = true;
+		if (plan->checkpoint_count != 1 ||
+		    fscanf(file, "%31s %" SCNu32, word, &plan->max_frames) != 2 ||
+		    strcmp(word, "RUN_UNTIL") != 0 ||
+		    plan->max_frames == 0 || plan->max_frames > 10000001 ||
+		    plan->checkpoints[0].frame != plan->max_frames - 1) {
+			fprintf(stderr, "malformed RUN_UNTIL record\n");
+			goto fail;
+		}
+		for (size_t i = 0; i < plan->range_count; ++i) {
+			if (plan->ranges[i].start > plan->ranges[i].end ||
+			    plan->ranges[i].end >= plan->max_frames ||
+			    plan->ranges[i].keys > 0x3FFu ||
+			    (i > 0 && plan->ranges[i].start <= plan->ranges[i - 1].end)) {
+				fprintf(stderr, "input range %zu is outside run-until bounds\n", i);
+				goto fail;
+			}
+		}
+		if (fscanf(file, "%31s %zu", word, &plan->run_probe_count) != 2 ||
+		    strcmp(word, "RUN_PROBES") != 0 ||
+		    plan->run_probe_count == 0 ||
+		    plan->run_probe_count > MAX_RUN_PROBES) {
+			fprintf(stderr, "malformed RUN_PROBES record\n");
+			goto fail;
+		}
+		plan->run_probes = calloc(plan->run_probe_count, sizeof(*plan->run_probes));
+		if (!plan->run_probes) {
+			fprintf(stderr, "out of memory reading run-until probes\n");
+			goto fail;
+		}
+		for (size_t i = 0; i < plan->run_probe_count; ++i) {
+			struct Probe* probe = &plan->run_probes[i];
+			if (fscanf(file, "%" SCNu32 " %u", &probe->address,
+			           &probe->size) != 2 ||
+			    (probe->size != 1 && probe->size != 2 && probe->size != 4)) {
+				fprintf(stderr, "malformed run-until probe %zu\n", i);
+				goto fail;
+			}
+		}
+		if (fscanf(file, "%31s %zu", word, &plan->terminal_count) != 2 ||
+		    strcmp(word, "TERMINALS") != 0 ||
+		    plan->terminal_count == 0 ||
+		    plan->terminal_count > MAX_TERMINALS) {
+			fprintf(stderr, "malformed TERMINALS record\n");
+			goto fail;
+		}
+		plan->terminals = calloc(plan->terminal_count, sizeof(*plan->terminals));
+		if (!plan->terminals) {
+			fprintf(stderr, "out of memory reading terminals\n");
+			goto fail;
+		}
+		for (size_t i = 0; i < plan->terminal_count; ++i) {
+			struct TerminalCondition* terminal = &plan->terminals[i];
+			unsigned reason;
+
+			if (fscanf(file, "%u %zu", &reason,
+			           &terminal->comparison_count) != 2 ||
+			    reason < TERMINAL_SUCCESS ||
+			    reason > TERMINAL_CONTROLLER_EXHAUSTED ||
+			    (reason_mask & (1u << reason)) != 0 ||
+			    terminal->comparison_count == 0 ||
+			    terminal->comparison_count > MAX_TERMINAL_COMPARISONS) {
+				fprintf(stderr, "malformed terminal %zu\n", i);
+				goto fail;
+			}
+			terminal->reason = (enum TerminalReason) reason;
+			reason_mask |= 1u << reason;
+			terminal->comparisons = calloc(
+			    terminal->comparison_count, sizeof(*terminal->comparisons));
+			if (!terminal->comparisons) {
+				fprintf(stderr, "out of memory reading terminal comparisons\n");
+				goto fail;
+			}
+			for (size_t j = 0; j < terminal->comparison_count; ++j) {
+				struct Comparison* comparison = &terminal->comparisons[j];
+				if (fscanf(file, "%zu %u %" SCNu32,
+				           &comparison->probe_index, &comparison->operator,
+				           &comparison->value) != 3 ||
+				    comparison->probe_index >= plan->run_probe_count ||
+				    comparison->operator > COMPARE_GE ||
+				    !probe_value_fits(
+				        plan->run_probes[comparison->probe_index].size,
+				        comparison->value)) {
+					fprintf(stderr,
+					        "malformed comparison %zu at terminal %zu\n",
+					        j, i);
+					goto fail;
+				}
+				for (size_t prior = 0; prior < j; ++prior) {
+					const struct Comparison* previous =
+					    &terminal->comparisons[prior];
+					if (previous->probe_index == comparison->probe_index &&
+					    previous->operator == comparison->operator &&
+					    previous->value == comparison->value) {
+						fprintf(stderr,
+						        "duplicate comparison %zu at terminal %zu\n",
+						        j, i);
+						goto fail;
+					}
+				}
+			}
+		}
+		if ((reason_mask & (1u << TERMINAL_SUCCESS)) == 0) {
+			fprintf(stderr, "TERMINALS has no success condition\n");
+			goto fail;
+		}
+		if (fscanf(file, "%31s %u", word, &enabled) != 2 ||
+		    strcmp(word, "STALL") != 0 || enabled > 1) {
+			fprintf(stderr, "malformed STALL record\n");
+			goto fail;
+		}
+		plan->stall.enabled = enabled != 0;
+		if (plan->stall.enabled &&
+		    (fscanf(file, "%zu %zu %u %" SCNu32 " %" SCNu32,
+		            &plan->stall.progress_probe_index,
+		            &plan->stall.work_expected.probe_index,
+		            &plan->stall.work_expected.operator,
+		            &plan->stall.work_expected.value,
+		            &plan->stall.max_unchanged_frames) != 5 ||
+		     plan->stall.progress_probe_index >= plan->run_probe_count ||
+		     plan->stall.work_expected.probe_index >= plan->run_probe_count ||
+		     plan->stall.work_expected.operator > COMPARE_GE ||
+		     !probe_value_fits(
+		         plan->run_probes[plan->stall.work_expected.probe_index].size,
+		         plan->stall.work_expected.value) ||
+		     plan->stall.max_unchanged_frames == 0 ||
+		     plan->stall.max_unchanged_frames >= plan->max_frames)) {
+			fprintf(stderr, "malformed STALL payload\n");
+			goto fail;
+		}
+		if (fscanf(file, "%31s %u", word, &enabled) != 2 ||
+		    strcmp(word, "TURN_LIMIT") != 0 || enabled > 1) {
+			fprintf(stderr, "malformed TURN_LIMIT record\n");
+			goto fail;
+		}
+		plan->turn_limit.enabled = enabled != 0;
+		if (plan->turn_limit.enabled &&
+		    (fscanf(file, "%zu %" SCNu32, &plan->turn_limit.probe_index,
+		            &plan->turn_limit.maximum) != 2 ||
+		     plan->turn_limit.probe_index >= plan->run_probe_count ||
+		     plan->turn_limit.maximum == 0 ||
+		     !probe_value_fits(
+		         plan->run_probes[plan->turn_limit.probe_index].size,
+		         plan->turn_limit.maximum))) {
+			fprintf(stderr, "malformed TURN_LIMIT payload\n");
+			goto fail;
+		}
+		if (fscanf(file, "%31s %u", word, &enabled) != 2 ||
+		    strcmp(word, "ACTION_LIMIT") != 0 || enabled > 1) {
+			fprintf(stderr, "malformed ACTION_LIMIT record\n");
+			goto fail;
+		}
+		plan->action_limit.enabled = enabled != 0;
+		if (plan->action_limit.enabled &&
+		    (fscanf(file, "%zu %" SCNu32, &plan->action_limit.probe_index,
+		            &plan->action_limit.maximum) != 2 ||
+		     plan->action_limit.probe_index >= plan->run_probe_count ||
+		     plan->action_limit.maximum == 0 ||
+		     !probe_value_fits(
+		         plan->run_probes[plan->action_limit.probe_index].size,
+		         plan->action_limit.maximum))) {
+			fprintf(stderr, "malformed ACTION_LIMIT payload\n");
+			goto fail;
 		}
 	}
 	if (fscanf(file, "%31s", word) == 1) {
@@ -362,9 +602,226 @@ static uint64_t hash_sram(struct mCore* core, const struct ByteRange* exclude_ra
 	return hash;
 }
 
+static bool comparison_matches(uint32_t actual, const struct Comparison* comparison)
+{
+	switch (comparison->operator) {
+	case COMPARE_EQ:
+		return actual == comparison->value;
+	case COMPARE_NE:
+		return actual != comparison->value;
+	case COMPARE_LT:
+		return actual < comparison->value;
+	case COMPARE_LE:
+		return actual <= comparison->value;
+	case COMPARE_GT:
+		return actual > comparison->value;
+	default:
+		return actual >= comparison->value;
+	}
+}
+
+static bool terminal_matches(const struct TerminalCondition* terminal,
+                             const uint32_t* run_values)
+{
+	for (size_t i = 0; i < terminal->comparison_count; ++i) {
+		const struct Comparison* comparison = &terminal->comparisons[i];
+		if (!comparison_matches(run_values[comparison->probe_index], comparison))
+			return false;
+	}
+	return true;
+}
+
+static const char* terminal_reason_name(enum TerminalReason reason)
+{
+	switch (reason) {
+	case TERMINAL_SUCCESS:
+		return "success";
+	case TERMINAL_OBJECTIVE_FAILURE:
+		return "objective_failure";
+	case TERMINAL_CONTROLLER_EXHAUSTED:
+		return "controller_exhausted";
+	case TERMINAL_ENGINE_STALL:
+		return "engine_stall";
+	case TERMINAL_MAX_FRAMES:
+		return "max_frames";
+	case TERMINAL_MAX_TURNS:
+		return "max_turns";
+	case TERMINAL_MAX_ACTIONS:
+		return "max_actions";
+	default:
+		return NULL;
+	}
+}
+
+static void emit_checkpoint(struct mCore* core, const color_t* buffer,
+                            unsigned width, unsigned height,
+                            const struct Checkpoint* checkpoint,
+                            size_t checkpoint_index, uint32_t frame)
+{
+	uint64_t hash = hash_framebuffer(buffer, width, height);
+	printf("CHECKPOINT\t%zu\t%" PRIu32 "\t%016" PRIx64 "\n",
+	       checkpoint_index, frame, hash);
+	for (size_t probe_index = 0;
+	     probe_index < checkpoint->probe_count; ++probe_index) {
+		printf("PROBE\t%zu\t%zu\t%" PRIu32 "\n",
+		       checkpoint_index, probe_index,
+		       read_probe(core, &checkpoint->probes[probe_index]));
+	}
+	if (checkpoint->sram_hash) {
+		uint64_t sram = hash_sram(core, checkpoint->exclude_ranges,
+		                           checkpoint->exclude_range_count);
+		printf("SRAMHASH\t%zu\t%016" PRIx64 "\n", checkpoint_index, sram);
+	}
+	for (size_t region_index = 0;
+	     region_index < checkpoint->region_count; ++region_index) {
+		uint64_t region_hash = hash_region(
+		    buffer, width, &checkpoint->regions[region_index]);
+		printf("REGIONHASH\t%zu\t%zu\t%016" PRIx64 "\n",
+		       checkpoint_index, region_index, region_hash);
+	}
+	for (size_t pixel_index = 0;
+	     pixel_index < checkpoint->pixel_probe_count; ++pixel_index) {
+		uint32_t rgb = read_pixel(
+		    buffer, width, &checkpoint->pixel_probes[pixel_index]);
+		printf("PIXEL\t%zu\t%zu\t%06" PRIx32 "\n",
+		       checkpoint_index, pixel_index, rgb);
+	}
+}
+
+static void apply_frame_input(struct mCore* core, const struct Plan* plan,
+                              size_t* range_index, uint32_t frame)
+{
+	uint32_t keys = 0;
+
+	while (*range_index < plan->range_count &&
+	       plan->ranges[*range_index].end < frame)
+		(*range_index)++;
+	if (*range_index < plan->range_count &&
+	    plan->ranges[*range_index].start <= frame)
+		keys = plan->ranges[*range_index].keys;
+	core->setKeys(core, keys);
+	core->runFrame(core);
+}
+
+static int run_fixed(struct mCore* core, const struct Plan* plan,
+                     const color_t* buffer, unsigned width, unsigned height)
+{
+	size_t range_index = 0;
+	size_t checkpoint_index = 0;
+	uint32_t last_frame = plan->checkpoints[plan->checkpoint_count - 1].frame;
+
+	for (uint32_t frame = 0; frame <= last_frame; ++frame) {
+		apply_frame_input(core, plan, &range_index, frame);
+		if (checkpoint_index < plan->checkpoint_count &&
+		    plan->checkpoints[checkpoint_index].frame == frame) {
+			emit_checkpoint(core, buffer, width, height,
+			                &plan->checkpoints[checkpoint_index],
+			                checkpoint_index, frame);
+			++checkpoint_index;
+		}
+	}
+	return checkpoint_index == plan->checkpoint_count ? 0 : 2;
+}
+
+static int run_until(struct mCore* core, const struct Plan* plan,
+                     const color_t* buffer, unsigned width, unsigned height)
+{
+	size_t range_index = 0;
+	bool have_previous_epoch = false;
+	bool previous_work_expected = false;
+	uint32_t previous_epoch = 0;
+	uint32_t unchanged_frames = 0;
+
+	for (uint32_t frame = 0; frame < plan->max_frames; ++frame) {
+		uint32_t run_values[MAX_RUN_PROBES];
+		enum TerminalReason reason = TERMINAL_NONE;
+		size_t matched_terminals = 0;
+		uint32_t turn_value = 0;
+		uint32_t action_value = 0;
+		bool work_expected = false;
+
+		apply_frame_input(core, plan, &range_index, frame);
+		for (size_t i = 0; i < plan->run_probe_count; ++i)
+			run_values[i] = read_probe(core, &plan->run_probes[i]);
+
+		if (plan->stall.enabled) {
+			uint32_t epoch = run_values[plan->stall.progress_probe_index];
+			if (have_previous_epoch && epoch < previous_epoch) {
+				fprintf(stderr,
+				        "progress epoch regressed at frame %" PRIu32
+				        " from %" PRIu32 " to %" PRIu32 "\n",
+				        frame, previous_epoch, epoch);
+				return 2;
+			}
+			work_expected = comparison_matches(
+			    run_values[plan->stall.work_expected.probe_index],
+			    &plan->stall.work_expected);
+			if (work_expected && previous_work_expected &&
+			    have_previous_epoch && epoch == previous_epoch)
+				++unchanged_frames;
+			else
+				unchanged_frames = 0;
+			previous_epoch = epoch;
+			have_previous_epoch = true;
+			previous_work_expected = work_expected;
+		}
+
+		for (size_t i = 0; i < plan->terminal_count; ++i) {
+			if (terminal_matches(&plan->terminals[i], run_values)) {
+				reason = plan->terminals[i].reason;
+				++matched_terminals;
+			}
+		}
+		if (matched_terminals > 1) {
+			fprintf(stderr,
+			        "multiple terminal conditions matched at frame %" PRIu32 "\n",
+			        frame);
+			return 2;
+		}
+		if (reason == TERMINAL_NONE && plan->stall.enabled && work_expected &&
+		    unchanged_frames >= plan->stall.max_unchanged_frames)
+			reason = TERMINAL_ENGINE_STALL;
+
+		if (plan->turn_limit.enabled) {
+			turn_value = run_values[plan->turn_limit.probe_index];
+			if (reason == TERMINAL_NONE &&
+			    turn_value >= plan->turn_limit.maximum)
+				reason = TERMINAL_MAX_TURNS;
+		}
+		if (plan->action_limit.enabled) {
+			action_value = run_values[plan->action_limit.probe_index];
+			if (reason == TERMINAL_NONE &&
+			    action_value >= plan->action_limit.maximum)
+				reason = TERMINAL_MAX_ACTIONS;
+		}
+		if (reason == TERMINAL_NONE && frame + 1 == plan->max_frames)
+			reason = TERMINAL_MAX_FRAMES;
+
+		if (reason != TERMINAL_NONE) {
+			const char* reason_name = terminal_reason_name(reason);
+			if (!reason_name) {
+				fprintf(stderr, "unknown terminal reason at frame %" PRIu32 "\n",
+				        frame);
+				return 2;
+			}
+			printf("TERMINAL\t%s\t%" PRIu32 "\t%u\t%" PRIu32
+			       "\t%u\t%" PRIu32 "\n",
+			       reason_name, frame, plan->turn_limit.enabled ? 1u : 0u,
+			       turn_value, plan->action_limit.enabled ? 1u : 0u,
+			       action_value);
+			emit_checkpoint(core, buffer, width, height,
+			                &plan->checkpoints[0], 0, frame);
+			return 0;
+		}
+	}
+	fprintf(stderr, "run-until exhausted without a terminal reason\n");
+	return 2;
+}
+
 static int run(const char* rom_path, const struct Plan* plan, const char* sram_path)
 {
 	struct mCore* core = mCoreFind(rom_path);
+	int result;
 	if (!core) {
 		fprintf(stderr, "no mGBA core recognizes ROM: %s\n", rom_path);
 		return 2;
@@ -426,59 +883,13 @@ static int run(const char* rom_path, const struct Plan* plan, const char* sram_p
 	core->setVideoBuffer(core, buffer, width);
 	core->reset(core);
 
-	size_t range_index = 0;
-	size_t checkpoint_index = 0;
-	uint32_t last_frame = plan->checkpoints[plan->checkpoint_count - 1].frame;
-	for (uint32_t frame = 0; frame <= last_frame; ++frame) {
-		while (range_index < plan->range_count &&
-		       plan->ranges[range_index].end < frame)
-			++range_index;
-		uint32_t keys = 0;
-		if (range_index < plan->range_count &&
-		    plan->ranges[range_index].start <= frame)
-			keys = plan->ranges[range_index].keys;
-		core->setKeys(core, keys);
-		core->runFrame(core);
-		if (checkpoint_index < plan->checkpoint_count &&
-		    plan->checkpoints[checkpoint_index].frame == frame) {
-			const struct Checkpoint* checkpoint =
-			    &plan->checkpoints[checkpoint_index];
-			uint64_t hash = hash_framebuffer(buffer, width, height);
-			printf("CHECKPOINT\t%zu\t%" PRIu32 "\t%016" PRIx64 "\n",
-			       checkpoint_index, frame, hash);
-			for (size_t probe_index = 0;
-			     probe_index < checkpoint->probe_count; ++probe_index) {
-				printf("PROBE\t%zu\t%zu\t%" PRIu32 "\n",
-				       checkpoint_index, probe_index,
-				       read_probe(core, &checkpoint->probes[probe_index]));
-			}
-			if (checkpoint->sram_hash) {
-				uint64_t sram = hash_sram(core, checkpoint->exclude_ranges,
-				                           checkpoint->exclude_range_count);
-				printf("SRAMHASH\t%zu\t%016" PRIx64 "\n",
-				       checkpoint_index, sram);
-			}
-			for (size_t region_index = 0;
-			     region_index < checkpoint->region_count; ++region_index) {
-				uint64_t region_hash = hash_region(
-				    buffer, width, &checkpoint->regions[region_index]);
-				printf("REGIONHASH\t%zu\t%zu\t%016" PRIx64 "\n",
-				       checkpoint_index, region_index, region_hash);
-			}
-			for (size_t pixel_index = 0;
-			     pixel_index < checkpoint->pixel_probe_count; ++pixel_index) {
-				uint32_t rgb = read_pixel(
-				    buffer, width, &checkpoint->pixel_probes[pixel_index]);
-				printf("PIXEL\t%zu\t%zu\t%06" PRIx32 "\n",
-				       checkpoint_index, pixel_index, rgb);
-			}
-			++checkpoint_index;
-		}
-	}
+	result = plan->run_until
+	    ? run_until(core, plan, buffer, width, height)
+	    : run_fixed(core, plan, buffer, width, height);
 	free(buffer);
 	mCoreConfigDeinit(&core->config);
 	core->deinit(core);
-	return checkpoint_index == plan->checkpoint_count ? 0 : 2;
+	return result;
 }
 
 int main(int argc, char** argv)

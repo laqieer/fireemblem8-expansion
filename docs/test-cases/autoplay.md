@@ -160,3 +160,98 @@ Use `make clean_fast` only to remove build outputs. The command controls one
 phase only. It adds no `NOBODY`, persistent ownership, strategy selector,
 authored objective, campaign mode, fast-forward behavior, or claim that the
 existing low-level AI can complete arbitrary chapters.
+
+## TC-AUTOPLAY-BOUNDS-001: Bounded semantic autoplay termination
+
+- **Feature / originating issue:** `bounded-semantic-run-until` /
+  [#86](https://github.com/laqieer/fireemblem8-expansion/issues/86).
+- **Supported configuration or artifact:** generated homebrew fixture with
+  libmGBA for all terminal classes; modern AAPCS debug ROM for the real
+  COMPUTER success; modern AAPCS debug and release ROMs for default PLAYER
+  negatives.
+- **Prerequisites and clean starting state:** repository root, Python 3.10+,
+  host C compiler, libmGBA development files, and the modern ARM toolchain for
+  the real ROM checks. Start without a committed ROM, save, or savestate. The
+  runtime scripts use clean boot routes and repository-local ignored output.
+
+### Actions
+
+1. Run
+   `python3 -m unittest tools.gba-playtest.tests.test_run_until -v`.
+2. Run
+   `make expansion-modern-autoplay-bounds-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+3. Run
+   `make expansion-modern-autoplay-bounds-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
+4. Inspect the reported reason, frame, turn, and action count for each runtime
+   scenario. Do not refresh a checked fingerprint to hide a mismatch.
+
+The generated fixture runs success, objective failure, explicit controller
+exhaustion, frozen expected-work progress, and each hard budget. Its success
+input becomes observable at frame 2. The real debug route uses the same
+Chapter 2 `SELECT+START+R` activation from `TC-AUTOPLAY-001`; no player-unit
+action is selected.
+
+### Expected result
+
+The generated fixture emits each reason exactly once:
+`success`, `objective_failure`, `controller_exhausted`, `engine_stall`,
+`max_frames`, `max_turns`, and `max_actions`. Success stops on its first
+matching frame, the frozen monotonic epoch stops as `engine_stall`, and every
+fingerprint contains exactly one checkpoint whose frame equals the typed
+terminal frame. Bound turn/action values use their symbolic probe identities.
+
+The real debug COMPUTER route stops at its first semantic completion:
+`success`, frame 17134, turn 2, six actions, one blue start/completion, 104
+red-hostile checks, 56 green-allied checks, and no invalid or failure record.
+This is earlier than the parent fixed checkpoint at frame 18000.
+
+### Negative controls
+
+Malformed or unbounded profiles, unsupported operators/reasons, duplicate or
+overlapping terminal definitions, impossible success/counter combinations,
+unresolved/aliasing symbols, and a regressing progress epoch fail
+deterministically. Objective failure is selected before stall classification,
+and a retry allowance still executes a semantic failure only once.
+
+The clean debug and release default routes never activate COMPUTER. Both stop
+at `max_frames` on frame 3950 with turn 1 and zero blue starts, completions,
+actions, debug activations, invalid records, or failures. Existing schema-v1
+fixed scenarios and format-v2 fingerprints continue to parse, capture, and
+verify unchanged.
+
+### Interactions and save compatibility
+
+The real positive depends on #85's transient control and pointer-free
+telemetry. The generic runner depends only on existing ELF probe binding and
+libmGBA. There are no fixed-frame conflicts. Authored objectives and
+accelerated/strategy layers may consume the terminal contract but are not
+defined here.
+
+The harness reads semantic probes only. It adds no target code, save field,
+preference, migration, compatibility epoch, generated game data,
+localization, configuration identity, ROM allocation, or RAM allocation. The
+underlying #85 controller remains transient and reset to PLAYER by map
+lifecycle boundaries.
+
+### Automation
+
+- `python3 -m unittest tools.gba-playtest.tests.test_run_until -v`
+  - strict schema/fingerprint diagnostics, plan-version compatibility,
+    generated libmGBA coverage for all seven reasons, first-frame capture,
+    monotonic stall semantics, and non-retry behavior.
+- `make expansion-modern-autoplay-bounds-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
+  - checked real COMPUTER success and checked default PLAYER `max_frames`
+    negative.
+- `make expansion-modern-autoplay-bounds-check MODERN_CONFIG=release MODERN_ABI=aapcs`
+  - checked release default PLAYER `max_frames` negative.
+- Existing host, boot, budget, save-format, localization/catalog, generated
+  data, and legacy gates prove the unchanged compatibility surfaces.
+
+### Cleanup and limitations
+
+Use `make clean_fast` only if ignored build artifacts must be removed. The
+runner classifies a ROM-supplied semantic state; it does not define chapter
+objectives, choose AI actions, accelerate engine logic, score strategies,
+claim balance, or prove arbitrary chapter completion. Explicit
+`controller_exhausted` telemetry must come from the controller/objective
+contract being tested and is not inferred from inactivity.

@@ -246,27 +246,6 @@ class DebugToolsLocalizationTests(unittest.TestCase):
     def test_every_generated_debug_menu_label_fits_actual_text_allocation(self):
         menu_width_tiles = self._constant("DEBUGTOOLS_MENU_WIDTH_TILES")
         allocation_pixels = (menu_width_tiles - 1) * 8
-        self.assertIn("InitText(&item->text, rect.w - 1);", self.uimenu)
-
-        menu_sources = "\n".join(
-            self.sources[name]
-            for name in (
-                "debugtools_registry.c",
-                "debugtools_actions.c",
-                "debugtools_tools.c",
-            )
-        )
-        menu_width_tokens = re.findall(
-            r"CONST_DATA struct MenuDef gDebugTools\w+MenuDef\s*=\s*\{\s*"
-            r"\{\s*1\s*,\s*1\s*,\s*([^,\s]+)\s*,\s*0\s*\}",
-            menu_sources,
-            flags=re.DOTALL,
-        )
-        self.assertEqual(len(menu_width_tokens), 8)
-        self.assertEqual(
-            set(menu_width_tokens),
-            {"DEBUGTOOLS_MENU_WIDTH_TILES"},
-        )
         self.assertLessEqual(1 + menu_width_tiles, 30)
 
         menu_keys = {

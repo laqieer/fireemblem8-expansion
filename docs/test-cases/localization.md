@@ -12,6 +12,30 @@ selection and rendering evidence is automated; linguistic quality and
 comparison of rendered CJK artwork to authorized regional artwork remain
 separate human judgments.
 
+## Issue #104 semantic evidence mapping
+
+Issue [#104](https://github.com/laqieer/fireemblem8-expansion/issues/104)
+replaced the localization/font/static-graphics audit's source-spelling
+assertions with the existing generated-output, compiler/linker, codec, and
+native-consumer evidence below. The mapping covers all 53 audit records.
+Private helper names, source ordering, literal formatting, and line placement
+are not acceptance evidence: a spelling-only refactor remains green, while a
+bad catalog payload, malformed asset, missing glyph, disabled locale payload,
+or unsafe runtime behavior fails the listed check.
+
+| Audited test surface | Semantic replacement or named static contract |
+| --- | --- |
+| `scripts/fonttools/cjk/tests/test_cjk_fonts.py` (six records) | `python3 -m scripts.fonttools.cjk check` regenerates inventory and decodes the font/asset binary contracts. Hashes, SFNT metadata, glyph maps, widths, and package signatures are externally consumed artifact contracts. |
+| `scripts/localization/game_catalog/tests/runtime/test_localized_game_text_runtime.py` and `test_generate_real.py` (four records) | Generated reports are parsed as structured data; `test_native_compile.py` compiles and links each locale payload, and the runtime driver decodes it through the real C implementation. |
+| `scripts/localization/game_catalog/tests/test_modern_integration.py` (three records) | Generated profile metadata is produced by the real configuration target. It proves the effective locale mask, default locale, and configuration fingerprint rather than Make recipe spelling. |
+| `scripts/localization/tests/test_authored_event_expansion.py`, `test_authored_help_shop_shards.py`, `test_combined_coverage.py`, `test_febuilder_alignment.py`, `test_game_locale_crosswalk.py`, and `test_structural_completion.py` (eight records) | Catalog, shard, and mapping documents are parsed and validated by their owning builders. Command tests use successful validator execution; they do not pin a status sentence. |
+| `scripts/localization/tests/test_debugtools_localization.py` (three records) | Decoded localized strings are measured against the actual allocation geometry for every supported locale. Invalid widths and missing payloads fail without relying on debug-menu declaration spelling. |
+| `scripts/localization/tests/test_ja_raw_origin.py`, `test_raw_surface_closure.py`, and `test_schema.py` (eight records) | Provenance is checked through parsed Merkle/object records and catalog resolution; the native resolver exercises locale fallback and runtime selection. |
+| `scripts/localization/tests/test_localized_ui_graphics.py` (seven records) | `extract_ui_graphics.check()` regenerates and byte-compares the registry, decodes each indexed PNG/TSA asset, and validates source hashes and surfaces. The named CJK runtime fingerprint is a target-ROM behavioral oracle, including its rejected zh-Hans pre-fix value. |
+| `scripts/localization/tests/test_sio_localization.py` (one record) | The host executable compiles the real transfer path and verifies its locale-independent shared-buffer behavior. |
+| `scripts/texttools/tests/test_text_consumer_audit.py` and `test_text_consumers_native.py` (twelve records) | `test_text_consumers_native.py` compiles real dialogue, CG, help-box, popup, SIO, class, and tactician consumers and executes valid, malformed, overflow, locale, and guard-byte controls. It replaces source walking and fixed-slot spelling checks. |
+| `scripts/texttools/tests/test_legacy_text_source.py` (one record) | The `## MSG_*` records are the documented externally consumed legacy text-source grammar. Its parser result is the named static-format exception: the test proves the emitted legacy source excludes only the declared modern suffix. |
+
 ## TC-LOCALIZATION-001: Default English and single-locale auto-select
 
 - **Feature / originating issue:** `expansion-locale-selection` /
@@ -380,6 +404,10 @@ with no optional module.
   — `graphics/localized_ui/manifest.json`.
 - `make expansion-modern-localization-runtime-cjk-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
   — `tools/gba-playtest/scenarios/locale-cjk-softreset-persistence-modern-debug.json`.
+
+The asset check decodes and regenerates the committed registry; the runtime
+scenario is the consumer/layout oracle. These are intentional replacements
+for C-source selector, OAM, and destination spelling checks.
 
 ### Cleanup and limitations
 
