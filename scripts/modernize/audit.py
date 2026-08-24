@@ -157,15 +157,41 @@ def _asm_label_context(code_lines: list[str], index: int) -> str:
 NAKED_ATTR_RE = re.compile(r"__attribute__\s*\(\([^)]*\bnaked\b[^)]*\)\)")
 ROM_LITERAL = r"0x(?:0[89][0-9A-Fa-f]{6}|[89][0-9A-Fa-f]{6})"
 RAW_ROM_RE = re.compile(rf"(?<![0-9A-Za-z_]){ROM_LITERAL}(?![0-9A-Fa-f])")
-# Declaration-shaped bitfields only. Requiring a type/declarator sequence from
-# the start of the line prevents ``condition ? value : 1;`` from matching.
-# The final alternative also covers unnamed integral padding fields (``u8 : 2``).
-BITFIELD_RE = re.compile(
-    r"^\s*(?:(?:const|volatile|signed|unsigned|struct\s+[A-Za-z_]\w*|"
-    r"union\s+[A-Za-z_]\w*|enum\s+[A-Za-z_]\w*|"
-    r"(?!(?:const|volatile|signed|unsigned|struct|union|enum)\b)[A-Za-z_]\w*)\s+)+"
-    r"(?:[A-Za-z_]\w*\s*)?:\s*(?:\d+|[A-Za-z_]\w*)\s*;"
-)
+
+
+def _is_c_identifier(token: str) -> bool:
+    if not token or not (token[0] == "_" or token[0].isascii() and token[0].isalpha()):
+        return False
+
+    return all(ch == "_" or ch.isascii() and ch.isalnum() for ch in token[1:])
+
+
+def is_bitfield_declaration(code: str) -> bool:
+    """Recognize the declaration-shaped bitfields supported by the audit.
+
+    This intentionally uses one linear token pass instead of a repeated regular
+    expression. Type qualifiers, tagged types, typedef names, named fields, and
+    unnamed padding fields are all identifiers on the left of the single colon;
+    the supported width is an ASCII integer or identifier.
+    """
+    stripped = code.strip()
+    if not stripped.endswith(";"):
+        return False
+
+    left, separator, width = stripped[:-1].rstrip().rpartition(":")
+    if not separator or ":" in left:
+        return False
+
+    width = width.strip()
+    if not width or not (
+        all("0" <= ch <= "9" for ch in width) or _is_c_identifier(width)
+    ):
+        return False
+
+    declaration_tokens = left.split()
+    return bool(declaration_tokens) and all(
+        _is_c_identifier(token) for token in declaration_tokens
+    )
 OFFSET_FIELD_RE = re.compile(
     r"/\*\s*(?:0x)?[0-9A-Fa-f]{1,4}\s*\*/[^;{}]*\b[A-Za-z_]\w*(?:\[[^\]]+\])?\s*;"
 )
@@ -1069,7 +1095,7 @@ def scan_c_file(path: str, lines: list[str]) -> list[dict]:
         if (
             "BITPACKED" in code
             or re.search(r"__attribute__\s*\(\([^)]*\bpacked\b", code)
-            or BITFIELD_RE.search(code)
+            or is_bitfield_declaration(code)
             or OFFSET_FIELD_RE.search(original)
         ):
             findings.append(make_finding("layout-sensitive-struct", path, index, original))
