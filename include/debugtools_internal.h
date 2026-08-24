@@ -1,7 +1,10 @@
 #ifndef GUARD_DEBUGTOOLS_INTERNAL_H
 #define GUARD_DEBUGTOOLS_INTERNAL_H
 
+#ifndef FE8_ARCHIVAL_BUILD
+
 #include "proc.h"
+#include "uimenu.h"
 #include "expansion_debugtools.h"
 
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
@@ -10,8 +13,13 @@ int DebugTools_RegisterBuiltinAction(const struct DebugToolsAction* action);
 void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu);
 int DebugTools_IsMenuTransitionScheduled(void);
 void DebugTools_RunMenuTransition(ProcPtr proc);
+void DebugTools_QueueSubmenuTransitionWithBuilder(
+    struct MenuProc* menu,
+    const struct MenuDef* menuDef,
+    void (*builder)(void));
 
 extern struct ProcCmd CONST_DATA gProcScr_DebugToolsMenuTransition[];
+extern struct MenuItemDef gDebugToolsMenuItemDefs[DEBUGTOOLS_HUB_MENU_SLOTS];
 
 #if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
 /*
@@ -36,6 +44,8 @@ struct PortraitPackageRuntimeProbe
 extern struct PortraitPackageRuntimeProbe gPortraitPackageRuntimeProbe;
 #endif
 
-#endif
+#endif /* FE8_EXPANSION_DEBUGTOOLS_ENABLED */
 
-#endif
+#endif /* FE8_ARCHIVAL_BUILD */
+
+#endif /* GUARD_DEBUGTOOLS_INTERNAL_H */

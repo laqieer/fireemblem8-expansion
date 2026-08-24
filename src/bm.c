@@ -466,7 +466,7 @@ void BmMain_StartPhase(ProcPtr proc)
         break;
 
     case FACTION_RED:
-#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
         if (DebugToolsPhaseControl_ApplyAtPhaseStart(gPlaySt.faction)
             == DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED)
             break;
@@ -475,7 +475,7 @@ void BmMain_StartPhase(ProcPtr proc)
         break;
 
     case FACTION_GREEN:
-#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
         if (DebugToolsPhaseControl_ApplyAtPhaseStart(gPlaySt.faction)
             == DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED)
             break;

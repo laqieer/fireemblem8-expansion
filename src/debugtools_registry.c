@@ -82,6 +82,8 @@ struct DebugToolsMenuTextScope
  * have switched it. */
 SECTION("debugtools_contributor_data") static struct DebugToolsMenuTextScope
     sMenuTextScope = {0};
+SECTION("debugtools_contributor_data") static void
+    (*sDeferredSubmenuBuilder)(void) = NULL;
 
 /* Preserve the established registry EWRAM layout as one explicit object.
  * Separate top-level statics are compiler-reordered in modern builds, so
@@ -97,16 +99,17 @@ struct DebugToolsRegistryState
     /* 004 */ enum DebugToolsResult lastResult;
     /* 008 */ int builtinActionCount;
     /* 00C */ struct DebugToolsAction builtinActions[DEBUGTOOLS_STABLE_BUILTIN_ACTION_MAX];
-    /* 078 */ struct MenuItemDef hubMenuItemDefs[DEBUGTOOLS_HUB_MENU_SLOTS];
 };
 
 EWRAM_DATA static struct DebugToolsRegistryState sRegistryState = {0};
+EWRAM_DATA struct MenuItemDef
+    gDebugToolsMenuItemDefs[DEBUGTOOLS_HUB_MENU_SLOTS] = {{0}};
 
 #define sHubActive sRegistryState.hubActive
 #define sLastResult sRegistryState.lastResult
 #define sBuiltinActionCount sRegistryState.builtinActionCount
 #define sBuiltinActions sRegistryState.builtinActions
-#define sHubMenuItemDefs sRegistryState.hubMenuItemDefs
+#define sHubMenuItemDefs gDebugToolsMenuItemDefs
 
 extern struct Font* gActiveFont;
 
@@ -651,16 +654,28 @@ static int DebugTools_StartMenuTransition(
 
 void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuDef* menuDef)
 {
+    DebugTools_QueueSubmenuTransitionWithBuilder(menu, menuDef, NULL);
+}
+
+void DebugTools_QueueSubmenuTransitionWithBuilder(
+    struct MenuProc* menu,
+    const struct MenuDef* menuDef,
+    void (*builder)(void))
+{
     if (menuDef == NULL
         || !(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE)
         || (sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
         return;
 
+    sDeferredSubmenuBuilder = builder;
     DebugTools_StartMenuTransition(
         menu,
         DEBUGTOOLS_TRANSITION_SUBMENU,
         menuDef,
         0);
+
+    if (!(sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
+        sDeferredSubmenuBuilder = NULL;
 }
 
 int DebugTools_IsMenuTransitionScheduled(void)
@@ -727,9 +742,19 @@ void DebugTools_RunMenuTransition(ProcPtr proc)
 
     if (target == DEBUGTOOLS_TRANSITION_SUBMENU && submenuDef != NULL)
     {
+        if (sDeferredSubmenuBuilder != NULL)
+        {
+            void (*builder)(void) = sDeferredSubmenuBuilder;
+
+            sDeferredSubmenuBuilder = NULL;
+            builder();
+        }
+
         DebugTools_StartOwnedMenu(submenuDef);
         return;
     }
+
+    sDeferredSubmenuBuilder = NULL;
 
     if (target == DEBUGTOOLS_TRANSITION_HUB)
     {

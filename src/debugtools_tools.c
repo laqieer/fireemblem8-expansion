@@ -2064,15 +2064,16 @@ CONST_DATA static struct DebugToolsAction sUnitInspectAction = {
 
 /* --- 6. Convoy inspection/edit ------------------------------------------ */
 
-/* Convoy and RNG submenus cannot coexist, so they share one three-item
- * buffer. The Flag/Chapter submenu additionally owns #124's five
- * transient phase rows and therefore requires its separate nine-item
- * buffer. */
+/* Convoy, RNG, and read-only Save State are mutually exclusive and each
+ * needs at most Back plus the terminator. #124's larger Flag/Chapter menu
+ * reuses gDebugToolsMenuItemDefs after the hub is ended by the deferred
+ * transition builder below. */
 EWRAM_DATA static struct MenuItemDef sDebugToolsToolMenuItemDefs[3] = {{0}};
-EWRAM_DATA static struct MenuItemDef sFlagMenuItemDefs[9] = {{0}};
 
 #define sConvoyMenuItemDefs sDebugToolsToolMenuItemDefs
+#define sFlagMenuItemDefs gDebugToolsMenuItemDefs
 #define sRngMenuItemDefs sDebugToolsToolMenuItemDefs
+#define sSaveStateMenuItemDefs sDebugToolsToolMenuItemDefs
 
 static void DebugToolsConvoy_OnEnd(struct MenuProc* menu)
 {
@@ -2319,8 +2320,10 @@ static u8 DebugToolsActions_FlagInspectSelected(struct MenuProc* menu, struct Me
         gDebugToolsProbe.chapterIndexSample, gDebugToolsProbe.debugFlagLastValue);
     DebugToolsTools_ShowStatusLine(buf);
 
-    DebugToolsFlag_BuildMenuItems();
-    DebugTools_QueueSubmenuTransition(menu, &gDebugToolsFlagMenuDef);
+    DebugTools_QueueSubmenuTransitionWithBuilder(
+        menu,
+        &gDebugToolsFlagMenuDef,
+        DebugToolsFlag_BuildMenuItems);
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
@@ -2413,8 +2416,6 @@ CONST_DATA static struct DebugToolsAction sRngInspectAction = {
 };
 
 /* --- 9. Save compatibility/state inspection (read-only) ------------------ */
-
-EWRAM_DATA static struct MenuItemDef sSaveStateMenuItemDefs[2] = {{0}}; /* back + terminator: nothing to confirm */
 
 static void DebugToolsSaveState_OnEnd(struct MenuProc* menu)
 {
