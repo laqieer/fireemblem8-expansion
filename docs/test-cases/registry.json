@@ -29,6 +29,7 @@
       "generated-data-platform",
       "typed-id-item-cap",
       "debug-tools",
+      "debugtools-visual-status-diagnostics",
       "runtime-playtest-harness",
       "upstream-port-tooling",
       "build-ci-default-release-reproduction",
@@ -2273,11 +2274,11 @@
         },
         {
           "command": "make expansion-modern-debugtools-diagnostics-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
-          "evidence": "tools/gba-playtest/scenarios/debugtools-diagnostics-modern-debug.json"
+          "evidence": "tools/gba-playtest/specs/debugtools-diagnostics-modern-debug.json"
         },
         {
           "command": "make expansion-modern-debugtools-diagnostics-check MODERN_CONFIG=release MODERN_ABI=aapcs",
-          "evidence": "tools/gba-playtest/scenarios/debugtools-diagnostics-modern-release.json"
+          "evidence": "tools/gba-playtest/specs/debugtools-diagnostics-modern-release.json"
         }
       ]
     }

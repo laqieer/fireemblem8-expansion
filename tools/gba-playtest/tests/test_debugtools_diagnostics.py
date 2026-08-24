@@ -148,7 +148,7 @@ class DebugToolsDiagnosticsHostTests(unittest.TestCase):
             self.assertIn(initialization, body)
 
     def test_scenario_specs_are_scalar_and_cover_all_frozen_contexts(self):
-        scenarios = ROOT / "tools/gba-playtest/scenarios"
+        scenarios = ROOT / "tools/gba-playtest/specs"
         debug = json.loads(
             (scenarios / "debugtools-diagnostics-modern-debug.json").read_text(
                 encoding="utf-8"

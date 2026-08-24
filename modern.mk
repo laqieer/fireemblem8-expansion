@@ -2688,9 +2688,9 @@ expansion-modern-debugtools-tools-check: expansion-modern-boot-preflight expansi
 # owner/probe omission plus semantic world-map progress. The runner resolves
 # every address from the exact ELF and emits only scalar probes.
 MODERN_DEBUGTOOLS_DIAGNOSTICS_SPEC := \
-	tools/gba-playtest/scenarios/debugtools-diagnostics-modern-$(MODERN_CONFIG).json
+	tools/gba-playtest/specs/debugtools-diagnostics-modern-$(MODERN_CONFIG).json
 MODERN_DEBUGTOOLS_DIAGNOSTICS_PREP_SPEC := \
-	tools/gba-playtest/scenarios/debugtools-diagnostics-prep-modern-debug.json
+	tools/gba-playtest/specs/debugtools-diagnostics-prep-modern-debug.json
 MODERN_DEBUGTOOLS_DIAGNOSTICS_RUNNER := \
 	tools/gba-playtest/run_debugtools_diagnostics_checks.py
 MODERN_DEBUGTOOLS_DIAGNOSTICS_OUT := \
