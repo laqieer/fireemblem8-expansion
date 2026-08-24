@@ -32,10 +32,10 @@
   "regions_headroom": {
     "ewram": {
       "capacity_bytes": 262144,
-      "free_bytes": 3096,
-      "occupied_bytes": 259048,
+      "free_bytes": 3088,
+      "occupied_bytes": 259056,
       "overflow": false,
-      "physical_free_bytes": 3096
+      "physical_free_bytes": 3088
     },
     "iwram": {
       "capacity_bytes": 32768,
@@ -71,42 +71,42 @@
     "missing": [],
     "symbols": {
       "gExpansionLocaleMsgCount": 2,
-      "gExpansionLocaleMsgIds": 174,
+      "gExpansionLocaleMsgIds": 240,
       "gExpansionLocaleTombstoneCount": 2
     },
-    "total_bytes": 178
+    "total_bytes": 244
   },
   "rom_catalog_strings": {
     "missing": [],
     "symbols": {
-      "gExpansionCatalog_de": 348,
-      "gExpansionCatalog_en": 348,
-      "gExpansionCatalog_es": 348,
-      "gExpansionCatalog_fr": 348,
-      "gExpansionCatalog_it": 348,
-      "gExpansionCatalog_ja": 348,
-      "gExpansionCatalog_qps_ploc": 348,
-      "gExpansionCatalog_zh_Hans": 348
+      "gExpansionCatalog_de": 480,
+      "gExpansionCatalog_en": 480,
+      "gExpansionCatalog_es": 480,
+      "gExpansionCatalog_fr": 480,
+      "gExpansionCatalog_it": 480,
+      "gExpansionCatalog_ja": 480,
+      "gExpansionCatalog_qps_ploc": 480,
+      "gExpansionCatalog_zh_Hans": 480
     },
-    "total_bytes": 2784,
+    "total_bytes": 3840,
     "unexpected": []
   },
   "schema_version": 1,
   "source_catalog_budget": {
-    "active_message_count": 87,
-    "catalog_index_bytes": 3054,
+    "active_message_count": 120,
+    "catalog_index_bytes": 4176,
     "catalog_string_bytes": {
-      "de": 1059,
-      "en": 924,
-      "es": 1067,
-      "fr": 1103,
-      "it": 1052,
-      "ja": 1088,
-      "qps-ploc": 1471,
-      "total": 8726,
-      "zh-Hans": 962
+      "de": 1219,
+      "en": 1084,
+      "es": 1227,
+      "fr": 1263,
+      "it": 1212,
+      "ja": 1345,
+      "qps-ploc": 1631,
+      "total": 10183,
+      "zh-Hans": 1202
     },
-    "glyphs_used_count": 345,
+    "glyphs_used_count": 396,
     "locales_generated": [
       "en",
       "ja",
@@ -118,7 +118,7 @@
       "qps-ploc"
     ],
     "pseudo_policy_counts": {
-      "compact": 4,
+      "compact": 37,
       "preserve": 6,
       "transform": 77
     },

@@ -243,8 +243,8 @@ int main(void)
           "the full registry must render as at most three bounded pages");
     CHECK(DEBUGTOOLS_TEXT_ALLOC_CAPACITY == 448,
           "the default BG text allocator capacity must remain 448 columns");
-    CHECK(DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET == 204,
-          "the maximum hub plus localized status line must use 204 columns");
+    CHECK(DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET == 187,
+          "the maximum hub plus localized status line must use 187 columns");
     CHECK(ExpansionLocale_GetCurrent() == EXPANSION_LOCALE_QPS_PLOC,
           "the public lifecycle fixture must execute under QPS");
 
@@ -362,7 +362,7 @@ int main(void)
     InitText(&statusText, DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES);
     CHECK(DebugToolsLifecycle_GetTextCounter()
           == textBase + DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET,
-          "the maximum CJK hub/status allocation must equal the 204-column budget");
+          "the maximum CJK hub/status allocation must equal the 187-column budget");
     CHECK(DebugToolsLifecycle_GetTextCounter() <= DEBUGTOOLS_TEXT_ALLOC_CAPACITY,
           "the maximum hub/status allocation must stay within text tile capacity");
 
@@ -491,13 +491,35 @@ int main(void)
         CHECK(DebugToolsLifecycle_GetTextCounter() == hubCounter,
               "page-three onEnd must not rewind its live Text rows");
         DebugToolsLifecycle_RunPendingTransition();
-        InitText(&statusText, DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES);
+        CHECK(gDebugToolsLifecycleLastMenuItemCount
+              == DEBUGTOOLS_HUB_PAGE_ACTION_MAX + 1,
+              "state diagnostics page must stay bounded");
+        CHECK(DebugToolsLifecycle_GetTextCounter()
+              == textBase + (DEBUGTOOLS_HUB_PAGE_ACTION_MAX + 1)
+                 * (DEBUGTOOLS_MENU_WIDTH_TILES - 1),
+              "state diagnostics page must use only its ten row allocations");
+
+        hubCounter = DebugToolsLifecycle_GetTextCounter();
+        DispatchMenuKey(R_BUTTON);
+        CHECK(DebugToolsLifecycle_GetTextCounter() == hubCounter,
+              "state diagnostics onEnd must not rewind live Text rows");
+        DebugToolsLifecycle_RunPendingTransition();
+        CHECK(gDebugToolsLifecycleLastMenuItemCount
+              == DEBUGTOOLS_HUB_PAGE_ACTION_MAX + 1,
+              "engine diagnostics page must stay bounded");
+
+        hubCounter = DebugToolsLifecycle_GetTextCounter();
+        DispatchMenuKey(R_BUTTON);
+        CHECK(DebugToolsLifecycle_GetTextCounter() == hubCounter,
+              "engine diagnostics onEnd must not rewind live Text rows");
+        DebugToolsLifecycle_RunPendingTransition();
         CHECK(gDebugToolsLifecycleLastMenuItemCount
               == DEBUGTOOLS_HUB_PAGE_ACTION_MAX + 1,
               "page one must stay bounded after repeated cycles");
         CHECK(DebugToolsLifecycle_GetTextCounter()
-              == textBase + DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET,
-              "page one must reuse the same allocation scope");
+              == textBase + (DEBUGTOOLS_HUB_PAGE_ACTION_MAX + 1)
+                 * (DEBUGTOOLS_MENU_WIDTH_TILES - 1),
+              "page one must use only its bounded live-row allocation");
 
         hubCounter = DebugToolsLifecycle_GetTextCounter();
         DispatchMenuKey(R_BUTTON);
@@ -513,8 +535,8 @@ int main(void)
               "page two must reuse the same allocation scope");
     }
 
-    CHECK(gDebugToolsLifecycleTransitionProcCount == 1 + 64 * 5,
-          "initial paging plus each page/submenu cycle must schedule exact deferred transitions");
+    CHECK(gDebugToolsLifecycleTransitionProcCount == 1 + 64 * 7,
+          "action, music, diagnostics, and submenu views must schedule exact deferred transitions");
     CHECK(sFakeSubmenuFont.chr_counter
           == SUBMENU_FONT_TEXT_BASE + 64 * SUBMENU_FONT_TEXT_WIDTH,
           "repeated public submenu cycles must preserve every unrelated font allocation");
