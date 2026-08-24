@@ -29,6 +29,7 @@ OUTPUT_INVENTORY = "asset_inventory.md"
 OUTPUT_PORTRAIT_DATA = "portrait_data.inc"
 OUTPUT_PORTRAIT_COMPONENTS = "portrait_components.inc"
 OUTPUT_PORTRAIT_SYMBOLS = "portrait_components.h"
+ATOMIC_WRITE_TEMP_PREFIX = ".asset-manifest-write-"
 OUTPUT_NAMES = (
     OUTPUT_MAKEFILE,
     OUTPUT_INVENTORY,
@@ -332,7 +333,7 @@ def _write_if_changed(path, content):
     directory = os.path.dirname(path)
     os.makedirs(directory, exist_ok=True)
     descriptor, temporary_path = tempfile.mkstemp(
-        prefix=".asset-manifest-",
+        prefix=ATOMIC_WRITE_TEMP_PREFIX,
         dir=directory,
         text=True,
     )
@@ -357,7 +358,7 @@ def _write_bytes_if_changed(path, content):
     directory = os.path.dirname(path)
     os.makedirs(directory, exist_ok=True)
     descriptor, temporary_path = tempfile.mkstemp(
-        prefix=".asset-manifest-",
+        prefix=ATOMIC_WRITE_TEMP_PREFIX,
         dir=directory,
     )
     try:
@@ -2429,6 +2430,8 @@ def _prune_obsolete_custom_spell_outputs(out_dir, expected_paths):
     }
     for directory, directories, files in os.walk(custom_spell_dir, topdown=False):
         for name in files:
+            if name.startswith(ATOMIC_WRITE_TEMP_PREFIX):
+                continue
             path = os.path.abspath(os.path.join(directory, name))
             if path in expected:
                 continue

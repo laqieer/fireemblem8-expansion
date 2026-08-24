@@ -10,6 +10,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import threading
 import time
 import unittest
 import zlib
@@ -1142,6 +1143,56 @@ class AssetManifestTests(unittest.TestCase):
             [name for name in os.listdir(out_dir) if name.startswith(".asset-manifest-")],
             [],
         )
+
+    def test_parallel_custom_output_prune_preserves_active_atomic_writer(self):
+        out_dir = os.path.join(TEST_ROOT, "parallel-custom-spell")
+        custom_spell_dir = os.path.join(out_dir, "custom_spell")
+        path = os.path.join(custom_spell_dir, "custom_spell_effect_data.inc")
+        os.makedirs(custom_spell_dir)
+
+        writer_ready = threading.Event()
+        prune_finished = threading.Event()
+        writer_failures = []
+        active_temporary_paths = []
+        real_replace = manifest.os.replace
+
+        def replace_after_concurrent_prune(source, destination):
+            if destination == path:
+                active_temporary_paths.append(source)
+                writer_ready.set()
+                if not prune_finished.wait(timeout=5):
+                    raise RuntimeError("concurrent prune did not complete")
+            return real_replace(source, destination)
+
+        def write_output():
+            try:
+                manifest._write_bytes_if_changed(path, b"generated binding\n")
+            except Exception as error:
+                writer_failures.append(error)
+
+        def prune_custom_outputs():
+            if not writer_ready.wait(timeout=5):
+                writer_failures.append(RuntimeError("atomic writer did not create a temporary file"))
+                prune_finished.set()
+                return
+            manifest._prune_obsolete_custom_spell_outputs(out_dir, {path})
+            prune_finished.set()
+
+        with mock.patch.object(manifest.os, "replace", side_effect=replace_after_concurrent_prune):
+            writer = threading.Thread(target=write_output)
+            pruner = threading.Thread(target=prune_custom_outputs)
+            writer.start()
+            pruner.start()
+            writer.join(timeout=5)
+            pruner.join(timeout=5)
+
+        self.assertFalse(writer.is_alive())
+        self.assertFalse(pruner.is_alive())
+        self.assertEqual(writer_failures, [])
+        self.assertEqual(len(active_temporary_paths), 1)
+        self.assertFalse(os.path.exists(active_temporary_paths[0]))
+        with open(path, "rb") as handle:
+            self.assertEqual(handle.read(), b"generated binding\n")
 
     def test_cli_rejects_output_outside_ignored_generated_root(self):
         result = subprocess.run(
