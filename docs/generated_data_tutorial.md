@@ -338,14 +338,21 @@ for that chapter's symbols; a matching owner must exist exactly once, and its
 `tables.units.symbols` is the only unit-group set the objectives may use. Each
 bundle's `units`, `eventlists`, and related table dependencies are loaded from
 that bundle's own declared `TableRef.source` paths, not from another chapter's
-default table. Keep the declaration empty when the chapter has no authored
-records.
+default table. The canonical objective source path loaded by the generator
+must exactly equal `chapterObjectives.source`; a same-named record from an
+unrelated file is rejected. Directory inputs load `*_objectives.json` and
+`*_bundle.json` in sorted order while retaining each record's source identity.
+Keep the declaration empty when the chapter has no authored records.
 
 `reach_area` and `hold_until_turn` rectangles must fit the owning chapter's
 actual map dimensions. Validation resolves the chapter's `mainLayerId` through
 `gChapterDataAssetTable`, then reads the map's authored TMX or layout metadata;
 coordinates at the last valid tile are accepted, while a partially or wholly
 off-map rectangle is rejected with the offending coordinate's JSON breadcrumb.
+The build discovers these objective/bundle sources, every per-bundle table
+source, chapter settings, asset table, map manifest, and authored TMX/layout
+metadata deterministically, so changing any live validation input reruns
+generation rather than reusing stale output.
 
 ```sh
 python3 -m scripts.generated_data validate --table chapterobjectives

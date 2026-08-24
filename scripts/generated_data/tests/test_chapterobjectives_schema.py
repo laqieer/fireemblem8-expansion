@@ -278,6 +278,36 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             diagnostics.render(),
         )
 
+    def test_owner_source_must_match_loaded_records_and_directory_order_is_stable(self):
+        records = schema.load_records(objective_fixture("unrelated_objectives.json"))
+        diagnostics = DiagnosticCollector()
+        chapter_bundle = chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json"))
+        schema.validate(
+            records,
+            diagnostics,
+            {
+                "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json")),
+                "chapterbundle": chapter_bundle,
+            },
+        )
+        source_errors = [
+            error for error in diagnostics.errors
+            if error.reference_path == "bundles[chapter=CHAPTER_L_2].chapterObjectives.source"
+        ]
+        self.assertEqual(len(source_errors), 1, diagnostics.render())
+        self.assertEqual(source_errors[0].location, chapter_bundle[0].chapter_objectives.source_loc)
+        self.assertIn("unrelated_objectives.json", source_errors[0].message)
+
+        directory_records = schema.load_records(objective_fixture("source_identity_objectives"))
+        self.assertEqual(
+            [os.path.basename(path) for path in directory_records.source_paths],
+            ["a_objectives.json", "b_objectives.json"],
+        )
+        self.assertEqual(
+            [os.path.basename(record.source_path) for record in directory_records],
+            ["a_objectives.json", "b_objectives.json"],
+        )
+
     def test_kind_specific_extras_and_protect_defeat_contradictions_fail_closed(self):
         records, diagnostics = _validate("valid.json")
         objectives = {objective.id: objective for objective in records[0].objectives}
