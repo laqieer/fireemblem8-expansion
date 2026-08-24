@@ -7,10 +7,12 @@
 #include "save_format.h"
 #include "expansion_debugtools.h"
 #include "expansion_debug_save_fixture.h"
+#include "debug_save_fixture_internal.h"
 
 u8 sGameStartSaveBuf[0x8000];
 u8 gGenericBuffer[0x2000];
 struct PlaySt gPlaySt;
+union DebugSaveFixtureStableStorage sSaveStateStableLayout;
 
 static u8 sSourceBytes[0x8000];
 CONST_DATA struct SaveBlocks *gSram = (struct SaveBlocks *)sSourceBytes;

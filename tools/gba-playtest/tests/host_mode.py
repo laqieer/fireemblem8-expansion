@@ -44,8 +44,8 @@ Classification of every module under tools/gba-playtest/tests:
   test_sram_hash_normalization, test_save_compat_gate_safety,
   test_stub_scenarios, test_pointer_oracle_audit, test_baseline_no_autorefresh,
   test_debugtools_registry (real project C sources compiled for the *host*),
-  test_backend_integration (libmGBA against a homebrew ROM generated into a
-  TemporaryDirectory), test_host_only_mode (this contract) and
+  test_backend_integration and test_run_until (libmGBA against homebrew ROMs
+  generated into a TemporaryDirectory), test_host_only_mode (this contract) and
   test_debugtools_sram_fixture. The last one is host-only safe but is the one
   Category A module that writes into build/: it regenerates its own
   deterministic debugtools SRAM fixture from source through the
