@@ -71,42 +71,42 @@
     "missing": [],
     "symbols": {
       "gExpansionLocaleMsgCount": 2,
-      "gExpansionLocaleMsgIds": 162,
+      "gExpansionLocaleMsgIds": 174,
       "gExpansionLocaleTombstoneCount": 2
     },
-    "total_bytes": 166
+    "total_bytes": 178
   },
   "rom_catalog_strings": {
     "missing": [],
     "symbols": {
-      "gExpansionCatalog_de": 324,
-      "gExpansionCatalog_en": 324,
-      "gExpansionCatalog_es": 324,
-      "gExpansionCatalog_fr": 324,
-      "gExpansionCatalog_it": 324,
-      "gExpansionCatalog_ja": 324,
-      "gExpansionCatalog_qps_ploc": 324,
-      "gExpansionCatalog_zh_Hans": 324
+      "gExpansionCatalog_de": 348,
+      "gExpansionCatalog_en": 348,
+      "gExpansionCatalog_es": 348,
+      "gExpansionCatalog_fr": 348,
+      "gExpansionCatalog_it": 348,
+      "gExpansionCatalog_ja": 348,
+      "gExpansionCatalog_qps_ploc": 348,
+      "gExpansionCatalog_zh_Hans": 348
     },
-    "total_bytes": 2592,
+    "total_bytes": 2784,
     "unexpected": []
   },
   "schema_version": 1,
   "source_catalog_budget": {
-    "active_message_count": 81,
-    "catalog_index_bytes": 2850,
+    "active_message_count": 87,
+    "catalog_index_bytes": 3054,
     "catalog_string_bytes": {
-      "de": 990,
-      "en": 856,
-      "es": 989,
-      "fr": 1027,
-      "it": 969,
-      "ja": 1018,
-      "qps-ploc": 1356,
-      "total": 8094,
-      "zh-Hans": 889
+      "de": 1059,
+      "en": 924,
+      "es": 1067,
+      "fr": 1103,
+      "it": 1052,
+      "ja": 1088,
+      "qps-ploc": 1471,
+      "total": 8726,
+      "zh-Hans": 962
     },
-    "glyphs_used_count": 331,
+    "glyphs_used_count": 345,
     "locales_generated": [
       "en",
       "ja",
@@ -120,7 +120,7 @@
     "pseudo_policy_counts": {
       "compact": 4,
       "preserve": 6,
-      "transform": 71
+      "transform": 77
     },
     "scratch_budget_bytes": 96,
     "scratch_headroom_bytes": 33,

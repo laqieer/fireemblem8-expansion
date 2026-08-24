@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "name": "debugtools-selector-chapter-modern-debug",
+  "description": "TC-DEBUGTOOLS-PROTOTYPE-001 chapter route: open the title debug hub, enter built-in ID 4, observe the metadata-derived Chapter 4 default, queue it from the bounded submenu, and drive the real chapter beginning event to live prep. Symbolic probes bind to the exact ELF. SRAM hashes before selection and after interactive arrival must remain identical.",
+  "frames": [
+    {"start": 90, "end": 95, "keys": ["A"]},
+    {"start": 150, "end": 155, "keys": ["START"]},
+    {"start": 210, "end": 215, "keys": ["A"]},
+    {"start": 270, "end": 275, "keys": ["START"]},
+    {"start": 330, "end": 335, "keys": ["A"]},
+    {"start": 390, "end": 395, "keys": ["START"]},
+    {"start": 450, "end": 455, "keys": ["A"]},
+    {"start": 600, "end": 606, "keys": ["SELECT", "R"]},
+    {"start": 650, "end": 656, "keys": ["DOWN"]},
+    {"start": 710, "end": 716, "keys": ["DOWN"]},
+    {"start": 770, "end": 776, "keys": ["DOWN"]},
+    {"start": 830, "end": 836, "keys": ["A"]},
+    {"start": 900, "end": 904, "keys": ["A"]},
+    {"start": 1300, "end": 1306, "keys": ["L"]},
+    {"start": 1360, "end": 1366, "keys": ["A"]},
+    {"start": 1650, "end": 1655, "keys": ["A"]},
+    {"start": 1760, "end": 1765, "keys": ["A"]},
+    {"start": 1870, "end": 1875, "keys": ["A"]},
+    {"start": 1980, "end": 1985, "keys": ["A"]},
+    {"start": 2090, "end": 2095, "keys": ["A"]},
+    {"start": 2200, "end": 2205, "keys": ["A"]},
+    {"start": 2310, "end": 2315, "keys": ["A"]},
+    {"start": 2420, "end": 2425, "keys": ["A"]},
+    {"start": 2530, "end": 2535, "keys": ["A"]},
+    {"start": 2640, "end": 2645, "keys": ["A"]},
+    {"start": 2750, "end": 2755, "keys": ["A"]},
+    {"start": 2860, "end": 2865, "keys": ["A"]},
+    {"start": 2970, "end": 2975, "keys": ["A"]},
+    {"start": 3080, "end": 3085, "keys": ["A"]},
+    {"start": 3250, "end": 3255, "keys": ["START"]},
+    {"start": 3550, "end": 3556, "keys": ["B"]},
+    {"start": 4400, "end": 4401, "keys": ["A"]}
+  ],
+  "checkpoints": [
+    {
+      "frame": 880,
+      "framebuffer": false,
+      "name": "selector-open-chapter4-default",
+      "sram_hash": true,
+      "probes": [
+        {"address": "gDebugToolsProbe+0x04", "size": 4},
+        {"address": "gDebugToolsProbe+0x08", "size": 4},
+        {"address": "sSelectorState", "size": 2},
+        {"address": "sSelectorState+0x02", "size": 1}
+      ]
+    },
+    {
+      "frame": 908,
+      "framebuffer": false,
+      "name": "chapter-request-after-menu-selection",
+      "probes": [
+        {"address": "gDebugToolsProbe", "size": 4},
+        {"address": "gDebugToolsProbe+0x24", "size": 4},
+        {"address": "sSelectorState", "size": 2},
+        {"address": "sSelectorState+0x02", "size": 1}
+      ]
+    },
+    {
+      "frame": 1100,
+      "framebuffer": false,
+      "name": "gamecontrol-committed-selector-chapter",
+      "probes": [
+        {"address": "gDebugToolsProbe+0x1c", "size": 4},
+        {"address": "gDebugToolsProbe+0x24", "size": 4},
+        {"address": "gPlaySt+0x0e", "size": 1},
+        {"address": "sSelectorState", "size": 2},
+        {"address": "sSelectorState+0x02", "size": 1}
+      ]
+    },
+    {
+      "frame": 4550,
+      "framebuffer": false,
+      "name": "selector-chapter-interactive",
+      "sram_hash": true,
+      "probes": [
+        {"address": "gDebugToolsProbe+0x20", "size": 4},
+        {"address": "gPlaySt+0x0e", "size": 1},
+        {"address": "gPlaySt+0x14", "size": 1},
+        {"address": "sSelectorState", "size": 2}
+      ]
+    }
+  ]
+}

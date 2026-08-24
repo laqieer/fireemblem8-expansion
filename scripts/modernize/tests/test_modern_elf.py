@@ -203,6 +203,37 @@ class ModernElfTargetTests(unittest.TestCase):
         self.assertNotIn("+$(MAKE) NODEP=0", ready_rule)
         self.assertIn("expansion-modern-legacy-ready", prepare_header)
 
+    def test_linker_check_reaches_selector_once_through_compatibility_alias(self):
+        """The legacy Ch4 target keeps CI coverage without duplicating selector work."""
+        linker_rule = self.resolved_make_database_rule(
+            "expansion-modern-linker-check"
+        )
+        linker_header = make_database_rule_header(
+            linker_rule,
+            "expansion-modern-linker-check",
+        )
+        self.assertIn(
+            "expansion-modern-debugtools-ch4prep-check",
+            linker_header,
+        )
+        self.assertNotIn(
+            "expansion-modern-debugtools-selector-check",
+            linker_header,
+        )
+
+        alias_rule = self.resolved_make_database_rule(
+            "expansion-modern-debugtools-ch4prep-check"
+        )
+        alias_header = make_database_rule_header(
+            alias_rule,
+            "expansion-modern-debugtools-ch4prep-check",
+        )
+        self.assertEqual(
+            alias_header,
+            "expansion-modern-debugtools-ch4prep-check: "
+            "expansion-modern-debugtools-selector-check",
+        )
+
     # -- Dry-run safety -----------------------------------------------------
 
     def test_dry_run_does_not_fail_on_missing_sidecar(self):

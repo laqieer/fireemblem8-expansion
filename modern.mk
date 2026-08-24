@@ -20,6 +20,7 @@ MODERN_GOALS := \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
+	expansion-modern-debugtools-selector-check \
 	expansion-modern-debuglog-check \
 	expansion-modern-newgame-check \
 	expansion-modern-combat-check \
@@ -297,6 +298,7 @@ MODERN_COHORT_SOURCES ?= \
 	src/hardware.c \
 	src/debugtools_registry.c \
 	src/debugtools_launcher.c \
+	src/debugtools_selector.c \
 	src/debugtools_actions.c \
 	src/debugtools_diag.c \
 	src/debugtools_tools.c \
@@ -773,6 +775,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
+	expansion-modern-debugtools-selector-check \
 	expansion-modern-newgame-check \
 	expansion-modern-combat-check \
 	expansion-modern-saveload-check \
@@ -1439,6 +1442,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
+	expansion-modern-debugtools-selector-check \
 	expansion-modern-newgame-check \
 	expansion-modern-combat-check \
 	expansion-modern-saveload-check \
@@ -2674,7 +2678,7 @@ expansion-modern-debugtools-map-check: expansion-modern-boot-preflight expansion
 # cursor interactivity; its release mirror retains the all-zero hotkey path.
 expansion-modern-debugtools-music-check: expansion-modern-debugtools-map-check \
 		$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)
-	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
 		--elf "$(MODERN_ELF)" \
 		--nm "$(MODERN_NM)" \
@@ -2731,94 +2735,78 @@ expansion-modern-portrait-package-runtime-check:
 		PYTHONPATH="tools/gba-playtest:tools/gba-playtest/tests" "$(PYTHON)" -c \
 		'import unittest; from test_portrait_package_runtime import PortraitPackageRuntimeTests; unittest.main(defaultTest="PortraitPackageRuntimeTests.test_debug_unit_inspect_renders_eirika_minimug")'
 
-# Issue #11 closure: the "Fast Boot: Ch4 Prep" launcher's own pending-
-# request/boot-commit lifecycle -- a second, independent launcher target
-# alongside Chapter 2's, added specifically because Chapter 2's own event
-# script never reaches the PREP event opcode. This scenario proves the
-# hub action arms its own request and GameControl_PostIntro consumes it
-# and commits gPlaySt.chapterIndex to CHAPTER_L_4 -- the same verified
-# pending-request handoff mechanism as Chapter 2's own
-# expansion-modern-debugtools-check, live-executed end to end. It does
-# NOT capture the further live-prep-screen arrival (the world-map
-# navigation through Chapter 4's own longer beginning script/battle
-# sequence) -- see docs/debugtools.md "Remaining #11 scope" and
-# reports/debugtools_issue11_closure.md for that explicit, honest
-# residual boundary.
-MODERN_DEBUGTOOLS_CH4PREP_SCENARIO := tools/gba-playtest/scenarios/debugtools-ch4-prep-launch-modern-$(MODERN_CONFIG).json
-MODERN_DEBUGTOOLS_CH4PREP_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-ch4-prep-launch-modern-$(MODERN_CONFIG).json
+# Issue #123 supersedes the standalone ID-4 Ch4 launcher with the bounded
+# selector while retaining this target name as a build-script compatibility
+# alias. The selector's default chapter target is Chapter 4 and its dedicated
+# gate proves request/commit plus live prep arrival and no-save behavior.
+expansion-modern-debugtools-ch4prep-check: expansion-modern-debugtools-selector-check
+	@printf 'Modern ROM debugtools-ch4prep compatibility alias passed via selector gate\n'
+
+# Issue #123: one bounded ID-4 Chapter/Skirmish selector. Debug runs both
+# the title-origin chapter route and the live-map skirmish route against the
+# same deterministic current-save fixture. Release replays the selector input
+# and proves every selector/request probe remains zero. Symbolic probe
+# expressions are resolved from the exact linked ELF.
+MODERN_DEBUGTOOLS_SELECTOR_CHAPTER_SCENARIO := tools/gba-playtest/scenarios/debugtools-selector-chapter-modern-debug.json
+MODERN_DEBUGTOOLS_SELECTOR_CHAPTER_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-selector-chapter-modern-debug.json
+MODERN_DEBUGTOOLS_SELECTOR_SKIRMISH_SCENARIO := tools/gba-playtest/scenarios/debugtools-selector-skirmish-modern-debug.json
+MODERN_DEBUGTOOLS_SELECTOR_SKIRMISH_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-selector-skirmish-modern-debug.json
+MODERN_DEBUGTOOLS_SELECTOR_RELEASE_SCENARIO := tools/gba-playtest/scenarios/debugtools-selector-modern-release.json
+MODERN_DEBUGTOOLS_SELECTOR_RELEASE_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-selector-modern-release.json
 
 ifeq ($(MODERN_CONFIG),debug)
-# Debug only: shares the title-screen prefix with
-# expansion-modern-debugtools-check, so it needs the same deterministic
-# pre-seeded SRAM fixture -- booting from genuinely blank SRAM takes a
-# different (WipeSram-driven) boot path with different frame timing,
-# which would shift this scenario's own frame-tied checkpoints (see
-# docs/debugtools.md "Deterministic pre-launch SRAM fixture"). The
-# release mirror has no such dependency (release builds never seed this
-# fixture either, see expansion-modern-debugtools-map-check above).
-expansion-modern-debugtools-ch4prep-check: expansion-modern-boot-preflight expansion-modern-rom \
+expansion-modern-debugtools-selector-check: expansion-modern-boot-preflight expansion-modern-rom \
 		$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)
-	@if [ ! -f "$(MODERN_DEBUGTOOLS_CH4PREP_SCENARIO)" ] || \
-		[ ! -f "$(MODERN_DEBUGTOOLS_CH4PREP_FINGERPRINT)" ]; then \
-		printf '%s\n' \
-			"error: missing debugtools Ch4-Prep-launch scenario or fingerprint" >&2; \
-		printf '  scenario:    %s\n' "$(MODERN_DEBUGTOOLS_CH4PREP_SCENARIO)" >&2; \
-		printf '  fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_CH4PREP_FINGERPRINT)" >&2; \
-		exit 1; \
-	fi
+	@for path in \
+		"$(MODERN_DEBUGTOOLS_SELECTOR_CHAPTER_SCENARIO)" \
+		"$(MODERN_DEBUGTOOLS_SELECTOR_CHAPTER_FINGERPRINT)" \
+		"$(MODERN_DEBUGTOOLS_SELECTOR_SKIRMISH_SCENARIO)" \
+		"$(MODERN_DEBUGTOOLS_SELECTOR_SKIRMISH_FINGERPRINT)"; do \
+		if [ ! -f "$$path" ]; then \
+			printf 'error: missing debugtools selector evidence: %s\n' "$$path" >&2; \
+			exit 1; \
+		fi; \
+	done
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
-		--scenario "$(MODERN_DEBUGTOOLS_CH4PREP_SCENARIO)" \
+		--elf "$(MODERN_ELF)" \
+		--scenario "$(MODERN_DEBUGTOOLS_SELECTOR_CHAPTER_SCENARIO)" \
 		--sram-image "$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)" \
-		--expected "$(MODERN_DEBUGTOOLS_CH4PREP_FINGERPRINT)" \
+		--expected "$(MODERN_DEBUGTOOLS_SELECTOR_CHAPTER_FINGERPRINT)" \
 		--policy behavior
-	@printf 'Modern ROM debugtools-ch4prep-check passed: %s (config=%s abi=%s)\n' \
-		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--scenario "$(MODERN_DEBUGTOOLS_SELECTOR_SKIRMISH_SCENARIO)" \
+		--sram-image "$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)" \
+		--expected "$(MODERN_DEBUGTOOLS_SELECTOR_SKIRMISH_FINGERPRINT)" \
+		--policy behavior
+	@printf 'Modern ROM debugtools selector check passed: %s (chapter + live-map skirmish)\n' \
+		"$(MODERN_ROM)"
 else
-expansion-modern-debugtools-ch4prep-check: expansion-modern-boot-preflight expansion-modern-rom
-	@if [ ! -f "$(MODERN_DEBUGTOOLS_CH4PREP_SCENARIO)" ] || \
-		[ ! -f "$(MODERN_DEBUGTOOLS_CH4PREP_FINGERPRINT)" ]; then \
-		printf '%s\n' \
-			"error: missing debugtools Ch4-Prep-launch scenario or fingerprint" >&2; \
-		printf '  scenario:    %s\n' "$(MODERN_DEBUGTOOLS_CH4PREP_SCENARIO)" >&2; \
-		printf '  fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_CH4PREP_FINGERPRINT)" >&2; \
+expansion-modern-debugtools-selector-check: expansion-modern-boot-preflight expansion-modern-rom
+	@if [ ! -f "$(MODERN_DEBUGTOOLS_SELECTOR_RELEASE_SCENARIO)" ] || \
+		[ ! -f "$(MODERN_DEBUGTOOLS_SELECTOR_RELEASE_FINGERPRINT)" ]; then \
+		printf '%s\n' "error: missing release debugtools selector evidence" >&2; \
 		exit 1; \
 	fi
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" \
 		--rom "$(MODERN_ROM)" \
-		--scenario "$(MODERN_DEBUGTOOLS_CH4PREP_SCENARIO)" \
-		--expected "$(MODERN_DEBUGTOOLS_CH4PREP_FINGERPRINT)" \
+		--elf "$(MODERN_ELF)" \
+		--scenario "$(MODERN_DEBUGTOOLS_SELECTOR_RELEASE_SCENARIO)" \
+		--expected "$(MODERN_DEBUGTOOLS_SELECTOR_RELEASE_FINGERPRINT)" \
 		--policy behavior
-	@printf 'Modern ROM debugtools-ch4prep-check passed: %s (config=%s abi=%s)\n' \
-		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+	@printf 'Modern ROM debugtools selector release-negative passed: %s\n' \
+		"$(MODERN_ROM)"
 endif
 
-# Issue #11 slice 2: the prep-phase SELECT+B hotkey has no equivalent live
-# scenario yet -- this repository's chapter data has hasPrepScreen=FALSE
-# for every chapter (a vestigial FE7 field, see include/chapterdata.h) and
-# no in-scope, already-decompiled event script currently drives
-# PrepScreenProc_MapIdle from a deterministic boot sequence without a
-# chapter/skirmish selector (explicitly out of scope for this slice, see
-# docs/debugtools.md "Remaining #11 scope"). The release mirror below and
-# the host C test suite (mask distinctness, call-site ordering,
-# compile-time validation, idempotent registration) are the available
-# deterministic proof for the prep hotkey until a future slice adds an
-# in-scope deterministic path to a live prep screen.
+# Issue #11 prep-hotkey release negative.
 MODERN_DEBUGTOOLS_PREP_RELEASE_SCENARIO := tools/gba-playtest/scenarios/debugtools-prep-hub-modern-release.json
 MODERN_DEBUGTOOLS_PREP_RELEASE_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-prep-hub-modern-release.json
-# Issue #11 closure: the live prep-screen-arrival scenario the debug branch
-# below now actually runs (it was an explicit residual before). Boots the
-# debug-only "Fast Boot: Ch4 Prep" launcher, traverses the Chapter 4 world
-# map (L cursor-jump + A node-confirm), skips the beginning event/scripted
-# battle to the real CALL(EventScr_CommonPrep) PREP opcode, rests
-# gProcScr_SALLYCURSOR in PrepScreenProc_MapIdle, and fires the SELECT+B
-# prep hotkey -- proving gDebugToolsProbe.prepScreenObservedCount 0->1, the
-# hub opening, its idempotent reentrancy, and a safe return to the still-live
-# prep. Debug-only: depends on the debug-only launcher (compiled out of a
-# release build), which is why the release branch keeps the compiled-out
-# mirror instead. Boots from blank SRAM (its own deterministic WipeSram path,
-# verified reproducible), so unlike the ch4prep launcher check it needs no
-# pre-seeded fixture. See reports/debugtools_issue11_closure.md.
+# The debug positive now reaches Chapter 4 through issue #123's ID-4 selector,
+# rests gProcScr_SALLYCURSOR in PrepScreenProc_MapIdle, and fires SELECT+B.
+# It proves prepScreenObservedCount 0->1, idempotent hub reentrancy, and safe
+# return to prep. It boots from blank SRAM and therefore needs no fixture.
 MODERN_DEBUGTOOLS_PREP_POSITIVE_SCENARIO := tools/gba-playtest/scenarios/debugtools-ch4-prep-positive-modern-debug.json
 MODERN_DEBUGTOOLS_PREP_POSITIVE_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-ch4-prep-positive-modern-debug.json
 
@@ -3073,7 +3061,7 @@ expansion-modern-combat-check: expansion-modern-boot-preflight expansion-modern-
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 else
 expansion-modern-combat-check:
-	@printf 'Modern ROM combat-check skipped: the Ch4 scripted-FIGHT combat scenario boots via the debug-only Fast Boot launcher (compiled out for config=%s); a debug-launcher scenario is legitimately debug-only, and the release runtime matrix does not include a separate combat scenario -- see reports/gba_playtest_issue13_closure.md\n' \
+	@printf 'Modern ROM combat-check skipped: the Ch4 scripted-FIGHT combat scenario boots via the debug-only selector (compiled out for config=%s); a debug-selector scenario is legitimately debug-only, and the release runtime matrix does not include a separate combat scenario -- see reports/gba_playtest_issue13_closure.md\n' \
 		'$(MODERN_CONFIG)'
 endif
 
@@ -4126,6 +4114,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
+	expansion-modern-debugtools-selector-check \
 	expansion-modern-newgame-check \
 	expansion-modern-combat-check \
 	expansion-modern-saveload-check \
