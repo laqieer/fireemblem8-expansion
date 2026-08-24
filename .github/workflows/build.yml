@@ -173,7 +173,7 @@ jobs:
         python3 scripts/check_docs.py --check --check-examples
 
     - name: Install dependencies
-      run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev && python -m pip install ttp numpy pillow
+      run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev && python3 -m pip install --require-hashes --only-binary=:all: --no-deps -r .github/requirements/build.txt
 
     - name: Build tools
       run: ./build_tools.sh
@@ -388,7 +388,7 @@ jobs:
         submodules: recursive
         persist-credentials: false
 
-    - run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev && python3 -m pip install ttp numpy pillow
+    - run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev && python3 -m pip install --require-hashes --only-binary=:all: --no-deps -r .github/requirements/build.txt
 
     - run: ./build_tools.sh
 
