@@ -14,10 +14,27 @@ BUILD = ROOT / "build"
 INCLUDES = ["-I", str(ROOT / "include"), "-I", str(ROOT / "include" / "generated")]
 TOOLS_SOURCE = ROOT / "src" / "debugtools_tools.c"
 BM_SOURCE = ROOT / "src" / "bm.c"
+BMIO_SOURCE = ROOT / "src" / "bmio.c"
+REGISTRY_SOURCE = ROOT / "src" / "debugtools_registry.c"
 AUTOPLAY_SOURCE = ROOT / "src" / "expansion_autoplay.c"
 DRIVER = Path(__file__).resolve().parent / "c" / "debugtools_phase_control_driver.c"
 REGISTRY = ROOT / "texts" / "expansion" / "registry.json"
 TEST_CASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
+RUNTIME_RUNNER = ROOT / "tools" / "gba-playtest" / "run_debugtools_phase_control_checks.py"
+DEBUG_RUNTIME_FINGERPRINT = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "fingerprints"
+    / "debugtools-phase-control-modern-debug.json"
+)
+RELEASE_RUNTIME_FINGERPRINT = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "fingerprints"
+    / "debugtools-phase-control-modern-release.json"
+)
 CC = shutil.which("gcc") or shutil.which("cc")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 NM = shutil.which("nm")
@@ -69,6 +86,8 @@ class DebugToolsPhaseControlHostTests(unittest.TestCase):
             for source, name in (
                 (TOOLS_SOURCE, "tools.o"),
                 (BM_SOURCE, "bm.o"),
+                (BMIO_SOURCE, "bmio.o"),
+                (REGISTRY_SOURCE, "registry.o"),
                 (AUTOPLAY_SOURCE, "autoplay.o"),
                 (DRIVER, "driver.o"),
             ):
@@ -162,6 +181,9 @@ class DebugToolsPhaseControlArmTests(unittest.TestCase):
             write_message_header(work)
             debug_object = work / "tools-debug.o"
             release_object = work / "tools-release.o"
+            debug_registry = work / "registry-debug.o"
+            release_registry = work / "registry-release.o"
+            archival_object = work / "tools-archival.o"
             common = [
                 ARM_CC,
                 "-mcpu=arm7tdmi",
@@ -198,14 +220,68 @@ class DebugToolsPhaseControlArmTests(unittest.TestCase):
                 ]
             )
             self.assertEqual(release.returncode, 0, release.stdout + release.stderr)
+            debug_registry_compile = run(
+                [
+                    *common[:-1],
+                    "-DFE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                    str(REGISTRY_SOURCE),
+                    "-o",
+                    str(debug_registry),
+                ]
+            )
+            self.assertEqual(
+                debug_registry_compile.returncode,
+                0,
+                debug_registry_compile.stdout + debug_registry_compile.stderr,
+            )
+            release_registry_compile = run(
+                [
+                    *common[:-1],
+                    "-DNDEBUG",
+                    str(REGISTRY_SOURCE),
+                    "-o",
+                    str(release_registry),
+                ]
+            )
+            self.assertEqual(
+                release_registry_compile.returncode,
+                0,
+                release_registry_compile.stdout + release_registry_compile.stderr,
+            )
+            archival = run(
+                [
+                    *common[:-1],
+                    "-DFE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                    "-DFE8_ARCHIVAL_BUILD=1",
+                    common[-1],
+                    "-o",
+                    str(archival_object),
+                ]
+            )
+            self.assertEqual(archival.returncode, 0, archival.stdout + archival.stderr)
             debug_symbols = run([ARM_NM, str(debug_object)])
             release_symbols = run([ARM_NM, str(release_object)])
+            archival_symbols = run([ARM_NM, str(archival_object)])
             self.assertEqual(debug_symbols.returncode, 0, debug_symbols.stderr)
             self.assertEqual(release_symbols.returncode, 0, release_symbols.stderr)
+            self.assertEqual(archival_symbols.returncode, 0, archival_symbols.stderr)
             self.assertIn("DebugToolsPhaseControl_ApplyAtPhaseStart", debug_symbols.stdout)
+            self.assertIn(
+                "DebugToolsPhaseControl_ApplyTurnBeforePhaseEvents",
+                debug_symbols.stdout,
+            )
             self.assertNotIn("DebugToolsPhaseControl", release_symbols.stdout)
+            self.assertNotIn("DebugToolsPhaseControl", archival_symbols.stdout)
             sized_symbols = run([ARM_NM, "-S", str(debug_object)])
+            debug_registry_symbols = run([ARM_NM, "-S", str(debug_registry)])
+            release_registry_symbols = run([ARM_NM, "-S", str(release_registry)])
             self.assertEqual(sized_symbols.returncode, 0, sized_symbols.stderr)
+            self.assertEqual(debug_registry_symbols.returncode, 0, debug_registry_symbols.stderr)
+            self.assertEqual(
+                release_registry_symbols.returncode,
+                0,
+                release_registry_symbols.stderr,
+            )
         request = re.search(
             r"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+[bBdD]\s+"
             r"sPhaseControlRequest$",
@@ -214,6 +290,26 @@ class DebugToolsPhaseControlArmTests(unittest.TestCase):
         )
         self.assertIsNotNone(request, "debug request state symbol missing")
         self.assertLessEqual(int(request.group(1), 16), 16)
+        debug_probe = re.search(
+            r"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+[bBdD]\s+"
+            r"gDebugToolsProbe$",
+            debug_registry_symbols.stdout,
+            flags=re.MULTILINE,
+        )
+        release_probe = re.search(
+            r"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+[bBdD]\s+"
+            r"gDebugToolsProbe$",
+            release_registry_symbols.stdout,
+            flags=re.MULTILINE,
+        )
+        self.assertIsNotNone(debug_probe, "debug telemetry probe missing")
+        self.assertIsNotNone(release_probe, "release telemetry probe missing")
+        self.assertEqual(int(debug_probe.group(1), 16), 0xB4)
+        self.assertEqual(
+            int(release_probe.group(1), 16),
+            0x84,
+            "release gDebugToolsProbe must retain its pre-#124 layout",
+        )
 
 
 class DebugToolsPhaseControlLocalizationTests(unittest.TestCase):
@@ -257,6 +353,50 @@ class DebugToolsPhaseControlCaseCatalogTests(unittest.TestCase):
             commands,
         )
         self.assertIn("make localization-validate", commands)
+        self.assertIn(
+            "make expansion-modern-debugtools-phase-control-check "
+            "MODERN_CONFIG=debug MODERN_ABI=aapcs",
+            commands,
+        )
+        self.assertIn(
+            "make expansion-modern-debugtools-phase-control-check "
+            "MODERN_CONFIG=release MODERN_ABI=aapcs",
+            commands,
+        )
+
+
+class DebugToolsPhaseControlRuntimeContractTests(unittest.TestCase):
+    def test_checked_debug_and_release_captures_are_semantic_and_menu_driven(self):
+        import runpy
+
+        self.assertTrue(RUNTIME_RUNNER.is_file(), f"missing {RUNTIME_RUNNER}")
+        module = runpy.run_path(str(RUNTIME_RUNNER))
+        debug_capture = json.loads(DEBUG_RUNTIME_FINGERPRINT.read_text(encoding="utf-8"))
+        release_capture = json.loads(
+            RELEASE_RUNTIME_FINGERPRINT.read_text(encoding="utf-8")
+        )
+        self.assertEqual(module["_check_positive"](debug_capture), [])
+        self.assertEqual(module["_check_negative"](release_capture), [])
+        frames = module["_positive_frames"]()
+        key_sets = [tuple(frame["keys"]) for frame in frames]
+        self.assertIn(("SELECT", "L"), key_sets)
+        self.assertIn(("DOWN",), key_sets)
+        self.assertIn(("R",), key_sets)
+        self.assertIn(("B",), key_sets)
+        self.assertIn(("A",), key_sets)
+        self.assertEqual(
+            [
+                checkpoint["name"]
+                for checkpoint in module["_positive_data"]()["checkpoints"]
+            ],
+            [
+                "player-before-apply",
+                "turn-requested-from-live-submenu",
+                "red-boundary-observes-requested-turn",
+                "next-blue-before-map-input",
+                "next-blue-map-interactive",
+            ],
+        )
 
 
 if __name__ == "__main__":

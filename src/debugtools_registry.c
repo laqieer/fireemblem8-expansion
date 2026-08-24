@@ -810,6 +810,10 @@ void DebugTools_ForceSessionCleanup(void)
     DebugTools_CleanupMusicPreview();
 #endif
 
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+    DebugToolsPhaseControl_Reset();
+#endif
+
     if (!(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE))
         return;
 

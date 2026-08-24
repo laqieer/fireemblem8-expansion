@@ -1234,6 +1234,9 @@ void EndBMapMain(void) {
 
 #ifndef FE8_ARCHIVAL_BUILD
     ExpansionAutoplay_Reset();
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+    DebugToolsPhaseControl_Reset();
+#endif
 #endif
 
     Proc_EndEachMarked(PROC_MARK_DISP);

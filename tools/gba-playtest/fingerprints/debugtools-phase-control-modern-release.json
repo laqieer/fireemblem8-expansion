@@ -1,0 +1,84 @@
+{
+  "checkpoints": [
+    {
+      "frame": 17140,
+      "name": "release-before-debug-input",
+      "probes": [
+        {
+          "address": "gBmSt+0x14",
+          "size": 1,
+          "value": "0x0e"
+        },
+        {
+          "address": "gDebugToolsProbe",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gPlaySt+0x0f",
+          "size": 1,
+          "value": "0x40"
+        },
+        {
+          "address": "gPlaySt+0x10",
+          "size": 2,
+          "value": "0x0000"
+        }
+      ]
+    },
+    {
+      "frame": 17920,
+      "name": "release-debug-input-is-inert",
+      "probes": [
+        {
+          "address": "gBmSt+0x14",
+          "size": 1,
+          "value": "0x0e"
+        },
+        {
+          "address": "gDebugToolsProbe",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gPlaySt+0x0f",
+          "size": 1,
+          "value": "0x40"
+        },
+        {
+          "address": "gPlaySt+0x10",
+          "size": 2,
+          "value": "0x0000"
+        }
+      ]
+    },
+    {
+      "frame": 25020,
+      "name": "release-map-remains-interactive",
+      "probes": [
+        {
+          "address": "gBmSt+0x14",
+          "size": 1,
+          "value": "0x07"
+        },
+        {
+          "address": "gDebugToolsProbe",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gPlaySt+0x0f",
+          "size": 1,
+          "value": "0x40"
+        },
+        {
+          "address": "gPlaySt+0x10",
+          "size": 2,
+          "value": "0x0000"
+        }
+      ]
+    }
+  ],
+  "format_version": 2,
+  "scenario": "debugtools-phase-control-modern-release"
+}

@@ -714,13 +714,14 @@ u32 DebugTools_GetLastAssertCode(void);
     do { if (!(cond)) DebugTools_RecordAssertFailure((u32)(code)); } while (0)
 
 /* --- Transient turn/faction phase control (issue #124) ------------------
- * This is a debug-only request surface over the existing BmMain_StartPhase
- * router. It never writes the persistent prototype debug-control option
- * bits. Requests may be queued only from a stable blue PLAYER phase and are
- * consumed once when the existing router reaches the requested red/green
- * phase boundary. PLAYER is intentionally a typed rejection: the existing
- * PlayerPhase commit path is blue-only. BLOCKED is supported because the
- * existing router can complete an otherwise empty red/green phase normally.
+ * This is a debug-only request surface over the existing phase router. It
+ * never writes the persistent prototype debug-control option bits. Requests
+ * may be queued only from a stable blue PLAYER phase. A turn request is
+ * consumed after SwitchPhases and before RunPhaseSwitchEvents; faction
+ * requests stay routed by BmMain_StartPhase. PLAYER is intentionally a typed
+ * rejection: the existing PlayerPhase commit path is blue-only. BLOCKED is
+ * supported because the existing router can complete an otherwise empty
+ * red/green phase normally.
  */
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
 enum DebugToolsPhaseControlMode
@@ -758,6 +759,7 @@ enum DebugToolsPhaseControlResult DebugToolsPhaseControl_RequestTurn(int turn);
 enum DebugToolsPhaseControlResult DebugToolsPhaseControl_RequestFactionMode(
     int faction,
     enum DebugToolsPhaseControlMode mode);
+void DebugToolsPhaseControl_ApplyTurnBeforePhaseEvents(void);
 enum DebugToolsPhaseControlStartAction DebugToolsPhaseControl_ApplyAtPhaseStart(int faction);
 void DebugToolsPhaseControl_Reset(void);
 void DebugToolsPhaseControl_Sample(void);
@@ -942,9 +944,10 @@ struct DebugToolsProbe
                                   * SaveCompatState) */
     u32 saveCompatInspectCount; /* increments once per inspect */
     /* --- Transient turn/faction phase control (issue #124) ---
-     * The request state itself is debug-only and physically omitted from
-     * release builds. These always-linked probe fields stay zero there,
-     * preserving the debugtools release-negative contract. */
+     * The request state and telemetry are debug-only. Keeping this extension
+     * out of release preserves the established gDebugToolsProbe layout and
+     * its all-zero release-negative contract. */
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
     u32 phaseControlTurnSample;
     u32 phaseControlRedModeSample;
     u32 phaseControlGreenModeSample;
@@ -957,6 +960,7 @@ struct DebugToolsProbe
     u32 phaseControlLastRequestKind;
     u32 phaseControlLastFaction;
     u32 phaseControlLastMode;
+#endif
 };
 
 /* Cursor-selected unit inspector/editor telemetry (issue #125). This is a

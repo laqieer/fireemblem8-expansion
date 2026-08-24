@@ -18,6 +18,8 @@ MODERN_GOALS := \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debugtools-phase-control-check \
+	expansion-modern-debugtools-phase-control-profile-rom \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
 	expansion-modern-debuglog-check \
@@ -771,6 +773,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
 	expansion-modern-newgame-check \
@@ -1437,6 +1440,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
 	expansion-modern-newgame-check \
@@ -1446,6 +1450,8 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-hq-mixer-check \
 	expansion-modern-blue-phase-delegate-profile-rom \
 	expansion-modern-blue-phase-delegate-check \
+	expansion-modern-debugtools-phase-control-profile-rom \
+	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-autoplay-bounds-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
@@ -3425,6 +3431,54 @@ expansion-modern-blue-phase-delegate-check: expansion-modern-boot-preflight \
 		--config "$(MODERN_CONFIG)" \
 		--out-dir "$(MODERN_BLUE_PHASE_DELEGATE_RUNTIME_OUTDIR)"
 
+# Issue #124 applies a turn request through the real Flag/Chapter submenu,
+# then reuses #87's one-phase Charge profile to advance through an actual
+# red boundary and return to a player-controlled map. The profile is needed
+# only for the debug positive path; release replays the same inputs against
+# the normal release ROM and proves the established debugtools probe is zero.
+MODERN_DEBUGTOOLS_PHASE_CONTROL_ROOT := \
+	build/expansion-modern-debugtools-phase-control
+MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR := \
+	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ROOT)/debug/$(MODERN_ABI)
+MODERN_DEBUGTOOLS_PHASE_CONTROL_ROM := \
+	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR)/fireemblem8.gba
+MODERN_DEBUGTOOLS_PHASE_CONTROL_ELF := \
+	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR)/fireemblem8.elf
+MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_SCRIPT := \
+	tools/gba-playtest/run_debugtools_phase_control_checks.py
+MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_OUTDIR := \
+	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR)/runtime-check
+
+expansion-modern-debugtools-phase-control-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=debug MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ROOT) \
+		EXPANSION_BLUE_PHASE_DELEGATE=1
+
+ifeq ($(MODERN_CONFIG),debug)
+expansion-modern-debugtools-phase-control-check: expansion-modern-boot-preflight \
+		expansion-modern-debugtools-phase-control-profile-rom
+	@mkdir -p "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_OUTDIR)/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_SCRIPT)" \
+		--rom "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ROM)" \
+		--elf "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ELF)" \
+		--config debug \
+		--out-dir "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_OUTDIR)"
+else
+expansion-modern-debugtools-phase-control-check: expansion-modern-boot-preflight \
+		expansion-modern-rom
+	@mkdir -p "$(MODERN_OUTPUT_DIR)/debugtools-phase-control-runtime-check/tmp"
+	TMPDIR="$(abspath $(MODERN_OUTPUT_DIR)/debugtools-phase-control-runtime-check/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_SCRIPT)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--config release \
+		--out-dir "$(MODERN_OUTPUT_DIR)/debugtools-phase-control-runtime-check"
+endif
+
 # Issue #86 bounded semantic run-until classification. This reuses the #85
 # routes and telemetry while keeping fixed-frame scenarios and fingerprints
 # unchanged.
@@ -4087,6 +4141,8 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-debugtools-map-check \
 		expansion-modern-debugtools-music-check \
 		expansion-modern-debugtools-tools-check \
+		expansion-modern-debugtools-phase-control-check \
+		expansion-modern-debugtools-phase-control-profile-rom \
 		expansion-modern-debugtools-prep-check \
 		expansion-modern-debugtools-ch4prep-check \
 		expansion-modern-newgame-check \
@@ -4118,6 +4174,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
 	expansion-modern-newgame-check \

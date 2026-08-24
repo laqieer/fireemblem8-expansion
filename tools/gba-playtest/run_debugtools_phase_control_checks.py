@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+"""Real-ROM semantic checks for issue #124 phase-control requests."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PLAYTEST_DIR = REPO_ROOT / "tools" / "gba-playtest"
+FINGERPRINT_DIR = PLAYTEST_DIR / "fingerprints"
+sys.path.insert(0, str(PLAYTEST_DIR))
+
+import gba_playtest  # noqa: E402
+import run_autoplay_checks as autoplay  # noqa: E402
+from probe_bindings import ElfSymbolResolver  # noqa: E402
+
+PHASE_PROBE = "gDebugToolsProbe"
+PHASE_TURN_SAMPLE = f"{PHASE_PROBE}+0x84"
+PHASE_REQUESTED_COUNT = f"{PHASE_PROBE}+0x90"
+PHASE_APPLIED_COUNT = f"{PHASE_PROBE}+0x94"
+PHASE_RESTORED_COUNT = f"{PHASE_PROBE}+0xa0"
+PHASE_LAST_RESULT = f"{PHASE_PROBE}+0xa4"
+PHASE_LAST_REQUEST_KIND = f"{PHASE_PROBE}+0xa8"
+PLAYER_FACTION = 0
+RED_FACTION = 0x40
+PHASE_CONTROL_OK = 0
+PHASE_CONTROL_REQUEST_TURN = 1
+
+
+class CheckError(RuntimeError):
+    pass
+
+
+def _phase_probes():
+    return [
+        {"address": "gPlaySt+0x0f", "size": 1},
+        {"address": "gPlaySt+0x10", "size": 2},
+        {"address": "gBmSt+0x14", "size": 1},
+        {"address": PHASE_TURN_SAMPLE, "size": 4},
+        {"address": PHASE_REQUESTED_COUNT, "size": 4},
+        {"address": PHASE_APPLIED_COUNT, "size": 4},
+        {"address": PHASE_RESTORED_COUNT, "size": 4},
+        {"address": PHASE_LAST_RESULT, "size": 4},
+        {"address": PHASE_LAST_REQUEST_KIND, "size": 4},
+    ]
+
+
+def _release_probes():
+    return [
+        {"address": "gPlaySt+0x0f", "size": 1},
+        {"address": "gPlaySt+0x10", "size": 2},
+        {"address": "gBmSt+0x14", "size": 1},
+        {"address": PHASE_PROBE, "size": 4},
+    ]
+
+
+def _positive_frames():
+    return [
+        *autoplay._load_route("savesuspend-resume-modern-debug", 16986),
+        {"start": 17150, "end": 17156, "keys": ["SELECT", "L"]},
+        *[
+            {"start": frame, "end": frame + 6, "keys": ["DOWN"]}
+            for frame in range(17250, 17610, 60)
+        ],
+        {"start": 17630, "end": 17636, "keys": ["A"]},
+        {"start": 17750, "end": 17756, "keys": ["DOWN"]},
+        {"start": 17810, "end": 17816, "keys": ["A"]},
+        {"start": 17970, "end": 17976, "keys": ["RIGHT"]},
+        {"start": 18120, "end": 18126, "keys": ["A"]},
+        {"start": 18220, "end": 18226, "keys": ["UP"]},
+        {"start": 18320, "end": 18326, "keys": ["R"]},
+        {"start": 18420, "end": 18426, "keys": ["B"]},
+        {"start": 18520, "end": 18526, "keys": ["A"]},
+        *[
+            {"start": frame, "end": frame + 4, "keys": ["A"]}
+            for frame in range(23000, 24600, 60)
+        ],
+        {"start": 25000, "end": 25006, "keys": ["RIGHT"]},
+    ]
+
+
+def _positive_data():
+    return {
+        "schema_version": 1,
+        "name": "debugtools-phase-control-modern-debug",
+        "description": (
+            "TC-DEBUGTOOLS-PROTOTYPE-002 positive: a clean Chapter 2 PLAYER "
+            "map opens the real SELECT+L debug hub, moves to Flag/Chapter, "
+            "selects Apply Turn +1, closes the hub, invokes #87's native "
+            "one-phase Charge command, then observes the real red boundary "
+            "and restored interactive blue map."
+        ),
+        "frames": _positive_frames(),
+        "checkpoints": [
+            {
+                "name": "player-before-apply",
+                "frame": 17140,
+                "framebuffer": False,
+                "probes": _phase_probes(),
+            },
+            {
+                "name": "turn-requested-from-live-submenu",
+                "frame": 17920,
+                "framebuffer": False,
+                "probes": _phase_probes(),
+            },
+            {
+                "name": "red-boundary-observes-requested-turn",
+                "frame": 20000,
+                "framebuffer": False,
+                "probes": _phase_probes(),
+            },
+            {
+                "name": "next-blue-before-map-input",
+                "frame": 24990,
+                "framebuffer": False,
+                "probes": _phase_probes(),
+            },
+            {
+                "name": "next-blue-map-interactive",
+                "frame": 25020,
+                "framebuffer": False,
+                "probes": _phase_probes(),
+            },
+        ],
+    }
+
+
+def _negative_data(config):
+    return {
+        "schema_version": 1,
+        "name": f"debugtools-phase-control-modern-{config}",
+        "description": (
+            "TC-DEBUGTOOLS-PROTOTYPE-002 release negative: replay the exact "
+            "debug-hub and native End Phase inputs against the release ROM. "
+            "The debug hub and phase-control probe extension are absent, so "
+            "the established always-linked diagnostic probe remains zero."
+        ),
+        "frames": _positive_frames(),
+        "checkpoints": [
+            {
+                "name": "release-before-debug-input",
+                "frame": 17140,
+                "framebuffer": False,
+                "probes": _release_probes(),
+            },
+            {
+                "name": "release-debug-input-is-inert",
+                "frame": 17920,
+                "framebuffer": False,
+                "probes": _release_probes(),
+            },
+            {
+                "name": "release-map-remains-interactive",
+                "frame": 25020,
+                "framebuffer": False,
+                "probes": _release_probes(),
+            },
+        ],
+    }
+
+
+def _capture(rom, elf, data):
+    scenario = gba_playtest.parse_scenario_data(
+        data,
+        source=data["name"],
+        symbol_resolver=ElfSymbolResolver(elf),
+    )
+    return gba_playtest.capture(rom, scenario)
+
+
+def _checkpoint_values(capture, index):
+    return {
+        probe["address"]: int(probe["value"], 16)
+        for probe in capture["checkpoints"][index]["probes"]
+    }
+
+
+def _check_positive(capture):
+    before = _checkpoint_values(capture, 0)
+    requested = _checkpoint_values(capture, 1)
+    boundary = _checkpoint_values(capture, 2)
+    restored = _checkpoint_values(capture, 3)
+    interactive = _checkpoint_values(capture, 4)
+    failures = []
+
+    if before["gPlaySt+0x0f"] != PLAYER_FACTION:
+        failures.append("positive: fixture did not begin in an interactive blue phase")
+    if requested[PHASE_REQUESTED_COUNT] != 1:
+        failures.append(
+            "positive: Apply Turn +1 did not record exactly one live request"
+        )
+    if requested[PHASE_LAST_REQUEST_KIND] != PHASE_CONTROL_REQUEST_TURN:
+        failures.append("positive: submenu did not select the typed turn request")
+    if requested[PHASE_APPLIED_COUNT] != 0:
+        failures.append("positive: turn request applied before the phase boundary")
+    if boundary["gPlaySt+0x0f"] != RED_FACTION:
+        failures.append("positive: no red phase boundary was observed")
+    if boundary["gPlaySt+0x10"] != before["gPlaySt+0x10"] + 1:
+        failures.append(
+            "positive: red boundary turn did not equal the selected +1 value"
+        )
+    if boundary[PHASE_TURN_SAMPLE] != boundary["gPlaySt+0x10"]:
+        failures.append(
+            "positive: phase telemetry did not sample the red event-boundary turn"
+        )
+    if boundary[PHASE_APPLIED_COUNT] != 1 or boundary[PHASE_RESTORED_COUNT] != 1:
+        failures.append(
+            "positive: boundary did not record exactly one apply/restoration"
+        )
+    if boundary[PHASE_LAST_RESULT] != PHASE_CONTROL_OK:
+        failures.append("positive: boundary did not finish with the typed OK result")
+    if restored["gPlaySt+0x0f"] != PLAYER_FACTION:
+        failures.append("positive: the next blue phase was not restored")
+    if interactive["gBmSt+0x14"] != restored["gBmSt+0x14"] + 1:
+        failures.append("positive: map cursor did not respond after phase control")
+    if restored[PHASE_APPLIED_COUNT] != 1 or restored[PHASE_RESTORED_COUNT] != 1:
+        failures.append("positive: phase control was not a one-boundary request")
+    return failures
+
+
+def _check_negative(capture):
+    failures = []
+    for checkpoint in capture["checkpoints"]:
+        for probe in checkpoint["probes"]:
+            if probe["address"] == PHASE_PROBE and probe["value"] != "0x00000000":
+                failures.append("release: debugtools probe changed after debug inputs")
+    final = _checkpoint_values(capture, -1)
+    if final["gBmSt+0x14"] == _checkpoint_values(capture, 0)["gBmSt+0x14"]:
+        failures.append("release: native map input did not remain interactive")
+    return failures
+
+
+def _verify_or_capture(capture, name, capture_fingerprints):
+    path = FINGERPRINT_DIR / f"{name}.json"
+    if capture_fingerprints:
+        baseline = dict(capture)
+        baseline.pop("rom", None)
+        path.write_text(gba_playtest.serialize_fingerprint(baseline), encoding="utf-8")
+        return []
+    if not path.is_file():
+        return [f"missing checked fingerprint: {path}"]
+    expected = gba_playtest.validate_fingerprint(
+        json.loads(path.read_text(encoding="utf-8")),
+        str(path),
+        policy="behavior",
+    )
+    return gba_playtest.compare_fingerprints(expected, capture, policy="behavior")
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--rom", required=True, type=Path)
+    parser.add_argument("--elf", required=True, type=Path)
+    parser.add_argument("--config", required=True, choices=("debug", "release"))
+    parser.add_argument("--out-dir", required=True, type=Path)
+    parser.add_argument("--capture-fingerprints", action="store_true")
+    args = parser.parse_args(argv)
+
+    try:
+        args.out_dir.mkdir(parents=True, exist_ok=True)
+        os.environ.setdefault("TMPDIR", str(args.out_dir / "tmp"))
+        Path(os.environ["TMPDIR"]).mkdir(parents=True, exist_ok=True)
+        data = _positive_data() if args.config == "debug" else _negative_data(args.config)
+        capture = _capture(args.rom, args.elf, data)
+        capture_path = args.out_dir / f"{data['name']}.captured.json"
+        capture_path.write_text(
+            gba_playtest.serialize_fingerprint(capture), encoding="utf-8"
+        )
+        semantic_failures = (
+            _check_positive(capture)
+            if args.config == "debug"
+            else _check_negative(capture)
+        )
+        failures = semantic_failures + _verify_or_capture(
+            capture, data["name"], args.capture_fingerprints
+        )
+        if failures:
+            raise CheckError("\n".join(failures))
+        print(
+            "Debugtools phase-control runtime check passed: "
+            f"{data['name']} ({args.config})"
+        )
+        return 0
+    except (CheckError, OSError, ValueError, KeyError, gba_playtest.PlaytestError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

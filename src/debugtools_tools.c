@@ -411,27 +411,38 @@ enum DebugToolsPhaseControlResult DebugToolsPhaseControl_RequestFactionMode(
         mode);
 }
 
-enum DebugToolsPhaseControlStartAction DebugToolsPhaseControl_ApplyAtPhaseStart(int faction)
+static void DebugToolsPhaseControl_CompleteRequest(void)
 {
-    enum DebugToolsPhaseControlStartAction action = DEBUGTOOLS_PHASE_CONTROL_START_NORMAL;
-
-    if (sPhaseControlRequest.kind == DEBUGTOOLS_PHASE_CONTROL_REQUEST_NONE)
-        return action;
-
-    if (sPhaseControlRequest.kind == DEBUGTOOLS_PHASE_CONTROL_REQUEST_FACTION
-        && sPhaseControlRequest.faction != faction)
-        return action;
-
-    if (sPhaseControlRequest.kind == DEBUGTOOLS_PHASE_CONTROL_REQUEST_TURN)
-        gPlaySt.chapterTurnNumber = (u16)sPhaseControlRequest.turn;
-    else if (sPhaseControlRequest.mode == DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
-        action = DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED;
-
     gDebugToolsProbe.phaseControlAppliedCount++;
     gDebugToolsProbe.phaseControlRestoredCount++;
     DebugToolsPhaseControl_RecordResult(DEBUGTOOLS_PHASE_CONTROL_OK);
     sPhaseControlRequest.kind = DEBUGTOOLS_PHASE_CONTROL_REQUEST_NONE;
     DebugToolsPhaseControl_RefreshProbe();
+}
+
+void DebugToolsPhaseControl_ApplyTurnBeforePhaseEvents(void)
+{
+    if (sPhaseControlRequest.kind != DEBUGTOOLS_PHASE_CONTROL_REQUEST_TURN)
+        return;
+
+    gPlaySt.chapterTurnNumber = (u16)sPhaseControlRequest.turn;
+    DebugToolsPhaseControl_CompleteRequest();
+}
+
+enum DebugToolsPhaseControlStartAction DebugToolsPhaseControl_ApplyAtPhaseStart(int faction)
+{
+    enum DebugToolsPhaseControlStartAction action = DEBUGTOOLS_PHASE_CONTROL_START_NORMAL;
+
+    if (sPhaseControlRequest.kind != DEBUGTOOLS_PHASE_CONTROL_REQUEST_FACTION)
+        return action;
+
+    if (sPhaseControlRequest.faction != faction)
+        return action;
+
+    if (sPhaseControlRequest.mode == DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+        action = DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED;
+
+    DebugToolsPhaseControl_CompleteRequest();
     return action;
 }
 
@@ -457,13 +468,13 @@ static u8 DebugToolsPhaseControl_ConfirmTurnIncrement(
     struct MenuProc* menu,
     struct MenuItemProc* item)
 {
-    (void)menu;
     (void)item;
 
     if (DebugToolsPhaseControl_RequestTurn((int)gPlaySt.chapterTurnNumber + 1)
         != DEBUGTOOLS_PHASE_CONTROL_OK)
         return MENU_ACT_SND6B;
 
+    DebugTools_EndSessionAfterMenuEnd(menu);
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
 
@@ -471,17 +482,18 @@ static u8 DebugToolsPhaseControl_ConfirmTurnDecrement(
     struct MenuProc* menu,
     struct MenuItemProc* item)
 {
-    (void)menu;
     (void)item;
 
     if (DebugToolsPhaseControl_RequestTurn((int)gPlaySt.chapterTurnNumber - 1)
         != DEBUGTOOLS_PHASE_CONTROL_OK)
         return MENU_ACT_SND6B;
 
+    DebugTools_EndSessionAfterMenuEnd(menu);
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
 
 static u8 DebugToolsPhaseControl_ConfirmFactionMode(
+    struct MenuProc* menu,
     int faction,
     enum DebugToolsPhaseControlMode mode)
 {
@@ -489,6 +501,7 @@ static u8 DebugToolsPhaseControl_ConfirmFactionMode(
         != DEBUGTOOLS_PHASE_CONTROL_OK)
         return MENU_ACT_SND6B;
 
+    DebugTools_EndSessionAfterMenuEnd(menu);
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
 
@@ -496,9 +509,9 @@ static u8 DebugToolsPhaseControl_ConfirmRedComputer(
     struct MenuProc* menu,
     struct MenuItemProc* item)
 {
-    (void)menu;
     (void)item;
     return DebugToolsPhaseControl_ConfirmFactionMode(
+        menu,
         FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_COMPUTER);
 }
 
@@ -506,9 +519,9 @@ static u8 DebugToolsPhaseControl_ConfirmRedBlocked(
     struct MenuProc* menu,
     struct MenuItemProc* item)
 {
-    (void)menu;
     (void)item;
     return DebugToolsPhaseControl_ConfirmFactionMode(
+        menu,
         FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED);
 }
 
@@ -516,9 +529,9 @@ static u8 DebugToolsPhaseControl_ConfirmGreenComputer(
     struct MenuProc* menu,
     struct MenuItemProc* item)
 {
-    (void)menu;
     (void)item;
     return DebugToolsPhaseControl_ConfirmFactionMode(
+        menu,
         FACTION_GREEN, DEBUGTOOLS_PHASE_CONTROL_COMPUTER);
 }
 
@@ -526,9 +539,9 @@ static u8 DebugToolsPhaseControl_ConfirmGreenBlocked(
     struct MenuProc* menu,
     struct MenuItemProc* item)
 {
-    (void)menu;
     (void)item;
     return DebugToolsPhaseControl_ConfirmFactionMode(
+        menu,
         FACTION_GREEN, DEBUGTOOLS_PHASE_CONTROL_BLOCKED);
 }
 

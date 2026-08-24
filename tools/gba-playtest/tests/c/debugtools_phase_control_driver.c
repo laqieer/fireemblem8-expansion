@@ -4,11 +4,16 @@
 #include <string.h>
 
 #include "bm.h"
+#include "bmio.h"
 #include "cp_common.h"
 #include "event.h"
 #include "expansion_autoplay.h"
 #include "expansion_debugtools.h"
+#include "fontgrp.h"
+#include "gamecontrol.h"
+#include "hardware.h"
 #include "playerphase.h"
+#include "uimenu.h"
 
 #define CHECK(condition, message) \
     do \
@@ -20,8 +25,6 @@
         } \
     } while (0)
 
-struct DebugToolsProbe gDebugToolsProbe;
-
 struct ProcCmd CONST_DATA gProc_BMapMain[] = { { 0 } };
 struct ProcCmd gProcScr_PlayerPhase[] = { { 0 } };
 struct ProcCmd gProcScr_Playerphase_0[] = { { 0 } };
@@ -29,9 +32,15 @@ struct ProcCmd CONST_DATA gProcScr_CpPhase[] = { { 0 } };
 struct ProcCmd CONST_DATA gProcScr_BerserkCpPhase[] = { { 0 } };
 struct ProcCmd CONST_DATA ProcScr_CamMove[] = { { 0 } };
 
-static struct Proc sMapMainProc;
+struct LCDControlBuffer gLCDControlBuffer;
+
+static struct BMapMainProc sMapMainProc;
+static struct GameCtrlProc sGameCtrl;
 static struct Proc sPlayerPhaseProc;
 static struct Proc sBlockingProc;
+static struct Font sFont;
+static u16 sBgMap[32 * 32];
+struct Font* gActiveFont = &sFont;
 static int sMapMainLive;
 static int sPlayerPhaseLive;
 static int sPlayerActionLive;
@@ -42,11 +51,14 @@ static int sEventLive;
 static int sFadeLive;
 static int sComputerPhaseStarts;
 static int sProcBreaks;
+static int sPhaseSwitchEventCount;
+static int sPhaseSwitchEventFaction;
+static int sPhaseSwitchEventTurn;
 
 ProcPtr Proc_Find(const struct ProcCmd* script)
 {
     if (script == gProc_BMapMain)
-        return sMapMainLive ? &sMapMainProc : NULL;
+        return sMapMainLive ? (ProcPtr)&sMapMainProc : NULL;
     if (script == gProcScr_PlayerPhase)
         return sPlayerPhaseLive ? &sPlayerPhaseProc : NULL;
     if (script == gProcScr_Playerphase_0)
@@ -77,6 +89,71 @@ void Proc_Break(ProcPtr proc)
     sProcBreaks++;
 }
 
+void Proc_End(ProcPtr proc)
+{
+    if (proc == (ProcPtr)&sMapMainProc)
+        sMapMainLive = 0;
+}
+
+void Proc_EndEachMarked(int mark)
+{
+    (void)mark;
+}
+
+void DebugTools_CleanupMusicPreview(void)
+{
+}
+
+u8 MenuAlwaysEnabled(const struct MenuItemDef* def, int number)
+{
+    (void)def;
+    (void)number;
+    return 1;
+}
+
+u8 MenuCancelSelect(struct MenuProc* menu, struct MenuItemProc* item)
+{
+    (void)menu;
+    (void)item;
+    return 0;
+}
+
+void SetupDebugFontForBG(int bg, int tileDataOffset)
+{
+    (void)bg;
+    (void)tileDataOffset;
+}
+
+u16* BG_GetMapBuffer(int bg)
+{
+    (void)bg;
+    return sBgMap;
+}
+
+void PrintDebugStringToBG(u16* bg, const char* asciiStr)
+{
+    (void)bg;
+    (void)asciiStr;
+}
+
+struct MenuProc* StartOrphanMenu(const struct MenuDef* def)
+{
+    (void)def;
+    return NULL;
+}
+
+struct Proc* EndMenu(struct MenuProc* proc)
+{
+    return (struct Proc*)proc;
+}
+
+ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
+{
+    (void)script;
+    (void)parent;
+    return &sBlockingProc;
+}
+
 s8 EventEngineExists(void)
 {
     return sEventLive;
@@ -87,11 +164,32 @@ bool8 DoesBMXFADEExist(void)
     return sFadeLive;
 }
 
+void ClearActiveFactionGrayedStates(void)
+{
+}
+
+void RefreshUnitSprites(void)
+{
+}
+
+s8 RunPhaseSwitchEvents(void)
+{
+    sPhaseSwitchEventCount++;
+    sPhaseSwitchEventFaction = gPlaySt.faction;
+    sPhaseSwitchEventTurn = gPlaySt.chapterTurnNumber;
+    return false;
+}
+
+void ProcessTurnSupportExp(void)
+{
+}
+
 static void ResetHarness(void)
 {
     memset(&gPlaySt, 0, sizeof(gPlaySt));
     memset(&gDebugToolsProbe, 0, sizeof(gDebugToolsProbe));
     memset(&sMapMainProc, 0, sizeof(sMapMainProc));
+    memset(&sGameCtrl, 0, sizeof(sGameCtrl));
     memset(&sPlayerPhaseProc, 0, sizeof(sPlayerPhaseProc));
     memset(&sBlockingProc, 0, sizeof(sBlockingProc));
     sMapMainLive = 1;
@@ -104,6 +202,11 @@ static void ResetHarness(void)
     sFadeLive = 0;
     sComputerPhaseStarts = 0;
     sProcBreaks = 0;
+    sPhaseSwitchEventCount = 0;
+    sPhaseSwitchEventFaction = -1;
+    sPhaseSwitchEventTurn = -1;
+    sMapMainProc.gameCtrl = &sGameCtrl;
+    sGameCtrl.proc_lockCnt = 1;
 
     gPlaySt.faction = FACTION_BLUE;
     gPlaySt.chapterTurnNumber = 5;
@@ -128,7 +231,12 @@ static int TestTurnRequestAtBoundary(void)
                   == DEBUGTOOLS_PHASE_CONTROL_REQUEST_TURN,
           "turn request telemetry must identify the queued operation");
 
-    gPlaySt.faction = FACTION_RED;
+    CHECK(BmMain_ChangePhase() == true,
+          "the phase change must complete before starting the destination route");
+    CHECK(sPhaseSwitchEventCount == 1
+              && sPhaseSwitchEventFaction == FACTION_RED
+              && sPhaseSwitchEventTurn == 9,
+          "destination phase events must observe the requested turn");
     BmMain_StartPhase(&sMapMainProc);
 
     CHECK(gPlaySt.chapterTurnNumber == 9,
@@ -241,11 +349,51 @@ static int TestRejectedAndExpiredRequests(void)
     return 0;
 }
 
+static int TestForcedLifecycleCleanup(void)
+{
+    ResetHarness();
+    CHECK(DebugToolsPhaseControl_RequestFactionMode(
+              FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+              == DEBUGTOOLS_PHASE_CONTROL_OK,
+          "a valid request must queue before forced session cleanup");
+    DebugTools_ForceSessionCleanup();
+    CHECK(gDebugToolsProbe.phaseControlExpiredCount == 1
+              && gDebugToolsProbe.phaseControlRestoredCount == 1
+              && gDebugToolsProbe.phaseControlLastResult
+                  == DEBUGTOOLS_PHASE_CONTROL_EXPIRED,
+          "forced debugtools cleanup must expire and restore a pending request");
+    gPlaySt.faction = FACTION_RED;
+    BmMain_StartPhase((ProcPtr)&sMapMainProc);
+    CHECK(sComputerPhaseStarts == 1,
+          "forced session cleanup must leave the next red phase on its ordinary route");
+
+    ResetHarness();
+    CHECK(DebugToolsPhaseControl_RequestFactionMode(
+              FACTION_GREEN, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+              == DEBUGTOOLS_PHASE_CONTROL_OK,
+          "a valid request must queue before forced map teardown");
+    EndBMapMain();
+    CHECK(gDebugToolsProbe.phaseControlExpiredCount == 1
+              && gDebugToolsProbe.phaseControlRestoredCount == 1
+              && gDebugToolsProbe.phaseControlLastResult
+                  == DEBUGTOOLS_PHASE_CONTROL_EXPIRED,
+          "EndBMapMain must expire and restore a pending request");
+    CHECK(sGameCtrl.proc_lockCnt == 0 && !sMapMainLive,
+          "forced map teardown must complete the real map-main lifecycle");
+    gPlaySt.faction = FACTION_GREEN;
+    BmMain_StartPhase((ProcPtr)&sMapMainProc);
+    CHECK(sComputerPhaseStarts == 1,
+          "forced map teardown must leave the next green phase on its ordinary route");
+
+    return 0;
+}
+
 int main(void)
 {
     CHECK(TestTurnRequestAtBoundary() == 0, "turn boundary contract");
     CHECK(TestFactionModesAndRestoration() == 0, "faction ownership contract");
     CHECK(TestRejectedAndExpiredRequests() == 0, "rejection and cleanup contract");
+    CHECK(TestForcedLifecycleCleanup() == 0, "forced lifecycle cleanup contract");
     puts("DEBUGTOOLS_PHASE_CONTROL_HOST_TEST: PASS");
     return 0;
 }
