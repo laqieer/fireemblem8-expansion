@@ -550,16 +550,26 @@ def validate(records, diagnostics, dependency_records=None,
                 if objective.group is None or objective.area is None:
                     diagnostics.add(_err("reach_area objective requires group and area",
                                          objective.loc, objective_ref))
+                if objective.protected_character is not None or objective.completion_objective is not None \
+                        or objective.event_flag is not None or objective.until_turn is not None:
+                    diagnostics.add(
+                        _err("reach_area objective accepts only group and area", objective.loc, objective_ref)
+                    )
             elif objective.kind == "defeat_group":
                 if objective.group is None:
                     diagnostics.add(_err("defeat_group objective requires group", objective.loc, objective_ref))
-                if objective.area is not None:
-                    diagnostics.add(_err("defeat_group objective does not accept area", objective.area.loc,
-                                         objective_ref + ".area"))
+                if objective.protected_character is not None or objective.completion_objective is not None \
+                        or objective.event_flag is not None or objective.until_turn is not None \
+                        or objective.area is not None:
+                    diagnostics.add(
+                        _err("defeat_group objective accepts only group", objective.loc, objective_ref)
+                    )
             elif objective.kind == "event_flag":
                 if objective.event_flag is None:
                     diagnostics.add(_err("event_flag objective requires eventFlag", objective.loc, objective_ref))
-                if objective.group is not None or objective.area is not None or objective.until_turn is not None:
+                if objective.group is not None or objective.protected_character is not None \
+                        or objective.completion_objective is not None or objective.area is not None \
+                        or objective.until_turn is not None:
                     diagnostics.add(_err("event_flag objective accepts only eventFlag", objective.loc, objective_ref))
             elif objective.kind == "hold_until_turn":
                 if objective.group is None or objective.area is None or objective.until_turn is None:
@@ -570,6 +580,26 @@ def validate(records, diagnostics, dependency_records=None,
                         validate_range(objective.until_turn, 1, TURN_MAX, objective.until_turn_loc,
                                        objective_ref + ".untilTurn", field_name="untilTurn")
                     )
+                if objective.protected_character is not None or objective.completion_objective is not None \
+                        or objective.event_flag is not None:
+                    diagnostics.add(
+                        _err("hold_until_turn objective accepts only group, area, and untilTurn",
+                             objective.loc, objective_ref)
+                    )
+
+            if objective.kind == "protect" and objective.protected_character is not None:
+                completion = objectives_by_id.get(objective.completion_objective)
+                completion_group = groups_by_id.get(completion.group) if completion is not None else None
+                if completion is not None and completion.kind == "defeat_group" and completion_group is not None:
+                    if objective.protected_character in {
+                        member.character for member in completion_group.members
+                    }:
+                        diagnostics.add(
+                            _err(
+                                "protect objective cannot complete by defeating its protected character",
+                                objective.completion_objective_loc, objective_ref + ".completionObjective",
+                            )
+                        )
 
         _validate_cycles(record, objectives_by_id, diagnostics)
         _validate_dependency_set(
@@ -594,6 +624,8 @@ def validate(records, diagnostics, dependency_records=None,
     )
     hashes = {}
     for identifier, loc, kind in all_ids:
+        if not _ID_RE.match(identifier):
+            continue
         value = stable_id_value(identifier)
         if value in hashes and hashes[value][0] != identifier:
             diagnostics.add(

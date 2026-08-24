@@ -58,8 +58,10 @@ class RecordScanRefBindingTests(unittest.TestCase):
     def test_explicit_record_scan_matching_resolved_tip_ok(self):
         sha1 = h.commit(self.fixture.upstream_dir, {"a.txt": "1"}, "c1", seconds_offset=10)
         h.refetch(self.fixture)
+        resolved_tip = git_utils.resolve_commit_sha("decomp/master", self.fixture.fork_dir)
+        self.assertEqual(sha1, resolved_tip)
         state_mod.record_scan(self.state, "decomp/master", sha1, self.fixture.fork_dir)
-        self.assertEqual(self.state["last_scanned"]["sha"], sha1)
+        self.assertEqual(self.state["last_scanned"]["sha"], resolved_tip)
 
     def test_explicit_record_scan_old_but_related_sha_rejected(self):
         """A real, ancestor-reachable, but no-longer-the-tip SHA on the
@@ -99,8 +101,10 @@ class RecordScanRefBindingTests(unittest.TestCase):
         sha1 = h.commit(self.fixture.upstream_dir, {"a.txt": "1"}, "c1", seconds_offset=10)
         h.refetch(self.fixture)
         state_mod.record_scan(self.state, "decomp/master", sha1, self.fixture.fork_dir)
+        before = json.dumps(self.state, sort_keys=True)
         with self.assertRaises(state_mod.StateError):
             state_mod.record_scan(self.state, "decomp/master", self.fixture.base_sha, self.fixture.fork_dir)
+        self.assertEqual(json.dumps(self.state, sort_keys=True), before)
 
 
 class AdvancePortedRefBindingTests(unittest.TestCase):

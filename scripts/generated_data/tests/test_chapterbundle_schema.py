@@ -89,7 +89,24 @@ def _messages(diagnostics):
 
 class ChapterBundleValidFixtureTests(unittest.TestCase):
     def test_valid_fixture_has_no_diagnostics(self):
-        records, diagnostics = _validate("valid.json")
+        records = chapterbundle_schema.load_records(cb_fixture("valid.json"))
+        records.chapter_objectives = chapterbundle_schema.TableRef(
+            "chapterobjectives",
+            "scripts/generated_data/tests/fixtures/chapterbundle/deps_chapterobjectives.json",
+            records.loc,
+            ["ChapterObjectives_EL"],
+            [records.loc],
+            records.loc,
+        )
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            _load_dependency_records(),
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C.c"),
+        )
         self.assertTrue(diagnostics.ok, msg=_messages(diagnostics))
         self.assertEqual(len(records), 1)
         self.assertEqual(records.chapter.id, "CHAPTER_EL")
@@ -387,6 +404,52 @@ class ChapterObjectivesBundleTests(unittest.TestCase):
         self.assertFalse(diagnostics.ok)
         self.assertTrue(
             any("missing from chapterObjectives.symbols" in message for message in _messages(diagnostics)),
+            _messages(diagnostics),
+        )
+
+    def test_objective_records_require_owning_chapter_bundle_declaration(self):
+        records = chapterbundle_schema.load_records(cb_fixture("valid.json"))
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            _load_dependency_records(),
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C.c"),
+        )
+        self.assertFalse(diagnostics.ok)
+        self.assertTrue(
+            any("has no chapterObjectives ownership declaration" in message
+                for message in _messages(diagnostics)),
+            _messages(diagnostics),
+        )
+
+    def test_objective_record_for_another_chapter_is_orphaned(self):
+        records = chapterbundle_schema.load_records(cb_fixture("valid.json"))
+        records.chapter_objectives = chapterbundle_schema.TableRef(
+            "chapterobjectives",
+            "scripts/generated_data/tests/fixtures/chapterbundle/deps_chapterobjectives.json",
+            records.loc,
+            ["ChapterObjectives_EL"],
+            [records.loc],
+            records.loc,
+        )
+        dependency_records = _load_dependency_records()
+        dependency_records["chapterobjectives"][0].chapter = "CHAPTER_OTHER"
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            dependency_records,
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C.c"),
+        )
+        self.assertFalse(diagnostics.ok)
+        self.assertTrue(
+            any("belongs to chapter 'CHAPTER_OTHER' but has no owning chapter bundle" in message
+                for message in _messages(diagnostics)),
             _messages(diagnostics),
         )
 

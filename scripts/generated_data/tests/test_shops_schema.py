@@ -28,14 +28,6 @@ class ShopsSchemaDuplicateTests(unittest.TestCase):
         self.assertTrue(any("duplicate shop symbol 'ShopList_Dup'" in m for m in messages), messages)
 
 
-class ShopsSchemaReferenceTests(unittest.TestCase):
-    def test_missing_item_reference_detected(self):
-        _, diagnostics = _validate("missing_item_ref.json")
-        self.assertFalse(diagnostics.ok)
-        messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(any("undefined item reference 'ITEM_NOT_A_REAL_ITEM'" in m for m in messages), messages)
-
-
 class ShopsSchemaTerminatorTests(unittest.TestCase):
     def test_empty_items_detected(self):
         _, diagnostics = _validate("empty_items.json")

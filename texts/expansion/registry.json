@@ -517,6 +517,134 @@
       "max_decoded_bytes": 32,
       "pseudo_policy": "preserve",
       "notes": "Issue #43 typed chapter-title manifest fallback label."
+    },
+    {
+      "id": 63,
+      "key": "debug.unit.edit_hp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 64,
+      "key": "debug.unit.edit_stats",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 65,
+      "key": "debug.unit.edit_ai",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 66,
+      "key": "debug.unit.clear_status",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 67,
+      "key": "debug.unit.identity",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 68,
+      "key": "debug.unit.state",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 69,
+      "key": "debug.unit.current_hp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 70,
+      "key": "debug.unit.max_hp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 71,
+      "key": "debug.unit.power",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 72,
+      "key": "debug.unit.skill",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 73,
+      "key": "debug.unit.speed",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 74,
+      "key": "debug.unit.defense",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 75,
+      "key": "debug.unit.resistance",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 76,
+      "key": "debug.unit.luck",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40
+    },
+    {
+      "id": 77,
+      "key": "debug.unit.ai_a",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24
+    },
+    {
+      "id": 78,
+      "key": "debug.unit.ai_b",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24
     }
   ]
 }
