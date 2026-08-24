@@ -120,15 +120,15 @@ Fits the existing `MenuProc`/`MenuItemDef` engine (`include/uimenu.h`,
   what stops `StartMenuCore`'s scan loop. The reserved Back entry is always
   written immediately after the last action visible on that page; the
   terminator is the slot after Back.
-- Storage is two fixed-size EWRAM arrays: nine immutable-identity built-in
+- Storage is two fixed-size EWRAM arrays: ten immutable-identity built-in
   slots (`DEBUGTOOLS_BUILTIN_ACTION_MAX`) and nine public contributor slots
   (`DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX`). `DEBUGTOOLS_ACTION_MAX` is their
-  combined introspection capacity (18). The added contributor/page state is
+  combined introspection capacity (19). The added contributor/page state is
   linked at the end of the existing EWRAM layout so public probes and later
   runtime state keep their established addresses. There is no heap allocation.
 - Built-in storage is ID-indexed: ID `N` always occupies slot `N-1`.
   Introspection scans sparse slots in ascending ID order, so built-ins stay in
-  ID/menu order 1-9 even when any public built-in initializer
+  ID/menu order 1-10 even when any public built-in initializer
   (`DebugTools_RegisterBuiltinActions`, `DebugTools_RegisterWeatherFogActions`,
   `DebugTools_RegisterChapter4PrepAction`, or
   `DebugTools_RegisterExtendedToolActions`) is called first. Weather and Fog
@@ -150,9 +150,9 @@ a registration failure is never silently dropped:
 | `DEBUGTOOLS_ERR_DUPLICATE` | `id` or `label` already registered |
 | `DEBUGTOOLS_ERR_CAPACITY_FULL` | The nine-slot contributor storage (or private built-in storage) is already full |
 | `DEBUGTOOLS_ERR_ALREADY_ACTIVE` | `DebugTools_OpenHub()` called while the hub is already open |
-| `DEBUGTOOLS_ERR_ID_INVALID` (closure) | `action->id == 0` (reserved/uninitialized-looking sentinel; every shipped action uses ids 1-9) |
+| `DEBUGTOOLS_ERR_ID_INVALID` (closure) | `action->id == 0` (reserved/uninitialized-looking sentinel; every shipped action uses ids 1-10) |
 | `DEBUGTOOLS_ERR_LABEL_INVALID` (closure) | `label` is empty (`""`) or longer than `DEBUGTOOLS_LABEL_MAX_LENGTH` (24) |
-| `DEBUGTOOLS_ERR_ID_RESERVED` | Public contributor attempted to claim built-in ID 1-9; valid contributor IDs are 10-65535 |
+| `DEBUGTOOLS_ERR_ID_RESERVED` | Public contributor attempted to claim built-in ID 1-10; valid contributor IDs are 11-65535 |
 | `DEBUGTOOLS_ERR_TEXT_CAPACITY` | The active font cannot fit one maximum hub/status allocation |
 
 All added closure codes are appended at the **end** of `enum DebugToolsResult` so
@@ -175,12 +175,12 @@ accepted, one character over is rejected).
 `gDebugToolsProbe.lastRegisterResult` mirrors the same value for playtest
 probes.
 
-Built-ins are initialized exactly once, in menu/ID order 1-9, before a
+Built-ins are initialized exactly once, in menu/ID order 1-10, before a
 valid public contributor registration is admitted. A contributor call made
 before the first hub open therefore cannot occupy a built-in slot and later
 acquire that built-in's localized label while retaining a different
-callback. The first valid contributor ID (10 or greater) succeeds, all nine
-documented contributor slots can coexist with all nine built-ins, and only
+callback. The first valid contributor ID (11 or greater) succeeds, all nine
+documented contributor slots can coexist with all ten built-ins, and only
 the tenth contributor receives `DEBUGTOOLS_ERR_CAPACITY_FULL`.
 
 ## Text allocator lifecycle
@@ -270,7 +270,7 @@ calls outside an active debug session are safe no-ops.
 
 `DebugTools_GetRegisteredCount()` / `DebugTools_GetRegisteredAction(index)`
 (bounds-checked, `NULL` outside `[0, count)`) expose the combined sequence:
-the nine built-ins first, then contributors in registration order.
+the ten built-ins first, then contributors in registration order.
 
 ## Diagnostics / visible feedback
 
@@ -1068,7 +1068,7 @@ it provides instead:
   so it is structurally impossible to use it as an arbitrary memory reader.
 
 No dedicated hub menu row is spent on a "Diagnostics" viewer: the first page
-remains the nine built-ins listed in "Hub menu ordering" above, preserving
+remains the original nine built-ins listed in "Hub menu ordering" above, preserving
 their established row identities and existing framebuffer/navigation
 expectations. The ring/
 assert state is instead exposed purely through `gDebugToolsProbe` fields and
@@ -1262,7 +1262,7 @@ tools" above for what each proves.
   a registration or changing the count on a rejected call.
   Its lifecycle case also links the real, unmodified `src/uimenu.c`
   `ProcessMenuSelectInput()`/`Menu_OnIdle()`/`EndMenu()` path and executes
-  under `qps-ploc`: all nine built-ins and all nine contributors retain
+  under `qps-ploc`: all ten built-ins and all nine contributors retain
   capacity/order/callback identity; QPS adapts only built-in rows while
   contributor labels remain on the raw renderer; R dispatch completes with
   the old menu alive and only the yielded Proc ends it; and 64
@@ -1461,7 +1461,7 @@ part of the shipped feature.
 ## Safety boundaries / extension rules
 
 - Contributors add debug actions **exclusively** through
-  `DebugTools_RegisterAction()` using IDs 10-65535; IDs 1-9 are reserved
+  `DebugTools_RegisterAction()` using IDs 11-65535; IDs 1-10 are reserved
   built-ins and return `DEBUGTOOLS_ERR_ID_RESERVED`. Never edit
   `gDebugToolsHubMenuDef` or
   `sHubMenuItemDefs` directly, and never add a second title-screen (or any
@@ -1542,7 +1542,7 @@ explicitly, honestly open is narrow:
   `expansion-modern-debugtools-tools-check`, host test
   `tools/gba-playtest/tests/test_tools_scenario.py`) reuses the proven Fast
   Boot: Chapter 2 map-hub prefix, opens the real map hub
-  (`registeredActionCount == 9`), and drives every tool from its real hub row,
+  (`registeredActionCount == 10`), and drives every tool from its real hub row,
   each with an asserted semantic effect AND a safe hub return (all
   relocation-independent `gDebugToolsProbe`/`gPlaySt`/`gBmSt` scalars):
   Unit inspect resolves Eirika (16/16) then a separate confirm applies
