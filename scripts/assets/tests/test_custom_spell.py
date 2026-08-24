@@ -624,6 +624,9 @@ class CustomSpellAdapterTests(unittest.TestCase):
             mock.patch.object(
                 manifest, "load_manifest", wraps=manifest.load_manifest
             ) as discover,
+            mock.patch.object(
+                manifest, "_repo_path", side_effect=lambda path, *_: path
+            ),
             mock.patch.object(custom_spell, "load_package") as convert,
         ):
             output = io.StringIO()

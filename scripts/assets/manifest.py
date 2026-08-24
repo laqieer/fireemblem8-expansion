@@ -192,6 +192,33 @@ def load_manifest(path):
     return [_parse_record(node) for node in root.require("assets").as_list()]
 
 
+def load_discovery(path):
+    records = load_manifest(path)
+    diagnostics = DiagnosticCollector()
+    for record in records:
+        if not ID_RE.fullmatch(record.id):
+            diagnostics.add(GeneratedDataError(
+                "asset id must match {}".format(ID_RE.pattern),
+                record.id_loc,
+                "asset.id",
+            ))
+        kind = KIND_REGISTRY.resolve(record.kind)
+        if kind is None:
+            diagnostics.add(GeneratedDataError(
+                "unknown asset kind '{}'".format(record.kind),
+                record.kind_loc,
+                "{}.kind".format(record.id),
+            ))
+            continue
+        for source, loc in zip(record.sources, record.source_locs):
+            try:
+                _repo_path(source, loc, "{}.sources".format(record.id))
+            except GeneratedDataError as error:
+                diagnostics.add(error)
+    diagnostics.raise_if_any()
+    return records
+
+
 def _repo_path(path, loc, reference_path):
     if not isinstance(path, str) or not path:
         raise GeneratedDataError("expected a non-empty path", loc, reference_path)

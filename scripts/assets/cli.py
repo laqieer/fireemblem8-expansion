@@ -76,7 +76,7 @@ def main(argv=None):
             )
             print("OK: {} generated asset record(s) are current".format(len(records)))
         elif args.command == "sources":
-            records = manifest.load_manifest(args.manifest)
+            records = manifest.load_discovery(args.manifest)
             sources = {"assets/portrait_registry.json"}
             for record in records:
                 sources.update(record.sources)
@@ -86,19 +86,19 @@ def main(argv=None):
             for source in sorted(sources):
                 print(source)
         elif args.command == "portrait-incbin-consumers":
-            records = manifest.load_manifest(args.manifest)
+            records = manifest.load_discovery(args.manifest)
             for record_id in manifest.portrait_incbin_consumer_ids(records):
                 print(record_id)
         elif args.command == "tmx-incbin-consumers":
-            records = manifest.load_manifest(args.manifest)
+            records = manifest.load_discovery(args.manifest)
             for record_id in manifest.tmx_incbin_consumer_ids(records):
                 print(record_id)
         elif args.command == "banim-incbin-consumers":
-            records = manifest.load_manifest(args.manifest)
+            records = manifest.load_discovery(args.manifest)
             for record_id in manifest.banim_incbin_consumer_ids(records):
                 print(record_id)
         elif args.command == "custom-spell-incbin-consumers":
-            records = manifest.load_manifest(args.manifest)
+            records = manifest.load_discovery(args.manifest)
             for record_id in manifest.custom_spell_incbin_consumer_ids(records):
                 print(record_id)
         else:
