@@ -314,3 +314,49 @@ Reset the emulator between title and map fixtures. Host artifacts stay under
 only songs with authoritative sound-room names; unnamed custom song-table
 slots are unsupported until a project adds a valid sound-room catalog row.
 The archival lane has no action or runtime behavior.
+
+## TC-DEBUGTOOLS-DIAGNOSTICS-001: Typed State and Engine diagnostics
+
+- **Feature / originating issue:** `debugtools-visual-status-diagnostics` /
+  [issue #127](https://github.com/laqieer/fireemblem8-expansion/issues/127).
+- **Supported configuration or artifact:** modern AAPCS debug source build
+  with the existing debugtools gate; the identical release profile is the
+  disabled control.
+- **Prerequisites and clean starting state:** start from a clean title boot
+  with the deterministic debugtools SRAM fixture and reset it between title,
+  Chapter 2 map, and Chapter 4 prep legs.
+
+### Actions
+
+1. At title idle, press SELECT+R. Press R past the action pages to State and
+   Engine, Refresh once, then Back.
+2. On the Chapter 2 map and Chapter 4 prep routes, enter State on a valid
+   cursor unit and on an empty in-bounds tile.
+3. Force-end one map diagnostics session and move the cursor after teardown.
+4. Compare the final whole-SRAM hash with the initial hash.
+
+### Expected result
+
+Title exposes only common scalars. Map and prep expose validated context,
+cursor, unit, weather/fog, and RNG data; an empty tile keeps cursor validity
+while clearing unit fields. Refresh captures once. Explicit teardown restores
+the owned display/font/lock state with a zero mismatch mask, leaves the map
+interactive, and preserves SRAM.
+
+### Negative control
+
+NULL output, stale/empty/out-of-range units, active event/fade, battle
+ownership, repeated input, and forced teardown fail closed. The release build
+exposes only the disabled provider stub and keeps all diagnostics probes zero.
+
+### Automation
+
+```sh
+python3 -m unittest tools.gba-playtest.tests.test_debugtools_diagnostics -v
+make expansion-modern-debugtools-diagnostics-check MODERN_CONFIG=debug MODERN_ABI=aapcs
+make expansion-modern-debugtools-diagnostics-check MODERN_CONFIG=release MODERN_ABI=aapcs
+```
+
+No framebuffer, screenshot, pointer, or subjective visual criterion is an
+acceptance oracle. Close or force-end the session and reset the disposable
+fixture after testing.
