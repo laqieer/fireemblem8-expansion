@@ -211,6 +211,9 @@ endif
 ifeq ($(FE8_BANIM_PACKAGE_RUNTIME_TEST),1)
 MODERN_DEFINE_FLAGS += -DFE8_BANIM_PACKAGE_RUNTIME_TEST=1
 endif
+ifeq ($(GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED),1)
+MODERN_DEFINE_FLAGS += -DFE8_CHAPTER_OBJECTIVES_ENABLED=1
+endif
 MODERN_INCLUDE_FLAGS := -Iinclude -I.
 
 # Issue #6 bundled content example: its ORIGINAL display text is authored in
@@ -2056,6 +2059,7 @@ ifneq (,$(MODERN_EXPANSION_DEFINES_ACTIVE))
 		printf '%s\n' 'item_id_cap=$(FE8_ITEM_ID_CAP)'; \
 		printf '%s\n' 'item_expansion_itemtest=$(FE8_EXPANSION_ITEMTEST)'; \
 		printf '%s\n' 'custom_spell_test=$(FE8_EXPANSION_CUSTOM_SPELL_TEST)'; \
+		printf '%s\n' 'chapter_objectives_enabled=$(GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED)'; \
 		printf '%s\n' 'layout_flags=$(MODERN_LAYOUT_FLAGS)'; \
 		printf '%s\n' 'data_layout_flags=$(MODERN_DATA_LAYOUT_FLAGS)'; \
 		printf '%s\n' 'banim_overlay_layout_flags=$(MODERN_BANIM_OVERLAY_LAYOUT_FLAGS)'; \
