@@ -3,9 +3,10 @@
 Scenario:    tools/gba-playtest/scenarios/combat.json
 Fingerprint: tools/gba-playtest/fingerprints/combat-modern-debug.json
 
-Boots the debug-only selector's default Chapter 4 target from a clean
-(blank-SRAM) boot and reaches EventScr_Ch4_BeginningScene's own
-FIGHT(CHARACTER_ARTUR, ...) tutorial battle. The target enemy
+Boots the debug-only selector's default Chapter 4 target with the explicit
+L+A compatibility gesture from a clean (blank-SRAM) boot and reaches
+EventScr_Ch4_BeginningScene's own FIGHT(CHARACTER_ARTUR, ...) tutorial battle.
+The target enemy
 gUnitArrayRed[0]'s curHP (0x0202eba7) transitions 15 -> 0 at the SCRIPT_BATTLE
 opcode (Event3F_ScriptBattle, the real battle engine -- proven by the P8 to
 occur one opcode before the following KILL), then the unit's pCharacterData
@@ -59,6 +60,17 @@ class CombatScenarioFilesTests(unittest.TestCase):
                 "artur-scripted-fight-lethal-hit",
                 "enemy-dead-removed-by-kill",
             ],
+        )
+
+    def test_compatibility_route_is_explicit_without_retiming_checkpoints(self):
+        raw = json.loads(SCENARIO_PATH.read_text(encoding="utf-8"))
+        selection = next(
+            frame for frame in raw["frames"] if frame["start"] == 900
+        )
+        self.assertEqual(selection["keys"], ["L", "A"])
+        self.assertEqual(
+            [checkpoint.frame for checkpoint in self.scenario.checkpoints],
+            [3285, 3296, 3305],
         )
 
     def test_proof_is_semantic_unit_hp_not_framebuffer(self):

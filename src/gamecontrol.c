@@ -480,15 +480,17 @@ void GameControl_PostIntro(struct GameCtrlProc * proc)
                 proc->nextChapter = request.chapterId;
 
                 /*
-                 * Preserve the established Chapter 4 prep route for the
-                 * selector's default Common-route target. This path only
-                 * executes after the selector request is consumed; an
-                 * unselected selector remains inert. The BMap traversal from
-                 * Borgo Ridge retains the existing event and combat timing.
+                 * The compatibility route is explicit request provenance,
+                 * not a build-profile decision. It preserves the established
+                 * Chapter 4 prep traversal only for a selector confirmation
+                 * made with the compatibility gesture; ordinary selector
+                 * targets remain direct and an unselected selector is inert.
                  */
                 if (request.kind == DEBUGTOOLS_LAUNCH_TARGET_CHAPTER
                     && request.chapterMode == CHAPTER_MODE_COMMON
-                    && request.chapterId == CHAPTER_L_4)
+                    && request.chapterId == CHAPTER_L_4
+                    && request.origin
+                        == DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_CH4_PREP_COMPAT)
                 {
                     GmDataInit();
                     gGMData.units[0].location = NODE_BORGO_RIDGE;

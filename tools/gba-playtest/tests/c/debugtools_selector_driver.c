@@ -121,6 +121,9 @@ int main(void)
     CHECK(DebugTools_ConsumePendingTargetLaunch(&request), "GameControl consume must succeed once");
     CHECK(request.targetId == 0x1104, "consumed request target mismatch");
     CHECK(
+        request.origin == DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_DIRECT,
+        "ordinary selector confirmation must retain direct provenance");
+    CHECK(
         request.chapterId == 4 && request.nodeId == NODE_ZAHA_WOODS,
         "consumed chapter route mismatch");
     CHECK(!DebugTools_ConsumePendingTargetLaunch(&request), "duplicate consume must be a no-op");
@@ -171,6 +174,21 @@ int main(void)
     CHECK(request.kind == DEBUGTOOLS_LAUNCH_TARGET_SKIRMISH, "consumed skirmish kind mismatch");
     CHECK(request.chapterId == 4, "consumed skirmish chapter mismatch");
     CHECK(!DebugTools_IsTargetLaunchPending(), "request must clear after consume");
+
+    CHECK(OpenSelector() == 0, "reopening selector for compatibility route failed");
+    itemDef = &gDebugToolsSelectorCapturedMenuDef->menuItems[0];
+    gDebugToolsSelectorTestKeyStatus.newKeys = L_BUTTON;
+    CHECK(
+        itemDef->onSelected(&sMenu, &sItem) & MENU_ACT_END,
+        "compatibility selection must close submenu");
+    gDebugToolsSelectorTestKeyStatus.newKeys = 0;
+    gDebugToolsSelectorCapturedMenuDef->onEnd(&sMenu);
+    CHECK(
+        DebugTools_ConsumePendingTargetLaunch(&request),
+        "compatibility request must consume once");
+    CHECK(
+        request.origin == DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_CH4_PREP_COMPAT,
+        "L+A selector confirmation must retain compatibility provenance");
 
     CHECK(
         DebugTools_RequestTargetLaunch(0x1104) == DEBUGTOOLS_LAUNCH_REQUEST_OK,

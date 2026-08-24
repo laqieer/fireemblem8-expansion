@@ -1064,7 +1064,7 @@
       "domain": "chapter",
       "key": "include/debugtools_internal.h|struct-field|chapter|DebugToolsLaunchRequest.chapterId",
       "kind": "struct-field",
-      "line": 45,
+      "line": 51,
       "path": "include/debugtools_internal.h",
       "reason": null,
       "record_count": null,
@@ -1083,7 +1083,7 @@
       "domain": "chapter",
       "key": "include/debugtools_internal.h|struct-field|chapter|DebugToolsLaunchTarget.chapterId",
       "kind": "struct-field",
-      "line": 34,
+      "line": 40,
       "path": "include/debugtools_internal.h",
       "reason": null,
       "record_count": null,
@@ -21012,7 +21012,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "aaeddaee450074074d3388b1f696326463ad753c7a7caa16a28c7a599d32f010",
+  "digest": "7dd0758baa93e07f9980ed0dedfbacbeae988223882ef06c6be15f31a976c57b",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,

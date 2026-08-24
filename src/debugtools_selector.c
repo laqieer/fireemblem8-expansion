@@ -37,6 +37,7 @@ struct DebugToolsSelectorState
 {
     u16 targetId;
     u8 pending;
+    u8 requestOrigin;
     u8 mapHandoffScheduled;
 };
 
@@ -358,12 +359,18 @@ static int DebugToolsSelector_IsTargetIdShapeValid(u16 targetId)
     return nodeId < NODE_MAX;
 }
 
-enum DebugToolsLaunchRequestResult DebugTools_RequestTargetLaunch(u16 targetId)
+enum DebugToolsLaunchRequestResult DebugTools_RequestTargetLaunchWithOrigin(
+    u16 targetId,
+    enum DebugToolsLaunchRequestOrigin origin)
 {
     struct DebugToolsLaunchTarget target;
 
     if (sSelectorState.pending)
         return DEBUGTOOLS_LAUNCH_REQUEST_BUSY;
+
+    if (origin != DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_DIRECT
+        && origin != DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_CH4_PREP_COMPAT)
+        return DEBUGTOOLS_LAUNCH_REQUEST_INVALID;
 
     if (!DebugToolsSelector_FindTargetById(targetId, &target, NULL))
         return DebugToolsSelector_IsTargetIdShapeValid(targetId)
@@ -371,8 +378,16 @@ enum DebugToolsLaunchRequestResult DebugTools_RequestTargetLaunch(u16 targetId)
             : DEBUGTOOLS_LAUNCH_REQUEST_INVALID;
 
     sSelectorState.targetId = target.id;
+    sSelectorState.requestOrigin = origin;
     sSelectorState.pending = 1;
     return DEBUGTOOLS_LAUNCH_REQUEST_OK;
+}
+
+enum DebugToolsLaunchRequestResult DebugTools_RequestTargetLaunch(u16 targetId)
+{
+    return DebugTools_RequestTargetLaunchWithOrigin(
+        targetId,
+        DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_DIRECT);
 }
 
 u16 DebugTools_GetSelectedTargetId(void)
@@ -407,7 +422,7 @@ int DebugTools_ConsumePendingTargetLaunch(struct DebugToolsLaunchRequest* out)
     out->nodeId = target.nodeId;
     out->chapterId = target.chapterId;
     out->encounterChoice = target.encounterChoice;
-    out->_pad = 0;
+    out->origin = sSelectorState.requestOrigin;
     sSelectorState.pending = 0;
     return 1;
 }
@@ -524,6 +539,7 @@ static u8 DebugToolsSelector_Selected(
 {
     struct DebugToolsLaunchTarget target;
     enum DebugToolsLaunchRequestResult result;
+    enum DebugToolsLaunchRequestOrigin origin;
 
     (void)menu;
     (void)item;
@@ -534,7 +550,10 @@ static u8 DebugToolsSelector_Selected(
             NULL))
         return MENU_ACT_SND6B;
 
-    result = DebugTools_RequestTargetLaunch(target.id);
+    origin = (gKeyStatusPtr->newKeys & L_BUTTON)
+        ? DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_CH4_PREP_COMPAT
+        : DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_DIRECT;
+    result = DebugTools_RequestTargetLaunchWithOrigin(target.id, origin);
     if (result != DEBUGTOOLS_LAUNCH_REQUEST_OK)
         return MENU_ACT_SND6B;
 

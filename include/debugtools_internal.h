@@ -25,6 +25,12 @@ enum DebugToolsLaunchRequestResult
     DEBUGTOOLS_LAUNCH_REQUEST_BUSY,
 };
 
+enum DebugToolsLaunchRequestOrigin
+{
+    DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_DIRECT = 0,
+    DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_CH4_PREP_COMPAT,
+};
+
 struct DebugToolsLaunchTarget
 {
     u16 id;
@@ -44,7 +50,7 @@ struct DebugToolsLaunchRequest
     u8 nodeId;
     u8 chapterId;
     u8 encounterChoice;
-    u8 _pad;
+    u8 origin;
 };
 
 void DebugTools_RegisterChapterSelectorAction(void);
@@ -52,6 +58,9 @@ int DebugTools_GetLaunchTargetCount(void);
 int DebugTools_GetLaunchTarget(int index, struct DebugToolsLaunchTarget* out);
 u16 DebugTools_GetSelectedTargetId(void);
 enum DebugToolsLaunchRequestResult DebugTools_RequestTargetLaunch(u16 targetId);
+enum DebugToolsLaunchRequestResult DebugTools_RequestTargetLaunchWithOrigin(
+    u16 targetId,
+    enum DebugToolsLaunchRequestOrigin origin);
 int DebugTools_IsTargetLaunchPending(void);
 int DebugTools_ConsumePendingTargetLaunch(struct DebugToolsLaunchRequest* out);
 int DebugTools_QueueMapLaunchHandoff(void);
