@@ -119,6 +119,14 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             sorted(dependencies["chapterbundle"].by_chapter),
             ["CHAPTER_L_2", "CHAPTER_L_3"],
         )
+        l2_units = chapterbundle_schema.resolve_bundle_dependencies(
+            dependencies["chapterbundle"][0]
+        )["units"]
+        l3_units = chapterbundle_schema.resolve_bundle_dependencies(
+            dependencies["chapterbundle"][1]
+        )["units"]
+        self.assertEqual([group.symbol for group in l2_units], ["UnitDef_Fixture_L2Ally"])
+        self.assertEqual([group.symbol for group in l3_units], ["UnitDef_Fixture_L3Ally"])
 
     def test_cross_owner_missing_and_duplicate_bundle_owners_fail_closed(self):
         records, dependencies = _two_chapter_records_and_dependencies()
@@ -168,6 +176,80 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             any(
                 error.reference_path == "bundles[chapter=CHAPTER_L_3].chapter"
                 and "duplicate chapter bundle owner" in error.message
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
+    def test_owner_dependency_sources_and_map_bounds_fail_closed(self):
+        records, dependencies = _two_chapter_records_and_dependencies()
+        diagnostics = DiagnosticCollector()
+        dependencies["chapterbundle"][1].tables_by_name["units"].source = (
+            "scripts/generated_data/tests/fixtures/chapterobjectives/deps_units_l2.json"
+        )
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(
+            any(
+                error.reference_path
+                == "chapters[symbol=ChapterObjectives_FixtureL3].aiGroups[id=AI_GROUP_FIXTURE_L3]"
+                ".members[character=CHARACTER_SETH].unitGroup"
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
+        records, dependencies = _two_chapter_records_and_dependencies()
+        diagnostics = DiagnosticCollector()
+        source = dependencies["chapterbundle"][1].tables_by_name["units"]
+        source.source = "scripts/generated_data/tests/fixtures/chapterobjectives/missing_units.json"
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(
+            any(
+                error.reference_path == "bundles[chapter=CHAPTER_L_3].tables.units.source"
+                and error.location == source.source_loc
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
+        records, dependencies = _two_chapter_records_and_dependencies()
+        diagnostics = DiagnosticCollector()
+        l2_area = records[0].objectives[0].area
+        l3_area = records[1].objectives[0].area
+        l2_area.x_min = l2_area.x_max = 14
+        l2_area.y_min = l2_area.y_max = 14
+        l3_area.x_min = l3_area.x_max = 16
+        l3_area.y_min = l3_area.y_max = 15
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(diagnostics.ok, diagnostics.render())
+
+        records, dependencies = _two_chapter_records_and_dependencies()
+        diagnostics = DiagnosticCollector()
+        l2_area = records[0].objectives[0].area
+        l2_area.x_min = 14
+        l2_area.x_max = 15
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(
+            any(
+                error.reference_path
+                == "chapters[symbol=ChapterObjectives_FixtureL2].objectives[id=OBJECTIVE_FIXTURE_L2_REACH].xMax"
+                and error.location == l2_area.x_max_loc
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
+        records, dependencies = _two_chapter_records_and_dependencies()
+        diagnostics = DiagnosticCollector()
+        l3_area = records[1].objectives[0].area
+        l3_area.y_min = 15
+        l3_area.y_max = 16
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(
+            any(
+                error.reference_path
+                == "chapters[symbol=ChapterObjectives_FixtureL3].objectives[id=OBJECTIVE_FIXTURE_L3_REACH].yMax"
+                and error.location == l3_area.y_max_loc
                 for error in diagnostics.errors
             ),
             diagnostics.render(),

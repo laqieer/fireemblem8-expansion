@@ -49,6 +49,16 @@ struct BanimPresentationPolicy
     /* 0E */ u16 timingMaxFrames;
 };
 
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
+struct BanimPresentationPolicyHarnessProbe
+{
+    /* 00 */ u32 currentPolicyId;
+    /* 04 */ u32 getCurrentCallCount;
+};
+
+extern struct BanimPresentationPolicyHarnessProbe gBanimPresentationPolicyHarnessProbe;
+#endif
+
 #ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
 struct BanimPresentationRuntimeProbe
 {

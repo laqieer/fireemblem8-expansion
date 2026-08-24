@@ -10,7 +10,7 @@
   "manifest": {"table": "eventlists", "symbol": "Ch2Events"},
   "tables": {
     "units": {
-      "source": "scripts/generated_data/tests/fixtures/chapterobjectives/deps_units_two_chapters.json",
+      "source": "scripts/generated_data/tests/fixtures/chapterobjectives/deps_units_l2.json",
       "symbols": ["UnitDef_Fixture_L2Ally"]
     }
   },

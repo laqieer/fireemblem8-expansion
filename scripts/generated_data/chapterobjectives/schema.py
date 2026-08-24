@@ -311,7 +311,7 @@ def _validate_dependency_set(diagnostics, record, name, values, locations, allow
         )
 
 
-def _validate_area(diagnostics, area, ref):
+def _validate_area(diagnostics, area, ref, map_dimensions):
     if area is None:
         return
     diagnostics.extend(validate_range(area.x_min, 0, 63, area.x_min_loc, ref + ".xMin", "xMin"))
@@ -322,6 +322,27 @@ def _validate_area(diagnostics, area, ref):
         diagnostics.add(_err("area.xMin must not exceed area.xMax", area.loc, ref + ".area"))
     if area.y_min > area.y_max:
         diagnostics.add(_err("area.yMin must not exceed area.yMax", area.loc, ref + ".area"))
+    if map_dimensions is None:
+        diagnostics.add(
+            _err(
+                "could not resolve the owning chapter map dimensions",
+                area.loc, ref + ".area",
+            )
+        )
+        return
+    map_width, map_height = map_dimensions
+    diagnostics.extend(
+        validate_range(area.x_min, 0, map_width - 1, area.x_min_loc, ref + ".xMin", "xMin")
+    )
+    diagnostics.extend(
+        validate_range(area.y_min, 0, map_height - 1, area.y_min_loc, ref + ".yMin", "yMin")
+    )
+    diagnostics.extend(
+        validate_range(area.x_max, 0, map_width - 1, area.x_max_loc, ref + ".xMax", "xMax")
+    )
+    diagnostics.extend(
+        validate_range(area.y_max, 0, map_height - 1, area.y_max_loc, ref + ".yMax", "yMax")
+    )
 
 
 def _validate_cycles(record, objectives_by_id, diagnostics):
@@ -362,6 +383,23 @@ def _bundle_records(dependency_records):
     return (bundles,)
 
 
+def _owner_unit_groups(owner, diagnostics, record):
+    from ..chapterbundle import schema as chapterbundle_schema
+
+    dependencies = chapterbundle_schema.resolve_bundle_dependencies(owner, diagnostics)
+    return {
+        group.symbol: group for group in dependencies.get("units", ())
+    }
+
+
+def _owner_map_dimensions(owner):
+    from ..chapterbundle import schema as chapterbundle_schema
+
+    return chapterbundle_schema.read_chapter_map_dimensions(
+        owner.chapter.chapter_settings_index
+    )
+
+
 def validate(records, diagnostics, dependency_records=None,
              chapters_header=CHAPTERS_HEADER, event_flags_header=EVENT_FLAGS_HEADER,
              characters_header=character_refs.CHARACTERS_HEADER):
@@ -369,7 +407,9 @@ def validate(records, diagnostics, dependency_records=None,
     chapters = extract_enum_constants(chapters_header, name_prefix="CHAPTER_")
     characters = character_refs.read_character_designators(characters_header)
     event_flags = extract_enum_constants(event_flags_header, name_prefix="EVFLAG_")
-    unit_groups = {group.symbol: group for group in dependency_records.get("units", ())}
+    fallback_unit_groups = {
+        group.symbol: group for group in dependency_records.get("units", ())
+    }
 
     capacity_loc = records[BUNDLE_CAPACITY].loc if len(records) > BUNDLE_CAPACITY else None
     capacity_ref = "chapters[{}]".format(BUNDLE_CAPACITY) if capacity_loc is not None else "chapters"
@@ -438,7 +478,9 @@ def validate(records, diagnostics, dependency_records=None,
     all_ids = []
     for record in records:
         record_ref = "chapters[symbol={}]".format(record.symbol)
+        unit_groups = fallback_unit_groups
         owned_unit_groups = set()
+        map_dimensions = None
         owners = owners_by_chapter.get(record.chapter, ())
         if not owners:
             diagnostics.add(
@@ -460,6 +502,8 @@ def validate(records, diagnostics, dependency_records=None,
             )
         else:
             chapter_bundle = owners[0]
+            unit_groups = _owner_unit_groups(chapter_bundle, diagnostics, record)
+            map_dimensions = _owner_map_dimensions(chapter_bundle)
             objective_owner = chapter_bundle.chapter_objectives
             if objective_owner is None or record.symbol not in objective_owner.symbols:
                 diagnostics.add(
@@ -690,7 +734,7 @@ def validate(records, diagnostics, dependency_records=None,
                                        objective.completion_objective_loc,
                                        objective_ref + ".completionObjective", kind="objective")
                 )
-            _validate_area(diagnostics, objective.area, objective_ref)
+            _validate_area(diagnostics, objective.area, objective_ref, map_dimensions)
 
             if objective.kind == "protect":
                 if objective.protected_character is None or objective.completion_objective is None:

@@ -164,6 +164,7 @@ class AutoplayHostTests(unittest.TestCase):
             self.assertIsNotNone(controller, "controller symbol missing")
             self.assertEqual(int(telemetry.group(1), 16), 64)
             self.assertEqual(int(controller.group(1), 16), 4)
+            self.assertNotIn("gExpansionAutoplayEventTrace", symbols.stdout)
             sections = run([ARM_SIZE, "-A", str(obj)])
             self.assertEqual(sections.returncode, 0, sections.stdout + sections.stderr)
             ewram_bytes = sum(
@@ -187,6 +188,85 @@ class AutoplayHostTests(unittest.TestCase):
             self.assertEqual(ewram_bytes, 0)
             self.assertEqual(iwram_bytes, 68)
             self.assertLessEqual(text_bytes, 4096)
+
+    def test_accelerated_profile_emits_event_trace_only_when_enabled(self):
+        if ARM_CC is None or ARM_NM is None or CC is None:
+            self.skipTest("host and arm compilers/binutils unavailable")
+        build_root = ROOT / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            obj = Path(temporary) / "expansion_autoplay-accelerated.o"
+            completed = run(
+                [
+                    ARM_CC,
+                    "-mcpu=arm7tdmi",
+                    "-mthumb",
+                    "-mthumb-interwork",
+                    "-mabi=aapcs",
+                    "-std=gnu89",
+                    "-ffreestanding",
+                    "-fno-builtin",
+                    "-O2",
+                    "-Werror=declaration-after-statement",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    *INCLUDES,
+                    "-DMODERN=1",
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-DFE8_AUTOPLAY_EVENT_TRACE_TEST=1",
+                    "-c",
+                    str(SOURCE),
+                    "-o",
+                    str(obj),
+                ]
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            symbols = run([ARM_NM, "-S", str(obj)])
+            self.assertEqual(symbols.returncode, 0, symbols.stdout + symbols.stderr)
+            event_trace = re.search(
+                r"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+[bBdD]\s+"
+                r"gExpansionAutoplayEventTrace$",
+                symbols.stdout,
+                flags=re.MULTILINE,
+            )
+            self.assertIsNotNone(event_trace, "accelerated trace symbol missing")
+            self.assertEqual(
+                int(event_trace.group(1), 16),
+                8 + 64 * 5 * 4,
+            )
+            executable = Path(temporary) / "autoplay-event-trace-host"
+            completed = run(
+                [
+                    CC,
+                    "-std=gnu89",
+                    "-Werror=declaration-after-statement",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    "-O2",
+                    *INCLUDES,
+                    "-DMODERN=1",
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-DFE8_AUTOPLAY_EVENT_TRACE_TEST=1",
+                    str(SOURCE),
+                    str(BMPHASE_SOURCE),
+                    str(DRIVER),
+                    "-o",
+                    str(executable),
+                ]
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                "accelerated host link failed:\n" + completed.stdout + completed.stderr,
+            )
+            completed = run([str(executable)])
+            self.assertEqual(
+                completed.returncode,
+                0,
+                "accelerated producer regression failed:\n"
+                + completed.stdout
+                + completed.stderr,
+            )
 
     def test_checked_runtime_evidence_satisfies_semantic_contract(self):
         module = runpy.run_path(str(RUNNER))

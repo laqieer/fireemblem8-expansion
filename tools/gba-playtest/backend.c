@@ -31,6 +31,13 @@
 #define MAX_RUN_PROBES 128u
 #define MAX_TERMINALS 3u
 #define MAX_TERMINAL_COMPARISONS 64u
+#define MAX_TRACE_PROBES 512u
+#define MAX_TRACE_RECORDS 450000u
+#define MAX_CHECKPOINT_PROBES 1536u
+
+#define PLAYST_CONFIG_GAME_SPEED_MASK (1u << 7)
+#define PLAYST_CONFIG_ANIMATION_TYPE_MASK (3u << 17)
+#define PLAYST_CONFIG_ANIMATION_TYPE_OFF (1u << 17)
 
 enum ComparisonOperator {
 	COMPARE_EQ = 0,
@@ -122,6 +129,7 @@ struct Checkpoint {
 	uint32_t frame;
 	size_t probe_count;
 	struct Probe* probes;
+	bool framebuffer;
 	bool sram_hash;
 	size_t exclude_range_count;
 	struct ByteRange* exclude_ranges;
@@ -149,6 +157,11 @@ struct Plan {
 	uint32_t seed_frame;
 	struct Probe seed_write;
 	uint32_t seed_value;
+	unsigned execution_profile;
+	uint32_t config_apply_frame;
+	uint32_t play_state_config_address;
+	size_t trace_probe_count;
+	struct Probe* trace_probes;
 };
 
 static FILE* sLogCapture;
@@ -202,6 +215,7 @@ static void free_plan(struct Plan* plan)
 	free(plan->ranges);
 	free(plan->run_probes);
 	free(plan->terminals);
+	free(plan->trace_probes);
 	memset(plan, 0, sizeof(*plan));
 }
 
@@ -216,7 +230,7 @@ static bool read_plan(const char* path, struct Plan* plan)
 	unsigned version;
 	if (fscanf(file, "%31s %u", word, &version) != 2 ||
 	    strcmp(word, "GBA_PLAYTEST_PLAN") != 0 ||
-	    (version != 3 && version != 4 && version != 5)) {
+	    (version != 3 && version != 4 && version != 5 && version != 6)) {
 		fprintf(stderr, "malformed plan header\n");
 		goto fail;
 	}
@@ -252,18 +266,35 @@ static bool read_plan(const char* path, struct Plan* plan)
 	for (size_t i = 0; i < plan->checkpoint_count; ++i) {
 		struct Checkpoint* checkpoint = &plan->checkpoints[i];
 		unsigned sram_hash_flag;
-		if (fscanf(file, "%" SCNu32 " %zu %u %zu %zu %zu", &checkpoint->frame,
-		           &checkpoint->probe_count, &sram_hash_flag,
-		           &checkpoint->exclude_range_count, &checkpoint->region_count,
-		           &checkpoint->pixel_probe_count) != 6 ||
-		    checkpoint->probe_count > 1024 ||
+		unsigned framebuffer_flag = 1;
+		int checkpoint_fields;
+
+		if (version == 5) {
+			checkpoint_fields = fscanf(
+			    file, "%" SCNu32 " %zu %u %zu %zu %zu %u",
+			    &checkpoint->frame, &checkpoint->probe_count, &sram_hash_flag,
+			    &checkpoint->exclude_range_count, &checkpoint->region_count,
+			    &checkpoint->pixel_probe_count, &framebuffer_flag);
+		} else {
+			checkpoint_fields = fscanf(
+			    file, "%" SCNu32 " %zu %u %zu %zu %zu",
+			    &checkpoint->frame, &checkpoint->probe_count, &sram_hash_flag,
+			    &checkpoint->exclude_range_count, &checkpoint->region_count,
+			    &checkpoint->pixel_probe_count);
+		}
+		if (checkpoint_fields != (version == 5 ? 7 : 6) ||
+		    checkpoint->probe_count > MAX_CHECKPOINT_PROBES ||
 		    checkpoint->exclude_range_count > 64 ||
 		    checkpoint->region_count > 64 ||
 		    checkpoint->pixel_probe_count > 256 ||
-		    (sram_hash_flag != 0 && sram_hash_flag != 1)) {
+		    (sram_hash_flag != 0 && sram_hash_flag != 1) ||
+		    (framebuffer_flag != 0 && framebuffer_flag != 1) ||
+		    (!framebuffer_flag &&
+		     (checkpoint->region_count != 0 || checkpoint->pixel_probe_count != 0))) {
 			fprintf(stderr, "malformed checkpoint %zu\n", i);
 			goto fail;
 		}
+		checkpoint->framebuffer = framebuffer_flag != 0;
 		checkpoint->sram_hash = sram_hash_flag != 0;
 		checkpoint->exclude_ranges = calloc(checkpoint->exclude_range_count,
 		                                     sizeof(*checkpoint->exclude_ranges));
@@ -499,8 +530,61 @@ static bool read_plan(const char* path, struct Plan* plan)
 			fprintf(stderr, "malformed ACTION_LIMIT payload\n");
 			goto fail;
 		}
+		if (version == 5) {
+			if (fscanf(file, "%31s %u %" SCNu32 " %" SCNu32,
+			           word, &plan->execution_profile,
+			           &plan->config_apply_frame,
+			           &plan->play_state_config_address) != 4 ||
+			    strcmp(word, "PROFILE") != 0 ||
+			    plan->execution_profile > 1 ||
+			    (plan->execution_profile == 0 &&
+			     (plan->config_apply_frame != 0 ||
+			      plan->play_state_config_address != 0)) ||
+			    (plan->execution_profile == 1 &&
+			     (plan->config_apply_frame >= plan->max_frames ||
+			      (plan->play_state_config_address & 3u) != 0))) {
+				fprintf(stderr, "malformed PROFILE record\n");
+				goto fail;
+			}
+			if (fscanf(file, "%31s %zu", word, &plan->trace_probe_count) != 2 ||
+			    strcmp(word, "TRACE") != 0 ||
+			    plan->trace_probe_count == 0 ||
+			    plan->trace_probe_count > MAX_TRACE_PROBES) {
+				fprintf(stderr, "malformed TRACE record\n");
+				goto fail;
+			}
+			plan->trace_probes = calloc(
+			    plan->trace_probe_count, sizeof(*plan->trace_probes));
+			if (!plan->trace_probes) {
+				fprintf(stderr, "out of memory reading trace probes\n");
+				goto fail;
+			}
+			for (size_t i = 0; i < plan->trace_probe_count; ++i) {
+				struct Probe* probe = &plan->trace_probes[i];
+				if (fscanf(file, "%" SCNu32 " %u", &probe->address,
+				           &probe->size) != 2 ||
+				    (probe->size != 1 && probe->size != 2 && probe->size != 4)) {
+					fprintf(stderr, "malformed trace probe %zu\n", i);
+					goto fail;
+				}
+				for (size_t prior = 0; prior < i; ++prior) {
+					const struct Probe* previous = &plan->trace_probes[prior];
+					if (previous->address == probe->address &&
+					    previous->size == probe->size) {
+						fprintf(stderr, "duplicate trace probe %zu\n", i);
+						goto fail;
+					}
+				}
+			}
+			if ((uint64_t) plan->max_frames * plan->trace_probe_count >
+			    MAX_TRACE_RECORDS) {
+				fprintf(stderr, "trace record budget exceeds %u\n",
+				        MAX_TRACE_RECORDS);
+				goto fail;
+			}
+		}
 	}
-	if (version == 5) {
+	if (version == 6) {
 		if (fscanf(file, "%31s %" SCNu32 " %" SCNu32 " %u %" SCNu32,
 		           word, &plan->seed_frame, &plan->seed_write.address,
 		           &plan->seed_write.size, &plan->seed_value) != 5 ||
@@ -705,9 +789,13 @@ static void emit_checkpoint(struct mCore* core, const color_t* buffer,
                             const struct Checkpoint* checkpoint,
                             size_t checkpoint_index, uint32_t frame)
 {
-	uint64_t hash = hash_framebuffer(buffer, width, height);
-	printf("CHECKPOINT\t%zu\t%" PRIu32 "\t%016" PRIx64 "\n",
-	       checkpoint_index, frame, hash);
+	if (checkpoint->framebuffer) {
+		uint64_t hash = hash_framebuffer(buffer, width, height);
+		printf("CHECKPOINT\t%zu\t%" PRIu32 "\t%016" PRIx64 "\n",
+		       checkpoint_index, frame, hash);
+	} else {
+		printf("CHECKPOINT\t%zu\t%" PRIu32 "\n", checkpoint_index, frame);
+	}
 	for (size_t probe_index = 0;
 	     probe_index < checkpoint->probe_count; ++probe_index) {
 		printf("PROBE\t%zu\t%zu\t%" PRIu32 "\n",
@@ -733,6 +821,55 @@ static void emit_checkpoint(struct mCore* core, const color_t* buffer,
 		printf("PIXEL\t%zu\t%zu\t%06" PRIx32 "\n",
 		       checkpoint_index, pixel_index, rgb);
 	}
+}
+
+static bool apply_accelerated_fidelity_config(struct mCore* core,
+                                              const struct Plan* plan,
+                                              uint32_t frame)
+{
+	uint32_t before;
+	uint32_t after;
+	uint32_t observed;
+
+	if (plan->execution_profile != 1 || frame != plan->config_apply_frame)
+		return true;
+	before = core->busRead32(core, plan->play_state_config_address);
+	after = before | PLAYST_CONFIG_GAME_SPEED_MASK;
+	after &= ~PLAYST_CONFIG_ANIMATION_TYPE_MASK;
+	after |= PLAYST_CONFIG_ANIMATION_TYPE_OFF;
+	core->busWrite32(core, plan->play_state_config_address, after);
+	observed = core->busRead32(core, plan->play_state_config_address);
+	if (observed != after) {
+		fprintf(stderr,
+		        "accelerated config write was not applied at %08" PRIx32
+		        ": expected %08" PRIx32 ", read %08" PRIx32 "\n",
+		        plan->play_state_config_address, after, observed);
+		return false;
+	}
+	printf("PROFILE\t%" PRIu32 "\t%08" PRIx32 "\t%08" PRIx32 "\n",
+	       frame, before, observed);
+	return true;
+}
+
+static void emit_trace(struct mCore* core, const struct Plan* plan,
+                       uint32_t frame, uint32_t* previous_values,
+                       bool* have_previous_values)
+{
+	uint32_t values[MAX_TRACE_PROBES];
+	bool changed = !*have_previous_values;
+
+	for (size_t i = 0; i < plan->trace_probe_count; ++i) {
+		values[i] = read_probe(core, &plan->trace_probes[i]);
+		if (*have_previous_values && values[i] != previous_values[i])
+			changed = true;
+	}
+	if (!changed)
+		return;
+	for (size_t i = 0; i < plan->trace_probe_count; ++i)
+		printf("TRACE\t%" PRIu32 "\t%zu\t%" PRIu32 "\n",
+		       frame, i, values[i]);
+	memcpy(previous_values, values, plan->trace_probe_count * sizeof(*values));
+	*have_previous_values = true;
 }
 
 static void apply_frame_input(struct mCore* core, const struct Plan* plan,
@@ -780,6 +917,8 @@ static int run_until(struct mCore* core, const struct Plan* plan,
 	bool previous_work_expected = false;
 	uint32_t previous_epoch = 0;
 	uint32_t unchanged_frames = 0;
+	uint32_t trace_values[MAX_TRACE_PROBES];
+	bool have_trace_values = false;
 
 	for (uint32_t frame = 0; frame < plan->max_frames; ++frame) {
 		uint32_t run_values[MAX_RUN_PROBES];
@@ -789,7 +928,11 @@ static int run_until(struct mCore* core, const struct Plan* plan,
 		uint32_t action_value = 0;
 		bool work_expected = false;
 
+		if (!apply_accelerated_fidelity_config(core, plan, frame))
+			return 2;
 		apply_frame_input(core, plan, &range_index, frame);
+		if (plan->trace_probe_count != 0)
+			emit_trace(core, plan, frame, trace_values, &have_trace_values);
 		for (size_t i = 0; i < plan->run_probe_count; ++i)
 			run_values[i] = read_probe(core, &plan->run_probes[i]);
 

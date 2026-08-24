@@ -18,6 +18,10 @@ Issue [#86](https://github.com/laqieer/fireemblem8-expansion/issues/86)
 builds on this telemetry with bounded semantic run-until scenarios; its
 canonical procedure is
 [`TC-AUTOPLAY-BOUNDS-001`](test-cases/autoplay.md#tc-autoplay-bounds-001-bounded-semantic-autoplay-termination).
+Issue [#88](https://github.com/laqieer/fireemblem8-expansion/issues/88) is the
+stacked accelerated-fidelity child of #86; its canonical paired-profile
+procedure is
+[`TC-AUTOPLAY-ACCEL-001`](test-cases/autoplay.md#tc-autoplay-accel-001-accelerated-fidelity-equivalence).
 
 ## Public API
 
@@ -232,6 +236,71 @@ The seven terminal reasons are deliberately not interchangeable:
 - `max_frames`, `max_turns`, and `max_actions` identify the exact exhausted
   budget.
 
+## Accelerated-fidelity profile
+
+Schema version 3 adds an explicit `execution_profile` beside the existing
+normal-fidelity baseline. It remains a bounded run-until scenario and preserves
+all schema-v1/v2 scenario and fingerprint formats unchanged. Both profiles
+call `core->runFrame()` for every emulated frame; acceleration is never a
+simulation or an engine shortcut.
+
+The `accelerated-fidelity` profile binds the existing `gPlaySt.config` word at
+one declared frame and applies only `gameSpeed` plus the existing animation
+option selected by `BANIM_PRESENTATION_POLICY_OFF`. Its emulator core and
+temporary SRAM copy are destroyed after capture, so it cannot persist either
+choice. The binding is an aligned 4-byte writable EWRAM/IWRAM word; ROM, VRAM,
+palette, OAM, and SRAM bindings fail before execution, and the backend reads
+the word back before emitting `PROFILE`. Format-4 validation requires
+`config_after` to be the exact accelerated transformation of `config_before`:
+game speed set, animation OFF, and every unrelated bit unchanged.
+`normal-fidelity` has no
+configuration write. The profile also names
+semantic trace probes, which are canonicalized by binding and size so
+equivalent input order produces one stable fingerprint shape. The backend
+emits an initial complete snapshot at frame 0 and another only when one of
+those semantic values changes. External format-4 traces must retain that
+frame-0 snapshot, strictly increase later snapshot frames, keep each snapshot
+at or below 512 probes, and remain within the 450,000-record aggregate limit.
+This preserves action/RNG order without treating wall-clock timing as behavior.
+The dedicated accelerated-fidelity test ROM alone records the first observed
+state and every later bounded ordered state transition at the event
+command-commit seam, including the command, slot-C/counter, and
+named objective flags (`EVFLAG_WIN`, `EVFLAG_DEFEAT_ALL`, and
+`EVFLAG_GAMEOVER`);
+the terminal checkpoint compares every record and fails on overflow. Endpoints
+also cover the active blue, red, and green unit slots. The declared frame bound
+multiplied by trace-probe count may not exceed 450,000 records, bounding backend
+output and the host's captured trace memory.
+
+Profile plans use backend format 5. A semantic-only terminal checkpoint emits
+its probes/SRAM state and no whole-framebuffer hash; the framebuffer remains
+allocated and attached to libmGBA, and region/pixel/visual scenarios still
+require the normal framebuffer capture path. Format-version-4 fingerprints
+record the profile state and trace. The paired comparator ignores emulated
+frame timestamps while requiring exact ROM provenance, terminal
+reason/counters, endpoint semantic probes, and ordered trace values to match
+exactly. Repeated samples of the same profile compare complete format-4
+fingerprints, including terminal and trace frame timestamps; no snapshot may
+claim configuration or trace activity after its terminal frame.
+Accelerated-fidelity rejects framebuffer, region, and pixel evidence entirely;
+schema-v3 normal fidelity retains those presentation-dependent contracts.
+
+The existing presentation-policy seam adopts a raw `gPlaySt.config.animationType`
+change when its cached selection disagrees. The accelerated test ROM additionally
+probes `BanimPresentationPolicy_GetCurrent()` and requires
+`BANIM_PRESENTATION_POLICY_OFF`, rather than treating config bits alone as proof.
+That private profile alone reserves 1,316 EWRAM bytes for the transition
+record, prior-state snapshot, and policy probe; ordinary debug/release,
+starter/HQ, and archival builds omit all three.
+
+The focused Chapter 2 fixture freezes 17,135 normal-fidelity frames and
+16,869 accelerated-fidelity frames (a 266-frame reduction). The benchmark
+records libmGBA/package version, host and runner identity, exact ROM
+provenance/configuration, source commit, frame counts, and three non-gating
+wall-clock samples. It rejects a deliberately perturbed trace even if that
+candidate completes faster. Visual, audio, or presentation-timing cases must
+remain on normal fidelity.
+
 Unit coordinates, pointers, source text, wall-clock duration, and framebuffer
 similarity are not progress proxies. A stationary defend/wait state reports
 work not expected and therefore does not accrue stall frames. Epoch regression
@@ -270,8 +339,10 @@ existing default combat-frame timing.
 The `chapterobjectives` generated-data table is owned by the existing
 chapter-bundle collection: every authored `src/data/*_bundle.json` is indexed
 by chapter identity, and each objective record resolves only through its one
-matching owner bundle. It validates against that owner's unit groups,
-character constants, and event flags. Its only initial kinds are:
+matching owner bundle. That bundle loads its own declared table sources,
+including unit and event-list data, before validation; it never inherits
+another chapter's defaults. Objective areas are additionally bounded by the
+owner chapter's authored map width and height. Its only initial kinds are:
 
 - `protect`: keep one referenced character alive until another typed
   objective completes;
@@ -332,8 +403,8 @@ This is host/runtime-test infrastructure only:
 - **Dependencies:** #85's public control/telemetry contract,
   `tools/gba-playtest`, existing ELF probe bindings, libmGBA, and the
   tester-case catalog.
-- **Dependents:** authored objectives (#88), accelerated-fidelity work (#89),
-  and later strategy/batch/planner layers through their own contracts.
+- **Dependents:** accelerated-fidelity comparison (#88), later integration
+  work (#89), and strategy/batch/planner layers through their own contracts.
 - **Conflicts:** none; fixed-frame scenarios and fingerprints remain valid and
   are exercised unchanged.
 - **Profiles:** generated homebrew/libmGBA host integration, modern AAPCS debug

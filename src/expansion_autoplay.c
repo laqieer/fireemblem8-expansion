@@ -1,7 +1,13 @@
 #include "global.h"
 
 #include "bmunit.h"
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
+#include "event.h"
+#include "eventinfo.h"
+#endif
 #include "cp_common.h"
+
+#include "constants/event-flags.h"
 
 #include "expansion_autoplay_internal.h"
 #include "expansion_autoplay_strategies.h"
@@ -20,6 +26,21 @@ static u32 EXPANSION_AUTOPLAY_IWRAM_DATA sExpansionBlueControl =
     EXPANSION_BLUE_CONTROL_PLAYER;
 struct ExpansionAutoplayTelemetry EXPANSION_AUTOPLAY_IWRAM_DATA
     gExpansionAutoplayTelemetry = { 0 };
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
+EWRAM_DATA struct ExpansionAutoplayEventTrace gExpansionAutoplayEventTrace = { 0 };
+
+struct ExpansionAutoplayEventTracePrevious
+{
+    bool initialized;
+    u32 slotC;
+    u32 eventCounter;
+    u32 objectiveFlags;
+    u32 gameOverFlag;
+};
+
+EWRAM_DATA static struct ExpansionAutoplayEventTracePrevious
+    sExpansionAutoplayEventTracePrevious = { 0 };
+#endif
 
 static void IncrementBounded(u32* value)
 {
@@ -36,10 +57,20 @@ static void SetFailure(enum ExpansionAutoplayFailure failure)
 void ExpansionAutoplay_Reset(void)
 {
     u8* byte = (u8*)&gExpansionAutoplayTelemetry;
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
+    u8* eventTraceByte = (u8*)&gExpansionAutoplayEventTrace;
+    u8* eventTracePreviousByte = (u8*)&sExpansionAutoplayEventTracePrevious;
+#endif
     int i;
 
     for (i = 0; i < (int)sizeof(gExpansionAutoplayTelemetry); i++)
         byte[i] = 0;
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
+    for (i = 0; i < (int)sizeof(gExpansionAutoplayEventTrace); i++)
+        eventTraceByte[i] = 0;
+    for (i = 0; i < (int)sizeof(sExpansionAutoplayEventTracePrevious); i++)
+        eventTracePreviousByte[i] = 0;
+#endif
 
     sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
     gExpansionAutoplayTelemetry.controller = EXPANSION_BLUE_CONTROL_PLAYER;
@@ -302,3 +333,51 @@ void ExpansionAutoplay_RecordStrategyFailure(int result)
     else
         SetFailure(EXPANSION_AUTOPLAY_FAILURE_STRATEGY_REGISTRY);
 }
+
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
+void ExpansionAutoplay_RecordEventCommand(u8 command)
+{
+    struct ExpansionAutoplayEventTraceEntry* entry;
+    u32 slotC;
+    u32 eventCounter;
+    u32 objectiveFlags;
+    u32 gameOverFlag;
+
+    if (gExpansionAutoplayTelemetry.controller != EXPANSION_BLUE_CONTROL_COMPUTER)
+        return;
+
+    slotC = gEventSlots[EVT_SLOT_C];
+    eventCounter = gEventSlotCounter;
+    objectiveFlags = (CheckFlag(EVFLAG_WIN) != 0)
+        | ((CheckFlag(EVFLAG_DEFEAT_ALL) != 0) << 1);
+    gameOverFlag = CheckFlag(EVFLAG_GAMEOVER) != 0;
+
+    if (sExpansionAutoplayEventTracePrevious.initialized
+        && sExpansionAutoplayEventTracePrevious.slotC == slotC
+        && sExpansionAutoplayEventTracePrevious.eventCounter == eventCounter
+        && sExpansionAutoplayEventTracePrevious.objectiveFlags == objectiveFlags
+        && sExpansionAutoplayEventTracePrevious.gameOverFlag == gameOverFlag)
+        return;
+
+    sExpansionAutoplayEventTracePrevious.initialized = TRUE;
+    sExpansionAutoplayEventTracePrevious.slotC = slotC;
+    sExpansionAutoplayEventTracePrevious.eventCounter = eventCounter;
+    sExpansionAutoplayEventTracePrevious.objectiveFlags = objectiveFlags;
+    sExpansionAutoplayEventTracePrevious.gameOverFlag = gameOverFlag;
+
+    if (gExpansionAutoplayEventTrace.count
+        >= EXPANSION_AUTOPLAY_EVENT_TRACE_CAPACITY)
+    {
+        gExpansionAutoplayEventTrace.overflow = TRUE;
+        return;
+    }
+
+    entry = &gExpansionAutoplayEventTrace.entries[gExpansionAutoplayEventTrace.count];
+    entry->command = command;
+    entry->slotC = slotC;
+    entry->eventCounter = eventCounter;
+    entry->objectiveFlags = objectiveFlags;
+    entry->gameOverFlag = gameOverFlag;
+    gExpansionAutoplayEventTrace.count++;
+}
+#endif

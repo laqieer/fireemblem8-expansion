@@ -11,6 +11,7 @@ cross-check (``chapters.h``, ``chapter_settings.json``, ``data_8B363C.c``),
 so each negative-path scenario only has to vary the one field under test.
 """
 
+import copy
 import os
 import unittest
 
@@ -111,6 +112,94 @@ class ChapterBundleValidFixtureTests(unittest.TestCase):
         self.assertEqual(
             sorted(records[0].tables_by_name),
             ["eventlists", "eventscripts", "shops", "traps", "units"],
+        )
+
+    def test_multi_bundle_dependencies_follow_each_table_ref_source(self):
+        first = chapterbundle_schema.load_records(cb_fixture("valid.json"))[0]
+        second = copy.deepcopy(first)
+        second.chapter.id = "CHAPTER_EL_OTHER"
+        second.chapter.chapter_settings_index = 1
+        second.chapter.internal_name = "EL1"
+        second.chapter.map_event_data_id = 1
+        second.tables_by_name["units"].source = (
+            "scripts/generated_data/tests/fixtures/chapterbundle/deps_units_second.json"
+        )
+        records = chapterbundle_schema.ChapterBundleRecords([first, second])
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            {},
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C_two_events.c"),
+        )
+        self.assertTrue(diagnostics.ok, msg=_messages(diagnostics))
+        self.assertEqual(
+            chapterbundle_schema.resolve_bundle_dependencies(first)["units"][0].units[0].x_position,
+            1,
+        )
+        self.assertEqual(
+            chapterbundle_schema.resolve_bundle_dependencies(second)["units"][0].units[0].x_position,
+            2,
+        )
+
+        second.tables_by_name["units"].source = "scripts/generated_data/tests/fixtures/chapterbundle/missing.json"
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            {},
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C_two_events.c"),
+        )
+        self.assertTrue(
+            any(
+                error.reference_path == "bundles[chapter=CHAPTER_EL_OTHER].tables.units.source"
+                and error.location == second.tables_by_name["units"].source_loc
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
+        )
+
+        second.tables_by_name["units"].source = (
+            "scripts/generated_data/tests/fixtures/chapterbundle/deps_units.json"
+        )
+        second.tables_by_name["units"].symbols = ["UnitDef_EL_CrossSource"]
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            {},
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C_two_events.c"),
+        )
+        self.assertTrue(
+            any(
+                error.reference_path == "tables.units.symbols[UnitDef_EL_CrossSource]"
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
+        )
+
+        duplicate = copy.deepcopy(second)
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            chapterbundle_schema.ChapterBundleRecords([first, second, duplicate]),
+            diagnostics,
+            {},
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C_two_events.c"),
+        )
+        self.assertTrue(
+            any(
+                error.reference_path == "bundles[chapter=CHAPTER_EL_OTHER].chapter"
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
         )
 
 
