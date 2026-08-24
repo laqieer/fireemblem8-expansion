@@ -192,7 +192,7 @@ class ChapterBundleRecord:
     """The full parsed ``ch2_bundle.json`` document."""
 
     def __init__(self, chapter, manifest, tables, support_owners, external_references, dependencies,
-                 chapter_objectives, autoplay_strategies, loc):
+                 chapter_objectives, autoplay_strategies, source_path, loc):
         self.chapter = chapter
         self.manifest = manifest
         self.tables = tables
@@ -202,6 +202,7 @@ class ChapterBundleRecord:
         self.dependencies = dependencies
         self.chapter_objectives = chapter_objectives
         self.autoplay_strategies = autoplay_strategies
+        self.source_path = source_path
         self.loc = loc
 
     def __len__(self):
@@ -214,10 +215,11 @@ class ChapterBundleRecord:
 class ChapterBundleRecords:
     """Deterministic collection of every authored chapter bundle source."""
 
-    __slots__ = ("records", "by_chapter")
+    __slots__ = ("records", "by_chapter", "source_paths")
 
-    def __init__(self, records):
+    def __init__(self, records, source_paths=()):
         self.records = tuple(records)
+        self.source_paths = tuple(source_paths)
         self.by_chapter = {}
         for record in self.records:
             self.by_chapter.setdefault(record.chapter.id, []).append(record)
@@ -355,7 +357,8 @@ def _load_record(source_path):
         chapter=chapter, manifest=manifest, tables=tables,
         support_owners=support_owners, external_references=external_references,
         dependencies=dependencies, chapter_objectives=chapter_objectives,
-        autoplay_strategies=autoplay_strategies, loc=root.loc,
+        autoplay_strategies=autoplay_strategies,
+        source_path=_source_path(source_path), loc=root.loc,
     )
 
 
@@ -369,7 +372,10 @@ def load_records(source_path):
             )
     else:
         source_paths = [source_path]
-    return ChapterBundleRecords([_load_record(path) for path in source_paths])
+    return ChapterBundleRecords(
+        [_load_record(path) for path in source_paths],
+        [_source_path(path) for path in source_paths],
+    )
 
 
 def _err(message, loc, ref):

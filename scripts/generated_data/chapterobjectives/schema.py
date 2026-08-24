@@ -9,6 +9,7 @@ from the current chapter, units, event flags, and turn counter.
 
 from __future__ import annotations
 
+import glob
 import os
 import re
 
@@ -160,9 +161,15 @@ class Dependencies:
 
 
 class ChapterObjectivesRecord:
-    __slots__ = ("chapter", "chapter_loc", "symbol", "symbol_loc", "groups", "objectives", "dependencies", "loc")
+    __slots__ = (
+        "chapter", "chapter_loc", "symbol", "symbol_loc", "groups", "objectives",
+        "dependencies", "source_path", "loc",
+    )
 
-    def __init__(self, chapter, chapter_loc, symbol, symbol_loc, groups, objectives, dependencies, loc):
+    def __init__(
+        self, chapter, chapter_loc, symbol, symbol_loc, groups, objectives,
+        dependencies, source_path, loc,
+    ):
         self.chapter = chapter
         self.chapter_loc = chapter_loc
         self.symbol = symbol
@@ -170,7 +177,16 @@ class ChapterObjectivesRecord:
         self.groups = groups
         self.objectives = objectives
         self.dependencies = dependencies
+        self.source_path = source_path
         self.loc = loc
+
+
+class ChapterObjectivesRecords(list):
+    """List-like records retaining every canonical input path."""
+
+    def __init__(self, records, source_paths):
+        super().__init__(records)
+        self.source_paths = tuple(source_paths)
 
 
 def _optional_string(node, key):
@@ -196,7 +212,11 @@ def _parse_area(node):
     )
 
 
-def load_records(source_path):
+def _canonical_source_path(source_path):
+    return os.path.normcase(os.path.realpath(os.path.abspath(source_path)))
+
+
+def _load_records_file(source_path):
     root = load_json_file(source_path)
     schema_node = root.require("$schema")
     if schema_node.as_str() != SCHEMA_ID:
@@ -262,10 +282,26 @@ def load_records(source_path):
         records.append(
             ChapterObjectivesRecord(
                 chapter.as_str(), chapter.loc, symbol.as_str(), symbol.loc,
-                groups, objectives, dependencies, chapter_node.loc,
+                groups, objectives, dependencies, _canonical_source_path(source_path), chapter_node.loc,
             )
         )
     return records
+
+
+def load_records(source_path):
+    """Load one objective file or every ``*_objectives.json`` file in a directory."""
+    if os.path.isdir(source_path):
+        source_paths = sorted(glob.glob(os.path.join(source_path, "*_objectives.json")))
+        if not source_paths:
+            raise GeneratedDataError(
+                "chapter objectives directory '{}' has no *_objectives.json sources".format(source_path)
+            )
+    else:
+        source_paths = [source_path]
+    records = []
+    for path in source_paths:
+        records.extend(_load_records_file(path))
+    return ChapterObjectivesRecords(records, [_canonical_source_path(path) for path in source_paths])
 
 
 def _err(message, loc, ref):
@@ -383,6 +419,13 @@ def _bundle_records(dependency_records):
     return (bundles,)
 
 
+def _owner_source_path(owner):
+    source_path = owner.chapter_objectives.source
+    if not os.path.isabs(source_path):
+        source_path = os.path.join(REPO_ROOT, source_path)
+    return _canonical_source_path(source_path)
+
+
 def _owner_unit_groups(owner, diagnostics, record):
     from ..chapterbundle import schema as chapterbundle_schema
 
@@ -420,15 +463,20 @@ def validate(records, diagnostics, dependency_records=None,
     )
     chapter_bundles = _bundle_records(dependency_records)
     owners_by_chapter = {}
-    actual_symbols_by_chapter = {}
+    actual_symbols_by_source_chapter = {}
     for record in records:
-        actual_symbols_by_chapter.setdefault(record.chapter, set()).add(record.symbol)
+        actual_symbols_by_source_chapter.setdefault(
+            (record.source_path, record.chapter), set()
+        ).add(record.symbol)
     for chapter_bundle in chapter_bundles:
         owners_by_chapter.setdefault(chapter_bundle.chapter.id, []).append(chapter_bundle)
         owner = chapter_bundle.chapter_objectives
         if owner is None:
             continue
-        actual_symbols = actual_symbols_by_chapter.get(chapter_bundle.chapter.id, set())
+        owner_source_path = _owner_source_path(chapter_bundle)
+        actual_symbols = actual_symbols_by_source_chapter.get(
+            (owner_source_path, chapter_bundle.chapter.id), set()
+        )
         diagnostics.extend(
             validate_unique(
                 zip(owner.symbols, owner.symbol_locs),
@@ -505,7 +553,26 @@ def validate(records, diagnostics, dependency_records=None,
             unit_groups = _owner_unit_groups(chapter_bundle, diagnostics, record)
             map_dimensions = _owner_map_dimensions(chapter_bundle)
             objective_owner = chapter_bundle.chapter_objectives
-            if objective_owner is None or record.symbol not in objective_owner.symbols:
+            if objective_owner is None:
+                diagnostics.add(
+                    _err(
+                        "chapter objective bundle '{}' is not declared by its owning chapter bundle".format(
+                            record.symbol
+                        ),
+                        record.symbol_loc, record_ref + ".symbol",
+                    )
+                )
+            elif _owner_source_path(chapter_bundle) != record.source_path:
+                diagnostics.add(
+                    _err(
+                        "chapter objective bundle '{}' is declared by '{}' but loaded from '{}'".format(
+                            record.symbol, objective_owner.source, record.source_path
+                        ),
+                        objective_owner.source_loc,
+                        "bundles[chapter={}].chapterObjectives.source".format(record.chapter),
+                    )
+                )
+            elif record.symbol not in objective_owner.symbols:
                 diagnostics.add(
                     _err(
                         "chapter objective bundle '{}' is not declared by its owning chapter bundle".format(
