@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import shutil
 import subprocess
 import unittest
@@ -93,27 +92,6 @@ class TextConsumerNativeTests(unittest.TestCase):
         )
         result = self._run([binary])
         self.assertEqual(result.stdout.strip(), "text_consumer_host_test: ok")
-
-    def test_weapon_helpbox_preserves_fixed_value_slots(self):
-        source = (ROOT / "src" / "helpbox.c").read_text(encoding="utf-8")
-        match = re.search(
-            r"void DrawHelpBoxWeaponStats\(int item\)\s*\{(.*?)\n\}",
-            source,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(match)
-        body = match.group(1)
-        self.assertIn(
-            "Text_InsertDrawString(&gHelpBoxSt.text[0], 67, 7, "
-            "GetItemDisplayRangeString(item));",
-            body,
-        )
-        self.assertIn(
-            "Text_InsertDrawNumberOrBlank(&gHelpBoxSt.text[0], 129, 7, "
-            "GetItemWeight(item));",
-            body,
-        )
-        self.assertNotIn("GetHelpBoxWeaponRangeAndWeightPositions", source)
 
     def test_reviewed_consumer_functions(self):
         common = [

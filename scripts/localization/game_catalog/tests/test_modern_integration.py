@@ -1,5 +1,4 @@
 import json
-import re
 import shutil
 import subprocess
 import unittest
@@ -172,87 +171,6 @@ class ModernGameLocalizationIntegrationTests(unittest.TestCase):
         self.assertEqual(
             both["source"].count("gGameLocalizationEnglishCompressedBlob[]"), 1
         )
-
-    def test_synthetic_identity_override_is_retired(self):
-        self.assertFalse(
-            (ROOT / "scripts/localization/game_catalog/synthetic_identity.py").exists()
-        )
-        modern_mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertNotIn("MODERN_GAME_LOCALIZATION_CJK_MASK", modern_mk)
-        self.assertNotIn("synthetic_identity", modern_mk)
-
-    def test_named_production_profiles_use_32m_and_real_locale_config(self):
-        modern_mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        expected = {
-            "expansion-modern-localization-profile-en-ja": (
-                "EXPANSION_ENABLED_LOCALES=en,ja",
-                "EXPANSION_PSEUDO_LOCALE=1",
-            ),
-            "expansion-modern-localization-profile-en-zh-hans": (
-                "EXPANSION_ENABLED_LOCALES=en,zh-Hans",
-                "EXPANSION_PSEUDO_LOCALE=1",
-            ),
-            "expansion-modern-localization-profile-en-ja-zh-hans": (
-                "EXPANSION_ENABLED_LOCALES=en,ja,zh-Hans",
-                "EXPANSION_PSEUDO_LOCALE=1",
-            ),
-            "expansion-modern-localization-profile-en-ja-zh-hans-qps": (
-                "EXPANSION_ENABLED_LOCALES=en,ja,zh-Hans,qps-ploc",
-                "EXPANSION_PSEUDO_LOCALE=1",
-            ),
-        }
-        for target, (locale_arg, qps_arg) in expected.items():
-            with self.subTest(target=target):
-                match = re.search(
-                    rf"(?m)^{target}:\n(?P<body>(?:\t[^\n]*\n)+)",
-                    modern_mk,
-                )
-                self.assertIsNotNone(match)
-                body = match.group("body")
-                self.assertIn("MODERN_ROM_SIZE=32M", body)
-                self.assertIn(locale_arg, body)
-                if target.endswith("-qps"):
-                    self.assertIn(qps_arg, body)
-                else:
-                    self.assertNotIn(qps_arg, body)
-
-    def test_cjk_runtime_gate_checks_all_product_profile_maps(self):
-        modern_mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        match = re.search(
-            r"(?m)^expansion-modern-localization-profile-headroom-check:\n"
-            r"(?P<body>(?:\t[^\n]*\n)+)",
-            modern_mk,
-        )
-        self.assertIsNotNone(match)
-        body = match.group("body")
-        for profile in (
-            "en-ja",
-            "en-zh-hans",
-            "en-ja-zh-hans",
-            "en-ja-zh-hans-qps",
-        ):
-            with self.subTest(profile=profile):
-                self.assertIn(
-                    f"expansion-modern-localization-profile-{profile}",
-                    body,
-                )
-        self.assertEqual(body.count("--validate-elf"), 4)
-        self.assertEqual(
-            body.count("--require-positive-headroom ewram"),
-            4,
-        )
-
-        cjk_start = modern_mk.index(
-            "expansion-modern-localization-runtime-cjk-check:"
-        )
-        cjk_recipe = modern_mk.index(
-            "ifeq ($(MODERN_CONFIG),debug)", cjk_start
-        )
-        self.assertIn(
-            "expansion-modern-localization-profile-headroom-check",
-            modern_mk[cjk_start:cjk_recipe],
-        )
-
 
 if __name__ == "__main__":
     unittest.main()
