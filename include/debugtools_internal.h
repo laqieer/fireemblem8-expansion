@@ -4,7 +4,7 @@
 #include "proc.h"
 #include "expansion_debugtools.h"
 
-#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
 
 int DebugTools_RegisterBuiltinAction(const struct DebugToolsAction* action);
 void DebugToolsActions_ForceCleanup(void);
