@@ -101,7 +101,7 @@ MAX_PROFILE_TRACE_PROBES = 512
 # Matches backend.c's MAX_TRACE_RECORDS. A trace emits each probe whenever
 # any trace value changes, so max_frames * trace probe count bounds both the
 # backend's stdout and the host's captured semantic trace.
-MAX_PROFILE_TRACE_RECORDS = 350_000
+MAX_PROFILE_TRACE_RECORDS = 450_000
 COMPARISON_OPERATORS = ("eq", "ne", "lt", "le", "gt", "ge")
 TERMINAL_CONDITION_REASONS = (
     "success",
@@ -2501,7 +2501,15 @@ def _validate_accelerated_fidelity_fingerprint(
             f"{source}.profile",
             {"name", "config_apply_frame", "config_before", "config_after"},
         )
-        _expect_frame(profile["config_apply_frame"], f"{source}.profile.config_apply_frame")
+        config_apply_frame = _expect_frame(
+            profile["config_apply_frame"],
+            f"{source}.profile.config_apply_frame",
+        )
+        if config_apply_frame > root["terminal"]["frame"]:
+            raise PlaytestError(
+                f"{source}.profile.config_apply_frame must not exceed "
+                f"{source}.terminal.frame"
+            )
         for field in ("config_before", "config_after"):
             if not isinstance(profile[field], str) or not re.fullmatch(
                 r"0x[0-9a-f]{8}", profile[field]
@@ -2521,6 +2529,10 @@ def _validate_accelerated_fidelity_fingerprint(
         frame = _expect_frame(snapshot["frame"], f"{path}.frame")
         if frame <= previous_frame:
             raise PlaytestError(f"{path}.frame must be strictly increasing")
+        if frame > root["terminal"]["frame"]:
+            raise PlaytestError(
+                f"{path}.frame must not exceed {source}.terminal.frame"
+            )
         previous_frame = frame
         trace_checkpoints.append(
             {

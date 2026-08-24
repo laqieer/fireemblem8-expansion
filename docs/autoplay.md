@@ -170,9 +170,11 @@ semantic trace probes, which are canonicalized by binding and size so
 equivalent input order produces one stable fingerprint shape. The backend
 emits a complete snapshot only when one of those semantic values changes,
 preserving action/event and RNG order without treating wall-clock timing as
-behavior. The declared frame bound multiplied by trace-probe count may not
-exceed 350,000 records, bounding backend output and the host's captured trace
-memory.
+behavior. The trace includes event slot-C/counter telemetry and chapter,
+permanent, and objective-result flag transitions; endpoints also cover the
+active blue, red, and green unit slots. The declared frame bound multiplied by
+trace-probe count may not exceed 450,000 records, bounding backend output and
+the host's captured trace memory.
 
 Profile plans use backend format 5. A semantic-only terminal checkpoint emits
 its probes/SRAM state and no whole-framebuffer hash; the framebuffer remains
@@ -181,7 +183,9 @@ require the normal framebuffer capture path. Format-version-4 fingerprints
 record the profile state and trace. The paired comparator ignores emulated
 frame timestamps while requiring exact ROM provenance, terminal
 reason/counters, endpoint semantic probes, and ordered trace values to match
-exactly.
+exactly. Repeated samples of the same profile compare complete format-4
+fingerprints, including terminal and trace frame timestamps; no snapshot may
+claim configuration or trace activity after its terminal frame.
 
 The focused Chapter 2 fixture freezes 17,135 normal-fidelity frames and
 16,869 accelerated-fidelity frames (a 266-frame reduction). The benchmark

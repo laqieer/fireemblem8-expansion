@@ -220,19 +220,23 @@ logic, and it never writes a user save fixture.
 The baseline finishes with `success` after exactly **17,135** emulated frames.
 Accelerated fidelity finishes after exactly **16,869** frames, a deterministic
 **266-frame reduction**. The terminal objective result, turn/action counts,
-all terminal semantic probes (including the active blue units' state and
-items), ordered committed-action/event telemetry, and every sampled RNG state
-are identical. Semantic-only terminal checkpoints omit the unused whole-frame
+all terminal semantic probes (including active blue, red, and green unit state
+and items), ordered committed-action/event telemetry, chapter/permanent and
+objective-result flag transitions, and every sampled RNG state are identical.
+Every repeated same-profile sample also has identical terminal and ordered
+trace frames. Semantic-only terminal checkpoints omit the unused whole-frame
 hash while libmGBA still allocates and renders its framebuffer normally.
 
 ### Negative control
 
 The focused host/backend fixture rejects malformed profile configuration,
-duplicate traces, and unexpected framebuffer output. The paired runner flips
-one committed semantic trace value after capture and requires the comparator
-to reject it; a faster divergent action/event/RNG route is therefore never
-accepted. Normal visual, audio, and presentation-timing scenarios remain on
-their existing normal-fidelity paths and fingerprints.
+duplicate traces, unexpected framebuffer output, terminal-impossible
+configuration/trace timestamps, and over-budget trace output. The paired
+runner flips one committed semantic trace value after capture and requires the
+comparator to reject it; same-profile samples with shifted terminal or trace
+frames also fail. A faster divergent action/event/RNG/flag route is therefore
+never accepted. Normal visual, audio, and presentation-timing scenarios remain
+on their existing normal-fidelity paths and fingerprints.
 
 ### Interactions and save compatibility
 

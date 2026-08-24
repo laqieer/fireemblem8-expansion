@@ -145,6 +145,66 @@ class AcceleratedFidelitySchemaTests(unittest.TestCase):
         with self.assertRaisesRegex(gba_playtest.PlaytestError, "aggregate limit"):
             gba_playtest.parse_scenario_data(over_limit)
 
+    def test_profile_covers_all_factions_events_flags_and_objective_result(self):
+        data = accelerated_fidelity_checks.profile_data(
+            gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY
+        )
+        endpoint = {
+            (probe["address"], probe["size"])
+            for probe in data["run_until"]["checkpoint"]["probes"]
+        }
+        for array_name in ("gUnitArrayBlue", "gUnitArrayRed", "gUnitArrayGreen"):
+            self.assertIn((f"{array_name}+0x00c", 4), endpoint)
+        self.assertNotIn(("gUnitArrayRed+0x174", 4), endpoint)
+        self.assertNotIn(("gUnitArrayGreen+0x09c", 4), endpoint)
+        for probe in (
+            ("gEventSlots+0x30", 4),
+            ("gEventSlotCounter", 4),
+            ("gChapterFlagBits", 4),
+            ("gPermanentFlagBits", 1),
+        ):
+            self.assertIn(probe, endpoint)
+
+        trace = {
+            (probe["address"], probe["size"])
+            for probe in data["execution_profile"]["trace"]
+        }
+        self.assertTrue(
+            {
+                ("gEventSlots+0x30", 4),
+                ("gEventSlotCounter", 4),
+                ("gChapterFlagBits", 4),
+                ("gPermanentFlagBits", 1),
+            }.issubset(trace)
+        )
+
+    def test_event_and_flag_probe_binding_rejects_out_of_span_access(self):
+        bound = accelerated_fidelity_checks._bind_event_and_flag_probe(
+            {"address": "gEventSlots+0x30", "size": 4},
+            lambda _symbol: 0x030004B8,
+        )
+        self.assertEqual(bound["address"], "0x030004e8")
+        with self.assertRaisesRegex(ValueError, "outside the documented"):
+            accelerated_fidelity_checks._bind_event_and_flag_probe(
+                {"address": "gEventSlots+0x38", "size": 1},
+                lambda _symbol: 0x030004B8,
+            )
+
+    def test_event_and_flag_binding_surfaces_missing_exact_symbol(self):
+        data = accelerated_fidelity_checks.profile_data(
+            gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY
+        )
+        with mock.patch.object(
+            accelerated_fidelity_checks,
+            "resolve_elf_symbol_address",
+            side_effect=accelerated_fidelity_checks.ProbeBindingError("missing event symbol"),
+        ):
+            with self.assertRaisesRegex(gba_playtest.PlaytestError, "missing event symbol"):
+                accelerated_fidelity_checks._bind_event_and_flag_probes(
+                    data,
+                    Path("missing.elf"),
+                )
+
 
 class AcceleratedFidelityBackendTests(unittest.TestCase):
     def _capture_data(self, data: dict) -> dict:
@@ -261,6 +321,55 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
             any("rom.sha1" in difference for difference in differences),
             differences,
         )
+
+    def test_repeated_profile_samples_require_terminal_and_trace_frames(self):
+        capture = self._capture(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
+        shifted_terminal = copy.deepcopy(capture)
+        shifted_terminal["terminal"]["frame"] += 1
+        shifted_terminal["checkpoints"][0]["frame"] += 1
+        terminal_differences = accelerated_fidelity_checks.compare_profile_samples(
+            capture,
+            shifted_terminal,
+        )
+        self.assertTrue(
+            any("terminal.frame" in difference for difference in terminal_differences),
+            terminal_differences,
+        )
+
+        shifted_trace = copy.deepcopy(capture)
+        shifted_trace["trace"][-1]["frame"] += 1
+        trace_differences = accelerated_fidelity_checks.compare_profile_samples(
+            capture,
+            shifted_trace,
+        )
+        self.assertTrue(
+            any("trace" in difference and ".frame" in difference for difference in trace_differences),
+            trace_differences,
+        )
+
+    def test_format_four_rejects_terminal_impossible_profile_and_trace_frames(self):
+        capture = self._capture(gba_playtest.EXECUTION_PROFILE_ACCELERATED_FIDELITY)
+        post_terminal_config = copy.deepcopy(capture)
+        post_terminal_config["profile"]["config_apply_frame"] = (
+            post_terminal_config["terminal"]["frame"] + 1
+        )
+        with self.assertRaisesRegex(gba_playtest.PlaytestError, "must not exceed"):
+            gba_playtest.validate_fingerprint(
+                post_terminal_config,
+                "<post-terminal-config>",
+                policy="behavior",
+            )
+
+        post_terminal_trace = copy.deepcopy(capture)
+        snapshot = copy.deepcopy(post_terminal_trace["trace"][-1])
+        snapshot["frame"] = post_terminal_trace["terminal"]["frame"] + 1
+        post_terminal_trace["trace"].append(snapshot)
+        with self.assertRaisesRegex(gba_playtest.PlaytestError, "must not exceed"):
+            gba_playtest.validate_fingerprint(
+                post_terminal_trace,
+                "<post-terminal-trace>",
+                policy="behavior",
+            )
 
 
 if __name__ == "__main__":

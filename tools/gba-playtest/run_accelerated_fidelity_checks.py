@@ -20,7 +20,11 @@ sys.path.insert(0, str(PLAYTEST_DIR))
 import gba_playtest  # noqa: E402
 import run_autoplay_bounds_checks as autoplay_bounds  # noqa: E402
 import run_autoplay_checks as autoplay  # noqa: E402
-from probe_bindings import ElfSymbolResolver  # noqa: E402
+from probe_bindings import (  # noqa: E402
+    ElfSymbolResolver,
+    ProbeBindingError,
+    resolve_elf_symbol_address,
+)
 
 
 BENCHMARK_FORMAT_VERSION = 1
@@ -28,6 +32,18 @@ DEFAULT_SAMPLES = 3
 CONFIG_APPLY_FRAME = 16500
 UNIT_SIZE = 0x48
 ACTIVE_BLUE_SLOTS = range(1, 7)
+ACTIVE_RED_SLOTS = range(1, 6)
+ACTIVE_GREEN_SLOTS = range(1, 3)
+# These engine globals are externally declared arrays/counters but their
+# original producer does not emit ELF sizes. Keep the ABI spans explicit so
+# the generated profile can bind them to the exact linked image without
+# relaxing normal symbol-bound probe validation.
+EVENT_AND_FLAG_SYMBOL_SPANS = {
+    "gEventSlots": 0x38,
+    "gEventSlotCounter": 4,
+    "gChapterFlagBits": 5,
+    "gPermanentFlagBits": 0x19,
+}
 FROZEN_BASELINE_FRAME_COUNT = 17135
 FROZEN_ACCELERATED_FRAME_COUNT = 16869
 
@@ -45,25 +61,94 @@ def _rng_probes() -> list[dict[str, object]]:
 
 def _unit_probes() -> list[dict[str, object]]:
     probes: list[dict[str, object]] = []
-    for slot in ACTIVE_BLUE_SLOTS:
-        base = slot * UNIT_SIZE
-        for offset, size in (
-            (0x0C, 4),  # state
-            (0x10, 2),  # map position
-            (0x12, 2),  # maximum/current HP
-            (0x1E, 2),
-            (0x20, 2),
-            (0x22, 2),
-            (0x24, 2),
-            (0x26, 2),  # five inventory slots
-        ):
-            probes.append(
-                {
-                    "address": f"gUnitArrayBlue+0x{base + offset:03x}",
-                    "size": size,
-                }
-            )
+    for array_name, slots in (
+        ("gUnitArrayBlue", ACTIVE_BLUE_SLOTS),
+        ("gUnitArrayRed", ACTIVE_RED_SLOTS),
+        ("gUnitArrayGreen", ACTIVE_GREEN_SLOTS),
+    ):
+        for slot in slots:
+            base = (slot - 1) * UNIT_SIZE
+            for offset, size in (
+                (0x0C, 4),  # state
+                (0x10, 2),  # map position
+                (0x12, 2),  # maximum/current HP
+                (0x1E, 2),
+                (0x20, 2),
+                (0x22, 2),
+                (0x24, 2),
+                (0x26, 2),  # five inventory slots
+            ):
+                probes.append(
+                    {
+                        "address": f"{array_name}+0x{base + offset:03x}",
+                        "size": size,
+                    }
+                )
     return probes
+
+
+def _event_and_flag_probes() -> list[dict[str, object]]:
+    return [
+        # Event slot C and the event-script counter provide ordered engine
+        # telemetry without introducing a second event router.
+        {"address": "gEventSlots+0x30", "size": 4},
+        {"address": "gEventSlotCounter", "size": 4},
+        # Chapter flags contain EVFLAG_WIN/EVFLAG_DEFEAT_ALL. Permanent
+        # flag byte zero contains EVFLAG_GAMEOVER (flag 101) as the explicit
+        # loss result.
+        {"address": "gChapterFlagBits", "size": 4},
+        {"address": "gPermanentFlagBits", "size": 1},
+    ]
+
+
+def _bind_event_and_flag_probe(
+    probe: dict[str, object],
+    resolve_address,
+) -> dict[str, object]:
+    binding = probe["address"]
+    if not isinstance(binding, str):
+        raise ValueError("event and flag probe address must be a string")
+    size = probe["size"]
+    if not isinstance(size, int):
+        raise ValueError("event and flag probe size must be an integer")
+    for symbol, span in EVENT_AND_FLAG_SYMBOL_SPANS.items():
+        if binding == symbol:
+            offset = 0
+        elif binding.startswith(f"{symbol}+"):
+            offset = int(binding[len(symbol) + 1 :], 0)
+        else:
+            continue
+        if offset < 0 or offset + size > span:
+            raise ValueError(
+                f"{binding} size {size} is outside the documented {symbol} "
+                f"span 0x{span:x}"
+            )
+        return {
+            **probe,
+            "address": f"0x{resolve_address(symbol) + offset:08x}",
+        }
+    return probe
+
+
+def _bind_event_and_flag_probes(data: dict[str, object], elf: Path) -> dict[str, object]:
+    bound = copy.deepcopy(data)
+    addresses: dict[str, int] = {}
+
+    def resolve_address(symbol: str) -> int:
+        if symbol not in addresses:
+            try:
+                addresses[symbol] = resolve_elf_symbol_address(elf, symbol)
+            except ProbeBindingError as exc:
+                raise gba_playtest.PlaytestError(str(exc)) from exc
+        return addresses[symbol]
+
+    for probes in (
+        bound["run_until"]["checkpoint"]["probes"],
+        bound["execution_profile"]["trace"],
+    ):
+        for index, probe in enumerate(probes):
+            probes[index] = _bind_event_and_flag_probe(probe, resolve_address)
+    return bound
 
 
 def _endpoint_probes() -> list[dict[str, object]]:
@@ -72,6 +157,7 @@ def _endpoint_probes() -> list[dict[str, object]]:
         {"address": "gPlaySt+0x14", "size": 1},
         *_rng_probes(),
         *_unit_probes(),
+        *_event_and_flag_probes(),
     ]
 
 
@@ -79,6 +165,7 @@ def _trace_probes() -> list[dict[str, object]]:
     return [
         *autoplay._probes()[: len(autoplay.TELEMETRY_FIELDS)],
         *_rng_probes(),
+        *_event_and_flag_probes(),
     ]
 
 
@@ -119,9 +206,10 @@ def _capture(
     *,
     backend_path: Path,
 ) -> dict:
+    bound_data = _bind_event_and_flag_probes(data, elf)
     scenario = gba_playtest.parse_scenario_data(
-        data,
-        source=str(data["name"]),
+        bound_data,
+        source=str(bound_data["name"]),
         symbol_resolver=ElfSymbolResolver(elf),
     )
     return gba_playtest.capture(rom, scenario, backend_path=backend_path)
@@ -159,6 +247,11 @@ def compare_semantics(baseline: dict, accelerated: dict) -> list[str]:
             _semantic_record(accelerated),
         )
     )
+
+
+def compare_profile_samples(expected: dict, actual: dict) -> list[str]:
+    """Require every repeated profile capture to be a complete format-4 match."""
+    return gba_playtest.compare_fingerprints(expected, actual, policy="exact-rom")
 
 
 def _check_capture(capture: dict, profile_name: str) -> list[str]:
@@ -367,8 +460,8 @@ def main(argv: list[str] | None = None) -> int:
                 baseline = current_baseline
                 accelerated = current_accelerated
             else:
-                differences = compare_semantics(baseline, current_baseline)
-                differences += compare_semantics(accelerated, current_accelerated)
+                differences = compare_profile_samples(baseline, current_baseline)
+                differences += compare_profile_samples(accelerated, current_accelerated)
                 if differences:
                     raise CheckError(
                         "benchmark samples were not reproducible:\n"
@@ -379,6 +472,12 @@ def main(argv: list[str] | None = None) -> int:
                     "sample": index + 1,
                     "baseline": baseline_seconds,
                     "accelerated": accelerated_seconds,
+                    "baseline_emulated_frames": current_baseline["terminal"]["frame"]
+                    + 1,
+                    "accelerated_emulated_frames": current_accelerated["terminal"][
+                        "frame"
+                    ]
+                    + 1,
                 }
             )
         assert baseline is not None and accelerated is not None
