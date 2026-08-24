@@ -431,6 +431,8 @@ GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)
 # lane retains its historical source/object set, while modern builds link this
 # additive generated record table and the pointer-free evaluator.
 GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE ?= src/data/chapter_objectives.json
+GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY ?= \
+	reports/generated_data_chapterobjectives_inventory.md
 GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED := $(shell $(PYTHON) -c \
 	'import json, sys; print(int(bool(json.load(open(sys.argv[1], encoding="utf-8"))["chapters"])))' \
 	"$(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE)" 2>/dev/null)
@@ -451,7 +453,9 @@ $(GENERATED_DATA_CHAPTEROBJECTIVES_C): $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE
 	$(GENERATED_DATA_CONFIG_INPUTS_chapterobjectives)
 	@mkdir -p $(@D)
 	$(GENERATED_DATA_PY) generate --table chapterobjectives \
-		--source $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE) --out-dir $(GENERATED_DATA_OUT_DIR)
+		--source $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE) \
+		--out-dir $(GENERATED_DATA_OUT_DIR) \
+		--inventory $(GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY)
 	@test -e $@ || { echo "error: generated-data table 'chapterobjectives' did not produce $@" >&2; exit 1; }
 
 # --- Issue #6 config-gated CONTENT text -----------------------------------

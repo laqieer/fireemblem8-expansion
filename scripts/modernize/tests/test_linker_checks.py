@@ -101,6 +101,24 @@ class LinkerCheckTargetTests(unittest.TestCase):
         self.assertIn("runtime check skipped", release_rule)
         self.assertNotIn("run_chapter_objective_checks.py", release_rule)
 
+    def test_chapter_objectives_profile_routes_inventory_to_its_build_root(self):
+        database = self.resolved_make_database(
+            "MODERN_CONFIG=debug",
+            "MODERN_ABI=aapcs",
+        )
+        profile_rule = make_database_rule(
+            database, "expansion-modern-chapter-objectives-profile-rom"
+        )
+        self.assertIsNotNone(profile_rule, database[-4000:])
+        self.assertIn(
+            "GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_INVENTORY)",
+            profile_rule,
+        )
+        self.assertEqual(
+            make_database_variable(database, "MODERN_CHAPTER_OBJECTIVES_PROFILE_INVENTORY"),
+            "build/expansion-modern-chapter-objectives/generated_data_chapterobjectives_inventory.md",
+        )
+
     def test_linker_check_dry_run_wires_every_gate(self):
         result = self.make("-n", "expansion-modern-linker-check")
         self.assertEqual(result.returncode, 0, result.stdout[-1000:])
