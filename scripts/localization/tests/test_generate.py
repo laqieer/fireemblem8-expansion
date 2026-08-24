@@ -84,7 +84,7 @@ class BuildOutputsTests(unittest.TestCase):
     def test_budget_reports_pseudo_policy_counts(self):
         budget = build_budget(self.catalog)
         expected = {
-            "transform": 77,
+            "transform": 86,
             "compact": 4,
             "preserve": 6,
         }
