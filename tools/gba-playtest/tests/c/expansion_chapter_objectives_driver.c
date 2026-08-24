@@ -93,6 +93,14 @@ int main(void)
         "protect objective must wait for its referenced completion"
     );
 
+    sEirika.state = US_RESCUED;
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(1), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_PENDING
+            && progress == 0,
+        "a carried unit must not count as area progress"
+    );
+
     sFlags[EVFLAG_BATTLE_QUOTES] = true;
     CHECK(
         ExpansionChapterObjectives_GetStatus(ObjectiveId(0), &progress)
@@ -109,9 +117,10 @@ int main(void)
         ExpansionChapterObjectives_GetStatus(ObjectiveId(2), &progress)
             == EXPANSION_CHAPTER_OBJECTIVE_PENDING
             && progress == 0,
-        "defeat objective must count a live member as pending"
+        "defeat objective must count a rescued member as pending"
     );
 
+    sEirika.state = US_NONE;
     gPlaySt.chapterTurnNumber = 2;
     CHECK(
         ExpansionChapterObjectives_GetStatus(ObjectiveId(3), &progress)

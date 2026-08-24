@@ -27,7 +27,7 @@
         {
           "address": "0x0203181c",
           "size": 4,
-          "value": "0x00000009"
+          "value": "0x0000000a"
         },
         {
           "address": "0x02031874",
@@ -378,7 +378,7 @@
           "value": "0x00000009"
         }
       ],
-      "sram_hash": "fnv1a64-sram-normalized:b2915a3e70562caa"
+      "sram_hash": "fnv1a64-sram-normalized:67a611338530fd11"
     },
     {
       "frame": 18200,
@@ -630,7 +630,7 @@
           "value": "0x11"
         }
       ],
-      "sram_hash": "fnv1a64-sram-normalized:b2915a3e70562caa"
+      "sram_hash": "fnv1a64-sram-normalized:67a611338530fd11"
     }
   ],
   "format_version": 2,

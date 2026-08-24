@@ -133,6 +133,7 @@ CFILES       := $(filter-out src/expansion_log.c,$(CFILES))
 CFILES       := $(filter-out src/expansion_autoplay.c,$(CFILES))
 CFILES       := $(filter-out src/expansion_chapter_objectives.c,$(CFILES))
 CFILES       := $(filter-out src/expansion_autoplay_strategies.c,$(CFILES))
+CFILES       := $(filter-out src/expansion_blue_phase_delegate.c,$(CFILES))
 ifeq (,$(findstring $(CFILES_GENERATED),$(CFILES)))
 CFILES       += $(CFILES_GENERATED)
 endif

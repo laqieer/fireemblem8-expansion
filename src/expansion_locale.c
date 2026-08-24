@@ -161,16 +161,12 @@ void ExpansionLocale_InvalidateCache(void)
 #endif
 }
 
-const char *ExpansionLocale_Resolve(ExpansionLocaleId locale, ExpansionMsgId msgId)
+const char *ExpansionLocale_ResolvePersistent(ExpansionLocaleId locale, ExpansionMsgId msgId)
 {
     const char *found;
-    size_t length;
 
     if (msgId == EXPANSION_MSG_ID_INVALID)
         return sMissingMarker;
-
-    if (sCacheValid && sCacheLocale == locale && sCacheMsgId == msgId)
-        return sScratch;
 
     found = FindInView(GetCatalogView(locale), msgId);
     if (found == NULL && locale != EXPANSION_LOCALE_EN)
@@ -179,6 +175,21 @@ const char *ExpansionLocale_Resolve(ExpansionLocaleId locale, ExpansionMsgId msg
         found = FindInView(GetCatalogView(EXPANSION_LOCALE_EN), msgId);
     }
     if (found == NULL)
+        return sMissingMarker;
+
+    return found;
+}
+
+const char *ExpansionLocale_Resolve(ExpansionLocaleId locale, ExpansionMsgId msgId)
+{
+    const char *found;
+    size_t length;
+
+    if (sCacheValid && sCacheLocale == locale && sCacheMsgId == msgId)
+        return sScratch;
+
+    found = ExpansionLocale_ResolvePersistent(locale, msgId);
+    if (found == sMissingMarker)
         return sMissingMarker;
 
     length = strlen(found);
@@ -199,6 +210,11 @@ const char *ExpansionLocale_Resolve(ExpansionLocaleId locale, ExpansionMsgId msg
 const char *ExpansionLocale_ResolveCurrent(ExpansionMsgId msgId)
 {
     return ExpansionLocale_Resolve(ExpansionLocale_GetCurrent(), msgId);
+}
+
+const char *ExpansionLocale_ResolveCurrentPersistent(ExpansionMsgId msgId)
+{
+    return ExpansionLocale_ResolvePersistent(ExpansionLocale_GetCurrent(), msgId);
 }
 
 void ExpansionLocale_GetCatalogStats(struct ExpansionLocaleCatalogStats *out)

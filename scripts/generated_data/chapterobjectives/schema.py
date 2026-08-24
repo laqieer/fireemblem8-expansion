@@ -38,8 +38,8 @@ GROUP_CAPACITY = 8
 GROUP_MEMBER_CAPACITY = 16
 TURN_MAX = 999
 
-_ID_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
-_C_SYMBOL_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ID_RE = re.compile(r"^[A-Z][A-Z0-9_]*\Z")
+_C_SYMBOL_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\Z")
 
 KIND_TO_C = {
     "protect": "EXPANSION_CHAPTER_OBJECTIVE_PROTECT",
