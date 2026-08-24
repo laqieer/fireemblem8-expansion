@@ -20,6 +20,7 @@ enum UnitObjectiveState
     UNIT_OBJECTIVE_MISSING,
     UNIT_OBJECTIVE_ALIVE,
     UNIT_OBJECTIVE_DEAD,
+    UNIT_OBJECTIVE_RESCUED,
 };
 
 static const struct ExpansionChapterObjectiveBundle* GetCurrentBundle(void)
@@ -44,6 +45,9 @@ static enum UnitObjectiveState GetUnitObjectiveStateFromUnit(const struct Unit* 
 
     if (unit->state & US_DEAD)
         return UNIT_OBJECTIVE_DEAD;
+
+    if (unit->state & US_RESCUED)
+        return UNIT_OBJECTIVE_RESCUED;
 
     if (unit->state & US_UNAVAILABLE)
         return UNIT_OBJECTIVE_MISSING;
@@ -161,6 +165,7 @@ static struct ObjectiveResult EvaluateObjective(
     case EXPANSION_CHAPTER_OBJECTIVE_DEFEAT_GROUP:
     {
         int index;
+        enum UnitObjectiveState unitState;
 
         if (objective->group == NULL)
         {
@@ -170,8 +175,11 @@ static struct ObjectiveResult EvaluateObjective(
 
         result.progress = objective->group->memberCount;
         for (index = 0; index < objective->group->memberCount; index++)
-            if (GetUnitObjectiveState(objective->group->members[index]) == UNIT_OBJECTIVE_ALIVE)
+        {
+            unitState = GetUnitObjectiveState(objective->group->members[index]);
+            if (unitState == UNIT_OBJECTIVE_ALIVE || unitState == UNIT_OBJECTIVE_RESCUED)
                 result.progress--;
+        }
 
         if (result.progress == objective->group->memberCount)
             result.state = EXPANSION_CHAPTER_OBJECTIVE_SUCCESS;
