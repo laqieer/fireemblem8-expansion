@@ -20,6 +20,9 @@
 #include "eventinfo.h"
 #include "event.h"
 #include "eventscript.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_autoplay_internal.h"
+#endif
 
 CONST_DATA struct ProcCmd ProcScr_StdEventEngine[] = {
     PROC_MARK(PROC_MARK_EVENT),
@@ -98,6 +101,7 @@ void EventEngine_OnUpdate(struct EventEngineProc * proc)
     while (TRUE) {
         unsigned evCode;
         EventFuncType evFunc;
+        u8 commandResult;
 
         // Event Slot 0
         gEventSlots[0] = 0;
@@ -105,7 +109,12 @@ void EventEngine_OnUpdate(struct EventEngineProc * proc)
         evCode = (*proc->pEventCurrent) >> 8;
         evFunc = (evCode < 0x80) ? gEventLoCmdTable[evCode] : gEventHiCmdTable[evCode - 0x80];
 
-        switch (evFunc(proc)) {
+        commandResult = evFunc(proc);
+#ifndef FE8_ARCHIVAL_BUILD
+        ExpansionAutoplay_RecordEventCommand(evCode);
+#endif
+
+        switch (commandResult) {
         case EVC_ADVANCE_CONTINUE:
             proc->pEventCurrent += ((*proc->pEventCurrent) >> 4)&0xF;
         case EVC_STOP_CONTINUE:

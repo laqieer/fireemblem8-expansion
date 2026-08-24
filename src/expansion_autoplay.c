@@ -1,6 +1,8 @@
 #include "global.h"
 
 #include "bmunit.h"
+#include "event.h"
+#include "variables.h"
 #include "cp_common.h"
 
 #include "expansion_autoplay_internal.h"
@@ -19,6 +21,19 @@ static u32 EXPANSION_AUTOPLAY_IWRAM_DATA sExpansionBlueControl =
     EXPANSION_BLUE_CONTROL_PLAYER;
 struct ExpansionAutoplayTelemetry EXPANSION_AUTOPLAY_IWRAM_DATA
     gExpansionAutoplayTelemetry = { 0 };
+EWRAM_DATA struct ExpansionAutoplayEventTrace gExpansionAutoplayEventTrace = { 0 };
+
+struct ExpansionAutoplayEventTracePrevious
+{
+    bool initialized;
+    u32 slotC;
+    u32 eventCounter;
+    u32 chapterFlags;
+    u32 permanentFlags;
+};
+
+EWRAM_DATA static struct ExpansionAutoplayEventTracePrevious
+    sExpansionAutoplayEventTracePrevious = { 0 };
 
 static void IncrementBounded(u32* value)
 {
@@ -32,13 +47,27 @@ static void SetFailure(enum ExpansionAutoplayFailure failure)
     gExpansionAutoplayTelemetry.failure = failure;
 }
 
+static u32 ReadFlagWord(const u8* bits)
+{
+    return (u32)bits[0]
+        | ((u32)bits[1] << 8)
+        | ((u32)bits[2] << 16)
+        | ((u32)bits[3] << 24);
+}
+
 void ExpansionAutoplay_Reset(void)
 {
     u8* byte = (u8*)&gExpansionAutoplayTelemetry;
+    u8* eventTraceByte = (u8*)&gExpansionAutoplayEventTrace;
+    u8* eventTracePreviousByte = (u8*)&sExpansionAutoplayEventTracePrevious;
     int i;
 
     for (i = 0; i < (int)sizeof(gExpansionAutoplayTelemetry); i++)
         byte[i] = 0;
+    for (i = 0; i < (int)sizeof(gExpansionAutoplayEventTrace); i++)
+        eventTraceByte[i] = 0;
+    for (i = 0; i < (int)sizeof(sExpansionAutoplayEventTracePrevious); i++)
+        eventTracePreviousByte[i] = 0;
 
     sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
     gExpansionAutoplayTelemetry.controller = EXPANSION_BLUE_CONTROL_PLAYER;
@@ -271,4 +300,49 @@ void ExpansionAutoplay_RecordSuspendSuppressed(void)
 {
     if (ExpansionAutoplay_IsBlueComputerPhase())
         IncrementBounded(&gExpansionAutoplayTelemetry.suspendWriteSuppressedCount);
+}
+
+void ExpansionAutoplay_RecordEventCommand(u8 command)
+{
+    struct ExpansionAutoplayEventTraceEntry* entry;
+    u32 slotC;
+    u32 eventCounter;
+    u32 chapterFlags;
+    u32 permanentFlags;
+
+    if (gExpansionAutoplayTelemetry.controller != EXPANSION_BLUE_CONTROL_COMPUTER)
+        return;
+
+    slotC = gEventSlots[EVT_SLOT_C];
+    eventCounter = gEventSlotCounter;
+    chapterFlags = ReadFlagWord(gChapterFlagBits);
+    permanentFlags = ReadFlagWord(gPermanentFlagBits);
+
+    if (sExpansionAutoplayEventTracePrevious.initialized
+        && sExpansionAutoplayEventTracePrevious.slotC == slotC
+        && sExpansionAutoplayEventTracePrevious.eventCounter == eventCounter
+        && sExpansionAutoplayEventTracePrevious.chapterFlags == chapterFlags
+        && sExpansionAutoplayEventTracePrevious.permanentFlags == permanentFlags)
+        return;
+
+    sExpansionAutoplayEventTracePrevious.initialized = TRUE;
+    sExpansionAutoplayEventTracePrevious.slotC = slotC;
+    sExpansionAutoplayEventTracePrevious.eventCounter = eventCounter;
+    sExpansionAutoplayEventTracePrevious.chapterFlags = chapterFlags;
+    sExpansionAutoplayEventTracePrevious.permanentFlags = permanentFlags;
+
+    if (gExpansionAutoplayEventTrace.count
+        >= EXPANSION_AUTOPLAY_EVENT_TRACE_CAPACITY)
+    {
+        gExpansionAutoplayEventTrace.overflow = TRUE;
+        return;
+    }
+
+    entry = &gExpansionAutoplayEventTrace.entries[gExpansionAutoplayEventTrace.count];
+    entry->command = command;
+    entry->slotC = slotC;
+    entry->eventCounter = eventCounter;
+    entry->chapterFlags = chapterFlags;
+    entry->permanentFlags = permanentFlags;
+    gExpansionAutoplayEventTrace.count++;
 }

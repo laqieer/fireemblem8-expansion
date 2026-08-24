@@ -2165,6 +2165,14 @@
       "category": "runtime-struct",
       "reason": null
     },
+    "include/expansion_autoplay.h|struct-field|chapter|ExpansionAutoplayEventTraceEntry.chapterFlags": {
+      "category": "runtime-struct",
+      "reason": null
+    },
+    "src/expansion_autoplay.c|struct-field|chapter|ExpansionAutoplayEventTracePrevious.chapterFlags": {
+      "category": "runtime-struct",
+      "reason": null
+    },
     "include/expansion_bgm.h|struct-field|chapter|ExpansionBgmContextRequest.chapterId": {
       "category": "runtime-struct",
       "reason": null

@@ -169,13 +169,24 @@ class AcceleratedFidelitySchemaTests(unittest.TestCase):
             (probe["address"], probe["size"])
             for probe in data["execution_profile"]["trace"]
         }
-        self.assertTrue(
-            {
-                ("gEventSlots+0x30", 4),
-                ("gEventSlotCounter", 4),
-                ("gChapterFlagBits", 4),
-                ("gPermanentFlagBits", 1),
-            }.issubset(trace)
+        event_poll_probes = {
+            ("gEventSlots+0x30", 4),
+            ("gEventSlotCounter", 4),
+            ("gChapterFlagBits", 4),
+            ("gPermanentFlagBits", 1),
+        }
+        self.assertFalse(event_poll_probes & trace)
+        self.assertIn(
+            (accelerated_fidelity_checks.EVENT_TRACE_SYMBOL, 4),
+            endpoint,
+        )
+        self.assertLessEqual(
+            len(data["run_until"]["checkpoint"]["probes"]),
+            1024,
+        )
+        self.assertIn(
+            {"address": accelerated_fidelity_checks.POLICY_PROBE_SYMBOL, "size": 4},
+            data["run_until"]["checkpoint"]["probes"],
         )
 
     def test_event_and_flag_probe_binding_rejects_out_of_span_access(self):
@@ -370,6 +381,40 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
                 "<post-terminal-trace>",
                 policy="behavior",
             )
+
+    def test_event_transition_endpoint_divergence_is_not_equivalent(self):
+        baseline = self._capture(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
+        changed = copy.deepcopy(baseline)
+        changed["checkpoints"][0]["probes"][0]["value"] = "0x00000000"
+        differences = accelerated_fidelity_checks.compare_semantics(baseline, changed)
+        self.assertTrue(
+            any("checkpoint_probes" in difference for difference in differences),
+            differences,
+        )
+
+    def test_event_transition_overflow_is_rejected(self):
+        capture = {
+            "checkpoints": [
+                {
+                    "probes": [
+                        {
+                            "address": accelerated_fidelity_checks.EVENT_TRACE_SYMBOL,
+                            "value": "0x00000001",
+                        },
+                        {
+                            "address": (
+                                f"{accelerated_fidelity_checks.EVENT_TRACE_SYMBOL}+0x004"
+                            ),
+                            "value": "0x00000001",
+                        },
+                    ]
+                }
+            ]
+        }
+        self.assertEqual(
+            accelerated_fidelity_checks._event_trace_failures(capture),
+            ["event transition telemetry overflowed"],
+        )
 
 
 if __name__ == "__main__":

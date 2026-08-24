@@ -224,8 +224,12 @@ all terminal semantic probes (including active blue, red, and green unit state
 and items), ordered committed-action/event telemetry, chapter/permanent and
 objective-result flag transitions, and every sampled RNG state are identical.
 Every repeated same-profile sample also has identical terminal and ordered
-trace frames. Semantic-only terminal checkpoints omit the unused whole-frame
-hash while libmGBA still allocates and renders its framebuffer normally.
+trace frames. Event command commits append a bounded ordered telemetry record;
+overflow is a failure. The accelerated runtime probes
+`BanimPresentationPolicy_GetCurrent()->id` and requires OFF after the harness
+applies its existing configuration. Semantic-only terminal checkpoints omit the
+unused whole-frame hash while libmGBA still allocates and renders its framebuffer
+normally.
 
 ### Negative control
 
@@ -234,9 +238,10 @@ duplicate traces, unexpected framebuffer output, terminal-impossible
 configuration/trace timestamps, and over-budget trace output. The paired
 runner flips one committed semantic trace value after capture and requires the
 comparator to reject it; same-profile samples with shifted terminal or trace
-frames also fail. A faster divergent action/event/RNG/flag route is therefore
-never accepted. Normal visual, audio, and presentation-timing scenarios remain
-on their existing normal-fidelity paths and fingerprints.
+frames, an event-telemetry overflow, or a non-OFF cached presentation policy
+also fail. A faster divergent action/event/RNG/flag route is therefore never
+accepted. Normal visual, audio, and presentation-timing scenarios remain on
+their existing normal-fidelity paths and fingerprints.
 
 ### Interactions and save compatibility
 

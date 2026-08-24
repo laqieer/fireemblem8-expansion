@@ -54,6 +54,11 @@ EWRAM_DATA static u8 sSelectedPolicyState;
 IWRAM_DATA static u8 sSelectedPolicyState;
 #endif
 
+#if FE8_EXPANSION_DEBUG
+EWRAM_DATA struct BanimPresentationPolicyHarnessProbe
+    gBanimPresentationPolicyHarnessProbe = {0};
+#endif
+
 #ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
 #if BANIM_PRESENTATION_RUNTIME_PROBE_POLICY != BANIM_PRESENTATION_POLICY_DEFAULT && \
     BANIM_PRESENTATION_RUNTIME_PROBE_POLICY != BANIM_PRESENTATION_POLICY_OFF
@@ -121,13 +126,31 @@ u8 BanimPresentationPolicy_FromAnimationOption(u8 animationOption)
 struct BanimPresentationPolicy const *BanimPresentationPolicy_GetCurrent(void)
 {
     u8 policyId;
+    struct BanimPresentationPolicy const *policy;
 
     if (sSelectedPolicyState == 0)
         policyId = BanimPresentationPolicy_FromAnimationOption(gPlaySt.config.animationType);
     else
         policyId = sSelectedPolicyState - 1;
 
-    return BanimPresentationPolicy_Get(policyId);
+    policy = BanimPresentationPolicy_Get(policyId);
+    if (policy != NULL && sSelectedPolicyState != 0
+        && policy->animationOption != gPlaySt.config.animationType)
+    {
+        BanimPresentationPolicy_AdoptAnimationOption(gPlaySt.config.animationType);
+        policy = BanimPresentationPolicy_Get(sSelectedPolicyState - 1);
+    }
+
+#if FE8_EXPANSION_DEBUG
+    if (policy != NULL)
+    {
+        gBanimPresentationPolicyHarnessProbe.currentPolicyId = policy->id;
+        if (gBanimPresentationPolicyHarnessProbe.getCurrentCallCount != 0xFFFFFFFFu)
+            gBanimPresentationPolicyHarnessProbe.getCurrentCallCount++;
+    }
+#endif
+
+    return policy;
 }
 
 bool8 BanimPresentationPolicy_Select(u8 policyId)

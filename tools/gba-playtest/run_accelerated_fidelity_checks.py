@@ -44,6 +44,11 @@ EVENT_AND_FLAG_SYMBOL_SPANS = {
     "gChapterFlagBits": 5,
     "gPermanentFlagBits": 0x19,
 }
+POLICY_PROBE_SYMBOL = "gBanimPresentationPolicyHarnessProbe"
+EVENT_TRACE_SYMBOL = "gExpansionAutoplayEventTrace"
+EVENT_TRACE_CAPACITY = 64
+EVENT_TRACE_ENTRY_WORDS = 5
+EVENT_TRACE_ENTRY_OFFSET = 8
 FROZEN_BASELINE_FRAME_COUNT = 17135
 FROZEN_ACCELERATED_FRAME_COUNT = 16869
 
@@ -98,6 +103,30 @@ def _event_and_flag_probes() -> list[dict[str, object]]:
         # loss result.
         {"address": "gChapterFlagBits", "size": 4},
         {"address": "gPermanentFlagBits", "size": 1},
+    ]
+
+
+def _event_transition_probes() -> list[dict[str, object]]:
+    probes = [
+        {"address": EVENT_TRACE_SYMBOL, "size": 4},
+        {"address": f"{EVENT_TRACE_SYMBOL}+0x004", "size": 4},
+    ]
+    for index in range(EVENT_TRACE_CAPACITY):
+        offset = EVENT_TRACE_ENTRY_OFFSET + index * EVENT_TRACE_ENTRY_WORDS * 4
+        probes.extend(
+            {
+                "address": f"{EVENT_TRACE_SYMBOL}+0x{offset + word * 4:03x}",
+                "size": 4,
+            }
+            for word in range(EVENT_TRACE_ENTRY_WORDS)
+        )
+    return probes
+
+
+def _policy_runtime_probes() -> list[dict[str, object]]:
+    return [
+        {"address": POLICY_PROBE_SYMBOL, "size": 4},
+        {"address": f"{POLICY_PROBE_SYMBOL}+0x004", "size": 4},
     ]
 
 
@@ -158,6 +187,8 @@ def _endpoint_probes() -> list[dict[str, object]]:
         *_rng_probes(),
         *_unit_probes(),
         *_event_and_flag_probes(),
+        *_event_transition_probes(),
+        *_policy_runtime_probes(),
     ]
 
 
@@ -165,7 +196,6 @@ def _trace_probes() -> list[dict[str, object]]:
     return [
         *autoplay._probes()[: len(autoplay.TELEMETRY_FIELDS)],
         *_rng_probes(),
-        *_event_and_flag_probes(),
     ]
 
 
@@ -232,7 +262,11 @@ def _semantic_record(capture: dict) -> dict:
         # each profile's different emulated-frame timestamps.
         "rom": capture["rom"],
         "terminal": _terminal_semantics(capture),
-        "checkpoint_probes": checkpoint["probes"],
+        "checkpoint_probes": [
+            probe
+            for probe in checkpoint["probes"]
+            if not probe["address"].startswith(POLICY_PROBE_SYMBOL)
+        ],
         # Frame timing is intentionally not part of equivalence: the exact
         # ordered telemetry/RNG values must match while faster existing game
         # presentation reaches them on earlier emulated frames.
@@ -254,8 +288,31 @@ def compare_profile_samples(expected: dict, actual: dict) -> list[str]:
     return gba_playtest.compare_fingerprints(expected, actual, policy="exact-rom")
 
 
+def _probe_values(capture: dict) -> dict[str, int]:
+    return {
+        probe["address"]: int(probe["value"], 16)
+        for probe in capture["checkpoints"][0]["probes"]
+    }
+
+
+def _event_trace_failures(capture: dict) -> list[str]:
+    values = _probe_values(capture)
+    count = values.get(EVENT_TRACE_SYMBOL)
+    overflow = values.get(f"{EVENT_TRACE_SYMBOL}+0x004")
+    if count is None or overflow is None:
+        return ["event transition telemetry was not captured"]
+    if count == 0:
+        return ["event transition telemetry captured no command commits"]
+    if count > EVENT_TRACE_CAPACITY:
+        return [f"event transition count={count} exceeds bounded capacity"]
+    if overflow != 0:
+        return ["event transition telemetry overflowed"]
+    return []
+
+
 def _check_capture(capture: dict, profile_name: str) -> list[str]:
     failures = autoplay_bounds._check_positive(capture)
+    failures += _event_trace_failures(capture)
     if capture["profile"]["name"] != profile_name:
         failures.append(
             f"{profile_name}: capture profile was {capture['profile']['name']!r}"
@@ -278,6 +335,17 @@ def _check_capture(capture: dict, profile_name: str) -> list[str]:
             failures.append(
                 "accelerated-fidelity: existing BANIM_PRESENTATION_POLICY_OFF "
                 "animation option was not selected"
+            )
+        values = _probe_values(capture)
+        if values.get(POLICY_PROBE_SYMBOL) != 3:
+            failures.append(
+                "accelerated-fidelity: BanimPresentationPolicy_GetCurrent() "
+                "did not observe BANIM_PRESENTATION_POLICY_OFF"
+            )
+        if values.get(f"{POLICY_PROBE_SYMBOL}+0x004", 0) == 0:
+            failures.append(
+                "accelerated-fidelity: BanimPresentationPolicy_GetCurrent() "
+                "was never observed"
             )
     return failures
 

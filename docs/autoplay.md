@@ -169,12 +169,14 @@ choice. `normal-fidelity` has no configuration write. The profile also names
 semantic trace probes, which are canonicalized by binding and size so
 equivalent input order produces one stable fingerprint shape. The backend
 emits a complete snapshot only when one of those semantic values changes,
-preserving action/event and RNG order without treating wall-clock timing as
-behavior. The trace includes event slot-C/counter telemetry and chapter,
-permanent, and objective-result flag transitions; endpoints also cover the
-active blue, red, and green unit slots. The declared frame bound multiplied by
-trace-probe count may not exceed 450,000 records, bounding backend output and
-the host's captured trace memory.
+preserving action/RNG order without treating wall-clock timing as behavior.
+Event commands append the first observed state and every later bounded ordered
+state transition at the event command-commit seam, including the command,
+slot-C/counter, and chapter/permanent flag state;
+the terminal checkpoint compares every record and fails on overflow. Endpoints
+also cover the active blue, red, and green unit slots. The declared frame bound
+multiplied by trace-probe count may not exceed 450,000 records, bounding backend
+output and the host's captured trace memory.
 
 Profile plans use backend format 5. A semantic-only terminal checkpoint emits
 its probes/SRAM state and no whole-framebuffer hash; the framebuffer remains
@@ -186,6 +188,11 @@ reason/counters, endpoint semantic probes, and ordered trace values to match
 exactly. Repeated samples of the same profile compare complete format-4
 fingerprints, including terminal and trace frame timestamps; no snapshot may
 claim configuration or trace activity after its terminal frame.
+
+The existing presentation-policy seam adopts a raw `gPlaySt.config.animationType`
+change when its cached selection disagrees. The accelerated harness additionally
+probes `BanimPresentationPolicy_GetCurrent()` in the real debug ROM and requires
+`BANIM_PRESENTATION_POLICY_OFF`, rather than treating config bits alone as proof.
 
 The focused Chapter 2 fixture freezes 17,135 normal-fidelity frames and
 16,869 accelerated-fidelity frames (a 266-frame reduction). The benchmark

@@ -48,6 +48,8 @@ enum
 {
     EXPANSION_AUTOPLAY_BLUE_ACTOR_CAPACITY = 62,
     EXPANSION_AUTOPLAY_TELEMETRY_SIZE = 64,
+    EXPANSION_AUTOPLAY_EVENT_TRACE_CAPACITY = 64,
+    EXPANSION_AUTOPLAY_EVENT_TRACE_ENTRY_WORDS = 5,
 };
 
 struct ExpansionAutoplayTelemetry
@@ -71,6 +73,24 @@ struct ExpansionAutoplayTelemetry
 };
 
 extern struct ExpansionAutoplayTelemetry gExpansionAutoplayTelemetry;
+
+struct ExpansionAutoplayEventTraceEntry
+{
+    u32 command;
+    u32 slotC;
+    u32 eventCounter;
+    u32 chapterFlags;
+    u32 permanentFlags;
+};
+
+struct ExpansionAutoplayEventTrace
+{
+    u32 count;
+    u32 overflow;
+    struct ExpansionAutoplayEventTraceEntry entries[EXPANSION_AUTOPLAY_EVENT_TRACE_CAPACITY];
+};
+
+extern struct ExpansionAutoplayEventTrace gExpansionAutoplayEventTrace;
 
 enum ExpansionAutoplayResult ExpansionAutoplay_SetBlueControl(enum ExpansionBlueControl control);
 enum ExpansionBlueControl ExpansionAutoplay_GetBlueControl(void);

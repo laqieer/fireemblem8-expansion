@@ -380,12 +380,14 @@ core. Normal fidelity accepts no configuration write. The profile also owns a
 non-empty `trace` array of normal 1/2/4-byte semantic probes, canonicalized by
 binding and size so input order cannot change the fingerprint shape. The
 backend samples it each emulated frame and emits a full snapshot only on a
-semantic change, retaining action/event/RNG order without making host
-wall-clock time a behavioral oracle. It traces the existing event slot-C and
-event counter plus chapter/permanent/objective-result flag transitions, while
-the endpoint covers active blue, red, and green unit slots. Its declared frame
-bound multiplied by trace-probe count may not exceed 450,000 records, bounding
-backend stdout and the host's captured trace memory.
+semantic change, retaining action/RNG order without making host wall-clock time
+a behavioral oracle. Event commands append the first observed state and every
+later bounded ordered command/slot-C/counter/chapter-flag/permanent-flag
+transition at their commit seam; the terminal
+checkpoint compares every record and rejects overflow. The endpoint covers
+active blue, red, and green unit slots. Its declared frame bound multiplied by
+trace-probe count may not exceed 450,000 records, bounding backend stdout and
+the host's captured trace memory.
 
 Schema-v3 uses plan format 5 and fingerprint format 4. Format 5 retains
 framebuffer allocation/rendering but adds one checkpoint flag: when a
@@ -412,7 +414,9 @@ trace, RNG values, unit state/items, flags/objective result, and turn/action
 counters, and its perturbed-trace negative must fail. Repeated captures of the
 same profile compare complete format-4 fingerprints, including terminal and
 trace frames; format-4 validation rejects profile or trace frames after the
-terminal. Visual/audio/timing cases stay on their normal-fidelity scenarios.
+terminal. The accelerated runtime also verifies that the existing presentation
+policy seam reports `BANIM_PRESENTATION_POLICY_OFF`, not merely matching config
+bits. Visual/audio/timing cases stay on their normal-fidelity scenarios.
 
 ## Initial coverage and limits
 
