@@ -19,6 +19,7 @@ from scripts.generated_data.diagnostics import GeneratedDataError, GeneratedData
 
 
 ROOT = manifest.REPO_ROOT
+DEFAULT_MANIFEST = os.path.join(ROOT, "assets", "manifest.json")
 REFERENCE_MANIFEST = os.path.join(
     ROOT, "assets", "manifests", "custom-spell-reference.json"
 )
@@ -507,13 +508,71 @@ class CustomSpellAdapterTests(unittest.TestCase):
             result.stdout + result.stderr,
         )
 
+    def test_default_to_reference_warm_build_regenerates_custom_bindings(self):
+        output = os.path.join(ROOT, "build", "generated", "assets")
+        fragment = os.path.join(output, "asset_manifest.mk")
+        custom_dir = os.path.join(output, "custom_spell")
+        data_include = os.path.join(
+            custom_dir, "custom_spell_effect_data.inc"
+        )
+
+        def run(manifest_path, enabled, *goals):
+            return subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-f",
+                    "assets.mk",
+                    *goals,
+                    "PYTHON={}".format(sys.executable),
+                    "ASSET_MANIFEST={}".format(manifest_path),
+                    "EXPANSION_CUSTOM_SPELL_EFFECTS={}".format(enabled),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        try:
+            default = run(DEFAULT_MANIFEST, 0, fragment)
+            self.assertEqual(
+                default.returncode, 0, default.stdout + default.stderr
+            )
+            with open(fragment, encoding="utf-8") as handle:
+                self.assertNotIn("custom_spell_effect_data.inc", handle.read())
+            shutil.rmtree(custom_dir, ignore_errors=True)
+            self.assertFalse(os.path.exists(data_include))
+
+            reference = run(REFERENCE_MANIFEST, 1, data_include)
+            self.assertEqual(
+                reference.returncode, 0, reference.stdout + reference.stderr
+            )
+            self.assertTrue(os.path.isfile(data_include))
+            with open(fragment, encoding="utf-8") as handle:
+                self.assertIn("custom_spell_effect_data.inc", handle.read())
+
+            shutil.rmtree(TEST_ROOT, ignore_errors=True)
+            checked = run(REFERENCE_MANIFEST, 1, "assets-check")
+            self.assertEqual(
+                checked.returncode, 0, checked.stdout + checked.stderr
+            )
+        finally:
+            shutil.rmtree(custom_dir, ignore_errors=True)
+            restored = run(DEFAULT_MANIFEST, 0, fragment)
+            if restored.returncode != 0:
+                raise AssertionError(restored.stdout + restored.stderr)
+
     def test_dense_index_allocation_is_sorted_and_capacity_bounded(self):
         package = self.load_reference()
 
-        def record(record_id, item):
+        def record(record_id, item, runtime_bytes=None):
+            copied_package = copy.deepcopy(package)
+            if runtime_bytes is not None:
+                copied_package.runtime_bytes = runtime_bytes
             return SimpleNamespace(
                 id=record_id,
-                custom_spell_package=copy.deepcopy(package),
+                custom_spell_package=copied_package,
                 custom_spell_fallback_id=22,
                 ownership={
                     "effectSymbol": "CUSTOM_SPELL_" + record_id,
@@ -544,6 +603,19 @@ class CustomSpellAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "capacity 16"):
             custom_spell.validate_collection(
                 [record("E{:02d}".format(index), "ITEM_{:02d}".format(index)) for index in range(17)]
+            )
+        with self.assertRaisesRegex(
+            ValueError, "aggregate custom spell runtime payload .* exceeds 0x40000"
+        ):
+            custom_spell.validate_collection(
+                [
+                    record(
+                        "ROM{:02d}".format(index),
+                        "ITEM_ROM_{:02d}".format(index),
+                        custom_spell.MAX_ROM_BYTES // 8 + 1,
+                    )
+                    for index in range(8)
+                ]
             )
         duplicate_item = [
             record("FIRST", "ITEM_ANIMA_FORBLAZE"),

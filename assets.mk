@@ -37,6 +37,11 @@ endif
 endif
 
 ASSET_OUTPUT_MK := $(ASSET_OUTPUT_DIR)/asset_manifest.mk
+# The generated fragment shares a stable path because consumers include it
+# directly. Record the active manifest/profile outside the checked output
+# tree so switching profiles rebuilds that fragment even when both manifests
+# predate it.
+ASSET_SELECTION_STAMP := $(ASSET_OUTPUT_DIR).manifest-selection
 ASSET_BANIM_DATA_ENTRIES := $(ASSET_OUTPUT_DIR)/banim/banim_data_entries.inc
 ASSET_BANIM_DEFS := $(ASSET_OUTPUT_DIR)/banim/banim_defs.inc
 ASSET_BANIM_DEFS_HEADER := $(ASSET_OUTPUT_DIR)/banim/banim_defs.h
@@ -59,6 +64,7 @@ assets-check:
 
 assets-clean:
 	$(PYTHON) -m scripts.assets --out-dir "$(ASSET_OUTPUT_DIR)" clean
+	$(RM) -f "$(ASSET_SELECTION_STAMP)"
 
 assets-test:
 	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES \
@@ -69,7 +75,21 @@ assets-test:
 # Remake this included Makefile before resolving object prerequisites. The
 # emitted fragment lists every declared source directly on the existing
 # chapter-table objects, including the configured modern output path.
-$(ASSET_OUTPUT_MK): $(ASSET_MANIFEST) $(ASSET_MANIFEST_SOURCES) $(ASSET_TOOL_INPUTS)
+.PHONY: FORCE_ASSET_SELECTION
+FORCE_ASSET_SELECTION:
+
+$(ASSET_SELECTION_STAMP): FORCE_ASSET_SELECTION
+	@mkdir -p "$(dir $@)"
+	@printf '%s\n' \
+		'manifest=$(abspath $(ASSET_MANIFEST))' \
+		'custom_spell_effects=$(EXPANSION_CUSTOM_SPELL_EFFECTS)' > "$@.tmp"
+	@if test -f "$@" && cmp -s "$@.tmp" "$@"; then \
+		rm -f "$@.tmp"; \
+	else \
+		mv -f "$@.tmp" "$@"; \
+	fi
+
+$(ASSET_OUTPUT_MK): $(ASSET_SELECTION_STAMP) $(ASSET_MANIFEST) $(ASSET_MANIFEST_SOURCES) $(ASSET_TOOL_INPUTS)
 	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
 
 $(ASSET_BANIM_DATA_ENTRIES) $(ASSET_BANIM_DEFS) $(ASSET_BANIM_DEFS_HEADER) \
