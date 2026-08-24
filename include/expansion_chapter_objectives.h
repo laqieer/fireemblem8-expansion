@@ -11,6 +11,15 @@
 #error "FE8_CHAPTER_OBJECTIVES_ENABLED must be 0 or 1"
 #endif
 
+#ifndef FE8_CHAPTER_OBJECTIVES_RUNTIME_TEST
+#define FE8_CHAPTER_OBJECTIVES_RUNTIME_TEST 0
+#endif
+
+#if (FE8_CHAPTER_OBJECTIVES_RUNTIME_TEST != 0) \
+    && (FE8_CHAPTER_OBJECTIVES_RUNTIME_TEST != 1)
+#error "FE8_CHAPTER_OBJECTIVES_RUNTIME_TEST must be 0 or 1"
+#endif
+
 enum ExpansionChapterObjectiveKind
 {
     EXPANSION_CHAPTER_OBJECTIVE_PROTECT = 1,
@@ -78,6 +87,24 @@ struct ExpansionChapterObjectiveTelemetry
     u32 progress;
     u32 activeCount;
 };
+
+#if FE8_CHAPTER_OBJECTIVES_RUNTIME_TEST
+struct ExpansionChapterObjectiveRuntimeProbe
+{
+    u32 magic;
+    u32 pendingId;
+    u32 pendingState;
+    u32 pendingProgress;
+    u32 eventState;
+    u32 eventProgress;
+    u32 reachPendingProgress;
+    u32 reachSuccessProgress;
+    u32 protectFailureState;
+    u32 defeatSuccessState;
+};
+
+extern struct ExpansionChapterObjectiveRuntimeProbe gExpansionChapterObjectiveRuntimeProbe;
+#endif
 
 extern const struct ExpansionChapterObjectiveBundle gExpansionChapterObjectiveBundles[];
 extern struct ExpansionChapterObjectiveTelemetry gExpansionChapterObjectiveTelemetry;

@@ -197,13 +197,14 @@ contract being tested and is not inferred from inactivity.
 
 ### Expected result
 
-The generated fixture resolves every initial generic kind: event-flag
-pending/success, group reach progress, group defeat progress, bounded
-hold-until-turn, and protected-unit failure/completion through its referenced
-objective. The evaluator publishes a deterministic selected state and
-progress. Resetting transient telemetry and refreshing it reproduces the same
-live state, proving no objective lifecycle state is hidden outside chapter
-units, flags, and turn state.
+The generated fixture resolves every initial generic kind: a known event
+objective transitions pending -> success with progress 0 -> 1 after its
+existing event flag is set; a real Chapter 2 group moves from reach progress
+0 -> 1; defeating its protected unit produces a protect failure and a
+defeat-group success. The evaluator publishes those known states and stable
+IDs through a test-only profile probe. Resetting transient telemetry and
+refreshing it reproduces the same live state, proving no objective lifecycle
+state is hidden outside chapter units, flags, and turn state.
 
 The bounded debug ROM negative follows #86's default PLAYER route. Its one
 terminal checkpoint is `max_frames` and all four objective telemetry words

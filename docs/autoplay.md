@@ -213,6 +213,11 @@ that must remember a transition must latch that decision in an existing event
 flag. Suspend/load is therefore safe by reconstruction and adds no hidden or
 serialized state.
 
+Recruitment, village, and chest events remain authored event-script behavior:
+their existing success path must set a named, persistent `EVFLAG_*`, and an
+`event_flag` objective observes that latched flag. Objectives never infer
+those outcomes from animation, menus, inventory, or unit appearance.
+
 `gExpansionChapterObjectiveTelemetry` is a separate 16-byte EWRAM,
 pointer-free record with the selected stable objective ID, state, progress,
 and active-objective count. The generic #86 ELF probe resolver can bind all
