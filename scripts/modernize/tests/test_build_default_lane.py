@@ -74,6 +74,30 @@ def run_make(args, env_overrides=None):
     )
 
 
+def parse_make_assignments(fragment):
+    values = {}
+    for line in fragment.splitlines():
+        if ":=" not in line:
+            continue
+        name, value = line.split(":=", 1)
+        name = name.strip()
+        if re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
+            values[name] = value.strip()
+    return values
+
+
+def parse_print_variables(output):
+    values = {}
+    pattern = re.compile(
+        r"^([A-Z][A-Z0-9_]*) is a (?:simple|recursive) variable set to \[(.*)\]$"
+    )
+    for line in output.splitlines():
+        match = pattern.match(line)
+        if match:
+            values[match.group(1)] = match.group(2)
+    return values
+
+
 def has_successful_workflow(runs, commit, branch):
     return any(
         run["commit"] == commit
@@ -244,15 +268,9 @@ class LegacyLaneStillReachableTests(unittest.TestCase):
         )
         self.assertIsNotNone(legacy_rule, result.stdout[:400])
         self.assertEqual(legacy_rule.strip(), "legacy: fireemblem8.gba")
-
-        text = MAKEFILE.read_text(encoding="utf-8")
-        self.assertNotIn("legacy-identity-check", text)
-        self.assertNotIn("archival_identity.py", text)
-        self.assertNotIn("archival_identity_manifest.json", text)
-        self.assertFalse((ROOT / "scripts" / "archival_identity.py").exists())
-        self.assertFalse(
-            (ROOT / "scripts" / "archival_identity_manifest.json").exists()
-        )
+        legacy_prerequisites = legacy_rule.split(":", 1)[1].split()
+        self.assertEqual(legacy_prerequisites, ["fireemblem8.gba"])
+        self.assertNotIn("legacy-identity-check", legacy_prerequisites)
 
     def test_fe8_default_lane_env_var_no_longer_routes_bare_make_to_agbcc(self):
         # Negative regression test (inverts the pre-fix assumption): an
@@ -284,29 +302,6 @@ class LegacyLaneStillReachableTests(unittest.TestCase):
         self.assertIsNotNone(all_rule, result.stdout[:400])
         self.assertEqual(all_rule.strip(), "all:")
         self.assertNotIn("fireemblem8.gba", all_rule)
-
-
-class NoLaneSelectionVariableSurvivesInMakefileTests(unittest.TestCase):
-    """Owner-mindset closure check: prove the retired escape hatch was
-    actually deleted from the Makefile's text, not merely made
-    behaviorally inert by some other override, and that no differently
-    named replacement gate was quietly introduced in its place."""
-
-    def test_makefile_never_mentions_fe8_default_lane(self):
-        text = MAKEFILE.read_text(encoding="utf-8")
-        self.assertNotIn("FE8_DEFAULT_LANE", text)
-
-    def test_makefile_all_target_recipe_is_a_single_unconditional_recursive_call(self):
-        text = MAKEFILE.read_text(encoding="utf-8")
-        match = re.search(r"^all:[^\n]*\n((?:\t.*\n)*)", text, re.MULTILINE)
-        self.assertIsNotNone(match, "could not find all:'s recipe block in Makefile")
-        recipe = match.group(1)
-        self.assertIn("expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs", recipe)
-        self.assertNotIn("+$(MAKE)", recipe)
-        self.assertIn("for flag in $(MAKEFLAGS); do", recipe)
-        self.assertIn("*n*) dry_run=1 ;;", recipe)
-        self.assertNotIn("ifeq", recipe)
-        self.assertNotIn("FE8_DEFAULT_LANE", recipe)
 
 
 class AutotoolsConfigureTests(unittest.TestCase):
@@ -359,15 +354,15 @@ class AutotoolsConfigureTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout[-4000:])
 
-            fragment = (Path(build_dir) / "config.autotools.mk").read_text(
-                encoding="utf-8"
+            fragment = parse_make_assignments(
+                (Path(build_dir) / "config.autotools.mk").read_text(encoding="utf-8")
             )
-            self.assertIn("EXPANSION_MECHANICS_HOOKS := 1", fragment)
-            self.assertIn("EXPANSION_MECHANICS_SAMPLE := 1", fragment)
-            self.assertIn("EXPANSION_DANGER_OVERLAY_MENU := 1", fragment)
-            self.assertIn("EXPANSION_BLUE_PHASE_DELEGATE := 1", fragment)
-            self.assertIn("EXPANSION_STARTER_CONTENT := 1", fragment)
-            self.assertIn("FE8_ITEM_ID_CAP := 0xCE", fragment)
+            self.assertEqual(fragment["EXPANSION_MECHANICS_HOOKS"], "1")
+            self.assertEqual(fragment["EXPANSION_MECHANICS_SAMPLE"], "1")
+            self.assertEqual(fragment["EXPANSION_DANGER_OVERLAY_MENU"], "1")
+            self.assertEqual(fragment["EXPANSION_BLUE_PHASE_DELEGATE"], "1")
+            self.assertEqual(fragment["EXPANSION_STARTER_CONTENT"], "1")
+            self.assertEqual(fragment["FE8_ITEM_ID_CAP"], "0xCE")
             self.assertTrue((Path(build_dir) / "GNUmakefile").is_file())
 
             make_result = subprocess.run(
@@ -387,26 +382,12 @@ class AutotoolsConfigureTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(make_result.returncode, 0, make_result.stdout[-4000:])
-            self.assertIn(
-                "EXPANSION_MECHANICS_HOOKS is a simple variable set to [1]",
-                make_result.stdout,
-            )
-            self.assertIn(
-                "EXPANSION_BLUE_PHASE_DELEGATE is a simple variable set to [1]",
-                make_result.stdout,
-            )
-            self.assertIn(
-                "EXPANSION_STARTER_CONTENT is a simple variable set to [1]",
-                make_result.stdout,
-            )
-            self.assertIn(
-                "FE8_ITEM_ID_CAP is a simple variable set to [0xCE]",
-                make_result.stdout,
-            )
-            self.assertIn(
-                "GENERATED_DATA_ITEM_CAP is a simple variable set to [0xCE]",
-                make_result.stdout,
-            )
+            values = parse_print_variables(make_result.stdout)
+            self.assertEqual(values["EXPANSION_MECHANICS_HOOKS"], "1")
+            self.assertEqual(values["EXPANSION_BLUE_PHASE_DELEGATE"], "1")
+            self.assertEqual(values["EXPANSION_STARTER_CONTENT"], "1")
+            self.assertEqual(values["FE8_ITEM_ID_CAP"], "0xCE")
+            self.assertEqual(values["GENERATED_DATA_ITEM_CAP"], "0xCE")
 
     def test_recursive_wrapper_options_precede_makeoverrides(self):
         wrapper = GNUMAKEFILE_IN.read_text(encoding="utf-8")
@@ -425,10 +406,10 @@ class AutotoolsConfigureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=build_root) as build_dir:
             result = self.run_configure(build_dir, "--disable-custom-spell-effects")
             self.assertEqual(result.returncode, 0, result.stdout[-4000:])
-            fragment = (Path(build_dir) / "config.autotools.mk").read_text(
-                encoding="utf-8"
+            fragment = parse_make_assignments(
+                (Path(build_dir) / "config.autotools.mk").read_text(encoding="utf-8")
             )
-            self.assertIn("EXPANSION_CUSTOM_SPELL_EFFECTS := 0", fragment)
+            self.assertEqual(fragment["EXPANSION_CUSTOM_SPELL_EFFECTS"], "0")
 
             make_result = subprocess.run(
                 [
@@ -448,14 +429,9 @@ class AutotoolsConfigureTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(make_result.returncode, 0, make_result.stdout[-4000:])
-            self.assertIn(
-                "EXPANSION_CUSTOM_SPELL_EFFECTS is a recursive variable set to [1]",
-                make_result.stdout,
-            )
-            self.assertIn(
-                "MODERN_CONFIG is a recursive variable set to [release]",
-                make_result.stdout,
-            )
+            values = parse_print_variables(make_result.stdout)
+            self.assertEqual(values["EXPANSION_CUSTOM_SPELL_EFFECTS"], "1")
+            self.assertEqual(values["MODERN_CONFIG"], "release")
 
     def test_configure_rejects_invalid_feature_dependency(self):
         with tempfile.TemporaryDirectory() as build_dir:

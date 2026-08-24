@@ -2664,7 +2664,7 @@ expansion-modern-debugtools-map-check: expansion-modern-boot-preflight expansion
 # deltas), the read-only Save inspector never writes, every submenu returns
 # safely to the hub, and the map is still interactive after the hub closes.
 # The issue #125 tail then applies cursor-unit HP 17->16, heals 16->17,
-# rejects an empty tile, and proves exact SRAM equality plus final map
+# rejects an empty tile, and proves metadata-normalized SRAM equality plus final map
 # interactivity. The config-parametrized release scenario replays identical
 # input with the established probe all-zero and editor symbols omitted. See
 # docs/debugtools.md and docs/test-cases/debugtools.md.
@@ -4047,6 +4047,8 @@ expansion-modern-custom-spell-check: expansion-modern-rom
 expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-overlay-audit \
 		expansion-modern-autoplay-check \
+		expansion-modern-autoplay-bounds-check \
+		expansion-modern-blue-phase-delegate-check \
 		expansion-modern-starter-runtime-check \
 		expansion-modern-boot-check \
 		expansion-modern-title-check \
