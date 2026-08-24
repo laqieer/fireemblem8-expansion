@@ -7,6 +7,7 @@
 #include "soundwrapper.h"
 #include "gamecontrol.h"
 #include "expansion_debugtools.h"
+#include "debugtools_internal.h"
 #include "expansion_itemtest.h"
 #include "localized_ui_graphics.h"
 #include "bmlib.h"
@@ -948,6 +949,19 @@ void Title_IDLE(struct TitleScreenProc * proc)
      * state -- a release-and-repress of the hotkey can never spawn a
      * second concurrent hub MenuProc. */
     DebugTools_TitleHotkeyCheck();
+
+    /* Typed selector requests become visible only after the complete
+     * hub/submenu/Text-allocation session has ended. The menu callback
+     * only queues data; this title owner performs the ordinary
+     * next-action handoff once no debug MenuProc remains alive. */
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+    if (DebugTools_IsTargetLaunchPending() && !DebugTools_IsHubActive())
+    {
+        SetNextGameActionId(GAME_ACTION_EVENT_RETURN);
+        Proc_Break(proc);
+        return;
+    }
+#endif
 
     /* The Chapter 2 action sets this request from its menu callback before
      * MENU_ACT_END tears down the hub. Check it before the broader session

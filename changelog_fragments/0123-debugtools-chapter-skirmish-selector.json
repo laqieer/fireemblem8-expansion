@@ -1,0 +1,6 @@
+{
+  "issue": 123,
+  "category": "added",
+  "summary": "Add a debug-only bounded chapter and skirmish selector backed by typed chapter/world-map metadata and a lifecycle-safe GameControl handoff.",
+  "semver_impact": "minor"
+}

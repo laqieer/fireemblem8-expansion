@@ -431,6 +431,7 @@ GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)
 # lane retains its historical source/object set, while modern builds link this
 # additive generated record table and the pointer-free evaluator.
 GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE ?= src/data/chapter_objectives.json
+GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE ?= src/data/ch2_bundle.json
 GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY ?= \
 	reports/generated_data_chapterobjectives_inventory.md
 GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED := $(shell $(PYTHON) -c \
@@ -445,15 +446,18 @@ GENERATED_DATA_CONFIG_INPUTS_chapterobjectives := \
 	include/constants/characters.h \
 	include/constants/event-flags.h \
 	include/bmunit.h \
-	src/data/ch2_units.json
+	src/data/ch2_units.json \
+	$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE)
 
 $(GENERATED_DATA_CHAPTEROBJECTIVES_C): $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE) \
+	$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE) \
 	$(GENERATED_DATA_SHARED_PY_SOURCES) \
 	$(wildcard scripts/generated_data/chapterobjectives/*.py) \
 	$(GENERATED_DATA_CONFIG_INPUTS_chapterobjectives)
 	@mkdir -p $(@D)
 	$(GENERATED_DATA_PY) generate --table chapterobjectives \
 		--source $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE) \
+		--dep-source chapterbundle=$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE) \
 		--out-dir $(GENERATED_DATA_OUT_DIR) \
 		--inventory $(GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY)
 	@test -e $@ || { echo "error: generated-data table 'chapterobjectives' did not produce $@" >&2; exit 1; }

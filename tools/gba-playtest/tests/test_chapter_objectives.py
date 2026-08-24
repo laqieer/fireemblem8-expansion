@@ -17,6 +17,9 @@ ARM_OBJDUMP = shutil.which("arm-none-eabi-objdump")
 SOURCE = ROOT / "src" / "expansion_chapter_objectives.c"
 DRIVER = Path(__file__).resolve().parent / "c" / "expansion_chapter_objectives_driver.c"
 FIXTURE = ROOT / "scripts" / "generated_data" / "tests" / "fixtures" / "chapterobjectives" / "valid.json"
+BUNDLE_FIXTURE = (
+    ROOT / "scripts" / "generated_data" / "tests" / "fixtures" / "chapterobjectives" / "ch2_bundle.json"
+)
 
 import gba_playtest  # noqa: E402
 import run_chapter_objective_checks as runtime_check  # noqa: E402
@@ -91,6 +94,8 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
                     "chapterobjectives",
                     "--source",
                     str(FIXTURE),
+                    "--dep-source",
+                    "chapterbundle={}".format(BUNDLE_FIXTURE),
                     "--out-dir",
                     str(generated_dir),
                     "--inventory",
@@ -113,6 +118,7 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
                     "-Werror=implicit-function-declaration",
                     "-Werror=implicit-int",
                     "-O2",
+                    "-fstack-usage",
                     "-I",
                     str(ROOT / "include"),
                     "-I",
@@ -175,6 +181,8 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
                 "-std=gnu89",
                 "-ffreestanding",
                 "-fno-builtin",
+                "-O2",
+                "-fstack-usage",
                 "-Werror=declaration-after-statement",
                 "-Werror=implicit-function-declaration",
                 "-Werror=implicit-int",
@@ -208,6 +216,27 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
                     sizes[fields[-1]] = int(fields[1], 16)
             self.assertEqual(sizes["gExpansionChapterObjectiveBundles"], 12)
             self.assertEqual(sizes["gExpansionChapterObjectiveTelemetry"], 16)
+
+            stack_usage_path = runtime_object.with_suffix(".su")
+            self.assertTrue(stack_usage_path.is_file())
+            stack_usage = {}
+            for line in stack_usage_path.read_text(encoding="utf-8").splitlines():
+                fields = line.split("\t")
+                stack_usage[fields[0].rsplit(":", 1)[-1]] = int(fields[1])
+            refresh_stack = stack_usage["ExpansionChapterObjectives_RefreshTelemetry"]
+            evaluate_stack = stack_usage["EvaluateObjective"]
+            group_stack = max(
+                (size for name, size in stack_usage.items() if name.startswith("GetGroupAreaResult")),
+                default=0,
+            )
+            unit_state_stack = max(
+                (size for name, size in stack_usage.items() if name.startswith("GetUnitObjectiveState")),
+                default=0,
+            )
+            self.assertLessEqual(
+                refresh_stack + 8 * evaluate_stack + group_stack + unit_state_stack,
+                4096,
+            )
 
             table = subprocess.run(
                 [ARM_OBJDUMP, "-t", str(runtime_object)],

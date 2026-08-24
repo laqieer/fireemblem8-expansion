@@ -33,6 +33,7 @@
       "generated-data-platform",
       "typed-id-item-cap",
       "debug-tools",
+      "debugtools-chapter-skirmish-selector",
       "cursor-unit-debug-editor",
       "debugtools-music-preview",
       "runtime-playtest-harness",
@@ -72,6 +73,18 @@
       "status": "current",
       "required_cases": [
         "TC-TEST-QUALITY-001"
+      ]
+    },
+    {
+      "id": "debugtools-chapter-skirmish-selector",
+      "title": "Bounded debugtools chapter and skirmish selector",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/123"
+      ],
+      "reference": "docs/debugtools.md",
+      "status": "current",
+      "required_cases": [
+        "TC-DEBUGTOOLS-PROTOTYPE-001"
       ]
     },
     {
@@ -669,6 +682,43 @@
         {
           "command": "python3 scripts/check_docs.py --check --check-examples",
           "evidence": "scripts/check_docs.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-DEBUGTOOLS-PROTOTYPE-001",
+      "title": "Bounded chapter and skirmish selector",
+      "feature_id": "debugtools-chapter-skirmish-selector",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/123"
+      ],
+      "document": "docs/test-cases/debugtools.md",
+      "anchor": "tc-debugtools-prototype-001-bounded-chapter-and-skirmish-selector",
+      "profiles": [
+        "Modern AAPCS debug source build with FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+        "Matching modern AAPCS release source build as the disabled negative control"
+      ],
+      "purpose": "Exercise metadata-derived chapter and supported skirmish targets through one lifecycle-safe typed request and GameControl handoff.",
+      "prerequisites": "Build from the repository root with the modern toolchain and libmGBA; use clean emulator SRAM or the generated deterministic current-save fixture.",
+      "actions": "Open ID 4 from title, launch the default Chapter 4 target to live prep, then open ID 4 from the deterministic Chapter 2 live map, select the adjacent Chapter 4 skirmish, reach blue Player Phase, and reopen/close the map hub. Exercise cancel and release controls.",
+      "expected_result": "Each route queues, consumes, hands off, and commits exactly once after menu cleanup; chapter and skirmish destinations are interactive; all compared SRAM hashes are identical.",
+      "negative_control": "Invalid, unavailable, duplicate, cancel, repeated-hotkey, forced-teardown, duplicate-consume, duplicate-handoff, and release inputs fail closed without a request, second menu, direct callback restart, or save change.",
+      "interactions": "Depends on issue #11 debugtools/menu ownership, GameControl PostIntro, bootstrap suppression, generated chapter data, typed world-map spawn/node data, and chapter event groups. Conflicts with raw prototype patches, duplicate registries/catalogs, save-writing launchers, and direct callback teardown.",
+      "save_compatibility": "No save field, layout, epoch, migration, completion/tactician state, or ordinary slot write; launch state is transient EWRAM and full SRAM hashes remain byte-identical.",
+      "cleanup": "Close the hub, stop the emulator, and discard the deterministic SRAM fixture rather than copying it over a personal save.",
+      "limitations": "Only valid world-map-node-backed chapters and complete encounter-variant-0 spawn routes are exposed; placeholder rows, arbitrary maps/memory, variants 1/2, prior World Map progression, and dormant prototype callbacks are unsupported.",
+      "automation": [
+        {
+          "command": "TMPDIR=\"$PWD/build/test-tmp\" python3 -m unittest tools.gba-playtest.tests.test_debugtools_registry.DebugToolsChapterSelectorHostTests -v",
+          "evidence": "tools/gba-playtest/tests/test_debugtools_registry.py"
+        },
+        {
+          "command": "make expansion-modern-debugtools-selector-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/debugtools-selector-skirmish-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-debugtools-selector-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/debugtools-selector-modern-release.json"
         }
       ]
     },
@@ -2025,18 +2075,18 @@
         "Disposable generated Chapter 2 fixture",
         "Modern AAPCS debug ROM with #86 bounded default-PLAYER route"
       ],
-      "purpose": "Prove typed generic objective lifecycle evaluation, chapter-bundle ownership, pointer-free telemetry, and unchanged-chapter inertness.",
+      "purpose": "Prove typed generic objective lifecycle evaluation, same-chapter bundle ownership, continuous hold failure latching, pointer-free telemetry, and unchanged-chapter inertness.",
       "prerequisites": "Repository root with Python 3 and a host C compiler; the bounded debug ROM negative also requires the modern ARM toolchain and libmGBA. Start without a save or savestate.",
       "actions": "Run the focused generated-data/objective host selectors, then the bounded debug objective target.",
-      "expected_result": "All five generic kinds produce deterministic pending/success/failure state and progress; reset/reload reconstructs state from chapter data; the unchanged debug route exposes zero objective telemetry.",
-      "negative_control": "Malformed references, duplicate/capacity/area/turn/flag/dependency/cycle errors fail closed; clearing transient telemetry cannot preserve hidden objective state; the existing chapter terminates at max_frames with no active objective.",
+      "expected_result": "All five generic kinds produce deterministic pending/success/failure state and progress; a hold violation latches its declared existing failure flag so leave/re-enter fails; reset/reload reconstructs state from chapter data; the unchanged debug route exposes zero objective telemetry.",
+      "negative_control": "Malformed references, cross-chapter unit groups, duplicate/capacity/area/turn/flag/dependency/cycle errors fail closed; clearing transient telemetry cannot preserve hidden objective state; the existing chapter terminates at max_frames with no active objective.",
       "interactions": "Depends on #85/#86 only for semantic telemetry/probe transport and reuses the generated-data registry, chapter bundle, unit groups, event flags, and helper catalog. It does not define AI strategy or a second router.",
-      "save_compatibility": "No save bytes, migration, preference, compatibility epoch, or serialized objective state. Runtime status is derived from existing chapter/event state.",
+      "save_compatibility": "No save bytes, migration, preference, compatibility epoch, or serialized objective state. Runtime status is derived from existing chapter/event state; continuous holds use their author-declared existing event-flag latch.",
       "cleanup": "The host fixture is temporary under build/. Use make clean_fast only for ignored artifacts.",
       "limitations": "No project strategy, route, balance claim, player-visible text, natural-language goal, or general event language.",
       "automation": [
         {
-          "command": "python3 -m unittest scripts.generated_data.tests.test_chapterobjectives_schema scripts.generated_data.tests.test_chapterbundle_schema.ChapterObjectivesBundleTests scripts.generated_data.tests.test_cli_new_tables.CliChapterObjectivesTests -v",
+          "command": "python3 -m unittest scripts.generated_data.tests.test_chapterobjectives_schema scripts.generated_data.tests.test_chapterbundle_schema scripts.generated_data.tests.test_cli_new_tables.CliChapterObjectivesTests -v",
           "evidence": "scripts/generated_data/tests/test_chapterobjectives_schema.py"
         },
         {

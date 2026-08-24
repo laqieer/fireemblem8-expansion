@@ -312,11 +312,13 @@ symbol, uppercase machine IDs, bounded `aiGroups`, and bounded `objectives`:
 The only initial kinds are `protect` (a character plus another objective),
 `reach_area`, `defeat_group`, `event_flag`, and `hold_until_turn`. Each
 chapter is limited to eight objectives, eight AI groups, and 16 members per
-group. A group member names both a `CHARACTER_*` and a Chapter-2 `UnitDef_*`
-symbol, so validation rejects a dangling or mismatched unit/character
-reference. The required `dependencies` lists are exact declarations: missing,
-duplicate, stale, empty, over-capacity, contradictory, cyclic, invalid-area,
-or unknown references fail with a source location and JSON breadcrumb.
+group. A group member names both a `CHARACTER_*` and a `UnitDef_*` symbol;
+the objective schema resolves that symbol through the owning chapter bundle's
+`tables.units.symbols`, so dangling, mismatched, and cross-chapter references
+fail with the member's source location and JSON breadcrumb. The required
+`dependencies` lists are exact declarations: missing, duplicate, stale,
+empty, over-capacity, contradictory, cyclic, invalid-area, or unknown
+references fail with a source location and JSON breadcrumb.
 
 ### Add typed **autoplay strategy profiles and assignments** (`--table autoplaystrategies`)
 
@@ -350,9 +352,16 @@ mismatch stops before an AI action rather than falling back silently.
 or clear those values only through the existing `helperScripts` `flag.set` /
 `flag.clear` operations or established event scripts; objectives introduce no
 event language, chapter manifest, router, or hidden runtime activation bit.
-`chapterObjectives` in `src/data/ch2_bundle.json` is the ownership and
-reachability declaration for the bundle symbol. Keep it empty when the
-chapter has no authored records.
+`hold_until_turn` additionally requires a distinct existing `failureFlag`;
+the evaluator sets it on the first violated hold condition, making that
+failure persist through Suspend/Resume without new save data.
+For example, a continuous hold uses
+`"failureFlag": "EVFLAG_PROJECT_ESCORT_FAILED"` alongside its `group`,
+`area`, and `untilTurn`; the flag must be a project-defined existing
+`EVFLAG_*` value and cannot be shared with that objective's activation,
+deactivation, or event flag.
+`chapterObjectives` in `src/data/ch2_bundle.json` is the ownership declaration
+for the bundle symbol. Keep it empty when the chapter has no authored records.
 
 ```sh
 python3 -m scripts.generated_data validate --table chapterobjectives
@@ -365,8 +374,10 @@ Generated C is linked only by the modern framework. It emits a 12-byte bundle
 record per authored chapter, 12 bytes per AI group plus one byte per member,
 and 28 bytes per objective; the default empty table contains only its
 12-byte sentinel. Runtime state is one 16-byte EWRAM telemetry record, never
-save data. IDs are source-owned uppercase machine IDs; their checked FNV-1a
-value is telemetry-only and needs no localization.
+save data. Each authored telemetry refresh uses a 1 KiB stack unit index and
+scans the 255 unit slots once, replacing per-member character scans while
+remaining within the 4 KiB stack bound. IDs are source-owned uppercase machine
+IDs; their checked FNV-1a value is telemetry-only and needs no localization.
 
 ---
 

@@ -201,6 +201,8 @@ class CliChapterObjectivesTests(unittest.TestCase):
             "validate", "--table", "chapterobjectives",
             "--source", fixture_path("chapterobjectives", "valid.json"),
             "--no-roundtrip",
+            "--dep-source",
+            "chapterbundle={}".format(fixture_path("chapterobjectives", "ch2_bundle.json")),
         ])
         self.assertEqual(code, 0, msg=out + err)
 
@@ -208,6 +210,8 @@ class CliChapterObjectivesTests(unittest.TestCase):
             "validate", "--table", "chapterobjectives",
             "--source", fixture_path("chapterobjectives", "missing_dependency.json"),
             "--no-roundtrip",
+            "--dep-source",
+            "chapterbundle={}".format(fixture_path("chapterobjectives", "ch2_bundle.json")),
         ])
         self.assertEqual(code, 1)
         self.assertIn("missing_dependency.json", err)
