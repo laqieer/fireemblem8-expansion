@@ -163,7 +163,7 @@ class ToolsScenarioFilesTests(unittest.TestCase):
         c = self._cp("hub-open")
         self.assertEqual(c[HUB_OPEN], "0x00000002")
         self.assertEqual(c[S_HUB], "0x01")
-        self.assertEqual(c[REG_COUNT], "0x00000009")
+        self.assertEqual(c[REG_COUNT], "0x0000000a")
         # every mutating transaction counter starts at zero
         for addr in (U_HEALTX, CV_ADDTX, FLG_TX, RNG_TX, SV_COUNT):
             self.assertEqual(c[addr], "0x00000000")

@@ -158,11 +158,11 @@ another blocking action, no eligible unit, and a controller failure. No
 rejected call changes the controller or phase.
 
 When enabled, the map menu appends one localized **Charge** row. Its label and
-help metadata use stable expansion message IDs `autoplay.charge.label` (79)
-and `autoplay.charge.help` (80). The vanilla map-menu help renderer accepts
+help metadata use stable expansion message IDs `autoplay.charge.label` (80)
+and `autoplay.charge.help` (81). The vanilla map-menu help renderer accepts
 vanilla message IDs rather than independent `ExpansionMsgId` values, so `R`
 on Charge invokes the custom expansion helpbox handler. That handler resolves
-ID 80 through the expansion ROM catalog and opens `StartHelpBoxString`; it
+ID 81 through the expansion ROM catalog and opens `StartHelpBoxString`; it
 never passes the expansion ID through the vanilla catalog or changes the
 command contract. The row is shown
 only while the ordinary map menu

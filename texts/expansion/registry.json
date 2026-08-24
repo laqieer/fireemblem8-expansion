@@ -648,6 +648,15 @@
     },
     {
       "id": 79,
+      "key": "debug.action.music_preview",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40,
+      "notes": "Issue #126 bounded debugtools music-preview action."
+    },
+    {
+      "id": 80,
       "key": "autoplay.charge.label",
       "status": "active",
       "surface": "framework_generic",
@@ -657,7 +666,7 @@
       "notes": "Issue #87 one-phase blue delegation map-menu label."
     },
     {
-      "id": 80,
+      "id": 81,
       "key": "autoplay.charge.help",
       "status": "active",
       "surface": "framework_generic",

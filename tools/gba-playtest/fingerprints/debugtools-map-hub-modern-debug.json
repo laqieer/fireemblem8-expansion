@@ -467,6 +467,267 @@
           "value": "0x00000004"
         }
       ]
+    },
+    {
+      "frame": 15030,
+      "name": "music-map-prior-context",
+      "probes": [
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x07"
+        },
+        {
+          "address": "gSoundSt+0x02",
+          "size": 2,
+          "value": "0x0000"
+        },
+        {
+          "address": "gSoundSt+0x04",
+          "size": 2,
+          "value": "0x0009"
+        },
+        {
+          "address": "gSoundSt+0x06",
+          "size": 1,
+          "value": "0x01"
+        },
+        {
+          "address": "gSoundSt+0x07",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gSoundSt+0x08",
+          "size": 1,
+          "value": "0xff"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram-normalized:67a611338530fd11"
+    },
+    {
+      "frame": 15150,
+      "name": "music-map-page-two",
+      "probes": [
+        {
+          "address": "gDebugToolsMusicProbe+0x10",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "value": "0x00000006"
+        },
+        {
+          "address": "gDebugToolsProbe+0x04",
+          "size": 4,
+          "value": "0x0000000a"
+        }
+      ]
+    },
+    {
+      "frame": 15210,
+      "name": "music-map-owner-acquired",
+      "probes": [
+        {
+          "address": "gDebugToolsMusicProbe+0x04",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x10",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x14",
+          "size": 4,
+          "value": "0x00000009"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x18",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x1c",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 15270,
+      "name": "music-map-first-preview",
+      "probes": [
+        {
+          "address": "gDebugToolsMusicProbe+0x00",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x04",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x10",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gSoundSt+0x04",
+          "size": 2,
+          "value": "0x0001"
+        },
+        {
+          "address": "gSoundSt+0x06",
+          "size": 1,
+          "value": "0x01"
+        }
+      ]
+    },
+    {
+      "frame": 15350,
+      "name": "music-map-boundary-preview",
+      "probes": [
+        {
+          "address": "gDebugToolsMusicProbe+0x00",
+          "size": 4,
+          "value": "0x00000046"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x04",
+          "size": 4,
+          "value": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x10",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gSoundSt+0x04",
+          "size": 2,
+          "value": "0x0046"
+        }
+      ]
+    },
+    {
+      "frame": 15410,
+      "name": "music-map-rapid-replacement",
+      "probes": [
+        {
+          "address": "gDebugToolsMusicProbe+0x00",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x04",
+          "size": 4,
+          "value": "0x00000003"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x10",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gSoundSt+0x04",
+          "size": 2,
+          "value": "0x0001"
+        }
+      ]
+    },
+    {
+      "frame": 15490,
+      "name": "music-map-restored",
+      "probes": [
+        {
+          "address": "gDebugToolsMusicProbe+0x08",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x10",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "value": "0x00000007"
+        },
+        {
+          "address": "gSoundSt+0x02",
+          "size": 2,
+          "value": "0x0000"
+        },
+        {
+          "address": "gSoundSt+0x04",
+          "size": 2,
+          "value": "0x0009"
+        },
+        {
+          "address": "gSoundSt+0x06",
+          "size": 1,
+          "value": "0x01"
+        },
+        {
+          "address": "gSoundSt+0x07",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gSoundSt+0x08",
+          "size": 1,
+          "value": "0xff"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram-normalized:67a611338530fd11"
+    },
+    {
+      "frame": 15550,
+      "name": "music-map-hub-closed",
+      "probes": [
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x07"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x08",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x10",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 15570,
+      "name": "music-map-remains-interactive",
+      "probes": [
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x08"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "gDebugToolsMusicProbe+0x10",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
     }
   ],
   "format_version": 2,

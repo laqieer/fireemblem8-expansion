@@ -158,8 +158,8 @@ class BluePhaseDelegateMenuTests(unittest.TestCase):
         path.write_text(
             "#define EXP_MSG_RAW_SURFACE_UNIT_ACTION_SUMMON 33u\n"
             "#define EXP_MSG_RAW_SURFACE_UNIT_ACTION_CALL_MONSTER 34u\n"
-            "#define EXP_MSG_AUTOPLAY_CHARGE_LABEL 79u\n"
-            "#define EXP_MSG_AUTOPLAY_CHARGE_HELP 80u\n",
+            "#define EXP_MSG_AUTOPLAY_CHARGE_LABEL 80u\n"
+            "#define EXP_MSG_AUTOPLAY_CHARGE_HELP 81u\n",
             encoding="utf-8",
         )
         return path
@@ -273,8 +273,8 @@ class BluePhaseDelegateLocalizationTests(unittest.TestCase):
             )
         )
         entries = {entry["key"]: entry for entry in registry["messages"]}
-        self.assertEqual(entries["autoplay.charge.label"]["id"], 79)
-        self.assertEqual(entries["autoplay.charge.help"]["id"], 80)
+        self.assertEqual(entries["autoplay.charge.label"]["id"], 80)
+        self.assertEqual(entries["autoplay.charge.help"]["id"], 81)
         for locale in ("en", "ja", "zh-Hans", "fr", "de", "es", "it"):
             catalog = json.loads(
                 (

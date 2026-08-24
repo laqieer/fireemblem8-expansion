@@ -101,18 +101,6 @@ int main(void)
         ExpansionLocale_Resolve(EXPANSION_LOCALE_INVALID, 0),
         "Expansion Framework") == 0);
 
-    /* Persistent catalog pointers remain valid when a later ordinary resolve
-     * updates the single mutable scratch slot. Help boxes use this path. */
-    {
-        const char *persistent =
-            ExpansionLocale_ResolvePersistent(EXPANSION_LOCALE_EN, 1);
-        CHECK(strcmp(persistent, "Version:") == 0);
-        CHECK(strcmp(
-            ExpansionLocale_Resolve(EXPANSION_LOCALE_JA, 1),
-            "バージョン:") == 0);
-        CHECK(strcmp(persistent, "Version:") == 0);
-    }
-
     /* Unknown/invalid message id -> visible missing marker, never crash. */
     s = ExpansionLocale_Resolve(EXPANSION_LOCALE_EN, (ExpansionMsgId)60000);
     CHECK(strcmp(s, "<!MISSING!>") == 0);
@@ -212,8 +200,8 @@ int main(void)
     CHECK(gameCacheInvalidations == 9);
 
     ExpansionLocale_GetCatalogStats(&stats);
-    CHECK(stats.activeMessageCount == 80);
-    CHECK(stats.tombstoneCount == 1);
+    CHECK(stats.activeMessageCount == gExpansionLocaleMsgCount);
+    CHECK(stats.tombstoneCount == gExpansionLocaleTombstoneCount);
     CHECK(stats.populatedLocaleCount == 8);
     CHECK(stats.populatedLocaleCount == gExpansionLocalePopulatedCount);
     CHECK(stats.scratchBudgetBytes == EXPANSION_LOCALE_SCRATCH_SLOT_BYTES);

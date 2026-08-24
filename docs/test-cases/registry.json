@@ -32,6 +32,7 @@
       "typed-id-item-cap",
       "debug-tools",
       "cursor-unit-debug-editor",
+      "debugtools-music-preview",
       "runtime-playtest-harness",
       "upstream-port-tooling",
       "build-ci-default-release-reproduction",
@@ -561,6 +562,18 @@
       "status": "current",
       "required_cases": [
         "TC-DEBUGTOOLS-PROTOTYPE-003"
+      ]
+    },
+    {
+      "id": "debugtools-music-preview",
+      "title": "Bounded reversible debugtools music preview",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/126"
+      ],
+      "reference": "docs/debugtools.md",
+      "status": "current",
+      "required_cases": [
+        "TC-DEBUGTOOLS-PROTOTYPE-004"
       ]
     }
   ],
@@ -2398,6 +2411,47 @@
         {
           "command": "make expansion-modern-debugtools-tools-check MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/scenarios/debugtools-tools-modern-release.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-DEBUGTOOLS-PROTOTYPE-004",
+      "title": "Preview bounded music and restore its owner",
+      "feature_id": "debugtools-music-preview",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/126"
+      ],
+      "document": "docs/test-cases/debugtools.md",
+      "anchor": "tc-debugtools-prototype-004-preview-bounded-music-and-restore-its-owner",
+      "profiles": [
+        "Modern AAPCS debug source build at title and live Chapter 2 player phase",
+        "Modern AAPCS release source build with identical input for omission"
+      ],
+      "purpose": "Prove authoritative catalog bounds, one preview owner, exact playing/silent restoration, release omission, and save neutrality.",
+      "prerequisites": "Use the unchanged gSoundRoomTable, default debugtools hotkeys, deterministic SRAM, and reset between title and map fixtures.",
+      "actions": "Open hub page two, enter Music Preview, preview first and wraparound boundary songs with rapid replacement, Back twice, repeat on the live map, then replay in release.",
+      "expected_result": "Validated localized songs preview with one owner; Back restores exact prior BGM context, SRAM is unchanged, and title/map input remains interactive.",
+      "negative_control": "Invalid/sentinel/unsafe-name rows, nested acquisition, cancel-before-preview, no-prior BGM, forced teardown, chapter cleanup, and release input fail safely without unlock/save mutation.",
+      "interactions": "Depends on debugtools submenu lifecycle, authoritative sound-room data, and issue #37 typed BGM ownership; conflicts with dormant BGM handlers, raw IDs, duplicate routers/owners, and bypass patches.",
+      "save_compatibility": "No unlock bit, save byte, layout, compatibility epoch, migration, preference, or configuration identity changes.",
+      "cleanup": "Reset between title/map fixtures; host artifacts under build/test-artifacts are removed automatically.",
+      "limitations": "Only authoritative named sound-room entries are enumerable; audio recognizability is supplementary and not a correctness criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_debugtools_music -v",
+          "evidence": "tools/gba-playtest/tests/test_debugtools_music.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_debugtools_registry.DebugToolsRegistryHostTests.test_builtin_identity_and_text_allocator_lifecycle -v",
+          "evidence": "tools/gba-playtest/tests/test_debugtools_registry.py"
+        },
+        {
+          "command": "make expansion-modern-debugtools-music-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/debugtools-music-title-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-debugtools-music-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/debugtools-music-title-modern-release.json"
         }
       ]
     }
