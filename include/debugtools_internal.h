@@ -4,6 +4,8 @@
 #include "proc.h"
 #include "expansion_debugtools.h"
 
+struct DebugToolsAction;
+
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
 
 int DebugTools_RegisterBuiltinAction(const struct DebugToolsAction* action);
