@@ -30,6 +30,7 @@ struct ProcCmd gProcScr_PlayerPhase[] = { { 0 } };
 struct ProcCmd gProcScr_Playerphase_0[] = { { 0 } };
 struct ProcCmd CONST_DATA gProcScr_CpPhase[] = { { 0 } };
 struct ProcCmd CONST_DATA gProcScr_BerserkCpPhase[] = { { 0 } };
+struct ProcCmd CONST_DATA gProcScr_UpdateTraps[] = { { 0 } };
 struct ProcCmd CONST_DATA ProcScr_CamMove[] = { { 0 } };
 
 struct LCDControlBuffer gLCDControlBuffer;
@@ -54,6 +55,8 @@ static int sFadeLive;
 static int sComputerPhaseStarts;
 static int sBerserkActionStarts;
 static int sBerserkEligible;
+static int sTrapUpdateStarts;
+static int sTrapDecayCount;
 static int sProcBreaks;
 static int sProcGotoLabel;
 static int sPhaseSwitchEventCount;
@@ -86,6 +89,8 @@ ProcPtr Proc_StartBlocking(const struct ProcCmd* script, ProcPtr parent)
         sComputerPhaseStarts++;
     else if (script == gProcScr_BerserkCpPhase && sBerserkEligible)
         sBerserkActionStarts++;
+    else if (script == gProcScr_UpdateTraps)
+        sTrapUpdateStarts++;
 
     return &sBlockingProc;
 }
@@ -207,6 +212,11 @@ void ProcessTurnSupportExp(void)
 {
 }
 
+void DecayTraps(void)
+{
+    sTrapDecayCount++;
+}
+
 static void ResetHarness(void)
 {
     memset(&gPlaySt, 0, sizeof(gPlaySt));
@@ -228,6 +238,8 @@ static void ResetHarness(void)
     sComputerPhaseStarts = 0;
     sBerserkActionStarts = 0;
     sBerserkEligible = 0;
+    sTrapUpdateStarts = 0;
+    sTrapDecayCount = 0;
     sProcBreaks = 0;
     sProcGotoLabel = -1;
     sPhaseSwitchEventCount = 0;
@@ -290,10 +302,13 @@ static int TestFactionModesAndRestoration(void)
     sBerserkEligible = 1;
     gPlaySt.faction = FACTION_RED;
     BmMain_StartPhase(&sMapMainProc);
-    if (sProcGotoLabel != 3)
+    if (sProcGotoLabel != 12)
         Proc_StartBlocking(gProcScr_BerserkCpPhase, &sMapMainProc);
+    if (sProcGotoLabel == 12)
+        BmMain_UpdateTraps(&sMapMainProc);
     CHECK(sComputerPhaseStarts == 0 && sBerserkActionStarts == 0
-              && sProcGotoLabel == 3,
+              && sTrapUpdateStarts == 0 && sTrapDecayCount == 0
+              && sProcGotoLabel == 12,
           "BLOCKED must bypass normal and eligible berserk computer actions");
     CHECK(gDebugToolsProbe.phaseControlAppliedCount == 1
               && gDebugToolsProbe.phaseControlRestoredCount == 1,
@@ -302,6 +317,23 @@ static int TestFactionModesAndRestoration(void)
     BmMain_StartPhase(&sMapMainProc);
     CHECK(sComputerPhaseStarts == 1,
           "the next red phase must restore the ordinary computer route");
+
+    ResetHarness();
+    CHECK(DebugToolsPhaseControl_RequestFactionMode(
+              FACTION_GREEN, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+              == DEBUGTOOLS_PHASE_CONTROL_OK,
+          "green BLOCKED must queue at a safe boundary");
+    sBerserkEligible = 1;
+    gPlaySt.faction = FACTION_GREEN;
+    BmMain_StartPhase(&sMapMainProc);
+    if (sProcGotoLabel != 12)
+        Proc_StartBlocking(gProcScr_BerserkCpPhase, &sMapMainProc);
+    if (sProcGotoLabel == 12)
+        BmMain_UpdateTraps(&sMapMainProc);
+    CHECK(sComputerPhaseStarts == 0 && sBerserkActionStarts == 0
+              && sTrapUpdateStarts == 1 && sTrapDecayCount == 1
+              && sProcGotoLabel == 12,
+          "green BLOCKED must retain traps while bypassing all AI actions");
 
     ResetHarness();
     CHECK(DebugToolsPhaseControl_RequestFactionMode(

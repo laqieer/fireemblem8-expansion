@@ -422,7 +422,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             self.sources["debugtools_tools.c"].count(
                 "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES"
             ),
-            1,
+            4,
         )
 
         suffixes = {
@@ -433,7 +433,6 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             "debug.status.convoy": " 100/100",
             "debug.status.rng_seed": " FFFF",
             "debug.status.save_state": " -99",
-            "debug.status.turn": " 999 R:BLOCK G:BLOCK",
         }
         for locale in ("en", "ja", "zh-Hans", "qps-ploc"):
             strings = self.loaded_catalog.strings_for(locale)
@@ -465,6 +464,45 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             )
             with self.subTest(locale=locale, key="chapter+flag"):
                 self.assertLessEqual(combined_width, allocation_pixels)
+
+    def test_split_flag_status_preserves_exact_fields_within_each_surface(self):
+        cjk_width = self._constant("DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES") * 8
+        non_cjk_width = self._constant(
+            "DEBUGTOOLS_STATUS_TEXT_NON_CJK_WIDTH_TILES"
+        ) * 8
+        tools = self.sources["debugtools_tools.c"]
+
+        self.assertIn(
+            'sprintf(values, "%s %d C:%d F:%d",',
+            tools,
+        )
+        self.assertIn('sprintf(redMode, "R:%s",', tools)
+        self.assertIn('sprintf(greenMode, "G:%s",', tools)
+        self.assertIn("DebugToolsTools_DrawCjkFlagStatus", tools)
+        self.assertIn("DebugToolsTools_DrawFlagStatus", tools)
+
+        for locale in ("en", "ja", "zh-Hans", "fr", "de", "es", "it", "qps-ploc"):
+            strings = self.loaded_catalog.strings_for(locale)
+            values = f"{strings['debug.status.turn']} 999 C:255 F:1"
+            red_mode = f"R:{strings['debug.mode.blocked']}"
+            green_mode = f"G:{strings['debug.mode.computer']}"
+            limit = cjk_width if locale in ("ja", "zh-Hans") else non_cjk_width
+
+            with self.subTest(locale=locale, line="values"):
+                self.assertEqual(
+                    values,
+                    f"{strings['debug.status.turn']} 999 C:255 F:1",
+                )
+                self.assertLessEqual(self._pixel_width(values, locale), limit)
+            with self.subTest(locale=locale, line="red"):
+                self.assertEqual(red_mode, f"R:{strings['debug.mode.blocked']}")
+                self.assertLessEqual(self._pixel_width(red_mode, locale), limit)
+            with self.subTest(locale=locale, line="green"):
+                self.assertEqual(
+                    green_mode,
+                    f"G:{strings['debug.mode.computer']}",
+                )
+                self.assertLessEqual(self._pixel_width(green_mode, locale), limit)
 
     def test_weather_and_fog_rows_fit_the_same_actual_menu_geometry(self):
         allocation_pixels = (

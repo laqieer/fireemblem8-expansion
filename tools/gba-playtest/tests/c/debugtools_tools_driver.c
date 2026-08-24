@@ -57,6 +57,8 @@ extern int gDebugToolsToolsHostStubLastEyeControl;
 extern int gDebugToolsToolsHostStubFaceMouthInitCount;
 extern int gDebugToolsToolsHostStubFaceMouthLoopCount;
 extern char gDebugToolsToolsHostStubLastStatusLine[64];
+extern char gDebugToolsToolsHostStubStatusLines[3][64];
+extern int gDebugToolsToolsHostStubStatusLineCount;
 extern int gDebugToolsToolsHostStubRefreshEntityMapCount;
 extern int gDebugToolsToolsHostStubRenderMapCount;
 extern int gDebugToolsToolsHostStubRefreshUnitSpritesCount;
@@ -79,6 +81,7 @@ extern void DebugToolsHostStub_SetFakeConvoy(int count, int full);
 extern void DebugToolsHostStub_ClearFakeFlags(void);
 extern void DebugToolsHostStub_SetFakeSaveCompatState(enum SaveCompatState state);
 extern void DebugToolsHostStub_RunPendingTransition(void);
+extern void DebugToolsHostStub_ResetStatusLines(void);
 #ifdef MODERN
 extern void DebugToolsHostStub_SetLocale(ExpansionLocaleId locale);
 #endif
@@ -783,6 +786,7 @@ int main(void)
 
     DebugToolsHostStub_ClearFakeFlags();
     gPlaySt.chapterIndex = 2;
+    DebugToolsHostStub_ResetStatusLines();
 
     rc = DebugTools_GetRegisteredAction(2)->onSelected(NULL, NULL);
     CHECK(rc == CLOSE_HUB_FLAGS, "Flag/Chapter Inspect onSelected must close the hub");
@@ -791,9 +795,16 @@ int main(void)
     CHECK(gDebugToolsToolsHostStub_LastMenuDef == &gDebugToolsFlagMenuDef, "Flag/Chapter Inspect must open gDebugToolsFlagMenuDef");
     CHECK(gDebugToolsProbe.chapterIndexSample == 2, "inspect must sample gPlaySt.chapterIndex");
     CHECK(gDebugToolsProbe.debugFlagLastValue == 0, "a freshly cleared debug flag must sample as 0");
-    CHECK(strstr(gDebugToolsToolsHostStubLastStatusLine, "C:2") != NULL
-              && strstr(gDebugToolsToolsHostStubLastStatusLine, "F:0") != NULL,
-          "normal Flag/Chapter status must retain chapter and flag samples");
+    CHECK(gDebugToolsToolsHostStubStatusLineCount == 3
+              && strcmp(gDebugToolsToolsHostStubStatusLines[0], "TURN 0 C:2 F:0") == 0
+#ifdef MODERN
+              && strcmp(gDebugToolsToolsHostStubStatusLines[1], "R:CPU") == 0
+              && strcmp(gDebugToolsToolsHostStubStatusLines[2], "G:CPU") == 0,
+#else
+              && strcmp(gDebugToolsToolsHostStubStatusLines[1], "R:0") == 0
+              && strcmp(gDebugToolsToolsHostStubStatusLines[2], "G:0") == 0,
+#endif
+          "normal Flag/Chapter status must retain exact split values and modes");
     CHECK(gDebugToolsProbe.debugFlagToggleCount == 0, "inspect alone must never apply a toggle transaction");
     CHECK(strcmp(gDebugToolsFlagMenuDef.menuItems[1].name, "Apply Turn +1") == 0,
           "Flag/Chapter must expose the bounded turn increment confirmation");
@@ -811,11 +822,14 @@ int main(void)
               && gDebugToolsFlagMenuDef.menuItems[8].name == NULL,
           "the expanded phase submenu must stay bounded and terminate after Back");
 #ifdef MODERN
+    DebugToolsHostStub_ResetStatusLines();
     DebugToolsHostStub_SetLocale(EXPANSION_LOCALE_JA);
     gDebugToolsFlagMenuDef.onInit(NULL);
-    CHECK(strstr(gDebugToolsToolsHostStubLastStatusLine, "C:2") != NULL
-              && strstr(gDebugToolsToolsHostStubLastStatusLine, "F:0") != NULL,
-          "CJK Flag/Chapter status must retain chapter and flag samples");
+    CHECK(gDebugToolsToolsHostStubStatusLineCount == 3
+              && strcmp(gDebugToolsToolsHostStubStatusLines[0], "TURN 0 C:2 F:0") == 0
+              && strcmp(gDebugToolsToolsHostStubStatusLines[1], "R:CPU") == 0
+              && strcmp(gDebugToolsToolsHostStubStatusLines[2], "G:CPU") == 0,
+          "CJK Flag/Chapter status must retain exact split values and modes");
     DebugToolsHostStub_SetLocale(EXPANSION_LOCALE_EN);
 #endif
     {

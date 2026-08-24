@@ -74,6 +74,8 @@ int gDebugToolsToolsHostStubLastEyeControl = -1;
 int gDebugToolsToolsHostStubFaceMouthInitCount = 0;
 int gDebugToolsToolsHostStubFaceMouthLoopCount = 0;
 char gDebugToolsToolsHostStubLastStatusLine[64] = {0};
+char gDebugToolsToolsHostStubStatusLines[3][64] = {{0}};
+int gDebugToolsToolsHostStubStatusLineCount = 0;
 #ifdef MODERN
 static ExpansionLocaleId sDebugToolsToolsLocale = EXPANSION_LOCALE_EN;
 #endif
@@ -187,6 +189,18 @@ void PrintDebugStringToBG(u16* bg, const char* asciiStr)
         sizeof(gDebugToolsToolsHostStubLastStatusLine) - 1);
     gDebugToolsToolsHostStubLastStatusLine[
         sizeof(gDebugToolsToolsHostStubLastStatusLine) - 1] = '\0';
+    if (gDebugToolsToolsHostStubStatusLineCount < 3)
+    {
+        strncpy(
+            gDebugToolsToolsHostStubStatusLines[
+                gDebugToolsToolsHostStubStatusLineCount],
+            asciiStr,
+            sizeof(gDebugToolsToolsHostStubStatusLines[0]) - 1);
+        gDebugToolsToolsHostStubStatusLines[
+            gDebugToolsToolsHostStubStatusLineCount][
+                sizeof(gDebugToolsToolsHostStubStatusLines[0]) - 1] = '\0';
+        gDebugToolsToolsHostStubStatusLineCount++;
+    }
 }
 
 void PutDrawText(
@@ -231,6 +245,15 @@ void DebugToolsHostStub_SetLocale(ExpansionLocaleId locale)
     sDebugToolsToolsLocale = locale;
 }
 #endif
+
+void DebugToolsHostStub_ResetStatusLines(void)
+{
+    memset(gDebugToolsToolsHostStubLastStatusLine, 0,
+        sizeof(gDebugToolsToolsHostStubLastStatusLine));
+    memset(gDebugToolsToolsHostStubStatusLines, 0,
+        sizeof(gDebugToolsToolsHostStubStatusLines));
+    gDebugToolsToolsHostStubStatusLineCount = 0;
+}
 
 u8 MenuAlwaysEnabled(const struct MenuItemDef* def, int number)
 {

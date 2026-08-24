@@ -173,7 +173,41 @@ static void DebugToolsTools_DrawCjkStatusLine(const char* text)
     gLCDControlBuffer.dispcnt.bg2_on = 1;
 }
 
-static void DebugToolsTools_FormatFlagStatus(char* buf);
+static void DebugToolsTools_DrawCjkFlagStatus(
+    const char* values,
+    const char* redMode,
+    const char* greenMode)
+{
+    BG_Fill(BG_GetMapBuffer(2), 0);
+    PutDrawText(
+        NULL,
+        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
+        TEXT_COLOR_SYSTEM_WHITE,
+        0,
+        DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES,
+        values);
+    PutDrawText(
+        NULL,
+        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 3),
+        TEXT_COLOR_SYSTEM_WHITE,
+        0,
+        DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES,
+        redMode);
+    PutDrawText(
+        NULL,
+        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 5),
+        TEXT_COLOR_SYSTEM_WHITE,
+        0,
+        DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES,
+        greenMode);
+    BG_EnableSyncByMask(BG2_SYNC_BIT);
+    gLCDControlBuffer.dispcnt.bg2_on = 1;
+}
+
+static void DebugToolsTools_FormatFlagStatus(
+    char* values,
+    char* redMode,
+    char* greenMode);
 
 static void DebugToolsTools_UnitMenuOnInit(struct MenuProc* menu)
 {
@@ -211,13 +245,15 @@ static void DebugToolsTools_ConvoyMenuOnInit(struct MenuProc* menu)
 
 static void DebugToolsTools_FlagMenuOnInit(struct MenuProc* menu)
 {
-    char buf[64];
+    char values[48];
+    char redMode[32];
+    char greenMode[32];
 
     (void)menu;
     if (!DebugToolsTools_UsesCjkText())
         return;
-    DebugToolsTools_FormatFlagStatus(buf);
-    DebugToolsTools_DrawCjkStatusLine(buf);
+    DebugToolsTools_FormatFlagStatus(values, redMode, greenMode);
+    DebugToolsTools_DrawCjkFlagStatus(values, redMode, greenMode);
 }
 
 static void DebugToolsTools_RngMenuOnInit(struct MenuProc* menu)
@@ -260,33 +296,60 @@ static void DebugToolsTools_SaveStateMenuOnInit(struct MenuProc* menu)
 #define DEBUGTOOLS_SAVE_MENU_ON_INIT 0
 #endif
 
-static void DebugToolsTools_FormatFlagStatus(char* buf)
+static void DebugToolsTools_FormatFlagStatus(
+    char* values,
+    char* redMode,
+    char* greenMode)
 {
     DebugToolsPhaseControl_Sample();
-#ifdef MODERN
-    sprintf(buf, "%s %d C:%d F:%d R:%s G:%s",
-        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_TURN),
+    sprintf(values, "%s %d C:%d F:%d",
+        DEBUGTOOLS_LOCALIZED_TEXT(EXP_MSG_DEBUG_STATUS_TURN, "TURN"),
         (int)gDebugToolsProbe.phaseControlTurnSample,
         (int)gDebugToolsProbe.chapterIndexSample,
-        (int)gDebugToolsProbe.debugFlagLastValue,
+        (int)gDebugToolsProbe.debugFlagLastValue);
+#ifdef MODERN
+    sprintf(redMode, "R:%s",
         ExpansionLocale_ResolveCurrent(
             gDebugToolsProbe.phaseControlRedModeSample
                     == DEBUGTOOLS_PHASE_CONTROL_BLOCKED
                 ? EXP_MSG_DEBUG_MODE_BLOCKED
-                : EXP_MSG_DEBUG_MODE_COMPUTER),
+                : EXP_MSG_DEBUG_MODE_COMPUTER));
+    sprintf(greenMode, "G:%s",
         ExpansionLocale_ResolveCurrent(
             gDebugToolsProbe.phaseControlGreenModeSample
                     == DEBUGTOOLS_PHASE_CONTROL_BLOCKED
                 ? EXP_MSG_DEBUG_MODE_BLOCKED
                 : EXP_MSG_DEBUG_MODE_COMPUTER));
 #else
-    sprintf(buf, "TURN %d C:%d F:%d R:%d G:%d",
-        (int)gDebugToolsProbe.phaseControlTurnSample,
-        (int)gDebugToolsProbe.chapterIndexSample,
-        (int)gDebugToolsProbe.debugFlagLastValue,
-        (int)gDebugToolsProbe.phaseControlRedModeSample,
-        (int)gDebugToolsProbe.phaseControlGreenModeSample);
+    sprintf(redMode, "R:%d", (int)gDebugToolsProbe.phaseControlRedModeSample);
+    sprintf(greenMode, "G:%d", (int)gDebugToolsProbe.phaseControlGreenModeSample);
 #endif
+}
+
+static void DebugToolsTools_DrawFlagStatus(
+    const char* values,
+    const char* redMode,
+    const char* greenMode)
+{
+#ifdef MODERN
+    if (DebugToolsTools_UsesCjkText())
+    {
+        DebugToolsTools_DrawCjkFlagStatus(values, redMode, greenMode);
+        return;
+    }
+#endif
+
+    SetupDebugFontForBG(2, 0);
+    PrintDebugStringToBG(
+        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
+        values);
+    PrintDebugStringToBG(
+        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 3),
+        redMode);
+    PrintDebugStringToBG(
+        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 5),
+        greenMode);
+    gLCDControlBuffer.dispcnt.bg2_on = 1;
 }
 
 static void DebugToolsTools_ShowStatusLine(const char* text)
@@ -2320,17 +2383,19 @@ static void DebugToolsFlag_BuildMenuItems(void)
 
 static u8 DebugToolsActions_FlagInspectSelected(struct MenuProc* menu, struct MenuItemProc* item)
 {
-    char buf[64];
+    char values[48];
+    char redMode[32];
+    char greenMode[32];
 
     (void)item;
 
     gDebugToolsProbe.chapterIndexSample = (u32)(u8)gPlaySt.chapterIndex;
     gDebugToolsProbe.debugFlagLastValue = (u32)CheckFlag(DEBUGTOOLS_DEBUG_EVENT_FLAG_ID);
-    DebugToolsTools_FormatFlagStatus(buf);
+    DebugToolsTools_FormatFlagStatus(values, redMode, greenMode);
 
     DebugTools_LogEvent(DEBUGTOOLS_LOG_FLAG_INSPECT,
         gDebugToolsProbe.chapterIndexSample, gDebugToolsProbe.debugFlagLastValue);
-    DebugToolsTools_ShowStatusLine(buf);
+    DebugToolsTools_DrawFlagStatus(values, redMode, greenMode);
 
     DebugTools_QueueSubmenuTransitionWithBuilder(
         menu,

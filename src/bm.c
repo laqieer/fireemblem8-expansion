@@ -48,6 +48,12 @@ struct Vec2 EWRAM_DATA sLastCoordMapCursorDrawn = {};
 u32 EWRAM_DATA sLastTimeMapCursorDrawn = 0;
 s8 EWRAM_DATA sCameraAnimTable[0x100] = { 0 };
 
+enum
+{
+    BM_MAIN_LABEL_NEXT_PHASE = 3,
+    BM_MAIN_LABEL_TRAP_PROCESSING = 12,
+};
+
 struct ProcCmd CONST_DATA gProc_BMapMain[] = {
     PROC_SLEEP(0),
 
@@ -106,6 +112,7 @@ PROC_LABEL(5),
     PROC_REPEAT(BmMain_StartPhase),
     PROC_START_CHILD_BLOCKING(gProcScr_BerserkCpPhase),
 
+PROC_LABEL(BM_MAIN_LABEL_TRAP_PROCESSING),
     PROC_CALL_2(BmMain_UpdateTraps),
 
     PROC_GOTO(3),
@@ -474,9 +481,9 @@ void BmMain_StartPhase(ProcPtr proc)
         if (DebugToolsPhaseControl_ApplyAtPhaseStart(gPlaySt.faction)
             == DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED)
         {
-            /* Label 3 performs the next phase change. Jumping there avoids
-             * both the ordinary and berserk computer children after label 5. */
-            Proc_Goto(proc, 3);
+            /* The map-main berserk child follows this callback. Resume at
+             * traps so green retains its vanilla update/decay tail. */
+            Proc_Goto(proc, BM_MAIN_LABEL_TRAP_PROCESSING);
             return;
         }
 #endif
@@ -488,9 +495,8 @@ void BmMain_StartPhase(ProcPtr proc)
         if (DebugToolsPhaseControl_ApplyAtPhaseStart(gPlaySt.faction)
             == DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED)
         {
-            /* See the red branch: the map-main berserk child follows this
-             * callback, so blocked phases must bypass the whole tail. */
-            Proc_Goto(proc, 3);
+            /* See the red branch: bypass AI children, then preserve traps. */
+            Proc_Goto(proc, BM_MAIN_LABEL_TRAP_PROCESSING);
             return;
         }
 #endif

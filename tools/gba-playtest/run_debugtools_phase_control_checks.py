@@ -193,7 +193,7 @@ def _blocked_data():
         "description": (
             "TC-DEBUGTOOLS-PROTOTYPE-002 blocked negative: the live "
             "Flag/Chapter submenu selects Apply G Block, then #87 Charge "
-            "advances the current blue phase. The blocked red phase bypasses "
+            "advances the current blue phase. The blocked green phase bypasses "
             "both computer children and ordinary player input returns on the "
             "following blue phase."
         ),
@@ -335,7 +335,7 @@ def _check_blocked(capture):
     if restored["gPlaySt+0x0f"] != PLAYER_FACTION:
         failures.append("blocked: normal blue control did not return")
     if restored["gPlaySt+0x10"] != before["gPlaySt+0x10"] + 1:
-        failures.append("blocked: skipped red phase did not advance to the next blue turn")
+        failures.append("blocked: skipped green phase did not advance to the next blue turn")
     if restored[PHASE_APPLIED_COUNT] != 1 or restored[PHASE_RESTORED_COUNT] != 1:
         failures.append("blocked: green block was not a one-phase restoration")
     return failures
