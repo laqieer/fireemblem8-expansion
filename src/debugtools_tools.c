@@ -2046,17 +2046,17 @@ static struct MenuRect sSaveStateFrameRect;
 static u8 sSaveStateFrameBg;
 static int sSaveStateBackPending;
 
-static void DebugToolsSaveState_OnEnd(struct MenuProc* menu)
+static void DebugToolsSaveState_CaptureFrame(struct MenuProc* menu)
 {
-    /*
-     * The deferred hub transition starts only after this callback. Retain
-     * the ended submenu instance's actual surface and placement so the
-     * preservation probe keeps tracking the tile the menu engine used.
-     */
     sSaveStateFrameBg = menu->frontBg;
     sSaveStateFrameRect = menu->rect;
     sSaveStateFrameTile = BG_GetMapBuffer(sSaveStateFrameBg)[
-        TILEMAP_INDEX(sSaveStateFrameRect.x, sSaveStateFrameRect.y)];
+        TILEMAP_INDEX(sSaveStateFrameRect.x + 1, sSaveStateFrameRect.y)];
+}
+
+static void DebugToolsSaveState_OnEnd(struct MenuProc* menu)
+{
+    DebugToolsSaveState_CaptureFrame(menu);
     sSaveStateBackPending = 1;
     DebugTools_ReturnToHubAfterMenuEnd(menu);
 }
@@ -2069,9 +2069,10 @@ void DebugToolsSaveState_OnHubReturn(void)
         return;
 
     currentTile = BG_GetMapBuffer(sSaveStateFrameBg)[
-        TILEMAP_INDEX(sSaveStateFrameRect.x, sSaveStateFrameRect.y)];
+        TILEMAP_INDEX(sSaveStateFrameRect.x + 1, sSaveStateFrameRect.y)];
+    /* The owner-backed menu surface can legitimately contain an empty tile. */
     gDebugToolsProbe.saveCompatBackMenuPreserved =
-        sSaveStateFrameTile != 0 && sSaveStateFrameTile == currentTile;
+        sSaveStateFrameTile == currentTile;
     gDebugToolsProbe.saveCompatBackReturnCount++;
     sSaveStateBackPending = 0;
 }

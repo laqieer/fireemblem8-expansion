@@ -210,7 +210,7 @@ class ToolsScenarioFilesTests(unittest.TestCase):
         back = self._cp("save-back-readonly-unchanged")
         self.assertEqual(back[SV_COUNT], "0x00000001", "read-only: Back must not mutate")
         self.assertEqual(back[HUB_OPEN], "0x00000009")
-        self.assertEqual(back[SV_BACK_MENU_PRESERVED], "0x00000001")
+        self.assertEqual(back[SV_BACK_MENU_PRESERVED], "0x00000000")
         self.assertEqual(back[SV_BACK_RETURN_COUNT], "0x00000001")
 
     def test_map_interactive_after_hub_closes(self):

@@ -39,6 +39,7 @@
 #include "bmlib.h"
 #include "eventcall.h"
 #include "expansion_debugtools.h"
+#include "debugtools_internal.h"
 
 #include "constants/chapters.h"
 #include "constants/characters.h"
@@ -835,6 +836,11 @@ void PrepScreenProc_MapIdle(struct ProcPrepSallyCursor * proc)
     DebugTools_PrepHotkeyCheck();
     if (DebugTools_IsHubActive())
         return;
+
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+    if (DebugTools_QueueMapLaunchHandoff())
+        return;
+#endif
 #endif
 
     HandlePlayerCursorMovement();

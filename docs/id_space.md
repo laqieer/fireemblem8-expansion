@@ -445,9 +445,9 @@ wording:
 * Every scenario in that harness which does reach a live map (`combat.json`,
   `save-load.json`, `debugtools-ch4-prep-positive-modern-debug.json`) is
   gated `ifeq ($(MODERN_CONFIG),debug)` in `modern.mk`, because each boots
-  through the debug-only Fast Boot launcher. The release mirrors
+  through a debug-only launcher or selector. The release mirrors
   (`debugtools-tools-modern-release`,
-  `debugtools-ch4-prep-launch-modern-release`) exist precisely to prove those
+  `debugtools-selector-modern-release`) exist precisely to prove those
   tools are compiled out of a release ROM, so neither can serve as a release
   map entry.
 * Reusing the release New Game entry was attempted, not assumed: the

@@ -2,6 +2,12 @@
   "$schema": "expansion-localization-catalog-v1",
   "locale": "ja",
   "strings": {
+    "debug.action.chapter_skirmish": "章/魔物戦",
+    "debug.selector.chapter": "章",
+    "debug.selector.skirmish": "魔物戦",
+    "debug.selector.eirika": "エイリーク",
+    "debug.selector.ephraim": "エフラム",
+    "debug.selector.unavailable": "対象なし",
     "autoplay.charge.label": "進撃",
     "autoplay.charge.help": "残りのユニットをこのフェイズだけAIに任せる",
     "framework.title": "拡張フレームワーク",

@@ -28283,6 +28283,54 @@
           ]
         },
         {
+          "id": "expansion:debug.action.chapter_skirmish",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.chapter",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.skirmish",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.eirika",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.ephraim",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.unavailable",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "expansion:debug.view.state",
           "mapping_source_kind": "expansion",
           "reason": "expansion UI registry system-font consumer",
@@ -28566,12 +28614,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2039,
+          "system": 2045,
           "talk": 1172
         },
-        "expansion_key_count": 114,
+        "expansion_key_count": 120,
         "game_target_count": 3414,
-        "record_count": 3530,
+        "record_count": 3536,
         "unclassified_count": 0
       }
     },
@@ -56857,6 +56905,54 @@
           ]
         },
         {
+          "id": "expansion:debug.action.chapter_skirmish",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.chapter",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.skirmish",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.eirika",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.ephraim",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.selector.unavailable",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "expansion:debug.view.state",
           "mapping_source_kind": "expansion",
           "reason": "expansion UI registry system-font consumer",
@@ -57140,12 +57236,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2039,
+          "system": 2045,
           "talk": 1172
         },
-        "expansion_key_count": 114,
+        "expansion_key_count": 120,
         "game_target_count": 3414,
-        "record_count": 3530,
+        "record_count": 3536,
         "unclassified_count": 0
       }
     }

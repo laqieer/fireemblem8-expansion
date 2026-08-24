@@ -110,8 +110,29 @@ class BuildOutputsTests(unittest.TestCase):
         self.assertEqual(entries_by_key["autoplay.charge.label"].id, 80)
         self.assertEqual(entries_by_key["autoplay.charge.help"].id, 81)
         self.assertEqual(
+            {
+                key: entries_by_key[key].id
+                for key in (
+                    "debug.action.chapter_skirmish",
+                    "debug.selector.chapter",
+                    "debug.selector.skirmish",
+                    "debug.selector.eirika",
+                    "debug.selector.ephraim",
+                    "debug.selector.unavailable",
+                )
+            },
+            {
+                "debug.action.chapter_skirmish": 82,
+                "debug.selector.chapter": 83,
+                "debug.selector.skirmish": 84,
+                "debug.selector.eirika": 85,
+                "debug.selector.ephraim": 86,
+                "debug.selector.unavailable": 87,
+            },
+        )
+        self.assertEqual(
             [entries_by_key[key].id for key in diagnostic_keys],
-            list(range(82, 115)),
+            list(range(88, 121)),
         )
 
     def test_budget_reports_all_required_sections(self):

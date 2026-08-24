@@ -4,6 +4,9 @@
 #include "proc.h"
 #include "expansion_debugtools.h"
 
+struct DebugToolsAction;
+struct MenuProc;
+
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
 
 int DebugTools_RegisterBuiltinAction(const struct DebugToolsAction* action);
@@ -86,6 +89,62 @@ void DebugToolsDiagnostics_RuntimeTestBoot(void);
 void DebugToolsDiagnostics_RuntimeTestMap(void);
 void DebugToolsDiagnostics_RuntimeTestPrep(void);
 #endif
+
+enum DebugToolsLaunchTargetKind
+{
+    DEBUGTOOLS_LAUNCH_TARGET_CHAPTER = 1,
+    DEBUGTOOLS_LAUNCH_TARGET_SKIRMISH = 2,
+};
+
+enum DebugToolsLaunchRequestResult
+{
+    DEBUGTOOLS_LAUNCH_REQUEST_OK = 0,
+    DEBUGTOOLS_LAUNCH_REQUEST_INVALID,
+    DEBUGTOOLS_LAUNCH_REQUEST_UNAVAILABLE,
+    DEBUGTOOLS_LAUNCH_REQUEST_BUSY,
+};
+
+enum DebugToolsLaunchRequestOrigin
+{
+    DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_DIRECT = 0,
+    DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_CH4_PREP_COMPAT,
+};
+
+struct DebugToolsLaunchTarget
+{
+    u16 id;
+    u8 kind;
+    u8 chapterMode;
+    u8 nodeId;
+    u8 chapterId;
+    u8 encounterChoice;
+    u8 _pad;
+};
+
+struct DebugToolsLaunchRequest
+{
+    u16 targetId;
+    u8 kind;
+    u8 chapterMode;
+    u8 nodeId;
+    u8 chapterId;
+    u8 encounterChoice;
+    u8 origin;
+};
+
+void DebugTools_RegisterChapterSelectorAction(void);
+int DebugTools_GetLaunchTargetCount(void);
+int DebugTools_GetLaunchTarget(int index, struct DebugToolsLaunchTarget* out);
+u16 DebugTools_GetSelectedTargetId(void);
+enum DebugToolsLaunchRequestResult DebugTools_RequestTargetLaunch(u16 targetId);
+enum DebugToolsLaunchRequestResult DebugTools_RequestTargetLaunchWithOrigin(
+    u16 targetId,
+    enum DebugToolsLaunchRequestOrigin origin);
+int DebugTools_IsTargetLaunchPending(void);
+int DebugTools_ConsumePendingTargetLaunch(struct DebugToolsLaunchRequest* out);
+int DebugTools_QueueMapLaunchHandoff(void);
+void DebugToolsSelector_RunMapHandoff(ProcPtr proc);
+void DebugToolsSelector_MapHandoffOnEnd(ProcPtr proc);
 
 extern struct ProcCmd CONST_DATA gProcScr_DebugToolsMenuTransition[];
 

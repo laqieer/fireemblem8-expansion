@@ -953,6 +953,15 @@ void Title_IDLE(struct TitleScreenProc * proc)
      * second concurrent hub MenuProc. */
     DebugTools_TitleHotkeyCheck();
 
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+    if (DebugTools_IsTargetLaunchPending() && !DebugTools_IsHubActive())
+    {
+        SetNextGameActionId(GAME_ACTION_EVENT_RETURN);
+        Proc_Break(proc);
+        return;
+    }
+#endif
+
     if (DebugTools_IsChapter2LaunchPending())
     {
         /* Preserve the established deterministic launch frame, but close

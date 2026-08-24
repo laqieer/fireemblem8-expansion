@@ -3,11 +3,10 @@
 Scenario:    tools/gba-playtest/scenarios/debugtools-ch4-prep-positive-modern-debug.json
 Fingerprint: tools/gba-playtest/fingerprints/debugtools-ch4-prep-positive-modern-debug.json
 
-Boots the debug-only "Fast Boot: Ch4 Prep" launcher, traverses the Chapter 4
-world map (L cursor-jump + A node-confirm), skips the beginning event/scripted
-battle to the real CALL(EventScr_CommonPrep) PREP opcode, navigates the prep
-at-menu to rest gProcScr_SALLYCURSOR in PrepScreenProc_MapIdle, and fires the
-SELECT+B prep hotkey. Proves gDebugToolsProbe.prepScreenObservedCount
+Boots the debug-only ID-4 selector's default Chapter 4 target, follows the
+real beginning event to CALL(EventScr_CommonPrep), navigates the prep at-menu
+to rest gProcScr_SALLYCURSOR in PrepScreenProc_MapIdle, and fires the SELECT+B
+prep hotkey. Proves gDebugToolsProbe.prepScreenObservedCount
 (0x02031854) goes 0 -> 1, the hub opens (hubOpenCount 0x02031818 1 -> 2,
 sHubActive 0x02031614 0 -> 1), the hub reentrancy is idempotent (a 2nd
 SELECT+B leaves hubOpenCount at 2 and cancels the menu so sHubActive goes
@@ -20,7 +19,7 @@ PrepScreenProc_MapIdle handler (DebugTools_PrepHotkeyCheck is only reachable
 from there), so no proc_idleCb/proc_scrCur ROM-pointer value is asserted as a
 behavior oracle. This is the live prep-screen arrival that was an explicit
 issue #11 residual; it now runs as the debug branch of
-expansion-modern-debugtools-prep-check. Debug-only: the launcher and hotkey
+expansion-modern-debugtools-prep-check. Debug-only: the selector and hotkey
 are compiled out of a release build.
 """
 

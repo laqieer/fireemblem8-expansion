@@ -542,31 +542,12 @@ int DebugTools_IsBootstrapSuppressionActive(void);
  * proc_script on free). No-op when the subsystem is compiled out. */
 void DebugTools_NotifyTitleScreenStarting(void);
 
-/* --- Fast Boot: Chapter 4 (reaches a live prep screen) --------------------
- * Issue #11 closure -- a second, independent deterministic launcher
- * alongside the Chapter 2 one above. Chapter 2's own event script never
- * calls the PREP event opcode (EventScr_CommonPrep), so it cannot exercise
- * DebugTools_PrepHotkeyCheck()/PrepScreenProc_MapIdle against a real, live
- * prep screen -- the gap docs/debugtools.md previously left as "Remaining
- * #11 scope". Chapter 4's own beginning event script
- * (src/events/ch4-eventscript.h, EventScr_Ch4_BeginningScene) is
- * self-contained (its own LOAD1/LOAD2 ally+enemy unit definitions, no
- * CALL into another chapter's own sub-script) and calls
- * CALL(EventScr_CommonPrep) partway through -- so booting into it via the
- * exact same pending-request handoff pattern as Chapter 2 above (arm ->
- * Title_IDLE detects after hub close -> GameControl_PostIntro consumes
- * once) reaches a genuine, unmodified, engine-driven PrepScreenProc
- * (gProcScr_SALLYCURSOR, src/prep_sallycursor.c) through the real PREP
- * event opcode (Event3E_PrepScreenCall, src/eventscr.c) -- not a
- * hand-rolled substitute. See docs/debugtools.md "Fast Boot: Chapter 4
- * (Prep)" and reports/debugtools_issue11_closure.md.
- *
- * Placing the world-map party at NODE_BORGO_RIDGE (src/gamecontrol.c) --
- * the same kind of "one node before the target" placement the Chapter 2
- * launcher uses (NODE_CASTLE_FRELIA before NODE_IDE) -- lets the ordinary
- * WorldMap_CallBeginningEvent node-resolution reach NODE_ZAHA_WOODS /
- * CHAPTER_L_4 on its own; no chapter-specific event/battle logic is
- * bypassed and no world-map traversal step is skipped. */
+/* --- Legacy Chapter 4 request compatibility -------------------------------
+ * The issue #11 Chapter 4 request remains available for runtime probes that
+ * call it directly. Its former built-in action ID 4 is now the bounded
+ * Chapter/Skirmish selector registered by src/debugtools_selector.c. The
+ * selector uses a separate typed request and does not route through these
+ * compatibility functions. */
 
 /* Arms the second pending debug launch request. Same idempotent,
  * side-effect-free-until-consumed contract as
@@ -587,12 +568,9 @@ int DebugTools_IsChapter4PrepLaunchPending(void);
  * the subsystem is compiled out. */
 int DebugTools_ConsumePendingChapter4PrepLaunch(void);
 
-/* Registers the Chapter 4 Prep launcher action alone. Called from
- * DebugTools_OpenHub() (src/debugtools_registry.c) *after*
- * DebugTools_RegisterWeatherFogActions() -- deliberately not bundled into
- * DebugTools_RegisterBuiltinActions() above, so Weather/Fog's own
- * pre-existing hub-menu row indices never shift. Idempotent -- safe to
- * call more than once. A no-op in a release build. */
+/* Compatibility alias: registers the ID-4 Chapter/Skirmish selector.
+ * Existing source that initialized the former Chapter 4 action explicitly
+ * therefore keeps initializing the same stable built-in slot. */
 void DebugTools_RegisterChapter4PrepAction(void);
 
 /* --- Diagnostics: structured probe/log ring + assert record ---------------

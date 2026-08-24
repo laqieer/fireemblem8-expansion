@@ -2,6 +2,12 @@
   "$schema": "expansion-localization-catalog-v1",
   "locale": "de",
   "strings": {
+    "debug.action.chapter_skirmish": "Kapitel/Gefecht",
+    "debug.selector.chapter": "Kapitel",
+    "debug.selector.skirmish": "Gefecht",
+    "debug.selector.eirika": "Eirika",
+    "debug.selector.ephraim": "Ephraim",
+    "debug.selector.unavailable": "Ziel nicht verfügbar",
     "autoplay.charge.label": "Angriff",
     "autoplay.charge.help": "Übrige Einheiten in dieser Phase der KI überlassen.",
     "framework.title": "Erweiterungsrahmen",

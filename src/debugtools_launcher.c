@@ -47,29 +47,11 @@ static u8 DebugToolsLauncher_FastBootChapter2(struct MenuProc* menu, struct Menu
      * gProc_BMapMain, no unit/event manipulation. */
     DebugTools_RequestChapter2Launch();
 
-    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A;
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
 
 CONST_DATA static struct DebugToolsAction sFastBootChapter2Action = {
     1, "Fast Boot: Chapter 2", DebugToolsLauncher_FastBootChapter2
-};
-
-static u8 DebugToolsLauncher_FastBootChapter4Prep(struct MenuProc* menu, struct MenuItemProc* item)
-{
-    (void)menu;
-    (void)item;
-
-    /* Only arms the pending request and closes the hub -- exactly the
-     * same narrow contract as DebugToolsLauncher_FastBootChapter2 above:
-     * no Proc_EndEach/Proc_Start of gProcScr_GameControl, no Proc_Goto of
-     * gProc_BMapMain, no unit/event manipulation. */
-    DebugTools_RequestChapter4PrepLaunch();
-
-    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A;
-}
-
-CONST_DATA static struct DebugToolsAction sFastBootChapter4PrepAction = {
-    4, "Fast Boot: Ch4 Prep", DebugToolsLauncher_FastBootChapter4Prep
 };
 
 void DebugTools_RegisterBuiltinActions(void)
@@ -89,7 +71,7 @@ void DebugTools_RegisterBuiltinActions(void)
  * own cursor-navigation input script already depends on. */
 void DebugTools_RegisterChapter4PrepAction(void)
 {
-    DebugTools_RegisterBuiltinAction(&sFastBootChapter4PrepAction);
+    DebugTools_RegisterChapterSelectorAction();
 }
 
 void DebugTools_RequestChapter2Launch(void)

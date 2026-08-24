@@ -428,7 +428,7 @@ static const struct DebugToolsAction sBuiltinActions[] =
     {1, "Fast Boot: Chapter 2", DebugToolsLifecycle_Builtin1Selected},
     {2, "Weather", DebugToolsLifecycle_Builtin2Selected},
     {3, "Fog", DebugToolsLifecycle_Builtin3Selected},
-    {4, "Fast Boot: Ch4 Prep", DebugToolsLifecycle_Builtin4Selected},
+    {4, "Chapter/Skirmish", DebugToolsLifecycle_Builtin4Selected},
     {5, "Unit Inspect", DebugToolsLifecycle_Builtin5Selected},
     {6, "Convoy Inspect", DebugToolsLifecycle_Builtin6Selected},
     {7, "Flag/Chapter", DebugToolsLifecycle_Builtin7Selected},

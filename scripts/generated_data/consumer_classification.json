@@ -1073,6 +1073,14 @@
       "category": "external-interface",
       "reason": null
     },
+    "include/debugtools_internal.h|struct-field|chapter|DebugToolsLaunchRequest.chapterId": {
+      "category": "runtime-struct",
+      "reason": null
+    },
+    "include/debugtools_internal.h|struct-field|chapter|DebugToolsLaunchTarget.chapterId": {
+      "category": "runtime-struct",
+      "reason": null
+    },
     "include/ekrbattle.h|function-signature|item|EkrCheckWeaponSieglindeSiegmund": {
       "category": "external-interface",
       "reason": null
@@ -4409,6 +4417,10 @@
       "category": "external-interface",
       "reason": null
     },
+    "tools/gba-playtest/tests/test_debugtools_registry.py|tool-symbol|chapter|chapter": {
+      "category": "reviewed-exclusion",
+      "reason": "a local Python test variable holding parsed scenario JSON, not a runtime/generated-data chapter ID consumer"
+    },
     "tools/gba-playtest/tests/test_debugtools_registry.py|tool-symbol|chapter|chapter_index": {
       "category": "external-interface",
       "reason": null
@@ -4416,6 +4428,10 @@
     "tools/gba-playtest/tests/test_debugtools_registry.py|tool-symbol|chapter|test_gamecontrol_chapter2_boot_never_bypasses_events_or_manually_loads_units": {
       "category": "external-interface",
       "reason": null
+    },
+    "tools/gba-playtest/tests/test_debugtools_registry.py|tool-symbol|chapter|test_selector_default_and_commit_are_chapter4": {
+      "category": "reviewed-exclusion",
+      "reason": "a unittest method name describing a fixed regression assertion, not a runtime/generated-data chapter ID consumer"
     },
     "tools/gba-playtest/tests/test_expansion_starter_content.py|tool-symbol|item|test_no_raw_numeric_content_item_id": {
       "category": "reviewed-exclusion",

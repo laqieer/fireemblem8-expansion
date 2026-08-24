@@ -85,7 +85,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/test-cases/template.md | laqieer | template | Reusable tester-facing case procedure template
 - docs/test-cases/foundation.md | laqieer | current | Tester procedure for the catalog and checker foundation (issue #54)
 - docs/test-cases/core-framework.md | laqieer | current | Core framework and authoring procedures, profiles, negatives, save expectations, and automation (issue #57)
-- docs/test-cases/debugtools.md | laqieer | current | Typed diagnostics, cursor-selected bounded unit editor, and music-preview procedures, negatives, save neutrality, and automation (issues #127/#125/#126)
+- docs/test-cases/debugtools.md | laqieer | current | Bounded selector, typed diagnostics, cursor-selected unit editor, and music-preview procedures, negatives, save neutrality, and automation (issues #123/#127/#125/#126)
 - docs/test-cases/localization.md | laqieer | current | Indexed localization and locale-persistence procedures, profiles, negatives, and semantic automation (issue #56)
 - docs/test-cases/presentation-audio-utility.md | laqieer | current | Tester procedures for portrait, sound-room, BGM, presentation, manifest, and utility seams (issue #58)
 - docs/test-cases/optional-gameplay.md | laqieer | current | Indexed optional gameplay procedures, profiles, negatives, save expectations, and automation (issue #55)

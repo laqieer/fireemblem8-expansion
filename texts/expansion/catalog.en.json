@@ -2,6 +2,12 @@
   "$schema": "expansion-localization-catalog-v1",
   "locale": "en",
   "strings": {
+    "debug.action.chapter_skirmish": "Chapter/Skirmish",
+    "debug.selector.chapter": "Chapter",
+    "debug.selector.skirmish": "Skirmish",
+    "debug.selector.eirika": "Eirika",
+    "debug.selector.ephraim": "Ephraim",
+    "debug.selector.unavailable": "Target unavailable",
     "autoplay.charge.label": "Charge",
     "autoplay.charge.help": "Delegate remaining units for this phase.",
     "framework.title": "Expansion Framework",

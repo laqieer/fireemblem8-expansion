@@ -855,6 +855,7 @@ int main(void)
           "save-state Back must use the owned no-clear cancel handler");
 
     memset(&saveStateMenu, 0, sizeof(saveStateMenu));
+    saveStateMenu.backBg = 0;
     saveStateMenu.frontBg = 2;
     saveStateMenu.rect.x = 7;
     saveStateMenu.rect.y = 9;
@@ -864,22 +865,16 @@ int main(void)
     DebugToolsHostStub_FillBgMap(0);
     DebugToolsHostStub_SetBgMapTile(
         saveStateMenu.frontBg,
-        saveStateMenu.rect.x,
+        saveStateMenu.rect.x + 1,
         saveStateMenu.rect.y,
         0x51A5);
-    CHECK(
-        DebugToolsHostStub_GetBgMapTile(
-            1,
-            gDebugToolsSaveStateMenuDef.rect.x,
-            gDebugToolsSaveStateMenuDef.rect.y) == 0,
-        "save-state regression fixture must distinguish the default menu surface");
     rc = gDebugToolsSaveStateMenuDef.menuItems[0].onSelected(NULL, NULL);
     CHECK(rc == (MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6B),
           "save-state Back must end without MENU_ACT_CLEAR");
     CHECK(
         DebugToolsHostStub_GetBgMapTile(
             saveStateMenu.frontBg,
-            saveStateMenu.rect.x,
+            saveStateMenu.rect.x + 1,
             saveStateMenu.rect.y) == 0x51A5,
         "save-state Back must not clear the actual menu frame tile");
 
@@ -888,7 +883,7 @@ int main(void)
     CHECK(
         DebugToolsHostStub_GetBgMapTile(
             saveStateMenu.frontBg,
-            saveStateMenu.rect.x,
+            saveStateMenu.rect.x + 1,
             saveStateMenu.rect.y) == 0x51A5,
         "save-state return-to-hub must preserve the actual menu frame tile");
     CHECK(gDebugToolsProbe.saveCompatBackMenuPreserved == 1

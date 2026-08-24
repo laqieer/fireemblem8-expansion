@@ -173,7 +173,7 @@ int main(void)
         "Fast Boot: Chapter 2",
         "Weather",
         "Fog",
-        "Fast Boot: Ch4 Prep",
+        "Chapter/Skirmish",
         "Unit Inspect",
         "Convoy Inspect",
         "Flag/Chapter",
