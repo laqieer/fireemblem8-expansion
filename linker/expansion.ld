@@ -152,13 +152,26 @@ SECTIONS
     } > ewram AT> ewram
     __ewram_overlay_worldmap_size = __ewram_overlay_worldmap_end - __ewram_start;
 
+    ewram_overlay_debugtools __ewram_start (NOLOAD) : ALIGN(4)
+    {
+        . = 0x01FB58;
+        __debugtools_display_backup_start = .;
+        *(ewram_overlay_debugtools)
+        __debugtools_display_backup_end = .;
+    } > ewram AT> ewram
+    __ewram_overlay_debugtools_size =
+        __debugtools_display_backup_end - __ewram_start;
+
     __ewram_overlay_peak_size = MAX(
         MAX(
             MAX(__ewram_overlay_0_size, __ewram_overlay_gameending_size),
             MAX(__ewram_overlay_bmstart_size, __ewram_overlay_gamestartsave_size)
         ),
         MAX(
-            MAX(__ewram_overlay_gamestart_size, __ewram_overlay_banim_size),
+            MAX(
+                MAX(__ewram_overlay_gamestart_size, __ewram_overlay_banim_size),
+                __ewram_overlay_debugtools_size
+            ),
             MAX(__ewram_overlay_sio_size, __ewram_overlay_worldmap_size)
         )
     );
@@ -209,12 +222,35 @@ SECTIONS
          * debug/playtest probe addresses remain stable. */
         . = ALIGN(4);
         *(debugtools_contributor_data)
+        __debugtools_diagnostics_data_start = .;
+        *(debugtools_diagnostics_data)
+        __debugtools_diagnostics_data_end = .;
 
         . = ALIGN(4);
         PROVIDE(gLoadUnitBuffer = .);
         PROVIDE(end = .);
     } > ewram AT> ewram
 
+    ASSERT(
+        __debugtools_display_backup_start >= __ewram_overlay_gamestart_end,
+        "debugtools display backup overlaps title/gamestart overlay"
+    )
+    ASSERT(
+        __debugtools_display_backup_start >= __ewram_overlay_0_end,
+        "debugtools display backup overlaps map/prep overlay"
+    )
+    ASSERT(
+        __debugtools_display_backup_end <= (__ewram_start + 0x20188),
+        "debugtools display backup exceeds pre-generic-buffer overlay tail"
+    )
+    ASSERT(
+        (__debugtools_display_backup_end - __debugtools_display_backup_start) <= 0x630,
+        "debugtools display backup exceeds 0x630-byte overlay budget"
+    )
+    ASSERT(
+        (__debugtools_diagnostics_data_end - __debugtools_diagnostics_data_start) <= 0x70,
+        "debugtools diagnostics persistent state exceeds 0x70-byte budget"
+    )
     IWRAM __iwram_start (NOLOAD) : ALIGN(4)
     {
         INCLUDE "linker/iwram.ld"
