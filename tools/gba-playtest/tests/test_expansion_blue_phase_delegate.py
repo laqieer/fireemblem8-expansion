@@ -232,6 +232,16 @@ class BluePhaseDelegateMenuTests(unittest.TestCase):
                         completed.stdout + completed.stderr,
                     )
 
+        statscreen = STATSCREEN_SOURCE.read_text(encoding="utf-8")
+        function = re.search(
+            r"void StartHelpBoxString\(.*?\n\}",
+            statscreen,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(function)
+        self.assertIn("if (string == NULL)", function.group(0))
+        self.assertIn('string = "";', function.group(0))
+
     def test_expansion_help_id_never_enters_the_vanilla_catalog(self):
         bmmenu = BMMENU_SOURCE.read_text(encoding="utf-8")
         menu_def = MENU_DEF_SOURCE.read_text(encoding="utf-8")

@@ -2080,6 +2080,9 @@ void StartHelpBoxExt(const struct HelpBoxInfo* info, int unk)
 
 void StartHelpBoxString(int x, int y, const char *string)
 {
+    if (string == NULL)
+        string = "";
+
     sMutableHbi.adjUp    = NULL;
     sMutableHbi.adjDown  = NULL;
     sMutableHbi.adjLeft  = NULL;
