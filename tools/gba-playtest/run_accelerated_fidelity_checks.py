@@ -139,6 +139,10 @@ def _terminal_semantics(capture: dict) -> dict:
 def _semantic_record(capture: dict) -> dict:
     checkpoint = capture["checkpoints"][0]
     return {
+        # Semantic equivalence is meaningful only for paired executions of
+        # the same immutable ROM image, even though it intentionally ignores
+        # each profile's different emulated-frame timestamps.
+        "rom": capture["rom"],
         "terminal": _terminal_semantics(capture),
         "checkpoint_probes": checkpoint["probes"],
         # Frame timing is intentionally not part of equivalence: the exact

@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import copy
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import gba_playtest
 from homebrew_fixture import build_homebrew_rom
+import run_accelerated_fidelity_checks as accelerated_fidelity_checks
 
 
 PROBE_ADDRESS = "0x02000000"
@@ -119,14 +122,67 @@ class AcceleratedFidelitySchemaTests(unittest.TestCase):
         with self.assertRaisesRegex(gba_playtest.PlaytestError, "duplicate probes"):
             gba_playtest.parse_scenario_data(duplicate_trace)
 
+    def test_trace_probes_are_canonicalized_and_resource_bounded(self):
+        reverse_order = profile_data(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
+        reverse_order["execution_profile"]["trace"] = [
+            {"address": CONFIG_ADDRESS, "size": 4},
+            {"address": PROBE_ADDRESS, "size": 4},
+        ]
+        scenario = gba_playtest.parse_scenario_data(reverse_order)
+        self.assertEqual(
+            [probe.binding for probe in scenario.execution_profile.trace_probes],
+            [PROBE_ADDRESS, CONFIG_ADDRESS],
+        )
+
+        at_limit = profile_data(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
+        at_limit["run_until"]["max_frames"] = gba_playtest.MAX_PROFILE_TRACE_RECORDS
+        gba_playtest.parse_scenario_data(at_limit)
+
+        over_limit = profile_data(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
+        over_limit["run_until"]["max_frames"] = (
+            gba_playtest.MAX_PROFILE_TRACE_RECORDS + 1
+        )
+        with self.assertRaisesRegex(gba_playtest.PlaytestError, "aggregate limit"):
+            gba_playtest.parse_scenario_data(over_limit)
+
 
 class AcceleratedFidelityBackendTests(unittest.TestCase):
-    def _capture(self, name: str) -> dict:
-        scenario = gba_playtest.parse_scenario_data(profile_data(name))
+    def _capture_data(self, data: dict) -> dict:
+        scenario = gba_playtest.parse_scenario_data(data)
         with temporary_directory("gba-accelerated-fidelity-") as temporary:
             rom = Path(temporary) / "fixture.gba"
             build_homebrew_rom(rom)
             return gba_playtest.capture(rom, scenario)
+
+    def _capture(self, name: str) -> dict:
+        return self._capture_data(profile_data(name))
+
+    def test_backend_rejects_trace_record_budget(self):
+        with temporary_directory("gba-accelerated-fidelity-") as temporary:
+            scenario = gba_playtest.parse_scenario_data(
+                profile_data(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
+            )
+            plan = Path(temporary) / "over-budget.plan"
+            backend = Path(temporary) / "gba-playtest-backend"
+            gba_playtest._write_plan(plan, scenario)
+            max_frames = gba_playtest.MAX_PROFILE_TRACE_RECORDS + 1
+            plan_text = plan.read_text(encoding="ascii").replace(
+                "4 1 0 0 0 0 0\n",
+                f"{max_frames - 1} 1 0 0 0 0 0\n",
+            )
+            plan.write_text(
+                plan_text.replace("RUN_UNTIL 5\n", f"RUN_UNTIL {max_frames}\n"),
+                encoding="ascii",
+            )
+            gba_playtest.build_backend(backend)
+            result = subprocess.run(
+                [str(backend), "unused.gba", str(plan)],
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("trace record budget exceeds", result.stderr)
 
     def test_accelerated_profile_keeps_all_frames_and_skips_unused_hash(self):
         normal = self._capture(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
@@ -147,9 +203,10 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
         )
         after = int(accelerated["profile"]["config_after"], 16)
         self.assertTrue(after & gba_playtest.PLAYST_CONFIG_GAME_SPEED_MASK)
+        self.assertEqual(gba_playtest.PLAYST_CONFIG_ANIMATION_TYPE_OFF, 0x1 << 17)
         self.assertEqual(
             after & gba_playtest.PLAYST_CONFIG_ANIMATION_TYPE_MASK,
-            gba_playtest.PLAYST_CONFIG_ANIMATION_TYPE_OFF,
+            0x1 << 17,
         )
         gba_playtest.validate_fingerprint(normal, "<normal>", policy="behavior")
         gba_playtest.validate_fingerprint(
@@ -169,6 +226,39 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
         )
         self.assertTrue(
             any("trace" in difference for difference in differences),
+            differences,
+        )
+
+    def test_reverse_ordered_trace_validates_as_canonical_fingerprint(self):
+        data = profile_data(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
+        data["execution_profile"]["trace"] = [
+            {"address": CONFIG_ADDRESS, "size": 4},
+            {"address": PROBE_ADDRESS, "size": 4},
+        ]
+        capture = self._capture_data(data)
+        self.assertEqual(
+            [probe["address"] for probe in capture["trace"][0]["probes"]],
+            [PROBE_ADDRESS, CONFIG_ADDRESS],
+        )
+        gba_playtest.validate_fingerprint(capture, "<canonical>", policy="behavior")
+        with mock.patch.object(gba_playtest, "MAX_PROFILE_TRACE_RECORDS", 1):
+            with self.assertRaisesRegex(gba_playtest.PlaytestError, "aggregate limit"):
+                gba_playtest.validate_fingerprint(
+                    capture,
+                    "<over-budget-fingerprint>",
+                    policy="behavior",
+                )
+
+    def test_semantic_comparison_requires_same_rom_provenance(self):
+        baseline = self._capture(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
+        different_rom = copy.deepcopy(baseline)
+        different_rom["rom"]["sha1"] = "f" * 40
+        differences = accelerated_fidelity_checks.compare_semantics(
+            baseline,
+            different_rom,
+        )
+        self.assertTrue(
+            any("rom.sha1" in difference for difference in differences),
             differences,
         )
 

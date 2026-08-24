@@ -179,11 +179,14 @@ contract being tested and is not inferred from inactivity.
 
 - **Feature / originating issue:** `accelerated-fidelity-harness` /
   [#88](https://github.com/laqieer/fireemblem8-expansion/issues/88).
-- **Stack dependency:** immediate parent issue [#86](https://github.com/laqieer/fireemblem8-expansion/issues/86),
-  based locally on `agent/issue-86` at
-  `82d4aad10578b86af72002ce3491f1843775ac5a`; #85 supplies the existing
-  controller/action telemetry. The child has no other issue dependency,
-  dependent, or conflict.
+- **Dependencies, dependents, and conflicts:** depends on
+  [#85](https://github.com/laqieer/fireemblem8-expansion/issues/85) telemetry,
+  [#86](https://github.com/laqieer/fireemblem8-expansion/issues/86) bounded
+  terminal semantics, and tester-case catalog [#54](https://github.com/laqieer/fireemblem8-expansion/issues/54).
+  [#91](https://github.com/laqieer/fireemblem8-expansion/issues/91) consumes
+  this profile for deterministic batch reports; later external planner and
+  campaign experiments may also consume it. It conflicts with visual, audio,
+  or presentation-timing acceptance cases, which must remain normal fidelity.
 - **Supported configuration or artifact:** one modern AAPCS debug ROM and
   exact linked ELF, run twice from the same clean boot, fixture, controller,
   and deterministic RNG state: `normal-fidelity` and

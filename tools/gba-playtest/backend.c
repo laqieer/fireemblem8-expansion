@@ -28,10 +28,11 @@
 #define MAX_TERMINALS 3u
 #define MAX_TERMINAL_COMPARISONS 64u
 #define MAX_TRACE_PROBES 512u
+#define MAX_TRACE_RECORDS 350000u
 
 #define PLAYST_CONFIG_GAME_SPEED_MASK (1u << 7)
 #define PLAYST_CONFIG_ANIMATION_TYPE_MASK (3u << 17)
-#define PLAYST_CONFIG_ANIMATION_TYPE_OFF (2u << 17)
+#define PLAYST_CONFIG_ANIMATION_TYPE_OFF (1u << 17)
 
 enum ComparisonOperator {
 	COMPARE_EQ = 0,
@@ -557,6 +558,12 @@ static bool read_plan(const char* path, struct Plan* plan)
 						goto fail;
 					}
 				}
+			}
+			if ((uint64_t) plan->max_frames * plan->trace_probe_count >
+			    MAX_TRACE_RECORDS) {
+				fprintf(stderr, "trace record budget exceeds %u\n",
+				        MAX_TRACE_RECORDS);
+				goto fail;
 			}
 		}
 	}

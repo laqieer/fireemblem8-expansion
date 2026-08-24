@@ -166,17 +166,22 @@ one declared frame and applies only `gameSpeed` plus the existing animation
 option selected by `BANIM_PRESENTATION_POLICY_OFF`. Its emulator core and
 temporary SRAM copy are destroyed after capture, so it cannot persist either
 choice. `normal-fidelity` has no configuration write. The profile also names
-ordered semantic trace probes. The backend emits a complete snapshot only
-when one of those semantic values changes, preserving action/event and RNG
-order without treating wall-clock timing as behavior.
+semantic trace probes, which are canonicalized by binding and size so
+equivalent input order produces one stable fingerprint shape. The backend
+emits a complete snapshot only when one of those semantic values changes,
+preserving action/event and RNG order without treating wall-clock timing as
+behavior. The declared frame bound multiplied by trace-probe count may not
+exceed 350,000 records, bounding backend output and the host's captured trace
+memory.
 
 Profile plans use backend format 5. A semantic-only terminal checkpoint emits
 its probes/SRAM state and no whole-framebuffer hash; the framebuffer remains
 allocated and attached to libmGBA, and region/pixel/visual scenarios still
 require the normal framebuffer capture path. Format-version-4 fingerprints
 record the profile state and trace. The paired comparator ignores emulated
-frame timestamps while requiring the terminal reason/counters, endpoint
-semantic probes, and ordered trace values to match exactly.
+frame timestamps while requiring exact ROM provenance, terminal
+reason/counters, endpoint semantic probes, and ordered trace values to match
+exactly.
 
 The focused Chapter 2 fixture freezes 17,135 normal-fidelity frames and
 16,869 accelerated-fidelity frames (a 266-frame reduction). The benchmark

@@ -98,6 +98,10 @@ MAX_SRAM_HASH_EXCLUDE_RANGES = 64
 MAX_RUN_UNTIL_COMPARISONS = 64
 MAX_RUN_UNTIL_PROBES = 128
 MAX_PROFILE_TRACE_PROBES = 512
+# Matches backend.c's MAX_TRACE_RECORDS. A trace emits each probe whenever
+# any trace value changes, so max_frames * trace probe count bounds both the
+# backend's stdout and the host's captured semantic trace.
+MAX_PROFILE_TRACE_RECORDS = 350_000
 COMPARISON_OPERATORS = ("eq", "ne", "lt", "le", "gt", "ge")
 TERMINAL_CONDITION_REASONS = (
     "success",
@@ -132,7 +136,7 @@ PLAN_EXECUTION_PROFILE_CODES = {
 # BANIM_PRESENTATION_POLICY_OFF to the disposable emulator core.
 PLAYST_CONFIG_GAME_SPEED_MASK = 1 << 7
 PLAYST_CONFIG_ANIMATION_TYPE_MASK = 0x3 << 17
-PLAYST_CONFIG_ANIMATION_TYPE_OFF = 0x2 << 17
+PLAYST_CONFIG_ANIMATION_TYPE_OFF = 0x1 << 17
 
 
 class PlaytestError(Exception):
@@ -1168,6 +1172,18 @@ def _parse_execution_profile(
                 "resolve to the same address/size"
             )
         resolved[identity] = probe.binding
+    trace_probes = tuple(
+        sorted(
+            trace_probes,
+            key=lambda probe: _probe_binding_sort_key(probe.binding, probe.size),
+        )
+    )
+    trace_record_count = run_until.max_frames * len(trace_probes)
+    if trace_record_count > MAX_PROFILE_TRACE_RECORDS:
+        raise PlaytestError(
+            f"{path}.trace can emit {trace_record_count} records, exceeding the "
+            f"{MAX_PROFILE_TRACE_RECORDS}-record aggregate limit"
+        )
 
     if name == EXECUTION_PROFILE_NORMAL_FIDELITY:
         if "config_apply_frame" in profile_data or "play_state_config" in profile_data:
@@ -1577,6 +1593,7 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
     terminal: tuple[str, int, bool, int, bool, int] | None = None
     profile_record: tuple[int, int, int] | None = None
     trace_snapshots: list[tuple[int, dict[int, int]]] = []
+    trace_record_count = 0
     for line_number, line in enumerate(stdout.splitlines(), 1):
         fields = line.split("\t")
         try:
@@ -1707,6 +1724,9 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
             elif len(fields) == 4 and fields[0] == "TRACE":
                 if scenario.execution_profile is None:
                     raise ValueError("unexpected trace record")
+                trace_record_count += 1
+                if trace_record_count > MAX_PROFILE_TRACE_RECORDS:
+                    raise ValueError("trace records exceed aggregate budget")
                 frame = int(fields[1])
                 probe_index = int(fields[2])
                 value = int(fields[3])
@@ -2492,6 +2512,7 @@ def _validate_accelerated_fidelity_fingerprint(
     if not isinstance(trace, list) or not trace:
         raise PlaytestError(f"{source}.trace must be a non-empty array")
     trace_checkpoints: list[dict[str, Any]] = []
+    trace_record_count = 0
     previous_frame = -1
     expected_shape: list[tuple[str, int]] | None = None
     for index, snapshot in enumerate(trace):
@@ -2510,6 +2531,12 @@ def _validate_accelerated_fidelity_fingerprint(
         )
         if not isinstance(snapshot["probes"], list) or not snapshot["probes"]:
             raise PlaytestError(f"{path}.probes must be a non-empty array")
+        trace_record_count += len(snapshot["probes"])
+        if trace_record_count > MAX_PROFILE_TRACE_RECORDS:
+            raise PlaytestError(
+                f"{source}.trace exceeds the {MAX_PROFILE_TRACE_RECORDS}-record "
+                "aggregate limit"
+            )
         shape = [
             (probe.get("address"), probe.get("size"))
             for probe in snapshot["probes"]

@@ -377,10 +377,13 @@ The accelerated profile has one explicit `play_state_config` binding and
 game-speed bit and the animation option selected by
 `BANIM_PRESENTATION_POLICY_OFF` are applied inside the disposable libmGBA
 core. Normal fidelity accepts no configuration write. The profile also owns a
-non-empty ordered `trace` array of normal 1/2/4-byte semantic probes. The
+non-empty `trace` array of normal 1/2/4-byte semantic probes, canonicalized by
+binding and size so input order cannot change the fingerprint shape. The
 backend samples it each emulated frame and emits a full snapshot only on a
 semantic change, retaining action/event/RNG order without making host
-wall-clock time a behavioral oracle.
+wall-clock time a behavioral oracle. Its declared frame bound multiplied by
+trace-probe count may not exceed 350,000 records, bounding backend stdout and
+the host's captured trace memory.
 
 Schema-v3 uses plan format 5 and fingerprint format 4. Format 5 retains
 framebuffer allocation/rendering but adds one checkpoint flag: when a
@@ -402,10 +405,10 @@ libmGBA version, host/runner identity, source commit, ROM provenance/config,
 emulated-frame counts, and three wall-clock samples. The checked Chapter 2
 fixture freezes 17,135 normal-fidelity frames and 16,869 accelerated-fidelity
 frames (266 fewer); wall-clock samples are evidence only. The paired
-comparator requires equal terminal semantic state, ordered trace, RNG values,
-unit state/items, flags/objective result, and turn/action counters, and its
-perturbed-trace negative must fail. Visual/audio/timing cases stay on their
-normal-fidelity scenarios.
+comparator requires equal ROM provenance, terminal semantic state, ordered
+trace, RNG values, unit state/items, flags/objective result, and turn/action
+counters, and its perturbed-trace negative must fail. Visual/audio/timing
+cases stay on their normal-fidelity scenarios.
 
 ## Initial coverage and limits
 
