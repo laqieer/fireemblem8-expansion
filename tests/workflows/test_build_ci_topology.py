@@ -37,6 +37,11 @@ EXPECTED_HASHED_REQUIREMENTS = {
         "sha256:2c8bc871f7740b690c6df6fb8c9633be58fcda123eea3e53be40a79e4af54b83",
     ),
 }
+PIP_INSTALL_RE = re.compile(
+    r"(?<![A-Za-z0-9_.-])"
+    r"(?:python(?:3(?:\.[0-9]+)?)?\s+-m\s+pip|pip(?:3(?:\.[0-9]+)?)?)"
+    r"\s+install\b"
+)
 PULL_REQUEST_TRIGGER = 'pull_request:\n    branches: [ "master" ]'
 PUSH_TRIGGER = 'push:\n    branches: [ "master" ]'
 SUMMARY_RESULTS = (
@@ -186,10 +191,12 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         pip_installs = [
             command
             for command in _run_block_commands(job)
-            if re.search(r"\bpython(?:3)?\s+-m\s+pip\s+install\b", command)
+            for _match in PIP_INSTALL_RE.finditer(command)
         ]
         if job_name in ("build", "patch-release"):
-            if len(pip_installs) != 1 or not _contains_command(job, HASHED_PIP_INSTALL):
+            if len(pip_installs) != 1 or _normalise(pip_installs[0]) != _normalise(
+                HASHED_PIP_INSTALL
+            ):
                 errors.append(f"{job_name} must use the reviewed hash-locked Python requirements")
         elif pip_installs:
             errors.append(f"{job_name} adds an unreviewed Python package install")
@@ -352,6 +359,34 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 for error in _errors(changed, False)
             )
         )
+
+    def test_appended_second_pip_install_fails(self):
+        changed = self.text.replace(
+            HASHED_PIP_INSTALL,
+            HASHED_PIP_INSTALL + " && python3 -m pip install evil",
+            1,
+        )
+        self.assertTrue(
+            any(
+                "must use the reviewed hash-locked Python requirements" in error
+                for error in _errors(changed, False)
+            )
+        )
+
+    def test_separate_bare_or_versioned_pip_install_fails(self):
+        for command in ("pip install evil", "pip3.12 install evil"):
+            with self.subTest(command=command):
+                changed = self.text.replace(
+                    "    - name: Build tools\n",
+                    f"    - run: {command}\n\n    - name: Build tools\n",
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "must use the reviewed hash-locked Python requirements" in error
+                        for error in _errors(changed, False)
+                    )
+                )
 
     def test_changed_requirement_hash_fails(self):
         changed = PYTHON_REQUIREMENTS.read_text(encoding="utf-8").replace(
