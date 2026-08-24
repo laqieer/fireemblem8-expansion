@@ -476,6 +476,26 @@ class CustomSpellArmTests(unittest.TestCase):
                 "gGeneratedCustomSpellEffects",
                 run([ARM_NM, "-S", str(data_enabled)]).stdout,
             )
+            public_symbol = work / "public-custom-spell-symbol.c"
+            public_symbol.write_text(
+                '#include "custom_spell_effect.h"\n'
+                'u8 gPublicCustomSpellSymbol = CUSTOM_SPELL_REFERENCE;\n',
+                encoding="ascii",
+            )
+            public_object = work / "public-custom-spell-symbol.o"
+            completed = run(
+                [
+                    *common,
+                    "-DFE8_EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+                    "-c",
+                    str(public_symbol),
+                    "-o",
+                    str(public_object),
+                ]
+            )
+            self.assertEqual(
+                completed.returncode, 0, completed.stdout + completed.stderr
+            )
             self.assertNotIn(
                 "CustomSpell",
                 run([ARM_NM, "-S", str(data_disabled)]).stdout,

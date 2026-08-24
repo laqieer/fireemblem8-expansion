@@ -235,6 +235,7 @@ def load_discovery(path):
         _validate_discovery_source_dependencies(
             kind, record, diagnostics, tracked_paths
         )
+    diagnostics.raise_if_any()
     tracked = {path for path, _loc, _reference in tracked_paths}
     for source in discovery_sources(records):
         if source in tracked:
@@ -2672,8 +2673,6 @@ def check(manifest_path, out_dir, custom_spell_effects=None):
         for root, directories, files in os.walk(out_dir):
             for filename in files:
                 path = os.path.join(root, filename)
-                if filename.endswith(".manifest-discovery.mk"):
-                    continue
                 if path not in expected and path not in transient_outputs:
                     errors.append("orphan generated output {}".format(path))
             for directory in directories:

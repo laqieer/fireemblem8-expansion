@@ -174,7 +174,7 @@ class CustomSpellAdapterTests(unittest.TestCase):
         self.assertEqual(package.sound_ids, [0xF1])
         self.assertEqual(package.bg_bytes, 0x500)
         self.assertEqual(package.obj_oam_entries, 2)
-        self.assertEqual(package.runtime_bytes, 2460)
+        self.assertEqual(package.runtime_bytes, 2448)
         first = [
             (
                 frame["obj_lz"],
@@ -202,6 +202,24 @@ class CustomSpellAdapterTests(unittest.TestCase):
         self.assertTrue(all(len(frame["obj_tiles"]) == 0x1000 for frame in package.frames))
         self.assertTrue(all(len(frame["bg_tiles"]) == 0x500 for frame in package.frames))
         self.assertTrue(all(len(frame["tsa"]) == 1200 for frame in package.frames))
+
+    def test_script_accounting_matches_emitted_words(self):
+        package = self.load_reference()
+        baseline = custom_spell.runtime_bytes(package, "CUSTOM_SPELL_REFERENCE")
+        self.assertEqual(baseline, package.runtime_bytes)
+        package.frames[0]["duration"] = 64
+        package.frames[1]["duration"] = 126
+        script_lines = []
+        custom_spell._script(script_lines, "Script", ["A", "B"], package.frames)
+        words = [
+            line for line in script_lines
+            if "ANIMSCR_FORCE_SPRITE" in line or "ANIMSCR_BLOCKED" in line
+        ]
+        self.assertEqual(len(words), 5)
+        self.assertEqual(
+            custom_spell.runtime_bytes(package, "CUSTOM_SPELL_REFERENCE"),
+            baseline + 8,
+        )
 
     def test_reference_manifest_generates_runtime_binding_and_identity(self):
         records = manifest.load_and_validate(REFERENCE_MANIFEST, 1)
@@ -236,6 +254,16 @@ class CustomSpellAdapterTests(unittest.TestCase):
             runtime_test = handle.read()
         self.assertIn("gGeneratedCustomSpellEffects", data)
         self.assertIn("CUSTOM_SPELL_REFERENCE", data)
+        with open(
+            os.path.join(
+                output, "custom_spell", "custom_spell_effect_generated.h"
+            ),
+            encoding="utf-8",
+        ) as handle:
+            self.assertIn(
+                "#define CUSTOM_SPELL_REFERENCE (CUSTOM_SPELL_EFFECT_BASE + 0)",
+                handle.read(),
+            )
         self.assertIn("ITEM_ANIMA_FORBLAZE, 128", association)
         self.assertIn(
             "#define CUSTOM_SPELL_EFFECT_TEST_ITEM ITEM_ANIMA_FORBLAZE",
@@ -789,6 +817,41 @@ class CustomSpellAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "suggested-palette name is duplicated"):
             custom_spell.read_indexed_png(path, 240, 64)
 
+    def test_compressed_ancillary_streams_are_bounded_and_complete(self):
+        path = os.path.join(TEST_ROOT, "compressed-ancillary.png")
+        valid = zlib.compress(b"payload")
+        cases = (
+            (b"iCCP", b"profile\0\0", "before"),
+            (b"zTXt", b"note\0\0", "between"),
+            (b"iTXt", b"note\0\1\0en\0title\0", "between"),
+        )
+        invalid_streams = (
+            (b"not-zlib", "invalid zlib stream"),
+            (valid[:-1], "incomplete or trailing zlib stream"),
+            (valid + b"trailing", "incomplete or trailing zlib stream"),
+            (
+                zlib.compress(
+                    b"x" * (custom_spell.MAX_ANCILLARY_DECOMPRESSED_BYTES + 1)
+                ),
+                "decompression exceeds",
+            ),
+        )
+        for name, prefix, placement in cases:
+            for stream, message in invalid_streams:
+                with self.subTest(name=name, message=message):
+                    payload = prefix + stream
+                    kwargs = {
+                        "ancillary_before_plte": ((name, payload),)
+                        if placement == "before"
+                        else (),
+                        "ancillary_before_idat": ((name, payload),)
+                        if placement == "between"
+                        else (),
+                    }
+                    _write_png(path, 240, 64, **kwargs)
+                    with self.assertRaisesRegex(ValueError, message):
+                        custom_spell.read_indexed_png(path, 240, 64)
+
         width = 240
         height = 64
         compressed = zlib.compress(b"\0" * (height * (width // 2 + 1)))
@@ -1262,6 +1325,17 @@ class CustomSpellAdapterTests(unittest.TestCase):
         orphan = os.path.join(output, "custom_spell", "orphan.bin")
         with open(orphan, "wb") as handle:
             handle.write(b"orphan")
+        with self.assertRaisesRegex(
+            GeneratedDataValidationError, "orphan generated output"
+        ):
+            manifest.check(REFERENCE_MANIFEST, output, 1)
+        manifest.generate(REFERENCE_MANIFEST, output, 1)
+        with open(
+            os.path.join(output, "unexpected.manifest-discovery.mk"),
+            "w",
+            encoding="utf-8",
+        ):
+            pass
         with self.assertRaisesRegex(
             GeneratedDataValidationError, "orphan generated output"
         ):
