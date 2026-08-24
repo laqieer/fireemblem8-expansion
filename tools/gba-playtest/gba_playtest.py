@@ -2543,6 +2543,16 @@ def _validate_accelerated_fidelity_fingerprint(
                 r"0x[0-9a-f]{8}", profile[field]
             ):
                 raise PlaytestError(f"{source}.profile.{field} must be 32-bit lowercase hex")
+        config_before = int(profile["config_before"], 16)
+        expected_config_after = (
+            (config_before | PLAYST_CONFIG_GAME_SPEED_MASK)
+            & ~PLAYST_CONFIG_ANIMATION_TYPE_MASK
+        ) | PLAYST_CONFIG_ANIMATION_TYPE_OFF
+        if int(profile["config_after"], 16) != expected_config_after:
+            raise PlaytestError(
+                f"{source}.profile.config_after must be the accelerated "
+                "transformation of config_before"
+            )
         for index, checkpoint in enumerate(root["checkpoints"]):
             forbidden = {
                 field

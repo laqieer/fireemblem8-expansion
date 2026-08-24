@@ -426,6 +426,33 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
                 policy="behavior",
             )
 
+    def test_external_accelerated_fingerprint_requires_exact_config_transition(self):
+        capture = self._capture(gba_playtest.EXECUTION_PROFILE_ACCELERATED_FIDELITY)
+        gba_playtest.validate_fingerprint(capture, "<backend-round-trip>", policy="behavior")
+        before = int(capture["profile"]["config_before"], 16)
+        expected = int(capture["profile"]["config_after"], 16)
+        cases = {
+            "speed-disabled": expected & ~gba_playtest.PLAYST_CONFIG_GAME_SPEED_MASK,
+            "animation-not-off": (
+                expected & ~gba_playtest.PLAYST_CONFIG_ANIMATION_TYPE_MASK
+            ) | (0x2 << 17),
+            "unrelated-bit-changed": expected ^ 1,
+        }
+        for label, invalid_after in cases.items():
+            with self.subTest(label=label):
+                invalid = copy.deepcopy(capture)
+                invalid["profile"]["config_before"] = f"0x{before:08x}"
+                invalid["profile"]["config_after"] = f"0x{invalid_after:08x}"
+                with self.assertRaisesRegex(
+                    gba_playtest.PlaytestError,
+                    "accelerated transformation",
+                ):
+                    gba_playtest.validate_fingerprint(
+                        invalid,
+                        f"<{label}>",
+                        policy="behavior",
+                    )
+
     def test_external_accelerated_fingerprint_rejects_visual_evidence(self):
         accelerated = self._capture(gba_playtest.EXECUTION_PROFILE_ACCELERATED_FIDELITY)
         accelerated["checkpoints"][0]["framebuffer_hash"] = "fnv1a64-rgb24:0000000000000000"

@@ -377,8 +377,10 @@ game-speed bit and the animation option selected by
 `BANIM_PRESENTATION_POLICY_OFF` are applied inside the disposable libmGBA
 core. The binding must be an aligned writable EWRAM/IWRAM word; ROM, VRAM,
 palette, OAM, and SRAM bindings are rejected, and the backend readback must
-equal the requested value before it emits `PROFILE`. Normal fidelity accepts
-no configuration write. The profile also owns a
+equal the requested value before it emits `PROFILE`. External format-4
+fingerprints must encode the exact same transformation of `config_before`:
+speed enabled, animation OFF, all unrelated bits unchanged. Normal fidelity
+accepts no configuration write. The profile also owns a
 non-empty `trace` array of normal 1/2/4-byte semantic probes, canonicalized by
 binding and size so input order cannot change the fingerprint shape. The
 backend samples it each emulated frame and emits a full snapshot only on a

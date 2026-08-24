@@ -250,7 +250,10 @@ option selected by `BANIM_PRESENTATION_POLICY_OFF`. Its emulator core and
 temporary SRAM copy are destroyed after capture, so it cannot persist either
 choice. The binding is an aligned 4-byte writable EWRAM/IWRAM word; ROM, VRAM,
 palette, OAM, and SRAM bindings fail before execution, and the backend reads
-the word back before emitting `PROFILE`. `normal-fidelity` has no
+the word back before emitting `PROFILE`. Format-4 validation requires
+`config_after` to be the exact accelerated transformation of `config_before`:
+game speed set, animation OFF, and every unrelated bit unchanged.
+`normal-fidelity` has no
 configuration write. The profile also names
 semantic trace probes, which are canonicalized by binding and size so
 equivalent input order produces one stable fingerprint shape. The backend
