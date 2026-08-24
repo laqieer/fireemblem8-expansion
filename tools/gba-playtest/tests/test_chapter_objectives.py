@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "tools" / "gba-playtest"))
 CC = shutil.which("gcc") or shutil.which("cc")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_NM = shutil.which("arm-none-eabi-nm")
+ARM_OBJDUMP = shutil.which("arm-none-eabi-objdump")
 SOURCE = ROOT / "src" / "expansion_chapter_objectives.c"
 DRIVER = Path(__file__).resolve().parent / "c" / "expansion_chapter_objectives_driver.c"
 FIXTURE = ROOT / "scripts" / "generated_data" / "tests" / "fixtures" / "chapterobjectives" / "valid.json"
@@ -105,7 +106,7 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
             self.assertIn("CHAPTER_OBJECTIVES_HOST_TEST: PASS", ran.stdout)
 
     def test_arm_aapcs_default_table_and_telemetry_budgets(self):
-        if ARM_CC is None or ARM_NM is None:
+        if ARM_CC is None or ARM_NM is None or ARM_OBJDUMP is None:
             self.skipTest("arm-none-eabi compiler/binutils unavailable")
 
         build_root = ROOT / "build"
@@ -179,6 +180,21 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
                     sizes[fields[-1]] = int(fields[1], 16)
             self.assertEqual(sizes["gExpansionChapterObjectiveBundles"], 12)
             self.assertEqual(sizes["gExpansionChapterObjectiveTelemetry"], 16)
+
+            table = subprocess.run(
+                [ARM_OBJDUMP, "-t", str(runtime_object)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(table.returncode, 0, table.stdout + table.stderr)
+            telemetry_symbols = [
+                line
+                for line in table.stdout.splitlines()
+                if line.endswith(" gExpansionChapterObjectiveTelemetry")
+            ]
+            self.assertEqual(len(telemetry_symbols), 1)
+            self.assertIn("ewram_data", telemetry_symbols[0].split())
 
 
 if __name__ == "__main__":
