@@ -1,0 +1,71 @@
+{
+  "$schema": "fe8.chapterobjectives.v1",
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "ChapterObjectives_FixtureL2",
+      "aiGroups": [
+        {
+          "id": "AI_GROUP_FIXTURE_L2",
+          "members": [
+            {
+              "character": "CHARACTER_EIRIKA",
+              "unitGroup": "UnitDef_Fixture_L2Ally"
+            }
+          ]
+        }
+      ],
+      "objectives": [
+        {
+          "id": "OBJECTIVE_FIXTURE_L2_REACH",
+          "kind": "reach_area",
+          "group": "AI_GROUP_FIXTURE_L2",
+          "area": {
+            "xMin": 0,
+            "yMin": 0,
+            "xMax": 3,
+            "yMax": 3
+          }
+        }
+      ],
+      "dependencies": {
+        "characters": ["CHARACTER_EIRIKA"],
+        "eventFlags": [],
+        "unitGroups": ["UnitDef_Fixture_L2Ally"]
+      }
+    },
+    {
+      "chapter": "CHAPTER_L_3",
+      "symbol": "ChapterObjectives_FixtureL3",
+      "aiGroups": [
+        {
+          "id": "AI_GROUP_FIXTURE_L3",
+          "members": [
+            {
+              "character": "CHARACTER_SETH",
+              "unitGroup": "UnitDef_Fixture_L3Ally"
+            }
+          ]
+        }
+      ],
+      "objectives": [
+        {
+          "id": "OBJECTIVE_FIXTURE_L3_REACH",
+          "kind": "reach_area",
+          "group": "AI_GROUP_FIXTURE_L3",
+          "area": {
+            "xMin": 0,
+            "yMin": 0,
+            "xMax": 3,
+            "yMax": 3
+          }
+        }
+      ],
+      "dependencies": {
+        "characters": ["CHARACTER_SETH"],
+        "eventFlags": [],
+        "unitGroups": ["UnitDef_Fixture_L3Ally"]
+      }
+    }
+  ]
+}

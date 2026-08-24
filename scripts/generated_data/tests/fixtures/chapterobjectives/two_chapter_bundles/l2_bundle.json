@@ -1,0 +1,24 @@
+{
+  "$schema": "fe8.chapterbundle.v1",
+  "chapter": {
+    "id": "CHAPTER_L_2",
+    "name": "L2",
+    "chapterSettingsIndex": 2,
+    "internalName": "L02",
+    "mapEventDataId": 13
+  },
+  "manifest": {"table": "eventlists", "symbol": "Ch2Events"},
+  "tables": {
+    "units": {
+      "source": "scripts/generated_data/tests/fixtures/chapterobjectives/deps_units_two_chapters.json",
+      "symbols": ["UnitDef_Fixture_L2Ally"]
+    }
+  },
+  "supportOwners": {"source": "src/data/supports.json", "required": []},
+  "chapterObjectives": {
+    "source": "scripts/generated_data/tests/fixtures/chapterobjectives/two_chapters.json",
+    "symbols": ["ChapterObjectives_FixtureL2"]
+  },
+  "externalReferences": [],
+  "dependencies": {"characters": [], "classes": [], "items": []}
+}

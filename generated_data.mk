@@ -431,7 +431,7 @@ GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)
 # lane retains its historical source/object set, while modern builds link this
 # additive generated record table and the pointer-free evaluator.
 GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE ?= src/data/chapter_objectives.json
-GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE ?= src/data/ch2_bundle.json
+GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE ?= src/data
 GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY ?= \
 	reports/generated_data_chapterobjectives_inventory.md
 GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED := $(shell $(PYTHON) -c \
@@ -441,16 +441,19 @@ ifeq ($(GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED),)
 GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED := 0
 endif
 GENERATED_DATA_CHAPTEROBJECTIVES_C := $(GENERATED_DATA_OUT_DIR)/data_chapter_objectives.c
+GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_INPUTS := $(or \
+	$(wildcard $(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE)/*_bundle.json), \
+	$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE))
 GENERATED_DATA_CONFIG_INPUTS_chapterobjectives := \
 	include/constants/chapters.h \
 	include/constants/characters.h \
 	include/constants/event-flags.h \
 	include/bmunit.h \
 	src/data/ch2_units.json \
-	$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE)
+	$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_INPUTS)
 
 $(GENERATED_DATA_CHAPTEROBJECTIVES_C): $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE) \
-	$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE) \
+	$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_INPUTS) \
 	$(GENERATED_DATA_SHARED_PY_SOURCES) \
 	$(wildcard scripts/generated_data/chapterobjectives/*.py) \
 	$(GENERATED_DATA_CONFIG_INPUTS_chapterobjectives)
