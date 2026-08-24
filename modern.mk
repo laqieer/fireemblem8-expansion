@@ -3375,18 +3375,33 @@ expansion-modern-autoplay-bounds-check: expansion-modern-boot-preflight expansio
 # never becomes a broad visual/audio/timing scenario gate.
 MODERN_AUTOPLAY_ACCELERATED_RUNTIME_SCRIPT := \
 	tools/gba-playtest/run_accelerated_fidelity_checks.py
+MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT := \
+	build/expansion-modern-autoplay-accelerated-fidelity
+MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROM := \
+	$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_AUTOPLAY_ACCELERATED_PROFILE_ELF := \
+	$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
 MODERN_AUTOPLAY_ACCELERATED_RUNTIME_OUTDIR := \
 	$(MODERN_OUTPUT_DIR)/autoplay-accelerated-fidelity-check
 
+CLEAN_DIRS += $(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT)
+
 ifeq ($(MODERN_CONFIG),debug)
+expansion-modern-autoplay-accelerated-fidelity-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT) \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_AUTOPLAY_EVENT_TRACE_TEST=1
+
 expansion-modern-autoplay-accelerated-fidelity-check: \
-		expansion-modern-boot-preflight expansion-modern-rom
+		expansion-modern-boot-preflight \
+		expansion-modern-autoplay-accelerated-fidelity-profile-rom
 	@mkdir -p "$(MODERN_AUTOPLAY_ACCELERATED_RUNTIME_OUTDIR)/tmp"
 	TMPDIR="$(abspath $(MODERN_AUTOPLAY_ACCELERATED_RUNTIME_OUTDIR)/tmp)" \
 		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
 		"$(PYTHON)" "$(MODERN_AUTOPLAY_ACCELERATED_RUNTIME_SCRIPT)" \
-		--rom "$(MODERN_ROM)" \
-		--elf "$(MODERN_ELF)" \
+		--rom "$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROM)" \
+		--elf "$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ELF)" \
 		--rom-commit "$(MODERN_BUILD_COMMIT)" \
 		--configuration "modern-$(MODERN_CONFIG)/$(MODERN_ABI)" \
 		--out-dir "$(MODERN_AUTOPLAY_ACCELERATED_RUNTIME_OUTDIR)"

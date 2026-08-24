@@ -170,9 +170,10 @@ semantic trace probes, which are canonicalized by binding and size so
 equivalent input order produces one stable fingerprint shape. The backend
 emits a complete snapshot only when one of those semantic values changes,
 preserving action/RNG order without treating wall-clock timing as behavior.
-Event commands append the first observed state and every later bounded ordered
-state transition at the event command-commit seam, including the command,
-slot-C/counter, and chapter/permanent flag state;
+The dedicated accelerated-fidelity test ROM alone records the first observed
+state and every later bounded ordered state transition at the event
+command-commit seam, including the command, slot-C/counter, and
+chapter/permanent flag state;
 the terminal checkpoint compares every record and fails on overflow. Endpoints
 also cover the active blue, red, and green unit slots. The declared frame bound
 multiplied by trace-probe count may not exceed 450,000 records, bounding backend
@@ -190,8 +191,8 @@ fingerprints, including terminal and trace frame timestamps; no snapshot may
 claim configuration or trace activity after its terminal frame.
 
 The existing presentation-policy seam adopts a raw `gPlaySt.config.animationType`
-change when its cached selection disagrees. The accelerated harness additionally
-probes `BanimPresentationPolicy_GetCurrent()` in the real debug ROM and requires
+change when its cached selection disagrees. The accelerated test ROM additionally
+probes `BanimPresentationPolicy_GetCurrent()` and requires
 `BANIM_PRESENTATION_POLICY_OFF`, rather than treating config bits alone as proof.
 
 The focused Chapter 2 fixture freezes 17,135 normal-fidelity frames and

@@ -49,7 +49,7 @@ struct BanimPresentationPolicy
     /* 0E */ u16 timingMaxFrames;
 };
 
-#if FE8_EXPANSION_DEBUG
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
 struct BanimPresentationPolicyHarnessProbe
 {
     /* 00 */ u32 currentPolicyId;

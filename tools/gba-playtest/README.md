@@ -381,9 +381,9 @@ non-empty `trace` array of normal 1/2/4-byte semantic probes, canonicalized by
 binding and size so input order cannot change the fingerprint shape. The
 backend samples it each emulated frame and emits a full snapshot only on a
 semantic change, retaining action/RNG order without making host wall-clock time
-a behavioral oracle. Event commands append the first observed state and every
-later bounded ordered command/slot-C/counter/chapter-flag/permanent-flag
-transition at their commit seam; the terminal
+a behavioral oracle. The dedicated accelerated test ROM alone appends the
+first observed state and every later bounded ordered command/slot-C/counter/
+chapter-flag/permanent-flag transition at the commit seam; the terminal
 checkpoint compares every record and rejects overflow. The endpoint covers
 active blue, red, and green unit slots. Its declared frame bound multiplied by
 trace-probe count may not exceed 450,000 records, bounding backend stdout and

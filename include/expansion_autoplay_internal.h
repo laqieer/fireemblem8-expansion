@@ -20,6 +20,8 @@ void ExpansionAutoplay_RecordCommittedAction(
 void ExpansionAutoplay_RecordRelationCheck(int leftSlot, int rightSlot, bool allied);
 void ExpansionAutoplay_RecordUnsupportedEscape(void);
 void ExpansionAutoplay_RecordSuspendSuppressed(void);
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
 void ExpansionAutoplay_RecordEventCommand(u8 command);
+#endif
 
 #endif /* GUARD_EXPANSION_AUTOPLAY_INTERNAL_H */

@@ -224,8 +224,9 @@ all terminal semantic probes (including active blue, red, and green unit state
 and items), ordered committed-action/event telemetry, chapter/permanent and
 objective-result flag transitions, and every sampled RNG state are identical.
 Every repeated same-profile sample also has identical terminal and ordered
-trace frames. Event command commits append a bounded ordered telemetry record;
-overflow is a failure. The accelerated runtime probes
+trace frames. The dedicated accelerated test ROM has event command commits
+append a bounded ordered telemetry record; overflow is a failure. The
+accelerated runtime probes
 `BanimPresentationPolicy_GetCurrent()->id` and requires OFF after the harness
 applies its existing configuration. Semantic-only terminal checkpoints omit the
 unused whole-frame hash while libmGBA still allocates and renders its framebuffer
@@ -247,10 +248,11 @@ their existing normal-fidelity paths and fingerprints.
 
 This is a harness profile only. It depends on #85 telemetry, #86 bounded
 terminal semantics, existing game-speed and battle-presentation policy seams,
-ELF probes, and libmGBA. It adds no player-facing switch, target code,
-save field, preference, migration, compatibility epoch, configuration
-identity, generated data, localization, ROM allocation, RAM allocation, or
-archival-lane behavior.
+ELF probes, and libmGBA. Its private accelerated-ROM build alone links bounded
+event-transition and presentation-policy probes; ordinary debug/release,
+starter/HQ profiles, and the archival lane omit them. It adds no player-facing
+switch, save field, preference, migration, compatibility epoch, configuration
+identity, generated game content, localization, or archival-lane behavior.
 
 ### Automation, cleanup, and limitations
 

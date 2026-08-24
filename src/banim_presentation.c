@@ -54,7 +54,7 @@ EWRAM_DATA static u8 sSelectedPolicyState;
 IWRAM_DATA static u8 sSelectedPolicyState;
 #endif
 
-#if FE8_EXPANSION_DEBUG
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
 EWRAM_DATA struct BanimPresentationPolicyHarnessProbe
     gBanimPresentationPolicyHarnessProbe = {0};
 #endif
@@ -141,7 +141,7 @@ struct BanimPresentationPolicy const *BanimPresentationPolicy_GetCurrent(void)
         policy = BanimPresentationPolicy_Get(sSelectedPolicyState - 1);
     }
 
-#if FE8_EXPANSION_DEBUG
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
     if (policy != NULL)
     {
         gBanimPresentationPolicyHarnessProbe.currentPolicyId = policy->id;

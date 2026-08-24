@@ -1,8 +1,10 @@
 #include "global.h"
 
 #include "bmunit.h"
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
 #include "event.h"
 #include "variables.h"
+#endif
 #include "cp_common.h"
 
 #include "expansion_autoplay_internal.h"
@@ -21,6 +23,7 @@ static u32 EXPANSION_AUTOPLAY_IWRAM_DATA sExpansionBlueControl =
     EXPANSION_BLUE_CONTROL_PLAYER;
 struct ExpansionAutoplayTelemetry EXPANSION_AUTOPLAY_IWRAM_DATA
     gExpansionAutoplayTelemetry = { 0 };
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
 EWRAM_DATA struct ExpansionAutoplayEventTrace gExpansionAutoplayEventTrace = { 0 };
 
 struct ExpansionAutoplayEventTracePrevious
@@ -34,6 +37,7 @@ struct ExpansionAutoplayEventTracePrevious
 
 EWRAM_DATA static struct ExpansionAutoplayEventTracePrevious
     sExpansionAutoplayEventTracePrevious = { 0 };
+#endif
 
 static void IncrementBounded(u32* value)
 {
@@ -47,6 +51,7 @@ static void SetFailure(enum ExpansionAutoplayFailure failure)
     gExpansionAutoplayTelemetry.failure = failure;
 }
 
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
 static u32 ReadFlagWord(const u8* bits)
 {
     return (u32)bits[0]
@@ -54,20 +59,25 @@ static u32 ReadFlagWord(const u8* bits)
         | ((u32)bits[2] << 16)
         | ((u32)bits[3] << 24);
 }
+#endif
 
 void ExpansionAutoplay_Reset(void)
 {
     u8* byte = (u8*)&gExpansionAutoplayTelemetry;
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
     u8* eventTraceByte = (u8*)&gExpansionAutoplayEventTrace;
     u8* eventTracePreviousByte = (u8*)&sExpansionAutoplayEventTracePrevious;
+#endif
     int i;
 
     for (i = 0; i < (int)sizeof(gExpansionAutoplayTelemetry); i++)
         byte[i] = 0;
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
     for (i = 0; i < (int)sizeof(gExpansionAutoplayEventTrace); i++)
         eventTraceByte[i] = 0;
     for (i = 0; i < (int)sizeof(sExpansionAutoplayEventTracePrevious); i++)
         eventTracePreviousByte[i] = 0;
+#endif
 
     sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
     gExpansionAutoplayTelemetry.controller = EXPANSION_BLUE_CONTROL_PLAYER;
@@ -302,6 +312,7 @@ void ExpansionAutoplay_RecordSuspendSuppressed(void)
         IncrementBounded(&gExpansionAutoplayTelemetry.suspendWriteSuppressedCount);
 }
 
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
 void ExpansionAutoplay_RecordEventCommand(u8 command)
 {
     struct ExpansionAutoplayEventTraceEntry* entry;
@@ -346,3 +357,4 @@ void ExpansionAutoplay_RecordEventCommand(u8 command)
     entry->permanentFlags = permanentFlags;
     gExpansionAutoplayEventTrace.count++;
 }
+#endif

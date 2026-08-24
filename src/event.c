@@ -20,7 +20,7 @@
 #include "eventinfo.h"
 #include "event.h"
 #include "eventscript.h"
-#ifndef FE8_ARCHIVAL_BUILD
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
 #include "expansion_autoplay_internal.h"
 #endif
 
@@ -110,7 +110,7 @@ void EventEngine_OnUpdate(struct EventEngineProc * proc)
         evFunc = (evCode < 0x80) ? gEventLoCmdTable[evCode] : gEventHiCmdTable[evCode - 0x80];
 
         commandResult = evFunc(proc);
-#ifndef FE8_ARCHIVAL_BUILD
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
         ExpansionAutoplay_RecordEventCommand(evCode);
 #endif
 
