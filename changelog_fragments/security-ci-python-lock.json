@@ -1,0 +1,6 @@
+{
+  "issue": null,
+  "category": "security",
+  "summary": "Hash-lock Build and release Python dependencies before artifact publication.",
+  "semver_impact": "patch"
+}
