@@ -53,6 +53,10 @@ def _write_png(
     iend=b"",
     palette=None,
     pixels=None,
+    ancillary_before_plte=(),
+    ancillary_before_idat=(),
+    ancillary_after_idat=(),
+    split_idat=False,
 ):
     if palette is None:
         palette = ((0, 0, 0), (255, 255, 255))
@@ -66,18 +70,31 @@ def _write_png(
         for offset in range(row_start, row_start + width, 2):
             scanlines.append((pixels[offset] << 4) | pixels[offset + 1])
     palette_bytes = bytes(component for color in palette for component in color)
-    payload = (
-        b"\x89PNG\r\n\x1a\n"
-        + _chunk(
+    compressed = zlib.compress(bytes(scanlines))
+    if split_idat:
+        midpoint = len(compressed) // 2
+        idat_parts = (compressed[:midpoint], compressed[midpoint:])
+    else:
+        idat_parts = (compressed,)
+    chunks = (
+        (
             b"IHDR",
-            struct.pack(
-                ">IIBBBBB", width, height, depth, color_type, 0, 0, 0
-            ),
-        )
-        + _chunk(b"PLTE", palette_bytes)
-        + _chunk(b"tRNS", alpha)
-        + _chunk(b"IDAT", zlib.compress(bytes(scanlines)))
-        + _chunk(b"IEND", iend)
+            struct.pack(">IIBBBBB", width, height, depth, color_type, 0, 0, 0),
+        ),
+        *ancillary_before_plte,
+        (b"PLTE", palette_bytes),
+        (b"tRNS", alpha),
+        *ancillary_before_idat,
+        *((b"IDAT", part) for part in idat_parts),
+        *ancillary_after_idat,
+        (b"IEND", iend),
+    )
+    _write_png_chunks(path, chunks)
+
+
+def _write_png_chunks(path, chunks):
+    payload = b"\x89PNG\r\n\x1a\n" + b"".join(
+        _chunk(name, data) for name, data in chunks
     )
     with open(path, "wb") as handle:
         handle.write(payload)
@@ -578,6 +595,63 @@ class CustomSpellAdapterTests(unittest.TestCase):
         _write_png(nonempty_iend, 240, 64, iend=b"invalid")
         with self.assertRaisesRegex(ValueError, "non-empty IEND"):
             custom_spell.read_indexed_png(nonempty_iend, 240, 64)
+
+    def test_png_accepts_legal_ancillary_and_consecutive_idat_chunks(self):
+        path = os.path.join(TEST_ROOT, "ancillary-multi-idat.png")
+        _write_png(
+            path,
+            240,
+            64,
+            ancillary_before_plte=((b"gAMA", struct.pack(">I", 45455)),),
+            ancillary_before_idat=((b"tEXt", b"source\0before"),),
+            ancillary_after_idat=((b"tEXt", b"source\0after"),),
+            split_idat=True,
+        )
+        self.assertEqual(
+            len(custom_spell.read_indexed_png(path, 240, 64)["pixels"]),
+            240 * 64,
+        )
+
+    def test_png_rejects_unknown_critical_and_invalid_chunk_ordering(self):
+        path = os.path.join(TEST_ROOT, "unknown-critical.png")
+        _write_png(path, 240, 64, ancillary_before_idat=((b"ABCD", b""),))
+        with self.assertRaisesRegex(ValueError, "unsupported critical"):
+            custom_spell.read_indexed_png(path, 240, 64)
+
+        width = 240
+        height = 64
+        scanlines = b"\0" * (height * (width // 2 + 1))
+        compressed = zlib.compress(scanlines)
+        ihdr = struct.pack(">IIBBBBB", width, height, 4, 3, 0, 0, 0)
+        palette = b"\0\0\0\xff\xff\xff"
+        midpoint = len(compressed) // 2
+        _write_png_chunks(
+            path,
+            (
+                (b"IHDR", ihdr),
+                (b"PLTE", palette),
+                (b"tRNS", b"\0\xff"),
+                (b"IDAT", compressed[:midpoint]),
+                (b"tEXt", b"split\0idat"),
+                (b"IDAT", compressed[midpoint:]),
+                (b"IEND", b""),
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "IDAT chunks must be contiguous"):
+            custom_spell.read_indexed_png(path, 240, 64)
+
+        _write_png_chunks(
+            path,
+            (
+                (b"IHDR", ihdr),
+                (b"PLTE", palette),
+                (b"IDAT", compressed),
+                (b"tRNS", b"\0\xff"),
+                (b"IEND", b""),
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "tRNS must occur after PLTE and before IDAT"):
+            custom_spell.read_indexed_png(path, 240, 64)
 
     def test_background_scaling_and_tsa_vectors(self):
         pixels = bytearray()

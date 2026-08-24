@@ -193,16 +193,47 @@ def _png_chunk_stream(path):
 def read_indexed_png(path, width, height):
     """Read the exact indexed 4bpp PNG subset accepted by the adapter."""
     chunks = _png_chunk_stream(path)
-    names = [name for name, _ in chunks]
-    required_order = [b"IHDR", b"PLTE", b"tRNS", b"IDAT", b"IEND"]
-    if names != required_order:
-        raise ValueError(
-            "{} must contain exactly IHDR, PLTE, tRNS, IDAT, IEND".format(path)
-        )
-    if len(chunks[0][1]) != 13:
+    if not chunks or chunks[0][0] != b"IHDR" or len(chunks[0][1]) != 13:
         raise ValueError("{} has an invalid IHDR".format(path))
+    ihdr = chunks[0][1]
+    palette_bytes = None
+    transparency = None
+    idat_parts = []
+    idat_finished = False
+    for index, (name, payload) in enumerate(chunks):
+        if name == b"IHDR":
+            if index != 0:
+                raise ValueError("{} must contain exactly one IHDR before all chunks".format(path))
+        elif name == b"PLTE":
+            if palette_bytes is not None or idat_parts:
+                raise ValueError("{} must contain exactly one PLTE before IDAT".format(path))
+            palette_bytes = payload
+        elif name == b"tRNS":
+            if transparency is not None:
+                raise ValueError("{} must contain at most one tRNS chunk".format(path))
+            if palette_bytes is None or idat_parts:
+                raise ValueError("{} tRNS must occur after PLTE and before IDAT".format(path))
+            transparency = payload
+        elif name == b"IDAT":
+            if palette_bytes is None:
+                raise ValueError("{} PLTE must occur before IDAT".format(path))
+            if idat_finished:
+                raise ValueError("{} IDAT chunks must be contiguous".format(path))
+            idat_parts.append(payload)
+        elif name == b"IEND":
+            if index != len(chunks) - 1:
+                raise ValueError("{} IEND must be the final chunk".format(path))
+        else:
+            if not name[0] & 0x20:
+                raise ValueError("{} has an unsupported critical chunk".format(path))
+            if idat_parts:
+                idat_finished = True
+    if palette_bytes is None:
+        raise ValueError("{} must contain exactly one PLTE before IDAT".format(path))
+    if not idat_parts:
+        raise ValueError("{} must contain IDAT image data".format(path))
     png_width, png_height, depth, color_type, compression, filtering, interlace = struct.unpack(
-        ">IIBBBBB", chunks[0][1]
+        ">IIBBBBB", ihdr
     )
     if (png_width, png_height) != (width, height):
         raise ValueError(
@@ -212,14 +243,13 @@ def read_indexed_png(path, width, height):
         raise ValueError(
             "{} must be non-interlaced indexed 4bpp PNG".format(path)
         )
-    palette_bytes = chunks[1][1]
     if not palette_bytes or len(palette_bytes) % 3 or len(palette_bytes) // 3 > 16:
         raise ValueError("{} palette must contain 1..16 RGB entries".format(path))
     palette = [
         tuple(palette_bytes[index:index + 3])
         for index in range(0, len(palette_bytes), 3)
     ]
-    alpha = list(chunks[2][1])
+    alpha = list(transparency or b"")
     if not alpha or len(alpha) > len(palette):
         raise ValueError("{} tRNS exceeds PLTE".format(path))
     alpha.extend([255] * (len(palette) - len(alpha)))
@@ -231,7 +261,7 @@ def read_indexed_png(path, width, height):
     expected = height * (row_bytes + 1)
     try:
         decompressor = zlib.decompressobj()
-        raw = decompressor.decompress(chunks[3][1], expected + 1)
+        raw = decompressor.decompress(b"".join(idat_parts), expected + 1)
         if len(raw) > expected or decompressor.unconsumed_tail:
             raise ValueError("{} PNG scanlines exceed expected size".format(path))
         raw += decompressor.flush(expected + 1 - len(raw))

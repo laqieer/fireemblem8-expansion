@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import copy
+import contextlib
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -17,7 +19,7 @@ import zlib
 from unittest import mock
 from types import SimpleNamespace
 
-from scripts.assets import banim, manifest, tmx
+from scripts.assets import banim, cli, manifest, tmx
 from scripts.generated_data.diagnostics import GeneratedDataError, GeneratedDataValidationError
 
 
@@ -606,6 +608,39 @@ class AssetManifestTests(unittest.TestCase):
         self.assertIn("assets/tmx/Ch2Map.tmx", sources)
         self.assertTrue(all("$(" not in source for source in sources))
         self.assertFalse(any(source.startswith("build/") for source in sources))
+
+    def test_discovery_rejects_missing_dependency_ownership_without_conversion(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            template = json.load(handle)
+        cases = (
+            ("tiled-tmx-map-layout", "chapterSettings"),
+            ("formatted-portrait-package", "registrySource"),
+            ("battle-animation-package", "classData"),
+        )
+        for kind_name, field in cases:
+            with self.subTest(kind=kind_name, field=field):
+                document = copy.deepcopy(template)
+                record = next(
+                    item for item in document["assets"] if item["kind"] == kind_name
+                )
+                del record["ownership"][field]
+                source = self.write_document(document)
+                stderr = io.StringIO()
+                with (
+                    mock.patch.object(tmx, "parse_tmx") as tmx_convert,
+                    mock.patch.object(banim, "load_package") as banim_convert,
+                    mock.patch.object(
+                        manifest.FormattedPortraitPackageKind, "_validate_metadata"
+                    ) as portrait_convert,
+                    mock.patch.object(manifest, "_write_bytes_if_changed") as write_output,
+                    contextlib.redirect_stderr(stderr),
+                ):
+                    self.assertEqual(cli.main(["--manifest", source, "sources"]), 1)
+                self.assertIn("ownership.{}".format(field), stderr.getvalue())
+                tmx_convert.assert_not_called()
+                banim_convert.assert_not_called()
+                portrait_convert.assert_not_called()
+                write_output.assert_not_called()
 
     def test_make_rejects_output_override_with_portrait_incbin_consumer(self):
         result = self.run_assets_make(

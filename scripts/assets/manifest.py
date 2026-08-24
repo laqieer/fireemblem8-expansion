@@ -227,8 +227,30 @@ def load_discovery(path):
                 _repo_path(source, loc, "{}.sources".format(record.id))
             except GeneratedDataError as error:
                 diagnostics.add(error)
+        _validate_discovery_source_dependencies(kind, record, diagnostics)
     diagnostics.raise_if_any()
     return records
+
+
+def _validate_discovery_source_dependencies(kind, record, diagnostics):
+    for field in getattr(kind, "_discovery_ownership_source_fields", ()):
+        reference = "{}.ownership.{}".format(record.id, field)
+        location = record.ownership_locs.get(field, record.loc)
+        if field not in record.ownership:
+            diagnostics.add(
+                GeneratedDataError(
+                    "missing ownership field '{}' required for dependency discovery".format(
+                        field
+                    ),
+                    location,
+                    reference,
+                )
+            )
+            continue
+        try:
+            _repo_path(record.ownership[field], location, reference)
+        except GeneratedDataError as error:
+            diagnostics.add(error)
 
 
 def _repo_path(path, loc, reference_path):
@@ -655,6 +677,10 @@ class ChapterMapLayoutKind:
     _object = "src/data/data_8B363C.o"
     _modern_object = "$(MODERN_OUTPUT_DIR)/src/data/data_8B363C.o"
     _map_buffer_bytes = 0x800
+    _discovery_ownership_source_fields = (
+        "chapterSettings",
+        "tableSource",
+    )
 
     @staticmethod
     def _map_payload_bytes(tile_count):
@@ -1101,6 +1127,7 @@ class FormattedPortraitPackageKind:
         "mouthOpen": (96, 72, 32, 16),
     }
     _c_symbol_re = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+    _discovery_ownership_source_fields = ("registrySource",)
 
     def _validate_metadata(self, record, diagnostics):
         metadata_path = record.sources[1]
@@ -1368,6 +1395,11 @@ class BattleAnimationPackageKind:
         "linkerScript": "linker_script_banim.txt",
         "consumer": "GetBattleAnimationId",
     }
+    _discovery_ownership_source_fields = (
+        "classData",
+        "tableSource",
+        "linkerScript",
+    )
     _object = "src/banim_data.o"
     _definitions_object = "src/data_banimconf.o"
     _banim_object = "banim/data_banim.o"
