@@ -16,6 +16,7 @@
       "one-phase-blue-delegation",
       "bounded-semantic-run-until",
       "typed-chapter-autoplay-objectives",
+      "accelerated-fidelity-harness",
       "custom-spell-runtime",
       "hq-pcm-mixer",
       "patch-release-artifact",
@@ -495,6 +496,18 @@
       "status": "current",
       "required_cases": [
         "TC-AUTOPLAY-OBJECTIVE-001"
+      ]
+    },
+    {
+      "id": "accelerated-fidelity-harness",
+      "title": "Accelerated-fidelity semantic harness profile",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/88"
+      ],
+      "reference": "docs/autoplay.md",
+      "status": "current",
+      "required_cases": [
+        "TC-AUTOPLAY-ACCEL-001"
       ]
     },
     {
@@ -2049,6 +2062,38 @@
       ]
     },
     {
+      "id": "TC-AUTOPLAY-ACCEL-001",
+      "title": "Accelerated-fidelity equivalence",
+      "feature_id": "accelerated-fidelity-harness",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/88"
+      ],
+      "document": "docs/test-cases/autoplay.md",
+      "anchor": "tc-autoplay-accel-001-accelerated-fidelity-equivalence",
+      "profiles": [
+        "Dedicated modern AAPCS debug accelerated-fidelity test ROM and exact linked ELF, paired normal-fidelity and accelerated-fidelity runs"
+      ],
+      "purpose": "Prove every emulated frame remains real core execution while existing game-speed/BANIM-off settings reduce the focused fixture's frame count without changing its semantic outcome.",
+      "prerequisites": "Repository root with Python 3.10+, host C compiler, libmGBA development files, and modern ARM toolchain; clean boot with no save or savestate.",
+      "actions": "Run the focused profile/backend test and the debug-only accelerated-fidelity Make target, then inspect its ignored benchmark JSON.",
+      "expected_result": "The same ROM reaches equal terminal semantic state, ordered action/RNG trace plus bounded append-only event-command and named objective-flag records (WIN, DEFEAT_ALL, GAMEOVER), every pointer-free gameplay field for active blue/red/green units, objective result, and turn/action counts; BanimPresentationPolicy_GetCurrent()->id is OFF for accelerated fidelity; every repeated same-profile sample has identical terminal and trace frames; baseline is 17135 frames and accelerated is 16869 frames.",
+      "negative_control": "Malformed/duplicate profile fields, accelerated framebuffer/region/pixel evidence, terminal-impossible profile/trace timestamps, ROM/VRAM/palette/OAM/SRAM or ignored-write configuration bindings, over-budget trace output, event-transition overflow, a non-OFF cached presentation policy, or unexpected semantic checkpoint framebuffer output fail; deliberately perturbed trace or same-profile frame data is rejected even when a candidate is faster.",
+      "interactions": "Depends on #85 telemetry, #86 bounded terminal semantics, and tester-case catalog #54. #91 consumes this profile for deterministic batch reports; later external planner and campaign experiments may also consume it. Conflicts with visual, audio, or presentation-timing acceptance cases, which remain normal fidelity.",
+      "save_compatibility": "The dedicated accelerated debug test ROM alone adds 1,316 EWRAM bytes for transition/policy telemetry; ordinary debug/release, starter/HQ, and archival builds omit it. No saved field, preference, migration, epoch, generated data, localization, configuration identity, or archival behavior changes.",
+      "cleanup": "The benchmark writes only ignored build output; use make clean_fast when that output must be removed.",
+      "limitations": "No gameplay simulation, frame skipping, savestate, player-facing setting, visual/audio/timing proof, or wall-clock pass/fail threshold.",
+      "automation": [
+        {
+          "command": "python3 tools/gba-playtest/tests/test_accelerated_fidelity.py -v",
+          "evidence": "tools/gba-playtest/tests/test_accelerated_fidelity.py"
+        },
+        {
+          "command": "make expansion-modern-autoplay-accelerated-fidelity-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_accelerated_fidelity_checks.py"
+        }
+      ]
+    },
+    {
       "id": "TC-AUTOPLAY-OBJECTIVE-001",
       "title": "Typed authored objective lifecycle",
       "feature_id": "typed-chapter-autoplay-objectives",
@@ -2062,12 +2107,12 @@
         "Disposable generated Chapter 2 fixture",
         "Modern AAPCS debug ROM with #86 bounded default-PLAYER route"
       ],
-      "purpose": "Prove typed generic objective lifecycle evaluation, same-chapter bundle ownership, continuous hold failure latching, pointer-free telemetry, and unchanged-chapter inertness.",
+      "purpose": "Prove typed generic objective lifecycle evaluation, indexed same-chapter bundle ownership, continuous hold failure latching, pointer-free telemetry, and unchanged-chapter inertness.",
       "prerequisites": "Repository root with Python 3 and a host C compiler; the bounded debug ROM negative also requires the modern ARM toolchain and libmGBA. Start without a save or savestate.",
       "actions": "Run the focused generated-data/objective host selectors, then the bounded debug objective target.",
-      "expected_result": "All five generic kinds produce deterministic pending/success/failure state and progress; a hold violation latches its declared existing failure flag so leave/re-enter fails; reset/reload reconstructs state from chapter data; the unchanged debug route exposes zero objective telemetry.",
-      "negative_control": "Malformed references, cross-chapter unit groups, duplicate/capacity/area/turn/flag/dependency/cycle errors fail closed; clearing transient telemetry cannot preserve hidden objective state; the existing chapter terminates at max_frames with no active objective.",
-      "interactions": "Depends on #85/#86 only for semantic telemetry/probe transport and reuses the generated-data registry, chapter bundle, unit groups, event flags, and helper catalog. It does not define AI strategy or a second router.",
+      "expected_result": "All five generic kinds produce deterministic pending/success/failure state and progress; each authored chapter resolves only its indexed owner bundle; a hold violation latches its declared existing failure flag so leave/re-enter fails; the unchanged debug route exposes zero objective telemetry.",
+      "negative_control": "Missing, duplicate, stale, or cross-chapter bundle/unit-group ownership; duplicate/capacity/area/turn/flag/dependency/cycle errors fail closed; clearing transient telemetry cannot preserve hidden objective state.",
+      "interactions": "Depends on #85/#86 only for semantic telemetry/probe transport and reuses the generated-data registry, indexed chapter bundles, unit groups, event flags, and helper catalog. It does not define AI strategy or a second router.",
       "save_compatibility": "No save bytes, migration, preference, compatibility epoch, or serialized objective state. Runtime status is derived from existing chapter/event state; continuous holds use their author-declared existing event-flag latch.",
       "cleanup": "The host fixture is temporary under build/. Use make clean_fast only for ignored artifacts.",
       "limitations": "No project strategy, route, balance claim, player-visible text, natural-language goal, or general event language.",
@@ -2075,10 +2120,6 @@
         {
           "command": "python3 -m unittest scripts.generated_data.tests.test_chapterobjectives_schema scripts.generated_data.tests.test_chapterbundle_schema scripts.generated_data.tests.test_cli_new_tables.CliChapterObjectivesTests -v",
           "evidence": "scripts/generated_data/tests/test_chapterobjectives_schema.py"
-        },
-        {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_chapter_objectives -v",
-          "evidence": "tools/gba-playtest/tests/test_chapter_objectives.py"
         },
         {
           "command": "make expansion-modern-chapter-objectives-check MODERN_CONFIG=debug MODERN_ABI=aapcs",

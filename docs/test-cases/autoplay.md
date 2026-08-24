@@ -328,3 +328,102 @@ The host test removes its repository-local temporary fixture. Use
 `make clean_fast` only to remove ignored build artifacts. This case does not
 prove strategy quality, balance, a project route, recruitment/village/chest
 policy, player-facing text, or a general expression language.
+## TC-AUTOPLAY-ACCEL-001: Accelerated-fidelity equivalence
+
+- **Feature / originating issue:** `accelerated-fidelity-harness` /
+  [#88](https://github.com/laqieer/fireemblem8-expansion/issues/88).
+- **Dependencies, dependents, and conflicts:** depends on
+  [#85](https://github.com/laqieer/fireemblem8-expansion/issues/85) telemetry,
+  [#86](https://github.com/laqieer/fireemblem8-expansion/issues/86) bounded
+  terminal semantics, and tester-case catalog [#54](https://github.com/laqieer/fireemblem8-expansion/issues/54).
+  [#91](https://github.com/laqieer/fireemblem8-expansion/issues/91) consumes
+  this profile for deterministic batch reports; later external planner and
+  campaign experiments may also consume it. It conflicts with visual, audio,
+  or presentation-timing acceptance cases, which must remain normal fidelity.
+- **Supported configuration or artifact:** one modern AAPCS debug ROM and
+  exact linked ELF, run twice from the same clean boot, fixture, controller,
+  and deterministic RNG state: `normal-fidelity` and
+  `accelerated-fidelity`.
+- **Prerequisites and clean starting state:** repository root, Python 3.10+,
+  a host C compiler, libmGBA development files, and the modern ARM toolchain.
+  Use no save or savestate. The runner owns only ignored output under
+  `build/`.
+
+### Actions
+
+1. Run `python3 tools/gba-playtest/tests/test_accelerated_fidelity.py -v`.
+2. Run
+   `make expansion-modern-autoplay-accelerated-fidelity-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+3. Inspect
+   `build/expansion-modern/debug/aapcs/autoplay-accelerated-fidelity-check/accelerated-fidelity-benchmark.json`
+   for the reported libmGBA version, host/runner identity, ROM provenance,
+   source commit, profile names, and three non-gating wall-clock samples. This
+   success-only artifact is removed before each invocation and atomically
+   replaced only after all semantic and frame checks pass.
+
+Both profiles execute every frame through `core->runFrame()` and use the same
+clean Chapter 2 route and debug-only COMPUTER activation. The accelerated
+profile applies only the already-supported `gPlaySt.config.gameSpeed` setting
+and `BANIM_PRESENTATION_POLICY_OFF`'s existing animation option in its
+disposable emulator core after the route's fixed input cadence. It does not
+skip movement, camera, Proc, battle, event, trap, phase, save, or controller
+logic, and it never writes a user save fixture.
+
+### Expected result
+
+The baseline finishes with `success` after exactly **17,135** emulated frames.
+Accelerated fidelity finishes after exactly **16,869** frames, a deterministic
+**266-frame reduction**. The terminal objective result, turn/action counts,
+all terminal semantic probes (including every pointer-free gameplay field for
+active blue, red, and green units), ordered committed-action/event telemetry,
+chapter/permanent and
+named objective-result flag transitions (`EVFLAG_WIN`, `EVFLAG_DEFEAT_ALL`,
+and `EVFLAG_GAMEOVER`), and every sampled RNG state are identical.
+Every repeated same-profile sample also has identical terminal and ordered
+trace frames. The dedicated accelerated test ROM has event command commits
+append a bounded ordered telemetry record; overflow is a failure. The
+accelerated runtime probes
+`BanimPresentationPolicy_GetCurrent()->id` and requires OFF after the harness
+applies its existing configuration. Semantic-only terminal checkpoints omit the
+unused whole-frame hash while libmGBA still allocates and renders its framebuffer
+normally.
+
+### Negative control
+
+The focused host/backend fixture rejects malformed profile configuration,
+duplicate traces, unexpected framebuffer output, terminal-impossible
+configuration/trace timestamps, and over-budget trace output. The paired
+runner flips one committed semantic trace value after capture and requires the
+comparator to reject it; same-profile samples with shifted terminal or trace
+frames, an event-telemetry overflow, or a non-OFF cached presentation policy
+also fail. ROM, VRAM, palette, OAM, SRAM, or ignored-write configuration
+bindings also fail before any success-shaped profile record is emitted. A
+faster divergent action/event/RNG/flag route is therefore never
+accepted. Normal visual, audio, and presentation-timing scenarios remain on
+their existing normal-fidelity paths and fingerprints.
+
+### Interactions and save compatibility
+
+This is a harness profile only. It depends on #85 telemetry, #86 bounded
+terminal semantics, existing game-speed and battle-presentation policy seams,
+ELF probes, and libmGBA. Its private accelerated-ROM build alone links bounded
+event-transition and presentation-policy probes (1,316 EWRAM bytes);
+ordinary debug/release, starter/HQ profiles, and the archival lane omit them.
+It adds no player-facing switch, save field, preference, migration,
+compatibility epoch, configuration identity, generated game content,
+localization, or archival-lane behavior.
+
+### Automation, cleanup, and limitations
+
+- `tools/gba-playtest/tests/test_accelerated_fidelity.py` validates strict
+  schema-v3/profile parsing, plan-v5 semantic-only hashing, one real
+  `runFrame()` per fixture frame, profile application, and trace perturbation.
+- `expansion-modern-autoplay-accelerated-fidelity-check` runs the paired
+  modern-debug libmGBA fixture, freezes the frame target, and writes the
+  reproducible benchmark report. Wall-clock samples are report-only rather
+  than an exact-duration assertion.
+
+Delete ignored build output with `make clean_fast` only when needed. This case
+does not validate visual/audio/timing behavior, authorize emulator savestates,
+add a game-speed or animation setting, or model/simulate a shortened game
+path.
