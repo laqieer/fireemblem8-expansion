@@ -194,6 +194,9 @@ The existing presentation-policy seam adopts a raw `gPlaySt.config.animationType
 change when its cached selection disagrees. The accelerated test ROM additionally
 probes `BanimPresentationPolicy_GetCurrent()` and requires
 `BANIM_PRESENTATION_POLICY_OFF`, rather than treating config bits alone as proof.
+That private profile alone reserves 1,316 EWRAM bytes for the transition
+record, prior-state snapshot, and policy probe; ordinary debug/release,
+starter/HQ, and archival builds omit all three.
 
 The focused Chapter 2 fixture freezes 17,135 normal-fidelity frames and
 16,869 accelerated-fidelity frames (a 266-frame reduction). The benchmark

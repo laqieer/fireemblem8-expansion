@@ -249,10 +249,11 @@ their existing normal-fidelity paths and fingerprints.
 This is a harness profile only. It depends on #85 telemetry, #86 bounded
 terminal semantics, existing game-speed and battle-presentation policy seams,
 ELF probes, and libmGBA. Its private accelerated-ROM build alone links bounded
-event-transition and presentation-policy probes; ordinary debug/release,
-starter/HQ profiles, and the archival lane omit them. It adds no player-facing
-switch, save field, preference, migration, compatibility epoch, configuration
-identity, generated game content, localization, or archival-lane behavior.
+event-transition and presentation-policy probes (1,316 EWRAM bytes);
+ordinary debug/release, starter/HQ profiles, and the archival lane omit them.
+It adds no player-facing switch, save field, preference, migration,
+compatibility epoch, configuration identity, generated game content,
+localization, or archival-lane behavior.
 
 ### Automation, cleanup, and limitations
 
