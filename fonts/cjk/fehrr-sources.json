@@ -7,7 +7,7 @@
         "path": "glyph/fe8j/font.fontall.txt",
         "sha256": "91e41c51f1e010be9a9c2426513487252e8b789e63e2d95d06c44093d7710bc9"
       },
-      "glyph_count": 1174,
+      "glyph_count": 1177,
       "glyphs": [
         {
           "filename": "glyph/fe8j/FontText_C397.png",
@@ -2896,6 +2896,17 @@
           "packed_sha256": "1154e22253395871dfe6e1ba2c53e583dda7822c2d9ecf9e2f44d82b198a395a",
           "png_sha256": "ea4c7da42b45b5429527d413f525450892582914d07e0cc0c9d20bf312a739ea",
           "scalar": "U+51B7",
+          "selection_kind": "same_game_same_style",
+          "source_map": "glyph/fe8j/font.fontall.txt",
+          "source_style": "item",
+          "source_tier": "same-game",
+          "width": 9
+        },
+        {
+          "filename": "glyph/fe8j/FontItem_E587A6.png",
+          "packed_sha256": "744d2fcb1abb2d542ca9001e8174900b8aeac0155a8c43e5deb75dad046fffde",
+          "png_sha256": "85a5c7917ad17e3c96808e1b30e2bfc10ab1df36e1957a75982b1ca6f05b1c5f",
+          "scalar": "U+51E6",
           "selection_kind": "same_game_same_style",
           "source_map": "glyph/fe8j/font.fontall.txt",
           "source_style": "item",
@@ -7259,6 +7270,17 @@
           "width": 9
         },
         {
+          "filename": "glyph/fe8j/FontText_E6A49C.png",
+          "packed_sha256": "2e4a8c0ae1b575d2596d41e131f46996dc1b9e756b51680f367d80fedefb84d3",
+          "png_sha256": "4319dadf1cf5d2c2b2f2d594ff00d9277eefd0e4fd35e5fc621919ece5feddb3",
+          "scalar": "U+691C",
+          "selection_kind": "same_game_cross_style",
+          "source_map": "glyph/fe8j/font.fontall.txt",
+          "source_style": "text",
+          "source_tier": "same-game",
+          "width": 12
+        },
+        {
           "filename": "glyph/fe8j/FontItem_E6A5AD.png",
           "packed_sha256": "a453834896e1e7ec65ef914a1de9df9b7d830f04f61b8be22ab9f33d27e02a73",
           "png_sha256": "db181fb88b75d04d8f65353492e8f4df6df1f1746f72e118da420f5dbbf2617d",
@@ -8748,6 +8770,17 @@
           "packed_sha256": "6fcf2edb0667f70702220f30cf32c3bf91cc0d5a023b7f84bb676bdaf6947fd2",
           "png_sha256": "860c0a27829795b3aa14f37d753d6548058dd2871f433579251f71a1e4c8e895",
           "scalar": "U+76D7",
+          "selection_kind": "same_game_same_style",
+          "source_map": "glyph/fe8j/font.fontall.txt",
+          "source_style": "item",
+          "source_tier": "same-game",
+          "width": 8
+        },
+        {
+          "filename": "glyph/fe8j/FontItem_E79B9F.png",
+          "packed_sha256": "7343415a020f9bd1019b96cb1fe4f103e830a0af56e882c2bb317526a4cce26b",
+          "png_sha256": "ae1d9860cbd55b34830b2271348ff75377a814be752995d6d27f346b470554b9",
+          "scalar": "U+76DF",
           "selection_kind": "same_game_same_style",
           "source_map": "glyph/fe8j/font.fontall.txt",
           "source_style": "item",
@@ -12928,8 +12961,8 @@
       "selection_counts": {
         "febuilder_fallback": 0,
         "fehrr_supplemental": 3,
-        "same_game_cross_style": 73,
-        "same_game_same_style": 1098
+        "same_game_cross_style": 74,
+        "same_game_same_style": 1100
       },
       "source_locale": "fe8j",
       "supplemental_maps": [
@@ -32064,7 +32097,7 @@
         "path": "glyph/fe8cn/font.fontall.txt",
         "sha256": "9c8f59c5a330c42283212665ab9fec0b8eee1bc73a7bf9329bc694d958ea6ceb"
       },
-      "glyph_count": 1459,
+      "glyph_count": 1460,
       "glyphs": [
         {
           "filename": "glyph/标点符号/道具标点/FontItem·.png",
@@ -46741,6 +46774,17 @@
           "width": 9
         },
         {
+          "filename": "glyph/fe8cn/FontText_E9929F.png",
+          "packed_sha256": "e8fd8c27a8241cd2f27b9d06ac546e76095ea8f8cea716fa23d1c05f723aede5",
+          "png_sha256": "3d7ee310e347a411262c20c48b9ce2a7fdfd108fe35a8b80c14e3b6db898d73c",
+          "scalar": "U+949F",
+          "selection_kind": "same_game_cross_style",
+          "source_map": "glyph/fe8cn/font.fontall.txt",
+          "source_style": "text",
+          "source_tier": "same-game",
+          "width": 13
+        },
+        {
           "filename": "glyph/fe8cn/FontItem_E992A2.png",
           "packed_sha256": "77d578cbfb020b65dc0ffd1a5ed779f75881769361ebcc461ade364346d0773f",
           "png_sha256": "29eb2821fdb214cedbaf52cd598bff392d729722ccb7505683991492b3336b7b",
@@ -48120,7 +48164,7 @@
       "selection_counts": {
         "febuilder_fallback": 0,
         "fehrr_supplemental": 36,
-        "same_game_cross_style": 106,
+        "same_game_cross_style": 107,
         "same_game_same_style": 1317
       },
       "source_locale": "fe8cn",
@@ -74493,6 +74537,6 @@
   "source": {
     "commit": "0ac6a2b8df20a3861f657fcf1afd9d443b3ed98b",
     "repository": "https://github.com/laqieer/FEHRR.git",
-    "tree_sha256": "fdd8163a63a7649306b2793e541e4d4fa7b562386ca80e737c45ded8cff23ae9"
+    "tree_sha256": "359f7bbecedfab465535a68055f4bcedff1f820e17d89f2bdadfae296c3cfd7c"
   }
 }

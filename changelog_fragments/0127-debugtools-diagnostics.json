@@ -1,0 +1,6 @@
+{
+  "issue": 127,
+  "category": "added",
+  "summary": "Add typed, read-only title/map/prep debugtools State and Engine diagnostics with bounded views and exact forced display restoration.",
+  "semver_impact": "minor"
+}

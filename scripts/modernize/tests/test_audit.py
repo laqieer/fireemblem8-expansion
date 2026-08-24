@@ -30,16 +30,19 @@ class AuditTests(unittest.TestCase):
         return root
 
     def test_bitfield_matcher_is_linear_and_preserves_valid_declarations(self):
-        self.assertIsNotNone(
-            audit.BITFIELD_RE.search("const volatile unsigned int flags : 3;")
+        self.assertTrue(
+            audit.is_bitfield_declaration("const volatile unsigned int flags : 3;")
         )
-        self.assertIsNotNone(audit.BITFIELD_RE.search("struct Header value : WIDTH;"))
-        self.assertIsNone(audit.BITFIELD_RE.search("condition ? value : 1;"))
+        self.assertTrue(audit.is_bitfield_declaration("struct Header value : WIDTH;"))
+        self.assertTrue(audit.is_bitfield_declaration("u8 : 2;"))
+        self.assertFalse(audit.is_bitfield_declaration("condition ? value : 1;"))
+        self.assertFalse(audit.is_bitfield_declaration("u8 value : WIDTH + 1;"))
+        self.assertFalse(audit.is_bitfield_declaration("u8 value :: 1;"))
 
-        adversarial = ("const " * 5000) + "not_a_bitfield;"
+        adversarial = ("const " * 50000) + "not_a_bitfield;"
         started = time.process_time()
-        self.assertIsNone(audit.BITFIELD_RE.search(adversarial))
-        self.assertLess(time.process_time() - started, 5.0)
+        self.assertFalse(audit.is_bitfield_declaration(adversarial))
+        self.assertLess(time.process_time() - started, 1.0)
 
     def test_all_scanner_classes_and_narrow_suppressions(self):
         with tempfile.TemporaryDirectory() as temporary:

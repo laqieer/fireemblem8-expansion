@@ -111,8 +111,8 @@ int main(void)
     got = DebugTools_GetRegisteredAction(0);
     DebugToolsHostStub_SetMonitorAlive(0);
     rc = got->onSelected(NULL, NULL);
-    CHECK(rc == (MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR),
-          "Weather onSelected must return SKIPCURSOR|END|SND6A|CLEAR to close the hub");
+    CHECK(rc == (MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A),
+          "Weather onSelected must close without globally clearing BG0/BG1");
     CHECK(gDebugToolsActionsHostStub_ProcFindCallCount == 1, "Weather onSelected must probe ProcScr_DebugMonitor exactly once");
     CHECK(gDebugToolsActionsHostStub_ProcStartCallCount == 1, "Weather onSelected must start ProcScr_DebugMonitor when none is alive");
     CHECK(gDebugToolsActionsHostStub_LastStartedScript == ProcScr_DebugMonitor, "Weather onSelected must start exactly ProcScr_DebugMonitor");
@@ -137,7 +137,8 @@ int main(void)
     CHECK(gDebugToolsWeatherMenuDef.menuItems[0].overrideId == 0xE0, "weather item overrideId must be the reserved 0xE0");
     CHECK(AllZero(&gDebugToolsWeatherMenuDef.menuItems[1], sizeof(gDebugToolsWeatherMenuDef.menuItems[1])),
           "weather menu's second slot must stay the all-zero MenuItemsEnd terminator");
-    CHECK(gDebugToolsWeatherMenuDef.onBPress == MenuCancelSelect, "weather submenu must close on B via MenuCancelSelect, same idiom as the hub");
+    CHECK(gDebugToolsWeatherMenuDef.onBPress == DebugTools_CancelMenu,
+          "weather submenu must close through the owned no-clear cancel path");
 
     CHECK(gDebugToolsWeatherMenuDef.onEnd != NULL, "weather MenuDef must define onEnd");
     CHECK(DebugTools_IsHubActive() != 0,
@@ -168,8 +169,8 @@ int main(void)
      * dependency at all. --------------------------------------------- */
     got = DebugTools_GetRegisteredAction(1);
     rc = got->onSelected(NULL, NULL);
-    CHECK(rc == (MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR),
-          "Fog onSelected must return SKIPCURSOR|END|SND6A|CLEAR to close the hub");
+    CHECK(rc == (MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A),
+          "Fog onSelected must close without globally clearing BG0/BG1");
     CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 3,
           "Fog onSelected must defer its submenu until the hub has ended");
     gDebugToolsHubMenuDef.onEnd(NULL);

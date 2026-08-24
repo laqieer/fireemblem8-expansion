@@ -28331,6 +28331,270 @@
           ]
         },
         {
+          "id": "expansion:debug.view.state",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.view.engine",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.action.refresh",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.unavailable",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.context",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.clock",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.chapter",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.turn",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.phase",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.cursor",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.unit",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.character",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.class",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.hp",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.weather",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.fog",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.rng",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.proc_count",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.event",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.actions",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.log_retained",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.log_writes",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.log_last",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.assert_count",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.assert_last",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.context_title",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.context_map",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.context_prep",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.context_battle",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.phase_player",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.phase_enemy",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.phase_npc",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.phase_other",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "static:sTacticianGridJaHiragana",
           "mapping_source_kind": "static_ui",
           "reason": "tactician name-entry grid system-font consumer",
@@ -28350,12 +28614,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2012,
+          "system": 2045,
           "talk": 1172
         },
-        "expansion_key_count": 87,
+        "expansion_key_count": 120,
         "game_target_count": 3414,
-        "record_count": 3503,
+        "record_count": 3536,
         "unclassified_count": 0
       }
     },
@@ -56689,6 +56953,270 @@
           ]
         },
         {
+          "id": "expansion:debug.view.state",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.view.engine",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.action.refresh",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.unavailable",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.context",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.clock",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.chapter",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.turn",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.phase",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.cursor",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.unit",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.character",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.class",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.hp",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.weather",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.fog",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.rng",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.proc_count",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.event",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.actions",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.log_retained",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.log_writes",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.log_last",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.assert_count",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.field.assert_last",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.context_title",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.context_map",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.context_prep",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.context_battle",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.phase_player",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.phase_enemy",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.phase_npc",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.value.phase_other",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "static:sTacticianGridZhHansFrequent",
           "mapping_source_kind": "static_ui",
           "reason": "tactician name-entry grid system-font consumer",
@@ -56708,12 +57236,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2012,
+          "system": 2045,
           "talk": 1172
         },
-        "expansion_key_count": 87,
+        "expansion_key_count": 120,
         "game_target_count": 3414,
-        "record_count": 3503,
+        "record_count": 3536,
         "unclassified_count": 0
       }
     }

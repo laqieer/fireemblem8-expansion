@@ -66,6 +66,8 @@ RNG_SEED = 0x0203188C
 RNG_TX = 0x02031890
 SV_STATE = 0x02031894
 SV_COUNT = 0x02031898
+SV_BACK_MENU_PRESERVED = "gDebugToolsProbe+0x84"
+SV_BACK_RETURN_COUNT = "gDebugToolsProbe+0x88"
 S_HUB = 0x02031614
 CURSOR_X = 0x02021104
 U_FOUND_BINDING = "gDebugToolsProbe+0x50"
@@ -208,6 +210,8 @@ class ToolsScenarioFilesTests(unittest.TestCase):
         back = self._cp("save-back-readonly-unchanged")
         self.assertEqual(back[SV_COUNT], "0x00000001", "read-only: Back must not mutate")
         self.assertEqual(back[HUB_OPEN], "0x00000009")
+        self.assertEqual(back[SV_BACK_MENU_PRESERVED], "0x00000001")
+        self.assertEqual(back[SV_BACK_RETURN_COUNT], "0x00000001")
 
     def test_map_interactive_after_hub_closes(self):
         c = self._cp("hub-closed-map-interactive")
