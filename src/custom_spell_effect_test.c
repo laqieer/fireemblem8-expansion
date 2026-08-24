@@ -296,6 +296,7 @@ static void CustomSpellEffectTest_RecordNormal(void)
     probe->normalChildCreates = sCounters.childCreates;
     probe->normalChildDeletes = sCounters.childDeletes;
     probe->normalFinalDisplayLatches = sCounters.finalDisplayLatches;
+    probe->normalDistanceType = gEkrDistanceType;
     probe->normalFinalActive = CustomSpellEffect_IsActive();
     probe->normalFinalSemaphore = gEfxBgSemaphore;
     probe->normalFinalSpellState = gEfxSpellAnimExists;
@@ -429,6 +430,9 @@ static void CustomSpellEffectTest_Loop(struct ProcCustomSpellEffectTestHarness *
     {
     case CUSTOM_SPELL_TEST_PHASE_INIT:
         CustomSpellEffectTest_ResetCounters();
+        gAnimRoundData[0] = ANIM_ROUND_TAKING_HIT_FAR;
+        gAnimRoundData[1] = ANIM_ROUND_TAKING_HIT_FAR;
+        gEkrDistanceType = EKR_DISTANCE_FAR;
 #if FE8_EXPANSION_CUSTOM_SPELL_EFFECTS
         CustomSpellEffectTest_StartDispatch(
             GetSpellAssocEfxIndex(CUSTOM_SPELL_EFFECT_TEST_ITEM));

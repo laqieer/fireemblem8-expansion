@@ -93,6 +93,7 @@ PROBE_FIELDS = (
     "allocationFailureCleanups",
     "normalFinalDisplayLatches",
     "reentrantFinalDisplayLatches",
+    "normalDistanceType",
 )
 
 
@@ -237,6 +238,7 @@ def expected_values(enabled: int) -> dict[str, int]:
             "normalChildCreates": 1,
             "normalChildDeletes": 1,
             "normalFinalDisplayLatches": 1,
+            "normalDistanceType": 1,
             "missingCustomDispatches": 1,
             "missingFallbackReason": 1,
             "missingFallbackAnimation": 22,
