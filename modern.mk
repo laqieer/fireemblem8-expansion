@@ -2646,20 +2646,19 @@ expansion-modern-debugtools-map-check: expansion-modern-boot-preflight expansion
 	@printf 'Modern ROM debugtools-map-check passed: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
-# Issue #11 closure: proves all five shipped bounded tools (Unit Inspect/Edit,
+# Issues #11/#125: proves all five shipped bounded tools (Unit Inspect/Edit,
 # Convoy Inspect/Edit, Flag/Chapter, RNG Inspect/Control, Save Compatibility/
 # State Inspect) are driven LIVE from the real Chapter 2 map debug hub in a
 # debug build -- each inspect samples semantic state, each mutating tool only
 # mutates after its own explicit confirm submenu item (asserted via
 # gDebugToolsProbe transaction counters and genuine convoy/flag/RNG pre/post
 # deltas), the read-only Save inspector never writes, every submenu returns
-# safely to the hub, and the map is still interactive after the hub closes
-# (player cursor moves). The config-parametrized release scenario instead
-# proves the identical input has zero effect (hub/tools compiled out,
-# gDebugToolsProbe stays all-zero). Probe-only, so -- like
-# expansion-modern-debugtools-map-check above -- it is not seeded with
-# MODERN_DEBUGTOOLS_SRAM_FIXTURE. See docs/debugtools.md and
-# reports/debugtools_issue11_closure.md.
+# safely to the hub, and the map is still interactive after the hub closes.
+# The issue #125 tail then applies cursor-unit HP 17->16, heals 16->17,
+# rejects an empty tile, and proves exact SRAM equality plus final map
+# interactivity. The config-parametrized release scenario replays identical
+# input with the established probe all-zero and editor symbols omitted. See
+# docs/debugtools.md and docs/test-cases/debugtools.md.
 MODERN_DEBUGTOOLS_TOOLS_SCENARIO := tools/gba-playtest/scenarios/debugtools-tools-modern-$(MODERN_CONFIG).json
 MODERN_DEBUGTOOLS_TOOLS_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-tools-modern-$(MODERN_CONFIG).json
 
@@ -2673,10 +2672,11 @@ expansion-modern-debugtools-tools-check: expansion-modern-boot-preflight expansi
 	fi
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
 		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_DEBUGTOOLS_TOOLS_SCENARIO)" \
 		--expected "$(MODERN_DEBUGTOOLS_TOOLS_FINGERPRINT)" \
 		--policy behavior
-	@printf 'Modern ROM debugtools-tools-check passed (five bounded tools live+confirmed in debug, compiled-out all-zero in release): %s (config=%s abi=%s)\n' \
+	@printf 'Modern ROM debugtools-tools-check passed (bounded tools + cursor unit editor live in debug, compiled-out all-zero in release): %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
 MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT := \
