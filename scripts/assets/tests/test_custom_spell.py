@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -15,7 +17,7 @@ import zlib
 from types import SimpleNamespace
 from unittest import mock
 
-from scripts.assets import custom_spell, manifest
+from scripts.assets import cli, custom_spell, manifest
 from scripts.generated_data.diagnostics import GeneratedDataError, GeneratedDataValidationError
 
 
@@ -515,6 +517,77 @@ class CustomSpellAdapterTests(unittest.TestCase):
         self.assertIn(
             "custom-spell-effect INCBIN consumer(s) CUSTOM_SPELL_REFERENCE",
             result.stdout + result.stderr,
+        )
+
+    def test_discovery_queries_skip_conversion_for_16x64_profile(self):
+        with open(REFERENCE_MANIFEST, encoding="utf-8") as handle:
+            document = json.load(handle)
+        template = next(
+            record for record in document["assets"]
+            if record["kind"] == "custom-spell-effect"
+        )
+        document["assets"] = []
+        for index in range(16):
+            record = copy.deepcopy(template)
+            record_id = "CUSTOM_SPELL_QUERY_{:02d}".format(index)
+            package = "synthetic/custom_spell_{:02d}".format(index)
+            record["id"] = record_id
+            record["ownership"]["item"] = "ITEM_QUERY_{:02d}".format(index)
+            record["ownership"]["effectSymbol"] = record_id
+            record["sources"] = [
+                package + "/spell.json",
+                package + "/animation.txt",
+            ]
+            for frame in range(64):
+                record["sources"].extend(
+                    (
+                        package + "/images/obj_{:02d}.png".format(frame),
+                        package + "/images/bg_{:02d}.png".format(frame),
+                    )
+                )
+            document["assets"].append(record)
+        manifest_path = os.path.join(TEST_ROOT, "query-profile.json")
+        with open(manifest_path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+
+        commands = (
+            "sources",
+            "portrait-incbin-consumers",
+            "tmx-incbin-consumers",
+            "banim-incbin-consumers",
+            "custom-spell-incbin-consumers",
+        )
+        with (
+            mock.patch.object(
+                manifest, "load_manifest", wraps=manifest.load_manifest
+            ) as discover,
+            mock.patch.object(custom_spell, "load_package") as convert,
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                for command in commands:
+                    self.assertEqual(
+                        cli.main(
+                            [
+                                "--custom-spell-effects",
+                                "1",
+                                "--manifest",
+                                manifest_path,
+                                command,
+                            ]
+                        ),
+                        0,
+                    )
+        self.assertEqual(discover.call_count, len(commands))
+        convert.assert_not_called()
+        self.assertEqual(
+            len(
+                [
+                    line for line in output.getvalue().splitlines()
+                    if line.startswith("CUSTOM_SPELL_QUERY_")
+                ]
+            ),
+            16,
         )
 
     def test_default_to_reference_warm_build_regenerates_custom_bindings(self):
