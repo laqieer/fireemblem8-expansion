@@ -161,9 +161,10 @@ When enabled, the map menu appends one localized **Charge** row. Its label and
 help metadata use stable expansion message IDs `autoplay.charge.label` (79)
 and `autoplay.charge.help` (80). The vanilla map-menu help renderer accepts
 vanilla message IDs rather than independent `ExpansionMsgId` values, so `R`
-on Charge is intentionally inert instead of resolving ID 80 through the wrong
-catalog. A downstream presentation can consume the stable help ID through the
-expansion resolver without changing the command contract. The row is shown
+on Charge invokes the custom expansion helpbox handler. That handler resolves
+ID 80 through the expansion ROM catalog and opens `StartHelpBoxString`; it
+never passes the expansion ID through the vanilla catalog or changes the
+command contract. The row is shown
 only while the ordinary map menu
 owns the sole game lock in a live interactive blue `PLAYER` phase, no event,
 fade, camera, action child, computer phase, berserk phase, or prior delegation
