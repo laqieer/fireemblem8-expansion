@@ -1325,6 +1325,23 @@ class LoadIdentityFeatureFlagTests(unittest.TestCase):
         self.assertIn("features", base.fingerprint_fields())
         self.assertNotIn("save_compat_epoch", base.fingerprint_fields())
 
+    def test_fingerprint_features_cover_all_parsed_feature_config_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            default = self._identity(tmp)
+            custom_spell = self._identity(tmp, custom_spell_effects="1")
+
+        expected = {
+            key.removeprefix("EXPANSION_").lower()
+            for key in ec.CONFIG_MK_FEATURE_KEYS
+        }
+        actual = (
+            set(default.fingerprint_fields()["features"])
+            | set(custom_spell.fingerprint_fields()["features"])
+            | {"bgm_continuation_policy"}
+        )
+        self.assertEqual(actual, expected)
+        self.assertIn("bgm_continuation_policy", default.fingerprint_fields())
+
     def test_custom_spell_default_preserves_pre_feature_fingerprint_schema(self):
         with tempfile.TemporaryDirectory() as tmp:
             implicit_default = self._identity(tmp)
