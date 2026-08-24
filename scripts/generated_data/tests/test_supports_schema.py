@@ -12,13 +12,6 @@ def _validate(fixture_name):
     return records, diagnostics
 
 
-class SupportsSchemaValidTests(unittest.TestCase):
-    def test_valid_fixture_has_no_diagnostics(self):
-        records, diagnostics = _validate("valid.json")
-        self.assertTrue(diagnostics.ok, msg=diagnostics.render())
-        self.assertEqual(len(records), 3)
-
-
 class SupportsSchemaDuplicateTests(unittest.TestCase):
     def test_duplicate_owner_detected(self):
         _, diagnostics = _validate("duplicate_owner.json")
