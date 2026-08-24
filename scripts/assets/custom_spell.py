@@ -192,6 +192,34 @@ def _png_chunk_stream(path):
     return chunks
 
 
+PNG_ANCILLARY_BEFORE_PLTE = {
+    b"cHRM",
+    b"gAMA",
+    b"iCCP",
+    b"sBIT",
+    b"sRGB",
+}
+PNG_ANCILLARY_BEFORE_IDAT = {b"pHYs", b"sPLT"}
+PNG_ANCILLARY_AFTER_PLTE = {b"bKGD", b"hIST"}
+PNG_ANCILLARY_TEXT_OR_TIME = {b"tEXt", b"zTXt", b"iTXt", b"tIME"}
+PNG_SINGLETON_ANCILLARY = (
+    PNG_ANCILLARY_BEFORE_PLTE
+    | PNG_ANCILLARY_BEFORE_IDAT
+    | PNG_ANCILLARY_AFTER_PLTE
+    | {b"tRNS", b"tIME"}
+)
+
+
+def _validate_png_chunk_type(path, name):
+    if len(name) != 4 or any(
+        not (ord("A") <= byte <= ord("Z") or ord("a") <= byte <= ord("z"))
+        for byte in name
+    ):
+        raise ValueError("{} PNG chunk type must contain exactly four ASCII letters".format(path))
+    if not ord("A") <= name[2] <= ord("Z"):
+        raise ValueError("{} PNG chunk type reserved third letter must be uppercase".format(path))
+
+
 def read_indexed_png(path, width, height):
     """Read the exact indexed 4bpp PNG subset accepted by the adapter."""
     chunks = _png_chunk_stream(path)
@@ -202,7 +230,9 @@ def read_indexed_png(path, width, height):
     transparency = None
     idat_parts = []
     idat_finished = False
+    seen_ancillary = set()
     for index, (name, payload) in enumerate(chunks):
+        _validate_png_chunk_type(path, name)
         if name == b"IHDR":
             if index != 0:
                 raise ValueError("{} must contain exactly one IHDR before all chunks".format(path))
@@ -228,6 +258,31 @@ def read_indexed_png(path, width, height):
         else:
             if not name[0] & 0x20:
                 raise ValueError("{} has an unsupported critical chunk".format(path))
+            if name in PNG_SINGLETON_ANCILLARY:
+                if name in seen_ancillary:
+                    raise ValueError("{} has more than one {} chunk".format(path, name.decode("ascii")))
+                seen_ancillary.add(name)
+            if name in PNG_ANCILLARY_BEFORE_PLTE:
+                if palette_bytes is not None:
+                    raise ValueError(
+                        "{} {} must occur before PLTE and IDAT".format(
+                            path, name.decode("ascii")
+                        )
+                    )
+            elif name in PNG_ANCILLARY_BEFORE_IDAT:
+                if idat_parts:
+                    raise ValueError(
+                        "{} {} must occur before IDAT".format(path, name.decode("ascii"))
+                    )
+            elif name in PNG_ANCILLARY_AFTER_PLTE:
+                if palette_bytes is None or idat_parts:
+                    raise ValueError(
+                        "{} {} must occur after PLTE and before IDAT".format(
+                            path, name.decode("ascii")
+                        )
+                    )
+            elif name in PNG_ANCILLARY_TEXT_OR_TIME:
+                pass
             if idat_parts:
                 idat_finished = True
     if palette_bytes is None:

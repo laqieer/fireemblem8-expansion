@@ -603,8 +603,16 @@ class CustomSpellAdapterTests(unittest.TestCase):
             240,
             64,
             ancillary_before_plte=((b"gAMA", struct.pack(">I", 45455)),),
-            ancillary_before_idat=((b"tEXt", b"source\0before"),),
-            ancillary_after_idat=((b"tEXt", b"source\0after"),),
+            ancillary_before_idat=(
+                (b"pHYs", struct.pack(">IIB", 2835, 2835, 1)),
+                (b"bKGD", b"\0"),
+                (b"aBCD", b""),
+                (b"tEXt", b"source\0before"),
+            ),
+            ancillary_after_idat=(
+                (b"tEXt", b"source\0after"),
+                (b"tIME", b"\x07\xe8\x01\x01\0\0\0"),
+            ),
             split_idat=True,
         )
         self.assertEqual(
@@ -653,6 +661,90 @@ class CustomSpellAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "tRNS must occur after PLTE and before IDAT"):
             custom_spell.read_indexed_png(path, 240, 64)
 
+    def test_png_rejects_invalid_chunk_types_and_ancillary_placement(self):
+        path = os.path.join(TEST_ROOT, "invalid-ancillary-placement.png")
+        width = 240
+        height = 64
+        scanlines = b"\0" * (height * (width // 2 + 1))
+        compressed = zlib.compress(scanlines)
+        ihdr = struct.pack(">IIBBBBB", width, height, 4, 3, 0, 0, 0)
+        palette = b"\0\0\0\xff\xff\xff"
+
+        for chunk_type, message in (
+            (b"gAmA", "reserved third letter"),
+            (b"gA?A", "four ASCII letters"),
+        ):
+            with self.subTest(chunk_type=chunk_type):
+                _write_png_chunks(
+                    path,
+                    (
+                        (b"IHDR", ihdr),
+                        (chunk_type, b""),
+                        (b"PLTE", palette),
+                        (b"tRNS", b"\0\xff"),
+                        (b"IDAT", compressed),
+                        (b"IEND", b""),
+                    ),
+                )
+                with self.assertRaisesRegex(ValueError, message):
+                    custom_spell.read_indexed_png(path, width, height)
+
+        cases = (
+            (
+                "gamma-after-plte",
+                (
+                    (b"IHDR", ihdr),
+                    (b"PLTE", palette),
+                    (b"gAMA", struct.pack(">I", 45455)),
+                    (b"tRNS", b"\0\xff"),
+                    (b"IDAT", compressed),
+                    (b"IEND", b""),
+                ),
+                "gAMA must occur before PLTE and IDAT",
+            ),
+            (
+                "gamma-after-idat",
+                (
+                    (b"IHDR", ihdr),
+                    (b"PLTE", palette),
+                    (b"tRNS", b"\0\xff"),
+                    (b"IDAT", compressed),
+                    (b"gAMA", struct.pack(">I", 45455)),
+                    (b"IEND", b""),
+                ),
+                "gAMA must occur before PLTE and IDAT",
+            ),
+            (
+                "background-before-plte",
+                (
+                    (b"IHDR", ihdr),
+                    (b"bKGD", b"\0"),
+                    (b"PLTE", palette),
+                    (b"tRNS", b"\0\xff"),
+                    (b"IDAT", compressed),
+                    (b"IEND", b""),
+                ),
+                "bKGD must occur after PLTE and before IDAT",
+            ),
+            (
+                "physical-after-idat",
+                (
+                    (b"IHDR", ihdr),
+                    (b"PLTE", palette),
+                    (b"tRNS", b"\0\xff"),
+                    (b"IDAT", compressed),
+                    (b"pHYs", struct.pack(">IIB", 2835, 2835, 1)),
+                    (b"IEND", b""),
+                ),
+                "pHYs must occur before IDAT",
+            ),
+        )
+        for name, chunks, message in cases:
+            with self.subTest(name=name):
+                _write_png_chunks(path, chunks)
+                with self.assertRaisesRegex(ValueError, message):
+                    custom_spell.read_indexed_png(path, width, height)
+
     def test_png_rejects_stream_truncated_immediately_after_idat(self):
         path = os.path.join(TEST_ROOT, "truncated-after-idat.png")
         _write_png(path, 240, 64)
@@ -675,8 +767,10 @@ class CustomSpellAdapterTests(unittest.TestCase):
             "used nonzero palette index must be opaque",
             "unused nonzero palette entries may have any `tRNS` alpha",
             "one or more consecutive `IDAT` chunks",
-            "Legal ancillary chunks may appear in legal positions",
+            "Other syntactically valid ancillary chunks may appear",
             "ends with a zero-payload `IEND`",
+            "uppercase reserved third letter",
+            "`cHRM`/`gAMA`/`iCCP`/`sBIT`/`sRGB` only before `PLTE`",
         ):
             self.assertIn(phrase, documentation)
 
@@ -790,6 +884,96 @@ class CustomSpellAdapterTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(all(os.path.isfile(output) for output in outputs))
+
+    def test_assets_make_discovers_and_builds_special_source_paths(self):
+        package_dir = os.path.join(
+            ROOT, "scripts", "assets", "tests", ".assets make #$%: package"
+        )
+        source_manifest = os.path.join(TEST_ROOT, "assets-make-special.json")
+        git_wrapper = os.path.join(TEST_ROOT, "git")
+        fragment = "build/generated/assets/asset_manifest.mk"
+        real_git = shutil.which("git")
+        self.assertIsNotNone(real_git)
+        shutil.copytree(
+            os.path.join(ROOT, "graphics", "custom_spell", "reference"),
+            package_dir,
+        )
+        relative_package = os.path.relpath(package_dir, ROOT).replace(os.sep, "/")
+        record = copy.deepcopy(self.reference_record())
+        record["sources"] = [
+            relative_package + "/spell.json",
+            relative_package + "/animation.txt",
+            relative_package + "/images/reference_obj_00.png",
+            relative_package + "/images/reference_bg_00.png",
+            relative_package + "/images/reference_obj_01.png",
+            relative_package + "/images/reference_bg_01.png",
+        ]
+        with open(source_manifest, "w", encoding="utf-8") as handle:
+            json.dump({"schemaVersion": 1, "assets": [record]}, handle)
+        with open(git_wrapper, "w", encoding="utf-8") as handle:
+            handle.write(
+                "#!/bin/sh\n"
+                "for arg in \"$@\"; do\n"
+                "    if [ \"$arg\" = \"ls-files\" ]; then\n"
+                "        exit 0\n"
+                "    fi\n"
+                "done\n"
+                "exec \"{}\" \"$@\"\n".format(real_git)
+            )
+        os.chmod(git_wrapper, 0o755)
+        environment = os.environ.copy()
+        environment["PATH"] = TEST_ROOT + os.pathsep + environment["PATH"]
+
+        def run(manifest_path, enabled, *goals, env=None):
+            return subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-f",
+                    "assets.mk",
+                    *goals,
+                    "PYTHON={}".format(sys.executable),
+                    "ASSET_MANIFEST={}".format(manifest_path),
+                    "EXPANSION_CUSTOM_SPELL_EFFECTS={}".format(enabled),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+
+        try:
+            generated = run(source_manifest, 1, fragment, env=environment)
+            self.assertEqual(
+                generated.returncode, 0, generated.stdout + generated.stderr
+            )
+            self.assertTrue(
+                os.path.isfile(
+                    os.path.join(
+                        ROOT,
+                        "build",
+                        "generated",
+                        "assets",
+                        "custom_spell",
+                        "custom_spell_effect_data.inc",
+                    )
+                )
+            )
+            source_path = os.path.join(ROOT, record["sources"][0])
+            source_stat = os.stat(source_path)
+            os.utime(
+                source_path,
+                ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns + 1_000_000_000),
+            )
+            rebuilt = run(source_manifest, 1, fragment, env=environment)
+            self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
+            self.assertIn("OK: generated", rebuilt.stdout)
+        finally:
+            shutil.rmtree(package_dir, ignore_errors=True)
+            restored = run(DEFAULT_MANIFEST, 0, fragment)
+            if restored.returncode != 0:
+                raise AssertionError(restored.stdout + restored.stderr)
 
     def test_obj_oam_and_frame_timing_capacities_fail_closed(self):
         pixels = bytearray(custom_spell.OBJ_WIDTH * custom_spell.OBJ_HEIGHT)

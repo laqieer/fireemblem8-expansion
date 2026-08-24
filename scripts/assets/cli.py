@@ -35,12 +35,18 @@ def _parser():
         "--out-dir", default=DEFAULT_OUT_DIR,
         help="ignored generated-output directory (default: %(default)s)",
     )
+    parser.add_argument(
+        "--source-stamp",
+        default=None,
+        help="build-local discovery source stamp output",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name in (
         "validate",
         "generate",
         "check",
         "sources",
+        "source-stamp",
         "portrait-incbin-consumers",
         "tmx-incbin-consumers",
         "banim-incbin-consumers",
@@ -77,14 +83,13 @@ def main(argv=None):
             print("OK: {} generated asset record(s) are current".format(len(records)))
         elif args.command == "sources":
             records = manifest.load_discovery(args.manifest)
-            sources = {"assets/portrait_registry.json"}
-            for record in records:
-                sources.update(record.sources)
-                kind = manifest.KIND_REGISTRY.resolve(record.kind)
-                if kind is not None:
-                    sources.update(kind.source_dependencies(record))
-            for source in sorted(sources):
+            for source in manifest.discovery_sources(records):
                 print(source)
+        elif args.command == "source-stamp":
+            if args.source_stamp is None:
+                raise GeneratedDataError("source-stamp requires --source-stamp")
+            records = manifest.write_source_stamp(args.manifest, args.source_stamp)
+            print("OK: wrote source stamp for {} asset record(s)".format(len(records)))
         elif args.command == "portrait-incbin-consumers":
             records = manifest.load_discovery(args.manifest)
             for record_id in manifest.portrait_incbin_consumer_ids(records):

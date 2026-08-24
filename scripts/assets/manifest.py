@@ -42,6 +42,9 @@ ASSET_OUTPUT_ROOT = os.path.abspath(
     os.path.join(REPO_ROOT, "build", "generated", "assets")
 )
 ASSET_OUTPUT_ROOT_REAL = os.path.realpath(ASSET_OUTPUT_ROOT)
+ASSET_GENERATED_ROOT = os.path.abspath(
+    os.path.join(REPO_ROOT, "build", "generated")
+)
 ID_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
@@ -229,6 +232,36 @@ def load_discovery(path):
                 diagnostics.add(error)
         _validate_discovery_source_dependencies(kind, record, diagnostics)
     diagnostics.raise_if_any()
+    return records
+
+
+def discovery_sources(records):
+    sources = {"assets/portrait_registry.json"}
+    for record in records:
+        sources.update(record.sources)
+        kind = KIND_REGISTRY.resolve(record.kind)
+        if kind is not None:
+            sources.update(kind.source_dependencies(record))
+    return tuple(sorted(sources))
+
+
+def render_source_stamp(records):
+    entries = []
+    for source in discovery_sources(records):
+        source_path = os.path.join(REPO_ROOT, source)
+        entries.append(
+            {
+                "mtime_ns": os.stat(source_path).st_mtime_ns,
+                "path": source,
+            }
+        )
+    return json.dumps({"sources": entries}, indent=2, sort_keys=True) + "\n"
+
+
+def write_source_stamp(manifest_path, path):
+    records = load_discovery(manifest_path)
+    destination = _safe_output_path(path, ASSET_GENERATED_ROOT)
+    _write_if_changed(destination, render_source_stamp(records))
     return records
 
 

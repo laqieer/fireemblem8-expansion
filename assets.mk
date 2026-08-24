@@ -42,6 +42,7 @@ ASSET_OUTPUT_MK := $(ASSET_OUTPUT_DIR)/asset_manifest.mk
 # tree so switching profiles rebuilds that fragment even when both manifests
 # predate it.
 ASSET_SELECTION_STAMP := $(ASSET_OUTPUT_DIR).manifest-selection
+ASSET_MANIFEST_SOURCE_STAMP := $(ASSET_OUTPUT_DIR).manifest-sources
 ASSET_BANIM_DATA_ENTRIES := $(ASSET_OUTPUT_DIR)/banim/banim_data_entries.inc
 ASSET_BANIM_DEFS := $(ASSET_OUTPUT_DIR)/banim/banim_defs.inc
 ASSET_BANIM_DEFS_HEADER := $(ASSET_OUTPUT_DIR)/banim/banim_defs.h
@@ -49,7 +50,6 @@ ASSET_BANIM_RUNTIME_TEST_DEFS := $(ASSET_OUTPUT_DIR)/banim/banim_runtime_test_de
 ASSET_BANIM_RUNTIME_SYMBOLS := $(ASSET_OUTPUT_DIR)/banim/banim_runtime_symbols.h
 ASSET_BANIM_COMBINED_LINKER_SCRIPT := $(ASSET_OUTPUT_DIR)/banim/linker_script_banim.txt
 ASSET_TOOL_INPUTS := $(filter-out scripts/assets/tests/%,$(sort $(shell find scripts/assets -type f -name '*.py' -print)))
-ASSET_MANIFEST_SOURCES := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" sources)
 
 .PHONY: assets-validate assets-generate assets-check assets-clean assets-test
 
@@ -64,7 +64,7 @@ assets-check:
 
 assets-clean:
 	$(PYTHON) -m scripts.assets --out-dir "$(ASSET_OUTPUT_DIR)" clean
-	$(RM) -f "$(ASSET_SELECTION_STAMP)"
+	$(RM) -f "$(ASSET_SELECTION_STAMP)" "$(ASSET_MANIFEST_SOURCE_STAMP)"
 
 assets-test:
 	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES \
@@ -77,6 +77,8 @@ assets-test:
 # chapter-table objects, including the configured modern output path.
 .PHONY: FORCE_ASSET_SELECTION
 FORCE_ASSET_SELECTION:
+.PHONY: FORCE_ASSET_SOURCES
+FORCE_ASSET_SOURCES:
 
 $(ASSET_SELECTION_STAMP): FORCE_ASSET_SELECTION
 	@mkdir -p "$(dir $@)"
@@ -90,7 +92,11 @@ $(ASSET_SELECTION_STAMP): FORCE_ASSET_SELECTION
 		mv -f "$@.tmp" "$@"; \
 	fi
 
-$(ASSET_OUTPUT_MK): $(ASSET_SELECTION_STAMP) $(ASSET_MANIFEST) $(ASSET_MANIFEST_SOURCES) $(ASSET_TOOL_INPUTS)
+$(ASSET_MANIFEST_SOURCE_STAMP): FORCE_ASSET_SOURCES
+	@mkdir -p "$(dir $@)"
+	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --source-stamp "$@" source-stamp
+
+$(ASSET_OUTPUT_MK): $(ASSET_SELECTION_STAMP) $(ASSET_MANIFEST_SOURCE_STAMP) $(ASSET_MANIFEST) $(ASSET_TOOL_INPUTS)
 	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
 
 $(ASSET_BANIM_DATA_ENTRIES) $(ASSET_BANIM_DEFS) $(ASSET_BANIM_DEFS_HEADER) \

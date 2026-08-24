@@ -179,11 +179,17 @@ Each OBJ PNG is exact indexed 4bpp 480x160; each BG PNG is exact indexed 4bpp
 is transparent. Every decoded, used nonzero palette index must be opaque;
 unused nonzero palette entries may have any `tRNS` alpha. A PNG begins with
 one `IHDR`, has one `PLTE`, has `tRNS` after `PLTE` and before one or more
-consecutive `IDAT` chunks, and ends with a zero-payload `IEND`. Legal ancillary
-chunks may appear in legal positions without interrupting `IDAT`; their payloads
-are not runtime inputs. Unknown critical chunks, duplicate/misordered required
-chunks, nonconsecutive `IDAT`, trailing bytes, and missing or malformed `IEND`
-fail. The runtime never parses source PNGs.
+consecutive `IDAT` chunks, and ends with a zero-payload `IEND`. The reader
+accepts chunk types made of exactly four ASCII letters with an uppercase
+reserved third letter. It accepts `cHRM`/`gAMA`/`iCCP`/`sBIT`/`sRGB` only before
+`PLTE`; `pHYs`/`sPLT` only before `IDAT`; `bKGD`/`hIST` only after `PLTE` and
+before `IDAT`; and text (`tEXt`/`zTXt`/`iTXt`) or `tIME` on either side of the
+consecutive `IDAT` run. Other syntactically valid ancillary chunks may appear
+in legal non-interrupting positions; their payloads are not runtime inputs.
+Unknown critical chunks, malformed/reserved chunk-type bits, duplicate or
+misordered required/known ancillary chunks, nonconsecutive `IDAT`, trailing
+bytes, and missing or malformed `IEND` fail. The runtime never parses source
+PNGs.
 
 ### Deterministic conversion
 

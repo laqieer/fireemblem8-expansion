@@ -959,10 +959,7 @@ class AssetManifestTests(unittest.TestCase):
     def test_asset_makefile_tracks_declared_manifest_sources(self):
         with open(os.path.join(REPO_ROOT, "assets.mk"), encoding="utf-8") as handle:
             asset_makefile = handle.read()
-        self.assertIn(
-            'ASSET_MANIFEST_SOURCES := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" sources)',
-            asset_makefile,
-        )
+        self.assertNotIn("ASSET_MANIFEST_SOURCES := $(shell", asset_makefile)
         rule = next(
             line
             for line in asset_makefile.splitlines()
@@ -972,8 +969,8 @@ class AssetManifestTests(unittest.TestCase):
         self.assertTrue(
             {
                 "$(ASSET_SELECTION_STAMP)",
+                "$(ASSET_MANIFEST_SOURCE_STAMP)",
                 "$(ASSET_MANIFEST)",
-                "$(ASSET_MANIFEST_SOURCES)",
                 "$(ASSET_TOOL_INPUTS)",
             }.issubset(prerequisites)
         )
