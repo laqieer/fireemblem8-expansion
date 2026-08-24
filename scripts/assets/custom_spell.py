@@ -10,6 +10,9 @@ import re
 import struct
 import zlib
 
+from scripts.generated_data import idspace as generated_idspace
+from scripts.generated_data.items import schema as items_schema
+
 
 IMPORT_FORMAT = "feditor-magic-v1"
 RUNTIME_ABI = 1
@@ -1217,17 +1220,44 @@ def _spell_lut(path):
     ]
 
 
-def _item_initializer(path, item):
-    with open(path, encoding="utf-8") as handle:
-        source = handle.read()
-    match = re.search(
-        r"\[\s*{}\s*\]\s*=\s*\{{(?P<body>.*?)\n\s*\}},".format(re.escape(item)),
-        source,
-        re.DOTALL,
+def _active_item_record(root, item):
+    cap = generated_idspace.resolve_item_id_cap()
+    items_header = os.path.join(root, "include", "constants", "items.h")
+    expansion_header = os.path.join(
+        root, "include", "constants", "items_expansion.h"
     )
-    if match is None:
-        raise ValueError("item '{}' has no authoritative ItemData record".format(item))
-    return match.group("body")
+    item_values = items_schema.extract_enum_constants(
+        items_header, name_prefix="ITEM_"
+    )
+    if os.path.exists(expansion_header):
+        item_values.update(
+            items_schema.extract_enum_constants(
+                expansion_header, name_prefix="ITEM_"
+            )
+        )
+    if item not in item_values:
+        raise ValueError("item '{}' is not a declared ITEM_* value".format(item))
+    item_value = item_values[item][0]
+    if item_value > cap:
+        raise ValueError(
+            "item '{}' (index 0x{:02X}) is beyond configured "
+            "FE8_ITEM_ID_CAP=0x{:02X}".format(item, item_value, cap)
+        )
+
+    records = items_schema.load_records(
+        os.path.join(root, "src", "data", "items.json"),
+        item_cap=cap,
+        overlay_source=os.path.join(
+            root, "src", "data", "items_expansion.json"
+        ),
+    )
+    record = next((record for record in records if record.item == item), None)
+    if record is None:
+        raise ValueError(
+            "item '{}' has no active generated ItemData record under "
+            "FE8_ITEM_ID_CAP=0x{:02X}".format(item, cap)
+        )
+    return record
 
 
 def validate_runtime_binding(root, ownership):
@@ -1266,13 +1296,9 @@ def validate_runtime_binding(root, ownership):
                 fallback_symbol
             )
         )
-    item_data = _item_initializer(os.path.join(root, "src", "data_items.c"), item)
-    weapon_type_match = re.search(r"\.weaponType\s*=\s*(ITYPE_[A-Z0-9_]+)", item_data)
-    attributes_match = re.search(r"\.attributes\s*=\s*([^,\n]+)", item_data)
-    if weapon_type_match is None or attributes_match is None:
-        raise ValueError("item '{}' lacks weapon type or attributes".format(item))
-    weapon_type = weapon_type_match.group(1)
-    attributes = set(re.findall(r"IA_[A-Z0-9_]+", attributes_match.group(1)))
+    item_record = _active_item_record(root, item)
+    weapon_type = item_record.weapon_type
+    attributes = set(item_record.attributes)
     if (
         weapon_type not in ("ITYPE_ANIMA", "ITYPE_LIGHT", "ITYPE_DARK")
         or "IA_WEAPON" not in attributes

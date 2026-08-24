@@ -221,6 +221,46 @@ class CustomSpellAdapterTests(unittest.TestCase):
             inventory["resource_digest"], contract["resource_digest"]
         )
 
+    def test_item_binding_uses_active_generated_profile_and_cap(self):
+        with mock.patch.dict(
+            os.environ, {"FE8_ITEM_ID_CAP": "0xCE"}, clear=False
+        ):
+            record = custom_spell._active_item_record(
+                ROOT, "ITEM_EXPANSION_CE"
+            )
+        self.assertEqual(record.item, "ITEM_EXPANSION_CE")
+        self.assertEqual(record.weapon_type, "ITYPE_ITEM")
+
+        with mock.patch.dict(
+            os.environ, {"FE8_ITEM_ID_CAP": "0xCD"}, clear=False
+        ):
+            with self.assertRaisesRegex(
+                ValueError, r"beyond configured FE8_ITEM_ID_CAP=0xCD"
+            ):
+                custom_spell._active_item_record(
+                    ROOT, "ITEM_EXPANSION_CE"
+                )
+        with self.assertRaisesRegex(ValueError, "not a declared ITEM"):
+            custom_spell._active_item_record(ROOT, "ITEM_NOT_REAL")
+
+    def test_generated_magic_item_can_own_runtime_binding(self):
+        ownership = copy.deepcopy(self.reference_record()["ownership"])
+        ownership["item"] = "ITEM_EXPANSION_CE"
+        generated_magic = SimpleNamespace(
+            weapon_type="ITYPE_ANIMA",
+            attributes=("IA_WEAPON", "IA_MAGIC"),
+        )
+        with mock.patch.object(
+            custom_spell,
+            "_active_item_record",
+            return_value=generated_magic,
+        ):
+            fallback, item_type = custom_spell.validate_runtime_binding(
+                ROOT, ownership
+            )
+        self.assertEqual(fallback, 22)
+        self.assertEqual(item_type, "ITYPE_ANIMA")
+
     def test_moved_sprite_geometry_changes_inventory_identity(self):
         def sprite_at(tile_x):
             pixels = bytearray(custom_spell.OBJ_WIDTH * custom_spell.OBJ_HEIGHT)
