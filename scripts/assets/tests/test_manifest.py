@@ -243,10 +243,12 @@ class AssetManifestTests(unittest.TestCase):
         path = os.path.join(REPO_ROOT, "assets", "manifest.json")
         first = manifest.load_and_validate(path)
         second = manifest.load_and_validate(path)
-        self.assertEqual(manifest.render_makefile(first), manifest.render_makefile(second))
+        rendered = manifest.render_makefile(first)
+        self.assertEqual(rendered, manifest.render_makefile(second))
         self.assertIn(
-            "$(MODERN_OUTPUT_DIR)/src/data/data_8B363C.o: assets/tmx/Ch2Map.tmx",
-            manifest.render_makefile(first),
+            "$(MODERN_OUTPUT_DIR)/src/data/data_8B363C.o: "
+            "$(ASSET_MANIFEST_SOURCE_STAMP)",
+            rendered,
         )
 
     def test_eirika_existing_component_alias_preserves_face_data_row(self):
@@ -1339,7 +1341,7 @@ class AssetManifestTests(unittest.TestCase):
         )
         rendered = manifest.render_makefile(records)
         self.assertIn(
-            "src/data/data_8B363C.o: dependent.mar transitive.mar direct.mar\n",
+            "src/data/data_8B363C.o: $(ASSET_MANIFEST_SOURCE_STAMP)\n",
             rendered,
         )
 

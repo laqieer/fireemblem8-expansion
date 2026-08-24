@@ -27,13 +27,20 @@ ABI `0` and SHA-256-of-empty inventory/resource values, while the disabled
 fingerprint intentionally remains the pre-feature default.
 
 ```sh
-./configure --enable-custom-spell-effects
-make ASSET_MANIFEST=assets/manifests/custom-spell-reference.json
+./configure --enable-custom-spell-effects \
+  --with-asset-manifest=assets/manifests/custom-spell-reference.json
+make
 
 # One-off equivalent
 make expansion-modern-rom EXPANSION_CUSTOM_SPELL_EFFECTS=1 \
   ASSET_MANIFEST=assets/manifests/custom-spell-reference.json
 ```
+
+`--with-asset-manifest=PATH` persists the selected source-owned manifest in
+ignored `config.autotools.mk`; if omitted, `ASSET_MANIFEST` remains
+`assets/manifest.json`. Enabling custom spell effects against that catalog-free
+default fails during `configure` with the same actionable manifest diagnostic
+used by the build.
 
 Only modern AAPCS debug and release builds support the runtime. The archival
 lane always compiles with `FE8_EXPANSION_CUSTOM_SPELL_EFFECTS=0`; it has no

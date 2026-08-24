@@ -48,17 +48,6 @@ ASSET_GENERATED_ROOT = os.path.abspath(
 ID_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
-def _make_escape_prerequisite(path):
-    return (
-        path.replace("\\", "\\\\")
-        .replace("$", "$$")
-        .replace("#", "\\#")
-        .replace(":", "\\:")
-        .replace(" ", "\\ ")
-        .replace("\t", "\\\t")
-    )
-
-
 def _is_int(value):
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -1996,14 +1985,13 @@ def render_makefile(records):
         kind = KIND_REGISTRY.resolve(record.kind)
         repository_sources.update(record.sources)
         repository_sources.update(kind.source_dependencies(record))
-
     def render_prerequisites(prerequisites):
-        return " ".join(
-            _make_escape_prerequisite(path)
-            if path in repository_sources
-            else path
-            for path in prerequisites
-        )
+        non_sources = [
+            path for path in prerequisites if path not in repository_sources
+        ]
+        if any(path in repository_sources for path in prerequisites):
+            non_sources.append("$(ASSET_MANIFEST_SOURCE_STAMP)")
+        return " ".join(non_sources)
 
     def dependency_sources(record):
         sources = []
@@ -2086,8 +2074,8 @@ def render_makefile(records):
                     seen_dependencies.add(source)
                     custom_dependencies.append(source)
         lines.append(
-            "\n{} &: $(ASSET_OUTPUT_MK) {}\n".format(
-                " ".join(generated), render_prerequisites(custom_dependencies)
+            "\n{} &: $(ASSET_OUTPUT_MK) $(ASSET_MANIFEST_SOURCE_STAMP)\n".format(
+                " ".join(generated)
             )
         )
         lines.append(

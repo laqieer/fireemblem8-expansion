@@ -821,13 +821,9 @@ class CustomSpellAdapterTests(unittest.TestCase):
             ],
         )
 
-    def test_make_prerequisites_escape_supported_source_paths(self):
-        self.assertEqual(
-            manifest._make_escape_prerequisite(r"source #$%:\path"),
-            r"source\ \#$$%\:\\path",
-        )
+    def test_generated_source_stamp_handles_supported_source_paths(self):
         package_dir = os.path.join(
-            ROOT, "scripts", "assets", "tests", ".custom spell #$%: package"
+            ROOT, "scripts", "assets", "tests", ".custom spell #$%:|; package"
         )
         self.addCleanup(shutil.rmtree, package_dir, ignore_errors=True)
         shutil.copytree(
@@ -854,9 +850,15 @@ class CustomSpellAdapterTests(unittest.TestCase):
 
         out_dir = os.path.join(TEST_ROOT, "special-path-output")
         outputs = custom_spell.output_paths(records, out_dir)
+        source_stamp = os.path.join(TEST_ROOT, "special-path-sources.stamp")
+        with open(source_stamp, "w", encoding="utf-8"):
+            pass
         fragment = os.path.join(TEST_ROOT, "special-path-rules.mk")
         with open(fragment, "w", encoding="utf-8") as handle:
-            handle.write(manifest.render_makefile(records))
+            handle.write(
+                "ASSET_MANIFEST_SOURCE_STAMP := {}\n".format(source_stamp)
+                + manifest.render_makefile(records)
+            )
         tool = os.path.join(TEST_ROOT, "touch-custom-spell-outputs.py")
         with open(tool, "w", encoding="utf-8") as handle:
             handle.write(
@@ -887,7 +889,7 @@ class CustomSpellAdapterTests(unittest.TestCase):
 
     def test_assets_make_discovers_and_builds_special_source_paths(self):
         package_dir = os.path.join(
-            ROOT, "scripts", "assets", "tests", ".assets make #$%: package"
+            ROOT, "scripts", "assets", "tests", ".assets make #$%:|; package"
         )
         source_manifest = os.path.join(TEST_ROOT, "assets-make-special.json")
         git_wrapper = os.path.join(TEST_ROOT, "git")
@@ -1351,6 +1353,7 @@ class CustomSpellAdapterTests(unittest.TestCase):
     def test_custom_dependency_touch_regenerates_outputs(self):
         output = os.path.join(ROOT, "build", "generated", "assets")
         fragment = os.path.join(output, "asset_manifest.mk")
+        source_stamp = output + ".manifest-sources"
         custom_dir = os.path.join(output, "custom_spell")
         data_include = os.path.join(
             custom_dir, "custom_spell_effect_data.inc"
@@ -1381,8 +1384,12 @@ class CustomSpellAdapterTests(unittest.TestCase):
             self.assertEqual(
                 generated.returncode, 0, generated.stdout + generated.stderr
             )
-            with open(fragment, encoding="utf-8") as handle:
-                self.assertIn("include/spellassoc.h", handle.read())
+            with open(source_stamp, encoding="utf-8") as handle:
+                stamp = json.load(handle)
+            self.assertIn(
+                "include/spellassoc.h",
+                [entry["path"] for entry in stamp["sources"]],
+            )
 
             os.utime(
                 dependency,

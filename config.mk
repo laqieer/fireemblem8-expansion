@@ -148,6 +148,7 @@ EXPANSION_AOE_REFERENCE       ?= 0
 # build/generated/assets. The selected generated contract changes ROM identity
 # but adds no save data or migration.
 EXPANSION_CUSTOM_SPELL_EFFECTS ?= 0
+ASSET_MANIFEST ?= assets/manifest.json
 
 # --- Optional one-phase blue delegation (issue #87) ------------------------
 # Expose one localized map-menu command that delegates the remaining eligible
