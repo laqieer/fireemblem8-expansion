@@ -335,8 +335,17 @@ deactivation, or event flag.
 Every authored `src/data/*_bundle.json` is loaded and indexed by chapter
 identity. Its `chapterObjectives` declaration is the ownership declaration
 for that chapter's symbols; a matching owner must exist exactly once, and its
-`tables.units.symbols` is the only unit-group set the objectives may use.
-Keep the declaration empty when the chapter has no authored records.
+`tables.units.symbols` is the only unit-group set the objectives may use. Each
+bundle's `units`, `eventlists`, and related table dependencies are loaded from
+that bundle's own declared `TableRef.source` paths, not from another chapter's
+default table. Keep the declaration empty when the chapter has no authored
+records.
+
+`reach_area` and `hold_until_turn` rectangles must fit the owning chapter's
+actual map dimensions. Validation resolves the chapter's `mainLayerId` through
+`gChapterDataAssetTable`, then reads the map's authored TMX or layout metadata;
+coordinates at the last valid tile are accepted, while a partially or wholly
+off-map rectangle is rejected with the offending coordinate's JSON breadcrumb.
 
 ```sh
 python3 -m scripts.generated_data validate --table chapterobjectives
