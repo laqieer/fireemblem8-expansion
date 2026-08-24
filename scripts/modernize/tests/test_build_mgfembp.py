@@ -31,6 +31,7 @@ class BuildMgfembpTests(unittest.TestCase):
                 "make",
                 "--no-print-directory",
                 "-rR",
+                "-n",
                 "-p",
                 "__issue102_mgfembp_probe__",
             ],
@@ -55,6 +56,7 @@ class BuildMgfembpTests(unittest.TestCase):
                 "MODERN_MGFEMBP_EMBED_ASSETS := mgfembp/data/debug_font.png \\",
                 "    mgfembp/data/message_gfx.png \\",
                 "    mgfembp/data/message_tm_1.bin",
+                "    recipe-must-not-be-part-of-the-variable",
                 "# environment",
             )
         )
@@ -194,6 +196,7 @@ class BuildMgfembpTests(unittest.TestCase):
                 "make",
                 "--no-print-directory",
                 "-rR",
+                "-n",
                 "-p",
                 "__issue102_mgfembp_probe__",
             ],

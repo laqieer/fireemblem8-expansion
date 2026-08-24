@@ -6,7 +6,11 @@ import re
 def _join_continuations(lines, start):
     fragments = [lines[start]]
     index = start + 1
-    while index < len(lines) and lines[index].startswith((" ", "\t")):
+    while (
+        fragments[-1].rstrip().endswith("\\")
+        and index < len(lines)
+        and lines[index].startswith((" ", "\t"))
+    ):
         fragments.append(lines[index])
         index += 1
     return " ".join(fragment.strip().removesuffix("\\").strip() for fragment in fragments)

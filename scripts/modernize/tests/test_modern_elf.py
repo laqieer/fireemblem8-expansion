@@ -37,7 +37,7 @@ class ModernElfTargetTests(unittest.TestCase):
         )
 
     def resolved_make_database_rule(self, target):
-        result = self.make("-rR", "-p", "__issue102_modern_elf_probe__")
+        result = self.make("-rR", "-n", "-p", "__issue102_modern_elf_probe__")
         self.assertNotEqual(result.returncode, 0)
         rule = make_database_rule(result.stdout, target)
         self.assertIsNotNone(rule, result.stdout[-4000:])

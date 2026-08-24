@@ -1613,6 +1613,7 @@ class StarterContentCompileTimeContractTests(unittest.TestCase):
                 "make",
                 "--no-print-directory",
                 "-rR",
+                "-n",
                 "-p",
                 "__issue102_config_probe__",
                 "MODERN_CONFIG_RESOLVE_GOALS=__issue102_config_probe__",
@@ -1637,6 +1638,7 @@ class StarterContentCompileTimeContractTests(unittest.TestCase):
             (
                 "MODERN_CFLAGS := -DFE8_EXPANSION_STARTER_CONTENT=1 \\",
                 "    -DFE8_ITEM_ID_CAP=0xCE",
+                "    recipe-must-not-be-part-of-the-variable",
                 "# automatic",
             )
         )
