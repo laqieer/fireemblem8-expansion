@@ -645,6 +645,15 @@
       "surface": "debug_overlay",
       "max_width": 16,
       "max_decoded_bytes": 24
+    },
+    {
+      "id": 79,
+      "key": "debug.action.music_preview",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40,
+      "notes": "Issue #126 bounded debugtools music-preview action."
     }
   ]
 }
