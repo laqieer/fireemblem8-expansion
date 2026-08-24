@@ -1,0 +1,8 @@
+# Exact Python 3.12/x86_64 wheels used by ubuntu-latest Build CI.
+# Runner changes fail closed until replacement artifacts are reviewed.
+numpy==2.5.2 \
+    --hash=sha256:3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8
+pillow==12.3.0 \
+    --hash=sha256:78cb2c6865a35ab8ff8b75fd122f6033b92a62c82801110e48ddd6c936a45d91
+ttp==0.10.1 \
+    --hash=sha256:2c8bc871f7740b690c6df6fb8c9633be58fcda123eea3e53be40a79e4af54b83
