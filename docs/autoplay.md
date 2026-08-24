@@ -278,23 +278,26 @@ character constants, and event flags. Its only initial kinds are:
 - `defeat_group`: every live member of one AI group is absent or defeated;
 - `event_flag`: observe a named existing `EVFLAG_*`; and
 - `hold_until_turn`: keep one group in an inclusive rectangle through a
-  bounded chapter turn.
+  bounded chapter turn, latching its first violation in a required existing
+  `failureFlag`.
 
 AI groups expose validated membership only. They do not choose targets,
 movement, actions, scoring, or precedence; those decisions remain for the
 later strategy layer. Group members reference both a symbolic character and
-an existing chapter unit-group symbol, so an author cannot silently attach an
-objective to a similarly named or unrelated unit.
+an existing unit-group symbol owned by the same chapter bundle, so an author
+cannot silently attach an objective to a similarly named or unrelated unit.
 
 Activation and deactivation are derived exclusively from existing event flags.
 Event scripts set/clear those flags through the existing `flag.set` and
 `flag.clear` helper operations (or existing hand-authored events); no
 objective opcode, event router, or alternate manifest exists. The evaluator
 recomputes pending/success/failure from the current chapter, flags, units,
-and turn on every battle-map task tick and phase start. It stores no history: an authored event
-that must remember a transition must latch that decision in an existing event
-flag. Suspend/load is therefore safe by reconstruction and adds no hidden or
-serialized state.
+and turn on every battle-map task tick and phase start. `hold_until_turn`
+additionally sets its declared existing `failureFlag` on the first missing,
+rescued, dead, or out-of-area member; later re-entry cannot clear that latch.
+All other authored history must likewise be represented by an existing event
+flag. Suspend/load therefore reconstructs the same state without hidden or
+serialized objective data.
 
 Recruitment, village, and chest events remain authored event-script behavior:
 their existing success path must set a named, persistent `EVFLAG_*`, and an
@@ -314,8 +317,10 @@ eight groups per chapter, and 16 members per group. Modern generated data
 uses 12 bytes per bundle, 12 bytes plus members per group, and 28 bytes per
 objective; the default empty table is one 12-byte sentinel. The runtime adds
 16 EWRAM bytes and no IWRAM, save, migration, compatibility epoch,
-localization, configuration identity, or feature gate. It is excluded from
-the archival lane.
+localization, configuration identity, or feature gate. Each authored
+telemetry refresh uses a bounded 1 KiB stack index and scans the 255 unit
+slots once, eliminating per-member character scans while remaining within the
+4 KiB stack bound. It is excluded from the archival lane.
 
 The canonical procedure is
 [`TC-AUTOPLAY-OBJECTIVE-001`](test-cases/autoplay.md#tc-autoplay-objective-001-typed-authored-objective-lifecycle).

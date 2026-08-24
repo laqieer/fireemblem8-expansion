@@ -271,7 +271,7 @@ contract being tested and is not inferred from inactivity.
 ### Actions
 
 1. Run
-   `python3 -m unittest scripts.generated_data.tests.test_chapterobjectives_schema scripts.generated_data.tests.test_chapterbundle_schema.ChapterObjectivesBundleTests scripts.generated_data.tests.test_cli_new_tables.CliChapterObjectivesTests -v`.
+   `python3 -m unittest scripts.generated_data.tests.test_chapterobjectives_schema scripts.generated_data.tests.test_chapterbundle_schema scripts.generated_data.tests.test_cli_new_tables.CliChapterObjectivesTests -v`.
 2. Run `python3 -m unittest tools.gba-playtest.tests.test_chapter_objectives -v`.
 3. Run
    `make expansion-modern-chapter-objectives-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
@@ -282,10 +282,12 @@ The generated fixture resolves every initial generic kind: a known event
 objective transitions pending -> success with progress 0 -> 1 after its
 existing event flag is set; a real Chapter 2 group moves from reach progress
 0 -> 1; defeating its protected unit produces a protect failure and a
-defeat-group success. The evaluator publishes those known states and stable
-IDs through a test-only profile probe. Resetting transient telemetry and
-refreshing it reproduces the same live state, proving no objective lifecycle
-state is hidden outside chapter units, flags, and turn state.
+defeat-group success. Leaving a hold rectangle latches its declared existing
+failure flag, so re-entering before its deadline remains failure. The
+evaluator publishes those known states and stable IDs through a test-only
+profile probe. Resetting transient telemetry and refreshing it reproduces the
+same live state, proving no objective lifecycle state is hidden outside
+chapter units, flags, and turn state.
 
 The bounded debug ROM negative follows #86's default PLAYER route. Its one
 terminal checkpoint is `max_frames` and all four objective telemetry words
@@ -300,14 +302,16 @@ is serialized.
 ### Negative controls
 
 Empty or oversized groups, duplicate IDs, unknown/mismatched
-chapter-unit/character references, invalid rectangles or turns, missing or
-stale dependency declarations, contradictory flags, protect cycles, and an
-unreachable chapter-bundle symbol fail with source locations and JSON
-breadcrumbs. Kind-specific unused fields, invalid non-ASCII stable IDs, and a
-protect objective that completes by defeating its protected unit also fail
-closed. The host reset/reconstruction assertion and the real fixture
+chapter-unit/character references (including a unit group owned by another
+chapter), invalid rectangles or turns, missing or stale dependency
+declarations, contradictory flags, protect cycles, and an unreachable
+chapter-bundle symbol fail with source locations and JSON breadcrumbs.
+Kind-specific unused fields, invalid non-ASCII stable IDs, and a protect
+objective that completes by defeating its protected unit also fail closed.
+The host reset/reconstruction assertion and the real fixture
 Suspend/Resume route both clear only transient telemetry, then derive the
-same state without serializing an objective field.
+same state without serializing an objective field; a hold's already-set
+existing failure flag remains the explicit persistent failure state.
 
 ### Interactions and save compatibility
 
