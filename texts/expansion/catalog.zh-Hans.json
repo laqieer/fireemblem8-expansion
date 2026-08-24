@@ -2,6 +2,8 @@
   "$schema": "expansion-localization-catalog-v1",
   "locale": "zh-Hans",
   "strings": {
+    "autoplay.charge.label": "冲锋",
+    "autoplay.charge.help": "仅在本回合将剩余单位交给电脑控制",
     "framework.title": "扩展框架",
     "framework.version_label": "版本:",
     "framework.build_label": "构建:",

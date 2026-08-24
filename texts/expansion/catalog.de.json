@@ -2,6 +2,8 @@
   "$schema": "expansion-localization-catalog-v1",
   "locale": "de",
   "strings": {
+    "autoplay.charge.label": "Angriff",
+    "autoplay.charge.help": "Übrige Einheiten in dieser Phase der KI überlassen.",
     "framework.title": "Erweiterungsrahmen",
     "framework.version_label": "Version:",
     "framework.build_label": "Build:",

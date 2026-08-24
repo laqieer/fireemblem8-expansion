@@ -67,6 +67,53 @@ class BuildOutputsTests(unittest.TestCase):
         self.assertEqual(ids, sorted(ids))
         self.assertEqual(len(ids), len(set(ids)))
 
+    def test_charge_and_diagnostics_message_ids_are_stable_and_disjoint(self):
+        entries_by_key = {
+            entry.key: entry for entry in self.catalog.active_entries
+        }
+        diagnostic_keys = (
+            "debug.view.state",
+            "debug.view.engine",
+            "debug.action.refresh",
+            "debug.value.unavailable",
+            "debug.field.context",
+            "debug.field.clock",
+            "debug.field.chapter",
+            "debug.field.turn",
+            "debug.field.phase",
+            "debug.field.cursor",
+            "debug.field.unit",
+            "debug.field.character",
+            "debug.field.class",
+            "debug.field.hp",
+            "debug.field.weather",
+            "debug.field.fog",
+            "debug.field.rng",
+            "debug.field.proc_count",
+            "debug.field.event",
+            "debug.field.actions",
+            "debug.field.log_retained",
+            "debug.field.log_writes",
+            "debug.field.log_last",
+            "debug.field.assert_count",
+            "debug.field.assert_last",
+            "debug.value.context_title",
+            "debug.value.context_map",
+            "debug.value.context_prep",
+            "debug.value.context_battle",
+            "debug.value.phase_player",
+            "debug.value.phase_enemy",
+            "debug.value.phase_npc",
+            "debug.value.phase_other",
+        )
+
+        self.assertEqual(entries_by_key["autoplay.charge.label"].id, 80)
+        self.assertEqual(entries_by_key["autoplay.charge.help"].id, 81)
+        self.assertEqual(
+            [entries_by_key[key].id for key in diagnostic_keys],
+            list(range(82, 115)),
+        )
+
     def test_budget_reports_all_required_sections(self):
         budget = build_budget(self.catalog)
         for key in (

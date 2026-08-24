@@ -2,6 +2,8 @@
   "$schema": "expansion-localization-catalog-v1",
   "locale": "ja",
   "strings": {
+    "autoplay.charge.label": "進撃",
+    "autoplay.charge.help": "残りのユニットをこのフェイズだけAIに任せる",
     "framework.title": "拡張フレームワーク",
     "framework.version_label": "バージョン:",
     "framework.build_label": "ビルド:",

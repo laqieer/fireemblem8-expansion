@@ -956,9 +956,9 @@ struct DebugToolsProbe
                                   * most recent inspect (enum
                                   * SaveCompatState) */
     u32 saveCompatInspectCount; /* increments once per inspect */
-    u32 saveCompatBackBg1Preserved; /* 1 when Save State's only Back path
-                                     * reaches the deferred hub return
-                                     * without clearing its BG1 frame tile */
+    u32 saveCompatBackMenuPreserved; /* 1 when Save State's only Back path
+                                      * reaches the deferred hub return
+                                      * without clearing its actual menu frame tile */
     u32 saveCompatBackReturnCount; /* completed owned Save State Back returns */
 };
 

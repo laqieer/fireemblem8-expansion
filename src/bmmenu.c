@@ -4,6 +4,11 @@
 #ifdef MODERN
 #include "expansion_ui_prefs.h"
 #endif
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
+#include "expansion_blue_phase_delegate.h"
+#include "expansion_locale.h"
+#include "expansion_msg_ids.h"
+#endif
 
 #include "hardware.h"
 #include "fontgrp.h"
@@ -218,6 +223,84 @@ u8 ExpansionDangerOverlay_MenuSelect(struct MenuProc* menu, struct MenuItemProc*
 #endif
 
 #undef EXPANSION_RECORD_DANGER_OVERLAY_PREF
+
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
+u8 ExpansionBluePhaseDelegate_MenuAvailability(
+    const struct MenuItemDef* def,
+    int number)
+{
+    enum ExpansionBluePhaseDelegateResult result;
+
+    (void)def;
+    (void)number;
+
+    result = ExpansionBluePhaseDelegate_GetAvailability();
+    return result == EXPANSION_BLUE_PHASE_DELEGATE_OK
+        ? MENU_ENABLED
+        : MENU_NOTSHOWN;
+}
+
+int ExpansionBluePhaseDelegate_MenuDraw(
+    struct MenuProc* menu,
+    struct MenuItemProc* menuItem)
+{
+    if (menuItem->availability == MENU_DISABLED)
+        Text_SetColor(&menuItem->text, TEXT_COLOR_SYSTEM_GRAY);
+
+    Text_DrawString(
+        &menuItem->text,
+        ExpansionLocale_ResolveCurrent(EXP_MSG_AUTOPLAY_CHARGE_LABEL));
+    PutText(
+        &menuItem->text,
+        TILEMAP_LOCATED(
+            BG_GetMapBuffer(menu->frontBg),
+            menuItem->xTile,
+            menuItem->yTile));
+
+    return 0;
+}
+
+u8 ExpansionBluePhaseDelegate_MenuSelect(
+    struct MenuProc* menu,
+    struct MenuItemProc* menuItem)
+{
+    enum ExpansionBluePhaseDelegateResult result;
+
+    (void)menu;
+    (void)menuItem;
+
+    result = ExpansionBluePhaseDelegate_Start();
+    if (result != EXPANSION_BLUE_PHASE_DELEGATE_OK)
+        return MENU_ACT_SND6B;
+
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
+}
+
+u8 ExpansionBluePhaseDelegate_MenuRPress(struct MenuProc* menu)
+{
+    MenuAutoHelpBoxSelect(menu);
+    return 0;
+}
+
+u8 ExpansionBluePhaseDelegate_MenuHelpBox(
+    struct MenuProc* menu,
+    struct MenuItemProc* menuItem)
+{
+    if (menuItem->def->onSelected == ExpansionBluePhaseDelegate_MenuSelect)
+    {
+        const char *resolved =
+            ExpansionLocale_ResolveCurrentPersistent(EXP_MSG_AUTOPLAY_CHARGE_HELP);
+
+        StartHelpBoxString(
+            menuItem->xTile * 8,
+            menuItem->yTile * 8,
+            resolved);
+        return 0;
+    }
+
+    return MenuStdHelpBox(menu, menuItem);
+}
+#endif
 
 u8 MapMenu_SuspendCommandEffect(void) {
 

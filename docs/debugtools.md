@@ -1029,8 +1029,9 @@ screen far enough to exercise this path: it observes
 (`0x020210b8`) holds `PLAY_FLAG_PREPSCREEN` (`0x10`), the hub opens
 (`hubOpenCount` `0x02031818` `1 -> 2`, `sHubActive` `0x02031614`
 `0 -> 1`), a 2nd SELECT+B is idempotent (`hubOpenCount` stays `2`), and the
-hub then closes (`sHubActive -> 0`) with prep still live -- a safe return
-to prep. The field is always-linked and mirrors every other probe's
+hub owns that input so its prep observation count is exactly `2`, then closes
+(`sHubActive -> 0`) with prep still live -- a safe return to prep. The field
+is always-linked and mirrors every other probe's
 zero-by-default contract in a release build.
 
 ## Diagnostics: structured probe/log ring + non-fatal assert record (issue #11 closure)
@@ -1648,7 +1649,7 @@ effect, safe map return, and the release compiled-out negative control.
 
 Issue #127 adds a read-only, fixed-layout diagnostics provider and two bounded
 views to the existing hub. It does not register an action: built-in IDs
-`1..9`, contributor IDs `10..65535`, both nine-entry capacities, and combined
+`1..10`, contributor IDs `11..65535`, both nine-entry capacities, and combined
 registry introspection remain unchanged.
 
 ```c

@@ -28267,6 +28267,22 @@
           ]
         },
         {
+          "id": "expansion:autoplay.charge.label",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:autoplay.charge.help",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "expansion:debug.view.state",
           "mapping_source_kind": "expansion",
           "reason": "expansion UI registry system-font consumer",
@@ -28550,12 +28566,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2037,
+          "system": 2039,
           "talk": 1172
         },
-        "expansion_key_count": 112,
+        "expansion_key_count": 114,
         "game_target_count": 3414,
-        "record_count": 3528,
+        "record_count": 3530,
         "unclassified_count": 0
       }
     },
@@ -56825,6 +56841,22 @@
           ]
         },
         {
+          "id": "expansion:autoplay.charge.label",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:autoplay.charge.help",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "expansion:debug.view.state",
           "mapping_source_kind": "expansion",
           "reason": "expansion UI registry system-font consumer",
@@ -57108,12 +57140,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2037,
+          "system": 2039,
           "talk": 1172
         },
-        "expansion_key_count": 112,
+        "expansion_key_count": 114,
         "game_target_count": 3414,
-        "record_count": 3528,
+        "record_count": 3530,
         "unclassified_count": 0
       }
     }

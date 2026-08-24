@@ -398,6 +398,16 @@
         "zh-Hans": "BGM查看"
       },
       {
+        "ja": "進撃",
+        "key": "autoplay.charge.label",
+        "zh-Hans": "冲锋"
+      },
+      {
+        "ja": "残りのユニットをこのフェイズだけAIに任せる",
+        "key": "autoplay.charge.help",
+        "zh-Hans": "仅在本回合将剩余单位交给电脑控制"
+      },
+      {
         "ja": "状態",
         "key": "debug.view.state",
         "zh-Hans": "状态"

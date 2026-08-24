@@ -1800,18 +1800,30 @@ class DebugToolsMapPrepOneEntryPathTests(unittest.TestCase):
         self.assertIn("DebugTools_MapHotkeyCheck()", statements[0])
         self.assertIn("DebugTools_IsHubActive()", body[: body.find("DebugTools_MapHotkeyCheck") + 400])
 
-    def test_prep_hotkey_check_is_the_first_statement_and_returns_while_hub_active(self):
-        """PrepScreenProc_MapIdle must call DebugTools_PrepHotkeyCheck() as
-        its first statement and immediately return while the hub is
-        active."""
+    def test_prep_hotkey_input_is_owned_by_the_active_hub(self):
+        """PrepScreenProc_MapIdle must reject input before calling its
+        hotkey hook when a hub is active, then reject vanilla input after
+        a successful open in the same frame."""
         text = _strip_c_comments(PREP_SALLYCURSOR_SRC.read_text(encoding="utf-8", errors="replace"))
         match = re.search(r"\bPrepScreenProc_MapIdle\s*\([^)]*\)\s*\{(.*?)\n\}", text, flags=re.DOTALL)
         self.assertIsNotNone(match, "PrepScreenProc_MapIdle definition not found")
         body = match.group(1)
-        statements = [s.strip() for s in body.split(";") if s.strip()]
-        self.assertGreaterEqual(len(statements), 1)
-        self.assertIn("DebugTools_PrepHotkeyCheck()", statements[0])
-        self.assertIn("DebugTools_IsHubActive()", body[: body.find("DebugTools_PrepHotkeyCheck") + 400])
+        hotkey = body.find("DebugTools_PrepHotkeyCheck()")
+        first_guard = body.find("DebugTools_IsHubActive()")
+        second_guard = body.find("DebugTools_IsHubActive()", hotkey)
+        self.assertGreaterEqual(hotkey, 0)
+        self.assertGreaterEqual(first_guard, 0)
+        self.assertGreaterEqual(second_guard, 0)
+        self.assertLess(
+            first_guard,
+            hotkey,
+            "an active hub must own prep input before the parent observes a hotkey",
+        )
+        self.assertGreater(
+            second_guard,
+            hotkey,
+            "a newly opened hub must still block vanilla prep input in its opening frame",
+        )
 
     def test_dormant_tools_still_untouched(self):
         for name in ("src/bmdebug.c", "src/uidebug.c", "src/menu_def.c"):

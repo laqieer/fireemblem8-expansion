@@ -2,6 +2,8 @@
   "$schema": "expansion-localization-catalog-v1",
   "locale": "es",
   "strings": {
+    "autoplay.charge.label": "Carga",
+    "autoplay.charge.help": "Delegar las unidades restantes a la IA este turno.",
     "framework.title": "Marco de expansión",
     "framework.version_label": "Versión:",
     "framework.build_label": "Build:",

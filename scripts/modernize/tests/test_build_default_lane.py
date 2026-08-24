@@ -330,6 +330,7 @@ class AutotoolsConfigureTests(unittest.TestCase):
             "--enable-mechanics-hooks",
             "--enable-mechanics-sample",
             "--enable-danger-overlay-menu",
+            "--enable-blue-phase-delegate",
             "--enable-starter-content",
             "--enable-localized-text-auto-wrap",
             "--enable-pseudo-locale",
@@ -347,6 +348,7 @@ class AutotoolsConfigureTests(unittest.TestCase):
                 "--enable-mechanics-hooks",
                 "--enable-mechanics-sample",
                 "--enable-danger-overlay-menu",
+                "--enable-blue-phase-delegate",
                 "--enable-starter-content",
                 "--with-item-id-cap=0xCE",
             )
@@ -358,6 +360,7 @@ class AutotoolsConfigureTests(unittest.TestCase):
             self.assertEqual(fragment["EXPANSION_MECHANICS_HOOKS"], "1")
             self.assertEqual(fragment["EXPANSION_MECHANICS_SAMPLE"], "1")
             self.assertEqual(fragment["EXPANSION_DANGER_OVERLAY_MENU"], "1")
+            self.assertEqual(fragment["EXPANSION_BLUE_PHASE_DELEGATE"], "1")
             self.assertEqual(fragment["EXPANSION_STARTER_CONTENT"], "1")
             self.assertEqual(fragment["FE8_ITEM_ID_CAP"], "0xCE")
             self.assertTrue((Path(build_dir) / "GNUmakefile").is_file())
@@ -367,6 +370,7 @@ class AutotoolsConfigureTests(unittest.TestCase):
                     "make",
                     "--no-print-directory",
                     "print-EXPANSION_MECHANICS_HOOKS",
+                    "print-EXPANSION_BLUE_PHASE_DELEGATE",
                     "print-EXPANSION_STARTER_CONTENT",
                     "print-FE8_ITEM_ID_CAP",
                     "print-GENERATED_DATA_ITEM_CAP",
@@ -380,6 +384,7 @@ class AutotoolsConfigureTests(unittest.TestCase):
             self.assertEqual(make_result.returncode, 0, make_result.stdout[-4000:])
             values = parse_print_variables(make_result.stdout)
             self.assertEqual(values["EXPANSION_MECHANICS_HOOKS"], "1")
+            self.assertEqual(values["EXPANSION_BLUE_PHASE_DELEGATE"], "1")
             self.assertEqual(values["EXPANSION_STARTER_CONTENT"], "1")
             self.assertEqual(values["FE8_ITEM_ID_CAP"], "0xCE")
             self.assertEqual(values["GENERATED_DATA_ITEM_CAP"], "0xCE")

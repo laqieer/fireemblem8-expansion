@@ -2,6 +2,8 @@
   "$schema": "expansion-localization-catalog-v1",
   "locale": "fr",
   "strings": {
+    "autoplay.charge.label": "Charge",
+    "autoplay.charge.help": "Confier les unités restantes à l'IA pour ce tour.",
     "framework.title": "Cadre d'extension",
     "framework.version_label": "Version :",
     "framework.build_label": "Build :",

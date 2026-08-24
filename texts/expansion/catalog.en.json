@@ -2,6 +2,8 @@
   "$schema": "expansion-localization-catalog-v1",
   "locale": "en",
   "strings": {
+    "autoplay.charge.label": "Charge",
+    "autoplay.charge.help": "Delegate remaining units for this phase.",
     "framework.title": "Expansion Framework",
     "framework.version_label": "Version:",
     "framework.build_label": "Build:",

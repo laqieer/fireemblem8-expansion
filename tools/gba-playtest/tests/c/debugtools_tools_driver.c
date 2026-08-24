@@ -78,6 +78,8 @@ extern void DebugToolsHostStub_ClearFakeFlags(void);
 extern void DebugToolsHostStub_SetFakeSaveCompatState(enum SaveCompatState state);
 extern void DebugToolsHostStub_FillBgMap(u16 value);
 extern int DebugToolsHostStub_IsBgMapFilled(u16 value);
+extern void DebugToolsHostStub_SetBgMapTile(int bg, int x, int y, u16 value);
+extern u16 DebugToolsHostStub_GetBgMapTile(int bg, int x, int y);
 extern void DebugToolsHostStub_RunPendingTransition(void);
 
 extern struct MenuDef CONST_DATA gDebugToolsUnitMenuDef;
@@ -125,6 +127,7 @@ static int ReadUnitStatField(
 int main(void)
 {
     const struct DebugToolsAction* action;
+    struct MenuProc saveStateMenu;
     u8 rc;
 
     /* --- Registration: five actions, ids 5-9, deterministic order. ---- */
@@ -851,20 +854,46 @@ int main(void)
     CHECK(gDebugToolsSaveStateMenuDef.menuItems[0].onSelected == DebugTools_CancelMenu,
           "save-state Back must use the owned no-clear cancel handler");
 
-    DebugToolsHostStub_FillBgMap(0x51A5);
+    memset(&saveStateMenu, 0, sizeof(saveStateMenu));
+    saveStateMenu.frontBg = 2;
+    saveStateMenu.rect.x = 7;
+    saveStateMenu.rect.y = 9;
+    saveStateMenu.rect.w = 6;
+    saveStateMenu.rect.h = 3;
+
+    DebugToolsHostStub_FillBgMap(0);
+    DebugToolsHostStub_SetBgMapTile(
+        saveStateMenu.frontBg,
+        saveStateMenu.rect.x,
+        saveStateMenu.rect.y,
+        0x51A5);
+    CHECK(
+        DebugToolsHostStub_GetBgMapTile(
+            1,
+            gDebugToolsSaveStateMenuDef.rect.x,
+            gDebugToolsSaveStateMenuDef.rect.y) == 0,
+        "save-state regression fixture must distinguish the default menu surface");
     rc = gDebugToolsSaveStateMenuDef.menuItems[0].onSelected(NULL, NULL);
     CHECK(rc == (MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6B),
           "save-state Back must end without MENU_ACT_CLEAR");
-    CHECK(DebugToolsHostStub_IsBgMapFilled(0x51A5),
-          "save-state Back must not clear the current BG map");
+    CHECK(
+        DebugToolsHostStub_GetBgMapTile(
+            saveStateMenu.frontBg,
+            saveStateMenu.rect.x,
+            saveStateMenu.rect.y) == 0x51A5,
+        "save-state Back must not clear the actual menu frame tile");
 
-    gDebugToolsSaveStateMenuDef.onEnd(NULL);
+    gDebugToolsSaveStateMenuDef.onEnd(&saveStateMenu);
     DebugToolsHostStub_RunPendingTransition();
-    CHECK(DebugToolsHostStub_IsBgMapFilled(0x51A5),
-          "save-state return-to-hub must preserve the BG map");
-    CHECK(gDebugToolsProbe.saveCompatBackBg1Preserved == 1
+    CHECK(
+        DebugToolsHostStub_GetBgMapTile(
+            saveStateMenu.frontBg,
+            saveStateMenu.rect.x,
+            saveStateMenu.rect.y) == 0x51A5,
+        "save-state return-to-hub must preserve the actual menu frame tile");
+    CHECK(gDebugToolsProbe.saveCompatBackMenuPreserved == 1
               && gDebugToolsProbe.saveCompatBackReturnCount == 1,
-          "save-state Back must preserve BG1 before the deferred hub redraw");
+          "save-state Back must preserve the completed menu's own BG and frame tile");
     DebugToolsHostStub_SetFakeSaveCompatState(SAVE_COMPAT_MIGRATABLE_OLDER);
     DebugTools_GetRegisteredAction(4)->onSelected(NULL, NULL);
     gDebugToolsHubMenuDef.onEnd(NULL);
