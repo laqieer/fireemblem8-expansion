@@ -94,7 +94,8 @@
     "debug.save_fixture.preview": "RAM-Kopie",
     "debug.save_fixture.title_only": "Nur Titel",
     "debug.save_fixture.invalid": "Ungültig",
-    "debug.save_fixture.blocked": "Speichern aus",
+    "debug.save_fixture.blocked": "Speichern aus"
+,
     "debug.action.chapter_skirmish": "Kapitel/Gefecht",
     "debug.selector.chapter": "Kapitel",
     "debug.selector.skirmish": "Gefecht",

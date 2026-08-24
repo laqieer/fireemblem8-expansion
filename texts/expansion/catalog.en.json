@@ -94,7 +94,8 @@
     "debug.save_fixture.preview": "RAM Fixture",
     "debug.save_fixture.title_only": "Title Only",
     "debug.save_fixture.invalid": "Invalid",
-    "debug.save_fixture.blocked": "Save Blocked",
+    "debug.save_fixture.blocked": "Save Blocked"
+,
     "debug.action.chapter_skirmish": "Chapter/Skirmish",
     "debug.selector.chapter": "Chapter",
     "debug.selector.skirmish": "Skirmish",
