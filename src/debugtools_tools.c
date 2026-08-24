@@ -48,8 +48,8 @@
  *
  * Each is a single registry action using the shared deferred submenu owner.
  * Every mutation requires a bounded preview and a separate confirmation
- * input; tool 9 remains read-only. Issue #125 extends action 5 through the
- * same seam with cursor selection and typed HP/stat/AI/status editors.
+ * input; tool 9 remains read-only. The unit editor uses the same seam for
+ * cursor selection and typed HP/stat/AI/status edits.
  *
  * No tool performs a raw/arbitrary address write. Fixed constants remain for
  * convoy/flag/RNG operations; the unit editor resolves a canonical live-map
@@ -156,118 +156,52 @@ static int DebugToolsTools_UsesCjkText(void)
     return locale == EXPANSION_LOCALE_JA || locale == EXPANSION_LOCALE_ZH_HANS;
 }
 
-static void DebugToolsTools_DrawCjkStatusLine(const char* text)
+static void DebugToolsTools_MenuOnInit(struct MenuProc* menu)
 {
-    BG_Fill(BG_GetMapBuffer(2), 0);
-    PutDrawText(
-        NULL,
-        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
-        TEXT_COLOR_SYSTEM_WHITE,
-        0,
-        DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES,
-        text);
-    BG_EnableSyncByMask(BG2_SYNC_BIT);
-    gLCDControlBuffer.dispcnt.bg2_on = 1;
+    char* status = DebugToolsDiagnostics_GetStatusBuffer();
+
+    if (status != NULL)
+        DebugToolsDiagnostics_DrawStatusText(menu, status);
 }
-
-static void DebugToolsTools_UnitMenuOnInit(struct MenuProc* menu)
-{
-    char buf[64];
-
-    (void)menu;
-    if (!DebugToolsTools_UsesCjkText())
-        return;
-
-    if (gDebugToolsProbe.unitInspectTargetFound)
-        sprintf(buf, "%s %d/%d",
-            ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_UNIT_HP),
-            (int)gDebugToolsProbe.unitInspectLastCurHp,
-            (int)gDebugToolsProbe.unitInspectLastMaxHp);
-    else
-        sprintf(buf, "%s", ExpansionLocale_ResolveCurrent(
-            EXP_MSG_DEBUG_STATUS_UNIT_UNAVAILABLE));
-
-    DebugToolsTools_DrawCjkStatusLine(buf);
-}
-
-static void DebugToolsTools_ConvoyMenuOnInit(struct MenuProc* menu)
-{
-    char buf[64];
-
-    (void)menu;
-    if (!DebugToolsTools_UsesCjkText())
-        return;
-    sprintf(buf, "%s %d/%d",
-        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_CONVOY),
-        (int)gDebugToolsProbe.convoyLastItemCount,
-        (int)CONVOY_ITEM_COUNT);
-    DebugToolsTools_DrawCjkStatusLine(buf);
-}
-
-static void DebugToolsTools_FlagMenuOnInit(struct MenuProc* menu)
-{
-    char buf[64];
-    char chapterLabel[24];
-
-    (void)menu;
-    if (!DebugToolsTools_UsesCjkText())
-        return;
-    strcpy(
-        chapterLabel,
-        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_CHAPTER));
-    sprintf(buf, "%s %d %s %d",
-        chapterLabel,
-        (int)gDebugToolsProbe.chapterIndexSample,
-        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_FLAG),
-        (int)gDebugToolsProbe.debugFlagLastValue);
-    DebugToolsTools_DrawCjkStatusLine(buf);
-}
-
-static void DebugToolsTools_RngMenuOnInit(struct MenuProc* menu)
-{
-    char buf[64];
-
-    (void)menu;
-    if (!DebugToolsTools_UsesCjkText())
-        return;
-    sprintf(buf, "%s %04X",
-        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_RNG_SEED),
-        (unsigned int)gDebugToolsProbe.rngInspectSeedSample0);
-    DebugToolsTools_DrawCjkStatusLine(buf);
-}
-
-static void DebugToolsTools_SaveStateMenuOnInit(struct MenuProc* menu)
-{
-    char buf[64];
-
-    (void)menu;
-    if (!DebugToolsTools_UsesCjkText())
-        return;
-    sprintf(buf, "%s %d",
-        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_SAVE_STATE),
-        (int)gDebugToolsProbe.saveCompatLastState);
-    DebugToolsTools_DrawCjkStatusLine(buf);
-}
-
-#define DEBUGTOOLS_UNIT_MENU_ON_INIT DebugToolsTools_UnitMenuOnInit
-#define DEBUGTOOLS_CONVOY_MENU_ON_INIT DebugToolsTools_ConvoyMenuOnInit
-#define DEBUGTOOLS_FLAG_MENU_ON_INIT DebugToolsTools_FlagMenuOnInit
-#define DEBUGTOOLS_RNG_MENU_ON_INIT DebugToolsTools_RngMenuOnInit
-#define DEBUGTOOLS_SAVE_MENU_ON_INIT DebugToolsTools_SaveStateMenuOnInit
+#define DEBUGTOOLS_UNIT_MENU_ON_INIT DebugToolsTools_MenuOnInit
 #else
 #define DEBUGTOOLS_LOCALIZE_ITEM(item, message) ((void)0)
 #define DEBUGTOOLS_UNIT_MENU_ON_INIT 0
-#define DEBUGTOOLS_CONVOY_MENU_ON_INIT 0
-#define DEBUGTOOLS_FLAG_MENU_ON_INIT 0
-#define DEBUGTOOLS_RNG_MENU_ON_INIT 0
-#define DEBUGTOOLS_SAVE_MENU_ON_INIT 0
+static void DebugToolsTools_MenuOnInit(struct MenuProc* menu)
+{
+    char* status = DebugToolsDiagnostics_GetStatusBuffer();
+
+    if (status != NULL)
+        DebugToolsDiagnostics_DrawStatusText(menu, status);
+}
 #endif
 
 static void DebugToolsTools_ShowStatusLine(const char* text)
 {
+    char* status = DebugToolsDiagnostics_GetStatusBuffer();
+
+    if (status != NULL)
+    {
+        strncpy(status, text, 63);
+        status[63] = '\0';
+        return;
+    }
+
 #ifdef MODERN
     if (DebugToolsTools_UsesCjkText())
+    {
+        BG_Fill(BG_GetMapBuffer(2), 0);
+        PutDrawText(
+            NULL,
+            BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
+            TEXT_COLOR_SYSTEM_WHITE,
+            0,
+            DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES,
+            text);
+        BG_EnableSyncByMask(BG2_SYNC_BIT);
+        gLCDControlBuffer.dispcnt.bg2_on = 1;
         return;
+    }
 #endif
 
     SetupDebugFontForBG(2, 0);
@@ -1824,10 +1758,10 @@ CONST_DATA struct MenuDef gDebugToolsConvoyMenuDef = {
     {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sConvoyMenuItemDefs,
-    DEBUGTOOLS_CONVOY_MENU_ON_INIT,
+    DebugToolsTools_MenuOnInit,
     DebugToolsConvoy_OnEnd,
     0,
-    MenuCancelSelect,
+    DebugTools_CancelMenu,
     0,
     0
 };
@@ -1874,10 +1808,11 @@ static void DebugToolsConvoy_BuildMenuItems(void)
 
     sConvoyMenuItemDefs[1].name = "Back";
     sConvoyMenuItemDefs[1].isAvailable = MenuAlwaysEnabled;
-    sConvoyMenuItemDefs[1].onSelected = MenuCancelSelect;
+    sConvoyMenuItemDefs[1].onSelected = DebugTools_CancelMenu;
     DEBUGTOOLS_LOCALIZE_ITEM(
         &sConvoyMenuItemDefs[1],
         EXP_MSG_FRAMEWORK_BACK);
+
 }
 
 static u8 DebugToolsActions_ConvoyInspectSelected(struct MenuProc* menu, struct MenuItemProc* item)
@@ -1917,10 +1852,10 @@ CONST_DATA struct MenuDef gDebugToolsFlagMenuDef = {
     {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sFlagMenuItemDefs,
-    DEBUGTOOLS_FLAG_MENU_ON_INIT,
+    DebugToolsTools_MenuOnInit,
     DebugToolsFlag_OnEnd,
     0,
-    MenuCancelSelect,
+    DebugTools_CancelMenu,
     0,
     0
 };
@@ -1972,10 +1907,11 @@ static void DebugToolsFlag_BuildMenuItems(void)
 
     sFlagMenuItemDefs[1].name = "Back";
     sFlagMenuItemDefs[1].isAvailable = MenuAlwaysEnabled;
-    sFlagMenuItemDefs[1].onSelected = MenuCancelSelect;
+    sFlagMenuItemDefs[1].onSelected = DebugTools_CancelMenu;
     DEBUGTOOLS_LOCALIZE_ITEM(
         &sFlagMenuItemDefs[1],
         EXP_MSG_FRAMEWORK_BACK);
+
 }
 
 static u8 DebugToolsActions_FlagInspectSelected(struct MenuProc* menu, struct MenuItemProc* item)
@@ -2028,10 +1964,10 @@ CONST_DATA struct MenuDef gDebugToolsRngMenuDef = {
     {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sRngMenuItemDefs,
-    DEBUGTOOLS_RNG_MENU_ON_INIT,
+    DebugToolsTools_MenuOnInit,
     DebugToolsRng_OnEnd,
     0,
-    MenuCancelSelect,
+    DebugTools_CancelMenu,
     0,
     0
 };
@@ -2068,10 +2004,11 @@ static void DebugToolsRng_BuildMenuItems(void)
 
     sRngMenuItemDefs[1].name = "Back";
     sRngMenuItemDefs[1].isAvailable = MenuAlwaysEnabled;
-    sRngMenuItemDefs[1].onSelected = MenuCancelSelect;
+    sRngMenuItemDefs[1].onSelected = DebugTools_CancelMenu;
     DEBUGTOOLS_LOCALIZE_ITEM(
         &sRngMenuItemDefs[1],
         EXP_MSG_FRAMEWORK_BACK);
+
 }
 
 static u8 DebugToolsActions_RngInspectSelected(struct MenuProc* menu, struct MenuItemProc* item)
@@ -2102,21 +2039,52 @@ CONST_DATA static struct DebugToolsAction sRngInspectAction = {
 
 /* --- 9. Save compatibility/state inspection (read-only) ------------------ */
 
-EWRAM_DATA static struct MenuItemDef sSaveStateMenuItemDefs[2] = {{0}}; /* back + terminator: nothing to confirm */
+EWRAM_DATA static struct MenuItemDef sSaveStateMenuItemDefs[2] = {{0}};
+extern struct MenuDef CONST_DATA gDebugToolsSaveStateMenuDef;
+static u16 sSaveStateFrameTile;
+static struct MenuRect sSaveStateFrameRect;
+static u8 sSaveStateFrameBg;
+static int sSaveStateBackPending;
+
+static void DebugToolsSaveState_CaptureFrame(struct MenuProc* menu)
+{
+    sSaveStateFrameBg = menu->backBg;
+    sSaveStateFrameRect = menu->rect;
+    sSaveStateFrameTile = BG_GetMapBuffer(sSaveStateFrameBg)[
+        TILEMAP_INDEX(sSaveStateFrameRect.x + 1, sSaveStateFrameRect.y)];
+}
 
 static void DebugToolsSaveState_OnEnd(struct MenuProc* menu)
 {
+    DebugToolsSaveState_CaptureFrame(menu);
+    sSaveStateBackPending = 1;
     DebugTools_ReturnToHubAfterMenuEnd(menu);
+}
+
+void DebugToolsSaveState_OnHubReturn(void)
+{
+    u16 currentTile;
+
+    if (!sSaveStateBackPending)
+        return;
+
+    currentTile = BG_GetMapBuffer(sSaveStateFrameBg)[
+        TILEMAP_INDEX(sSaveStateFrameRect.x + 1, sSaveStateFrameRect.y)];
+    /* The owner-backed menu surface can legitimately contain an empty tile. */
+    gDebugToolsProbe.saveCompatBackMenuPreserved =
+        sSaveStateFrameTile == currentTile;
+    gDebugToolsProbe.saveCompatBackReturnCount++;
+    sSaveStateBackPending = 0;
 }
 
 CONST_DATA struct MenuDef gDebugToolsSaveStateMenuDef = {
     {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sSaveStateMenuItemDefs,
-    DEBUGTOOLS_SAVE_MENU_ON_INIT,
+    DebugToolsTools_MenuOnInit,
     DebugToolsSaveState_OnEnd,
     0,
-    MenuCancelSelect,
+    DebugTools_CancelMenu,
     0,
     0
 };
@@ -2127,10 +2095,11 @@ static void DebugToolsSaveState_BuildMenuItems(void)
 
     sSaveStateMenuItemDefs[0].name = "Back";
     sSaveStateMenuItemDefs[0].isAvailable = MenuAlwaysEnabled;
-    sSaveStateMenuItemDefs[0].onSelected = MenuCancelSelect;
+    sSaveStateMenuItemDefs[0].onSelected = DebugTools_CancelMenu;
     DEBUGTOOLS_LOCALIZE_ITEM(
         &sSaveStateMenuItemDefs[0],
         EXP_MSG_FRAMEWORK_BACK);
+
 }
 
 static u8 DebugToolsActions_SaveStateInspectSelected(struct MenuProc* menu, struct MenuItemProc* item)

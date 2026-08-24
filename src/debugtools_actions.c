@@ -22,8 +22,8 @@
  * to live *inside* a MenuItemProc that gets ticked every frame while
  * focused -- a single onSelected callback cannot drive that cycling
  * behavior directly. Each action below therefore closes the hub and
- * opens its own bounded one-item orphan submenu (same StartOrphanMenu
- * idiom as the hub itself, src/debugtools_registry.c) whose sole
+ * opens its own bounded one-item owner-child submenu through the shared
+ * transition path in src/debugtools_registry.c; its sole
  * MenuItemDef reuses the real dormant function pointers, then reopens
  * the hub from its own onEnd once the submenu's B/Back closes it -- see
  * docs/debugtools.md. This file never edits src/bmdebug.c, src/menu_def.c,
@@ -82,7 +82,7 @@ CONST_DATA struct MenuDef gDebugToolsWeatherMenuDef = {
     0,
     DebugToolsWeather_OnEnd,
     0,
-    MenuCancelSelect,
+    DebugTools_CancelMenu,
     0,
     0
 };
@@ -121,15 +121,13 @@ static u8 DebugToolsActions_WeatherSelected(struct MenuProc* menu, struct MenuIt
     }
 
     DebugToolsWeather_BuildMenuItems();
-    SetupDebugFontForBG(2, 0);
-
     /* The transition captures this menu's first Text allocation, then
      * yields before rewinding it so every hub MenuItemProc is dead. */
     DebugTools_QueueSubmenuTransition(menu, &gDebugToolsWeatherMenuDef);
 
     /* Closes the hub (this action's own owning menu) exactly like the
      * Chapter 2 launcher action does -- see src/debugtools_launcher.c. */
-    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A;
 }
 
 CONST_DATA static struct DebugToolsAction sWeatherAction = {
@@ -156,7 +154,7 @@ CONST_DATA struct MenuDef gDebugToolsFogMenuDef = {
     0,
     DebugToolsFog_OnEnd,
     0,
-    MenuCancelSelect,
+    DebugTools_CancelMenu,
     0,
     0
 };
@@ -181,11 +179,9 @@ static u8 DebugToolsActions_FogSelected(struct MenuProc* menu, struct MenuItemPr
     (void)item;
 
     DebugToolsFog_BuildMenuItems();
-    SetupDebugFontForBG(2, 0);
-
     DebugTools_QueueSubmenuTransition(menu, &gDebugToolsFogMenuDef);
 
-    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A;
 }
 
 CONST_DATA static struct DebugToolsAction sFogAction = {
@@ -199,6 +195,11 @@ void DebugTools_RegisterWeatherFogActions(void)
      * successful no-ops. */
     DebugTools_RegisterBuiltinAction(&sWeatherAction);
     DebugTools_RegisterBuiltinAction(&sFogAction);
+}
+
+void DebugToolsActions_ForceCleanup(void)
+{
+    DebugToolsWeather_StopMonitorIfOwned();
 }
 
 #else /* !FE8_EXPANSION_DEBUGTOOLS_ENABLED */

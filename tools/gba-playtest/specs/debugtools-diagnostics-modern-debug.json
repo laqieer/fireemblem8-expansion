@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "name": "debugtools-diagnostics-modern-debug",
+  "description": "Issue #127 scalar-only diagnostics composition spec. Reuses the established Chapter 2 route, then opens State and Engine, refreshes once, and invokes the test-only forced owner teardown. The runtime fixture also executes title restoration, battle rejection, valid cursor-unit capture, and empty-tile capture.",
+  "base_scenario": "debugtools-hub-modern-debug.json",
+  "base_frame_limit": 14164,
+  "tail_frames": [
+    {
+      "start": 14600,
+      "end": 14630,
+      "keys": ["DOWN"]
+    }
+  ],
+  "checkpoint_frames": {
+    "title": 590,
+    "map_runtime": 14700,
+    "interactive": 14800
+  }
+}
