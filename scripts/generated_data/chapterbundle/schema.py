@@ -70,6 +70,8 @@ import importlib
 import json
 import os
 
+from scripts.assets import tmx
+
 from ..diagnostics import GeneratedDataError
 from ..cparse import find_c_array_blocks, split_top_level_entries
 from ..json_loader import load_json_file
@@ -507,7 +509,29 @@ def read_chapter_map_dimensions(chapter_settings_index, chapter_settings_path=CH
             if ownership.get("symbol") == map_symbol and {
                 "mapWidth", "mapHeight"
             } <= set(resources):
-                return resources["mapWidth"], resources["mapHeight"]
+                sources = asset.get("sources", ())
+                if not sources:
+                    raise GeneratedDataError(
+                        "map asset '{}' has no TMX source".format(asset.get("id", map_symbol))
+                    )
+                source_path = _source_path(sources[0])
+                try:
+                    source_width, source_height, _values = tmx.parse_tmx(source_path)
+                except (OSError, tmx.TmxError) as error:
+                    raise GeneratedDataError(
+                        "could not parse TMX source '{}': {}".format(source_path, error)
+                    )
+                if (resources["mapWidth"], resources["mapHeight"]) != (source_width, source_height):
+                    raise GeneratedDataError(
+                        "map asset '{}' manifest dimensions {}x{} do not match TMX {}x{}".format(
+                            asset.get("id", map_symbol),
+                            resources["mapWidth"],
+                            resources["mapHeight"],
+                            source_width,
+                            source_height,
+                        )
+                    )
+                return source_width, source_height
     except OSError:
         pass
     layout_path = os.path.join(map_layout_dir, "{}.json".format(map_symbol))
