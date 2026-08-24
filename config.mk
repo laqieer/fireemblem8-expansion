@@ -147,6 +147,13 @@ EXPANSION_AOE_REFERENCE       ?= 0
 # manifest record, package parser, item binding, or save data by itself.
 EXPANSION_CUSTOM_SPELL_EFFECTS ?= 0
 
+# --- Optional one-phase blue delegation (issue #87) ------------------------
+# Expose one localized map-menu command that delegates the remaining eligible
+# blue actions in the current phase through issue #85's transient controller.
+# Strict 0/1 validation, config identity, save compatibility, and supported
+# profiles are documented in docs/autoplay.md.
+EXPANSION_BLUE_PHASE_DELEGATE ?= 0
+
 # EXPANSION_LOCALIZED_TEXT_AUTO_WRAP -- opt-in runtime safety net for real
 # CJK profiles. When 1, the dialogue engine measures the next VWF glyph
 # against the active Text allocation and advances to the next line before it

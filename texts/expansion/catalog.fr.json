@@ -80,6 +80,8 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "Chapitre"
+    "ui.presentation.chapter_title_default": "Chapitre",
+    "autoplay.charge.label": "Charge",
+    "autoplay.charge.help": "Confier les unités restantes à l'IA pour ce tour."
   }
 }

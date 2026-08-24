@@ -19,9 +19,9 @@ Run `./configure --help` to see the persistent feature/profile interface.
 `configure` validates the selected combination with the same
 `scripts/modernize/expansion_config.py` implementation used by the build, then
 writes ignored `config.autotools.mk` and `GNUmakefile` files. Supported options
-cover the starter flags, AoE reference, casual-mode policy, HQ mixer,
-localized-text auto-wrap, enabled/default/pseudo locales, ROM size, item ID
-cap, and link-time text shift.
+cover the starter flags, one-phase blue delegation, AoE reference, casual-mode
+policy, HQ mixer, localized-text auto-wrap, enabled/default/pseudo locales,
+ROM size, item ID cap, and link-time text shift.
 
 Only options explicitly passed to `configure` are written, so unspecified
 settings continue to use `config.mk`/`modern.mk` defaults. Precedence is:
@@ -55,6 +55,7 @@ regenerate the committed `configure` script with `autoreconf -fi`.
 | `EXPANSION_MECHANICS_HOOKS` | `0` or `1` | `0` | issue #6 starter feature (fingerprint) -- link the public battle-stat mechanics hook registry |
 | `EXPANSION_MECHANICS_SAMPLE` | `0` or `1` | `0` | issue #6 starter feature (fingerprint) -- register the content-free sample mechanic; requires `EXPANSION_MECHANICS_HOOKS=1` |
 | `EXPANSION_DANGER_OVERLAY_MENU` | `0` or `1` | `0` | issue #6 starter feature (fingerprint) -- expose the player danger/range overlay map-menu surface |
+| `EXPANSION_BLUE_PHASE_DELEGATE` | `0` or `1` | `0` | issue #87 optional one-phase Charge map-menu delegation through issue #85 (fingerprint); modern controller required |
 | `EXPANSION_STARTER_CONTENT` | `0` or `1` | `0` | issue #6 starter feature (fingerprint) -- link the bundled generated-data content example; requires `EXPANSION_MECHANICS_HOOKS=1` **and** an item ID cap reaching `ITEM_EXPANSION_CE` (`FE8_ITEM_ID_CAP=0xCE` or higher) |
 | `EXPANSION_AOE_REFERENCE` | `0` or `1` | `0` | issue #42 optional project-neutral radius-heal reference and semantic probe (fingerprint); the typed AoE core remains available independently and the flag has no dependencies or conflicts |
 | `EXPANSION_CUSTOM_SPELL_EFFECTS` | `0` or `1` | `0` | issue #77 optional typed custom battle spell-effect runtime foundation (fingerprint); preserves vanilla LUT/`SpellAssoc`, has no save impact, and the future #78 adapter owns generated bindings |
@@ -218,6 +219,7 @@ compatibility-relevant setting changes.
 | `rom_title`, `rom_game_code`, `rom_maker_code`, `rom_revision` | ROM identity; changing these produces a distinguishable ROM (e.g. for emulator save matching, patch tooling) |
 | `enabled_locales`, `default_locale`, `pseudo_locale_enabled` | issue #18 localization settings; the enabled set is normalized into stable locale-ID order before hashing, so equivalent input orders share a fingerprint while different locale profiles do not. Diagnostic/UI identity only -- see `docs/localization.md`; never touches the save format (`EXPANSION_SAVE_COMPAT_EPOCH` stays independent, see below) |
 | `features.mechanics_hooks`, `features.mechanics_sample`, `features.danger_overlay_menu`, `features.starter_content` | issue #6 starter-feature opt-ins; each links different code and/or data, so two builds that differ in any of them are behaviourally distinguishable. Diagnostic identity only -- see `docs/starter_features.md`; none of them touches the save format |
+| `features.blue_phase_delegate` | issue #87 permanent default-off Charge command; changes the map menu and blue-control behavior only when selected. Diagnostic identity only -- see `docs/autoplay.md`; no save field or epoch change |
 | `features.aoe_reference` | issue #42 default-off reference effect/probe; changes runtime behavior only when explicitly invoked. Diagnostic identity only -- see `docs/aoe.md`; it does not touch the save format |
 | `features.custom_spell_effects`, enabled `custom_spell_effect_contract.runtime_abi`, `inventory_digest`, and `resource_budget_digest` | issue #77 default-off custom battle spell-effect runtime; enabled identity binds ABI v1, the synthetic per-frame visual/sound-range inventory, effect-wide sound/OAM tables, final-display lifecycle, and the published resource envelope. Disabled metadata records zero ABI and SHA-256-of-empty inventory/resource digests without adding that contract tuple to the fingerprint, so the default fingerprint remains unchanged. Diagnostic identity only -- see `docs/custom_spell_effects.md`; it does not touch the save format |
 | `features.casual_mode` | issue #34 changes defeat handling and therefore runtime behavior. Its marker uses existing serialized unit-state capacity; no save struct or compatibility epoch changes |

@@ -85,7 +85,7 @@ class BuildOutputsTests(unittest.TestCase):
         budget = build_budget(self.catalog)
         expected = {
             "transform": 71,
-            "compact": 2,
+            "compact": 4,
             "preserve": 6,
         }
         self.assertEqual(

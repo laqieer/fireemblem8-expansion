@@ -2018,7 +2018,10 @@ void StartItemHelpBox(int x, int y, int item)
     StartHelpBoxExt(&sMutableHbi, FALSE);
 }
 
-void StartHelpBoxExt(const struct HelpBoxInfo* info, int unk)
+static void StartHelpBoxExtInternal(
+    const struct HelpBoxInfo* info,
+    int unk,
+    const char *string)
 {
     struct HelpBoxProc* proc;
     int wContent, hContent;
@@ -2055,16 +2058,47 @@ void StartHelpBoxExt(const struct HelpBoxInfo* info, int unk)
         proc->info->populate(proc);
 
     SetTextFontGlyphs(1);
-    GetStringTextBox(GetStringFromIndex(proc->mid), &wContent, &hContent);
+    GetStringTextBox(string ? string : GetStringFromIndex(proc->mid), &wContent, &hContent);
     SetTextFontGlyphs(0);
 
     ApplyHelpBoxContentSize(proc, wContent, hContent);
     ApplyHelpBoxPosition(proc, info->xDisplay, info->yDisplay);
 
     ClearHelpBoxText();
-    StartHelpBoxTextInit(proc->item, proc->mid);
+    if (string)
+        StartHelpBoxTextInitFromString(string);
+    else
+        StartHelpBoxTextInit(proc->item, proc->mid);
 
     sLastHbi = info;
+}
+
+void StartHelpBoxExt(const struct HelpBoxInfo* info, int unk)
+{
+    StartHelpBoxExtInternal(info, unk, NULL);
+}
+
+void StartHelpBoxString(int x, int y, const char *string)
+{
+    if (string == NULL)
+        string = "";
+
+    sMutableHbi.adjUp    = NULL;
+    sMutableHbi.adjDown  = NULL;
+    sMutableHbi.adjLeft  = NULL;
+    sMutableHbi.adjRight = NULL;
+
+    sMutableHbi.xDisplay = x;
+    sMutableHbi.yDisplay = y;
+    sMutableHbi.mid      = 0;
+
+    sMutableHbi.redirect = NULL;
+    sMutableHbi.populate = NULL;
+
+    sHbOrigin.x = 0;
+    sHbOrigin.y = 0;
+
+    StartHelpBoxExtInternal(&sMutableHbi, FALSE, string);
 }
 
 void StartHelpBoxExt_Unk(int x, int y, int mid)
