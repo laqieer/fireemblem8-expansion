@@ -81,6 +81,12 @@
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
     "ui.presentation.chapter_title_default": "チャプター",
+    "debug.action.chapter_skirmish": "章/魔物戦",
+    "debug.selector.chapter": "章",
+    "debug.selector.skirmish": "魔物戦",
+    "debug.selector.eirika": "エイリーク",
+    "debug.selector.ephraim": "エフラム",
+    "debug.selector.unavailable": "対象なし",
     "autoplay.charge.label": "進撃",
     "autoplay.charge.help": "残りのユニットをこのフェイズだけAIに任せる"
   }
