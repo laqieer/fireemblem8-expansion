@@ -6,12 +6,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLAYTEST_DIR = REPO_ROOT / "tools" / "gba-playtest"
 FINGERPRINT_DIR = PLAYTEST_DIR / "fingerprints"
+BMUNIT_HEADER = REPO_ROOT / "include" / "bmunit.h"
 sys.path.insert(0, str(PLAYTEST_DIR))
 
 import gba_playtest  # noqa: E402
@@ -27,9 +29,23 @@ PHASE_LAST_RESULT = f"{PHASE_PROBE}+0xa4"
 PHASE_LAST_REQUEST_KIND = f"{PHASE_PROBE}+0xa8"
 PHASE_LAST_FACTION = f"{PHASE_PROBE}+0xac"
 PHASE_LAST_MODE = f"{PHASE_PROBE}+0xb0"
-PLAYER_FACTION = 0
-RED_FACTION = 0x40
-GREEN_FACTION = 0x80
+FLAG_MENU_GREEN_BLOCK_ROW = 6
+
+def _load_faction_constants():
+    source = BMUNIT_HEADER.read_text(encoding="utf-8")
+    values = {}
+    for name in ("FACTION_BLUE", "FACTION_GREEN", "FACTION_RED"):
+        match = re.search(rf"\b{name}\s*=\s*(0x[0-9A-Fa-f]+|\d+)", source)
+        if match is None:
+            raise RuntimeError(f"{BMUNIT_HEADER}: {name} is unavailable")
+        values[name] = int(match.group(1), 0)
+    return values
+
+
+FACTION_CONSTANTS = _load_faction_constants()
+PLAYER_FACTION = FACTION_CONSTANTS["FACTION_BLUE"]
+RED_FACTION = FACTION_CONSTANTS["FACTION_RED"]
+GREEN_FACTION = FACTION_CONSTANTS["FACTION_GREEN"]
 PHASE_CONTROL_OK = 0
 PHASE_CONTROL_REQUEST_TURN = 1
 PHASE_CONTROL_REQUEST_FACTION = 2
@@ -139,7 +155,7 @@ def _positive_data():
             },
             {
                 "name": "red-boundary-observes-requested-turn",
-                "frame": 20000,
+                "frame": 19000,
                 "framebuffer": False,
                 "probes": _phase_probes(),
             },
@@ -168,17 +184,17 @@ def _blocked_frames():
             for frame in range(17250, 17610, 60)
         ],
         {"start": 17630, "end": 17636, "keys": ["A"]},
-        {"start": 17750, "end": 17756, "keys": ["DOWN"]},
-        {"start": 17810, "end": 17816, "keys": ["DOWN"]},
-        {"start": 17870, "end": 17876, "keys": ["DOWN"]},
-        {"start": 17930, "end": 17936, "keys": ["DOWN"]},
-        {"start": 17990, "end": 17996, "keys": ["A"]},
-        {"start": 18150, "end": 18156, "keys": ["RIGHT"]},
-        {"start": 18300, "end": 18306, "keys": ["A"]},
-        {"start": 18400, "end": 18406, "keys": ["UP"]},
-        {"start": 18500, "end": 18506, "keys": ["R"]},
-        {"start": 18600, "end": 18606, "keys": ["B"]},
-        {"start": 18700, "end": 18706, "keys": ["A"]},
+        *[
+            {"start": 17750 + index * 60, "end": 17756 + index * 60, "keys": ["DOWN"]}
+            for index in range(FLAG_MENU_GREEN_BLOCK_ROW)
+        ],
+        {"start": 18110, "end": 18116, "keys": ["A"]},
+        {"start": 18270, "end": 18276, "keys": ["RIGHT"]},
+        {"start": 18420, "end": 18426, "keys": ["A"]},
+        {"start": 18520, "end": 18526, "keys": ["UP"]},
+        {"start": 18620, "end": 18626, "keys": ["R"]},
+        {"start": 18720, "end": 18726, "keys": ["B"]},
+        {"start": 18820, "end": 18826, "keys": ["A"]},
         *[
             {"start": frame, "end": frame + 4, "keys": ["A"]}
             for frame in range(23200, 24800, 60)
@@ -207,7 +223,7 @@ def _blocked_data():
             },
             {
                 "name": "green-block-requested",
-                "frame": 18250,
+                "frame": 18350,
                 "framebuffer": False,
                 "probes": _phase_probes(),
             },

@@ -62,7 +62,7 @@
       ]
     },
     {
-      "frame": 18250,
+      "frame": 18350,
       "name": "green-block-requested",
       "probes": [
         {
@@ -103,7 +103,7 @@
         {
           "address": "gDebugToolsProbe+0xac",
           "size": 4,
-          "value": "0x00000080"
+          "value": "0x00000040"
         },
         {
           "address": "gDebugToolsProbe+0xb0",
@@ -164,7 +164,7 @@
         {
           "address": "gDebugToolsProbe+0xac",
           "size": 4,
-          "value": "0x00000080"
+          "value": "0x00000040"
         },
         {
           "address": "gDebugToolsProbe+0xb0",

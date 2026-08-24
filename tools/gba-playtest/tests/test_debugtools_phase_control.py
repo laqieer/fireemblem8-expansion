@@ -21,6 +21,7 @@ DRIVER = Path(__file__).resolve().parent / "c" / "debugtools_phase_control_drive
 REGISTRY = ROOT / "texts" / "expansion" / "registry.json"
 TEST_CASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
 RUNTIME_RUNNER = ROOT / "tools" / "gba-playtest" / "run_debugtools_phase_control_checks.py"
+BMUNIT_HEADER = ROOT / "include" / "bmunit.h"
 DEBUG_RUNTIME_FINGERPRINT = (
     ROOT
     / "tools"
@@ -407,6 +408,27 @@ class DebugToolsPhaseControlRuntimeContractTests(unittest.TestCase):
                 "next-blue-before-map-input",
                 "next-blue-map-interactive",
             ],
+        )
+        self.assertEqual(
+            module["FACTION_CONSTANTS"],
+            {
+                "FACTION_BLUE": 0x00,
+                "FACTION_GREEN": 0x40,
+                "FACTION_RED": 0x80,
+            },
+        )
+        self.assertIn("FACTION_GREEN  = 0x40", BMUNIT_HEADER.read_text(encoding="utf-8"))
+        self.assertIn("FACTION_RED    = 0x80", BMUNIT_HEADER.read_text(encoding="utf-8"))
+        blocked_frames = module["_blocked_frames"]()
+        block_downs = [
+            frame
+            for frame in blocked_frames
+            if 17630 < frame["start"] < 18110
+            and tuple(frame["keys"]) == ("DOWN",)
+        ]
+        self.assertEqual(
+            len(block_downs),
+            module["FLAG_MENU_GREEN_BLOCK_ROW"],
         )
         self.assertEqual(
             [

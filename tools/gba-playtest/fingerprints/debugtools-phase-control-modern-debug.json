@@ -123,13 +123,13 @@
       ]
     },
     {
-      "frame": 20000,
+      "frame": 19000,
       "name": "red-boundary-observes-requested-turn",
       "probes": [
         {
           "address": "gBmSt+0x14",
           "size": 1,
-          "value": "0x0a"
+          "value": "0x07"
         },
         {
           "address": "gDebugToolsProbe+0x84",
@@ -174,7 +174,7 @@
         {
           "address": "gPlaySt+0x0f",
           "size": 1,
-          "value": "0x40"
+          "value": "0x80"
         },
         {
           "address": "gPlaySt+0x10",
