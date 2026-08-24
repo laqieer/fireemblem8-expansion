@@ -262,11 +262,11 @@ class ToolsScenarioFilesTests(unittest.TestCase):
         self.assertTrue(after.sram_hash)
         self.assertEqual(before.expected_sram_hash, after.expected_sram_hash)
         self.assertEqual(
-            tuple((item.offset, item.length) for item in before.sram_hash_exclude_ranges),
+            before.sram_hash_exclude_ranges,
             SRAM_METADATA_NORMALIZATION_RANGES,
         )
         self.assertEqual(
-            tuple((item.offset, item.length) for item in after.sram_hash_exclude_ranges),
+            after.sram_hash_exclude_ranges,
             SRAM_METADATA_NORMALIZATION_RANGES,
         )
         self.assertTrue(
@@ -329,11 +329,11 @@ class ToolsReleaseNegativeFilesTests(unittest.TestCase):
         self.assertTrue(after.sram_hash)
         self.assertEqual(before.expected_sram_hash, after.expected_sram_hash)
         self.assertEqual(
-            tuple((item.offset, item.length) for item in before.sram_hash_exclude_ranges),
+            before.sram_hash_exclude_ranges,
             SRAM_METADATA_NORMALIZATION_RANGES,
         )
         self.assertEqual(
-            tuple((item.offset, item.length) for item in after.sram_hash_exclude_ranges),
+            after.sram_hash_exclude_ranges,
             SRAM_METADATA_NORMALIZATION_RANGES,
         )
         self.assertTrue(
