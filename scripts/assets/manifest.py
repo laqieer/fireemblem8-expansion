@@ -1497,7 +1497,7 @@ class CustomSpellEffectKind:
         "soundEvents", "romBytes",
     )
 
-    def validate(self, record, diagnostics):
+    def validate(self, record, diagnostics, item_id_cap=None):
         valid = _validate_exact_values(
             record.options, record.option_locs, self._options, diagnostics,
             record.loc, "{}.options".format(record.id),
@@ -1553,7 +1553,7 @@ class CustomSpellEffectKind:
             return
         try:
             fallback, item_type = custom_spell.validate_runtime_binding(
-                REPO_ROOT, record.ownership
+                REPO_ROOT, record.ownership, item_id_cap=item_id_cap
             )
             package = custom_spell.load_package(
                 REPO_ROOT,
@@ -1635,7 +1635,7 @@ KIND_REGISTRY.register(BattleAnimationPackageKind())
 KIND_REGISTRY.register(CustomSpellEffectKind())
 
 
-def validate(records):
+def validate(records, item_id_cap=None):
     diagnostics = DiagnosticCollector()
     by_id = {}
     ownership = {}
@@ -1687,7 +1687,12 @@ def validate(records):
         _validate_provenance(record, diagnostics)
         if len(normalized_sources) != len(record.sources):
             continue
-        metadata = kind.validate(record, diagnostics)
+        if isinstance(kind, CustomSpellEffectKind):
+            metadata = kind.validate(
+                record, diagnostics, item_id_cap=item_id_cap
+            )
+        else:
+            metadata = kind.validate(record, diagnostics)
         if record.kind == FormattedPortraitPackageKind.name:
             portrait_metadata[id(record)] = metadata
         if isinstance(kind, BattleAnimationPackageKind) and record.banim_package is None:
@@ -1851,8 +1856,8 @@ def validate_custom_spell_selection(records, enabled):
         )
 
 
-def load_and_validate(path, custom_spell_effects=None):
-    records = validate(load_manifest(path))
+def load_and_validate(path, custom_spell_effects=None, item_id_cap=None):
+    records = validate(load_manifest(path), item_id_cap=item_id_cap)
     if custom_spell_effects is not None:
         validate_custom_spell_selection(records, custom_spell_effects)
     return records

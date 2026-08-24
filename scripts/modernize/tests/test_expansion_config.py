@@ -1367,6 +1367,33 @@ class LoadIdentityFeatureFlagTests(unittest.TestCase):
             original_identity.save_compat_epoch, moved_identity.save_compat_epoch
         )
 
+    def test_custom_spell_uses_resolved_item_cap_not_environment(self):
+        contract = {
+            "inventory_digest": "1" * 64,
+            "resource_digest": "2" * 64,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                mock.patch.dict(
+                    "os.environ", {"FE8_ITEM_ID_CAP": "0xCD"}, clear=False
+                ),
+                mock.patch.object(
+                    ec,
+                    "resolve_custom_spell_contract",
+                    return_value=contract,
+                ) as resolver,
+            ):
+                identity = self._identity(
+                    tmp,
+                    custom_spell_effects="1",
+                    asset_manifest="unused.json",
+                    item_id_cap="0xCE",
+                )
+        self.assertEqual(identity.item_id_cap, 0xCE)
+        resolver.assert_called_once_with(
+            Path(tmp), "unused.json", 1, 0xCE
+        )
+
     def test_sample_without_hooks_rejected_in_load_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ec.ConfigError):

@@ -134,7 +134,9 @@ class ConfigError(ValueError):
     """A configuration value is invalid, or an incompatible combination was given."""
 
 
-def resolve_custom_spell_contract(repo_root, manifest_path, enabled):
+def resolve_custom_spell_contract(
+    repo_root, manifest_path, enabled, item_id_cap=None
+):
     path = Path(manifest_path or "assets/manifest.json")
     if not path.is_absolute():
         path = Path(repo_root) / path
@@ -179,7 +181,9 @@ def resolve_custom_spell_contract(repo_root, manifest_path, enabled):
             "custom spell asset validation modules are unavailable"
         ) from exc
     try:
-        records = asset_manifest_tool.load_and_validate(str(path), 1)
+        records = asset_manifest_tool.load_and_validate(
+            str(path), 1, item_id_cap=item_id_cap
+        )
         return custom_spell_assets.canonical_contract(records)
     except (
         GeneratedDataError,
@@ -922,7 +926,10 @@ def load_identity(
         else cfg.get("EXPANSION_CUSTOM_SPELL_EFFECTS", "0"),
     )
     custom_spell_contract = resolve_custom_spell_contract(
-        repo_root, asset_manifest, resolved_custom_spell_effects
+        repo_root,
+        asset_manifest,
+        resolved_custom_spell_effects,
+        resolved_item_id_cap,
     )
     resolved_casual_mode = validate_feature_flag(
         "EXPANSION_CASUAL_MODE",

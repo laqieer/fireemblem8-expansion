@@ -1222,8 +1222,14 @@ def _spell_lut(path):
     ]
 
 
-def _active_item_record(root, item):
-    cap = generated_idspace.resolve_item_id_cap()
+def _active_item_record(root, item, item_id_cap=None):
+    cap = (
+        generated_idspace.resolve_item_id_cap()
+        if item_id_cap is None
+        else generated_idspace.validate_domain_cap(
+            generated_idspace.domain_by_key("item"), item_id_cap
+        )
+    )
     items_header = os.path.join(root, "include", "constants", "items.h")
     expansion_header = os.path.join(
         root, "include", "constants", "items_expansion.h"
@@ -1262,7 +1268,7 @@ def _active_item_record(root, item):
     return record
 
 
-def validate_runtime_binding(root, ownership):
+def validate_runtime_binding(root, ownership, item_id_cap=None):
     item = ownership["item"]
     effect_symbol = ownership["effectSymbol"]
     fallback_symbol = ownership["fallbackVanillaEffect"]
@@ -1298,7 +1304,7 @@ def validate_runtime_binding(root, ownership):
                 fallback_symbol
             )
         )
-    item_record = _active_item_record(root, item)
+    item_record = _active_item_record(root, item, item_id_cap=item_id_cap)
     weapon_type = item_record.weapon_type
     attributes = set(item_record.attributes)
     if (
