@@ -30,6 +30,8 @@ DIAG_SRC = REPO_ROOT / "src" / "debugtools_diag.c"
 TOOLS_SRC = REPO_ROOT / "src" / "debugtools_tools.c"
 BMUNIT_SRC = REPO_ROOT / "src" / "bmunit.c"
 EVENTSCR3_SRC = REPO_ROOT / "src" / "eventscr3.c"
+MUSIC_SRC = REPO_ROOT / "src" / "debugtools_music.c"
+MENU_DEF_SRC = REPO_ROOT / "src" / "menu_def.c"
 GAMECONTROL_SRC = REPO_ROOT / "src" / "gamecontrol.c"
 HEADER = REPO_ROOT / "include" / "expansion_debugtools.h"
 TITLESCREEN_SRC = REPO_ROOT / "src" / "titlescreen.c"
@@ -78,6 +80,7 @@ def _write_debugtools_msg_id_header(work_dir: Path):
         "EXP_MSG_DEBUG_ACTION_FLAG_CHAPTER": "debug.action.flag_chapter",
         "EXP_MSG_DEBUG_ACTION_RNG_INSPECT": "debug.action.rng_inspect",
         "EXP_MSG_DEBUG_ACTION_SAVE_STATE": "debug.action.save_state",
+        "EXP_MSG_DEBUG_ACTION_MUSIC_PREVIEW": "debug.action.music_preview",
         "EXP_MSG_DEBUG_STATUS_HUB": "debug.status.hub",
         "EXP_MSG_DEBUG_STATUS_HUB_ERROR": "debug.status.hub_error",
         "EXP_MSG_DEBUG_ACTION_REFRESH": "debug.action.refresh",
@@ -161,6 +164,90 @@ def _defined_symbol_names(obj: Path) -> set:
     return names
 
 
+class DebugToolsOverrideIdRegistryTests(unittest.TestCase):
+    """Parses every custom debugtools override definition and the live
+    menu_def dispatch ID, reserves #124's planned phase-control block, then
+    compiles them as one switch so duplicate menu-dispatch cases fail in C."""
+
+    DEBUGTOOLS_SOURCES = (ACTIONS_SRC, TOOLS_SRC, MUSIC_SRC)
+    PHASE_CONTROL_RESERVED_IDS = range(0xF6, 0xFB)
+
+    @classmethod
+    def setUpClass(cls):
+        _skip_if_no_host_compiler()
+
+    def test_complete_override_registry_is_unique_and_compilable(self):
+        declaration = re.compile(
+            r"\b(DEBUGTOOLS_[A-Z0-9_]+_OVERRIDE_ID)\s*=\s*(0x[0-9A-Fa-f]+|\d+)"
+        )
+        menu_assignment = re.compile(
+            r"\.overrideId\s*=\s*(DEBUGTOOLS_[A-Z0-9_]+_OVERRIDE_ID)"
+        )
+        menu_dispatch = re.compile(
+            r"\boverrideId\s*==\s*(0x[0-9A-Fa-f]+|\d+)"
+        )
+        registry = {}
+        defined = set()
+
+        for source in self.DEBUGTOOLS_SOURCES:
+            text = _strip_c_comments(source.read_text(encoding="utf-8"))
+            for name, value_text in declaration.findall(text):
+                value = int(value_text, 0)
+                self.assertNotIn(name, registry)
+                registry[name] = value
+                defined.add(name)
+
+            for name in menu_assignment.findall(text):
+                self.assertIn(name, defined, (source, name))
+
+        self.assertEqual(registry["DEBUGTOOLS_MUSIC_OVERRIDE_ID"], 0xFB)
+
+        entries = [(name, value) for name, value in registry.items()]
+        entries.extend(
+            (f"PHASE_CONTROL_RESERVED_{value:02X}", value)
+            for value in self.PHASE_CONTROL_RESERVED_IDS
+        )
+        entries.extend(
+            (f"MENU_DEF_DISPATCH_{value_text}", int(value_text, 0))
+            for value_text in menu_dispatch.findall(
+                _strip_c_comments(MENU_DEF_SRC.read_text(encoding="utf-8"))
+            )
+        )
+
+        values = {}
+        for name, value in entries:
+            self.assertNotIn(
+                value,
+                values,
+                f"override ID 0x{value:02X} is shared by {values.get(value)} and {name}",
+            )
+            values[value] = name
+
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            source = work / "debugtools_override_ids.c"
+            source.write_text(
+                "int DebugToolsOverrideIdRegistryCompile(int value)\n"
+                "{\n"
+                "    switch (value)\n"
+                "    {\n"
+                + "".join(f"        case 0x{value:02X}: return {index};\n"
+                          for index, (_, value) in enumerate(entries))
+                + "        default: return -1;\n"
+                "    }\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            rc, out, _ = _compile(work, source, "debugtools_override_ids.o")
+            self.assertEqual(
+                rc,
+                0,
+                f"compiled override registry contains a duplicate case:\n{out}",
+            )
+
+
 class DebugToolsRegistryHostTests(unittest.TestCase):
     """Compiles and executes the real src/debugtools_registry.c (enabled
     path) against tools/gba-playtest/tests/c/debugtools_registry_driver.c,
@@ -214,9 +301,9 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
             )
             self.assertEqual(rc, 0, f"host registry test failed:\n{out}")
             self.assertIn("DEBUGTOOLS_HOST_TEST: PASS", out)
-            self.assertIn("DEBUGTOOLS_BUILTIN_ACTION_MAX=9", out)
+            self.assertIn("DEBUGTOOLS_BUILTIN_ACTION_MAX=10", out)
             self.assertIn("DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX=9", out)
-            self.assertIn("DEBUGTOOLS_ACTION_MAX=18", out)
+            self.assertIn("DEBUGTOOLS_ACTION_MAX=19", out)
             self.assertIn("DEBUGTOOLS_HUB_MENU_SLOTS=11", out)
 
     def test_registry_id_and_label_validation(self):
@@ -241,8 +328,8 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
 
     def test_builtin_identity_and_text_allocator_lifecycle(self):
         """A valid contributor-before-init registration must coexist with
-        identity-safe IDs 1-9. The ninth contributor succeeds, the tenth
-        fails, R pages between the two full action pages, and 64 maximum
+        identity-safe IDs 1-10. The ninth contributor succeeds, the tenth
+        fails, R pages across the three bounded pages, and 64 maximum
         page/contributor-submenu cycles reuse one bounded text allocation
         scope. The contributor callback uses only the public submenu handoff
         API, returns ordinary MENU_ACT_END, and its real MenuDef::onEnd uses
@@ -321,7 +408,7 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
 
-            for first in range(1, 5):
+            for first in range(1, 6):
                 with self.subTest(first_initializer=first):
                     work = root / f"first-{first}"
                     work.mkdir()
@@ -382,7 +469,7 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
         registry = _strip_c_comments(REGISTRY_SRC.read_text(encoding="utf-8"))
         builtin_sources = "\n".join(
             _strip_c_comments(path.read_text(encoding="utf-8"))
-            for path in (LAUNCHER_SRC, ACTIONS_SRC, TOOLS_SRC)
+            for path in (LAUNCHER_SRC, ACTIONS_SRC, TOOLS_SRC, MUSIC_SRC)
         )
 
         self.assertIn(
@@ -409,7 +496,7 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
                     builtin_sources,
                 )
             ),
-            9,
+            10,
         )
 
     def test_contributor_storage_is_appended_after_stable_ewram_layout(self):
@@ -2287,7 +2374,7 @@ class DebugToolsMapPrepScenarioSchemaTests(unittest.TestCase):
     def test_map_debug_scenario_is_schema_valid(self):
         scenario, data = self._load("debugtools-map-hub-modern-debug.json")
         self.assertEqual(scenario.name, "debugtools-map-hub-modern-debug")
-        self.assertEqual(len(data["checkpoints"]), 13)
+        self.assertEqual(len(data["checkpoints"]), 22)
         by_name = {c["name"]: c for c in data["checkpoints"]}
         for expected_name in (
             "map-hub-opened-after-first-pulse",

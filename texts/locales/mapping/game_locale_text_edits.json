@@ -393,6 +393,11 @@
         "zh-Hans": "AI2"
       },
       {
+        "ja": "BGM確認",
+        "key": "debug.action.music_preview",
+        "zh-Hans": "BGM查看"
+      },
+      {
         "ja": "状態",
         "key": "debug.view.state",
         "zh-Hans": "状态"

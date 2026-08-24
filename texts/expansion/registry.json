@@ -648,6 +648,15 @@
     },
     {
       "id": 79,
+      "key": "debug.action.music_preview",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 40,
+      "notes": "Issue #126 bounded debugtools music-preview action."
+    },
+    {
+      "id": 80,
       "key": "debug.view.state",
       "status": "active",
       "surface": "debug_overlay",
@@ -656,7 +665,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 80,
+      "id": 81,
       "key": "debug.view.engine",
       "status": "active",
       "surface": "debug_overlay",
@@ -665,7 +674,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 81,
+      "id": 82,
       "key": "debug.action.refresh",
       "status": "active",
       "surface": "debug_overlay",
@@ -674,7 +683,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 82,
+      "id": 83,
       "key": "debug.value.unavailable",
       "status": "active",
       "surface": "debug_overlay",
@@ -683,7 +692,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 83,
+      "id": 84,
       "key": "debug.field.context",
       "status": "active",
       "surface": "debug_overlay",
@@ -692,7 +701,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 84,
+      "id": 85,
       "key": "debug.field.clock",
       "status": "active",
       "surface": "debug_overlay",
@@ -701,7 +710,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 85,
+      "id": 86,
       "key": "debug.field.chapter",
       "status": "active",
       "surface": "debug_overlay",
@@ -710,7 +719,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 86,
+      "id": 87,
       "key": "debug.field.turn",
       "status": "active",
       "surface": "debug_overlay",
@@ -719,7 +728,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 87,
+      "id": 88,
       "key": "debug.field.phase",
       "status": "active",
       "surface": "debug_overlay",
@@ -728,7 +737,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 88,
+      "id": 89,
       "key": "debug.field.cursor",
       "status": "active",
       "surface": "debug_overlay",
@@ -737,7 +746,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 89,
+      "id": 90,
       "key": "debug.field.unit",
       "status": "active",
       "surface": "debug_overlay",
@@ -746,7 +755,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 90,
+      "id": 91,
       "key": "debug.field.character",
       "status": "active",
       "surface": "debug_overlay",
@@ -755,7 +764,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 91,
+      "id": 92,
       "key": "debug.field.class",
       "status": "active",
       "surface": "debug_overlay",
@@ -764,7 +773,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 92,
+      "id": 93,
       "key": "debug.field.hp",
       "status": "active",
       "surface": "debug_overlay",
@@ -773,7 +782,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 93,
+      "id": 94,
       "key": "debug.field.weather",
       "status": "active",
       "surface": "debug_overlay",
@@ -782,7 +791,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 94,
+      "id": 95,
       "key": "debug.field.fog",
       "status": "active",
       "surface": "debug_overlay",
@@ -791,7 +800,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 95,
+      "id": 96,
       "key": "debug.field.rng",
       "status": "active",
       "surface": "debug_overlay",
@@ -800,7 +809,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 96,
+      "id": 97,
       "key": "debug.field.proc_count",
       "status": "active",
       "surface": "debug_overlay",
@@ -809,7 +818,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 97,
+      "id": 98,
       "key": "debug.field.event",
       "status": "active",
       "surface": "debug_overlay",
@@ -818,7 +827,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 98,
+      "id": 99,
       "key": "debug.field.actions",
       "status": "active",
       "surface": "debug_overlay",
@@ -827,7 +836,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 99,
+      "id": 100,
       "key": "debug.field.log_retained",
       "status": "active",
       "surface": "debug_overlay",
@@ -836,7 +845,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 100,
+      "id": 101,
       "key": "debug.field.log_writes",
       "status": "active",
       "surface": "debug_overlay",
@@ -845,7 +854,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 101,
+      "id": 102,
       "key": "debug.field.log_last",
       "status": "active",
       "surface": "debug_overlay",
@@ -854,7 +863,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 102,
+      "id": 103,
       "key": "debug.field.assert_count",
       "status": "active",
       "surface": "debug_overlay",
@@ -863,7 +872,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 103,
+      "id": 104,
       "key": "debug.field.assert_last",
       "status": "active",
       "surface": "debug_overlay",
@@ -872,7 +881,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 104,
+      "id": 105,
       "key": "debug.value.context_title",
       "status": "active",
       "surface": "debug_overlay",
@@ -881,7 +890,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 105,
+      "id": 106,
       "key": "debug.value.context_map",
       "status": "active",
       "surface": "debug_overlay",
@@ -890,7 +899,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 106,
+      "id": 107,
       "key": "debug.value.context_prep",
       "status": "active",
       "surface": "debug_overlay",
@@ -899,7 +908,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 107,
+      "id": 108,
       "key": "debug.value.context_battle",
       "status": "active",
       "surface": "debug_overlay",
@@ -908,7 +917,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 108,
+      "id": 109,
       "key": "debug.value.phase_player",
       "status": "active",
       "surface": "debug_overlay",
@@ -917,7 +926,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 109,
+      "id": 110,
       "key": "debug.value.phase_enemy",
       "status": "active",
       "surface": "debug_overlay",
@@ -926,7 +935,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 110,
+      "id": 111,
       "key": "debug.value.phase_npc",
       "status": "active",
       "surface": "debug_overlay",
@@ -935,7 +944,7 @@
       "pseudo_policy": "compact"
     },
     {
-      "id": 111,
+      "id": 112,
       "key": "debug.value.phase_other",
       "status": "active",
       "surface": "debug_overlay",

@@ -27,6 +27,7 @@
     "debug.action.flag_chapter": "フラグ/章",
     "debug.action.rng_inspect": "RNG確認",
     "debug.action.save_state": "状態保存",
+    "debug.action.music_preview": "BGM確認",
     "framework.locale_short_name.en": "EN",
     "framework.locale_short_name.qps_ploc": "QPS",
     "language.settings_more": "その他",

@@ -12,6 +12,7 @@ void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu);
 int DebugTools_IsMenuTransitionScheduled(void);
 void DebugTools_RunMenuTransition(ProcPtr proc);
 u8 DebugTools_CancelMenu(struct MenuProc* menu, struct MenuItemProc* item);
+void DebugToolsSaveState_OnHubReturn(void);
 
 enum DebugToolsDiagnosticsRestoreMismatch
 {

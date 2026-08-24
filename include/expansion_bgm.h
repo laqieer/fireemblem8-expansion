@@ -48,6 +48,21 @@ enum ExpansionBgmContinuationPolicy
     EXPANSION_BGM_CONTINUATION_RESTART = 2,
 };
 
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_EXPANSION_DEBUGTOOLS_ENABLED
+enum ExpansionBgmPreviewOwner
+{
+    EXPANSION_BGM_PREVIEW_OWNER_NONE = 0,
+    EXPANSION_BGM_PREVIEW_OWNER_DEBUGTOOLS_MUSIC = 1,
+};
+
+enum ExpansionBgmPreviewReleaseResult
+{
+    EXPANSION_BGM_PREVIEW_RELEASE_ERROR = -1,
+    EXPANSION_BGM_PREVIEW_RELEASED_IDLE = 0,
+    EXPANSION_BGM_PREVIEW_RESTORED = 1,
+};
+#endif
+
 #ifndef FE8_EXPANSION_BGM_CONTINUATION_POLICY
 #define FE8_EXPANSION_BGM_CONTINUATION_POLICY EXPANSION_BGM_CONTINUATION_PRESERVE
 #endif
@@ -148,5 +163,13 @@ void ExpansionBgm_Continue(
     int speed,
     struct MusicPlayerInfo *player);
 int ExpansionBgm_GetContinuationPolicy(void);
+
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_EXPANSION_DEBUGTOOLS_ENABLED
+bool ExpansionBgm_AcquirePreview(enum ExpansionBgmPreviewOwner owner);
+bool ExpansionBgm_PreviewSong(enum ExpansionBgmPreviewOwner owner, int songId);
+int ExpansionBgm_ReleasePreview(enum ExpansionBgmPreviewOwner owner);
+enum ExpansionBgmPreviewOwner ExpansionBgm_GetPreviewOwner(void);
+enum ExpansionBgmContext ExpansionBgm_GetCurrentContext(void);
+#endif
 
 #endif /* GUARD_EXPANSION_BGM_H */

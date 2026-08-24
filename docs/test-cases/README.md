@@ -76,5 +76,7 @@ Issue #84's security/correctness procedures are
 [`TC-CODEQL-084`](codeql-alerts.md#tc-codeql-084-remaining-confirmed-alert-boundaries).
 The cursor-selected unit debug editor procedure is
 [`TC-DEBUGTOOLS-PROTOTYPE-003`](debugtools.md#tc-debugtools-prototype-003-cursor-selected-bounded-unit-inspectoreditor).
+The bounded debugtools music-preview procedure is
+[`TC-DEBUGTOOLS-PROTOTYPE-004`](debugtools.md#tc-debugtools-prototype-004-preview-bounded-music-and-restore-its-owner).
 The typed State and Engine diagnostics procedure is
 [`TC-DEBUGTOOLS-DIAGNOSTICS-001`](debugtools.md#tc-debugtools-diagnostics-001-typed-state-and-engine-diagnostics).

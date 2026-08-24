@@ -80,6 +80,15 @@ void DebugToolsDiagnostics_EndSession(int forced)
     (void)forced;
 }
 
+void DebugToolsDiagnostics_ForceCloseSession(void)
+{
+    DebugToolsDiagnostics_EndSession(1);
+}
+
+void __attribute__((weak)) DebugToolsSaveState_OnHubReturn(void)
+{
+}
+
 void DebugToolsDiagnostics_SetSessionContext(
     enum DebugToolsDiagnosticsContext context)
 {

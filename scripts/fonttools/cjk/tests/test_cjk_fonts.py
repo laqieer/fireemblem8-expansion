@@ -35,11 +35,16 @@ class CjkFontTests(unittest.TestCase):
         inventory = json.loads((ROOT / "fonts/cjk/inventory.json").read_text())
         registry_path = ROOT / "texts/expansion/registry.json"
         registry = json.loads(registry_path.read_text())
-        active_keys = {
-            record["key"]
+        active_records = [
+            record
             for record in registry["messages"]
             if record["status"] == "active"
+        ]
+        active_keys = {
+            record["key"]
+            for record in active_records
         }
+        self.assertEqual(len(active_keys), len(active_records))
         catalog_paths = sorted((ROOT / "texts/expansion").glob("catalog.*.json"))
         source_paths = [registry_path, *catalog_paths]
         for path in source_paths:

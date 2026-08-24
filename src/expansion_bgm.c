@@ -4,13 +4,43 @@
 #include "bmunit.h"
 #include "chapterdata.h"
 #include "eventinfo.h"
+#include "bmsave.h"
 #include "constants/songs.h"
+
+#ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_debugtools.h"
+#include "soundwrapper.h"
+#endif
 
 static int ExpansionBgm_ContextIsValid(enum ExpansionBgmContext context)
 {
     return context >= EXPANSION_BGM_CONTEXT_MAP_PHASE
         && context < EXPANSION_BGM_CONTEXT_COUNT;
 }
+
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_EXPANSION_DEBUGTOOLS_ENABLED
+struct ExpansionBgmPreviewState
+{
+    enum ExpansionBgmPreviewOwner owner;
+    enum ExpansionBgmContext priorContext;
+    struct SoundBgmContext priorSound;
+    u8 hasPlayed;
+};
+
+SECTION("debugtools_contributor_data") static enum ExpansionBgmContext
+    sExpansionBgmCurrentContext =
+    EXPANSION_BGM_CONTEXT_MAP_PHASE;
+SECTION("debugtools_contributor_data") static struct ExpansionBgmPreviewState
+    sExpansionBgmPreviewState = {0};
+
+static void ExpansionBgm_RememberContext(enum ExpansionBgmContext context)
+{
+    if (ExpansionBgm_ContextIsValid(context))
+        sExpansionBgmCurrentContext = context;
+}
+#else
+#define ExpansionBgm_RememberContext(context) ((void)(context))
+#endif
 
 static int ExpansionBgm_ActionIsValid(enum ExpansionBgmAction action)
 {
@@ -191,6 +221,8 @@ void ExpansionBgm_Start(
         ExpansionBgm_MakeRequest(context, fallbackSong);
     int songId;
 
+    ExpansionBgm_RememberContext(context);
+
     if (fallbackSong == SONG_NONE)
     {
         StartOrChangeBgm(SONG_NONE, speed, player);
@@ -210,6 +242,8 @@ void ExpansionBgm_StartExplicit(
     struct ExpansionBgmContextRequest request =
         ExpansionBgm_MakeRequest(context, SONG_NONE);
 
+    ExpansionBgm_RememberContext(context);
+
     if (songId == SONG_NONE)
     {
         StartOrChangeBgm(SONG_NONE, speed, player);
@@ -227,7 +261,7 @@ void ExpansionBgm_FadeInExplicit(
     int duration,
     struct MusicPlayerInfo *player)
 {
-    (void)context;
+    ExpansionBgm_RememberContext(context);
     if (songId != SONG_NONE)
         StartBgmFadeIn(songId, duration, player);
 }
@@ -243,6 +277,8 @@ void ExpansionBgm_Change(
     struct ExpansionBgmContextRequest request =
         ExpansionBgm_MakeRequest(context, fallbackSong);
     int songId;
+
+    ExpansionBgm_RememberContext(context);
 
     if (fallbackSong == SONG_NONE)
     {
@@ -262,19 +298,19 @@ void ExpansionBgm_ChangeExplicit(
     int duration,
     ProcPtr parent)
 {
-    (void)context;
+    ExpansionBgm_RememberContext(context);
     ChangeBgm(songId, volumeInit, volumeEnd, duration, parent);
 }
 
 void ExpansionBgm_Override(enum ExpansionBgmContext context, int songId)
 {
-    (void)context;
+    ExpansionBgm_RememberContext(context);
     OverrideBgm(songId);
 }
 
 void ExpansionBgm_Restore(enum ExpansionBgmContext context, u16 speed)
 {
-    (void)context;
+    ExpansionBgm_RememberContext(context);
     _RestoreBgm(speed);
 }
 
@@ -286,6 +322,8 @@ void ExpansionBgm_Continue(
 {
     struct ExpansionBgmContextRequest request;
     int resolvedSong;
+
+    ExpansionBgm_RememberContext(context);
 
     if (songId == SONG_NONE)
         return;
@@ -317,3 +355,70 @@ int ExpansionBgm_GetContinuationPolicy(void)
 {
     return FE8_EXPANSION_BGM_CONTINUATION_POLICY;
 }
+
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_EXPANSION_DEBUGTOOLS_ENABLED
+bool ExpansionBgm_AcquirePreview(enum ExpansionBgmPreviewOwner owner)
+{
+    if (owner == EXPANSION_BGM_PREVIEW_OWNER_NONE)
+        return FALSE;
+
+    if (sExpansionBgmPreviewState.owner != EXPANSION_BGM_PREVIEW_OWNER_NONE)
+        return FALSE;
+
+    sExpansionBgmPreviewState.owner = owner;
+    sExpansionBgmPreviewState.priorContext = sExpansionBgmCurrentContext;
+    Sound_CaptureBgmContext(&sExpansionBgmPreviewState.priorSound);
+    sExpansionBgmPreviewState.hasPlayed = FALSE;
+    return TRUE;
+}
+
+bool ExpansionBgm_PreviewSong(enum ExpansionBgmPreviewOwner owner, int songId)
+{
+    if (owner == EXPANSION_BGM_PREVIEW_OWNER_NONE
+        || sExpansionBgmPreviewState.owner != owner)
+        return FALSE;
+
+    if (songId == SONG_NONE || !IsSoundRoomSongIdValid(songId))
+        return FALSE;
+
+    if (!Sound_StartTransientBgm(songId, NULL))
+        return FALSE;
+
+    sExpansionBgmPreviewState.hasPlayed = TRUE;
+    return TRUE;
+}
+
+int ExpansionBgm_ReleasePreview(enum ExpansionBgmPreviewOwner owner)
+{
+    int result = EXPANSION_BGM_PREVIEW_RELEASED_IDLE;
+
+    if (owner == EXPANSION_BGM_PREVIEW_OWNER_NONE
+        || sExpansionBgmPreviewState.owner != owner)
+        return EXPANSION_BGM_PREVIEW_RELEASE_ERROR;
+
+    if (sExpansionBgmPreviewState.hasPlayed)
+    {
+        if (!Sound_RestoreBgmContext(&sExpansionBgmPreviewState.priorSound, NULL))
+            result = EXPANSION_BGM_PREVIEW_RELEASE_ERROR;
+        else
+            result = EXPANSION_BGM_PREVIEW_RESTORED;
+    }
+
+    sExpansionBgmCurrentContext = sExpansionBgmPreviewState.priorContext;
+    sExpansionBgmPreviewState.owner = EXPANSION_BGM_PREVIEW_OWNER_NONE;
+    sExpansionBgmPreviewState.priorContext = EXPANSION_BGM_CONTEXT_MAP_PHASE;
+    sExpansionBgmPreviewState.hasPlayed = FALSE;
+
+    return result;
+}
+
+enum ExpansionBgmPreviewOwner ExpansionBgm_GetPreviewOwner(void)
+{
+    return sExpansionBgmPreviewState.owner;
+}
+
+enum ExpansionBgmContext ExpansionBgm_GetCurrentContext(void)
+{
+    return sExpansionBgmCurrentContext;
+}
+#endif

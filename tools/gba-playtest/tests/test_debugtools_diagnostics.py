@@ -192,8 +192,8 @@ class DebugToolsDiagnosticsHostTests(unittest.TestCase):
         self.assertIn("<= 0x630", linker)
         self.assertIn("<= 0x70", linker)
         self.assertNotIn("ewram_overlay_debugtools", legacy)
-        self.assertIn("DEBUGTOOLS_BUILTIN_ID_MAX = 9", header)
-        self.assertIn("DEBUGTOOLS_CONTRIBUTOR_ID_MIN = 10", header)
+        self.assertIn("DEBUGTOOLS_BUILTIN_ID_MAX = 10", header)
+        self.assertIn("DEBUGTOOLS_CONTRIBUTOR_ID_MIN = 11", header)
         self.assertIn("sizeof(struct DebugToolsDiagnosticsSnapshot)", (
             ROOT / "src/debugtools_diagnostics.c"
         ).read_text(encoding="utf-8"))

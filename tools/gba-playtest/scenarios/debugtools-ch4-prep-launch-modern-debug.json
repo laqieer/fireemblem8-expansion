@@ -132,7 +132,7 @@
         {
           "address": "0x0203181c",
           "size": 4,
-          "expected": "0x00000009"
+          "expected": "0x0000000a"
         }
       ]
     },

@@ -337,6 +337,14 @@ ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
     return (ProcPtr)1;
 }
 
+ProcPtr Proc_Find(const struct ProcCmd* script)
+{
+    if (script == gProcScr_DebugToolsMenuTransition)
+        return sDebugToolsLifecyclePendingTransition;
+
+    return NULL;
+}
+
 void DebugToolsLifecycle_RunPendingTransition(void)
 {
     ProcPtr proc = sDebugToolsLifecyclePendingTransition;
@@ -408,6 +416,13 @@ u8 DebugToolsLifecycle_Builtin9Selected(struct MenuProc* menu, struct MenuItemPr
     return 9;
 }
 
+u8 DebugToolsLifecycle_Builtin10Selected(struct MenuProc* menu, struct MenuItemProc* item)
+{
+    (void)menu;
+    (void)item;
+    return 10;
+}
+
 static const struct DebugToolsAction sBuiltinActions[] =
 {
     {1, "Fast Boot: Chapter 2", DebugToolsLifecycle_Builtin1Selected},
@@ -419,6 +434,7 @@ static const struct DebugToolsAction sBuiltinActions[] =
     {7, "Flag/Chapter", DebugToolsLifecycle_Builtin7Selected},
     {8, "RNG Inspect", DebugToolsLifecycle_Builtin8Selected},
     {9, "Save State", DebugToolsLifecycle_Builtin9Selected},
+    {10, "Music Preview", DebugToolsLifecycle_Builtin10Selected},
 };
 
 void DebugTools_RegisterBuiltinActions(void)
@@ -456,6 +472,15 @@ void DebugToolsDiagnostics_EndSession(int forced)
     DebugToolsDiagnostics_OnSessionRestored();
 }
 
+void DebugToolsDiagnostics_ForceCloseSession(void)
+{
+    DebugToolsDiagnostics_EndSession(1);
+}
+
+void DebugToolsSaveState_OnHubReturn(void)
+{
+}
+
 void DebugToolsDiagnostics_SetSessionContext(
     enum DebugToolsDiagnosticsContext context)
 {
@@ -490,7 +515,8 @@ struct MenuProc* DebugToolsDiagnostics_GetActiveMenu(void)
 struct MenuProc* DebugToolsDiagnostics_StartOwnedMenu(
     const struct MenuDef* menuDef)
 {
-    return DebugToolsLifecycle_StartOrphanMenu(menuDef);
+    (void)menuDef;
+    return NULL;
 }
 
 int DebugToolsDiagnostics_IsRestoring(void)
@@ -527,3 +553,14 @@ void DebugToolsDiagnostics_RecordViewOpen(int engineView)
 {
     (void)engineView;
 }
+
+#if !DEBUGTOOLS_LIFECYCLE_USE_REAL_MUSIC
+void DebugTools_RegisterMusicPreviewAction(void)
+{
+    DebugTools_RegisterBuiltinAction(&sBuiltinActions[9]);
+}
+
+void DebugTools_CleanupMusicPreview(void)
+{
+}
+#endif

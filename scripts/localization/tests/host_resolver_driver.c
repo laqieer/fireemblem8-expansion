@@ -201,7 +201,7 @@ int main(void)
 
     ExpansionLocale_GetCatalogStats(&stats);
     CHECK(stats.activeMessageCount == gExpansionLocaleMsgCount);
-    CHECK(stats.tombstoneCount == 1);
+    CHECK(stats.tombstoneCount == gExpansionLocaleTombstoneCount);
     CHECK(stats.populatedLocaleCount == 8);
     CHECK(stats.populatedLocaleCount == gExpansionLocalePopulatedCount);
     CHECK(stats.scratchBudgetBytes == EXPANSION_LOCALE_SCRATCH_SLOT_BYTES);

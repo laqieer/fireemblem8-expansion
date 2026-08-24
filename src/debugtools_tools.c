@@ -1741,7 +1741,13 @@ CONST_DATA static struct DebugToolsAction sUnitInspectAction = {
 
 /* --- 6. Convoy inspection/edit ------------------------------------------ */
 
-EWRAM_DATA static struct MenuItemDef sConvoyMenuItemDefs[3] = {{0}};
+/* These tool submenus cannot coexist, so one three-item buffer serves all
+ * three builders without consuming three copies of persistent EWRAM. */
+EWRAM_DATA static struct MenuItemDef sDebugToolsToolMenuItemDefs[3] = {{0}};
+
+#define sConvoyMenuItemDefs sDebugToolsToolMenuItemDefs
+#define sFlagMenuItemDefs sDebugToolsToolMenuItemDefs
+#define sRngMenuItemDefs sDebugToolsToolMenuItemDefs
 
 static void DebugToolsConvoy_OnEnd(struct MenuProc* menu)
 {
@@ -1836,8 +1842,6 @@ CONST_DATA static struct DebugToolsAction sConvoyInspectAction = {
 };
 
 /* --- 7. Flag/chapter/event state action ---------------------------------- */
-
-EWRAM_DATA static struct MenuItemDef sFlagMenuItemDefs[3] = {{0}};
 
 static void DebugToolsFlag_OnEnd(struct MenuProc* menu)
 {
@@ -1951,8 +1955,6 @@ CONST_DATA static struct DebugToolsAction sFlagInspectAction = {
 
 /* --- 8. RNG inspection/control ------------------------------------------ */
 
-EWRAM_DATA static struct MenuItemDef sRngMenuItemDefs[3] = {{0}};
-
 static void DebugToolsRng_OnEnd(struct MenuProc* menu)
 {
     DebugTools_ReturnToHubAfterMenuEnd(menu);
@@ -2038,10 +2040,35 @@ CONST_DATA static struct DebugToolsAction sRngInspectAction = {
 /* --- 9. Save compatibility/state inspection (read-only) ------------------ */
 
 EWRAM_DATA static struct MenuItemDef sSaveStateMenuItemDefs[2] = {{0}};
+extern struct MenuDef CONST_DATA gDebugToolsSaveStateMenuDef;
+static u16 sSaveStateBg1FrameTile;
+static int sSaveStateBackPending;
 
 static void DebugToolsSaveState_OnEnd(struct MenuProc* menu)
 {
+    sSaveStateBg1FrameTile = BG_GetMapBuffer(1)[
+        TILEMAP_INDEX(
+            gDebugToolsSaveStateMenuDef.rect.x,
+            gDebugToolsSaveStateMenuDef.rect.y)];
+    sSaveStateBackPending = 1;
     DebugTools_ReturnToHubAfterMenuEnd(menu);
+}
+
+void DebugToolsSaveState_OnHubReturn(void)
+{
+    u16 currentTile;
+
+    if (!sSaveStateBackPending)
+        return;
+
+    currentTile = BG_GetMapBuffer(1)[
+        TILEMAP_INDEX(
+            gDebugToolsSaveStateMenuDef.rect.x,
+            gDebugToolsSaveStateMenuDef.rect.y)];
+    gDebugToolsProbe.saveCompatBackBg1Preserved =
+        sSaveStateBg1FrameTile != 0 && sSaveStateBg1FrameTile == currentTile;
+    gDebugToolsProbe.saveCompatBackReturnCount++;
+    sSaveStateBackPending = 0;
 }
 
 CONST_DATA struct MenuDef gDebugToolsSaveStateMenuDef = {
@@ -2051,7 +2078,7 @@ CONST_DATA struct MenuDef gDebugToolsSaveStateMenuDef = {
     DebugToolsTools_MenuOnInit,
     DebugToolsSaveState_OnEnd,
     0,
-    MenuCancelSelect,
+    DebugTools_CancelMenu,
     0,
     0
 };
@@ -2062,7 +2089,7 @@ static void DebugToolsSaveState_BuildMenuItems(void)
 
     sSaveStateMenuItemDefs[0].name = "Back";
     sSaveStateMenuItemDefs[0].isAvailable = MenuAlwaysEnabled;
-    sSaveStateMenuItemDefs[0].onSelected = MenuCancelSelect;
+    sSaveStateMenuItemDefs[0].onSelected = DebugTools_CancelMenu;
     DEBUGTOOLS_LOCALIZE_ITEM(
         &sSaveStateMenuItemDefs[0],
         EXP_MSG_FRAMEWORK_BACK);

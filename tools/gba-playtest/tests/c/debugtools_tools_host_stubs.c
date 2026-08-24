@@ -55,6 +55,27 @@ struct Font* gActiveFont = &sDebugToolsToolsTestFont;
 static u16 sToolsStubBgMap[32 * 32];
 u16 gPaletteBuffer[0x200] = {0};
 
+void DebugToolsHostStub_FillBgMap(u16 value)
+{
+    int index;
+
+    for (index = 0; index < 32 * 32; ++index)
+        sToolsStubBgMap[index] = value;
+}
+
+int DebugToolsHostStub_IsBgMapFilled(u16 value)
+{
+    int index;
+
+    for (index = 0; index < 32 * 32; ++index)
+    {
+        if (sToolsStubBgMap[index] != value)
+            return 0;
+    }
+
+    return 1;
+}
+
 int gDebugToolsToolsHostStubPutFaceChibiCallCount = 0;
 int gDebugToolsToolsHostStubLastFaceChibiId = -1;
 int gDebugToolsToolsHostStubLastFaceChibiChr = -1;
@@ -221,6 +242,11 @@ ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
     return (ProcPtr)1;
 }
 
+void Proc_End(ProcPtr proc)
+{
+    (void)proc;
+}
+
 void DebugToolsHostStub_RunPendingTransition(void)
 {
     ProcPtr proc = sDebugToolsToolsPendingTransition;
@@ -242,6 +268,9 @@ static int sDebugToolsToolsBattleActive = 0;
 
 ProcPtr Proc_Find(const struct ProcCmd* script)
 {
+    if (script == gProcScr_DebugToolsMenuTransition)
+        return sDebugToolsToolsPendingTransition;
+
     if (script == gProcScr_PlayerPhase && sDebugToolsToolsPlayerPhaseActive)
         return (ProcPtr)1;
 
@@ -295,6 +324,14 @@ void DebugTools_RegisterChapter4PrepAction(void)
 }
 
 void DebugTools_RegisterWeatherFogActions(void)
+{
+}
+
+void DebugTools_RegisterMusicPreviewAction(void)
+{
+}
+
+void DebugTools_CleanupMusicPreview(void)
 {
 }
 
