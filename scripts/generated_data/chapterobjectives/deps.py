@@ -45,6 +45,10 @@ def collect_input_paths(objectives_source, bundle_source):
     paths.update(bundles.source_paths)
     paths.add(_canonical(objectives_source))
     paths.add(_canonical(bundle_source))
+    if os.path.isdir(objectives_source):
+        paths.add(_canonical(objectives_source))
+    if os.path.isdir(bundle_source):
+        paths.add(_canonical(bundle_source))
     paths.update(
         (
             _canonical(objectives_schema.CHAPTERS_HEADER),
@@ -60,6 +64,9 @@ def collect_input_paths(objectives_source, bundle_source):
         for table in bundle.tables:
             paths.add(_owner_source(table.source))
         paths.add(_owner_source(bundle.support_owners.source))
+    paths.add(_canonical(os.path.dirname(bundle_schema.ASSET_MANIFEST_PATH)))
+    paths.add(_canonical(bundle_schema.MAP_LAYOUT_DIR))
+    paths.add(_canonical(os.path.join(bundle_schema.REPO_ROOT, "assets", "tmx")))
     paths.update(_canonical(path) for path in glob.glob(os.path.join(bundle_schema.MAP_LAYOUT_DIR, "*.json")))
     paths.update(
         _canonical(path)
