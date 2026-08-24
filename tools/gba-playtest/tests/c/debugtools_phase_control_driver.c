@@ -394,6 +394,13 @@ static int TestRejectedAndExpiredRequests(void)
           "map-action ownership must reject a request without mutation");
     sPlayerActionLive = 0;
 
+    sCameraLive = 1;
+    CHECK(DebugToolsPhaseControl_RequestFactionMode(
+              FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+              == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
+          "camera Proc ownership must reject a request without mutation");
+    sCameraLive = 0;
+
     sFadeLive = 1;
     CHECK(DebugToolsPhaseControl_RequestTurn(6)
               == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
@@ -417,12 +424,43 @@ static int TestRejectedAndExpiredRequests(void)
           "unsafe ownership must not queue, apply, or restore a request");
 
     CHECK(DebugToolsPhaseControl_RequestFactionMode(
-              FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+              FACTION_GREEN, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
               == DEBUGTOOLS_PHASE_CONTROL_OK,
           "cleared map-action and battle ownership must restore acceptance");
     CHECK(gDebugToolsProbe.phaseControlRequestedCount
               == requestsBeforeUnsafeOwnership + 1,
           "normal acceptance must record exactly one request after adversaries");
+    CHECK(DebugToolsPhaseControl_RequestTurn(6)
+              == DEBUGTOOLS_PHASE_CONTROL_ERR_PENDING,
+          "a second request must fail while the original request is pending");
+    CHECK(gDebugToolsProbe.phaseControlRequestedCount
+              == requestsBeforeUnsafeOwnership + 1
+              && gDebugToolsProbe.phaseControlLastRequestKind
+                  == DEBUGTOOLS_PHASE_CONTROL_REQUEST_FACTION
+              && gDebugToolsProbe.phaseControlLastFaction == FACTION_GREEN
+              && gDebugToolsProbe.phaseControlLastMode
+                  == DEBUGTOOLS_PHASE_CONTROL_BLOCKED,
+          "pending rejection must preserve the original request fields");
+    gPlaySt.faction = FACTION_GREEN;
+    BmMain_StartPhase(&sMapMainProc);
+    CHECK(gDebugToolsProbe.phaseControlAppliedCount == 1
+              && gDebugToolsProbe.phaseControlRestoredCount == 1,
+          "the original pending request must consume normally");
+
+    gPlaySt.faction = FACTION_BLUE;
+    CHECK(DebugToolsPhaseControl_RequestFactionMode(
+              FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+              == DEBUGTOOLS_PHASE_CONTROL_OK,
+          "a second normal request must queue after the original consumes");
+    CHECK(DebugToolsPhaseControl_RequestTurn(6)
+              == DEBUGTOOLS_PHASE_CONTROL_ERR_PENDING,
+          "pending request must remain unique before reset");
+    CHECK(gDebugToolsProbe.phaseControlLastRequestKind
+              == DEBUGTOOLS_PHASE_CONTROL_REQUEST_FACTION
+              && gDebugToolsProbe.phaseControlLastFaction == FACTION_RED
+              && gDebugToolsProbe.phaseControlLastMode
+                  == DEBUGTOOLS_PHASE_CONTROL_BLOCKED,
+          "reset must retain diagnostics for the original pending request");
     expiredBeforeCleanup = gDebugToolsProbe.phaseControlExpiredCount;
     DebugToolsPhaseControl_Reset();
     CHECK(gDebugToolsProbe.phaseControlExpiredCount == expiredBeforeCleanup + 1,
@@ -445,7 +483,7 @@ static int TestRejectedAndExpiredRequests(void)
           "a valid request must queue before expiry testing");
     DebugToolsPhaseControl_Reset();
     CHECK(gDebugToolsProbe.phaseControlExpiredCount == expiredBeforeCleanup + 2
-              && gDebugToolsProbe.phaseControlRestoredCount == 2
+              && gDebugToolsProbe.phaseControlRestoredCount == 3
               && gDebugToolsProbe.phaseControlLastResult
                   == DEBUGTOOLS_PHASE_CONTROL_EXPIRED,
           "lifecycle reset must expire and restore a pending request");

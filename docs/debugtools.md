@@ -1719,7 +1719,10 @@ Requests are accepted only while the map is in the stable interactive blue
 computer/berserk phase, event, battle, fade, or camera Proc may own the map;
 and #85 must report no failure. Direct request API calls under those ownership
 guards fail closed: they record a rejection but never queue, apply, or restore
-a request. The request is not applied from the menu callback.
+a request. Only one request may be pending: a second returns the typed pending
+error without overwriting the original request, which then still consumes or
+expires through its ordinary lifecycle. The request is not applied from the
+menu callback.
 `BmMain_StartPhase` remains the sole faction router and consumes a matching
 red/green request at the corresponding boundary. A turn request applies after
 the phase switch but before `RunPhaseSwitchEvents`, so destination-faction
