@@ -241,3 +241,8 @@ absent from FEHRR is byte-for-byte the recorded FEBuilder fallback. They do
 not invoke FEHRR, FEBuilderGBA, or download anything. The explicit maintainer
 gate above performs the temporary package generation, validation, roundtrip,
 and source-priority import.
+
+These are parsed/binary artifact contracts, not source-spelling checks:
+renaming an implementation helper does not affect them, while a missing,
+reordered, malformed, or width-incompatible glyph changes the generated
+inventory or decoded asset and fails validation.
