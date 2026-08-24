@@ -94,8 +94,7 @@
     "debug.save_fixture.preview": "Copie RAM",
     "debug.save_fixture.title_only": "Titre seul",
     "debug.save_fixture.invalid": "Invalide",
-    "debug.save_fixture.blocked": "Sauv. bloquée"
-,
+    "debug.save_fixture.blocked": "Sauv. bloquée",
     "debug.action.chapter_skirmish": "Chapitre/Escarmouche",
     "debug.selector.chapter": "Chapitre",
     "debug.selector.skirmish": "Escarmouche",

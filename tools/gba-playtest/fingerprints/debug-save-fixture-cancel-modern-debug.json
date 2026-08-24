@@ -20,7 +20,7 @@
     },
     {
       "frame": 1420,
-      "framebuffer_hash": "fnv1a64-rgb24:104b21790e64477c",
+      "framebuffer_hash": "fnv1a64-rgb24:ee8e2b9068e2b483",
       "name": "cancel-zeroized",
       "probes": [
         {

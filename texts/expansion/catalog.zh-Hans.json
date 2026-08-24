@@ -94,8 +94,7 @@
     "debug.save_fixture.preview": "RAM测试数据",
     "debug.save_fixture.title_only": "仅标题画面",
     "debug.save_fixture.invalid": "数据无效",
-    "debug.save_fixture.blocked": "禁止保存"
-,
+    "debug.save_fixture.blocked": "禁止保存",
     "debug.action.chapter_skirmish": "章节/魔物战",
     "debug.selector.chapter": "章节",
     "debug.selector.skirmish": "魔物战",

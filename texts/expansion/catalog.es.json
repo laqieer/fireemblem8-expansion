@@ -94,8 +94,7 @@
     "debug.save_fixture.preview": "Copia RAM",
     "debug.save_fixture.title_only": "Solo título",
     "debug.save_fixture.invalid": "No válida",
-    "debug.save_fixture.blocked": "Guardado off"
-,
+    "debug.save_fixture.blocked": "Guardado off",
     "debug.action.chapter_skirmish": "Capítulo/Encuentro",
     "debug.selector.chapter": "Capítulo",
     "debug.selector.skirmish": "Encuentro",

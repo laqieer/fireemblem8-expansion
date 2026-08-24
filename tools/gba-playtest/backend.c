@@ -21,6 +21,7 @@
 #error "gba-playtest requires libmGBA's standard 32-bit color_t build"
 #endif
 
+#define GBA_SRAM_BASE 0x0E000000u
 #define GBA_SRAM_SIZE 0x8000u
 #define MAX_INPUT_RANGES 1000000u
 #define MAX_RUN_PROBES 128u
@@ -583,23 +584,29 @@ static uint64_t hash_sram(struct mCore* core, const struct ByteRange* exclude_ra
 	void* save_data = NULL;
 	size_t save_size = core->savedataClone(core, &save_data);
 	bool owns_save_data = true;
+	bool use_bus = false;
 	uint64_t hash = UINT64_C(14695981039346656037);
 
 	if (save_data == NULL || save_size != GBA_SRAM_SIZE) {
 		free(save_data);
 		if (initial_sram == NULL) {
-			fprintf(stderr, "mGBA returned invalid SRAM backing data\n");
-			abort();
+			use_bus = true;
+			owns_save_data = false;
+			save_data = NULL;
+			save_size = GBA_SRAM_SIZE;
+		} else {
+			save_data = (void*)initial_sram;
+			save_size = GBA_SRAM_SIZE;
+			owns_save_data = false;
 		}
-		save_data = (void*)initial_sram;
-		save_size = GBA_SRAM_SIZE;
-		owns_save_data = false;
 	}
 
 	for (uint32_t offset = 0; offset < GBA_SRAM_SIZE; ++offset) {
 		if (offset_excluded(exclude_ranges, exclude_range_count, offset))
 			continue;
-		uint8_t byte = ((const uint8_t*) save_data)[offset];
+		uint8_t byte = use_bus
+		    ? core->busRead8(core, GBA_SRAM_BASE + offset)
+		    : ((const uint8_t*) save_data)[offset];
 		hash ^= byte;
 		hash *= UINT64_C(1099511628211);
 	}
