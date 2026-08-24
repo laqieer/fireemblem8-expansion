@@ -53,8 +53,47 @@ struct LCDControlBuffer gLCDControlBuffer = {0};
 static struct Font sDebugToolsToolsTestFont = {0};
 struct Font* gActiveFont = &sDebugToolsToolsTestFont;
 
-static u16 sToolsStubBgMap[32 * 32];
+static u16 sToolsStubBgMaps[4][32 * 32];
 u16 gPaletteBuffer[0x200] = {0};
+
+void DebugToolsHostStub_FillBgMap(u16 value)
+{
+    int bg;
+    int index;
+
+    for (bg = 0; bg < 4; ++bg)
+    {
+        for (index = 0; index < 32 * 32; ++index)
+            sToolsStubBgMaps[bg][index] = value;
+    }
+}
+
+int DebugToolsHostStub_IsBgMapFilled(u16 value)
+{
+    int bg;
+    int index;
+
+    for (bg = 0; bg < 4; ++bg)
+    {
+        for (index = 0; index < 32 * 32; ++index)
+        {
+            if (sToolsStubBgMaps[bg][index] != value)
+                return 0;
+        }
+    }
+
+    return 1;
+}
+
+void DebugToolsHostStub_SetBgMapTile(int bg, int x, int y, u16 value)
+{
+    sToolsStubBgMaps[bg & 3][TILEMAP_INDEX(x, y)] = value;
+}
+
+u16 DebugToolsHostStub_GetBgMapTile(int bg, int x, int y)
+{
+    return sToolsStubBgMaps[bg & 3][TILEMAP_INDEX(x, y)];
+}
 
 int gDebugToolsToolsHostStubPutFaceChibiCallCount = 0;
 int gDebugToolsToolsHostStubLastFaceChibiId = -1;
@@ -91,8 +130,7 @@ static void DebugToolsHostStub_MapVram(void)
 
 u16* BG_GetMapBuffer(int bg)
 {
-    (void)bg;
-    return sToolsStubBgMap;
+    return sToolsStubBgMaps[bg & 3];
 }
 
 void BG_EnableSyncByMask(int bgMask)
@@ -192,13 +230,6 @@ u8 MenuAlwaysEnabled(const struct MenuItemDef* def, int number)
     (void)def;
     (void)number;
     return 1;
-}
-
-u8 MenuAlwaysDisabled(const struct MenuItemDef* def, int number)
-{
-    (void)def;
-    (void)number;
-    return MENU_DISABLED;
 }
 
 u8 MenuCancelSelect(struct MenuProc* menu, struct MenuItemProc* item)

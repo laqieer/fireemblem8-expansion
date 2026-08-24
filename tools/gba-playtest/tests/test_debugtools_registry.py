@@ -91,6 +91,39 @@ def _write_debugtools_msg_id_header(work_dir: Path):
         "EXP_MSG_DEBUG_SELECTOR_EIRIKA": "debug.selector.eirika",
         "EXP_MSG_DEBUG_SELECTOR_EPHRAIM": "debug.selector.ephraim",
         "EXP_MSG_DEBUG_SELECTOR_UNAVAILABLE": "debug.selector.unavailable",
+        "EXP_MSG_DEBUG_ACTION_REFRESH": "debug.action.refresh",
+        "EXP_MSG_DEBUG_VALUE_UNAVAILABLE": "debug.value.unavailable",
+        "EXP_MSG_DEBUG_FIELD_CONTEXT": "debug.field.context",
+        "EXP_MSG_DEBUG_FIELD_CLOCK": "debug.field.clock",
+        "EXP_MSG_DEBUG_FIELD_CHAPTER": "debug.field.chapter",
+        "EXP_MSG_DEBUG_FIELD_TURN": "debug.field.turn",
+        "EXP_MSG_DEBUG_FIELD_PHASE": "debug.field.phase",
+        "EXP_MSG_DEBUG_FIELD_CURSOR": "debug.field.cursor",
+        "EXP_MSG_DEBUG_FIELD_UNIT": "debug.field.unit",
+        "EXP_MSG_DEBUG_FIELD_CHARACTER": "debug.field.character",
+        "EXP_MSG_DEBUG_FIELD_CLASS": "debug.field.class",
+        "EXP_MSG_DEBUG_FIELD_HP": "debug.field.hp",
+        "EXP_MSG_DEBUG_VIEW_STATE": "debug.view.state",
+        "EXP_MSG_DEBUG_VIEW_ENGINE": "debug.view.engine",
+        "EXP_MSG_DEBUG_FIELD_WEATHER": "debug.field.weather",
+        "EXP_MSG_DEBUG_FIELD_FOG": "debug.field.fog",
+        "EXP_MSG_DEBUG_FIELD_RNG": "debug.field.rng",
+        "EXP_MSG_DEBUG_FIELD_PROC_COUNT": "debug.field.proc_count",
+        "EXP_MSG_DEBUG_FIELD_EVENT": "debug.field.event",
+        "EXP_MSG_DEBUG_FIELD_ACTIONS": "debug.field.actions",
+        "EXP_MSG_DEBUG_FIELD_LOG_RETAINED": "debug.field.log_retained",
+        "EXP_MSG_DEBUG_FIELD_LOG_WRITES": "debug.field.log_writes",
+        "EXP_MSG_DEBUG_FIELD_LOG_LAST": "debug.field.log_last",
+        "EXP_MSG_DEBUG_FIELD_ASSERT_COUNT": "debug.field.assert_count",
+        "EXP_MSG_DEBUG_FIELD_ASSERT_LAST": "debug.field.assert_last",
+        "EXP_MSG_DEBUG_VALUE_CONTEXT_TITLE": "debug.value.context_title",
+        "EXP_MSG_DEBUG_VALUE_CONTEXT_MAP": "debug.value.context_map",
+        "EXP_MSG_DEBUG_VALUE_CONTEXT_PREP": "debug.value.context_prep",
+        "EXP_MSG_DEBUG_VALUE_CONTEXT_BATTLE": "debug.value.context_battle",
+        "EXP_MSG_DEBUG_VALUE_PHASE_PLAYER": "debug.value.phase_player",
+        "EXP_MSG_DEBUG_VALUE_PHASE_ENEMY": "debug.value.phase_enemy",
+        "EXP_MSG_DEBUG_VALUE_PHASE_NPC": "debug.value.phase_npc",
+        "EXP_MSG_DEBUG_VALUE_PHASE_OTHER": "debug.value.phase_other",
     }
     lines = ["#ifndef TEST_EXPANSION_MSG_IDS_H", "#define TEST_EXPANSION_MSG_IDS_H"]
     lines += [f"#define {macro} {ids[key]}" for macro, key in macros.items()]
@@ -251,7 +284,18 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
         rc, out, driver_obj = _compile(work, driver_src, "driver.o")
         self.assertEqual(rc, 0, f"compiling {driver_src.name} failed:\n{out}")
 
-        rc, out, exe = _link(work, [registry_obj, stubs_obj, driver_obj], "test_exe")
+        rc, out, support_obj = _compile(
+            work,
+            C_FIXTURES_DIR / "debugtools_registry_support_stubs.c",
+            "registry_support.o",
+        )
+        self.assertEqual(rc, 0, f"compiling registry support stubs failed:\n{out}")
+
+        rc, out, exe = _link(
+            work,
+            [registry_obj, stubs_obj, support_obj, driver_obj],
+            "test_exe",
+        )
         self.assertEqual(rc, 0, f"linking host registry test failed:\n{out}")
 
         rc, out = _run(exe)
@@ -736,6 +780,64 @@ class DebugToolsHotkeyCollisionHostTests(unittest.TestCase):
             self.assertEqual(rc, 0, f"a non-colliding custom mask must compile cleanly:\n{out}")
 
 
+class DebugToolsInternalHeaderCompileTests(unittest.TestCase):
+    """Checks that internal debug-tools declarations stand on their own in
+    callers that do not include uimenu.h directly."""
+
+    @classmethod
+    def setUpClass(cls):
+        _skip_if_no_host_compiler()
+
+    def test_cancel_menu_prototype_is_self_contained_in_supported_contexts(self):
+        import tempfile
+
+        snippet = (
+            '#include "global.h"\n'
+            '#include "debugtools_internal.h"\n'
+            "#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)\n"
+            "static u8 (*const sCancelMenu)(struct MenuProc*, struct MenuItemProc*) =\n"
+            "    DebugTools_CancelMenu;\n"
+            "#endif\n"
+            "int main(void) { return 0; }\n"
+        )
+        contexts = (
+            ("modern-debug", ("-DMODERN=1", "-DFE8_EXPANSION_DEBUGTOOLS_ENABLED=1")),
+            ("modern-release", ("-DMODERN=1", "-DFE8_EXPANSION_DEBUGTOOLS_ENABLED=0")),
+            ("archival", ("-DFE8_ARCHIVAL_BUILD=1",)),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            for name, defines in contexts:
+                with self.subTest(context=name):
+                    source = root / f"{name}.c"
+                    output = root / f"{name}.o"
+                    source.write_text(snippet, encoding="utf-8")
+                    command = [
+                        CC,
+                        "-c",
+                        "-w",
+                        *_include_flags(),
+                        *defines,
+                        str(source),
+                        "-o",
+                        str(output),
+                    ]
+                    result = subprocess.run(
+                        command,
+                        cwd=str(REPO_ROOT),
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        result.returncode,
+                        0,
+                        f"{name} internal-header compile failed:\n"
+                        f"{result.stdout}{result.stderr}",
+                    )
+
+
 class DebugToolsOneEntryPathTests(unittest.TestCase):
     """Structural (source-grep) proof that the title-screen hotkey has
     exactly one call site and one definition, matching the WHERE
@@ -1125,8 +1227,17 @@ class DebugToolsChapter2LaunchLifecycleHostTests(unittest.TestCase):
             )
             self.assertEqual(rc, 0, f"compiling debugtools_launcher_driver.c failed:\n{out}")
 
+            rc, out, support_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debugtools_registry_support_stubs.c",
+                "launcher_registry_support.o",
+            )
+            self.assertEqual(rc, 0, f"compiling launcher registry support failed:\n{out}")
+
             rc, out, exe = _link(
-                work, [registry_obj, launcher_obj, stubs_obj, driver_obj], "launcher_test_exe"
+                work,
+                [registry_obj, launcher_obj, stubs_obj, support_obj, driver_obj],
+                "launcher_test_exe",
             )
             self.assertEqual(
                 rc, 0,
@@ -1427,11 +1538,8 @@ class DebugToolsChapter2LaunchLifecycleHostTests(unittest.TestCase):
             self.assertNotIn(banned, body, f"disabled DebugTools_CleanupBootstrapObserver must not reference {banned}")
 
     def test_title_idle_consumes_pending_request_before_session_guard(self):
-        """Title_IDLE must consume an already-armed Chapter 2 request before
-        the broader debug-session guard. The hub callback arms the request
-        while returning MENU_ACT_END; deferred text cleanup deliberately
-        keeps session ownership for one more yield, and must not add a frame
-        to the established launch timeline."""
+        """Title_IDLE must preserve the deterministic launch frame while
+        synchronously restoring the display owner before advancing."""
         text = TITLESCREEN_SRC.read_text(encoding="utf-8", errors="replace")
         match = re.search(r"void Title_IDLE\([^)]*\)\s*\{(.*?)\n\}", text, flags=re.DOTALL)
         self.assertIsNotNone(match, "could not locate Title_IDLE's function body")
@@ -1446,8 +1554,28 @@ class DebugToolsChapter2LaunchLifecycleHostTests(unittest.TestCase):
         self.assertNotEqual(pending_check_pos, -1, "Title_IDLE must call DebugTools_IsChapter2LaunchPending()")
         self.assertLess(
             pending_check_pos, hub_guard.start(),
-            "the pending-request check must precede the broad session guard so deferred "
-            "allocator cleanup cannot delay the deterministic launch timeline",
+            "the pending-request check must precede the broad session guard so "
+            "the established launch frame is not deferred",
+        )
+        pending_branch = re.search(
+            r"if\s*\(\s*DebugTools_IsChapter2LaunchPending\(\)\s*\)"
+            r"\s*\{([^}]*)\}",
+            body,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(pending_branch)
+        branch = pending_branch.group(1)
+        close_pos = branch.find("DebugToolsDiagnostics_ForceCloseSession")
+        advance_pos = branch.find("SetNextGameActionId")
+        self.assertGreaterEqual(
+            close_pos,
+            0,
+            "pending launch must synchronously close through the display owner",
+        )
+        self.assertGreater(
+            advance_pos,
+            close_pos,
+            "display restoration must precede title launch advancement",
         )
 
     def test_title_idle_pending_branch_never_synthesizes_input(self):
@@ -1847,18 +1975,30 @@ class DebugToolsMapPrepOneEntryPathTests(unittest.TestCase):
         self.assertIn("DebugTools_MapHotkeyCheck()", statements[0])
         self.assertIn("DebugTools_IsHubActive()", body[: body.find("DebugTools_MapHotkeyCheck") + 400])
 
-    def test_prep_hotkey_check_is_the_first_statement_and_returns_while_hub_active(self):
-        """PrepScreenProc_MapIdle must call DebugTools_PrepHotkeyCheck() as
-        its first statement and immediately return while the hub is
-        active."""
+    def test_prep_hotkey_input_is_owned_by_the_active_hub(self):
+        """PrepScreenProc_MapIdle must reject input before calling its
+        hotkey hook when a hub is active, then reject vanilla input after
+        a successful open in the same frame."""
         text = _strip_c_comments(PREP_SALLYCURSOR_SRC.read_text(encoding="utf-8", errors="replace"))
         match = re.search(r"\bPrepScreenProc_MapIdle\s*\([^)]*\)\s*\{(.*?)\n\}", text, flags=re.DOTALL)
         self.assertIsNotNone(match, "PrepScreenProc_MapIdle definition not found")
         body = match.group(1)
-        statements = [s.strip() for s in body.split(";") if s.strip()]
-        self.assertGreaterEqual(len(statements), 1)
-        self.assertIn("DebugTools_PrepHotkeyCheck()", statements[0])
-        self.assertIn("DebugTools_IsHubActive()", body[: body.find("DebugTools_PrepHotkeyCheck") + 400])
+        hotkey = body.find("DebugTools_PrepHotkeyCheck()")
+        first_guard = body.find("DebugTools_IsHubActive()")
+        second_guard = body.find("DebugTools_IsHubActive()", hotkey)
+        self.assertGreaterEqual(hotkey, 0)
+        self.assertGreaterEqual(first_guard, 0)
+        self.assertGreaterEqual(second_guard, 0)
+        self.assertLess(
+            first_guard,
+            hotkey,
+            "an active hub must own prep input before the parent observes a hotkey",
+        )
+        self.assertGreater(
+            second_guard,
+            hotkey,
+            "a newly opened hub must still block vanilla prep input in its opening frame",
+        )
 
     def test_dormant_tools_still_untouched(self):
         for name in ("src/bmdebug.c", "src/uidebug.c", "src/menu_def.c"):
@@ -1911,8 +2051,17 @@ class DebugToolsWeatherFogActionsHostTests(unittest.TestCase):
             )
             self.assertEqual(rc, 0, f"compiling debugtools_actions_driver.c failed:\n{out}")
 
+            rc, out, support_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debugtools_registry_support_stubs.c",
+                "actions_registry_support.o",
+            )
+            self.assertEqual(rc, 0, f"compiling actions registry support failed:\n{out}")
+
             rc, out, exe = _link(
-                work, [registry_obj, actions_obj, stubs_obj, driver_obj], "actions_test_exe"
+                work,
+                [registry_obj, actions_obj, stubs_obj, support_obj, driver_obj],
+                "actions_test_exe",
             )
             self.assertEqual(rc, 0, f"linking host Weather/Fog actions test failed:\n{out}")
 
@@ -2187,8 +2336,17 @@ class DebugToolsExtendedToolsHostTests(unittest.TestCase):
             )
             self.assertEqual(rc, 0, f"compiling debugtools_tools_driver.c failed:\n{out}")
 
+            rc, out, support_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debugtools_registry_support_stubs.c",
+                "tools_registry_support.o",
+            )
+            self.assertEqual(rc, 0, f"compiling tools registry support failed:\n{out}")
+
             rc, out, exe = _link(
-                work, [registry_obj, tools_obj, diag_obj, stubs_obj, driver_obj], "tools_test_exe"
+                work,
+                [registry_obj, tools_obj, diag_obj, stubs_obj, support_obj, driver_obj],
+                "tools_test_exe",
             )
             self.assertEqual(rc, 0, f"linking host extended-tools test failed:\n{out}")
 
@@ -2291,8 +2449,17 @@ class DebugToolsExtendedToolsHostTests(unittest.TestCase):
                 defines=defines
             )
             self.assertEqual(rc, 0, f"compiling portrait probe driver failed:\n{out}")
+            rc, out, support_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debugtools_registry_support_stubs.c",
+                "portrait_registry_support.o",
+                defines=defines,
+            )
+            self.assertEqual(rc, 0, f"compiling portrait registry support failed:\n{out}")
             rc, out, exe = _link(
-                work, [registry_obj, tools_obj, diag_obj, stubs_obj, driver_obj], "portrait_probe_test"
+                work,
+                [registry_obj, tools_obj, diag_obj, stubs_obj, support_obj, driver_obj],
+                "portrait_probe_test",
             )
             self.assertEqual(rc, 0, f"linking portrait probe host test failed:\n{out}")
             rc, out = _run(exe)

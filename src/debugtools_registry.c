@@ -6,6 +6,8 @@
 
 #include "hardware.h"
 #include "fontgrp.h"
+#include "bm.h"
+#include "bmunit.h"
 #include "proc.h"
 #include "uimenu.h"
 #include "expansion_debugtools.h"
@@ -76,7 +78,7 @@ struct DebugToolsMenuTextScope
     u16 counterBase;
 };
 
-/* StartMenuCore allocates every row synchronously inside StartOrphanMenu,
+/* StartMenuCore allocates every row synchronously inside StartMenu,
  * before the menu Proc reaches MenuDef::onInit. Capture that exact owner
  * here rather than consulting gActiveFont after a contributor onInit may
  * have switched it. */
@@ -145,13 +147,18 @@ static int DebugTools_StartMenuTransition(
 static struct MenuProc* DebugTools_StartOwnedMenu(const struct MenuDef* menuDef);
 static int DebugTools_GetActionCount(void);
 static const struct DebugToolsAction* DebugTools_GetAction(int index);
+static int DebugTools_SetLastResult(enum DebugToolsResult result);
+
+#if defined(FE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST)
+static struct MenuProc* sDebugToolsRuntimeMenu;
+#endif
 
 static u8 DebugToolsHub_BackSelected(struct MenuProc* menu, struct MenuItemProc* item)
 {
-    return MenuCancelSelect(menu, item);
+    return DebugTools_CancelMenu(menu, item);
 }
 
-static int DebugToolsHub_GetPageCount(void)
+static int DebugToolsHub_GetActionPageCount(void)
 {
     int count = DebugTools_GetActionCount();
 
@@ -162,9 +169,69 @@ static int DebugToolsHub_GetPageCount(void)
         / DEBUGTOOLS_HUB_PAGE_ACTION_MAX;
 }
 
+static int DebugToolsHub_GetPageCount(void)
+{
+    return DebugToolsHub_GetActionPageCount()
+        + DEBUGTOOLS_DIAGNOSTICS_PAGE_COUNT;
+}
+
+static int DebugToolsHub_IsDiagnosticsPage(void)
+{
+    return sHubPage >= DebugToolsHub_GetActionPageCount();
+}
+
+static int DebugToolsHub_IsEnginePage(void)
+{
+    return sHubPage == DebugToolsHub_GetActionPageCount() + 1;
+}
+
+static u8 DebugToolsHub_ConsumeEntryCombo(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    enum DebugToolsDiagnosticsContext context =
+        DebugToolsDiagnostics_GetSessionContext();
+    u16 mask;
+
+    (void)menu;
+    (void)item;
+
+    switch (context)
+    {
+    case DEBUGTOOLS_DIAG_CONTEXT_TITLE:
+        mask = FE8_EXPANSION_DEBUGTOOLS_HOTKEY_MASK;
+        break;
+
+    case DEBUGTOOLS_DIAG_CONTEXT_MAP:
+        mask = FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK;
+        break;
+
+    case DEBUGTOOLS_DIAG_CONTEXT_PREP:
+        mask = FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK;
+        break;
+
+    default:
+        return 0;
+    }
+
+    if ((gKeyStatusPtr->heldKeys & mask) != mask
+        || (gKeyStatusPtr->newKeys & mask) == 0)
+        return 0;
+
+    if (context == DEBUGTOOLS_DIAG_CONTEXT_PREP
+        && (gPlaySt.chapterStateBits & PLAY_FLAG_PREPSCREEN))
+        gDebugToolsProbe.prepScreenObservedCount++;
+
+    DebugTools_OpenHub();
+    gKeyStatusPtr->newKeys = 0;
+    return 0;
+}
+
 static u8 DebugToolsHub_NextPage(struct MenuProc* menu)
 {
     int pageCount = DebugToolsHub_GetPageCount();
+    int nextPage;
+    enum DebugToolsResult result;
 
     if (pageCount <= 1)
         return 0;
@@ -172,7 +239,19 @@ static u8 DebugToolsHub_NextPage(struct MenuProc* menu)
     if (sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED)
         return 0;
 
-    sHubPage = (sHubPage + 1) % pageCount;
+    nextPage = (sHubPage + 1) % pageCount;
+
+    if (nextPage >= DebugToolsHub_GetActionPageCount())
+    {
+        result = DebugToolsDiagnostics_BeginSession();
+        if (result != DEBUGTOOLS_OK && result != DEBUGTOOLS_ERR_ALREADY_ACTIVE)
+        {
+            DebugTools_SetLastResult(result);
+            return 0;
+        }
+    }
+
+    sHubPage = nextPage;
     DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_HUB, NULL, 1);
     menu->state |= MENU_STATE_FROZEN;
 
@@ -181,18 +260,19 @@ static u8 DebugToolsHub_NextPage(struct MenuProc* menu)
 
 static void DebugToolsHub_OnEnd(struct MenuProc* proc)
 {
-    /* Restore bg2 to the off state Title_EnableMainScreenDisplay left it
-     * in (src/titlescreen.c) -- our diagnostics line is the only thing
-     * that ever turns it on while the hub is the active menu. */
-    gLCDControlBuffer.dispcnt.bg2_on = 0;
-
+    DebugToolsDiagnostics_ClearActiveMenu(proc);
+#if defined(FE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST)
+    if (sDebugToolsRuntimeMenu == proc)
+        sDebugToolsRuntimeMenu = NULL;
+#endif
     sHubActive = 0;
     sDebugMenuState &= ~DEBUGTOOLS_STATE_HUB_ACTIVE;
 
     if (!(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE))
         return;
 
-    if (!(sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
+    if (!DebugToolsDiagnostics_IsRestoring()
+        && !(sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
         DebugTools_StartMenuTransition(
             proc,
             DEBUGTOOLS_TRANSITION_CLEANUP,
@@ -200,14 +280,16 @@ static void DebugToolsHub_OnEnd(struct MenuProc* proc)
             0);
 }
 
+static void DebugToolsHub_OnInit(struct MenuProc* proc);
+
 CONST_DATA struct MenuDef gDebugToolsHubMenuDef = {
     {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sHubMenuItemDefs,
-    0,
+    DebugToolsHub_OnInit,
     DebugToolsHub_OnEnd,
     0,
-    MenuCancelSelect,
+    DebugTools_CancelMenu,
     DebugToolsHub_NextPage,
     0
 };
@@ -251,13 +333,6 @@ static ExpansionMsgId DebugToolsHub_ResolveBuiltinLabelMsgId(
     return sBuiltinActionLabelMsgIds[id];
 }
 
-static int DebugToolsHub_UsesCjkText(void)
-{
-    ExpansionLocaleId locale = ExpansionLocale_GetCurrent();
-
-    return locale == EXPANSION_LOCALE_JA || locale == EXPANSION_LOCALE_ZH_HANS;
-}
-
 /* onDraw for a builtin action's hub row only -- resolved fresh every
  * redraw (menu redraws happen on every hub open/locale-settings
  * round-trip), so a locale switch is picked up on the very next render
@@ -282,6 +357,360 @@ static int DebugToolsHub_BuiltinActionRowDraw(struct MenuProc* proc, struct Menu
 }
 #endif /* FE8_ARCHIVAL_BUILD */
 
+#ifdef MODERN
+#define DEBUGTOOLS_TEXT(message, fallback) \
+    ExpansionLocale_ResolveCurrent((message))
+#else
+#define DEBUGTOOLS_TEXT(message, fallback) (fallback)
+#endif
+
+static const char* DebugToolsHub_ContextText(u8 context)
+{
+    switch (context)
+    {
+    case DEBUGTOOLS_DIAG_CONTEXT_TITLE:
+        return DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_VALUE_CONTEXT_TITLE, "TITLE");
+
+    case DEBUGTOOLS_DIAG_CONTEXT_MAP:
+        return DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_VALUE_CONTEXT_MAP, "MAP");
+
+    case DEBUGTOOLS_DIAG_CONTEXT_PREP:
+        return DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_VALUE_CONTEXT_PREP, "PREP");
+
+    case DEBUGTOOLS_DIAG_CONTEXT_BATTLE:
+        return DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_VALUE_CONTEXT_BATTLE, "BATTLE");
+
+    default:
+        return DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_VALUE_UNAVAILABLE, "N/A");
+    }
+}
+
+static const char* DebugToolsHub_PhaseText(u8 faction)
+{
+    switch (faction)
+    {
+    case FACTION_BLUE:
+        return DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_VALUE_PHASE_PLAYER, "PLAYER");
+
+    case FACTION_RED:
+        return DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_VALUE_PHASE_ENEMY, "ENEMY");
+
+    case FACTION_GREEN:
+        return DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_VALUE_PHASE_NPC, "NPC");
+
+    default:
+        return DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_VALUE_PHASE_OTHER, "OTHER");
+    }
+}
+
+static void DebugToolsHub_FormatUnavailable(char* buf)
+{
+    sprintf(buf, "%s",
+        DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_VALUE_UNAVAILABLE, "N/A"));
+}
+
+static void DebugToolsHub_FormatStateRow(
+    char* buf,
+    int row,
+    const struct DebugToolsDiagnosticsSnapshot* snapshot)
+{
+    if (!(snapshot->validMask & DEBUGTOOLS_DIAG_VALID_COMMON))
+    {
+        DebugToolsHub_FormatUnavailable(buf);
+        return;
+    }
+
+    switch (row)
+    {
+    case 0:
+        sprintf(buf, "%s %s %s %u",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_CONTEXT, "CTX"),
+            DebugToolsHub_ContextText(snapshot->context),
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_CLOCK, "CLK"),
+            (unsigned int)snapshot->gameClockFrames);
+        return;
+
+    case 1:
+        if (!(snapshot->validMask & DEBUGTOOLS_DIAG_VALID_MAP))
+            break;
+        sprintf(buf, "%s %d %s %u",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_CHAPTER, "CH"),
+            (int)snapshot->chapterIndex,
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_TURN, "T"),
+            (unsigned int)snapshot->turn);
+        return;
+
+    case 2:
+        if (!(snapshot->validMask & DEBUGTOOLS_DIAG_VALID_MAP))
+            break;
+        sprintf(buf, "%s %s",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_PHASE, "PH"),
+            DebugToolsHub_PhaseText(snapshot->faction));
+        return;
+
+    case 3:
+        if (!(snapshot->validMask & DEBUGTOOLS_DIAG_VALID_CURSOR))
+            break;
+        sprintf(buf, "%s %d,%d",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_CURSOR, "XY"),
+            (int)snapshot->cursorX,
+            (int)snapshot->cursorY);
+        return;
+
+    case 4:
+        if (!(snapshot->validMask & DEBUGTOOLS_DIAG_VALID_UNIT))
+            break;
+        sprintf(buf, "%s %u %s %u %s %u",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_UNIT, "U"),
+            (unsigned int)snapshot->cursorUnitId,
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_CHARACTER, "C"),
+            (unsigned int)snapshot->characterId,
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_CLASS, "J"),
+            (unsigned int)snapshot->classId);
+        return;
+
+    case 5:
+        if (!(snapshot->validMask & DEBUGTOOLS_DIAG_VALID_UNIT))
+            break;
+        sprintf(buf, "%s %u/%u",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_HP, "HP"),
+            (unsigned int)snapshot->currentHp,
+            (unsigned int)snapshot->maxHp);
+        return;
+
+    case 6:
+        if (!(snapshot->validMask & DEBUGTOOLS_DIAG_VALID_MAP))
+            break;
+        sprintf(buf, "%s %u %s %u",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_WEATHER, "W"),
+            (unsigned int)snapshot->weatherId,
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_FOG, "F"),
+            (unsigned int)snapshot->fogRange);
+        return;
+
+    case 7:
+        sprintf(buf, "%s %04X %04X %04X",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_RNG, "RNG"),
+            (unsigned int)snapshot->rngState[0],
+            (unsigned int)snapshot->rngState[1],
+            (unsigned int)snapshot->rngState[2]);
+        return;
+    }
+
+    DebugToolsHub_FormatUnavailable(buf);
+}
+
+static void DebugToolsHub_FormatEngineRow(
+    char* buf,
+    int row,
+    const struct DebugToolsDiagnosticsSnapshot* snapshot)
+{
+    if (!(snapshot->validMask & DEBUGTOOLS_DIAG_VALID_COMMON))
+    {
+        DebugToolsHub_FormatUnavailable(buf);
+        return;
+    }
+
+    switch (row)
+    {
+    case 0:
+        sprintf(buf, "%s %u",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_PROC_COUNT, "PROC"),
+            (unsigned int)snapshot->procCount);
+        return;
+
+    case 1:
+        sprintf(buf, "%s %u",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_EVENT, "EVENT"),
+            (unsigned int)snapshot->eventEngineActive);
+        return;
+
+    case 2:
+        sprintf(buf, "%s %u",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_ACTIONS, "ACT"),
+            (unsigned int)snapshot->registeredActionCount);
+        return;
+
+    case 3:
+        sprintf(buf, "%s %u/%u",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_LOG_RETAINED, "LOG"),
+            (unsigned int)snapshot->logRetainedCount,
+            (unsigned int)DEBUGTOOLS_LOG_RING_SIZE);
+        return;
+
+    case 4:
+        sprintf(buf, "%s %u",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_LOG_WRITES, "WRITES"),
+            (unsigned int)snapshot->logTotalWrites);
+        return;
+
+    case 5:
+        sprintf(buf, "%s %u",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_LOG_LAST, "LAST LOG"),
+            (unsigned int)snapshot->lastLogCode);
+        return;
+
+    case 6:
+        sprintf(buf, "%s %u",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_ASSERT_COUNT, "ASSERT"),
+            (unsigned int)snapshot->assertFailureCount);
+        return;
+
+    default:
+        sprintf(buf, "%s %u",
+            DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_FIELD_ASSERT_LAST, "LAST ASSERT"),
+            (unsigned int)snapshot->lastAssertCode);
+        return;
+    }
+}
+
+static int DebugToolsHub_DiagnosticsRowDraw(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    const struct DebugToolsDiagnosticsSnapshot* snapshot =
+        DebugToolsDiagnostics_GetSnapshot();
+    char buf[64];
+
+    ClearText(&item->text);
+    Text_SetColor(&item->text, TEXT_COLOR_SYSTEM_WHITE);
+
+    if (DebugToolsHub_IsEnginePage())
+        DebugToolsHub_FormatEngineRow(buf, item->itemNumber, snapshot);
+    else
+        DebugToolsHub_FormatStateRow(buf, item->itemNumber, snapshot);
+
+    Text_DrawString(&item->text, buf);
+    PutText(
+        &item->text,
+        TILEMAP_LOCATED(
+            BG_GetMapBuffer(menu->frontBg),
+            item->xTile,
+            item->yTile));
+    return 0;
+}
+
+static u8 DebugToolsHub_RefreshSelected(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)item;
+    DebugToolsDiagnostics_RefreshSnapshot();
+    RedrawMenu(menu);
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_SND6A;
+}
+
+#if defined(FE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST)
+static u8 sDebugToolsRuntimeViewStage;
+static u8 sDebugToolsRuntimeViewStarted;
+static u8 sDebugToolsRuntimeEngineWait;
+
+static void DebugToolsHub_RuntimeTestViews(ProcPtr proc)
+{
+    struct MenuProc* menu;
+
+    if (sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED)
+        return;
+
+    menu = DebugToolsDiagnostics_GetActiveMenu();
+    if (menu == NULL)
+        menu = sDebugToolsRuntimeMenu;
+    switch (sDebugToolsRuntimeViewStage)
+    {
+    case 0:
+        DebugToolsDiagnostics_SetSessionContext(DEBUGTOOLS_DIAG_CONTEXT_MAP);
+        if (DebugTools_OpenHub() == DEBUGTOOLS_OK)
+            sDebugToolsRuntimeViewStage = 1;
+        return;
+
+    case 1:
+        if (menu == NULL)
+            return;
+
+        if (!DebugToolsHub_IsDiagnosticsPage())
+        {
+            /* The lifecycle host driver traverses every action page. This
+             * runtime-only scalar fixture needs State/Engine before its
+             * fixed checkpoint, so start the real page transition from the
+             * final catalog-derived action page. */
+            sHubPage = DebugToolsHub_GetActionPageCount() - 1;
+            DebugToolsHub_NextPage(menu);
+            return;
+        }
+
+        sDebugToolsRuntimeViewStage = 2;
+        return;
+
+    case 2:
+        if (menu == NULL || !DebugToolsHub_IsDiagnosticsPage())
+            return;
+        DebugToolsHub_RefreshSelected(menu, NULL);
+        DebugToolsHub_NextPage(menu);
+        sDebugToolsRuntimeEngineWait = 0;
+        sDebugToolsRuntimeViewStage = 3;
+        return;
+
+    case 3:
+        if (menu == NULL || !DebugToolsHub_IsEnginePage())
+            return;
+        if (++sDebugToolsRuntimeEngineWait < 2)
+            return;
+        DebugToolsDiagnostics_ForceCloseSession();
+        gDebugToolsDiagnosticsProbe.viewRuntimeComplete = 1;
+        Proc_Break(proc);
+        return;
+    }
+}
+
+static struct ProcCmd CONST_DATA sDebugToolsRuntimeViewScript[] =
+{
+    PROC_REPEAT(DebugToolsHub_RuntimeTestViews),
+    PROC_END,
+};
+
+static void DebugToolsHub_StartRuntimeTestViews(void)
+{
+    if (sDebugToolsRuntimeViewStarted
+        || !gDebugToolsDiagnosticsProbe.mapRuntimeComplete)
+        return;
+
+    sDebugToolsRuntimeViewStarted = 1;
+    Proc_Start(sDebugToolsRuntimeViewScript, PROC_TREE_3);
+}
+#endif
+
+static void DebugToolsHub_BuildDiagnosticsMenuItems(void)
+{
+    int i;
+
+    for (i = 0; i < 8; ++i)
+    {
+        sHubMenuItemDefs[i].name = "";
+        sHubMenuItemDefs[i].isAvailable = MenuAlwaysDisabled;
+        sHubMenuItemDefs[i].onDraw = DebugToolsHub_DiagnosticsRowDraw;
+        sHubMenuItemDefs[i].onIdle = DebugToolsHub_ConsumeEntryCombo;
+    }
+
+    sHubMenuItemDefs[8].name = "Refresh";
+    sHubMenuItemDefs[8].isAvailable = MenuAlwaysEnabled;
+    sHubMenuItemDefs[8].onSelected = DebugToolsHub_RefreshSelected;
+    sHubMenuItemDefs[8].onIdle = DebugToolsHub_ConsumeEntryCombo;
+    sHubMenuItemDefs[9].name = "Back";
+    sHubMenuItemDefs[9].isAvailable = MenuAlwaysEnabled;
+    sHubMenuItemDefs[9].onSelected = DebugToolsHub_BackSelected;
+    sHubMenuItemDefs[9].onIdle = DebugToolsHub_ConsumeEntryCombo;
+
+#ifdef MODERN
+    sHubMenuItemDefs[8].helpMsgId = EXP_MSG_DEBUG_ACTION_REFRESH;
+    sHubMenuItemDefs[8].onDraw = DebugToolsHub_BuiltinActionRowDraw;
+    sHubMenuItemDefs[9].helpMsgId = EXP_MSG_FRAMEWORK_BACK;
+    sHubMenuItemDefs[9].onDraw = DebugToolsHub_BuiltinActionRowDraw;
+#endif
+
+    DebugToolsDiagnostics_RefreshSnapshot();
+    DebugToolsDiagnostics_RecordViewOpen(DebugToolsHub_IsEnginePage());
+}
+
 static void DebugToolsHub_BuildMenuItems(void)
 {
     const struct DebugToolsAction* action;
@@ -298,6 +727,12 @@ static void DebugToolsHub_BuildMenuItems(void)
     actionCount = DebugTools_GetActionCount();
     if (sHubPage >= DebugToolsHub_GetPageCount())
         sHubPage = 0;
+
+    if (DebugToolsHub_IsDiagnosticsPage())
+    {
+        DebugToolsHub_BuildDiagnosticsMenuItems();
+        return;
+    }
 
     firstAction = sHubPage * DEBUGTOOLS_HUB_PAGE_ACTION_MAX;
     visibleCount = actionCount - firstAction;
@@ -320,7 +755,7 @@ static void DebugToolsHub_BuildMenuItems(void)
         def->isAvailable = MenuAlwaysEnabled;
         def->onDraw = NULL;
         def->onSelected = action->onSelected;
-        def->onIdle = NULL;
+        def->onIdle = DebugToolsHub_ConsumeEntryCombo;
         def->onSwitchIn = NULL;
         def->onSwitchOut = NULL;
 
@@ -347,15 +782,17 @@ static void DebugToolsHub_BuildMenuItems(void)
 #endif
     sHubMenuItemDefs[visibleCount].isAvailable = MenuAlwaysEnabled;
     sHubMenuItemDefs[visibleCount].onSelected = DebugToolsHub_BackSelected;
+    sHubMenuItemDefs[visibleCount].onIdle =
+        DebugToolsHub_ConsumeEntryCombo;
 
     /* sHubMenuItemDefs[visibleCount + 1] stays all-zero: the terminator. */
 }
 
-static void DebugToolsHub_ShowDiagnostics(void)
+static void DebugToolsHub_ShowDiagnostics(struct MenuProc* menu)
 {
     char buf[64];
     int actionCount = DebugTools_GetActionCount();
-    int pageCount = DebugToolsHub_GetPageCount();
+    int pageCount = DebugToolsHub_GetActionPageCount();
 
 #ifdef MODERN
     if (sLastResult != DEBUGTOOLS_OK)
@@ -367,24 +804,9 @@ static void DebugToolsHub_ShowDiagnostics(void)
             ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_HUB),
             sBuiltinActionCount, DEBUGTOOLS_BUILTIN_ACTION_MAX);
     else
-        sprintf(buf, "%s %d/%d %d/%d",
+        sprintf(buf, "%s %d %d/%d",
             ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_HUB),
-            actionCount, DEBUGTOOLS_ACTION_MAX, sHubPage + 1, pageCount);
-
-    if (DebugToolsHub_UsesCjkText())
-    {
-        BG_Fill(BG_GetMapBuffer(2), 0);
-        PutDrawText(
-            NULL,
-            BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
-            TEXT_COLOR_SYSTEM_WHITE,
-            0,
-            DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES,
-            buf);
-        BG_EnableSyncByMask(BG2_SYNC_BIT);
-        gLCDControlBuffer.dispcnt.bg2_on = 1;
-        return;
-    }
+            actionCount, sHubPage + 1, pageCount);
 #else
     if (sLastResult != DEBUGTOOLS_OK)
         sprintf(buf, "DBGTOOLS ERR %d", (int)sLastResult);
@@ -392,14 +814,35 @@ static void DebugToolsHub_ShowDiagnostics(void)
         sprintf(buf, "DBGTOOLS %d/%d",
             sBuiltinActionCount, DEBUGTOOLS_BUILTIN_ACTION_MAX);
     else
-        sprintf(buf, "DBGTOOLS %d/%d %d/%d",
-            actionCount, DEBUGTOOLS_ACTION_MAX, sHubPage + 1, pageCount);
+        sprintf(buf, "DBGTOOLS %d %d/%d",
+            actionCount, sHubPage + 1, pageCount);
 #endif
 
-    SetupDebugFontForBG(2, 0);
-    PrintDebugStringToBG(BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1), buf);
+    DebugToolsDiagnostics_DrawStatusText(menu, buf);
+}
 
-    gLCDControlBuffer.dispcnt.bg2_on = 1;
+static void DebugToolsHub_ShowViewHeader(struct MenuProc* menu)
+{
+    const char* text = DebugToolsHub_IsEnginePage()
+        ? DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_VIEW_ENGINE, "ENGINE")
+        : DEBUGTOOLS_TEXT(EXP_MSG_DEBUG_VIEW_STATE, "STATE");
+
+    DebugToolsDiagnostics_DrawStatusText(menu, text);
+}
+
+static void DebugToolsHub_OnInit(struct MenuProc* menu)
+{
+    if (!DebugToolsHub_IsDiagnosticsPage())
+    {
+        DebugToolsHub_ShowDiagnostics(menu);
+        return;
+    }
+
+    DebugToolsHub_ShowViewHeader(menu);
+    DrawMenuItemHover(menu, menu->itemCurrent, FALSE);
+    menu->itemPrevious = menu->itemCurrent;
+    menu->itemCurrent = 8;
+    DrawMenuItemHover(menu, menu->itemCurrent, TRUE);
 }
 
 static int DebugTools_SetLastResult(enum DebugToolsResult result)
@@ -618,12 +1061,22 @@ static int DebugTools_HasTextCapacity(void)
 
 static struct MenuProc* DebugTools_StartOwnedMenu(const struct MenuDef* menuDef)
 {
+    struct MenuProc* menu;
+
     sMenuTextScope.ownerFont = gActiveFont;
     sMenuTextScope.restoreFont = gActiveFont;
     sMenuTextScope.counterBase =
         gActiveFont == NULL ? 0 : gActiveFont->chr_counter;
 
-    return StartOrphanMenu(menuDef);
+    menu = DebugToolsDiagnostics_StartOwnedMenu(menuDef);
+    if (menu == NULL)
+        menu = StartOrphanMenu(menuDef);
+
+    DebugToolsDiagnostics_SetActiveMenu(menu);
+#if defined(FE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST)
+    sDebugToolsRuntimeMenu = menu;
+#endif
+    return menu;
 }
 
 static int DebugTools_StartMenuTransition(
@@ -670,7 +1123,10 @@ int DebugTools_IsMenuTransitionScheduled(void)
 
 void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
 {
+    DebugToolsDiagnostics_ClearActiveMenu(menu);
+
     if (!(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE)
+        || DebugToolsDiagnostics_IsRestoring()
         || (sDebugMenuState
         & (DEBUGTOOLS_STATE_HUB_ACTIVE | DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
     )
@@ -701,16 +1157,6 @@ static enum DebugToolsResult DebugTools_OpenHubInternal(void)
     sHubActive = 1;
     sDebugMenuState |= DEBUGTOOLS_STATE_HUB_ACTIVE;
 
-#ifdef MODERN
-    if (DebugToolsHub_UsesCjkText())
-    {
-        DebugTools_StartOwnedMenu(&gDebugToolsHubMenuDef);
-        DebugToolsHub_ShowDiagnostics();
-        return DEBUGTOOLS_OK;
-    }
-#endif
-
-    DebugToolsHub_ShowDiagnostics();
     DebugTools_StartOwnedMenu(&gDebugToolsHubMenuDef);
 
     return DEBUGTOOLS_OK;
@@ -739,6 +1185,7 @@ void DebugTools_RunMenuTransition(ProcPtr proc)
 
     if (target == DEBUGTOOLS_TRANSITION_HUB)
     {
+        DebugToolsSaveState_OnHubReturn();
         DebugTools_OpenHubInternal();
         return;
     }
@@ -748,6 +1195,8 @@ void DebugTools_RunMenuTransition(ProcPtr proc)
     DebugTools_CleanupMusicPreview();
 #endif
     sDebugMenuState &= ~(DEBUGTOOLS_STATE_SESSION_ACTIVE | DEBUGTOOLS_STATE_HUB_ACTIVE);
+    DebugToolsDiagnostics_EndSession(0);
+    DebugToolsDiagnostics_ClearSessionContext();
 }
 
 struct ProcCmd CONST_DATA gProcScr_DebugToolsMenuTransition[] =
@@ -764,7 +1213,7 @@ enum DebugToolsResult DebugTools_OpenHub(void)
      * already open must never start a second concurrent MenuProc:
      * without this, the title hotkey check's edge-detected newKeys
      * condition re-fires on every subsequent complete press/release/
-     * press cycle, each of which would otherwise call StartOrphanMenu()
+     * press cycle, each of which would otherwise start another owned menu
      * again. Guarding here -- rather than in each caller -- protects
      * every current and future entry path. */
     if (sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE)
@@ -785,6 +1234,46 @@ int DebugTools_IsHubActive(void)
     return sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE;
 }
 
+void DebugToolsDiagnostics_OnSessionRestored(void)
+{
+#ifndef FE8_ARCHIVAL_BUILD
+    DebugTools_CleanupMusicPreview();
+#endif
+    sHubPage = 0;
+    sHubActive = 0;
+    sDebugMenuState &=
+        ~(DEBUGTOOLS_STATE_SESSION_ACTIVE
+            | DEBUGTOOLS_STATE_HUB_ACTIVE
+            | DEBUGTOOLS_STATE_TRANSITION_SCHEDULED);
+}
+
+static void DebugTools_TryOpenFromContext(
+    enum DebugToolsDiagnosticsContext context)
+{
+    enum DebugToolsResult result;
+    u16 mask;
+
+    if (context == DEBUGTOOLS_DIAG_CONTEXT_TITLE)
+        mask = FE8_EXPANSION_DEBUGTOOLS_HOTKEY_MASK;
+    else if (context == DEBUGTOOLS_DIAG_CONTEXT_MAP)
+        mask = FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK;
+    else
+        mask = FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK;
+
+    if (DebugTools_IsHubActive())
+    {
+        if (DebugTools_OpenHub() == DEBUGTOOLS_ERR_ALREADY_ACTIVE
+            && context != DEBUGTOOLS_DIAG_CONTEXT_PREP)
+            gKeyStatusPtr->newKeys &= (u16)~mask;
+        return;
+    }
+
+    DebugToolsDiagnostics_SetSessionContext(context);
+    result = DebugTools_OpenHub();
+    if (result != DEBUGTOOLS_OK)
+        DebugToolsDiagnostics_ClearSessionContext();
+}
+
 void DebugTools_ForceSessionCleanup(void)
 {
 #ifndef FE8_ARCHIVAL_BUILD
@@ -802,10 +1291,12 @@ void DebugTools_ForceSessionCleanup(void)
             Proc_End(transition);
     }
 
+    DebugToolsDiagnostics_ForceCloseSession();
     gLCDControlBuffer.dispcnt.bg2_on = 0;
     sHubActive = 0;
     sHubPage = 0;
     sDebugMenuState &= DEBUGTOOLS_STATE_BUILTINS_INITIALIZED;
+    DebugToolsDiagnostics_ClearSessionContext();
 }
 
 void DebugTools_TitleHotkeyCheck(void)
@@ -820,10 +1311,7 @@ void DebugTools_TitleHotkeyCheck(void)
      * authoritative reentrancy guard (returns DEBUGTOOLS_ERR_ALREADY_ACTIVE,
      * a no-op, rather than starting a second concurrent MenuProc). */
     if ((gKeyStatusPtr->heldKeys & mask) == mask && (gKeyStatusPtr->newKeys & mask) != 0)
-    {
-        if (DebugTools_OpenHub() == DEBUGTOOLS_ERR_ALREADY_ACTIVE)
-            gKeyStatusPtr->newKeys &= (u16)~mask;
-    }
+        DebugTools_TryOpenFromContext(DEBUGTOOLS_DIAG_CONTEXT_TITLE);
 }
 
 /* Issue #11 slice 2: map-phase and prep-screen hub entry points. Same
@@ -834,16 +1322,35 @@ void DebugTools_MapHotkeyCheck(void)
 {
     u16 mask = FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK;
 
-    if ((gKeyStatusPtr->heldKeys & mask) == mask && (gKeyStatusPtr->newKeys & mask) != 0)
+#if defined(FE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST)
+    DebugToolsDiagnostics_RuntimeTestMap();
+    DebugToolsHub_StartRuntimeTestViews();
+    if (gDebugToolsDiagnosticsProbe.viewRuntimeComplete)
+        gDebugToolsDiagnosticsProbe.postViewMapIdleCount++;
     {
-        if (DebugTools_OpenHub() == DEBUGTOOLS_ERR_ALREADY_ACTIVE)
-            gKeyStatusPtr->newKeys &= (u16)~mask;
+        u16 forceMask = SELECT_BUTTON | START_BUTTON;
+
+        if (DebugTools_IsHubActive()
+            && (gKeyStatusPtr->heldKeys & forceMask) == forceMask
+            && (gKeyStatusPtr->newKeys & forceMask) != 0)
+        {
+            DebugToolsDiagnostics_ForceCloseSession();
+            return;
+        }
     }
+#endif
+
+    if ((gKeyStatusPtr->heldKeys & mask) == mask && (gKeyStatusPtr->newKeys & mask) != 0)
+        DebugTools_TryOpenFromContext(DEBUGTOOLS_DIAG_CONTEXT_MAP);
 }
 
 void DebugTools_PrepHotkeyCheck(void)
 {
     u16 mask = FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK;
+
+#if defined(FE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST)
+    DebugToolsDiagnostics_RuntimeTestPrep();
+#endif
 
     if ((gKeyStatusPtr->heldKeys & mask) == mask && (gKeyStatusPtr->newKeys & mask) != 0)
     {
@@ -859,9 +1366,7 @@ void DebugTools_PrepHotkeyCheck(void)
         if (gPlaySt.chapterStateBits & PLAY_FLAG_PREPSCREEN)
             gDebugToolsProbe.prepScreenObservedCount++;
 
-        /* B is also the hub's cancel input. Preserve it on the reentrant
-         * SELECT+B pulse so the existing prep lifecycle can close cleanly. */
-        DebugTools_OpenHub();
+        DebugTools_TryOpenFromContext(DEBUGTOOLS_DIAG_CONTEXT_PREP);
     }
 }
 

@@ -65,7 +65,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/config_identity.md | laqieer | current | Config surface + ROM identity fingerprint reference (issue #8)
 - docs/save_format.md | laqieer | current | Save format + compatibility gate reference (issue #2)
 - docs/id_space.md | laqieer | current | Extensible ID space DEFAULT vs ACTIVE contract reference (issue #10)
-- docs/debugtools.md | laqieer | current | Debug-tools reference: action registry, hotkey hub, bounded chapter/skirmish selector, five tools, diagnostics, lifecycle/release safety, and non-goals (issues #11/#123)
+- docs/debugtools.md | laqieer | current | Debug-tools reference: action registry, hotkey hub, bounded chapter/skirmish selector, save fixtures, diagnostics, lifecycle/release safety, and non-goals (issues #11/#123/#127/#128)
 - docs/debug_save_fixtures.md | laqieer | current | Typed volatile save-fixture isolation, confirmation, game-control, write-block, and recovery contract (issue #128)
 - docs/generated_data.md | laqieer | current | Full generated-data platform design/reference (issue #5)
 - docs/generated_data_tutorial.md | laqieer | current | Contributor-facing generated-data authoring walkthrough
@@ -86,7 +86,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/test-cases/template.md | laqieer | template | Reusable tester-facing case procedure template
 - docs/test-cases/foundation.md | laqieer | current | Tester procedure for the catalog and checker foundation (issue #54)
 - docs/test-cases/core-framework.md | laqieer | current | Core framework and authoring procedures, profiles, negatives, save expectations, and automation (issue #57)
-- docs/test-cases/debugtools.md | laqieer | current | Bounded selector, cursor-selected unit editor, and music-preview procedures, typed negatives, save neutrality, and automation (issues #123/#125/#126)
+- docs/test-cases/debugtools.md | laqieer | current | Bounded selector, typed diagnostics, cursor-selected unit editor, and music-preview procedures, negatives, save neutrality, and automation (issues #123/#127/#125/#126)
 - docs/test-cases/localization.md | laqieer | current | Indexed localization and locale-persistence procedures, profiles, negatives, and semantic automation (issue #56)
 - docs/test-cases/presentation-audio-utility.md | laqieer | current | Tester procedures for portrait, sound-room, BGM, presentation, manifest, and utility seams (issue #58)
 - docs/test-cases/optional-gameplay.md | laqieer | current | Indexed optional gameplay procedures, profiles, negatives, save expectations, and automation (issue #55)

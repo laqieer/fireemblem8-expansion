@@ -1090,8 +1090,9 @@ screen far enough to exercise this path: it observes
 (`0x020210b8`) holds `PLAY_FLAG_PREPSCREEN` (`0x10`), the hub opens
 (`hubOpenCount` `0x02031818` `1 -> 2`, `sHubActive` `0x02031614`
 `0 -> 1`), a 2nd SELECT+B is idempotent (`hubOpenCount` stays `2`), and the
-hub then closes (`sHubActive -> 0`) with prep still live -- a safe return
-to prep. The field is always-linked and mirrors every other probe's
+hub owns that input so its prep observation count is exactly `2`, then closes
+(`sHubActive -> 0`) with prep still live -- a safe return to prep. The field
+is always-linked and mirrors every other probe's
 zero-by-default contract in a release build.
 
 ## Diagnostics: structured probe/log ring + non-fatal assert record (issue #11 closure)
@@ -1256,7 +1257,10 @@ writes SRAM.
    `InitGlobalSaveInfodata`, or any writer. Issue #128 extends this same
    stable row at title only with a validated RAM-clone/preview/Arm/final
    `L+R+A`/one-shot continue flow. Map/prep retain only the read-only Back
-   submenu. See [`debug_save_fixtures.md`](debug_save_fixtures.md).
+   submenu. Its Back path captures the actual `MenuProc::backBg` frame
+   geometry, preserves the no-clear cancellation behavior, and reports the
+   deferred return result. See
+   [`debug_save_fixtures.md`](debug_save_fixtures.md).
 
 ### Host-executed evidence
 
@@ -1699,3 +1703,70 @@ measured by the normal linker budget check.
 [`TC-CORE-006`](test-cases/core-framework.md#tc-core-006-debug-tools-are-debug-only)
 records the clean-boot debug-hub procedure, each bounded tool's semantic
 effect, safe map return, and the release compiled-out negative control.
+
+## Typed visual/status diagnostics (issue #127)
+
+Issue #127 adds a read-only, fixed-layout diagnostics provider and two bounded
+views to the existing hub. It does not register an action: built-in IDs
+`1..10`, contributor IDs `11..65535`, both nine-entry capacities, and combined
+registry introspection remain unchanged.
+
+```c
+enum DebugToolsResult DebugTools_CaptureDiagnostics(
+    struct DebugToolsDiagnosticsSnapshot* out);
+```
+
+`struct DebugToolsDiagnosticsSnapshot` is exactly `0x40` bytes. Its validity
+mask separates common, map, cursor, and unit fields so unavailable values are
+never mistaken for real zeroes. Common fields are capture sequence, game
+clock, Proc count, three-word RNG state, registered action count, structured
+log counts/last code, and assert count/last code. Map/prep fields are chapter,
+turn, faction, weather, fog range, cursor coordinates, and a bounds-checked
+cursor unit's slot, character/class IDs, and current/max HP.
+
+The provider is main-thread-only and succeeds only during a session opened by
+an authoritative hotkey call site. `NULL` returns
+`DEBUGTOOLS_ERR_INVALID_ARGUMENT`; title/map/prep conflicts return
+`DEBUGTOOLS_ERR_CONTEXT_UNAVAILABLE`; disabled builds zero a non-NULL output
+and return `DEBUGTOOLS_ERR_DISABLED`. Capture never advances RNG, writes a
+log, mutates gameplay state, or touches SRAM.
+
+Press `R` after the registered action page(s) to reach State, then Engine, and
+then return to the first action page. Each diagnostics view has eight
+read-only rows, Refresh, and Back: ten live rows within `MENU_ITEM_MAX == 11`.
+A capture runs on view entry and once per edge-detected Refresh press; there
+is no timer/per-frame refresh.
+
+| Context | Availability |
+| --- | --- |
+| Title | `Title_IDLE`; common/RNG/log/assert/proc/action fields only |
+| Live map | `PlayerPhase_MainIdle`; full map/cursor fields, unit fields only for a valid cursor unit |
+| Prep | `PrepScreenProc_MapIdle` with `PLAY_FLAG_PREPSCREEN`; the same validated map/unit fields |
+| Battle, battle event, map animation, fade, other screen | unavailable before display writes |
+
+Battle remains unavailable because its renderer owns BG, OBJ, window, blend,
+palette, and sometimes HBlank state. The dormant monochrome/status shortcuts,
+retail `DebugMapMenu_DisplayInfo*`, arbitrary event/memory/proc browsers,
+VRAM/OAM estimates, and performance profiling remain non-goals.
+
+### Display owner and restoration
+
+One Proc with `PROC_SET_END_CB` owns the built-in session and every menu is
+its blocking child, so normal Back, deferred action/view/submenu transitions,
+`EndAllMenus`, explicit forced close, owner `Proc_End`, and soft reset converge
+on the idempotent owner end callback. Before the first menu it captures the
+BG0/BG1 rectangle, BG offsets, active font pointer/counter, animated palette
+entry, and game-lock baseline. It restores them, schedules BG sync, and only
+then releases the session guard.
+
+The diagnostics owner and views use ordinary `MenuProc`/`Text` rendering
+inside the captured rectangle, independently of the cursor unit editor's
+bounded submenu state. The feature adds `0x08` bytes of persistent
+sequence/context state to normal debug builds; its dedicated scalar runtime
+artifact adds the probe only under its test define. Release omits the
+owner/views/backup and retains only the public disabled stub. The archival
+lane sees no source, linker, or layout change.
+
+The canonical human procedure and scalar-only host/libmGBA mapping is
+[`TC-DEBUGTOOLS-DIAGNOSTICS-001`](test-cases/debugtools.md#tc-debugtools-diagnostics-001-typed-state-and-engine-diagnostics).
+No screenshot or framebuffer hash is an acceptance oracle.

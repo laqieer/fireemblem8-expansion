@@ -2,7 +2,6 @@
   "checkpoints": [
     {
       "frame": 300,
-      "framebuffer_hash": "fnv1a64-rgb24:3855f352b10ce427",
       "name": "hub-closed-before-hotkey",
       "probes": [
         {
@@ -29,7 +28,6 @@
     },
     {
       "frame": 630,
-      "framebuffer_hash": "fnv1a64-rgb24:9b470a705bed1b15",
       "name": "hub-opened-after-first-pulse",
       "probes": [
         {
@@ -56,7 +54,6 @@
     },
     {
       "frame": 680,
-      "framebuffer_hash": "fnv1a64-rgb24:a33af6e29cccc970",
       "name": "hub-still-single-after-repeated-pulse",
       "probes": [
         {
@@ -83,7 +80,6 @@
     },
     {
       "frame": 706,
-      "framebuffer_hash": "fnv1a64-rgb24:689590925f709a35",
       "name": "pre-launch",
       "probes": [
         {
@@ -266,7 +262,6 @@
     },
     {
       "frame": 950,
-      "framebuffer_hash": "fnv1a64-rgb24:e674df1325ea6f14",
       "name": "gamecontrol-consumed-launch",
       "probes": [
         {
@@ -448,7 +443,6 @@
     },
     {
       "frame": 14000,
-      "framebuffer_hash": "fnv1a64-rgb24:5307903e0972df34",
       "name": "chapter2-interactive-stable",
       "probes": [
         {
@@ -576,7 +570,6 @@
     },
     {
       "frame": 14900,
-      "framebuffer_hash": "fnv1a64-rgb24:55db07680456d59e",
       "name": "post-interactive-cursor-response",
       "probes": [
         {

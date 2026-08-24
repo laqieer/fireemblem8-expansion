@@ -31,6 +31,16 @@ union DebugSaveFixtureStableStorage
         u8 handoff;
         u8 reserved;
     } fixture;
+    struct
+    {
+        u8 frameX;
+        u8 frameY;
+        u8 frameW;
+        u8 frameH;
+        u16 frameTile;
+        u8 frameBg;
+        u8 framePending;
+    } returnTelemetry;
     struct DebugToolsUnitEditorState unitEditor;
 };
 

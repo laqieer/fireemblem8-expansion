@@ -1,4 +1,8 @@
 #include "global.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "debugtools_internal.h"
+#endif
+
 #include "localized_ui_graphics.h"
 #include "proc.h"
 #include "bm.h"
@@ -805,9 +809,19 @@ void SoftResetIfKeyComboPressed(void)
     if ((u8)CheckCanKeyComboReset() != 0)
     {
         if (gKeyStatusPtr->heldKeys == (L_BUTTON | R_BUTTON | A_BUTTON | B_BUTTON))
+        {
+#ifndef FE8_ARCHIVAL_BUILD
+            DebugToolsDiagnostics_ForceCloseSession();
+#endif
             SoftReset(0);
+        }
         else if (gKeyStatusPtr->heldKeys == (A_BUTTON | B_BUTTON | SELECT_BUTTON | START_BUTTON))
+        {
+#ifndef FE8_ARCHIVAL_BUILD
+            DebugToolsDiagnostics_ForceCloseSession();
+#endif
             SoftReset(0);
+        }
     }
 }
 

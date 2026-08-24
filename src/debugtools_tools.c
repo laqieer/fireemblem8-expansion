@@ -174,6 +174,13 @@ static void DebugToolsTools_DrawCjkStatusLine(const char* text)
     gLCDControlBuffer.dispcnt.bg2_on = 1;
 }
 
+static void DebugToolsTools_MenuOnInit(struct MenuProc* menu)
+{
+    char* status = DebugToolsDiagnostics_GetStatusBuffer();
+
+    if (status != NULL)
+        DebugToolsDiagnostics_DrawStatusText(menu, status);
+}
 static void DebugToolsTools_UnitMenuOnInit(struct MenuProc* menu)
 {
     char buf[64];
@@ -276,13 +283,41 @@ static void DebugToolsTools_SaveStateMenuOnInit(struct MenuProc* menu)
 #define DEBUGTOOLS_FLAG_MENU_ON_INIT 0
 #define DEBUGTOOLS_RNG_MENU_ON_INIT 0
 #define DEBUGTOOLS_SAVE_MENU_ON_INIT 0
+static void DebugToolsTools_MenuOnInit(struct MenuProc* menu)
+{
+    char* status = DebugToolsDiagnostics_GetStatusBuffer();
+
+    if (status != NULL)
+        DebugToolsDiagnostics_DrawStatusText(menu, status);
+}
 #endif
 
 static void DebugToolsTools_ShowStatusLine(const char* text)
 {
+    char* status = DebugToolsDiagnostics_GetStatusBuffer();
+
+    if (status != NULL)
+    {
+        strncpy(status, text, 63);
+        status[63] = '\0';
+        return;
+    }
+
 #ifdef MODERN
     if (DebugToolsTools_UsesCjkText())
+    {
+        BG_Fill(BG_GetMapBuffer(2), 0);
+        PutDrawText(
+            NULL,
+            BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
+            TEXT_COLOR_SYSTEM_WHITE,
+            0,
+            DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES,
+            text);
+        BG_EnableSyncByMask(BG2_SYNC_BIT);
+        gLCDControlBuffer.dispcnt.bg2_on = 1;
         return;
+    }
 #endif
 
     SetupDebugFontForBG(2, 0);
@@ -1840,10 +1875,10 @@ CONST_DATA struct MenuDef gDebugToolsConvoyMenuDef = {
     {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sConvoyMenuItemDefs,
-    DEBUGTOOLS_CONVOY_MENU_ON_INIT,
+    DebugToolsTools_MenuOnInit,
     DebugToolsConvoy_OnEnd,
     0,
-    MenuCancelSelect,
+    DebugTools_CancelMenu,
     0,
     0
 };
@@ -1890,10 +1925,11 @@ static void DebugToolsConvoy_BuildMenuItems(void)
 
     sConvoyMenuItemDefs[1].name = "Back";
     sConvoyMenuItemDefs[1].isAvailable = MenuAlwaysEnabled;
-    sConvoyMenuItemDefs[1].onSelected = MenuCancelSelect;
+    sConvoyMenuItemDefs[1].onSelected = DebugTools_CancelMenu;
     DEBUGTOOLS_LOCALIZE_ITEM(
         &sConvoyMenuItemDefs[1],
         EXP_MSG_FRAMEWORK_BACK);
+
 }
 
 static u8 DebugToolsActions_ConvoyInspectSelected(struct MenuProc* menu, struct MenuItemProc* item)
@@ -1933,10 +1969,10 @@ CONST_DATA struct MenuDef gDebugToolsFlagMenuDef = {
     {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sFlagMenuItemDefs,
-    DEBUGTOOLS_FLAG_MENU_ON_INIT,
+    DebugToolsTools_MenuOnInit,
     DebugToolsFlag_OnEnd,
     0,
-    MenuCancelSelect,
+    DebugTools_CancelMenu,
     0,
     0
 };
@@ -1988,10 +2024,11 @@ static void DebugToolsFlag_BuildMenuItems(void)
 
     sFlagMenuItemDefs[1].name = "Back";
     sFlagMenuItemDefs[1].isAvailable = MenuAlwaysEnabled;
-    sFlagMenuItemDefs[1].onSelected = MenuCancelSelect;
+    sFlagMenuItemDefs[1].onSelected = DebugTools_CancelMenu;
     DEBUGTOOLS_LOCALIZE_ITEM(
         &sFlagMenuItemDefs[1],
         EXP_MSG_FRAMEWORK_BACK);
+
 }
 
 static u8 DebugToolsActions_FlagInspectSelected(struct MenuProc* menu, struct MenuItemProc* item)
@@ -2044,10 +2081,10 @@ CONST_DATA struct MenuDef gDebugToolsRngMenuDef = {
     {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sRngMenuItemDefs,
-    DEBUGTOOLS_RNG_MENU_ON_INIT,
+    DebugToolsTools_MenuOnInit,
     DebugToolsRng_OnEnd,
     0,
-    MenuCancelSelect,
+    DebugTools_CancelMenu,
     0,
     0
 };
@@ -2084,10 +2121,11 @@ static void DebugToolsRng_BuildMenuItems(void)
 
     sRngMenuItemDefs[1].name = "Back";
     sRngMenuItemDefs[1].isAvailable = MenuAlwaysEnabled;
-    sRngMenuItemDefs[1].onSelected = MenuCancelSelect;
+    sRngMenuItemDefs[1].onSelected = DebugTools_CancelMenu;
     DEBUGTOOLS_LOCALIZE_ITEM(
         &sRngMenuItemDefs[1],
         EXP_MSG_FRAMEWORK_BACK);
+
 }
 
 static u8 DebugToolsActions_RngInspectSelected(struct MenuProc* menu, struct MenuItemProc* item)
@@ -2217,15 +2255,46 @@ static enum DebugSaveFixtureResult DebugToolsSaveFixture_PrepareSelected(void)
         &preview);
 }
 
+#define sSaveStateFrameTile \
+    sSaveStateStableLayout.returnTelemetry.frameTile
+#define sSaveStateFrameX \
+    sSaveStateStableLayout.returnTelemetry.frameX
+#define sSaveStateFrameY \
+    sSaveStateStableLayout.returnTelemetry.frameY
+#define sSaveStateFrameW \
+    sSaveStateStableLayout.returnTelemetry.frameW
+#define sSaveStateFrameH \
+    sSaveStateStableLayout.returnTelemetry.frameH
+#define sSaveStateFrameBg \
+    sSaveStateStableLayout.returnTelemetry.frameBg
+#define sSaveStateBackPending \
+    sSaveStateStableLayout.returnTelemetry.framePending
+
+static void DebugToolsSaveState_CaptureFrame(struct MenuProc* menu)
+{
+    sSaveStateFrameBg = menu->backBg;
+    sSaveStateFrameX = menu->rect.x;
+    sSaveStateFrameY = menu->rect.y;
+    sSaveStateFrameW = menu->rect.w;
+    sSaveStateFrameH = menu->rect.h;
+    sSaveStateFrameTile = BG_GetMapBuffer(sSaveStateFrameBg)[
+        TILEMAP_INDEX(sSaveStateFrameX + 1, sSaveStateFrameY)];
+}
+
 static void DebugToolsSaveState_OnEnd(struct MenuProc* menu)
 {
     if (sSaveFixtureOpeningPreview)
     {
         sSaveFixtureOpeningPreview = 0;
     }
-    else
+    else if (DebugSaveFixture_IsActive())
     {
         DebugSaveFixture_Abort(DEBUG_SAVE_FIXTURE_ABORT_CANCEL);
+    }
+    else
+    {
+        DebugToolsSaveState_CaptureFrame(menu);
+        sSaveStateBackPending = 1;
     }
 
     DebugTools_ReturnToHubAfterMenuEnd(menu);
@@ -2258,6 +2327,22 @@ static void DebugToolsSaveFixtureFinal_OnEnd(struct MenuProc* menu)
     DebugTools_ReturnToHubAfterMenuEnd(menu);
 }
 
+void DebugToolsSaveState_OnHubReturn(void)
+{
+    u16 currentTile;
+
+    if (!sSaveStateBackPending)
+        return;
+
+    currentTile = BG_GetMapBuffer(sSaveStateFrameBg)[
+        TILEMAP_INDEX(sSaveStateFrameX + 1, sSaveStateFrameY)];
+    /* The owner-backed menu surface can legitimately contain an empty tile. */
+    gDebugToolsProbe.saveCompatBackMenuPreserved =
+        sSaveStateFrameTile == currentTile;
+    gDebugToolsProbe.saveCompatBackReturnCount++;
+    sSaveStateBackPending = 0;
+}
+
 CONST_DATA struct MenuDef gDebugToolsSaveStateMenuDef = {
     {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
@@ -2265,7 +2350,7 @@ CONST_DATA struct MenuDef gDebugToolsSaveStateMenuDef = {
     DEBUGTOOLS_SAVE_MENU_ON_INIT,
     DebugToolsSaveState_OnEnd,
     0,
-    MenuCancelSelect,
+    DebugTools_CancelMenu,
     0,
     0
 };
@@ -2559,6 +2644,7 @@ static void DebugToolsSaveFixturePreview_BuildMenuItems(void)
     DEBUGTOOLS_LOCALIZE_ITEM(
         &sSaveFixtureMenuItemDefs[3],
         EXP_MSG_FRAMEWORK_BACK);
+
 }
 
 static void DebugToolsSaveFixtureFinal_BuildMenuItems(void)
@@ -2594,7 +2680,7 @@ static void DebugToolsSaveState_BuildReadOnlyMenuItems(void)
         sizeof(sSaveFixtureMenuItemDefs));
     sSaveFixtureMenuItemDefs[0].name = "Back";
     sSaveFixtureMenuItemDefs[0].isAvailable = MenuAlwaysEnabled;
-    sSaveFixtureMenuItemDefs[0].onSelected = MenuCancelSelect;
+    sSaveFixtureMenuItemDefs[0].onSelected = DebugTools_CancelMenu;
     DEBUGTOOLS_LOCALIZE_ITEM(
         &sSaveFixtureMenuItemDefs[0],
         EXP_MSG_FRAMEWORK_BACK);

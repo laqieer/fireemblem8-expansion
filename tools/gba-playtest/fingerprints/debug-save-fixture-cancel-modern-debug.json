@@ -2,7 +2,7 @@
   "checkpoints": [
     {
       "frame": 1200,
-      "framebuffer_hash": "fnv1a64-rgb24:5b408285548a231e",
+      "framebuffer_hash": "fnv1a64-rgb24:b013ecbb79753536",
       "name": "cancel-preview-ready",
       "probes": [
         {
@@ -20,7 +20,7 @@
     },
     {
       "frame": 1420,
-      "framebuffer_hash": "fnv1a64-rgb24:ee8e2b9068e2b483",
+      "framebuffer_hash": "fnv1a64-rgb24:c707f2a1504193d0",
       "name": "cancel-zeroized",
       "probes": [
         {
