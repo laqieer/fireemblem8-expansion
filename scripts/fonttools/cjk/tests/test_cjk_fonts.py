@@ -45,7 +45,6 @@ class CjkFontTests(unittest.TestCase):
             for record in active_records
         }
         self.assertEqual(len(active_keys), len(active_records))
-
         catalog_paths = sorted((ROOT / "texts/expansion").glob("catalog.*.json"))
         source_paths = [registry_path, *catalog_paths]
         for path in source_paths:

@@ -1,4 +1,4 @@
-"""Issue #11 closure: five shipped bounded tools driven LIVE from the map hub.
+"""Issues #11/#125: bounded tools and cursor-selected unit editing live.
 
 Scenario:    tools/gba-playtest/scenarios/debugtools-tools-modern-debug.json
 Fingerprint: tools/gba-playtest/fingerprints/debugtools-tools-modern-debug.json
@@ -6,15 +6,15 @@ Release neg: tools/gba-playtest/scenarios/debugtools-tools-modern-release.json
 
 Boots the debug-only Fast Boot: Chapter 2 map hub, then triggers each of the
 five bounded tools from its real hub row and proves an asserted semantic state
-effect plus a safe return to the hub -- all through relocation-independent
-gDebugToolsProbe / gPlaySt / gBmSt scalars (never a pointer, framebuffer, or
-SRAM-hash oracle):
+effect plus a safe return to the hub. Issue #125 then reselects the unit under
+the cursor, previews and confirms an actual 17 -> 16 HP edit, heals 16 -> 17,
+rejects an empty tile, proves exact SRAM equality, and returns to an
+interactive map. Evidence is semantic probes and exact SRAM hashes, never a
+framebuffer or relocated-pointer oracle.
 
-  5 Unit Inspect/Edit -- inspect resolves Eirika (found, 16/16 HP); a separate
-    confirm applies Heal-to-Full (unitHealTransactionCount 0 -> 1). Eirika is
-    already full HP here, so the byte-exact wounded->full HP mutation is proven
-    by the real-source host test (tests/c/debugtools_tools_driver.c); this
-    scenario proves the confirmed-transaction postcondition fired live.
+  5 Unit Inspect/Edit -- inspect resolves live cursor slot 1, character 6,
+    class 0x48 at 17/17 HP. A separate editor preview leaves HP unchanged,
+    confirmation changes 17 -> 16, and confirmed heal restores 16 -> 17.
   6 Convoy Inspect/Edit -- inspect samples count 0; confirm adds an item
     (convoyAddTransactionCount 0 -> 1); a re-inspect shows the count rose 0 -> 1.
   7 Flag/Chapter -- inspect samples chapterIndex 2 and flag 0; confirm toggles
@@ -25,10 +25,10 @@ SRAM-hash oracle):
     (SAVE_COMPAT_CURRENT, count 0 -> 1); its Back item never mutates (count
     stays 1).
 
-Every submenu returns to the hub (hubOpenCount 2 -> 9), and after the hub
-closes the map is still interactive (player cursor moves 0x06 -> 0x07). The
-release sibling replays the same input and proves every gDebugToolsProbe field
-stays 0 (hub/tools compiled out). Debug-only; probe-only (deterministic).
+The cursor then moves to an empty tile; Unit Inspect records a typed rejection
+without changing HP or transaction count. The release sibling replays the same
+input, proves the established probe stays zero, and pairs with the disabled
+object test proving issue #125's editor probe/code are absent.
 """
 
 from __future__ import annotations
@@ -67,6 +67,20 @@ SV_STATE = 0x02031894
 SV_COUNT = 0x02031898
 S_HUB = 0x02031614
 CURSOR_X = 0x02021104
+U_FOUND_BINDING = "gDebugToolsProbe+0x50"
+CURSOR_X_BINDING = "gBmSt+0x14"
+UNIT_TARGET_SLOT = "gDebugToolsUnitEditorProbe+0x00"
+UNIT_CHARACTER = "gDebugToolsUnitEditorProbe+0x04"
+UNIT_CLASS = "gDebugToolsUnitEditorProbe+0x08"
+UNIT_PREVIEW_COUNT = "gDebugToolsUnitEditorProbe+0x1c"
+UNIT_EDIT_TX = "gDebugToolsUnitEditorProbe+0x20"
+UNIT_REJECT_COUNT = "gDebugToolsUnitEditorProbe+0x28"
+UNIT_LAST_FIELD = "gDebugToolsUnitEditorProbe+0x34"
+UNIT_OLD = "gDebugToolsUnitEditorProbe+0x38"
+UNIT_NEW = "gDebugToolsUnitEditorProbe+0x3c"
+UNIT_OUTCOME = "gDebugToolsUnitEditorProbe+0x40"
+UNIT_REFRESH_COUNT = "gDebugToolsUnitEditorProbe+0x44"
+CURSOR_UNIT_HP = "gUnitArrayBlue+0x13"
 
 _POINTER_RANGES = (
     (0x02000000, 0x0203FFFF),
@@ -92,15 +106,25 @@ class ToolsScenarioFilesTests(unittest.TestCase):
     def _cp(self, name):
         by_name = {c.name: c for c in self.scenario.checkpoints}
         self.assertIn(name, by_name, f"missing checkpoint {name}")
-        return {p.address: p.expected for p in by_name[name].probes}
+        return {
+            p.address if p.address is not None else p.binding: p.expected
+            for p in by_name[name].probes
+        }
 
     def test_scenario_parses_enabled_probe_only(self):
         self.assertEqual(self.scenario.name, DEBUG_NAME)
         self.assertFalse(self.scenario.disabled)
         for c in self.scenario.checkpoints:
             self.assertFalse(c.framebuffer, f"{c.name} must be probe-only (no framebuffer)")
-            self.assertFalse(c.sram_hash, f"{c.name} must be probe-only (no sram_hash)")
             self.assertTrue(c.probes, f"{c.name} must carry probes")
+            if c.name not in {
+                "hub-closed-map-interactive",
+                "unit-editor-final-map-interactive",
+            }:
+                self.assertFalse(
+                    c.sram_hash,
+                    f"{c.name} must use SRAM only at before/after boundaries",
+                )
 
     def test_checkpoint_names_and_order(self):
         self.assertEqual(
@@ -120,6 +144,12 @@ class ToolsScenarioFilesTests(unittest.TestCase):
                 "save-inspected",
                 "save-back-readonly-unchanged",
                 "hub-closed-map-interactive",
+                "unit-editor-cursor-target-inspected",
+                "unit-current-hp-previewed",
+                "unit-current-hp-confirmed",
+                "unit-heal-restored-full-hp",
+                "unit-empty-tile-rejected",
+                "unit-editor-final-map-interactive",
             ],
         )
 
@@ -135,8 +165,11 @@ class ToolsScenarioFilesTests(unittest.TestCase):
     def test_unit_inspect_then_confirm(self):
         insp = self._cp("unit-inspected")
         self.assertEqual(insp[U_FOUND], "0x00000001")
-        self.assertEqual(insp[U_CURHP], "0x00000010")
-        self.assertEqual(insp[U_MAXHP], "0x00000010")
+        self.assertEqual(insp[U_CURHP], "0x00000011")
+        self.assertEqual(insp[U_MAXHP], "0x00000011")
+        self.assertEqual(insp[UNIT_TARGET_SLOT], "0x00000001")
+        self.assertEqual(insp[UNIT_CHARACTER], "0x00000006")
+        self.assertEqual(insp[UNIT_CLASS], "0x00000048")
         self.assertEqual(insp[U_HEALTX], "0x00000000")
         self.assertEqual(insp[S_HUB], "0x00", "inspect opens the confirm submenu (hub closed)")
         conf = self._cp("unit-heal-confirmed")
@@ -175,6 +208,65 @@ class ToolsScenarioFilesTests(unittest.TestCase):
         self.assertEqual(c[S_HUB], "0x00", "hub fully closed")
         self.assertEqual(c[CURSOR_X], "0x07", "player cursor responds to input (0x06 -> 0x07)")
 
+    def test_cursor_unit_hp_preview_confirm_heal_and_empty_reject(self):
+        inspected = self._cp("unit-editor-cursor-target-inspected")
+        self.assertEqual(inspected[CURSOR_UNIT_HP], "0x11")
+        self.assertEqual(inspected[UNIT_TARGET_SLOT], "0x00000001")
+        self.assertEqual(inspected[UNIT_CHARACTER], "0x00000006")
+        self.assertEqual(inspected[UNIT_CLASS], "0x00000048")
+        self.assertEqual(inspected[UNIT_OUTCOME], "0x00000001")
+
+        preview = self._cp("unit-current-hp-previewed")
+        self.assertEqual(preview[CURSOR_UNIT_HP], "0x11", "preview is read-only")
+        self.assertEqual(preview[UNIT_PREVIEW_COUNT], "0x00000002")
+        self.assertEqual(preview[UNIT_EDIT_TX], "0x00000000")
+        self.assertEqual(preview[UNIT_OLD], "0x00000011")
+        self.assertEqual(preview[UNIT_NEW], "0x00000010")
+        self.assertEqual(preview[UNIT_OUTCOME], "0x00000002")
+
+        confirmed = self._cp("unit-current-hp-confirmed")
+        self.assertEqual(confirmed[CURSOR_UNIT_HP], "0x10")
+        self.assertEqual(confirmed[UNIT_EDIT_TX], "0x00000001")
+        self.assertEqual(confirmed[UNIT_LAST_FIELD], "0x00000001")
+        self.assertEqual(confirmed[UNIT_OLD], "0x00000011")
+        self.assertEqual(confirmed[UNIT_NEW], "0x00000010")
+        self.assertEqual(confirmed[UNIT_OUTCOME], "0x00000003")
+        self.assertEqual(confirmed[UNIT_REFRESH_COUNT], "0x00000001")
+
+        healed = self._cp("unit-heal-restored-full-hp")
+        self.assertEqual(healed[CURSOR_UNIT_HP], "0x11")
+        self.assertEqual(healed[UNIT_EDIT_TX], "0x00000002")
+        self.assertEqual(healed[UNIT_OLD], "0x00000010")
+        self.assertEqual(healed[UNIT_NEW], "0x00000011")
+        self.assertEqual(healed[UNIT_OUTCOME], "0x00000003")
+        self.assertEqual(healed[UNIT_REFRESH_COUNT], "0x00000002")
+
+        rejected = self._cp("unit-empty-tile-rejected")
+        self.assertEqual(rejected[U_FOUND_BINDING], "0x00000000")
+        self.assertEqual(rejected[CURSOR_UNIT_HP], "0x11")
+        self.assertEqual(rejected[UNIT_EDIT_TX], "0x00000002")
+        self.assertEqual(rejected[UNIT_REJECT_COUNT], "0x00000001")
+        self.assertEqual(rejected[UNIT_OUTCOME], "0x00000007")
+
+    def test_unit_editor_preserves_sram_and_final_map_interactivity(self):
+        by_name = {c.name: c for c in self.scenario.checkpoints}
+        before = by_name["hub-closed-map-interactive"]
+        after = by_name["unit-editor-final-map-interactive"]
+        self.assertTrue(before.sram_hash)
+        self.assertTrue(after.sram_hash)
+        self.assertEqual(before.expected_sram_hash, after.expected_sram_hash)
+
+        final = self._cp("unit-editor-final-map-interactive")
+        self.assertEqual(final[S_HUB], "0x00")
+        self.assertEqual(
+            final[CURSOR_X_BINDING],
+            "0x06",
+            "LEFT moves the cursor after cleanup",
+        )
+        self.assertEqual(final[CURSOR_UNIT_HP], "0x11")
+        self.assertEqual(final[UNIT_EDIT_TX], "0x00000002")
+        self.assertEqual(final[UNIT_REJECT_COUNT], "0x00000001")
+
     def test_no_probe_asserts_a_relocated_pointer_value(self):
         for c in self.scenario.checkpoints:
             for p in c.probes:
@@ -183,7 +275,7 @@ class ToolsScenarioFilesTests(unittest.TestCase):
                 value = int(p.expected, 16)
                 self.assertFalse(
                     any(lo <= value <= hi for lo, hi in _POINTER_RANGES),
-                    f"{c.name} probe 0x{p.address:08x} asserts pointer-range value {p.expected}",
+                    f"{c.name} probe {p.binding} asserts pointer-range value {p.expected}",
                 )
 
     def test_committed_fingerprint_matches(self):
@@ -193,7 +285,7 @@ class ToolsScenarioFilesTests(unittest.TestCase):
             policy="behavior",
         )
         self.assertEqual(fp["scenario"], DEBUG_NAME)
-        self.assertEqual(len(fp["checkpoints"]), 14)
+        self.assertEqual(len(fp["checkpoints"]), 20)
 
 
 class ToolsReleaseNegativeFilesTests(unittest.TestCase):
@@ -207,9 +299,18 @@ class ToolsReleaseNegativeFilesTests(unittest.TestCase):
                 any_probe = True
                 self.assertEqual(
                     p.expected, "0x00000000",
-                    f"release {c.name} probe 0x{p.address:08x} must be zero (tools compiled out)",
+                    f"release {c.name} probe {p.binding} must be zero (tools compiled out)",
                 )
         self.assertTrue(any_probe, "release sibling must carry all-zero probes")
+
+    def test_release_sram_hash_is_unchanged_across_identical_input_tail(self):
+        scenario = gba_playtest.load_scenario(RELEASE_SCENARIO)
+        by_name = {c.name: c for c in scenario.checkpoints}
+        before = by_name["hub-closed-map-interactive-release-zero"]
+        after = by_name["unit-editor-release-final"]
+        self.assertTrue(before.sram_hash)
+        self.assertTrue(after.sram_hash)
+        self.assertEqual(before.expected_sram_hash, after.expected_sram_hash)
 
 
 @host_mode.live_artifact_testcase("debugtools-tools runtime coverage")
@@ -219,7 +320,13 @@ class ToolsRuntimeTests(unittest.TestCase):
 
     def _run(self, rom, scenario_path, fingerprint_path, name):
         host_mode.require_built_rom(rom, f"modern ROM for {name}")
-        scenario = gba_playtest.load_scenario(scenario_path)
+        config = "release" if "release" in name else "debug"
+        elf = host_mode.modern_elf(config)
+        self.assertTrue(elf.is_file(), f"modern ELF for {name} not built: {elf}")
+        scenario = gba_playtest.load_scenario(
+            scenario_path,
+            gba_playtest.ElfSymbolResolver(elf),
+        )
         expected = gba_playtest.validate_fingerprint(
             json.loads(fingerprint_path.read_text(encoding="utf-8")),
             str(fingerprint_path),

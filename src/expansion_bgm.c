@@ -9,6 +9,7 @@
 
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_debugtools.h"
+#include "soundwrapper.h"
 #endif
 
 static int ExpansionBgm_ContextIsValid(enum ExpansionBgmContext context)

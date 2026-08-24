@@ -20,7 +20,7 @@
  * rows are *drawn*; struct DebugToolsAction/DebugToolsResult/
  * DebugTools_RegisterAction's ABI and every registered action's own
  * `id`/`label`/`onSelected` fields are completely untouched. Any
- * third-party/unmapped id (0, or >9) keeps the exact original
+ * third-party/unmapped id (0, or >DEBUGTOOLS_BUILTIN_ID_MAX) keeps the exact original
  * pointer-based (def->name = action->label, onDraw = NULL) rendering
  * below -- never redirected through this table. */
 #include "expansion_locale.h"
@@ -46,6 +46,9 @@
 EWRAM_DATA struct DebugToolsProbe gDebugToolsProbe = {0};
 
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+
+SECTION("debugtools_contributor_data") struct DebugToolsUnitEditorProbe
+    gDebugToolsUnitEditorProbe = {0};
 
 enum
 {
@@ -650,7 +653,7 @@ void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuD
 {
     if (menuDef == NULL
         || !(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE)
-        || !(sDebugMenuState & DEBUGTOOLS_STATE_HUB_ACTIVE))
+        || (sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
         return;
 
     DebugTools_StartMenuTransition(
@@ -658,6 +661,20 @@ void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuD
         DEBUGTOOLS_TRANSITION_SUBMENU,
         menuDef,
         0);
+}
+
+int DebugTools_IsMenuTransitionScheduled(void)
+{
+    return sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED;
+}
+
+void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu)
+{
+    if (!(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE)
+        || (sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
+        return;
+
+    DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_CLEANUP, NULL, 0);
 }
 
 void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
