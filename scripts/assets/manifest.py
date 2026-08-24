@@ -235,6 +235,26 @@ def load_discovery(path):
         _validate_discovery_source_dependencies(
             kind, record, diagnostics, tracked_paths
         )
+    tracked = {path for path, _loc, _reference in tracked_paths}
+    for source in discovery_sources(records):
+        if source in tracked:
+            continue
+        try:
+            tracked_paths.append(
+                (
+                    _repo_path(
+                        source,
+                        None,
+                        "discovery source dependency",
+                        verify_tracked=False,
+                    ),
+                    None,
+                    "discovery source dependency",
+                )
+            )
+            tracked.add(source)
+        except GeneratedDataError as error:
+            diagnostics.add(error)
     _validate_tracked_paths(tracked_paths, diagnostics)
     diagnostics.raise_if_any()
     return records
