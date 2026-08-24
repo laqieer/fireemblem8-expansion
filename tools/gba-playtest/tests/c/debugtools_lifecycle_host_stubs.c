@@ -30,6 +30,7 @@ static struct MenuProc sDebugToolsLifecycleMenuProc;
 static struct MenuItemProc sDebugToolsLifecycleMenuItems[MENU_ITEM_MAX];
 static struct Proc sDebugToolsLifecycleTransitionProc;
 static ProcPtr sDebugToolsLifecyclePendingTransition;
+static int sDebugToolsLifecycleDiagnosticsRestoring;
 
 int gDebugToolsLifecycleStartMenuCount = 0;
 int gDebugToolsLifecycleTransitionProcCount = 0;
@@ -353,6 +354,11 @@ void DebugToolsLifecycle_RunPendingTransition(void)
     DebugTools_RunMenuTransition(proc);
 }
 
+void DebugToolsLifecycle_SetDiagnosticsRestoring(int restoring)
+{
+    sDebugToolsLifecycleDiagnosticsRestoring = restoring;
+}
+
 u8 DebugToolsLifecycle_Builtin1Selected(struct MenuProc* menu, struct MenuItemProc* item)
 {
     (void)menu;
@@ -521,7 +527,7 @@ struct MenuProc* DebugToolsDiagnostics_StartOwnedMenu(
 
 int DebugToolsDiagnostics_IsRestoring(void)
 {
-    return 0;
+    return sDebugToolsLifecycleDiagnosticsRestoring;
 }
 
 const struct DebugToolsDiagnosticsSnapshot* DebugToolsDiagnostics_GetSnapshot(void)

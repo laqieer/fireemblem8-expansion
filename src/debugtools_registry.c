@@ -1138,6 +1138,7 @@ void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
 void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu)
 {
     if (!(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE)
+        || DebugToolsDiagnostics_IsRestoring()
         || (sDebugMenuState
         & (DEBUGTOOLS_STATE_HUB_ACTIVE | DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
     )
