@@ -5,10 +5,10 @@
       "name": "ewram",
       "origin": 33554432,
       "capacity_bytes": 262144,
-      "occupied_bytes": 260440,
-      "physical_free_bytes": 1704,
-      "free_bytes": 1704,
-      "utilization_percent": 99.35,
+      "occupied_bytes": 260716,
+      "physical_free_bytes": 1428,
+      "free_bytes": 1428,
+      "utilization_percent": 99.46,
       "overflow": false
     },
     {
@@ -104,13 +104,13 @@
     {
       "name": "ewram_data",
       "address": 33685900,
-      "size_bytes": 127796,
+      "size_bytes": 128072,
       "is_overlay": false,
       "region": "ewram"
     },
     {
       "name": ".bss",
-      "address": 33813696,
+      "address": 33813972,
       "size_bytes": 1176,
       "is_overlay": false,
       "region": "ewram"
@@ -258,7 +258,7 @@
     },
     {
       "name": "__ewram_used_end",
-      "address": 33814872,
+      "address": 33815148,
       "expression": ".",
       "region": "ewram"
     },
@@ -1033,7 +1033,7 @@
     },
     {
       "name": "__floating_end",
-      "address": 145936308,
+      "address": 145946044,
       "expression": ".",
       "region": "rom"
     },
@@ -1126,13 +1126,13 @@
         "name": "ewram_data",
         "type": "NOBITS",
         "address": 33685900,
-        "size_bytes": 127796,
+        "size_bytes": 128072,
         "flags": "WA"
       },
       {
         "name": ".bss",
         "type": "NOBITS",
-        "address": 33813696,
+        "address": 33813972,
         "size_bytes": 1176,
         "flags": "WA"
       },

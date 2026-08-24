@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "debugtools-tools-modern-release",
-  "description": "Release negative sibling of debugtools-tools-modern-debug.json (issue #11). Replays the exact same input script verbatim against a release build, where the entire debug hub, its Fast Boot launchers, and all five bounded tools are compiled out (FE8_EXPANSION_DEBUGTOOLS_ENABLED==0). gDebugToolsProbe still exists in every build as zero-initialized EWRAM, so the identical input provably has zero effect: hubOpenCount/registeredActionCount and every tool transaction/sample field (unitInspectTargetFound, unitHealTransactionCount, convoyAddTransactionCount, debugFlagToggleCount, rngReseedTransactionCount, saveCompatInspectCount) stay 0x00000000 across the whole run -- proving no tool ever registered, inspected, or mutated anything. Probe addresses are the release build's own gDebugToolsProbe (0x02031504); probe-only, so it is deterministic and relocation/environment-independent.",
+  "description": "Release negative sibling for issues #11/#125. It replays the debug scenario's exact frame script, including cursor-target inspect, HP preview/confirm/heal, empty-tile rejection, and cleanup inputs. FE8_EXPANSION_DEBUGTOOLS_ENABLED is compiled out, so gDebugToolsProbe remains all zero and the issue #125 editor code, menus, state, and telemetry symbol are physically absent. Exact SRAM hashes before and after the issue #125 tail match. Evidence is semantic and framebuffer-free.",
   "frames": [
     {
       "start": 90,
@@ -2154,6 +2154,197 @@
       "keys": [
         "RIGHT"
       ]
+    },
+    {
+      "start": 17800,
+      "end": 17806,
+      "keys": [
+        "LEFT"
+      ]
+    },
+    {
+      "start": 17860,
+      "end": 17866,
+      "keys": [
+        "SELECT",
+        "L"
+      ]
+    },
+    {
+      "start": 17920,
+      "end": 17926,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 17980,
+      "end": 17986,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18040,
+      "end": 18046,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18100,
+      "end": 18106,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18160,
+      "end": 18166,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 18220,
+      "end": 18226,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18280,
+      "end": 18286,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 18340,
+      "end": 18346,
+      "keys": [
+        "LEFT"
+      ]
+    },
+    {
+      "start": 18400,
+      "end": 18406,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 18460,
+      "end": 18466,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18520,
+      "end": 18526,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18580,
+      "end": 18586,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18640,
+      "end": 18646,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18700,
+      "end": 18706,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 18760,
+      "end": 18766,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 18840,
+      "end": 18846,
+      "keys": [
+        "B"
+      ]
+    },
+    {
+      "start": 18900,
+      "end": 18906,
+      "keys": [
+        "RIGHT"
+      ]
+    },
+    {
+      "start": 18960,
+      "end": 18966,
+      "keys": [
+        "SELECT",
+        "L"
+      ]
+    },
+    {
+      "start": 19020,
+      "end": 19026,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 19080,
+      "end": 19086,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 19140,
+      "end": 19146,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 19200,
+      "end": 19206,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 19260,
+      "end": 19266,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 19320,
+      "end": 19326,
+      "keys": [
+        "B"
+      ]
+    },
+    {
+      "start": 19400,
+      "end": 19406,
+      "keys": [
+        "LEFT"
+      ]
     }
   ],
   "checkpoints": [
@@ -2343,7 +2534,70 @@
           "size": 4,
           "expected": "0x00000000"
         }
+      ],
+      "sram_hash": true,
+      "sram_hash_exclude_ranges": [
+        {
+          "offset": 29640,
+          "length": 9
+        },
+        {
+          "offset": 29650,
+          "length": 2
+        }
+      ],
+      "expected_sram_hash": "fnv1a64-sram-normalized:5d1bb96afc90d14f"
+    },
+    {
+      "frame": 19300,
+      "framebuffer": false,
+      "name": "unit-editor-release-zero",
+      "probes": [
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0x50",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0x5c",
+          "size": 4,
+          "expected": "0x00000000"
+        }
       ]
+    },
+    {
+      "frame": 19440,
+      "framebuffer": false,
+      "name": "unit-editor-release-final",
+      "probes": [
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0x5c",
+          "size": 4,
+          "expected": "0x00000000"
+        }
+      ],
+      "sram_hash": true,
+      "sram_hash_exclude_ranges": [
+        {
+          "offset": 29640,
+          "length": 9
+        },
+        {
+          "offset": 29650,
+          "length": 2
+        }
+      ],
+      "expected_sram_hash": "fnv1a64-sram-normalized:5d1bb96afc90d14f"
     }
   ]
 }

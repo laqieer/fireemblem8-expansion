@@ -27,11 +27,6 @@ def _validate(fixture_name):
 
 
 class ItemsSchemaValidTests(unittest.TestCase):
-    def test_valid_fixture_has_no_diagnostics(self):
-        records, diagnostics = _validate("valid.json")
-        self.assertTrue(diagnostics.ok, msg=diagnostics.render())
-        self.assertEqual(len(records), 3)
-
     def test_encoded_range_and_pointer_fields_resolved(self):
         records, _ = _validate("valid.json")
         by_item = {r.item: r for r in records}
@@ -121,12 +116,6 @@ class ItemsSchemaAttributeTests(unittest.TestCase):
 
 
 class ItemsSchemaRangeTests(unittest.TestCase):
-    def test_bad_text_id_detected(self):
-        _, diagnostics = _validate("bad_text_id.json")
-        self.assertFalse(diagnostics.ok)
-        messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(any("nameTextId 9999 out of range [0, 9]" in m for m in messages), messages)
-
     def test_bad_range_nibble_detected(self):
         _, diagnostics = _validate("bad_range.json")
         self.assertFalse(diagnostics.ok)

@@ -182,9 +182,54 @@
           "size": 4,
           "value": "0x00000000"
         }
+      ],
+      "sram_hash": "fnv1a64-sram-normalized:5d1bb96afc90d14f"
+    },
+    {
+      "frame": 19300,
+      "name": "unit-editor-release-zero",
+      "probes": [
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0x50",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0x5c",
+          "size": 4,
+          "value": "0x00000000"
+        }
       ]
+    },
+    {
+      "frame": 19440,
+      "name": "unit-editor-release-final",
+      "probes": [
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0x5c",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram-normalized:5d1bb96afc90d14f"
     }
   ],
   "format_version": 2,
+  "rom": {
+    "game_code": "BE8E",
+    "sha1": "f613c059422f16495b6a2645c96a8c3ea63cea45",
+    "size": 16777216,
+    "title": "FIREEMBLEM2E"
+  },
   "scenario": "debugtools-tools-modern-release"
 }

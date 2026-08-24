@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "debugtools-tools-modern-debug",
-  "description": "Issue #11 closure: five shipped bounded tools driven LIVE from the real Chapter 2 map debug hub, with a clean debug-only boot (blank SRAM). Reuses the proven Fast Boot: Chapter 2 map-hub frame prefix to reach an interactive PlayerPhase map, opens the map hub (SELECT+L; hubOpenCount 1->2, sHubActive 0->1, registeredActionCount==9), then triggers each tool from its real hub row and proves an asserted semantic state effect plus a safe return to the hub, all via relocation-independent gDebugToolsProbe/gPlaySt/gBmSt scalars (never a pointer, framebuffer, or SRAM-hash oracle):\n 5 Unit Inspect/Edit: inspect resolves CHARACTER_EIRIKA (unitInspectTargetFound==1, curHP/maxHP both 16), a separate confirm applies Heal-to-Full (unitHealTransactionCount 0->1). Eirika is already at full HP at this runtime start, so the live proof is the confirmed-transaction postcondition; the byte-exact wounded->full HP mutation is proven by the real-source host test tools/gba-playtest/tests/c/debugtools_tools_driver.c.\n 6 Convoy Inspect/Edit: inspect samples GetConvoyItemCount()==0, a separate confirm adds a test item (convoyAddTransactionCount 0->1), and a re-inspect shows the count actually rose (convoyLastItemCount 0->1) -- a genuine in-scenario pre/post delta.\n 7 Flag/Chapter: inspect samples gPlaySt.chapterIndex==2 and the flag==0; a separate confirm toggles it (debugFlagToggleCount 0->1) with the flag value going 0->1.\n 8 RNG Inspect/Control: inspect samples the live RN seed (0x0000ee77); a separate confirm reseeds (rngReseedTransactionCount 0->1), and a re-inspect shows the seed actually changed (0x0000ee77 -> 0x0000690b) -- a genuine in-scenario pre/post delta.\n 9 Save Compatibility/State Inspect (read-only): inspect classifies SRAM (saveCompatLastState==SAVE_COMPAT_CURRENT/4, saveCompatInspectCount 0->1); its Back item is a pure cancel and the inspect count stays 1 with no mutation -- proving the inspector never writes.\nEach mutating tool mutates only after its own explicit confirm submenu item; each submenu returns cleanly to the hub (hubOpenCount rises 2->9, sHubActive re-toggles) and a final B closes the hub (sHubActive 1->0). The real map is then still interactive: a RIGHT press moves the player cursor (gBmSt.playerCursor.x 0x06->0x07) while the phase byte stays stable. Debug-only: the hub, tools, and gDebugToolsProbe writes are all compiled out of a release build (see the release negative sibling debugtools-tools-modern-release.json).",
+  "description": "Issues #11/#125: the five bounded tools run live from a clean Chapter 2 PlayerPhase map. The original checks retain Convoy 0->1, Flag 0->1, RNG reseed, read-only Save State, bounded submenu returns, and map interactivity. Unit Inspect now resolves cursor slot 1 (character 6/class 0x48) at 17/17 HP instead of a fixed character. The issue #125 tail previews HP 17->16 without mutation, confirms exactly that one-field edit, heals 16->17, moves to an empty tile and records REJECTED_EMPTY without changing HP/transaction count, then closes the hub and moves the cursor. Exact before/after SRAM hashes match. All new probes are symbolic gDebugToolsUnitEditorProbe/gUnitArrayBlue bindings; no framebuffer or pointer value is an oracle. The release sibling replays every input with both debug probes all zero.",
   "frames": [
     {
       "start": 90,
@@ -2154,6 +2154,197 @@
       "keys": [
         "RIGHT"
       ]
+    },
+    {
+      "start": 17800,
+      "end": 17806,
+      "keys": [
+        "LEFT"
+      ]
+    },
+    {
+      "start": 17860,
+      "end": 17866,
+      "keys": [
+        "SELECT",
+        "L"
+      ]
+    },
+    {
+      "start": 17920,
+      "end": 17926,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 17980,
+      "end": 17986,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18040,
+      "end": 18046,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18100,
+      "end": 18106,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18160,
+      "end": 18166,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 18220,
+      "end": 18226,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18280,
+      "end": 18286,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 18340,
+      "end": 18346,
+      "keys": [
+        "LEFT"
+      ]
+    },
+    {
+      "start": 18400,
+      "end": 18406,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 18460,
+      "end": 18466,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18520,
+      "end": 18526,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18580,
+      "end": 18586,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18640,
+      "end": 18646,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 18700,
+      "end": 18706,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 18760,
+      "end": 18766,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 18840,
+      "end": 18846,
+      "keys": [
+        "B"
+      ]
+    },
+    {
+      "start": 18900,
+      "end": 18906,
+      "keys": [
+        "RIGHT"
+      ]
+    },
+    {
+      "start": 18960,
+      "end": 18966,
+      "keys": [
+        "SELECT",
+        "L"
+      ]
+    },
+    {
+      "start": 19020,
+      "end": 19026,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 19080,
+      "end": 19086,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 19140,
+      "end": 19146,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 19200,
+      "end": 19206,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 19260,
+      "end": 19266,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 19320,
+      "end": 19326,
+      "keys": [
+        "B"
+      ]
+    },
+    {
+      "start": 19400,
+      "end": 19406,
+      "keys": [
+        "LEFT"
+      ]
     }
   ],
   "checkpoints": [
@@ -2232,12 +2423,32 @@
         {
           "address": "0x0203186c",
           "size": 4,
-          "expected": "0x00000010"
+          "expected": "0x00000011"
         },
         {
           "address": "0x02031870",
           "size": 4,
-          "expected": "0x00000010"
+          "expected": "0x00000011"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x00",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x04",
+          "size": 4,
+          "expected": "0x00000006"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x08",
+          "size": 4,
+          "expected": "0x00000048"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x40",
+          "size": 4,
+          "expected": "0x00000001"
         },
         {
           "address": "0x02031874",
@@ -2528,7 +2739,288 @@
           "size": 1,
           "expected": "0x03"
         }
+      ],
+      "sram_hash": true,
+      "sram_hash_exclude_ranges": [
+        {
+          "offset": 29640,
+          "length": 9
+        },
+        {
+          "offset": 29650,
+          "length": 2
+        }
+      ],
+      "expected_sram_hash": "fnv1a64-sram-normalized:9762bc80f680658e"
+    },
+    {
+      "frame": 18200,
+      "framebuffer": false,
+      "name": "unit-editor-cursor-target-inspected",
+      "probes": [
+        {
+          "address": "0x02031614",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "gDebugToolsProbe+0x50",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x00",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x04",
+          "size": 4,
+          "expected": "0x00000006"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x08",
+          "size": 4,
+          "expected": "0x00000048"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x40",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gUnitArrayBlue+0x13",
+          "size": 1,
+          "expected": "0x11"
+        }
       ]
+    },
+    {
+      "frame": 18380,
+      "framebuffer": false,
+      "name": "unit-current-hp-previewed",
+      "probes": [
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x1c",
+          "size": 4,
+          "expected": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x20",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x38",
+          "size": 4,
+          "expected": "0x00000011"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x3c",
+          "size": 4,
+          "expected": "0x00000010"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x40",
+          "size": 4,
+          "expected": "0x00000002"
+        },
+        {
+          "address": "gUnitArrayBlue+0x13",
+          "size": 1,
+          "expected": "0x11"
+        }
+      ]
+    },
+    {
+      "frame": 18440,
+      "framebuffer": false,
+      "name": "unit-current-hp-confirmed",
+      "probes": [
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "expected": "0x0000000b"
+        },
+        {
+          "address": "0x02031614",
+          "size": 1,
+          "expected": "0x01"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x20",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x34",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x38",
+          "size": 4,
+          "expected": "0x00000011"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x3c",
+          "size": 4,
+          "expected": "0x00000010"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x40",
+          "size": 4,
+          "expected": "0x00000003"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x44",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gUnitArrayBlue+0x13",
+          "size": 1,
+          "expected": "0x10"
+        }
+      ]
+    },
+    {
+      "frame": 18800,
+      "framebuffer": false,
+      "name": "unit-heal-restored-full-hp",
+      "probes": [
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "expected": "0x0000000c"
+        },
+        {
+          "address": "gDebugToolsProbe+0x5c",
+          "size": 4,
+          "expected": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x20",
+          "size": 4,
+          "expected": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x30",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x38",
+          "size": 4,
+          "expected": "0x00000010"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x3c",
+          "size": 4,
+          "expected": "0x00000011"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x40",
+          "size": 4,
+          "expected": "0x00000003"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x44",
+          "size": 4,
+          "expected": "0x00000002"
+        },
+        {
+          "address": "gUnitArrayBlue+0x13",
+          "size": 1,
+          "expected": "0x11"
+        }
+      ]
+    },
+    {
+      "frame": 19300,
+      "framebuffer": false,
+      "name": "unit-empty-tile-rejected",
+      "probes": [
+        {
+          "address": "0x02031614",
+          "size": 1,
+          "expected": "0x01"
+        },
+        {
+          "address": "gDebugToolsProbe+0x00",
+          "size": 4,
+          "expected": "0x0000000d"
+        },
+        {
+          "address": "gDebugToolsProbe+0x50",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x20",
+          "size": 4,
+          "expected": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x28",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x40",
+          "size": 4,
+          "expected": "0x00000007"
+        },
+        {
+          "address": "gUnitArrayBlue+0x13",
+          "size": 1,
+          "expected": "0x11"
+        }
+      ]
+    },
+    {
+      "frame": 19440,
+      "framebuffer": false,
+      "name": "unit-editor-final-map-interactive",
+      "probes": [
+        {
+          "address": "0x02031614",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "gBmSt+0x14",
+          "size": 1,
+          "expected": "0x06"
+        },
+        {
+          "address": "gUnitArrayBlue+0x13",
+          "size": 1,
+          "expected": "0x11"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x20",
+          "size": 4,
+          "expected": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsUnitEditorProbe+0x28",
+          "size": 4,
+          "expected": "0x00000001"
+        }
+      ],
+      "sram_hash": true,
+      "sram_hash_exclude_ranges": [
+        {
+          "offset": 29640,
+          "length": 9
+        },
+        {
+          "offset": 29650,
+          "length": 2
+        }
+      ],
+      "expected_sram_hash": "fnv1a64-sram-normalized:9762bc80f680658e"
     }
   ]
 }

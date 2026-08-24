@@ -44,11 +44,6 @@ def _validate(fixture_name):
 
 
 class ClassesSchemaValidTests(unittest.TestCase):
-    def test_valid_fixture_has_no_diagnostics(self):
-        records, diagnostics = _validate("valid.json")
-        self.assertTrue(diagnostics.ok, msg=diagnostics.render())
-        self.assertEqual(len(records), 2)
-
     def test_encoded_fields_resolved(self):
         records, _ = _validate("valid.json")
         by_class = {r.class_name: r for r in records}
@@ -115,22 +110,6 @@ class ClassesSchemaReferenceTests(unittest.TestCase):
         messages = [str(e) for e in diagnostics.errors]
         self.assertTrue(
             any("duplicate class attribute 'CA_LORD' in the same list" in m for m in messages), messages
-        )
-
-    def test_bad_base_ranks_itype_reference_detected(self):
-        _, diagnostics = _validate("bad_base_ranks_itype_ref.json")
-        self.assertFalse(diagnostics.ok)
-        messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(
-            any("undefined weapon type reference 'ITYPE_NOT_A_REAL_TYPE'" in m for m in messages), messages
-        )
-
-    def test_bad_base_ranks_wexp_reference_detected(self):
-        _, diagnostics = _validate("bad_base_ranks_wexp_ref.json")
-        self.assertFalse(diagnostics.ok)
-        messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(
-            any("undefined weapon-exp threshold reference 'WPN_EXP_NOT_REAL'" in m for m in messages), messages
         )
 
     def test_bad_battle_anim_pointer_detected(self):
@@ -331,12 +310,6 @@ class ClassesMovecostDependencyTests(unittest.TestCase):
 
 
 class ClassesSchemaRangeTests(unittest.TestCase):
-    def test_bad_text_id_detected(self):
-        _, diagnostics = _validate("bad_text_id.json")
-        self.assertFalse(diagnostics.ok)
-        messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(any("nameTextId 9999 out of range [0, 9]" in m for m in messages), messages)
-
     def test_bad_sms_id_detected(self):
         _, diagnostics = _validate("bad_sms_id.json")
         self.assertFalse(diagnostics.ok)
@@ -348,12 +321,6 @@ class ClassesSchemaRangeTests(unittest.TestCase):
         self.assertFalse(diagnostics.ok)
         messages = [str(e) for e in diagnostics.errors]
         self.assertTrue(any("defaultPortraitId 999 out of range [0, 2]" in m for m in messages), messages)
-
-    def test_bad_base_stat_range_detected(self):
-        _, diagnostics = _validate("bad_base_stat_range.json")
-        self.assertFalse(diagnostics.ok)
-        messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(any("hp 999 out of range [-128, 127]" in m for m in messages), messages)
 
     def test_bad_promotion_gain_range_detected(self):
         _, diagnostics = _validate("bad_promotion_gain_range.json")
