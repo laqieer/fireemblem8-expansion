@@ -81,7 +81,10 @@ def _run_block_commands(job: str) -> list[str]:
         if match is None:
             index += 1
             continue
-        if match.group("value") == "|":
+        if re.fullmatch(
+            r"[|>](?:(?:[1-9][+-]?)|(?:[+-][1-9]?))?",
+            match.group("value"),
+        ):
             index += 1
             block = []
             while index < len(lines) and lines[index].startswith("        "):
@@ -397,6 +400,24 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 changed = self.text.replace(
                     "    - name: Build tools\n",
                     f"    - run: {command}\n\n    - name: Build tools\n",
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "must use the reviewed hash-locked Python requirements" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_folded_block_scalar_pip_install_fails(self):
+        for scalar in (">", ">-", ">+2"):
+            with self.subTest(scalar=scalar):
+                changed = self.text.replace(
+                    "    - name: Build tools\n",
+                    f"    - run: {scalar}\n"
+                    "        echo preparing &&\n"
+                    "        python3 -m pip --isolated install evil\n\n"
+                    "    - name: Build tools\n",
                     1,
                 )
                 self.assertTrue(
