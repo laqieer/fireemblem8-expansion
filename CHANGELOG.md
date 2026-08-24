@@ -45,6 +45,7 @@ Do not hand-edit the text between the two HTML comment markers below --
 
 ### Security
 
+- Hash-lock Build and release Python dependencies before artifact publication.
 - Make modernization bitfield scanning linear-time for adversarial source declarations.
 - Add a three-way immutable binding validator for the mgfembp git submodule (.gitmodules section, HEAD tree gitlink, export-exclusion record, and provenance record must all agree exactly on path/URL/pinned commit); reject a non-https submodule URL scheme and any allowlist/exclusion contradiction. Never fetches or initializes the submodule. (#9)
 - Add explicit, factual export exclusions (docs/release_data/export_exclusions.json) and prove the included source allowlist and export exclusions are an exact, disjoint partition of the complete immutable HEAD tree; wire exact archive-member equality and non-git closed-world coverage into the rehearsal. (#9)
