@@ -653,6 +653,18 @@ class CustomSpellAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "tRNS must occur after PLTE and before IDAT"):
             custom_spell.read_indexed_png(path, 240, 64)
 
+    def test_png_rejects_stream_truncated_immediately_after_idat(self):
+        path = os.path.join(TEST_ROOT, "truncated-after-idat.png")
+        _write_png(path, 240, 64)
+        with open(path, "rb") as handle:
+            encoded = handle.read()
+        terminal_iend = _chunk(b"IEND", b"")
+        self.assertTrue(encoded.endswith(terminal_iend))
+        with open(path, "wb") as handle:
+            handle.write(encoded[:-len(terminal_iend)])
+        with self.assertRaisesRegex(ValueError, "must end with IEND"):
+            custom_spell.read_indexed_png(path, 240, 64)
+
     def test_background_scaling_and_tsa_vectors(self):
         pixels = bytearray()
         for source_y in range(custom_spell.BG_HEIGHT):

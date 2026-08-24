@@ -187,6 +187,8 @@ def _png_chunk_stream(path):
             break
     if offset != len(data):
         raise ValueError("{} has trailing data after IEND".format(path))
+    if not chunks or chunks[-1][0] != b"IEND":
+        raise ValueError("{} must end with IEND".format(path))
     return chunks
 
 
