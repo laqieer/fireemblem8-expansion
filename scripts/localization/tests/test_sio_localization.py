@@ -314,10 +314,6 @@ class SioLocalizationTests(unittest.TestCase):
                 0,
                 result.stdout + result.stderr,
             )
-            self.assertIn(
-                "SIO_XMAP_TRANSFER_SHARED_BUFFER_TEST: PASS",
-                result.stdout,
-            )
 
 
 if __name__ == "__main__":

@@ -38,18 +38,13 @@ class CandidateTreeReleaseTests(unittest.TestCase):
     def test_gitmodules_binds_each_candidate_gitlink(self):
         self.assertEqual(sb.check_submodule_binding(ROOT, self.target_tree), [])
 
-    def test_release_make_exposes_concrete_check_commands(self):
-        text = (ROOT / "release.mk").read_text(encoding="utf-8")
-        self.assertIn("release-check:", text)
-        self.assertIn("release-rehearse:", text)
-
-    def test_candidate_tree_target_runs_only_the_tree_command(self):
+    def _dry_run_target(self, target):
         completed = subprocess.run(
             [
                 "make",
                 "--no-print-directory",
                 "-n",
-                "release-candidate-tree-check",
+                target,
                 f"RELEASE_TARGET_SHA={self.target_tree}",
             ],
             cwd=ROOT,
@@ -59,11 +54,27 @@ class CandidateTreeReleaseTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout)
+        return completed.stdout
+
+    def test_release_targets_bind_the_requested_candidate(self):
+        for target, command in (
+            ("release-check", "check"),
+            ("release-rehearse", "rehearse"),
+        ):
+            with self.subTest(target=target):
+                output = self._dry_run_target(target)
+                self.assertIn(
+                    f"scripts.release_rehearsal.cli {command} --target-sha {self.target_tree}",
+                    output,
+                )
+
+    def test_candidate_tree_target_runs_only_the_tree_command(self):
+        output = self._dry_run_target("release-candidate-tree-check")
         self.assertIn(
             f"scripts.release_rehearsal.cli candidate-tree --target-sha {self.target_tree}",
-            completed.stdout,
+            output,
         )
-        self.assertNotIn("scripts.release_rehearsal.cli check", completed.stdout)
+        self.assertNotIn("scripts.release_rehearsal.cli check", output)
 
     def test_archive_mismatch_is_present_in_json_and_exit_status(self):
         args = SimpleNamespace(
