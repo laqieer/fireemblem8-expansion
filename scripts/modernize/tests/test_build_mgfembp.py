@@ -2,11 +2,14 @@
 
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+from scripts.modernize.tests.make_database import make_database_variable
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -20,6 +23,52 @@ spec.loader.exec_module(builder)
 
 
 class BuildMgfembpTests(unittest.TestCase):
+
+    @staticmethod
+    def resolved_make_database_variable(name):
+        result = subprocess.run(
+            [
+                "make",
+                "--no-print-directory",
+                "-rR",
+                "-n",
+                "-p",
+                "__issue102_mgfembp_probe__",
+            ],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if result.returncode == 0:
+            raise AssertionError("the nonexistent Make probe unexpectedly succeeded")
+        value = make_database_variable(result.stdout, name)
+        if value is None:
+            raise AssertionError(
+                f"{name} absent from Make database:\n{result.stdout[-4000:]}"
+            )
+        return value
+
+    def test_make_database_variable_collects_continuations(self):
+        fixture = "\n".join(
+            (
+                "MODERN_MGFEMBP_EMBED_ASSETS := mgfembp/data/debug_font.png \\",
+                "    mgfembp/data/message_gfx.png \\",
+                "    mgfembp/data/message_tm_1.bin",
+                "    recipe-must-not-be-part-of-the-variable",
+                "# environment",
+            )
+        )
+        manifest = make_database_variable(fixture, "MODERN_MGFEMBP_EMBED_ASSETS")
+        self.assertEqual(
+            manifest.split(),
+            [
+                "mgfembp/data/debug_font.png",
+                "mgfembp/data/message_gfx.png",
+                "mgfembp/data/message_tm_1.bin",
+            ],
+        )
 
     def tool_paths(self):
         cc = os.environ.get("MODERN_CC") or shutil.which("arm-none-eabi-gcc")
@@ -46,11 +95,6 @@ class BuildMgfembpTests(unittest.TestCase):
         c_sources, asm_sources = builder.validate_source_list(MGFEMBP)
         self.assertEqual([path.name for path in c_sources], list(builder.EXPECTED_C_SOURCES))
         self.assertEqual([path.name for path in asm_sources], list(builder.EXPECTED_ASM_SOURCES))
-
-    def test_no_agbcc_in_build_script(self):
-        source = SCRIPT.read_text(encoding="utf-8")
-        for needle in ("agbcc", "old_agbcc"):
-            self.assertNotIn(needle, source)
 
     def test_linker_script_generation(self):
         result = builder.generate_linker_script_text(
@@ -138,20 +182,38 @@ class BuildMgfembpTests(unittest.TestCase):
             )
 
     def test_modern_mk_embed_list_matches_script(self):
-        """modern.mk MODERN_MGFEMBP_EMBED_ASSETS must list the same
-        source assets as build_mgfembp.py."""
-        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        for asset in builder.EXPECTED_EMBED_SOURCE_ASSETS:
-            self.assertIn(
-                f"mgfembp/{asset}",
-                mk,
-                f"modern.mk missing embed asset: mgfembp/{asset}",
-            )
+        """The resolved modern embed manifest matches the builder contract."""
+        manifest = self.resolved_make_database_variable(
+            "MODERN_MGFEMBP_EMBED_ASSETS"
+        ).split()
+        builder.validate_embed_manifest(manifest)
 
     def test_fe6sio_dep_included_in_modern_mk(self):
-        """modern.mk must -include the fe6sio .d file."""
-        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("MODERN_FE6SIO_OBJ:.o=.d", mk)
+        """The resolved FE6 SIO object is wired into the modern ELF graph."""
+        object_path = self.resolved_make_database_variable("MODERN_FE6SIO_OBJ")
+        result = subprocess.run(
+            [
+                "make",
+                "--no-print-directory",
+                "-rR",
+                "-n",
+                "-p",
+                "__issue102_mgfembp_probe__",
+            ],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        rule = next(
+            (line for line in result.stdout.splitlines() if line.startswith(f"{object_path}:")),
+            None,
+        )
+        self.assertIsNotNone(rule, result.stdout[-4000:])
+        self.assertIn("asm/fe6sio.s", rule)
+        self.assertIn("fe6sio_payload.bin.lz", rule)
 
     # -- Runtime embed manifest validation ----------------------------------
 
@@ -185,10 +247,25 @@ class BuildMgfembpTests(unittest.TestCase):
         self.assertIn("duplicate", str(ctx.exception))
 
     def test_modern_mk_passes_embed_assets_to_builder(self):
-        """modern.mk must pass --embed-asset for each asset."""
-        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("--embed-asset", mk)
-        self.assertIn("MODERN_MGFEMBP_EMBED_ASSETS", mk)
+        """The dry-run build command passes the complete resolved manifest."""
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-n",
+                    "expansion-modern-mgfembp",
+                    f"MODERN_BUILD_ROOT={Path(tmp) / 'modern'}",
+                ],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stdout[-4000:])
+        embedded = re.findall(r'--embed-asset "([^"]+)"', result.stdout)
+        builder.validate_embed_manifest(embedded)
 
     # -- Depfile filtering --------------------------------------------------
 

@@ -10,7 +10,10 @@ second registry, harness, generated-data schema, or project ruleset.
 - **Feature / originating issue:** `modern-framework-build` /
   [#3](https://github.com/laqieer/fireemblem8-expansion/issues/3),
   [#4](https://github.com/laqieer/fireemblem8-expansion/issues/4), and
-  [#28](https://github.com/laqieer/fireemblem8-expansion/issues/28).
+  [#28](https://github.com/laqieer/fireemblem8-expansion/issues/28);
+  [#102](https://github.com/laqieer/fireemblem8-expansion/issues/102)
+  preserves these checks through resolved Make data, compiler diagnostics,
+  generated linker inputs, and linked artifacts rather than source spelling.
 - **Supported configuration or artifact:** clean supported-host source checkout;
   the default modern release AAPCS build.
 - **Prerequisites and clean starting state:** run at the repository root with
@@ -47,6 +50,12 @@ epoch; the archival lane retains its default-cap-only boundary.
   — `scripts/modernize/tests/test_build_default_lane.py`.
 - `python3 -m unittest discover -s scripts/modernize/tests -p "test_quickstart.py" -v`
   — `scripts/modernize/tests/test_quickstart.py`.
+- `python3 -m unittest discover -s scripts/modernize/tests -p "test_modern_elf.py" -v`
+  and
+  `python3 -m unittest discover -s scripts/modernize/tests -p "test_build_mgfembp.py" -v`
+  — resolved Make graph, generated linker input, and payload-artifact checks.
+- `python3 -m unittest discover -s scripts/modernize/tests -p "test_expansion_config.py" -v`
+  — parsed configuration and real preprocessor dependency controls.
 - `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs`
   — `tools/gba-playtest/scenarios/boot.json`.
 

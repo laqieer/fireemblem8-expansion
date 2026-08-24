@@ -430,6 +430,7 @@ GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)
 # Typed chapter objectives are a modern-only generated table.  The archival
 # lane retains its historical source/object set, while modern builds link this
 # additive generated record table and the pointer-free evaluator.
+GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE ?= src/data/chapter_objectives.json
 GENERATED_DATA_CHAPTEROBJECTIVES_C := $(GENERATED_DATA_OUT_DIR)/data_chapter_objectives.c
 GENERATED_DATA_CONFIG_INPUTS_chapterobjectives := \
 	include/constants/chapters.h \
@@ -438,12 +439,13 @@ GENERATED_DATA_CONFIG_INPUTS_chapterobjectives := \
 	include/bmunit.h \
 	src/data/ch2_units.json
 
-$(GENERATED_DATA_CHAPTEROBJECTIVES_C): src/data/chapter_objectives.json \
+$(GENERATED_DATA_CHAPTEROBJECTIVES_C): $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE) \
 	$(GENERATED_DATA_SHARED_PY_SOURCES) \
 	$(wildcard scripts/generated_data/chapterobjectives/*.py) \
 	$(GENERATED_DATA_CONFIG_INPUTS_chapterobjectives)
 	@mkdir -p $(@D)
-	$(GENERATED_DATA_PY) generate --table chapterobjectives --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_PY) generate --table chapterobjectives \
+		--source $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE) --out-dir $(GENERATED_DATA_OUT_DIR)
 	@test -e $@ || { echo "error: generated-data table 'chapterobjectives' did not produce $@" >&2; exit 1; }
 
 # Typed autoplay strategies are modern-only generated data. The default

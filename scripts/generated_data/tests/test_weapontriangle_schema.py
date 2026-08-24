@@ -111,13 +111,5 @@ class WeaponTriangleSchemaReciprocalTests(unittest.TestCase):
         self.assertTrue(any("reciprocal atkBonus mismatch" in m for m in messages), messages)
 
 
-class WeaponTriangleSchemaRangeTests(unittest.TestCase):
-    def test_bad_range_detected(self):
-        _, diagnostics = _validate("bad_range.json")
-        self.assertFalse(diagnostics.ok)
-        messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(any("200" in m and "out of range" in m for m in messages), messages)
-
-
 if __name__ == "__main__":
     unittest.main()

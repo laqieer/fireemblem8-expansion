@@ -12,10 +12,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLAYTEST_DIR = REPO_ROOT / "tools" / "gba-playtest"
 FINGERPRINT_DIR = PLAYTEST_DIR / "fingerprints"
+SCENARIOS_DIR = PLAYTEST_DIR / "scenarios"
 sys.path.insert(0, str(PLAYTEST_DIR))
+sys.path.insert(0, str(PLAYTEST_DIR / "tests"))
 
 import gba_playtest  # noqa: E402
 import run_autoplay_bounds_checks as autoplay_bounds  # noqa: E402
+import sram_fixture  # noqa: E402
 from probe_bindings import ElfSymbolResolver  # noqa: E402
 
 OBJECTIVE_TELEMETRY_SYMBOL = "gExpansionChapterObjectiveTelemetry"
@@ -45,6 +48,31 @@ def scenario_data() -> dict:
     return scenario
 
 
+def fixture_scenario_data() -> dict:
+    """Extend the ordinary suspend/resume route with authored-objective probes."""
+    source_path = SCENARIOS_DIR / "savesuspend-resume-modern-debug.json"
+    scenario = json.loads(source_path.read_text(encoding="utf-8"))
+    scenario["name"] = "chapter-objectives-fixture-suspend-resume"
+    scenario["description"] = (
+        "TC-AUTOPLAY-OBJECTIVE-001 authored fixture: execute a generated "
+        "objective bundle through the ordinary Chapter 2 Suspend, reset, "
+        "and Resume flow, then require reconstructed telemetry."
+    )
+    for checkpoint in scenario["checkpoints"]:
+        if checkpoint["name"] in ("suspend-confirmed", "resumed-chapter2"):
+            for probe in checkpoint["probes"]:
+                probe.pop("expected", None)
+            checkpoint["probes"].extend(
+                [
+                    {"address": OBJECTIVE_TELEMETRY_SYMBOL, "size": 4},
+                    {"address": OBJECTIVE_TELEMETRY_SYMBOL + "+0x04", "size": 4},
+                    {"address": OBJECTIVE_TELEMETRY_SYMBOL + "+0x08", "size": 4},
+                    {"address": OBJECTIVE_TELEMETRY_SYMBOL + "+0x0c", "size": 4},
+                ]
+            )
+    return scenario
+
+
 def _values(capture: dict) -> dict[str, int]:
     probes = capture["checkpoints"][0]["probes"]
     values = {probe["address"]: int(probe["value"], 16) for probe in probes}
@@ -54,6 +82,16 @@ def _values(capture: dict) -> dict[str, int]:
         "progress": values[OBJECTIVE_TELEMETRY_SYMBOL + "+0x08"],
         "activeCount": values[OBJECTIVE_TELEMETRY_SYMBOL + "+0x0c"],
     }
+
+
+def _checkpoint_values(capture: dict, name: str) -> dict[str, int]:
+    for checkpoint in capture["checkpoints"]:
+        if checkpoint["name"] == name:
+            return {
+                probe["address"]: int(probe["value"], 16)
+                for probe in checkpoint["probes"]
+            }
+    raise CheckError("fixture objective scenario omitted checkpoint '{}'".format(name))
 
 
 def _check(capture: dict) -> list[str]:
@@ -71,6 +109,45 @@ def _check(capture: dict) -> list[str]:
     return failures
 
 
+def _check_fixture(capture: dict) -> list[str]:
+    """Prove a real authored table is re-evaluated after ReadSuspendSave."""
+    failures = []
+    suspended = _checkpoint_values(capture, "suspend-confirmed")
+    resumed = _checkpoint_values(capture, "resumed-chapter2")
+    objective_bindings = (
+        OBJECTIVE_TELEMETRY_SYMBOL,
+        OBJECTIVE_TELEMETRY_SYMBOL + "+0x04",
+        OBJECTIVE_TELEMETRY_SYMBOL + "+0x08",
+        OBJECTIVE_TELEMETRY_SYMBOL + "+0x0c",
+    )
+
+    for address, expected in (
+        ("0x020210b2", 2),
+        ("0x020210b3", 0),
+    ):
+        if suspended.get(address) != expected or resumed.get(address) != expected:
+            failures.append(
+                "fixture suspend/resume: {} changed state ({} -> {}), expected {}".format(
+                    address, suspended.get(address), resumed.get(address), expected
+                )
+            )
+
+    if suspended.get(OBJECTIVE_TELEMETRY_SYMBOL, 0) == 0:
+        failures.append("fixture suspend/resume: no authored objective was active before Suspend")
+    if suspended.get(OBJECTIVE_TELEMETRY_SYMBOL + "+0x04", 0) == 0:
+        failures.append("fixture suspend/resume: active authored objective had inactive status before Suspend")
+
+    for address in objective_bindings:
+        if resumed.get(address) != suspended.get(address):
+            failures.append(
+                "fixture suspend/resume: telemetry {} changed across Resume ({} != {})".format(
+                    address, resumed.get(address), suspended.get(address)
+                )
+            )
+
+    return failures
+
+
 def _fingerprint_path() -> Path:
     return FINGERPRINT_DIR / "chapter-objectives-empty-modern-debug.json"
 
@@ -79,6 +156,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rom", required=True, type=Path)
     parser.add_argument("--elf", required=True, type=Path)
+    parser.add_argument("--fixture-rom", required=True, type=Path)
+    parser.add_argument("--fixture-elf", required=True, type=Path)
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--capture-fingerprint", action="store_true")
     args = parser.parse_args(argv)
@@ -113,11 +192,30 @@ def main(argv: list[str] | None = None) -> int:
             )
             failures.extend(gba_playtest.compare_fingerprints(expected, capture, policy="behavior"))
 
+        fixture_dir = args.out_dir / "authored-fixture"
+        fixture_sram = sram_fixture.write_fixture(
+            fixture_dir / "suspend-resume-current.sav", sram_fixture.STATE_CURRENT
+        )
+        fixture_capture = gba_playtest.capture(
+            args.fixture_rom,
+            gba_playtest.parse_scenario_data(
+                fixture_scenario_data(),
+                source="chapter-objectives-fixture-suspend-resume",
+                symbol_resolver=ElfSymbolResolver(args.fixture_elf),
+            ),
+            sram_image=fixture_sram,
+        )
+        (fixture_dir / "chapter-objectives-fixture-suspend-resume.captured.json").write_text(
+            gba_playtest.serialize_fingerprint(fixture_capture), encoding="utf-8"
+        )
+        failures.extend(_check_fixture(fixture_capture))
+
         if failures:
             raise CheckError("\n".join(failures))
         values = _values(capture)
         print(
-            "Chapter objective default check passed: reason={} frame={} active={}".format(
+            "Chapter objective checks passed: default reason={} frame={} active={} "
+            "and authored fixture reconstructed after Suspend/Resume".format(
                 capture["terminal"]["reason"], capture["terminal"]["frame"], values["activeCount"]
             )
         )

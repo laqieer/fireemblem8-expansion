@@ -73,6 +73,39 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             schema.stable_id_value("AI_GROUP_FIXTURE_EIRIKA"),
         )
 
+    def test_kind_specific_extras_and_protect_defeat_contradictions_fail_closed(self):
+        records, diagnostics = _validate("valid.json")
+        objectives = {objective.id: objective for objective in records[0].objectives}
+        objectives["OBJECTIVE_FIXTURE_REACH"].protected_character = "CHARACTER_EIRIKA"
+        objectives["OBJECTIVE_FIXTURE_REACH"].completion_objective = "OBJECTIVE_FIXTURE_EVENT"
+        objectives["OBJECTIVE_FIXTURE_REACH"].event_flag = "EVFLAG_BATTLE_QUOTES"
+        objectives["OBJECTIVE_FIXTURE_REACH"].until_turn = 2
+        objectives["OBJECTIVE_FIXTURE_DEFEAT"].area = objectives["OBJECTIVE_FIXTURE_REACH"].area
+        objectives["OBJECTIVE_FIXTURE_EVENT"].group = "AI_GROUP_FIXTURE_EIRIKA"
+        objectives["OBJECTIVE_FIXTURE_HOLD"].event_flag = "EVFLAG_BATTLE_QUOTES"
+        objectives["OBJECTIVE_FIXTURE_PROTECT"].completion_objective = "OBJECTIVE_FIXTURE_DEFEAT"
+        schema.validate(records, diagnostics, {
+            "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json"))
+        })
+        rendered = diagnostics.render()
+        for expected in (
+            "reach_area objective accepts only group and area",
+            "defeat_group objective accepts only group",
+            "event_flag objective accepts only eventFlag",
+            "hold_until_turn objective accepts only group, area, and untilTurn",
+            "cannot complete by defeating its protected character",
+        ):
+            self.assertIn(expected, rendered)
+
+    def test_invalid_non_ascii_id_reports_a_structured_diagnostic(self):
+        records, diagnostics = _validate("valid.json")
+        records[0].objectives[0].id = "OBJECTIVE_\u00e9"
+        schema.validate(records, diagnostics, {
+            "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json"))
+        })
+        self.assertFalse(diagnostics.ok)
+        self.assertIn("must use uppercase stable identifier spelling", diagnostics.render())
+
 
 if __name__ == "__main__":
     unittest.main()

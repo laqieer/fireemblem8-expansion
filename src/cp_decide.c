@@ -16,8 +16,12 @@
 #include "cp_common.h"
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_autoplay_internal.h"
-#include "expansion_autoplay_planner.h"
+#if FE8_EXPANSION_AUTOPLAY_STRATEGIES
 #include "expansion_autoplay_strategies.h"
+#endif
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#include "expansion_autoplay_planner.h"
+#endif
 #endif
 
 static void CpDecide_Suspend(ProcPtr proc);
@@ -116,6 +120,7 @@ next_unit:
 
             AiClearDecision();
 #ifndef FE8_ARCHIVAL_BUILD
+#if FE8_EXPANSION_AUTOPLAY_STRATEGIES
             if (ExpansionAutoplay_IsBlueComputerPhase())
             {
                 enum ExpansionAutoplayStrategyResult strategyResult =
@@ -131,8 +136,16 @@ next_unit:
 
                 if (strategyResult == EXPANSION_AUTOPLAY_STRATEGY_FALLBACK)
                     AiDecideMainFunc();
+            }
+            else
+#endif
+#endif
+            AiDecideMainFunc();
 
+#ifndef FE8_ARCHIVAL_BUILD
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+            if (ExpansionAutoplay_IsBlueComputerPhase())
+            {
                 switch (ExpansionAutoplayPlanner_OfferDecision(&gAiDecision))
                 {
                 case EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT:
@@ -147,11 +160,9 @@ next_unit:
                 default:
                     break;
                 }
-#endif
             }
-            else
 #endif
-            AiDecideMainFunc();
+#endif
 
             gActiveUnit->state |= US_HAS_MOVED_AI;
 
