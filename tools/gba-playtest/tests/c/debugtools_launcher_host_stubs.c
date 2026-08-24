@@ -190,11 +190,21 @@ void DebugTools_RegisterExtendedToolActions(void)
      * itself calls OpenHub. */
 }
 
+void DebugTools_RegisterChapterSelectorAction(void)
+{
+    /* The selector has its own host driver. This launcher lifecycle
+     * fixture only needs the compatibility initializer to link. */
+}
+
 void DebugTools_RegisterMusicPreviewAction(void)
 {
 }
 
 void DebugTools_CleanupMusicPreview(void)
+{
+}
+
+void DebugToolsPhaseControl_Reset(void)
 {
 }
 

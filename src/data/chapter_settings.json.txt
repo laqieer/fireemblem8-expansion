@@ -145,3 +145,7 @@ struct ROMChapterData CONST_DATA gChapterDataTable[] =
     },
 ## endfor
 };
+
+#if (FE8_EXPANSION_DEBUG || FE8_EXPANSION_DEBUGTOOLS_ENABLED) && !defined(FE8_ARCHIVAL_BUILD)
+const unsigned gChapterDataCount = ARRAY_COUNT(gChapterDataTable);
+#endif
