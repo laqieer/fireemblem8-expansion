@@ -63,6 +63,12 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
                     "gExpansionChapterObjectiveTelemetry+0x0c",
                 ],
             )
+            runtime_bindings = [
+                probe.binding
+                for probe in checkpoint.probes
+                if probe.binding.startswith("gExpansionChapterObjectiveRuntimeProbe")
+            ]
+            self.assertEqual(runtime_bindings, list(runtime_check.OBJECTIVE_RUNTIME_PROBE_BINDINGS))
 
     def test_generated_fixture_evaluates_all_kinds_and_reconstructs_after_reset(self):
         if CC is None:

@@ -22,6 +22,21 @@ import sram_fixture  # noqa: E402
 from probe_bindings import ElfSymbolResolver  # noqa: E402
 
 OBJECTIVE_TELEMETRY_SYMBOL = "gExpansionChapterObjectiveTelemetry"
+OBJECTIVE_RUNTIME_PROBE_SYMBOL = "gExpansionChapterObjectiveRuntimeProbe"
+OBJECTIVE_RUNTIME_PROBE_MAGIC = 0x4F424A54
+OBJECTIVE_FIXTURE_EVENT_ID = 0xA6F02B15
+OBJECTIVE_RUNTIME_PROBE_BINDINGS = (
+    OBJECTIVE_RUNTIME_PROBE_SYMBOL,
+    OBJECTIVE_RUNTIME_PROBE_SYMBOL + "+0x04",
+    OBJECTIVE_RUNTIME_PROBE_SYMBOL + "+0x08",
+    OBJECTIVE_RUNTIME_PROBE_SYMBOL + "+0x0c",
+    OBJECTIVE_RUNTIME_PROBE_SYMBOL + "+0x10",
+    OBJECTIVE_RUNTIME_PROBE_SYMBOL + "+0x14",
+    OBJECTIVE_RUNTIME_PROBE_SYMBOL + "+0x18",
+    OBJECTIVE_RUNTIME_PROBE_SYMBOL + "+0x1c",
+    OBJECTIVE_RUNTIME_PROBE_SYMBOL + "+0x20",
+    OBJECTIVE_RUNTIME_PROBE_SYMBOL + "+0x24",
+)
 
 
 class CheckError(RuntimeError):
@@ -69,6 +84,7 @@ def fixture_scenario_data() -> dict:
                     {"address": OBJECTIVE_TELEMETRY_SYMBOL + "+0x08", "size": 4},
                     {"address": OBJECTIVE_TELEMETRY_SYMBOL + "+0x0c", "size": 4},
                 ]
+                + [{"address": binding, "size": 4} for binding in OBJECTIVE_RUNTIME_PROBE_BINDINGS]
             )
     return scenario
 
@@ -120,6 +136,18 @@ def _check_fixture(capture: dict) -> list[str]:
         OBJECTIVE_TELEMETRY_SYMBOL + "+0x08",
         OBJECTIVE_TELEMETRY_SYMBOL + "+0x0c",
     )
+    expected_probe_values = {
+        OBJECTIVE_RUNTIME_PROBE_BINDINGS[0]: OBJECTIVE_RUNTIME_PROBE_MAGIC,
+        OBJECTIVE_RUNTIME_PROBE_BINDINGS[1]: OBJECTIVE_FIXTURE_EVENT_ID,
+        OBJECTIVE_RUNTIME_PROBE_BINDINGS[2]: 1,
+        OBJECTIVE_RUNTIME_PROBE_BINDINGS[3]: 0,
+        OBJECTIVE_RUNTIME_PROBE_BINDINGS[4]: 2,
+        OBJECTIVE_RUNTIME_PROBE_BINDINGS[5]: 1,
+        OBJECTIVE_RUNTIME_PROBE_BINDINGS[6]: 0,
+        OBJECTIVE_RUNTIME_PROBE_BINDINGS[7]: 1,
+        OBJECTIVE_RUNTIME_PROBE_BINDINGS[8]: 3,
+        OBJECTIVE_RUNTIME_PROBE_BINDINGS[9]: 2,
+    }
 
     for address, expected in (
         ("0x020210b2", 2),
@@ -142,6 +170,20 @@ def _check_fixture(capture: dict) -> list[str]:
             failures.append(
                 "fixture suspend/resume: telemetry {} changed across Resume ({} != {})".format(
                     address, resumed.get(address), suspended.get(address)
+                )
+            )
+
+    for address, expected in expected_probe_values.items():
+        if suspended.get(address) != expected:
+            failures.append(
+                "fixture objective transition: {}={}, expected {}".format(
+                    address, suspended.get(address), expected
+                )
+            )
+        if resumed.get(address) != expected:
+            failures.append(
+                "fixture objective transition after Resume: {}={}, expected {}".format(
+                    address, resumed.get(address), expected
                 )
             )
 

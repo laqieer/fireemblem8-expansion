@@ -7,6 +7,12 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from scripts.modernize.tests.make_database import (
+    make_database_rule,
+    make_database_rule_header,
+    make_database_variable,
+)
+
 
 ROOT = Path(__file__).resolve().parents[3]
 MODERN_MK = ROOT / "modern.mk"
@@ -37,6 +43,13 @@ class LinkerCheckTargetTests(unittest.TestCase):
             check=False,
         )
 
+    def resolved_make_database(self, *config):
+        result = self.make(
+            "-rR", "-n", "-p", *config, "__issue89_linker_checks_probe__"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        return result.stdout
+
     def test_all_linker_checks_are_modern_goals(self):
         text = MODERN_MK.read_text(encoding="utf-8")
         goals = text.split("MODERN_GOALS :=", 1)[1].split("ifneq", 1)[0]
@@ -57,6 +70,54 @@ class LinkerCheckTargetTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires MODERN_ABI=aapcs", result.stdout)
+
+    def test_chapter_objectives_runtime_check_runs_debug_and_skips_release(self):
+        debug_database = self.resolved_make_database(
+            "MODERN_CONFIG=debug",
+            "MODERN_ABI=aapcs",
+        )
+        debug_rule = make_database_rule(
+            debug_database, "expansion-modern-chapter-objectives-check"
+        )
+        self.assertIsNotNone(debug_rule, debug_database[-4000:])
+        self.assertIn("$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_SCRIPT)", debug_rule)
+        self.assertEqual(
+            make_database_variable(debug_database, "MODERN_CHAPTER_OBJECTIVES_RUNTIME_SCRIPT"),
+            "tools/gba-playtest/run_chapter_objective_checks.py",
+        )
+
+        release_database = self.resolved_make_database(
+            "MODERN_CONFIG=release",
+            "MODERN_ABI=aapcs",
+        )
+        release_rule = make_database_rule(
+            release_database, "expansion-modern-chapter-objectives-check"
+        )
+        self.assertIsNotNone(release_rule, release_database[-4000:])
+        release_header = make_database_rule_header(
+            release_rule, "expansion-modern-chapter-objectives-check"
+        )
+        self.assertIn("expansion-modern-chapter-objectives-profile-boot-check", release_header)
+        self.assertIn("runtime check skipped", release_rule)
+        self.assertNotIn("run_chapter_objective_checks.py", release_rule)
+
+    def test_chapter_objectives_profile_routes_inventory_to_its_build_root(self):
+        database = self.resolved_make_database(
+            "MODERN_CONFIG=debug",
+            "MODERN_ABI=aapcs",
+        )
+        profile_rule = make_database_rule(
+            database, "expansion-modern-chapter-objectives-profile-rom"
+        )
+        self.assertIsNotNone(profile_rule, database[-4000:])
+        self.assertIn(
+            "GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_INVENTORY)",
+            profile_rule,
+        )
+        self.assertEqual(
+            make_database_variable(database, "MODERN_CHAPTER_OBJECTIVES_PROFILE_INVENTORY"),
+            "build/expansion-modern-chapter-objectives/generated_data_chapterobjectives_inventory.md",
+        )
 
     def test_linker_check_dry_run_wires_every_gate(self):
         result = self.make("-n", "expansion-modern-linker-check")
