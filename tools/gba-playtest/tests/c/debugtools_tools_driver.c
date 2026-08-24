@@ -855,8 +855,8 @@ int main(void)
           "save-state Back must use the owned no-clear cancel handler");
 
     memset(&saveStateMenu, 0, sizeof(saveStateMenu));
-    saveStateMenu.backBg = 0;
-    saveStateMenu.frontBg = 2;
+    saveStateMenu.backBg = 2;
+    saveStateMenu.frontBg = 1;
     saveStateMenu.rect.x = 7;
     saveStateMenu.rect.y = 9;
     saveStateMenu.rect.w = 6;
@@ -867,6 +867,11 @@ int main(void)
         saveStateMenu.frontBg,
         saveStateMenu.rect.x + 1,
         saveStateMenu.rect.y,
+        0x4F4E);
+    DebugToolsHostStub_SetBgMapTile(
+        saveStateMenu.backBg,
+        saveStateMenu.rect.x + 1,
+        saveStateMenu.rect.y,
         0x51A5);
     rc = gDebugToolsSaveStateMenuDef.menuItems[0].onSelected(NULL, NULL);
     CHECK(rc == (MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6B),
@@ -875,8 +880,14 @@ int main(void)
         DebugToolsHostStub_GetBgMapTile(
             saveStateMenu.frontBg,
             saveStateMenu.rect.x + 1,
+            saveStateMenu.rect.y) == 0x4F4E,
+        "save-state Back must not alter the misleading front-BG sentinel");
+    CHECK(
+        DebugToolsHostStub_GetBgMapTile(
+            saveStateMenu.backBg,
+            saveStateMenu.rect.x + 1,
             saveStateMenu.rect.y) == 0x51A5,
-        "save-state Back must not clear the actual menu frame tile");
+        "save-state Back must not clear the actual back-BG frame tile");
 
     gDebugToolsSaveStateMenuDef.onEnd(&saveStateMenu);
     DebugToolsHostStub_RunPendingTransition();
@@ -884,11 +895,32 @@ int main(void)
         DebugToolsHostStub_GetBgMapTile(
             saveStateMenu.frontBg,
             saveStateMenu.rect.x + 1,
-            saveStateMenu.rect.y) == 0x51A5,
-        "save-state return-to-hub must preserve the actual menu frame tile");
+              saveStateMenu.rect.y) == 0x4F4E,
+          "save-state return-to-hub must not alter the misleading front-BG sentinel");
+    CHECK(
+          DebugToolsHostStub_GetBgMapTile(
+              saveStateMenu.backBg,
+              saveStateMenu.rect.x + 1,
+              saveStateMenu.rect.y) == 0x51A5,
+          "save-state return-to-hub must preserve the actual back-BG frame tile");
     CHECK(gDebugToolsProbe.saveCompatBackMenuPreserved == 1
-              && gDebugToolsProbe.saveCompatBackReturnCount == 1,
+                && gDebugToolsProbe.saveCompatBackReturnCount == 1,
           "save-state Back must preserve the completed menu's own BG and frame tile");
+    DebugToolsHostStub_SetBgMapTile(
+          saveStateMenu.backBg,
+          saveStateMenu.rect.x + 1,
+          saveStateMenu.rect.y,
+          0x61A5);
+    gDebugToolsSaveStateMenuDef.onEnd(&saveStateMenu);
+    DebugToolsHostStub_SetBgMapTile(
+        saveStateMenu.backBg,
+        saveStateMenu.rect.x + 1,
+        saveStateMenu.rect.y,
+        0);
+    DebugToolsSaveState_OnHubReturn();
+    CHECK(gDebugToolsProbe.saveCompatBackMenuPreserved == 0
+              && gDebugToolsProbe.saveCompatBackReturnCount == 2,
+        "save-state telemetry must reject a mutated actual back-BG frame tile");
     DebugToolsHostStub_SetFakeSaveCompatState(SAVE_COMPAT_MIGRATABLE_OLDER);
     DebugTools_GetRegisteredAction(4)->onSelected(NULL, NULL);
     gDebugToolsHubMenuDef.onEnd(NULL);

@@ -2048,7 +2048,7 @@ static int sSaveStateBackPending;
 
 static void DebugToolsSaveState_CaptureFrame(struct MenuProc* menu)
 {
-    sSaveStateFrameBg = menu->frontBg;
+    sSaveStateFrameBg = menu->backBg;
     sSaveStateFrameRect = menu->rect;
     sSaveStateFrameTile = BG_GetMapBuffer(sSaveStateFrameBg)[
         TILEMAP_INDEX(sSaveStateFrameRect.x + 1, sSaveStateFrameRect.y)];
