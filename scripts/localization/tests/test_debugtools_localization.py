@@ -259,7 +259,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         self.assertEqual(tools.count("EXP_MSG_FRAMEWORK_BACK"), 8)
         self.assertIn("DebugToolsTools_LocalizedMenuItemDraw", tools)
         self.assertIn("ExpansionLocale_ResolveCurrent", tools)
-        self.assertIn("PutDrawText(", tools)
+        self.assertNotIn("PutDrawText(", tools)
 
         self.assertEqual(
             re.findall(

@@ -105,15 +105,7 @@ class DebugToolsDiagnosticsHostTests(unittest.TestCase):
             )
 
     def test_owned_path_forbids_raw_display_and_framebuffer_oracles(self):
-        sources = "\n".join(
-            (ROOT / path).read_text(encoding="utf-8")
-            for path in (
-                "src/debugtools_registry.c",
-                "src/debugtools_actions.c",
-                "src/debugtools_tools.c",
-                "src/debugtools_diagnostics.c",
-            )
-        )
+        sources = SRC.read_text(encoding="utf-8")
         for forbidden in (
             "SetupDebugFontForBG(",
             "SetupDebugFontForOBJ(",

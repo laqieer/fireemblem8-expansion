@@ -149,59 +149,13 @@ static void DebugToolsTools_LocalizeMenuItem(
 #define DEBUGTOOLS_LOCALIZE_ITEM(item, message) \
     DebugToolsTools_LocalizeMenuItem((item), (message))
 
-static int DebugToolsTools_UsesCjkText(void)
-{
-    ExpansionLocaleId locale = ExpansionLocale_GetCurrent();
-
-    return locale == EXPANSION_LOCALE_JA || locale == EXPANSION_LOCALE_ZH_HANS;
-}
-
-static void DebugToolsTools_DrawCjkStatusLine(const char* text)
-{
-    BG_Fill(BG_GetMapBuffer(2), 0);
-    PutDrawText(
-        NULL,
-        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
-        TEXT_COLOR_SYSTEM_WHITE,
-        0,
-        DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES,
-        text);
-    BG_EnableSyncByMask(BG2_SYNC_BIT);
-    gLCDControlBuffer.dispcnt.bg2_on = 1;
-}
-
-static void DebugToolsTools_UnitMenuOnInit(struct MenuProc* menu)
-{
-    char buf[64];
-
-    (void)menu;
-    if (!DebugToolsTools_UsesCjkText())
-        return;
-
-    if (gDebugToolsProbe.unitInspectTargetFound)
-        sprintf(
-            buf,
-            "%s %d/%d",
-            ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_UNIT_HP),
-            (int)gDebugToolsProbe.unitInspectLastCurHp,
-            (int)gDebugToolsProbe.unitInspectLastMaxHp);
-    else
-        sprintf(
-            buf,
-            "%s",
-            ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_UNIT_UNAVAILABLE));
-
-    DebugToolsTools_DrawCjkStatusLine(buf);
-}
-
-#define DEBUGTOOLS_UNIT_MENU_ON_INIT DebugToolsTools_UnitMenuOnInit
-
 static void DebugToolsTools_MenuOnInit(struct MenuProc* menu)
 {
     DebugToolsDiagnostics_DrawStatusText(
         menu,
         DebugToolsDiagnostics_GetStatusBuffer());
 }
+#define DEBUGTOOLS_UNIT_MENU_ON_INIT DebugToolsTools_MenuOnInit
 #else
 #define DEBUGTOOLS_LOCALIZE_ITEM(item, message) ((void)0)
 #define DEBUGTOOLS_UNIT_MENU_ON_INIT 0
@@ -216,11 +170,6 @@ static void DebugToolsTools_MenuOnInit(struct MenuProc* menu)
 static void DebugToolsTools_ShowStatusLine(const char* text)
 {
     char* status = DebugToolsDiagnostics_GetStatusBuffer();
-
-#ifdef MODERN
-    if (DebugToolsTools_UsesCjkText())
-        return;
-#endif
 
     strncpy(status, text, 63);
     status[63] = '\0';
