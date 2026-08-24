@@ -46,7 +46,8 @@
       "locale-preference-persistence",
       "localized-text-input-ui",
       "localization-profile-validation",
-      "codeql-alert-remediation"
+      "codeql-alert-remediation",
+      "debugtools-visual-status-diagnostics"
     ],
     "deferred_issues": []
   },
@@ -613,6 +614,18 @@
       "status": "current",
       "required_cases": [
         "TC-DEBUGTOOLS-PROTOTYPE-004"
+      ]
+    },
+    {
+      "id": "debugtools-visual-status-diagnostics",
+      "title": "Typed debugtools State and Engine diagnostics",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/127"
+      ],
+      "reference": "docs/debugtools.md",
+      "status": "current",
+      "required_cases": [
+        "TC-DEBUGTOOLS-DIAGNOSTICS-001"
       ]
     }
   ],
@@ -2602,6 +2615,44 @@
         {
           "command": "make expansion-modern-debugtools-music-check MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/scenarios/debugtools-music-title-modern-release.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-DEBUGTOOLS-DIAGNOSTICS-001",
+      "title": "Typed State and Engine diagnostics",
+      "feature_id": "debugtools-visual-status-diagnostics",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/127"
+      ],
+      "document": "docs/test-cases/debugtools.md",
+      "anchor": "tc-debugtools-diagnostics-001-typed-state-and-engine-diagnostics",
+      "profiles": [
+        "Modern AAPCS debug source build with existing debugtools gate",
+        "Modern AAPCS release disabled control",
+        "Pseudo-locale host geometry"
+      ],
+      "purpose": "Verify the typed title/map/prep snapshot, fixed hub views, empty-unit validity, battle exclusion, and exact forced restoration.",
+      "prerequisites": "Clean deterministic debugtools SRAM fixture, no external prototype/debug-display patch, and libmGBA for the mapped ROM scenarios.",
+      "actions": "Open State/Engine at title, Chapter 2 map, and Chapter 4 prep; capture a valid and empty cursor tile; force-end one map session; replay identical release input.",
+      "expected_result": "Exact semantic fields and validity bits are reported, Refresh increments once, forced teardown restores BG/font/lock with mismatch mask zero, the map remains interactive, and SRAM is unchanged.",
+      "negative_control": "NULL, empty/stale/out-of-range unit, active event/fade, battle owner, repeated input, forced teardown, and release all fail closed without framebuffer evidence.",
+      "interactions": "Depends on issue #11 and the canonical localization/tester-case infrastructure; consumes no action ID and conflicts with active display/event/battle owners or another diagnostics overlay.",
+      "save_compatibility": "Read-only and byte-neutral: no save field, write, preference, epoch, migration, or configuration identity change.",
+      "cleanup": "Close or force-end the session and reset the disposable fixture.",
+      "limitations": "No battle/event/fade/map-animation view, live overlay, monochrome mode, normal stat-screen page, VRAM/OAM estimate, arbitrary browser, or profiler.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_debugtools_diagnostics tools.gba-playtest.tests.test_debugtools_registry -v",
+          "evidence": "tools/gba-playtest/tests/test_debugtools_diagnostics.py"
+        },
+        {
+          "command": "make expansion-modern-debugtools-diagnostics-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/specs/debugtools-diagnostics-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-debugtools-diagnostics-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/specs/debugtools-diagnostics-modern-release.json"
         }
       ]
     }

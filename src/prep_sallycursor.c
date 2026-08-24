@@ -831,6 +831,8 @@ void PrepScreenProc_MapIdle(struct ProcPrepSallyCursor * proc)
      * returns immediately while the hub is active so a hotkey combo that
      * completes this frame can never also be read by the L/R/B/A/START
      * handling below on the same frame -- a no-op in a release build. */
+    if (DebugTools_IsHubActive())
+        return;
     DebugTools_PrepHotkeyCheck();
     if (DebugTools_IsHubActive())
         return;

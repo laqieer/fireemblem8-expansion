@@ -10,27 +10,17 @@
           "value": "0x08"
         },
         {
-          "address": "gDebugToolsProbe+0x84",
+          "address": "gDebugToolsProbe+0x8c",
           "size": 4,
           "value": "0x00000000"
         },
         {
-          "address": "gDebugToolsProbe+0x90",
+          "address": "gDebugToolsProbe+0x98",
           "size": 4,
           "value": "0x00000000"
         },
         {
-          "address": "gDebugToolsProbe+0x94",
-          "size": 4,
-          "value": "0x00000000"
-        },
-        {
-          "address": "gDebugToolsProbe+0xa0",
-          "size": 4,
-          "value": "0x00000000"
-        },
-        {
-          "address": "gDebugToolsProbe+0xa4",
+          "address": "gDebugToolsProbe+0x9c",
           "size": 4,
           "value": "0x00000000"
         },
@@ -46,6 +36,16 @@
         },
         {
           "address": "gDebugToolsProbe+0xb0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb8",
           "size": 4,
           "value": "0x00000000"
         },
@@ -71,42 +71,42 @@
           "value": "0x09"
         },
         {
-          "address": "gDebugToolsProbe+0x84",
+          "address": "gDebugToolsProbe+0x8c",
           "size": 4,
           "value": "0x00000001"
         },
         {
-          "address": "gDebugToolsProbe+0x90",
+          "address": "gDebugToolsProbe+0x98",
           "size": 4,
           "value": "0x00000001"
         },
         {
-          "address": "gDebugToolsProbe+0x94",
-          "size": 4,
-          "value": "0x00000000"
-        },
-        {
-          "address": "gDebugToolsProbe+0xa0",
-          "size": 4,
-          "value": "0x00000000"
-        },
-        {
-          "address": "gDebugToolsProbe+0xa4",
+          "address": "gDebugToolsProbe+0x9c",
           "size": 4,
           "value": "0x00000000"
         },
         {
           "address": "gDebugToolsProbe+0xa8",
           "size": 4,
-          "value": "0x00000002"
+          "value": "0x00000000"
         },
         {
           "address": "gDebugToolsProbe+0xac",
           "size": 4,
-          "value": "0x00000040"
+          "value": "0x00000000"
         },
         {
           "address": "gDebugToolsProbe+0xb0",
+          "size": 4,
+          "value": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb4",
+          "size": 4,
+          "value": "0x00000040"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb8",
           "size": 4,
           "value": "0x00000002"
         },
@@ -132,42 +132,42 @@
           "value": "0x08"
         },
         {
-          "address": "gDebugToolsProbe+0x84",
+          "address": "gDebugToolsProbe+0x8c",
           "size": 4,
           "value": "0x00000001"
         },
         {
-          "address": "gDebugToolsProbe+0x90",
+          "address": "gDebugToolsProbe+0x98",
           "size": 4,
           "value": "0x00000001"
         },
         {
-          "address": "gDebugToolsProbe+0x94",
+          "address": "gDebugToolsProbe+0x9c",
           "size": 4,
           "value": "0x00000001"
-        },
-        {
-          "address": "gDebugToolsProbe+0xa0",
-          "size": 4,
-          "value": "0x00000001"
-        },
-        {
-          "address": "gDebugToolsProbe+0xa4",
-          "size": 4,
-          "value": "0x00000000"
         },
         {
           "address": "gDebugToolsProbe+0xa8",
           "size": 4,
-          "value": "0x00000002"
+          "value": "0x00000001"
         },
         {
           "address": "gDebugToolsProbe+0xac",
           "size": 4,
-          "value": "0x00000040"
+          "value": "0x00000000"
         },
         {
           "address": "gDebugToolsProbe+0xb0",
+          "size": 4,
+          "value": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb4",
+          "size": 4,
+          "value": "0x00000040"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb8",
           "size": 4,
           "value": "0x00000002"
         },

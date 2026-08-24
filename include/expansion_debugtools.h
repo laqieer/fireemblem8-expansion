@@ -158,10 +158,14 @@ enum
     DEBUGTOOLS_ACTION_MAX = 19,
     DEBUGTOOLS_HUB_PAGE_ACTION_MAX = 9,
     DEBUGTOOLS_HUB_PAGE_MAX = 3,
+    DEBUGTOOLS_DIAGNOSTICS_PAGE_COUNT = 2,
+    DEBUGTOOLS_HUB_VIEW_MAX =
+        DEBUGTOOLS_HUB_PAGE_MAX + DEBUGTOOLS_DIAGNOSTICS_PAGE_COUNT,
     DEBUGTOOLS_HUB_MENU_SLOTS = 11, /* nine actions + Back + terminator */
-    DEBUGTOOLS_MENU_WIDTH_TILES = 19,
-    DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES = 24,
-    DEBUGTOOLS_STATUS_TEXT_NON_CJK_WIDTH_TILES = 29,
+    DEBUGTOOLS_MENU_WIDTH_TILES = 18,
+    DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES = 17,
+    DEBUGTOOLS_FLAG_STATUS_CJK_WIDTH_TILES = 24,
+    DEBUGTOOLS_FLAG_STATUS_NON_CJK_WIDTH_TILES = 29,
     DEBUGTOOLS_BUILTIN_ID_MIN = 1,
     DEBUGTOOLS_BUILTIN_ID_MAX = 10,
     DEBUGTOOLS_CONTRIBUTOR_ID_MIN = 11,
@@ -170,11 +174,11 @@ enum
     /* The default BG text font starts at tile 0x80 and Text uses two
      * 8x8 tiles per allocated text column. Tile indices are 10 bits, so
      * the allocator has (0x400 - 0x80) / 2 == 448 columns available.
-     * Each maximum-size page uses ten 18-column rows (nine actions + Back)
-     * plus one 24-column localized status line. Transitions reclaim this
-     * bounded 204-column scope only after the old menu has ended. */
+     * Each maximum-size page uses ten 17-column rows (nine actions + Back)
+     * plus one 17-column localized status line. Transitions reclaim this
+     * bounded 187-column scope only after the old menu has ended. */
     DEBUGTOOLS_TEXT_ALLOC_CAPACITY = 448,
-    DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET = 204,
+    DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET = 187,
 
     /* Issue #11 closure: explicit policy bound on a contributor label's
      * length (excluding the NUL terminator). Not a hard memory-safety
@@ -209,7 +213,9 @@ enum DebugToolsResult
     DEBUGTOOLS_ERR_ID_INVALID,      /* action->id == 0 (reserved/uninitialized-looking sentinel) */
     DEBUGTOOLS_ERR_LABEL_INVALID,   /* label is empty, or longer than DEBUGTOOLS_LABEL_MAX_LENGTH */
     DEBUGTOOLS_ERR_ID_RESERVED,     /* contributor attempted to claim built-in id 1-10 */
-    DEBUGTOOLS_ERR_TEXT_CAPACITY    /* active font cannot fit one maximum hub allocation */
+    DEBUGTOOLS_ERR_TEXT_CAPACITY,   /* active font cannot fit one maximum hub allocation */
+    DEBUGTOOLS_ERR_INVALID_ARGUMENT,
+    DEBUGTOOLS_ERR_CONTEXT_UNAVAILABLE
 };
 
 /* A single contributor-registered debug action. label remains a raw C string
@@ -253,7 +259,7 @@ enum DebugToolsResult DebugTools_GetLastRegistrationResult(void);
 /* Contributor submenu handoff contract.
  *
  * A registered action that opens another MenuDef must NOT call
- * StartOrphanMenu directly. Its onSelected callback must first call
+ * StartOrphanMenu or StartMenu directly. Its onSelected callback must first call
  * DebugTools_QueueSubmenuTransition(menu, submenuDef), then return a result
  * containing MENU_ACT_END. Queueing marks the handoff before the ordinary
  * menu callback result ends the hub, so the hub's onEnd does not perform
@@ -268,7 +274,8 @@ enum DebugToolsResult DebugTools_GetLastRegistrationResult(void);
  * may instead end the session. Both paths defer the matching rewind until
  * after the submenu and its Text objects have ended.
  * The row-allocation font and counter baseline are captured immediately
- * before StartOrphanMenu, before MenuDef::onInit can switch gActiveFont.
+ * before the owner-child StartMenu call, before MenuDef::onInit can switch
+ * gActiveFont.
  * Cleanup rewinds only that exact owner, restores the previously active
  * font as a separate step, and never writes a contributor font's unrelated
  * counter. A font-switching submenu remains responsible for any allocations
@@ -285,13 +292,12 @@ void DebugTools_QueueSubmenuTransition(
     const struct MenuDef* submenuDef);
 void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu);
 
-/* Opens the debug hub menu (a StartOrphanMenu-based menu, same idiom as
- * the existing dormant debug menus in src/menu_def.c). Lazily registers
- * all shipped built-in actions on first call.
+/* Opens the debug hub as a blocking child menu of the session's display-owner
+ * Proc. Lazily registers all shipped built-in actions on first call.
  *
  * This is the single authoritative reentrancy guard for the whole
  * subsystem: it returns DEBUGTOOLS_ERR_ALREADY_ACTIVE (an explicit,
- * observable no-op -- no menu construction, no second StartOrphanMenu,
+ * observable no-op -- no menu construction, no second owner-child menu,
  * gDebugToolsProbe.hubOpenCount left unchanged) if any hub/submenu/
  * allocator-transition session is already active. A release-and-repress
  * of the title hotkey during that session must never spawn a second
@@ -306,9 +312,9 @@ enum DebugToolsResult DebugTools_OpenHub(void);
  * one-yield allocator transition after each old menu ends. It clears only
  * after final deferred cleanup restores the pre-debug text allocation
  * counter. Title_IDLE (src/titlescreen.c) checks this to skip its own
- * A/START handling for the whole session: the menu proc and Title_IDLE
- * are independent sibling procs under the same gProcScr_GameControl tree
- * that both still read newKeys every frame, so without this guard a
+ * A/START handling for the whole session: the context owner remains
+ * schedulable beside the display-owner/menu descendant and both can read
+ * newKeys in one frame, so without this guard a
  * single A press meant for a debug menu could race the vanilla
  * title-to-gameplay transition. Always returns 0 when the subsystem is
  * compiled out. */
@@ -361,6 +367,66 @@ void DebugTools_RegisterWeatherFogActions(void);
  * (gDebugToolsProbe.titleIdleTimerSample then stays 0 for the whole
  * release-build run, same as every other probe field). */
 void DebugTools_RecordTitleIdleTimer(u32 timerIdle);
+
+/* --- Typed visual/status diagnostics (issue #127) -------------------------
+ * Captures one bounded, read-only snapshot from an active debugtools session.
+ * The provider is the only public extension seam for these diagnostics; the
+ * built-in State/Engine views are private consumers and do not occupy a
+ * DebugToolsAction ID or contributor slot.
+ *
+ * A successful capture increments sequence exactly once. Unsupported,
+ * transient, battle, disabled, and out-of-session calls fail closed with
+ * validMask == 0. Unavailable optional fields are zero and must be ignored
+ * unless their corresponding validity bit is set. */
+enum DebugToolsDiagnosticsContext
+{
+    DEBUGTOOLS_DIAG_CONTEXT_UNAVAILABLE = 0,
+    DEBUGTOOLS_DIAG_CONTEXT_TITLE,
+    DEBUGTOOLS_DIAG_CONTEXT_MAP,
+    DEBUGTOOLS_DIAG_CONTEXT_PREP,
+    DEBUGTOOLS_DIAG_CONTEXT_BATTLE,
+};
+
+enum DebugToolsDiagnosticsValid
+{
+    DEBUGTOOLS_DIAG_VALID_COMMON = (1 << 0),
+    DEBUGTOOLS_DIAG_VALID_MAP = (1 << 1),
+    DEBUGTOOLS_DIAG_VALID_CURSOR = (1 << 2),
+    DEBUGTOOLS_DIAG_VALID_UNIT = (1 << 3),
+};
+
+struct DebugToolsDiagnosticsSnapshot
+{
+    /* 00 */ u32 sequence;
+    /* 04 */ u32 validMask;
+    /* 08 */ u32 gameClockFrames;
+    /* 0C */ u32 procCount;
+    /* 10 */ u32 logTotalWrites;
+    /* 14 */ u32 lastLogCode;
+    /* 18 */ u32 assertFailureCount;
+    /* 1C */ u32 lastAssertCode;
+    /* 20 */ u16 rngState[3];
+    /* 26 */ u8 context;
+    /* 27 */ u8 eventEngineActive;
+    /* 28 */ s8 chapterIndex;
+    /* 29 */ u8 faction;
+    /* 2A */ u16 turn;
+    /* 2C */ s16 cursorX;
+    /* 2E */ s16 cursorY;
+    /* 30 */ u8 cursorUnitId;
+    /* 31 */ u8 characterId;
+    /* 32 */ u8 classId;
+    /* 33 */ u8 currentHp;
+    /* 34 */ u8 maxHp;
+    /* 35 */ u8 weatherId;
+    /* 36 */ u8 fogRange;
+    /* 37 */ u8 registeredActionCount;
+    /* 38 */ u8 logRetainedCount;
+    /* 39 */ u8 reserved[7];
+};
+
+enum DebugToolsResult DebugTools_CaptureDiagnostics(
+    struct DebugToolsDiagnosticsSnapshot* out);
 
 /* --- Pending Chapter 2 fast-boot launch request ---------------------------
  * Replaces the earlier "tear down and restart GameCtrlProc from inside a
@@ -748,9 +814,9 @@ void DebugToolsPhaseControl_Sample(void);
  * Issue #11 closure requirement 5. Each is a single registry action (see
  * src/debugtools_tools.c) that samples/displays read-only state on
  * selection. Convoy, Flag, and RNG retain their bounded Confirm/Back menus.
- * Issue #125 gives Unit one fixed root plus HP/stat/AI preview menus; A is
- * still a separate confirmation after inspection/preview. No tool performs
- * a raw/arbitrary address write or accepts an unvalidated index: fixed
+ * Unit has one fixed root plus HP/stat/AI preview menus, and A remains a
+ * separate confirmation after inspection or preview. No tool performs a
+ * raw/arbitrary address write or accepts an unvalidated index: fixed
  * operations use documented constants, while Unit resolves and revalidates
  * the live cursor target through engine helpers. Persistent SRAM is never
  * mutated (RNG/flags/units/convoy are ordinary EWRAM runtime state; Save
@@ -922,6 +988,10 @@ struct DebugToolsProbe
                                   * most recent inspect (enum
                                   * SaveCompatState) */
     u32 saveCompatInspectCount; /* increments once per inspect */
+    u32 saveCompatBackMenuPreserved; /* 1 when Save State's only Back path
+                                      * reaches the deferred hub return
+                                      * without clearing its actual menu frame tile */
+    u32 saveCompatBackReturnCount; /* completed owned Save State Back returns */
     /* --- Transient turn/faction phase control (issue #124) ---
      * The request state and telemetry are debug-only. Keeping this extension
      * out of release preserves the established gDebugToolsProbe layout and

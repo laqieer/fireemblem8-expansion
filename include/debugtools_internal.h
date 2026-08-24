@@ -8,11 +8,13 @@
 #include "expansion_debugtools.h"
 
 struct DebugToolsAction;
+struct MenuItemProc;
 struct MenuProc;
 
-#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
 
 int DebugTools_RegisterBuiltinAction(const struct DebugToolsAction* action);
+void DebugToolsActions_ForceCleanup(void);
 void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu);
 int DebugTools_IsMenuTransitionScheduled(void);
 void DebugTools_RunMenuTransition(ProcPtr proc);
@@ -20,6 +22,81 @@ void DebugTools_QueueSubmenuTransitionWithBuilder(
     struct MenuProc* menu,
     const struct MenuDef* menuDef,
     void (*builder)(void));
+u8 DebugTools_CancelMenu(struct MenuProc* menu, struct MenuItemProc* item);
+void DebugToolsSaveState_OnHubReturn(void);
+
+enum DebugToolsDiagnosticsRestoreMismatch
+{
+    DEBUGTOOLS_DIAG_RESTORE_BG0 = (1 << 0),
+    DEBUGTOOLS_DIAG_RESTORE_BG1 = (1 << 1),
+    DEBUGTOOLS_DIAG_RESTORE_FONT = (1 << 2),
+    DEBUGTOOLS_DIAG_RESTORE_LCD = (1 << 3),
+    DEBUGTOOLS_DIAG_RESTORE_PALETTE = (1 << 4),
+    DEBUGTOOLS_DIAG_RESTORE_BG2 = (1 << 5),
+    DEBUGTOOLS_DIAG_RESTORE_LOCK = (1 << 6),
+};
+
+#if defined(FE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST) \
+    || defined(FE8_DEBUGTOOLS_DIAGNOSTICS_PROBE_TEST)
+struct DebugToolsDiagnosticsProbe
+{
+    u32 captureCount;
+    u32 lastSequence;
+    u32 lastResult;
+    u32 lastContext;
+    u32 lastValidMask;
+    u32 lastCursorUnitId;
+    u32 ownerActive;
+    u32 ownerStartCount;
+    u32 restorationCount;
+    u32 forcedTeardownCount;
+    u32 restorationMismatchMask;
+    u32 statePageOpenCount;
+    u32 enginePageOpenCount;
+    u32 titleCaptureCount;
+    u32 emptyUnitCaptureCount;
+    u32 battleRejectCount;
+    u32 runtimeTestComplete;
+    u32 mapUnitCaptureCount;
+    u32 mapRuntimeComplete;
+    u32 prepCaptureCount;
+    u32 prepRuntimeComplete;
+    u32 viewRuntimeComplete;
+    u32 lastLockBaseline;
+    u32 lastLockAfterRestore;
+    u32 postViewMapIdleCount;
+};
+
+extern struct DebugToolsDiagnosticsProbe gDebugToolsDiagnosticsProbe;
+#endif
+
+void DebugToolsDiagnostics_SetSessionContext(
+    enum DebugToolsDiagnosticsContext context);
+void DebugToolsDiagnostics_ClearSessionContext(void);
+enum DebugToolsDiagnosticsContext DebugToolsDiagnostics_GetSessionContext(void);
+int DebugToolsDiagnostics_IsContextAvailable(void);
+enum DebugToolsResult DebugToolsDiagnostics_BeginSession(void);
+void DebugToolsDiagnostics_EndSession(int forced);
+void DebugToolsDiagnostics_ForceCloseSession(void);
+int DebugToolsDiagnostics_IsRestoring(void);
+void DebugToolsDiagnostics_SetActiveMenu(struct MenuProc* menu);
+void DebugToolsDiagnostics_ClearActiveMenu(struct MenuProc* menu);
+struct MenuProc* DebugToolsDiagnostics_GetActiveMenu(void);
+struct MenuProc* DebugToolsDiagnostics_StartOwnedMenu(
+    const struct MenuDef* menuDef);
+const struct DebugToolsDiagnosticsSnapshot* DebugToolsDiagnostics_GetSnapshot(void);
+char* DebugToolsDiagnostics_GetStatusBuffer(void);
+void DebugToolsDiagnostics_DrawStatusText(
+    struct MenuProc* menu,
+    const char* text);
+enum DebugToolsResult DebugToolsDiagnostics_RefreshSnapshot(void);
+void DebugToolsDiagnostics_RecordViewOpen(int engineView);
+void DebugToolsDiagnostics_OnSessionRestored(void);
+#if defined(FE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST)
+void DebugToolsDiagnostics_RuntimeTestBoot(void);
+void DebugToolsDiagnostics_RuntimeTestMap(void);
+void DebugToolsDiagnostics_RuntimeTestPrep(void);
+#endif
 
 enum DebugToolsLaunchTargetKind
 {
@@ -103,7 +180,11 @@ struct PortraitPackageRuntimeProbe
 extern struct PortraitPackageRuntimeProbe gPortraitPackageRuntimeProbe;
 #endif
 
-#endif /* FE8_EXPANSION_DEBUGTOOLS_ENABLED */
+#else
+
+#define DebugToolsDiagnostics_ForceCloseSession() ((void)0)
+
+#endif
 
 #endif /* FE8_ARCHIVAL_BUILD */
 

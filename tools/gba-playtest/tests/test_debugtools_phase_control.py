@@ -55,15 +55,15 @@ DEBUG_DEFINES = (
 )
 
 MESSAGE_KEYS = {
-    "debug.confirm.turn_increment": 88,
-    "debug.confirm.turn_decrement": 89,
-    "debug.confirm.red_computer": 90,
-    "debug.confirm.red_blocked": 91,
-    "debug.confirm.green_computer": 92,
-    "debug.confirm.green_blocked": 93,
-    "debug.status.turn": 94,
-    "debug.mode.computer": 95,
-    "debug.mode.blocked": 96,
+    "debug.confirm.turn_increment": 121,
+    "debug.confirm.turn_decrement": 122,
+    "debug.confirm.red_computer": 123,
+    "debug.confirm.red_blocked": 124,
+    "debug.confirm.green_computer": 125,
+    "debug.confirm.green_blocked": 126,
+    "debug.status.turn": 127,
+    "debug.mode.computer": 128,
+    "debug.mode.blocked": 129,
 }
 
 
@@ -95,7 +95,6 @@ class DebugToolsPhaseControlHostTests(unittest.TestCase):
                 (TOOLS_SOURCE, "tools.o"),
                 (BM_SOURCE, "bm.o"),
                 (BMIO_SOURCE, "bmio.o"),
-                (REGISTRY_SOURCE, "registry.o"),
                 (AUTOPLAY_SOURCE, "autoplay.o"),
                 (DRIVER, "driver.o"),
             ):
@@ -312,11 +311,11 @@ class DebugToolsPhaseControlArmTests(unittest.TestCase):
         )
         self.assertIsNotNone(debug_probe, "debug telemetry probe missing")
         self.assertIsNotNone(release_probe, "release telemetry probe missing")
-        self.assertEqual(int(debug_probe.group(1), 16), 0xB4)
+        self.assertEqual(int(debug_probe.group(1), 16), 0xBC)
         self.assertEqual(
             int(release_probe.group(1), 16),
-            0x84,
-            "release gDebugToolsProbe must retain its pre-#124 layout",
+            0x8C,
+            "release gDebugToolsProbe must retain the #127 release layout",
         )
 
 

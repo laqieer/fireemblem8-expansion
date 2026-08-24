@@ -438,6 +438,171 @@
         "zh-Hans": "目标不可用"
       },
       {
+        "ja": "状態",
+        "key": "debug.view.state",
+        "zh-Hans": "状态"
+      },
+      {
+        "ja": "エンジン",
+        "key": "debug.view.engine",
+        "zh-Hans": "系统"
+      },
+      {
+        "ja": "更新",
+        "key": "debug.action.refresh",
+        "zh-Hans": "更新"
+      },
+      {
+        "ja": "なし",
+        "key": "debug.value.unavailable",
+        "zh-Hans": "不可用"
+      },
+      {
+        "ja": "場面",
+        "key": "debug.field.context",
+        "zh-Hans": "场景"
+      },
+      {
+        "ja": "時間",
+        "key": "debug.field.clock",
+        "zh-Hans": "时钟"
+      },
+      {
+        "ja": "章",
+        "key": "debug.field.chapter",
+        "zh-Hans": "章节"
+      },
+      {
+        "ja": "ターン",
+        "key": "debug.field.turn",
+        "zh-Hans": "回合"
+      },
+      {
+        "ja": "軍",
+        "key": "debug.field.phase",
+        "zh-Hans": "阶段"
+      },
+      {
+        "ja": "座標",
+        "key": "debug.field.cursor",
+        "zh-Hans": "坐标"
+      },
+      {
+        "ja": "部隊",
+        "key": "debug.field.unit",
+        "zh-Hans": "单位"
+      },
+      {
+        "ja": "人物",
+        "key": "debug.field.character",
+        "zh-Hans": "人物"
+      },
+      {
+        "ja": "兵種",
+        "key": "debug.field.class",
+        "zh-Hans": "职业"
+      },
+      {
+        "ja": "HP",
+        "key": "debug.field.hp",
+        "zh-Hans": "生命"
+      },
+      {
+        "ja": "天候",
+        "key": "debug.field.weather",
+        "zh-Hans": "天气"
+      },
+      {
+        "ja": "霧",
+        "key": "debug.field.fog",
+        "zh-Hans": "迷雾"
+      },
+      {
+        "ja": "乱数",
+        "key": "debug.field.rng",
+        "zh-Hans": "随机"
+      },
+      {
+        "ja": "処理",
+        "key": "debug.field.proc_count",
+        "zh-Hans": "进程"
+      },
+      {
+        "ja": "イベント",
+        "key": "debug.field.event",
+        "zh-Hans": "事件"
+      },
+      {
+        "ja": "項目",
+        "key": "debug.field.actions",
+        "zh-Hans": "操作"
+      },
+      {
+        "ja": "ログ",
+        "key": "debug.field.log_retained",
+        "zh-Hans": "日志"
+      },
+      {
+        "ja": "書込",
+        "key": "debug.field.log_writes",
+        "zh-Hans": "写入"
+      },
+      {
+        "ja": "最終ログ",
+        "key": "debug.field.log_last",
+        "zh-Hans": "末日志"
+      },
+      {
+        "ja": "検証",
+        "key": "debug.field.assert_count",
+        "zh-Hans": "断言"
+      },
+      {
+        "ja": "最終検証",
+        "key": "debug.field.assert_last",
+        "zh-Hans": "末断言"
+      },
+      {
+        "ja": "タイトル",
+        "key": "debug.value.context_title",
+        "zh-Hans": "标题"
+      },
+      {
+        "ja": "マップ",
+        "key": "debug.value.context_map",
+        "zh-Hans": "地图"
+      },
+      {
+        "ja": "準備",
+        "key": "debug.value.context_prep",
+        "zh-Hans": "准备"
+      },
+      {
+        "ja": "戦闘",
+        "key": "debug.value.context_battle",
+        "zh-Hans": "战斗"
+      },
+      {
+        "ja": "自軍",
+        "key": "debug.value.phase_player",
+        "zh-Hans": "我方"
+      },
+      {
+        "ja": "敵軍",
+        "key": "debug.value.phase_enemy",
+        "zh-Hans": "敌方"
+      },
+      {
+        "ja": "同盟",
+        "key": "debug.value.phase_npc",
+        "zh-Hans": "友军"
+      },
+      {
+        "ja": "その他",
+        "key": "debug.value.phase_other",
+        "zh-Hans": "其他"
+      },
+      {
         "ja": "ターン+1",
         "key": "debug.confirm.turn_increment",
         "zh-Hans": "应用回合+1"

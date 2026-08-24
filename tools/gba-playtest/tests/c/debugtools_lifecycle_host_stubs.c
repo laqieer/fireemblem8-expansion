@@ -12,8 +12,16 @@
 
 struct KeyStatusBuffer gDebugToolsLifecycleKeyStatus = {0};
 struct KeyStatusBuffer * CONST_DATA gKeyStatusPtr = &gDebugToolsLifecycleKeyStatus;
+static enum DebugToolsDiagnosticsContext sDiagnosticsContext;
 struct LCDControlBuffer gLCDControlBuffer = {0};
 struct PlaySt gPlaySt = {0};
+
+u8 DebugTools_CancelMenu(struct MenuProc* menu, struct MenuItemProc* item)
+{
+    (void)menu;
+    (void)item;
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6B;
+}
 
 static struct Font sDebugToolsLifecycleFont = {0};
 struct Font* gActiveFont = &sDebugToolsLifecycleFont;
@@ -48,6 +56,11 @@ void InitText(struct Text* text, int tileWidth)
     text->chr_position = gActiveFont->chr_counter;
     text->tile_width = tileWidth;
     gActiveFont->chr_counter += tileWidth;
+}
+
+void ClearText(struct Text* text)
+{
+    (void)text;
 }
 
 void SetTextFont(struct Font* font)
@@ -107,6 +120,39 @@ void PutText(struct Text* text, u16* dest)
 {
     (void)text;
     (void)dest;
+}
+
+void DrawUiFrame(
+    u16* map,
+    int x,
+    int y,
+    int width,
+    int height,
+    int tileref,
+    int style)
+{
+    (void)map;
+    (void)x;
+    (void)y;
+    (void)width;
+    (void)height;
+    (void)tileref;
+    (void)style;
+}
+
+void ClearUiFrame(u16* map, int x, int y, int width, int height)
+{
+    (void)map;
+    (void)x;
+    (void)y;
+    (void)width;
+    (void)height;
+}
+
+char* GetStringFromIndex(int index)
+{
+    (void)index;
+    return "";
 }
 
 void PutDrawText(
@@ -178,6 +224,13 @@ u8 MenuAlwaysEnabled(const struct MenuItemDef* def, int number)
     return MENU_ENABLED;
 }
 
+u8 MenuAlwaysDisabled(const struct MenuItemDef* def, int number)
+{
+    (void)def;
+    (void)number;
+    return MENU_DISABLED;
+}
+
 u8 MenuCancelSelect(struct MenuProc* menu, struct MenuItemProc* item)
 {
     (void)menu;
@@ -196,6 +249,18 @@ struct Proc* EndMenu(struct MenuProc* proc)
 struct MenuProc* StartOrphanMenu(const struct MenuDef* def)
 {
     return DebugToolsLifecycle_StartOrphanMenu(def);
+}
+
+void RedrawMenu(struct MenuProc* menu)
+{
+    (void)menu;
+}
+
+void DrawMenuItemHover(struct MenuProc* menu, int item, s8 hover)
+{
+    (void)menu;
+    (void)item;
+    (void)hover;
 }
 #endif
 
@@ -394,6 +459,99 @@ void DebugTools_RegisterExtendedToolActions(void)
 
     for (i = 4; i < 9; ++i)
         DebugTools_RegisterBuiltinAction(&sBuiltinActions[i]);
+}
+
+enum DebugToolsResult DebugToolsDiagnostics_BeginSession(void)
+{
+    return DEBUGTOOLS_OK;
+}
+
+void DebugToolsDiagnostics_EndSession(int forced)
+{
+    (void)forced;
+    DebugToolsDiagnostics_OnSessionRestored();
+}
+
+void DebugToolsDiagnostics_ForceCloseSession(void)
+{
+    DebugToolsDiagnostics_EndSession(1);
+}
+
+void DebugToolsSaveState_OnHubReturn(void)
+{
+}
+
+void DebugToolsDiagnostics_SetSessionContext(
+    enum DebugToolsDiagnosticsContext context)
+{
+    sDiagnosticsContext = context;
+}
+
+void DebugToolsDiagnostics_ClearSessionContext(void)
+{
+    sDiagnosticsContext = DEBUGTOOLS_DIAG_CONTEXT_UNAVAILABLE;
+}
+
+enum DebugToolsDiagnosticsContext DebugToolsDiagnostics_GetSessionContext(void)
+{
+    return sDiagnosticsContext;
+}
+
+void DebugToolsDiagnostics_SetActiveMenu(struct MenuProc* menu)
+{
+    (void)menu;
+}
+
+void DebugToolsDiagnostics_ClearActiveMenu(struct MenuProc* menu)
+{
+    (void)menu;
+}
+
+struct MenuProc* DebugToolsDiagnostics_GetActiveMenu(void)
+{
+    return gDebugToolsLifecycleLastMenuProc;
+}
+
+struct MenuProc* DebugToolsDiagnostics_StartOwnedMenu(
+    const struct MenuDef* menuDef)
+{
+    (void)menuDef;
+    return NULL;
+}
+
+int DebugToolsDiagnostics_IsRestoring(void)
+{
+    return 0;
+}
+
+const struct DebugToolsDiagnosticsSnapshot* DebugToolsDiagnostics_GetSnapshot(void)
+{
+    static struct DebugToolsDiagnosticsSnapshot snapshot;
+    return &snapshot;
+}
+
+char* DebugToolsDiagnostics_GetStatusBuffer(void)
+{
+    static char status[64];
+    return status;
+}
+
+void DebugToolsDiagnostics_DrawStatusText(
+    struct MenuProc* menu,
+    const char* text)
+{
+    (void)menu;
+    (void)text;
+}
+
+enum DebugToolsResult DebugToolsDiagnostics_RefreshSnapshot(void)
+{
+    return DEBUGTOOLS_OK;
+}
+
+void DebugToolsDiagnostics_RecordViewOpen(int engineView)
+{
+    (void)engineView;
 }
 
 #if !DEBUGTOOLS_LIFECYCLE_USE_REAL_MUSIC

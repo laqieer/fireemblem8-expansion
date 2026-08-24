@@ -25,6 +25,8 @@
         } \
     } while (0)
 
+struct DebugToolsProbe gDebugToolsProbe;
+
 struct ProcCmd CONST_DATA gProc_BMapMain[] = { { 0 } };
 struct ProcCmd gProcScr_PlayerPhase[] = { { 0 } };
 struct ProcCmd gProcScr_Playerphase_0[] = { { 0 } };
@@ -57,6 +59,7 @@ static int sBerserkActionStarts;
 static int sBerserkEligible;
 static int sTrapUpdateStarts;
 static int sTrapDecayCount;
+static int sDebugSessionActive;
 static int sProcBreaks;
 static int sProcGotoLabel;
 static int sPhaseSwitchEventCount;
@@ -120,6 +123,16 @@ void Proc_EndEachMarked(int mark)
 
 void DebugTools_CleanupMusicPreview(void)
 {
+}
+
+void DebugTools_ForceSessionCleanup(void)
+{
+    DebugToolsPhaseControl_Reset();
+}
+
+int DebugTools_IsHubActive(void)
+{
+    return sDebugSessionActive;
 }
 
 u8 MenuAlwaysEnabled(const struct MenuItemDef* def, int number)
@@ -240,6 +253,7 @@ static void ResetHarness(void)
     sBerserkEligible = 0;
     sTrapUpdateStarts = 0;
     sTrapDecayCount = 0;
+    sDebugSessionActive = 0;
     sProcBreaks = 0;
     sProcGotoLabel = -1;
     sPhaseSwitchEventCount = 0;
@@ -250,6 +264,7 @@ static void ResetHarness(void)
 
     gPlaySt.faction = FACTION_BLUE;
     gPlaySt.chapterTurnNumber = 5;
+    gBmSt.lock = 1;
     ExpansionAutoplay_Reset();
     ExpansionAutoplay_OnPlayerPhaseStart();
     DebugToolsPhaseControl_Reset();
@@ -495,6 +510,53 @@ static int TestRejectedAndExpiredRequests(void)
     return 0;
 }
 
+static int TestLockOwnership(void)
+{
+    u32 requestsBefore;
+
+    ResetHarness();
+    CHECK(DebugToolsPhaseControl_RequestFactionMode(
+              FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+              == DEBUGTOOLS_PHASE_CONTROL_OK,
+          "normal stable-map lock must accept a request");
+    DebugToolsPhaseControl_Reset();
+
+    requestsBefore = gDebugToolsProbe.phaseControlRequestedCount;
+    gBmSt.lock = 2;
+    CHECK(DebugToolsPhaseControl_RequestFactionMode(
+              FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+              == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
+          "orphan extra lock must reject a request");
+    CHECK(gDebugToolsProbe.phaseControlRequestedCount == requestsBefore,
+          "orphan extra lock must not queue a request");
+
+    sDebugSessionActive = 1;
+    CHECK(DebugToolsPhaseControl_RequestFactionMode(
+              FACTION_GREEN, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+              == DEBUGTOOLS_PHASE_CONTROL_OK,
+          "the one diagnostics-session lock must accept a request");
+    DebugToolsPhaseControl_Reset();
+
+    requestsBefore = gDebugToolsProbe.phaseControlRequestedCount;
+    gBmSt.lock = 3;
+    CHECK(DebugToolsPhaseControl_RequestFactionMode(
+              FACTION_GREEN, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+              == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
+          "extra lock state must reject a request");
+    CHECK(gDebugToolsProbe.phaseControlRequestedCount == requestsBefore,
+          "extra lock state must not queue a request");
+
+    sDebugSessionActive = 0;
+    gBmSt.lock = 1;
+    CHECK(DebugToolsPhaseControl_RequestFactionMode(
+              FACTION_GREEN, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+              == DEBUGTOOLS_PHASE_CONTROL_OK,
+          "normal acceptance must resume after lock release");
+    DebugToolsPhaseControl_Reset();
+
+    return 0;
+}
+
 static int TestForcedLifecycleCleanup(void)
 {
     ResetHarness();
@@ -539,6 +601,7 @@ int main(void)
     CHECK(TestTurnRequestAtBoundary() == 0, "turn boundary contract");
     CHECK(TestFactionModesAndRestoration() == 0, "faction ownership contract");
     CHECK(TestRejectedAndExpiredRequests() == 0, "rejection and cleanup contract");
+    CHECK(TestLockOwnership() == 0, "game lock ownership contract");
     CHECK(TestForcedLifecycleCleanup() == 0, "forced lifecycle cleanup contract");
     puts("DEBUGTOOLS_PHASE_CONTROL_HOST_TEST: PASS");
     return 0;

@@ -1090,8 +1090,9 @@ screen far enough to exercise this path: it observes
 (`0x020210b8`) holds `PLAY_FLAG_PREPSCREEN` (`0x10`), the hub opens
 (`hubOpenCount` `0x02031818` `1 -> 2`, `sHubActive` `0x02031614`
 `0 -> 1`), a 2nd SELECT+B is idempotent (`hubOpenCount` stays `2`), and the
-hub then closes (`sHubActive -> 0`) with prep still live -- a safe return
-to prep. The field is always-linked and mirrors every other probe's
+hub owns that input so its prep observation count is exactly `2`, then closes
+(`sHubActive -> 0`) with prep still live -- a safe return to prep. The field
+is always-linked and mirrors every other probe's
 zero-by-default contract in a release build.
 
 ## Diagnostics: structured probe/log ring + non-fatal assert record (issue #11 closure)
@@ -1252,7 +1253,14 @@ runtime state; Save State is read-only).
    `gDebugToolsProbe.saveCompatInspectCount`. This tool never calls
    `BuildCurrentExpansionSaveMeta` against a live SRAM target,
    `InitGlobalSaveInfodata`, or any writer -- the safest of the five by
-   construction.
+   construction. Its only **Back** row and B handler both use
+   `DebugTools_CancelMenu`, never `MenuCancelSelect`, so their deferred
+   return-to-hub path cannot clear BG0/BG1. The tools host driver fills its
+   synthetic BG map before Back, verifies the no-clear result flags, and
+   verifies the same map survives the deferred hub return; the runtime
+   save-back checkpoint verifies the read-only return-to-hub route remains
+   interactive and reports a preserved nonzero BG1 frame tile before the
+   deferred hub redraw.
 
 ### Host-executed evidence
 
@@ -1707,7 +1715,8 @@ The submenu samples the current turn and red/green mode in its status line.
 Its bounded, explicit confirmation rows queue exactly one request:
 
 - **Apply Turn +1** and **Apply Turn -1** accept only the engine range
-  `1..999`.
+  `1..999`. Their menu override IDs are independently reserved as `0xF6`
+  and `0xFC`; `0xFC` must not alias Music Preview's `0xFB` override.
 - **Apply Red/Green CPU** records an explicit one-phase ordinary computer
   route.
 - **Apply Red/Green Block** suppresses only the requested next red or green
@@ -1717,12 +1726,14 @@ Its bounded, explicit confirmation rows queue exactly one request:
 Requests are accepted only while the map is in the stable interactive blue
 `PLAYER` phase: the map and player-phase Procs must be live; no player action,
 computer/berserk phase, event, battle, fade, or camera Proc may own the map;
-and #85 must report no failure. Direct request API calls under those ownership
-guards fail closed: they record a rejection but never queue, apply, or restore
-a request. Only one request may be pending: a second returns the typed pending
-error without overwriting the original request, which then still consumes or
-expires through its ordinary lifecycle. The request is not applied from the
-menu callback.
+and #85 must report no failure. `GetGameLock()` must equal the normal stable
+map count of one, or exactly two while the active debugtools session owns the
+one additional lock; orphan and extra locks reject. Direct request API calls
+under those ownership guards fail closed: they record a rejection but never
+queue, apply, or restore a request. Only one request may be pending: a second
+returns the typed pending error without overwriting the original request,
+which then still consumes or expires through its ordinary lifecycle. The
+request is not applied from the menu callback.
 `BmMain_StartPhase` remains the sole faction router and consumes a matching
 red/green request at the corresponding boundary. A turn request applies after
 the phase switch but before `RunPhaseSwitchEvents`, so destination-faction
@@ -1754,7 +1765,7 @@ so save layout, epoch, configuration identity, generated data, and archival
 behavior are unchanged.
 
 The existing submenu remains bounded: it has eight live rows plus its
-terminator, below `MENU_ITEM_MAX == 11`. All nine new message IDs (88--96)
+terminator, below `MENU_ITEM_MAX == 11`. All nine new message IDs (121--129)
 are in the expansion catalog for every authored locale. The debug-only
 request state is bounded to 16 bytes by the ARM object check; its 48-byte
 probe extension is debug-only, preserving release EWRAM/layout.
@@ -1803,3 +1814,70 @@ probe extension is debug-only, preserving release EWRAM/layout.
 - **Cleanup and limitations:** exit with Back; use `make clean_fast` only for
   ignored artifacts. This is not red/green manual play, persistent AI policy,
   arbitrary turn editing, a strategy system, or a raw prototype menu import.
+
+## Typed visual/status diagnostics (issue #127)
+
+Issue #127 adds a read-only, fixed-layout diagnostics provider and two bounded
+views to the existing hub. It does not register an action: built-in IDs
+`1..10`, contributor IDs `11..65535`, both nine-entry capacities, and combined
+registry introspection remain unchanged.
+
+```c
+enum DebugToolsResult DebugTools_CaptureDiagnostics(
+    struct DebugToolsDiagnosticsSnapshot* out);
+```
+
+`struct DebugToolsDiagnosticsSnapshot` is exactly `0x40` bytes. Its validity
+mask separates common, map, cursor, and unit fields so unavailable values are
+never mistaken for real zeroes. Common fields are capture sequence, game
+clock, Proc count, three-word RNG state, registered action count, structured
+log counts/last code, and assert count/last code. Map/prep fields are chapter,
+turn, faction, weather, fog range, cursor coordinates, and a bounds-checked
+cursor unit's slot, character/class IDs, and current/max HP.
+
+The provider is main-thread-only and succeeds only during a session opened by
+an authoritative hotkey call site. `NULL` returns
+`DEBUGTOOLS_ERR_INVALID_ARGUMENT`; title/map/prep conflicts return
+`DEBUGTOOLS_ERR_CONTEXT_UNAVAILABLE`; disabled builds zero a non-NULL output
+and return `DEBUGTOOLS_ERR_DISABLED`. Capture never advances RNG, writes a
+log, mutates gameplay state, or touches SRAM.
+
+Press `R` after the registered action page(s) to reach State, then Engine, and
+then return to the first action page. Each diagnostics view has eight
+read-only rows, Refresh, and Back: ten live rows within `MENU_ITEM_MAX == 11`.
+A capture runs on view entry and once per edge-detected Refresh press; there
+is no timer/per-frame refresh.
+
+| Context | Availability |
+| --- | --- |
+| Title | `Title_IDLE`; common/RNG/log/assert/proc/action fields only |
+| Live map | `PlayerPhase_MainIdle`; full map/cursor fields, unit fields only for a valid cursor unit |
+| Prep | `PrepScreenProc_MapIdle` with `PLAY_FLAG_PREPSCREEN`; the same validated map/unit fields |
+| Battle, battle event, map animation, fade, other screen | unavailable before display writes |
+
+Battle remains unavailable because its renderer owns BG, OBJ, window, blend,
+palette, and sometimes HBlank state. The dormant monochrome/status shortcuts,
+retail `DebugMapMenu_DisplayInfo*`, arbitrary event/memory/proc browsers,
+VRAM/OAM estimates, and performance profiling remain non-goals.
+
+### Display owner and restoration
+
+One Proc with `PROC_SET_END_CB` owns the built-in session and every menu is
+its blocking child, so normal Back, deferred action/view/submenu transitions,
+`EndAllMenus`, explicit forced close, owner `Proc_End`, and soft reset converge
+on the idempotent owner end callback. Before the first menu it captures the
+BG0/BG1 rectangle, BG offsets, active font pointer/counter, animated palette
+entry, and game-lock baseline. It restores them, schedules BG sync, and only
+then releases the session guard.
+
+The diagnostics owner and views use ordinary `MenuProc`/`Text` rendering
+inside the captured rectangle, independently of the cursor unit editor's
+bounded submenu state. The feature adds `0x08` bytes of persistent
+sequence/context state to normal debug builds; its dedicated scalar runtime
+artifact adds the probe only under its test define. Release omits the
+owner/views/backup and retains only the public disabled stub. The archival
+lane sees no source, linker, or layout change.
+
+The canonical human procedure and scalar-only host/libmGBA mapping is
+[`TC-DEBUGTOOLS-DIAGNOSTICS-001`](test-cases/debugtools.md#tc-debugtools-diagnostics-001-typed-state-and-engine-diagnostics).
+No screenshot or framebuffer hash is an acceptance oracle.

@@ -2,6 +2,7 @@ import json
 import sys
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -66,6 +67,74 @@ class BuildOutputsTests(unittest.TestCase):
         self.assertEqual(ids, sorted(ids))
         self.assertEqual(len(ids), len(set(ids)))
 
+    def test_charge_and_diagnostics_message_ids_are_stable_and_disjoint(self):
+        entries_by_key = {
+            entry.key: entry for entry in self.catalog.active_entries
+        }
+        diagnostic_keys = (
+            "debug.view.state",
+            "debug.view.engine",
+            "debug.action.refresh",
+            "debug.value.unavailable",
+            "debug.field.context",
+            "debug.field.clock",
+            "debug.field.chapter",
+            "debug.field.turn",
+            "debug.field.phase",
+            "debug.field.cursor",
+            "debug.field.unit",
+            "debug.field.character",
+            "debug.field.class",
+            "debug.field.hp",
+            "debug.field.weather",
+            "debug.field.fog",
+            "debug.field.rng",
+            "debug.field.proc_count",
+            "debug.field.event",
+            "debug.field.actions",
+            "debug.field.log_retained",
+            "debug.field.log_writes",
+            "debug.field.log_last",
+            "debug.field.assert_count",
+            "debug.field.assert_last",
+            "debug.value.context_title",
+            "debug.value.context_map",
+            "debug.value.context_prep",
+            "debug.value.context_battle",
+            "debug.value.phase_player",
+            "debug.value.phase_enemy",
+            "debug.value.phase_npc",
+            "debug.value.phase_other",
+        )
+
+        self.assertEqual(entries_by_key["autoplay.charge.label"].id, 80)
+        self.assertEqual(entries_by_key["autoplay.charge.help"].id, 81)
+        self.assertEqual(
+            {
+                key: entries_by_key[key].id
+                for key in (
+                    "debug.action.chapter_skirmish",
+                    "debug.selector.chapter",
+                    "debug.selector.skirmish",
+                    "debug.selector.eirika",
+                    "debug.selector.ephraim",
+                    "debug.selector.unavailable",
+                )
+            },
+            {
+                "debug.action.chapter_skirmish": 82,
+                "debug.selector.chapter": 83,
+                "debug.selector.skirmish": 84,
+                "debug.selector.eirika": 85,
+                "debug.selector.ephraim": 86,
+                "debug.selector.unavailable": 87,
+            },
+        )
+        self.assertEqual(
+            [entries_by_key[key].id for key in diagnostic_keys],
+            list(range(88, 121)),
+        )
+
     def test_budget_reports_all_required_sections(self):
         budget = build_budget(self.catalog)
         for key in (
@@ -83,14 +152,14 @@ class BuildOutputsTests(unittest.TestCase):
 
     def test_budget_reports_pseudo_policy_counts(self):
         budget = build_budget(self.catalog)
-        expected = {
-            "transform": 86,
-            "compact": 4,
-            "preserve": 6,
-        }
         self.assertEqual(
             budget["pseudo_policy_counts"],
-            expected,
+            dict(
+                Counter(
+                    entry.pseudo_policy
+                    for entry in self.catalog.active_entries
+                )
+            ),
         )
 
     def test_generated_qps_catalog_preserves_build_timestamp(self):

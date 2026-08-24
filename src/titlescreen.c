@@ -913,6 +913,9 @@ void Title_EnterMainScreen(struct TitleScreenProc* proc) {
 void Title_IDLE(struct TitleScreenProc * proc)
 {
 #ifndef FE8_ARCHIVAL_BUILD
+#if defined(FE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST)
+    DebugToolsDiagnostics_RuntimeTestBoot();
+#endif
     /* Freeze the idle/attract timer pair entirely while the hub is
      * active (see DebugTools_IsHubActive doc, include/expansion_debugtools.h):
      * checking hub state before incrementing means proc->timer_idle
@@ -950,10 +953,6 @@ void Title_IDLE(struct TitleScreenProc * proc)
      * second concurrent hub MenuProc. */
     DebugTools_TitleHotkeyCheck();
 
-    /* Typed selector requests become visible only after the complete
-     * hub/submenu/Text-allocation session has ended. The menu callback
-     * only queues data; this title owner performs the ordinary
-     * next-action handoff once no debug MenuProc remains alive. */
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
     if (DebugTools_IsTargetLaunchPending() && !DebugTools_IsHubActive())
     {
@@ -963,13 +962,12 @@ void Title_IDLE(struct TitleScreenProc * proc)
     }
 #endif
 
-    /* The Chapter 2 action sets this request from its menu callback before
-     * MENU_ACT_END tears down the hub. Check it before the broader session
-     * guard: deferred Text cleanup intentionally retains session ownership
-     * for one yield after the hub MenuProc is gone, but must not delay the
-     * established deterministic launch/input timeline by another frame. */
     if (DebugTools_IsChapter2LaunchPending())
     {
+        /* Preserve the established deterministic launch frame, but close
+         * through the display owner first so BG/font/lock restoration is
+         * complete before the title Proc advances. */
+        DebugToolsDiagnostics_ForceCloseSession();
         SetNextGameActionId(GAME_ACTION_EVENT_RETURN);
         Proc_Break(proc);
         return;
@@ -979,8 +977,7 @@ void Title_IDLE(struct TitleScreenProc * proc)
      * independent siblings that both still read newKeys every frame --
      * skip the vanilla A/START handling for as long as the hub is up so
      * an A press meant to select a hub action can never also race the
-     * normal title-to-gameplay transition below (always 0 in a release
-     * build). */
+     * normal title-to-gameplay transition below. */
     if (DebugTools_IsHubActive())
         return;
 #endif

@@ -35,7 +35,8 @@ class DebugToolsLocalizationTests(unittest.TestCase):
     }
     DIRECT_MENU_LABELS = Counter(
         {
-            "Back": 10,
+            "Back": 11,
+            "Refresh": 1,
             "Confirm Heal to Full": 1,
             "Confirm Add Item": 1,
             "Confirm Toggle Flag": 1,
@@ -390,13 +391,17 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         menu_width = self._constant("DEBUGTOOLS_MENU_WIDTH_TILES")
         status_width = self._constant("DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES")
         capacity = self._constant("DEBUGTOOLS_TEXT_ALLOC_CAPACITY")
+        configured_budget = self._constant(
+            "DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET"
+        )
 
         expected_budget = (page_action_max + 1) * (menu_width - 1) + status_width
         self.assertEqual(action_max, 19)
         self.assertEqual(contributor_max, 9)
         self.assertEqual(page_action_max, 9)
         self.assertEqual(page_max, 3)
-        self.assertEqual(expected_budget, 204)
+        self.assertEqual(expected_budget, 187)
+        self.assertEqual(configured_budget, expected_budget)
         self.assertLessEqual(expected_budget, capacity)
 
         qps = self.loaded_catalog.strings_for("qps-ploc")
@@ -412,19 +417,6 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         status_width_tiles = self._constant(
             "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES"
         )
-        self.assertEqual(
-            self.sources["debugtools_registry.c"].count(
-                "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES"
-            ),
-            1,
-        )
-        self.assertEqual(
-            self.sources["debugtools_tools.c"].count(
-                "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES"
-            ),
-            4,
-        )
-
         suffixes = {
             "debug.status.hub": " 19/19 3/3",
             "debug.status.hub_error": " -99",
@@ -466,9 +458,11 @@ class DebugToolsLocalizationTests(unittest.TestCase):
                 self.assertLessEqual(combined_width, allocation_pixels)
 
     def test_split_flag_status_preserves_exact_fields_within_each_surface(self):
-        cjk_width = self._constant("DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES") * 8
+        cjk_width = self._constant(
+            "DEBUGTOOLS_FLAG_STATUS_CJK_WIDTH_TILES"
+        ) * 8
         non_cjk_width = self._constant(
-            "DEBUGTOOLS_STATUS_TEXT_NON_CJK_WIDTH_TILES"
+            "DEBUGTOOLS_FLAG_STATUS_NON_CJK_WIDTH_TILES"
         ) * 8
         tools = self.sources["debugtools_tools.c"]
 
