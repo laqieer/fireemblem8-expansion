@@ -447,7 +447,7 @@ bool BmMain_CheckBeginPhaseEvent(void)
 //! FE8U = 0x08015450
 void BmMain_StartPhase(ProcPtr proc)
 {
-#ifndef FE8_ARCHIVAL_BUILD
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
     ExpansionChapterObjectives_RefreshTelemetry();
 #endif
 

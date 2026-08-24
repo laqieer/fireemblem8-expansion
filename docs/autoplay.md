@@ -180,12 +180,13 @@ adds the generic authored-data seam that supplies objective state to bounded
 autoplay. It does not add a strategy policy, a route, an AI assignment
 precedence rule, player-visible objective text, or a project-specific chapter
 record. The default `src/data/chapter_objectives.json` has no chapter records;
-every existing chapter therefore remains objective-inactive.
+every existing chapter therefore remains objective-inactive. Its sentinel-only
+generated table also omits objective phase and map-task hooks, preserving the
+existing default combat-frame timing.
 
 The `chapterobjectives` generated-data table is owned by the existing
 `chapterbundle` declaration and validates against the existing unit groups,
-character constants, event flags, and typed event-helper catalog. Its only
-initial kinds are:
+character constants, and event flags. Its only initial kinds are:
 
 - `protect`: keep one referenced character alive until another typed
   objective completes;

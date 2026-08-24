@@ -106,6 +106,16 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
         self.assertFalse(diagnostics.ok)
         self.assertIn("must use uppercase stable identifier spelling", diagnostics.render())
 
+    def test_protect_objective_rejects_null_character_sentinel(self):
+        records, diagnostics = _validate("valid.json")
+        objectives = {objective.id: objective for objective in records[0].objectives}
+        objectives["OBJECTIVE_FIXTURE_PROTECT"].protected_character = "CHARACTER_NONE"
+        schema.validate(records, diagnostics, {
+            "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json"))
+        })
+        self.assertFalse(diagnostics.ok)
+        self.assertIn("protectedCharacter must not be CHARACTER_NONE", diagnostics.render())
+
 
 if __name__ == "__main__":
     unittest.main()
