@@ -527,10 +527,16 @@ void HelpBoxIntroDrawTexts(struct ProcHelpBoxIntro * proc)
 
     otherProc->pretext_lines = proc->pretext_lines;
 
-    // GetStringFromIndex writes to sMsgString.buffer1, which is then used by StringInsertSpecialPrefixByCtrl a couple lines later
-    GetStringFromIndex(proc->msg);
-
-    otherProc->string = StringInsertSpecialPrefixByCtrl();
+    if (proc->string)
+    {
+        otherProc->string = proc->string;
+    }
+    else
+    {
+        // GetStringFromIndex writes to sMsgString.buffer1, which is then used by StringInsertSpecialPrefixByCtrl a couple lines later
+        GetStringFromIndex(proc->msg);
+        otherProc->string = StringInsertSpecialPrefixByCtrl();
+    }
     otherProc->chars_per_step = 1;
     otherProc->step = 0;
 
@@ -574,6 +580,16 @@ void StartHelpBoxTextInit(int item, int msgId)
 
     proc->item = item;
     proc->msg = msgId;
+    proc->string = NULL;
+}
+
+void StartHelpBoxTextInitFromString(const char *string)
+{
+    struct ProcHelpBoxIntro * proc = Proc_Start(ProcScr_HelpBoxIntro, PROC_TREE_3);
+
+    proc->item = 0;
+    proc->msg = 0;
+    proc->string = string;
 }
 
 //! FE8U = 0x0808A118

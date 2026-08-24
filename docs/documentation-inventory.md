@@ -70,7 +70,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/generated_data_tutorial.md | laqieer | current | Contributor-facing generated-data authoring walkthrough
 - docs/starter_features.md | laqieer | current | Four default-off starter flags, typed mechanics/content API, QoL, and runtime matrices (issue #6)
 - docs/aoe.md | laqieer | current | Typed bounded AoE targeting/effects, shared item/action/AI seam, and default-off reference (issue #42)
-- docs/autoplay.md | laqieer | current | Transient typed blue controller/telemetry and bounded semantic run-until outcomes (issues #85/#86)
+- docs/autoplay.md | laqieer | current | Transient typed blue controller/telemetry, bounded semantic run-until outcomes, and optional one-phase Charge command (issues #85/#86/#87)
 - docs/custom_spell_effects.md | laqieer | current | Default-off typed battle spell-effect runtime foundation and resource contract (issue #77)
 - docs/portrait_resolver.md | laqieer | current | Typed character/class/chapter/flag portrait and minimug resolver with legacy fallback (issue #35)
 - docs/community_asset_coverage.md | laqieer | current | Authoritative community asset-family ownership, build/runtime seam, provenance boundary, and gap catalog (issue #59)
@@ -91,7 +91,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/test-cases/optional-gameplay.md | laqieer | current | Indexed optional gameplay procedures, profiles, negatives, save expectations, and automation (issue #55)
 - docs/test-cases/audio.md | laqieer | current | Indexed optional HQ PCM mixer procedure, profiles, negatives, and audio criterion (issue #83)
 - docs/test-cases/patch-release.md | laqieer | current | Indexed BPS artifact validation/application and fail-closed input procedures (issue #49)
-- docs/test-cases/autoplay.md | laqieer | current | Blue computer-phase and bounded semantic termination procedures (issues #85/#86)
+- docs/test-cases/autoplay.md | laqieer | current | Controller smoke, bounded semantic termination, and Charge delegation procedures (issues #85/#86/#87)
 - docs/test-cases/asset-authoring.md | laqieer | current | Indexed source-asset adapter procedure, controls, runtime evidence, and cleanup (issue #62)
 - docs/test-cases/workflow-governance.md | laqieer | current | Indexed trusted-push and centralized CI-wait orchestration procedure (issue #93)
 - docs/test-cases/codeql-alerts.md | laqieer | current | Link Arena and confirmed CodeQL alert regression procedures (issue #84)
@@ -159,7 +159,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - scripts/shiftcheck/tas/README.md | laqieer | subsystem-reference | Full-game TAS shiftability validation reference
 - scripts/texttools/multilang_codec/README.md | laqieer | subsystem-reference | Deterministic multilingual Huffman codec format, decoder contract, and focused tests
 - fonts/cjk/THIRD_PARTY_NOTICES.md | laqieer | subsystem-reference | Vendored Noto CJK font copyright, license, source, and immutable pin notices
-- tools/gba-playtest/README.md | laqieer | subsystem-reference | Headless libmGBA fixed-frame and bounded run-until fingerprint tooling reference
+- tools/gba-playtest/README.md | laqieer | subsystem-reference | Headless libmGBA playtest fingerprint tooling reference
 <!-- DOCS-INVENTORY:END -->
 
 ## Notes

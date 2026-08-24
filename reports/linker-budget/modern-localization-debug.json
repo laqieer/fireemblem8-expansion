@@ -71,42 +71,42 @@
     "missing": [],
     "symbols": {
       "gExpansionLocaleMsgCount": 2,
-      "gExpansionLocaleMsgIds": 158,
+      "gExpansionLocaleMsgIds": 162,
       "gExpansionLocaleTombstoneCount": 2
     },
-    "total_bytes": 162
+    "total_bytes": 166
   },
   "rom_catalog_strings": {
     "missing": [],
     "symbols": {
-      "gExpansionCatalog_de": 316,
-      "gExpansionCatalog_en": 316,
-      "gExpansionCatalog_es": 316,
-      "gExpansionCatalog_fr": 316,
-      "gExpansionCatalog_it": 316,
-      "gExpansionCatalog_ja": 316,
-      "gExpansionCatalog_qps_ploc": 316,
-      "gExpansionCatalog_zh_Hans": 316
+      "gExpansionCatalog_de": 324,
+      "gExpansionCatalog_en": 324,
+      "gExpansionCatalog_es": 324,
+      "gExpansionCatalog_fr": 324,
+      "gExpansionCatalog_it": 324,
+      "gExpansionCatalog_ja": 324,
+      "gExpansionCatalog_qps_ploc": 324,
+      "gExpansionCatalog_zh_Hans": 324
     },
-    "total_bytes": 2528,
+    "total_bytes": 2592,
     "unexpected": []
   },
   "schema_version": 1,
   "source_catalog_budget": {
-    "active_message_count": 79,
-    "catalog_index_bytes": 2782,
+    "active_message_count": 81,
+    "catalog_index_bytes": 2850,
     "catalog_string_bytes": {
-      "de": 928,
-      "en": 808,
-      "es": 932,
-      "fr": 968,
-      "it": 912,
-      "ja": 948,
-      "qps-ploc": 1308,
-      "total": 7637,
-      "zh-Hans": 833
+      "de": 990,
+      "en": 856,
+      "es": 989,
+      "fr": 1027,
+      "it": 969,
+      "ja": 1018,
+      "qps-ploc": 1356,
+      "total": 8094,
+      "zh-Hans": 889
     },
-    "glyphs_used_count": 305,
+    "glyphs_used_count": 331,
     "locales_generated": [
       "en",
       "ja",
@@ -118,13 +118,13 @@
       "qps-ploc"
     ],
     "pseudo_policy_counts": {
-      "compact": 2,
+      "compact": 4,
       "preserve": 6,
       "transform": 71
     },
     "scratch_budget_bytes": 96,
-    "scratch_headroom_bytes": 63,
-    "scratch_slot_bytes_used_max": 33,
+    "scratch_headroom_bytes": 33,
+    "scratch_slot_bytes_used_max": 63,
     "tombstone_count": 1
   }
 }

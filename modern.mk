@@ -51,6 +51,8 @@ MODERN_GOALS := \
 	expansion-modern-bgm-registry-check \
 	expansion-modern-autoplay-check \
 	expansion-modern-banim-package-runtime-check \
+	expansion-modern-blue-phase-delegate-profile-rom \
+	expansion-modern-blue-phase-delegate-check \
 	expansion-modern-autoplay-bounds-check \
 	expansion-modern-chapter-objectives-profile-rom \
 	expansion-modern-chapter-objectives-profile-boot-check \
@@ -1456,6 +1458,8 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-saveload-check \
 	expansion-modern-autoplay-check \
 	expansion-modern-hq-mixer-check \
+	expansion-modern-blue-phase-delegate-profile-rom \
+	expansion-modern-blue-phase-delegate-check \
 	expansion-modern-autoplay-bounds-check \
 	expansion-modern-chapter-objectives-check \
 	expansion-modern-aoe-profile-rom \
@@ -1607,6 +1611,7 @@ ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 		--mechanics-hooks "$(EXPANSION_MECHANICS_HOOKS)" \
 		--mechanics-sample "$(EXPANSION_MECHANICS_SAMPLE)" \
 		--danger-overlay-menu "$(EXPANSION_DANGER_OVERLAY_MENU)" \
+		--blue-phase-delegate "$(EXPANSION_BLUE_PHASE_DELEGATE)" \
 		--starter-content "$(EXPANSION_STARTER_CONTENT)" \
 		--aoe-reference "$(EXPANSION_AOE_REFERENCE)" \
 		--custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
@@ -1673,6 +1678,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	--mechanics-hooks "$(EXPANSION_MECHANICS_HOOKS)" \
 	--mechanics-sample "$(EXPANSION_MECHANICS_SAMPLE)" \
 	--danger-overlay-menu "$(EXPANSION_DANGER_OVERLAY_MENU)" \
+	--blue-phase-delegate "$(EXPANSION_BLUE_PHASE_DELEGATE)" \
 	--starter-content "$(EXPANSION_STARTER_CONTENT)" \
 	--aoe-reference "$(EXPANSION_AOE_REFERENCE)" \
 	--custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
@@ -1758,6 +1764,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	-DFE8_EXPANSION_MECHANICS_HOOKS=$(EXPANSION_MECHANICS_HOOKS) \
 	-DFE8_EXPANSION_MECHANICS_SAMPLE=$(EXPANSION_MECHANICS_SAMPLE) \
 	-DFE8_EXPANSION_DANGER_OVERLAY_MENU=$(EXPANSION_DANGER_OVERLAY_MENU) \
+	-DFE8_EXPANSION_BLUE_PHASE_DELEGATE=$(EXPANSION_BLUE_PHASE_DELEGATE) \
 	-DFE8_EXPANSION_STARTER_CONTENT=$(EXPANSION_STARTER_CONTENT) \
 	-DFE8_EXPANSION_AOE_REFERENCE=$(EXPANSION_AOE_REFERENCE) \
 	-DFE8_EXPANSION_CUSTOM_SPELL_EFFECTS=$(EXPANSION_CUSTOM_SPELL_EFFECTS) \
@@ -1833,6 +1840,7 @@ MODERN_PATCH_RELEASE_FLAGS := \
 	EXPANSION_MECHANICS_HOOKS=1 \
 	EXPANSION_MECHANICS_SAMPLE=1 \
 	EXPANSION_DANGER_OVERLAY_MENU=1 \
+	EXPANSION_BLUE_PHASE_DELEGATE=1 \
 	EXPANSION_STARTER_CONTENT=1 \
 	EXPANSION_AOE_REFERENCE=1 \
 	EXPANSION_LOCALIZED_TEXT_AUTO_WRAP=1 \
@@ -2011,6 +2019,7 @@ ifneq (,$(MODERN_EXPANSION_DEFINES_ACTIVE))
 		printf '%s\n' 'mechanics_hooks=$(EXPANSION_MECHANICS_HOOKS)'; \
 		printf '%s\n' 'mechanics_sample=$(EXPANSION_MECHANICS_SAMPLE)'; \
 		printf '%s\n' 'danger_overlay_menu=$(EXPANSION_DANGER_OVERLAY_MENU)'; \
+		printf '%s\n' 'blue_phase_delegate=$(EXPANSION_BLUE_PHASE_DELEGATE)'; \
 		printf '%s\n' 'starter_content=$(EXPANSION_STARTER_CONTENT)'; \
 		printf '%s\n' 'aoe_reference=$(EXPANSION_AOE_REFERENCE)'; \
 		printf '%s\n' 'custom_spell_effects=$(EXPANSION_CUSTOM_SPELL_EFFECTS)'; \
@@ -2701,7 +2710,7 @@ expansion-modern-debugtools-music-check: expansion-modern-debugtools-map-check \
 # deltas), the read-only Save inspector never writes, every submenu returns
 # safely to the hub, and the map is still interactive after the hub closes.
 # The issue #125 tail then applies cursor-unit HP 17->16, heals 16->17,
-# rejects an empty tile, and proves exact SRAM equality plus final map
+# rejects an empty tile, and proves metadata-normalized SRAM equality plus final map
 # interactivity. The config-parametrized release scenario replays identical
 # input with the established probe all-zero and editor symbols omitted. See
 # docs/debugtools.md and docs/test-cases/debugtools.md.
@@ -3397,6 +3406,40 @@ expansion-modern-autoplay-check: expansion-modern-boot-preflight expansion-moder
 		--elf "$(MODERN_ELF)" \
 		--config "$(MODERN_CONFIG)" \
 		--out-dir "$(MODERN_AUTOPLAY_RUNTIME_OUTDIR)"
+
+# Issue #87 optional one-phase Charge command. The enabled build has its own
+# root; the matching ordinary build is the disabled PLAYER/menu negative.
+MODERN_BLUE_PHASE_DELEGATE_ROOT := build/expansion-modern-blue-phase-delegate
+MODERN_BLUE_PHASE_DELEGATE_OUTPUT_DIR := \
+	$(MODERN_BLUE_PHASE_DELEGATE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+MODERN_BLUE_PHASE_DELEGATE_ROM := \
+	$(MODERN_BLUE_PHASE_DELEGATE_OUTPUT_DIR)/fireemblem8.gba
+MODERN_BLUE_PHASE_DELEGATE_ELF := \
+	$(MODERN_BLUE_PHASE_DELEGATE_OUTPUT_DIR)/fireemblem8.elf
+MODERN_BLUE_PHASE_DELEGATE_RUNTIME_SCRIPT := \
+	tools/gba-playtest/run_blue_phase_delegate_checks.py
+MODERN_BLUE_PHASE_DELEGATE_RUNTIME_OUTDIR := \
+	$(MODERN_BLUE_PHASE_DELEGATE_OUTPUT_DIR)/runtime-check
+
+expansion-modern-blue-phase-delegate-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_BLUE_PHASE_DELEGATE_ROOT) \
+		EXPANSION_BLUE_PHASE_DELEGATE=1
+
+expansion-modern-blue-phase-delegate-check: expansion-modern-boot-preflight \
+		expansion-modern-rom \
+		expansion-modern-blue-phase-delegate-profile-rom
+	@mkdir -p "$(MODERN_BLUE_PHASE_DELEGATE_RUNTIME_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_BLUE_PHASE_DELEGATE_RUNTIME_OUTDIR)/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_BLUE_PHASE_DELEGATE_RUNTIME_SCRIPT)" \
+		--enabled-rom "$(MODERN_BLUE_PHASE_DELEGATE_ROM)" \
+		--enabled-elf "$(MODERN_BLUE_PHASE_DELEGATE_ELF)" \
+		--disabled-rom "$(MODERN_ROM)" \
+		--disabled-elf "$(MODERN_ELF)" \
+		--config "$(MODERN_CONFIG)" \
+		--out-dir "$(MODERN_BLUE_PHASE_DELEGATE_RUNTIME_OUTDIR)"
 
 # Issue #86 bounded semantic run-until classification. This reuses the #85
 # routes and telemetry while keeping fixed-frame scenarios and fingerprints
@@ -4103,6 +4146,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-autoplay-check \
 		expansion-modern-autoplay-bounds-check \
 		expansion-modern-chapter-objectives-check \
+		expansion-modern-blue-phase-delegate-check \
 		expansion-modern-starter-runtime-check \
 		expansion-modern-boot-check \
 		expansion-modern-title-check \
