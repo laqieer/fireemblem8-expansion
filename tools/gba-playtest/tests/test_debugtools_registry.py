@@ -2471,6 +2471,30 @@ class DebugToolsChapterSelectorHostTests(unittest.TestCase):
             self.assertEqual(rc, 0, f"selector host test failed:\n{out}")
             self.assertIn("DEBUGTOOLS_SELECTOR_HOST_TEST: PASS", out)
 
+    def test_selector_compiles_with_debugtools_enabled_outside_debug_profile(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            _write_debugtools_msg_id_header(work)
+            rc, out, _ = _compile(
+                work,
+                SELECTOR_SRC,
+                "selector_non_debug.o",
+                defines=(
+                    "MODERN=1",
+                    "FE8_EXPANSION_DEBUG=0",
+                    "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                ),
+                extra_flags=("-I", str(work)),
+            )
+            self.assertEqual(
+                rc,
+                0,
+                "selector must see gChapterDataCount whenever the supported "
+                f"debugtools override is enabled:\n{out}",
+            )
+
     def test_release_selector_bodies_are_omitted(self):
         import tempfile
 

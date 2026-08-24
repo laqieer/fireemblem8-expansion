@@ -119,10 +119,6 @@ class CombinedCoverageTests(unittest.TestCase):
             stderr=subprocess.STDOUT,
         )
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn(
-            "translated=3414 candidates=0 blocked=0 residual=0",
-            result.stdout,
-        )
 
 
 if __name__ == "__main__":

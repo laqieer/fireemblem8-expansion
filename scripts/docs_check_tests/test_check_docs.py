@@ -1500,107 +1500,207 @@ class ProjectWikiStatusRegressionTests(unittest.TestCase):
 REAL_REPO_ROOT = os.path.dirname(os.path.dirname(CHECK_DOCS_PATH))
 
 
-class StaleQuickstartObjectCountRegressionTests(unittest.TestCase):
-    OLD_STALE_PHRASES = [
-        "as twenty-one `.o` and twenty-one `.d` files.",
-        "all 435 authoritative C files (363 normal `src/*.c`,",
-        "since the 18-file cohort is a strict subset of the",
-        "363-file full C list) as 438 `.o` and 438 primary `.d` files.",
-        "links a full modern ELF using all 438 modern objects,",
-    ]
+BUILD_TARGET_TABLE_COLUMNS = (
+    "Command",
+    "What it produces",
+    "Builds a ROM?",
+    "Needs libmGBA?",
+)
+DOCUMENTED_OBJECT_PRINT_TARGETS = frozenset((
+    "print-MODERN_COHORT_C_OBJECTS",
+    "print-MODERN_COHORT_ASM_OBJECTS",
+    "print-MODERN_COHORT_OBJECTS",
+    "print-MODERN_ALL_C_OBJECTS",
+    "print-MODERN_ALL_DATA_OBJECTS",
+    "print-MODERN_ALL_ASM_OBJECTS",
+    "print-MODERN_ALL_OBJECTS",
+))
+LINKED_MODERN_TARGETS = frozenset((
+    "expansion-modern-elf",
+    "expansion-modern-rom",
+    "expansion-modern-boot-check",
+    "expansion-modern-linker-check",
+))
 
-    def test_each_old_quickstart_phrase_is_flagged_stale(self):
-        for phrase in self.OLD_STALE_PHRASES:
-            with self.subTest(phrase=phrase), TempRepo() as repo:
-                root = repo.root
-                write(root, "doc.md", phrase + "\n")
-                findings = check_docs.check_stale_phrases(["doc.md"], root)
-                self.assertTrue(findings, "expected a finding for: %r" % phrase)
 
-    def test_current_quickstart_object_wording_has_no_stale_findings(self):
-        with TempRepo() as repo:
-            root = repo.root
-            write(root, "quickstart.md", check_docs.read_text(
-                os.path.join(REAL_REPO_ROOT, "docs", "quickstart.md")
-            ))
-            findings = check_docs.check_stale_phrases(["quickstart.md"], root)
-            self.assertEqual(findings, [])
+def _table_cells(line):
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        raise AssertionError("build-target table row is not pipe-delimited")
+    return tuple(
+        cell.strip() for cell in re.split(r"(?<!\\)\|", stripped[1:-1])
+    )
 
-    # The replacement `make print-<VAR>` commands quickstart.md now
-    # documents must resolve against this repository's real, statically
-    # parsed Makefile/modern.mk target graph, proving they are not
-    # illustrative placeholders.
-    def test_dynamic_print_commands_resolve_against_real_makefile(self):
-        literal, patterns = check_docs.parse_make_targets(REAL_REPO_ROOT)
-        for var in (
-            "MODERN_COHORT_C_OBJECTS",
-            "MODERN_COHORT_ASM_OBJECTS",
-            "MODERN_COHORT_OBJECTS",
-            "MODERN_ALL_C_OBJECTS",
-            "MODERN_ALL_DATA_OBJECTS",
-            "MODERN_ALL_ASM_OBJECTS",
-            "MODERN_ALL_OBJECTS",
-        ):
-            with self.subTest(var=var):
-                self.assertTrue(
-                    check_docs.make_target_exists("print-" + var, literal, patterns),
-                    "print-%s should resolve via the print-%% pattern rule" % var,
+
+def _build_target_header_index(lines):
+    for index, line in enumerate(lines):
+        try:
+            cells = _table_cells(line)
+        except AssertionError:
+            continue
+        if cells == BUILD_TARGET_TABLE_COLUMNS:
+            return index
+    return None
+
+
+def parse_build_target_table(text):
+    lines = text.splitlines()
+    header_index = _build_target_header_index(lines)
+    if header_index is None:
+        raise AssertionError("build-target table header differs")
+    if header_index + 1 >= len(lines):
+        raise AssertionError("build-target table separator is invalid")
+
+    separator = _table_cells(lines[header_index + 1])
+    if len(separator) != len(BUILD_TARGET_TABLE_COLUMNS) or not all(
+        re.fullmatch(r":?-{3,}:?", cell) for cell in separator
+    ):
+        raise AssertionError("build-target table separator is invalid")
+
+    rows = []
+    for line in lines[header_index + 2:]:
+        if not line.strip():
+            break
+        if not line.strip().startswith("|"):
+            break
+        cells = _table_cells(line)
+        if len(cells) != len(BUILD_TARGET_TABLE_COLUMNS):
+            raise AssertionError("build-target table row has the wrong column count")
+        rows.append(dict(zip(BUILD_TARGET_TABLE_COLUMNS, cells)))
+    if not rows:
+        raise AssertionError("build-target table has no data rows")
+    return tuple(rows)
+
+
+def build_target_commands(rows):
+    commands = {}
+    for row in rows:
+        for command in re.findall(r"`([^`]+)`", row["Command"]):
+            parts = command.split()
+            if not parts or parts[0] != "make":
+                continue
+            for part in parts[1:]:
+                if part.startswith("-") or "=" in part:
+                    continue
+                commands.setdefault(part, set()).add(command)
+    return commands
+
+
+def assert_documented_build_contract(test_case, quickstart, framework_support):
+    literal, patterns = check_docs.parse_make_targets(REAL_REPO_ROOT)
+    documented_targets = {
+        target
+        for _is_bare, target in (
+            *check_docs.extract_make_invocations(quickstart),
+            *check_docs.extract_make_invocations(framework_support),
+        )
+        if target is not None
+    }
+    test_case.assertTrue(
+        DOCUMENTED_OBJECT_PRINT_TARGETS <= documented_targets,
+        "the live documentation must expose every dynamic object-count command",
+    )
+    for target in DOCUMENTED_OBJECT_PRINT_TARGETS:
+        test_case.assertTrue(
+            check_docs.make_target_exists(target, literal, patterns),
+            "documented %s must resolve in the parsed Make database" % target,
+        )
+
+    commands = build_target_commands(parse_build_target_table(framework_support))
+    for target in LINKED_MODERN_TARGETS:
+        test_case.assertIn(target, commands)
+        test_case.assertTrue(
+            any("MODERN_ABI=aapcs" in command for command in commands[target]),
+            "documented linked target %s must require AAPCS" % target,
+        )
+
+
+class DocumentationBuildContractTests(unittest.TestCase):
+    def test_documented_object_count_and_linked_abi_contracts_are_semantic(self):
+        quickstart = check_docs.read_text(
+            os.path.join(REAL_REPO_ROOT, "docs", "quickstart.md")
+        )
+        framework_support = check_docs.read_text(
+            os.path.join(REAL_REPO_ROOT, "docs", "framework-support.md")
+        )
+        assert_documented_build_contract(self, quickstart, framework_support)
+        self.assertEqual(
+            [],
+            check_docs.check_object_count_claims(
+                ["docs/quickstart.md", "docs/framework-support.md"],
+                REAL_REPO_ROOT,
+            ),
+        )
+
+        lines = framework_support.splitlines()
+        header_index = _build_target_header_index(lines)
+        self.assertIsNotNone(header_index)
+        table_end = header_index + 2
+        while table_end < len(lines) and lines[table_end].strip().startswith("|"):
+            table_end += 1
+        moved_table = [
+            *lines[header_index:header_index + 2],
+            *reversed(lines[header_index + 2:table_end]),
+            "",
+            *lines[:header_index],
+            *lines[table_end:],
+        ]
+        for index, line in enumerate(moved_table):
+            if line == "## Build targets and outputs":
+                moved_table[index] = "## Toolchain target reference"
+                moved_table.insert(index + 2, "The table above remains authoritative.")
+                break
+        assert_documented_build_contract(
+            self,
+            quickstart,
+            "\n".join(moved_table),
+        )
+
+        with self.assertRaisesRegex(AssertionError, "must require AAPCS"):
+            assert_documented_build_contract(
+                self,
+                quickstart,
+                framework_support.replace(
+                    "make expansion-modern-elf MODERN_CONFIG=<debug\\|release> MODERN_ABI=aapcs",
+                    "make expansion-modern-elf MODERN_CONFIG=<debug\\|release> MODERN_ABI=apcs-gnu",
+                    1,
+                ),
+            )
+        with self.assertRaisesRegex(AssertionError, "header differs"):
+            parse_build_target_table(
+                framework_support.replace(
+                    "| Command | What it produces | Builds a ROM? | Needs libmGBA? |",
+                    "| Command | What it produces | Builds a ROM? |",
+                    1,
                 )
+            )
+        malformed_separator = list(framework_support.splitlines())
+        malformed_header_index = _build_target_header_index(malformed_separator)
+        self.assertIsNotNone(malformed_header_index)
+        malformed_separator[malformed_header_index + 1] = (
+            "| --- | --- | --- | not-a-separator |"
+        )
+        with self.assertRaisesRegex(AssertionError, "separator is invalid"):
+            parse_build_target_table("\n".join(malformed_separator))
 
 
-# ---------------------------------------------------------------------------
-# Acceptance-review finding (issues #7/#17 docs contract fixup): the same
-# 3-defect pattern found earlier in quickstart.md was later reintroduced in
-# docs/framework-support.md by a subsequent governance-establishing commit:
-#
-#   1. docs/framework-support.md hardcoded MODERN_COHORT_OBJECTS/
-#      MODERN_ALL_OBJECTS counts (21 C + 3 asm = 24; 450) instead of
-#      pointing solely at `make print-<VAR>`.
-#   2. Its expansion-modern-elf row listed `MODERN_ABI=<aapcs|apcs-gnu>` as
-#      if both ABIs were valid for a *linked* target, when modern.mk's
-#      MODERN_LINKED_GOALS guard fails fast on anything but aapcs.
-#   3. docs/config_identity.md's MODERN_ABI settings-reference row carried
-#      no caveat that apcs-gnu is compile-only.
-#
-# The tests below prove (a) the old phrasing is flagged stale if it ever
-# reappears, (b) the current, live doc text is both stale-clean and states
-# the AAPCS-only/apcs-gnu-compile-only contract explicitly, and (c) that
-# contract is real -- proven against the actual `modern.mk` via a real
-# `make -n` dry-run probe, never a simulated/equivalent stand-in.
-# ---------------------------------------------------------------------------
-
-class StaleFrameworkSupportABIRegressionTests(unittest.TestCase):
-    OLD_STALE_PHRASES = [
-        "21 `src/*.c` objects + 3 handwritten-assembly objects, 24 total",
-        "handwritten asm: 450 objects as of this audit",
-        r"expansion-modern-elf MODERN_CONFIG=<debug\|release> MODERN_ABI=<aapcs\|apcs-gnu>",
-    ]
-
-    def test_each_old_phrase_is_flagged_stale(self):
-        for phrase in self.OLD_STALE_PHRASES:
-            with self.subTest(phrase=phrase), TempRepo() as repo:
-                root = repo.root
-                write(root, "doc.md", phrase + "\n")
-                findings = check_docs.check_stale_phrases(["doc.md"], root)
-                self.assertTrue(findings, "expected a finding for: %r" % phrase)
-
-    def test_current_framework_support_wording_has_no_stale_findings(self):
-        with TempRepo() as repo:
-            root = repo.root
-            write(root, "framework-support.md", check_docs.read_text(
-                os.path.join(REAL_REPO_ROOT, "docs", "framework-support.md")
-            ))
-            findings = check_docs.check_stale_phrases(["framework-support.md"], root)
-            self.assertEqual(findings, [])
-
-    def test_current_config_identity_wording_has_no_stale_findings(self):
-        with TempRepo() as repo:
-            root = repo.root
-            write(root, "config_identity.md", check_docs.read_text(
-                os.path.join(REAL_REPO_ROOT, "docs", "config_identity.md")
-            ))
-            findings = check_docs.check_stale_phrases(["config_identity.md"], root)
-            self.assertEqual(findings, [])
+class StructuralObjectCountClaimTests(unittest.TestCase):
+    def test_historical_count_forms_are_rejected_structurally(self):
+        count_claims = (
+            "as twenty-one `.o` and twenty-one `.d` files.",
+            "all 435 authoritative C files (363 normal `src/*.c`,",
+            "since the 18-file cohort is a strict subset of the",
+            "363-file full C list) as 438 `.o` and 438 primary `.d` files.",
+            "links a full modern ELF using all 438 modern objects,",
+            "21 `src/*.c` objects + 3 handwritten-assembly objects, 24 total",
+            "handwritten asm: 450 objects as of this audit",
+        )
+        for claim in count_claims:
+            with self.subTest(claim=claim), TempRepo() as repo:
+                write(repo.root, "doc.md", "# Build contract\n\n" + claim + "\n")
+                self.assertTrue(
+                    check_docs.check_object_count_claims(["doc.md"], repo.root)
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -1667,15 +1767,6 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
                 os.path.join(REAL_REPO_ROOT, "docs", "generated_data.md")
             ))
             findings = check_docs.check_stale_phrases(["generated_data.md"], root)
-            self.assertEqual(findings, [])
-
-    def test_current_framework_support_doc_has_no_stale_findings_for_gate_numbers(self):
-        with TempRepo() as repo:
-            root = repo.root
-            write(root, "framework-support.md", check_docs.read_text(
-                os.path.join(REAL_REPO_ROOT, "docs", "framework-support.md")
-            ))
-            findings = check_docs.check_stale_phrases(["framework-support.md"], root)
             self.assertEqual(findings, [])
 
     def test_current_issue5_closure_report_has_no_stale_findings(self):
@@ -1915,20 +2006,19 @@ class ObjectCountClaimEscapeRegressionTests(unittest.TestCase):
                 findings = check_docs.check_object_count_claims(["doc.md"], root)
                 self.assertTrue(findings, "expected a finding for: %r" % phrase)
 
-    def test_flagged_even_inside_fenced_code_block(self):
-        # This is the exact escape hatch: check_stale_phrases() strips
-        # fenced blocks, so a hardcoded count hidden inside one previously
-        # produced zero findings. check_object_count_claims() must not.
+    def test_numeric_and_spelled_claims_are_flagged_inside_fenced_code_blocks(self):
         with TempRepo() as repo:
             root = repo.root
-            write(root, "doc.md",
-                  "```bash\n"
-                  "make print-MODERN_ALL_OBJECTS         # -> 450 objects as of this audit\n"
-                  "```\n")
-            stale_findings = check_docs.check_stale_phrases(["doc.md"], root)
-            self.assertEqual(stale_findings, [], "expected the fenced-block escape to reproduce")
+            write(
+                root,
+                "doc.md",
+                "```bash\n"
+                "MODERN_ALL_OBJECTS -> 450\n"
+                "the five save objects are compile-only\n"
+                "```\n",
+            )
             findings = check_docs.check_object_count_claims(["doc.md"], root)
-            self.assertTrue(findings, "check_object_count_claims must still catch it")
+            self.assertEqual(2, len(findings))
 
     def test_dynamic_print_command_alone_passes(self):
         with TempRepo() as repo:
@@ -2063,15 +2153,6 @@ class SpelledObjectCountClaimRegressionTests(unittest.TestCase):
             # The reported line number is the line the number word itself
             # starts on (line 1), not the line the noun phrase concludes on.
             self.assertEqual(findings[0].line, 1)
-
-    def test_flagged_even_inside_fenced_code_block(self):
-        with TempRepo() as repo:
-            root = repo.root
-            write(root, "doc.md", "```text\nthe five save objects are compile-only\n```\n")
-            stale_findings = check_docs.check_stale_phrases(["doc.md"], root)
-            self.assertEqual(stale_findings, [])
-            findings = check_docs.check_object_count_claims(["doc.md"], root)
-            self.assertTrue(findings)
 
     def test_current_quickstart_has_no_spelled_object_count_findings(self):
         with TempRepo() as repo:
