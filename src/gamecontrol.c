@@ -11,6 +11,7 @@
 #include "rng.h"
 #include "event.h"
 #include "opinfo.h"
+#include "chapterdata.h"
 #include "bm.h"
 #include "bmsave.h"
 #include "ending_details.h"
@@ -25,6 +26,7 @@
 #include "constants/songs.h"
 #include "expansion_debugtools.h"
 #include "debug_save_fixture_internal.h"
+#include "debugtools_internal.h"
 #include "expansion_language_menu.h"
 #include "expansion_itemtest.h"
 
@@ -489,6 +491,83 @@ void GameControl_PostIntro(struct GameCtrlProc * proc)
 #endif
 
 #ifndef FE8_ARCHIVAL_BUILD
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+        {
+            struct DebugToolsLaunchRequest request;
+
+            if (DebugTools_ConsumePendingTargetLaunch(&request))
+            {
+                SetLCGRNValue(DEBUGTOOLS_FASTBOOT_RNG_SEED);
+                InitRN(AdvanceGetLCGRNValue());
+
+                InitPlayConfig(0, 0);
+                gPlaySt.chapterModeIndex = request.chapterMode;
+                ResetPermanentFlags();
+                ResetChapterFlags();
+                InitUnits();
+                gPlaySt.chapterIndex = request.chapterId;
+                proc->nextChapter = request.chapterId;
+
+                /*
+                 * The compatibility route is explicit request provenance,
+                 * not a build-profile decision. It preserves the established
+                 * Chapter 4 prep traversal only for a selector confirmation
+                 * made with the compatibility gesture; ordinary selector
+                 * targets remain direct and an unselected selector is inert.
+                 */
+                if (request.kind == DEBUGTOOLS_LAUNCH_TARGET_CHAPTER
+                    && request.chapterMode == CHAPTER_MODE_COMMON
+                    && request.chapterId == CHAPTER_L_4
+                    && request.origin
+                        == DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_CH4_PREP_COMPAT)
+                {
+                    GmDataInit();
+                    gGMData.units[0].location = NODE_BORGO_RIDGE;
+                    DebugTools_ArmBootstrapSuppression();
+                    Proc_Goto(proc, LGAMECTRL_EXEC_BM);
+                    break;
+                }
+
+                gPlaySt.save_menu_type = 2;
+                GmDataInit();
+                gGMData.current_node = request.nodeId;
+                gGMData.units[0].location = request.nodeId;
+                gGMData.nodes[request.nodeId].state |=
+                    GM_NODE_STATE_VALID;
+
+                if (request.kind == DEBUGTOOLS_LAUNCH_TARGET_SKIRMISH)
+                {
+                    /* Encounter ally definitions reposition an existing
+                     * party; they are not a complete new-game roster.
+                     * Seed that party from this selected chapter's own
+                     * authoritative normal ally metadata before BMap
+                     * applies the selected encounter definitions. */
+                    LoadUnits(
+                        GetChapterEventDataPointer(request.chapterId)
+                            ->playerUnitsInNormal);
+                    gGMData.nodes[request.nodeId].state &=
+                        ~GM_NODE_STATE_CLEARED;
+                    gGMData.unk_cc = 0;
+                    gGMData.unk_c9[0] = request.encounterChoice;
+                    gPlaySt.chapterStateBits |= PLAY_FLAG_EXTRA_MAP;
+                }
+                else
+                {
+                    gGMData.nodes[request.nodeId].state |=
+                        GM_NODE_STATE_CLEARED;
+                }
+
+                DebugTools_ArmBootstrapSuppression();
+
+                /* Direct battle-map entry is the ordinary GameControl
+                 * label used by save-menu direct starts. The debug menu
+                 * is already gone; no GameControl/BMap proc is recreated. */
+                Proc_Goto(proc, LGAMECTRL_EXEC_BM_EXT);
+                break;
+            }
+        }
+#endif
+
         /* Debug hub "Fast Boot: Chapter 2" handoff (see
          * src/debugtools_launcher.c, include/expansion_debugtools.h):
          * consumed at most once per armed request, and only here, before

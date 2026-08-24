@@ -24,7 +24,9 @@ struct HelpBoxScrollProc {
 struct ProcHelpBoxIntro {
     /* 00 */ PROC_HEADER;
 
-    /* 29 */ u8 _pad[0x58-0x29];
+    /* 29 */ u8 _pad[0x34-0x29];
+    /* 34 */ const char *string;
+    /* 38 */ u8 _pad2[0x58-0x38];
 
     /* 58 */ int item;
     /* 5C */ int msg;
@@ -121,6 +123,7 @@ void DisplayHelpBoxObj(int x, int y, int w, int h, int unk);
 // ??? HelpBoxDrawPrefix(???);
 // ??? HelpBoxIntroDrawTexts(???);
 void StartHelpBoxTextInit(int item, int mid);
+void StartHelpBoxTextInitFromString(const char *string);
 void ClearHelpBoxText(void);
 // ??? HelpBoxIntro_bug_0(???);
 // ??? HelpBoxIntro_bug_OnClose(???);

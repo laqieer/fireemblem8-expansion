@@ -29,7 +29,7 @@
     },
     {
       "frame": 630,
-      "framebuffer_hash": "fnv1a64-rgb24:23ac325083e916f8",
+      "framebuffer_hash": "fnv1a64-rgb24:9b470a705bed1b15",
       "name": "hub-opened-after-first-pulse",
       "probes": [
         {
@@ -56,7 +56,7 @@
     },
     {
       "frame": 680,
-      "framebuffer_hash": "fnv1a64-rgb24:25590613f1befdb5",
+      "framebuffer_hash": "fnv1a64-rgb24:a33af6e29cccc970",
       "name": "hub-still-single-after-repeated-pulse",
       "probes": [
         {

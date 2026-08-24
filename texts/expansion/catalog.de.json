@@ -95,5 +95,14 @@
     "debug.save_fixture.title_only": "Nur Titel",
     "debug.save_fixture.invalid": "Ungültig",
     "debug.save_fixture.blocked": "Speichern aus"
+,
+    "debug.action.chapter_skirmish": "Kapitel/Gefecht",
+    "debug.selector.chapter": "Kapitel",
+    "debug.selector.skirmish": "Gefecht",
+    "debug.selector.eirika": "Eirika",
+    "debug.selector.ephraim": "Ephraim",
+    "debug.selector.unavailable": "Ziel nicht verfügbar",
+    "autoplay.charge.label": "Angriff",
+    "autoplay.charge.help": "Übrige Einheiten in dieser Phase der KI überlassen."
   }
 }

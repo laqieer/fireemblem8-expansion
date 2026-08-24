@@ -1,0 +1,49 @@
+{
+  "checkpoints": [
+    {
+      "frame": 880,
+      "name": "selector-open-chapter4-default",
+      "probes": [
+        {"address": "gDebugToolsProbe+0x04", "size": 4, "value": "0x0000000a"},
+        {"address": "gDebugToolsProbe+0x08", "size": 4, "value": "0x00000000"},
+        {"address": "sSelectorState", "size": 2, "value": "0x1104"},
+        {"address": "sSelectorState+0x02", "size": 1, "value": "0x00"}
+      ],
+      "sram_hash": "fnv1a64-sram:ff081a88b533792d"
+    },
+    {
+      "frame": 908,
+      "name": "chapter-request-after-menu-selection",
+      "probes": [
+        {"address": "gDebugToolsProbe", "size": 4, "value": "0x00000001"},
+        {"address": "gDebugToolsProbe+0x24", "size": 4, "value": "0x00000000"},
+        {"address": "sSelectorState", "size": 2, "value": "0x1104"},
+        {"address": "sSelectorState+0x02", "size": 1, "value": "0x01"}
+      ]
+    },
+    {
+      "frame": 1100,
+      "name": "gamecontrol-committed-selector-chapter",
+      "probes": [
+        {"address": "gDebugToolsProbe+0x1c", "size": 4, "value": "0x00000001"},
+        {"address": "gDebugToolsProbe+0x24", "size": 4, "value": "0x00000001"},
+        {"address": "gPlaySt+0x0e", "size": 1, "value": "0x04"},
+        {"address": "sSelectorState", "size": 2, "value": "0x1104"},
+        {"address": "sSelectorState+0x02", "size": 1, "value": "0x00"}
+      ]
+    },
+    {
+      "frame": 4550,
+      "name": "selector-chapter-interactive",
+      "probes": [
+        {"address": "gDebugToolsProbe+0x20", "size": 4, "value": "0x00000000"},
+        {"address": "gPlaySt+0x0e", "size": 1, "value": "0x04"},
+        {"address": "gPlaySt+0x14", "size": 1, "value": "0x10"},
+        {"address": "sSelectorState", "size": 2, "value": "0x1104"}
+      ],
+      "sram_hash": "fnv1a64-sram:ff081a88b533792d"
+    }
+  ],
+  "format_version": 2,
+  "scenario": "debugtools-selector-chapter-modern-debug"
+}

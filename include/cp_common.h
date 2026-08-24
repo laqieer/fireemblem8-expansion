@@ -179,6 +179,10 @@ extern void(*AiDecideMainFunc)(void);
 
 extern struct ProcCmd CONST_DATA gProcScr_CpPhase[];
 extern struct ProcCmd CONST_DATA gProcScr_BerserkCpPhase[];
+
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
+bool IsUnitEligibleForAiPhase(const struct Unit* unit);
+#endif
 extern struct ProcCmd CONST_DATA gProcScr_CpOrder[];
 extern struct ProcCmd CONST_DATA gProcScr_BerserkCpOrder[];
 extern struct ProcCmd CONST_DATA gProcScr_CpDecide[];

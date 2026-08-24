@@ -657,6 +657,74 @@
     },
     {
       "id": 80,
+      "key": "autoplay.charge.label",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 8,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact",
+      "notes": "Issue #87 one-phase blue delegation map-menu label."
+    },
+    {
+      "id": 81,
+      "key": "autoplay.charge.help",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 64,
+      "max_decoded_bytes": 96,
+      "pseudo_policy": "compact",
+      "notes": "Issue #87 one-phase blue delegation map-menu help."
+    },
+    {
+      "id": 82,
+      "key": "debug.action.chapter_skirmish",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 64
+    },
+    {
+      "id": 83,
+      "key": "debug.selector.chapter",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24
+    },
+    {
+      "id": 84,
+      "key": "debug.selector.skirmish",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24
+    },
+    {
+      "id": 85,
+      "key": "debug.selector.eirika",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 20,
+      "max_decoded_bytes": 24
+    },
+    {
+      "id": 86,
+      "key": "debug.selector.ephraim",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 20,
+      "max_decoded_bytes": 24
+    },
+    {
+      "id": 87,
+      "key": "debug.selector.unavailable",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 48
+    },
+    {
+      "id": 88,
       "key": "debug.save_fixture.game0",
       "status": "active",
       "surface": "debug_overlay",
@@ -664,7 +732,7 @@
       "max_decoded_bytes": 32
     },
     {
-      "id": 81,
+      "id": 89,
       "key": "debug.save_fixture.game1",
       "status": "active",
       "surface": "debug_overlay",
@@ -672,7 +740,7 @@
       "max_decoded_bytes": 32
     },
     {
-      "id": 82,
+      "id": 90,
       "key": "debug.save_fixture.game2",
       "status": "active",
       "surface": "debug_overlay",
@@ -680,7 +748,7 @@
       "max_decoded_bytes": 32
     },
     {
-      "id": 83,
+      "id": 91,
       "key": "debug.save_fixture.latest_suspend",
       "status": "active",
       "surface": "debug_overlay",
@@ -688,7 +756,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 84,
+      "id": 92,
       "key": "debug.save_fixture.completion",
       "status": "active",
       "surface": "debug_overlay",
@@ -696,7 +764,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 85,
+      "id": 93,
       "key": "debug.save_fixture.tactician",
       "status": "active",
       "surface": "debug_overlay",
@@ -704,7 +772,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 86,
+      "id": 94,
       "key": "debug.save_fixture.keep",
       "status": "active",
       "surface": "debug_overlay",
@@ -712,7 +780,7 @@
       "max_decoded_bytes": 20
     },
     {
-      "id": 87,
+      "id": 95,
       "key": "debug.save_fixture.marker",
       "status": "active",
       "surface": "debug_overlay",
@@ -720,7 +788,7 @@
       "max_decoded_bytes": 20
     },
     {
-      "id": 88,
+      "id": 96,
       "key": "debug.save_fixture.arm",
       "status": "active",
       "surface": "debug_overlay",
@@ -728,7 +796,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 89,
+      "id": 97,
       "key": "debug.save_fixture.continue",
       "status": "active",
       "surface": "debug_overlay",
@@ -736,7 +804,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 90,
+      "id": 98,
       "key": "debug.save_fixture.preview",
       "status": "active",
       "surface": "debug_overlay",
@@ -744,7 +812,7 @@
       "max_decoded_bytes": 32
     },
     {
-      "id": 91,
+      "id": 99,
       "key": "debug.save_fixture.title_only",
       "status": "active",
       "surface": "debug_overlay",
@@ -752,7 +820,7 @@
       "max_decoded_bytes": 40
     },
     {
-      "id": 92,
+      "id": 100,
       "key": "debug.save_fixture.invalid",
       "status": "active",
       "surface": "debug_overlay",
@@ -760,7 +828,7 @@
       "max_decoded_bytes": 32
     },
     {
-      "id": 93,
+      "id": 101,
       "key": "debug.save_fixture.blocked",
       "status": "active",
       "surface": "debug_overlay",

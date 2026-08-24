@@ -126,9 +126,10 @@ provenance to differ. Its expected baseline may omit the otherwise-unused
 print the captured candidate identity. Use it only when changed ROM bytes are
 expected; it never silently turns off capture identity reporting. Capture JSON
 always contains provenance under `"rom"` regardless of the later verification
-policy. Fixed-frame schema version 1 uses fingerprint format version 2;
-bounded run-until schema version 2 uses fingerprint format version 3.
-Exact-ROM expected fingerprints in either format require valid provenance.
+policy. Fixed-frame scenarios use schema version 1 and exact-ROM expected fingerprints
+require valid provenance in format version 2. Bounded semantic run-until
+scenarios use schema version 2 and fingerprint format version 3, including one
+typed terminal outcome plus its dynamic checkpoint frame.
 
 ## Host-only test mode
 
@@ -187,8 +188,6 @@ A scenario is one strict JSON object. Unknown fields, duplicate JSON keys,
 overlapping/out-of-order frame ranges, duplicate checkpoints/probes, malformed
 expectations, and invalid key/address names are errors.
 
-### Fixed-frame schema version 1
-
 ```json
 {
   "schema_version": 1,
@@ -239,131 +238,6 @@ documented program explicitly mirrors KEYINPUT there.
 Disabled schema-ready stubs additionally use `"disabled": true` and a non-empty
 `"blocker"`. They may have no checkpoints, and capture rejects them explicitly.
 
-Schema version 1 and its format-version-2 fingerprints are unchanged. Existing
-fixed-frame files require no migration and still generate the same plan and
-fingerprint structure.
-
-### Bounded semantic run-until schema version 2
-
-Schema version 2 replaces the fixed `checkpoints` array with one bounded
-`run_until` profile and one terminal checkpoint template:
-
-```json
-{
-  "schema_version": 2,
-  "name": "bounded-example",
-  "frames": [
-    {"start": 90, "end": 95, "keys": ["SELECT", "START", "R"]}
-  ],
-  "run_until": {
-    "max_frames": 18001,
-    "terminal_conditions": [
-      {
-        "reason": "success",
-        "all": [
-          {
-            "address": "gExpansionAutoplayTelemetry+0x04",
-            "size": 4,
-            "operator": "eq",
-            "value": "0x00000003"
-          }
-        ]
-      },
-      {
-        "reason": "objective_failure",
-        "all": [
-          {
-            "address": "gExpansionAutoplayTelemetry+0x04",
-            "size": 4,
-            "operator": "eq",
-            "value": "0x00000004"
-          }
-        ]
-      }
-    ],
-    "stall": {
-      "max_unchanged_frames": 1800,
-      "progress": {
-        "address": "gExpansionAutoplayTelemetry+0x18",
-        "size": 4
-      },
-      "work_expected": {
-        "address": "gExpansionAutoplayTelemetry+0x04",
-        "size": 4,
-        "operator": "eq",
-        "value": "0x00000002"
-      }
-    },
-    "turn_limit": {
-      "maximum": 3,
-      "address": "gPlaySt+0x10",
-      "size": 2
-    },
-    "action_limit": {
-      "maximum": 62,
-      "address": "gExpansionAutoplayTelemetry+0x18",
-      "size": 4
-    },
-    "checkpoint": {
-      "name": "semantic-terminal",
-      "framebuffer": false,
-      "probes": [
-        {"address": "gExpansionAutoplayTelemetry+0x18", "size": 4}
-      ]
-    }
-  }
-}
-```
-
-`max_frames` is an unconditional positive frame count. A value of N executes
-at most zero-based frames 0 through N-1; every input range must end before N.
-The terminal checkpoint deliberately has no authored `frame`: the backend
-captures it exactly once on the first terminal frame.
-
-Each terminal condition is a conjunction (`all`) of unsigned comparisons over
-the same bounded 1/2/4-byte literal or ELF-symbol probes used by checkpoints.
-Operators are `eq`, `ne`, `lt`, `le`, `gt`, and `ge`; values are lowercase
-fixed-width hexadecimal strings. Exactly one `success` definition is required.
-`objective_failure` and `controller_exhausted` definitions are optional.
-Duplicate predicates/reasons, internally impossible conjunctions, or two
-terminal definitions that can overlap are rejected before ROM execution.
-The parser also rejects a success definition statically precluded by its
-declared turn/action ceiling.
-
-`turn_limit` and `action_limit` are optional named semantic counters. Their
-positive `maximum` is checked after explicit terminal conditions, so success
-observed exactly at a counter bound remains success. `stall` is optional and
-requires a ROM-supplied monotonic progress epoch plus a separate
-`work_expected` comparison. Only consecutive unchanged epoch transitions
-while work is expected count toward `max_unchanged_frames`; a defend/wait
-objective can report work not expected and remain stationary without being
-called stalled. Any epoch regression is a deterministic backend error, never
-normalized into a terminal result.
-
-Terminal priority is explicit conditions, `engine_stall`, `max_turns`,
-`max_actions`, then `max_frames`. Exactly one of these stable reasons is
-emitted:
-
-- `success` - the authored success state became observable;
-- `objective_failure` - the ROM reported an authored loss/failure state;
-- `controller_exhausted` - explicit ROM telemetry reported no legal action;
-- `engine_stall` - the monotonic progress epoch stopped while work was expected;
-- `max_frames`, `max_turns`, or `max_actions` - the corresponding hard budget
-  was reached first.
-
-Run-until captures use fingerprint format version 3. They retain normal
-scenario and ROM provenance, contain exactly one checkpoint, and add
-`terminal.reason`, `terminal.frame`, plus probe-shaped `terminal.turn` and
-`terminal.actions` values (or `null` when the counter is unbound). The
-checkpoint frame must equal the terminal frame. Behavior-policy verification
-compares this typed terminal record as well as checkpoint data.
-
-All seven reasons are deterministic semantic outcomes, not host process
-timeouts. They return one fingerprint and are never retried. `--retries`
-continues to apply only to a transient compiler/pkg-config/backend process
-timeout; it cannot turn an objective failure, exhausted controller, stall, or
-budget result into success.
-
 ## Initial coverage and limits
 
 `boot.json` is a no-input early boot capture. `title-progression.json` uses the
@@ -398,14 +272,16 @@ similarity alone.
 | `new-game.json` | Ordinary Save-Menu New Game creation: New Game -> Easy -> first empty slot, with a before/after whole-SRAM hash proving the real `SaveMenuWriteNewGame`/`WriteGameSave`-class write happened, and `gPlaySt.chapterIndex`/`faction` probes confirming the created game begins at the Prologue (`CHAPTER_L_PROLOGUE`, player phase) | debug + release |
 | `debugtools-hub-modern-{debug,release}.json` (issue #11) | The debug-only "Fast Boot: Chapter 2" launcher's deterministic clean-boot chapter/map **arrival**: reaches an interactive first stable Player Phase on the real Chapter 2 map, proven via relocation-independent cursor/phase/proc-state/hub-count semantic probes plus per-slot `struct Unit.state` fields and a stable fixture-seeded whole-SRAM hash (no unit `pCharacterData` ROM pointer is asserted as an oracle); release mirror proves the hub/launcher are compiled out and inert | debug (live) / release (negative) |
 | `debugtools-map-hub-modern-{debug,release}.json` (issue #11) | The map-phase debug hub stays reachable and leaves the real, interactive Chapter 2 map genuinely interactive afterward | debug (live) / release (negative) |
-| `debugtools-{prep,timer,ch4-prep-launch}-*` (issue #11) | Additional debug-tool launcher/hotkey/diagnostics behavior and their release-inert negatives -- see `docs/debugtools.md` | debug + release, per file |
+| `debugtools-{prep,timer}-*` (issue #11) | Additional debug-tool hotkey/diagnostics behavior and release-inert negatives -- see `docs/debugtools.md` | debug + release, per file |
+| `debugtools-selector-{chapter,skirmish}-modern-debug.json` + `debugtools-selector-modern-release.json` (issue #123) | Metadata-derived ID-4 selector: title Chapter 4 and live-map Chapter 4 skirmish requests consume exactly once after session cleanup, reach interactive prep/map state, and retain identical full-SRAM hashes; exact-input release mirror keeps every selector probe zero | debug (two live routes) / release (negative) |
 | `savecompat-current.json` / `savecompat-dialog-back.json` / `savecompat-erase.json` | Save-compatibility classification, non-destructive Back, and confirmed Erase across all `SaveCompatState` values | debug + release |
 | `savesuspend-resume-modern-debug.json` | Full write -> soft-reset -> reload round trip: an ordinary Map Menu **Suspend**, a real soft-reset key combo, and **Resume** through `ReadSuspendSave()`, with `gPlaySt.chapterIndex`/`faction`/cursor and a unit-item probe proving the exact manually-saved state (not the earlier auto-save) was restored | debug only (depends on the debug-only Chapter 2 launcher) |
-| `combat.json` (issue #13) | The chapter's own scripted `FIGHT` in Chapter 4 resolved by the REAL battle engine (`Event3F_ScriptBattle`, `EV_CMD_SCRIPT_BATTLE`): the target enemy `gUnitArrayRed[0]` is alive at full HP (`maxHP` `0x0202eba6` and `curHP` `0x0202eba7` both `15`), `curHP` transitions `15 -> 0` at the resolving SCRIPT_BATTLE frame while `maxHP` stays `15`, then `pCharacterData` (`0x0202eb94`) is cleared to a null `0x00000000` (death) -- relocation-independent semantic HP scalars and a null-field marker, never a nonzero pointer, framebuffer, or timing | debug only (debug-only Fast Boot launcher) |
+| `combat.json` (issue #13) | The selector's default Chapter 4 target reaches the chapter's own scripted `FIGHT` through an explicit `L+A` compatibility request, resolved by the REAL battle engine (`Event3F_ScriptBattle`, `EV_CMD_SCRIPT_BATTLE`): the target enemy `gUnitArrayRed[0]` is alive at full HP (`maxHP` `0x0202eba6` and `curHP` `0x0202eba7` both `15`), `curHP` transitions `15 -> 0` at the resolving SCRIPT_BATTLE frame while `maxHP` stays `15`, then `pCharacterData` (`0x0202eb94`) is cleared to a null `0x00000000` (death) -- relocation-independent semantic HP scalars and a null-field marker, never a nonzero pointer, framebuffer, or timing | debug only (selector compatibility Chapter 4 boot) |
 | `save-load.json` (issue #13) | Normal (non-Suspend) game-save write + load: SaveMenu New Game -> slot 0 write, a real A+B+SELECT+START soft reset, then SaveMenu RESTART -> `PostSaveMenuHandler` -> `ReadGameSave(0)`; `playthroughIdentifier` (`0x020210bc`)/`chapterModeIndex` (`0x020210bf`) go `1 -> 0 -> 1`, `gameSaveSlot` (`0x020210b0`) `== 0`, and before/after whole-SRAM hashes differ | debug only (debug-calibrated soft-reset) |
-| `debugtools-ch4-prep-positive-modern-debug.json` (issue #11) | Live prep-screen arrival + SELECT+B prep hotkey: rests `gProcScr_SALLYCURSOR` in `PrepScreenProc_MapIdle` and fires the hotkey; `prepScreenObservedCount` (`0x02031854`) `0 -> 1` (reachable only from MapIdle, so it is the relocation-independent proof the hotkey fired live), `PLAY_FLAG_PREPSCREEN` held throughout, idempotent 2nd press, safe return to prep -- no proc ROM-pointer oracle | debug only (debug-only launcher + hotkey) |
+| `debugtools-ch4-prep-positive-modern-debug.json` (issue #11, evolved by #123) | Live prep-screen arrival through the selector's default Chapter 4 target + SELECT+B prep hotkey: rests `gProcScr_SALLYCURSOR` in `PrepScreenProc_MapIdle` and fires the hotkey; `prepScreenObservedCount` (`0x02031854`) `0 -> 1` (reachable only from MapIdle, so it is the relocation-independent proof the hotkey fired live), `PLAY_FLAG_PREPSCREEN` held throughout, idempotent 2nd press, safe return to prep -- no proc ROM-pointer oracle | debug only (debug-only selector + hotkey) |
 | `debugtools-tools-modern-{debug,release}.json` (issues #11/#125) | The five shipped bounded tools driven **live** from the real Chapter 2 map hub. Issue #125 adds cursor slot/character/class inspection, a read-only HP preview, exact confirmed HP `17 -> 16`, heal `16 -> 17`, typed empty-tile rejection, matching before/after SRAM hashes, and post-cleanup cursor movement. Existing Convoy `0 -> 1`, Flag `0 -> 1`, RNG reseed, and read-only Save assertions remain. Symbol-bound semantic probes only; release replays identical input with the established probe zero while editor code/state/probe symbols are omitted | debug (live) / release (negative) |
 | `run_autoplay_checks.py` generated scenarios (issue #85) | `TC-AUTOPLAY-001`: a clean Chapter 2 debug-only activation chord drives a full blue phase through the existing AI and records legal actions, faction-relation checks, completion, and progression; clean Prologue debug/release defaults remain PLAYER with zero blue AI actions | debug (positive + negative) / release (negative) |
+| `run_blue_phase_delegate_checks.py` generated scenarios (issue #87) | `TC-AUTOPLAY-CHARGE-001`: the enabled debug ROM selects the real localized Charge map-menu row, delegates the current blue phase, and reaches the next interactive blue phase with PLAYER restored; matching default debug/release ROMs retain zero blue AI actions | debug (positive + negative) / release (negative) |
 | `run_autoplay_bounds_checks.py` generated scenarios (issue #86) | `TC-AUTOPLAY-BOUNDS-001`: the same debug COMPUTER route stops at its first semantic completion (frame 17134 in the checked candidate), while clean debug/release PLAYER controls reach `max_frames` at frame 3950 with zero actions; the generated homebrew fixture separately covers all seven terminal reasons | debug (positive + negative) / release (negative) |
 
 New-game, chapter/map arrival, combat, and normal save/load are all enabled,

@@ -95,5 +95,14 @@
     "debug.save_fixture.title_only": "タイトル画面のみ",
     "debug.save_fixture.invalid": "データ無効",
     "debug.save_fixture.blocked": "保存禁止"
+,
+    "debug.action.chapter_skirmish": "章/魔物戦",
+    "debug.selector.chapter": "章",
+    "debug.selector.skirmish": "魔物戦",
+    "debug.selector.eirika": "エイリーク",
+    "debug.selector.ephraim": "エフラム",
+    "debug.selector.unavailable": "対象なし",
+    "autoplay.charge.label": "進撃",
+    "autoplay.charge.help": "残りのユニットをこのフェイズだけAIに任せる"
   }
 }

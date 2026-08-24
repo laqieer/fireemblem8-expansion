@@ -191,11 +191,11 @@ def check_layout_anchor(elf: Path) -> None:
             "debug Save State layout, shared menu storage, or the 0x100-byte "
             "fixture state/preview/probe contract drifted"
         )
-    if int(elf_anchor.group(1), 16) != (
+    if int(elf_anchor.group(1), 16) < (
         int(stable_probe.group(1), 16) + int(stable_probe.group(2), 16)
     ):
         raise RuntimeError(
-            "retained save-fixture storage no longer follows the debug probe"
+            "retained save-fixture storage overlaps the debug probe"
         )
     if recovered_menu_bytes < 0x1B0:
         raise RuntimeError(

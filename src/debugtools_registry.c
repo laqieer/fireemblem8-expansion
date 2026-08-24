@@ -225,7 +225,7 @@ static const ExpansionMsgId sBuiltinActionLabelMsgIds[DEBUGTOOLS_BUILTIN_ACTION_
     EXP_MSG_DEBUG_ACTION_FASTBOOT_CH2,      /* id 1 */
     EXP_MSG_DEBUG_ACTION_WEATHER,           /* id 2 */
     EXP_MSG_DEBUG_ACTION_FOG,               /* id 3 */
-    EXP_MSG_DEBUG_ACTION_FASTBOOT_CH4PREP,  /* id 4 */
+    EXP_MSG_DEBUG_ACTION_CHAPTER_SKIRMISH,  /* id 4 */
     EXP_MSG_DEBUG_ACTION_UNIT_INSPECT,      /* id 5 */
     EXP_MSG_DEBUG_ACTION_CONVOY_INSPECT,    /* id 6 */
     EXP_MSG_DEBUG_ACTION_FLAG_CHAPTER,      /* id 7 */

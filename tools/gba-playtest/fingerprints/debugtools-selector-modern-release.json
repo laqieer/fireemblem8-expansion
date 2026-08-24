@@ -1,0 +1,36 @@
+{
+  "checkpoints": [
+    {
+      "frame": 880,
+      "name": "release-selector-input-is-inert",
+      "probes": [
+        {"address": "gDebugToolsProbe", "size": 4, "value": "0x00000000"},
+        {"address": "gDebugToolsProbe+0x04", "size": 4, "value": "0x00000000"},
+        {"address": "gDebugToolsProbe+0x08", "size": 4, "value": "0x00000000"},
+        {"address": "gDebugToolsProbe+0x0c", "size": 4, "value": "0x00000000"}
+      ]
+    },
+    {
+      "frame": 1100,
+      "name": "release-has-no-request-or-commit",
+      "probes": [
+        {"address": "gDebugToolsProbe+0x14", "size": 4, "value": "0x00000000"},
+        {"address": "gDebugToolsProbe+0x18", "size": 4, "value": "0x00000000"},
+        {"address": "gDebugToolsProbe+0x30", "size": 4, "value": "0x00000000"},
+        {"address": "gDebugToolsProbe+0x38", "size": 4, "value": "0x00000000"}
+      ]
+    },
+    {
+      "frame": 4550,
+      "name": "release-remains-live-with-selector-probes-zero",
+      "probes": [
+        {"address": "gDebugToolsProbe", "size": 4, "value": "0x00000000"},
+        {"address": "gDebugToolsProbe+0x04", "size": 4, "value": "0x00000000"},
+        {"address": "gDebugToolsProbe+0x38", "size": 4, "value": "0x00000000"},
+        {"address": "gPlaySt+0x0e", "size": 1, "value": "0x00"}
+      ]
+    }
+  ],
+  "format_version": 2,
+  "scenario": "debugtools-selector-modern-release"
+}

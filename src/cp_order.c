@@ -48,6 +48,22 @@ ProcFunc CONST_DATA sCpOrderFuncList[] =
     CpOrderFunc_End,
 };
 
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
+bool IsUnitEligibleForAiPhase(const struct Unit* unit)
+{
+    if (!unit || !unit->pCharacterData)
+        return false;
+
+    if (unit->statusIndex == UNIT_STATUS_SLEEP || unit->statusIndex == UNIT_STATUS_BERSERK)
+        return false;
+
+    if (unit->state & (US_HIDDEN | US_UNSELECTABLE | US_DEAD | US_RESCUED | US_HAS_MOVED_AI))
+        return false;
+
+    return true;
+}
+#endif
+
 void CpOrderMain(ProcPtr proc)
 {
     sCpOrderFuncList[gAiState.orderState++](proc);
@@ -180,6 +196,10 @@ int BuildAiUnitList(void)
     {
         struct Unit* unit = GetUnit(faction + i + 1);
 
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
+        if (!IsUnitEligibleForAiPhase(unit))
+            continue;
+#else
         if (!unit->pCharacterData)
             continue;
 
@@ -191,6 +211,7 @@ int BuildAiUnitList(void)
 
         if (unit->state & (US_HIDDEN | US_UNSELECTABLE | US_DEAD | US_RESCUED | US_HAS_MOVED_AI))
             continue;
+#endif
 
         gAiState.units[aiNum] = faction + i + 1;
         *prioIt++ = GetUnitAiPriority(unit);

@@ -3,9 +3,10 @@
 This document is the single reference for the debug-tools subsystem built
 for issue #11: a release-safe config gate; a fixed-capacity, hardened
 contributor action-registration API (capacity/id/label/callback/reentrancy
-all explicitly validated); title/map/prep-screen hub hotkeys; two
-deterministic launchers (Chapter 2, and Chapter 4 for reaching a real prep
-screen); the Weather/Fog actions; a bounded diagnostics foundation (log
+all explicitly validated); title/map/prep-screen hub hotkeys; the Chapter 2
+deterministic launcher; the issue #123 bounded chapter/skirmish selector
+(which supersedes the former standalone Chapter 4 action at stable built-in
+ID 4); the Weather/Fog actions; a bounded diagnostics foundation (log
 ring + non-fatal assert record); five bounded validated tools (unit,
 convoy, flag/chapter, RNG, save-state); issue #125's cursor-selected typed
 unit inspector/editor; issue #126's bounded reversible music-preview action;
@@ -22,7 +23,8 @@ and
 | --- | --- |
 | `include/expansion_debugtools.h` | Public contract: config gate, title/map/prep hotkey masks + compile-time collision guards, registration API, pending-request/bootstrap-suppression API, `struct DebugToolsProbe` |
 | `src/debugtools_registry.c` | Registry storage, hub menu construction/diagnostics, title/map/prep hotkey checks, `gDebugToolsProbe` |
-| `src/debugtools_launcher.c` | The built-in "Fast Boot: Chapter 2" action: arms/consumes the pending launch request, owns the bootstrap-suppression state and its observer proc |
+| `src/debugtools_launcher.c` | The built-in "Fast Boot: Chapter 2" action, bootstrap-suppression observer, and source-compatible Chapter 4 initializer alias |
+| `src/debugtools_selector.c` | Built-in ID-4 Chapter/Skirmish submenu, metadata-derived target enumeration, typed one-shot request, and deferred live-map/prep GameControl handoff |
 | `src/debugtools_actions.c` (slice 2) | Built-in Weather/Fog actions: registers each as a bounded one-item submenu whose `MenuItemDef` reuses the dormant `DebugMenu_Weather*`/`DebugMenu_Fog*` functions in `src/bmdebug.c` by pointer, with its own Back/B handling |
 | `src/titlescreen.c` | The title-screen hotkey call site (`Title_IDLE`); also detects the pending launch request after the hub MenuProc closes, before deferred allocator cleanup releases session ownership |
 | `src/playerphase.c` (slice 2) | The map-phase hotkey call site: `PlayerPhase_MainIdle` calls `DebugTools_MapHotkeyCheck()` and returns immediately while the hub is active, as its first statements |
@@ -35,9 +37,10 @@ and
 | `tools/gba-playtest/fingerprints/debugtools-{hub,map-hub,prep-hub}-modern-{debug,release}.json` | Captured fingerprints for the scenarios above |
 | `src/debugtools_diag.c` (closure) | Diagnostics foundation: bounded log ring (`DebugTools_LogEvent`/`GetLogEntry`/`GetLogCount`) and non-fatal assert record (`DEBUGTOOLS_ASSERT`/`DebugTools_RecordAssertFailure`) |
 | `src/debugtools_tools.c` (closure + issues #125/#128) | The five bounded validated tools. Unit Inspect resolves the live cursor target and exposes typed HP/stat/AI/status edits; Convoy Inspect, Flag/Chapter, and RNG Inspect retain their issue #11 contracts; Save State adds only the isolated title-only volatile fixture flow |
+| `src/gamecontrol.c` (issue #123) | `GameControl_PostIntro` consumes the validated typed selector request, creates only transient chapter/skirmish state, arms boot-write suppression, and selects the direct or explicit Chapter 4 compatibility route from request provenance |
+| `tools/gba-playtest/scenarios/debugtools-selector-{chapter,skirmish}-modern-debug.json` | Title-origin Chapter 4 and live-map-origin Chapter 4 skirmish routes, including exact-once request/consume/handoff, interactive destinations, and byte-identical pre/post SRAM hashes |
+| `tools/gba-playtest/scenarios/debugtools-selector-modern-release.json` | Exact-input release mirror proving selector/action/request/handoff behavior and the private selector state symbol are omitted while the unchanged modern release debugtools probe stays zero |
 | `src/debugtools_music.c` (issue #126) | Built-in ID 10: authoritative song navigation, localized names, one typed preview owner, exact restoration, telemetry, and forced cleanup |
-| `src/gamecontrol.c` (closure) | `GameControl_PostIntro` also consumes the second, independent Ch4-Prep pending request and commits the deterministic Chapter 4 boot |
-| `tools/gba-playtest/scenarios/debugtools-ch4-prep-launch-modern-{debug,release}.json` (closure) | The Ch4-Prep launcher's own boot-commit lifecycle scenario + release mirror (see "Fast Boot: Chapter 4 (Prep)" below; the live prep-screen arrival itself is proven by the prep-positive scenario in the next row) |
 | `tools/gba-playtest/scenarios/debugtools-ch4-prep-positive-modern-debug.json` (closure) | Live prep-screen arrival (debug-only): drives the Chapter 4 world-map traversal + the real `PREP` opcode to a live `PrepScreenProc_MapIdle`, then fires the SELECT+B prep hotkey; proves `prepScreenObservedCount` 0->1 and `PLAY_FLAG_PREPSCREEN` held throughout. Gate: DEBUG branch of `expansion-modern-debugtools-prep-check` |
 | `tools/gba-playtest/tests/test_debugtools_registry.py` + `tools/gba-playtest/tests/c/*.c` | Host tests (see "Host tests" below) |
 
@@ -75,14 +78,14 @@ by-pointer/never-copy discipline for the engine helpers they call
   all** -- not merely unreachable at runtime. Verified by `nm` on the linked
   release ELF (no `DebugToolsHub_*`/`gDebugToolsHubMenuDef`/
   `DebugToolsLauncher_*`/`DebugToolsMusic_*`/typed preview-owner and transient
-  sound-helper symbols) and by an equivalent host-compiled check
+  sound-helper/selector symbols) and by equivalent host-compiled checks
   (`test_registry_disabled_path_behavior_and_symbol_omission`).
 - The archival agbcc lane excludes the supported subsystem behind
-  `FE8_ARCHIVAL_BUILD`; issues #125 and #126 add no archival runtime behavior
-  or byte-match requirement.
+  `FE8_ARCHIVAL_BUILD`; issues #123, #125, and #126 add no archival runtime
+  behavior or byte-match requirement.
 
 `gDebugToolsProbe` (see "Playtest probe surface" below) is the one exception:
-it is always linked, in every build, so a release scenario can assert it
+it is always linked in modern debug and release builds, so a release scenario can assert it
 stays all-zero for a whole run.
 
 ## Registration API
@@ -462,6 +465,155 @@ stay at their pre-toggle value across a Weather/Fog cycle, exactly as this
 root-cause analysis predicts), and left exactly as-is -- fixing either is
 out of this slice's WHERE/HOW MUCH ("Weather/Fog... dormant, non-persistent"
 was itself given as the reason these two were chosen as safe to expose).
+
+## Bounded chapter/skirmish selector (issue #123)
+
+Issue #123 is a **framework capability**: projects, playtest automation, and
+content authors can enter an authoritative chapter or supported world-map
+encounter without restoring the prototype/retail debug menu. It uses the
+existing hub, submenu transition, and GameControl seams. It does not add a
+second registry, feature flag, chapter catalog, or startup callback.
+
+### Action and controls
+
+Built-in ID 4 is now `Chapter/Skirmish`. This intentionally evolves the old
+single-purpose `Fast Boot: Ch4 Prep` row without changing any stable built-in
+ID, the nine built-in slots, contributor IDs `10..65535`, the public
+`struct DebugToolsAction` ABI, the nine-row page limit, or the 18-action total
+capacity. `DebugTools_RegisterChapter4PrepAction()` remains a source-compatible
+initializer alias for the ID-4 selector, and
+`expansion-modern-debugtools-ch4prep-check` remains a compatibility build
+target that runs the selector gate.
+
+Selecting ID 4 uses the existing deferred hub-to-submenu handoff. The submenu
+has one live row plus the all-zero terminator:
+
+- Left/Right selects the previous/next target with wraparound.
+- The row shows localized Chapter/Skirmish and route labels plus the numeric
+  chapter identity.
+- A revalidates and queues exactly one typed request, then closes the submenu
+  and the complete debug session through deferred Text cleanup.
+- B or forced teardown before A queues nothing and returns through the same
+  bounded hub session.
+
+The immutable two-entry `MenuItemDef` table (one row plus terminator) is
+ROM-resident. The selector allocates only one 18-column menu `Text`; Left/Right
+redraws reuse it and never call `InitText` again. Final cleanup rewinds the
+captured owner font only after both MenuProcs have ended. No heap allocation is
+used.
+
+### Authoritative target enumeration
+
+There is no hand-authored chapter list. `src/debugtools_selector.c` scans the
+typed runtime sources already owned by the engine:
+
+- `gWMNodeData[0..NODE_MAX)` supplies node, route, encounter, and
+  route-specific chapter identities.
+- `gChapterDataTable` and its generated debug-only
+  `gChapterDataCount = ARRAY_COUNT(gChapterDataTable)` bound chapter lookup and
+  require a non-empty internal name, map-event reference, chapter-title text
+  reference, normal ally list, and beginning event.
+- Nodes whose Eirika/Ephraim chapter identities match produce one Common
+  target. A route split produces independent Eirika and Ephraim targets.
+- A skirmish target additionally requires membership in the bounded
+  `gWMMonsterSpawnLocations[0..min(gWMMonsterSpawnsSize, WM_MON_LOC_MAX))`
+  table, `GMAP_ENCOUNTERS_MONSTERS`, and all three typed ally plus all three
+  typed enemy encounter lists in the selected `ChapterEventGroup`.
+
+The stock metadata yields 45 targets, but that count is not compiled into the
+selector. A generated-data project changes the result by changing the owning
+chapter/world-map/event metadata, not by editing debugtools. Invalid,
+placeholder, out-of-range, non-spawn, or incomplete encounter rows are never
+displayed.
+
+Each emitted target has a stable typed identity:
+
+```text
+(DebugToolsLaunchTargetKind << 12) |
+(chapterMode << 8) |
+worldMapNode
+```
+
+The four-byte private state stores only that ID plus pending/handoff bits.
+Consume re-resolves it against current metadata and constructs the typed
+kind/mode/node/chapter request on the GameControl stack. A malformed ID is
+`DEBUGTOOLS_LAUNCH_REQUEST_INVALID`; a well-formed identity
+whose metadata is unavailable is `DEBUGTOOLS_LAUNCH_REQUEST_UNAVAILABLE`; and
+any second arm while one request is pending is
+`DEBUGTOOLS_LAUNCH_REQUEST_BUSY`. Host automation asserts all three explicit
+results and that they leave the active menu/owner untouched.
+
+### Lifecycle-safe GameControl handoff
+
+The submenu callback never calls `EndBMapMain`, `Proc_Goto`, `Proc_EndEach`,
+`StartBattleMap`, a restart helper, or a save API.
+
+1. **Title:** A queues the typed request. The submenu `onEnd` schedules final
+   debug-session cleanup. `Title_IDLE` reacts only after
+   `DebugTools_IsHubActive()` is false, then takes the ordinary
+   `GAME_ACTION_EVENT_RETURN`/`Proc_Break` path.
+2. **Live map or prep:** the owning `PlayerPhase_MainIdle` or
+   `PrepScreenProc_MapIdle` sees the pending request only after session
+   cleanup and schedules one yielded handoff Proc. That independent Proc
+   verifies BMap and GameControl still exist, ends BMap once, and routes the
+   existing GameControl to `LGAMECTRL_POST_TITLE_IDLE`. It never destroys or
+   recreates GameControl. A duplicate schedule is a no-op; a lost owner is
+   bounded by a 60-frame cancellation timeout.
+3. **GameControl:** `GameControl_PostIntro` consumes once before the ordinary
+   save-menu branch and seeds the deterministic RNG. Ordinary selector
+   confirmation initializes transient play state and enters
+   `LGAMECTRL_EXEC_BM_EXT`, the engine's existing direct battle-map label.
+   Holding L while confirming the default Common-route Chapter 4 target marks
+   that request as compatibility-origin and preserves the established
+   `NODE_BORGO_RIDGE` traversal through `LGAMECTRL_EXEC_BM`. Story targets mark
+   only their transient selected node as valid/cleared. Skirmishes mark the
+   authoritative spawn node valid/not cleared, select encounter variant 0, and
+   set `PLAY_FLAG_EXTRA_MAP`.
+   Encounter ally lists reposition an existing party, so GameControl first
+   seeds that party from the selected chapter's authoritative normal ally
+   list; it never maintains a separate unit fixture.
+
+The existing bootstrap observer/write suppression covers the transition until
+the first stable Player Phase. Chapter and skirmish libmGBA scenarios compare
+the full 32 KiB SRAM hash before selection with prep/map interactive
+checkpoints; every value is exactly
+`fnv1a64-sram:1fb2612031f74d22`.
+
+### Compatibility, limits, and conflicts
+
+| Surface | Contract |
+| --- | --- |
+| Configuration | Existing `FE8_EXPANSION_DEBUGTOOLS_ENABLED`; no new Autoconf option, Make variable, or C gate |
+| Modern debug | ID-4 selector/action/request/handoff and generated count are linked |
+| Modern release | Selector bodies/call sites, private selector state, and `gChapterDataCount` are omitted; exact input leaves the unchanged release probe zero |
+| Archival | `FE8_ARCHIVAL_BUILD` compiles the selector empty; no source/layout/identity requirement changes |
+| Save | No field, epoch, migration, slot write, completion mutation, or tactician mutation |
+| Generated data | Reads the generated chapter table/count and typed world-map/event metadata; no generated output is committed |
+| Localization | Stable expansion message IDs for the action, kind, route, and unavailable labels in all seven authored locales |
+| ROM/RAM | 4 bytes fixed debug EWRAM for selected target/pending/handoff state, leaving 1,700 bytes in default debug, 112 in en+ja/en+zh-Hans, 76 in en+ja+zh-Hans, 40 in all-locale+pseudo, and 8 in the expanded-item runtime profile; immutable menu definitions live in ROM; one transient Proc; no heap; release EWRAM layout unchanged |
+| Dependencies | Issue #11 registry, deferred menu ownership, title/map/prep hotkeys, GameControl PostIntro, bootstrap suppression, generated chapter metadata, typed world-map/event metadata |
+| Dependents | None |
+| Conflicts | Prototype/debug patches, direct engine-owned menu edits, save-writing launchers, duplicate registries/catalogs, or direct restart/BMap teardown from a menu callback |
+| Explicit none | Starter gameplay features, custom spells, locale selection, autoplay strategy, and save migration |
+
+Only world-map-node-backed chapter identities are selectable. Placeholder
+chapter-table rows, arbitrary memory addresses, unregistered project maps,
+non-spawn encounters, encounter variants 1/2, and World Map progression
+cinematics are intentionally unsupported. Direct entry starts the selected
+battle/prep lifecycle; it does not pretend to complete preceding story nodes.
+
+The canonical procedure is
+[`TC-DEBUGTOOLS-PROTOTYPE-001`](test-cases/debugtools.md#tc-debugtools-prototype-001-bounded-chapter-and-skirmish-selector).
+Host automation covers metadata bounds, stable IDs, invalid/unavailable,
+duplicate, cancel, forced teardown, reentrancy, exact-once consume, and release
+symbol omission. `make expansion-modern-debugtools-selector-check
+MODERN_CONFIG=debug MODERN_ABI=aapcs` covers the title Chapter 4 and live-map
+Chapter 4 skirmish routes; the same target with `MODERN_CONFIG=release` covers
+the disabled path. There is no manual-only criterion.
+
+Rollback is a single-commit revert: ID 4 returns to the standalone Chapter 4
+action and the generated count, typed request, selector UI, scenarios, and
+catalog IDs disappear. No save/content conversion or ID migration is needed.
 
 ## Deterministic launcher: "Fast Boot: Chapter 2"
 
@@ -869,72 +1021,26 @@ release-mirror scenario proves the hotkey is inert on a release build, and
 the live, in-ROM debug playtest proof against a real prep screen is now
 provided by `debugtools-ch4-prep-positive-modern-debug.json`.
 
-## Fast Boot: Chapter 4 (Prep) (issue #11 closure)
+## Historical Chapter 4 launcher compatibility
 
-Chapter 2's own event script (`EventScr_Ch2_BeginningScene`) never calls the
-`PREP` event opcode, so the Chapter 2 launcher above cannot exercise
-`DebugTools_PrepHotkeyCheck()`/`PrepScreenProc_MapIdle` against a real, live
-prep screen -- the gap this repository's docs previously described as
-deferred, now closed by the Chapter 4 launcher and the prep-positive
-scenario below. `EventScr_Ch4_BeginningScene` (`src/events/ch4-eventscript.h`) is
-self-contained (its own `LOAD1`/`LOAD2` ally+enemy unit definitions, no
-`CALL` into another chapter's own sub-script) and calls
-`CALL(EventScr_CommonPrep)` partway through -- so a second, independent
-deterministic launcher targeting Chapter 4 reaches a genuine, unmodified,
-engine-driven `PrepScreenProc` (`gProcScr_SALLYCURSOR`) through the real
-`PREP` event opcode (`Event3E_PrepScreenCall`, `src/eventscr.c`), not a
-hand-rolled substitute.
+Issue #11 introduced a second, independent Chapter 4 request pair because
+Chapter 2 never reaches `EventScr_CommonPrep`. Those request functions and
+their probe fields remain available to specialized runtime probes, but issue
+#123 supersedes the visible ID-4 action with the selector above.
+`DebugTools_RegisterChapter4PrepAction()` now initializes that selector, and
+the old `expansion-modern-debugtools-ch4prep-check` target aliases
+`expansion-modern-debugtools-selector-check`.
 
-### Mechanism: a second, independent pending-request pair
+Weather and Fog therefore remain rows 1 and 2, while row 3 is now
+Chapter/Skirmish. The full first page remains nine bounded actions:
+Chapter 2 (0), Weather (1), Fog (2), Chapter/Skirmish (3), Unit Inspect (4),
+Convoy Inspect (5), Flag/Chapter (6), RNG Inspect (7), Save State (8), then
+Back (9). Contributor ordering and capacity are unchanged.
 
-`DebugTools_RequestChapter4PrepLaunch()` / `DebugTools_IsChapter4PrepLaunchPending()`
-/ `DebugTools_ConsumePendingChapter4PrepLaunch()` (`src/debugtools_launcher.c`)
-mirror the Chapter 2 request's exact one-shot arm/pending/consume contract,
-entirely independently: arming or consuming one never observably affects
-the other (`gDebugToolsProbe.pendingCh4PrepLaunchRequest`/
-`ch4PrepLauncherArmed`/`ch4PrepLaunchRequestConsumedCount` are separate
-fields from the Chapter 2 request's own). Both share the exact same
-`DebugTools_ArmBootstrapSuppression()`/`DebugToolsObserver_WaitForStablePlayerPhase`
-machinery -- that machinery was already chapter-agnostic (it only ever
-polls `gPlaySt.faction`/`gProcScr_PlayerPhase`, never a specific chapter
-index), so no changes were needed there for a second launch target.
-
-`GameControl_PostIntro` (`src/gamecontrol.c`) consumes the Ch4-Prep request
-at its own call site, textually after the Chapter 2 branch and before the
-ordinary `StartSaveMenu` branch, and commits an equivalent deterministic
-boot targeting `CHAPTER_L_4`: the same `InitPlayConfig`/`ResetPermanentFlags`/
-`ResetChapterFlags`/`InitUnits`/`GmDataInit` bootstrap, the same fixed debug
-RNG reseed, and the same one-shot bootstrap-suppression arming. The only
-difference is the world-map placement: `gGMData.units[0].location =
-NODE_BORGO_RIDGE` (instead of `NODE_CASTLE_FRELIA`) -- `NODE_BORGO_RIDGE`'s
-own `WMLoc_GetNextLocId` resolves to `NODE_ZAHA_WOODS` / `CHAPTER_L_4`
-(`src/worldmap_node_data.c`), exactly as `NODE_CASTLE_FRELIA` resolves to
-`NODE_IDE` / `CHAPTER_L_2` -- so the ordinary world-map traversal (an `L`
-cursor-jump + `A` node-confirm) reaches Chapter 4 without skipping any
-chapter-specific event/battle logic, and no chapter-specific event/battle
-logic is bypassed.
-
-### Hub menu ordering: Weather/Fog keep their pre-existing row indices
-
-`DebugTools_RegisterChapter4PrepAction()` is invoked from the one-shot
-built-in initializer, deliberately **after** `DebugTools_RegisterWeatherFogActions()`
-and **not** bundled into `DebugTools_RegisterBuiltinActions()` (which
-continues to register only the Chapter 2 launcher, completely unchanged).
-An earlier revision of this closure bundled both launchers into one
-registration call, which silently shifted Weather (index 1) and Fog (index
-2) down by one row -- breaking `debugtools-map-hub-modern-debug.json`'s own
-already-proven cursor-navigation input script (it would have landed one row
-early after the extra registration). Registering in this order keeps
-Weather/Fog at their pre-existing indices 1/2, so every already-committed
-map/prep-hub scenario's own input script keeps working unmodified; "Fast
-Boot: Ch4 Prep" and the five bounded tools below land at indices 3-8. The
-first hub page remains: Chapter 2 (0), Weather (1), Fog (2), Ch4 Prep (3),
-Unit Inspect (4), Convoy Inspect (5), Flag/Chapter (6), RNG Inspect (7),
-Save State (8), Back (9). Issue #126 preserves that entire first page, then
-places Music Preview (built-in ID 10) at page-two row 0, followed by the
-first eight contributors. The ninth contributor occupies page three with
-Back. R cycles at most three pages without changing any action's label or
-callback identity.
+The selector chapter scenario now owns the Chapter 4 request/commit/no-save
+evidence and reaches live prep directly. The existing
+`debugtools-ch4-prep-positive-modern-debug.json` remains an independent live
+prep hotkey/lifecycle proof and continues to pass against the evolved row.
 
 ## Bounded music preview (issue #126)
 
@@ -963,51 +1069,6 @@ preview audio once, cancels a queued transition, and releases the session
 guard. The appended `gDebugToolsMusicProbe` and bounded diagnostic events
 provide semantic correctness evidence; audio recognizability is supplementary.
 
-### Playtest evidence and its explicit, honest scope boundary
-
-`tools/gba-playtest/scenarios/debugtools-ch4-prep-launch-modern-debug.json`
-(4 checkpoints, live, debug-only) replays the same intro prefix as the
-title-hub scenario, pulses the title hotkey once, navigates down three rows
-to "Fast Boot: Ch4 Prep", selects it, and proves via `gDebugToolsProbe` that:
-the request arms independently (`pendingCh4PrepLaunchRequest ==
-DEBUGTOOLS_LAUNCH_REQUEST_MAGIC`), and `GameControl_PostIntro` consumes it
-exactly once and commits `gPlaySt.chapterIndex` to `CHAPTER_L_4`
-(`ch4PrepLauncherArmed == DEBUGTOOLS_LAUNCHER_ARMED_MAGIC`,
-`ch4PrepLaunchRequestConsumedCount == 1`). This is genuine, live-executed
-mGBA runtime evidence -- not a host-only or structural proof -- that the
-second launcher's pending-request handoff mechanism works end to end on
-real emulation, exactly like the Chapter 2 launcher's own
-`gamecontrol-consumed-launch` checkpoint.
-`debugtools-ch4-prep-launch-modern-release.json` replays the identical
-frame-for-frame input and asserts every probe stays `0x00000000`,
-confirming the second launcher is compiled out too (mirroring the Chapter 2
-release proof). Unlike the three post-world-map-lock release negatives (hub,
-map, prep) -- whose vacuous frozen-screen (`d11078d0`) oracle was removed and
-which the standing guard
-`test_release_negatives_forbid_any_framebuffer_and_require_semantic_probes`
-now forbids from carrying any framebuffer -- this launch scenario stops at the
-title/hub boot-commit stage before any world-map traversal, so it legitimately
-retains two ordinary pre-lock framebuffer captures (`hub-closed-before-hotkey`,
-`hub-opened-after-pulse`) of the vanilla title path, distinct from that removed
-frozen-screen hash.
-
-**Scope of this launch scenario, and the separate positive scenario that
-completes it**: `debugtools-ch4-prep-launch-modern-debug.json` deliberately
-ends at the boot-commit checkpoint captured above -- it asserts the
-pending-request handoff and `gPlaySt.chapterIndex == CHAPTER_L_4`, and does
-**not** itself assert `gPlaySt.chapterStateBits & PLAY_FLAG_PREPSCREEN` or
-`gDebugToolsProbe.prepScreenObservedCount`. Reaching Chapter 4's actual
-live `PrepScreenProc` requires further world-map navigation (an `L`
-cursor-jump + `A` node-confirm once the world map becomes interactive)
-followed by skipping `EventScr_Ch4_BeginningScene`'s beginning
-event/scripted `FIGHT()` battle to its own `CALL(EventScr_CommonPrep)`,
-then navigating the prep at-menu. That remaining segment is now proven by a
-**separate, enabled** live scenario,
-`debugtools-ch4-prep-positive-modern-debug.json` (see "Live prep-screen
-arrival" below and `reports/debugtools_issue11_closure.md`), which rests
-`gProcScr_SALLYCURSOR` in `PrepScreenProc_MapIdle` and fires the SELECT+B
-hotkey there -- so the live prep-screen arrival is achieved, split cleanly
-across two focused scenarios.
 
 ### Live prep-screen arrival: `DebugTools_PrepHotkeyCheck`'s observation (achieved)
 
@@ -1523,17 +1584,14 @@ arrival is now **achieved** (first bullet). What otherwise remains
 explicitly, honestly open is narrow:
 
 - **Live prep-screen arrival -- ACHIEVED.** Both halves are proven live:
-  the "Fast Boot: Ch4 Prep" launcher's pending-request/boot-commit
-  lifecycle (`debugtools-ch4-prep-launch-modern-debug.json`: the request
-  arms independently, `GameControl_PostIntro` consumes it and commits
-  `gPlaySt.chapterIndex` to `CHAPTER_L_4`), and the
-  world-map-to-prep-screen arrival plus the SELECT+B hotkey
+  the selector's direct Chapter 4 typed request/commit and prep arrival
+  (`debugtools-selector-chapter-modern-debug.json`: target `0x1104`,
+  exact-once consume, `gPlaySt.chapterIndex == CHAPTER_L_4`, prep bit set,
+  unchanged SRAM), and the SELECT+B prep hotkey
   (`debugtools-ch4-prep-positive-modern-debug.json`, host test
   `tools/gba-playtest/tests/test_prep_positive_scenario.py`). The positive
-  scenario does the world-map `L` cursor-jump + `A` node-confirm, skips the
-  beginning event/scripted `FIGHT()` battle to `CALL(EventScr_CommonPrep)`,
-  rests `gProcScr_SALLYCURSOR` in `PrepScreenProc_MapIdle` and fires SELECT+B
-  there: `DebugTools_PrepHotkeyCheck()`'s
+  scenario rests `gProcScr_SALLYCURSOR` in `PrepScreenProc_MapIdle` and fires
+  SELECT+B there: `DebugTools_PrepHotkeyCheck()`'s
   `PLAY_FLAG_PREPSCREEN` observation
   (`gDebugToolsProbe.prepScreenObservedCount`, `0x02031854`) is observed
   `0 -> 1` at runtime while `gPlaySt.chapterStateBits` (`0x020210b8`) holds

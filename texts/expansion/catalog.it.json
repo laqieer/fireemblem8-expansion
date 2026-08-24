@@ -95,5 +95,14 @@
     "debug.save_fixture.title_only": "Solo titolo",
     "debug.save_fixture.invalid": "Non valida",
     "debug.save_fixture.blocked": "Salvataggio off"
+,
+    "debug.action.chapter_skirmish": "Capitolo/Schermaglia",
+    "debug.selector.chapter": "Capitolo",
+    "debug.selector.skirmish": "Schermaglia",
+    "debug.selector.eirika": "Eirika",
+    "debug.selector.ephraim": "Ephraim",
+    "debug.selector.unavailable": "Obiettivo non disponibile",
+    "autoplay.charge.label": "Carica",
+    "autoplay.charge.help": "Affida le unità rimaste all'IA per questo turno."
   }
 }

@@ -29,6 +29,7 @@ ACTIONS_SRC = REPO_ROOT / "src" / "debugtools_actions.c"
 DIAG_SRC = REPO_ROOT / "src" / "debugtools_diag.c"
 TOOLS_SRC = REPO_ROOT / "src" / "debugtools_tools.c"
 SAVE_FIXTURE_SRC = REPO_ROOT / "src" / "debug_save_fixture.c"
+SELECTOR_SRC = REPO_ROOT / "src" / "debugtools_selector.c"
 BMUNIT_SRC = REPO_ROOT / "src" / "bmunit.c"
 EVENTSCR3_SRC = REPO_ROOT / "src" / "eventscr3.c"
 MUSIC_SRC = REPO_ROOT / "src" / "debugtools_music.c"
@@ -76,6 +77,7 @@ def _write_debugtools_msg_id_header(work_dir: Path):
         "EXP_MSG_DEBUG_ACTION_WEATHER": "debug.action.weather",
         "EXP_MSG_DEBUG_ACTION_FOG": "debug.action.fog",
         "EXP_MSG_DEBUG_ACTION_FASTBOOT_CH4PREP": "debug.action.fastboot_ch4prep",
+        "EXP_MSG_DEBUG_ACTION_CHAPTER_SKIRMISH": "debug.action.chapter_skirmish",
         "EXP_MSG_DEBUG_ACTION_UNIT_INSPECT": "debug.action.unit_inspect",
         "EXP_MSG_DEBUG_ACTION_CONVOY_INSPECT": "debug.action.convoy_inspect",
         "EXP_MSG_DEBUG_ACTION_FLAG_CHAPTER": "debug.action.flag_chapter",
@@ -84,6 +86,11 @@ def _write_debugtools_msg_id_header(work_dir: Path):
         "EXP_MSG_DEBUG_ACTION_MUSIC_PREVIEW": "debug.action.music_preview",
         "EXP_MSG_DEBUG_STATUS_HUB": "debug.status.hub",
         "EXP_MSG_DEBUG_STATUS_HUB_ERROR": "debug.status.hub_error",
+        "EXP_MSG_DEBUG_SELECTOR_CHAPTER": "debug.selector.chapter",
+        "EXP_MSG_DEBUG_SELECTOR_SKIRMISH": "debug.selector.skirmish",
+        "EXP_MSG_DEBUG_SELECTOR_EIRIKA": "debug.selector.eirika",
+        "EXP_MSG_DEBUG_SELECTOR_EPHRAIM": "debug.selector.ephraim",
+        "EXP_MSG_DEBUG_SELECTOR_UNAVAILABLE": "debug.selector.unavailable",
     }
     lines = ["#ifndef TEST_EXPANSION_MSG_IDS_H", "#define TEST_EXPANSION_MSG_IDS_H"]
     lines += [f"#define {macro} {ids[key]}" for macro, key in macros.items()]
@@ -426,7 +433,13 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
         registry = _strip_c_comments(REGISTRY_SRC.read_text(encoding="utf-8"))
         builtin_sources = "\n".join(
             _strip_c_comments(path.read_text(encoding="utf-8"))
-            for path in (LAUNCHER_SRC, ACTIONS_SRC, TOOLS_SRC, MUSIC_SRC)
+            for path in (
+                LAUNCHER_SRC,
+                SELECTOR_SRC,
+                ACTIONS_SRC,
+                TOOLS_SRC,
+                MUSIC_SRC,
+            )
         )
 
         self.assertIn(
@@ -2639,119 +2652,363 @@ class DebugToolsMapPrepScenarioSchemaTests(unittest.TestCase):
 
 
 class DebugToolsCh4PrepLaunchScenarioSchemaTests(unittest.TestCase):
-    """Validates the issue #11 closure Ch4-Prep-launch playtest scenarios
-    (the second, independent "Fast Boot: Ch4 Prep" launcher's own
-    pending-request/boot-commit lifecycle, live-executed against a real
-    debug build, plus its release compiled-out mirror) against
-    gba_playtest's own schema parser, mirroring
-    DebugToolsScenarioSchemaTests'/DebugToolsMapPrepScenarioSchemaTests'
-    pattern for the earlier Chapter 2 launcher scenarios."""
+    """Pins the old build target to the selector's Chapter 4 successor."""
+
+    def test_ch4prep_gate_is_a_selector_compatibility_alias(self):
+        modern = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
+        self.assertRegex(
+            modern,
+            r"expansion-modern-debugtools-ch4prep-check:\s+"
+            r"expansion-modern-debugtools-selector-check",
+        )
+        self.assertNotIn("MODERN_DEBUGTOOLS_CH4PREP_SCENARIO", modern)
+
+    def test_selector_default_and_commit_are_chapter4(self):
+        data = json.loads(
+            (
+                REPO_ROOT
+                / "tools/gba-playtest/scenarios/debugtools-selector-chapter-modern-debug.json"
+            ).read_text(encoding="utf-8")
+        )
+        by_name = {checkpoint["name"]: checkpoint for checkpoint in data["checkpoints"]}
+        self.assertIn("selector-open-chapter4-default", by_name)
+        self.assertIn("gamecontrol-committed-selector-chapter", by_name)
+
+        fingerprint = json.loads(
+            (
+                REPO_ROOT
+                / "tools/gba-playtest/fingerprints/debugtools-selector-chapter-modern-debug.json"
+            ).read_text(encoding="utf-8")
+        )
+        values = {
+            probe["address"]: probe["value"]
+            for checkpoint in fingerprint["checkpoints"]
+            for probe in checkpoint["probes"]
+        }
+        self.assertEqual(values["sSelectorState"], "0x1104")
+        self.assertEqual(values["gPlaySt+0x0e"], "0x04")
+
+
+class DebugToolsChapterSelectorHostTests(unittest.TestCase):
+    """Executes the real selector against bounded typed metadata fixtures."""
 
     @classmethod
     def setUpClass(cls):
-        sys.path.insert(0, str(REPO_ROOT / "tools" / "gba-playtest"))
-        global gba_playtest
-        import gba_playtest  # noqa: F401
+        _skip_if_no_host_compiler()
 
-    def _load(self, name):
-        import json
-        path = REPO_ROOT / "tools" / "gba-playtest" / "scenarios" / name
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return gba_playtest.parse_scenario_data(data), data
+    def test_selector_metadata_request_menu_and_map_handoff_host_executed(self):
+        import tempfile
 
-    def test_debug_scenario_is_schema_valid_and_has_expected_checkpoints(self):
-        scenario, data = self._load("debugtools-ch4-prep-launch-modern-debug.json")
-        self.assertEqual(scenario.name, "debugtools-ch4-prep-launch-modern-debug")
-        by_name = {c["name"]: c for c in data["checkpoints"]}
-        for expected_name in (
-            "hub-closed-before-hotkey",
-            "hub-opened-after-pulse",
-            "ch4-prep-request-armed",
-            "gamecontrol-committed-chapter4-boot",
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            _write_debugtools_msg_id_header(work)
+            defines = (
+                "MODERN=1",
+                "FE8_EXPANSION_DEBUG=1",
+                "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                "DEBUGTOOLS_SELECTOR_HOST_TEST=1",
+            )
+            extra_flags = ("-I", str(work))
+
+            rc, out, selector_obj = _compile(
+                work,
+                SELECTOR_SRC,
+                "selector.o",
+                defines=defines,
+                extra_flags=extra_flags,
+            )
+            self.assertEqual(
+                rc,
+                0,
+                f"compiling real debugtools_selector.c failed:\n{out}",
+            )
+
+            rc, out, stubs_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debugtools_selector_host_stubs.c",
+                "selector_stubs.o",
+                defines=defines,
+                extra_flags=extra_flags,
+            )
+            self.assertEqual(rc, 0, f"compiling selector stubs failed:\n{out}")
+
+            rc, out, driver_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debugtools_selector_driver.c",
+                "selector_driver.o",
+                defines=defines,
+                extra_flags=extra_flags,
+            )
+            self.assertEqual(rc, 0, f"compiling selector driver failed:\n{out}")
+
+            rc, out, exe = _link(
+                work,
+                (selector_obj, stubs_obj, driver_obj),
+                "selector_test",
+            )
+            self.assertEqual(rc, 0, f"linking selector host test failed:\n{out}")
+
+            rc, out = _run(exe)
+            self.assertEqual(rc, 0, f"selector host test failed:\n{out}")
+            self.assertIn("DEBUGTOOLS_SELECTOR_HOST_TEST: PASS", out)
+
+    def test_selector_compiles_with_debugtools_enabled_outside_debug_profile(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            _write_debugtools_msg_id_header(work)
+            rc, out, _ = _compile(
+                work,
+                SELECTOR_SRC,
+                "selector_non_debug.o",
+                defines=(
+                    "MODERN=1",
+                    "FE8_EXPANSION_DEBUG=0",
+                    "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                ),
+                extra_flags=("-I", str(work)),
+            )
+            self.assertEqual(
+                rc,
+                0,
+                "selector must see gChapterDataCount whenever the supported "
+                f"debugtools override is enabled:\n{out}",
+            )
+
+    def test_release_selector_bodies_are_omitted(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            rc, out, obj = _compile(
+                work,
+                SELECTOR_SRC,
+                "selector_disabled.o",
+                defines=(
+                    "MODERN=1",
+                    "FE8_EXPANSION_DEBUG=0",
+                    "FE8_EXPANSION_DEBUGTOOLS_ENABLED=0",
+                ),
+            )
+            self.assertEqual(
+                rc,
+                0,
+                f"compiling disabled debugtools_selector.c failed:\n{out}",
+            )
+            symbols = _defined_symbol_names(obj)
+            self.assertFalse(
+                {
+                    name
+                    for name in symbols
+                    if name.startswith("DebugTools")
+                    or name.startswith("gDebugToolsChapterSelector")
+                },
+                f"release selector object unexpectedly defines symbols: {symbols}",
+            )
+
+    def test_selector_uses_authoritative_metadata_without_parallel_catalog(self):
+        selector = SELECTOR_SRC.read_text(encoding="utf-8")
+        template = (
+            REPO_ROOT / "src" / "data" / "chapter_settings.json.txt"
+        ).read_text(encoding="utf-8")
+        chapter_json = json.loads(
+            (REPO_ROOT / "src" / "data" / "chapter_settings.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        for symbol in (
+            "gChapterDataCount",
+            "GetROMChapterStruct",
+            "gWMNodeData",
+            "gWMMonsterSpawnLocations",
+            "gWMMonsterSpawnsSize",
+            "GetChapterEventDataPointer",
         ):
-            self.assertIn(expected_name, by_name, f"missing checkpoint {expected_name!r}")
+            self.assertIn(symbol, selector)
 
-    def test_debug_scenario_reuses_the_hub_scenarios_frame_prefix(self):
-        """Must build on top of the already-verified title-progression
-        intro sequence (debugtools-hub-modern-debug.json's own prefix
-        before its first hotkey pulse), not a fresh/independent boot
-        script."""
-        _, ch4_data = self._load("debugtools-ch4-prep-launch-modern-debug.json")
-        _, hub_data = self._load("debugtools-hub-modern-debug.json")
-
-        hub_prefix = [f for f in hub_data["frames"] if f["start"] < 600]
-        ch4_prefix = [f for f in ch4_data["frames"] if f["start"] < 600]
-        self.assertEqual(
-            ch4_prefix, hub_prefix,
-            "the Ch4-Prep-launch scenario's pre-hotkey frame prefix must exactly match "
-            "the title-hub scenario's own (same proven intro-advance sequence)",
+        self.assertIn(
+            "gChapterDataCount = ARRAY_COUNT(gChapterDataTable)",
+            template,
+        )
+        self.assertEqual(len(chapter_json["chapters"]), 79)
+        self.assertNotRegex(
+            selector,
+            r"DebugToolsLaunchTarget\s+\w+\s*\[",
+            "selector must enumerate authoritative metadata, not ship a parallel target table",
+        )
+        self.assertNotRegex(
+            selector,
+            r"\bCHAPTER_(?:L|E|I|T|R)_",
+            "selector target enumeration must not hard-code chapter identities",
         )
 
-    def test_debug_scenario_navigates_past_weather_fog_to_reach_ch4_prep(self):
-        """The hub menu order is Chapter2(0)/Weather(1)/Fog(2)/Ch4Prep(3)/
-        five tools(4-8) -- reaching "Fast Boot: Ch4 Prep" from a freshly
-        opened hub therefore requires exactly three DOWN presses before
-        the confirming A, proving this scenario's own input script
-        actually targets the fourth hub row, not accidentally Weather/Fog
-        or the Chapter 2 launcher itself."""
-        _, data = self._load("debugtools-ch4-prep-launch-modern-debug.json")
-        post_hotkey = [f for f in data["frames"] if f["start"] >= 600]
-        key_sequence = [tuple(f["keys"]) for f in sorted(post_hotkey, key=lambda f: f["start"])]
+    def test_selector_scenarios_are_schema_valid_and_cover_case_controls(self):
+        sys.path.insert(0, str(REPO_ROOT / "tools" / "gba-playtest"))
+        import gba_playtest
+
+        symbol_sizes = {
+            "gDebugToolsProbe": (0x02031818, 0x84),
+            "gPlaySt": (0x020210A4, 0x4C),
+            "sSelectorState": (0x0203189C, 0x04),
+        }
+
+        def resolve(symbol):
+            return symbol_sizes[symbol]
+
+        scenario_dir = REPO_ROOT / "tools" / "gba-playtest" / "scenarios"
+        parsed = {}
+        raw = {}
+        for name in (
+            "debugtools-selector-chapter-modern-debug.json",
+            "debugtools-selector-skirmish-modern-debug.json",
+            "debugtools-selector-modern-release.json",
+        ):
+            data = json.loads((scenario_dir / name).read_text(encoding="utf-8"))
+            parsed[name] = gba_playtest.parse_scenario_data(
+                data,
+                str(scenario_dir / name),
+                resolve,
+            )
+            raw[name] = data
+
         self.assertEqual(
-            key_sequence,
-            [
-                ("SELECT", "R"),
-                ("DOWN",),
-                ("DOWN",),
-                ("DOWN",),
-                ("A",),
-                ("A",),
-            ],
-            f"expected exactly one hotkey pulse, three DOWN presses, then two A presses, found: {key_sequence}",
+            parsed["debugtools-selector-chapter-modern-debug.json"].name,
+            "debugtools-selector-chapter-modern-debug",
+        )
+        self.assertEqual(
+            parsed["debugtools-selector-skirmish-modern-debug.json"].name,
+            "debugtools-selector-skirmish-modern-debug",
+        )
+        self.assertEqual(
+            parsed["debugtools-selector-modern-release.json"].name,
+            "debugtools-selector-modern-release",
+        )
+        self.assertEqual(
+            raw["debugtools-selector-modern-release.json"]["frames"],
+            raw["debugtools-selector-chapter-modern-debug.json"]["frames"],
+            "release must replay the exact chapter-selector input script",
         )
 
-    def test_debug_scenario_probe_addresses_match_documented_struct_offsets(self):
-        """gDebugToolsProbe's pendingCh4PrepLaunchRequest/ch4PrepLauncherArmed/
-        ch4PrepLaunchRequestConsumedCount fields sit at offsets 0x30/0x34/0x38
-        from the struct base (include/expansion_debugtools.h) -- confirms
-        this scenario's own hardcoded addresses were derived from the same
-        base nm-verified elsewhere (docs/debugtools.md), not independently
-        (and possibly incorrectly) guessed.
-        """
-        _, data = self._load("debugtools-ch4-prep-launch-modern-debug.json")
-        by_name = {c["name"]: c for c in data["checkpoints"]}
-        base = int(by_name["hub-closed-before-hotkey"]["probes"][0]["address"], 16)
-
-        armed_checkpoint = by_name["gamecontrol-committed-chapter4-boot"]
-        addresses = {p["address"] for p in armed_checkpoint["probes"]}
-        self.assertIn("0x%08x" % (base + 0x34), addresses, "ch4PrepLauncherArmed must be at offset 0x34")
-
-        armed_probe_checkpoint = by_name["ch4-prep-request-armed"]
-        pending_addresses = {p["address"]: p["expected"] for p in armed_probe_checkpoint["probes"]}
-        self.assertEqual(
-            pending_addresses.get("0x%08x" % (base + 0x30)), "0x44424c32",
-            "pendingCh4PrepLaunchRequest (offset 0x30) must read the DEBUGTOOLS_LAUNCH_REQUEST_MAGIC "
-            "('DBL2') while armed",
+        skirmish_names = {
+            checkpoint["name"]
+            for checkpoint in raw[
+                "debugtools-selector-skirmish-modern-debug.json"
+            ]["checkpoints"]
+        }
+        self.assertTrue(
+            {
+                "live-map-before-selector",
+                "live-map-selector-on-supported-skirmish",
+                "map-handoff-consumed-exactly-once",
+                "selector-skirmish-map-interactive",
+                "skirmish-map-hotkey-reopens-hub",
+                "skirmish-map-stable-after-hub-close",
+            }.issubset(skirmish_names)
         )
 
-    def test_release_scenario_reuses_debug_scenarios_frames_and_stays_all_zero(self):
-        """The release mirror must replay the identical frame-for-frame
-        input script (not a hand-authored approximation) and assert every
-        probe stays 0x00000000 throughout -- proving the Ch4 Prep launcher
-        is compiled out entirely in a release build, exactly like the
-        Chapter 2 launcher's own release mirror."""
-        _, debug_data = self._load("debugtools-ch4-prep-launch-modern-debug.json")
-        _, release_data = self._load("debugtools-ch4-prep-launch-modern-release.json")
+    def test_selector_fingerprints_pin_no_save_and_release_zero_controls(self):
+        fingerprint_dir = (
+            REPO_ROOT / "tools" / "gba-playtest" / "fingerprints"
+        )
+        chapter = json.loads(
+            (
+                fingerprint_dir
+                / "debugtools-selector-chapter-modern-debug.json"
+            ).read_text(encoding="utf-8")
+        )
+        skirmish = json.loads(
+            (
+                fingerprint_dir
+                / "debugtools-selector-skirmish-modern-debug.json"
+            ).read_text(encoding="utf-8")
+        )
+        release = json.loads(
+            (
+                fingerprint_dir / "debugtools-selector-modern-release.json"
+            ).read_text(encoding="utf-8")
+        )
 
-        self.assertEqual(release_data["frames"], debug_data["frames"])
+        chapter_hashes = {
+            checkpoint["sram_hash"]
+            for checkpoint in chapter["checkpoints"]
+            if "sram_hash" in checkpoint
+        }
+        skirmish_hashes = {
+            checkpoint["sram_hash"]
+            for checkpoint in skirmish["checkpoints"]
+            if "sram_hash" in checkpoint
+        }
+        self.assertEqual(chapter_hashes, {"fnv1a64-sram:ff081a88b533792d"})
+        self.assertEqual(skirmish_hashes, {"fnv1a64-sram:ff081a88b533792d"})
 
-        for checkpoint in release_data["checkpoints"]:
+        for checkpoint in release["checkpoints"]:
             for probe in checkpoint["probes"]:
-                self.assertEqual(
-                    probe["expected"], "0x00000000",
-                    f"release checkpoint {checkpoint['name']!r} probe {probe['address']} "
-                    "must expect 0x00000000",
+                if probe["address"].startswith("gDebugToolsProbe"):
+                    self.assertEqual(probe["value"], "0x00000000")
+
+    def test_callbacks_only_queue_typed_state(self):
+        selector = _strip_c_comments(SELECTOR_SRC.read_text(encoding="utf-8"))
+
+        for function_name in (
+            "DebugToolsSelector_ActionSelected",
+            "DebugToolsSelector_Selected",
+        ):
+            match = re.search(
+                rf"\b{function_name}\s*\([^)]*\)\s*\{{(.*?)\n\}}",
+                selector,
+                flags=re.DOTALL,
+            )
+            self.assertIsNotNone(match, f"missing {function_name}")
+            body = match.group(1)
+            for banned in (
+                "EndBMapMain",
+                "Proc_Goto",
+                "Proc_EndEach",
+                "RestartGame",
+                "Write",
+                "StartBattleMap",
+            ):
+                self.assertNotIn(
+                    banned,
+                    body,
+                    f"{function_name} must not perform lifecycle/save transition {banned}",
                 )
+
+        gamecontrol = _strip_c_comments(
+            GAMECONTROL_SRC.read_text(encoding="utf-8")
+        )
+        consume = gamecontrol.index("DebugTools_ConsumePendingTargetLaunch")
+        save_menu = gamecontrol.index(
+            "Proc_Goto(proc, LGAMECTRL_EXEC_SAVEMENU)",
+            consume,
+        )
+        self.assertLess(consume, save_menu)
+        self.assertIn(
+            "Proc_Goto(proc, LGAMECTRL_EXEC_BM_EXT)",
+            gamecontrol[consume:save_menu],
+        )
+        for banned in (
+            "WriteGameSave",
+            "WriteSuspendSave",
+            "WriteNewGameSave",
+            "SaveMetadata",
+        ):
+            self.assertNotIn(banned, gamecontrol[consume:save_menu])
+
+        self.assertIn(
+            "DebugTools_QueueMapLaunchHandoff()",
+            PLAYERPHASE_SRC.read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            "DebugTools_QueueMapLaunchHandoff()",
+            PREP_SALLYCURSOR_SRC.read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            "!DebugTools_IsHubActive()",
+            TITLESCREEN_SRC.read_text(encoding="utf-8"),
+        )
 
 
 if __name__ == "__main__":

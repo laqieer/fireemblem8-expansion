@@ -252,4 +252,4 @@ Direct indexed imports: 3183; edited originals: 156; raw direct imports: 143; ra
 
 All active `texts/expansion/` registry/catalog strings are new framework
 content and are intentionally not represented as edits to an original game
-message. The machine-readable report enumerates all 93 such stable keys.
+message. The machine-readable report enumerates all 101 such stable keys.

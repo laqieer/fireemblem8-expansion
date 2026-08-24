@@ -653,7 +653,8 @@ name embedded in the hash text itself (never ambiguous downstream):
   `backend.c`'s plan-format limit). This exists only for ROM-generated
   `SAVE_COMPAT_CURRENT` checkpoints (`savecompat-current.json`'s
   no-dialog checkpoint, `savecompat-erase.json`'s post-erase checkpoints,
-  and the migrated-v1-load reuse of `savecompat-current.json`) whose SRAM
+  the migrated-v1-load reuse of `savecompat-current.json`, and the
+  `debugtools-tools-modern-debug.json` post-fixture checkpoints) whose SRAM
   legitimately contains intentionally build-variable diagnostic bytes:
   `ExpansionSaveMeta.configFingerprint` (17 bytes, absolute SRAM offset
   29620 / `0x73B4`), `ExpansionSaveMeta.buildCommitShort` (9 bytes,
