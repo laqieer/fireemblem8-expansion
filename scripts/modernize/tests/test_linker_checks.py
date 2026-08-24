@@ -135,6 +135,60 @@ class LinkerCheckTargetTests(unittest.TestCase):
         ):
             self.assertIn(expected, result.stdout)
 
+    def test_debug_linker_aggregate_schedules_accelerated_fidelity(self):
+        database = self.make(
+            "-pn",
+            "expansion-modern-linker-check",
+            "MODERN_CONFIG=debug",
+            "MAKE=echo",
+        )
+        self.assertEqual(database.returncode, 0, database.stdout[-2000:])
+        header = make_database_rule_header(
+            database.stdout,
+            "expansion-modern-linker-check",
+        )
+        self.assertIsNotNone(header)
+        self.assertIn(
+            "expansion-modern-autoplay-accelerated-fidelity-check",
+            header,
+        )
+
+        result = self.make(
+            "-n",
+            "expansion-modern-autoplay-accelerated-fidelity-check",
+            "MODERN_CONFIG=debug",
+            "MAKE=echo",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout[-2000:])
+        self.assertIn("run_accelerated_fidelity_checks.py", result.stdout)
+
+    def test_release_linker_aggregate_omits_accelerated_runtime_capture(self):
+        database = self.make(
+            "-pn",
+            "expansion-modern-linker-check",
+            "MODERN_CONFIG=release",
+            "MAKE=echo",
+        )
+        self.assertEqual(database.returncode, 0, database.stdout[-2000:])
+        header = make_database_rule_header(
+            database.stdout,
+            "expansion-modern-linker-check",
+        )
+        self.assertIsNotNone(header)
+        self.assertNotIn(
+            "expansion-modern-autoplay-accelerated-fidelity-check",
+            header,
+        )
+
+        result = self.make(
+            "-n",
+            "expansion-modern-linker-check",
+            "MODERN_CONFIG=release",
+            "MAKE=echo",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout[-2000:])
+        self.assertNotIn("run_accelerated_fidelity_checks.py", result.stdout)
+
     def test_budget_check_requires_elf_identity_and_user_stack_margin(self):
         result = self.make("-n", "expansion-modern-budget-check")
         self.assertEqual(result.returncode, 0, result.stdout[-1000:])

@@ -26,9 +26,11 @@ from probe_bindings import (
 
 FIXED_SCENARIO_SCHEMA_VERSION = 1
 RUN_UNTIL_SCENARIO_SCHEMA_VERSION = 2
+ACCELERATED_FIDELITY_SCENARIO_SCHEMA_VERSION = 3
 SCENARIO_SCHEMA_VERSION = FIXED_SCENARIO_SCHEMA_VERSION
 FIXED_FINGERPRINT_FORMAT_VERSION = 2
 RUN_UNTIL_FINGERPRINT_FORMAT_VERSION = 3
+ACCELERATED_FIDELITY_FINGERPRINT_FORMAT_VERSION = 4
 FINGERPRINT_FORMAT_VERSION = FIXED_FINGERPRINT_FORMAT_VERSION
 PKG_CONFIG_TIMEOUT_SECONDS = 10
 COMPILER_TIMEOUT_SECONDS = 60
@@ -87,14 +89,24 @@ RAM_RANGES = (
     (0x08000000, 0x0A000000),
     (0x0E000000, 0x0E008000),
 )
+WRITABLE_WORK_RAM_RANGES = (
+    (0x02000000, 0x02040000),
+    (0x03000000, 0x03008000),
+)
 SRAM_IMAGE_SIZE = 0x8000
 # Matches backend.c's read_plan() rejection of checkpoint->exclude_range_count
 # > 64 -- validated here too so a scenario with too many ranges fails fast
 # with a clear PlaytestError instead of being rejected deep inside the
 # backend after a plan file has already been generated.
 MAX_SRAM_HASH_EXCLUDE_RANGES = 64
+MAX_PROBES_PER_CHECKPOINT = 1536
 MAX_RUN_UNTIL_COMPARISONS = 64
 MAX_RUN_UNTIL_PROBES = 128
+MAX_PROFILE_TRACE_PROBES = 512
+# Matches backend.c's MAX_TRACE_RECORDS. A trace emits each probe whenever
+# any trace value changes, so max_frames * trace probe count bounds both the
+# backend's stdout and the host's captured semantic trace.
+MAX_PROFILE_TRACE_RECORDS = 450_000
 COMPARISON_OPERATORS = ("eq", "ne", "lt", "le", "gt", "ge")
 TERMINAL_CONDITION_REASONS = (
     "success",
@@ -113,6 +125,23 @@ PLAN_OPERATOR_CODES = {
 PLAN_TERMINAL_REASON_CODES = {
     reason: index + 1 for index, reason in enumerate(TERMINAL_CONDITION_REASONS)
 }
+EXECUTION_PROFILE_NORMAL_FIDELITY = "normal-fidelity"
+EXECUTION_PROFILE_ACCELERATED_FIDELITY = "accelerated-fidelity"
+EXECUTION_PROFILE_NAMES = (
+    EXECUTION_PROFILE_NORMAL_FIDELITY,
+    EXECUTION_PROFILE_ACCELERATED_FIDELITY,
+)
+PLAN_EXECUTION_PROFILE_CODES = {
+    EXECUTION_PROFILE_NORMAL_FIDELITY: 0,
+    EXECUTION_PROFILE_ACCELERATED_FIDELITY: 1,
+}
+# These are the documented PlaySt.config bit positions in include/types.h.
+# The accelerated profile changes no engine switch of its own: it applies the
+# existing game-speed preference and the animation option selected by
+# BANIM_PRESENTATION_POLICY_OFF to the disposable emulator core.
+PLAYST_CONFIG_GAME_SPEED_MASK = 1 << 7
+PLAYST_CONFIG_ANIMATION_TYPE_MASK = 0x3 << 17
+PLAYST_CONFIG_ANIMATION_TYPE_OFF = 0x1 << 17
 
 
 class PlaytestError(Exception):
@@ -292,6 +321,14 @@ class RunUntil:
 
 
 @dataclass(frozen=True)
+class ExecutionProfile:
+    name: str
+    config_apply_frame: int | None
+    play_state_config: Probe | None
+    trace_probes: tuple[Probe, ...]
+
+
+@dataclass(frozen=True)
 class Region:
     name: str
     x: int
@@ -343,6 +380,7 @@ class Scenario:
     checkpoints: tuple[Checkpoint, ...]
     schema_version: int = FIXED_SCENARIO_SCHEMA_VERSION
     run_until: RunUntil | None = None
+    execution_profile: ExecutionProfile | None = None
 
 
 @dataclass(frozen=True)
@@ -521,6 +559,12 @@ def _parse_fixed_scenario_data(
         probes_data = item["probes"]
         if not isinstance(probes_data, list):
             raise PlaytestError(f"{path}.probes must be an array")
+        if len(probes_data) > MAX_PROBES_PER_CHECKPOINT:
+            raise PlaytestError(
+                f"{path}.probes has {len(probes_data)} entries, exceeding the "
+                f"{MAX_PROBES_PER_CHECKPOINT}-probe limit per checkpoint "
+                "(matches backend.c's plan-format cap)"
+            )
         probes: list[Probe] = []
         seen_bindings: set[tuple[str, int]] = set()
         seen_addresses: set[tuple[int, int]] = set()
@@ -1097,6 +1141,160 @@ def _parse_run_until_scenario_data(
     )
 
 
+def _parse_execution_profile(
+    data: Any,
+    source: str,
+    run_until: RunUntil,
+    symbol_resolver: Callable[[str], tuple[int, int]] | None,
+) -> ExecutionProfile:
+    path = f"{source}.execution_profile"
+    profile_data = _expect_object(
+        data,
+        path,
+        {"name", "trace"},
+        {"config_apply_frame", "play_state_config"},
+    )
+    name = profile_data["name"]
+    if not isinstance(name, str) or name not in EXECUTION_PROFILE_NAMES:
+        raise PlaytestError(
+            f"{path}.name must be one of {', '.join(EXECUTION_PROFILE_NAMES)}"
+        )
+    trace_data = profile_data["trace"]
+    if not isinstance(trace_data, list) or not trace_data:
+        raise PlaytestError(f"{path}.trace must be a non-empty array")
+    if len(trace_data) > MAX_PROFILE_TRACE_PROBES:
+        raise PlaytestError(
+            f"{path}.trace has {len(trace_data)} probes, exceeding the "
+            f"{MAX_PROFILE_TRACE_PROBES}-probe limit"
+        )
+    trace_probes = tuple(
+        _parse_run_probe(
+            raw_probe,
+            f"{path}.trace[{index}]",
+            symbol_resolver,
+        )
+        for index, raw_probe in enumerate(trace_data)
+    )
+    bindings = [(probe.binding, probe.size) for probe in trace_probes]
+    if len(bindings) != len(set(bindings)):
+        raise PlaytestError(f"{path}.trace contains duplicate probes")
+    resolved: dict[tuple[int, int], str] = {}
+    for probe in trace_probes:
+        if probe.address is None:
+            continue
+        identity = (probe.address, probe.size)
+        previous = resolved.get(identity)
+        if previous is not None and previous != probe.binding:
+            raise PlaytestError(
+                f"{path}.trace probes {previous!r} and {probe.binding!r} "
+                "resolve to the same address/size"
+            )
+        resolved[identity] = probe.binding
+    trace_probes = tuple(
+        sorted(
+            trace_probes,
+            key=lambda probe: _probe_binding_sort_key(probe.binding, probe.size),
+        )
+    )
+    trace_record_count = run_until.max_frames * len(trace_probes)
+    if trace_record_count > MAX_PROFILE_TRACE_RECORDS:
+        raise PlaytestError(
+            f"{path}.trace can emit {trace_record_count} records, exceeding the "
+            f"{MAX_PROFILE_TRACE_RECORDS}-record aggregate limit"
+        )
+
+    if name == EXECUTION_PROFILE_NORMAL_FIDELITY:
+        if "config_apply_frame" in profile_data or "play_state_config" in profile_data:
+            raise PlaytestError(
+                f"{path} normal-fidelity must not apply runtime configuration"
+            )
+        return ExecutionProfile(name, None, None, trace_probes)
+
+    if "config_apply_frame" not in profile_data or "play_state_config" not in profile_data:
+        raise PlaytestError(
+            f"{path} accelerated-fidelity requires config_apply_frame and "
+            "play_state_config"
+        )
+    config_apply_frame = _expect_frame(
+        profile_data["config_apply_frame"],
+        f"{path}.config_apply_frame",
+    )
+    if config_apply_frame >= run_until.max_frames:
+        raise PlaytestError(
+            f"{path}.config_apply_frame must be below run_until.max_frames"
+        )
+    play_state_config = _parse_run_probe(
+        profile_data["play_state_config"],
+        f"{path}.play_state_config",
+        symbol_resolver,
+    )
+    if play_state_config.size != 4:
+        raise PlaytestError(f"{path}.play_state_config.size must be 4")
+    if play_state_config.address is not None and not any(
+        start <= play_state_config.address
+        and play_state_config.address + play_state_config.size <= end
+        for start, end in WRITABLE_WORK_RAM_RANGES
+    ):
+        raise PlaytestError(
+            f"{path}.play_state_config must resolve to aligned writable EWRAM "
+            "or IWRAM"
+        )
+    return ExecutionProfile(
+        name,
+        config_apply_frame,
+        play_state_config,
+        trace_probes,
+    )
+
+
+def _parse_accelerated_fidelity_scenario_data(
+    data: Any,
+    source: str,
+    symbol_resolver: Callable[[str], tuple[int, int]] | None,
+) -> Scenario:
+    root = _expect_object(
+        data,
+        source,
+        {"schema_version", "name", "frames", "run_until", "execution_profile"},
+        {"description"},
+    )
+    base_data = {
+        "schema_version": RUN_UNTIL_SCENARIO_SCHEMA_VERSION,
+        "name": root["name"],
+        "frames": root["frames"],
+        "run_until": root["run_until"],
+    }
+    if "description" in root:
+        base_data["description"] = root["description"]
+    bounded = _parse_run_until_scenario_data(base_data, source, symbol_resolver)
+    assert bounded.run_until is not None
+    profile = _parse_execution_profile(
+        root["execution_profile"],
+        source,
+        bounded.run_until,
+        symbol_resolver,
+    )
+    if profile.name == EXECUTION_PROFILE_ACCELERATED_FIDELITY:
+        for checkpoint in bounded.checkpoints:
+            if checkpoint.framebuffer or checkpoint.regions or checkpoint.pixel_probes:
+                raise PlaytestError(
+                    f"{source} accelerated-fidelity requires semantic-only "
+                    f"checkpoint {checkpoint.name!r} without framebuffer, "
+                    "region, or pixel evidence"
+                )
+    return Scenario(
+        bounded.name,
+        bounded.description,
+        bounded.disabled,
+        bounded.blocker,
+        bounded.inputs,
+        bounded.checkpoints,
+        ACCELERATED_FIDELITY_SCENARIO_SCHEMA_VERSION,
+        bounded.run_until,
+        profile,
+    )
+
+
 def parse_scenario_data(
     data: Any,
     source: str = "<scenario>",
@@ -1109,15 +1307,23 @@ def parse_scenario_data(
         raise PlaytestError(
             f"{source}.schema_version must be integer "
             f"{FIXED_SCENARIO_SCHEMA_VERSION} or "
-            f"{RUN_UNTIL_SCENARIO_SCHEMA_VERSION}"
+            f"{RUN_UNTIL_SCENARIO_SCHEMA_VERSION} or "
+            f"{ACCELERATED_FIDELITY_SCENARIO_SCHEMA_VERSION}"
         )
     if schema_version == FIXED_SCENARIO_SCHEMA_VERSION:
         return _parse_fixed_scenario_data(data, source, symbol_resolver)
     if schema_version == RUN_UNTIL_SCENARIO_SCHEMA_VERSION:
         return _parse_run_until_scenario_data(data, source, symbol_resolver)
+    if schema_version == ACCELERATED_FIDELITY_SCENARIO_SCHEMA_VERSION:
+        return _parse_accelerated_fidelity_scenario_data(
+            data,
+            source,
+            symbol_resolver,
+        )
     raise PlaytestError(
         f"{source}.schema_version must be integer "
-        f"{FIXED_SCENARIO_SCHEMA_VERSION} or {RUN_UNTIL_SCENARIO_SCHEMA_VERSION}"
+        f"{FIXED_SCENARIO_SCHEMA_VERSION}, {RUN_UNTIL_SCENARIO_SCHEMA_VERSION}, "
+        f"or {ACCELERATED_FIDELITY_SCENARIO_SCHEMA_VERSION}"
     )
 
 
@@ -1279,12 +1485,22 @@ def _write_plan(
     scheduled_write: ScheduledWrite | None = None,
 ) -> None:
     # Fixed scenarios retain plan format 3 exactly. Format 4 appends bounded
-    # semantic run-until records; format 5 adds one declared seed write.
+    # semantic run-until records; format 5 carries accelerated traces, and
+    # format 6 carries one declared batch seed write.
     # Plans are generated and consumed within one capture/verify invocation;
     # scenario and fingerprint compatibility lives in their JSON versions.
-    plan_version = 5 if scheduled_write is not None else (
-        4 if scenario.run_until is not None else 3
-    )
+    if scheduled_write is not None and scenario.execution_profile is not None:
+        raise PlaytestError(
+            "scheduled writes are supported only by normal-fidelity batch captures"
+        )
+    if scheduled_write is not None:
+        plan_version = 6
+    elif scenario.execution_profile is not None:
+        plan_version = 5
+    elif scenario.run_until is not None:
+        plan_version = 4
+    else:
+        plan_version = 3
     lines = [f"GBA_PLAYTEST_PLAN {plan_version}", f"RANGES {len(scenario.inputs)}"]
     lines.extend(
         f"{frame_range.start} {frame_range.end} {frame_range.key_mask}"
@@ -1292,11 +1508,14 @@ def _write_plan(
     )
     lines.append(f"CHECKPOINTS {len(scenario.checkpoints)}")
     for checkpoint in scenario.checkpoints:
-        lines.append(
+        checkpoint_record = (
             f"{checkpoint.frame} {len(checkpoint.probes)} {int(checkpoint.sram_hash)} "
             f"{len(checkpoint.sram_hash_exclude_ranges)} {len(checkpoint.regions)} "
             f"{len(checkpoint.pixel_probes)}"
         )
+        if plan_version == 5:
+            checkpoint_record += f" {int(checkpoint.framebuffer)}"
+        lines.append(checkpoint_record)
         lines.extend(
             f"{offset} {length}"
             for offset, length in checkpoint.sram_hash_exclude_ranges
@@ -1408,6 +1627,30 @@ def _write_plan(
             f"SEED_WRITE {scheduled_write.frame} {scheduled_write.probe.address} "
             f"{scheduled_write.probe.size} {scheduled_write.value}"
         )
+    if scenario.execution_profile is not None:
+        profile = scenario.execution_profile
+        profile_code = PLAN_EXECUTION_PROFILE_CODES[profile.name]
+        if profile.play_state_config is None:
+            config_apply_frame = 0
+            config_address = 0
+        else:
+            if profile.play_state_config.address is None:
+                raise PlaytestError(
+                    f"scenario {scenario.name!r} profile config "
+                    "has no resolved execution address; supply the exact linked ELF with --elf"
+                )
+            assert profile.config_apply_frame is not None
+            config_apply_frame = profile.config_apply_frame
+            config_address = profile.play_state_config.address
+        lines.append(f"PROFILE {profile_code} {config_apply_frame} {config_address}")
+        lines.append(f"TRACE {len(profile.trace_probes)}")
+        for probe in profile.trace_probes:
+            if probe.address is None:
+                raise PlaytestError(
+                    f"scenario {scenario.name!r} trace probe {probe.binding!r} "
+                    "has no resolved execution address; supply the exact linked ELF with --elf"
+                )
+            lines.append(f"{probe.address} {probe.size}")
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
@@ -1419,18 +1662,24 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
     region_hashes: dict[tuple[int, int], str] = {}
     pixel_values: dict[tuple[int, int], int] = {}
     terminal: tuple[str, int, bool, int, bool, int] | None = None
+    profile_record: tuple[int, int, int] | None = None
+    trace_snapshots: list[tuple[int, dict[int, int]]] = []
+    trace_record_count = 0
     for line_number, line in enumerate(stdout.splitlines(), 1):
         fields = line.split("\t")
         try:
-            if len(fields) == 4 and fields[0] == "CHECKPOINT":
+            if fields[0] == "CHECKPOINT" and len(fields) in (3, 4):
                 checkpoint_index = int(fields[1])
                 frame = int(fields[2])
-                if checkpoint_index in hashes:
-                    raise ValueError("duplicate checkpoint")
-                if not (0 <= checkpoint_index < len(scenario.checkpoints)):
+                checkpoint = scenario.checkpoints[checkpoint_index] if (
+                    0 <= checkpoint_index < len(scenario.checkpoints)
+                ) else None
+                if checkpoint is None:
                     raise ValueError("checkpoint index out of range")
+                if checkpoint_index in checkpoint_frames:
+                    raise ValueError("duplicate checkpoint")
                 if scenario.run_until is None:
-                    if frame != scenario.checkpoints[checkpoint_index].frame:
+                    if frame != checkpoint.frame:
                         raise ValueError("checkpoint frame does not match plan")
                 elif (
                     checkpoint_index != 0
@@ -1438,10 +1687,19 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
                     or frame >= scenario.run_until.max_frames
                 ):
                     raise ValueError("terminal checkpoint frame is outside run-until bounds")
-                if not re.fullmatch(r"[0-9a-f]{16}", fields[3]):
-                    raise ValueError("malformed hash")
                 checkpoint_frames[checkpoint_index] = frame
-                hashes[checkpoint_index] = f"fnv1a64-rgb24:{fields[3]}"
+                # Plan formats 3/4 always emitted a whole-frame hash, even
+                # when Python did not consume it. Schema-v3 profile plans use
+                # format 5 and omit that work for semantic-only checkpoints.
+                expects_framebuffer_hash = (
+                    checkpoint.framebuffer or scenario.execution_profile is None
+                )
+                if expects_framebuffer_hash:
+                    if len(fields) != 4 or not re.fullmatch(r"[0-9a-f]{16}", fields[3]):
+                        raise ValueError("malformed hash")
+                    hashes[checkpoint_index] = f"fnv1a64-rgb24:{fields[3]}"
+                elif len(fields) != 3:
+                    raise ValueError("unexpected framebuffer hash")
             elif len(fields) == 7 and fields[0] == "TERMINAL":
                 if scenario.run_until is None:
                     raise ValueError("unexpected terminal record for fixed-frame scenario")
@@ -1513,6 +1771,56 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
                     bool(action_present),
                     action_value,
                 )
+            elif len(fields) == 4 and fields[0] == "PROFILE":
+                if scenario.execution_profile is None:
+                    raise ValueError("unexpected profile record")
+                if (
+                    scenario.execution_profile.name
+                    != EXECUTION_PROFILE_ACCELERATED_FIDELITY
+                ):
+                    raise ValueError("normal-fidelity profile emitted a configuration record")
+                if profile_record is not None:
+                    raise ValueError("duplicate profile record")
+                frame = int(fields[1])
+                before = int(fields[2], 16)
+                after = int(fields[3], 16)
+                if (
+                    scenario.execution_profile.config_apply_frame is None
+                    or frame != scenario.execution_profile.config_apply_frame
+                    or not (0 <= before <= 0xFFFFFFFF)
+                    or not (0 <= after <= 0xFFFFFFFF)
+                ):
+                    raise ValueError("malformed profile record")
+                profile_record = (frame, before, after)
+            elif len(fields) == 4 and fields[0] == "TRACE":
+                if scenario.execution_profile is None:
+                    raise ValueError("unexpected trace record")
+                trace_record_count += 1
+                if trace_record_count > MAX_PROFILE_TRACE_RECORDS:
+                    raise ValueError("trace records exceed aggregate budget")
+                frame = int(fields[1])
+                probe_index = int(fields[2])
+                value = int(fields[3])
+                profile = scenario.execution_profile
+                if (
+                    frame < 0
+                    or scenario.run_until is None
+                    or frame >= scenario.run_until.max_frames
+                ):
+                    raise ValueError("trace frame is outside run-until bounds")
+                if not (0 <= probe_index < len(profile.trace_probes)):
+                    raise ValueError("trace probe index out of range")
+                probe = profile.trace_probes[probe_index]
+                if not (0 <= value < 1 << (probe.size * 8)):
+                    raise ValueError("trace value exceeds declared width")
+                if not trace_snapshots or trace_snapshots[-1][0] != frame:
+                    if trace_snapshots and frame <= trace_snapshots[-1][0]:
+                        raise ValueError("trace frames are not strictly increasing")
+                    trace_snapshots.append((frame, {}))
+                values_at_frame = trace_snapshots[-1][1]
+                if probe_index in values_at_frame:
+                    raise ValueError("duplicate trace probe")
+                values_at_frame[probe_index] = value
             elif len(fields) == 3 and fields[0] == "SRAMHASH":
                 checkpoint_index = int(fields[1])
                 if checkpoint_index in sram_hashes:
@@ -1588,9 +1896,20 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
             raise PlaytestError(
                 f"malformed backend output at line {line_number}: {line!r} ({exc})"
             ) from exc
-    if len(hashes) != len(scenario.checkpoints):
+    if len(checkpoint_frames) != len(scenario.checkpoints):
         raise PlaytestError(
-            f"backend returned {len(hashes)} of {len(scenario.checkpoints)} checkpoints"
+            f"backend returned {len(checkpoint_frames)} of "
+            f"{len(scenario.checkpoints)} checkpoints"
+        )
+    expected_framebuffer_hash_count = (
+        len(scenario.checkpoints)
+        if scenario.execution_profile is None
+        else sum(1 for checkpoint in scenario.checkpoints if checkpoint.framebuffer)
+    )
+    if len(hashes) != expected_framebuffer_hash_count:
+        raise PlaytestError(
+            f"backend returned {len(hashes)} of {expected_framebuffer_hash_count} "
+            "framebuffer hashes"
         )
     if scenario.run_until is None:
         if terminal is not None:
@@ -1604,6 +1923,24 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
             raise PlaytestError(
                 "backend terminal and checkpoint frames do not match exactly"
             )
+    if scenario.execution_profile is None:
+        if profile_record is not None or trace_snapshots:
+            raise PlaytestError("backend returned profile output for a normal scenario")
+    else:
+        profile = scenario.execution_profile
+        if profile.name == EXECUTION_PROFILE_ACCELERATED_FIDELITY:
+            if profile_record is None:
+                raise PlaytestError("backend returned no accelerated profile record")
+        elif profile_record is not None:
+            raise PlaytestError("normal-fidelity profile returned a configuration record")
+        if not trace_snapshots:
+            raise PlaytestError("backend returned no semantic trace")
+        expected_trace_indexes = set(range(len(profile.trace_probes)))
+        for frame, values_at_frame in trace_snapshots:
+            if set(values_at_frame) != expected_trace_indexes:
+                raise PlaytestError(
+                    f"backend trace at frame {frame} does not contain every profile probe"
+                )
     expected_sram_hash_count = sum(
         1 for checkpoint in scenario.checkpoints if checkpoint.sram_hash
     )
@@ -1672,7 +2009,9 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
     fingerprint: dict[str, Any] = {
         "checkpoints": checkpoints,
         "format_version": (
-            RUN_UNTIL_FINGERPRINT_FORMAT_VERSION
+            ACCELERATED_FIDELITY_FINGERPRINT_FORMAT_VERSION
+            if scenario.execution_profile is not None
+            else RUN_UNTIL_FINGERPRINT_FORMAT_VERSION
             if scenario.run_until is not None
             else FIXED_FINGERPRINT_FORMAT_VERSION
         ),
@@ -1707,6 +2046,31 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
                 scenario.run_until.action_limit, action_present, action_value
             ),
         }
+    if scenario.execution_profile is not None:
+        profile = scenario.execution_profile
+        captured_profile: dict[str, Any] = {"name": profile.name}
+        if profile_record is not None:
+            frame, before, after = profile_record
+            captured_profile.update(
+                config_apply_frame=frame,
+                config_before=f"0x{before:08x}",
+                config_after=f"0x{after:08x}",
+            )
+        fingerprint["profile"] = captured_profile
+        fingerprint["trace"] = [
+            {
+                "frame": frame,
+                "probes": [
+                    {
+                        "address": probe.binding,
+                        "size": probe.size,
+                        "value": f"0x{values_at_frame[index]:0{probe.size * 2}x}",
+                    }
+                    for index, probe in enumerate(profile.trace_probes)
+                ],
+            }
+            for frame, values_at_frame in trace_snapshots
+        ]
     return fingerprint
 
 
@@ -1717,6 +2081,7 @@ def capture(
     retries: int = 0,
     scheduled_write: ScheduledWrite | None = None,
     work_dir: Path | None = None,
+    backend_path: Path | None = None,
 ) -> dict[str, Any]:
     if scenario.disabled:
         raise PlaytestError(f"scenario {scenario.name!r} is disabled: {scenario.blocker}")
@@ -1741,7 +2106,11 @@ def capture(
         dir=str(work_dir) if work_dir is not None else None,
     ) as temporary:
         temporary_path = Path(temporary)
-        backend = temporary_path / "gba-playtest-backend"
+        backend = (
+            backend_path
+            if backend_path is not None
+            else temporary_path / "gba-playtest-backend"
+        )
         plan = temporary_path / "plan.txt"
         execution_rom = temporary_path / "input.gba"
         try:
@@ -1765,7 +2134,10 @@ def capture(
         # The identity is computed from the immutable temporary copy passed to
         # libmGBA, avoiding a path-replacement race between hashing and loading.
         provenance = rom_provenance(execution_rom)
-        build_backend(backend, retries)
+        if backend_path is None:
+            build_backend(backend, retries)
+        elif not backend.is_file():
+            raise PlaytestError(f"prebuilt libmGBA backend does not exist: {backend}")
         _write_plan(plan, scenario, scheduled_write)
         last_frame = (
             scenario.run_until.max_frames - 1
@@ -1879,10 +2251,18 @@ def validate_fingerprint(
         return _validate_fixed_fingerprint(data, source, symbol_resolver, policy)
     if format_version == RUN_UNTIL_FINGERPRINT_FORMAT_VERSION:
         return _validate_run_until_fingerprint(data, source, symbol_resolver, policy)
+    if format_version == ACCELERATED_FIDELITY_FINGERPRINT_FORMAT_VERSION:
+        return _validate_accelerated_fidelity_fingerprint(
+            data,
+            source,
+            symbol_resolver,
+            policy,
+        )
     raise PlaytestError(
         f"{source}.format_version must be integer "
         f"{FIXED_FINGERPRINT_FORMAT_VERSION} or "
-        f"{RUN_UNTIL_FINGERPRINT_FORMAT_VERSION}"
+        f"{RUN_UNTIL_FINGERPRINT_FORMAT_VERSION} or "
+        f"{ACCELERATED_FIDELITY_FINGERPRINT_FORMAT_VERSION}"
     )
 
 
@@ -2143,6 +2523,166 @@ def _validate_run_until_fingerprint(
         raise PlaytestError(
             f"{terminal_path}.actions must be non-null when reason is 'max_actions'"
         )
+    return root
+
+
+def _validate_accelerated_fidelity_fingerprint(
+    data: Any,
+    source: str,
+    symbol_resolver: Callable[[str], tuple[int, int]] | None,
+    policy: str,
+) -> dict[str, Any]:
+    required_fields = {
+        "format_version",
+        "scenario",
+        "profile",
+        "terminal",
+        "checkpoints",
+        "trace",
+    }
+    optional_fields: set[str] = set()
+    if policy == "exact-rom":
+        required_fields.add("rom")
+    else:
+        optional_fields.add("rom")
+    root = _expect_object(data, source, required_fields, optional_fields)
+    if (
+        not _is_int(root["format_version"])
+        or root["format_version"] != ACCELERATED_FIDELITY_FINGERPRINT_FORMAT_VERSION
+    ):
+        raise PlaytestError(
+            f"{source}.format_version must be integer "
+            f"{ACCELERATED_FIDELITY_FINGERPRINT_FORMAT_VERSION}"
+        )
+    run_until_shape = dict(root)
+    run_until_shape["format_version"] = RUN_UNTIL_FINGERPRINT_FORMAT_VERSION
+    run_until_shape.pop("profile")
+    run_until_shape.pop("trace")
+    _validate_run_until_fingerprint(
+        run_until_shape,
+        source,
+        symbol_resolver,
+        policy,
+    )
+
+    profile = root["profile"]
+    if not isinstance(profile, dict):
+        raise PlaytestError(f"{source}.profile must be an object")
+    profile_name = profile.get("name")
+    if not isinstance(profile_name, str) or profile_name not in EXECUTION_PROFILE_NAMES:
+        raise PlaytestError(
+            f"{source}.profile.name must be one of "
+            f"{', '.join(EXECUTION_PROFILE_NAMES)}"
+        )
+    if profile_name == EXECUTION_PROFILE_NORMAL_FIDELITY:
+        _expect_object(profile, f"{source}.profile", {"name"})
+    else:
+        profile = _expect_object(
+            profile,
+            f"{source}.profile",
+            {"name", "config_apply_frame", "config_before", "config_after"},
+        )
+        config_apply_frame = _expect_frame(
+            profile["config_apply_frame"],
+            f"{source}.profile.config_apply_frame",
+        )
+        if config_apply_frame > root["terminal"]["frame"]:
+            raise PlaytestError(
+                f"{source}.profile.config_apply_frame must not exceed "
+                f"{source}.terminal.frame"
+            )
+        for field in ("config_before", "config_after"):
+            if not isinstance(profile[field], str) or not re.fullmatch(
+                r"0x[0-9a-f]{8}", profile[field]
+            ):
+                raise PlaytestError(f"{source}.profile.{field} must be 32-bit lowercase hex")
+        config_before = int(profile["config_before"], 16)
+        expected_config_after = (
+            (config_before | PLAYST_CONFIG_GAME_SPEED_MASK)
+            & ~PLAYST_CONFIG_ANIMATION_TYPE_MASK
+        ) | PLAYST_CONFIG_ANIMATION_TYPE_OFF
+        if int(profile["config_after"], 16) != expected_config_after:
+            raise PlaytestError(
+                f"{source}.profile.config_after must be the accelerated "
+                "transformation of config_before"
+            )
+        for index, checkpoint in enumerate(root["checkpoints"]):
+            forbidden = {
+                field
+                for field in ("framebuffer_hash", "regions", "pixel_probes")
+                if field in checkpoint
+            }
+            if forbidden:
+                raise PlaytestError(
+                    f"{source}.checkpoints[{index}] accelerated-fidelity forbids "
+                    f"{', '.join(sorted(forbidden))}"
+                )
+
+    trace = root["trace"]
+    if not isinstance(trace, list) or not trace:
+        raise PlaytestError(f"{source}.trace must be a non-empty array")
+    trace_checkpoints: list[dict[str, Any]] = []
+    trace_record_count = 0
+    previous_frame = -1
+    expected_shape: list[tuple[str, int]] | None = None
+    for index, snapshot in enumerate(trace):
+        path = f"{source}.trace[{index}]"
+        snapshot = _expect_object(snapshot, path, {"frame", "probes"})
+        frame = _expect_frame(snapshot["frame"], f"{path}.frame")
+        if index == 0 and frame != 0:
+            raise PlaytestError(
+                f"{path}.frame must be 0 for the initial full trace snapshot"
+            )
+        if frame <= previous_frame:
+            raise PlaytestError(f"{path}.frame must be strictly increasing")
+        if frame > root["terminal"]["frame"]:
+            raise PlaytestError(
+                f"{path}.frame must not exceed {source}.terminal.frame"
+            )
+        previous_frame = frame
+        trace_checkpoints.append(
+            {
+                "frame": frame,
+                "name": f"trace-{index}",
+                "probes": snapshot["probes"],
+            }
+        )
+        if not isinstance(snapshot["probes"], list) or not snapshot["probes"]:
+            raise PlaytestError(f"{path}.probes must be a non-empty array")
+        if len(snapshot["probes"]) > MAX_PROFILE_TRACE_PROBES:
+            raise PlaytestError(
+                f"{path}.probes has {len(snapshot['probes'])} probes, exceeding "
+                f"the {MAX_PROFILE_TRACE_PROBES}-probe limit"
+            )
+        trace_record_count += len(snapshot["probes"])
+        if trace_record_count > MAX_PROFILE_TRACE_RECORDS:
+            raise PlaytestError(
+                f"{source}.trace exceeds the {MAX_PROFILE_TRACE_RECORDS}-record "
+                "aggregate limit"
+            )
+        shape = [
+            (probe.get("address"), probe.get("size"))
+            for probe in snapshot["probes"]
+            if isinstance(probe, dict)
+        ]
+        if len(shape) != len(snapshot["probes"]):
+            raise PlaytestError(f"{path}.probes entries must be objects")
+        if expected_shape is None:
+            expected_shape = shape
+        elif shape != expected_shape:
+            raise PlaytestError(
+                f"{path}.probes must preserve the first trace snapshot's probe shape"
+            )
+    _validate_fixed_fingerprint(
+        {
+            "format_version": FIXED_FINGERPRINT_FORMAT_VERSION,
+            "scenario": root["scenario"],
+            "checkpoints": trace_checkpoints,
+        },
+        f"{source}.trace",
+        symbol_resolver,
+        "behavior",
+    )
     return root
 
 

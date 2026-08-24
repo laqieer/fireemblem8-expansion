@@ -90,6 +90,8 @@ CHAPTER_SETTINGS_JSON = os.path.join(REPO_ROOT, "src", "data", "chapter_settings
 CHAPTER_DATA_ASSET_TABLE_SOURCE = os.path.join(REPO_ROOT, "src", "data", "data_8B363C.c")
 CHAPTER_DATA_ASSET_TABLE_SYMBOL = "gChapterDataAssetTable"
 CHAPTER_DATA_ASSET_TABLE_DECL = r"const\s+void\s*\*"
+ASSET_MANIFEST_PATH = os.path.join(REPO_ROOT, "assets", "manifest.json")
+MAP_LAYOUT_DIR = os.path.join(REPO_ROOT, "graphics", "map", "layout")
 
 # The 5 per-chapter tables this bundle composes ("supports" is a global,
 # chapter-agnostic table -- see `supportOwners` instead).
@@ -374,6 +376,73 @@ def _err(message, loc, ref):
     return GeneratedDataError(message, loc, ref)
 
 
+def _source_path(source):
+    return source if os.path.isabs(source) else os.path.join(REPO_ROOT, source)
+
+
+def _dependency_loader(table_name):
+    if table_name == "units":
+        from ..units import schema
+    elif table_name == "shops":
+        from ..shops import schema
+    elif table_name == "traps":
+        from ..traps import schema
+    elif table_name == "eventscripts":
+        from ..eventscripts import schema
+    elif table_name == "eventlists":
+        from ..eventlists import schema
+    elif table_name == "supports":
+        from ..supports import schema
+    else:
+        raise GeneratedDataError("unknown chapter bundle dependency '{}'".format(table_name))
+    return schema.load_records
+
+
+def resolve_bundle_dependencies(record, diagnostics=None, dependency_records=None,
+                                prefer_supplied=False):
+    """Load one bundle's table records from its own declared source paths."""
+    resolved = {}
+    for table_name in BUNDLE_TABLE_NAMES:
+        table = record.tables_by_name.get(table_name)
+        if table is None:
+            continue
+        if prefer_supplied and dependency_records is not None and table_name in dependency_records:
+            resolved[table_name] = dependency_records[table_name]
+            continue
+        try:
+            resolved[table_name] = _dependency_loader(table_name)(_source_path(table.source))
+        except (OSError, GeneratedDataError) as error:
+            if diagnostics is not None:
+                diagnostics.add(
+                    _err(
+                        "could not load {} dependency source '{}': {}".format(
+                            table_name, table.source, error
+                        ),
+                        table.source_loc,
+                        "bundles[chapter={}].tables.{}.source".format(record.chapter.id, table_name),
+                    )
+                )
+    if prefer_supplied and dependency_records is not None and "supports" in dependency_records:
+        resolved["supports"] = dependency_records["supports"]
+    else:
+        try:
+            resolved["supports"] = _dependency_loader("supports")(
+                _source_path(record.support_owners.source)
+            )
+        except (OSError, GeneratedDataError) as error:
+            if diagnostics is not None:
+                diagnostics.add(
+                    _err(
+                        "could not load supports dependency source '{}': {}".format(
+                            record.support_owners.source, error
+                        ),
+                        record.support_owners.source_loc,
+                        "bundles[chapter={}].supportOwners.source".format(record.chapter.id),
+                    )
+                )
+    return resolved
+
+
 def read_chapter_settings_row(index, chapter_settings_path=CHAPTER_SETTINGS_JSON):
     """Read one row of ``chapter_settings.json`` (plain ``json.load`` -- this
     is a large, read-only, pre-existing asset this table only consumes, not
@@ -399,6 +468,40 @@ def read_asset_table_entries(asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE,
     raise GeneratedDataError(
         "could not find '{}' array in {}".format(symbol, asset_table_path)
     )
+
+
+def read_chapter_map_dimensions(chapter_settings_index, chapter_settings_path=CHAPTER_SETTINGS_JSON,
+                                asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE,
+                                asset_manifest_path=ASSET_MANIFEST_PATH,
+                                map_layout_dir=MAP_LAYOUT_DIR):
+    """Resolve one chapter's authored map width/height from its runtime map asset."""
+    row = read_chapter_settings_row(chapter_settings_index, chapter_settings_path)
+    if row is None or "map" not in row or "mainLayerId" not in row["map"]:
+        return None
+    asset_entries = read_asset_table_entries(asset_table_path)
+    main_layer_id = row["map"]["mainLayerId"]
+    if not (0 <= main_layer_id < len(asset_entries)):
+        return None
+    map_symbol = asset_entries[main_layer_id]
+    try:
+        with open(asset_manifest_path, "r", encoding="utf-8") as handle:
+            asset_manifest = json.load(handle)
+        for asset in asset_manifest.get("assets", ()):
+            ownership = asset.get("ownership", {})
+            resources = asset.get("resources", {})
+            if ownership.get("symbol") == map_symbol and {
+                "mapWidth", "mapHeight"
+            } <= set(resources):
+                return resources["mapWidth"], resources["mapHeight"]
+    except OSError:
+        pass
+    layout_path = os.path.join(map_layout_dir, "{}.json".format(map_symbol))
+    try:
+        with open(layout_path, "r", encoding="utf-8") as handle:
+            layout = json.load(handle)
+        return layout["width"], layout["height"]
+    except (OSError, KeyError):
+        return None
 
 
 def _validate_record(records, diagnostics, dependency_records=None,
@@ -811,9 +914,16 @@ def validate(records, diagnostics, dependency_records=None,
             "bundles[chapter={key}].chapter",
         )
     )
+    use_supplied_dependencies = len(records) == 1 and dependency_records is not None
     for record in records:
+        record_dependencies = resolve_bundle_dependencies(
+            record,
+            diagnostics,
+            dependency_records,
+            prefer_supplied=use_supplied_dependencies,
+        )
         _validate_record(
-            record, diagnostics, dependency_records,
+            record, diagnostics, record_dependencies,
             chapters_header=chapters_header,
             characters_header=characters_header,
             classes_header=classes_header,

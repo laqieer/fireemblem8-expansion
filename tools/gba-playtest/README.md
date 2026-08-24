@@ -292,6 +292,196 @@ documented program explicitly mirrors KEYINPUT there.
 Disabled schema-ready stubs additionally use `"disabled": true` and a non-empty
 `"blocker"`. They may have no checkpoints, and capture rejects them explicitly.
 
+Schema version 1 and its format-version-2 fingerprints are unchanged. Existing
+fixed-frame files require no migration and still generate the same plan and
+fingerprint structure.
+
+### Bounded semantic run-until schema version 2
+
+Schema version 2 replaces the fixed `checkpoints` array with one bounded
+`run_until` profile and one terminal checkpoint template:
+
+```json
+{
+  "schema_version": 2,
+  "name": "bounded-example",
+  "frames": [
+    {"start": 90, "end": 95, "keys": ["SELECT", "START", "R"]}
+  ],
+  "run_until": {
+    "max_frames": 18001,
+    "terminal_conditions": [
+      {
+        "reason": "success",
+        "all": [
+          {
+            "address": "gExpansionAutoplayTelemetry+0x04",
+            "size": 4,
+            "operator": "eq",
+            "value": "0x00000003"
+          }
+        ]
+      },
+      {
+        "reason": "objective_failure",
+        "all": [
+          {
+            "address": "gExpansionAutoplayTelemetry+0x04",
+            "size": 4,
+            "operator": "eq",
+            "value": "0x00000004"
+          }
+        ]
+      }
+    ],
+    "stall": {
+      "max_unchanged_frames": 1800,
+      "progress": {
+        "address": "gExpansionAutoplayTelemetry+0x18",
+        "size": 4
+      },
+      "work_expected": {
+        "address": "gExpansionAutoplayTelemetry+0x04",
+        "size": 4,
+        "operator": "eq",
+        "value": "0x00000002"
+      }
+    },
+    "turn_limit": {
+      "maximum": 3,
+      "address": "gPlaySt+0x10",
+      "size": 2
+    },
+    "action_limit": {
+      "maximum": 62,
+      "address": "gExpansionAutoplayTelemetry+0x18",
+      "size": 4
+    },
+    "checkpoint": {
+      "name": "semantic-terminal",
+      "framebuffer": false,
+      "probes": [
+        {"address": "gExpansionAutoplayTelemetry+0x18", "size": 4}
+      ]
+    }
+  }
+}
+```
+
+`max_frames` is an unconditional positive frame count. A value of N executes
+at most zero-based frames 0 through N-1; every input range must end before N.
+The terminal checkpoint deliberately has no authored `frame`: the backend
+captures it exactly once on the first terminal frame.
+
+Each terminal condition is a conjunction (`all`) of unsigned comparisons over
+the same bounded 1/2/4-byte literal or ELF-symbol probes used by checkpoints.
+Operators are `eq`, `ne`, `lt`, `le`, `gt`, and `ge`; values are lowercase
+fixed-width hexadecimal strings. Exactly one `success` definition is required.
+`objective_failure` and `controller_exhausted` definitions are optional.
+Duplicate predicates/reasons, internally impossible conjunctions, or two
+terminal definitions that can overlap are rejected before ROM execution.
+The parser also rejects a success definition statically precluded by its
+declared turn/action ceiling.
+
+`turn_limit` and `action_limit` are optional named semantic counters. Their
+positive `maximum` is checked after explicit terminal conditions, so success
+observed exactly at a counter bound remains success. `stall` is optional and
+requires a ROM-supplied monotonic progress epoch plus a separate
+`work_expected` comparison. Only consecutive unchanged epoch transitions
+while work is expected count toward `max_unchanged_frames`; a defend/wait
+objective can report work not expected and remain stationary without being
+called stalled. Any epoch regression is a deterministic backend error, never
+normalized into a terminal result.
+
+Terminal priority is explicit conditions, `engine_stall`, `max_turns`,
+`max_actions`, then `max_frames`. Exactly one of these stable reasons is
+emitted:
+
+- `success` - the authored success state became observable;
+- `objective_failure` - the ROM reported an authored loss/failure state;
+- `controller_exhausted` - explicit ROM telemetry reported no legal action;
+- `engine_stall` - the monotonic progress epoch stopped while work was expected;
+- `max_frames`, `max_turns`, or `max_actions` - the corresponding hard budget
+  was reached first.
+
+Run-until captures use fingerprint format version 3. They retain normal
+scenario and ROM provenance, contain exactly one checkpoint, and add
+`terminal.reason`, `terminal.frame`, plus probe-shaped `terminal.turn` and
+`terminal.actions` values (or `null` when the counter is unbound). The
+checkpoint frame must equal the terminal frame. Behavior-policy verification
+compares this typed terminal record as well as checkpoint data.
+
+All seven reasons are deterministic semantic outcomes, not host process
+timeouts. They return one fingerprint and are never retried. `--retries`
+continues to apply only to a transient compiler/pkg-config/backend process
+timeout; it cannot turn an objective failure, exhausted controller, stall, or
+budget result into success.
+
+### Accelerated-fidelity schema version 3
+
+Issue #88 adds a strict `execution_profile` to bounded run-until scenarios:
+`normal-fidelity` or `accelerated-fidelity`. Schema-v1/v2 inputs and
+fingerprint formats remain unchanged. Both profiles execute every selected
+frame through the same `core->runFrame()` path; no profile can skip engine,
+Proc, event, battle, movement, camera, trap, phase, controller, or save logic.
+
+The accelerated profile has one explicit `play_state_config` binding and
+`config_apply_frame`. At that frame, only the existing `gPlaySt.config`
+game-speed bit and the animation option selected by
+`BANIM_PRESENTATION_POLICY_OFF` are applied inside the disposable libmGBA
+core. The binding must be an aligned writable EWRAM/IWRAM word; ROM, VRAM,
+palette, OAM, and SRAM bindings are rejected, and the backend readback must
+equal the requested value before it emits `PROFILE`. External format-4
+fingerprints must encode the exact same transformation of `config_before`:
+speed enabled, animation OFF, all unrelated bits unchanged. Normal fidelity
+accepts no configuration write. The profile also owns a
+non-empty `trace` array of normal 1/2/4-byte semantic probes, canonicalized by
+binding and size so input order cannot change the fingerprint shape. The
+backend emits its initial full snapshot at frame 0, then another only on a
+semantic change. External format-4 fingerprints must retain that initial
+snapshot, strictly increase later snapshot frames, keep each snapshot at or
+below 512 probes, and remain within the 450,000-record aggregate limit. This
+retains action/RNG order without making host wall-clock time a behavioral
+oracle. The dedicated accelerated test ROM alone appends the
+first observed state and every later bounded ordered command/slot-C/counter/
+named-objective-flag transition at the commit seam; the terminal
+checkpoint compares every record and rejects overflow. The endpoint covers
+active blue, red, and green unit slots. Its declared frame bound multiplied by
+trace-probe count may not exceed 450,000 records, bounding backend stdout and
+the host's captured trace memory.
+
+Schema-v3 uses plan format 5 and fingerprint format 4. Format 5 retains
+framebuffer allocation/rendering but adds one checkpoint flag: when a
+semantic-only checkpoint has `framebuffer: false`, it does not calculate or
+emit an unused whole-frame hash. Region/pixel capture still requires
+`framebuffer: true`. The format-4 fingerprint records profile application
+details and the ordered trace, while preserving normal ROM provenance,
+terminal reason/counters, and terminal semantic checkpoint.
+
+The focused reproducible command is:
+
+```sh
+make expansion-modern-autoplay-accelerated-fidelity-check \
+  MODERN_CONFIG=debug MODERN_ABI=aapcs
+```
+
+It writes an ignored benchmark JSON beside the debug ROM. That report records
+libmGBA version, host/runner identity, source commit, ROM provenance/config,
+emulated-frame counts, and three wall-clock samples. The checked Chapter 2
+fixture freezes 17,135 normal-fidelity frames and 16,869 accelerated-fidelity
+frames (266 fewer); wall-clock samples are evidence only. The paired
+comparator requires equal ROM provenance, terminal semantic state, ordered
+trace, RNG values, unit state/items, flags/objective result, and turn/action
+counters, and its perturbed-trace negative must fail. Repeated captures of the
+same profile compare complete format-4 fingerprints, including terminal and
+trace frames; format-4 validation rejects profile or trace frames after the
+terminal. The accelerated runtime also verifies that the existing presentation
+policy seam reports `BANIM_PRESENTATION_POLICY_OFF`, not merely matching config
+bits. A prior benchmark artifact is removed before capture, and a fresh report
+is atomically published only after every semantic, reproducibility, and frozen
+frame check passes. Visual/audio/timing cases stay on their normal-fidelity
+scenarios.
+
 ## Initial coverage and limits
 
 `boot.json` is a no-input early boot capture. `title-progression.json` uses the
@@ -337,6 +527,7 @@ similarity alone.
 | `run_autoplay_checks.py` generated scenarios (issue #85) | `TC-AUTOPLAY-001`: a clean Chapter 2 debug-only activation chord drives a full blue phase through the existing AI and records legal actions, faction-relation checks, completion, and progression; clean Prologue debug/release defaults remain PLAYER with zero blue AI actions | debug (positive + negative) / release (negative) |
 | `run_blue_phase_delegate_checks.py` generated scenarios (issue #87) | `TC-AUTOPLAY-CHARGE-001`: the enabled debug ROM selects the real localized Charge map-menu row, delegates the current blue phase, and reaches the next interactive blue phase with PLAYER restored; matching default debug/release ROMs retain zero blue AI actions | debug (positive + negative) / release (negative) |
 | `run_autoplay_bounds_checks.py` generated scenarios (issue #86) | `TC-AUTOPLAY-BOUNDS-001`: the same debug COMPUTER route stops at its first semantic completion (frame 17134 in the checked candidate), while clean debug/release PLAYER controls reach `max_frames` at frame 3950 with zero actions; the generated homebrew fixture separately covers all seven terminal reasons | debug (positive + negative) / release (negative) |
+| `run_accelerated_fidelity_checks.py` generated paired scenarios (issue #88) | `TC-AUTOPLAY-ACCEL-001`: same-ROM normal/accelerated Chapter 2 profiles preserve terminal probes, ordered telemetry/RNG trace, active-unit state/items, objective result, and turn/action counts while reducing 17,135 frames to 16,869; the benchmark reports non-gating wall-clock samples and the perturbation control rejects divergence | debug only |
 
 New-game, chapter/map arrival, combat, and normal save/load are all enabled,
 verified scenarios -- see the coverage table above. **No `*.stub.json` files
