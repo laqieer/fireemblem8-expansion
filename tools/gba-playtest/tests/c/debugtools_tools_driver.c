@@ -37,7 +37,7 @@
         } \
     } while (0)
 
-#define CLOSE_HUB_FLAGS (MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR)
+#define CLOSE_HUB_FLAGS (MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A)
 
 extern int gDebugToolsToolsHostStub_StartOrphanMenuCallCount;
 extern const struct MenuDef* gDebugToolsToolsHostStub_LastMenuDef;
@@ -153,7 +153,8 @@ int main(void)
 
     CHECK(strcmp(gDebugToolsUnitMenuDef.menuItems[0].name, "Confirm Heal to Full") == 0, "unit submenu item 0 must be the Confirm item");
     CHECK(strcmp(gDebugToolsUnitMenuDef.menuItems[1].name, "Back") == 0, "unit submenu item 1 must be Back");
-    CHECK(gDebugToolsUnitMenuDef.menuItems[1].onSelected == MenuCancelSelect, "unit submenu Back must use MenuCancelSelect");
+    CHECK(gDebugToolsUnitMenuDef.menuItems[1].onSelected == DebugTools_CancelMenu,
+          "unit submenu Back must use the owned no-clear cancel path");
 
     rc = gDebugToolsUnitMenuDef.menuItems[0].onSelected(NULL, NULL);
     CHECK(rc == CLOSE_HUB_FLAGS, "Unit confirm must close its submenu");
@@ -295,7 +296,8 @@ int main(void)
      * must be Back, using the same MenuCancelSelect idiom as every other
      * tool's Back entry. */
     CHECK(strcmp(gDebugToolsSaveStateMenuDef.menuItems[0].name, "Back") == 0, "save-state submenu's only item must be Back");
-    CHECK(gDebugToolsSaveStateMenuDef.menuItems[0].onSelected == MenuCancelSelect, "save-state submenu Back must use MenuCancelSelect");
+    CHECK(gDebugToolsSaveStateMenuDef.menuItems[0].onSelected == DebugTools_CancelMenu,
+          "save-state submenu Back must use the owned no-clear cancel path");
 
     gDebugToolsSaveStateMenuDef.onEnd(NULL);
     DebugToolsHostStub_RunPendingTransition();

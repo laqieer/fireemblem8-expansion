@@ -17,6 +17,7 @@ MODERN_GOALS := \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
 	expansion-modern-debuglog-check \
@@ -295,6 +296,7 @@ MODERN_COHORT_SOURCES ?= \
 	src/debugtools_launcher.c \
 	src/debugtools_actions.c \
 	src/debugtools_diag.c \
+	src/debugtools_diagnostics.c \
 	src/debugtools_tools.c
 
 # Handwritten assembly that must not be decompiled (see CONTRIBUTING.md).
@@ -765,6 +767,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
 	expansion-modern-newgame-check \
@@ -1430,6 +1433,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
 	expansion-modern-newgame-check \
@@ -2676,6 +2680,59 @@ expansion-modern-debugtools-tools-check: expansion-modern-boot-preflight expansi
 		--policy behavior
 	@printf 'Modern ROM debugtools-tools-check passed (five bounded tools live+confirmed in debug, compiled-out all-zero in release): %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+# Issue #127: typed State/Engine diagnostics. The debug leg uses an isolated
+# runtime-test build that drives title restoration, battle rejection, valid
+# and empty cursor-unit captures, both views, explicit Refresh, and forced
+# teardown. The release leg uses the ordinary release ROM and proves internal
+# owner/probe omission plus semantic world-map progress. The runner resolves
+# every address from the exact ELF and emits only scalar probes.
+MODERN_DEBUGTOOLS_DIAGNOSTICS_SPEC := \
+	tools/gba-playtest/scenarios/debugtools-diagnostics-modern-$(MODERN_CONFIG).json
+MODERN_DEBUGTOOLS_DIAGNOSTICS_PREP_SPEC := \
+	tools/gba-playtest/scenarios/debugtools-diagnostics-prep-modern-debug.json
+MODERN_DEBUGTOOLS_DIAGNOSTICS_RUNNER := \
+	tools/gba-playtest/run_debugtools_diagnostics_checks.py
+MODERN_DEBUGTOOLS_DIAGNOSTICS_OUT := \
+	$(MODERN_OUTPUT_DIR)/debugtools-diagnostics-runtime
+MODERN_DEBUGTOOLS_DIAGNOSTICS_BUILD_ROOT := \
+	build/expansion-modern-debugtools-diagnostics-runtime
+MODERN_DEBUGTOOLS_DIAGNOSTICS_ROM := \
+	$(MODERN_DEBUGTOOLS_DIAGNOSTICS_BUILD_ROOT)/debug/aapcs/fireemblem8.gba
+MODERN_DEBUGTOOLS_DIAGNOSTICS_ELF := \
+	$(MODERN_DEBUGTOOLS_DIAGNOSTICS_BUILD_ROOT)/debug/aapcs/fireemblem8.elf
+
+.PHONY: expansion-modern-debugtools-diagnostics-check
+ifeq ($(MODERN_CONFIG),debug)
+expansion-modern-debugtools-diagnostics-check: expansion-modern-boot-preflight \
+		$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)
+	+$(MAKE) expansion-modern-rom \
+		MODERN_BUILD_ROOT="$(MODERN_DEBUGTOOLS_DIAGNOSTICS_BUILD_ROOT)" \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		MODERN_INTERNAL_TEST_DEFINES="-DFE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST=1"
+	"$(PYTHON)" "$(MODERN_DEBUGTOOLS_DIAGNOSTICS_RUNNER)" \
+		--rom "$(MODERN_DEBUGTOOLS_DIAGNOSTICS_ROM)" \
+		--elf "$(MODERN_DEBUGTOOLS_DIAGNOSTICS_ELF)" \
+		--config debug \
+		--spec "$(MODERN_DEBUGTOOLS_DIAGNOSTICS_SPEC)" \
+		--out-dir "$(MODERN_DEBUGTOOLS_DIAGNOSTICS_OUT)" \
+		--sram-image "$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)"
+	"$(PYTHON)" "$(MODERN_DEBUGTOOLS_DIAGNOSTICS_RUNNER)" \
+		--rom "$(MODERN_DEBUGTOOLS_DIAGNOSTICS_ROM)" \
+		--elf "$(MODERN_DEBUGTOOLS_DIAGNOSTICS_ELF)" \
+		--config debug \
+		--spec "$(MODERN_DEBUGTOOLS_DIAGNOSTICS_PREP_SPEC)" \
+		--out-dir "$(MODERN_DEBUGTOOLS_DIAGNOSTICS_OUT)"
+else
+expansion-modern-debugtools-diagnostics-check: expansion-modern-boot-preflight \
+		expansion-modern-rom
+	"$(PYTHON)" "$(MODERN_DEBUGTOOLS_DIAGNOSTICS_RUNNER)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--config release \
+		--spec "$(MODERN_DEBUGTOOLS_DIAGNOSTICS_SPEC)" \
+		--out-dir "$(MODERN_DEBUGTOOLS_DIAGNOSTICS_OUT)"
+endif
 
 MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT := \
 	build/expansion-modern-portrait-package-runtime
@@ -3993,6 +4050,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-debugtools-timer-check \
 		expansion-modern-debugtools-map-check \
 		expansion-modern-debugtools-tools-check \
+		expansion-modern-debugtools-diagnostics-check \
 		expansion-modern-debugtools-prep-check \
 		expansion-modern-debugtools-ch4prep-check \
 		expansion-modern-newgame-check \
@@ -4023,6 +4081,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
 	expansion-modern-newgame-check \

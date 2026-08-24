@@ -373,6 +373,7 @@
       "key": "debug.status.hub",
       "status": "active",
       "surface": "debug_overlay",
+      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -381,6 +382,7 @@
       "key": "debug.status.hub_error",
       "status": "active",
       "surface": "debug_overlay",
+      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -389,6 +391,7 @@
       "key": "debug.status.unit_hp",
       "status": "active",
       "surface": "debug_overlay",
+      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -397,6 +400,7 @@
       "key": "debug.status.unit_unavailable",
       "status": "active",
       "surface": "debug_overlay",
+      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -405,6 +409,7 @@
       "key": "debug.status.convoy",
       "status": "active",
       "surface": "debug_overlay",
+      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -413,6 +418,7 @@
       "key": "debug.status.chapter",
       "status": "active",
       "surface": "debug_overlay",
+      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -421,6 +427,7 @@
       "key": "debug.status.flag",
       "status": "active",
       "surface": "debug_overlay",
+      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -429,6 +436,7 @@
       "key": "debug.status.rng_seed",
       "status": "active",
       "surface": "debug_overlay",
+      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -437,6 +445,7 @@
       "key": "debug.status.save_state",
       "status": "active",
       "surface": "debug_overlay",
+      "pseudo_policy": "compact",
       "max_width": 48,
       "max_decoded_bytes": 80
     },
@@ -517,6 +526,303 @@
       "max_decoded_bytes": 32,
       "pseudo_policy": "preserve",
       "notes": "Issue #43 typed chapter-title manifest fallback label."
+    },
+    {
+      "id": 63,
+      "key": "debug.view.state",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 32,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 64,
+      "key": "debug.view.engine",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 32,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 65,
+      "key": "debug.action.refresh",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 24,
+      "max_decoded_bytes": 32,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 66,
+      "key": "debug.value.unavailable",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 67,
+      "key": "debug.field.context",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 68,
+      "key": "debug.field.clock",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 69,
+      "key": "debug.field.chapter",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 70,
+      "key": "debug.field.turn",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 71,
+      "key": "debug.field.phase",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 72,
+      "key": "debug.field.cursor",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 73,
+      "key": "debug.field.unit",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 74,
+      "key": "debug.field.character",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 75,
+      "key": "debug.field.class",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 76,
+      "key": "debug.field.hp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 77,
+      "key": "debug.field.weather",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 78,
+      "key": "debug.field.fog",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 79,
+      "key": "debug.field.rng",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 80,
+      "key": "debug.field.proc_count",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 81,
+      "key": "debug.field.event",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 82,
+      "key": "debug.field.actions",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 83,
+      "key": "debug.field.log_retained",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 84,
+      "key": "debug.field.log_writes",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 85,
+      "key": "debug.field.log_last",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 20,
+      "max_decoded_bytes": 28,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 86,
+      "key": "debug.field.assert_count",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 87,
+      "key": "debug.field.assert_last",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 20,
+      "max_decoded_bytes": 28,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 88,
+      "key": "debug.value.context_title",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 89,
+      "key": "debug.value.context_map",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 90,
+      "key": "debug.value.context_prep",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 91,
+      "key": "debug.value.context_battle",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 92,
+      "key": "debug.value.phase_player",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 93,
+      "key": "debug.value.phase_enemy",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 94,
+      "key": "debug.value.phase_npc",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 95,
+      "key": "debug.value.phase_other",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact"
     }
   ]
 }

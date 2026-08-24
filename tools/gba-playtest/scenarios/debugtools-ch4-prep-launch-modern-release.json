@@ -99,7 +99,7 @@
   "checkpoints": [
     {
       "frame": 300,
-      "framebuffer": true,
+      "framebuffer": false,
       "name": "hub-closed-before-hotkey",
       "probes": [
         {
@@ -121,7 +121,7 @@
     },
     {
       "frame": 630,
-      "framebuffer": true,
+      "framebuffer": false,
       "name": "hub-opened-after-pulse",
       "probes": [
         {

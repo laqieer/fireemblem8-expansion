@@ -21,7 +21,7 @@ non-goals -- `mgba_printf`/full debugger/arbitrary memory editor).
 | `src/debugtools_registry.c` | Registry storage, hub menu construction/diagnostics, title/map/prep hotkey checks, `gDebugToolsProbe` |
 | `src/debugtools_launcher.c` | The built-in "Fast Boot: Chapter 2" action: arms/consumes the pending launch request, owns the bootstrap-suppression state and its observer proc |
 | `src/debugtools_actions.c` (slice 2) | Built-in Weather/Fog actions: registers each as a bounded one-item submenu whose `MenuItemDef` reuses the dormant `DebugMenu_Weather*`/`DebugMenu_Fog*` functions in `src/bmdebug.c` by pointer, with its own Back/B handling |
-| `src/titlescreen.c` | The title-screen hotkey call site (`Title_IDLE`); also detects the pending launch request after the hub MenuProc closes, before deferred allocator cleanup releases session ownership |
+| `src/titlescreen.c` | The title-screen hotkey call site (`Title_IDLE`); also detects the pending launch request after the hub MenuProc closes and synchronously closes/restores the display owner before advancing |
 | `src/playerphase.c` (slice 2) | The map-phase hotkey call site: `PlayerPhase_MainIdle` calls `DebugTools_MapHotkeyCheck()` and returns immediately while the hub is active, as its first statements |
 | `src/prep_sallycursor.c` (slice 2) | The prep-screen hotkey call site: `PrepScreenProc_MapIdle` calls `DebugTools_PrepHotkeyCheck()` and returns immediately while the hub is active, as its first statements |
 | `src/gamecontrol.c` | `GameControl_PostIntro` consumes the pending request exactly once and performs the actual deterministic boot |
@@ -184,7 +184,7 @@ row, and `InitText` monotonically advances the active font's
 ended and reopen a fresh hub from the submenu's `onEnd`; repeated
 hub→submenu→hub cycles therefore accumulated allocations indefinitely.
 
-Immediately before every debug-owned `StartOrphanMenu()`,
+Immediately before every debug-owned owner-child `StartMenu()`,
 `DebugTools_StartOwnedMenu()` captures the exact active font that will own
 the row allocations, its pre-allocation `chr_counter`, and the active font
 that must be restored later. This happens synchronously with
@@ -206,20 +206,20 @@ guard remains active across submenus and the one-frame transition.
 
 The default BG font has 448 allocator columns available from tile `0x80`
 through tile index `0x3FF` (two 8x8 tiles per text column). Each maximum hub
-page uses `10 * 18 = 180` columns for nine actions plus Back; the largest
-CJK status line adds 24, for a checked worst-case budget of 204. Opening is
+page uses `10 * 17 = 170` columns for nine actions plus Back; the largest
+CJK status line adds 17, for a checked worst-case budget of 187. Opening is
 rejected with `DEBUGTOOLS_ERR_TEXT_CAPACITY` if the current baseline plus
 that budget would exceed the active font's capacity. Host tests fill all
 18 registrations, page between both full rows, execute 64
 hub→submenu→hub/page cycles, and prove every reopened page returns to the
-same 204-column peak while final cleanup restores the original baseline.
+same 187-column peak while final cleanup restores the original baseline.
 
 ### Contributor submenu contract
 
 A contributor action that needs its own `MenuDef` must use the public handoff
 pair in `include/expansion_debugtools.h`; directly calling `StartOrphanMenu`
-from the action callback is unsupported because it bypasses allocator/session
-ownership:
+or `StartMenu` from the action callback is unsupported because it bypasses
+allocator/session ownership:
 
 ```c
 static struct Font gMyDebugFont;
@@ -243,7 +243,7 @@ static u8 MyDebugAction_Selected(struct MenuProc* menu, struct MenuItemProc* ite
     MyDebugSubmenu_BuildMenuItems();
     DebugTools_QueueSubmenuTransition(menu, &gMyDebugSubmenuDef);
 
-    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A;
 }
 ```
 
@@ -268,12 +268,12 @@ the nine built-ins first, then contributors in registration order.
 ## Diagnostics / visible feedback
 
 Registration/input failures are not silent: `DebugToolsHub_ShowDiagnostics()`
-reuses the existing on-screen debug font (`SetupDebugFontForBG`/
-`PrintDebugStringToBG`, `src/fontgrp.c` -- the same mechanism already proven
-by the dormant debug menus) to print either `"DBGTOOLS ERR <code>"` (last
-registration result was not `DEBUGTOOLS_OK`) or the count/page form
-`"DBGTOOLS <n>/18 <page>/2"` when contributors are present. The built-in-only
-profile retains its existing `"DBGTOOLS 9/9"` line. A full
+uses the session-owned ordinary `Text` allocation on BG0 to print either
+`"DBGTOOLS ERR <code>"` (last registration result was not `DEBUGTOOLS_OK`) or
+the count/page form `"DBGTOOLS <n> <page>/2"` when contributors are
+present. The built-in-only profile retains its `"DBGTOOLS 9/9"` line. It no
+longer clears or configures BG2, uploads the dormant debug font, or writes
+debug-font palette state. A full
 `mgba_printf`/AGB print-protocol
 implementation was judged too broad for this slice and is explicitly
 deferred (see "Remaining #11 scope"); this on-screen line is the retained,
@@ -311,20 +311,20 @@ the combo stays held. Entry is impossible in release builds:
 `DebugTools_TitleHotkeyCheck()` compiles to an empty stub (no key read, no
 `DebugTools_OpenHub()` call) when the subsystem is disabled.
 
-### Sibling-proc race and `DebugTools_IsHubActive()`
+### Concurrent context-owner input and `DebugTools_IsHubActive()`
 
 `Title_IDLE` lives inside `gProcScr_GameControl`'s own proc tree
 (`src/gamecontrol.c`'s script directly `PROC_CALL`s `StartTitleScreen_WithMusic`).
-The hub's menu (`StartOrphanMenu`) is started *from inside* `Title_IDLE`, so
-once open, the hub's menu proc and `Title_IDLE` are **independent sibling
-procs** under that same tree -- both still read `newKeys` every frame. Without
-a guard, an "A" press meant to select a hub action would also be seen, on the
-same frame, by `Title_IDLE`'s own unconditional `A_BUTTON | START_BUTTON`
-check below it, racing the vanilla title-to-gameplay transition against the
-hub action.
+The hub creates a display-owner child of the title Proc and starts its menu as
+that owner's blocking child. The title context remains schedulable beside
+that descendant, so both can still read `newKeys` in one frame. Without a
+guard, an "A" press meant to select a hub action would also be seen by
+`Title_IDLE`'s own unconditional `A_BUTTON | START_BUTTON` check, racing the
+vanilla title-to-gameplay transition against the hub action.
 
 `DebugTools_IsHubActive()` (backed by a static flag, set in
-`DebugTools_OpenHub`, cleared in the hub's `MenuDef::onEnd`) closes this gap:
+`DebugTools_OpenHub`, cleared only after the display-owner restoration
+callback) closes this gap:
 `Title_IDLE` returns immediately after the hotkey check for as long as the
 hub is active, skipping its own vanilla A/START handling entirely. Always
 returns 0 in a release build.
@@ -334,8 +334,8 @@ returns 0 in a release build.
 `DebugTools_OpenHub()` is the single authoritative reentrancy guard for the
 whole hub-entry surface: it checks the complete debug-menu session state at
 the very top, before any side effect (built-in initialization, menu-item
-construction, diagnostics, `hubOpenCount` increment, or
-`StartOrphanMenu()`), and returns `DEBUGTOOLS_ERR_ALREADY_ACTIVE` as a pure
+construction, diagnostics, `hubOpenCount` increment, or owner/menu
+construction), and returns `DEBUGTOOLS_ERR_ALREADY_ACTIVE` as a pure
 no-op if the hub, a submenu, or an allocator transition is already active.
 
 This matters because `DebugTools_TitleHotkeyCheck()`'s edge-detection only
@@ -415,7 +415,7 @@ the hub's own menu selects that row), and the dormant `DebugMenu_Weather*`/
 `MenuItemDef` callback sets (`onDraw`/`onIdle`), each action's
 `onSelected` handler (`DebugToolsActions_WeatherSelected`/
 `DebugToolsActions_FogSelected`) opens a **bounded, one-item submenu**
-(`StartOrphanMenu` over a single-entry `MenuDef`) whose one `MenuItemDef`
+(`StartMenu` under the display owner with a single-entry `MenuDef`) whose one `MenuItemDef`
 reuses the existing dormant `DebugMenu_WeatherDraw`/`DebugMenu_WeatherIdle`
 (or `DebugMenu_FogDraw`/`DebugMenu_FogIdle`) function pointers directly --
 the dormant code itself is never edited, copied, or reimplemented. Each
@@ -480,8 +480,11 @@ anywhere:
    ended by the next `Title_IDLE` turn. The pending check intentionally
    precedes the broader `DebugTools_IsHubActive()` session guard because
    deferred text cleanup retains allocator/reentrancy ownership for one
-   additional yield. When pending, `Title_IDLE` reacts with the
-   exact same `SetNextGameActionId(GAME_ACTION_EVENT_RETURN); Proc_Break(proc);`
+   additional yield. It first calls
+   `DebugToolsDiagnostics_ForceCloseSession()`, which synchronously restores
+   the exact BG/font/palette/lock state and cancels that deferred cleanup,
+   then uses the same
+   `SetNextGameActionId(GAME_ACTION_EVENT_RETURN); Proc_Break(proc);`
    pair the ordinary `A`/`START` branch uses -- the normal fade/end/
    parent-unblock lifecycle of this `TitleScreen` proc runs completely
    unmodified. No `A`/`START` keypress is ever synthesized.
@@ -1061,7 +1064,7 @@ Issue #11 closure requirement 5. Each is a single registry action
 read-only state immediately on selection (logged via
 `DEBUGTOOLS_LOG_*_INSPECT`), then -- for the four that can mutate anything
 -- opens a bounded two-item "Confirm `<action>`" / "Back" submenu (the
-exact same `StartOrphanMenu` idiom Weather/Fog already use in
+exact same owner-child transition Weather/Fog already use in
 `src/debugtools_actions.c`) so a mutation only ever happens after an
 explicit, separate confirmation input, never on the initial hub selection
 alone. No tool ever performs a raw/arbitrary address write or accepts an
@@ -1184,8 +1187,8 @@ tools" above for what each proves.
   metrics, then checks every hub/confirmation/Back label against the actual
   `(MenuDef.rect.w - 1) * 8` Text allocation. It also checks composed status
   lines against their real BG geometry and the localized Weather/Fog
-  label/value columns. The shared debug menu width is 19 tiles (18 text
-  tiles); the CJK status allocation is 24 tiles, both still within the
+  label/value columns. The shared debug menu width is 18 tiles (17 text
+  tiles); the CJK status allocation is 17 tiles, both still within the
   30-tile GBA screen.
 - **`DebugToolsRegistryHostTests`** compiles+links+executes the real
   `src/debugtools_registry.c` (enabled path) against a small driver
@@ -1499,14 +1502,107 @@ explicitly, honestly open is narrow:
   Issue #68's separate, bounded mGBA debug-register transport does not give
   the legacy declarations mGBA-specific semantics. See
   `reports/debugtools_issue11_closure.md`'s "Explicit non-goals" section
-  for the reasoning. The on-screen BG2 diagnostic line plus the bounded
-  log ring/assert record (`src/debugtools_diag.c`) are this subsystem's
-  retained, always-visible/queryable substitutes.
+  for the reasoning. The session-owned hub/status rows plus the bounded log
+  ring/assert record (`src/debugtools_diag.c`) are this subsystem's retained,
+  visible/queryable substitutes.
 - **Migrating the remaining dormant chapter-selector/BGM-commit tools** out
   of `bmdebug.c`/`uidebug.c`/`menu_def.c` into the new registration API
   (Weather/Fog were migrated first; a chapter/skirmish selector specifically
   would also unlock the live-prep-screen gap above) is not part of this
   closure's WHAT and remains available as clearly-scoped future work.
+
+## Typed visual/status diagnostics (issue #127)
+
+Issue #127 adds a read-only, fixed-layout diagnostics provider and two bounded
+views to the existing hub. It does not register an action: built-in IDs
+`1..9`, contributor IDs `10..65535`, both nine-entry capacities, and combined
+registry introspection remain unchanged.
+
+```c
+enum DebugToolsResult DebugTools_CaptureDiagnostics(
+    struct DebugToolsDiagnosticsSnapshot* out);
+```
+
+`struct DebugToolsDiagnosticsSnapshot` is exactly `0x40` bytes. Its validity
+mask separates common, map, cursor, and unit fields so an unavailable value is
+never mistaken for a real zero. Common fields are capture sequence, game clock
+in 60 Hz frames, total live Proc count, three-word RNG state, registered action
+count, retained/total structured-log counts and last code, and non-fatal assert
+count/last code. Map/prep fields are chapter, turn, faction, weather, fog range
+in tiles, cursor coordinates in tiles, and a bounds-checked cursor unit's slot,
+character/class IDs, and current/max HP.
+
+The provider is main-thread-only and succeeds only during a session opened
+from one of the authoritative hotkey call sites. `NULL` returns
+`DEBUGTOOLS_ERR_INVALID_ARGUMENT`; title/map/prep context conflicts return
+`DEBUGTOOLS_ERR_CONTEXT_UNAVAILABLE`; disabled builds zero a non-NULL output
+and return `DEBUGTOOLS_ERR_DISABLED`. Capture never advances RNG, writes a log,
+mutates gameplay state, or touches SRAM.
+
+Press `R` after the registered action page(s) to reach State, then Engine, then
+return to the first action page. Each diagnostics view has eight read-only
+rows, Refresh, and Back: ten live rows within `MENU_ITEM_MAX == 11`. A capture
+runs once on view entry and once per edge-detected `A` press on Refresh; there
+is no timer/per-frame refresh.
+
+| Context | Availability |
+| --- | --- |
+| Title | `Title_IDLE`; common/RNG/log/assert/proc/action fields only |
+| Live map | `PlayerPhase_MainIdle`; full map/cursor fields, unit fields only for a valid cursor unit |
+| Prep | `PrepScreenProc_MapIdle` with `PLAY_FLAG_PREPSCREEN`; same validated map/unit fields. This authoritative owner/flag pair permits the lingering battle-related Procs observed after Chapter 4's handoff. |
+| Battle, battle event, map animation, fade, other screen | unavailable before display writes |
+
+Battle remains unavailable because the battle renderer owns every BG, OBJ,
+window/blend/palette state, and sometimes HBlank. The dormant prototype
+monochrome/status shortcuts, retail `DebugMapMenu_DisplayInfo*`, arbitrary
+event/memory/proc browsers, VRAM/OAM estimates, and performance profiling are
+non-goals.
+
+### Display owner and restoration
+
+One Proc with `PROC_SET_END_CB` owns the built-in session, and every menu is
+its blocking child, so either explicit forced close or parent teardown
+recursively reaches the same owner callback. At title it is a nonblocking
+child and takes exactly one global game lock. On map/prep it is itself a
+blocking child of the authoritative context Proc and takes no global lock;
+that Proc semaphore pauses context input without preventing its menu
+descendant from running. Before the first menu it captures the exact BG0/BG1
+rectangle used by the largest hub
+(`x=1`, `y=1`, `w=18`, computed `h=22`), the two BG offsets, active font
+pointer/counter, animated green-text palette entry, and game-lock baseline.
+Built-in menus no longer return `MENU_ACT_CLEAR`, which would erase all of
+BG0/BG1, and no longer use the raw BG2/debug-font path. Diagnostics and tool
+status rows use ordinary `MenuProc`/`Text` rendering inside the captured
+rectangle.
+
+Normal Back, deferred action/view/submenu transitions, `EndAllMenus`, explicit
+forced close, owner `Proc_End`, and soft reset converge on the idempotent owner
+end callback. It ends children, restores the exact captured cells, offsets,
+font allocation, palette entry and title lock (or lets Proc teardown release
+the map/prep context semaphore), schedules BG0/BG1 sync, and only then
+releases the session guard. A title launch synchronously invokes this callback
+before advancing the title Proc, preserving both restoration and its
+established deterministic frame.
+
+The entire `0x630`-byte BG backup occupies a linker-asserted non-battle
+overlay tail between `__ewram_overlay_gamestart_end` and `gGenericBuffer`.
+Restoration metadata lives in the owner Proc payload. One non-owning child
+Proc uses its exact `0x40`-byte payload as the shared snapshot/tool-status
+scratch; it is bounded by the same parent teardown and consumes one
+preallocated Proc-pool slot but no incremental section RAM. Status `Text` is
+stack-local. A normal debug build adds only
+`0x08` bytes of persistent sequence/context state; the dedicated
+scalar-runtime artifact adds its `0x64`-byte probe and still remains below
+the linker-enforced `0x70` cap. The probe is absent from ordinary debug
+builds.
+The feature uses no IWRAM, VRAM allocation, custom OAM, palette bank, window,
+blend, or HBlank owner. Release omits the owner/views/backup and keeps only
+the public disabled stub; the archival lane sees no source, linker, or layout
+change.
+
+The canonical human procedure and scalar-only host/libmGBA mapping is
+[`TC-DEBUGTOOLS-DIAGNOSTICS-001`](test-cases/debugtools.md#tc-debugtools-diagnostics-001-typed-state-and-engine-diagnostics).
+No screenshot or framebuffer hash is an acceptance oracle.
 
 ## Release-safe mGBA logging (issue #68)
 

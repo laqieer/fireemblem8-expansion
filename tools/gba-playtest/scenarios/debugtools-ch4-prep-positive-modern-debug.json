@@ -243,6 +243,13 @@
         "SELECT",
         "B"
       ]
+    },
+    {
+      "start": 4900,
+      "end": 4906,
+      "keys": [
+        "B"
+      ]
     }
   ],
   "checkpoints": [

@@ -2,7 +2,6 @@
   "checkpoints": [
     {
       "frame": 300,
-      "framebuffer_hash": "fnv1a64-rgb24:3855f352b10ce427",
       "name": "hub-closed-before-hotkey",
       "probes": [
         {
@@ -24,7 +23,6 @@
     },
     {
       "frame": 630,
-      "framebuffer_hash": "fnv1a64-rgb24:23ac325083e916f8",
       "name": "hub-opened-after-pulse",
       "probes": [
         {

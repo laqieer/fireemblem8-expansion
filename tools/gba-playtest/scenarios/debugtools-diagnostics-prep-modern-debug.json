@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "name": "debugtools-diagnostics-prep-modern-debug",
+  "description": "Issue #127 live-prep scalar scenario. Reuses the established Chapter 4 prep route and asserts the runtime fixture captures one validated PREP snapshot without screenshots.",
+  "kind": "prep",
+  "base_scenario": "debugtools-ch4-prep-positive-modern-debug.json",
+  "base_frame_limit": 6000,
+  "tail_frames": [],
+  "checkpoint_frames": {
+    "prep": 6000
+  }
+}

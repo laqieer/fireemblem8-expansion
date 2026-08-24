@@ -67,6 +67,13 @@
       "region": "ewram"
     },
     {
+      "name": "ewram_overlay_debugtools",
+      "address": 33554432,
+      "size_bytes": 129880,
+      "is_overlay": true,
+      "region": "ewram"
+    },
+    {
       "name": "ewram_overlay_gameending",
       "address": 33554432,
       "size_bytes": 10296,
@@ -160,6 +167,13 @@
       "region": "ewram"
     },
     {
+      "name": "ewram_overlay_debugtools",
+      "address": 33554432,
+      "size_bytes": 129880,
+      "peak_bytes": 131464,
+      "region": "ewram"
+    },
+    {
       "name": "ewram_overlay_gameending",
       "address": 33554432,
       "size_bytes": 10296,
@@ -239,6 +253,18 @@
       "region": "ewram"
     },
     {
+      "name": "__debugtools_display_backup_end",
+      "address": 33684312,
+      "expression": ".",
+      "region": "ewram"
+    },
+    {
+      "name": "__debugtools_display_backup_start",
+      "address": 33684312,
+      "expression": ".",
+      "region": "ewram"
+    },
+    {
       "name": "__ewram_overlay_gamestart_end",
       "address": 33684312,
       "expression": ".",
@@ -254,6 +280,18 @@
       "name": "__ewram_persistent_start",
       "address": 33685896,
       "expression": "(__ewram_start + ((__ewram_overlay_peak_size + 0x3) & 0xfffffffffffffffc))",
+      "region": "ewram"
+    },
+    {
+      "name": "__debugtools_diagnostics_data_end",
+      "address": 33812272,
+      "expression": ".",
+      "region": "ewram"
+    },
+    {
+      "name": "__debugtools_diagnostics_data_start",
+      "address": 33812272,
+      "expression": ".",
       "region": "ewram"
     },
     {
@@ -1033,7 +1071,7 @@
     },
     {
       "name": "__floating_end",
-      "address": 145956428,
+      "address": 145958476,
       "expression": ".",
       "region": "rom"
     },
@@ -1064,7 +1102,7 @@
   ],
   "elf": {
     "available": true,
-    "section_count": 12,
+    "section_count": 13,
     "sections": [
       {
         "name": "ewram_overlay_0",
@@ -1085,6 +1123,13 @@
         "type": "NOBITS",
         "address": 33554432,
         "size_bytes": 2048,
+        "flags": "WA"
+      },
+      {
+        "name": "ewram_overlay_debugtools",
+        "type": "NOBITS",
+        "address": 33554432,
+        "size_bytes": 129880,
         "flags": "WA"
       },
       {

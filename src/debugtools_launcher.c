@@ -47,7 +47,7 @@ static u8 DebugToolsLauncher_FastBootChapter2(struct MenuProc* menu, struct Menu
      * gProc_BMapMain, no unit/event manipulation. */
     DebugTools_RequestChapter2Launch();
 
-    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A;
 }
 
 CONST_DATA static struct DebugToolsAction sFastBootChapter2Action = {
@@ -65,7 +65,7 @@ static u8 DebugToolsLauncher_FastBootChapter4Prep(struct MenuProc* menu, struct 
      * gProc_BMapMain, no unit/event manipulation. */
     DebugTools_RequestChapter4PrepLaunch();
 
-    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A;
 }
 
 CONST_DATA static struct DebugToolsAction sFastBootChapter4PrepAction = {

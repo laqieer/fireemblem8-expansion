@@ -34,7 +34,8 @@ class DebugToolsLocalizationTests(unittest.TestCase):
     }
     DIRECT_MENU_LABELS = Counter(
         {
-            "Back": 6,
+            "Back": 7,
+            "Refresh": 1,
             "Confirm Heal to Full": 1,
             "Confirm Add Item": 1,
             "Confirm Toggle Flag": 1,
@@ -58,6 +59,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         "FLAG": "debug.status.flag",
         "RNG SEED": "debug.status.rng_seed",
         "SAVE STATE": "debug.status.save_state",
+        "Refresh": "debug.action.refresh",
     }
 
     @classmethod
@@ -187,6 +189,8 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         self.assertIn("DebugToolsHub_BuiltinActionRowDraw", registry)
         self.assertIn("EXP_MSG_DEBUG_STATUS_HUB", registry)
         self.assertIn("EXP_MSG_DEBUG_STATUS_HUB_ERROR", registry)
+        self.assertIn("EXP_MSG_DEBUG_ACTION_REFRESH", registry)
+        self.assertIn("DebugToolsHub_BuildDiagnosticsMenuItems", registry)
 
         for key_suffix in (
             "CONFIRM_HEAL_FULL",
@@ -206,7 +210,9 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         self.assertEqual(tools.count("EXP_MSG_FRAMEWORK_BACK"), 5)
         self.assertIn("DebugToolsTools_LocalizedMenuItemDraw", tools)
         self.assertIn("ExpansionLocale_ResolveCurrent", tools)
-        self.assertIn("PutDrawText(", tools)
+        self.assertNotIn("PutDrawText(", registry + tools)
+        self.assertNotIn("SetupDebugFontForBG(", registry + tools)
+        self.assertNotIn("PrintDebugStringToBG(", registry + tools)
 
         self.assertEqual(
             re.findall(
@@ -278,13 +284,17 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         menu_width = self._constant("DEBUGTOOLS_MENU_WIDTH_TILES")
         status_width = self._constant("DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES")
         capacity = self._constant("DEBUGTOOLS_TEXT_ALLOC_CAPACITY")
+        configured_budget = self._constant(
+            "DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET"
+        )
 
         expected_budget = (page_action_max + 1) * (menu_width - 1) + status_width
         self.assertEqual(action_max, 18)
         self.assertEqual(contributor_max, 9)
         self.assertEqual(page_action_max, 9)
         self.assertEqual(page_max, 2)
-        self.assertEqual(expected_budget, 204)
+        self.assertEqual(expected_budget, 187)
+        self.assertEqual(configured_budget, expected_budget)
         self.assertLessEqual(expected_budget, capacity)
 
         qps = self.loaded_catalog.strings_for("qps-ploc")
@@ -300,21 +310,17 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         status_width_tiles = self._constant(
             "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES"
         )
-        self.assertEqual(
-            self.sources["debugtools_registry.c"].count(
-                "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES"
-            ),
-            1,
+        self.assertNotIn(
+            "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES",
+            self.sources["debugtools_registry.c"],
         )
-        self.assertEqual(
-            self.sources["debugtools_tools.c"].count(
-                "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES"
-            ),
-            1,
+        self.assertNotIn(
+            "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES",
+            self.sources["debugtools_tools.c"],
         )
 
         suffixes = {
-            "debug.status.hub": " 18/18 2/2",
+            "debug.status.hub": " 18 2/2",
             "debug.status.hub_error": " -99",
             "debug.status.unit_hp": " 255/255",
             "debug.status.unit_unavailable": "",
@@ -325,10 +331,8 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         for locale in ("en", "ja", "zh-Hans", "qps-ploc"):
             strings = self.loaded_catalog.strings_for(locale)
             allocation_pixels = (
-                status_width_tiles * 8
-                if locale in ("ja", "zh-Hans")
-                else 29 * 8
-            )
+                self._constant("DEBUGTOOLS_MENU_WIDTH_TILES") - 1
+            ) * 8
             for key, suffix in suffixes.items():
                 text = strings[key] + suffix
                 width = (

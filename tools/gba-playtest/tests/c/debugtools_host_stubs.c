@@ -17,6 +17,7 @@
 #include "fontgrp.h"
 #include "proc.h"
 #include "uimenu.h"
+#include "expansion_debugtools.h"
 
 struct KeyStatusBuffer gDebugToolsTestKeyStatus = {0};
 struct KeyStatusBuffer * CONST_DATA gKeyStatusPtr = &gDebugToolsTestKeyStatus;
