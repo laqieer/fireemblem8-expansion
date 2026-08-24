@@ -7,6 +7,11 @@
 #include "cp_common.h"
 #include "expansion_autoplay.h"
 #include "expansion_autoplay_internal.h"
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
+#include "event.h"
+#include "eventinfo.h"
+#include "constants/event-flags.h"
+#endif
 
 #define CHECK(condition, message) \
     do \
@@ -19,6 +24,25 @@
     } while (0)
 
 struct PlaySt gPlaySt;
+
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
+u32 gEventSlots[EVENT_SLOT_COUNT];
+u32 gEventSlotCounter;
+static s8 sEventFlagWin;
+static s8 sEventFlagDefeatAll;
+static s8 sEventFlagGameOver;
+
+s8 CheckFlag(int flag)
+{
+    if (flag == EVFLAG_WIN)
+        return sEventFlagWin;
+    if (flag == EVFLAG_DEFEAT_ALL)
+        return sEventFlagDefeatAll;
+    if (flag == EVFLAG_GAMEOVER)
+        return sEventFlagGameOver;
+    return 0;
+}
+#endif
 
 struct Unit* GetUnit(int id)
 {
@@ -259,6 +283,64 @@ static int TestFailurePhaseAuthority(void)
     return 0;
 }
 
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
+static int TestEventTraceTransitions(void)
+{
+    struct ExpansionAutoplayEventTrace const* trace;
+    int index;
+
+    ExpansionAutoplay_Reset();
+    CHECK(ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER)
+              == EXPANSION_AUTOPLAY_OK,
+          "event trace must enable COMPUTER");
+    ExpansionAutoplay_RecordEventCommand(0x10);
+    trace = &gExpansionAutoplayEventTrace;
+    CHECK(trace->count == 1 && trace->overflow == 0,
+          "first event state must append exactly one record");
+    CHECK(trace->entries[0].command == 0x10,
+          "first event command must be retained");
+
+    gEventSlots[EVT_SLOT_C] = 0x1234;
+    sEventFlagWin = TRUE;
+    ExpansionAutoplay_RecordEventCommand(0x11);
+    gEventSlots[EVT_SLOT_C] = 0;
+    sEventFlagWin = FALSE;
+    ExpansionAutoplay_RecordEventCommand(0x12);
+    CHECK(trace->count == 3,
+          "same-frame transition and reversion must append independently");
+    CHECK(trace->entries[1].slotC == 0x1234
+              && trace->entries[1].objectiveFlags == 1,
+          "transition state must retain the changed slot and WIN flag");
+    CHECK(trace->entries[2].slotC == 0
+              && trace->entries[2].objectiveFlags == 0,
+          "reverted state must retain the later command-commit value");
+
+    ExpansionAutoplay_Reset();
+    CHECK(gExpansionAutoplayEventTrace.count == 0
+              && gExpansionAutoplayEventTrace.overflow == 0,
+          "reset must clear event trace state");
+    CHECK(ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER)
+              == EXPANSION_AUTOPLAY_OK,
+          "event trace capacity test must enable COMPUTER");
+    for (index = 0; index < EXPANSION_AUTOPLAY_EVENT_TRACE_CAPACITY; index++)
+    {
+        gEventSlotCounter = index;
+        ExpansionAutoplay_RecordEventCommand((u8)index);
+    }
+    CHECK(gExpansionAutoplayEventTrace.count
+              == EXPANSION_AUTOPLAY_EVENT_TRACE_CAPACITY
+              && gExpansionAutoplayEventTrace.overflow == 0,
+          "event trace must retain exactly its declared capacity");
+    gEventSlotCounter = EXPANSION_AUTOPLAY_EVENT_TRACE_CAPACITY;
+    ExpansionAutoplay_RecordEventCommand(0xFF);
+    CHECK(gExpansionAutoplayEventTrace.count
+              == EXPANSION_AUTOPLAY_EVENT_TRACE_CAPACITY
+              && gExpansionAutoplayEventTrace.overflow == TRUE,
+          "event trace overflow must be explicit and fatal to the harness");
+    return 0;
+}
+#endif
+
 int main(void)
 {
     CHECK(sizeof(struct ExpansionAutoplayTelemetry)
@@ -268,6 +350,9 @@ int main(void)
     CHECK(TestValidationAndBounds() == 0, "validation/bounds test");
     CHECK(TestFailurePhaseAuthority() == 0, "failure phase-authority test");
     CHECK(TestActionCapabilities() == 0, "action capability test");
+#if FE8_AUTOPLAY_EVENT_TRACE_TEST
+    CHECK(TestEventTraceTransitions() == 0, "event trace transition test");
+#endif
 
     puts("AUTOPLAY_HOST_TEST: PASS");
     return 0;
