@@ -67,7 +67,7 @@
       }
     ]
   },
-  "census_digest": "fb95154c0000f0528dbfd005445650eeb27f9ccfba744d4bde11e686ebf39d0a",
+  "census_digest": "714387a48a6586d166d5d497654cb27f4b6649da6eb5c33b937217fdbb6e431b",
   "consumers": [
     {
       "category": "event-operand",
@@ -665,7 +665,7 @@
       "domain": "chapter",
       "key": "include/expansion_chapter_objectives.h|struct-field|chapter|ExpansionChapterObjectiveBundle.chapterId",
       "kind": "struct-field",
-      "line": 67,
+      "line": 76,
       "path": "include/expansion_chapter_objectives.h",
       "reason": null,
       "record_count": null,
@@ -8294,6 +8294,25 @@
       "storage_bits": 16,
       "surface": "runtime-source",
       "symbol": "GENERATED_DATA_EVENTLISTS_CH2_LINKED",
+      "technical_max": 65535
+    },
+    {
+      "category": "reviewed-exclusion",
+      "configured_cap": 255,
+      "declaration": "OBJECTIVE_FIXTURE_EVENT_ID = 0xA6F02B15",
+      "domain": "event",
+      "key": "tools/gba-playtest/run_chapter_objective_checks.py|tool-symbol|event|OBJECTIVE_FIXTURE_EVENT_ID",
+      "kind": "tool-symbol",
+      "line": 27,
+      "path": "tools/gba-playtest/run_chapter_objective_checks.py",
+      "reason": "Stable test-only objective hash used to verify generated telemetry, not an event ID consumer.",
+      "record_count": null,
+      "sentinel": null,
+      "signed": 0,
+      "status": "adequate",
+      "storage_bits": 16,
+      "surface": "external-tool",
+      "symbol": "OBJECTIVE_FIXTURE_EVENT_ID",
       "technical_max": 65535
     },
     {
@@ -17499,7 +17518,7 @@
       "domain": "item",
       "key": "tools/gba-playtest/tests/test_chapter_objectives.py|tool-symbol|item|inventory",
       "kind": "tool-symbol",
-      "line": 76,
+      "line": 82,
       "path": "tools/gba-playtest/tests/test_chapter_objectives.py",
       "reason": "Temporary generated-data inventory path used only by the host test; it is not an item ID consumer.",
       "record_count": 206,
@@ -21031,7 +21050,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "2423e7ad75bd440875a5ada7451cf298035fbe7b570c0eb5080351777f53985e",
+  "digest": "b7924c0c067c77b1b2d81802b51630b09aa025ed0e1ae1d3ffd1a11d9e01515a",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,
