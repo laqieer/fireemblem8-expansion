@@ -257,8 +257,11 @@ game speed set, animation OFF, and every unrelated bit unchanged.
 configuration write. The profile also names
 semantic trace probes, which are canonicalized by binding and size so
 equivalent input order produces one stable fingerprint shape. The backend
-emits a complete snapshot only when one of those semantic values changes,
-preserving action/RNG order without treating wall-clock timing as behavior.
+emits an initial complete snapshot at frame 0 and another only when one of
+those semantic values changes. External format-4 traces must retain that
+frame-0 snapshot, strictly increase later snapshot frames, keep each snapshot
+at or below 512 probes, and remain within the 450,000-record aggregate limit.
+This preserves action/RNG order without treating wall-clock timing as behavior.
 The dedicated accelerated-fidelity test ROM alone records the first observed
 state and every later bounded ordered state transition at the event
 command-commit seam, including the command, slot-C/counter, and

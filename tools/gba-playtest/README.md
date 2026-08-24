@@ -383,9 +383,12 @@ speed enabled, animation OFF, all unrelated bits unchanged. Normal fidelity
 accepts no configuration write. The profile also owns a
 non-empty `trace` array of normal 1/2/4-byte semantic probes, canonicalized by
 binding and size so input order cannot change the fingerprint shape. The
-backend samples it each emulated frame and emits a full snapshot only on a
-semantic change, retaining action/RNG order without making host wall-clock time
-a behavioral oracle. The dedicated accelerated test ROM alone appends the
+backend emits its initial full snapshot at frame 0, then another only on a
+semantic change. External format-4 fingerprints must retain that initial
+snapshot, strictly increase later snapshot frames, keep each snapshot at or
+below 512 probes, and remain within the 450,000-record aggregate limit. This
+retains action/RNG order without making host wall-clock time a behavioral
+oracle. The dedicated accelerated test ROM alone appends the
 first observed state and every later bounded ordered command/slot-C/counter/
 named-objective-flag transition at the commit seam; the terminal
 checkpoint compares every record and rejects overflow. The endpoint covers

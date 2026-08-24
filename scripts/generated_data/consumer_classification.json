@@ -4390,8 +4390,8 @@
       "reason": null
     },
     "tools/gba-playtest/tests/test_accelerated_fidelity.py|tool-symbol|event|test_profile_covers_all_factions_events_flags_and_objective_result": {
-      "category": "external-interface",
-      "reason": null
+      "category": "reviewed-exclusion",
+      "reason": "a unittest method name containing 'events' for profile coverage; it neither stores nor consumes an event ID"
     },
     "tools/gba-playtest/tests/test_debugtools_registry.py|tool-symbol|chapter|chapter": {
       "category": "reviewed-exclusion",

@@ -245,6 +245,20 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
     def _capture(self, name: str) -> dict:
         return self._capture_data(profile_data(name))
 
+    @staticmethod
+    def _external_trace_snapshot(frame: int, probe_count: int) -> dict:
+        return {
+            "frame": frame,
+            "probes": [
+                {
+                    "address": f"0x{0x02010000 + index * 4:08x}",
+                    "size": 4,
+                    "value": "0x00000000",
+                }
+                for index in range(probe_count)
+            ],
+        }
+
     def test_backend_rejects_trace_record_budget(self):
         with temporary_directory("gba-accelerated-fidelity-") as temporary:
             scenario = gba_playtest.parse_scenario_data(
@@ -425,6 +439,74 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
                 "<post-terminal-trace>",
                 policy="behavior",
             )
+
+    def test_external_format_four_requires_initial_full_trace_snapshot(self):
+        capture = self._capture(gba_playtest.EXECUTION_PROFILE_ACCELERATED_FIDELITY)
+        gba_playtest.validate_fingerprint(
+            capture,
+            "<backend-initial-trace-round-trip>",
+            policy="behavior",
+        )
+
+        missing_initial = copy.deepcopy(capture)
+        missing_initial["trace"] = []
+        with self.assertRaisesRegex(gba_playtest.PlaytestError, "non-empty"):
+            gba_playtest.validate_fingerprint(
+                missing_initial,
+                "<missing-initial-trace>",
+                policy="behavior",
+            )
+
+        late_initial = copy.deepcopy(capture)
+        late_initial["trace"][0]["frame"] = 1
+        with self.assertRaisesRegex(gba_playtest.PlaytestError, "initial full trace snapshot"):
+            gba_playtest.validate_fingerprint(
+                late_initial,
+                "<late-initial-trace>",
+                policy="behavior",
+            )
+
+    def test_external_format_four_bounds_each_trace_snapshot_and_aggregate(self):
+        capture = self._capture(gba_playtest.EXECUTION_PROFILE_ACCELERATED_FIDELITY)
+        at_limit = copy.deepcopy(capture)
+        at_limit["trace"] = [
+            self._external_trace_snapshot(0, gba_playtest.MAX_PROFILE_TRACE_PROBES)
+        ]
+        gba_playtest.validate_fingerprint(
+            at_limit,
+            "<trace-snapshot-at-limit>",
+            policy="behavior",
+        )
+
+        over_snapshot_limit = copy.deepcopy(at_limit)
+        over_snapshot_limit["trace"] = [
+            self._external_trace_snapshot(
+                0,
+                gba_playtest.MAX_PROFILE_TRACE_PROBES + 1,
+            )
+        ]
+        with self.assertRaisesRegex(gba_playtest.PlaytestError, "512-probe limit"):
+            gba_playtest.validate_fingerprint(
+                over_snapshot_limit,
+                "<trace-snapshot-over-limit>",
+                policy="behavior",
+            )
+
+        over_aggregate_limit = copy.deepcopy(at_limit)
+        over_aggregate_limit["trace"].append(
+            self._external_trace_snapshot(1, gba_playtest.MAX_PROFILE_TRACE_PROBES)
+        )
+        with mock.patch.object(
+            gba_playtest,
+            "MAX_PROFILE_TRACE_RECORDS",
+            gba_playtest.MAX_PROFILE_TRACE_PROBES,
+        ):
+            with self.assertRaisesRegex(gba_playtest.PlaytestError, "aggregate limit"):
+                gba_playtest.validate_fingerprint(
+                    over_aggregate_limit,
+                    "<trace-aggregate-over-limit>",
+                    policy="behavior",
+                )
 
     def test_external_accelerated_fingerprint_requires_exact_config_transition(self):
         capture = self._capture(gba_playtest.EXECUTION_PROFILE_ACCELERATED_FIDELITY)

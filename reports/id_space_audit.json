@@ -67,7 +67,7 @@
       }
     ]
   },
-  "census_digest": "0254f29e09997128255f743ca1214c0d236a4ab1c2d7b545abeea28999f6a5b4",
+  "census_digest": "02a697070741df85bd9f2bd7b3f826bb3d93be406625bf347689121029dcf6c0",
   "consumers": [
     {
       "category": "event-operand",
@@ -8335,7 +8335,7 @@
       "technical_max": 65535
     },
     {
-      "category": "external-interface",
+      "category": "reviewed-exclusion",
       "configured_cap": 255,
       "declaration": "def test_profile_covers_all_factions_events_flags_and_objective_result(self):",
       "domain": "event",
@@ -8343,7 +8343,7 @@
       "kind": "tool-symbol",
       "line": 165,
       "path": "tools/gba-playtest/tests/test_accelerated_fidelity.py",
-      "reason": null,
+      "reason": "a unittest method name containing 'events' for profile coverage; it neither stores nor consumes an event ID",
       "record_count": null,
       "sentinel": null,
       "signed": 0,
@@ -21031,7 +21031,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "084be157b6868b7b6f3b3744d43f9cfde176426403056d2e20bd57ad4f0fbb1f",
+  "digest": "3b0f57e693d786f9e553f10c9e876916e7a674302322ddbd1c5eb93450ea5138",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,

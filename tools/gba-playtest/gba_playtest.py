@@ -2576,6 +2576,10 @@ def _validate_accelerated_fidelity_fingerprint(
         path = f"{source}.trace[{index}]"
         snapshot = _expect_object(snapshot, path, {"frame", "probes"})
         frame = _expect_frame(snapshot["frame"], f"{path}.frame")
+        if index == 0 and frame != 0:
+            raise PlaytestError(
+                f"{path}.frame must be 0 for the initial full trace snapshot"
+            )
         if frame <= previous_frame:
             raise PlaytestError(f"{path}.frame must be strictly increasing")
         if frame > root["terminal"]["frame"]:
@@ -2592,6 +2596,11 @@ def _validate_accelerated_fidelity_fingerprint(
         )
         if not isinstance(snapshot["probes"], list) or not snapshot["probes"]:
             raise PlaytestError(f"{path}.probes must be a non-empty array")
+        if len(snapshot["probes"]) > MAX_PROFILE_TRACE_PROBES:
+            raise PlaytestError(
+                f"{path}.probes has {len(snapshot['probes'])} probes, exceeding "
+                f"the {MAX_PROFILE_TRACE_PROBES}-probe limit"
+            )
         trace_record_count += len(snapshot["probes"])
         if trace_record_count > MAX_PROFILE_TRACE_RECORDS:
             raise PlaytestError(
