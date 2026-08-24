@@ -666,10 +666,13 @@ static uint64_t hash_sram(struct mCore* core, const struct ByteRange* exclude_ra
 	 * cartridge bus window: bus reads can expose transient mapper state even
 	 * when the persisted 0x8000-byte image is unchanged. */
 	void* save_data = NULL;
-	size_t save_size = core->savedataClone(core, &save_data);
+	size_t save_size = 0;
 	bool owns_save_data = true;
 	bool use_bus = false;
 	uint64_t hash = UINT64_C(14695981039346656037);
+
+	if (core->savedataClone != NULL)
+		save_size = core->savedataClone(core, &save_data);
 
 	if (save_data == NULL || save_size != GBA_SRAM_SIZE) {
 		free(save_data);
