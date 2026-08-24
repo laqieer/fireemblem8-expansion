@@ -212,7 +212,7 @@ that must remember a transition must latch that decision in an existing event
 flag. Suspend/load is therefore safe by reconstruction and adds no hidden or
 serialized state.
 
-`gExpansionChapterObjectiveTelemetry` is a separate 16-byte IWRAM,
+`gExpansionChapterObjectiveTelemetry` is a separate 16-byte EWRAM,
 pointer-free record with the selected stable objective ID, state, progress,
 and active-objective count. The generic #86 ELF probe resolver can bind all
 four fields directly; this keeps #85/#86's existing 64-byte telemetry layout,
@@ -224,7 +224,7 @@ The generated table budgets are 32 chapter bundles, eight objectives and
 eight groups per chapter, and 16 members per group. Modern generated data
 uses 12 bytes per bundle, 12 bytes plus members per group, and 28 bytes per
 objective; the default empty table is one 12-byte sentinel. The runtime adds
-16 IWRAM bytes and no EWRAM, save, migration, compatibility epoch,
+16 EWRAM bytes and no IWRAM, save, migration, compatibility epoch,
 localization, configuration identity, or feature gate. It is excluded from
 the archival lane.
 

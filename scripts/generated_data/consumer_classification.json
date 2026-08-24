@@ -2177,7 +2177,15 @@
       "category": "lookup-table",
       "reason": null
     },
+    "include/expansion_autoplay_strategies.h|struct-field|chapter|ExpansionAutoplayStrategyBundle.chapterId": {
+      "category": "lookup-table",
+      "reason": null
+    },
     "tools/gba-playtest/tests/test_chapter_objectives.py|tool-symbol|item|inventory": {
+      "category": "reviewed-exclusion",
+      "reason": "Temporary generated-data inventory path used only by the host test; it is not an item ID consumer."
+    },
+    "tools/gba-playtest/tests/test_autoplay_strategies.py|tool-symbol|item|inventory": {
       "category": "reviewed-exclusion",
       "reason": "Temporary generated-data inventory path used only by the host test; it is not an item ID consumer."
     },
@@ -4379,6 +4387,10 @@
     },
     "src/worldmap_shop_data.c|data-symbol|item|ItemList_WM_ZahaWoods_Vendor": {
       "category": "lookup-table",
+      "reason": null
+    },
+    "tools/gba-playtest/autoplay_batch.py|tool-symbol|unit|faction": {
+      "category": "external-interface",
       "reason": null
     },
     "tools/gba-playtest/gba_playtest.py|tool-symbol|item|item": {

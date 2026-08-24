@@ -175,7 +175,20 @@ class AutoplayStrategiesRuntimeTests(unittest.TestCase):
                         int(value)
                         for value in re.findall(r"^\.text\s+(\d+)\s+", sizes.stdout, re.MULTILINE)
                     )
-                    self.assertEqual(ewram_bytes, 0)
+                    strategy_sizes = run([ARM_SIZE, "-A", str(objects[0]), str(objects[3])])
+                    self.assertEqual(
+                        strategy_sizes.returncode,
+                        0,
+                        strategy_sizes.stdout + strategy_sizes.stderr,
+                    )
+                    strategy_ewram_bytes = sum(
+                        int(value)
+                        for value in re.findall(
+                            r"^ewram_data\s+(\d+)\s+", strategy_sizes.stdout, re.MULTILINE
+                        )
+                    )
+                    self.assertEqual(strategy_ewram_bytes, 0)
+                    self.assertEqual(ewram_bytes, 16)
                     self.assertLessEqual(text_bytes, 4096)
 
 
