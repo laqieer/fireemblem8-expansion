@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unicodedata
@@ -1944,7 +1945,19 @@ def render_makefile(records):
         generated = custom_spell.output_paths(
             custom_records, "$(ASSET_OUTPUT_DIR)"
         )
-        lines.append("\n{} &: $(ASSET_OUTPUT_MK)\n".format(" ".join(generated)))
+        custom_dependencies = []
+        seen_dependencies = set()
+        for record in custom_records:
+            kind = KIND_REGISTRY.resolve(record.kind)
+            for source in tuple(record.sources) + kind.source_dependencies(record):
+                if source not in seen_dependencies:
+                    seen_dependencies.add(source)
+                    custom_dependencies.append(source)
+        lines.append(
+            "\n{} &: $(ASSET_OUTPUT_MK) {}\n".format(
+                " ".join(generated), " ".join(custom_dependencies)
+            )
+        )
         lines.append(
             '\t$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" '
             '--out-dir "$(ASSET_OUTPUT_DIR)" generate\n'
@@ -2360,6 +2373,13 @@ def expected_outputs(records, out_dir):
 def generate(manifest_path, out_dir, custom_spell_effects=None):
     records = load_and_validate(manifest_path, custom_spell_effects)
     out_dir = safe_output_dir(out_dir)
+    custom_spell_dir = os.path.join(out_dir, "custom_spell")
+    if os.path.lexists(custom_spell_dir):
+        if os.path.islink(custom_spell_dir) or not os.path.isdir(custom_spell_dir):
+            raise ValueError(
+                "custom spell generated output path must be a real directory"
+            )
+        shutil.rmtree(custom_spell_dir)
     outputs = expected_outputs(records, out_dir)
     for path in outputs:
         _safe_output_path(path, out_dir)

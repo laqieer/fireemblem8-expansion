@@ -9,6 +9,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import time
 import unittest
 import zlib
 from types import SimpleNamespace
@@ -23,6 +24,7 @@ DEFAULT_MANIFEST = os.path.join(ROOT, "assets", "manifest.json")
 REFERENCE_MANIFEST = os.path.join(
     ROOT, "assets", "manifests", "custom-spell-reference.json"
 )
+PROFILE_TEST_ROOT = os.path.join(ROOT, "build", "custom-spell-profile-test")
 TEST_ROOT = os.path.join(
     ROOT, "build", "generated", "assets", "custom-spell-test"
 )
@@ -282,6 +284,12 @@ class CustomSpellAdapterTests(unittest.TestCase):
                     json.dump(document, handle)
                 with self.assertRaisesRegex(ValueError, message):
                     custom_spell._read_spell(spell_path, songs)
+        with open(spell_path, "w", encoding="utf-8") as handle:
+            handle.write(
+                '{"schemaVersion": 1, "schemaVersion": 1, "soundTable": []}'
+            )
+        with self.assertRaisesRegex(ValueError, "duplicate key 'schemaVersion'"):
+            custom_spell._read_spell(spell_path, songs)
 
     def test_animation_grammar_rejects_every_unsupported_boundary(self):
         path = os.path.join(TEST_ROOT, "animation.txt")
@@ -301,6 +309,7 @@ class CustomSpellAdapterTests(unittest.TestCase):
             "content after terminator": valid_frame + "~~~\n# trailing\n",
             "missing terminator": valid_frame,
             "zero wait": "O p- obj.png\nB p- bg.png\n0\n~~~\n",
+            "unicode wait": "O p- obj.png\nB p- bg.png\n\u0661\n~~~\n",
         }
         for name, source in cases.items():
             with self.subTest(name=name):
@@ -557,9 +566,106 @@ class CustomSpellAdapterTests(unittest.TestCase):
             self.assertEqual(
                 checked.returncode, 0, checked.stdout + checked.stderr
             )
+
+            default = run(DEFAULT_MANIFEST, 0, fragment)
+            self.assertEqual(
+                default.returncode, 0, default.stdout + default.stderr
+            )
+            self.assertFalse(os.path.exists(custom_dir))
+            checked = run(DEFAULT_MANIFEST, 0, "assets-check")
+            self.assertEqual(
+                checked.returncode, 0, checked.stdout + checked.stderr
+            )
+
+            os.makedirs(PROFILE_TEST_ROOT)
+            alternate_manifest = os.path.join(
+                PROFILE_TEST_ROOT, "alternate-custom-spell-manifest.json"
+            )
+            shutil.copyfile(REFERENCE_MANIFEST, alternate_manifest)
+            alternate = run(alternate_manifest, 1, data_include)
+            self.assertEqual(
+                alternate.returncode, 0, alternate.stdout + alternate.stderr
+            )
+            checked = run(alternate_manifest, 1, "assets-check")
+            self.assertEqual(
+                checked.returncode, 0, checked.stdout + checked.stderr
+            )
         finally:
             shutil.rmtree(custom_dir, ignore_errors=True)
+            shutil.rmtree(PROFILE_TEST_ROOT, ignore_errors=True)
             restored = run(DEFAULT_MANIFEST, 0, fragment)
+            if restored.returncode != 0:
+                raise AssertionError(restored.stdout + restored.stderr)
+
+    def test_custom_dependency_touch_regenerates_outputs(self):
+        output = os.path.join(ROOT, "build", "generated", "assets")
+        fragment = os.path.join(output, "asset_manifest.mk")
+        custom_dir = os.path.join(output, "custom_spell")
+        data_include = os.path.join(
+            custom_dir, "custom_spell_effect_data.inc"
+        )
+        dependency = os.path.join(ROOT, "include", "spellassoc.h")
+
+        def run(*goals):
+            return subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-f",
+                    "assets.mk",
+                    *goals,
+                    "PYTHON={}".format(sys.executable),
+                    "ASSET_MANIFEST={}".format(REFERENCE_MANIFEST),
+                    "EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        original = os.stat(dependency)
+        try:
+            generated = run(data_include)
+            self.assertEqual(
+                generated.returncode, 0, generated.stdout + generated.stderr
+            )
+            with open(fragment, encoding="utf-8") as handle:
+                self.assertIn("include/spellassoc.h", handle.read())
+
+            os.utime(
+                dependency,
+                ns=(
+                    original.st_atime_ns,
+                    max(original.st_mtime_ns, time.time_ns()) + 2_000_000_000,
+                ),
+            )
+            regenerated = run(data_include)
+            self.assertEqual(
+                regenerated.returncode, 0, regenerated.stdout + regenerated.stderr
+            )
+            self.assertIn("scripts.assets", regenerated.stdout)
+        finally:
+            os.utime(
+                dependency, ns=(original.st_atime_ns, original.st_mtime_ns)
+            )
+            shutil.rmtree(custom_dir, ignore_errors=True)
+            restored = subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-f",
+                    "assets.mk",
+                    fragment,
+                    "PYTHON={}".format(sys.executable),
+                    "ASSET_MANIFEST={}".format(DEFAULT_MANIFEST),
+                    "EXPANSION_CUSTOM_SPELL_EFFECTS=0",
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
             if restored.returncode != 0:
                 raise AssertionError(restored.stdout + restored.stderr)
 

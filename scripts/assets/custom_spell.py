@@ -82,12 +82,21 @@ def _exact_keys(value, keys, reference):
         raise ValueError("{} has unknown field '{}'".format(reference, extra[0]))
 
 
+def _reject_duplicate_json_keys(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate key {!r}".format(key))
+        value[key] = item
+    return value
+
+
 def _read_json(path):
     try:
         if os.path.getsize(path) > MAX_SPELL_JSON_BYTES:
             raise ValueError("source exceeds {} bytes".format(MAX_SPELL_JSON_BYTES))
         with open(path, encoding="utf-8") as handle:
-            return json.load(handle)
+            return json.load(handle, object_pairs_hook=_reject_duplicate_json_keys)
     except (OSError, ValueError) as exc:
         raise ValueError("{}: {}".format(path, exc)) from exc
 
@@ -350,7 +359,7 @@ def parse_animation(path, sound_table):
             if "images/" + filename not in referenced:
                 referenced.append("images/" + filename)
             continue
-        if line.isdecimal():
+        if re.fullmatch(r"[0-9]+", line):
             if current is None or "bg" not in current:
                 raise _line_error(path, line_number, "has wait outside ordered O/B/wait frame")
             duration = int(line)
@@ -1114,6 +1123,8 @@ def expected_outputs(records, out_dir):
         record for record in records
         if getattr(record, "custom_spell_package", None) is not None
     ]
+    if not effects:
+        return {}
     outputs = {}
     for record in effects:
         for frame_index, frame in enumerate(record.custom_spell_package.frames):
