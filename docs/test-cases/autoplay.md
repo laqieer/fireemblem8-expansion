@@ -346,8 +346,9 @@ policy, player-facing text, or a general expression language.
    `python3 -m unittest scripts.generated_data.tests.test_autoplaystrategies_schema scripts.generated_data.tests.test_chapterbundle_schema.ChapterAutoplayStrategiesBundleTests -v`.
 2. Run
    `python3 -m unittest tools.gba-playtest.tests.test_autoplay_strategies -v`.
-3. Build the bounded debug/release enabled and disabled objects with
-   `make expansion-modern-autoplay-strategies-objects MODERN_CONFIG=<debug|release> MODERN_ABI=aapcs EXPANSION_AUTOPLAY_STRATEGIES=<0|1> MODERN_BUILD_ROOT=<isolated-root>`.
+3. Run
+   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_strategies.AutoplayStrategiesRuntimeTests.test_arm_profiles_are_ewram_free_and_gate_reference_callbacks -v`
+   to parse the ARM symbol set for both enabled and disabled profiles.
 
 ### Expected result
 
