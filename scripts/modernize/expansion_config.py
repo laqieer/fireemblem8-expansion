@@ -107,15 +107,15 @@ CONFIG_MK_KEYS = (
     "EXPANSION_DEFAULT_LOCALE",
     "EXPANSION_PSEUDO_LOCALE",
 )
-# Optional starter-feature flag keys (issue #6). Unlike CONFIG_MK_KEYS these
-# are NOT required to be present: a config.mk (or a synthetic test fixture)
-# that omits them is treated exactly as if each were 0, matching config.mk's
-# own `?= 0` default. This keeps the blast radius of adding the flags to a
-# single new source (config.mk) instead of every committed/synthetic fixture.
+# Optional feature/policy keys. Unlike CONFIG_MK_KEYS these are not required
+# to be present: a config.mk (or synthetic fixture) that omits one receives
+# that setting's documented default. This keeps new optional settings from
+# forcing unrelated synthetic fixtures to duplicate the complete config.
 CONFIG_MK_FEATURE_KEYS = (
     "EXPANSION_MECHANICS_HOOKS",
     "EXPANSION_MECHANICS_SAMPLE",
     "EXPANSION_DANGER_OVERLAY_MENU",
+    "EXPANSION_BLUE_PHASE_DELEGATE",
     "EXPANSION_STARTER_CONTENT",
     "EXPANSION_AOE_REFERENCE",
     "EXPANSION_CUSTOM_SPELL_EFFECTS",
@@ -718,6 +718,7 @@ class ExpansionIdentity:
     mechanics_hooks: int = 0
     mechanics_sample: int = 0
     danger_overlay_menu: int = 0
+    blue_phase_delegate: int = 0
     starter_content: int = 0
     aoe_reference: int = 0
     custom_spell_effects: int = 0
@@ -751,9 +752,9 @@ class ExpansionIdentity:
         """Compatibility-relevant settings folded into the config fingerprint:
         semantic version, ABI, ROM size, link-time text shift, ROM identity,
         the debug/release preset, (issue #18 sprint 1) the normalized
-        enabled-locale set/default locale/pseudo-locale flag, and (issue #6)
-        the starter-feature opt-in flags (so toggling any feature flag or
-        locale setting changes the fingerprint). Deliberately does NOT
+        enabled-locale set/default locale/pseudo-locale flag, and optional
+        feature/policy settings (so toggling any behavior flag or locale
+        setting changes the fingerprint). Deliberately does NOT
         include save_compat_epoch: that field has its own independent,
         narrower bump policy (see config.mk) and must never change merely
         because a locale or feature-flag setting changed -- proven by
@@ -763,6 +764,7 @@ class ExpansionIdentity:
             "mechanics_hooks": self.mechanics_hooks,
             "mechanics_sample": self.mechanics_sample,
             "danger_overlay_menu": self.danger_overlay_menu,
+            "blue_phase_delegate": self.blue_phase_delegate,
             "starter_content": self.starter_content,
             "aoe_reference": self.aoe_reference,
             "localized_text_auto_wrap": self.localized_text_auto_wrap,
@@ -827,6 +829,7 @@ def load_identity(
     mechanics_hooks=None,
     mechanics_sample=None,
     danger_overlay_menu=None,
+    blue_phase_delegate=None,
     starter_content=None,
     aoe_reference=None,
     custom_spell_effects=None,
@@ -931,6 +934,12 @@ def load_identity(
         resolved_custom_spell_effects,
         resolved_item_id_cap,
     )
+    resolved_blue_phase_delegate = validate_feature_flag(
+        "EXPANSION_BLUE_PHASE_DELEGATE",
+        blue_phase_delegate
+        if blue_phase_delegate not in (None, "")
+        else cfg.get("EXPANSION_BLUE_PHASE_DELEGATE", "0"),
+    )
     resolved_casual_mode = validate_feature_flag(
         "EXPANSION_CASUAL_MODE",
         casual_mode
@@ -979,6 +988,7 @@ def load_identity(
         mechanics_hooks=resolved_hooks,
         mechanics_sample=resolved_sample,
         danger_overlay_menu=resolved_danger,
+        blue_phase_delegate=resolved_blue_phase_delegate,
         starter_content=resolved_content,
         aoe_reference=resolved_aoe_reference,
         custom_spell_effects=resolved_custom_spell_effects,
@@ -1114,6 +1124,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="override EXPANSION_DANGER_OVERLAY_MENU (0 or 1)",
     )
     parser.add_argument(
+        "--blue-phase-delegate",
+        default=None,
+        help="override EXPANSION_BLUE_PHASE_DELEGATE (0 or 1)",
+    )
+    parser.add_argument(
         "--starter-content",
         default=None,
         help="override EXPANSION_STARTER_CONTENT (0 or 1)",
@@ -1227,6 +1242,7 @@ def main(argv=None) -> int:
             mechanics_hooks=args.mechanics_hooks,
             mechanics_sample=args.mechanics_sample,
             danger_overlay_menu=args.danger_overlay_menu,
+            blue_phase_delegate=args.blue_phase_delegate,
             starter_content=args.starter_content,
             aoe_reference=args.aoe_reference,
             custom_spell_effects=args.custom_spell_effects,

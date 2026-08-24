@@ -183,6 +183,14 @@ const char *ExpansionLocale_Resolve(ExpansionLocaleId locale, ExpansionMsgId msg
 /* Convenience wrapper: ExpansionLocale_Resolve(ExpansionLocale_GetCurrent(), msgId). */
 const char *ExpansionLocale_ResolveCurrent(ExpansionMsgId msgId);
 
+/*
+ * Resolves a catalog string without using the mutable scratch cache. The
+ * returned pointer is ROM-resident catalog text (or the static missing marker)
+ * and remains valid across later resolver calls and locale-cache invalidation.
+ */
+const char *ExpansionLocale_ResolvePersistent(ExpansionLocaleId locale, ExpansionMsgId msgId);
+const char *ExpansionLocale_ResolveCurrentPersistent(ExpansionMsgId msgId);
+
 /* Invalidates the resolver's single bounded scratch cache slot and, in a CJK
  * profile, the full-game localized-message cache. Called automatically by
  * ExpansionLocale_SetCurrent on an actual locale change; exposed directly

@@ -396,6 +396,46 @@
         "ja": "BGM確認",
         "key": "debug.action.music_preview",
         "zh-Hans": "BGM查看"
+      },
+      {
+        "ja": "進撃",
+        "key": "autoplay.charge.label",
+        "zh-Hans": "冲锋"
+      },
+      {
+        "ja": "残りのユニットをこのフェイズだけAIに任せる",
+        "key": "autoplay.charge.help",
+        "zh-Hans": "仅在本回合将剩余单位交给电脑控制"
+      },
+      {
+        "ja": "章/魔物戦",
+        "key": "debug.action.chapter_skirmish",
+        "zh-Hans": "章节/魔物战"
+      },
+      {
+        "ja": "章",
+        "key": "debug.selector.chapter",
+        "zh-Hans": "章节"
+      },
+      {
+        "ja": "魔物戦",
+        "key": "debug.selector.skirmish",
+        "zh-Hans": "魔物战"
+      },
+      {
+        "ja": "エイリーク",
+        "key": "debug.selector.eirika",
+        "zh-Hans": "艾瑞珂"
+      },
+      {
+        "ja": "エフラム",
+        "key": "debug.selector.ephraim",
+        "zh-Hans": "伊弗列姆"
+      },
+      {
+        "ja": "対象なし",
+        "key": "debug.selector.unavailable",
+        "zh-Hans": "目标不可用"
       }
     ],
     "reason": "Expansion registry keys have no original FE8J/FE8CN indexed source."

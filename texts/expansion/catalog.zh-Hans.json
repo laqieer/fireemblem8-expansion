@@ -80,6 +80,14 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "章节"
+    "ui.presentation.chapter_title_default": "章节",
+    "debug.action.chapter_skirmish": "章节/魔物战",
+    "debug.selector.chapter": "章节",
+    "debug.selector.skirmish": "魔物战",
+    "debug.selector.eirika": "艾瑞珂",
+    "debug.selector.ephraim": "伊弗列姆",
+    "debug.selector.unavailable": "目标不可用",
+    "autoplay.charge.label": "冲锋",
+    "autoplay.charge.help": "仅在本回合将剩余单位交给电脑控制"
   }
 }

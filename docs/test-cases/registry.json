@@ -13,6 +13,7 @@
       "aoe-reference-module",
       "optional-gameplay-combinations",
       "transient-blue-computer-control",
+      "one-phase-blue-delegation",
       "bounded-semantic-run-until",
       "custom-spell-runtime",
       "hq-pcm-mixer",
@@ -30,6 +31,7 @@
       "generated-data-platform",
       "typed-id-item-cap",
       "debug-tools",
+      "debugtools-chapter-skirmish-selector",
       "cursor-unit-debug-editor",
       "debugtools-music-preview",
       "runtime-playtest-harness",
@@ -69,6 +71,18 @@
       "status": "current",
       "required_cases": [
         "TC-TEST-QUALITY-001"
+      ]
+    },
+    {
+      "id": "debugtools-chapter-skirmish-selector",
+      "title": "Bounded debugtools chapter and skirmish selector",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/123"
+      ],
+      "reference": "docs/debugtools.md",
+      "status": "current",
+      "required_cases": [
+        "TC-DEBUGTOOLS-PROTOTYPE-001"
       ]
     },
     {
@@ -449,6 +463,18 @@
       ]
     },
     {
+      "id": "one-phase-blue-delegation",
+      "title": "Optional one-phase Charge-style blue delegation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/87"
+      ],
+      "reference": "docs/autoplay.md",
+      "status": "current",
+      "required_cases": [
+        "TC-AUTOPLAY-CHARGE-001"
+      ]
+    },
+    {
       "id": "bounded-semantic-run-until",
       "title": "Bounded semantic run-until scenarios",
       "issue_urls": [
@@ -632,6 +658,43 @@
         {
           "command": "python3 scripts/check_docs.py --check --check-examples",
           "evidence": "scripts/check_docs.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-DEBUGTOOLS-PROTOTYPE-001",
+      "title": "Bounded chapter and skirmish selector",
+      "feature_id": "debugtools-chapter-skirmish-selector",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/123"
+      ],
+      "document": "docs/test-cases/debugtools.md",
+      "anchor": "tc-debugtools-prototype-001-bounded-chapter-and-skirmish-selector",
+      "profiles": [
+        "Modern AAPCS debug source build with FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+        "Matching modern AAPCS release source build as the disabled negative control"
+      ],
+      "purpose": "Exercise metadata-derived chapter and supported skirmish targets through one lifecycle-safe typed request and GameControl handoff.",
+      "prerequisites": "Build from the repository root with the modern toolchain and libmGBA; use clean emulator SRAM or the generated deterministic current-save fixture.",
+      "actions": "Open ID 4 from title, launch the default Chapter 4 target to live prep, then open ID 4 from the deterministic Chapter 2 live map, select the adjacent Chapter 4 skirmish, reach blue Player Phase, and reopen/close the map hub. Exercise cancel and release controls.",
+      "expected_result": "Each route queues, consumes, hands off, and commits exactly once after menu cleanup; chapter and skirmish destinations are interactive; all compared SRAM hashes are identical.",
+      "negative_control": "Invalid, unavailable, duplicate, cancel, repeated-hotkey, forced-teardown, duplicate-consume, duplicate-handoff, and release inputs fail closed without a request, second menu, direct callback restart, or save change.",
+      "interactions": "Depends on issue #11 debugtools/menu ownership, GameControl PostIntro, bootstrap suppression, generated chapter data, typed world-map spawn/node data, and chapter event groups. Conflicts with raw prototype patches, duplicate registries/catalogs, save-writing launchers, and direct callback teardown.",
+      "save_compatibility": "No save field, layout, epoch, migration, completion/tactician state, or ordinary slot write; launch state is transient EWRAM and full SRAM hashes remain byte-identical.",
+      "cleanup": "Close the hub, stop the emulator, and discard the deterministic SRAM fixture rather than copying it over a personal save.",
+      "limitations": "Only valid world-map-node-backed chapters and complete encounter-variant-0 spawn routes are exposed; placeholder rows, arbitrary maps/memory, variants 1/2, prior World Map progression, and dormant prototype callbacks are unsupported.",
+      "automation": [
+        {
+          "command": "TMPDIR=\"$PWD/build/test-tmp\" python3 -m unittest tools.gba-playtest.tests.test_debugtools_registry.DebugToolsChapterSelectorHostTests -v",
+          "evidence": "tools/gba-playtest/tests/test_debugtools_registry.py"
+        },
+        {
+          "command": "make expansion-modern-debugtools-selector-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/debugtools-selector-skirmish-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-debugtools-selector-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/debugtools-selector-modern-release.json"
         }
       ]
     },
@@ -1929,6 +1992,48 @@
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
           "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-AUTOPLAY-CHARGE-001",
+      "title": "One-phase Charge delegation",
+      "feature_id": "one-phase-blue-delegation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/87"
+      ],
+      "document": "docs/test-cases/autoplay.md",
+      "anchor": "tc-autoplay-charge-001-one-phase-charge-delegation",
+      "profiles": [
+        "Modern AAPCS debug ROM with EXPANSION_BLUE_PHASE_DELEGATE=1",
+        "Modern AAPCS debug and release ROMs with the feature disabled",
+        "Every authored expansion locale catalog"
+      ],
+      "purpose": "Prove current-phase eligible-only blue delegation, bounded legal AI actions, exact one-phase completion, localized menu/help, and PLAYER restoration.",
+      "prerequisites": "Repository root with libmGBA; clean Chapter 2 positive plus the host fixture with one already-moved and two eligible blue units.",
+      "actions": "Run the Charge host suite and debug/release expansion-modern-blue-phase-delegate-check targets; manually open R-help and select Charge on the documented fixture.",
+      "expected_result": "Only remaining eligible units act through the existing AI, the current blue phase completes once, failure evidence is retained, and the next blue phase is interactive PLAYER.",
+      "negative_control": "Feature-disabled debug/release builds add no row or symbol, preserve the 8-row base menu and idle PLAYER behavior, and record zero blue AI actions.",
+      "interactions": "Depends only on issue #85; composes with Threat Range at 10 of 11 menu rows; downstream extra rows require an explicit capacity/order choice.",
+      "save_compatibility": "No field, preference, epoch, migration, or serialized controller; reset/suspend-resume restores PLAYER through issue #85.",
+      "cleanup": "Use make clean_fast only to remove build artifacts.",
+      "limitations": "One phase only; no NOBODY, persistent ownership, strategy/objective/campaign logic, fast-forward, or arbitrary chapter-completion claim.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v",
+          "evidence": "tools/gba-playtest/tests/test_expansion_blue_phase_delegate.py"
+        },
+        {
+          "command": "make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/fingerprints/autoplay-charge-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/fingerprints/autoplay-player-default-modern-release.json"
+        },
+        {
+          "command": "make localization-test",
+          "evidence": "texts/expansion/registry.json"
         }
       ]
     },
