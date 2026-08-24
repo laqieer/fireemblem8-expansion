@@ -268,7 +268,9 @@ generated table also omits objective phase and map-task hooks, preserving the
 existing default combat-frame timing.
 
 The `chapterobjectives` generated-data table is owned by the existing
-`chapterbundle` declaration and validates against the existing unit groups,
+chapter-bundle collection: every authored `src/data/*_bundle.json` is indexed
+by chapter identity, and each objective record resolves only through its one
+matching owner bundle. It validates against that owner's unit groups,
 character constants, and event flags. Its only initial kinds are:
 
 - `protect`: keep one referenced character alive until another typed
