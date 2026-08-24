@@ -226,6 +226,105 @@ static int ObjectivePriority(enum ExpansionChapterObjectiveState state)
     }
 }
 
+#if FE8_CHAPTER_OBJECTIVES_RUNTIME_TEST
+
+#define EXPANSION_CHAPTER_OBJECTIVE_RUNTIME_PROBE_MAGIC 0x4F424A54
+
+struct ExpansionChapterObjectiveRuntimeProbe EWRAM_DATA
+    gExpansionChapterObjectiveRuntimeProbe = { 0 };
+
+static bool8 EWRAM_DATA sExpansionChapterObjectiveRuntimeProbeComplete = FALSE;
+
+static const struct ExpansionChapterObjective* FindObjectiveByKind(
+    const struct ExpansionChapterObjectiveBundle* bundle,
+    enum ExpansionChapterObjectiveKind kind)
+{
+    int index;
+
+    for (index = 0; index < bundle->objectiveCount; index++)
+        if (bundle->objectives[index].kind == kind)
+            return &bundle->objectives[index];
+
+    return NULL;
+}
+
+static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjectiveBundle* bundle)
+{
+    const struct ExpansionChapterObjective* eventObjective;
+    const struct ExpansionChapterObjective* reachObjective;
+    const struct ExpansionChapterObjective* defeatObjective;
+    const struct ExpansionChapterObjective* protectObjective;
+    struct Unit* protectedUnit;
+    enum ExpansionChapterObjectiveState state;
+    u32 progress;
+    u32 originalUnitState;
+    int originalX;
+    int originalY;
+    bool8 eventFlagWasSet;
+
+    if (sExpansionChapterObjectiveRuntimeProbeComplete)
+        return;
+
+    eventObjective = FindObjectiveByKind(bundle, EXPANSION_CHAPTER_OBJECTIVE_EVENT_FLAG);
+    reachObjective = FindObjectiveByKind(bundle, EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA);
+    defeatObjective = FindObjectiveByKind(bundle, EXPANSION_CHAPTER_OBJECTIVE_DEFEAT_GROUP);
+    protectObjective = FindObjectiveByKind(bundle, EXPANSION_CHAPTER_OBJECTIVE_PROTECT);
+    if (eventObjective == NULL || reachObjective == NULL || defeatObjective == NULL
+        || protectObjective == NULL)
+    {
+        return;
+    }
+
+    protectedUnit = GetUnitFromCharId(protectObjective->protectedCharacter);
+    if (protectedUnit == NULL || protectedUnit->pCharacterData == NULL)
+        return;
+
+    sExpansionChapterObjectiveRuntimeProbeComplete = TRUE;
+    eventFlagWasSet = CheckFlag(eventObjective->eventFlag);
+    originalUnitState = protectedUnit->state;
+    originalX = protectedUnit->xPos;
+    originalY = protectedUnit->yPos;
+
+    ClearFlag(eventObjective->eventFlag);
+    state = ExpansionChapterObjectives_GetStatus(eventObjective->id, &progress);
+    gExpansionChapterObjectiveRuntimeProbe.pendingId = eventObjective->id;
+    gExpansionChapterObjectiveRuntimeProbe.pendingState = state;
+    gExpansionChapterObjectiveRuntimeProbe.pendingProgress = progress;
+
+    SetFlag(eventObjective->eventFlag);
+    state = ExpansionChapterObjectives_GetStatus(eventObjective->id, &progress);
+    gExpansionChapterObjectiveRuntimeProbe.eventState = state;
+    gExpansionChapterObjectiveRuntimeProbe.eventProgress = progress;
+
+    protectedUnit->xPos = 63;
+    protectedUnit->yPos = 63;
+    ExpansionChapterObjectives_GetStatus(reachObjective->id, &progress);
+    gExpansionChapterObjectiveRuntimeProbe.reachPendingProgress = progress;
+
+    protectedUnit->xPos = reachObjective->xMin;
+    protectedUnit->yPos = reachObjective->yMin;
+    ExpansionChapterObjectives_GetStatus(reachObjective->id, &progress);
+    gExpansionChapterObjectiveRuntimeProbe.reachSuccessProgress = progress;
+
+    protectedUnit->state |= US_DEAD;
+    state = ExpansionChapterObjectives_GetStatus(protectObjective->id, &progress);
+    gExpansionChapterObjectiveRuntimeProbe.protectFailureState = state;
+    state = ExpansionChapterObjectives_GetStatus(defeatObjective->id, &progress);
+    gExpansionChapterObjectiveRuntimeProbe.defeatSuccessState = state;
+
+    protectedUnit->state = originalUnitState;
+    protectedUnit->xPos = originalX;
+    protectedUnit->yPos = originalY;
+    if (eventFlagWasSet)
+        SetFlag(eventObjective->eventFlag);
+    else
+        ClearFlag(eventObjective->eventFlag);
+
+    gExpansionChapterObjectiveRuntimeProbe.magic = EXPANSION_CHAPTER_OBJECTIVE_RUNTIME_PROBE_MAGIC;
+}
+
+#endif
+
 void ExpansionChapterObjectives_ResetTelemetry(void)
 {
     gExpansionChapterObjectiveTelemetry.objectiveId = 0;
@@ -257,6 +356,10 @@ void ExpansionChapterObjectives_RefreshTelemetry(void)
     ExpansionChapterObjectives_ResetTelemetry();
     if (bundle == NULL)
         return;
+
+#if FE8_CHAPTER_OBJECTIVES_RUNTIME_TEST
+    RunChapterObjectiveRuntimeProbe(bundle);
+#endif
 
     for (index = 0; index < bundle->objectiveCount; index++)
     {

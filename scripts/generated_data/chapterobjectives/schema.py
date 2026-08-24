@@ -415,6 +415,15 @@ def validate(records, diagnostics, dependency_records=None,
         used_characters = set()
         used_flags = set()
         used_unit_groups = set()
+        protected_character_groups = {}
+
+        for group_name in record.dependencies.unit_groups:
+            source_group = unit_groups.get(group_name)
+            if source_group is None:
+                continue
+            for unit in source_group.units:
+                if isinstance(unit.char_index, str):
+                    protected_character_groups.setdefault(unit.char_index, set()).add(group_name)
 
         for group in record.groups:
             _validate_id(group.id, group.id_loc, record_ref + ".aiGroups[id={}].id".format(group.id),
@@ -533,6 +542,19 @@ def validate(records, diagnostics, dependency_records=None,
                             objective.protected_character_loc, objective_ref + ".protectedCharacter",
                         )
                     )
+                if objective.kind == "protect":
+                    character_groups = protected_character_groups.get(objective.protected_character, set())
+                    if not character_groups:
+                        diagnostics.add(
+                            _err(
+                                "protectedCharacter '{}' must belong to a validated chapter unit group".format(
+                                    objective.protected_character
+                                ),
+                                objective.protected_character_loc,
+                                objective_ref + ".protectedCharacter",
+                            )
+                        )
+                    used_unit_groups.update(character_groups)
             if objective.completion_objective is not None:
                 diagnostics.extend(
                     validate_reference(objective.completion_objective, objectives_by_id,
@@ -596,6 +618,13 @@ def validate(records, diagnostics, dependency_records=None,
 
             if objective.kind == "protect" and objective.protected_character is not None:
                 completion = objectives_by_id.get(objective.completion_objective)
+                completion_seen = set()
+                while completion is not None and completion.kind == "protect":
+                    if completion.id in completion_seen:
+                        completion = None
+                        break
+                    completion_seen.add(completion.id)
+                    completion = objectives_by_id.get(completion.completion_objective)
                 completion_group = groups_by_id.get(completion.group) if completion is not None else None
                 if completion is not None and completion.kind == "defeat_group" and completion_group is not None:
                     if objective.protected_character in {
@@ -603,7 +632,7 @@ def validate(records, diagnostics, dependency_records=None,
                     }:
                         diagnostics.add(
                             _err(
-                                "protect objective cannot complete by defeating its protected character",
+                                "protect completion chain reaches a defeat_group containing its protected character",
                                 objective.completion_objective_loc, objective_ref + ".completionObjective",
                             )
                         )

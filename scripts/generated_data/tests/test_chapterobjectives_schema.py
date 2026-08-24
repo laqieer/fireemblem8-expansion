@@ -93,7 +93,7 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             "defeat_group objective accepts only group",
             "event_flag objective accepts only eventFlag",
             "hold_until_turn objective accepts only group, area, and untilTurn",
-            "cannot complete by defeating its protected character",
+            "completion chain reaches a defeat_group containing its protected character",
         ):
             self.assertIn(expected, rendered)
 
@@ -115,6 +115,39 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
         })
         self.assertFalse(diagnostics.ok)
         self.assertIn("protectedCharacter must not be CHARACTER_NONE", diagnostics.render())
+
+    def test_protect_objective_requires_a_validated_chapter_unit_group(self):
+        records, diagnostics = _validate("valid.json")
+        objectives = {objective.id: objective for objective in records[0].objectives}
+        objectives["OBJECTIVE_FIXTURE_PROTECT"].protected_character = "CHARACTER_LYON"
+        schema.validate(records, diagnostics, {
+            "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json"))
+        })
+        self.assertFalse(diagnostics.ok)
+        self.assertIn("must belong to a validated chapter unit group", diagnostics.render())
+
+    def test_protect_completion_chain_rejects_a_terminal_defeat_of_the_protected_unit(self):
+        records, diagnostics = _validate("valid.json")
+        objectives = {objective.id: objective for objective in records[0].objectives}
+        root = objectives["OBJECTIVE_FIXTURE_PROTECT"]
+        intermediate = objectives["OBJECTIVE_FIXTURE_HOLD"]
+        root.completion_objective = intermediate.id
+        intermediate.kind = "protect"
+        intermediate.group = None
+        intermediate.area = None
+        intermediate.until_turn = None
+        intermediate.protected_character = "CHARACTER_LYON"
+        intermediate.protected_character_loc = intermediate.id_loc
+        intermediate.completion_objective = "OBJECTIVE_FIXTURE_DEFEAT"
+        intermediate.completion_objective_loc = intermediate.id_loc
+        schema.validate(records, diagnostics, {
+            "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json"))
+        })
+        self.assertFalse(diagnostics.ok)
+        self.assertIn(
+            "completion chain reaches a defeat_group containing its protected character",
+            diagnostics.render(),
+        )
 
 
 if __name__ == "__main__":
