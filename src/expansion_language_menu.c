@@ -280,6 +280,7 @@ EWRAM_DATA struct ExpansionLanguageMenuProbe gExpansionLanguageMenuProbe = {0};
 #include "prepscreen.h"
 #include "uiconfig.h"
 #include "expansion_ui_prefs.h"
+#include "debugtools_internal.h"
 
 /* One row per BUILD-ENABLED locale slot, plus one reserved Back row
  * (settings submenu only) -- mirrors DEBUGTOOLS_HUB_MENU_SLOTS' own
@@ -349,18 +350,20 @@ static const ExpansionMsgId sLocaleShortNameMsgIds[EXPANSION_LOCALE_COUNT] =
 };
 
 /* RAM-resident MenuItemDef adapter, rebuilt every time either MenuDef
- * below is (re)shown -- same "contributor/runtime code never edits an
- * engine-owned const MenuItemDef table" idiom as
- * src/debugtools_registry.c's sHubMenuItemDefs. A SINGLE array shared by
- * both the first-start selector and the later settings submenu: the two
- * are never simultaneously live (the selector is a blocking child of
- * early boot -- src/gamecontrol.c -- that always finishes before the
- * title/gameplay this settings submenu is only ever reachable from --
- * src/uiconfig.c -- can begin), and each menu's own
- * ExpansionLanguageMenu_BuildLocaleRows call fully rewrites every row
- * (memset then repopulate) immediately before its StartMenu, so neither
- * ever depends on whatever the other last left behind. */
-EWRAM_DATA static struct MenuItemDef sLanguageMenuItemDefs[EXPANSION_LANGUAGE_MENU_MAX_ROWS] = {0};
+* below is (re)shown -- same "contributor/runtime code never edits an
+* engine-owned const MenuItemDef table" idiom as
+* src/debugtools_registry.c's sHubMenuItemDefs. The first-start selector
+* and later settings submenu are never simultaneously live. When debug
+* tools are enabled, they also share the capacity-safe debug menu buffer:
+* the selector finishes before title input begins, and OpenSettings rejects
+* an active debug hub. Each build path fully rewrites its rows before
+* StartMenu, so no caller depends on prior contents. */
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+#define sLanguageMenuItemDefs sDebugToolsMenuItemDefs
+#else
+EWRAM_DATA static struct MenuItemDef
+    sLanguageMenuItemDefs[EXPANSION_LANGUAGE_MENU_MAX_ROWS] = {0};
+#endif
 
 struct ExpansionLanguageSelectorProc
 {
@@ -809,6 +812,11 @@ void ExpansionLanguageMenu_OpenSettings(ProcPtr parent)
     u8 itemIndex;
     u8 rowCount;
     u8 skippedRows;
+
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+    if (DebugTools_IsHubActive())
+        return;
+#endif
 
     skippedRows = EXPANSION_LANGUAGE_INLINE_MAX - 1;
     rowCount = ExpansionLanguageMenu_BuildLocaleRows(

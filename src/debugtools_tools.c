@@ -295,22 +295,23 @@ typedef char DebugToolsUnitEditorStateLayoutAssert[
 typedef char DebugToolsUnitEditorProbeLayoutAssert[
     sizeof(struct DebugToolsUnitEditorProbe) == 0x48 ? 1 : -1];
 
-/* Every submenu transition ends the current menu first, so all five tools and
- * the Save State flow can share one six-item persistent buffer. */
-EWRAM_DATA static struct MenuItemDef sDebugToolsMenuItemDefs[6] = {{0}};
-
-#define sConvoyMenuItemDefs sDebugToolsMenuItemDefs
-#define sFlagMenuItemDefs sDebugToolsMenuItemDefs
-#define sRngMenuItemDefs sDebugToolsMenuItemDefs
-#define sSaveStateMenuItemDefs sDebugToolsMenuItemDefs
-#define sSaveFixtureMenuItemDefs sDebugToolsMenuItemDefs
-
+/* Every submenu transition ends the current menu first, so all five tools,
+ * Save State, and the language selector can share this bounded buffer. */
 /* Retain the pre-#128 72-byte Save State capacity while reusing it for the
  * fixture preview and title-only menu controls. */
 EWRAM_DATA union DebugSaveFixtureStableStorage sSaveStateStableLayout
     __attribute__((used)) = {0};
 extern struct DebugToolsUnitEditorState sUnitEditor
     __attribute__((alias("sSaveStateStableLayout")));
+
+EWRAM_DATA struct MenuItemDef
+    sDebugToolsMenuItemDefs[DEBUGTOOLS_SHARED_MENU_ITEM_MAX] = {{0}};
+
+#define sConvoyMenuItemDefs sDebugToolsMenuItemDefs
+#define sFlagMenuItemDefs sDebugToolsMenuItemDefs
+#define sRngMenuItemDefs sDebugToolsMenuItemDefs
+#define sSaveStateMenuItemDefs sDebugToolsMenuItemDefs
+#define sSaveFixtureMenuItemDefs sDebugToolsMenuItemDefs
 
 #define sSaveFixtureOverrides sSaveStateStableLayout.fixture.preview.overrides
 #define sSaveFixtureSourceKind sSaveStateStableLayout.fixture.preview.target.sourceKind

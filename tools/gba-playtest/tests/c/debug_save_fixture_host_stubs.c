@@ -106,17 +106,18 @@ u16 Checksum16(void const *data, int size)
 
 u32 ComputeChecksum32(const u32 *values, int size)
 {
-    u32 hash = 2166136261u;
-    const u8 *bytes = (const u8 *)values;
+    const u16 *halves = (const u16 *)values;
+    u32 add = 0;
+    u32 xor = 0;
     int i;
 
-    for (i = 0; i < size; ++i)
+    for (i = 0; i < size / 2; ++i)
     {
-        hash ^= bytes[i];
-        hash *= 16777619u;
+        add += halves[i];
+        xor ^= halves[i];
     }
 
-    return hash;
+    return (add & 0xFFFF) | ((xor & 0xFFFF) << 16);
 }
 
 u16 ExpansionSaveMetaChecksum(struct ExpansionSaveMeta const *meta)
