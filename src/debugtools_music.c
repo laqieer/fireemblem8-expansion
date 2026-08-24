@@ -25,7 +25,10 @@ SECTION("debugtools_contributor_data") struct DebugToolsMusicProbe
 
 enum
 {
-    DEBUGTOOLS_MUSIC_OVERRIDE_ID = 0xE2
+    /* 0xE0-0xE1 belong to Weather/Fog, 0xE2-0xF5 to the bounded
+     * unit-editor menus, and 0xF6-0xFA remain reserved for issue #124
+     * phase control. Keep this stable, disjoint menu-dispatch ID. */
+    DEBUGTOOLS_MUSIC_OVERRIDE_ID = 0xFB
 };
 
 struct DebugToolsMusicState
