@@ -53,8 +53,8 @@ _FORBIDDEN_IDENTIFIERS = (
     "ReadGameSavePlaySt",
     "ReadGameSaveCoreGfx",
     "InvalidateGameSave",
-    "struct SaveBlockInfo",
 )
+_FORBIDDEN_SAVE_BLOCK_TYPE = "SaveBlockInfo"
 
 
 def _strip_comments(text: str) -> str:
@@ -100,6 +100,37 @@ def _undefined_symbols(obj: Path) -> set[str]:
     if completed.returncode != 0:
         raise AssertionError(completed.stdout + completed.stderr)
     return {line.split()[-1] for line in completed.stdout.splitlines() if line.split()}
+
+
+def _gcc_original_tree(work: Path, source: Path, name: str) -> str:
+    """Return GCC's parsed C tree, which retains type and field expressions."""
+    output = work / name
+    tree = work / (name + ".original")
+    completed = subprocess.run(
+        [
+            ARM_CC,
+            "-mcpu=arm7tdmi",
+            "-mthumb",
+            "-mthumb-interwork",
+            "-mabi=aapcs",
+            "-std=gnu89",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-w",
+            *INCLUDE_FLAGS,
+            "-fdump-tree-original=" + str(tree),
+            "-c",
+            str(source),
+            "-o",
+            str(output),
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return tree.read_text(encoding="utf-8")
 
 
 class StartSaveMenuGateStructureTests(unittest.TestCase):
@@ -192,11 +223,24 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
             refs = _undefined_symbols(
                 _compile_arm(Path(tmp), SAVE_COMPAT_MENU_C, "save_compat_menu.o")
             )
-        forbidden = set(_FORBIDDEN_IDENTIFIERS) - {"struct SaveBlockInfo"}
         self.assertFalse(
-            refs & forbidden,
+            refs & set(_FORBIDDEN_IDENTIFIERS),
             "compatibility proc must classify globally before any slot/block API: %r"
-            % sorted(refs & forbidden),
+            % sorted(refs & set(_FORBIDDEN_IDENTIFIERS)),
+        )
+
+    def test_compat_proc_parsed_tree_has_no_save_block_type_or_field_access(self):
+        """A type or field expression emits no undefined-symbol relocation."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = _gcc_original_tree(
+                Path(tmp),
+                SAVE_COMPAT_MENU_C,
+                "save_compat_menu.ast",
+            )
+        self.assertNotRegex(
+            tree,
+            r"\b(?:struct )?" + _FORBIDDEN_SAVE_BLOCK_TYPE + r"\b",
+            "compatibility proc must not declare or dereference SaveBlockInfo",
         )
 
     def test_only_savemenu_object_can_reference_the_normal_menu_proc(self):

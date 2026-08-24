@@ -21,8 +21,8 @@ implementation spelling is removed as evidence.
 | `test_expansion_starter_content.py` (18) | Generated content output, ARM profile compilation, a tiny public `ItemExpansionProbe` ABI consumer, item-name object data, and starter hook scenarios. | Starter profile executes real combat and increments hook probes. | Default profile performs the same combat with zero hook probes. |
 | `test_host_only_mode.py` (2) | Parsed-AST discovery of all test modules plus poisoned artifact access for registered live classes. | Category-A checks run in host-only mode. | Every discovered Category-B class skips before artifact access and must be registered. |
 | `test_prep_positive_scenario.py` (1) | Parsed input timeline and semantic prep probes. | Prep hotkey produces the documented observation. | Release/default probe remains inert. |
-| `test_probe_bindings.py` (1) | Fake `nm` executables plus a generated `make -n` starter binding recipe exercise explicit/configured forwarding and failure resolution. | Explicit/configured tools resolve a symbol and the generated recipe forwards `MODERN_NM`. | Missing tool reports `ProbeBindingError`. |
-| `test_save_compat_gate_safety.py` (6) | Compiled undefined-symbol boundaries, a tiny public probe-header consumer, and save-compat scenarios assert SRAM classification, confirmation, and erase outcomes. | Current and explicit-confirmation flows complete. | Forbidden slot APIs and external normal-save-menu starts have no relocation; Back/corrupt paths preserve saves and never erase. |
+| `test_probe_bindings.py` (1) | Fake `nm` executables plus `make -n` of the six shipped debug/release hook and QoL bindings exercise explicit/configured forwarding and failure resolution. | Every emitted production probe command forwards `MODERN_NM`; explicit/configured tools resolve a symbol. | Missing tool reports `ProbeBindingError`. |
+| `test_save_compat_gate_safety.py` (6) | Compiled undefined-symbol boundaries, a GCC parsed-tree type/field boundary, a tiny public probe-header consumer, and save-compat scenarios assert SRAM classification, confirmation, and erase outcomes. | Current and explicit-confirmation flows complete. | Forbidden slot APIs, `SaveBlockInfo` type/field expressions, and external normal-save-menu starts are rejected; Back/corrupt paths preserve saves and never erase. |
 | `test_save_load_scenario.py` (1) | Parsed reset input and live SRAM/play-state transition. | New game, reset, and reload restore the discriminants. | Pre-write SRAM differs from the created save. |
 | `test_savesuspend_resume_scenario.py` (2) | Parsed ordinary UI inputs and runtime SRAM/play-state checkpoints. | Manual suspend resumes the intended state. | No raw memory poke or bypass fixture is accepted. |
 | `test_starter_features_scenarios.py` (1) | Parsed behavior fingerprints and live starter/default ROM probes. | Starter hook fires during real combat. | Same combat on the default ROM keeps every hook scalar zero. |
@@ -42,6 +42,12 @@ debug/release and the starter debug/release profile where a positive feature
 case needs it. The archival lane is not part of this issue. Save compatibility
 is unchanged: all save assertions continue to use the existing deterministic
 fixtures and current-format classification.
+
+`SaveBlockInfo` is an ABI/type boundary rather than an external symbol:
+declaring it or dereferencing one of its fields creates no undefined-symbol
+relocation. The save-compat test therefore combines relocation checks for
+callable APIs with GCC's parsed C tree for the otherwise unrepresentable type
+and field-access prohibition.
 
 ## Rollback
 

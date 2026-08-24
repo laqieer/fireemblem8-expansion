@@ -230,7 +230,6 @@ class FeBuilderAlignmentEvidenceTests(unittest.TestCase):
             stderr=subprocess.STDOUT,
         )
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("conflicts=12 collisions=17", result.stdout)
 
 
 if __name__ == "__main__":

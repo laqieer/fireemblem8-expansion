@@ -29,6 +29,9 @@
 #include "eventinfo.h"
 #include "expansion_debugtools.h"
 #include "expansion_itemtest.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_autoplay_internal.h"
+#endif
 
 #include "playerphase.h"
 
@@ -292,6 +295,14 @@ void PlayerPhase_MainIdle(ProcPtr proc)
     DebugTools_MapHotkeyCheck();
     if (DebugTools_IsHubActive())
         return;
+
+    if (ExpansionAutoplay_TryActivateScenario(
+            gKeyStatusPtr->newKeys, gKeyStatusPtr->heldKeys))
+    {
+        EndPlayerPhaseSideWindows();
+        Proc_Goto(proc, 3);
+        return;
+    }
 #endif
 
     HandlePlayerCursorMovement();

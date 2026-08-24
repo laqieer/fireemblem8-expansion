@@ -304,6 +304,39 @@ All of the above validation happens — including missing/unreachable local
 objects being reported as an actionable error — **before** `state.json` is
 ever written, so a rejected call leaves the file byte-for-byte unchanged.
 
+### Ref-binding evidence consolidation (Issue #107)
+
+Issue #107 records the upstream-port portion of the #99 test-governance
+audit. Its scope is limited to duplicate `record-scan` protocol evidence:
+it does not change the upstream-port policy, ref semantics, workflow gates,
+or the state-file schema.
+
+All four audit candidates have the `merge` disposition. The
+`RecordScanRefBindingTests` methods are the retained counterparts because
+they sit with the direct explicit/implicit ref-binding matrix and now assert
+both the resolved-tip value and rejected-call state preservation.
+
+| Audit candidate | Merge result | Retained protocol evidence |
+| --- | --- | --- |
+| `test_ref_binding.py::RecordScanRefBindingTests.test_explicit_record_scan_matching_resolved_tip_ok` | Retained | Explicit current-tip scan resolves `decomp/master` to the supplied SHA and records that exact tip. |
+| `test_state.py::BoundaryAdvanceTests.test_record_scan_forward_ok` | Removed as duplicate | `RecordScanRefBindingTests.test_explicit_record_scan_matching_resolved_tip_ok` |
+| `test_ref_binding.py::RecordScanRefBindingTests.test_explicit_record_scan_backward_still_rejected` | Retained | A previously recorded boundary cannot move backward; the rejected call preserves the state snapshot. |
+| `test_state.py::BoundaryAdvanceTests.test_record_scan_backward_rejected` | Removed as duplicate | `RecordScanRefBindingTests.test_explicit_record_scan_backward_still_rejected` |
+
+The retained forward and backward controls call `state.record_scan` against
+synthetic local Git repositories; they do not inspect tracked source text.
+Consequently, a behavior-preserving refactor remains green, while a
+directionality mutation that accepts the old boundary or a mutation that
+records a non-resolved tip fails the retained semantic evidence. This
+consolidation exercises the meaningful-test-evidence contract in
+[`TC-TEST-QUALITY-001`](test-cases/foundation.md#tc-test-quality-001-meaningful-test-evidence-policy-rejects-semantic-mutations).
+
+No raw tracked-source-text assertion was confirmed in this audit scope. The
+parent #99 audit and issue #100 policy are dependencies; there are no feature,
+profile, save, generated-data, localization, ROM/RAM, debug/release, or
+archival-lane conflicts. Reverting this change restores only the duplicate
+assertions and does not alter persisted upstream-port state.
+
 Separately, `update-state record-scan --ref decomp/master` lets you
 explicitly advance `last_scanned` once you've reviewed a scan's output (also
 forward-only, and ref-tip-bound as described above).

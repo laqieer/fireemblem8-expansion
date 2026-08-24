@@ -6,11 +6,16 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
+from scripts.release_rehearsal import candidate_tree as ct
+from scripts.release_rehearsal import git_source as gs
 from scripts.release_rehearsal import gitmodules as gm
+from scripts.release_rehearsal import submodule_binding as sb
 
 ROOT_HEAD_SHA = subprocess.run(
     ["git", "rev-parse", "HEAD"], cwd=str(ROOT), capture_output=True, text=True,
@@ -123,6 +128,49 @@ class LoadGitmodulesSectionsTests(unittest.TestCase):
         sections = gm.load_gitmodules_sections(ROOT, "HEAD")
         self.assertEqual(sections["mgfembp"]["path"], "mgfembp")
         self.assertEqual(sections["mgfembp"]["url"], "https://github.com/StanHash/mgfembp.git")
+
+
+class SubmoduleBindingContractTests(unittest.TestCase):
+    def _check(self, sections, gitlink_paths):
+        tree = SimpleNamespace(
+            gitlink_entries=tuple(SimpleNamespace(path=path) for path in gitlink_paths)
+        )
+        with (
+            mock.patch.object(gs, "is_git_repo", return_value=True),
+            mock.patch.object(ct, "load", return_value=tree),
+            mock.patch.object(gm, "load_gitmodules_sections", return_value=sections),
+        ):
+            return sb.check_submodule_binding(ROOT, ROOT_HEAD_SHA)
+
+    def test_nonsemantic_gitmodules_formatting_preserves_binding(self):
+        compact = (
+            '[submodule "vendor"]\n'
+            "\tpath = vendor\n"
+            "\turl = https://example.invalid/vendor.git\n"
+        )
+        formatted = (
+            "# Documentation-only formatting must not change this declaration.\n\n"
+            '[submodule "vendor"]\n'
+            "\tpath = vendor\n\n"
+            "\turl = https://example.invalid/vendor.git\n"
+        )
+        self.assertEqual(gm.parse_gitmodules(compact), gm.parse_gitmodules(formatted))
+        self.assertEqual(
+            self._check(gm.parse_gitmodules(formatted), ("vendor",)),
+            [],
+        )
+
+    def test_candidate_gitlink_and_declaration_mismatch_fails_closed(self):
+        sections = gm.parse_gitmodules(
+            '[submodule "vendor"]\n\tpath = vendor\n\turl = https://example.invalid/vendor.git\n'
+        )
+        self.assertEqual(
+            self._check(sections, ("other",)),
+            [
+                "other: gitlink has no .gitmodules declaration",
+                "vendor: .gitmodules declaration has no immutable target-tree gitlink",
+            ],
+        )
 
 
 class NeverInvokesGitForNonGitRepoRootTests(unittest.TestCase):

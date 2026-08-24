@@ -126,8 +126,9 @@ provenance to differ. Its expected baseline may omit the otherwise-unused
 print the captured candidate identity. Use it only when changed ROM bytes are
 expected; it never silently turns off capture identity reporting. Capture JSON
 always contains provenance under `"rom"` regardless of the later verification
-policy. Scenario schema version remains 1; exact-ROM expected fingerprints
-require valid provenance in format version 2.
+policy. Fixed-frame schema version 1 uses fingerprint format version 2;
+bounded run-until schema version 2 uses fingerprint format version 3.
+Exact-ROM expected fingerprints in either format require valid provenance.
 
 ## Host-only test mode
 
@@ -186,6 +187,8 @@ A scenario is one strict JSON object. Unknown fields, duplicate JSON keys,
 overlapping/out-of-order frame ranges, duplicate checkpoints/probes, malformed
 expectations, and invalid key/address names are errors.
 
+### Fixed-frame schema version 1
+
 ```json
 {
   "schema_version": 1,
@@ -236,6 +239,131 @@ documented program explicitly mirrors KEYINPUT there.
 Disabled schema-ready stubs additionally use `"disabled": true` and a non-empty
 `"blocker"`. They may have no checkpoints, and capture rejects them explicitly.
 
+Schema version 1 and its format-version-2 fingerprints are unchanged. Existing
+fixed-frame files require no migration and still generate the same plan and
+fingerprint structure.
+
+### Bounded semantic run-until schema version 2
+
+Schema version 2 replaces the fixed `checkpoints` array with one bounded
+`run_until` profile and one terminal checkpoint template:
+
+```json
+{
+  "schema_version": 2,
+  "name": "bounded-example",
+  "frames": [
+    {"start": 90, "end": 95, "keys": ["SELECT", "START", "R"]}
+  ],
+  "run_until": {
+    "max_frames": 18001,
+    "terminal_conditions": [
+      {
+        "reason": "success",
+        "all": [
+          {
+            "address": "gExpansionAutoplayTelemetry+0x04",
+            "size": 4,
+            "operator": "eq",
+            "value": "0x00000003"
+          }
+        ]
+      },
+      {
+        "reason": "objective_failure",
+        "all": [
+          {
+            "address": "gExpansionAutoplayTelemetry+0x04",
+            "size": 4,
+            "operator": "eq",
+            "value": "0x00000004"
+          }
+        ]
+      }
+    ],
+    "stall": {
+      "max_unchanged_frames": 1800,
+      "progress": {
+        "address": "gExpansionAutoplayTelemetry+0x18",
+        "size": 4
+      },
+      "work_expected": {
+        "address": "gExpansionAutoplayTelemetry+0x04",
+        "size": 4,
+        "operator": "eq",
+        "value": "0x00000002"
+      }
+    },
+    "turn_limit": {
+      "maximum": 3,
+      "address": "gPlaySt+0x10",
+      "size": 2
+    },
+    "action_limit": {
+      "maximum": 62,
+      "address": "gExpansionAutoplayTelemetry+0x18",
+      "size": 4
+    },
+    "checkpoint": {
+      "name": "semantic-terminal",
+      "framebuffer": false,
+      "probes": [
+        {"address": "gExpansionAutoplayTelemetry+0x18", "size": 4}
+      ]
+    }
+  }
+}
+```
+
+`max_frames` is an unconditional positive frame count. A value of N executes
+at most zero-based frames 0 through N-1; every input range must end before N.
+The terminal checkpoint deliberately has no authored `frame`: the backend
+captures it exactly once on the first terminal frame.
+
+Each terminal condition is a conjunction (`all`) of unsigned comparisons over
+the same bounded 1/2/4-byte literal or ELF-symbol probes used by checkpoints.
+Operators are `eq`, `ne`, `lt`, `le`, `gt`, and `ge`; values are lowercase
+fixed-width hexadecimal strings. Exactly one `success` definition is required.
+`objective_failure` and `controller_exhausted` definitions are optional.
+Duplicate predicates/reasons, internally impossible conjunctions, or two
+terminal definitions that can overlap are rejected before ROM execution.
+The parser also rejects a success definition statically precluded by its
+declared turn/action ceiling.
+
+`turn_limit` and `action_limit` are optional named semantic counters. Their
+positive `maximum` is checked after explicit terminal conditions, so success
+observed exactly at a counter bound remains success. `stall` is optional and
+requires a ROM-supplied monotonic progress epoch plus a separate
+`work_expected` comparison. Only consecutive unchanged epoch transitions
+while work is expected count toward `max_unchanged_frames`; a defend/wait
+objective can report work not expected and remain stationary without being
+called stalled. Any epoch regression is a deterministic backend error, never
+normalized into a terminal result.
+
+Terminal priority is explicit conditions, `engine_stall`, `max_turns`,
+`max_actions`, then `max_frames`. Exactly one of these stable reasons is
+emitted:
+
+- `success` - the authored success state became observable;
+- `objective_failure` - the ROM reported an authored loss/failure state;
+- `controller_exhausted` - explicit ROM telemetry reported no legal action;
+- `engine_stall` - the monotonic progress epoch stopped while work was expected;
+- `max_frames`, `max_turns`, or `max_actions` - the corresponding hard budget
+  was reached first.
+
+Run-until captures use fingerprint format version 3. They retain normal
+scenario and ROM provenance, contain exactly one checkpoint, and add
+`terminal.reason`, `terminal.frame`, plus probe-shaped `terminal.turn` and
+`terminal.actions` values (or `null` when the counter is unbound). The
+checkpoint frame must equal the terminal frame. Behavior-policy verification
+compares this typed terminal record as well as checkpoint data.
+
+All seven reasons are deterministic semantic outcomes, not host process
+timeouts. They return one fingerprint and are never retried. `--retries`
+continues to apply only to a transient compiler/pkg-config/backend process
+timeout; it cannot turn an objective failure, exhausted controller, stall, or
+budget result into success.
+
 ## Initial coverage and limits
 
 `boot.json` is a no-input early boot capture. `title-progression.json` uses the
@@ -277,6 +405,8 @@ similarity alone.
 | `save-load.json` (issue #13) | Normal (non-Suspend) game-save write + load: SaveMenu New Game -> slot 0 write, a real A+B+SELECT+START soft reset, then SaveMenu RESTART -> `PostSaveMenuHandler` -> `ReadGameSave(0)`; `playthroughIdentifier` (`0x020210bc`)/`chapterModeIndex` (`0x020210bf`) go `1 -> 0 -> 1`, `gameSaveSlot` (`0x020210b0`) `== 0`, and before/after whole-SRAM hashes differ | debug only (debug-calibrated soft-reset) |
 | `debugtools-ch4-prep-positive-modern-debug.json` (issue #11) | Live prep-screen arrival + SELECT+B prep hotkey: rests `gProcScr_SALLYCURSOR` in `PrepScreenProc_MapIdle` and fires the hotkey; `prepScreenObservedCount` (`0x02031854`) `0 -> 1` (reachable only from MapIdle, so it is the relocation-independent proof the hotkey fired live), `PLAY_FLAG_PREPSCREEN` held throughout, idempotent 2nd press, safe return to prep -- no proc ROM-pointer oracle | debug only (debug-only launcher + hotkey) |
 | `debugtools-tools-modern-{debug,release}.json` (issue #11) | The five shipped bounded tools driven **live** from the real Chapter 2 map hub: each of Unit Inspect/Edit, Convoy Inspect/Edit, Flag/Chapter, RNG Inspect/Control, and Save Compatibility/State Inspect is triggered from its real hub row with an asserted semantic effect (Unit heal transaction; Convoy count `0 -> 1`; Flag `0 -> 1`; RNG seed `0x0000ee77 -> 0x0000690b`; Save read-only, count `0 -> 1` and unchanged on Back) and a safe hub return (`hubOpenCount 2 -> 9`), ending with the map still interactive (player cursor `0x06 -> 0x07`); probe-only, relocation-independent. Release mirror proves the hub/tools are compiled out (`gDebugToolsProbe` all-zero) | debug (live) / release (negative) |
+| `run_autoplay_checks.py` generated scenarios (issue #85) | `TC-AUTOPLAY-001`: a clean Chapter 2 debug-only activation chord drives a full blue phase through the existing AI and records legal actions, faction-relation checks, completion, and progression; clean Prologue debug/release defaults remain PLAYER with zero blue AI actions | debug (positive + negative) / release (negative) |
+| `run_autoplay_bounds_checks.py` generated scenarios (issue #86) | `TC-AUTOPLAY-BOUNDS-001`: the same debug COMPUTER route stops at its first semantic completion (frame 17134 in the checked candidate), while clean debug/release PLAYER controls reach `max_frames` at frame 3950 with zero actions; the generated homebrew fixture separately covers all seven terminal reasons | debug (positive + negative) / release (negative) |
 
 New-game, chapter/map arrival, combat, and normal save/load are all enabled,
 verified scenarios -- see the coverage table above. **No `*.stub.json` files

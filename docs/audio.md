@@ -52,7 +52,7 @@ are:
 | Mixer ROM object | stock `SoundMainRAM` (`0x3A4` bytes) | HQ object (`0xAC8` bytes) | `+0x724` bytes |
 | IWRAM executable buffer | `0x400` bytes | `0xAC0` bytes | `+0x6C0` bytes |
 | IWRAM intermediate buffer | absent | `0x380` bytes | `+0x380` bytes |
-| IWRAM static end | `0x030067A9` | `0x03006E00` | `+0x657` bytes |
+| IWRAM static end | `0x030067F0` | `0x03006E00` | `+0x610` bytes |
 | Minimum user stack | `0x1000` bytes | `0x1000` bytes | unchanged |
 | Relocated MP2K/presentation bookkeeping and probe | absent | EWRAM | `+0x418` bytes |
 

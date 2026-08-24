@@ -36,6 +36,9 @@
 
 #include "expansion_debugtools.h"
 #include "expansion_itemtest.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_autoplay_internal.h"
+#endif
 
 struct PalFadeSt EWRAM_DATA sPalFadeSt[0x20] = { 0 };
 struct BmSt EWRAM_DATA gBmSt = {};
@@ -447,6 +450,16 @@ void BmMain_StartPhase(ProcPtr proc)
     case FACTION_BLUE:
 #if FE8_EXPANSION_AOE_REFERENCE
         ExpansionAoEReference_RunProbe();
+#endif
+#ifndef FE8_ARCHIVAL_BUILD
+        if (ExpansionAutoplay_GetBlueControl() == EXPANSION_BLUE_CONTROL_COMPUTER)
+        {
+            ExpansionAutoplay_OnBlueComputerPhaseStart();
+            Proc_StartBlocking(gProcScr_CpPhase, proc);
+            break;
+        }
+
+        ExpansionAutoplay_OnPlayerPhaseStart();
 #endif
         Proc_StartBlocking(gProcScr_PlayerPhase, proc);
         break;

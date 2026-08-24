@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -145,24 +146,114 @@ class ProbeBindingToolTests(unittest.TestCase):
         self.assertIn("gba-playtest: cannot launch ELF symbol tool", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
 
-    def test_make_dry_run_forwards_configured_nm_to_all_starter_bindings(self):
+    def test_make_dry_run_forwards_configured_nm_to_all_production_starter_bindings(self):
         configured_nm = "/semantic/toolchain/arm-none-eabi-nm"
-        recipe = self.work / "semantic-nm.mk"
-        recipe.write_text(
-            "include " + str(REPO_ROOT / "modern.mk") + "\n"
-            "semantic-nm:\n"
-            "\t$(call modern_starter_probe_binding,semantic.elf,semantic.json,semantic.json)\n",
-            encoding="utf-8",
+        expected_runs = (
+            (
+                "debug",
+                "expansion-modern-starter-hook-check",
+                {
+                    (
+                        "tools/gba-playtest/scenarios/starter-hook-modern-debug.json",
+                        "tools/gba-playtest/fingerprints/starter-hook-modern-debug.json",
+                        None,
+                    ),
+                    (
+                        "tools/gba-playtest/scenarios/starter-hook-negative-modern-debug.json",
+                        "tools/gba-playtest/fingerprints/starter-hook-negative-modern-debug.json",
+                        None,
+                    ),
+                },
+            ),
+            (
+                "release",
+                "expansion-modern-starter-hook-check",
+                {
+                    (
+                        "tools/gba-playtest/scenarios/starter-hook-clean-modern-release.json",
+                        "tools/gba-playtest/fingerprints/starter-hook-clean-modern-release.json",
+                        None,
+                    ),
+                    (
+                        "tools/gba-playtest/scenarios/starter-hook-clean-negative-modern-release.json",
+                        "tools/gba-playtest/fingerprints/starter-hook-clean-negative-modern-release.json",
+                        None,
+                    ),
+                },
+            ),
+            (
+                "debug",
+                "expansion-modern-starter-qol-check",
+                {
+                    (
+                        "tools/gba-playtest/scenarios/starter-danger-overlay-modern-debug.json",
+                        "tools/gba-playtest/fingerprints/starter-danger-overlay-modern-debug.json",
+                        "gExpansionDangerOverlayProbe",
+                    ),
+                    (
+                        "tools/gba-playtest/scenarios/starter-danger-overlay-negative-modern-debug.json",
+                        "tools/gba-playtest/fingerprints/starter-danger-overlay-negative-modern-debug.json",
+                        "gExpansionDangerOverlayProbe",
+                    ),
+                },
+            ),
         )
-        completed = subprocess.run(
-            ["make", "-n", "-f", str(recipe), "semantic-nm", "MODERN_NM=" + configured_nm],
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-        self.assertIn("check_starter_probe_addresses.py", completed.stdout)
-        self.assertIn('--nm "' + configured_nm + '"', completed.stdout)
+
+        for config, target, expected_bindings in expected_runs:
+            with self.subTest(config=config, target=target):
+                completed = subprocess.run(
+                    [
+                        "make",
+                        "-n",
+                        "--old-file=expansion-modern-boot-preflight",
+                        "--old-file=expansion-modern-rom",
+                        "--old-file=expansion-modern-starter-profile-rom",
+                        target,
+                        "MODERN_CONFIG=" + config,
+                        "MODERN_NM=" + configured_nm,
+                    ],
+                    cwd=str(REPO_ROOT),
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    completed.stdout + completed.stderr,
+                )
+                commands = [
+                    shlex.split(line)
+                    for line in completed.stdout.splitlines()
+                    if "check_starter_probe_addresses.py" in line
+                ]
+                self.assertEqual(
+                    len(commands),
+                    len(expected_bindings),
+                    completed.stdout,
+                )
+
+                bindings = set()
+                for command in commands:
+                    self.assertGreaterEqual(len(command), 9)
+                    self.assertEqual(
+                        command[1],
+                        "tools/gba-playtest/check_starter_probe_addresses.py",
+                    )
+                    options = {
+                        command[index]: command[index + 1]
+                        for index in range(2, len(command) - 1, 2)
+                        if command[index].startswith("--")
+                    }
+                    self.assertEqual(options.get("--nm"), configured_nm)
+                    self.assertTrue(options.get("--elf", "").endswith(".elf"))
+                    bindings.add(
+                        (
+                            options.get("--scenario"),
+                            options.get("--fingerprint"),
+                            options.get("--symbol"),
+                        )
+                    )
+                self.assertSetEqual(bindings, expected_bindings)
 
 if __name__ == "__main__":
     unittest.main()

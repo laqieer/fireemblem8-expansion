@@ -48,7 +48,9 @@ MODERN_GOALS := \
 	expansion-modern-hq-mixer-disabled-profile-rom \
 	expansion-modern-hq-mixer-check \
 	expansion-modern-bgm-registry-check \
+	expansion-modern-autoplay-check \
 	expansion-modern-banim-package-runtime-check \
+	expansion-modern-autoplay-bounds-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-idspace-active-check \
@@ -1434,7 +1436,9 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-newgame-check \
 	expansion-modern-combat-check \
 	expansion-modern-saveload-check \
+	expansion-modern-autoplay-check \
 	expansion-modern-hq-mixer-check \
+	expansion-modern-autoplay-bounds-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-budget \
@@ -3331,6 +3335,39 @@ expansion-modern-aoe-check: expansion-modern-boot-preflight \
 		--config "$(MODERN_CONFIG)" \
 		--out-dir "$(MODERN_AOE_RUNTIME_OUTDIR)"
 
+# Issue #85 transient blue controller. Debug exercises COMPUTER on a clean
+# Chapter 2 fixture; debug and release both exercise the default PLAYER
+# negative. The positive uses the documented debug-only activation chord and
+# then observes pointer-free ELF symbols.
+MODERN_AUTOPLAY_RUNTIME_SCRIPT := tools/gba-playtest/run_autoplay_checks.py
+MODERN_AUTOPLAY_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/autoplay-runtime-check
+
+expansion-modern-autoplay-check: expansion-modern-boot-preflight expansion-modern-rom
+	@mkdir -p "$(MODERN_AUTOPLAY_RUNTIME_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_AUTOPLAY_RUNTIME_OUTDIR)/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_AUTOPLAY_RUNTIME_SCRIPT)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--config "$(MODERN_CONFIG)" \
+		--out-dir "$(MODERN_AUTOPLAY_RUNTIME_OUTDIR)"
+
+# Issue #86 bounded semantic run-until classification. This reuses the #85
+# routes and telemetry while keeping fixed-frame scenarios and fingerprints
+# unchanged.
+MODERN_AUTOPLAY_BOUNDS_RUNTIME_SCRIPT := tools/gba-playtest/run_autoplay_bounds_checks.py
+MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/autoplay-bounds-runtime-check
+
+expansion-modern-autoplay-bounds-check: expansion-modern-boot-preflight expansion-modern-rom
+	@mkdir -p "$(MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR)/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_AUTOPLAY_BOUNDS_RUNTIME_SCRIPT)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--config "$(MODERN_CONFIG)" \
+		--out-dir "$(MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR)"
+
 # Normal save/load runtime scenario (issue #13 closure). Reuses new-game.json's
 # clean-boot SaveMenu New Game -> slot 0 write, then a real A+B+SELECT+START
 # soft reset (RAM reinitialized), then the top-level SaveMenu RESTART item ->
@@ -3966,6 +4003,8 @@ expansion-modern-custom-spell-check: expansion-modern-rom
 
 expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-overlay-audit \
+		expansion-modern-autoplay-check \
+		expansion-modern-autoplay-bounds-check \
 		expansion-modern-starter-runtime-check \
 		expansion-modern-boot-check \
 		expansion-modern-title-check \
