@@ -21,9 +21,10 @@ save migration. A battle Proc is transient and cannot survive an ordinary
 save/suspend boundary.
 
 Enabled identity also binds runtime ABI `1`, the selected manifest's generated
-descriptor/asset inventory SHA-256, and resource-envelope SHA-256. The disabled
-metadata records ABI `0` and SHA-256-of-empty inventory/resource values, while
-the disabled fingerprint intentionally remains the pre-feature default.
+descriptor/asset inventory SHA-256 (including each frame's canonical OAM
+geometry hash), and resource-envelope SHA-256. The disabled metadata records
+ABI `0` and SHA-256-of-empty inventory/resource values, while the disabled
+fingerprint intentionally remains the pre-feature default.
 
 ```sh
 ./configure --enable-custom-spell-effects
@@ -97,7 +98,9 @@ One record uses the exact kind-owned schema below:
     "graphics/custom_spell/reference/spell.json",
     "graphics/custom_spell/reference/animation.txt",
     "graphics/custom_spell/reference/images/reference_obj_00.png",
-    "graphics/custom_spell/reference/images/reference_bg_00.png"
+    "graphics/custom_spell/reference/images/reference_bg_00.png",
+    "graphics/custom_spell/reference/images/reference_obj_01.png",
+    "graphics/custom_spell/reference/images/reference_bg_01.png"
   ],
   "dependsOn": [],
   "options": {

@@ -1323,6 +1323,47 @@ class LoadIdentityFeatureFlagTests(unittest.TestCase):
             enabled.config_fingerprint,
         )
 
+    def test_custom_spell_inventory_digest_changes_fingerprint(self):
+        original = {
+            "inventory_digest": "1" * 64,
+            "resource_digest": "2" * 64,
+        }
+        moved_sprite = {
+            "inventory_digest": "3" * 64,
+            "resource_digest": original["resource_digest"],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(
+                ec,
+                "resolve_custom_spell_contract",
+                side_effect=(original, moved_sprite),
+            ):
+                original_identity = self._identity(
+                    tmp,
+                    custom_spell_effects="1",
+                    asset_manifest="unused.json",
+                )
+                moved_identity = self._identity(
+                    tmp,
+                    custom_spell_effects="1",
+                    asset_manifest="unused.json",
+                )
+
+        self.assertNotEqual(
+            original_identity.custom_spell_effect_inventory_digest,
+            moved_identity.custom_spell_effect_inventory_digest,
+        )
+        self.assertEqual(
+            original_identity.custom_spell_effect_resource_budget_digest,
+            moved_identity.custom_spell_effect_resource_budget_digest,
+        )
+        self.assertNotEqual(
+            original_identity.config_fingerprint, moved_identity.config_fingerprint
+        )
+        self.assertEqual(
+            original_identity.save_compat_epoch, moved_identity.save_compat_epoch
+        )
+
     def test_sample_without_hooks_rejected_in_load_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ec.ConfigError):

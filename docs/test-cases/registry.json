@@ -1198,7 +1198,7 @@
       "negative_control": "The same ROM dispatches vanilla index 24 through the unchanged LUT without incrementing the custom-dispatch counter.",
       "interactions": "Depends on #60's sole KIND_REGISTRY plus the existing C05/StartSpellAnimation, spell-FX, Proc, and presentation-policy seams. No starter, casual, AoE, localization, or BGM dependency.",
       "save_compatibility": "The isolated effect ends with zero transient ownership and introduces no save field, item encoding, migration, or epoch change.",
-      "cleanup": "Remove only the named build/issue77-*-enabled roots if artifacts are no longer needed.",
+      "cleanup": "Remove only the named build/issue78-*-enabled roots if artifacts are no longer needed.",
       "limitations": "Visual and audio recognizability is supplementary; generated scalar/resource state is the pass oracle.",
       "automation": [
         {
@@ -1367,15 +1367,15 @@
       "negative_control": "The enabled test ROMs from TC-CUSTOM-SPELL-061-001 contain the public symbols and dispatch the registered 0x80 descriptor.",
       "interactions": "The default is independent of every other optional feature. The archival lane fixes both custom-spell macros at zero and has no package support.",
       "save_compatibility": "The default fingerprint and save compatibility epoch remain unchanged; no save bytes are added.",
-      "cleanup": "Remove only the named build/issue77-*-disabled roots if artifacts are no longer needed.",
+      "cleanup": "Remove only the named build/issue78-*-disabled roots if artifacts are no longer needed.",
       "limitations": "The test-only harness remains present only in explicitly flagged probe ROMs; ordinary disabled ROMs contain neither the harness nor runtime.",
       "automation": [
         {
-          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=debug MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-debug-disabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=0",
+          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=debug MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue78-debug-disabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=0",
           "evidence": "tools/gba-playtest/run_custom_spell_effect_checks.py"
         },
         {
-          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=release MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-release-disabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=0",
+          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=release MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue78-release-disabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=0",
           "evidence": "tools/gba-playtest/run_custom_spell_effect_checks.py"
         },
         {

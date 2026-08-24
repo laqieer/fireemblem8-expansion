@@ -36,7 +36,9 @@ def _chunk(name, data):
     )
 
 
-def _write_png(path, width, height, *, depth=4, color_type=3, alpha=b"\0\xff"):
+def _write_png(
+    path, width, height, *, depth=4, color_type=3, alpha=b"\0\xff", iend=b""
+):
     row_bytes = (width * depth + 7) // 8
     scanlines = b"".join(b"\0" + b"\0" * row_bytes for _ in range(height))
     palette = b"\0\0\0\xff\xff\xff"
@@ -51,7 +53,7 @@ def _write_png(path, width, height, *, depth=4, color_type=3, alpha=b"\0\xff"):
         + _chunk(b"PLTE", palette)
         + _chunk(b"tRNS", alpha)
         + _chunk(b"IDAT", zlib.compress(scanlines))
-        + _chunk(b"IEND", b"")
+        + _chunk(b"IEND", iend)
     )
     with open(path, "wb") as handle:
         handle.write(payload)
@@ -164,6 +166,10 @@ class CustomSpellAdapterTests(unittest.TestCase):
         self.assertEqual(
             inventory["inventory"]["effects"][0]["animation_id"], 0x80
         )
+        self.assertRegex(
+            inventory["inventory"]["effects"][0]["frames"][0]["oam_sha256"],
+            r"^[0-9a-f]{64}$",
+        )
         contract = custom_spell.canonical_contract(records)
         self.assertEqual(
             inventory["inventory_digest"], contract["inventory_digest"]
@@ -171,6 +177,51 @@ class CustomSpellAdapterTests(unittest.TestCase):
         self.assertEqual(
             inventory["resource_digest"], contract["resource_digest"]
         )
+
+    def test_moved_sprite_geometry_changes_inventory_identity(self):
+        def sprite_at(tile_x):
+            pixels = bytearray(custom_spell.OBJ_WIDTH * custom_spell.OBJ_HEIGHT)
+            for y in range(8):
+                for x in range(tile_x * 8, tile_x * 8 + 8):
+                    pixels[y * custom_spell.OBJ_WIDTH + x] = 1
+            return {
+                "pixels": bytes(pixels),
+                "palette": [(0, 0, 0), (255, 255, 255)],
+            }
+
+        original_tiles, original_oam = custom_spell._pack_obj(sprite_at(0))
+        moved_tiles, moved_oam = custom_spell._pack_obj(sprite_at(1))
+        self.assertEqual(original_tiles, moved_tiles)
+        self.assertNotEqual(original_oam, moved_oam)
+
+        original_package = copy.deepcopy(self.load_reference())
+        original_package.frames[0]["obj_lz"] = custom_spell.gba_lz77(original_tiles)
+        original_package.frames[0]["oam"] = original_oam
+        moved_package = copy.deepcopy(original_package)
+        moved_package.frames[0]["obj_lz"] = custom_spell.gba_lz77(moved_tiles)
+        moved_package.frames[0]["oam"] = moved_oam
+
+        def record(package):
+            return SimpleNamespace(
+                id="MOVED_SPRITE",
+                custom_spell_package=package,
+                custom_spell_fallback_id=22,
+                ownership={
+                    "effectSymbol": "CUSTOM_SPELL_MOVED_SPRITE",
+                    "item": "ITEM_ANIMA_FORBLAZE",
+                },
+                resources={"hitFrame": 2},
+            )
+
+        original = custom_spell.canonical_contract([record(original_package)])
+        moved = custom_spell.canonical_contract([record(moved_package)])
+        original_frame = original["inventory"]["effects"][0]["frames"][0]
+        moved_frame = moved["inventory"]["effects"][0]["frames"][0]
+        self.assertEqual(
+            original_frame["obj_gfx_sha256"], moved_frame["obj_gfx_sha256"]
+        )
+        self.assertNotEqual(original_frame["oam_sha256"], moved_frame["oam_sha256"])
+        self.assertNotEqual(original["inventory_digest"], moved["inventory_digest"])
 
     def test_reference_manifest_preserves_the_complete_default_asset_catalog(self):
         with open(os.path.join(ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
@@ -318,6 +369,10 @@ class CustomSpellAdapterTests(unittest.TestCase):
                 )
                 with self.assertRaisesRegex(ValueError, message):
                     custom_spell.read_indexed_png(path, 240, 64)
+        nonempty_iend = os.path.join(TEST_ROOT, "nonempty-iend.png")
+        _write_png(nonempty_iend, 240, 64, iend=b"invalid")
+        with self.assertRaisesRegex(ValueError, "non-empty IEND"):
+            custom_spell.read_indexed_png(nonempty_iend, 240, 64)
 
     def test_obj_oam_and_frame_timing_capacities_fail_closed(self):
         pixels = bytearray(custom_spell.OBJ_WIDTH * custom_spell.OBJ_HEIGHT)

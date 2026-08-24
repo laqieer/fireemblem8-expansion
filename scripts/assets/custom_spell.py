@@ -165,6 +165,8 @@ def _png_chunk_stream(path):
         crc = struct.unpack(">I", data[offset + 8 + length:end])[0]
         if zlib.crc32(name + payload) & 0xFFFFFFFF != crc:
             raise ValueError("{} has an invalid PNG chunk CRC".format(path))
+        if name == b"IEND" and payload:
+            raise ValueError("{} has a non-empty IEND payload".format(path))
         chunks.append((name, payload))
         offset = end
         if name == b"IEND":
@@ -1053,6 +1055,11 @@ def canonical_contract(records):
                     "duration": frame["duration"],
                     "obj_gfx_sha256": hashlib.sha256(frame["obj_lz"]).hexdigest(),
                     "obj_palette_sha256": hashlib.sha256(frame["obj_palette"]).hexdigest(),
+                    "oam_sha256": hashlib.sha256(
+                        json.dumps(
+                            frame["oam"], sort_keys=True, separators=(",", ":")
+                        ).encode("ascii")
+                    ).hexdigest(),
                     "sound_count": len(frame["sounds"]),
                 }
             )
