@@ -31,6 +31,7 @@
       "generated-data-platform",
       "typed-id-item-cap",
       "debug-tools",
+      "cursor-unit-debug-editor",
       "runtime-playtest-harness",
       "upstream-port-tooling",
       "build-ci-default-release-reproduction",
@@ -547,6 +548,18 @@
       "required_cases": [
         "TC-SIO-084",
         "TC-CODEQL-084"
+      ]
+    },
+    {
+      "id": "cursor-unit-debug-editor",
+      "title": "Cursor-selected bounded unit debug inspector/editor",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/125"
+      ],
+      "reference": "docs/debugtools.md",
+      "status": "current",
+      "required_cases": [
+        "TC-DEBUGTOOLS-PROTOTYPE-003"
       ]
     }
   ],
@@ -2334,6 +2347,43 @@
         {
           "command": "python3 -m unittest scripts.modernize.tests.test_audit -v",
           "evidence": "scripts/modernize/tests/test_audit.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-DEBUGTOOLS-PROTOTYPE-003",
+      "title": "Cursor-selected bounded unit inspector/editor",
+      "feature_id": "cursor-unit-debug-editor",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/125"
+      ],
+      "document": "docs/test-cases/debugtools.md",
+      "anchor": "tc-debugtools-prototype-003-cursor-selected-bounded-unit-inspectoreditor",
+      "profiles": [
+        "Modern AAPCS debug with a clean Chapter 2 live PlayerPhase map",
+        "Modern AAPCS release with identical input as the compiled-out negative"
+      ],
+      "purpose": "Prove cursor identity inspection, one-field confirmed HP editing, authoritative heal, typed rejection, cleanup, release omission, and save neutrality.",
+      "prerequisites": "Blank SRAM and the debugtools Fast Boot Chapter 2 fixture; cursor at (6,3) over slot 1 before the positive steps.",
+      "actions": "Inspect the cursor unit, preview and confirm HP 17 to 16, heal 16 to 17, move to empty (7,3), retry Unit Inspect, close the hub, and move the cursor; run focused host field/negative tests.",
+      "expected_result": "Inspection is read-only; confirmed HP and heal mutate exactly one field with old/new/outcome telemetry and map refresh; empty tile rejects; SRAM hashes match; map remains interactive.",
+      "negative_control": "Identical release input keeps the established debug probe zero and editor symbols omitted; host controls reject invalid/dead/purple/stale/conflicted/range/Recovery/Condition/forced-teardown paths without mutation.",
+      "interactions": "Depends on issue #11 debugtools and typed unit helpers; conflicts with active event/battle ownership, raw unit editors, prototype patches, and duplicate mutation routers; no gameplay or generated-data dependency.",
+      "save_compatibility": "No save writer, implicit save, field/layout/epoch/schema change, or migration; only confirmed debug-session EWRAM unit state may change.",
+      "cleanup": "Close with B and reset or discard the unsaved fixture; use make clean_fast only for ignored build output.",
+      "limitations": "No class/item/inventory/level/rank/support/faction/rescue/movement/AI3/AI4/Recovery/Condition/raw-memory editing.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_debugtools_registry.DebugToolsExtendedToolsHostTests tools.gba-playtest.tests.test_tools_scenario -v",
+          "evidence": "tools/gba-playtest/tests/c/debugtools_tools_driver.c"
+        },
+        {
+          "command": "make expansion-modern-debugtools-tools-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/debugtools-tools-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-debugtools-tools-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/debugtools-tools-modern-release.json"
         }
       ]
     }

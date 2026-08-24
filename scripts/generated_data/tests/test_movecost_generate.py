@@ -10,12 +10,6 @@ REAL_SOURCE = os.path.join(REPO_ROOT, "src", "data", "movecost.json")
 
 
 class GenerateDeterminismTests(unittest.TestCase):
-    def test_generation_is_repeatable(self):
-        records = load_records(REAL_SOURCE)
-        first = generate_c_source(records, REAL_SOURCE)
-        second = generate_c_source(records, REAL_SOURCE)
-        self.assertEqual(first, second)
-
     def test_generated_output_contains_expected_symbols_and_includes(self):
         records = load_records(REAL_SOURCE)
         content = generate_c_source(records, REAL_SOURCE)

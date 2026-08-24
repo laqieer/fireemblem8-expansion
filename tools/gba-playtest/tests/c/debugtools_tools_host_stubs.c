@@ -29,7 +29,13 @@
 #include "uimenu.h"
 #include "proc.h"
 #include "bmunit.h"
+#include "bmmap.h"
+#include "bmudisp.h"
 #include "bmcontainer.h"
+#include "event.h"
+#include "ekrbattle.h"
+#include "playerphase.h"
+#include "cp_common.h"
 #include "eventinfo.h"
 #include "rng.h"
 #include "bmsave.h"
@@ -175,6 +181,13 @@ u8 MenuAlwaysEnabled(const struct MenuItemDef* def, int number)
     return 1;
 }
 
+u8 MenuAlwaysDisabled(const struct MenuItemDef* def, int number)
+{
+    (void)def;
+    (void)number;
+    return MENU_DISABLED;
+}
+
 u8 MenuCancelSelect(struct MenuProc* menu, struct MenuItemProc* item)
 {
     (void)menu;
@@ -223,6 +236,52 @@ void DebugToolsHostStub_RunPendingTransition(void)
     DebugTools_RunMenuTransition(proc);
 }
 
+/* --- Live-map ownership and conflict stand-ins ------------------------- */
+
+struct ProcCmd gProcScr_PlayerPhase[] = {
+    PROC_END
+};
+
+static int sDebugToolsToolsPlayerPhaseActive = 1;
+static int sDebugToolsToolsEventActive = 0;
+static int sDebugToolsToolsBattleEventActive = 0;
+static int sDebugToolsToolsBattleActive = 0;
+
+ProcPtr Proc_Find(const struct ProcCmd* script)
+{
+    if (script == gProcScr_PlayerPhase && sDebugToolsToolsPlayerPhaseActive)
+        return (ProcPtr)1;
+
+    return NULL;
+}
+
+s8 EventEngineExists(void)
+{
+    return sDebugToolsToolsEventActive;
+}
+
+int BattleEventEngineExists(void)
+{
+    return sDebugToolsToolsBattleEventActive;
+}
+
+int IsBattleDeamonActive(void)
+{
+    return sDebugToolsToolsBattleActive;
+}
+
+void DebugToolsHostStub_SetUnitEditContext(
+    int playerPhaseActive,
+    int eventActive,
+    int battleEventActive,
+    int battleActive)
+{
+    sDebugToolsToolsPlayerPhaseActive = playerPhaseActive;
+    sDebugToolsToolsEventActive = eventActive;
+    sDebugToolsToolsBattleEventActive = battleEventActive;
+    sDebugToolsToolsBattleActive = battleActive;
+}
+
 /* This driver links the real src/debugtools_registry.c alongside
  * src/debugtools_tools.c so the shared deferred return-to-hub path is the
  * real implementation -- but neither the
@@ -250,6 +309,31 @@ void DebugTools_RegisterWeatherFogActions(void)
  * this driver's own Flag-tool inspect assertions read
  * gPlaySt.chapterStateBits/chapterIndex. --------------------------------- */
 struct PlaySt gPlaySt = {0};
+struct BmSt gBmSt = {0};
+
+enum
+{
+    DEBUGTOOLS_TOOLS_MAP_WIDTH = 8,
+    DEBUGTOOLS_TOOLS_MAP_HEIGHT = 8
+};
+
+static u8 sDebugToolsToolsMapUnits[DEBUGTOOLS_TOOLS_MAP_HEIGHT][DEBUGTOOLS_TOOLS_MAP_WIDTH];
+static u8* sDebugToolsToolsMapUnitRows[DEBUGTOOLS_TOOLS_MAP_HEIGHT] = {
+    sDebugToolsToolsMapUnits[0],
+    sDebugToolsToolsMapUnits[1],
+    sDebugToolsToolsMapUnits[2],
+    sDebugToolsToolsMapUnits[3],
+    sDebugToolsToolsMapUnits[4],
+    sDebugToolsToolsMapUnits[5],
+    sDebugToolsToolsMapUnits[6],
+    sDebugToolsToolsMapUnits[7],
+};
+
+struct Vec2 gBmMapSize = {
+    DEBUGTOOLS_TOOLS_MAP_WIDTH,
+    DEBUGTOOLS_TOOLS_MAP_HEIGHT
+};
+u8** gBmMapUnit = sDebugToolsToolsMapUnitRows;
 
 /* --- Unit inspector fakes -----------------------------------------------
  * GetUnitMaxHp/GetUnitCurrentHp/SetUnitHp/SetUnitStatus mirror
@@ -261,31 +345,122 @@ struct PlaySt gPlaySt = {0};
  * "target not found" paths are directly, deterministically testable. */
 
 static struct Unit sDebugToolsToolsFakeUnit;
+static struct CharacterData sDebugToolsToolsFakeCharacter;
+static struct ClassData sDebugToolsToolsFakeClass;
 static int sDebugToolsToolsFakeUnitPresent = 0;
+int gDebugToolsToolsHostStubRefreshEntityMapCount = 0;
+int gDebugToolsToolsHostStubRenderMapCount = 0;
+int gDebugToolsToolsHostStubRefreshUnitSpritesCount = 0;
+int gDebugToolsToolsHostStubUnitCheckStatCapsCount = 0;
+int gDebugToolsToolsHostStubChangeUnitAiCount = 0;
+int gDebugToolsToolsHostStubLastAiA = -1;
+int gDebugToolsToolsHostStubLastAiB = -1;
 
 void DebugToolsHostStub_SetFakeUnit(int present, int curHp, int maxHp)
 {
+    memset(sDebugToolsToolsMapUnits, 0, sizeof(sDebugToolsToolsMapUnits));
     sDebugToolsToolsFakeUnitPresent = present;
+    gBmSt.playerCursor.x = 2;
+    gBmSt.playerCursor.y = 3;
+    DebugToolsHostStub_SetUnitEditContext(1, 0, 0, 0);
 
     if (present)
     {
         memset(&sDebugToolsToolsFakeUnit, 0, sizeof(sDebugToolsToolsFakeUnit));
-        /* Any non-NULL pointer satisfies UNIT_IS_VALID's pCharacterData
-         * check; this driver never dereferences it. */
-        sDebugToolsToolsFakeUnit.pCharacterData = (const struct CharacterData*)&sDebugToolsToolsFakeUnit;
+        memset(&sDebugToolsToolsFakeCharacter, 0, sizeof(sDebugToolsToolsFakeCharacter));
+        memset(&sDebugToolsToolsFakeClass, 0, sizeof(sDebugToolsToolsFakeClass));
+        sDebugToolsToolsFakeCharacter.number = 1;
+        sDebugToolsToolsFakeClass.number = 1;
+        sDebugToolsToolsFakeClass.maxHP = 60;
+        sDebugToolsToolsFakeClass.maxPow = 30;
+        sDebugToolsToolsFakeClass.maxSkl = 30;
+        sDebugToolsToolsFakeClass.maxSpd = 30;
+        sDebugToolsToolsFakeClass.maxDef = 30;
+        sDebugToolsToolsFakeClass.maxRes = 30;
+        sDebugToolsToolsFakeClass.maxCon = 25;
+        sDebugToolsToolsFakeClass.baseCon = 5;
+        sDebugToolsToolsFakeClass.baseMov = 5;
+        sDebugToolsToolsFakeUnit.pCharacterData = &sDebugToolsToolsFakeCharacter;
+        sDebugToolsToolsFakeUnit.pClassData = &sDebugToolsToolsFakeClass;
+        sDebugToolsToolsFakeUnit.index = 1;
+        sDebugToolsToolsFakeUnit.xPos = 2;
+        sDebugToolsToolsFakeUnit.yPos = 3;
         sDebugToolsToolsFakeUnit.curHP = (s8)curHp;
         sDebugToolsToolsFakeUnit.maxHP = (s8)maxHp;
+        sDebugToolsToolsFakeUnit.pow = 5;
+        sDebugToolsToolsFakeUnit.skl = 6;
+        sDebugToolsToolsFakeUnit.spd = 7;
+        sDebugToolsToolsFakeUnit.def = 8;
+        sDebugToolsToolsFakeUnit.res = 9;
+        sDebugToolsToolsFakeUnit.lck = 10;
+        sDebugToolsToolsMapUnits[3][2] = 1;
     }
 }
 
-struct Unit* GetUnitFromCharId(int charId)
+struct Unit* DebugToolsHostStub_GetFakeUnit(void)
 {
-    (void)charId;
+    return &sDebugToolsToolsFakeUnit;
+}
+
+struct ClassData* DebugToolsHostStub_GetFakeClass(void)
+{
+    return &sDebugToolsToolsFakeClass;
+}
+
+void DebugToolsHostStub_SetCursor(int x, int y)
+{
+    gBmSt.playerCursor.x = x;
+    gBmSt.playerCursor.y = y;
+}
+
+void DebugToolsHostStub_MoveFakeUnit(int x, int y)
+{
+    if (sDebugToolsToolsFakeUnit.xPos >= 0
+        && sDebugToolsToolsFakeUnit.xPos < DEBUGTOOLS_TOOLS_MAP_WIDTH
+        && sDebugToolsToolsFakeUnit.yPos >= 0
+        && sDebugToolsToolsFakeUnit.yPos < DEBUGTOOLS_TOOLS_MAP_HEIGHT)
+        sDebugToolsToolsMapUnits[sDebugToolsToolsFakeUnit.yPos][sDebugToolsToolsFakeUnit.xPos] = 0;
+
+    sDebugToolsToolsFakeUnit.xPos = x;
+    sDebugToolsToolsFakeUnit.yPos = y;
+    if (x >= 0 && x < DEBUGTOOLS_TOOLS_MAP_WIDTH
+        && y >= 0 && y < DEBUGTOOLS_TOOLS_MAP_HEIGHT)
+        sDebugToolsToolsMapUnits[y][x] = (u8)sDebugToolsToolsFakeUnit.index;
+}
+
+struct Unit* GetUnitFromCharId(int characterNumber)
+{
+    (void)characterNumber;
 
     if (!sDebugToolsToolsFakeUnitPresent)
         return NULL;
 
     return &sDebugToolsToolsFakeUnit;
+}
+
+struct Unit* GetUnit(int slot)
+{
+    if (!sDebugToolsToolsFakeUnitPresent
+        || slot != (u8)sDebugToolsToolsFakeUnit.index)
+        return NULL;
+
+    return &sDebugToolsToolsFakeUnit;
+}
+
+const struct CharacterData* GetCharacterData(int characterNumber)
+{
+    if (characterNumber != sDebugToolsToolsFakeCharacter.number)
+        return NULL;
+
+    return &sDebugToolsToolsFakeCharacter;
+}
+
+const struct ClassData* GetClassData(int classNumber)
+{
+    if (classNumber != sDebugToolsToolsFakeClass.number)
+        return NULL;
+
+    return &sDebugToolsToolsFakeClass;
 }
 
 int GetUnitMaxHp(struct Unit* unit)
@@ -318,6 +493,66 @@ void SetUnitStatus(struct Unit* unit, int status)
         unit->statusIndex = (u8)status;
         unit->statusDuration = 5;
     }
+}
+
+void UnitCheckStatCaps(struct Unit* unit)
+{
+    gDebugToolsToolsHostStubUnitCheckStatCapsCount++;
+
+    if (unit->maxHP > 60)
+        unit->maxHP = 60;
+    if (unit->pow > unit->pClassData->maxPow)
+        unit->pow = unit->pClassData->maxPow;
+    if (unit->skl > unit->pClassData->maxSkl)
+        unit->skl = unit->pClassData->maxSkl;
+    if (unit->spd > unit->pClassData->maxSpd)
+        unit->spd = unit->pClassData->maxSpd;
+    if (unit->def > unit->pClassData->maxDef)
+        unit->def = unit->pClassData->maxDef;
+    if (unit->res > unit->pClassData->maxRes)
+        unit->res = unit->pClassData->maxRes;
+    if (unit->lck > 30)
+        unit->lck = 30;
+}
+
+void ChangeUnitAi(struct Unit* unit, u8 aiA, u8 aiB, u8 unused)
+{
+    (void)unused;
+    gDebugToolsToolsHostStubChangeUnitAiCount++;
+    gDebugToolsToolsHostStubLastAiA = aiA;
+    gDebugToolsToolsHostStubLastAiB = aiB;
+
+    if (unit->state & (US_HIDDEN | US_DEAD))
+        return;
+
+    if (aiA != AI_A_INVALID)
+    {
+        unit->ai1 = aiA;
+        unit->ai_a_pc = 0;
+    }
+
+    if (aiB != AI_B_INVALID)
+    {
+        unit->ai2 = aiB;
+        unit->ai_b_pc = 0;
+        if (aiB == AI_B_0C)
+            unit->aiFlags |= AI_UNIT_FLAG_3;
+    }
+}
+
+void RefreshEntityBmMaps(void)
+{
+    gDebugToolsToolsHostStubRefreshEntityMapCount++;
+}
+
+void RenderBmMap(void)
+{
+    gDebugToolsToolsHostStubRenderMapCount++;
+}
+
+void RefreshUnitSprites(void)
+{
+    gDebugToolsToolsHostStubRefreshUnitSpritesCount++;
 }
 
 /* --- Convoy inspector fakes ---------------------------------------------

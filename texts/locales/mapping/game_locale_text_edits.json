@@ -313,7 +313,87 @@
         "zh-Hans": "章节"
       },
       {
-        "ja": "突撃",
+        "ja": "HP編集",
+        "key": "debug.unit.edit_hp",
+        "zh-Hans": "编辑生命"
+      },
+      {
+        "ja": "能力編集",
+        "key": "debug.unit.edit_stats",
+        "zh-Hans": "编辑能力"
+      },
+      {
+        "ja": "AI編集",
+        "key": "debug.unit.edit_ai",
+        "zh-Hans": "编辑AI"
+      },
+      {
+        "ja": "状態解除",
+        "key": "debug.unit.clear_status",
+        "zh-Hans": "清除状态"
+      },
+      {
+        "ja": "ユニット/クラス",
+        "key": "debug.unit.identity",
+        "zh-Hans": "单位/职业"
+      },
+      {
+        "ja": "状態",
+        "key": "debug.unit.state",
+        "zh-Hans": "状态"
+      },
+      {
+        "ja": "現在HP",
+        "key": "debug.unit.current_hp",
+        "zh-Hans": "当前生命"
+      },
+      {
+        "ja": "最大HP",
+        "key": "debug.unit.max_hp",
+        "zh-Hans": "最大生命"
+      },
+      {
+        "ja": "力",
+        "key": "debug.unit.power",
+        "zh-Hans": "力量"
+      },
+      {
+        "ja": "技",
+        "key": "debug.unit.skill",
+        "zh-Hans": "技巧"
+      },
+      {
+        "ja": "速さ",
+        "key": "debug.unit.speed",
+        "zh-Hans": "速度"
+      },
+      {
+        "ja": "守備",
+        "key": "debug.unit.defense",
+        "zh-Hans": "防御"
+      },
+      {
+        "ja": "魔防",
+        "key": "debug.unit.resistance",
+        "zh-Hans": "魔防"
+      },
+      {
+        "ja": "幸運",
+        "key": "debug.unit.luck",
+        "zh-Hans": "幸运"
+      },
+      {
+        "ja": "AI1",
+        "key": "debug.unit.ai_a",
+        "zh-Hans": "AI1"
+      },
+      {
+        "ja": "AI2",
+        "key": "debug.unit.ai_b",
+        "zh-Hans": "AI2"
+      },
+      {
+        "ja": "進撃",
         "key": "autoplay.charge.label",
         "zh-Hans": "冲锋"
       },

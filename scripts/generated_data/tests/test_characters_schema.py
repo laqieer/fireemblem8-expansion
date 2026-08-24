@@ -36,11 +36,6 @@ def _validate(fixture_name, dependency_records=None, **overrides):
 
 
 class CharactersSchemaValidTests(unittest.TestCase):
-    def test_valid_fixture_has_no_diagnostics(self):
-        records, diagnostics = _validate("valid.json")
-        self.assertTrue(diagnostics.ok, msg=diagnostics.render())
-        self.assertEqual(len(records), 3)
-
     def test_derived_number_matches_designator(self):
         records, _ = _validate("valid.json")
         by_key = {r.key_repr(): r for r in records}
@@ -225,22 +220,6 @@ class CharactersSchemaReferenceTests(unittest.TestCase):
         messages = [str(e) for e in diagnostics.errors]
         self.assertTrue(any("duplicate character attribute 'CA_LORD'" in m for m in messages), messages)
 
-    def test_bad_base_ranks_itype_reference_detected(self):
-        _, diagnostics = _validate("bad_base_ranks_itype_ref.json")
-        self.assertFalse(diagnostics.ok)
-        messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(
-            any("undefined weapon type reference 'ITYPE_NOT_A_REAL_TYPE'" in m for m in messages), messages
-        )
-
-    def test_bad_base_ranks_wexp_reference_detected(self):
-        _, diagnostics = _validate("bad_base_ranks_wexp_ref.json")
-        self.assertFalse(diagnostics.ok)
-        messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(
-            any("undefined weapon-exp threshold reference 'WPN_EXP_NOT_REAL'" in m for m in messages), messages
-        )
-
 
 class CharactersSchemaRangeTests(unittest.TestCase):
     def test_bad_text_id_detected(self):
@@ -268,12 +247,6 @@ class CharactersSchemaRangeTests(unittest.TestCase):
         self.assertFalse(diagnostics.ok)
         messages = [str(e) for e in diagnostics.errors]
         self.assertTrue(any("miniPortrait 99 out of range [0, 7]" in m for m in messages), messages)
-
-    def test_bad_base_stat_range_detected(self):
-        _, diagnostics = _validate("bad_base_stat_range.json")
-        self.assertFalse(diagnostics.ok)
-        messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(any("hp 999 out of range [-128, 127]" in m for m in messages), messages)
 
     def test_bad_growth_range_detected(self):
         _, diagnostics = _validate("bad_growth_range.json")

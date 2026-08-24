@@ -121,8 +121,8 @@ proves failure telemetry is preserved while control still restores.
 The checked Chapter 2 run records five eligible actors, five committed legal
 actions, 76 red-hostile checks, 17 green-allied checks, one start/completion,
 zero failures, and `PLAYER` on blue turn 2. `R` on Charge leaves the menu and
-controller state intact rather than treating expansion help ID 64 as vanilla
-message 64.
+controller state intact rather than treating the expansion help ID as a
+vanilla message ID.
 
 ### Negative control
 
