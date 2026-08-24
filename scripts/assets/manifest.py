@@ -45,6 +45,17 @@ ASSET_OUTPUT_ROOT_REAL = os.path.realpath(ASSET_OUTPUT_ROOT)
 ID_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
+def _make_escape_prerequisite(path):
+    return (
+        path.replace("\\", "\\\\")
+        .replace("$", "$$")
+        .replace("#", "\\#")
+        .replace(":", "\\:")
+        .replace(" ", "\\ ")
+        .replace("\t", "\\\t")
+    )
+
+
 def _is_int(value):
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -1915,6 +1926,19 @@ def render_makefile(records):
         "\n",
     ]
     by_id = {record.id: record for record in records}
+    repository_sources = set()
+    for record in records:
+        kind = KIND_REGISTRY.resolve(record.kind)
+        repository_sources.update(record.sources)
+        repository_sources.update(kind.source_dependencies(record))
+
+    def render_prerequisites(prerequisites):
+        return " ".join(
+            _make_escape_prerequisite(path)
+            if path in repository_sources
+            else path
+            for path in prerequisites
+        )
 
     def dependency_sources(record):
         sources = []
@@ -1941,7 +1965,7 @@ def render_makefile(records):
             prerequisites = list(sources) + dependency_sources(record)
             if isinstance(target, tuple):
                 target = " ".join(target)
-            lines.append("{}: {}\n".format(target, " ".join(prerequisites)))
+            lines.append("{}: {}\n".format(target, render_prerequisites(prerequisites)))
     packages = [
         record for record in records if record.kind == BattleAnimationPackageKind.name
     ]
@@ -1998,7 +2022,7 @@ def render_makefile(records):
                     custom_dependencies.append(source)
         lines.append(
             "\n{} &: $(ASSET_OUTPUT_MK) {}\n".format(
-                " ".join(generated), " ".join(custom_dependencies)
+                " ".join(generated), render_prerequisites(custom_dependencies)
             )
         )
         lines.append(

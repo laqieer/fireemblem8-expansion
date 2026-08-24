@@ -43,11 +43,29 @@ def _chunk(name, data):
 
 
 def _write_png(
-    path, width, height, *, depth=4, color_type=3, alpha=b"\0\xff", iend=b""
+    path,
+    width,
+    height,
+    *,
+    depth=4,
+    color_type=3,
+    alpha=b"\0\xff",
+    iend=b"",
+    palette=None,
+    pixels=None,
 ):
-    row_bytes = (width * depth + 7) // 8
-    scanlines = b"".join(b"\0" + b"\0" * row_bytes for _ in range(height))
-    palette = b"\0\0\0\xff\xff\xff"
+    if palette is None:
+        palette = ((0, 0, 0), (255, 255, 255))
+    if pixels is None:
+        pixels = bytes(width * height)
+    if len(pixels) != width * height:
+        raise ValueError("PNG fixture pixels must fill the image")
+    scanlines = bytearray()
+    for row_start in range(0, len(pixels), width):
+        scanlines.append(0)
+        for offset in range(row_start, row_start + width, 2):
+            scanlines.append((pixels[offset] << 4) | pixels[offset + 1])
+    palette_bytes = bytes(component for color in palette for component in color)
     payload = (
         b"\x89PNG\r\n\x1a\n"
         + _chunk(
@@ -56,9 +74,9 @@ def _write_png(
                 ">IIBBBBB", width, height, depth, color_type, 0, 0, 0
             ),
         )
-        + _chunk(b"PLTE", palette)
+        + _chunk(b"PLTE", palette_bytes)
         + _chunk(b"tRNS", alpha)
-        + _chunk(b"IDAT", zlib.compress(scanlines))
+        + _chunk(b"IDAT", zlib.compress(bytes(scanlines)))
         + _chunk(b"IEND", iend)
     )
     with open(path, "wb") as handle:
@@ -307,6 +325,77 @@ class CustomSpellAdapterTests(unittest.TestCase):
         self.assertNotEqual(original_frame["oam_sha256"], moved_frame["oam_sha256"])
         self.assertNotEqual(original["inventory_digest"], moved["inventory_digest"])
 
+    def test_generated_oam_vectors_cover_canonical_and_mirrored_front_back_geometry(self):
+        pixels = bytearray(custom_spell.OBJ_WIDTH * custom_spell.OBJ_HEIGHT)
+        for y in range(3 * 8, 4 * 8):
+            for x in range(2 * 8, 3 * 8):
+                pixels[y * custom_spell.OBJ_WIDTH + x] = 1
+        for y in range(4 * 8, 5 * 8):
+            for x in range(240 + 5 * 8, 240 + 6 * 8):
+                pixels[y * custom_spell.OBJ_WIDTH + x] = 2
+
+        _, entries = custom_spell._pack_obj(
+            {
+                "pixels": bytes(pixels),
+                "palette": ((0, 0, 0), (255, 255, 255), (255, 0, 0)),
+            }
+        )
+        self.assertEqual(
+            entries,
+            [
+                {
+                    "source_x": 2,
+                    "source_y": 3,
+                    "seat_x": 0,
+                    "seat_y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "shape": "ATTR0_SQUARE",
+                    "size": "ATTR1_SIZE_8",
+                },
+                {
+                    "source_x": 5,
+                    "source_y": 4,
+                    "seat_x": 1,
+                    "seat_y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "shape": "ATTR0_SQUARE",
+                    "size": "ATTR1_SIZE_8",
+                },
+            ],
+        )
+
+        canonical = []
+        custom_spell._oam_array(canonical, "Vector", entries, False)
+        self.assertEqual(
+            "".join(canonical),
+            "static const struct AnimSpriteData Vector[] =\n"
+            "{\n"
+            "    { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), "
+            ".as = { .object = { 0, -156, -64 } } },\n"
+            "    { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), "
+            ".as = { .object = { 1, -132, -56 } } },\n"
+            "    ANIM_SPRITE_END,\n"
+            "};\n\n",
+        )
+
+        mirrored = []
+        custom_spell._oam_array(mirrored, "Vector", entries, True)
+        self.assertEqual(
+            "".join(mirrored),
+            "static const struct AnimSpriteData Vector[] =\n"
+            "{\n"
+            "    { .header = (u32)(ATTR0_SQUARE) | "
+            "((u32)((ATTR1_SIZE_8 + ATTR1_FLIP_X)) << 16), "
+            ".as = { .object = { 0, 148, -64 } } },\n"
+            "    { .header = (u32)(ATTR0_SQUARE) | "
+            "((u32)((ATTR1_SIZE_8 + ATTR1_FLIP_X)) << 16), "
+            ".as = { .object = { 1, 124, -56 } } },\n"
+            "    ANIM_SPRITE_END,\n"
+            "};\n\n",
+        )
+
     def test_reference_manifest_preserves_the_complete_default_asset_catalog(self):
         with open(os.path.join(ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
             default = json.load(handle)
@@ -445,7 +534,6 @@ class CustomSpellAdapterTests(unittest.TestCase):
             ("wrong-depth.png", 240, 64, 8, 3, b"\0\xff", "indexed 4bpp"),
             ("true-color.png", 240, 64, 4, 2, b"\0\xff", "indexed 4bpp"),
             ("opaque-zero.png", 240, 64, 4, 3, b"\xff\xff", "only palette index 0"),
-            ("partial-alpha.png", 240, 64, 4, 3, b"\0\x80", "only palette index 0"),
         )
         for name, width, height, depth, color_type, alpha, message in cases:
             with self.subTest(name=name):
@@ -460,10 +548,147 @@ class CustomSpellAdapterTests(unittest.TestCase):
                 )
                 with self.assertRaisesRegex(ValueError, message):
                     custom_spell.read_indexed_png(path, 240, 64)
+        unused_partial_alpha = os.path.join(TEST_ROOT, "unused-partial-alpha.png")
+        _write_png(
+            unused_partial_alpha,
+            240,
+            64,
+            alpha=b"\0\x80\xff",
+            palette=((0, 0, 0), (255, 0, 0), (0, 255, 0)),
+            pixels=bytes([2]) * (240 * 64),
+        )
+        self.assertEqual(
+            set(custom_spell.read_indexed_png(unused_partial_alpha, 240, 64)["pixels"]),
+            {2},
+        )
+        used_partial_alpha = os.path.join(TEST_ROOT, "used-partial-alpha.png")
+        _write_png(
+            used_partial_alpha,
+            240,
+            64,
+            alpha=b"\0\x80\xff",
+            palette=((0, 0, 0), (255, 0, 0), (0, 255, 0)),
+            pixels=bytes([1]) * (240 * 64),
+        )
+        with self.assertRaisesRegex(
+            ValueError, "used nonzero palette indices opaque"
+        ):
+            custom_spell.read_indexed_png(used_partial_alpha, 240, 64)
         nonempty_iend = os.path.join(TEST_ROOT, "nonempty-iend.png")
         _write_png(nonempty_iend, 240, 64, iend=b"invalid")
         with self.assertRaisesRegex(ValueError, "non-empty IEND"):
             custom_spell.read_indexed_png(nonempty_iend, 240, 64)
+
+    def test_background_scaling_and_tsa_vectors(self):
+        pixels = bytearray()
+        for source_y in range(custom_spell.BG_HEIGHT):
+            pixels.extend([(source_y % 15) + 1] * custom_spell.BG_WIDTH)
+        png = {
+            "pixels": bytes(pixels),
+            "palette": ((0, 0, 0),) * 16,
+        }
+        scaled = custom_spell._scale_bg(png)
+
+        def source_row(row):
+            start = row * custom_spell.BG_WIDTH
+            return bytes(pixels[start:start + custom_spell.BG_WIDTH])
+
+        for output_y, expected_source_y in (
+            (0, 0),
+            (1, 0),
+            (2, 1),
+            (79, 32),
+            (80, 32),
+            (157, 63),
+            (158, 63),
+        ):
+            start = output_y * custom_spell.BG_WIDTH
+            self.assertEqual(
+                scaled[start:start + custom_spell.BG_WIDTH],
+                source_row(expected_source_y),
+            )
+        self.assertEqual(
+            scaled[159 * custom_spell.BG_WIDTH:],
+            bytes(custom_spell.BG_WIDTH),
+        )
+
+        _, tsa = custom_spell._pack_bg(png)
+        entries = [
+            int.from_bytes(tsa[offset:offset + 2], "little")
+            for offset in range(0, len(tsa), 2)
+        ]
+        self.assertEqual(
+            entries,
+            [
+                tile_index
+                for tile_index in range(1, 21)
+                for _tile_x in range(30)
+            ],
+        )
+
+    def test_make_prerequisites_escape_supported_source_paths(self):
+        self.assertEqual(
+            manifest._make_escape_prerequisite(r"source #$%:\path"),
+            r"source\ \#$$%\:\\path",
+        )
+        package_dir = os.path.join(
+            ROOT, "scripts", "assets", "tests", ".custom spell #$%: package"
+        )
+        self.addCleanup(shutil.rmtree, package_dir, ignore_errors=True)
+        shutil.copytree(
+            os.path.join(ROOT, "graphics", "custom_spell", "reference"),
+            package_dir,
+        )
+        relative_package = os.path.relpath(package_dir, ROOT).replace(os.sep, "/")
+        record = copy.deepcopy(self.reference_record())
+        record["sources"] = [
+            relative_package + "/spell.json",
+            relative_package + "/animation.txt",
+            relative_package + "/images/reference_obj_00.png",
+            relative_package + "/images/reference_bg_00.png",
+            relative_package + "/images/reference_obj_01.png",
+            relative_package + "/images/reference_bg_01.png",
+        ]
+        source_manifest = os.path.join(TEST_ROOT, "special-path-manifest.json")
+        with open(source_manifest, "w", encoding="utf-8") as handle:
+            json.dump({"schemaVersion": 1, "assets": [record]}, handle)
+        with mock.patch.object(
+            manifest.subprocess, "run", return_value=SimpleNamespace(returncode=0)
+        ):
+            records = manifest.load_and_validate(source_manifest, 1)
+
+        out_dir = os.path.join(TEST_ROOT, "special-path-output")
+        outputs = custom_spell.output_paths(records, out_dir)
+        fragment = os.path.join(TEST_ROOT, "special-path-rules.mk")
+        with open(fragment, "w", encoding="utf-8") as handle:
+            handle.write(manifest.render_makefile(records))
+        tool = os.path.join(TEST_ROOT, "touch-custom-spell-outputs.py")
+        with open(tool, "w", encoding="utf-8") as handle:
+            handle.write(
+                "import os\n"
+                "from pathlib import Path\n"
+                "for output in {}:\n"
+                "    Path(output).parent.mkdir(parents=True, exist_ok=True)\n"
+                "    Path(output).touch()\n".format(repr(outputs))
+            )
+        result = subprocess.run(
+            [
+                "make",
+                "--no-print-directory",
+                "-f",
+                fragment,
+                outputs[0],
+                "ASSET_OUTPUT_DIR={}".format(out_dir),
+                "ASSET_OUTPUT_MK={}".format(fragment),
+                "ASSET_TOOL={} {}".format(sys.executable, tool),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(all(os.path.isfile(output) for output in outputs))
 
     def test_obj_oam_and_frame_timing_capacities_fail_closed(self):
         pixels = bytearray(custom_spell.OBJ_WIDTH * custom_spell.OBJ_HEIGHT)

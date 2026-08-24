@@ -223,7 +223,7 @@ def read_indexed_png(path, width, height):
     if not alpha or len(alpha) > len(palette):
         raise ValueError("{} tRNS exceeds PLTE".format(path))
     alpha.extend([255] * (len(palette) - len(alpha)))
-    if alpha[0] != 0 or any(value != 255 for value in alpha[1:]):
+    if alpha[0] != 0:
         raise ValueError(
             "{} must make only palette index 0 transparent".format(path)
         )
@@ -277,6 +277,10 @@ def read_indexed_png(path, width, height):
             pixels.extend((value >> 4, value & 0x0F))
     if any(value >= len(palette) for value in pixels):
         raise ValueError("{} uses a palette index outside PLTE".format(path))
+    if any(alpha[value] != 255 for value in set(pixels) if value != 0):
+        raise ValueError(
+            "{} must make used nonzero palette indices opaque".format(path)
+        )
     return {"pixels": bytes(pixels), "palette": palette}
 
 
