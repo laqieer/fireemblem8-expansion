@@ -68,9 +68,11 @@ def _include_flags():
     return flags
 
 
-def _compile(work_dir: Path, src: Path, obj_name: str, defines=()):
+def _compile(work_dir: Path, src: Path, obj_name: str, defines=(), extra_include_dirs=()):
     obj = work_dir / obj_name
     cmd = [CC, "-c", "-w"] + _include_flags()
+    for directory in extra_include_dirs:
+        cmd += ["-I", str(directory)]
     for d in defines:
         cmd += ["-D", d]
     cmd += [str(src), "-o", str(obj)]
@@ -130,8 +132,15 @@ class ExpansionLanguageMenuDecisionHostTests(unittest.TestCase):
             self.assertIn("EXPANSION_LANGUAGE_MENU_DECISION_HOST_TEST: PASS", out)
 
     def test_archival_debugtools_build_uses_private_language_rows(self):
+        from scripts.localization.catalog import load_catalog
+        from scripts.localization.generate import build_msg_ids_header
+
         with _temporary_directory() as tmp:
             work = Path(tmp)
+            (work / "expansion_msg_ids.h").write_text(
+                build_msg_ids_header(load_catalog()),
+                encoding="utf-8",
+            )
             rc, out, _ = _compile(
                 work,
                 LANGUAGE_MENU_SRC,
@@ -141,6 +150,7 @@ class ExpansionLanguageMenuDecisionHostTests(unittest.TestCase):
                     "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
                     "FE8_ARCHIVAL_BUILD=1",
                 ),
+                extra_include_dirs=(work,),
             )
             self.assertEqual(
                 rc,
