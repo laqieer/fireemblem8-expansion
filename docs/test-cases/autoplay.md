@@ -220,8 +220,9 @@ logic, and it never writes a user save fixture.
 The baseline finishes with `success` after exactly **17,135** emulated frames.
 Accelerated fidelity finishes after exactly **16,869** frames, a deterministic
 **266-frame reduction**. The terminal objective result, turn/action counts,
-all terminal semantic probes (including active blue, red, and green unit state
-and items), ordered committed-action/event telemetry, chapter/permanent and
+all terminal semantic probes (including every pointer-free gameplay field for
+active blue, red, and green units), ordered committed-action/event telemetry,
+chapter/permanent and
 named objective-result flag transitions (`EVFLAG_WIN`, `EVFLAG_DEFEAT_ALL`,
 and `EVFLAG_GAMEOVER`), and every sampled RNG state are identical.
 Every repeated same-profile sample also has identical terminal and ordered

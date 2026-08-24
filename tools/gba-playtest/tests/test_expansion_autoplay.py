@@ -190,8 +190,8 @@ class AutoplayHostTests(unittest.TestCase):
             self.assertLessEqual(text_bytes, 4096)
 
     def test_accelerated_profile_emits_event_trace_only_when_enabled(self):
-        if ARM_CC is None or ARM_NM is None:
-            self.skipTest("arm-none-eabi compiler/binutils unavailable")
+        if ARM_CC is None or ARM_NM is None or CC is None:
+            self.skipTest("host and arm compilers/binutils unavailable")
         build_root = ROOT / "build"
         build_root.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=build_root) as temporary:
@@ -233,6 +233,39 @@ class AutoplayHostTests(unittest.TestCase):
             self.assertEqual(
                 int(event_trace.group(1), 16),
                 8 + 64 * 5 * 4,
+            )
+            executable = Path(temporary) / "autoplay-event-trace-host"
+            completed = run(
+                [
+                    CC,
+                    "-std=gnu89",
+                    "-Werror=declaration-after-statement",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    "-O2",
+                    *INCLUDES,
+                    "-DMODERN=1",
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-DFE8_AUTOPLAY_EVENT_TRACE_TEST=1",
+                    str(SOURCE),
+                    str(BMPHASE_SOURCE),
+                    str(DRIVER),
+                    "-o",
+                    str(executable),
+                ]
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                "accelerated host link failed:\n" + completed.stdout + completed.stderr,
+            )
+            completed = run([str(executable)])
+            self.assertEqual(
+                completed.returncode,
+                0,
+                "accelerated producer regression failed:\n"
+                + completed.stdout
+                + completed.stderr,
             )
 
     def test_checked_runtime_evidence_satisfies_semantic_contract(self):

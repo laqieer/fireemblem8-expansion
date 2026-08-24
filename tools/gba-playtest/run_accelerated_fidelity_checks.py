@@ -31,6 +31,27 @@ BENCHMARK_FORMAT_VERSION = 1
 DEFAULT_SAMPLES = 3
 CONFIG_APPLY_FRAME = 16500
 UNIT_SIZE = 0x48
+UNIT_GAMEPLAY_PROBE_LAYOUT = (
+    (0x08, 2),  # level, EXP
+    (0x0A, 2),  # AI flags, slot index
+    (0x0C, 4),  # state
+    (0x10, 2),  # map position
+    (0x12, 2), (0x14, 2),  # HP, strength, skill
+    (0x16, 2), (0x18, 2),  # speed, defense, resistance, luck
+    (0x1A, 2), (0x1C, 2),  # constitution, rescue, ballista, movement bonuses
+    (0x1E, 2),
+    (0x20, 2),
+    (0x22, 2),
+    (0x24, 2),
+    (0x26, 2),  # five inventory slots
+    (0x28, 4),
+    (0x2C, 4),  # weapon ranks
+    (0x30, 2),  # status/torch/barrier durations
+    (0x32, 2), (0x34, 2), (0x36, 2), (0x38, 2),  # supports and support bits
+    (0x40, 2),  # AI configuration
+    (0x42, 2), (0x44, 2),
+    (0x46, 1),  # AI scripts and counter
+)
 ACTIVE_BLUE_SLOTS = range(1, 7)
 ACTIVE_RED_SLOTS = range(1, 6)
 ACTIVE_GREEN_SLOTS = range(1, 3)
@@ -73,16 +94,7 @@ def _unit_probes() -> list[dict[str, object]]:
     ):
         for slot in slots:
             base = (slot - 1) * UNIT_SIZE
-            for offset, size in (
-                (0x0C, 4),  # state
-                (0x10, 2),  # map position
-                (0x12, 2),  # maximum/current HP
-                (0x1E, 2),
-                (0x20, 2),
-                (0x22, 2),
-                (0x24, 2),
-                (0x26, 2),  # five inventory slots
-            ):
+            for offset, size in UNIT_GAMEPLAY_PROBE_LAYOUT:
                 probes.append(
                     {
                         "address": f"{array_name}+0x{base + offset:03x}",

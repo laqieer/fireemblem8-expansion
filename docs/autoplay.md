@@ -190,6 +190,8 @@ reason/counters, endpoint semantic probes, and ordered trace values to match
 exactly. Repeated samples of the same profile compare complete format-4
 fingerprints, including terminal and trace frame timestamps; no snapshot may
 claim configuration or trace activity after its terminal frame.
+Accelerated-fidelity rejects framebuffer, region, and pixel evidence entirely;
+schema-v3 normal fidelity retains those presentation-dependent contracts.
 
 The existing presentation-policy seam adopts a raw `gPlaySt.config.animationType`
 change when its cached selection disagrees. The accelerated test ROM additionally

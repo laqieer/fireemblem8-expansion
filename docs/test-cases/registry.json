@@ -32,6 +32,7 @@
       "typed-id-item-cap",
       "debug-tools",
       "cursor-unit-debug-editor",
+      "debugtools-music-preview",
       "runtime-playtest-harness",
       "upstream-port-tooling",
       "build-ci-default-release-reproduction",
@@ -307,7 +308,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/3",
         "https://github.com/laqieer/fireemblem8-expansion/issues/4",
         "https://github.com/laqieer/fireemblem8-expansion/issues/28",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/102"
       ],
       "reference": "docs/quickstart.md",
       "status": "current",
@@ -560,6 +562,18 @@
       "status": "current",
       "required_cases": [
         "TC-DEBUGTOOLS-PROTOTYPE-003"
+      ]
+    },
+    {
+      "id": "debugtools-music-preview",
+      "title": "Bounded reversible debugtools music preview",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/126"
+      ],
+      "reference": "docs/debugtools.md",
+      "status": "current",
+      "required_cases": [
+        "TC-DEBUGTOOLS-PROTOTYPE-004"
       ]
     }
   ],
@@ -1511,7 +1525,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/3",
         "https://github.com/laqieer/fireemblem8-expansion/issues/4",
         "https://github.com/laqieer/fireemblem8-expansion/issues/28",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/102"
       ],
       "document": "docs/test-cases/core-framework.md",
       "anchor": "tc-core-001-modern-default-build-and-archival-split",
@@ -1532,6 +1547,18 @@
         {
           "command": "python3 -m unittest discover -s scripts/modernize/tests -p \"test_build_default_lane.py\" -v",
           "evidence": "scripts/modernize/tests/test_build_default_lane.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s scripts/modernize/tests -p \"test_modern_elf.py\" -v",
+          "evidence": "scripts/modernize/tests/test_modern_elf.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s scripts/modernize/tests -p \"test_build_mgfembp.py\" -v",
+          "evidence": "scripts/modernize/tests/test_build_mgfembp.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s scripts/modernize/tests -p \"test_expansion_config.py\" -v",
+          "evidence": "scripts/modernize/tests/test_expansion_config.py"
         },
         {
           "command": "make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs",
@@ -1931,8 +1958,8 @@
       "purpose": "Prove every emulated frame remains real core execution while existing game-speed/BANIM-off settings reduce the focused fixture's frame count without changing its semantic outcome.",
       "prerequisites": "Repository root with Python 3.10+, host C compiler, libmGBA development files, and modern ARM toolchain; clean boot with no save or savestate.",
       "actions": "Run the focused profile/backend test and the debug-only accelerated-fidelity Make target, then inspect its ignored benchmark JSON.",
-      "expected_result": "The same ROM reaches equal terminal semantic state, ordered action/RNG trace plus bounded append-only event-command and named objective-flag records (WIN, DEFEAT_ALL, GAMEOVER), active blue/red/green unit state/items, objective result, and turn/action counts; BanimPresentationPolicy_GetCurrent()->id is OFF for accelerated fidelity; every repeated same-profile sample has identical terminal and trace frames; baseline is 17135 frames and accelerated is 16869 frames.",
-      "negative_control": "Malformed/duplicate profile fields, terminal-impossible profile/trace timestamps, over-budget trace output, event-transition overflow, a non-OFF cached presentation policy, or unexpected semantic checkpoint framebuffer output fail; deliberately perturbed trace or same-profile frame data is rejected even when a candidate is faster.",
+      "expected_result": "The same ROM reaches equal terminal semantic state, ordered action/RNG trace plus bounded append-only event-command and named objective-flag records (WIN, DEFEAT_ALL, GAMEOVER), every pointer-free gameplay field for active blue/red/green units, objective result, and turn/action counts; BanimPresentationPolicy_GetCurrent()->id is OFF for accelerated fidelity; every repeated same-profile sample has identical terminal and trace frames; baseline is 17135 frames and accelerated is 16869 frames.",
+      "negative_control": "Malformed/duplicate profile fields, accelerated framebuffer/region/pixel evidence, terminal-impossible profile/trace timestamps, over-budget trace output, event-transition overflow, a non-OFF cached presentation policy, or unexpected semantic checkpoint framebuffer output fail; deliberately perturbed trace or same-profile frame data is rejected even when a candidate is faster.",
       "interactions": "Depends on #85 telemetry, #86 bounded terminal semantics, and tester-case catalog #54. #91 consumes this profile for deterministic batch reports; later external planner and campaign experiments may also consume it. Conflicts with visual, audio, or presentation-timing acceptance cases, which remain normal fidelity.",
       "save_compatibility": "The dedicated accelerated debug test ROM alone adds 1,316 EWRAM bytes for transition/policy telemetry; ordinary debug/release, starter/HQ, and archival builds omit it. No saved field, preference, migration, epoch, generated data, localization, configuration identity, or archival behavior changes.",
       "cleanup": "The benchmark writes only ignored build output; use make clean_fast when that output must be removed.",
@@ -2374,6 +2401,47 @@
         {
           "command": "make expansion-modern-debugtools-tools-check MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/scenarios/debugtools-tools-modern-release.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-DEBUGTOOLS-PROTOTYPE-004",
+      "title": "Preview bounded music and restore its owner",
+      "feature_id": "debugtools-music-preview",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/126"
+      ],
+      "document": "docs/test-cases/debugtools.md",
+      "anchor": "tc-debugtools-prototype-004-preview-bounded-music-and-restore-its-owner",
+      "profiles": [
+        "Modern AAPCS debug source build at title and live Chapter 2 player phase",
+        "Modern AAPCS release source build with identical input for omission"
+      ],
+      "purpose": "Prove authoritative catalog bounds, one preview owner, exact playing/silent restoration, release omission, and save neutrality.",
+      "prerequisites": "Use the unchanged gSoundRoomTable, default debugtools hotkeys, deterministic SRAM, and reset between title and map fixtures.",
+      "actions": "Open hub page two, enter Music Preview, preview first and wraparound boundary songs with rapid replacement, Back twice, repeat on the live map, then replay in release.",
+      "expected_result": "Validated localized songs preview with one owner; Back restores exact prior BGM context, SRAM is unchanged, and title/map input remains interactive.",
+      "negative_control": "Invalid/sentinel/unsafe-name rows, nested acquisition, cancel-before-preview, no-prior BGM, forced teardown, chapter cleanup, and release input fail safely without unlock/save mutation.",
+      "interactions": "Depends on debugtools submenu lifecycle, authoritative sound-room data, and issue #37 typed BGM ownership; conflicts with dormant BGM handlers, raw IDs, duplicate routers/owners, and bypass patches.",
+      "save_compatibility": "No unlock bit, save byte, layout, compatibility epoch, migration, preference, or configuration identity changes.",
+      "cleanup": "Reset between title/map fixtures; host artifacts under build/test-artifacts are removed automatically.",
+      "limitations": "Only authoritative named sound-room entries are enumerable; audio recognizability is supplementary and not a correctness criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_debugtools_music -v",
+          "evidence": "tools/gba-playtest/tests/test_debugtools_music.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_debugtools_registry.DebugToolsRegistryHostTests.test_builtin_identity_and_text_allocator_lifecycle -v",
+          "evidence": "tools/gba-playtest/tests/test_debugtools_registry.py"
+        },
+        {
+          "command": "make expansion-modern-debugtools-music-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/debugtools-music-title-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-debugtools-music-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/debugtools-music-title-modern-release.json"
         }
       ]
     }

@@ -182,7 +182,7 @@ class AcceleratedFidelitySchemaTests(unittest.TestCase):
         )
         self.assertLessEqual(
             len(data["run_until"]["checkpoint"]["probes"]),
-            1024,
+            gba_playtest.MAX_PROBES_PER_CHECKPOINT,
         )
         self.assertIn(
             {"address": accelerated_fidelity_checks.POLICY_PROBE_SYMBOL, "size": 4},
@@ -414,6 +414,38 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
         self.assertEqual(
             accelerated_fidelity_checks._event_trace_failures(capture),
             ["event transition telemetry overflowed"],
+        )
+
+    def test_accelerated_profile_rejects_presentation_evidence(self):
+        accelerated = profile_data(gba_playtest.EXECUTION_PROFILE_ACCELERATED_FIDELITY)
+        accelerated["run_until"]["checkpoint"]["framebuffer"] = True
+        accelerated["run_until"]["checkpoint"]["regions"] = [
+            {"name": "visible", "x": 0, "y": 0, "width": 1, "height": 1}
+        ]
+        accelerated["run_until"]["checkpoint"]["pixel_probes"] = [{"x": 0, "y": 0}]
+        with self.assertRaisesRegex(gba_playtest.PlaytestError, "semantic-only"):
+            gba_playtest.parse_scenario_data(accelerated)
+
+        normal = profile_data(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
+        normal["run_until"]["checkpoint"]["framebuffer"] = True
+        normal["run_until"]["checkpoint"]["regions"] = [
+            {"name": "visible", "x": 0, "y": 0, "width": 1, "height": 1}
+        ]
+        normal["run_until"]["checkpoint"]["pixel_probes"] = [{"x": 0, "y": 0}]
+        gba_playtest.parse_scenario_data(normal)
+
+    def test_unit_probe_layout_covers_all_pointer_free_gameplay_fields(self):
+        self.assertEqual(
+            accelerated_fidelity_checks.UNIT_GAMEPLAY_PROBE_LAYOUT,
+            (
+                (0x08, 2), (0x0A, 2), (0x0C, 4), (0x10, 2),
+                (0x12, 2), (0x14, 2), (0x16, 2), (0x18, 2),
+                (0x1A, 2), (0x1C, 2),
+                (0x1E, 2), (0x20, 2), (0x22, 2), (0x24, 2), (0x26, 2),
+                (0x28, 4), (0x2C, 4), (0x30, 2),
+                (0x32, 2), (0x34, 2), (0x36, 2), (0x38, 2), (0x40, 2),
+                (0x42, 2), (0x44, 2), (0x46, 1),
+            ),
         )
 
 

@@ -70,6 +70,9 @@ IWRAM_DATA struct BanimPresentationRuntimeProbe gBanimPresentationRuntimeProbe =
 void BanimPresentationPolicy_RuntimeProbePrepare(void)
 {
     sSelectedPolicyState = BANIM_PRESENTATION_RUNTIME_PROBE_POLICY + 1;
+    gPlaySt.config.animationType =
+        gBanimPresentationPolicies[BANIM_PRESENTATION_RUNTIME_PROBE_POLICY]
+            .animationOption;
 }
 
 void BanimPresentationPolicy_RuntimeProbeRecordHit(

@@ -29,6 +29,7 @@
 #define MAX_TERMINAL_COMPARISONS 64u
 #define MAX_TRACE_PROBES 512u
 #define MAX_TRACE_RECORDS 450000u
+#define MAX_CHECKPOINT_PROBES 1536u
 
 #define PLAYST_CONFIG_GAME_SPEED_MASK (1u << 7)
 #define PLAYST_CONFIG_ANIMATION_TYPE_MASK (3u << 17)
@@ -266,7 +267,7 @@ static bool read_plan(const char* path, struct Plan* plan)
 			    &checkpoint->pixel_probe_count);
 		}
 		if (checkpoint_fields != (version == 5 ? 7 : 6) ||
-		    checkpoint->probe_count > 1024 ||
+		    checkpoint->probe_count > MAX_CHECKPOINT_PROBES ||
 		    checkpoint->exclude_range_count > 64 ||
 		    checkpoint->region_count > 64 ||
 		    checkpoint->pixel_probe_count > 256 ||

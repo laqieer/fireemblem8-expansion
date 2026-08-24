@@ -95,6 +95,7 @@ SRAM_IMAGE_SIZE = 0x8000
 # with a clear PlaytestError instead of being rejected deep inside the
 # backend after a plan file has already been generated.
 MAX_SRAM_HASH_EXCLUDE_RANGES = 64
+MAX_PROBES_PER_CHECKPOINT = 1536
 MAX_RUN_UNTIL_COMPARISONS = 64
 MAX_RUN_UNTIL_PROBES = 128
 MAX_PROFILE_TRACE_PROBES = 512
@@ -547,6 +548,12 @@ def _parse_fixed_scenario_data(
         probes_data = item["probes"]
         if not isinstance(probes_data, list):
             raise PlaytestError(f"{path}.probes must be an array")
+        if len(probes_data) > MAX_PROBES_PER_CHECKPOINT:
+            raise PlaytestError(
+                f"{path}.probes has {len(probes_data)} entries, exceeding the "
+                f"{MAX_PROBES_PER_CHECKPOINT}-probe limit per checkpoint "
+                "(matches backend.c's plan-format cap)"
+            )
         probes: list[Probe] = []
         seen_bindings: set[tuple[str, int]] = set()
         seen_addresses: set[tuple[int, int]] = set()
@@ -1247,6 +1254,14 @@ def _parse_accelerated_fidelity_scenario_data(
         bounded.run_until,
         symbol_resolver,
     )
+    if profile.name == EXECUTION_PROFILE_ACCELERATED_FIDELITY:
+        for checkpoint in bounded.checkpoints:
+            if checkpoint.framebuffer or checkpoint.regions or checkpoint.pixel_probes:
+                raise PlaytestError(
+                    f"{source} accelerated-fidelity requires semantic-only "
+                    f"checkpoint {checkpoint.name!r} without framebuffer, "
+                    "region, or pixel evidence"
+                )
     return Scenario(
         bounded.name,
         bounded.description,

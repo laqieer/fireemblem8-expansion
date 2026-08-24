@@ -303,6 +303,8 @@ int DebugTools_IsBootstrapSuppressionActive(void)
 
 void DebugTools_NotifyTitleScreenStarting(void)
 {
+    DebugTools_ForceSessionCleanup();
+
     /* No-op whenever suppression is not currently active -- an ordinary
      * title screen (re)start (first boot, a real user quitting back to
      * title, etc.) is not "abandoning a pending deterministic boot".
