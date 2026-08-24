@@ -138,7 +138,7 @@ class CustomSpellAdapterTests(unittest.TestCase):
         self.assertEqual(package.sound_ids, [0xF1])
         self.assertEqual(package.bg_bytes, 0x500)
         self.assertEqual(package.obj_oam_entries, 2)
-        self.assertEqual(package.runtime_bytes, 2444)
+        self.assertEqual(package.runtime_bytes, 2460)
         first = [
             (
                 frame["obj_lz"],
@@ -902,6 +902,22 @@ class CustomSpellAdapterTests(unittest.TestCase):
                     for index in range(8)
                 ]
             )
+        association_only_overflow = [
+            record(
+                "ASSOC{:02d}".format(index),
+                "ITEM_ASSOC_{:02d}".format(index),
+                custom_spell.MAX_ROM_BYTES // custom_spell.MAX_EFFECTS,
+            )
+            for index in range(custom_spell.MAX_EFFECTS)
+        ]
+        for runtime_record in association_only_overflow:
+            runtime_record.custom_spell_package.runtime_bytes += (
+                custom_spell.SPELL_ASSOC_ENTRY_BYTES
+            )
+        with self.assertRaisesRegex(
+            ValueError, "aggregate custom spell runtime payload .* exceeds 0x40000"
+        ):
+            custom_spell.validate_collection(association_only_overflow)
         duplicate_item = [
             record("FIRST", "ITEM_ANIMA_FORBLAZE"),
             record("SECOND", "ITEM_ANIMA_FORBLAZE"),

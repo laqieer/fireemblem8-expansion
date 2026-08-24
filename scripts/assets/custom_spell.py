@@ -30,6 +30,7 @@ MAX_ROM_BYTES = 0x40000
 MAX_PNG_SOURCE_BYTES = 2 * 1024 * 1024
 MAX_SPELL_JSON_BYTES = 64 * 1024
 MAX_ANIMATION_TEXT_BYTES = 1024 * 1024
+SPELL_ASSOC_ENTRY_BYTES = 0x10
 OBJ_WIDTH = 480
 OBJ_HEIGHT = 160
 BG_WIDTH = 240
@@ -780,6 +781,7 @@ def runtime_bytes(package, effect_symbol):
         + 0x34
         + script_words * 4
         + len(effect_symbol.encode("ascii")) + 1
+        + SPELL_ASSOC_ENTRY_BYTES
     )
     return _align4(binary_bytes + oam_bytes + metadata_bytes)
 
