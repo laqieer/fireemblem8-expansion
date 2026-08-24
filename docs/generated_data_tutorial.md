@@ -360,8 +360,11 @@ For example, a continuous hold uses
 `area`, and `untilTurn`; the flag must be a project-defined existing
 `EVFLAG_*` value and cannot be shared with that objective's activation,
 deactivation, or event flag.
-`chapterObjectives` in `src/data/ch2_bundle.json` is the ownership declaration
-for the bundle symbol. Keep it empty when the chapter has no authored records.
+Every authored `src/data/*_bundle.json` is loaded and indexed by chapter
+identity. Its `chapterObjectives` declaration is the ownership declaration
+for that chapter's symbols; a matching owner must exist exactly once, and its
+`tables.units.symbols` is the only unit-group set the objectives may use.
+Keep the declaration empty when the chapter has no authored records.
 
 ```sh
 python3 -m scripts.generated_data validate --table chapterobjectives

@@ -65,6 +65,7 @@ slice (see "Remaining Issue #5 scope" in the docs).
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 
@@ -208,7 +209,28 @@ class ChapterBundleRecord:
         return 1
 
 
-def load_records(source_path):
+class ChapterBundleRecords:
+    """Deterministic collection of every authored chapter bundle source."""
+
+    __slots__ = ("records", "by_chapter")
+
+    def __init__(self, records):
+        self.records = tuple(records)
+        self.by_chapter = {}
+        for record in self.records:
+            self.by_chapter.setdefault(record.chapter.id, []).append(record)
+
+    def __iter__(self):
+        return iter(self.records)
+
+    def __len__(self):
+        return len(self.records)
+
+    def __getitem__(self, index):
+        return self.records[index]
+
+
+def _load_record(source_path):
     root = load_json_file(source_path)
     schema_node = root.require("$schema")
     if schema_node.as_str() != SCHEMA_ID:
@@ -335,6 +357,19 @@ def load_records(source_path):
     )
 
 
+def load_records(source_path):
+    """Load one bundle file or every ``*_bundle.json`` file in a directory."""
+    if os.path.isdir(source_path):
+        source_paths = sorted(glob.glob(os.path.join(source_path, "*_bundle.json")))
+        if not source_paths:
+            raise GeneratedDataError(
+                "chapter bundle directory '{}' has no *_bundle.json sources".format(source_path)
+            )
+    else:
+        source_paths = [source_path]
+    return ChapterBundleRecords([_load_record(path) for path in source_paths])
+
+
 def _err(message, loc, ref):
     return GeneratedDataError(message, loc, ref)
 
@@ -366,11 +401,11 @@ def read_asset_table_entries(asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE,
     )
 
 
-def validate(records, diagnostics, dependency_records=None,
-             chapters_header=CHAPTERS_HEADER, characters_header=CHARACTERS_HEADER,
-             classes_header=CLASSES_HEADER, items_header=ITEMS_HEADER,
-             chapter_settings_path=CHAPTER_SETTINGS_JSON,
-             asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE):
+def _validate_record(records, diagnostics, dependency_records=None,
+                     chapters_header=CHAPTERS_HEADER, characters_header=CHARACTERS_HEADER,
+                     classes_header=CLASSES_HEADER, items_header=ITEMS_HEADER,
+                     chapter_settings_path=CHAPTER_SETTINGS_JSON,
+                     asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE):
     """Validate the whole-bundle manifest against the current
     ``units``/``shops``/``traps``/``eventscripts``/``eventlists``/
     ``supports`` records (``dependency_records``, loaded via
@@ -760,6 +795,34 @@ def validate(records, diagnostics, dependency_records=None,
     graph.topo_order()  # raises GeneratedDataError on a cycle
 
 
+def validate(records, diagnostics, dependency_records=None,
+             chapters_header=CHAPTERS_HEADER, characters_header=CHARACTERS_HEADER,
+             classes_header=CLASSES_HEADER, items_header=ITEMS_HEADER,
+             chapter_settings_path=CHAPTER_SETTINGS_JSON,
+             asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE):
+    """Validate every authored bundle and reject duplicate chapter owners."""
+    if not isinstance(records, ChapterBundleRecords):
+        records = ChapterBundleRecords(records)
+
+    diagnostics.extend(
+        validate_unique(
+            ((record.chapter.id, record.chapter.id_loc) for record in records),
+            "duplicate chapter bundle owner for '{key}' (first defined at {first_loc})",
+            "bundles[chapter={key}].chapter",
+        )
+    )
+    for record in records:
+        _validate_record(
+            record, diagnostics, dependency_records,
+            chapters_header=chapters_header,
+            characters_header=characters_header,
+            classes_header=classes_header,
+            items_header=items_header,
+            chapter_settings_path=chapter_settings_path,
+            asset_table_path=asset_table_path,
+        )
+
+
 def _contains_whole_word(text, word):
     import re
     return re.search(r"(?<![A-Za-z0-9_])" + re.escape(word) + r"(?![A-Za-z0-9_])", text) is not None
@@ -856,7 +919,7 @@ class ChapterBundleTableSchema(TableSchema):
     name = SCHEMA_NAME
     version = SCHEMA_VERSION
 
-    default_source = "src/data/ch2_bundle.json"
+    default_source = "src/data"
     # Metadata-only: the bundle is a cross-table view, not itself a single
     # hand-written C file to round-trip against, and there is no C to
     # generate (each composed table already generates/round-trips its own
