@@ -1716,14 +1716,14 @@ Its bounded, explicit confirmation rows queue exactly one request:
 
 Requests are accepted only while the map is in the stable interactive blue
 `PLAYER` phase: the map and player-phase Procs must be live; no player action,
-computer/berserk phase, event, fade, or camera Proc may own the map; and #85
-must report no failure. The request is not applied from the menu callback.
+computer/berserk phase, event, battle, fade, or camera Proc may own the map;
+and #85 must report no failure. The request is not applied from the menu callback.
 `BmMain_StartPhase` remains the sole faction router and consumes a matching
 red/green request at the corresponding boundary. A turn request applies after
 the phase switch but before `RunPhaseSwitchEvents`, so destination-faction
-events observe the requested turn. A `BLOCKED` request deliberately starts no
-child computer Proc, so the existing map-main script performs the ordinary
-phase transition.
+events observe the requested turn. A `BLOCKED` request jumps map-main directly
+to the next phase change, bypassing both its ordinary and berserk computer
+children.
 
 `PLAYER` is a closed typed rejection for red and green. The existing
 `PlayerPhase_CommitActiveUnitMove` only commits blue units, so routing another
@@ -1765,8 +1765,8 @@ probe extension is debug-only, preserving release EWRAM/layout.
 - **Actions:** open the map debug hub, open **Flag/Chapter**, inspect the
   turn/red/green status, select one localized **Apply** row, close the hub,
   and complete the current blue phase. For `BLOCKED`, observe the requested
-  red or green phase pass without a computer action, then observe the next
-  same-faction phase return to ordinary computer control.
+  red or green phase pass without either computer child acting, then observe
+  the next same-faction phase return to ordinary computer control.
 - **Expected result:** one confirmed request produces one requested, applied,
   and restored telemetry transition. Turn changes after the switch and before
   destination-faction phase events; a blocked faction is skipped once;
@@ -1784,7 +1784,8 @@ probe extension is debug-only, preserving release EWRAM/layout.
 - **Automation:** `test_debugtools_phase_control.py` executes the real
   request functions, `BmMain_ChangePhase`, `BmMain_StartPhase`, forced map
   teardown, and forced debugtools-session cleanup with valid/adversarial
-  states; it verifies phase-event ordering, ARM request-state bounds, release
+  states; it verifies phase-event ordering, an eligible berserk child is
+  bypassed by BLOCKED, battle/fade rejection, ARM request-state bounds, release
   layout/symbol omission, and every authored locale. The
   `expansion-modern-debugtools-phase-control-check` libmGBA scenario selects
   **Apply Turn +1** from the live submenu, uses #87's native one-phase Charge

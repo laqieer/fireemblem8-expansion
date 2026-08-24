@@ -1,13 +1,13 @@
 {
   "checkpoints": [
     {
-      "frame": 17140,
-      "name": "release-before-debug-input",
+      "frame": 3950,
+      "name": "release-blue-player-before-debug-input",
       "probes": [
         {
           "address": "gBmSt+0x14",
           "size": 1,
-          "value": "0x0e"
+          "value": "0x04"
         },
         {
           "address": "gDebugToolsProbe",
@@ -17,23 +17,23 @@
         {
           "address": "gPlaySt+0x0f",
           "size": 1,
-          "value": "0x40"
+          "value": "0x00"
         },
         {
           "address": "gPlaySt+0x10",
           "size": 2,
-          "value": "0x0000"
+          "value": "0x0001"
         }
       ]
     },
     {
-      "frame": 17920,
-      "name": "release-debug-input-is-inert",
+      "frame": 4070,
+      "name": "release-blue-player-debug-input-inert",
       "probes": [
         {
           "address": "gBmSt+0x14",
           "size": 1,
-          "value": "0x0e"
+          "value": "0x04"
         },
         {
           "address": "gDebugToolsProbe",
@@ -43,23 +43,23 @@
         {
           "address": "gPlaySt+0x0f",
           "size": 1,
-          "value": "0x40"
+          "value": "0x00"
         },
         {
           "address": "gPlaySt+0x10",
           "size": 2,
-          "value": "0x0000"
+          "value": "0x0001"
         }
       ]
     },
     {
-      "frame": 25020,
-      "name": "release-map-remains-interactive",
+      "frame": 4170,
+      "name": "release-blue-player-map-interactive",
       "probes": [
         {
           "address": "gBmSt+0x14",
           "size": 1,
-          "value": "0x07"
+          "value": "0x05"
         },
         {
           "address": "gDebugToolsProbe",
@@ -69,12 +69,12 @@
         {
           "address": "gPlaySt+0x0f",
           "size": 1,
-          "value": "0x40"
+          "value": "0x00"
         },
         {
           "address": "gPlaySt+0x10",
           "size": 2,
-          "value": "0x0000"
+          "value": "0x0001"
         }
       ]
     }

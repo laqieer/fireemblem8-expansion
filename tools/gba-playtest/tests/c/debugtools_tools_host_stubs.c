@@ -43,6 +43,10 @@
 #include "save_format.h"
 #include "expansion_autoplay.h"
 #include "expansion_debugtools.h"
+#include "expansion_locale.h"
+#ifdef MODERN
+#include "expansion_msg_ids.h"
+#endif
 #include "debugtools_internal.h"
 
 /* --- Hardware/menu stand-ins (mirrors debugtools_actions_host_stubs.c) - */
@@ -69,6 +73,10 @@ int gDebugToolsToolsHostStubLastStartFaceId = -1;
 int gDebugToolsToolsHostStubLastEyeControl = -1;
 int gDebugToolsToolsHostStubFaceMouthInitCount = 0;
 int gDebugToolsToolsHostStubFaceMouthLoopCount = 0;
+char gDebugToolsToolsHostStubLastStatusLine[64] = {0};
+#ifdef MODERN
+static ExpansionLocaleId sDebugToolsToolsLocale = EXPANSION_LOCALE_EN;
+#endif
 
 static struct FaceProc sDebugToolsToolsFakeFace;
 static struct FaceBlinkProc sDebugToolsToolsFakeMouth;
@@ -173,8 +181,56 @@ void SetupDebugFontForBG(int bg, int tileDataOffset)
 void PrintDebugStringToBG(u16* bg, const char* asciiStr)
 {
     (void)bg;
-    (void)asciiStr;
+    strncpy(
+        gDebugToolsToolsHostStubLastStatusLine,
+        asciiStr,
+        sizeof(gDebugToolsToolsHostStubLastStatusLine) - 1);
+    gDebugToolsToolsHostStubLastStatusLine[
+        sizeof(gDebugToolsToolsHostStubLastStatusLine) - 1] = '\0';
 }
+
+void PutDrawText(
+    struct Text* text,
+    u16* dest,
+    int colorId,
+    int x,
+    int tileWidth,
+    const char* string)
+{
+    (void)text;
+    (void)dest;
+    (void)colorId;
+    (void)x;
+    (void)tileWidth;
+    PrintDebugStringToBG(NULL, string);
+}
+
+#ifdef MODERN
+ExpansionLocaleId ExpansionLocale_GetCurrent(void)
+{
+    return sDebugToolsToolsLocale;
+}
+
+const char* ExpansionLocale_ResolveCurrent(ExpansionMsgId message)
+{
+    switch (message)
+    {
+        case EXP_MSG_DEBUG_STATUS_TURN:
+            return "TURN";
+
+        case EXP_MSG_DEBUG_MODE_BLOCKED:
+            return "BLOCK";
+
+        default:
+            return "CPU";
+    }
+}
+
+void DebugToolsHostStub_SetLocale(ExpansionLocaleId locale)
+{
+    sDebugToolsToolsLocale = locale;
+}
+#endif
 
 u8 MenuAlwaysEnabled(const struct MenuItemDef* def, int number)
 {

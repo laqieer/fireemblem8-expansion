@@ -473,7 +473,12 @@ void BmMain_StartPhase(ProcPtr proc)
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
         if (DebugToolsPhaseControl_ApplyAtPhaseStart(gPlaySt.faction)
             == DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED)
-            break;
+        {
+            /* Label 3 performs the next phase change. Jumping there avoids
+             * both the ordinary and berserk computer children after label 5. */
+            Proc_Goto(proc, 3);
+            return;
+        }
 #endif
         Proc_StartBlocking(gProcScr_CpPhase, proc);
         break;
@@ -482,7 +487,12 @@ void BmMain_StartPhase(ProcPtr proc)
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
         if (DebugToolsPhaseControl_ApplyAtPhaseStart(gPlaySt.faction)
             == DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED)
-            break;
+        {
+            /* See the red branch: the map-main berserk child follows this
+             * callback, so blocked phases must bypass the whole tail. */
+            Proc_Goto(proc, 3);
+            return;
+        }
 #endif
         Proc_StartBlocking(gProcScr_CpPhase, proc);
         break;

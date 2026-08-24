@@ -173,6 +173,8 @@ static void DebugToolsTools_DrawCjkStatusLine(const char* text)
     gLCDControlBuffer.dispcnt.bg2_on = 1;
 }
 
+static void DebugToolsTools_FormatFlagStatus(char* buf);
+
 static void DebugToolsTools_UnitMenuOnInit(struct MenuProc* menu)
 {
     char buf[64];
@@ -214,20 +216,7 @@ static void DebugToolsTools_FlagMenuOnInit(struct MenuProc* menu)
     (void)menu;
     if (!DebugToolsTools_UsesCjkText())
         return;
-    DebugToolsPhaseControl_Sample();
-    sprintf(buf, "%s %d R:%s G:%s",
-        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_TURN),
-        (int)gDebugToolsProbe.phaseControlTurnSample,
-        ExpansionLocale_ResolveCurrent(
-            gDebugToolsProbe.phaseControlRedModeSample
-                    == DEBUGTOOLS_PHASE_CONTROL_BLOCKED
-                ? EXP_MSG_DEBUG_MODE_BLOCKED
-                : EXP_MSG_DEBUG_MODE_COMPUTER),
-        ExpansionLocale_ResolveCurrent(
-            gDebugToolsProbe.phaseControlGreenModeSample
-                    == DEBUGTOOLS_PHASE_CONTROL_BLOCKED
-                ? EXP_MSG_DEBUG_MODE_BLOCKED
-                : EXP_MSG_DEBUG_MODE_COMPUTER));
+    DebugToolsTools_FormatFlagStatus(buf);
     DebugToolsTools_DrawCjkStatusLine(buf);
 }
 
@@ -270,6 +259,35 @@ static void DebugToolsTools_SaveStateMenuOnInit(struct MenuProc* menu)
 #define DEBUGTOOLS_RNG_MENU_ON_INIT 0
 #define DEBUGTOOLS_SAVE_MENU_ON_INIT 0
 #endif
+
+static void DebugToolsTools_FormatFlagStatus(char* buf)
+{
+    DebugToolsPhaseControl_Sample();
+#ifdef MODERN
+    sprintf(buf, "%s %d C:%d F:%d R:%s G:%s",
+        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_TURN),
+        (int)gDebugToolsProbe.phaseControlTurnSample,
+        (int)gDebugToolsProbe.chapterIndexSample,
+        (int)gDebugToolsProbe.debugFlagLastValue,
+        ExpansionLocale_ResolveCurrent(
+            gDebugToolsProbe.phaseControlRedModeSample
+                    == DEBUGTOOLS_PHASE_CONTROL_BLOCKED
+                ? EXP_MSG_DEBUG_MODE_BLOCKED
+                : EXP_MSG_DEBUG_MODE_COMPUTER),
+        ExpansionLocale_ResolveCurrent(
+            gDebugToolsProbe.phaseControlGreenModeSample
+                    == DEBUGTOOLS_PHASE_CONTROL_BLOCKED
+                ? EXP_MSG_DEBUG_MODE_BLOCKED
+                : EXP_MSG_DEBUG_MODE_COMPUTER));
+#else
+    sprintf(buf, "TURN %d C:%d F:%d R:%d G:%d",
+        (int)gDebugToolsProbe.phaseControlTurnSample,
+        (int)gDebugToolsProbe.chapterIndexSample,
+        (int)gDebugToolsProbe.debugFlagLastValue,
+        (int)gDebugToolsProbe.phaseControlRedModeSample,
+        (int)gDebugToolsProbe.phaseControlGreenModeSample);
+#endif
+}
 
 static void DebugToolsTools_ShowStatusLine(const char* text)
 {
@@ -349,6 +367,7 @@ static bool DebugToolsPhaseControl_IsSafeRequestBoundary(void)
     if (!Proc_Find(gProc_BMapMain) || !Proc_Find(gProcScr_PlayerPhase)
         || Proc_Find(gProcScr_Playerphase_0) || Proc_Find(gProcScr_CpPhase)
         || Proc_Find(gProcScr_BerserkCpPhase) || EventEngineExists()
+        || BattleEventEngineExists() || IsBattleDeamonActive()
         || DoesBMXFADEExist() || Proc_Find(ProcScr_CamMove))
         return false;
 
@@ -2307,27 +2326,7 @@ static u8 DebugToolsActions_FlagInspectSelected(struct MenuProc* menu, struct Me
 
     gDebugToolsProbe.chapterIndexSample = (u32)(u8)gPlaySt.chapterIndex;
     gDebugToolsProbe.debugFlagLastValue = (u32)CheckFlag(DEBUGTOOLS_DEBUG_EVENT_FLAG_ID);
-    DebugToolsPhaseControl_Sample();
-#ifdef MODERN
-    sprintf(buf, "%s %d R:%s G:%s",
-        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_TURN),
-        (int)gDebugToolsProbe.phaseControlTurnSample,
-        ExpansionLocale_ResolveCurrent(
-            gDebugToolsProbe.phaseControlRedModeSample
-                    == DEBUGTOOLS_PHASE_CONTROL_BLOCKED
-                ? EXP_MSG_DEBUG_MODE_BLOCKED
-                : EXP_MSG_DEBUG_MODE_COMPUTER),
-        ExpansionLocale_ResolveCurrent(
-            gDebugToolsProbe.phaseControlGreenModeSample
-                    == DEBUGTOOLS_PHASE_CONTROL_BLOCKED
-                ? EXP_MSG_DEBUG_MODE_BLOCKED
-                : EXP_MSG_DEBUG_MODE_COMPUTER));
-#else
-    sprintf(buf, "TURN %d R:%d G:%d",
-        (int)gDebugToolsProbe.phaseControlTurnSample,
-        (int)gDebugToolsProbe.phaseControlRedModeSample,
-        (int)gDebugToolsProbe.phaseControlGreenModeSample);
-#endif
+    DebugToolsTools_FormatFlagStatus(buf);
 
     DebugTools_LogEvent(DEBUGTOOLS_LOG_FLAG_INSPECT,
         gDebugToolsProbe.chapterIndexSample, gDebugToolsProbe.debugFlagLastValue);

@@ -25,10 +25,16 @@ PHASE_APPLIED_COUNT = f"{PHASE_PROBE}+0x94"
 PHASE_RESTORED_COUNT = f"{PHASE_PROBE}+0xa0"
 PHASE_LAST_RESULT = f"{PHASE_PROBE}+0xa4"
 PHASE_LAST_REQUEST_KIND = f"{PHASE_PROBE}+0xa8"
+PHASE_LAST_FACTION = f"{PHASE_PROBE}+0xac"
+PHASE_LAST_MODE = f"{PHASE_PROBE}+0xb0"
 PLAYER_FACTION = 0
 RED_FACTION = 0x40
+GREEN_FACTION = 0x80
 PHASE_CONTROL_OK = 0
 PHASE_CONTROL_REQUEST_TURN = 1
+PHASE_CONTROL_REQUEST_FACTION = 2
+PHASE_CONTROL_BLOCKED = 2
+RELEASE_PLAYER_TURN = 1
 
 
 class CheckError(RuntimeError):
@@ -46,6 +52,8 @@ def _phase_probes():
         {"address": PHASE_RESTORED_COUNT, "size": 4},
         {"address": PHASE_LAST_RESULT, "size": 4},
         {"address": PHASE_LAST_REQUEST_KIND, "size": 4},
+        {"address": PHASE_LAST_FACTION, "size": 4},
+        {"address": PHASE_LAST_MODE, "size": 4},
     ]
 
 
@@ -81,6 +89,27 @@ def _positive_frames():
         ],
         {"start": 25000, "end": 25006, "keys": ["RIGHT"]},
     ]
+
+
+def _release_frames():
+    base = autoplay._negative_data("release")
+    base_frame = max(checkpoint["frame"] for checkpoint in base["checkpoints"])
+    frames = [*base["frames"]]
+    frames.extend(
+        (
+            {
+                "start": base_frame + 80,
+                "end": base_frame + 86,
+                "keys": ["SELECT", "L"],
+            },
+            {
+                "start": base_frame + 180,
+                "end": base_frame + 186,
+                "keys": ["RIGHT"],
+            },
+        )
+    )
+    return frames, base_frame
 
 
 def _positive_data():
@@ -130,33 +159,97 @@ def _positive_data():
     }
 
 
+def _blocked_frames():
+    return [
+        *autoplay._load_route("savesuspend-resume-modern-debug", 16986),
+        {"start": 17150, "end": 17156, "keys": ["SELECT", "L"]},
+        *[
+            {"start": frame, "end": frame + 6, "keys": ["DOWN"]}
+            for frame in range(17250, 17610, 60)
+        ],
+        {"start": 17630, "end": 17636, "keys": ["A"]},
+        {"start": 17750, "end": 17756, "keys": ["DOWN"]},
+        {"start": 17810, "end": 17816, "keys": ["DOWN"]},
+        {"start": 17870, "end": 17876, "keys": ["DOWN"]},
+        {"start": 17930, "end": 17936, "keys": ["DOWN"]},
+        {"start": 17990, "end": 17996, "keys": ["A"]},
+        {"start": 18150, "end": 18156, "keys": ["RIGHT"]},
+        {"start": 18300, "end": 18306, "keys": ["A"]},
+        {"start": 18400, "end": 18406, "keys": ["UP"]},
+        {"start": 18500, "end": 18506, "keys": ["R"]},
+        {"start": 18600, "end": 18606, "keys": ["B"]},
+        {"start": 18700, "end": 18706, "keys": ["A"]},
+        *[
+            {"start": frame, "end": frame + 4, "keys": ["A"]}
+            for frame in range(23200, 24800, 60)
+        ],
+    ]
+
+
+def _blocked_data():
+    return {
+        "schema_version": 1,
+        "name": "debugtools-phase-blocked-modern-debug",
+        "description": (
+            "TC-DEBUGTOOLS-PROTOTYPE-002 blocked negative: the live "
+            "Flag/Chapter submenu selects Apply G Block, then #87 Charge "
+            "advances the current blue phase. The blocked red phase bypasses "
+            "both computer children and ordinary player input returns on the "
+            "following blue phase."
+        ),
+        "frames": _blocked_frames(),
+        "checkpoints": [
+            {
+                "name": "player-before-green-block",
+                "frame": 17140,
+                "framebuffer": False,
+                "probes": _phase_probes(),
+            },
+            {
+                "name": "green-block-requested",
+                "frame": 18250,
+                "framebuffer": False,
+                "probes": _phase_probes(),
+            },
+            {
+                "name": "green-block-next-blue-restored",
+                "frame": 25590,
+                "framebuffer": False,
+                "probes": _phase_probes(),
+            },
+        ],
+    }
+
+
 def _negative_data(config):
+    frames, base_frame = _release_frames()
     return {
         "schema_version": 1,
         "name": f"debugtools-phase-control-modern-{config}",
         "description": (
-            "TC-DEBUGTOOLS-PROTOTYPE-002 release negative: replay the exact "
-            "debug-hub and native End Phase inputs against the release ROM. "
-            "The debug hub and phase-control probe extension are absent, so "
-            "the established always-linked diagnostic probe remains zero."
+            "TC-DEBUGTOOLS-PROTOTYPE-002 release negative: a stable "
+            "clean-boot Prologue blue PLAYER map receives the debug hotkey "
+            "and a native cursor move. The hotkey is compiled out, "
+            "gDebugToolsProbe remains zero, and the same player map accepts "
+            "the native movement."
         ),
-        "frames": _positive_frames(),
+        "frames": frames,
         "checkpoints": [
             {
-                "name": "release-before-debug-input",
-                "frame": 17140,
+                "name": "release-blue-player-before-debug-input",
+                "frame": base_frame,
                 "framebuffer": False,
                 "probes": _release_probes(),
             },
             {
-                "name": "release-debug-input-is-inert",
-                "frame": 17920,
+                "name": "release-blue-player-debug-input-inert",
+                "frame": base_frame + 120,
                 "framebuffer": False,
                 "probes": _release_probes(),
             },
             {
-                "name": "release-map-remains-interactive",
-                "frame": 25020,
+                "name": "release-blue-player-map-interactive",
+                "frame": base_frame + 220,
                 "framebuffer": False,
                 "probes": _release_probes(),
             },
@@ -223,14 +316,50 @@ def _check_positive(capture):
     return failures
 
 
+def _check_blocked(capture):
+    before = _checkpoint_values(capture, 0)
+    requested = _checkpoint_values(capture, 1)
+    restored = _checkpoint_values(capture, 2)
+    failures = []
+
+    if before["gPlaySt+0x0f"] != PLAYER_FACTION:
+        failures.append("blocked: fixture did not begin in an interactive blue phase")
+    if requested[PHASE_REQUESTED_COUNT] != 1:
+        failures.append("blocked: Apply G Block did not record one request")
+    if requested[PHASE_LAST_REQUEST_KIND] != PHASE_CONTROL_REQUEST_FACTION:
+        failures.append("blocked: request was not typed as faction control")
+    if requested[PHASE_LAST_FACTION] != GREEN_FACTION:
+        failures.append("blocked: request did not target green")
+    if requested[PHASE_LAST_MODE] != PHASE_CONTROL_BLOCKED:
+        failures.append("blocked: request did not use BLOCKED mode")
+    if restored["gPlaySt+0x0f"] != PLAYER_FACTION:
+        failures.append("blocked: normal blue control did not return")
+    if restored["gPlaySt+0x10"] != before["gPlaySt+0x10"] + 1:
+        failures.append("blocked: skipped red phase did not advance to the next blue turn")
+    if restored[PHASE_APPLIED_COUNT] != 1 or restored[PHASE_RESTORED_COUNT] != 1:
+        failures.append("blocked: green block was not a one-phase restoration")
+    return failures
+
+
 def _check_negative(capture):
     failures = []
+    before = _checkpoint_values(capture, 0)
+    final = _checkpoint_values(capture, -1)
     for checkpoint in capture["checkpoints"]:
+        values = {
+            probe["address"]: int(probe["value"], 16)
+            for probe in checkpoint["probes"]
+        }
+        if values["gPlaySt+0x0f"] != PLAYER_FACTION:
+            failures.append("release: map did not remain in the blue PLAYER faction")
+        if values["gPlaySt+0x10"] != RELEASE_PLAYER_TURN:
+            failures.append(
+                "release: map turn did not remain at the expected player turn"
+            )
         for probe in checkpoint["probes"]:
             if probe["address"] == PHASE_PROBE and probe["value"] != "0x00000000":
                 failures.append("release: debugtools probe changed after debug inputs")
-    final = _checkpoint_values(capture, -1)
-    if final["gBmSt+0x14"] == _checkpoint_values(capture, 0)["gBmSt+0x14"]:
+    if final["gBmSt+0x14"] != before["gBmSt+0x14"] + 1:
         failures.append("release: native map input did not remain interactive")
     return failures
 
@@ -265,25 +394,29 @@ def main(argv=None):
         args.out_dir.mkdir(parents=True, exist_ok=True)
         os.environ.setdefault("TMPDIR", str(args.out_dir / "tmp"))
         Path(os.environ["TMPDIR"]).mkdir(parents=True, exist_ok=True)
-        data = _positive_data() if args.config == "debug" else _negative_data(args.config)
-        capture = _capture(args.rom, args.elf, data)
-        capture_path = args.out_dir / f"{data['name']}.captured.json"
-        capture_path.write_text(
-            gba_playtest.serialize_fingerprint(capture), encoding="utf-8"
-        )
-        semantic_failures = (
-            _check_positive(capture)
-            if args.config == "debug"
-            else _check_negative(capture)
-        )
-        failures = semantic_failures + _verify_or_capture(
-            capture, data["name"], args.capture_fingerprints
-        )
+        if args.config == "debug":
+            cases = [
+                (_positive_data(), _check_positive),
+                (_blocked_data(), _check_blocked),
+            ]
+        else:
+            cases = [(_negative_data(args.config), _check_negative)]
+        failures = []
+        for data, semantic_check in cases:
+            capture = _capture(args.rom, args.elf, data)
+            capture_path = args.out_dir / f"{data['name']}.captured.json"
+            capture_path.write_text(
+                gba_playtest.serialize_fingerprint(capture), encoding="utf-8"
+            )
+            failures.extend(semantic_check(capture))
+            failures.extend(
+                _verify_or_capture(capture, data["name"], args.capture_fingerprints)
+            )
         if failures:
             raise CheckError("\n".join(failures))
         print(
             "Debugtools phase-control runtime check passed: "
-            f"{data['name']} ({args.config})"
+            f"{args.config}"
         )
         return 0
     except (CheckError, OSError, ValueError, KeyError, gba_playtest.PlaytestError) as error:

@@ -48,9 +48,14 @@ static int sComputerPhaseLive;
 static int sBerserkPhaseLive;
 static int sCameraLive;
 static int sEventLive;
+static int sBattleEventLive;
+static int sBattleLive;
 static int sFadeLive;
 static int sComputerPhaseStarts;
+static int sBerserkActionStarts;
+static int sBerserkEligible;
 static int sProcBreaks;
+static int sProcGotoLabel;
 static int sPhaseSwitchEventCount;
 static int sPhaseSwitchEventFaction;
 static int sPhaseSwitchEventTurn;
@@ -79,6 +84,8 @@ ProcPtr Proc_StartBlocking(const struct ProcCmd* script, ProcPtr parent)
 
     if (script == gProcScr_CpPhase)
         sComputerPhaseStarts++;
+    else if (script == gProcScr_BerserkCpPhase && sBerserkEligible)
+        sBerserkActionStarts++;
 
     return &sBlockingProc;
 }
@@ -87,6 +94,12 @@ void Proc_Break(ProcPtr proc)
 {
     (void)proc;
     sProcBreaks++;
+}
+
+void Proc_Goto(ProcPtr proc, int label)
+{
+    (void)proc;
+    sProcGotoLabel = label;
 }
 
 void Proc_End(ProcPtr proc)
@@ -159,6 +172,16 @@ s8 EventEngineExists(void)
     return sEventLive;
 }
 
+int BattleEventEngineExists(void)
+{
+    return sBattleEventLive;
+}
+
+int IsBattleDeamonActive(void)
+{
+    return sBattleLive;
+}
+
 bool8 DoesBMXFADEExist(void)
 {
     return sFadeLive;
@@ -199,9 +222,14 @@ static void ResetHarness(void)
     sBerserkPhaseLive = 0;
     sCameraLive = 0;
     sEventLive = 0;
+    sBattleEventLive = 0;
+    sBattleLive = 0;
     sFadeLive = 0;
     sComputerPhaseStarts = 0;
+    sBerserkActionStarts = 0;
+    sBerserkEligible = 0;
     sProcBreaks = 0;
+    sProcGotoLabel = -1;
     sPhaseSwitchEventCount = 0;
     sPhaseSwitchEventFaction = -1;
     sPhaseSwitchEventTurn = -1;
@@ -259,10 +287,14 @@ static int TestFactionModesAndRestoration(void)
               FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
               == DEBUGTOOLS_PHASE_CONTROL_OK,
           "red BLOCKED must queue at a safe boundary");
+    sBerserkEligible = 1;
     gPlaySt.faction = FACTION_RED;
     BmMain_StartPhase(&sMapMainProc);
-    CHECK(sComputerPhaseStarts == 0 && sProcBreaks == 1,
-          "BLOCKED must skip exactly the requested red computer phase");
+    if (sProcGotoLabel != 3)
+        Proc_StartBlocking(gProcScr_BerserkCpPhase, &sMapMainProc);
+    CHECK(sComputerPhaseStarts == 0 && sBerserkActionStarts == 0
+              && sProcGotoLabel == 3,
+          "BLOCKED must bypass normal and eligible berserk computer actions");
     CHECK(gDebugToolsProbe.phaseControlAppliedCount == 1
               && gDebugToolsProbe.phaseControlRestoredCount == 1,
           "a blocked phase must restore ordinary ownership immediately");
@@ -319,6 +351,24 @@ static int TestRejectedAndExpiredRequests(void)
               == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
           "active events must reject a request without mutation");
     sEventLive = 0;
+
+    sFadeLive = 1;
+    CHECK(DebugToolsPhaseControl_RequestTurn(6)
+              == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
+          "map fade ownership must reject a request without mutation");
+    sFadeLive = 0;
+
+    sBattleEventLive = 1;
+    CHECK(DebugToolsPhaseControl_RequestTurn(6)
+              == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
+          "battle-event ownership must reject a request without mutation");
+    sBattleEventLive = 0;
+
+    sBattleLive = 1;
+    CHECK(DebugToolsPhaseControl_RequestTurn(6)
+              == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
+          "active battle ownership must reject a request without mutation");
+    sBattleLive = 0;
 
     CHECK(ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER)
               == EXPANSION_AUTOPLAY_OK,

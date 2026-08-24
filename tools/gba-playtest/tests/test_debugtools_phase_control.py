@@ -28,6 +28,13 @@ DEBUG_RUNTIME_FINGERPRINT = (
     / "fingerprints"
     / "debugtools-phase-control-modern-debug.json"
 )
+BLOCKED_RUNTIME_FINGERPRINT = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "fingerprints"
+    / "debugtools-phase-blocked-modern-debug.json"
+)
 RELEASE_RUNTIME_FINGERPRINT = (
     ROOT
     / "tools"
@@ -372,10 +379,14 @@ class DebugToolsPhaseControlRuntimeContractTests(unittest.TestCase):
         self.assertTrue(RUNTIME_RUNNER.is_file(), f"missing {RUNTIME_RUNNER}")
         module = runpy.run_path(str(RUNTIME_RUNNER))
         debug_capture = json.loads(DEBUG_RUNTIME_FINGERPRINT.read_text(encoding="utf-8"))
+        blocked_capture = json.loads(
+            BLOCKED_RUNTIME_FINGERPRINT.read_text(encoding="utf-8")
+        )
         release_capture = json.loads(
             RELEASE_RUNTIME_FINGERPRINT.read_text(encoding="utf-8")
         )
         self.assertEqual(module["_check_positive"](debug_capture), [])
+        self.assertEqual(module["_check_blocked"](blocked_capture), [])
         self.assertEqual(module["_check_negative"](release_capture), [])
         frames = module["_positive_frames"]()
         key_sets = [tuple(frame["keys"]) for frame in frames]
@@ -395,6 +406,17 @@ class DebugToolsPhaseControlRuntimeContractTests(unittest.TestCase):
                 "red-boundary-observes-requested-turn",
                 "next-blue-before-map-input",
                 "next-blue-map-interactive",
+            ],
+        )
+        self.assertEqual(
+            [
+                checkpoint["name"]
+                for checkpoint in module["_blocked_data"]()["checkpoints"]
+            ],
+            [
+                "player-before-green-block",
+                "green-block-requested",
+                "green-block-next-blue-restored",
             ],
         )
 
