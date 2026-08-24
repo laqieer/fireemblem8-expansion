@@ -60,6 +60,10 @@ int main(void)
     int returnHubBefore;
 
     DebugToolsSelectorHostStub_Init();
+    CHECK(!DebugTools_IsTargetLaunchPending(),
+        "unselected selector must not queue a default launch");
+    CHECK(!DebugTools_ConsumePendingTargetLaunch(&request),
+        "unselected selector must not be consumable");
     DebugTools_RegisterChapterSelectorAction();
 
     CHECK(gDebugToolsSelectorCapturedAction != NULL, "selector action must register");

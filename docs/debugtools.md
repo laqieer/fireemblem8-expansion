@@ -34,7 +34,7 @@ frozen-checklist mapping. The issue #125 tester procedure is
 | `tools/gba-playtest/fingerprints/debugtools-{hub,map-hub,prep-hub}-modern-{debug,release}.json` | Captured fingerprints for the scenarios above |
 | `src/debugtools_diag.c` (closure) | Diagnostics foundation: bounded log ring (`DebugTools_LogEvent`/`GetLogEntry`/`GetLogCount`) and non-fatal assert record (`DEBUGTOOLS_ASSERT`/`DebugTools_RecordAssertFailure`) |
 | `src/debugtools_tools.c` (closure + issue #125) | The five bounded validated tools. Unit Inspect resolves the live cursor target and exposes typed HP/stat/AI/status edits; Convoy Inspect, Flag/Chapter, RNG Inspect, and read-only Save State retain their issue #11 contracts |
-| `src/gamecontrol.c` (issue #123) | `GameControl_PostIntro` consumes the validated typed selector request, creates only transient chapter/skirmish state, arms boot-write suppression, and enters the ordinary direct-battle-map label |
+| `src/gamecontrol.c` (issue #123) | `GameControl_PostIntro` consumes the validated typed selector request, creates only transient chapter/skirmish state, arms boot-write suppression, and preserves the established world-map route for the default Common-route Chapter 4 target |
 | `tools/gba-playtest/scenarios/debugtools-selector-{chapter,skirmish}-modern-debug.json` | Title-origin Chapter 4 and live-map-origin Chapter 4 skirmish routes, including exact-once request/consume/handoff, interactive destinations, and byte-identical pre/post SRAM hashes |
 | `tools/gba-playtest/scenarios/debugtools-selector-modern-release.json` | Exact-input release mirror proving selector/action/request/handoff behavior and the private selector state symbol are omitted while the unchanged modern release debugtools probe stays zero |
 | `tools/gba-playtest/scenarios/debugtools-ch4-prep-positive-modern-debug.json` (closure) | Live prep-screen arrival (debug-only): drives the Chapter 4 world-map traversal + the real `PREP` opcode to a live `PrepScreenProc_MapIdle`, then fires the SELECT+B prep hotkey; proves `prepScreenObservedCount` 0->1 and `PLAY_FLAG_PREPSCREEN` held throughout. Gate: DEBUG branch of `expansion-modern-debugtools-prep-check` |
@@ -555,11 +555,14 @@ The submenu callback never calls `EndBMapMain`, `Proc_Goto`, `Proc_EndEach`,
    recreates GameControl. A duplicate schedule is a no-op; a lost owner is
    bounded by a 60-frame cancellation timeout.
 3. **GameControl:** `GameControl_PostIntro` consumes once before the ordinary
-   save-menu branch, seeds the deterministic RNG, initializes transient play
-   state, and enters `LGAMECTRL_EXEC_BM_EXT`, the engine's existing direct
-   battle-map label. Story targets mark only their transient selected node as
-   valid/cleared. Skirmishes mark the authoritative spawn node valid/not
-   cleared, select encounter variant 0, and set `PLAY_FLAG_EXTRA_MAP`.
+   save-menu branch and seeds the deterministic RNG. The default Common-route
+   Chapter 4 target preserves the established `NODE_BORGO_RIDGE` world-map
+   traversal through `LGAMECTRL_EXEC_BM`; every other typed target initializes
+   transient play state and enters `LGAMECTRL_EXEC_BM_EXT`, the engine's
+   existing direct battle-map label. Story targets mark only their transient
+   selected node as valid/cleared. Skirmishes mark the authoritative spawn node
+   valid/not cleared, select encounter variant 0, and set
+   `PLAY_FLAG_EXTRA_MAP`.
    Encounter ally lists reposition an existing party, so GameControl first
    seeds that party from the selected chapter's authoritative normal ally
    list; it never maintains a separate unit fixture.
@@ -1542,7 +1545,8 @@ arrival is now **achieved** (first bullet). What otherwise remains
 explicitly, honestly open is narrow:
 
 - **Live prep-screen arrival -- ACHIEVED.** Both halves are proven live:
-  the selector's Chapter 4 typed request/commit and direct prep arrival
+  the selector's Chapter 4 typed request/commit and world-map-compatible prep
+  arrival
   (`debugtools-selector-chapter-modern-debug.json`: target `0x1104`,
   exact-once consume, `gPlaySt.chapterIndex == CHAPTER_L_4`, prep bit set,
   unchanged SRAM), and the SELECT+B prep hotkey

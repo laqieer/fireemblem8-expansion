@@ -477,9 +477,27 @@ void GameControl_PostIntro(struct GameCtrlProc * proc)
                 ResetChapterFlags();
                 InitUnits();
                 gPlaySt.chapterIndex = request.chapterId;
-                gPlaySt.save_menu_type = 2;
                 proc->nextChapter = request.chapterId;
 
+                /*
+                 * Preserve the established Chapter 4 prep route for the
+                 * selector's default Common-route target. This path only
+                 * executes after the selector request is consumed; an
+                 * unselected selector remains inert. The BMap traversal from
+                 * Borgo Ridge retains the existing event and combat timing.
+                 */
+                if (request.kind == DEBUGTOOLS_LAUNCH_TARGET_CHAPTER
+                    && request.chapterMode == CHAPTER_MODE_COMMON
+                    && request.chapterId == CHAPTER_L_4)
+                {
+                    GmDataInit();
+                    gGMData.units[0].location = NODE_BORGO_RIDGE;
+                    DebugTools_ArmBootstrapSuppression();
+                    Proc_Goto(proc, LGAMECTRL_EXEC_BM);
+                    break;
+                }
+
+                gPlaySt.save_menu_type = 2;
                 GmDataInit();
                 gGMData.current_node = request.nodeId;
                 gGMData.units[0].location = request.nodeId;

@@ -1033,7 +1033,7 @@
     },
     {
       "name": "__floating_end",
-      "address": 145945900,
+      "address": 145945948,
       "expression": ".",
       "region": "rom"
     },
