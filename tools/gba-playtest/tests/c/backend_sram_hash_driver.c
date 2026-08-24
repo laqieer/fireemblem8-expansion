@@ -37,7 +37,6 @@ static uint32_t ReadCurrentSram(struct mCore* core, uint32_t address)
 int main(void)
 {
     struct mCore core;
-    uint8_t initial_sram[GBA_SRAM_SIZE];
     uint64_t unchanged_a;
     uint64_t unchanged_b;
     uint64_t mutated;
@@ -45,26 +44,25 @@ int main(void)
     uint64_t cloned_b;
 
     memset(&core, 0, sizeof(core));
-    memset(initial_sram, 0xA5, sizeof(initial_sram));
     memset(sCurrentSram, 0x11, sizeof(sCurrentSram));
     memcpy(sClonedSram, sCurrentSram, sizeof(sClonedSram));
     core.savedataClone = CloneFailure;
     core.busRead8 = ReadCurrentSram;
 
-    unchanged_a = hash_sram(&core, NULL, 0, initial_sram);
-    unchanged_b = hash_sram(&core, NULL, 0, initial_sram);
+    unchanged_a = hash_sram(&core, NULL, 0);
+    unchanged_b = hash_sram(&core, NULL, 0);
     if (unchanged_a != unchanged_b)
         return 1;
 
     sCurrentSram[0x1234] ^= 0xFF;
-    mutated = hash_sram(&core, NULL, 0, initial_sram);
+    mutated = hash_sram(&core, NULL, 0);
     if (mutated == unchanged_a)
         return 2;
 
     core.savedataClone = CloneStable;
-    cloned_a = hash_sram(&core, NULL, 0, initial_sram);
+    cloned_a = hash_sram(&core, NULL, 0);
     sCurrentSram[0x1234] ^= 0x7E;
-    cloned_b = hash_sram(&core, NULL, 0, initial_sram);
+    cloned_b = hash_sram(&core, NULL, 0);
     if (cloned_a != cloned_b)
         return 3;
 
