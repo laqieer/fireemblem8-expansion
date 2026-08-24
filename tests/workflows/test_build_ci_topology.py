@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
+PYTHON_REQUIREMENTS = ROOT / ".github" / "requirements" / "build.txt"
 RETIRED_WORKFLOW_FILENAME = "full" + "-matrix.yml"
 RETIRED_WORKFLOW = ROOT / ".github" / "workflows" / RETIRED_WORKFLOW_FILENAME
 MAKEFILE = ROOT / "Makefile"
@@ -18,6 +19,29 @@ MASTER_PUBLISHER_CONDITION = (
 COMBINED_WORKERS = ("host-tests", "build", "extended-host-tests", "legacy")
 INDEPENDENT_JOBS = COMBINED_WORKERS + ("patch-release",)
 SUMMARY_NEEDS = "needs: [host-tests, build, extended-host-tests, legacy]"
+HASHED_PIP_INSTALL = (
+    "python3 -m pip install --require-hashes --only-binary=:all: --no-deps "
+    "-r .github/requirements/build.txt"
+)
+EXPECTED_HASHED_REQUIREMENTS = {
+    "numpy": (
+        "2.5.2",
+        "sha256:3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8",
+    ),
+    "pillow": (
+        "12.3.0",
+        "sha256:78cb2c6865a35ab8ff8b75fd122f6033b92a62c82801110e48ddd6c936a45d91",
+    ),
+    "ttp": (
+        "0.10.1",
+        "sha256:2c8bc871f7740b690c6df6fb8c9633be58fcda123eea3e53be40a79e4af54b83",
+    ),
+}
+PIP_INVOCATION_RE = re.compile(
+    r"(?<![A-Za-z0-9_.-])"
+    r"(?:python(?:3(?:\.[0-9]+)?)?\s+-m\s+pip|pip(?:3(?:\.[0-9]+)?)?)"
+    r"(?=\s|$)"
+)
 PULL_REQUEST_TRIGGER = 'pull_request:\n    branches: [ "master" ]'
 PUSH_TRIGGER = 'push:\n    branches: [ "master" ]'
 SUMMARY_RESULTS = (
@@ -57,7 +81,10 @@ def _run_block_commands(job: str) -> list[str]:
         if match is None:
             index += 1
             continue
-        if match.group("value") == "|":
+        if re.fullmatch(
+            r"[|>](?:(?:[1-9][+-]?)|(?:[+-][1-9]?))?",
+            match.group("value"),
+        ):
             index += 1
             block = []
             while index < len(lines) and lines[index].startswith("        "):
@@ -79,6 +106,48 @@ def _contains_command(job: str, command: str) -> bool:
         _normalise(command) in _normalise(run)
         for run in _run_block_commands(job)
     )
+
+
+def _hashed_requirements_errors(text: str) -> list[str]:
+    logical_lines = []
+    current = ""
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        current = f"{current} {line}".strip()
+        if current.endswith("\\"):
+            current = current[:-1].rstrip()
+            continue
+        logical_lines.append(current)
+        current = ""
+
+    errors = []
+    if current:
+        errors.append("unterminated requirement continuation")
+
+    records = {}
+    for line in logical_lines:
+        fields = line.split()
+        if not fields or "==" not in fields[0]:
+            errors.append(f"invalid requirement record: {line}")
+            continue
+        name, version = fields[0].split("==", 1)
+        hashes = [field.removeprefix("--hash=") for field in fields[1:]]
+        if any(not field.startswith("--hash=sha256:") for field in fields[1:]):
+            errors.append(f"{name} has a non-SHA256 requirement option")
+            continue
+        if len(hashes) != 1:
+            errors.append(f"{name} must have exactly one reviewed wheel hash")
+            continue
+        if name in records:
+            errors.append(f"duplicate requirement: {name}")
+            continue
+        records[name] = (version, hashes[0])
+
+    if records != EXPECTED_HASHED_REQUIREMENTS:
+        errors.append("Build Python requirements differ from reviewed versions/hashes")
+    return errors
 
 
 def _make_recipe(text: str, target: str) -> str:
@@ -122,6 +191,18 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             words = set(command.split())
             if "apt-get" in words and "libpng-dev" in words and "pkg-config" not in words:
                 errors.append(f"{job_name} installs libpng-dev without pkg-config")
+        pip_invocations = [
+            command
+            for command in _run_block_commands(job)
+            for _match in PIP_INVOCATION_RE.finditer(command)
+        ]
+        if job_name in ("build", "patch-release"):
+            if len(pip_invocations) != 1 or _normalise(pip_invocations[0]) != _normalise(
+                HASHED_PIP_INSTALL
+            ):
+                errors.append(f"{job_name} must use the reviewed hash-locked Python requirements")
+        elif pip_invocations:
+            errors.append(f"{job_name} adds an unreviewed Python package install")
 
     for job_name in COMBINED_WORKERS:
         if "if:" in jobs[job_name]:
@@ -262,6 +343,102 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         for error in _errors(changed, False)
                     )
                 )
+
+    def test_build_python_dependencies_are_exactly_hash_locked(self):
+        self.assertEqual(
+            _hashed_requirements_errors(PYTHON_REQUIREMENTS.read_text(encoding="utf-8")),
+            [],
+        )
+
+    def test_unhashed_privileged_pip_install_fails(self):
+        changed = self.text.replace(
+            HASHED_PIP_INSTALL,
+            "python3 -m pip install ttp numpy pillow",
+            1,
+        )
+        self.assertTrue(
+            any(
+                "must use the reviewed hash-locked Python requirements" in error
+                for error in _errors(changed, False)
+            )
+        )
+
+    def test_appended_second_pip_install_fails(self):
+        changed = self.text.replace(
+            HASHED_PIP_INSTALL,
+            HASHED_PIP_INSTALL + " && python3 -m pip install evil",
+            1,
+        )
+        self.assertTrue(
+            any(
+                "must use the reviewed hash-locked Python requirements" in error
+                for error in _errors(changed, False)
+            )
+        )
+
+    def test_separate_bare_or_versioned_pip_install_fails(self):
+        for command in ("pip install evil", "pip3.12 install evil"):
+            with self.subTest(command=command):
+                changed = self.text.replace(
+                    "    - name: Build tools\n",
+                    f"    - run: {command}\n\n    - name: Build tools\n",
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "must use the reviewed hash-locked Python requirements" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_pip_global_options_before_install_fail(self):
+        for command in (
+            "python3 -m pip --isolated install evil",
+            "pip --proxy https://example.invalid install evil",
+        ):
+            with self.subTest(command=command):
+                changed = self.text.replace(
+                    "    - name: Build tools\n",
+                    f"    - run: {command}\n\n    - name: Build tools\n",
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "must use the reviewed hash-locked Python requirements" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_folded_block_scalar_pip_install_fails(self):
+        for scalar in (">", ">-", ">+2"):
+            with self.subTest(scalar=scalar):
+                changed = self.text.replace(
+                    "    - name: Build tools\n",
+                    f"    - run: {scalar}\n"
+                    "        echo preparing &&\n"
+                    "        python3 -m pip --isolated install evil\n\n"
+                    "    - name: Build tools\n",
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "must use the reviewed hash-locked Python requirements" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_changed_requirement_hash_fails(self):
+        changed = PYTHON_REQUIREMENTS.read_text(encoding="utf-8").replace(
+            EXPECTED_HASHED_REQUIREMENTS["numpy"][1],
+            "sha256:" + ("0" * 64),
+            1,
+        )
+        self.assertTrue(
+            any(
+                "differ from reviewed versions/hashes" in error
+                for error in _hashed_requirements_errors(changed)
+            )
+        )
 
     def test_missing_summary_dependency_fails(self):
         changed = self.text.replace(
