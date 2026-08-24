@@ -52,15 +52,11 @@ class LinkerCheckTargetTests(unittest.TestCase):
             self.assertIn(target, goals)
 
     def test_chapter_objectives_runtime_check_requires_aapcs_and_consolidates(self):
-        text = MODERN_MK.read_text(encoding="utf-8")
-        linked_goals = text.split("MODERN_LINKED_GOALS :=", 1)[1].split(
-            "MODERN_REQUESTED_LINKED_GOALS", 1
-        )[0]
-        linker_check = text.split("expansion-modern-linker-check:", 1)[1].split(
-            '"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py', 1
-        )[0]
-        self.assertIn("expansion-modern-chapter-objectives-check", linked_goals)
-        self.assertIn("expansion-modern-chapter-objectives-check", linker_check)
+        result = self.make(
+            "-n", "expansion-modern-chapter-objectives-check", "MODERN_ABI=apcs-gnu"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires MODERN_ABI=aapcs", result.stdout)
 
     def test_linker_check_dry_run_wires_every_gate(self):
         result = self.make("-n", "expansion-modern-linker-check")
@@ -74,6 +70,7 @@ class LinkerCheckTargetTests(unittest.TestCase):
             "modern_shifted_boot.sh",
             "scan_build_addrs.py",
             "scan_raw_casts.sh",
+            "run_chapter_objective_checks.py",
         ):
             self.assertIn(expected, result.stdout)
 
