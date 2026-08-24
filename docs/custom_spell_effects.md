@@ -175,8 +175,15 @@ records, arbitrary C/Event Assembler, missing or reordered triples, unsafe
 paths, and extra/mid-stream terminators fail with file/line diagnostics.
 
 Each OBJ PNG is exact indexed 4bpp 480x160; each BG PNG is exact indexed 4bpp
-240x64. Both have 1..16 colors, transparent index 0, opaque nonzero entries,
-one IDAT, no ancillary/critical extras, and no runtime decoder.
+240x64. Both have 1..16 palette entries and a non-empty `tRNS` whose index 0
+is transparent. Every decoded, used nonzero palette index must be opaque;
+unused nonzero palette entries may have any `tRNS` alpha. A PNG begins with
+one `IHDR`, has one `PLTE`, has `tRNS` after `PLTE` and before one or more
+consecutive `IDAT` chunks, and ends with a zero-payload `IEND`. Legal ancillary
+chunks may appear in legal positions without interrupting `IDAT`; their payloads
+are not runtime inputs. Unknown critical chunks, duplicate/misordered required
+chunks, nonconsecutive `IDAT`, trailing bytes, and missing or malformed `IEND`
+fail. The runtime never parses source PNGs.
 
 ### Deterministic conversion
 

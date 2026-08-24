@@ -551,7 +551,8 @@ class AssetManifestTests(unittest.TestCase):
         record = valid_portrait_record(TEST_ROOT)
         with open(os.path.join(REPO_ROOT, record["sources"][1]), "w", encoding="utf-8") as handle:
             handle.write("{ malformed metadata")
-        self.assert_validation_error([record], "cannot load portrait metadata")
+        with mock.patch.object(manifest, "_repo_path", side_effect=lambda path, *_: path):
+            self.assert_validation_error([record], "cannot load portrait metadata")
 
     def test_formatted_portrait_package_reports_unreadable_metadata_without_crashing(self):
         record = valid_portrait_record(TEST_ROOT)
@@ -563,7 +564,10 @@ class AssetManifestTests(unittest.TestCase):
                 raise OSError("metadata unavailable for test")
             return real_open(path, *args, **kwargs)
 
-        with mock.patch("builtins.open", side_effect=reject_metadata):
+        with (
+            mock.patch("builtins.open", side_effect=reject_metadata),
+            mock.patch.object(manifest, "_repo_path", side_effect=lambda path, *_: path),
+        ):
             self.assert_validation_error([record], "cannot load portrait metadata")
 
     def test_formatted_portrait_package_reports_missing_metadata_field_without_crashing(self):
@@ -583,7 +587,8 @@ class AssetManifestTests(unittest.TestCase):
         }
         with open(metadata_path, "w", encoding="utf-8") as handle:
             json.dump(metadata, handle)
-        self.assert_validation_error([record], "portrait metadata must contain exactly")
+        with mock.patch.object(manifest, "_repo_path", side_effect=lambda path, *_: path):
+            self.assert_validation_error([record], "portrait metadata must contain exactly")
 
     def test_formatted_portrait_package_requires_metadata_json(self):
         record = valid_portrait_record(TEST_ROOT)
@@ -593,7 +598,8 @@ class AssetManifestTests(unittest.TestCase):
             os.path.join(REPO_ROOT, record["sources"][1].replace("proof.json", "metadata.json")),
             source_path,
         )
-        self.assert_validation_error([record], "metadata.json")
+        with mock.patch.object(manifest, "_repo_path", side_effect=lambda path, *_: path):
+            self.assert_validation_error([record], "metadata.json")
 
     def test_sources_command_includes_portrait_registry_dependency(self):
         result = subprocess.run(
@@ -957,10 +963,63 @@ class AssetManifestTests(unittest.TestCase):
             'ASSET_MANIFEST_SOURCES := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" sources)',
             asset_makefile,
         )
-        self.assertIn(
-            "$(ASSET_OUTPUT_MK): $(ASSET_MANIFEST) $(ASSET_MANIFEST_SOURCES) $(ASSET_TOOL_INPUTS)",
-            asset_makefile,
+        rule = next(
+            line
+            for line in asset_makefile.splitlines()
+            if line.startswith("$(ASSET_OUTPUT_MK):")
         )
+        prerequisites = set(rule.split(":", 1)[1].split())
+        self.assertTrue(
+            {
+                "$(ASSET_SELECTION_STAMP)",
+                "$(ASSET_MANIFEST)",
+                "$(ASSET_MANIFEST_SOURCES)",
+                "$(ASSET_TOOL_INPUTS)",
+            }.issubset(prerequisites)
+        )
+        legacy = valid_record()
+        legacy["id"] = "CH1_MAIN_MAP"
+        legacy["kind"] = "chapter-map-layout"
+        legacy["sources"] = [
+            "graphics/map/layout/Ch1Map.mar",
+            "graphics/map/layout/Ch1Map.json",
+        ]
+        legacy["options"] = {"format": "mar", "compression": "lz77"}
+        legacy["ownership"].update(
+            {"chapterSettingsIndex": 1, "mainLayerId": 8, "symbol": "Ch1Map"}
+        )
+        legacy["resources"].update({"mapWidth": 15, "mapHeight": 10})
+        source = self.write_manifest([legacy])
+        output_dir = os.path.join(TEST_ROOT, "selection-stamp")
+        stamp = output_dir + ".manifest-selection"
+
+        def update_stamp(enabled):
+            return subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-f",
+                    "assets.mk",
+                    stamp,
+                    "PYTHON={}".format(sys.executable),
+                    "ASSET_MANIFEST={}".format(source),
+                    "ASSET_OUTPUT_DIR={}".format(output_dir),
+                    "EXPANSION_CUSTOM_SPELL_EFFECTS={}".format(enabled),
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        first = update_stamp(0)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        with open(stamp, encoding="utf-8") as handle:
+            self.assertIn("custom_spell_effects=0", handle.read())
+        second = update_stamp(1)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        with open(stamp, encoding="utf-8") as handle:
+            self.assertIn("custom_spell_effects=1", handle.read())
 
     def assert_asset_manifest_would_regenerate(
         self, manifest_path, output_dir, dependencies

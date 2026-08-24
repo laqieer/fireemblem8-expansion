@@ -665,6 +665,21 @@ class CustomSpellAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must end with IEND"):
             custom_spell.read_indexed_png(path, 240, 64)
 
+    def test_public_png_contract_matches_parser(self):
+        with open(
+            os.path.join(ROOT, "docs", "custom_spell_effects.md"),
+            encoding="utf-8",
+        ) as handle:
+            documentation = " ".join(handle.read().split())
+        for phrase in (
+            "used nonzero palette index must be opaque",
+            "unused nonzero palette entries may have any `tRNS` alpha",
+            "one or more consecutive `IDAT` chunks",
+            "Legal ancillary chunks may appear in legal positions",
+            "ends with a zero-payload `IEND`",
+        ):
+            self.assertIn(phrase, documentation)
+
     def test_background_scaling_and_tsa_vectors(self):
         pixels = bytearray()
         for source_y in range(custom_spell.BG_HEIGHT):
