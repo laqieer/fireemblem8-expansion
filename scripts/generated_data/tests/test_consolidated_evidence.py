@@ -93,10 +93,26 @@ class SchemaEvidenceTests(unittest.TestCase):
     def test_schema_fixtures(self):
         valid_cases = (("characters", 3), ("classes", 2), ("items", 3), ("supports", 3))
         failure_cases = (
-            ("characters", "bad_base_ranks_itype_ref.json", "ITYPE_NOT_A_REAL_TYPE"),
-            ("classes", "bad_base_ranks_itype_ref.json", "ITYPE_NOT_A_REAL_TYPE"),
-            ("characters", "bad_base_ranks_wexp_ref.json", "WPN_EXP_NOT_REAL"),
-            ("classes", "bad_base_ranks_wexp_ref.json", "WPN_EXP_NOT_REAL"),
+            (
+                "characters",
+                "bad_base_ranks_itype_ref.json",
+                "undefined weapon type reference 'ITYPE_NOT_A_REAL_TYPE'",
+            ),
+            (
+                "classes",
+                "bad_base_ranks_itype_ref.json",
+                "undefined weapon type reference 'ITYPE_NOT_A_REAL_TYPE'",
+            ),
+            (
+                "characters",
+                "bad_base_ranks_wexp_ref.json",
+                "undefined weapon-exp threshold reference 'WPN_EXP_NOT_REAL'",
+            ),
+            (
+                "classes",
+                "bad_base_ranks_wexp_ref.json",
+                "undefined weapon-exp threshold reference 'WPN_EXP_NOT_REAL'",
+            ),
             ("characters", "bad_base_stat_range.json", "hp 999 out of range [-128, 127]"),
             ("classes", "bad_base_stat_range.json", "hp 999 out of range [-128, 127]"),
             ("classes", "bad_text_id.json", "nameTextId 9999 out of range [0, 9]"),
@@ -106,8 +122,16 @@ class SchemaEvidenceTests(unittest.TestCase):
             ("movecost", "bad_range.json", "200"),
             ("terrainstats", "bad_range.json", "200"),
             ("weapontriangle", "bad_range.json", "200"),
-            ("shops", "missing_item_ref.json", "ITEM_NOT_A_REAL_ITEM"),
-            ("units", "missing_item_ref.json", "ITEM_NOT_A_REAL_ITEM"),
+            (
+                "shops",
+                "missing_item_ref.json",
+                "undefined item reference 'ITEM_NOT_A_REAL_ITEM'",
+            ),
+            (
+                "units",
+                "missing_item_ref.json",
+                "undefined item reference 'ITEM_NOT_A_REAL_ITEM'",
+            ),
         )
 
         for table, expected_count in valid_cases:
