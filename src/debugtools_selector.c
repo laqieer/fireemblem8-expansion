@@ -699,7 +699,7 @@ static u8 DebugToolsSelector_Selected(
             NULL))
         return MENU_ACT_SND6B;
 
-    origin = (gKeyStatusPtr->newKeys & L_BUTTON)
+    origin = (gKeyStatusPtr->heldKeys & L_BUTTON)
         ? DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_CH4_PREP_COMPAT
         : DEBUGTOOLS_LAUNCH_REQUEST_ORIGIN_DIRECT;
     result = DebugTools_RequestTargetLaunchWithOrigin(target.id, origin);

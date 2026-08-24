@@ -186,11 +186,11 @@ int main(void)
 
     CHECK(OpenSelector() == 0, "reopening selector for compatibility route failed");
     itemDef = &gDebugToolsSelectorCapturedMenuDef->menuItems[0];
-    gDebugToolsSelectorTestKeyStatus.newKeys = L_BUTTON;
+    gDebugToolsSelectorTestKeyStatus.heldKeys = L_BUTTON;
     CHECK(
         itemDef->onSelected(&sMenu, &sItem) & MENU_ACT_END,
         "compatibility selection must close submenu");
-    gDebugToolsSelectorTestKeyStatus.newKeys = 0;
+    gDebugToolsSelectorTestKeyStatus.heldKeys = 0;
     gDebugToolsSelectorCapturedMenuDef->onEnd(&sMenu);
     CHECK(
         DebugTools_ConsumePendingTargetLaunch(&request),
