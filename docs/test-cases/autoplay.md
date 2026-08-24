@@ -222,7 +222,8 @@ Accelerated fidelity finishes after exactly **16,869** frames, a deterministic
 **266-frame reduction**. The terminal objective result, turn/action counts,
 all terminal semantic probes (including active blue, red, and green unit state
 and items), ordered committed-action/event telemetry, chapter/permanent and
-objective-result flag transitions, and every sampled RNG state are identical.
+named objective-result flag transitions (`EVFLAG_WIN`, `EVFLAG_DEFEAT_ALL`,
+and `EVFLAG_GAMEOVER`), and every sampled RNG state are identical.
 Every repeated same-profile sample also has identical terminal and ordered
 trace frames. The dedicated accelerated test ROM has event command commits
 append a bounded ordered telemetry record; overflow is a failure. The

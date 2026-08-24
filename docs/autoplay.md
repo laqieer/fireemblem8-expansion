@@ -173,7 +173,8 @@ preserving action/RNG order without treating wall-clock timing as behavior.
 The dedicated accelerated-fidelity test ROM alone records the first observed
 state and every later bounded ordered state transition at the event
 command-commit seam, including the command, slot-C/counter, and
-chapter/permanent flag state;
+named objective flags (`EVFLAG_WIN`, `EVFLAG_DEFEAT_ALL`, and
+`EVFLAG_GAMEOVER`);
 the terminal checkpoint compares every record and fails on overflow. Endpoints
 also cover the active blue, red, and green unit slots. The declared frame bound
 multiplied by trace-probe count may not exceed 450,000 records, bounding backend

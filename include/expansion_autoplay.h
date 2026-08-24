@@ -86,8 +86,8 @@ struct ExpansionAutoplayEventTraceEntry
     u32 command;
     u32 slotC;
     u32 eventCounter;
-    u32 chapterFlags;
-    u32 permanentFlags;
+    u32 objectiveFlags;
+    u32 gameOverFlag;
 };
 
 struct ExpansionAutoplayEventTrace

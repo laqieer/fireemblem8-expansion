@@ -3,9 +3,11 @@
 #include "bmunit.h"
 #if FE8_AUTOPLAY_EVENT_TRACE_TEST
 #include "event.h"
-#include "variables.h"
+#include "eventinfo.h"
 #endif
 #include "cp_common.h"
+
+#include "constants/event-flags.h"
 
 #include "expansion_autoplay_internal.h"
 
@@ -31,8 +33,8 @@ struct ExpansionAutoplayEventTracePrevious
     bool initialized;
     u32 slotC;
     u32 eventCounter;
-    u32 chapterFlags;
-    u32 permanentFlags;
+    u32 objectiveFlags;
+    u32 gameOverFlag;
 };
 
 EWRAM_DATA static struct ExpansionAutoplayEventTracePrevious
@@ -50,16 +52,6 @@ static void SetFailure(enum ExpansionAutoplayFailure failure)
     gExpansionAutoplayTelemetry.state = EXPANSION_AUTOPLAY_STATE_FAILURE;
     gExpansionAutoplayTelemetry.failure = failure;
 }
-
-#if FE8_AUTOPLAY_EVENT_TRACE_TEST
-static u32 ReadFlagWord(const u8* bits)
-{
-    return (u32)bits[0]
-        | ((u32)bits[1] << 8)
-        | ((u32)bits[2] << 16)
-        | ((u32)bits[3] << 24);
-}
-#endif
 
 void ExpansionAutoplay_Reset(void)
 {
@@ -318,29 +310,30 @@ void ExpansionAutoplay_RecordEventCommand(u8 command)
     struct ExpansionAutoplayEventTraceEntry* entry;
     u32 slotC;
     u32 eventCounter;
-    u32 chapterFlags;
-    u32 permanentFlags;
+    u32 objectiveFlags;
+    u32 gameOverFlag;
 
     if (gExpansionAutoplayTelemetry.controller != EXPANSION_BLUE_CONTROL_COMPUTER)
         return;
 
     slotC = gEventSlots[EVT_SLOT_C];
     eventCounter = gEventSlotCounter;
-    chapterFlags = ReadFlagWord(gChapterFlagBits);
-    permanentFlags = ReadFlagWord(gPermanentFlagBits);
+    objectiveFlags = (CheckFlag(EVFLAG_WIN) != 0)
+        | ((CheckFlag(EVFLAG_DEFEAT_ALL) != 0) << 1);
+    gameOverFlag = CheckFlag(EVFLAG_GAMEOVER) != 0;
 
     if (sExpansionAutoplayEventTracePrevious.initialized
         && sExpansionAutoplayEventTracePrevious.slotC == slotC
         && sExpansionAutoplayEventTracePrevious.eventCounter == eventCounter
-        && sExpansionAutoplayEventTracePrevious.chapterFlags == chapterFlags
-        && sExpansionAutoplayEventTracePrevious.permanentFlags == permanentFlags)
+        && sExpansionAutoplayEventTracePrevious.objectiveFlags == objectiveFlags
+        && sExpansionAutoplayEventTracePrevious.gameOverFlag == gameOverFlag)
         return;
 
     sExpansionAutoplayEventTracePrevious.initialized = TRUE;
     sExpansionAutoplayEventTracePrevious.slotC = slotC;
     sExpansionAutoplayEventTracePrevious.eventCounter = eventCounter;
-    sExpansionAutoplayEventTracePrevious.chapterFlags = chapterFlags;
-    sExpansionAutoplayEventTracePrevious.permanentFlags = permanentFlags;
+    sExpansionAutoplayEventTracePrevious.objectiveFlags = objectiveFlags;
+    sExpansionAutoplayEventTracePrevious.gameOverFlag = gameOverFlag;
 
     if (gExpansionAutoplayEventTrace.count
         >= EXPANSION_AUTOPLAY_EVENT_TRACE_CAPACITY)
@@ -353,8 +346,8 @@ void ExpansionAutoplay_RecordEventCommand(u8 command)
     entry->command = command;
     entry->slotC = slotC;
     entry->eventCounter = eventCounter;
-    entry->chapterFlags = chapterFlags;
-    entry->permanentFlags = permanentFlags;
+    entry->objectiveFlags = objectiveFlags;
+    entry->gameOverFlag = gameOverFlag;
     gExpansionAutoplayEventTrace.count++;
 }
 #endif
