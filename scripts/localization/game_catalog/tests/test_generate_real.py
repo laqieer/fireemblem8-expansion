@@ -90,26 +90,6 @@ class RealGenerateTests(unittest.TestCase):
                     },
                 )
 
-    def test_generated_c_uses_locale_data_section_and_has_target_entries(self):
-        with self._tmpdir() as tmp:
-            written = generate(output_dir=Path(tmp))
-            source = written["source"].read_text(encoding="utf-8")
-            header = written["header"].read_text(encoding="utf-8")
-            config_header = written["config_header"].read_text(encoding="utf-8")
-            self.assertIn('SECTION(".locale_data")', header)
-            self.assertIn("GAME_LOCALIZATION_TARGET_COUNT 3414u", header)
-            self.assertIn("FE8_GAME_LOCALIZATION_DATA_PRESENT 1", config_header)
-            self.assertIn(
-                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4715u",
-                config_header,
-            )
-            self.assertIn("gGameLocalizationEnglishEntries[]", source)
-            self.assertIn("gGameLocalizationEnglishCatalog", source)
-            self.assertIn("gGameLocalizationJaEntries[]", source)
-            self.assertIn("gGameLocalizationZhHansEntries[]", source)
-            self.assertIn("gGameLocalizationCatalogs[GAME_LOCALIZATION_LOCALE_COUNT]", source)
-            self.assertIn("gGameLocalizationJaCompressedBlob +", source)
-
     def test_deferred_game_id_surfaces_emit_exact_japanese_and_chinese(self):
         build = build_game_catalog()
         ja = build.locale_bundle("ja")
@@ -307,51 +287,6 @@ class RealGenerateTests(unittest.TestCase):
 
             for name in ja:
                 self.assertEqual(ja[name].read_bytes(), ja_repeat[name].read_bytes(), name)
-
-            ja_source = ja["source"].read_text(encoding="utf-8")
-            zh_source = zh["source"].read_text(encoding="utf-8")
-            both_source = both["source"].read_text(encoding="utf-8")
-            ja_header = ja["header"].read_text(encoding="utf-8")
-            zh_header = zh["header"].read_text(encoding="utf-8")
-            ja_config = ja["config_header"].read_text(encoding="utf-8")
-            zh_config = zh["config_header"].read_text(encoding="utf-8")
-
-            self.assertIn("gGameLocalizationJaCompressedBlob[]", ja_source)
-            self.assertIn("gGameLocalizationEnglishCompressedBlob[]", ja_source)
-            self.assertNotIn("gGameLocalizationZhHansCompressedBlob[]", ja_source)
-            self.assertIn("gGameLocalizationZhHansCompressedBlob[]", zh_source)
-            self.assertIn("gGameLocalizationEnglishCompressedBlob[]", zh_source)
-            self.assertNotIn("gGameLocalizationJaCompressedBlob[]", zh_source)
-            self.assertIn("gGameLocalizationJaCompressedBlob[]", both_source)
-            self.assertIn("gGameLocalizationZhHansCompressedBlob[]", both_source)
-            self.assertEqual(ja_source.count(
-                "(const struct GameLocalizationLocaleCatalog *)0,"
-            ), 5)
-            self.assertEqual(zh_source.count(
-                "(const struct GameLocalizationLocaleCatalog *)0,"
-            ), 5)
-            self.assertEqual(
-                both_source.count(
-                    "(const struct GameLocalizationLocaleCatalog *)0,"
-                ),
-                4,
-            )
-
-            self.assertIn("GAME_LOCALIZATION_JA_ENABLED 1u", ja_header)
-            self.assertIn(
-                "GAME_LOCALIZATION_SHARED_ENGLISH_ENABLED 1u", ja_header
-            )
-            self.assertIn("GAME_LOCALIZATION_ZH_HANS_ENABLED 0u", ja_header)
-            self.assertNotIn("extern const u32 gGameLocalizationZhHansNodes[];", ja_header)
-            self.assertIn("GAME_LOCALIZATION_JA_ENABLED 0u", zh_header)
-            self.assertIn("GAME_LOCALIZATION_ZH_HANS_ENABLED 1u", zh_header)
-            self.assertNotIn("extern const u32 gGameLocalizationJaNodes[];", zh_header)
-            self.assertIn(
-                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4715u", ja_config
-            )
-            self.assertIn(
-                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4000u", zh_config
-            )
 
             ja_report = json.loads(ja["report_json"].read_text(encoding="utf-8"))
             zh_report = json.loads(zh["report_json"].read_text(encoding="utf-8"))

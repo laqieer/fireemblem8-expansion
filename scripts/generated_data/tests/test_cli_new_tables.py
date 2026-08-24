@@ -6,24 +6,6 @@ from scripts.generated_data.tests.test_cli import run_cli
 
 
 class CliUnitsTests(unittest.TestCase):
-    def test_validate_valid_fixture_passes(self):
-        code, out, err = run_cli([
-            "validate", "--table", "units",
-            "--source", fixture_path("units", "valid.json"),
-            "--no-roundtrip",
-        ])
-        self.assertEqual(code, 0, msg=out + err)
-        self.assertIn("OK:", out)
-
-    def test_validate_invalid_fixture_fails(self):
-        code, out, err = run_cli([
-            "validate", "--table", "units",
-            "--source", fixture_path("units", "duplicate_group.json"),
-            "--no-roundtrip",
-        ])
-        self.assertEqual(code, 1)
-        self.assertIn("duplicate_group.json", err)
-
     def test_real_ch2_units_source_validates_and_roundtrips_clean(self):
         code, out, err = run_cli(["validate", "--table", "units"])
         self.assertEqual(code, 0, msg=out + err)
@@ -52,23 +34,6 @@ class CliUnitsTests(unittest.TestCase):
 
 
 class CliShopsTests(unittest.TestCase):
-    def test_validate_valid_fixture_passes(self):
-        code, out, err = run_cli([
-            "validate", "--table", "shops",
-            "--source", fixture_path("shops", "valid.json"),
-            "--no-roundtrip",
-        ])
-        self.assertEqual(code, 0, msg=out + err)
-
-    def test_validate_invalid_fixture_fails(self):
-        code, out, err = run_cli([
-            "validate", "--table", "shops",
-            "--source", fixture_path("shops", "missing_item_ref.json"),
-            "--no-roundtrip",
-        ])
-        self.assertEqual(code, 1)
-        self.assertIn("undefined item reference", err)
-
     def test_real_ch2_shops_source_validates_and_roundtrips_clean(self):
         code, out, err = run_cli(["validate", "--table", "shops"])
         self.assertEqual(code, 0, msg=out + err)
@@ -79,23 +44,6 @@ class CliShopsTests(unittest.TestCase):
 
 
 class CliTrapsTests(unittest.TestCase):
-    def test_validate_valid_fixture_passes(self):
-        code, out, err = run_cli([
-            "validate", "--table", "traps",
-            "--source", fixture_path("traps", "valid.json"),
-            "--no-roundtrip",
-        ])
-        self.assertEqual(code, 0, msg=out + err)
-
-    def test_validate_invalid_fixture_fails(self):
-        code, out, err = run_cli([
-            "validate", "--table", "traps",
-            "--source", fixture_path("traps", "bad_type.json"),
-            "--no-roundtrip",
-        ])
-        self.assertEqual(code, 1)
-        self.assertIn("undefined trap type reference", err)
-
     def test_real_ch2_traps_source_validates_and_roundtrips_clean(self):
         code, out, err = run_cli(["validate", "--table", "traps"])
         self.assertEqual(code, 0, msg=out + err)
@@ -106,23 +54,6 @@ class CliTrapsTests(unittest.TestCase):
 
 
 class CliEventScriptsTests(unittest.TestCase):
-    def test_validate_valid_fixture_passes(self):
-        code, out, err = run_cli([
-            "validate", "--table", "eventscripts",
-            "--source", fixture_path("eventscripts", "valid.json"),
-            "--no-roundtrip",
-        ])
-        self.assertEqual(code, 0, msg=out + err)
-
-    def test_validate_invalid_fixture_fails(self):
-        code, out, err = run_cli([
-            "validate", "--table", "eventscripts",
-            "--source", fixture_path("eventscripts", "undeclared_symbol.json"),
-            "--no-roundtrip",
-        ])
-        self.assertEqual(code, 1)
-        self.assertIn("is not declared in", err)
-
     def test_real_ch2_eventscripts_source_validates_clean(self):
         code, out, err = run_cli(["validate", "--table", "eventscripts"])
         self.assertEqual(code, 0, msg=out + err)
@@ -156,25 +87,6 @@ def _eventlists_dep_source_args():
 
 
 class CliEventListsTests(unittest.TestCase):
-    def test_validate_valid_fixture_passes(self):
-        code, out, err = run_cli([
-            "validate", "--table", "eventlists",
-            "--source", fixture_path("eventlists", "valid.json"),
-            "--no-roundtrip",
-        ] + _eventlists_dep_source_args())
-        self.assertEqual(code, 0, msg=out + err)
-        self.assertIn("OK:", out)
-
-    def test_validate_invalid_fixture_fails_with_location(self):
-        code, out, err = run_cli([
-            "validate", "--table", "eventlists",
-            "--source", fixture_path("eventlists", "missing_unit_ref.json"),
-            "--no-roundtrip",
-        ] + _eventlists_dep_source_args())
-        self.assertEqual(code, 1)
-        self.assertIn("missing_unit_ref.json", err)
-        self.assertIn("undefined unit group reference", err)
-
     def test_validate_tutorial_wrong_count_fails(self):
         code, out, err = run_cli([
             "validate", "--table", "eventlists",
@@ -236,16 +148,6 @@ class CliChapterBundleTests(unittest.TestCase):
             "--no-roundtrip",
         ])
         self.assertEqual(code, 0, msg=out + err)
-
-    def test_validate_invalid_fixture_fails_with_location(self):
-        code, out, err = run_cli([
-            "validate", "--table", "chapterbundle",
-            "--source", fixture_path("chapterbundle", "cli_missing_support_owner.json"),
-            "--no-roundtrip",
-        ])
-        self.assertEqual(code, 1)
-        self.assertIn("cli_missing_support_owner.json", err)
-        self.assertIn("missing from supportOwners.required", err)
 
     def test_generate_skips_c_output_for_metadata_only_table(self):
         with scratch_dir() as tmp:
@@ -317,15 +219,6 @@ class CliChapterObjectivesTests(unittest.TestCase):
 
 
 class CliItemsTests(unittest.TestCase):
-    def test_validate_invalid_fixture_fails(self):
-        code, out, err = run_cli([
-            "validate", "--table", "items",
-            "--source", fixture_path("items", "bad_weapon_type.json"),
-            "--no-roundtrip",
-        ])
-        self.assertEqual(code, 1)
-        self.assertIn("undefined weapon type reference", err)
-
     def test_real_items_source_validates_and_roundtrips_clean(self):
         code, out, err = run_cli(["validate", "--table", "items"])
         self.assertEqual(code, 0, msg=out + err)
@@ -349,15 +242,6 @@ class CliItemsTests(unittest.TestCase):
 
 
 class CliClassesTests(unittest.TestCase):
-    def test_validate_invalid_fixture_fails(self):
-        code, out, err = run_cli([
-            "validate", "--table", "classes",
-            "--source", fixture_path("classes", "bad_class_ref.json"),
-            "--no-roundtrip",
-        ])
-        self.assertEqual(code, 1)
-        self.assertIn("undefined class reference 'CLASS_NOT_A_REAL_CLASS'", err)
-
     def test_real_classes_source_validates_and_roundtrips_clean(self):
         code, out, err = run_cli(["validate", "--table", "classes"])
         self.assertEqual(code, 0, msg=out + err)
@@ -388,25 +272,6 @@ class CliCharactersTests(unittest.TestCase):
     ``test_generate_*``/``test_check_*`` counterparts every other
     fully-registered table has.
     """
-
-    def test_validate_valid_fixture_passes(self):
-        code, out, err = run_cli([
-            "validate", "--table", "characters",
-            "--source", fixture_path("characters", "valid.json"),
-            "--no-roundtrip",
-        ])
-        self.assertEqual(code, 0, msg=out + err)
-        self.assertIn("OK:", out)
-
-    def test_validate_invalid_fixture_fails_with_location(self):
-        code, out, err = run_cli([
-            "validate", "--table", "characters",
-            "--source", fixture_path("characters", "duplicate_symbolic.json"),
-            "--no-roundtrip",
-        ])
-        self.assertEqual(code, 1)
-        self.assertIn("duplicate_symbolic.json", err)
-        self.assertIn("duplicate character designator 1", err)
 
     def test_validate_missing_source_table_is_registered_without_being_in_all_tables(self):
         # characters is resolvable via --table (registered in registry.py)

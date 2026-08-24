@@ -47,8 +47,20 @@ class LinkerCheckTargetTests(unittest.TestCase):
             "expansion-modern-overlay-audit",
             "expansion-modern-shifted-check",
             "expansion-modern-linker-check",
+            "expansion-modern-chapter-objectives-check",
         ):
             self.assertIn(target, goals)
+
+    def test_chapter_objectives_runtime_check_requires_aapcs_and_consolidates(self):
+        text = MODERN_MK.read_text(encoding="utf-8")
+        linked_goals = text.split("MODERN_LINKED_GOALS :=", 1)[1].split(
+            "MODERN_REQUESTED_LINKED_GOALS", 1
+        )[0]
+        linker_check = text.split("expansion-modern-linker-check:", 1)[1].split(
+            '"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py', 1
+        )[0]
+        self.assertIn("expansion-modern-chapter-objectives-check", linked_goals)
+        self.assertIn("expansion-modern-chapter-objectives-check", linker_check)
 
     def test_linker_check_dry_run_wires_every_gate(self):
         result = self.make("-n", "expansion-modern-linker-check")
