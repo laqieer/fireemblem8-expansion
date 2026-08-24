@@ -114,8 +114,11 @@ class PrepPositiveScenarioFilesTests(unittest.TestCase):
         self.assertEqual(opened[PREP_FLAG], "0x10")
         self.assertEqual(opened[SHUB_ACTIVE], "0x01")
         # Reentrancy: hubOpenCount stays 2 (idempotent) and the same B cancels
-        # the hub menu (sHubActive 1 -> 0), returning to still-live prep.
+        # the hub menu (sHubActive 1 -> 0), returning to still-live prep. The
+        # second physical SELECT+B is observed exactly once; the active hub
+        # owns it so the parent prep proc cannot increment the counter too.
         self.assertEqual(reentry[HUB_OPEN], "0x00000002")
+        self.assertEqual(reentry[PREP_OBS], "0x00000002")
         self.assertEqual(reentry[PREP_FLAG], "0x10")
         self.assertEqual(reentry[SHUB_ACTIVE], "0x00")
         # Long-run: prep still live with the hub cleanly closed.

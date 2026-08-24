@@ -372,6 +372,12 @@ unrelated file is rejected. Directory inputs load `*_objectives.json` and
 `*_bundle.json` in sorted order while retaining each record's source identity.
 Keep the declaration empty when the chapter has no authored records.
 
+The modern objective hook is enabled only when that same canonical objective
+loader finds at least one record. A nonempty file and a nonempty sorted
+directory therefore compile the map/phase telemetry hooks identically; an
+empty record set omits them. Malformed or unreadable sources stop Make with
+the loader diagnostic instead of silently selecting the disabled path.
+
 `reach_area` and `hold_until_turn` rectangles must fit the owning chapter's
 actual map dimensions. Validation resolves the chapter's `mainLayerId` through
 `gChapterDataAssetTable`, then reads the map's authored TMX or layout metadata;

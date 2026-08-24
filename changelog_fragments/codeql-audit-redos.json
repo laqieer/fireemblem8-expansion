@@ -1,0 +1,6 @@
+{
+  "issue": null,
+  "category": "security",
+  "summary": "Make modernization bitfield scanning linear-time for adversarial source declarations.",
+  "semver_impact": "patch"
+}
