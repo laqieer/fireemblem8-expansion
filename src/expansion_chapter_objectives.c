@@ -6,7 +6,7 @@
 
 #include "expansion_chapter_objectives.h"
 
-struct ExpansionChapterObjectiveTelemetry IWRAM_DATA
+struct ExpansionChapterObjectiveTelemetry EWRAM_DATA
     gExpansionChapterObjectiveTelemetry = { 0 };
 
 struct ObjectiveResult

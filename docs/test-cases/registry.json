@@ -17,6 +17,7 @@
       "typed-chapter-autoplay-objectives",
       "typed-autoplay-strategy-profiles",
       "deterministic-autoplay-batch-reports",
+      "local-external-autoplay-planner",
       "custom-spell-runtime",
       "hq-pcm-mixer",
       "patch-release-artifact",
@@ -2013,19 +2014,19 @@
         },
         {
           "command": "make expansion-modern-autoplay-strategies-objects MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_AUTOPLAY_STRATEGIES=0 MODERN_BUILD_ROOT=build/issue90-debug-disabled",
-          "evidence": "build/issue90-debug-disabled/debug/aapcs/src/expansion_autoplay_strategies.o"
+          "evidence": "modern.mk"
         },
         {
           "command": "make expansion-modern-autoplay-strategies-objects MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_AUTOPLAY_STRATEGIES=1 MODERN_BUILD_ROOT=build/issue90-debug-enabled",
-          "evidence": "build/issue90-debug-enabled/debug/aapcs/src/expansion_autoplay_strategies.o"
+          "evidence": "modern.mk"
         },
         {
           "command": "make expansion-modern-autoplay-strategies-objects MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_AUTOPLAY_STRATEGIES=0 MODERN_BUILD_ROOT=build/issue90-release-disabled",
-          "evidence": "build/issue90-release-disabled/release/aapcs/src/expansion_autoplay_strategies.o"
+          "evidence": "modern.mk"
         },
         {
           "command": "make expansion-modern-autoplay-strategies-objects MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_AUTOPLAY_STRATEGIES=1 MODERN_BUILD_ROOT=build/issue90-release-enabled",
-          "evidence": "build/issue90-release-enabled/release/aapcs/src/expansion_autoplay_strategies.o"
+          "evidence": "modern.mk"
         }
       ]
     },
