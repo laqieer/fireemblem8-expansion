@@ -676,6 +676,64 @@ class DebugToolsHotkeyCollisionHostTests(unittest.TestCase):
             self.assertEqual(rc, 0, f"a non-colliding custom mask must compile cleanly:\n{out}")
 
 
+class DebugToolsInternalHeaderCompileTests(unittest.TestCase):
+    """Checks that internal debug-tools declarations stand on their own in
+    callers that do not include uimenu.h directly."""
+
+    @classmethod
+    def setUpClass(cls):
+        _skip_if_no_host_compiler()
+
+    def test_cancel_menu_prototype_is_self_contained_in_supported_contexts(self):
+        import tempfile
+
+        snippet = (
+            '#include "global.h"\n'
+            '#include "debugtools_internal.h"\n'
+            "#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)\n"
+            "static u8 (*const sCancelMenu)(struct MenuProc*, struct MenuItemProc*) =\n"
+            "    DebugTools_CancelMenu;\n"
+            "#endif\n"
+            "int main(void) { return 0; }\n"
+        )
+        contexts = (
+            ("modern-debug", ("-DMODERN=1", "-DFE8_EXPANSION_DEBUGTOOLS_ENABLED=1")),
+            ("modern-release", ("-DMODERN=1", "-DFE8_EXPANSION_DEBUGTOOLS_ENABLED=0")),
+            ("archival", ("-DFE8_ARCHIVAL_BUILD=1",)),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            for name, defines in contexts:
+                with self.subTest(context=name):
+                    source = root / f"{name}.c"
+                    output = root / f"{name}.o"
+                    source.write_text(snippet, encoding="utf-8")
+                    command = [
+                        CC,
+                        "-c",
+                        "-w",
+                        *_include_flags(),
+                        *defines,
+                        str(source),
+                        "-o",
+                        str(output),
+                    ]
+                    result = subprocess.run(
+                        command,
+                        cwd=str(REPO_ROOT),
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        result.returncode,
+                        0,
+                        f"{name} internal-header compile failed:\n"
+                        f"{result.stdout}{result.stderr}",
+                    )
+
+
 class DebugToolsOneEntryPathTests(unittest.TestCase):
     """Structural (source-grep) proof that the title-screen hotkey has
     exactly one call site and one definition, matching the WHERE

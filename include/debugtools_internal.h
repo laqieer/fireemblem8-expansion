@@ -5,6 +5,7 @@
 #include "expansion_debugtools.h"
 
 struct DebugToolsAction;
+struct MenuItemProc;
 struct MenuProc;
 
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
