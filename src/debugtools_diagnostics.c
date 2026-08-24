@@ -420,10 +420,9 @@ static void DebugToolsDisplayOwner_OnEnd(ProcPtr proc)
     {
         UnlockGame();
         owner->ownerLock = 0;
+        if (gBmSt.lock != owner->lockBaseline)
+            mismatch |= DEBUGTOOLS_DIAG_RESTORE_LOCK;
     }
-
-    if (gBmSt.lock != owner->lockBaseline)
-        mismatch |= DEBUGTOOLS_DIAG_RESTORE_LOCK;
 #if defined(FE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST) \
     || defined(FE8_DEBUGTOOLS_DIAGNOSTICS_PROBE_TEST)
     gDebugToolsDiagnosticsProbe.lastLockAfterRestore = gBmSt.lock;
@@ -795,7 +794,8 @@ static int DebugToolsDiagnostics_RuntimeTestCaptureMap(
     gBmSt.playerCursor.x = x;
     gBmSt.playerCursor.y = y;
     DebugToolsDiagnostics_SetSessionContext(context);
-    if (DebugTools_OpenHub() == DEBUGTOOLS_OK)
+    if (DebugTools_OpenHub() == DEBUGTOOLS_OK
+        && DebugToolsDiagnostics_BeginSession() == DEBUGTOOLS_OK)
     {
         if (DebugTools_CaptureDiagnostics(&snapshot) == DEBUGTOOLS_OK)
         {
@@ -823,9 +823,13 @@ static int DebugToolsDiagnostics_RuntimeTestCaptureCurrentMap(
     result = DebugTools_OpenHub();
     if (result == DEBUGTOOLS_OK)
     {
-        result = DebugTools_CaptureDiagnostics(&snapshot);
+        result = DebugToolsDiagnostics_BeginSession();
         if (result == DEBUGTOOLS_OK)
-            ok = (snapshot.validMask & DEBUGTOOLS_DIAG_VALID_MAP) != 0;
+        {
+            result = DebugTools_CaptureDiagnostics(&snapshot);
+            if (result == DEBUGTOOLS_OK)
+                ok = (snapshot.validMask & DEBUGTOOLS_DIAG_VALID_MAP) != 0;
+        }
         DebugToolsDiagnostics_ForceCloseSession();
     }
 
@@ -840,7 +844,8 @@ void DebugToolsDiagnostics_RuntimeTestBoot(void)
         return;
 
     DebugToolsDiagnostics_SetSessionContext(DEBUGTOOLS_DIAG_CONTEXT_TITLE);
-    if (DebugTools_OpenHub() != DEBUGTOOLS_OK)
+    if (DebugTools_OpenHub() != DEBUGTOOLS_OK
+        || DebugToolsDiagnostics_BeginSession() != DEBUGTOOLS_OK)
         return;
 
     DebugTools_CaptureDiagnostics(&snapshot);

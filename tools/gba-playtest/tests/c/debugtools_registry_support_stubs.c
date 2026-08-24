@@ -114,7 +114,8 @@ struct MenuProc* DebugToolsDiagnostics_GetActiveMenu(void)
 struct MenuProc* DebugToolsDiagnostics_StartOwnedMenu(
     const struct MenuDef* menuDef)
 {
-    return StartOrphanMenu(menuDef);
+    (void)menuDef;
+    return NULL;
 }
 
 int DebugToolsDiagnostics_IsRestoring(void)

@@ -137,6 +137,11 @@ static int DebugTools_StartMenuTransition(
 static struct MenuProc* DebugTools_StartOwnedMenu(const struct MenuDef* menuDef);
 static int DebugTools_GetActionCount(void);
 static const struct DebugToolsAction* DebugTools_GetAction(int index);
+static int DebugTools_SetLastResult(enum DebugToolsResult result);
+
+#if defined(FE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST)
+static struct MenuProc* sDebugToolsRuntimeMenu;
+#endif
 
 static u8 DebugToolsHub_BackSelected(struct MenuProc* menu, struct MenuItemProc* item)
 {
@@ -215,6 +220,8 @@ static u8 DebugToolsHub_ConsumeEntryCombo(
 static u8 DebugToolsHub_NextPage(struct MenuProc* menu)
 {
     int pageCount = DebugToolsHub_GetPageCount();
+    int nextPage;
+    enum DebugToolsResult result;
 
     if (pageCount <= 1)
         return 0;
@@ -222,7 +229,19 @@ static u8 DebugToolsHub_NextPage(struct MenuProc* menu)
     if (sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED)
         return 0;
 
-    sHubPage = (sHubPage + 1) % pageCount;
+    nextPage = (sHubPage + 1) % pageCount;
+
+    if (nextPage >= DebugToolsHub_GetActionPageCount())
+    {
+        result = DebugToolsDiagnostics_BeginSession();
+        if (result != DEBUGTOOLS_OK && result != DEBUGTOOLS_ERR_ALREADY_ACTIVE)
+        {
+            DebugTools_SetLastResult(result);
+            return 0;
+        }
+    }
+
+    sHubPage = nextPage;
     DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_HUB, NULL, 1);
     menu->state |= MENU_STATE_FROZEN;
 
@@ -232,6 +251,10 @@ static u8 DebugToolsHub_NextPage(struct MenuProc* menu)
 static void DebugToolsHub_OnEnd(struct MenuProc* proc)
 {
     DebugToolsDiagnostics_ClearActiveMenu(proc);
+#if defined(FE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST)
+    if (sDebugToolsRuntimeMenu == proc)
+        sDebugToolsRuntimeMenu = NULL;
+#endif
     sHubActive = 0;
     sDebugMenuState &= ~DEBUGTOOLS_STATE_HUB_ACTIVE;
 
@@ -575,6 +598,8 @@ static void DebugToolsHub_RuntimeTestViews(ProcPtr proc)
         return;
 
     menu = DebugToolsDiagnostics_GetActiveMenu();
+    if (menu == NULL)
+        menu = sDebugToolsRuntimeMenu;
     switch (sDebugToolsRuntimeViewStage)
     {
     case 0:
@@ -1001,7 +1026,13 @@ static struct MenuProc* DebugTools_StartOwnedMenu(const struct MenuDef* menuDef)
         gActiveFont == NULL ? 0 : gActiveFont->chr_counter;
 
     menu = DebugToolsDiagnostics_StartOwnedMenu(menuDef);
+    if (menu == NULL)
+        menu = StartOrphanMenu(menuDef);
+
     DebugToolsDiagnostics_SetActiveMenu(menu);
+#if defined(FE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST)
+    sDebugToolsRuntimeMenu = menu;
+#endif
     return menu;
 }
 
@@ -1112,6 +1143,7 @@ void DebugTools_RunMenuTransition(ProcPtr proc)
     sHubPage = 0;
     sDebugMenuState &= ~(DEBUGTOOLS_STATE_SESSION_ACTIVE | DEBUGTOOLS_STATE_HUB_ACTIVE);
     DebugToolsDiagnostics_EndSession(0);
+    DebugToolsDiagnostics_ClearSessionContext();
 }
 
 struct ProcCmd CONST_DATA gProcScr_DebugToolsMenuTransition[] =
@@ -1123,8 +1155,6 @@ struct ProcCmd CONST_DATA gProcScr_DebugToolsMenuTransition[] =
 
 enum DebugToolsResult DebugTools_OpenHub(void)
 {
-    enum DebugToolsResult result;
-
     /* Single authoritative reentrancy guard. A release-and-repress of
      * the title hotkey (or any other future caller) while the hub is
      * already open must never start a second concurrent MenuProc:
@@ -1140,10 +1170,6 @@ enum DebugToolsResult DebugTools_OpenHub(void)
 
     if (!DebugTools_HasTextCapacity())
         return DebugTools_SetLastResult(DEBUGTOOLS_ERR_TEXT_CAPACITY);
-
-    result = DebugToolsDiagnostics_BeginSession();
-    if (result != DEBUGTOOLS_OK)
-        return DebugTools_SetLastResult(result);
 
     sHubPage = 0;
     sDebugMenuState |= DEBUGTOOLS_STATE_SESSION_ACTIVE;

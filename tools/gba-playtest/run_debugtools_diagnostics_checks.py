@@ -228,12 +228,12 @@ def check_debug(checkpoints: list[dict[str, int | str]]) -> list[str]:
         failures.append(
             f"runtime capture count is {map_runtime['captureCount']}, expected 6"
         )
-    if int(map_runtime["forcedTeardownCount"]) != 5:
+    if int(map_runtime["forcedTeardownCount"]) != 4:
         failures.append(
-            "forced title/launcher/map/view teardown count is not exactly five"
+            "explicit title/map/view diagnostics teardown count is not exactly four"
         )
-    if int(map_runtime["restorationCount"]) != 5:
-        failures.append("all owner restorations did not total five")
+    if int(map_runtime["restorationCount"]) != 4:
+        failures.append("all explicit diagnostics owner restorations did not total four")
     if interactive.get("sram_hash") != map_runtime.get("sram_hash"):
         failures.append("diagnostics changed whole SRAM")
     if int(interactive["postViewMapIdleCount"]) <= int(map_runtime["postViewMapIdleCount"]):

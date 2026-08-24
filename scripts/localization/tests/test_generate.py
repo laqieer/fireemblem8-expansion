@@ -2,6 +2,7 @@ import json
 import sys
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -85,7 +86,12 @@ class BuildOutputsTests(unittest.TestCase):
         budget = build_budget(self.catalog)
         self.assertEqual(
             budget["pseudo_policy_counts"],
-            {"transform": 70, "compact": 2, "preserve": 6},
+            dict(
+                Counter(
+                    entry.pseudo_policy
+                    for entry in self.catalog.active_entries
+                )
+            ),
         )
 
     def test_generated_qps_catalog_preserves_build_timestamp(self):

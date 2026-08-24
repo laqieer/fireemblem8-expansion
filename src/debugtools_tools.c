@@ -149,11 +149,19 @@ static void DebugToolsTools_LocalizeMenuItem(
 #define DEBUGTOOLS_LOCALIZE_ITEM(item, message) \
     DebugToolsTools_LocalizeMenuItem((item), (message))
 
+static int DebugToolsTools_UsesCjkText(void)
+{
+    ExpansionLocaleId locale = ExpansionLocale_GetCurrent();
+
+    return locale == EXPANSION_LOCALE_JA || locale == EXPANSION_LOCALE_ZH_HANS;
+}
+
 static void DebugToolsTools_MenuOnInit(struct MenuProc* menu)
 {
-    DebugToolsDiagnostics_DrawStatusText(
-        menu,
-        DebugToolsDiagnostics_GetStatusBuffer());
+    char* status = DebugToolsDiagnostics_GetStatusBuffer();
+
+    if (status != NULL)
+        DebugToolsDiagnostics_DrawStatusText(menu, status);
 }
 #define DEBUGTOOLS_UNIT_MENU_ON_INIT DebugToolsTools_MenuOnInit
 #else
@@ -161,9 +169,10 @@ static void DebugToolsTools_MenuOnInit(struct MenuProc* menu)
 #define DEBUGTOOLS_UNIT_MENU_ON_INIT 0
 static void DebugToolsTools_MenuOnInit(struct MenuProc* menu)
 {
-    DebugToolsDiagnostics_DrawStatusText(
-        menu,
-        DebugToolsDiagnostics_GetStatusBuffer());
+    char* status = DebugToolsDiagnostics_GetStatusBuffer();
+
+    if (status != NULL)
+        DebugToolsDiagnostics_DrawStatusText(menu, status);
 }
 #endif
 
@@ -171,8 +180,33 @@ static void DebugToolsTools_ShowStatusLine(const char* text)
 {
     char* status = DebugToolsDiagnostics_GetStatusBuffer();
 
-    strncpy(status, text, 63);
-    status[63] = '\0';
+    if (status != NULL)
+    {
+        strncpy(status, text, 63);
+        status[63] = '\0';
+        return;
+    }
+
+#ifdef MODERN
+    if (DebugToolsTools_UsesCjkText())
+    {
+        BG_Fill(BG_GetMapBuffer(2), 0);
+        PutDrawText(
+            NULL,
+            BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
+            TEXT_COLOR_SYSTEM_WHITE,
+            0,
+            DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES,
+            text);
+        BG_EnableSyncByMask(BG2_SYNC_BIT);
+        gLCDControlBuffer.dispcnt.bg2_on = 1;
+        return;
+    }
+#endif
+
+    SetupDebugFontForBG(2, 0);
+    PrintDebugStringToBG(BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1), text);
+    gLCDControlBuffer.dispcnt.bg2_on = 1;
 }
 
 /* --- 5. Unit inspection/edit -------------------------------------------- */
