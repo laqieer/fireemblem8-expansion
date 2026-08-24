@@ -537,6 +537,51 @@ class CustomSpellAdapterTests(unittest.TestCase):
             ):
                 manifest.load_and_validate(path)
 
+    def test_invalid_ownership_stops_before_conversion_or_access(self):
+        with open(REFERENCE_MANIFEST, encoding="utf-8") as handle:
+            document = json.load(handle)
+        path = os.path.join(TEST_ROOT, "manifest.json")
+
+        changed = copy.deepcopy(document)
+        record = next(
+            row for row in changed["assets"]
+            if row["kind"] == "custom-spell-effect"
+        )
+        record["ownership"]["spellAssociationSource"] = "../outside.c"
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(changed, handle)
+        with (
+            mock.patch.object(custom_spell, "validate_runtime_binding") as binding,
+            mock.patch.object(custom_spell, "load_package") as loader,
+        ):
+            with self.assertRaisesRegex(
+                GeneratedDataValidationError,
+                "ownership.spellAssociationSource must be",
+            ):
+                manifest.load_and_validate(path, 1)
+        binding.assert_not_called()
+        loader.assert_not_called()
+
+        changed = copy.deepcopy(document)
+        record = next(
+            row for row in changed["assets"]
+            if row["kind"] == "custom-spell-effect"
+        )
+        record["ownership"]["effectSymbol"] = 7
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(changed, handle)
+        with (
+            mock.patch.object(custom_spell, "_spell_fallbacks") as fallbacks,
+            mock.patch.object(custom_spell, "load_package") as loader,
+        ):
+            with self.assertRaisesRegex(
+                GeneratedDataValidationError,
+                "ownership.effectSymbol must be a CUSTOM_SPELL",
+            ):
+                manifest.load_and_validate(path, 1)
+        fallbacks.assert_not_called()
+        loader.assert_not_called()
+
     def test_rejected_sources_never_load_custom_package(self):
         with open(REFERENCE_MANIFEST, encoding="utf-8") as handle:
             document = json.load(handle)

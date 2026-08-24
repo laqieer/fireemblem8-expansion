@@ -1516,6 +1516,7 @@ class CustomSpellEffectKind:
         ) and valid
         if not valid:
             return
+        fixed_values_valid = True
         for key, expected in self._options.items():
             if not _has_exact_value(record.options[key], expected):
                 diagnostics.add(GeneratedDataError(
@@ -1525,6 +1526,7 @@ class CustomSpellEffectKind:
                     record.option_locs[key],
                     "{}.options.{}".format(record.id, key),
                 ))
+                fixed_values_valid = False
         for key, expected in self._ownership.items():
             if record.ownership[key] != expected:
                 diagnostics.add(GeneratedDataError(
@@ -1534,6 +1536,9 @@ class CustomSpellEffectKind:
                     record.ownership_locs[key],
                     "{}.ownership.{}".format(record.id, key),
                 ))
+                fixed_values_valid = False
+        if not fixed_values_valid:
+            return
         if (
             len(record.sources) < 4
             or os.path.basename(record.sources[0]) != "spell.json"
@@ -1547,6 +1552,9 @@ class CustomSpellEffectKind:
             ))
             return
         try:
+            fallback, item_type = custom_spell.validate_runtime_binding(
+                REPO_ROOT, record.ownership
+            )
             package = custom_spell.load_package(
                 REPO_ROOT,
                 record.sources[0],
@@ -1556,9 +1564,6 @@ class CustomSpellEffectKind:
                 record.ownership["effectSymbol"],
             )
             custom_spell.validate_declared_resources(package, record.resources)
-            fallback, item_type = custom_spell.validate_runtime_binding(
-                REPO_ROOT, record.ownership
-            )
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             diagnostics.add(GeneratedDataError(
                 str(exc), record.loc, "{}.package".format(record.id)
