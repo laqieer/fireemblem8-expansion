@@ -1,9 +1,11 @@
 """Semantic schema/generator coverage for issue #89 chapter objectives."""
 
+import copy
 import os
 import re
 import unittest
 
+from scripts.generated_data.chapterbundle import schema as chapterbundle_schema
 from scripts.generated_data.chapterobjectives import generate, schema
 from scripts.generated_data.diagnostics import DiagnosticCollector
 from scripts.generated_data.tests._util import fixture_path
@@ -21,7 +23,9 @@ def _validate(name):
     records = schema.load_records(objective_fixture(name))
     diagnostics = DiagnosticCollector()
     units = units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json"))
-    schema.validate(records, diagnostics, {"units": units})
+    bundle_name = "symbol_collision_bundle.json" if name == "symbol_collision.json" else "ch2_bundle.json"
+    chapter_bundle = chapterbundle_schema.load_records(objective_fixture(bundle_name))
+    schema.validate(records, diagnostics, {"units": units, "chapterbundle": chapter_bundle})
     return records, diagnostics
 
 
@@ -74,13 +78,41 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             schema.stable_id_value("AI_GROUP_FIXTURE_EIRIKA"),
         )
 
-    def test_group_member_symbols_are_delimited_by_stable_id_hash(self):
+    def test_group_member_symbols_are_delimited_by_stable_id_hash_and_cross_chapter_members_fail(self):
         records, diagnostics = _validate("symbol_collision.json")
-        self.assertTrue(diagnostics.ok, diagnostics.render())
+        self.assertFalse(diagnostics.ok)
+        ownership_errors = [
+            error for error in diagnostics.errors
+            if error.message == "chapter objective bundle 'A_B' for chapter 'CHAPTER_L_3' has no owning chapter bundle"
+        ]
+        self.assertEqual(len(ownership_errors), 1, diagnostics.render())
+        self.assertEqual(ownership_errors[0].location, records[1].chapter_loc)
+        self.assertEqual(ownership_errors[0].reference_path, "chapters[symbol=A_B].chapter")
         output = generate.generate_c_source(records, objective_fixture("symbol_collision.json"))
         members = re.findall(r"static const u8 (s[A-Za-z0-9_]+Members)\[\]", output)
         self.assertEqual(len(members), 2)
         self.assertEqual(len(set(members)), 2)
+
+    def test_chapter_bundle_rejects_stale_objective_symbol(self):
+        records, diagnostics = _validate("valid.json")
+        chapter_bundle = chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json"))
+        chapter_bundle.chapter_objectives.symbols.append("ChapterObjectives_Stale")
+        chapter_bundle.chapter_objectives.symbol_locs.append(chapter_bundle.chapter_objectives.symbol_locs[0])
+        schema.validate(
+            records,
+            diagnostics,
+            {
+                "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json")),
+                "chapterbundle": chapter_bundle,
+            },
+        )
+        self.assertTrue(
+            any(
+                error.reference_path == "chapterObjectives.symbols[ChapterObjectives_Stale]"
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
 
     def test_kind_specific_extras_and_protect_defeat_contradictions_fail_closed(self):
         records, diagnostics = _validate("valid.json")
@@ -101,10 +133,31 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             "reach_area objective accepts only group and area",
             "defeat_group objective accepts only group",
             "event_flag objective accepts only eventFlag",
-            "hold_until_turn objective accepts only group, area, and untilTurn",
+            "hold_until_turn objective accepts only group, area, untilTurn, and failureFlag",
             "completion chain reaches a defeat_group containing its protected character",
         ):
             self.assertIn(expected, rendered)
+
+    def test_bundle_capacity_points_to_the_first_overflowing_record(self):
+        records, diagnostics = _validate("valid.json")
+        for _ in range(schema.BUNDLE_CAPACITY):
+            records.append(copy.deepcopy(records[0]))
+
+        schema.validate(
+            records,
+            diagnostics,
+            {
+                "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json")),
+                "chapterbundle": chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json")),
+            },
+        )
+        capacity_errors = [
+            error for error in diagnostics.errors
+            if error.message == "chapter objective bundles count 33 exceeds fixed capacity 32"
+        ]
+        self.assertEqual(len(capacity_errors), 1, diagnostics.render())
+        self.assertEqual(capacity_errors[0].location, records[schema.BUNDLE_CAPACITY].loc)
+        self.assertEqual(capacity_errors[0].reference_path, "chapters[32]")
 
     def test_invalid_non_ascii_id_reports_a_structured_diagnostic(self):
         records, diagnostics = _validate("valid.json")

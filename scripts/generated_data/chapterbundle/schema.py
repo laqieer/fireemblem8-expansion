@@ -98,7 +98,7 @@ BUNDLE_TABLE_NAMES = ("units", "shops", "traps", "eventscripts", "eventlists")
 # validation (see `dependency_tables()`/`cli.py`); `supports` is included
 # for the support-owner reciprocal check even though it isn't one of the
 # 5 `BUNDLE_TABLE_NAMES`.
-DEPENDENCY_TABLE_NAMES = BUNDLE_TABLE_NAMES + ("supports", "chapterobjectives")
+DEPENDENCY_TABLE_NAMES = BUNDLE_TABLE_NAMES + ("supports",)
 
 
 class ChapterInfo:
@@ -457,59 +457,6 @@ def validate(records, diagnostics, dependency_records=None,
                 manifest.symbol_loc, "manifest.symbol",
             )
         )
-
-    objective_records = dependency_records.get("chapterobjectives")
-    if objective_records is not None:
-        objective_ref = records.chapter_objectives
-        actual_objective_symbols = {
-            objective.symbol for objective in objective_records if objective.chapter == chapter.id
-        }
-        if objective_ref is None:
-            for symbol in sorted(actual_objective_symbols):
-                diagnostics.add(
-                    _err(
-                        "chapter objective bundle '{}' for chapter '{}' has no chapterObjectives ownership "
-                        "declaration".format(symbol, chapter.id),
-                        records.loc, "chapterObjectives",
-                    )
-                )
-        else:
-            diagnostics.extend(
-                validate_unique(
-                    zip(objective_ref.symbols, objective_ref.symbol_locs),
-                    "duplicate symbol '{key}' declared in chapterObjectives.symbols "
-                    "(first at {first_loc})",
-                    "chapterObjectives.symbols[{key}]",
-                )
-            )
-            for symbol, loc in zip(objective_ref.symbols, objective_ref.symbol_locs):
-                if symbol not in actual_objective_symbols:
-                    diagnostics.add(
-                        _err(
-                            "chapter objective bundle '{}' is not reachable from chapter '{}'".format(
-                                symbol, chapter.id
-                            ),
-                            loc, "chapterObjectives.symbols[{}]".format(symbol),
-                        )
-                    )
-            for symbol in sorted(actual_objective_symbols - set(objective_ref.symbols)):
-                diagnostics.add(
-                    _err(
-                        "chapter objective bundle '{}' is reachable for chapter '{}' but missing from "
-                        "chapterObjectives.symbols".format(symbol, chapter.id),
-                        objective_ref.loc, "chapterObjectives.symbols[{}]".format(symbol),
-                    )
-                )
-
-        for objective in objective_records:
-            if objective.chapter != chapter.id:
-                diagnostics.add(
-                    _err(
-                        "chapter objective bundle '{}' belongs to chapter '{}' but has no owning "
-                        "chapter bundle".format(objective.symbol, objective.chapter),
-                        objective.chapter_loc, "chapterObjectives",
-                    )
-                )
 
     # -- 3. declared table symbol sets vs. actual dependency-table records --
     diagnostics.extend(

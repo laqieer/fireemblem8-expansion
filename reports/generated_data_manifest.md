@@ -6,13 +6,13 @@ Aggregate, discoverable registry of every table the platform registers: record c
 
 - Registered tables: 15
 - Total records: 724
-- Dependency topological order: eventscripts, items, movecost, shops, supports, terrainstats, classes, characters, traps, ui_presentation, units, chapterobjectives, eventlists, chapterbundle, weapontriangle
-- Aggregate dependency graph digest (sha256): `2717adc07c3cb280720d8db469339a87892f0b8c8abb9254dd4cfd87f20efffe`
+- Dependency topological order: eventscripts, items, movecost, shops, supports, terrainstats, classes, characters, traps, ui_presentation, units, eventlists, chapterbundle, chapterobjectives, weapontriangle
+- Aggregate dependency graph digest (sha256): `8c06907814895eec02660a046b71dc6acc3af34c0f65dff8d4bf9d8d39679c8f`
 
 | Table | Version | Records | Budget | Output symbol | Table dependencies |
 |---|---|---|---|---|---|
-| chapterbundle | 1 | 1 | - | (metadata-only) | units, shops, traps, eventscripts, eventlists, supports, chapterobjectives |
-| chapterobjectives | 1 | 0 | 0/32 | data_chapter_objectives.c | units |
+| chapterbundle | 1 | 1 | - | (metadata-only) | units, shops, traps, eventscripts, eventlists, supports |
+| chapterobjectives | 1 | 0 | 0/32 | data_chapter_objectives.c | units, chapterbundle |
 | characters | 1 | 256 | 256/256 | data_characters.c | classes, supports |
 | classes | 1 | 127 | - | data_classes.c | terrainstats, movecost |
 | eventlists | 1 | 9 | - | data_ch2_eventlists.c | units, shops, traps, eventscripts |
