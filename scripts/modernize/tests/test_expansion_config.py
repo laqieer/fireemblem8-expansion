@@ -52,6 +52,7 @@ def write_config_mk(
     mechanics_hooks=None,
     mechanics_sample=None,
     danger_overlay_menu=None,
+    blue_phase_delegate=None,
 ) -> Path:
     path = directory / "config.mk"
     # The issue #6 starter-feature flags are optional config.mk keys: a
@@ -65,6 +66,10 @@ def write_config_mk(
     if danger_overlay_menu is not None:
         feature_lines.append(
             f"EXPANSION_DANGER_OVERLAY_MENU := {danger_overlay_menu}"
+        )
+    if blue_phase_delegate is not None:
+        feature_lines.append(
+            f"EXPANSION_BLUE_PHASE_DELEGATE := {blue_phase_delegate}"
         )
     path.write_text(
         "\n".join(
@@ -1253,14 +1258,21 @@ class LoadIdentityFeatureFlagTests(unittest.TestCase):
         self.assertEqual(identity.mechanics_hooks, 0)
         self.assertEqual(identity.mechanics_sample, 0)
         self.assertEqual(identity.danger_overlay_menu, 0)
+        self.assertEqual(identity.blue_phase_delegate, 0)
 
     def test_flags_appear_in_json_dict(self):
         with tempfile.TemporaryDirectory() as tmp:
-            identity = self._identity(tmp, mechanics_hooks="1", danger_overlay_menu="1")
+            identity = self._identity(
+                tmp,
+                mechanics_hooks="1",
+                danger_overlay_menu="1",
+                blue_phase_delegate="1",
+            )
         data = identity.to_dict()
         self.assertEqual(data["mechanics_hooks"], 1)
         self.assertEqual(data["mechanics_sample"], 0)
         self.assertEqual(data["danger_overlay_menu"], 1)
+        self.assertEqual(data["blue_phase_delegate"], 1)
 
     def test_flag_change_changes_fingerprint_but_not_epoch_or_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1268,12 +1280,14 @@ class LoadIdentityFeatureFlagTests(unittest.TestCase):
             hooks = self._identity(tmp, mechanics_hooks="1")
             sample = self._identity(tmp, mechanics_hooks="1", mechanics_sample="1")
             danger = self._identity(tmp, danger_overlay_menu="1")
+            delegate = self._identity(tmp, blue_phase_delegate="1")
         # Every flag toggle changes the config fingerprint...
         self.assertNotEqual(base.config_fingerprint, hooks.config_fingerprint)
         self.assertNotEqual(hooks.config_fingerprint, sample.config_fingerprint)
         self.assertNotEqual(base.config_fingerprint, danger.config_fingerprint)
+        self.assertNotEqual(base.config_fingerprint, delegate.config_fingerprint)
         # ...while the save-compatibility epoch/key is untouched by all of them.
-        for identity in (base, hooks, sample, danger):
+        for identity in (base, hooks, sample, danger, delegate):
             self.assertEqual(identity.save_compat_epoch, 1)
 
     def test_feature_flags_are_not_in_save_compat_key(self):
@@ -1377,9 +1391,10 @@ class FeatureFlagCliTests(unittest.TestCase):
 
     def test_invalid_flag_value_fails_at_cli(self):
         with tempfile.TemporaryDirectory() as tmp:
-            result = self._resolve(tmp, "--danger-overlay-menu", "2")
+            result = self._resolve(tmp, "--blue-phase-delegate", "2")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("out of range", result.stderr)
+        self.assertIn("EXPANSION_BLUE_PHASE_DELEGATE", result.stderr)
 
     def test_generate_json_contains_feature_flags(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1394,6 +1409,7 @@ class FeatureFlagCliTests(unittest.TestCase):
                 "--repo-root", tmp,
                 "--mechanics-hooks", "1",
                 "--danger-overlay-menu", "1",
+                "--blue-phase-delegate", "1",
                 "--output-dir", str(out_dir),
             )
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -1403,6 +1419,62 @@ class FeatureFlagCliTests(unittest.TestCase):
         self.assertEqual(data["mechanics_hooks"], 1)
         self.assertEqual(data["mechanics_sample"], 0)
         self.assertEqual(data["danger_overlay_menu"], 1)
+        self.assertEqual(data["blue_phase_delegate"], 1)
+
+
+class BluePhaseDelegateFlagTests(unittest.TestCase):
+    def _identity(self, **kwargs):
+        params = dict(
+            config_mk_path=ROOT / "config.mk",
+            config_preset="release",
+            abi="aapcs",
+            rom_size="16M",
+            build_id_override="abcdef12",
+        )
+        params.update(kwargs)
+        return ec.load_identity(**params)
+
+    def test_default_is_off_and_strict(self):
+        identity = self._identity()
+        self.assertEqual(identity.blue_phase_delegate, 0)
+        self.assertEqual(
+            identity.fingerprint_fields()["features"]["blue_phase_delegate"], 0
+        )
+        for bad in ("-1", "2", "yes"):
+            with self.subTest(value=bad):
+                with self.assertRaises(ec.ConfigError) as ctx:
+                    self._identity(blue_phase_delegate=bad)
+                self.assertIn("EXPANSION_BLUE_PHASE_DELEGATE", str(ctx.exception))
+
+    def test_toggle_changes_identity_but_not_save_compatibility(self):
+        disabled = self._identity(blue_phase_delegate=0)
+        enabled = self._identity(blue_phase_delegate=1)
+        self.assertNotEqual(disabled.config_fingerprint, enabled.config_fingerprint)
+        self.assertEqual(disabled.save_compat_epoch, enabled.save_compat_epoch)
+
+    def test_c_and_make_contracts_are_wired(self):
+        header = (ROOT / "include" / "expansion_config.h").read_text(
+            encoding="utf-8"
+        )
+        modern_mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
+        self.assertIn("#define FE8_EXPANSION_BLUE_PHASE_DELEGATE 0", header)
+        self.assertIn(
+            "FE8_EXPANSION_BLUE_PHASE_DELEGATE must be 0 or 1", header
+        )
+        self.assertIn(
+            "requires the modern issue #85 blue controller", header
+        )
+        self.assertIn(
+            "-DFE8_EXPANSION_BLUE_PHASE_DELEGATE=$(EXPANSION_BLUE_PHASE_DELEGATE)",
+            modern_mk,
+        )
+        self.assertIn(
+            '--blue-phase-delegate "$(EXPANSION_BLUE_PHASE_DELEGATE)"',
+            modern_mk,
+        )
+        self.assertIn(
+            "blue_phase_delegate=$(EXPANSION_BLUE_PHASE_DELEGATE)", modern_mk
+        )
 
 
 class StarterContentFlagTests(unittest.TestCase):

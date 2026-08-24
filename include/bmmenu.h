@@ -18,6 +18,13 @@ u8 MapMenu_DangerZone_UnusedEffect(void);
 #if FE8_EXPANSION_DANGER_OVERLAY_MENU
 u8 ExpansionDangerOverlay_MenuSelect(struct MenuProc * menu, struct MenuItemProc * menuItem);
 #endif
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
+u8 ExpansionBluePhaseDelegate_MenuAvailability(const struct MenuItemDef * def, int number);
+int ExpansionBluePhaseDelegate_MenuDraw(struct MenuProc * menu, struct MenuItemProc * menuItem);
+u8 ExpansionBluePhaseDelegate_MenuSelect(struct MenuProc * menu, struct MenuItemProc * menuItem);
+u8 ExpansionBluePhaseDelegate_MenuRPress(struct MenuProc * menu);
+u8 ExpansionBluePhaseDelegate_MenuHelpBox(struct MenuProc * menu, struct MenuItemProc * menuItem);
+#endif
 u8 MapMenu_SuspendCommandEffect(void);
 u8 MenuEffect_CloseMenuVoid(void);
 u8 EffectWait(struct MenuProc * menu, struct MenuItemProc * menuItem);

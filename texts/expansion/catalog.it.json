@@ -80,6 +80,8 @@
     "framework.locale_short_name.de": "DE",
     "framework.locale_short_name.es": "ES",
     "framework.locale_short_name.it": "IT",
-    "ui.presentation.chapter_title_default": "Capitolo"
+    "ui.presentation.chapter_title_default": "Capitolo",
+    "autoplay.charge.label": "Carica",
+    "autoplay.charge.help": "Affida le unità rimaste all'IA per questo turno."
   }
 }
