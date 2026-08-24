@@ -217,6 +217,19 @@ class CliChapterObjectivesTests(unittest.TestCase):
         self.assertIn("missing_dependency.json", err)
         self.assertIn("is used by this chapter objective bundle", err)
 
+    def test_validate_multiple_chapters_with_indexed_bundle_owners(self):
+        code, out, err = run_cli([
+            "validate", "--table", "chapterobjectives",
+            "--source", fixture_path("chapterobjectives", "two_chapters.json"),
+            "--no-roundtrip",
+            "--dep-source",
+            "units={}".format(fixture_path("chapterobjectives", "deps_units_two_chapters.json")),
+            "--dep-source",
+            "chapterbundle={}".format(fixture_path("chapterobjectives", "two_chapter_bundles")),
+        ])
+        self.assertEqual(code, 0, msg=out + err)
+        self.assertIn("2 record(s)", out)
+
     def test_check_real_default_source_has_no_drift(self):
         code, out, err = run_cli(["check", "--table", "chapterobjectives"])
         self.assertEqual(code, 0, msg=out + err)

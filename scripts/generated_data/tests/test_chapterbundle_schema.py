@@ -87,13 +87,13 @@ def _messages(diagnostics):
 class ChapterBundleValidFixtureTests(unittest.TestCase):
     def test_valid_fixture_has_no_diagnostics(self):
         records = chapterbundle_schema.load_records(cb_fixture("valid.json"))
-        records.chapter_objectives = chapterbundle_schema.TableRef(
+        records[0].chapter_objectives = chapterbundle_schema.TableRef(
             "chapterobjectives",
             "scripts/generated_data/tests/fixtures/chapterbundle/deps_chapterobjectives.json",
-            records.loc,
+            records[0].loc,
             ["ChapterObjectives_EL"],
-            [records.loc],
-            records.loc,
+            [records[0].loc],
+            records[0].loc,
         )
         diagnostics = DiagnosticCollector()
         chapterbundle_schema.validate(
@@ -106,10 +106,10 @@ class ChapterBundleValidFixtureTests(unittest.TestCase):
         )
         self.assertTrue(diagnostics.ok, msg=_messages(diagnostics))
         self.assertEqual(len(records), 1)
-        self.assertEqual(records.chapter.id, "CHAPTER_EL")
-        self.assertEqual(records.manifest.symbol, "ELEvents")
+        self.assertEqual(records[0].chapter.id, "CHAPTER_EL")
+        self.assertEqual(records[0].manifest.symbol, "ELEvents")
         self.assertEqual(
-            sorted(records.tables_by_name),
+            sorted(records[0].tables_by_name),
             ["eventlists", "eventscripts", "shops", "traps", "units"],
         )
 
@@ -384,9 +384,9 @@ class EndToEndRealBundleTests(unittest.TestCase):
         diagnostics = DiagnosticCollector()
         chapterbundle_schema.validate(records, diagnostics, dependency_records)
         self.assertTrue(diagnostics.ok, msg=_messages(diagnostics))
-        self.assertEqual(len(records.tables), 5)
-        self.assertEqual(records.chapter.id, "CHAPTER_L_2")
-        self.assertEqual(records.manifest.symbol, "Ch2Events")
+        self.assertEqual(len(records[0].tables), 5)
+        self.assertEqual(records[0].chapter.id, "CHAPTER_L_2")
+        self.assertEqual(records[0].manifest.symbol, "Ch2Events")
 
     def test_committed_bundle_has_no_undeclared_or_orphan_records(self):
         # A second, more targeted assertion of the same "no orphan / no

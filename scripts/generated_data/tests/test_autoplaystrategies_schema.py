@@ -1,5 +1,6 @@
 """Semantic schema/generator coverage for issue #90 autoplay strategies."""
 
+import copy
 import os
 import unittest
 
@@ -23,28 +24,30 @@ def _dependency_records(strategy_records):
         fixture_path("chapterobjectives", "valid.json")
     )
     units = units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json"))
-    chapter_bundle = chapterbundle_schema.load_records(
+    chapter_bundles = chapterbundle_schema.load_records(
         fixture_path("chapterobjectives", "ch2_bundle.json")
     )
 
     if strategy_records["chapters"]:
-        owned_chapters = [
-            chapter for chapter in strategy_records["chapters"]
-            if chapter.chapter == chapter_bundle.chapter.id
-        ]
-        chapter_bundle.autoplay_strategies = chapterbundle_schema.TableRef(
-            "autoplaystrategies",
-            strategy_fixture("valid.json"),
-            chapter_bundle.loc,
-            [chapter.symbol for chapter in owned_chapters],
-            [chapter.symbol_loc for chapter in owned_chapters],
-            chapter_bundle.loc,
-        )
+        for chapter_id, bundles in chapter_bundles.by_chapter.items():
+            chapter_bundle = bundles[0]
+            owned_chapters = [
+                chapter for chapter in strategy_records["chapters"]
+                if chapter.chapter == chapter_id
+            ]
+            chapter_bundle.autoplay_strategies = chapterbundle_schema.TableRef(
+                "autoplaystrategies",
+                strategy_fixture("valid.json"),
+                chapter_bundle.loc,
+                [chapter.symbol for chapter in owned_chapters],
+                [chapter.symbol_loc for chapter in owned_chapters],
+                chapter_bundle.loc,
+            )
 
     return {
         "chapterobjectives": objective_records,
         "units": units,
-        "chapterbundle": chapter_bundle,
+        "chapterbundle": chapter_bundles,
     }
 
 
@@ -78,12 +81,63 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
     def test_authored_strategy_bundle_requires_its_chapter_owner_declaration(self):
         records = schema.load_records(strategy_fixture("valid.json"))
         dependencies = _dependency_records(records)
-        dependencies["chapterbundle"].autoplay_strategies.symbols = []
+        dependencies["chapterbundle"].by_chapter["CHAPTER_L_2"][0].autoplay_strategies.symbols = []
         diagnostics = DiagnosticCollector()
         schema.validate(records, diagnostics, dependencies)
         self.assertTrue(
             any(
                 "is not declared by its owning chapter bundle" in error.message
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
+    def test_multi_chapter_strategy_owners_resolve_by_chapter_index(self):
+        records = schema.load_records(strategy_fixture("valid.json"))
+        records["chapters"][0].group_assignments = []
+        l3_record = copy.deepcopy(records["chapters"][0])
+        l3_record.chapter = "CHAPTER_L_3"
+        l3_record.symbol = "AutoplayStrategies_FixtureL3"
+        l3_record.group_assignments = []
+        l3_record.unit_assignments = []
+        records["chapters"].append(l3_record)
+
+        chapter_bundles = chapterbundle_schema.load_records(
+            fixture_path("chapterobjectives", "two_chapter_bundles")
+        )
+        for chapter_id, bundles in chapter_bundles.by_chapter.items():
+            chapter_bundle = bundles[0]
+            owned_chapters = [
+                chapter for chapter in records["chapters"] if chapter.chapter == chapter_id
+            ]
+            chapter_bundle.autoplay_strategies = chapterbundle_schema.TableRef(
+                "autoplaystrategies",
+                strategy_fixture("valid.json"),
+                chapter_bundle.loc,
+                [chapter.symbol for chapter in owned_chapters],
+                [chapter.symbol_loc for chapter in owned_chapters],
+                chapter_bundle.loc,
+            )
+
+        dependencies = {
+            "chapterobjectives": objectives_schema.load_records(
+                fixture_path("chapterobjectives", "two_chapters.json")
+            ),
+            "units": units_schema.load_records(
+                fixture_path("chapterobjectives", "deps_units_two_chapters.json")
+            ),
+            "chapterbundle": chapter_bundles,
+        }
+        diagnostics = DiagnosticCollector()
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(diagnostics.ok, diagnostics.render())
+
+        chapter_bundles.by_chapter["CHAPTER_L_3"][0].autoplay_strategies.symbols = []
+        diagnostics = DiagnosticCollector()
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(
+            any(
+                error.reference_path == "chapters[symbol=AutoplayStrategies_FixtureL3].symbol"
                 for error in diagnostics.errors
             ),
             diagnostics.render(),

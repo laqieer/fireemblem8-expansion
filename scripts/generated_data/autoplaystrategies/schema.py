@@ -222,6 +222,17 @@ def _validate_assignment(assignment, ref, strategies, event_flags, diagnostics):
             )
 
 
+def _bundle_records(dependency_records):
+    bundles = dependency_records.get("chapterbundle")
+    if bundles is None:
+        return ()
+    if hasattr(bundles, "records"):
+        return tuple(bundles.records)
+    if isinstance(bundles, (list, tuple)):
+        return tuple(bundles)
+    return (bundles,)
+
+
 def validate(records, diagnostics, dependency_records=None,
              chapters_header=CHAPTERS_HEADER, event_flags_header=EVENT_FLAGS_HEADER,
              characters_header=character_refs.CHARACTERS_HEADER):
@@ -235,7 +246,10 @@ def validate(records, diagnostics, dependency_records=None,
     objectives = {
         record.chapter: record for record in dependency_records.get("chapterobjectives", ())
     }
-    chapter_bundle = dependency_records.get("chapterbundle")
+    chapter_bundles = _bundle_records(dependency_records)
+    owners_by_chapter = {}
+    for chapter_bundle in chapter_bundles:
+        owners_by_chapter.setdefault(chapter_bundle.chapter.id, []).append(chapter_bundle)
 
     diagnostics.extend(
         validate_fixed_capacity(
@@ -370,7 +384,8 @@ def validate(records, diagnostics, dependency_records=None,
                     ref + ".symbol",
                 )
             )
-        if chapter_bundle is None or chapter_bundle.chapter.id != chapter.chapter:
+        owners = owners_by_chapter.get(chapter.chapter, ())
+        if not owners:
             diagnostics.add(
                 _error(
                     "strategy assignment bundle '{}' for chapter '{}' has no owning chapter bundle".format(
@@ -380,7 +395,17 @@ def validate(records, diagnostics, dependency_records=None,
                     ref + ".chapter",
                 )
             )
-        elif chapter_bundle.autoplay_strategies is None:
+        elif len(owners) != 1:
+            diagnostics.add(
+                _error(
+                    "strategy assignment bundle '{}' for chapter '{}' has duplicate owning chapter bundles".format(
+                        chapter.symbol, chapter.chapter
+                    ),
+                    chapter.chapter_loc,
+                    ref + ".chapter",
+                )
+            )
+        elif owners[0].autoplay_strategies is None:
             diagnostics.add(
                 _error(
                     "strategy assignment bundle '{}' has no autoplayStrategies ownership declaration".format(
@@ -390,7 +415,7 @@ def validate(records, diagnostics, dependency_records=None,
                     ref + ".symbol",
                 )
             )
-        elif chapter.symbol not in chapter_bundle.autoplay_strategies.symbols:
+        elif chapter.symbol not in owners[0].autoplay_strategies.symbols:
             diagnostics.add(
                 _error(
                     "strategy assignment bundle '{}' is not declared by its owning chapter bundle".format(
@@ -450,11 +475,13 @@ def validate(records, diagnostics, dependency_records=None,
             )
             _validate_assignment(assignment, assignment_ref, strategy_ids, event_flags, diagnostics)
 
-    if chapter_bundle is not None and chapter_bundle.autoplay_strategies is not None:
+    for chapter_bundle in chapter_bundles:
+        owner = chapter_bundle.autoplay_strategies
+        if owner is None:
+            continue
         actual_symbols = {
             chapter.symbol for chapter in chapters if chapter.chapter == chapter_bundle.chapter.id
         }
-        owner = chapter_bundle.autoplay_strategies
         diagnostics.extend(
             validate_unique(
                 zip(owner.symbols, owner.symbol_locs),

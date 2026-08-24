@@ -351,6 +351,17 @@ def _validate_cycles(record, objectives_by_id, diagnostics):
         visit(identifier, [])
 
 
+def _bundle_records(dependency_records):
+    bundles = dependency_records.get("chapterbundle")
+    if bundles is None:
+        return ()
+    if hasattr(bundles, "records"):
+        return tuple(bundles.records)
+    if isinstance(bundles, (list, tuple)):
+        return tuple(bundles)
+    return (bundles,)
+
+
 def validate(records, diagnostics, dependency_records=None,
              chapters_header=CHAPTERS_HEADER, event_flags_header=EVENT_FLAGS_HEADER,
              characters_header=character_refs.CHARACTERS_HEADER):
@@ -367,10 +378,17 @@ def validate(records, diagnostics, dependency_records=None,
             len(records), BUNDLE_CAPACITY, capacity_loc, capacity_ref, what="chapter objective bundles"
         )
     )
-    chapter_bundle = dependency_records.get("chapterbundle")
-    if chapter_bundle is not None and chapter_bundle.chapter_objectives is not None:
+    chapter_bundles = _bundle_records(dependency_records)
+    owners_by_chapter = {}
+    actual_symbols_by_chapter = {}
+    for record in records:
+        actual_symbols_by_chapter.setdefault(record.chapter, set()).add(record.symbol)
+    for chapter_bundle in chapter_bundles:
+        owners_by_chapter.setdefault(chapter_bundle.chapter.id, []).append(chapter_bundle)
         owner = chapter_bundle.chapter_objectives
-        actual_symbols = {record.symbol for record in records if record.chapter == chapter_bundle.chapter.id}
+        if owner is None:
+            continue
+        actual_symbols = actual_symbols_by_chapter.get(chapter_bundle.chapter.id, set())
         diagnostics.extend(
             validate_unique(
                 zip(owner.symbols, owner.symbol_locs),
@@ -388,6 +406,19 @@ def validate(records, diagnostics, dependency_records=None,
                         loc, "chapterObjectives.symbols[{}]".format(symbol),
                     )
                 )
+    for chapter, owners in owners_by_chapter.items():
+        if len(owners) < 2:
+            continue
+        first = owners[0]
+        for duplicate in owners[1:]:
+            diagnostics.add(
+                _err(
+                    "duplicate chapter bundle owner for '{}' (first defined at {})".format(
+                        chapter, first.chapter.id_loc
+                    ),
+                    duplicate.chapter.id_loc, "bundles[chapter={}].chapter".format(chapter),
+                )
+            )
 
     diagnostics.extend(
         validate_unique(
@@ -408,7 +439,8 @@ def validate(records, diagnostics, dependency_records=None,
     for record in records:
         record_ref = "chapters[symbol={}]".format(record.symbol)
         owned_unit_groups = set()
-        if chapter_bundle is None or chapter_bundle.chapter.id != record.chapter:
+        owners = owners_by_chapter.get(record.chapter, ())
+        if not owners:
             diagnostics.add(
                 _err(
                     "chapter objective bundle '{}' for chapter '{}' has no owning chapter bundle".format(
@@ -417,7 +449,17 @@ def validate(records, diagnostics, dependency_records=None,
                     record.chapter_loc, record_ref + ".chapter",
                 )
             )
+        elif len(owners) != 1:
+            diagnostics.add(
+                _err(
+                    "chapter objective bundle '{}' for chapter '{}' has duplicate owning chapter bundles".format(
+                        record.symbol, record.chapter
+                    ),
+                    record.chapter_loc, record_ref + ".chapter",
+                )
+            )
         else:
+            chapter_bundle = owners[0]
             objective_owner = chapter_bundle.chapter_objectives
             if objective_owner is None or record.symbol not in objective_owner.symbols:
                 diagnostics.add(
@@ -470,9 +512,19 @@ def validate(records, diagnostics, dependency_records=None,
         used_unit_groups = set()
         protected_character_groups = {}
 
-        for group_name in record.dependencies.unit_groups:
+        for group_name, group_loc in zip(
+            record.dependencies.unit_groups, record.dependencies.unit_group_locs
+        ):
             source_group = unit_groups.get(group_name)
             if source_group is None:
+                continue
+            if group_name not in owned_unit_groups:
+                diagnostics.add(
+                    _err(
+                        "unit group '{}' is not owned by chapter '{}'".format(group_name, record.chapter),
+                        group_loc, record_ref + ".dependencies.unitGroups[{}]".format(group_name),
+                    )
+                )
                 continue
             for unit in source_group.units:
                 if isinstance(unit.char_index, str):

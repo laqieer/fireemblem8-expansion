@@ -23,10 +23,22 @@ def _validate(name):
     records = schema.load_records(objective_fixture(name))
     diagnostics = DiagnosticCollector()
     units = units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json"))
-    bundle_name = "symbol_collision_bundle.json" if name == "symbol_collision.json" else "ch2_bundle.json"
+    bundle_name = (
+        "symbol_collision_bundles" if name == "symbol_collision.json" else "ch2_bundle.json"
+    )
     chapter_bundle = chapterbundle_schema.load_records(objective_fixture(bundle_name))
     schema.validate(records, diagnostics, {"units": units, "chapterbundle": chapter_bundle})
     return records, diagnostics
+
+
+def _two_chapter_records_and_dependencies():
+    return (
+        schema.load_records(objective_fixture("two_chapters.json")),
+        {
+            "units": units_schema.load_records(objective_fixture("deps_units_two_chapters.json")),
+            "chapterbundle": chapterbundle_schema.load_records(objective_fixture("two_chapter_bundles")),
+        },
+    )
 
 
 class ChapterObjectivesSchemaTests(unittest.TestCase):
@@ -83,21 +95,91 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
         self.assertFalse(diagnostics.ok)
         ownership_errors = [
             error for error in diagnostics.errors
-            if error.message == "chapter objective bundle 'A_B' for chapter 'CHAPTER_L_3' has no owning chapter bundle"
+            if error.message == "unit group 'UnitDef_Event_Ch2Ally' is not owned by chapter 'CHAPTER_L_3'"
+            and error.reference_path
+            == "chapters[symbol=A_B].aiGroups[id=C].members[character=CHARACTER_EIRIKA].unitGroup"
         ]
         self.assertEqual(len(ownership_errors), 1, diagnostics.render())
-        self.assertEqual(ownership_errors[0].location, records[1].chapter_loc)
-        self.assertEqual(ownership_errors[0].reference_path, "chapters[symbol=A_B].chapter")
+        self.assertEqual(ownership_errors[0].location, records[1].groups[0].members[0].unit_group_loc)
+        self.assertEqual(
+            ownership_errors[0].reference_path,
+            "chapters[symbol=A_B].aiGroups[id=C].members[character=CHARACTER_EIRIKA].unitGroup",
+        )
         output = generate.generate_c_source(records, objective_fixture("symbol_collision.json"))
         members = re.findall(r"static const u8 (s[A-Za-z0-9_]+Members)\[\]", output)
         self.assertEqual(len(members), 2)
         self.assertEqual(len(set(members)), 2)
 
+    def test_multiple_chapter_bundles_resolve_their_own_unit_groups(self):
+        records, dependencies = _two_chapter_records_and_dependencies()
+        diagnostics = DiagnosticCollector()
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(diagnostics.ok, diagnostics.render())
+        self.assertEqual(
+            sorted(dependencies["chapterbundle"].by_chapter),
+            ["CHAPTER_L_2", "CHAPTER_L_3"],
+        )
+
+    def test_cross_owner_missing_and_duplicate_bundle_owners_fail_closed(self):
+        records, dependencies = _two_chapter_records_and_dependencies()
+        diagnostics = DiagnosticCollector()
+        member = records[1].groups[0].members[0]
+        member.unit_group = "UnitDef_Fixture_L2Ally"
+        schema.validate(records, diagnostics, dependencies)
+        cross_owner = [
+            error for error in diagnostics.errors
+            if error.reference_path
+            == "chapters[symbol=ChapterObjectives_FixtureL3].aiGroups[id=AI_GROUP_FIXTURE_L3]"
+            ".members[character=CHARACTER_SETH].unitGroup"
+        ]
+        self.assertEqual(len(cross_owner), 1, diagnostics.render())
+        self.assertEqual(cross_owner[0].location, member.unit_group_loc)
+
+        records, dependencies = _two_chapter_records_and_dependencies()
+        diagnostics = DiagnosticCollector()
+        dependencies["chapterbundle"] = chapterbundle_schema.ChapterBundleRecords(
+            [dependencies["chapterbundle"][0]]
+        )
+        schema.validate(records, diagnostics, dependencies)
+        missing_owner = [
+            error for error in diagnostics.errors
+            if error.message
+            == "chapter objective bundle 'ChapterObjectives_FixtureL3' for chapter 'CHAPTER_L_3' "
+            "has no owning chapter bundle"
+        ]
+        self.assertEqual(len(missing_owner), 1, diagnostics.render())
+        self.assertEqual(missing_owner[0].location, records[1].chapter_loc)
+        self.assertEqual(
+            missing_owner[0].reference_path,
+            "chapters[symbol=ChapterObjectives_FixtureL3].chapter",
+        )
+
+        records, dependencies = _two_chapter_records_and_dependencies()
+        diagnostics = DiagnosticCollector()
+        dependencies["chapterbundle"] = chapterbundle_schema.ChapterBundleRecords(
+            [
+                dependencies["chapterbundle"][0],
+                dependencies["chapterbundle"][1],
+                copy.deepcopy(dependencies["chapterbundle"][1]),
+            ]
+        )
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(
+            any(
+                error.reference_path == "bundles[chapter=CHAPTER_L_3].chapter"
+                and "duplicate chapter bundle owner" in error.message
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
     def test_chapter_bundle_rejects_stale_objective_symbol(self):
         records, diagnostics = _validate("valid.json")
         chapter_bundle = chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json"))
-        chapter_bundle.chapter_objectives.symbols.append("ChapterObjectives_Stale")
-        chapter_bundle.chapter_objectives.symbol_locs.append(chapter_bundle.chapter_objectives.symbol_locs[0])
+        chapter_bundle[0].chapter_objectives.symbols.append("ChapterObjectives_Stale")
+        chapter_bundle[0].chapter_objectives.symbol_locs.append(
+            chapter_bundle[0].chapter_objectives.symbol_locs[0]
+        )
         schema.validate(
             records,
             diagnostics,
