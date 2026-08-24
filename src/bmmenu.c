@@ -1,5 +1,9 @@
 #include "global.h"
 
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
+#include <string.h>
+#endif
+
 #include "expansion_danger_overlay.h"
 #ifdef MODERN
 #include "expansion_ui_prefs.h"
@@ -8,6 +12,9 @@
 #include "expansion_blue_phase_delegate.h"
 #include "expansion_locale.h"
 #include "expansion_msg_ids.h"
+
+EWRAM_DATA static char sBluePhaseDelegateHelpText[
+    EXPANSION_LOCALE_SCRATCH_SLOT_BYTES];
 #endif
 
 #include "hardware.h"
@@ -288,10 +295,19 @@ u8 ExpansionBluePhaseDelegate_MenuHelpBox(
 {
     if (menuItem->def->onSelected == ExpansionBluePhaseDelegate_MenuSelect)
     {
+        const char *resolved =
+            ExpansionLocale_ResolveCurrent(EXP_MSG_AUTOPLAY_CHARGE_HELP);
+
+        strncpy(
+            sBluePhaseDelegateHelpText,
+            resolved,
+            sizeof(sBluePhaseDelegateHelpText) - 1);
+        sBluePhaseDelegateHelpText[
+            sizeof(sBluePhaseDelegateHelpText) - 1] = '\0';
         StartHelpBoxString(
             menuItem->xTile * 8,
             menuItem->yTile * 8,
-            ExpansionLocale_ResolveCurrent(EXP_MSG_AUTOPLAY_CHARGE_HELP));
+            sBluePhaseDelegateHelpText);
         return 0;
     }
 
