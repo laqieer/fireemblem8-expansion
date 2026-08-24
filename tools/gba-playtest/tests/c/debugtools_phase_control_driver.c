@@ -326,6 +326,8 @@ static int TestFactionModesAndRestoration(void)
 static int TestRejectedAndExpiredRequests(void)
 {
     u32 rejectedBefore;
+    u32 requestsBeforeUnsafeOwnership;
+    u32 expiredBeforeCleanup;
 
     ResetHarness();
     rejectedBefore = gDebugToolsProbe.phaseControlRejectedCount;
@@ -352,6 +354,14 @@ static int TestRejectedAndExpiredRequests(void)
           "active events must reject a request without mutation");
     sEventLive = 0;
 
+    requestsBeforeUnsafeOwnership = gDebugToolsProbe.phaseControlRequestedCount;
+    sPlayerActionLive = 1;
+    CHECK(DebugToolsPhaseControl_RequestFactionMode(
+              FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+              == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
+          "map-action ownership must reject a request without mutation");
+    sPlayerActionLive = 0;
+
     sFadeLive = 1;
     CHECK(DebugToolsPhaseControl_RequestTurn(6)
               == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
@@ -369,6 +379,22 @@ static int TestRejectedAndExpiredRequests(void)
               == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
           "active battle ownership must reject a request without mutation");
     sBattleLive = 0;
+    CHECK(gDebugToolsProbe.phaseControlRequestedCount == requestsBeforeUnsafeOwnership
+              && gDebugToolsProbe.phaseControlAppliedCount == 0
+              && gDebugToolsProbe.phaseControlRestoredCount == 0,
+          "unsafe ownership must not queue, apply, or restore a request");
+
+    CHECK(DebugToolsPhaseControl_RequestFactionMode(
+              FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+              == DEBUGTOOLS_PHASE_CONTROL_OK,
+          "cleared map-action and battle ownership must restore acceptance");
+    CHECK(gDebugToolsProbe.phaseControlRequestedCount
+              == requestsBeforeUnsafeOwnership + 1,
+          "normal acceptance must record exactly one request after adversaries");
+    expiredBeforeCleanup = gDebugToolsProbe.phaseControlExpiredCount;
+    DebugToolsPhaseControl_Reset();
+    CHECK(gDebugToolsProbe.phaseControlExpiredCount == expiredBeforeCleanup + 1,
+          "test cleanup must expire the accepted post-adversary request");
 
     CHECK(ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER)
               == EXPANSION_AUTOPLAY_OK,
@@ -386,8 +412,8 @@ static int TestRejectedAndExpiredRequests(void)
               == DEBUGTOOLS_PHASE_CONTROL_OK,
           "a valid request must queue before expiry testing");
     DebugToolsPhaseControl_Reset();
-    CHECK(gDebugToolsProbe.phaseControlExpiredCount == 1
-              && gDebugToolsProbe.phaseControlRestoredCount == 1
+    CHECK(gDebugToolsProbe.phaseControlExpiredCount == expiredBeforeCleanup + 2
+              && gDebugToolsProbe.phaseControlRestoredCount == 2
               && gDebugToolsProbe.phaseControlLastResult
                   == DEBUGTOOLS_PHASE_CONTROL_EXPIRED,
           "lifecycle reset must expire and restore a pending request");
