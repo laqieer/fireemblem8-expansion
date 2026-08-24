@@ -1,8 +1,8 @@
 {
   "checkpoints": [
     {
-      "frame": 300,
-      "framebuffer_hash": "fnv1a64-rgb24:3855f352b10ce427",
+      "frame": 550,
+      "framebuffer_hash": "fnv1a64-rgb24:2d9ab45bcfc84b25",
       "name": "release-before-hotkey",
       "probes": [
         {
@@ -21,11 +21,11 @@
           "value": "0x00000000"
         }
       ],
-      "sram_hash": "fnv1a64-sram:e81bac1ff9c4a929"
+      "sram_hash": "fnv1a64-sram:4c0f364a34fd1659"
     },
     {
       "frame": 700,
-      "framebuffer_hash": "fnv1a64-rgb24:71555e474f28dbba",
+      "framebuffer_hash": "fnv1a64-rgb24:32d3f3d78906017f",
       "name": "release-hotkey-inert",
       "probes": [
         {
@@ -44,7 +44,7 @@
           "value": "0x00000000"
         }
       ],
-      "sram_hash": "fnv1a64-sram:2272a673c74852ee"
+      "sram_hash": "fnv1a64-sram:4c0f364a34fd1659"
     }
   ],
   "format_version": 2,

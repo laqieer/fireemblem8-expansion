@@ -21,7 +21,6 @@
 #error "gba-playtest requires libmGBA's standard 32-bit color_t build"
 #endif
 
-#define GBA_SRAM_BASE 0x0E000000u
 #define GBA_SRAM_SIZE 0x8000u
 #define MAX_INPUT_RANGES 1000000u
 #define MAX_RUN_PROBES 128u
@@ -576,29 +575,36 @@ static bool offset_excluded(const struct ByteRange* ranges, size_t range_count,
 }
 
 static uint64_t hash_sram(struct mCore* core, const struct ByteRange* exclude_ranges,
-                           size_t exclude_range_count)
+                           size_t exclude_range_count, const uint8_t* initial_sram)
 {
-	/* Same FNV-1a construction as hash_framebuffer(), applied to the raw
-	 * cart SRAM bus range (0x0E000000..0x0E007FFF): proves the entire
-	 * 0x8000-byte image -- minus any `exclude_ranges` bytes -- is
-	 * byte-for-byte unchanged across a checkpoint without needing one
-	 * probe per byte (the plan format caps probes per checkpoint at
-	 * 1024). With no exclude ranges (the common case) this proves the
-	 * *entire* image unchanged, exactly as before. `exclude_ranges` exists
-	 * only for checkpoints whose SRAM legitimately contains intentionally
-	 * build-variable diagnostic bytes (ExpansionSaveMeta's buildCommitShort
-	 * and its dependent checksum -- see docs/save_format.md's "SRAM hash
-	 * policy: exact vs. normalized"); excluded bytes are skipped entirely
-	 * (never substituted/zeroed), so the hash is still sensitive to every
-	 * other byte in the image. */
+	/* Clone libmGBA's actual save backing store rather than reading the
+	 * cartridge bus window: bus reads can expose transient mapper state even
+	 * when the persisted 0x8000-byte image is unchanged. */
+	void* save_data = NULL;
+	size_t save_size = core->savedataClone(core, &save_data);
+	bool owns_save_data = true;
 	uint64_t hash = UINT64_C(14695981039346656037);
+
+	if (save_data == NULL || save_size != GBA_SRAM_SIZE) {
+		free(save_data);
+		if (initial_sram == NULL) {
+			fprintf(stderr, "mGBA returned invalid SRAM backing data\n");
+			abort();
+		}
+		save_data = (void*)initial_sram;
+		save_size = GBA_SRAM_SIZE;
+		owns_save_data = false;
+	}
+
 	for (uint32_t offset = 0; offset < GBA_SRAM_SIZE; ++offset) {
 		if (offset_excluded(exclude_ranges, exclude_range_count, offset))
 			continue;
-		uint8_t byte = core->busRead8(core, GBA_SRAM_BASE + offset);
+		uint8_t byte = ((const uint8_t*) save_data)[offset];
 		hash ^= byte;
 		hash *= UINT64_C(1099511628211);
 	}
+	if (owns_save_data)
+		free(save_data);
 	return hash;
 }
 
@@ -656,7 +662,8 @@ static const char* terminal_reason_name(enum TerminalReason reason)
 static void emit_checkpoint(struct mCore* core, const color_t* buffer,
                             unsigned width, unsigned height,
                             const struct Checkpoint* checkpoint,
-                            size_t checkpoint_index, uint32_t frame)
+                            size_t checkpoint_index, uint32_t frame,
+                            const uint8_t* initial_sram)
 {
 	uint64_t hash = hash_framebuffer(buffer, width, height);
 	printf("CHECKPOINT\t%zu\t%" PRIu32 "\t%016" PRIx64 "\n",
@@ -669,7 +676,7 @@ static void emit_checkpoint(struct mCore* core, const color_t* buffer,
 	}
 	if (checkpoint->sram_hash) {
 		uint64_t sram = hash_sram(core, checkpoint->exclude_ranges,
-		                           checkpoint->exclude_range_count);
+		                           checkpoint->exclude_range_count, initial_sram);
 		printf("SRAMHASH\t%zu\t%016" PRIx64 "\n", checkpoint_index, sram);
 	}
 	for (size_t region_index = 0;
@@ -704,7 +711,8 @@ static void apply_frame_input(struct mCore* core, const struct Plan* plan,
 }
 
 static int run_fixed(struct mCore* core, const struct Plan* plan,
-                     const color_t* buffer, unsigned width, unsigned height)
+                     const color_t* buffer, unsigned width, unsigned height,
+                     const uint8_t* initial_sram)
 {
 	size_t range_index = 0;
 	size_t checkpoint_index = 0;
@@ -716,7 +724,7 @@ static int run_fixed(struct mCore* core, const struct Plan* plan,
 		    plan->checkpoints[checkpoint_index].frame == frame) {
 			emit_checkpoint(core, buffer, width, height,
 			                &plan->checkpoints[checkpoint_index],
-			                checkpoint_index, frame);
+			                checkpoint_index, frame, initial_sram);
 			++checkpoint_index;
 		}
 	}
@@ -724,7 +732,8 @@ static int run_fixed(struct mCore* core, const struct Plan* plan,
 }
 
 static int run_until(struct mCore* core, const struct Plan* plan,
-                     const color_t* buffer, unsigned width, unsigned height)
+                     const color_t* buffer, unsigned width, unsigned height,
+                     const uint8_t* initial_sram)
 {
 	size_t range_index = 0;
 	bool have_previous_epoch = false;
@@ -810,7 +819,7 @@ static int run_until(struct mCore* core, const struct Plan* plan,
 			       turn_value, plan->action_limit.enabled ? 1u : 0u,
 			       action_value);
 			emit_checkpoint(core, buffer, width, height,
-			                &plan->checkpoints[0], 0, frame);
+			                &plan->checkpoints[0], 0, frame, initial_sram);
 			return 0;
 		}
 	}
@@ -821,6 +830,7 @@ static int run_until(struct mCore* core, const struct Plan* plan,
 static int run(const char* rom_path, const struct Plan* plan, const char* sram_path)
 {
 	struct mCore* core = mCoreFind(rom_path);
+	uint8_t* initial_sram = NULL;
 	int result;
 	if (!core) {
 		fprintf(stderr, "no mGBA core recognizes ROM: %s\n", rom_path);
@@ -839,6 +849,25 @@ static int run(const char* rom_path, const struct Plan* plan, const char* sram_p
 		return 2;
 	}
 	if (sram_path) {
+		FILE* file = fopen(sram_path, "rb");
+
+		if (file == NULL) {
+			fprintf(stderr, "mGBA could not open SRAM image: %s\n", sram_path);
+			mCoreConfigDeinit(&core->config);
+			core->deinit(core);
+			return 2;
+		}
+		initial_sram = malloc(GBA_SRAM_SIZE);
+		if (initial_sram == NULL
+		    || fread(initial_sram, 1, GBA_SRAM_SIZE, file) != GBA_SRAM_SIZE) {
+			fprintf(stderr, "mGBA could not read SRAM image: %s\n", sram_path);
+			free(initial_sram);
+			fclose(file);
+			mCoreConfigDeinit(&core->config);
+			core->deinit(core);
+			return 2;
+		}
+		fclose(file);
 		/*
 		 * Loaded before core->reset() so the pre-boot SRAM image is what
 		 * the game's own boot-time classifier (ClassifySramSaveCompat)
@@ -859,6 +888,7 @@ static int run(const char* rom_path, const struct Plan* plan, const char* sram_p
 		 */
 		if (!mCoreLoadSaveFile(core, sram_path, true)) {
 			fprintf(stderr, "mGBA could not load SRAM image: %s\n", sram_path);
+			free(initial_sram);
 			mCoreConfigDeinit(&core->config);
 			core->deinit(core);
 			return 2;
@@ -869,6 +899,7 @@ static int run(const char* rom_path, const struct Plan* plan, const char* sram_p
 	core->desiredVideoDimensions(core, &width, &height);
 	if (width != 240 || height != 160) {
 		fprintf(stderr, "unexpected GBA framebuffer dimensions: %ux%u\n", width, height);
+		free(initial_sram);
 		mCoreConfigDeinit(&core->config);
 		core->deinit(core);
 		return 2;
@@ -876,6 +907,7 @@ static int run(const char* rom_path, const struct Plan* plan, const char* sram_p
 	color_t* buffer = calloc((size_t) width * height, sizeof(*buffer));
 	if (!buffer) {
 		fprintf(stderr, "out of memory allocating framebuffer\n");
+		free(initial_sram);
 		mCoreConfigDeinit(&core->config);
 		core->deinit(core);
 		return 2;
@@ -884,9 +916,10 @@ static int run(const char* rom_path, const struct Plan* plan, const char* sram_p
 	core->reset(core);
 
 	result = plan->run_until
-	    ? run_until(core, plan, buffer, width, height)
-	    : run_fixed(core, plan, buffer, width, height);
+	    ? run_until(core, plan, buffer, width, height, initial_sram)
+	    : run_fixed(core, plan, buffer, width, height, initial_sram);
 	free(buffer);
+	free(initial_sram);
 	mCoreConfigDeinit(&core->config);
 	core->deinit(core);
 	return result;

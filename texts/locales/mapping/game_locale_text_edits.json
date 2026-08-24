@@ -393,6 +393,11 @@
         "zh-Hans": "AI2"
       },
       {
+        "ja": "BGM確認",
+        "key": "debug.action.music_preview",
+        "zh-Hans": "BGM查看"
+      },
+      {
         "ja": "ゲームスロット0",
         "key": "debug.save_fixture.game0",
         "zh-Hans": "游戏存档0"

@@ -32,10 +32,10 @@
   "regions_headroom": {
     "ewram": {
       "capacity_bytes": 262144,
-      "free_bytes": 1760,
-      "occupied_bytes": 260384,
+      "free_bytes": 1688,
+      "occupied_bytes": 260456,
       "overflow": false,
-      "physical_free_bytes": 1760
+      "physical_free_bytes": 1688
     },
     "iwram": {
       "capacity_bytes": 32768,
@@ -71,40 +71,40 @@
     "missing": [],
     "symbols": {
       "gExpansionLocaleMsgCount": 2,
-      "gExpansionLocaleMsgIds": 184,
+      "gExpansionLocaleMsgIds": 186,
       "gExpansionLocaleTombstoneCount": 2
     },
-    "total_bytes": 188
+    "total_bytes": 190
   },
   "rom_catalog_strings": {
     "missing": [],
     "symbols": {
-      "gExpansionCatalog_de": 368,
-      "gExpansionCatalog_en": 368,
-      "gExpansionCatalog_es": 368,
-      "gExpansionCatalog_fr": 368,
-      "gExpansionCatalog_it": 368,
-      "gExpansionCatalog_ja": 368,
-      "gExpansionCatalog_qps_ploc": 368,
-      "gExpansionCatalog_zh_Hans": 368
+      "gExpansionCatalog_de": 372,
+      "gExpansionCatalog_en": 372,
+      "gExpansionCatalog_es": 372,
+      "gExpansionCatalog_fr": 372,
+      "gExpansionCatalog_it": 372,
+      "gExpansionCatalog_ja": 372,
+      "gExpansionCatalog_qps_ploc": 372,
+      "gExpansionCatalog_zh_Hans": 372
     },
-    "total_bytes": 2944,
+    "total_bytes": 2976,
     "unexpected": []
   },
   "schema_version": 1,
   "source_catalog_budget": {
-    "active_message_count": 92,
-    "catalog_index_bytes": 3224,
+    "active_message_count": 93,
+    "catalog_index_bytes": 3258,
     "catalog_string_bytes": {
-      "de": 1070,
-      "en": 910,
-      "es": 1057,
-      "fr": 1084,
-      "it": 1049,
-      "ja": 1194,
-      "qps-ploc": 1492,
-      "total": 8863,
-      "zh-Hans": 1007
+      "de": 1084,
+      "en": 924,
+      "es": 1078,
+      "fr": 1100,
+      "it": 1066,
+      "ja": 1204,
+      "qps-ploc": 1515,
+      "total": 8988,
+      "zh-Hans": 1017
     },
     "glyphs_used_count": 338,
     "locales_generated": [
@@ -120,7 +120,7 @@
     "pseudo_policy_counts": {
       "compact": 2,
       "preserve": 6,
-      "transform": 84
+      "transform": 85
     },
     "scratch_budget_bytes": 96,
     "scratch_headroom_bytes": 63,

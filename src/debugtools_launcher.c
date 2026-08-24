@@ -304,6 +304,7 @@ int DebugTools_IsBootstrapSuppressionActive(void)
 
 void DebugTools_NotifyTitleScreenStarting(void)
 {
+    DebugTools_ForceSessionCleanup();
     DebugSaveFixture_NotifyTitleScreenStarting();
 
     /* No-op whenever suppression is not currently active -- an ordinary

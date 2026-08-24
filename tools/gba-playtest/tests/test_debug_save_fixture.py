@@ -150,6 +150,18 @@ class DebugSaveFixtureContractTests(unittest.TestCase):
             "fnv1a64-sram:4c0f364a34fd1659",
         )
 
+        fingerprint = json.loads(
+            (FINGERPRINTS / RELEASE_SCENARIO).read_text(encoding="utf-8")
+        )
+        hashes = {
+            checkpoint["sram_hash"] for checkpoint in fingerprint["checkpoints"]
+        }
+        self.assertEqual(
+            len(hashes),
+            1,
+            "release debug-hotkey pulses must not change any SRAM byte",
+        )
+
     def test_cancel_invalid_incompatible_and_interruption_are_exact(self):
         for name in DEBUG_SCENARIOS[1:]:
             with self.subTest(name=name):

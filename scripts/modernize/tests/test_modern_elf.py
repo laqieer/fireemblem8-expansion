@@ -15,6 +15,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scripts.modernize.tests.make_database import (
+    make_database_rule,
+    make_database_rule_header,
+)
+
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -29,6 +34,34 @@ class ModernElfTargetTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=False,
+        )
+
+    def resolved_make_database_rule(self, target):
+        result = self.make("-rR", "-n", "-p", "__issue102_modern_elf_probe__")
+        self.assertNotEqual(result.returncode, 0)
+        rule = make_database_rule(result.stdout, target)
+        self.assertIsNotNone(rule, result.stdout[-4000:])
+        return rule
+
+    def test_make_database_rule_header_collects_continuations(self):
+        fixture = "\n".join(
+            (
+                "expansion-modern-link-prepare: first-prerequisite \\",
+                "    expansion-modern-legacy-ready \\",
+                "    final-prerequisite",
+                "#  recipe to execute",
+            )
+        )
+        header = make_database_rule_header(
+            fixture,
+            "expansion-modern-link-prepare",
+        )
+        self.assertEqual(
+            header,
+            (
+                "expansion-modern-link-prepare: first-prerequisite "
+                "expansion-modern-legacy-ready final-prerequisite"
+            ),
         )
 
     def tool_overrides(self):
@@ -155,27 +188,25 @@ class ModernElfTargetTests(unittest.TestCase):
     # -- Legacy freshness via NODEP=0 recursive make ------------------------
 
     def test_legacy_ready_step_uses_nodep_zero(self):
-        """modern.mk must declare NODEP=0 in the legacy-ready step."""
-        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("expansion-modern-legacy-ready", mk)
-        self.assertIn("$(MAKE) NODEP=0", mk)
-        self.assertNotIn("+$(MAKE) NODEP=0", mk)
-        # link-prepare must depend on legacy-ready (may span lines)
-        self.assertIn("expansion-modern-legacy-ready", mk)
-        prep_idx = mk.index("expansion-modern-link-prepare:")
-        ready_idx = mk.index("expansion-modern-legacy-ready", prep_idx)
-        self.assertGreater(ready_idx, prep_idx)
+        """The resolved Make graph refreshes legacy objects before linking."""
+        ready_rule = self.resolved_make_database_rule(
+            "expansion-modern-legacy-ready"
+        )
+        prepare_rule = self.resolved_make_database_rule(
+            "expansion-modern-link-prepare"
+        )
+        prepare_header = make_database_rule_header(
+            prepare_rule,
+            "expansion-modern-link-prepare",
+        )
+        self.assertIn("NODEP=0", ready_rule)
+        self.assertNotIn("+$(MAKE) NODEP=0", ready_rule)
+        self.assertIn("expansion-modern-legacy-ready", prepare_header)
 
     # -- Dry-run safety -----------------------------------------------------
 
     def test_dry_run_does_not_fail_on_missing_sidecar(self):
         """make -n with a guaranteed-missing sidecar must exit 0."""
-        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("for flag in $(MAKEFLAGS); do", mk)
-        self.assertIn("--) break ;;", mk)
-        self.assertIn("*n*) dry_run=1 ;;", mk)
-        self.assertNotIn("$(findstring n,$(MAKEFLAGS))", mk)
-        self.assertNotIn('+@if [ ! -f "$(MODERN_ELF_BANIM_SYM)"', mk)
         with tempfile.TemporaryDirectory() as tmp:
             missing_sym = Path(tmp) / "dir with spaces" / "banim.o.sym.o"
             banim_obj = Path(ROOT / "banim" / "data_banim.o")

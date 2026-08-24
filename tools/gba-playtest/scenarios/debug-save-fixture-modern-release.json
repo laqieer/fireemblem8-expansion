@@ -1,21 +1,18 @@
 {
   "schema_version": 1,
   "name": "debug-save-fixture-modern-release",
-  "description": "TC-DEBUGSAVE-001 release negative: replay the title advance and repeated SELECT+R debug hotkey pulses against the modern release ROM with the generated valid fixture source image. Debugtools and all DebugSaveFixture code/data symbols are omitted, the title remains in its ordinary idle state, gDebugToolsProbe stays zero, and exact whole SRAM is unchanged.",
+  "description": "TC-DEBUGSAVE-001 release negative: establish the ordinary title idle state before frame 550, then replay only SELECT+R debug hotkey pulses against the modern release ROM with the generated valid fixture source image. Debugtools and all DebugSaveFixture code/data symbols are omitted, the title remains in its ordinary idle state, gDebugToolsProbe stays zero, and exact whole SRAM is unchanged.",
   "frames": [
     {"start": 90, "end": 95, "keys": ["A"]},
     {"start": 150, "end": 155, "keys": ["START"]},
     {"start": 210, "end": 215, "keys": ["A"]},
     {"start": 270, "end": 275, "keys": ["START"]},
-    {"start": 330, "end": 335, "keys": ["A"]},
-    {"start": 390, "end": 395, "keys": ["START"]},
-    {"start": 450, "end": 455, "keys": ["A"]},
     {"start": 600, "end": 606, "keys": ["SELECT", "R"]},
     {"start": 650, "end": 656, "keys": ["SELECT", "R"]}
   ],
   "checkpoints": [
     {
-      "frame": 300,
+      "frame": 550,
       "name": "release-before-hotkey",
       "framebuffer": true,
       "sram_hash": true,

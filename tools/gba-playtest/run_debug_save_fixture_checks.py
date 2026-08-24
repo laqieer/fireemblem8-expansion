@@ -129,12 +129,12 @@ def check_layout_anchor(elf: Path) -> None:
         re.MULTILINE,
     )
     elf_anchor = re.search(
-        r"^0203189c 00000048 \w sSaveStateStableLayout$",
+        r"^([0-9a-fA-F]+) 00000048 \w sSaveStateStableLayout$",
         elf_symbols,
         re.MULTILINE,
     )
     stable_probe = re.search(
-        r"^02031818 00000084 \w gDebugToolsProbe$",
+        r"^([0-9a-fA-F]+) ([0-9a-fA-F]+) \w gDebugToolsProbe$",
         elf_symbols,
         re.MULTILINE,
     )
@@ -190,6 +190,12 @@ def check_layout_anchor(elf: Path) -> None:
         raise RuntimeError(
             "debug Save State layout, shared menu storage, or the 0x100-byte "
             "fixture state/preview/probe contract drifted"
+        )
+    if int(elf_anchor.group(1), 16) != (
+        int(stable_probe.group(1), 16) + int(stable_probe.group(2), 16)
+    ):
+        raise RuntimeError(
+            "retained save-fixture storage no longer follows the debug probe"
         )
     if recovered_menu_bytes < 0x1B0:
         raise RuntimeError(

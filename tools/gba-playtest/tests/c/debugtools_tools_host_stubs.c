@@ -241,6 +241,11 @@ ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
     return (ProcPtr)1;
 }
 
+void Proc_End(ProcPtr proc)
+{
+    (void)proc;
+}
+
 void DebugToolsHostStub_RunPendingTransition(void)
 {
     ProcPtr proc = sDebugToolsToolsPendingTransition;
@@ -262,6 +267,9 @@ static int sDebugToolsToolsBattleActive = 0;
 
 ProcPtr Proc_Find(const struct ProcCmd* script)
 {
+    if (script == gProcScr_DebugToolsMenuTransition)
+        return sDebugToolsToolsPendingTransition;
+
     if (script == gProcScr_PlayerPhase && sDebugToolsToolsPlayerPhaseActive)
         return (ProcPtr)1;
 
@@ -440,6 +448,14 @@ const struct DebugSaveFixturePreview* DebugSaveFixture_GetPreview(void)
         return NULL;
 
     return &sFakeSaveFixturePreview;
+}
+
+void DebugTools_RegisterMusicPreviewAction(void)
+{
+}
+
+void DebugTools_CleanupMusicPreview(void)
+{
 }
 
 /* --- gPlaySt: DebugTools_PrepHotkeyCheck (src/debugtools_registry.c) and

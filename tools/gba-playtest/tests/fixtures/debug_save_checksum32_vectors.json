@@ -1,0 +1,18 @@
+[
+  {
+    "bytes_hex": "",
+    "checksum32": "0x00000000"
+  },
+  {
+    "bytes_hex": "3412",
+    "checksum32": "0x12341234"
+  },
+  {
+    "bytes_hex": "3412cdab",
+    "checksum32": "0xb9f9be01"
+  },
+  {
+    "bytes_hex": "ffff010002000400",
+    "checksum32": "0xfff80006"
+  }
+]

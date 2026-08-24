@@ -16,6 +16,7 @@ MODERN_GOALS := \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
+	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debug-save-fixture-check \
 	expansion-modern-debugtools-prep-check \
@@ -297,7 +298,8 @@ MODERN_COHORT_SOURCES ?= \
 	src/debugtools_launcher.c \
 	src/debugtools_actions.c \
 	src/debugtools_diag.c \
-	src/debugtools_tools.c
+	src/debugtools_tools.c \
+	src/debugtools_music.c
 
 # Handwritten assembly that must not be decompiled (see CONTRIBUTING.md).
 # libagbsyscall.s is a self-contained set of BIOS SWI trampolines; arm.s and
@@ -766,6 +768,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
+	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debug-save-fixture-check \
 	expansion-modern-debugtools-prep-check \
@@ -1432,6 +1435,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
+	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debug-save-fixture-check \
 	expansion-modern-debugtools-prep-check \
@@ -2441,6 +2445,8 @@ MODERN_DEBUGTOOLS_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-hub-
 # MODERN_DEBUGTOOLS_SCENARIO above.
 MODERN_DEBUGTOOLS_MAP_SCENARIO := tools/gba-playtest/scenarios/debugtools-map-hub-modern-$(MODERN_CONFIG).json
 MODERN_DEBUGTOOLS_MAP_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-map-hub-modern-$(MODERN_CONFIG).json
+MODERN_DEBUGTOOLS_MUSIC_SCENARIO := tools/gba-playtest/scenarios/debugtools-music-title-modern-$(MODERN_CONFIG).json
+MODERN_DEBUGTOOLS_MUSIC_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-music-title-modern-$(MODERN_CONFIG).json
 MODERN_PLAYTEST := tools/gba-playtest/gba_playtest.py
 
 # Convert the linked ELF to a flat, padded ROM image, patch the configured
@@ -2518,7 +2524,9 @@ expansion-modern-boot-preflight:
 		[ ! -f "$(MODERN_DEBUGTOOLS_SCENARIO)" ] || \
 		[ ! -f "$(MODERN_DEBUGTOOLS_FINGERPRINT)" ] || \
 		[ ! -f "$(MODERN_DEBUGTOOLS_MAP_SCENARIO)" ] || \
-		[ ! -f "$(MODERN_DEBUGTOOLS_MAP_FINGERPRINT)" ]; then \
+		[ ! -f "$(MODERN_DEBUGTOOLS_MAP_FINGERPRINT)" ] || \
+		[ ! -f "$(MODERN_DEBUGTOOLS_MUSIC_SCENARIO)" ] || \
+		[ ! -f "$(MODERN_DEBUGTOOLS_MUSIC_FINGERPRINT)" ]; then \
 		printf '%s\n' \
 			"error: missing boot scenario or fingerprint (including title progression and debugtools)" >&2; \
 		printf '  boot scenario:        %s\n' "$(MODERN_BOOT_SCENARIO)" >&2; \
@@ -2529,6 +2537,8 @@ expansion-modern-boot-preflight:
 		printf '  debugtools fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_FINGERPRINT)" >&2; \
 		printf '  debugtools map scenario:  %s\n' "$(MODERN_DEBUGTOOLS_MAP_SCENARIO)" >&2; \
 		printf '  debugtools map fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_MAP_FINGERPRINT)" >&2; \
+		printf '  debugtools music scenario: %s\n' "$(MODERN_DEBUGTOOLS_MUSIC_SCENARIO)" >&2; \
+		printf '  debugtools music fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_MUSIC_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
 	@if ! "$(PYTHON)" "$(MODERN_PLAYTEST)" backend-check; then \
@@ -2643,10 +2653,30 @@ expansion-modern-debugtools-check: expansion-modern-boot-preflight expansion-mod
 expansion-modern-debugtools-map-check: expansion-modern-boot-preflight expansion-modern-rom
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
 		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_DEBUGTOOLS_MAP_SCENARIO)" \
 		--expected "$(MODERN_DEBUGTOOLS_MAP_FINGERPRINT)" \
 		--policy behavior
 	@printf 'Modern ROM debugtools-map-check passed: %s (config=%s abi=%s)\n' \
+		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+# Issue #126 / TC-DEBUGTOOLS-PROTOTYPE-004. The focused title fixture proves
+# first/boundary/rapid preview and exact restoration against deterministic
+# SRAM. The existing map gate is a dependency because its debug fixture also
+# drives the same action from a live PlayerPhase map and proves post-close
+# cursor interactivity; its release mirror retains the all-zero hotkey path.
+expansion-modern-debugtools-music-check: expansion-modern-debugtools-map-check \
+		$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--nm "$(MODERN_NM)" \
+		--scenario "$(MODERN_DEBUGTOOLS_MUSIC_SCENARIO)" \
+		--sram-image "$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)" \
+		--expected "$(MODERN_DEBUGTOOLS_MUSIC_FINGERPRINT)" \
+		--policy behavior
+	@printf 'Modern ROM debugtools-music-check passed: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
 # Issues #11/#125: proves all five shipped bounded tools (Unit Inspect/Edit,
@@ -4028,6 +4058,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-debugtools-check \
 		expansion-modern-debugtools-timer-check \
 		expansion-modern-debugtools-map-check \
+		expansion-modern-debugtools-music-check \
 		expansion-modern-debugtools-tools-check \
 		expansion-modern-debug-save-fixture-check \
 		expansion-modern-debugtools-prep-check \
@@ -4059,6 +4090,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
 	expansion-modern-debugtools-map-check \
+	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debug-save-fixture-check \
 	expansion-modern-debugtools-prep-check \
