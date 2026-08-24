@@ -217,7 +217,7 @@
   ],
   "checkpoints": [
     {
-      "frame": 3280,
+      "frame": 3285,
       "framebuffer": false,
       "name": "enemy-alive-before-fight",
       "probes": [
@@ -234,7 +234,7 @@
       ]
     },
     {
-      "frame": 3281,
+      "frame": 3296,
       "framebuffer": false,
       "name": "artur-scripted-fight-lethal-hit",
       "probes": [
@@ -251,7 +251,7 @@
       ]
     },
     {
-      "frame": 3282,
+      "frame": 3305,
       "framebuffer": false,
       "name": "enemy-dead-removed-by-kill",
       "probes": [

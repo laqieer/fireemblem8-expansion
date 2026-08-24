@@ -29,6 +29,8 @@ ACTIONS_SRC = REPO_ROOT / "src" / "debugtools_actions.c"
 DIAG_SRC = REPO_ROOT / "src" / "debugtools_diag.c"
 TOOLS_SRC = REPO_ROOT / "src" / "debugtools_tools.c"
 SELECTOR_SRC = REPO_ROOT / "src" / "debugtools_selector.c"
+BMUNIT_SRC = REPO_ROOT / "src" / "bmunit.c"
+EVENTSCR3_SRC = REPO_ROOT / "src" / "eventscr3.c"
 GAMECONTROL_SRC = REPO_ROOT / "src" / "gamecontrol.c"
 HEADER = REPO_ROOT / "include" / "expansion_debugtools.h"
 TITLESCREEN_SRC = REPO_ROOT / "src" / "titlescreen.c"
@@ -425,6 +427,8 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
                 "DebugToolsHub_ShowDiagnostics",
                 "DebugToolsHub_BackSelected",
                 "DebugToolsHub_OnEnd",
+                "DebugTools_EndSessionAfterMenuEnd",
+                "DebugTools_IsMenuTransitionScheduled",
             }
             leaked = forbidden & defined
             self.assertFalse(
@@ -434,6 +438,11 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
             # gDebugToolsProbe must still be linked in every build (the
             # release playtest scenario reads it directly by address).
             self.assertIn("gDebugToolsProbe", defined)
+            self.assertNotIn(
+                "gDebugToolsUnitEditorProbe",
+                defined,
+                "release must physically omit issue #125 editor telemetry",
+            )
 
             rc, out, driver_obj = _compile(
                 work, C_FIXTURES_DIR / "debugtools_disabled_driver.c", "disabled_driver.o"
@@ -1990,6 +1999,66 @@ class DebugToolsExtendedToolsHostTests(unittest.TestCase):
             self.assertEqual(rc, 0, f"host extended-tools test failed:\n{out}")
             self.assertIn("DEBUGTOOLS_TOOLS_HOST_TEST: PASS", out)
 
+    def test_unit_editor_executes_authoritative_engine_helpers(self):
+        """Retain and execute the real bmunit.c/eventscr3.c helper bodies.
+
+        Section garbage collection removes unrelated engine functions after
+        compilation; SetUnitHp, UnitCheckStatCaps, SetUnitStatus,
+        SetUnitStatusExt, and ChangeUnitAi are linked from their production
+        translation units, not reimplemented by the fixture.
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            section_flags = ["-ffunction-sections", "-fdata-sections"]
+
+            rc, out, bmunit_obj = _compile(
+                work,
+                BMUNIT_SRC,
+                "bmunit_real_helpers.o",
+                extra_flags=section_flags,
+            )
+            self.assertEqual(
+                rc, 0, f"compiling real src/bmunit.c helpers failed:\n{out}"
+            )
+
+            rc, out, eventscr3_obj = _compile(
+                work,
+                EVENTSCR3_SRC,
+                "eventscr3_real_helpers.o",
+                extra_flags=section_flags,
+            )
+            self.assertEqual(
+                rc, 0, f"compiling real src/eventscr3.c helper failed:\n{out}"
+            )
+
+            rc, out, driver_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debugtools_unit_real_helpers_driver.c",
+                "unit_real_helpers_driver.o",
+                extra_flags=section_flags,
+            )
+            self.assertEqual(
+                rc, 0, f"compiling real unit-helper driver failed:\n{out}"
+            )
+
+            rc, out, exe = _link(
+                work,
+                [bmunit_obj, eventscr3_obj, driver_obj],
+                "unit_real_helpers_test",
+                extra_flags=["-Wl,--gc-sections"],
+            )
+            self.assertEqual(
+                rc, 0, f"linking real unit-helper executable failed:\n{out}"
+            )
+
+            rc, out = _run(exe)
+            self.assertEqual(
+                rc, 0, f"real unit-helper executable failed:\n{out}"
+            )
+            self.assertIn("DEBUGTOOLS_UNIT_REAL_HELPERS: PASS", out)
+
     def test_portrait_runtime_probe_is_test_only_and_host_executed(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -2073,8 +2142,22 @@ class DebugToolsExtendedToolsHostTests(unittest.TestCase):
         (SetUnitHp/AddItemToConvoy/SetFlag/SetLCGRNValue etc.), never a
         save-block/SRAM API."""
         text = _strip_c_comments(TOOLS_SRC.read_text(encoding="utf-8", errors="replace"))
-        for banned in ("DebugMenu_", "WriteSaveBlock", "WriteSuspendSave", "WriteGameSave", "BuildCurrentExpansionSaveMeta"):
+        for banned in (
+            "DebugMenu_",
+            "WriteSaveBlock",
+            "WriteSuspendSave",
+            "WriteGameSave",
+            "BuildCurrentExpansionSaveMeta",
+            "UnitAddItem",
+            "UnitClearInventory",
+            "UnitRemoveItem",
+            "UnitChangeFaction",
+            "ClearUnit",
+            "LoadUnit",
+        ):
             self.assertNotIn(banned, text, f"src/debugtools_tools.c must never reference {banned}")
+        self.assertNotRegex(text, r"->\s*items\s*\[")
+        self.assertNotRegex(text, r"->\s*pClassData\s*=(?!=)")
 
     def test_extended_tools_source_is_wired_into_both_builds(self):
         ldscript_text = (REPO_ROOT / "ldscript.txt").read_text(encoding="utf-8", errors="replace")

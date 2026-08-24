@@ -76,3 +76,5 @@ Issue #84's security/correctness procedures are
 [`TC-CODEQL-084`](codeql-alerts.md#tc-codeql-084-remaining-confirmed-alert-boundaries).
 The bounded debug chapter/skirmish procedure is
 [`TC-DEBUGTOOLS-PROTOTYPE-001`](debugtools.md#tc-debugtools-prototype-001-bounded-chapter-and-skirmish-selector).
+The cursor-selected unit debug editor procedure is
+[`TC-DEBUGTOOLS-PROTOTYPE-003`](debugtools.md#tc-debugtools-prototype-003-cursor-selected-bounded-unit-inspectoreditor).

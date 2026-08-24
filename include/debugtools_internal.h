@@ -7,8 +7,9 @@
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
 
 int DebugTools_RegisterBuiltinAction(const struct DebugToolsAction* action);
-void DebugTools_RunMenuTransition(ProcPtr proc);
 void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu);
+int DebugTools_IsMenuTransitionScheduled(void);
+void DebugTools_RunMenuTransition(ProcPtr proc);
 
 enum DebugToolsLaunchTargetKind
 {

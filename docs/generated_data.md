@@ -2071,6 +2071,36 @@ make generated-data-ch2-traps-link-check
 make generated-data-ch2-shops-link-check
 ```
 
+## Issue #103: consolidated generated-data and asset-pipeline test evidence
+
+Issue #103 is a **framework test-evidence consolidation**: it changes only
+host-test organization, with no schema, generated source, asset, API,
+configuration, save, localization, ROM/RAM, profile, or archival-lane impact.
+It depends on #99 and #100; #101, #102, and #104 through #107 are unaffected. The sole conflict is dropping a distinct fixture or failure mode; one revert restores the preceding methods without data migration.
+
+The audit's 36 merge candidates run through four semantic methods in `scripts/generated_data/tests/test_consolidated_evidence.py`; named subtests call the live schema/generator/CLI with every input, as the matrix records.
+
+| Disposition and audited candidates | Retained semantic counterpart | Positive fixture | Negative control |
+| --- | --- | --- | --- |
+| **Merge:** `test_characters_schema.py::CharactersSchemaValidTests.test_valid_fixture_has_no_diagnostics`<br>`test_classes_schema.py::ClassesSchemaValidTests.test_valid_fixture_has_no_diagnostics`<br>`test_items_schema.py::ItemsSchemaValidTests.test_valid_fixture_has_no_diagnostics`<br>`test_supports_schema.py::SupportsSchemaValidTests.test_valid_fixture_has_no_diagnostics` | `SchemaEvidenceTests.test_schema_fixtures` | Each table's `valid.json` parses with its original record count. | Schema diagnostics must remain empty only for each valid fixture. |
+| **Merge:** `test_characters_schema.py::CharactersSchemaReferenceTests.test_bad_base_ranks_itype_reference_detected`<br>`test_classes_schema.py::ClassesSchemaReferenceTests.test_bad_base_ranks_itype_reference_detected` | `SchemaEvidenceTests.test_schema_fixtures` | The table/fixture subtests reach each real schema. | `bad_base_ranks_itype_ref.json` rejects `ITYPE_NOT_A_REAL_TYPE`. |
+| **Merge:** `test_characters_schema.py::CharactersSchemaReferenceTests.test_bad_base_ranks_wexp_reference_detected`<br>`test_classes_schema.py::ClassesSchemaReferenceTests.test_bad_base_ranks_wexp_reference_detected` | `SchemaEvidenceTests.test_schema_fixtures` | The table/fixture subtests reach each real schema. | `bad_base_ranks_wexp_ref.json` rejects `WPN_EXP_NOT_REAL`. |
+| **Merge:** `test_characters_schema.py::CharactersSchemaRangeTests.test_bad_base_stat_range_detected`<br>`test_classes_schema.py::ClassesSchemaRangeTests.test_bad_base_stat_range_detected` | `SchemaEvidenceTests.test_schema_fixtures` | The table/fixture subtests reach each real schema. | `bad_base_stat_range.json` rejects `hp` outside the signed-byte range. |
+| **Merge:** `test_classes_schema.py::ClassesSchemaRangeTests.test_bad_text_id_detected`<br>`test_items_schema.py::ItemsSchemaRangeTests.test_bad_text_id_detected` | `SchemaEvidenceTests.test_schema_fixtures` | The mini-header fixture keeps the real text-ID bound at 9. | `bad_text_id.json` rejects `nameTextId` 9999. |
+| **Merge:** `test_movecost_generate.py::GenerateDeterminismTests.test_generation_is_repeatable`<br>`test_terrainstats_generate.py::GenerateDeterminismTests.test_generation_is_repeatable`<br>`test_weapontriangle_generate.py::GenerateDeterminismTests.test_generation_is_repeatable` | `SchemaEvidenceTests.test_generated_outputs_are_repeatable` | Each live source is loaded by its own generator. | Two renders of each source must be byte-for-byte equal. |
+| **Merge:** `test_movecost_schema.py::MovecostSchemaCoverageTests.test_extra_terrain_key_detected`<br>`test_terrainstats_schema.py::TerrainStatsSchemaCoverageTests.test_extra_terrain_key_detected` | `SchemaEvidenceTests.test_schema_fixtures` | Both real terrain-table schemas use their own small header fixture. | `extra_terrain_key.json` rejects `TERRAIN_NOT_REAL`. |
+| **Merge:** `test_movecost_schema.py::MovecostSchemaRangeTests.test_bad_range_detected`<br>`test_terrainstats_schema.py::TerrainStatsSchemaRangeTests.test_bad_range_detected`<br>`test_weapontriangle_schema.py::WeaponTriangleSchemaRangeTests.test_bad_range_detected` | `SchemaEvidenceTests.test_schema_fixtures` | The three table/fixture subtests reach their live validators. | `bad_range.json` rejects value 200 as out of range. |
+| **Merge:** `test_shops_schema.py::ShopsSchemaReferenceTests.test_missing_item_reference_detected`<br>`test_units_schema.py::UnitsSchemaReferenceTests.test_missing_item_reference_detected` | `SchemaEvidenceTests.test_schema_fixtures` | The two table/fixture subtests reach their live validators. | `missing_item_ref.json` rejects `ITEM_NOT_A_REAL_ITEM`. |
+| **Merge:** `test_cli_new_tables.py::CliUnitsTests.test_validate_valid_fixture_passes`<br>`test_cli_new_tables.py::CliShopsTests.test_validate_valid_fixture_passes`<br>`test_cli_new_tables.py::CliTrapsTests.test_validate_valid_fixture_passes`<br>`test_cli_new_tables.py::CliEventScriptsTests.test_validate_valid_fixture_passes`<br>`test_cli_new_tables.py::CliEventListsTests.test_validate_valid_fixture_passes`<br>`test_cli_new_tables.py::CliCharactersTests.test_validate_valid_fixture_passes` | `CliEvidenceTests.test_valid_fixtures_pass` | The six table-specific `valid.json` CLI calls exit successfully, including the event-list dependency fixtures. | Successful cases preserve the existing `OK:` protocol checks where they previously applied. |
+| **Merge:** `test_cli_new_tables.py::CliUnitsTests.test_validate_invalid_fixture_fails`<br>`test_cli_new_tables.py::CliShopsTests.test_validate_invalid_fixture_fails`<br>`test_cli_new_tables.py::CliTrapsTests.test_validate_invalid_fixture_fails`<br>`test_cli_new_tables.py::CliEventScriptsTests.test_validate_invalid_fixture_fails`<br>`test_cli_new_tables.py::CliEventListsTests.test_validate_invalid_fixture_fails_with_location`<br>`test_cli_new_tables.py::CliChapterBundleTests.test_validate_invalid_fixture_fails_with_location`<br>`test_cli_new_tables.py::CliItemsTests.test_validate_invalid_fixture_fails`<br>`test_cli_new_tables.py::CliClassesTests.test_validate_invalid_fixture_fails`<br>`test_cli_new_tables.py::CliCharactersTests.test_validate_invalid_fixture_fails_with_location` | `CliEvidenceTests.test_invalid_fixtures_fail` | The nine CLI table/fixture subtests retain their individual source and dependency setup. | Each invalid fixture returns status 1 and preserves its specific diagnostic, including source-location diagnostics. |
+
+All 20 `scripts/assets/tests/test_manifest.py` audit records are **keep**. `TC-CORE-004` and `TC-TEST-QUALITY-001` map valid fixtures and deterministic output to the invalid ID, range, terrain-key, item-reference, and nondeterminism controls:
+
+```sh
+python3 -m unittest scripts.generated_data.tests.test_consolidated_evidence -v
+python3 -m unittest scripts.assets.tests.test_manifest -v
+```
+
 ## Linking a generated table in place of its hand-written counterpart (Batch 2c-1 + 2c-2 + 2c-3 + 2c-4)
 
 Issue #5 Batch 2c-1 made `classes` the first generated table actually

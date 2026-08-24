@@ -32,10 +32,10 @@
   "regions_headroom": {
     "ewram": {
       "capacity_bytes": 262144,
-      "free_bytes": 1700,
-      "occupied_bytes": 260444,
+      "free_bytes": 1704,
+      "occupied_bytes": 260440,
       "overflow": false,
-      "physical_free_bytes": 1700
+      "physical_free_bytes": 1704
     },
     "iwram": {
       "capacity_bytes": 32768,
@@ -71,42 +71,42 @@
     "missing": [],
     "symbols": {
       "gExpansionLocaleMsgCount": 2,
-      "gExpansionLocaleMsgIds": 136,
+      "gExpansionLocaleMsgIds": 156,
       "gExpansionLocaleTombstoneCount": 2
     },
-    "total_bytes": 140
+    "total_bytes": 160
   },
   "rom_catalog_strings": {
     "missing": [],
     "symbols": {
-      "gExpansionCatalog_de": 272,
-      "gExpansionCatalog_en": 272,
-      "gExpansionCatalog_es": 272,
-      "gExpansionCatalog_fr": 272,
-      "gExpansionCatalog_it": 272,
-      "gExpansionCatalog_ja": 272,
-      "gExpansionCatalog_qps_ploc": 272,
-      "gExpansionCatalog_zh_Hans": 272
+      "gExpansionCatalog_de": 312,
+      "gExpansionCatalog_en": 312,
+      "gExpansionCatalog_es": 312,
+      "gExpansionCatalog_fr": 312,
+      "gExpansionCatalog_it": 312,
+      "gExpansionCatalog_ja": 312,
+      "gExpansionCatalog_qps_ploc": 312,
+      "gExpansionCatalog_zh_Hans": 312
     },
-    "total_bytes": 2176,
+    "total_bytes": 2496,
     "unexpected": []
   },
   "schema_version": 1,
   "source_catalog_budget": {
-    "active_message_count": 68,
-    "catalog_index_bytes": 2408,
+    "active_message_count": 78,
+    "catalog_index_bytes": 2748,
     "catalog_string_bytes": {
-      "de": 815,
-      "en": 727,
-      "es": 833,
-      "fr": 874,
-      "it": 826,
-      "ja": 872,
-      "qps-ploc": 1160,
-      "total": 6858,
-      "zh-Hans": 751
+      "de": 914,
+      "en": 794,
+      "es": 911,
+      "fr": 952,
+      "it": 895,
+      "ja": 938,
+      "qps-ploc": 1285,
+      "total": 7512,
+      "zh-Hans": 823
     },
-    "glyphs_used_count": 296,
+    "glyphs_used_count": 305,
     "locales_generated": [
       "en",
       "ja",
@@ -120,7 +120,7 @@
     "pseudo_policy_counts": {
       "compact": 2,
       "preserve": 6,
-      "transform": 60
+      "transform": 70
     },
     "scratch_budget_bytes": 96,
     "scratch_headroom_bytes": 63,
