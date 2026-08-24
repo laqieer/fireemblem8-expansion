@@ -33,6 +33,10 @@ enum
 _Static_assert(NODE_MAX <= 0x100, "selector target ID reserves eight node bits");
 _Static_assert(NODE_MAX * 4 <= 0xFF, "selector target count probe must fit u8");
 
+#ifdef DEBUGTOOLS_SELECTOR_HOST_TEST
+int gDebugToolsSelectorEnumerationCount;
+#endif
+
 struct DebugToolsSelectorState
 {
     u16 targetId;
@@ -118,6 +122,24 @@ static u16 DebugToolsSelector_MakeTargetId(int kind, int chapterMode, int nodeId
         | nodeId;
 }
 
+static int DebugToolsSelector_IsTargetAvailable(int kind, int nodeId, int chapterId)
+{
+    if (kind == DEBUGTOOLS_LAUNCH_TARGET_CHAPTER)
+        return DebugToolsSelector_IsChapterAvailable(chapterId);
+
+    if (kind == DEBUGTOOLS_LAUNCH_TARGET_SKIRMISH)
+        return DebugToolsSelector_IsSkirmishAvailable(nodeId, chapterId);
+
+    return 0;
+}
+
+static void DebugToolsSelector_RecordEnumeration(void)
+{
+#ifdef DEBUGTOOLS_SELECTOR_HOST_TEST
+    gDebugToolsSelectorEnumerationCount++;
+#endif
+}
+
 static int DebugToolsSelector_EmitTarget(
     int wantedIndex,
     int* currentIndex,
@@ -127,20 +149,8 @@ static int DebugToolsSelector_EmitTarget(
     int chapterId,
     struct DebugToolsLaunchTarget* out)
 {
-    if (kind == DEBUGTOOLS_LAUNCH_TARGET_CHAPTER)
-    {
-        if (!DebugToolsSelector_IsChapterAvailable(chapterId))
-            return 0;
-    }
-    else if (kind == DEBUGTOOLS_LAUNCH_TARGET_SKIRMISH)
-    {
-        if (!DebugToolsSelector_IsSkirmishAvailable(nodeId, chapterId))
-            return 0;
-    }
-    else
-    {
+    if (!DebugToolsSelector_IsTargetAvailable(kind, nodeId, chapterId))
         return 0;
-    }
 
     if (*currentIndex == wantedIndex && out != NULL)
     {
@@ -166,6 +176,8 @@ static int DebugToolsSelector_ResolveTarget(
 
     if (wantedIndex < 0)
         return 0;
+
+    DebugToolsSelector_RecordEnumeration();
 
     for (nodeId = 0; nodeId < NODE_MAX; ++nodeId)
     {
@@ -312,35 +324,6 @@ int DebugTools_GetLaunchTarget(int index, struct DebugToolsLaunchTarget* out)
     return DebugToolsSelector_ResolveTarget(index, out);
 }
 
-static int DebugToolsSelector_FindTargetById(
-    u16 targetId,
-    struct DebugToolsLaunchTarget* out,
-    int* outIndex)
-{
-    struct DebugToolsLaunchTarget candidate;
-    int count = DebugTools_GetLaunchTargetCount();
-    int i;
-
-    for (i = 0; i < count; ++i)
-    {
-        if (!DebugTools_GetLaunchTarget(i, &candidate))
-            continue;
-
-        if (candidate.id != targetId)
-            continue;
-
-        if (out != NULL)
-            *out = candidate;
-
-        if (outIndex != NULL)
-            *outIndex = i;
-
-        return 1;
-    }
-
-    return 0;
-}
-
 static int DebugToolsSelector_IsTargetIdShapeValid(u16 targetId)
 {
     int kind = targetId >> DEBUGTOOLS_SELECTOR_TARGET_ID_KIND_SHIFT;
@@ -357,6 +340,172 @@ static int DebugToolsSelector_IsTargetIdShapeValid(u16 targetId)
         return 0;
 
     return nodeId < NODE_MAX;
+}
+
+static int DebugToolsSelector_DecodeTargetId(
+    u16 targetId,
+    struct DebugToolsLaunchTarget* out)
+{
+    int kind;
+    int chapterMode;
+    int nodeId;
+    int eirikaChapter;
+    int ephraimChapter;
+    int chapterId;
+
+    if (!DebugToolsSelector_IsTargetIdShapeValid(targetId))
+        return 0;
+
+    kind = targetId >> DEBUGTOOLS_SELECTOR_TARGET_ID_KIND_SHIFT;
+    chapterMode = (targetId >> DEBUGTOOLS_SELECTOR_TARGET_ID_MODE_SHIFT) & 0x0F;
+    nodeId = targetId & 0xFF;
+    eirikaChapter = gWMNodeData[nodeId].chapteridx_eirika;
+    ephraimChapter = gWMNodeData[nodeId].chapteridx_ephram;
+
+    if (chapterMode == CHAPTER_MODE_COMMON)
+    {
+        if (eirikaChapter != ephraimChapter)
+            return 0;
+
+        chapterId = eirikaChapter;
+    }
+    else if (chapterMode == CHAPTER_MODE_EIRIKA)
+    {
+        chapterId = eirikaChapter;
+    }
+    else
+    {
+        chapterId = ephraimChapter;
+    }
+
+    if (!DebugToolsSelector_IsTargetAvailable(kind, nodeId, chapterId))
+        return 0;
+
+    if (out != NULL)
+    {
+        out->id = targetId;
+        out->kind = kind;
+        out->chapterMode = chapterMode;
+        out->nodeId = nodeId;
+        out->chapterId = chapterId;
+        out->encounterChoice = 0;
+        out->_pad = 0;
+    }
+
+    return 1;
+}
+
+static int DebugToolsSelector_FindTargetIndexEmit(
+    u16 targetId,
+    int* currentIndex,
+    int kind,
+    int chapterMode,
+    int nodeId,
+    int chapterId,
+    int* outIndex)
+{
+    if (!DebugToolsSelector_IsTargetAvailable(kind, nodeId, chapterId))
+        return 0;
+
+    if (DebugToolsSelector_MakeTargetId(kind, chapterMode, nodeId) == targetId)
+    {
+        *outIndex = *currentIndex;
+        return 1;
+    }
+
+    (*currentIndex)++;
+    return 0;
+}
+
+static int DebugToolsSelector_FindTargetIndex(u16 targetId, int* outIndex)
+{
+    int currentIndex = 0;
+    int nodeId;
+
+    if (outIndex == NULL)
+        return 0;
+
+    DebugToolsSelector_RecordEnumeration();
+
+    for (nodeId = 0; nodeId < NODE_MAX; ++nodeId)
+    {
+        int eirikaChapter = gWMNodeData[nodeId].chapteridx_eirika;
+        int ephraimChapter = gWMNodeData[nodeId].chapteridx_ephram;
+
+        if (eirikaChapter == ephraimChapter)
+        {
+            if (DebugToolsSelector_FindTargetIndexEmit(
+                    targetId,
+                    &currentIndex,
+                    DEBUGTOOLS_LAUNCH_TARGET_CHAPTER,
+                    CHAPTER_MODE_COMMON,
+                    nodeId,
+                    eirikaChapter,
+                    outIndex)
+                || DebugToolsSelector_FindTargetIndexEmit(
+                    targetId,
+                    &currentIndex,
+                    DEBUGTOOLS_LAUNCH_TARGET_SKIRMISH,
+                    CHAPTER_MODE_COMMON,
+                    nodeId,
+                    eirikaChapter,
+                    outIndex))
+                return 1;
+        }
+        else
+        {
+            if (DebugToolsSelector_FindTargetIndexEmit(
+                    targetId,
+                    &currentIndex,
+                    DEBUGTOOLS_LAUNCH_TARGET_CHAPTER,
+                    CHAPTER_MODE_EIRIKA,
+                    nodeId,
+                    eirikaChapter,
+                    outIndex)
+                || DebugToolsSelector_FindTargetIndexEmit(
+                    targetId,
+                    &currentIndex,
+                    DEBUGTOOLS_LAUNCH_TARGET_SKIRMISH,
+                    CHAPTER_MODE_EIRIKA,
+                    nodeId,
+                    eirikaChapter,
+                    outIndex)
+                || DebugToolsSelector_FindTargetIndexEmit(
+                    targetId,
+                    &currentIndex,
+                    DEBUGTOOLS_LAUNCH_TARGET_CHAPTER,
+                    CHAPTER_MODE_EPHRAIM,
+                    nodeId,
+                    ephraimChapter,
+                    outIndex)
+                || DebugToolsSelector_FindTargetIndexEmit(
+                    targetId,
+                    &currentIndex,
+                    DEBUGTOOLS_LAUNCH_TARGET_SKIRMISH,
+                    CHAPTER_MODE_EPHRAIM,
+                    nodeId,
+                    ephraimChapter,
+                    outIndex))
+                return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int DebugToolsSelector_FindTargetById(
+    u16 targetId,
+    struct DebugToolsLaunchTarget* out,
+    int* outIndex)
+{
+    if (!DebugToolsSelector_DecodeTargetId(targetId, out))
+        return 0;
+
+    if (outIndex != NULL
+        && !DebugToolsSelector_FindTargetIndex(targetId, outIndex))
+        return 0;
+
+    return 1;
 }
 
 enum DebugToolsLaunchRequestResult DebugTools_RequestTargetLaunchWithOrigin(
@@ -596,21 +745,15 @@ CONST_DATA struct MenuDef gDebugToolsChapterSelectorMenuDef = {
 static int DebugToolsSelector_FindDefaultTarget(void)
 {
     struct DebugToolsLaunchTarget target;
-    int count = DebugTools_GetLaunchTargetCount();
-    int i;
+    u16 targetId = DebugToolsSelector_MakeTargetId(
+        DEBUGTOOLS_LAUNCH_TARGET_CHAPTER,
+        CHAPTER_MODE_COMMON,
+        NODE_ZAHA_WOODS);
 
-    for (i = 0; i < count; ++i)
-    {
-        if (!DebugTools_GetLaunchTarget(i, &target))
-            continue;
+    if (!DebugToolsSelector_DecodeTargetId(targetId, &target))
+        return 0;
 
-        if (target.kind == DEBUGTOOLS_LAUNCH_TARGET_CHAPTER
-            && target.nodeId == NODE_ZAHA_WOODS
-            && target.chapterMode == CHAPTER_MODE_COMMON)
-            return i;
-    }
-
-    return 0;
+    return target.id;
 }
 
 static u8 DebugToolsSelector_ActionSelected(
@@ -627,9 +770,9 @@ static u8 DebugToolsSelector_ActionSelected(
 
     {
         struct DebugToolsLaunchTarget target;
-        int targetIndex = DebugToolsSelector_FindDefaultTarget();
+        u16 targetId = DebugToolsSelector_FindDefaultTarget();
 
-        if (!DebugTools_GetLaunchTarget(targetIndex, &target))
+        if (!DebugToolsSelector_DecodeTargetId(targetId, &target))
             return MENU_ACT_SND6B;
 
         sSelectorState.targetId = target.id;

@@ -657,6 +657,26 @@
     },
     {
       "id": 80,
+      "key": "autoplay.charge.label",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 8,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact",
+      "notes": "Issue #87 one-phase blue delegation map-menu label."
+    },
+    {
+      "id": 81,
+      "key": "autoplay.charge.help",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 64,
+      "max_decoded_bytes": 96,
+      "pseudo_policy": "compact",
+      "notes": "Issue #87 one-phase blue delegation map-menu help."
+    },
+    {
+      "id": 82,
       "key": "debug.action.chapter_skirmish",
       "status": "active",
       "surface": "debug_overlay",
@@ -664,7 +684,7 @@
       "max_decoded_bytes": 64
     },
     {
-      "id": 81,
+      "id": 83,
       "key": "debug.selector.chapter",
       "status": "active",
       "surface": "debug_overlay",
@@ -672,7 +692,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 82,
+      "id": 84,
       "key": "debug.selector.skirmish",
       "status": "active",
       "surface": "debug_overlay",
@@ -680,7 +700,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 83,
+      "id": 85,
       "key": "debug.selector.eirika",
       "status": "active",
       "surface": "debug_overlay",
@@ -688,7 +708,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 84,
+      "id": 86,
       "key": "debug.selector.ephraim",
       "status": "active",
       "surface": "debug_overlay",
@@ -696,7 +716,7 @@
       "max_decoded_bytes": 24
     },
     {
-      "id": 85,
+      "id": 87,
       "key": "debug.selector.unavailable",
       "status": "active",
       "surface": "debug_overlay",

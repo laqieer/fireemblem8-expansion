@@ -86,6 +86,8 @@
     "debug.selector.skirmish": "魔物战",
     "debug.selector.eirika": "艾瑞珂",
     "debug.selector.ephraim": "伊弗列姆",
-    "debug.selector.unavailable": "目标不可用"
+    "debug.selector.unavailable": "目标不可用",
+    "autoplay.charge.label": "冲锋",
+    "autoplay.charge.help": "仅在本回合将剩余单位交给电脑控制"
   }
 }

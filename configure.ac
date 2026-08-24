@@ -54,6 +54,18 @@ AC_ARG_ENABLE(
     [fe8_danger_overlay_menu=])
 
 AC_ARG_ENABLE(
+    [blue-phase-delegate],
+    [AS_HELP_STRING(
+        [--enable-blue-phase-delegate],
+        [add one-phase Charge delegation to the map menu])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_blue_phase_delegate=1],
+        [no], [fe8_blue_phase_delegate=0],
+        [AC_MSG_ERROR([--enable-blue-phase-delegate accepts only yes or no])])],
+    [fe8_blue_phase_delegate=])
+
+AC_ARG_ENABLE(
     [starter-content],
     [AS_HELP_STRING(
         [--enable-starter-content],
@@ -218,6 +230,10 @@ AS_IF(
     [FE8_CFG_DANGER_OVERLAY_MENU="EXPANSION_DANGER_OVERLAY_MENU := $fe8_danger_overlay_menu"],
     [FE8_CFG_DANGER_OVERLAY_MENU=])
 AS_IF(
+    [test -n "$fe8_blue_phase_delegate"],
+    [FE8_CFG_BLUE_PHASE_DELEGATE="EXPANSION_BLUE_PHASE_DELEGATE := $fe8_blue_phase_delegate"],
+    [FE8_CFG_BLUE_PHASE_DELEGATE=])
+AS_IF(
     [test -n "$fe8_starter_content"],
     [FE8_CFG_STARTER_CONTENT="EXPANSION_STARTER_CONTENT := $fe8_starter_content"],
     [FE8_CFG_STARTER_CONTENT=])
@@ -273,6 +289,7 @@ AS_IF(
 AC_SUBST([FE8_CFG_MECHANICS_HOOKS])
 AC_SUBST([FE8_CFG_MECHANICS_SAMPLE])
 AC_SUBST([FE8_CFG_DANGER_OVERLAY_MENU])
+AC_SUBST([FE8_CFG_BLUE_PHASE_DELEGATE])
 AC_SUBST([FE8_CFG_STARTER_CONTENT])
 AC_SUBST([FE8_CFG_AOE_REFERENCE])
 AC_SUBST([FE8_CFG_CUSTOM_SPELL_EFFECTS])
@@ -306,6 +323,7 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --mechanics-hooks "$fe8_mechanics_hooks" \
     --mechanics-sample "$fe8_mechanics_sample" \
     --danger-overlay-menu "$fe8_danger_overlay_menu" \
+    --blue-phase-delegate "$fe8_blue_phase_delegate" \
     --starter-content "$fe8_starter_content" \
     --aoe-reference "$fe8_aoe_reference" \
     --custom-spell-effects "$fe8_custom_spell_effects" \

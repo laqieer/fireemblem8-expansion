@@ -239,6 +239,12 @@ CONST_DATA struct MenuItemDef gMapMenuItems[] = {
      * helpMsgId 0), reusing the promoted danger-zone command. */
     {"Threat Range", 0, 0, 0, 0, MenuAlwaysEnabled, 0, ExpansionDangerOverlay_MenuSelect, 0, 0, 0},
 #endif
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
+    {"Charge", 0, EXP_MSG_AUTOPLAY_CHARGE_HELP, 0, 0,
+     ExpansionBluePhaseDelegate_MenuAvailability,
+     ExpansionBluePhaseDelegate_MenuDraw,
+     ExpansionBluePhaseDelegate_MenuSelect, 0, 0, 0},
+#endif
     MenuItemsEnd
 };
 
@@ -415,8 +421,16 @@ CONST_DATA struct MenuDef gMapMenuDef = {
     gMapMenuItems,
     0, 0, 0,
     MenuCancelSelect,
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
+    ExpansionBluePhaseDelegate_MenuRPress,
+#else
     MenuAutoHelpBoxSelect,
+#endif
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
+    ExpansionBluePhaseDelegate_MenuHelpBox
+#else
     MenuStdHelpBox
+#endif
 };
 
 struct SelectInfo CONST_DATA gSelectInfo_OffensiveStaff =

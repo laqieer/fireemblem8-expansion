@@ -20,6 +20,7 @@ extern int gDebugToolsSelectorEndBMapCount;
 extern int gDebugToolsSelectorSetNextAction;
 extern int gDebugToolsSelectorProcGotoLabel;
 extern ProcPtr gDebugToolsSelectorLastProc;
+extern int gDebugToolsSelectorEnumerationCount;
 
 extern void DebugToolsSelectorHostStub_Init(void);
 extern void DebugToolsSelectorHostStub_SetHubActive(int active);
@@ -92,6 +93,7 @@ int main(void)
     CHECK(target.id == 0x2104, "Chapter 4 skirmish stable target ID mismatch");
     CHECK(target.kind == DEBUGTOOLS_LAUNCH_TARGET_SKIRMISH, "skirmish target kind mismatch");
 
+    gDebugToolsSelectorEnumerationCount = 0;
     CHECK(
         DebugTools_RequestTargetLaunch(0xFFFF) == DEBUGTOOLS_LAUNCH_REQUEST_INVALID,
         "malformed target identity must be rejected as invalid");
@@ -126,6 +128,9 @@ int main(void)
     CHECK(
         request.chapterId == 4 && request.nodeId == NODE_ZAHA_WOODS,
         "consumed chapter route mismatch");
+    CHECK(
+        gDebugToolsSelectorEnumerationCount == 0,
+        "direct request, draw, and consume must not enumerate targets");
     CHECK(!DebugTools_ConsumePendingTargetLaunch(&request), "duplicate consume must be a no-op");
 
     returnHubBefore = gDebugToolsSelectorReturnHubCount;
@@ -138,9 +143,13 @@ int main(void)
 
     CHECK(OpenSelector() == 0, "reopening selector for skirmish failed");
     itemDef = &gDebugToolsSelectorCapturedMenuDef->menuItems[0];
+    gDebugToolsSelectorEnumerationCount = 0;
     gDebugToolsSelectorTestKeyStatus.newKeys = DPAD_RIGHT;
     itemDef->onIdle(&sMenu, &sItem);
     gDebugToolsSelectorTestKeyStatus.newKeys = 0;
+    CHECK(
+        gDebugToolsSelectorEnumerationCount == 2,
+        "left/right navigation may scan once and resolve the destination once");
     CHECK(DebugTools_GetSelectedTargetId() == 0x2104, "RIGHT must select adjacent Ch4 skirmish");
     CHECK(
         itemDef->onSelected(&sMenu, &sItem) & MENU_ACT_END,

@@ -86,6 +86,8 @@
     "debug.selector.skirmish": "Schermaglia",
     "debug.selector.eirika": "Eirika",
     "debug.selector.ephraim": "Ephraim",
-    "debug.selector.unavailable": "Obiettivo non disponibile"
+    "debug.selector.unavailable": "Obiettivo non disponibile",
+    "autoplay.charge.label": "Carica",
+    "autoplay.charge.help": "Affida le unità rimaste all'IA per questo turno."
   }
 }

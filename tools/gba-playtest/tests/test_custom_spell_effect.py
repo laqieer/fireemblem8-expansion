@@ -96,6 +96,7 @@ class CustomSpellConfigTests(unittest.TestCase):
                 "mechanics_hooks": disabled.mechanics_hooks,
                 "mechanics_sample": disabled.mechanics_sample,
                 "danger_overlay_menu": disabled.danger_overlay_menu,
+                "blue_phase_delegate": disabled.blue_phase_delegate,
                 "starter_content": disabled.starter_content,
                 "aoe_reference": disabled.aoe_reference,
                 "localized_text_auto_wrap": disabled.localized_text_auto_wrap,

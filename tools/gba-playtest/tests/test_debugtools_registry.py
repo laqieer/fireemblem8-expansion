@@ -2602,6 +2602,7 @@ class DebugToolsChapterSelectorHostTests(unittest.TestCase):
                 "MODERN=1",
                 "FE8_EXPANSION_DEBUG=1",
                 "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                "DEBUGTOOLS_SELECTOR_HOST_TEST=1",
             )
             extra_flags = ("-I", str(work))
 

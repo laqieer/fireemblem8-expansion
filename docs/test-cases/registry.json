@@ -13,6 +13,7 @@
       "aoe-reference-module",
       "optional-gameplay-combinations",
       "transient-blue-computer-control",
+      "one-phase-blue-delegation",
       "bounded-semantic-run-until",
       "custom-spell-runtime",
       "hq-pcm-mixer",
@@ -457,6 +458,18 @@
       "status": "current",
       "required_cases": [
         "TC-WORKFLOW-CI-WAIT-001"
+      ]
+    },
+    {
+      "id": "one-phase-blue-delegation",
+      "title": "Optional one-phase Charge-style blue delegation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/87"
+      ],
+      "reference": "docs/autoplay.md",
+      "status": "current",
+      "required_cases": [
+        "TC-AUTOPLAY-CHARGE-001"
       ]
     },
     {
@@ -1939,6 +1952,48 @@
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
           "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-AUTOPLAY-CHARGE-001",
+      "title": "One-phase Charge delegation",
+      "feature_id": "one-phase-blue-delegation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/87"
+      ],
+      "document": "docs/test-cases/autoplay.md",
+      "anchor": "tc-autoplay-charge-001-one-phase-charge-delegation",
+      "profiles": [
+        "Modern AAPCS debug ROM with EXPANSION_BLUE_PHASE_DELEGATE=1",
+        "Modern AAPCS debug and release ROMs with the feature disabled",
+        "Every authored expansion locale catalog"
+      ],
+      "purpose": "Prove current-phase eligible-only blue delegation, bounded legal AI actions, exact one-phase completion, localized menu/help, and PLAYER restoration.",
+      "prerequisites": "Repository root with libmGBA; clean Chapter 2 positive plus the host fixture with one already-moved and two eligible blue units.",
+      "actions": "Run the Charge host suite and debug/release expansion-modern-blue-phase-delegate-check targets; manually open R-help and select Charge on the documented fixture.",
+      "expected_result": "Only remaining eligible units act through the existing AI, the current blue phase completes once, failure evidence is retained, and the next blue phase is interactive PLAYER.",
+      "negative_control": "Feature-disabled debug/release builds add no row or symbol, preserve the 8-row base menu and idle PLAYER behavior, and record zero blue AI actions.",
+      "interactions": "Depends only on issue #85; composes with Threat Range at 10 of 11 menu rows; downstream extra rows require an explicit capacity/order choice.",
+      "save_compatibility": "No field, preference, epoch, migration, or serialized controller; reset/suspend-resume restores PLAYER through issue #85.",
+      "cleanup": "Use make clean_fast only to remove build artifacts.",
+      "limitations": "One phase only; no NOBODY, persistent ownership, strategy/objective/campaign logic, fast-forward, or arbitrary chapter-completion claim.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v",
+          "evidence": "tools/gba-playtest/tests/test_expansion_blue_phase_delegate.py"
+        },
+        {
+          "command": "make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/fingerprints/autoplay-charge-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/fingerprints/autoplay-player-default-modern-release.json"
+        },
+        {
+          "command": "make localization-test",
+          "evidence": "texts/expansion/registry.json"
         }
       ]
     },

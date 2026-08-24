@@ -86,6 +86,8 @@
     "debug.selector.skirmish": "Encuentro",
     "debug.selector.eirika": "Eirika",
     "debug.selector.ephraim": "Ephraim",
-    "debug.selector.unavailable": "Objetivo no disponible"
+    "debug.selector.unavailable": "Objetivo no disponible",
+    "autoplay.charge.label": "Carga",
+    "autoplay.charge.help": "Delegar las unidades restantes a la IA este turno."
   }
 }

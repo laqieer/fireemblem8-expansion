@@ -154,8 +154,10 @@ dormant prototype menu.
 - Step 5 opens no unit submenu. It records `REJECTED_EMPTY`, preserves HP
   `17`, preserves two successful unit transactions, writes no save data, and
   leaves map input responsive.
-- The whole-SRAM hash immediately before the issue #125 tail exactly equals
-  the final hash.
+- The normalized SRAM hash immediately before the issue #125 tail equals the
+  final hash. It excludes only the build-variable `ExpansionSaveMeta` config
+  fingerprint, build commit, and dependent checksum; every save-state byte
+  and compatibility field remains covered.
 
 ### Negative control
 
@@ -206,8 +208,8 @@ python3 scripts/check_docs.py --check
 
 The first command executes the real editor callbacks and separately links and
 executes the production `bmunit.c`/`eventscr3.c` helpers. The paired libmGBA
-gate proves the live positive/negative semantics, exact SRAM equality, and map
-interactivity. All deterministic criteria are automated; there is no
+gate proves the live positive/negative semantics, metadata-normalized SRAM
+equality, and map interactivity. All deterministic criteria are automated; there is no
 manual-only visual or UX judgment.
 
 ### Cleanup and limitations
