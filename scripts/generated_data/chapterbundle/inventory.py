@@ -143,18 +143,20 @@ def build_inventory(records):
         "- Full multi-table dependency graph digest (sha256): `{}`\n".format(graph.digest()),
         "- Full multi-table topological order: {}\n".format(", ".join(graph.topo_order())),
         "\n",
-        "| Chapter | Manifest | Unit groups | Objective symbols |\n",
-        "|---|---|---:|---:|\n",
+        "| Chapter | Bundle source | Source digest (sha256) | Manifest | Unit symbols | Objective symbols |\n",
+        "|---|---|---|---|---|---|\n",
     ]
     for record in records:
         unit_groups = record.tables_by_name.get("units")
         objectives = record.chapter_objectives
         lines.append(
-            "| {} | {} | {} | {} |\n".format(
+            "| {} | {} | {} | {} | {} | {} |\n".format(
                 record.chapter.id,
+                record.source_path,
+                _table_digest(record.source_path),
                 record.manifest.symbol,
-                len(unit_groups.symbols) if unit_groups is not None else 0,
-                len(objectives.symbols) if objectives is not None else 0,
+                ", ".join(sorted(unit_groups.symbols)) if unit_groups is not None else "-",
+                ", ".join(sorted(objectives.symbols)) if objectives is not None else "-",
             )
         )
     return "".join(lines)

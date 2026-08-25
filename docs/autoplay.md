@@ -346,7 +346,8 @@ owner chapter's authored map width and height. Its only initial kinds are:
 
 - `protect`: keep one referenced character alive until another typed
   objective completes, latching a pre-completion violation in a required
-  existing `failureFlag`;
+  existing `failureFlag` and latching its first completion in a distinct
+  `completionFlag`;
 - `reach_area`: every live member of one AI group reaches an inclusive,
   bounded rectangle;
 - `defeat_group`: every live member of one AI group is absent or defeated;
@@ -369,9 +370,12 @@ recomputes pending/success/failure from the current chapter, flags, units,
 and turn on every battle-map task tick and phase start. `hold_until_turn`
 additionally sets its declared existing `failureFlag` on the first missing,
 rescued, dead, or out-of-area member; later re-entry cannot clear that latch.
-All other authored history must likewise be represented by an existing event
-flag. Suspend/load therefore reconstructs the same state without hidden or
-serialized objective data.
+After an unfailed hold reaches its deadline it is terminal success before
+later unit-area checks. Objective evaluation may reset/show setup telemetry
+while chapter beginning events run, but cannot set protect/hold flags until
+the post-`CallBeginningEvents` readiness hook. All other authored history
+must likewise be represented by an existing event flag. Suspend/load therefore
+reconstructs the same state without hidden or serialized objective data.
 
 Recruitment, village, and chest events remain authored event-script behavior:
 their existing success path must set a named, persistent `EVFLAG_*`, and an
@@ -388,9 +392,10 @@ ties deterministically.
 
 The generated table budgets are 32 chapter bundles, eight objectives and
 eight groups per chapter, and 16 members per group. Modern generated data
-uses 12 bytes per bundle, 12 bytes plus members per group, and 28 bytes per
-objective; the default empty table is one 12-byte sentinel. The runtime adds
-16 EWRAM bytes and no IWRAM, save, migration, compatibility epoch,
+uses 12 bytes per bundle, 12 bytes plus members per group, and 32 bytes per
+objective; the default empty table is one 12-byte sentinel. The telemetry
+record remains 16 EWRAM bytes; one transient readiness byte gates evaluation
+until beginning events complete. Neither changes IWRAM, save, migration, compatibility epoch,
 localization, configuration identity, or feature gate. Each authored
 telemetry refresh uses a bounded 1 KiB stack index and scans the 255 unit
 slots once, eliminating per-member character scans while remaining within the
