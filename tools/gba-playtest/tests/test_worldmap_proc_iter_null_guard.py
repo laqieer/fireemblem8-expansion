@@ -239,8 +239,8 @@ class ProcFindNextCodegenTests(unittest.TestCase):
             "each optimized Proc_FindNext call must expose a null path: "
             "calls=%r paths=%r" % (calls, null_exit_paths),
         )
-        self.assertTrue(any(exits for _source, _address, exits in null_exit_paths),
-                        "no exhausted Proc_FindNext path reaches a function exit")
+        self.assertTrue(all(exits for _source, _address, exits in null_exit_paths),
+                        "exhausted Proc_FindNext path lacks a function exit: %r" % (null_exit_paths,))
 
 
 if __name__ == "__main__":

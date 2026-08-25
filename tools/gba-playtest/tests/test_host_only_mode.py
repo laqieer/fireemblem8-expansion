@@ -98,6 +98,7 @@ class _ArtifactDiscovery(ast.NodeVisitor):
         self.homebrew_modules, self.temporary_modules, self.temporary_symbols = set(), set(), set()
         self.host_mode_symbols, self.gba_playtest_symbols = {}, {}
         self.homebrew_builders, self.temporary_factories = set(), set()
+        self.factory_origins = {}
     def _owner(self):
         return self.class_stack[-1] if self.class_stack else "<module>"
     def _mark_repository(self, reason):
@@ -208,12 +209,14 @@ class _ArtifactDiscovery(ast.NodeVisitor):
             rooted, artifact, temporary, dynamic = self._path_origin(node.left)
             return (
                 rooted,
-                artifact or ((rooted or temporary) and _has_artifact_suffix(node.right)),
+                artifact or ((rooted or temporary or dynamic) and _has_artifact_suffix(node.right)),
                 temporary,
                 dynamic,
             )
 
         if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in self.factory_origins:
+                return self.factory_origins[node.func.id]
             if self._is_temporary_factory(node):
                 return (False, False, True, False)
 
@@ -283,45 +286,30 @@ class _ArtifactDiscovery(ast.NodeVisitor):
             return None
         return self.helper_aliases.get(self._origin_key(node), ("<module>", node.id) if ("<module>", node.id) in self.module_helpers else None)
     def visit_Module(self, node):
-        self.module_helpers = {
-            ("<module>", statement.name)
-            for statement in node.body
-            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
+        self.module_helpers = {("<module>", statement.name) for statement in node.body if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))}
         for statement in node.body:
-            if isinstance(statement, (ast.Import, ast.ImportFrom)):
-                self.visit(statement)
-        self.temporary_factories |= {
-            function.name
-            for function in node.body
-            if isinstance(function, ast.FunctionDef)
-            and any(
-                self._is_temporary_factory(call)
-                for call in ast.walk(function)
-                if isinstance(call, ast.Call)
-            )
-        }
+            if isinstance(statement, (ast.Import, ast.ImportFrom)): self.visit(statement)
+        for function in (item for item in node.body if isinstance(item, ast.FunctionDef)):
+            roots = {item.optional_vars.id for item in ast.walk(function) if isinstance(item, ast.withitem) and self._is_temporary_factory(item.context_expr) and isinstance(item.optional_vars, ast.Name)}
+            returned = [item.value for item in ast.walk(function) if isinstance(item, ast.Return) and item.value]
+            rooted = any(any(isinstance(name, ast.Name) and name.id == "REPO_ROOT" for name in ast.walk(value)) for value in returned)
+            temporary = any(self._is_temporary_factory(value) or any(isinstance(name, ast.Name) and name.id in roots for name in ast.walk(value)) for value in returned)
+            self.factory_origins[function.name] = (rooted, False, temporary and not rooted, not rooted and not temporary)
+            if temporary and not rooted: self.temporary_factories.add(function.name)
         for statement in node.body:
             if not isinstance(statement, (ast.Import, ast.ImportFrom)):
                 self.visit(statement)
     def visit_Import(self, node):
+        targets = {"host_mode": self.host_mode_modules, "gba_playtest": self.gba_playtest_modules,
+                   "homebrew_fixture": self.homebrew_modules, "tempfile": self.temporary_modules}
         for alias in node.names:
-            local = alias.asname or alias.name.split(".", 1)[0]
-            if alias.name == "host_mode":
-                self.host_mode_modules.add(local)
-            elif alias.name == "gba_playtest":
-                self.gba_playtest_modules.add(local)
-            elif alias.name == "homebrew_fixture":
-                self.homebrew_modules.add(local)
-            elif alias.name == "tempfile":
-                self.temporary_modules.add(local)
+            if alias.name in targets: targets[alias.name].add(alias.asname or alias.name.split(".", 1)[0])
     def visit_ImportFrom(self, node):
         for alias in node.names:
             local = alias.asname or alias.name
-            if node.module == "host_mode":
-                self.host_mode_symbols[local] = alias.name
-            elif node.module == "gba_playtest":
-                self.gba_playtest_symbols[local] = alias.name
+            symbols = {"host_mode": self.host_mode_symbols, "gba_playtest": self.gba_playtest_symbols}.get(node.module)
+            if symbols is not None:
+                symbols[local] = alias.name
             elif node.module == "homebrew_fixture" and alias.name == "build_homebrew_rom":
                 self.homebrew_builders.add(local)
             elif node.module == "tempfile" and alias.name == "TemporaryDirectory":
@@ -335,15 +323,8 @@ class _ArtifactDiscovery(ast.NodeVisitor):
         self.class_stack.pop()
     def _visit_function(self, node):
         key = (self._owner(), node.name)
-        parameters = tuple(
-            argument.arg
-            for argument in (*node.args.posonlyargs, *node.args.args)
-        )
-        self.function_parameters[key] = (
-            parameters[1:]
-            if self.class_stack and parameters and parameters[0] == "self"
-            else parameters
-        )
+        parameters = tuple(argument.arg for argument in (*node.args.posonlyargs, *node.args.args))
+        self.function_parameters[key] = parameters[1:] if self.class_stack and parameters and parameters[0] == "self" else parameters
         self.function_stack.append(key)
         self.function_depth += 1
         self.generic_visit(node)
@@ -360,6 +341,15 @@ class _ArtifactDiscovery(ast.NodeVisitor):
         if node.value is not None:
             self._remember_assignment((node.target,), node.value)
         self.generic_visit(node)
+    def visit_If(self, node):
+        before, generated, aliases = dict(self.path_origins), set(self.generated_paths), dict(self.helper_aliases)
+        for statement in node.body: self.visit(statement)
+        left, left_generated, left_aliases = dict(self.path_origins), set(self.generated_paths), dict(self.helper_aliases)
+        self.path_origins, self.generated_paths, self.helper_aliases = before, generated, aliases
+        for statement in node.orelse: self.visit(statement)
+        right, keys = self.path_origins, set(left) | set(self.path_origins)
+        self.path_origins = {key: tuple(a or b for a, b in zip(left.get(key, before.get(key, (False,) * 4)), right.get(key, before.get(key, (False,) * 4)))) for key in keys}
+        self.generated_paths, self.helper_aliases = left_generated & self.generated_paths, {key: value for key, value in left_aliases.items() if self.helper_aliases.get(key) == value}
     def visit_BinOp(self, node):
         rooted, artifact, _temporary, _dynamic = self._path_origin(node)
         if rooted and artifact:
@@ -420,14 +410,15 @@ class _ArtifactDiscovery(ast.NodeVisitor):
             self.gba_playtest_modules,
             self.gba_playtest_symbols,
         ) == "capture":
-            _rooted, _artifact, temporary, dynamic = (
+            rooted, _artifact, temporary, dynamic = (
                 self._path_origin(node.args[0])
                 if node.args
                 else (False, False, False, False)
             )
             if not (
                 self.capture_mock_depth
-                or (temporary and node.args and self._is_temporary_generated_path(node.args[0]))
+                or (temporary and not rooted and not dynamic and node.args
+                    and self._is_temporary_generated_path(node.args[0]))
             ):
                 if self.function_depth and not self.class_stack:
                     pass
@@ -438,7 +429,9 @@ class _ArtifactDiscovery(ast.NodeVisitor):
                             self._owner(),
                             self.function_stack[-1] if self.function_stack else None,
                             node.args[0].id if node.args and isinstance(node.args[0], ast.Name) else None,
+                            rooted,
                             temporary,
+                            dynamic,
                             self._is_temporary_generated_path(node.args[0]) if node.args else False,
                         )
                     )
@@ -497,8 +490,8 @@ class _ArtifactDiscovery(ast.NodeVisitor):
     @property
     def live_capture_owners(self):
         owners = set()
-        for owner, function, argument, temporary, generated in self.direct_capture_records:
-            if temporary and generated:
+        for owner, function, argument, rooted, temporary, dynamic, generated in self.direct_capture_records:
+            if temporary and not rooted and not dynamic and generated:
                 continue
             if (
                 function is not None
@@ -512,7 +505,7 @@ class _ArtifactDiscovery(ast.NodeVisitor):
                 ]
                 if callers and all(
                     len(arguments) > argument_index
-                    and arguments[argument_index][0][2]
+                    and arguments[argument_index][0][2] and not arguments[argument_index][0][0] and not arguments[argument_index][0][3]
                     and arguments[argument_index][1]
                     for arguments in callers
                 ):
@@ -786,19 +779,21 @@ class Concat:
     def run(self): (REPO_ROOT / (name + ".elf")).stat()
 class ConstantConcat:
     def run(self): (REPO_ROOT / ("fireemblem8." + "gba")).read_bytes()
+def false_temp(): return (tf.TemporaryDirectory(), REPO_ROOT)[1]
+class FalseTemp:
+    def run(self): (false_temp() / "game.gba").read_bytes()
+class Branch:
+    def run(self, live):
+        if live: root = REPO_ROOT
+        else: root = Path(tf.TemporaryDirectory().name)
+        (root / "game.gba").read_bytes()
 class Unguarded:
     def run(self): reader = read_live; reader()
 class Guarded:
     def run(self): read_live()
 class Cross:
-    def live(self):
-        rom = hm.modern_rom("release"); gba_playtest.capture(rom, object())
-        with tf.TemporaryDirectory() as directory:
-            rom = Path(directory) / "fixture.gba"; build_homebrew_rom(rom)
-    def temporary(self):
-        with tf.TemporaryDirectory() as directory:
-            rom = Path(directory) / "fixture.gba"; build_homebrew_rom(rom); gba_playtest.capture(rom, object())
-            rom = Path(directory) / "other.gba"; gba_playtest.capture(rom, object())
+    def live(self): rom = hm.modern_rom("release"); gba_playtest.capture(rom, object()); rom = Path(tf.TemporaryDirectory().name) / "fixture.gba"; build_homebrew_rom(rom)
+    def temporary(self): rom = Path(tf.TemporaryDirectory().name) / "fixture.gba"; build_homebrew_rom(rom); gba_playtest.capture(rom, object()); rom = Path(tf.TemporaryDirectory().name) / "other.gba"; gba_playtest.capture(rom, object())
     def bind(self): self.rom = hm.modern_elf("release")
     def use(self): self.rom.read_bytes()
 """,
@@ -808,7 +803,7 @@ class Cross:
         self.assertEqual(fixture.helper_owners, {"Unguarded", "Guarded"})
         self.assertTrue(_registered_owner_errors("fixture", fixture.helper_owners, guarded, guarded))
         self.assertEqual(fixture.live_capture_owners, {"Escaped", "Cross"})
-        self.assertTrue({"Fstring", "Concat", "ConstantConcat", "Cross"} <= set(fixture.repository_owners))
+        self.assertTrue({"Fstring", "Concat", "ConstantConcat", "FalseTemp", "Branch", "Cross"} <= set(fixture.repository_owners))
 
 
 class HostOnlyCentralGateTests(unittest.TestCase):
