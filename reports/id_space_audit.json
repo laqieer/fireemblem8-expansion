@@ -67,7 +67,7 @@
       }
     ]
   },
-  "census_digest": "48b08f8643fa5cfd179579b8ff7b5acfcd003d870cb1fd4aca998b3b4aa5d515",
+  "census_digest": "d21d664a90c6b93869bfdddfffc10f07cd090bc987d803889a549a29fd345afd",
   "consumers": [
     {
       "category": "event-operand",
@@ -17607,25 +17607,6 @@
       "technical_max": 255
     },
     {
-      "category": "reviewed-exclusion",
-      "configured_cap": 205,
-      "declaration": "def test_no_raw_numeric_content_item_id(self):",
-      "domain": "item",
-      "key": "tools/gba-playtest/tests/test_expansion_starter_content.py|tool-symbol|item|test_no_raw_numeric_content_item_id",
-      "kind": "tool-symbol",
-      "line": 119,
-      "path": "tools/gba-playtest/tests/test_expansion_starter_content.py",
-      "reason": "a unittest method NAME in a host test, not an ID consumer: the test asserts that no raw numeric item ID literal appears in the issue #6 sources, so it stores no ID and is never indexed by one",
-      "record_count": 206,
-      "sentinel": 0,
-      "signed": 0,
-      "status": "expandable",
-      "storage_bits": 8,
-      "surface": "external-tool",
-      "symbol": "test_no_raw_numeric_content_item_id",
-      "technical_max": 255
-    },
-    {
       "category": "runtime-macro",
       "configured_cap": 205,
       "declaration": "#define ITEM_INDEX(aItem) ((aItem) & 0xFF)",
@@ -21164,7 +21145,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "205f012b81a062a0089cf2c12d34ab1f334de694f86a31bb60b698756a05e344",
+  "digest": "859ce12a58e5db841d621826575479e9d683fcd5f3a1cf402ca68058f6b2c35f",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,
