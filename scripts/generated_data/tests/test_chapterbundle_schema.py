@@ -202,6 +202,24 @@ class ChapterBundleValidFixtureTests(unittest.TestCase):
             _messages(diagnostics),
         )
 
+    def test_multi_bundle_inventory_tracks_source_and_symbol_identity(self):
+        first = chapterbundle_schema.load_records(cb_fixture("valid.json"))[0]
+        second = copy.deepcopy(first)
+        second.chapter.id = "CHAPTER_EL_OTHER"
+        second.source_path = cb_fixture("deps_units_second.json")
+        second.tables_by_name["units"].symbols = ["UnitDef_EL_Alternate"]
+        records = chapterbundle_schema.ChapterBundleRecords([first, second])
+        inventory = chapterbundle_schema.ChapterBundleTableSchema().build_inventory(records)
+
+        self.assertIn(second.source_path, inventory)
+        self.assertIn("UnitDef_EL_Alternate", inventory)
+        changed = copy.deepcopy(second)
+        changed.tables_by_name["units"].symbols = ["UnitDef_EL_Changed"]
+        changed_inventory = chapterbundle_schema.ChapterBundleTableSchema().build_inventory(
+            chapterbundle_schema.ChapterBundleRecords([first, changed])
+        )
+        self.assertNotEqual(inventory, changed_inventory)
+
 
 class ChapterCrossCheckTests(unittest.TestCase):
     """chapter.id / chapterSettingsIndex / internalName / mapEventDataId /

@@ -62,6 +62,7 @@ struct ExpansionChapterObjective
     u16 activationFlag;
     u16 deactivationFlag;
     u16 eventFlag;
+    u16 completionFlag;
     u16 untilTurn;
     u8 kind;
     u8 protectedCharacter;
@@ -114,6 +115,7 @@ extern const struct ExpansionChapterObjectiveBundle gExpansionChapterObjectiveBu
 extern struct ExpansionChapterObjectiveTelemetry gExpansionChapterObjectiveTelemetry;
 
 void ExpansionChapterObjectives_ResetTelemetry(void);
+void ExpansionChapterObjectives_OnBeginningEventsComplete(void);
 void ExpansionChapterObjectives_RefreshTelemetry(void);
 enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetStatus(u32 objectiveId, u32* progressOut);
 const struct ExpansionChapterObjective* ExpansionChapterObjectives_GetActiveObjective(void);

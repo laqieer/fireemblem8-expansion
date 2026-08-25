@@ -69,6 +69,9 @@ PROC_LABEL(1),
     PROC_CALL(SetEventId_0x84),
     PROC_CALL(UpdatePrevDeployStates),
     PROC_CALL_2(CallBeginningEvents),
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
+    PROC_CALL(ExpansionChapterObjectives_OnBeginningEventsComplete),
+#endif
     PROC_CALL(UndeployEveryone),
 
     // fallthrough
