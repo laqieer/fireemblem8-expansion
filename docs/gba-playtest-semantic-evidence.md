@@ -43,8 +43,12 @@ hook fail without relying on comments or implementation spelling.
 
 ## Budget baseline provenance
 
-The committed reports were stale relative to the exact base, so this issue
-owns their directly derived refresh. This is not a no-budget-change claim.
+The original `b20b060a` reports were stale, so this issue recorded their
+directly derived refresh. This is not a no-budget-change claim. After the
+normal merge of `dd46367e`, #124 remains the current localization owner:
+debug emits all 129 stable messages (index 4482, strings 11087) while release
+emits 120, omits the nine debug-only payloads, and retains the #159
+index/string values below.
 
 | Owner | Old -> new | Provenance |
 | --- | ---: | --- |
@@ -53,5 +57,6 @@ owns their directly derived refresh. This is not a no-budget-change claim.
 | Linked catalog | message-ID table 224 -> 240 (+16); eight string tables 3584 -> 3840 (+256) | Regeneration from those same parsed registry entries adds one `u16` ID and one pointer per locale for each of eight messages. |
 | Scratch/glyph report | maximum slot 33 -> 63; headroom 63 -> 33; glyphs 362 -> 396 | Direct output of the current catalog generator; the fixed scratch budget remains 96 and has positive headroom. |
 
-Rollback reverts this issue's tests, scenario, documentation, and refreshed
-reports together; it does not migrate saves or change production behavior.
+Rollback reverts this issue's tests, scenario, and documentation; merged
+#124 emission and report ownership remain. No save migration or production
+behavior changes.

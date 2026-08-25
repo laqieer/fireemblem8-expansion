@@ -32,10 +32,10 @@
   "regions_headroom": {
     "ewram": {
       "capacity_bytes": 262144,
-      "free_bytes": 1808,
-      "occupied_bytes": 260336,
+      "free_bytes": 1740,
+      "occupied_bytes": 260404,
       "overflow": false,
-      "physical_free_bytes": 1808
+      "physical_free_bytes": 1740
     },
     "iwram": {
       "capacity_bytes": 32768,
@@ -71,42 +71,43 @@
     "missing": [],
     "symbols": {
       "gExpansionLocaleMsgCount": 2,
-      "gExpansionLocaleMsgIds": 240,
+      "gExpansionLocaleMsgIds": 258,
       "gExpansionLocaleTombstoneCount": 2
     },
-    "total_bytes": 244
+    "total_bytes": 262
   },
   "rom_catalog_strings": {
     "missing": [],
     "symbols": {
-      "gExpansionCatalog_de": 480,
-      "gExpansionCatalog_en": 480,
-      "gExpansionCatalog_es": 480,
-      "gExpansionCatalog_fr": 480,
-      "gExpansionCatalog_it": 480,
-      "gExpansionCatalog_ja": 480,
-      "gExpansionCatalog_qps_ploc": 480,
-      "gExpansionCatalog_zh_Hans": 480
+      "gExpansionCatalog_de": 516,
+      "gExpansionCatalog_en": 516,
+      "gExpansionCatalog_es": 516,
+      "gExpansionCatalog_fr": 516,
+      "gExpansionCatalog_it": 516,
+      "gExpansionCatalog_ja": 516,
+      "gExpansionCatalog_qps_ploc": 516,
+      "gExpansionCatalog_zh_Hans": 516
     },
-    "total_bytes": 3840,
+    "total_bytes": 4128,
     "unexpected": []
   },
   "schema_version": 1,
   "source_catalog_budget": {
-    "active_message_count": 120,
-    "catalog_index_bytes": 4176,
+    "active_message_count": 129,
+    "catalog_index_bytes": 4482,
     "catalog_string_bytes": {
-      "de": 1219,
-      "en": 1084,
-      "es": 1227,
-      "fr": 1263,
-      "it": 1212,
-      "ja": 1345,
-      "qps-ploc": 1631,
-      "total": 10183,
-      "zh-Hans": 1202
+      "de": 1339,
+      "en": 1179,
+      "es": 1340,
+      "fr": 1381,
+      "it": 1325,
+      "ja": 1417,
+      "qps-ploc": 1777,
+      "total": 11087,
+      "zh-Hans": 1329
     },
-    "glyphs_used_count": 396,
+    "emission_profile": "debug",
+    "glyphs_used_count": 402,
     "locales_generated": [
       "en",
       "ja",
@@ -117,14 +118,16 @@
       "it",
       "qps-ploc"
     ],
+    "omitted_active_message_count": 0,
     "pseudo_policy_counts": {
       "compact": 37,
       "preserve": 6,
-      "transform": 77
+      "transform": 86
     },
     "scratch_budget_bytes": 96,
     "scratch_headroom_bytes": 33,
     "scratch_slot_bytes_used_max": 63,
+    "stable_active_message_count": 129,
     "tombstone_count": 1
   }
 }
