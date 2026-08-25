@@ -1,0 +1,32 @@
+{
+  "$schema": "fe8.chapterobjectives.v1",
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "ChapterObjectives_Fixture",
+      "aiGroups": [
+        {
+          "id": "AI_GROUP_UNRELATED",
+          "members": [
+            {
+              "character": "CHARACTER_EIRIKA",
+              "unitGroup": "UnitDef_Event_Ch2Ally"
+            }
+          ]
+        }
+      ],
+      "objectives": [
+        {
+          "id": "OBJECTIVE_UNRELATED_EVENT",
+          "kind": "event_flag",
+          "eventFlag": "EVFLAG_BATTLE_QUOTES"
+        }
+      ],
+      "dependencies": {
+        "characters": ["CHARACTER_EIRIKA"],
+        "eventFlags": ["EVFLAG_BATTLE_QUOTES"],
+        "unitGroups": ["UnitDef_Event_Ch2Ally"]
+      }
+    }
+  ]
+}

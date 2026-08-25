@@ -11,8 +11,12 @@ cross-check (``chapters.h``, ``chapter_settings.json``, ``data_8B363C.c``),
 so each negative-path scenario only has to vary the one field under test.
 """
 
+import copy
+import json
 import os
+import shutil
 import unittest
+from pathlib import Path
 
 from scripts.generated_data.diagnostics import DiagnosticCollector, GeneratedDataError
 from scripts.generated_data.chapterbundle import schema as chapterbundle_schema
@@ -23,7 +27,7 @@ from scripts.generated_data.shops import schema as shops_schema
 from scripts.generated_data.supports import schema as supports_schema
 from scripts.generated_data.traps import schema as traps_schema
 from scripts.generated_data.units import schema as units_schema
-from scripts.generated_data.tests._util import fixture_path
+from scripts.generated_data.tests._util import fixture_path, scratch_dir
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
@@ -75,7 +79,8 @@ def _validate(bundle_fixture, dep_overrides=None, **validate_kwargs):
     )
     kwargs.update(validate_kwargs)
     chapterbundle_schema.validate(
-        records, diagnostics, _load_dependency_records(dep_overrides), **kwargs
+        records, diagnostics, _load_dependency_records(dep_overrides),
+        use_supplied_dependencies=True, **kwargs
     )
     return records, diagnostics
 
@@ -85,16 +90,252 @@ def _messages(diagnostics):
 
 
 class ChapterBundleValidFixtureTests(unittest.TestCase):
+    def test_single_bundle_uses_declared_sources_unless_test_hook_is_explicit(self):
+        records = chapterbundle_schema.load_records(cb_fixture("valid.json"))
+        records[0].tables_by_name["units"].source = (
+            "scripts/generated_data/tests/fixtures/chapterbundle/missing.json"
+        )
+        diagnostics = DiagnosticCollector()
+        kwargs = {
+            "chapters_header": cb_fixture("chapters.h"),
+            "chapter_settings_path": cb_fixture("chapter_settings.json"),
+            "asset_table_path": cb_fixture("data_8B363C.c"),
+        }
+        chapterbundle_schema.validate(records, diagnostics, _load_dependency_records(), **kwargs)
+        self.assertTrue(
+            any(
+                error.reference_path == "bundles[chapter=CHAPTER_EL].tables.units.source"
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
+        )
+
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            _load_dependency_records(),
+            use_supplied_dependencies=True,
+            **kwargs
+        )
+        self.assertTrue(diagnostics.ok, _messages(diagnostics))
+
     def test_valid_fixture_has_no_diagnostics(self):
-        records, diagnostics = _validate("valid.json")
+        records = chapterbundle_schema.load_records(cb_fixture("valid.json"))
+        records[0].chapter_objectives = chapterbundle_schema.TableRef(
+            "chapterobjectives",
+            "scripts/generated_data/tests/fixtures/chapterbundle/deps_chapterobjectives.json",
+            records[0].loc,
+            ["ChapterObjectives_EL"],
+            [records[0].loc],
+            records[0].loc,
+        )
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            _load_dependency_records(),
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C.c"),
+        )
         self.assertTrue(diagnostics.ok, msg=_messages(diagnostics))
         self.assertEqual(len(records), 1)
-        self.assertEqual(records.chapter.id, "CHAPTER_EL")
-        self.assertEqual(records.manifest.symbol, "ELEvents")
+        self.assertEqual(records[0].chapter.id, "CHAPTER_EL")
+        self.assertEqual(records[0].manifest.symbol, "ELEvents")
         self.assertEqual(
-            sorted(records.tables_by_name),
+            sorted(records[0].tables_by_name),
             ["eventlists", "eventscripts", "shops", "traps", "units"],
         )
+
+    def test_multi_bundle_dependencies_follow_each_table_ref_source(self):
+        first = chapterbundle_schema.load_records(cb_fixture("valid.json"))[0]
+        second = copy.deepcopy(first)
+        second.chapter.id = "CHAPTER_EL_OTHER"
+        second.chapter.chapter_settings_index = 1
+        second.chapter.internal_name = "EL1"
+        second.chapter.map_event_data_id = 1
+        second.tables_by_name["units"].source = (
+            "scripts/generated_data/tests/fixtures/chapterbundle/deps_units_second.json"
+        )
+        records = chapterbundle_schema.ChapterBundleRecords([first, second])
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            {},
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C_two_events.c"),
+        )
+        self.assertTrue(diagnostics.ok, msg=_messages(diagnostics))
+        self.assertEqual(
+            chapterbundle_schema.resolve_bundle_dependencies(first)["units"][0].units[0].x_position,
+            1,
+        )
+        self.assertEqual(
+            chapterbundle_schema.resolve_bundle_dependencies(second)["units"][0].units[0].x_position,
+            2,
+        )
+
+        second.tables_by_name["units"].source = "scripts/generated_data/tests/fixtures/chapterbundle/missing.json"
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            {},
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C_two_events.c"),
+        )
+        self.assertTrue(
+            any(
+                error.reference_path == "bundles[chapter=CHAPTER_EL_OTHER].tables.units.source"
+                and error.location == second.tables_by_name["units"].source_loc
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
+        )
+
+        second.tables_by_name["units"].source = (
+            "scripts/generated_data/tests/fixtures/chapterbundle/deps_units.json"
+        )
+        second.tables_by_name["units"].symbols = ["UnitDef_EL_CrossSource"]
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            {},
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C_two_events.c"),
+        )
+        self.assertTrue(
+            any(
+                error.reference_path == "tables.units.symbols[UnitDef_EL_CrossSource]"
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
+        )
+
+        duplicate = copy.deepcopy(second)
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            chapterbundle_schema.ChapterBundleRecords([first, second, duplicate]),
+            diagnostics,
+            {},
+            chapters_header=cb_fixture("chapters.h"),
+            chapter_settings_path=cb_fixture("chapter_settings.json"),
+            asset_table_path=cb_fixture("data_8B363C_two_events.c"),
+        )
+        self.assertTrue(
+            any(
+                error.reference_path == "bundles[chapter=CHAPTER_EL_OTHER].chapter"
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
+        )
+
+    def test_multi_bundle_inventory_tracks_source_and_symbol_identity(self):
+        first = chapterbundle_schema.load_records(cb_fixture("valid.json"))[0]
+        second = copy.deepcopy(first)
+        second.chapter.id = "CHAPTER_EL_OTHER"
+        second.source_path = cb_fixture("deps_units_second.json")
+        second.tables_by_name["units"].symbols = ["UnitDef_EL_Alternate"]
+        records = chapterbundle_schema.ChapterBundleRecords([first, second])
+        inventory = chapterbundle_schema.ChapterBundleTableSchema().build_inventory(records)
+
+        self.assertIn(
+            "scripts/generated_data/tests/fixtures/chapterbundle/deps_units_second.json",
+            inventory,
+        )
+        self.assertIn("UnitDef_EL_Alternate", inventory)
+        changed = copy.deepcopy(second)
+        changed.tables_by_name["units"].symbols = ["UnitDef_EL_Changed"]
+        changed_inventory = chapterbundle_schema.ChapterBundleTableSchema().build_inventory(
+            chapterbundle_schema.ChapterBundleRecords([first, changed])
+        )
+        self.assertNotEqual(inventory, changed_inventory)
+
+    def test_inventory_paths_are_checkout_independent_and_reject_outside_root(self):
+        def copy_bundle_checkout(checkout_root, multiple):
+            source = repo_path("src", "data", "ch2_bundle.json")
+            with open(source, encoding="utf-8") as handle:
+                bundle = json.load(handle)
+            paths = [table["source"] for table in bundle["tables"].values()]
+            paths.append(bundle["supportOwners"]["source"])
+            if "chapterObjectives" in bundle:
+                paths.append(bundle["chapterObjectives"]["source"])
+            for path in paths:
+                destination = os.path.join(checkout_root, path)
+                os.makedirs(os.path.dirname(destination), exist_ok=True)
+                shutil.copyfile(repo_path(path), destination)
+
+            bundle_dir = os.path.join(checkout_root, "src", "data")
+            first = os.path.join(bundle_dir, "ch2_bundle.json")
+            with open(first, "w", encoding="utf-8") as handle:
+                json.dump(bundle, handle)
+            if not multiple:
+                return chapterbundle_schema.load_records(first, repository_root=checkout_root)
+
+            second_bundle = copy.deepcopy(bundle)
+            second_bundle["chapter"]["id"] = "CHAPTER_L_3"
+            with open(os.path.join(bundle_dir, "l3_bundle.json"), "w", encoding="utf-8") as handle:
+                json.dump(second_bundle, handle)
+            return chapterbundle_schema.load_records(bundle_dir, repository_root=checkout_root)
+
+        with scratch_dir() as tmp:
+            first_root = os.path.join(tmp, "first-checkout")
+            second_root = os.path.join(tmp, "second-checkout")
+            os.mkdir(first_root)
+            os.mkdir(second_root)
+            schema = chapterbundle_schema.ChapterBundleTableSchema()
+            single_first = schema.build_inventory(copy_bundle_checkout(first_root, multiple=False))
+            single_second = schema.build_inventory(copy_bundle_checkout(second_root, multiple=False))
+            self.assertEqual(single_first, single_second)
+            self.assertIn("src/data/ch2_bundle.json", single_first)
+            self.assertNotIn(first_root, single_first)
+
+            multi_first_records = copy_bundle_checkout(first_root, multiple=True)
+            multi_second_records = copy_bundle_checkout(second_root, multiple=True)
+            multi_first = schema.build_inventory(multi_first_records)
+            multi_second = schema.build_inventory(multi_second_records)
+            self.assertEqual(multi_first, multi_second)
+            self.assertIn("src/data/ch2_bundle.json", multi_first)
+            self.assertIn("src/data/l3_bundle.json", multi_first)
+            self.assertNotIn(first_root, multi_first)
+            unit_source = Path(first_root) / "src" / "data" / "ch2_units.json"
+            unit_source.write_text(
+                unit_source.read_text(encoding="utf-8") + "\n",
+                encoding="utf-8",
+            )
+            self.assertNotEqual(multi_first, schema.build_inventory(multi_first_records))
+
+            objective_directory = Path(first_root) / "objective_sources"
+            objective_directory.mkdir()
+            objective_source = Path(first_root) / "src" / "data" / "chapter_objectives.json"
+            shutil.copyfile(objective_source, objective_directory / "default_objectives.json")
+            directory_owner = copy.deepcopy(copy_bundle_checkout(first_root, multiple=False)[0])
+            directory_owner.chapter_objectives.source = "objective_sources"
+            directory_inventory = schema.build_inventory(
+                chapterbundle_schema.ChapterBundleRecords([directory_owner])
+            )
+            self.assertIn("objective_sources/default_objectives.json", directory_inventory)
+            (objective_directory / "default_objectives.json").write_text(
+                (objective_directory / "default_objectives.json").read_text(encoding="utf-8") + "\n",
+                encoding="utf-8",
+            )
+            self.assertNotEqual(
+                directory_inventory,
+                schema.build_inventory(chapterbundle_schema.ChapterBundleRecords([directory_owner])),
+            )
+
+            outside = copy.deepcopy(multi_first_records[1])
+            outside.source_path = os.path.join(tmp, "outside", "l3_bundle.json")
+            with self.assertRaises(GeneratedDataError):
+                schema.build_inventory(
+                    chapterbundle_schema.ChapterBundleRecords([multi_first_records[0], outside])
+                )
 
 
 class ChapterCrossCheckTests(unittest.TestCase):
@@ -350,8 +591,7 @@ class DependencyGraphAcyclicTests(unittest.TestCase):
 
 
 class EndToEndRealBundleTests(unittest.TestCase):
-    """Loads all 7 currently-registered tables (units/shops/traps/
-    eventscripts/eventlists/supports/chapterbundle) plus the real,
+    """Loads the 6 chapter-bundle dependency tables plus the real,
     read-only chapter_settings.json + gChapterDataAssetTable, and validates
     the exact committed Chapter 2 bundle end-to-end with zero diagnostics."""
 
@@ -368,9 +608,9 @@ class EndToEndRealBundleTests(unittest.TestCase):
         diagnostics = DiagnosticCollector()
         chapterbundle_schema.validate(records, diagnostics, dependency_records)
         self.assertTrue(diagnostics.ok, msg=_messages(diagnostics))
-        self.assertEqual(len(records.tables), 5)
-        self.assertEqual(records.chapter.id, "CHAPTER_L_2")
-        self.assertEqual(records.manifest.symbol, "Ch2Events")
+        self.assertEqual(len(records[0].tables), 5)
+        self.assertEqual(records[0].chapter.id, "CHAPTER_L_2")
+        self.assertEqual(records[0].manifest.symbol, "Ch2Events")
 
     def test_committed_bundle_has_no_undeclared_or_orphan_records(self):
         # A second, more targeted assertion of the same "no orphan / no

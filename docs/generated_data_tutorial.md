@@ -277,6 +277,119 @@ reachable, support owners are reciprocal, referenced character/class/item
 IDs exist). It is metadata-only (no generated C) -- its job is the
 whole-bundle drift gate `make generated-data-ch2-check`.
 
+### Add typed **chapter objectives and AI groups** (`--table chapterobjectives`)
+
+Source: `src/data/chapter_objectives.json`. This modern-only generated table
+is empty by default: existing chapters have no objective/group record and keep
+their behavior unchanged. A future chapter adds one bundle with a stable
+symbol, uppercase machine IDs, bounded `aiGroups`, and bounded `objectives`:
+
+```json
+{
+  "chapter": "CHAPTER_L_2",
+  "symbol": "ChapterObjectives_ProjectChapter2",
+  "aiGroups": [{
+    "id": "AI_GROUP_PROJECT_ESCORT",
+    "members": [{
+      "character": "CHARACTER_EIRIKA",
+      "unitGroup": "UnitDef_Event_Ch2Ally"
+    }]
+  }],
+  "objectives": [{
+    "id": "OBJECTIVE_PROJECT_REACH",
+    "kind": "reach_area",
+    "group": "AI_GROUP_PROJECT_ESCORT",
+    "area": { "xMin": 4, "yMin": 2, "xMax": 6, "yMax": 4 }
+  }],
+  "dependencies": {
+    "characters": ["CHARACTER_EIRIKA"],
+    "eventFlags": [],
+    "unitGroups": ["UnitDef_Event_Ch2Ally"]
+  }
+}
+```
+
+The only initial kinds are `protect` (a character plus another objective),
+`reach_area`, `defeat_group`, `event_flag`, and `hold_until_turn`. Each
+chapter is limited to eight objectives, eight AI groups, and 16 members per
+group. A group member names both a `CHARACTER_*` and a `UnitDef_*` symbol;
+the objective schema resolves that symbol through the owning chapter bundle's
+`tables.units.symbols`, so dangling, mismatched, and cross-chapter references
+fail with the member's source location and JSON breadcrumb. The required
+`dependencies` lists are exact declarations: missing, duplicate, stale,
+empty, over-capacity, contradictory, cyclic, invalid-area, or unknown
+references fail with a source location and JSON breadcrumb.
+
+`activationFlag` and `deactivationFlag` use existing `EVFLAG_*` state. Set
+or clear those values only through the existing `helperScripts` `flag.set` /
+`flag.clear` operations or established event scripts; objectives introduce no
+event language, chapter manifest, router, or hidden runtime activation bit.
+`protect` requires distinct existing `failureFlag` and `completionFlag`
+values. It latches a protected member's death, missing, or rescued state only
+while its completion objective remains pending; its first completion success
+latches `completionFlag`, so success stays terminal even if a dynamic
+completion condition later regresses. `hold_until_turn` requires its own
+`failureFlag`; once its deadline arrives without that latch it is terminal
+success, including after later departure. Both reconstruct through
+Suspend/Resume without new save data. State-mutating evaluation starts only
+after the engine's beginning events complete, so beginning-event unit loads
+cannot create setup-time failure latches.
+Across a connected protect completion chain, every `deactivationFlag` must
+also differ from every referenced `eventFlag`, `failureFlag`, and
+`completionFlag`; otherwise it could return inactive before a terminal
+completion or failure latch is observed.
+Every `protect` completion latch is also distinct from every `protect` or
+`hold_until_turn` failure latch in its chapter, so one objective cannot turn
+another objective's terminal failure into success.
+For example, a continuous hold uses
+`"failureFlag": "EVFLAG_PROJECT_ESCORT_FAILED"` alongside its `group`,
+`area`, and `untilTurn`; the flag must be a project-defined existing
+`EVFLAG_*` value and cannot be shared with that objective's activation,
+deactivation, or event flag.
+Every authored `src/data/*_bundle.json` is loaded and indexed by chapter
+identity. Its `chapterObjectives` declaration is the ownership declaration
+for that chapter's symbols; a matching owner must exist exactly once, and its
+`tables.units.symbols` is the only unit-group set the objectives may use. Each
+bundle's `units`, `eventlists`, and related table dependencies are loaded from
+that bundle's own declared `TableRef.source` paths, not from another chapter's
+default table. The canonical objective source path loaded by the generator
+must exactly equal `chapterObjectives.source`; a same-named record from an
+unrelated file is rejected. Directory inputs load `*_objectives.json` and
+`*_bundle.json` in sorted order while retaining each record's source identity.
+Keep the declaration empty when the chapter has no authored records.
+
+The modern objective hook is enabled only when that same canonical objective
+loader finds at least one record. A nonempty file and a nonempty sorted
+directory therefore compile the map/phase telemetry hooks identically; an
+empty record set omits them. Malformed or unreadable sources stop Make with
+the loader diagnostic instead of silently selecting the disabled path.
+
+`reach_area` and `hold_until_turn` rectangles must fit the owning chapter's
+actual map dimensions. Validation resolves the chapter's `mainLayerId` through
+`gChapterDataAssetTable`, then reads the map's authored TMX or layout metadata;
+coordinates at the last valid tile are accepted, while a partially or wholly
+off-map rectangle is rejected with the offending coordinate's JSON breadcrumb.
+The build discovers these objective/bundle sources, every per-bundle table
+source, chapter settings, asset table, map manifest, and authored TMX/layout
+metadata deterministically, so changing any live validation input reruns
+generation rather than reusing stale output.
+
+```sh
+python3 -m scripts.generated_data validate --table chapterobjectives
+python3 -m scripts.generated_data generate --table chapterobjectives
+python3 -m scripts.generated_data check --table chapterobjectives
+make generated-data-ch2-check
+```
+
+Generated C is linked only by the modern framework. It emits a 12-byte bundle
+record per authored chapter, 12 bytes per AI group plus one byte per member,
+and 28 bytes per objective; the default empty table contains only its
+12-byte sentinel. Runtime state is one 16-byte EWRAM telemetry record, never
+save data. Each authored telemetry refresh uses a 1 KiB stack unit index and
+scans the 255 unit slots once, replacing per-member character scans while
+remaining within the 4 KiB stack bound. IDs are source-owned uppercase machine
+IDs; their checked FNV-1a value is telemetry-only and needs no localization.
+
 ---
 
 ## Custom C symbols / callbacks (escape hatch)

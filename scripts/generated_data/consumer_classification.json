@@ -2181,6 +2181,18 @@
       "category": "lookup-table",
       "reason": null
     },
+    "include/expansion_chapter_objectives.h|struct-field|chapter|ExpansionChapterObjectiveBundle.chapterId": {
+      "category": "lookup-table",
+      "reason": null
+    },
+    "tools/gba-playtest/tests/test_chapter_objectives.py|tool-symbol|item|inventory": {
+      "category": "reviewed-exclusion",
+      "reason": "Temporary generated-data inventory path used only by the host test; it is not an item ID consumer."
+    },
+    "tools/gba-playtest/run_chapter_objective_checks.py|tool-symbol|event|OBJECTIVE_FIXTURE_EVENT_ID": {
+      "category": "reviewed-exclusion",
+      "reason": "Stable test-only objective hash used to verify generated telemetry, not an event ID consumer."
+    },
     "include/expansion_bgm.h|struct-field|character|ExpansionBgmActionSelector.characterId": {
       "category": "lookup-table",
       "reason": null

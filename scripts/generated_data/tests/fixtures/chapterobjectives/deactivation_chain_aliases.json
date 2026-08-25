@@ -1,0 +1,57 @@
+{
+  "$schema": "fe8.chapterobjectives.v1",
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "ChapterObjectives_DeactivationChainAliases",
+      "aiGroups": [],
+      "objectives": [
+        {
+          "id": "OBJECTIVE_CHAIN_EVENT",
+          "kind": "event_flag",
+          "eventFlag": "EVFLAG_BATTLE_QUOTES"
+        },
+        {
+          "id": "OBJECTIVE_CHAIN_ROOT",
+          "kind": "protect",
+          "protectedCharacter": "CHARACTER_EIRIKA",
+          "completionObjective": "OBJECTIVE_CHAIN_CHILD",
+          "deactivationFlag": "EVFLAG_5",
+          "failureFlag": "EVFLAG_DEFEAT_BOSS",
+          "completionFlag": "EVFLAG_WIN"
+        },
+        {
+          "id": "OBJECTIVE_CHAIN_CHILD",
+          "kind": "protect",
+          "protectedCharacter": "CHARACTER_EIRIKA",
+          "completionObjective": "OBJECTIVE_CHAIN_EVENT",
+          "deactivationFlag": "EVFLAG_DEFEAT_BOSS",
+          "failureFlag": "EVFLAG_5",
+          "completionFlag": "EVFLAG_BGM_CHANGE"
+        },
+        {
+          "id": "OBJECTIVE_CHAIN_SIBLING",
+          "kind": "protect",
+          "protectedCharacter": "CHARACTER_EIRIKA",
+          "completionObjective": "OBJECTIVE_CHAIN_EVENT",
+          "deactivationFlag": "EVFLAG_WIN",
+          "failureFlag": "EVFLAG_DEFEAT_ALL",
+          "completionFlag": "EVFLAG_GAMEOVER"
+        }
+      ],
+      "dependencies": {
+        "characters": ["CHARACTER_EIRIKA"],
+        "eventFlags": [
+          "EVFLAG_BATTLE_QUOTES",
+          "EVFLAG_5",
+          "EVFLAG_DEFEAT_BOSS",
+          "EVFLAG_WIN",
+          "EVFLAG_BGM_CHANGE",
+          "EVFLAG_DEFEAT_ALL",
+          "EVFLAG_GAMEOVER"
+        ],
+        "unitGroups": ["UnitDef_Event_Ch2Ally"]
+      }
+    }
+  ]
+}

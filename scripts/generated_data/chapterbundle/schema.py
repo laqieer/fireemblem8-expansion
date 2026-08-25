@@ -65,8 +65,12 @@ slice (see "Remaining Issue #5 scope" in the docs).
 
 from __future__ import annotations
 
+import glob
+import importlib
 import json
 import os
+
+from scripts.assets import tmx
 
 from ..diagnostics import GeneratedDataError
 from ..cparse import find_c_array_blocks, split_top_level_entries
@@ -89,6 +93,8 @@ CHAPTER_SETTINGS_JSON = os.path.join(REPO_ROOT, "src", "data", "chapter_settings
 CHAPTER_DATA_ASSET_TABLE_SOURCE = os.path.join(REPO_ROOT, "src", "data", "data_8B363C.c")
 CHAPTER_DATA_ASSET_TABLE_SYMBOL = "gChapterDataAssetTable"
 CHAPTER_DATA_ASSET_TABLE_DECL = r"const\s+void\s*\*"
+ASSET_MANIFEST_PATH = os.path.join(REPO_ROOT, "assets", "manifest.json")
+MAP_LAYOUT_DIR = os.path.join(REPO_ROOT, "graphics", "map", "layout")
 
 # The 5 per-chapter tables this bundle composes ("supports" is a global,
 # chapter-agnostic table -- see `supportOwners` instead).
@@ -99,6 +105,14 @@ BUNDLE_TABLE_NAMES = ("units", "shops", "traps", "eventscripts", "eventlists")
 # for the support-owner reciprocal check even though it isn't one of the
 # 5 `BUNDLE_TABLE_NAMES`.
 DEPENDENCY_TABLE_NAMES = BUNDLE_TABLE_NAMES + ("supports",)
+DEPENDENCY_SCHEMA_MODULES = {
+    "units": "scripts.generated_data.units.schema",
+    "shops": "scripts.generated_data.shops.schema",
+    "traps": "scripts.generated_data.traps.schema",
+    "eventscripts": "scripts.generated_data.eventscripts.schema",
+    "eventlists": "scripts.generated_data.eventlists.schema",
+    "supports": "scripts.generated_data.supports.schema",
+}
 
 
 class ChapterInfo:
@@ -188,7 +202,8 @@ class Dependencies:
 class ChapterBundleRecord:
     """The full parsed ``ch2_bundle.json`` document."""
 
-    def __init__(self, chapter, manifest, tables, support_owners, external_references, dependencies, loc):
+    def __init__(self, chapter, manifest, tables, support_owners, external_references, dependencies,
+                 chapter_objectives, source_path, repository_root, loc):
         self.chapter = chapter
         self.manifest = manifest
         self.tables = tables
@@ -196,6 +211,9 @@ class ChapterBundleRecord:
         self.support_owners = support_owners
         self.external_references = external_references
         self.dependencies = dependencies
+        self.chapter_objectives = chapter_objectives
+        self.source_path = source_path
+        self.repository_root = repository_root
         self.loc = loc
 
     def __len__(self):
@@ -205,7 +223,29 @@ class ChapterBundleRecord:
         return 1
 
 
-def load_records(source_path):
+class ChapterBundleRecords:
+    """Deterministic collection of every authored chapter bundle source."""
+
+    __slots__ = ("records", "by_chapter", "source_paths")
+
+    def __init__(self, records, source_paths=()):
+        self.records = tuple(records)
+        self.source_paths = tuple(source_paths)
+        self.by_chapter = {}
+        for record in self.records:
+            self.by_chapter.setdefault(record.chapter.id, []).append(record)
+
+    def __iter__(self):
+        return iter(self.records)
+
+    def __len__(self):
+        return len(self.records)
+
+    def __getitem__(self, index):
+        return self.records[index]
+
+
+def _load_record(source_path, repository_root=REPO_ROOT):
     root = load_json_file(source_path)
     schema_node = root.require("$schema")
     if schema_node.as_str() != SCHEMA_ID:
@@ -294,15 +334,140 @@ def load_records(source_path):
         loc=deps_node.loc,
     )
 
+    objectives_node = root.get("chapterObjectives")
+    chapter_objectives = None
+    if objectives_node is not None:
+        source_node = objectives_node.require("source")
+        symbols_node = objectives_node.require("symbols")
+        symbol_nodes = symbols_node.as_list()
+        chapter_objectives = TableRef(
+            name="chapterobjectives",
+            source=source_node.as_str(),
+            source_loc=source_node.loc,
+            symbols=[node.as_str() for node in symbol_nodes],
+            symbol_locs=[node.loc for node in symbol_nodes],
+            loc=objectives_node.loc,
+        )
+
     return ChapterBundleRecord(
         chapter=chapter, manifest=manifest, tables=tables,
         support_owners=support_owners, external_references=external_references,
-        dependencies=dependencies, loc=root.loc,
+        dependencies=dependencies, chapter_objectives=chapter_objectives,
+        source_path=_source_path(source_path, repository_root),
+        repository_root=_source_path(repository_root),
+        loc=root.loc,
+    )
+
+
+def load_records(source_path, repository_root=REPO_ROOT):
+    """Load one bundle file or every ``*_bundle.json`` file in a directory."""
+    source_path = _source_path(source_path, repository_root)
+    if os.path.isdir(source_path):
+        source_paths = sorted(glob.glob(os.path.join(source_path, "*_bundle.json")))
+        if not source_paths:
+            raise GeneratedDataError(
+                "chapter bundle directory '{}' has no *_bundle.json sources".format(source_path)
+            )
+    else:
+        source_paths = [source_path]
+    return ChapterBundleRecords(
+        [_load_record(path, repository_root) for path in source_paths],
+        [_source_path(path, repository_root) for path in source_paths],
     )
 
 
 def _err(message, loc, ref):
     return GeneratedDataError(message, loc, ref)
+
+
+def _source_path(source, repository_root=REPO_ROOT):
+    path = source if os.path.isabs(source) else os.path.join(repository_root, source)
+    return os.path.realpath(os.path.abspath(path))
+
+
+def source_display_path(source, repository_root=REPO_ROOT):
+    """Return a stable repository-relative inventory path.
+
+    Source reads and digests retain canonical absolute paths. Inventories must
+    not contain a checkout-specific prefix, so outside-root paths fail rather
+    than silently serializing machine-local locations.
+    """
+    root = _source_path(repository_root)
+    path = _source_path(source, root)
+    try:
+        inside_root = os.path.commonpath((root, path)) == root
+    except ValueError:
+        inside_root = False
+    if not inside_root:
+        raise GeneratedDataError(
+            "inventory source '{}' is outside repository root '{}'".format(path, root)
+        )
+    return os.path.relpath(path, root).replace(os.sep, "/")
+
+
+def _dependency_loader(table_name):
+    module_name = DEPENDENCY_SCHEMA_MODULES.get(table_name)
+    if module_name is None:
+        raise GeneratedDataError("unknown chapter bundle dependency '{}'".format(table_name))
+    schema = importlib.import_module(module_name)
+    return schema.load_records
+
+
+def dependency_module_paths():
+    """Return deterministic source paths for every registered bundle loader."""
+    paths = {os.path.realpath(__file__)}
+    for module_name in sorted(DEPENDENCY_SCHEMA_MODULES.values()):
+        module = importlib.import_module(module_name)
+        if getattr(module, "__file__", None):
+            paths.add(os.path.realpath(module.__file__))
+    return tuple(sorted(paths))
+
+
+def resolve_bundle_dependencies(record, diagnostics=None, dependency_records=None,
+                                prefer_supplied=False):
+    """Load one bundle's table records from its own declared source paths."""
+    resolved = {}
+    for table_name in BUNDLE_TABLE_NAMES:
+        table = record.tables_by_name.get(table_name)
+        if table is None:
+            continue
+        if prefer_supplied and dependency_records is not None and table_name in dependency_records:
+            resolved[table_name] = dependency_records[table_name]
+            continue
+        try:
+            resolved[table_name] = _dependency_loader(table_name)(
+                _source_path(table.source, record.repository_root)
+            )
+        except (OSError, GeneratedDataError) as error:
+            if diagnostics is not None:
+                diagnostics.add(
+                    _err(
+                        "could not load {} dependency source '{}': {}".format(
+                            table_name, table.source, error
+                        ),
+                        table.source_loc,
+                        "bundles[chapter={}].tables.{}.source".format(record.chapter.id, table_name),
+                    )
+                )
+    if prefer_supplied and dependency_records is not None and "supports" in dependency_records:
+        resolved["supports"] = dependency_records["supports"]
+    else:
+        try:
+            resolved["supports"] = _dependency_loader("supports")(
+                _source_path(record.support_owners.source, record.repository_root)
+            )
+        except (OSError, GeneratedDataError) as error:
+            if diagnostics is not None:
+                diagnostics.add(
+                    _err(
+                        "could not load supports dependency source '{}': {}".format(
+                            record.support_owners.source, error
+                        ),
+                        record.support_owners.source_loc,
+                        "bundles[chapter={}].supportOwners.source".format(record.chapter.id),
+                    )
+                )
+    return resolved
 
 
 def read_chapter_settings_row(index, chapter_settings_path=CHAPTER_SETTINGS_JSON):
@@ -315,6 +480,64 @@ def read_chapter_settings_row(index, chapter_settings_path=CHAPTER_SETTINGS_JSON
     if not (0 <= index < len(chapters)):
         return None
     return chapters[index]
+
+
+def _validate_chapter_objectives_source(record, diagnostics):
+    objectives = record.chapter_objectives
+    if objectives is None:
+        return
+
+    from ..chapterobjectives import schema as objectives_schema
+
+    source_ref = "bundles[chapter={}].chapterObjectives.source".format(record.chapter.id)
+    source_path = _source_path(objectives.source, record.repository_root)
+    try:
+        source_records = objectives_schema.load_records(source_path)
+    except (OSError, GeneratedDataError) as error:
+        diagnostics.add(
+            _err(
+                "could not load chapterObjectives source '{}': {}".format(objectives.source, error),
+                objectives.source_loc,
+                source_ref,
+            )
+        )
+        return
+
+    diagnostics.extend(
+        validate_unique(
+            zip(objectives.symbols, objectives.symbol_locs),
+            "duplicate chapterObjectives symbol '{key}' (first at {first_loc})",
+            "bundles[chapter={}].chapterObjectives.symbols[{{key}}]".format(record.chapter.id),
+        )
+    )
+    source_symbols = {
+        source_record.symbol
+        for source_record in source_records
+        if source_record.chapter == record.chapter.id
+    }
+    for symbol, loc in zip(objectives.symbols, objectives.symbol_locs):
+        if symbol not in source_symbols:
+            diagnostics.add(
+                _err(
+                    "chapterObjectives symbol '{}' is not a record for chapter '{}' in source '{}'".format(
+                        symbol, record.chapter.id, objectives.source
+                    ),
+                    loc,
+                    "bundles[chapter={}].chapterObjectives.symbols[{}]".format(
+                        record.chapter.id, symbol
+                    ),
+                )
+            )
+    for symbol in sorted(source_symbols - set(objectives.symbols)):
+        diagnostics.add(
+            _err(
+                "chapterObjectives source '{}' contains chapter '{}' symbol '{}' not declared by this bundle".format(
+                    objectives.source, record.chapter.id, symbol
+                ),
+                objectives.source_loc,
+                source_ref,
+            )
+        )
 
 
 def read_asset_table_entries(asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE,
@@ -332,11 +555,85 @@ def read_asset_table_entries(asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE,
     )
 
 
-def validate(records, diagnostics, dependency_records=None,
-             chapters_header=CHAPTERS_HEADER, characters_header=CHARACTERS_HEADER,
-             classes_header=CLASSES_HEADER, items_header=ITEMS_HEADER,
-             chapter_settings_path=CHAPTER_SETTINGS_JSON,
-             asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE):
+def read_chapter_map_dimensions(chapter_settings_index, chapter_settings_path=CHAPTER_SETTINGS_JSON,
+                                asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE,
+                                asset_manifest_path=ASSET_MANIFEST_PATH,
+                                map_layout_dir=MAP_LAYOUT_DIR):
+    """Resolve one chapter's authored map width/height from its runtime map asset."""
+    row = read_chapter_settings_row(chapter_settings_index, chapter_settings_path)
+    if row is None or "map" not in row or "mainLayerId" not in row["map"]:
+        return None
+    asset_entries = read_asset_table_entries(asset_table_path)
+    main_layer_id = row["map"]["mainLayerId"]
+    if not (0 <= main_layer_id < len(asset_entries)):
+        return None
+    map_symbol = asset_entries[main_layer_id]
+    try:
+        with open(asset_manifest_path, "r", encoding="utf-8") as handle:
+            asset_manifest = json.load(handle)
+        for asset in asset_manifest.get("assets", ()):
+            ownership = asset.get("ownership", {})
+            resources = asset.get("resources", {})
+            if ownership.get("symbol") == map_symbol and {
+                "mapWidth", "mapHeight"
+            } <= set(resources):
+                sources = asset.get("sources", ())
+                if not sources:
+                    raise GeneratedDataError(
+                        "map asset '{}' has no TMX source".format(asset.get("id", map_symbol))
+                    )
+                source_path = _source_path(sources[0])
+                try:
+                    source_width, source_height, _values = tmx.parse_tmx(source_path)
+                except (OSError, tmx.TmxError) as error:
+                    raise GeneratedDataError(
+                        "could not parse TMX source '{}': {}".format(source_path, error)
+                    )
+                if (resources["mapWidth"], resources["mapHeight"]) != (source_width, source_height):
+                    raise GeneratedDataError(
+                        "map asset '{}' manifest dimensions {}x{} do not match TMX {}x{}".format(
+                            asset.get("id", map_symbol),
+                            resources["mapWidth"],
+                            resources["mapHeight"],
+                            source_width,
+                            source_height,
+                        )
+                    )
+                return source_width, source_height
+    except OSError:
+        pass
+    layout_path = os.path.join(map_layout_dir, "{}.json".format(map_symbol))
+    try:
+        with open(layout_path, "r", encoding="utf-8") as handle:
+            layout = json.load(handle)
+    except OSError:
+        return None
+    except (json.JSONDecodeError, TypeError) as error:
+        raise GeneratedDataError(
+            "could not parse fallback map layout '{}': {}".format(layout_path, error)
+        )
+    try:
+        width = layout["width"]
+        height = layout["height"]
+    except (KeyError, TypeError) as error:
+        raise GeneratedDataError(
+            "fallback map layout '{}' has no usable width/height: {}".format(layout_path, error)
+        )
+    if (
+        isinstance(width, bool) or not isinstance(width, int) or width <= 0
+        or isinstance(height, bool) or not isinstance(height, int) or height <= 0
+    ):
+        raise GeneratedDataError(
+            "fallback map layout '{}' width/height must be positive integers".format(layout_path)
+        )
+    return width, height
+
+
+def _validate_record(records, diagnostics, dependency_records=None,
+                     chapters_header=CHAPTERS_HEADER, characters_header=CHARACTERS_HEADER,
+                     classes_header=CLASSES_HEADER, items_header=ITEMS_HEADER,
+                     chapter_settings_path=CHAPTER_SETTINGS_JSON,
+                     asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE):
     """Validate the whole-bundle manifest against the current
     ``units``/``shops``/``traps``/``eventscripts``/``eventlists``/
     ``supports`` records (``dependency_records``, loaded via
@@ -345,6 +642,7 @@ def validate(records, diagnostics, dependency_records=None,
     dependency_records = dependency_records or {}
     chapter = records.chapter
     manifest = records.manifest
+    _validate_chapter_objectives_source(records, diagnostics)
 
     # -- 1. chapter ID / chapter-settings index / internalName / mapEventDataId --
     chapters_enum = extract_enum_constants(chapters_header, name_prefix="CHAPTER_")
@@ -726,6 +1024,44 @@ def validate(records, diagnostics, dependency_records=None,
     graph.topo_order()  # raises GeneratedDataError on a cycle
 
 
+def validate(records, diagnostics, dependency_records=None, use_supplied_dependencies=False,
+             chapters_header=CHAPTERS_HEADER, characters_header=CHARACTERS_HEADER,
+             classes_header=CLASSES_HEADER, items_header=ITEMS_HEADER,
+             chapter_settings_path=CHAPTER_SETTINGS_JSON,
+             asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE):
+    """Validate every authored bundle and reject duplicate chapter owners.
+
+    ``use_supplied_dependencies`` is an explicit test-only hook. Production
+    callers always reload each dependency from the bundle's declared source.
+    """
+    if not isinstance(records, ChapterBundleRecords):
+        records = ChapterBundleRecords(records)
+
+    diagnostics.extend(
+        validate_unique(
+            ((record.chapter.id, record.chapter.id_loc) for record in records),
+            "duplicate chapter bundle owner for '{key}' (first defined at {first_loc})",
+            "bundles[chapter={key}].chapter",
+        )
+    )
+    for record in records:
+        record_dependencies = resolve_bundle_dependencies(
+            record,
+            diagnostics,
+            dependency_records,
+            prefer_supplied=use_supplied_dependencies,
+        )
+        _validate_record(
+            record, diagnostics, record_dependencies,
+            chapters_header=chapters_header,
+            characters_header=characters_header,
+            classes_header=classes_header,
+            items_header=items_header,
+            chapter_settings_path=chapter_settings_path,
+            asset_table_path=asset_table_path,
+        )
+
+
 def _contains_whole_word(text, word):
     import re
     return re.search(r"(?<![A-Za-z0-9_])" + re.escape(word) + r"(?![A-Za-z0-9_])", text) is not None
@@ -822,7 +1158,7 @@ class ChapterBundleTableSchema(TableSchema):
     name = SCHEMA_NAME
     version = SCHEMA_VERSION
 
-    default_source = "src/data/ch2_bundle.json"
+    default_source = "src/data"
     # Metadata-only: the bundle is a cross-table view, not itself a single
     # hand-written C file to round-trip against, and there is no C to
     # generate (each composed table already generates/round-trips its own

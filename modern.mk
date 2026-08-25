@@ -59,6 +59,9 @@ MODERN_GOALS := \
 	expansion-modern-blue-phase-delegate-check \
 	expansion-modern-autoplay-bounds-check \
 	expansion-modern-autoplay-accelerated-fidelity-check \
+	expansion-modern-chapter-objectives-profile-rom \
+	expansion-modern-chapter-objectives-profile-boot-check \
+	expansion-modern-chapter-objectives-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-idspace-active-check \
@@ -214,6 +217,9 @@ endif
 
 ifeq ($(FE8_BANIM_PACKAGE_RUNTIME_TEST),1)
 MODERN_DEFINE_FLAGS += -DFE8_BANIM_PACKAGE_RUNTIME_TEST=1
+endif
+ifeq ($(GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED),1)
+MODERN_DEFINE_FLAGS += -DFE8_CHAPTER_OBJECTIVES_ENABLED=1
 endif
 MODERN_INCLUDE_FLAGS := -Iinclude -I.
 
@@ -635,6 +641,10 @@ ifneq ($(strip $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)),)
 MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o
 endif
 
+ifneq ($(strip $(GENERATED_DATA_CHAPTEROBJECTIVES_C)),)
+MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o
+endif
+
 # Issue #5 Batch 1 (mechanics): $(GENERATED_DATA_TERRAINSTATS_OBJECT)
 # (generated_data.mk) is the same kind of additive object as units/
 # traps/shops/eventlists just above -- src/data_terrains.c has no
@@ -997,6 +1007,10 @@ $(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o: $(GENERATED_DATA_CH2_SHOPS_C)
 # reachable, since nothing adds this path to MODERN_ALL_C_OBJECTS in that
 # case.
 $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o: $(GENERATED_DATA_CH2_EVENTLISTS_C)
+	@mkdir -p $(@D)
+	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+$(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o: $(GENERATED_DATA_CHAPTEROBJECTIVES_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 
@@ -1467,6 +1481,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-debugtools-phase-control-profile-rom \
 	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-autoplay-bounds-check \
+	expansion-modern-chapter-objectives-check \
 	expansion-modern-autoplay-accelerated-fidelity-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
@@ -2039,6 +2054,7 @@ ifneq (,$(MODERN_EXPANSION_DEFINES_ACTIVE))
 		printf '%s\n' 'item_id_cap=$(FE8_ITEM_ID_CAP)'; \
 		printf '%s\n' 'item_expansion_itemtest=$(FE8_EXPANSION_ITEMTEST)'; \
 		printf '%s\n' 'custom_spell_test=$(FE8_EXPANSION_CUSTOM_SPELL_TEST)'; \
+		printf '%s\n' 'chapter_objectives_enabled=$(GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED)'; \
 		printf '%s\n' 'layout_flags=$(MODERN_LAYOUT_FLAGS)'; \
 		printf '%s\n' 'data_layout_flags=$(MODERN_DATA_LAYOUT_FLAGS)'; \
 		printf '%s\n' 'banim_overlay_layout_flags=$(MODERN_BANIM_OVERLAY_LAYOUT_FLAGS)'; \
@@ -3558,6 +3574,23 @@ endif
 # unchanged.
 MODERN_AUTOPLAY_BOUNDS_RUNTIME_SCRIPT := tools/gba-playtest/run_autoplay_bounds_checks.py
 MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/autoplay-bounds-runtime-check
+MODERN_CHAPTER_OBJECTIVES_RUNTIME_SCRIPT := tools/gba-playtest/run_chapter_objective_checks.py
+MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/chapter-objectives-runtime-check
+MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT := build/expansion-modern-chapter-objectives
+MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR := \
+	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)/generated-data
+MODERN_CHAPTER_OBJECTIVES_PROFILE_INVENTORY := \
+	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)/generated_data_chapterobjectives_inventory.md
+MODERN_CHAPTER_OBJECTIVES_PROFILE_ROM := \
+	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_CHAPTER_OBJECTIVES_PROFILE_ELF := \
+	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_CHAPTER_OBJECTIVES_RUNTIME_FIXTURE := \
+	scripts/generated_data/tests/fixtures/chapterobjectives/valid.json
+MODERN_CHAPTER_OBJECTIVES_RUNTIME_CHAPTERBUNDLE_FIXTURE := \
+	scripts/generated_data/tests/fixtures/chapterobjectives/ch2_bundle.json
+
+CLEAN_DIRS += $(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)
 
 expansion-modern-autoplay-bounds-check: expansion-modern-boot-preflight expansion-modern-rom
 	@mkdir -p "$(MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR)/tmp"
@@ -3609,6 +3642,44 @@ expansion-modern-autoplay-accelerated-fidelity-check:
 	@printf '%s\n' \
 		"error: expansion-modern-autoplay-accelerated-fidelity-check requires MODERN_CONFIG=debug" >&2
 	@exit 1
+endif
+
+expansion-modern-chapter-objectives-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT) \
+		GENERATED_DATA_OUT_DIR=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_INVENTORY) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_FIXTURE) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_CHAPTERBUNDLE_FIXTURE) \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_CHAPTER_OBJECTIVES_RUNTIME_TEST=1
+
+expansion-modern-chapter-objectives-profile-boot-check:
+	+$(MAKE) expansion-modern-boot-check \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT) \
+		GENERATED_DATA_OUT_DIR=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_INVENTORY) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_FIXTURE) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_CHAPTERBUNDLE_FIXTURE) \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_CHAPTER_OBJECTIVES_RUNTIME_TEST=1
+
+ifeq ($(MODERN_CONFIG),debug)
+expansion-modern-chapter-objectives-check: expansion-modern-boot-preflight expansion-modern-rom \
+		expansion-modern-chapter-objectives-profile-rom
+	@mkdir -p "$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR)/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_SCRIPT)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--fixture-rom "$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROM)" \
+		--fixture-elf "$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ELF)" \
+		--out-dir "$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR)"
+else
+expansion-modern-chapter-objectives-check: expansion-modern-chapter-objectives-profile-boot-check
+	@printf 'Modern chapter-objectives runtime check skipped: the authored Suspend -> reset -> Resume scenario is debug-calibrated; the enabled authored-data profile was built and boot-verified for config=%s\n' \
+		'$(MODERN_CONFIG)'
 endif
 
 # Normal save/load runtime scenario (issue #13 closure). Reuses new-game.json's
@@ -4255,6 +4326,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-overlay-audit \
 		expansion-modern-autoplay-check \
 		expansion-modern-autoplay-bounds-check \
+		expansion-modern-chapter-objectives-check \
 		$(MODERN_LINKER_CHECK_ACCELERATED_FIDELITY) \
 		expansion-modern-blue-phase-delegate-check \
 		expansion-modern-starter-runtime-check \

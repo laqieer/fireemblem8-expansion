@@ -110,9 +110,9 @@ MESSAGE_KEYS = {
     "debug.mode.blocked": 129,
 }
 RELEASE_PHASE_BASELINE = {
-    "ewram_occupied_bytes": 259056,
+    "ewram_occupied_bytes": 259076,
     "rom_occupied_bytes": 16776960,
-    "floating_end": 145962292,
+    "floating_end": 145963764,
     "emitted_message_count": 120,
 }
 

@@ -1,0 +1,19 @@
+{
+  "$schema": "fe8.units.v1",
+  "groups": [
+    {
+      "symbol": "UnitDef_Fixture_L3Ally",
+      "units": [
+        {
+          "charIndex": "CHARACTER_SETH",
+          "classIndex": "CLASS_PALADIN",
+          "allegiance": "FACTION_ID_BLUE",
+          "level": 1,
+          "xPosition": 1,
+          "yPosition": 0,
+          "items": ["ITEM_SWORD_IRON"]
+        }
+      ]
+    }
+  ]
+}
