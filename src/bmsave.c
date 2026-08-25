@@ -507,8 +507,10 @@ void WriteSuspendSave(int slot)
     struct SaveBlockInfo chunk;
     u8 list[MENU_OVERRIDE_MAX];
     struct Dungeon dungeon[2];
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
     struct PlaySt suspendPlaySt;
     u16 persistentTurn;
+#endif
     int i, val;
     struct SuspendSavePackedUnit *buf;
 
@@ -524,8 +526,12 @@ void WriteSuspendSave(int slot)
     slot += GetNextSuspendSaveId();
     dest = GetSaveWriteAddr(slot);
     gPlaySt.time_saved = GetGameClock();
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
     suspendPlaySt = gPlaySt;
     WriteAndVerifySramFast(&suspendPlaySt, &dest->playSt, sizeof(suspendPlaySt));
+#else
+    WriteAndVerifySramFast(&gPlaySt, &dest->playSt, sizeof(gPlaySt));
+#endif
     StoreRNStateToActionStruct();
     WriteAndVerifySramFast(&gActionData, &dest->action, sizeof(struct ActionData));
 

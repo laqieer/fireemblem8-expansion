@@ -2035,9 +2035,9 @@ def capture(
     rom: Path,
     scenario: Scenario,
     sram_image: Path | None = None,
-    sram_output: Path | None = None,
     retries: int = 0,
     backend_path: Path | None = None,
+    sram_output: Path | None = None,
 ) -> dict[str, Any]:
     if scenario.disabled:
         raise PlaytestError(f"scenario {scenario.name!r} is disabled: {scenario.blocker}")

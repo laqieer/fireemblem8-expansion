@@ -6,6 +6,7 @@
 
 #include <string.h>
 
+#include "constants/items.h"
 #include "anime.h"
 #include "banim_presentation.h"
 #include "custom_spell_effect.h"
@@ -13,6 +14,11 @@
 #include "efxmagic.h"
 #include "ekrbattle.h"
 #include "proc.h"
+#include "spellassoc.h"
+
+#if FE8_EXPANSION_CUSTOM_SPELL_EFFECTS
+#include "custom_spell_effect_runtime_test.h"
+#endif
 
 #define CUSTOM_SPELL_EFFECT_TEST_FALLBACK_INVALID 1
 #define CUSTOM_SPELL_EFFECT_TEST_FALLBACK_REENTRANT 2
@@ -290,6 +296,7 @@ static void CustomSpellEffectTest_RecordNormal(void)
     probe->normalChildCreates = sCounters.childCreates;
     probe->normalChildDeletes = sCounters.childDeletes;
     probe->normalFinalDisplayLatches = sCounters.finalDisplayLatches;
+    probe->normalDistanceType = gEkrDistanceType;
     probe->normalFinalActive = CustomSpellEffect_IsActive();
     probe->normalFinalSemaphore = gEfxBgSemaphore;
     probe->normalFinalSpellState = gEfxSpellAnimExists;
@@ -423,7 +430,15 @@ static void CustomSpellEffectTest_Loop(struct ProcCustomSpellEffectTestHarness *
     {
     case CUSTOM_SPELL_TEST_PHASE_INIT:
         CustomSpellEffectTest_ResetCounters();
+        gAnimRoundData[0] = ANIM_ROUND_TAKING_HIT_FAR;
+        gAnimRoundData[1] = ANIM_ROUND_TAKING_HIT_FAR;
+        gEkrDistanceType = EKR_DISTANCE_FAR;
+#if FE8_EXPANSION_CUSTOM_SPELL_EFFECTS
+        CustomSpellEffectTest_StartDispatch(
+            GetSpellAssocEfxIndex(CUSTOM_SPELL_EFFECT_TEST_ITEM));
+#else
         CustomSpellEffectTest_StartDispatch(CUSTOM_SPELL_EFFECT_BASE);
+#endif
         proc->phase = CUSTOM_SPELL_TEST_PHASE_NORMAL_WAIT;
         break;
 

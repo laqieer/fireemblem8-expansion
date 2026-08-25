@@ -38,6 +38,8 @@ u16 Tsa_Banim_0[600];
 u16 Tsa_efxFireBG_0[600];
 u16 Img_FireSpellSprites[1];
 u16 Pal_FireSpellSprites[16];
+u16 sHostFrame1ObjGfx[1];
+u16 sHostFrame1BgGfx[1];
 u32 AnimScr_EfxFireOBJ_L_Front[1];
 u32 AnimScr_EfxFireOBJ_L_Back[1];
 u32 AnimScr_EfxFireOBJ_R_Front[1];
@@ -52,6 +54,63 @@ SpellAnimFunc gEkrSpellAnimLut[] =
     [TEST_VANILLA_ANIM_NULL_PLACEHOLDER] = NULL,
 };
 const u32 gEkrSpellAnimLutCount = ARRAY_COUNT(gEkrSpellAnimLut);
+
+static const struct CustomSpellEffectFrameAssets sHostFrameAssets[] =
+{
+    {
+        Img_FireSpellSprites,
+        Img_FireSpellBg,
+        Tsa_Banim_0,
+        Tsa_efxFireBG_0,
+        Pal_FireSpellSprites,
+        Pal_FireSpellBg,
+    },
+    {
+        sHostFrame1ObjGfx,
+        sHostFrame1BgGfx,
+        Tsa_Banim_0,
+        Tsa_efxFireBG_0,
+        Pal_FireSpellSprites,
+        Pal_FireSpellBg,
+    },
+};
+static const struct CustomSpellEffectFrame sHostFrames[] =
+{
+    { 2, 0, 0, 0, &sHostFrameAssets[0] },
+    { 2, 0, 0, 1, &sHostFrameAssets[1] },
+};
+static const u16 sHostSoundIds[] = { 0xF1 };
+const struct CustomSpellEffect gGeneratedCustomSpellEffects[] =
+{
+    {
+        "CUSTOM_SPELL_REFERENCE",
+        sHostFrames,
+        {
+            CUSTOM_SPELL_EFFECT_MAX_OBJ_BYTES,
+            0x500,
+            CUSTOM_SPELL_EFFECT_BG_TSA_BYTES,
+            CUSTOM_SPELL_EFFECT_OBJ_PALETTE_LINE,
+            CUSTOM_SPELL_EFFECT_BG_PALETTE_LINE,
+            2,
+            1,
+            { 0, 0 },
+            2444,
+        },
+        {
+            FramScr_Unk5D4F90,
+            FramScr_Unk5D4F90,
+            FramScr_Unk5D4F90,
+            FramScr_Unk5D4F90,
+        },
+        sHostSoundIds,
+        CUSTOM_SPELL_EFFECT_BASE,
+        CUSTOM_SPELL_EFFECT_REFERENCE_FALLBACK,
+        2,
+        4,
+        2,
+        { 0, 0, 0 },
+    },
+};
 
 typedef char CustomSpellEffectResourcesRomOffset[
     offsetof(struct CustomSpellEffectResources, romBytes) == 0x0C ? 1 : -1];
@@ -80,6 +139,8 @@ static int sPlayedSounds[CUSTOM_SPELL_EFFECT_MAX_SOUND_EVENTS];
 static int sProcEnds;
 static u32 sObjGfxSize;
 static u32 sBgGfxSize;
+static const u16 *sCurrentObjGfx;
+static const u16 *sCurrentBgGfx;
 static int sObjGfxSizeMismatch;
 static int sBgGfxSizeMismatch;
 
@@ -112,6 +173,8 @@ static void ResetState(void)
     sProcEnds = 0;
     sObjGfxSize = 0;
     sBgGfxSize = 0;
+    sCurrentObjGfx = NULL;
+    sCurrentBgGfx = NULL;
     sObjGfxSizeMismatch = 0;
     sBgGfxSizeMismatch = 0;
     sPolicy.id = BANIM_PRESENTATION_POLICY_DEFAULT;
@@ -200,6 +263,11 @@ struct Anim *GetAnimAnotherSide(struct Anim *anim)
     return &sTargetAnim;
 }
 
+int GetAnimPosition(struct Anim *anim)
+{
+    return (anim->state2 & ANIM_BIT2_POS_RIGHT) ? EKR_POS_R : EKR_POS_L;
+}
+
 s16 GetAnimRoundTypeAnotherSide(struct Anim *anim)
 {
     (void)anim;
@@ -261,7 +329,7 @@ void SpellFx_RegisterBgPal(const u16 *palette, u32 size)
 
 void SpellFx_RegisterBgGfx(const u16 *graphics, u32 size)
 {
-    (void)graphics;
+    sCurrentBgGfx = graphics;
     if (sBgGfxLoads != 0 && sBgGfxSize != size)
         sBgGfxSizeMismatch = 1;
     sBgGfxSize = size;
@@ -277,7 +345,7 @@ void SpellFx_RegisterObjPal(const u16 *palette, u32 size)
 
 void SpellFx_RegisterObjGfx(const u16 *graphics, u32 size)
 {
-    (void)graphics;
+    sCurrentObjGfx = graphics;
     if (sObjGfxLoads != 0 && sObjGfxSize != size)
         sObjGfxSizeMismatch = 1;
     sObjGfxSize = size;
@@ -366,10 +434,23 @@ int main(void)
         || !Check(sBegins == 1 && sObjGfxLoads == 1 && sBgGfxLoads == 1,
                   "custom effect did not load both reserved VRAM lanes")
         || !Check(sObjPalLoads == 1 && sBgPalLoads == 1 && sTsaWrites == 1,
-                  "custom effect did not own both palettes and BG1 TSA"))
+                  "custom effect did not own both palettes and BG1 TSA")
+        || !Check(sChildAnim.xPosition == 0x44 && sChildAnim.yPosition == 0x58,
+                  "left-side custom OAM did not use generated screen-space origin"))
         return 1;
 
-    for (frame = 0; frame < effect->totalFrames; ++frame)
+    for (frame = 0; frame < effect->frames[0].duration; ++frame)
+        CustomSpellEffect_Loop(&sProc);
+    if (!Check(sCurrentObjGfx == effect->frames[0].assets->objGfx
+               && sCurrentBgGfx == effect->frames[0].assets->bgGfx,
+               "next visual set uploaded before its OAM boundary"))
+        return 1;
+    CustomSpellEffect_Loop(&sProc);
+    if (!Check(sCurrentObjGfx == effect->frames[1].assets->objGfx
+               && sCurrentBgGfx == effect->frames[1].assets->bgGfx,
+               "next visual set did not upload at its OAM boundary"))
+        return 1;
+    for (frame = 1; frame < effect->frames[1].duration; ++frame)
         CustomSpellEffect_Loop(&sProc);
 
     if (!Check(CustomSpellEffect_IsActive() && gEfxBgSemaphore == 1,
@@ -506,14 +587,14 @@ int main(void)
     if (!Check(!CustomSpellEffect_Validate(&invalid), "nonzero v1 frame flags accepted"))
         return 1;
     frames[0].flags = 0;
-    frames[1].soundStart = 0;
+    frames[1].soundStart = effect->frames[1].soundStart + 1;
     if (!Check(!CustomSpellEffect_Validate(&invalid), "noncontiguous sound range accepted"))
         return 1;
-    frames[1].soundStart = 1;
-    frames[0].soundCount = 2;
+    frames[1].soundStart = effect->frames[1].soundStart;
+    frames[0].soundCount = effect->resources.soundEvents + 1;
     if (!Check(!CustomSpellEffect_Validate(&invalid), "out-of-bounds sound range accepted"))
         return 1;
-    frames[0].soundCount = 1;
+    frames[0].soundCount = effect->frames[0].soundCount;
     invalid.soundIds = NULL;
     if (!Check(!CustomSpellEffect_Validate(&invalid), "NULL sound table accepted"))
         return 1;
