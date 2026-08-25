@@ -28,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -61,41 +62,19 @@ _SAVE_INTERNAL_APIS = (
     "WriteGameSave",
     "ReadGameSave",
 )
-def _edge_set(text: str) -> set[tuple[str, str]]:
-    return {tuple(edge.split(":", 1)) for edge in text.split()}
-
-
-_SAVE_API_ALLOWLIST = {
-    "WriteSuspendSave": _edge_set(
-        "src/bm.c:BmMain_SuspendBeforePhase src/bmarena.c:ArenaContinueBattle "
-        "src/bmbattle.c:BattleGenerateArena src/bmdebug.c:DebugChuudanMenu_ManualSave "
-        "src/bmtrap.c:HandlePostActionTraps src/cp_decide.c:CpDecide_Suspend "
-        "src/playerphase.c:PlayerPhase_PrepareAction src/playerphase.c:PlayerPhase_Suspend "
-        "src/uiarena.c:WriteSuspendPlayerIdle"
-    ),
-    "ReadSuspendSave": _edge_set(
-        "src/bmdebug.c:DebugContinueMenu_ContinueChapter "
-        "src/bmdebug.c:DebugContinueMenu_ManualContinue "
-        "src/savemenu.c:PostSaveMenuHandler"
-    ),
-    "WriteGameSave": _edge_set(
-        "src/bmdebug.c:DebugClearMenu_ClearFile "
-        "src/bmdebug.c:StartupDebugMenu_ChapterSelectEffect "
-        "src/bmdebug.c:StartupDebugMenu_WorldMapEffect "
-        "src/bonusclaim.c:BonusClaim_DrawItemSentPopup "
-        "src/savemenu.c:ExecSaveMenuMiscOption"
-    ),
-    "ReadGameSave": _edge_set(
-        "src/savemenu.c:ExecSaveMenuMiscOption "
-        "src/savemenu.c:PostSaveMenuHandler "
-        "src/savemenu.c:SaveMenuExtraSlotSelectLoop "
-        "src/sio_term.c:LinkArenaTeamBuild_LoadSelectedSave"
-    ),
+_SAVE_API_COUNTS = {
+    "WriteSuspendSave": {
+        "src/bm.c": 1, "src/bmarena.c": 1, "src/bmbattle.c": 1,
+        "src/bmdebug.c": 1, "src/bmtrap.c": 1, "src/cp_decide.c": 1,
+        "src/playerphase.c": 2, "src/uiarena.c": 1,
+    },
+    "ReadSuspendSave": {"src/bmdebug.c": 2, "src/savemenu.c": 1},
+    "WriteGameSave": {
+        "src/bmdebug.c": 3, "src/bonusclaim.c": 1, "src/savemenu.c": 1,
+    },
+    "ReadGameSave": {"src/savemenu.c": 5, "src/sio_term.c": 1},
 }
-_SAVE_MENU_PROC_ALLOWLIST = {
-    ("src/savemenu.c", "StartSaveMenu"),
-    ("src/savemenu.c", "SaveMenu_SetDifficultyChoice"),
-}
+_SAVE_MENU_PROC_COUNTS = {"src/savemenu.c": 2}
 _START_SAVE_MENU_OBJECT_ALLOWLIST = {
     "src/gamecontrol.c",
     "src/save_compat_menu.c",
@@ -273,6 +252,9 @@ def _has_start_save_gate_cfg(cfg: str) -> bool:
     for branch, branch_successors in successors.items():
         if len(branch_successors) != 2:
             continue
+        branch_body = blocks.get(branch, "")
+        if not re.search(r"if \([^)]*!= 4\)", branch_body):
+            continue
         if not any(reaches(classifier, {branch}) for classifier in classifier_blocks):
             continue
         for compat in compat_blocks & branch_successors:
@@ -318,7 +300,7 @@ def _included_header_text(source: Path) -> str:
                 if candidate.is_file():
                     pending.append(candidate)
                     break
-    return "\n".join(text)
+    return re.sub(r"\\\n", "", "\n".join(text))
 
 
 def _candidate_sources(sources: tuple[Path, ...], symbols: tuple[str, ...]) -> tuple[Path, ...]:
@@ -335,14 +317,14 @@ def _candidate_sources(sources: tuple[Path, ...], symbols: tuple[str, ...]) -> t
     )
 
 
-def _object_relocation_edges(obj: Path, symbols: tuple[str, ...]) -> set[tuple[str, str]]:
+def _object_relocation_edges(obj: Path, symbols: tuple[str, ...]) -> list[tuple[str, str]]:
     completed = subprocess.run(
         [ARM_OBJDUMP, "-dr", str(obj)],
         capture_output=True,
         text=True,
         check=True,
     )
-    edges = set()
+    edges = []
     function = None
     symbol_pattern = re.compile(
         r"R_ARM_[A-Z0-9_]+\s+(" + "|".join(map(re.escape, symbols)) + r")\b"
@@ -353,7 +335,7 @@ def _object_relocation_edges(obj: Path, symbols: tuple[str, ...]) -> set[tuple[s
             function = match.group(1)
         match = symbol_pattern.search(line)
         if match and function is not None:
-            edges.add((function, match.group(1)))
+            edges.append((function, match.group(1)))
     return edges
 
 
@@ -361,14 +343,16 @@ def _compiled_census_edges(
     work: Path,
     sources: tuple[Path, ...],
     symbols: tuple[str, ...],
-) -> set[tuple[str, str, str]]:
-    edges = set()
+    defines=(),
+    extra_includes=(),
+) -> list[tuple[str, str, str]]:
+    edges = []
     for index, source in enumerate(_candidate_sources(sources, symbols)):
         object_name = "census-%03d.o" % index
-        obj = _compile_arm(work, source, object_name)
+        obj = _compile_arm(work, source, object_name, defines, extra_includes)
         relative = source.relative_to(ROOT).as_posix()
         for function, symbol in _object_relocation_edges(obj, symbols):
-            edges.add((relative, function, symbol))
+            edges.append((relative, function, symbol))
     return edges
 
 
@@ -376,10 +360,18 @@ def _compiled_undefined_sources(
     work: Path,
     sources: tuple[Path, ...],
     symbol: str,
+    defines=(),
+    extra_includes=(),
 ) -> set[str]:
     callers = set()
     for index, source in enumerate(_candidate_sources(sources, (symbol,))):
-        obj = _compile_arm(work, source, "reference-%03d.o" % index)
+        obj = _compile_arm(
+            work,
+            source,
+            "reference-%03d.o" % index,
+            defines,
+            extra_includes,
+        )
         if symbol in _undefined_symbols(obj):
             callers.add(source.relative_to(ROOT).as_posix())
     return callers
@@ -388,8 +380,6 @@ def _compiled_undefined_sources(
 def _boundary_modes(work: Path):
     yield "default", (), ()
     yield "modern", ("-DMODERN=1",), (_generate_message_ids(work),)
-
-
 def _assert_no_save_block_or_xmap_access(test: unittest.TestCase, tree: str):
     test.assertNotRegex(
         tree,
@@ -433,11 +423,7 @@ def _has_xmap_member_use(tree: str) -> bool:
             tree,
         )
     )
-
-
 class SaveCompatDialogBackSemanticTests(unittest.TestCase):
-    """The existing runtime artifacts prove Back-first, byte-preserving UI."""
-
     def test_every_noncurrent_back_fixture_preserves_sram(self):
         scenario = json.loads(
             (SCENARIOS_DIR / "savecompat-dialog-back.json").read_text(
@@ -549,17 +535,7 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
 
                     mutation = work / (mode + "-unconditional_save_menu.c")
                     mutation.write_text(
-                        '#include "global.h"\n'
-                        '#include "savemenu.h"\n'
-                        '#include "save_format.h"\n'
-                        '#include "save_compat_menu.h"\n'
-                        'extern struct ProcCmd ProcScr_SaveMenu[];\n'
-                        'void StartSaveMenu(void *parent)\n'
-                        '{\n'
-                        '    enum SaveCompatState compat = ClassifySramSaveCompat();\n'
-                        '    StartSaveCompatMenu(parent, compat);\n'
-                        '    Proc_StartBlocking(ProcScr_SaveMenu, parent);\n'
-                        '}\n',
+                        '#include "global.h"\n#include "savemenu.h"\n#include "save_format.h"\n#include "save_compat_menu.h"\nextern struct ProcCmd ProcScr_SaveMenu[];\nvoid StartSaveMenu(void *parent)\n{\n    enum SaveCompatState compat = ClassifySramSaveCompat();\n    StartSaveCompatMenu(parent, compat);\n    Proc_StartBlocking(ProcScr_SaveMenu, parent);\n}\n',
                         encoding="utf-8",
                     )
                     mutated_cfg = _function_cfg(
@@ -579,18 +555,7 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
 
                     missing_return = work / (mode + "-missing_return_save_menu.c")
                     missing_return.write_text(
-                        '#include "global.h"\n'
-                        '#include "savemenu.h"\n'
-                        '#include "save_format.h"\n'
-                        '#include "save_compat_menu.h"\n'
-                        'extern struct ProcCmd ProcScr_SaveMenu[];\n'
-                        'void StartSaveMenu(void *parent)\n'
-                        '{\n'
-                        '    enum SaveCompatState gate = ClassifySramSaveCompat();\n'
-                        '    if (gate != SAVE_COMPAT_CURRENT)\n'
-                        '        StartSaveCompatMenu(parent, gate);\n'
-                        '    Proc_StartBlocking(ProcScr_SaveMenu, parent);\n'
-                        '}\n',
+                        '#include "global.h"\n#include "savemenu.h"\n#include "save_format.h"\n#include "save_compat_menu.h"\nextern struct ProcCmd ProcScr_SaveMenu[];\nvoid StartSaveMenu(void *parent)\n{\n    enum SaveCompatState gate = ClassifySramSaveCompat();\n    if (gate != SAVE_COMPAT_CURRENT)\n        StartSaveCompatMenu(parent, gate);\n    Proc_StartBlocking(ProcScr_SaveMenu, parent);\n}\n',
                         encoding="utf-8",
                     )
                     missing_return_cfg = _function_cfg(
@@ -609,123 +574,159 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                         "fail the CFG gate",
                     )
 
+                    inverted = work / (mode + "-inverted_save_menu.c")
+                    inverted.write_text(
+                        '#include "global.h"\n#include "savemenu.h"\n#include "save_format.h"\n#include "save_compat_menu.h"\nextern struct ProcCmd ProcScr_SaveMenu[];\nvoid StartSaveMenu(void *parent)\n{\n    enum SaveCompatState state = ClassifySramSaveCompat();\n    if (state == SAVE_COMPAT_CURRENT)\n        StartSaveCompatMenu(parent, state);\n    else\n        Proc_StartBlocking(ProcScr_SaveMenu, parent);\n}\n',
+                        encoding="utf-8",
+                    )
+                    self.assertFalse(
+                        _has_start_save_gate_cfg(
+                            _function_cfg(
+                                _gcc_cfg_tree(
+                                    work,
+                                    inverted,
+                                    mode + "-inverted_save_menu.o",
+                                    defines,
+                                    includes,
+                                ),
+                                "StartSaveMenu",
+                            )
+                        ),
+                        "inverted CURRENT classification must fail the CFG gate",
+                    )
+
     def test_complete_production_reverse_reference_census(self):
         sources = _production_sources()
         self.assertGreater(len(sources), 400)
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
-            edges = _compiled_census_edges(work, sources, _SAVE_INTERNAL_APIS)
-            by_symbol = {
-                symbol: {
-                    (path, function)
-                    for path, function, edge_symbol in edges
-                    if edge_symbol == symbol
-                }
-                for symbol in _SAVE_INTERNAL_APIS
-            }
-            self.assertEqual(by_symbol, _SAVE_API_ALLOWLIST)
-
-            start_callers = _compiled_undefined_sources(
-                work,
-                sources,
-                "StartSaveMenu",
-            )
-            self.assertEqual(
-                start_callers,
-                _START_SAVE_MENU_OBJECT_ALLOWLIST,
-            )
-
-            menu_edges = _compiled_census_edges(
-                work,
-                sources,
-                ("ProcScr_SaveMenu",),
-            )
-            self.assertEqual(
-                {(path, function) for path, function, _ in menu_edges},
-                _SAVE_MENU_PROC_ALLOWLIST,
-            )
-
             extra_caller = work / "extra_save_caller.c"
             extra_caller.write_text(
-                '#include "global.h"\n'
-                '#include "bmsave.h"\n'
-                'void SaveCompatUnexpectedSaveHook(void)\n'
-                '{\n'
-                '    WriteGameSave(0);\n'
-                '}\n',
+                '#include "global.h"\n#include "bmsave.h"\nvoid SaveCompatUnexpectedSaveHook(void)\n{\n    WriteGameSave(0);\n}\n',
                 encoding="utf-8",
             )
-            extra_edges = _object_relocation_edges(
-                _compile_arm(work, extra_caller, "extra_save_caller.o"),
-                _SAVE_INTERNAL_APIS,
-            )
-            self.assertNotIn(
-                ("SaveCompatUnexpectedSaveHook", "WriteGameSave"),
-                _SAVE_API_ALLOWLIST["WriteGameSave"],
-            )
-            self.assertIn(
-                ("SaveCompatUnexpectedSaveHook", "WriteGameSave"),
-                extra_edges,
-            )
-
             hidden_header = work / "hidden_save_hook.h"
             hidden_header.write_text(
-                '#define SAVE_COMPAT_HIDDEN_WRITE() WriteGameSave(0)\n',
+                '#define SAVE_COMPAT_HIDDEN_WRITE() \\\n    WriteGameSave(0)\n',
                 encoding="utf-8",
             )
             hidden_caller = work / "hidden_save_caller.c"
             hidden_caller.write_text(
-                '#include "global.h"\n'
-                '#include "bmsave.h"\n'
-                '#include "hidden_save_hook.h"\n'
-                'void SaveCompatHiddenSaveHook(void)\n'
-                '{\n'
-                '    SAVE_COMPAT_HIDDEN_WRITE();\n'
-                '}\n',
+                '#include "global.h"\n#include "bmsave.h"\n#include "hidden_save_hook.h"\nvoid SaveCompatHiddenSaveHook(void)\n{\n    SAVE_COMPAT_HIDDEN_WRITE();\n}\n',
                 encoding="utf-8",
             )
-            self.assertEqual(
-                _candidate_sources((hidden_caller,), _SAVE_INTERNAL_APIS),
-                (hidden_caller,),
-                "preprocessed discovery must retain header-hidden save calls",
-            )
-            hidden_edges = _object_relocation_edges(
-                _compile_arm(
-                    work,
-                    hidden_caller,
-                    "hidden_save_caller.o",
-                    extra_includes=(work,),
-                ),
-                _SAVE_INTERNAL_APIS,
-            )
-            self.assertIn(
-                ("SaveCompatHiddenSaveHook", "WriteGameSave"),
-                hidden_edges,
-            )
-
             bypass = work / "extra_save_menu_bypass.c"
             bypass.write_text(
-                '#include "global.h"\n'
-                '#include "savemenu.h"\n'
-                'extern struct ProcCmd ProcScr_SaveMenu[];\n'
-                'void SaveCompatUnexpectedMenuBypass(ProcPtr parent)\n'
-                '{\n'
-                '    Proc_StartBlocking(ProcScr_SaveMenu, parent);\n'
-                '}\n',
+                '#include "global.h"\n#include "savemenu.h"\nextern struct ProcCmd ProcScr_SaveMenu[];\nvoid SaveCompatUnexpectedMenuBypass(ProcPtr parent)\n{\n    Proc_StartBlocking(ProcScr_SaveMenu, parent);\n}\n',
                 encoding="utf-8",
             )
-            bypass_edges = _object_relocation_edges(
-                _compile_arm(work, bypass, "extra_save_menu_bypass.o"),
-                ("ProcScr_SaveMenu",),
+            modern_only = work / "modern_only_save_caller.c"
+            modern_only.write_text(
+                '#include "global.h"\n#include "bmsave.h"\nvoid SaveCompatModernOnlyHook(void)\n{\n#ifdef MODERN\n    WriteGameSave(0);\n#endif\n}\n',
+                encoding="utf-8",
             )
-            self.assertNotIn(
-                ("extra_save_menu_bypass.c", "SaveCompatUnexpectedMenuBypass"),
-                _SAVE_MENU_PROC_ALLOWLIST,
-            )
-            self.assertIn(
-                ("SaveCompatUnexpectedMenuBypass", "ProcScr_SaveMenu"),
-                bypass_edges,
-            )
+
+            for mode, defines, includes in _boundary_modes(work):
+                with self.subTest(mode=mode):
+                    edges = _compiled_census_edges(
+                        work, sources, _SAVE_INTERNAL_APIS, defines, includes
+                    )
+                    by_symbol = {
+                        symbol: dict(
+                            Counter(
+                                path for path, _, edge_symbol in edges
+                                if edge_symbol == symbol
+                            )
+                        )
+                        for symbol in _SAVE_INTERNAL_APIS
+                    }
+                    self.assertEqual(by_symbol, _SAVE_API_COUNTS)
+                    self.assertEqual(
+                        _compiled_undefined_sources(
+                            work, sources, "StartSaveMenu", defines, includes
+                        ),
+                        _START_SAVE_MENU_OBJECT_ALLOWLIST,
+                    )
+                    self.assertEqual(
+                        dict(
+                            Counter(
+                                path for path, _, _ in _compiled_census_edges(
+                                    work,
+                                    sources,
+                                    ("ProcScr_SaveMenu",),
+                                    defines,
+                                    includes,
+                                )
+                            )
+                        ),
+                        _SAVE_MENU_PROC_COUNTS,
+                    )
+                    self.assertEqual(
+                        _candidate_sources((hidden_caller,), _SAVE_INTERNAL_APIS),
+                        (hidden_caller,),
+                    )
+                    self.assertEqual(
+                        Counter(
+                            symbol
+                            for _, symbol in _object_relocation_edges(
+                                _compile_arm(
+                                    work,
+                                    extra_caller,
+                                    mode + "-extra_save_caller.o",
+                                    defines,
+                                    includes,
+                                ),
+                                _SAVE_INTERNAL_APIS,
+                            )
+                        ),
+                        Counter({"WriteGameSave": 1}),
+                    )
+                    self.assertEqual(
+                        Counter(
+                            symbol
+                            for _, symbol in _object_relocation_edges(
+                                _compile_arm(
+                                    work,
+                                    hidden_caller,
+                                    mode + "-hidden_save_caller.o",
+                                    defines,
+                                    (work, *includes),
+                                ),
+                                _SAVE_INTERNAL_APIS,
+                            )
+                        ),
+                        Counter({"WriteGameSave": 1}),
+                    )
+                    self.assertEqual(
+                        Counter(
+                            symbol
+                            for _, symbol in _object_relocation_edges(
+                                _compile_arm(
+                                    work,
+                                    bypass,
+                                    mode + "-extra_save_menu_bypass.o",
+                                    defines,
+                                    includes,
+                                ),
+                                ("ProcScr_SaveMenu",),
+                            )
+                        ),
+                        Counter({"ProcScr_SaveMenu": 1}),
+                    )
+                    modern_edges = _object_relocation_edges(
+                        _compile_arm(
+                            work,
+                            modern_only,
+                            mode + "-modern_only_save_caller.o",
+                            defines,
+                            includes,
+                        ),
+                        _SAVE_INTERNAL_APIS,
+                    )
+                    self.assertEqual(
+                        Counter(symbol for _, symbol in modern_edges),
+                        Counter({"WriteGameSave": 1}) if mode == "modern" else Counter(),
+                    )
 
     def test_public_diagnostic_probe_declarations_link_for_a_consumer(self):
         with tempfile.TemporaryDirectory() as tmp:

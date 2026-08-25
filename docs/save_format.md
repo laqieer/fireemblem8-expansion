@@ -497,18 +497,15 @@ erased fill pattern to `SAVE_COMPAT_CURRENT` at boot. `StartSaveMenu()` also
 rechecks and initializes EMPTY as a defensive fallback before routing every
 other non-CURRENT state to the compatibility menu.
 
-`scripts/modernize/tests/test_save_format_call_site_safety.py` separately
-retains the older `EnsureGlobalSaveInfoLoaded()` safe-init source boundary.
-`tools/gba-playtest/tests/test_save_compat_gate_safety.py` covers the
+`scripts/modernize/tests/test_save_format_call_site_safety.py` separately retains the older `EnsureGlobalSaveInfoLoaded()` safe-init source boundary; `tools/gba-playtest/tests/test_save_compat_gate_safety.py` covers the
 save-menu gate without relying on source spelling or statement order. It
 compiles `savemenu.c`, `save_compat_menu.c`, and `gamecontrol.c` in both
 default and `-DMODERN=1` forms (with generated message IDs), checks the
 classifier/diversion/menu relocations, and rejects forbidden save-internal
 relocations from the compatibility proc. Its parsed C-tree boundary rejects
 `SaveBlockInfo`, `SaveBlocks.xmap`, `xmap_magic`, and an adversarial
-`XMAP_MAGIC` field-access fixture, which a relocation-only check cannot see.
-The same test traverses every tracked production source and its project-header
-macro definitions, maps each ARM relocation to its enclosing function, and
+`XMAP_MAGIC` field-access fixture.
+The same test traverses every tracked production source and project-header macro definitions, maps each ARM relocation to its enclosing function, and
 compares the complete reverse-reference census to an explicit allowlist.
 Injected direct and header-macro-hidden save hooks, plus normal-menu-bypass
 objects, fail the census; the compiler CFG for `StartSaveMenu()` proves
@@ -517,9 +514,7 @@ rejects unconditional-start and missing-return mutations.
 
 ### Issue #160 semantic-evidence migration map
 
-The eight issue #99 rewrite records below map to
-[`TC-TEST-QUALITY-001`](test-cases/foundation.md#tc-test-quality-001-meaningful-test-evidence-policy-rejects-semantic-mutations).
-They preserve the save bytes, classifier/schema, and existing scenarios.
+The eight issue #99 rewrite records below map to [`TC-TEST-QUALITY-001`](test-cases/foundation.md#tc-test-quality-001-meaningful-test-evidence-policy-rejects-semantic-mutations) and preserve save bytes, classifier/schema, and scenarios.
 
 | Audit record | Replacement evidence |
 | --- | --- |
