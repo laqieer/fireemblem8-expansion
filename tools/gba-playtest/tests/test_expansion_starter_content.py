@@ -306,6 +306,12 @@ class StarterContentC89ContractTests(unittest.TestCase):
     """The enabled production translation units must reject non-C89 syntax."""
 
     def test_enabled_content_translation_units_and_header_compile_as_c89(self):
+        audited_headers = {
+            "expansion_starter_content.h",
+            "expansion_mechanics.h",
+            "expansion_itemtest.h",
+        }
+
         with _test_tempdir() as tmp:
             work = Path(tmp)
             generated = work / "generated"
@@ -313,7 +319,14 @@ class StarterContentC89ContractTests(unittest.TestCase):
             headers = work / "headers"
             shutil.copytree(REPO_ROOT / "include", headers / "include")
 
-            for path in headers.rglob("*.h"):
+            for path in (headers / "include").rglob("*.h"):
+                relative = path.relative_to(headers / "include").as_posix()
+                if relative in audited_headers:
+                    self.assertEqual(
+                        path.read_bytes(),
+                        (REPO_ROOT / "include" / relative).read_bytes(),
+                    )
+                    continue
                 path.write_text(
                     re.sub(r"//[^\n]*", "", path.read_text(encoding="utf-8")),
                     encoding="utf-8",
@@ -383,12 +396,6 @@ class StarterContentBattleSeamTests(unittest.TestCase):
                 references,
             )
 
-            poison = Path(tmp) / "starter_content_poison.h"
-            poison.write_text(
-                "#define ITEM_EXPANSION_CE ITEM_EXPANSION_CE_FORBIDDEN_IN_BMBATTLE\n",
-                encoding="utf-8",
-            )
-
             def compile_battle(source, obj_name):
                 obj = Path(tmp) / obj_name
                 command = [
@@ -400,8 +407,6 @@ class StarterContentBattleSeamTests(unittest.TestCase):
                     *_include_flags(),
                     "-I",
                     str(REPO_ROOT),
-                    "-include",
-                    str(poison),
                 ]
                 command.extend("-D" + define for define in CONTENT_DEFINES)
                 command.extend([str(source), "-o", str(obj)])
@@ -412,12 +417,19 @@ class StarterContentBattleSeamTests(unittest.TestCase):
                     text=True,
                 )
 
-            completed = compile_battle(BMBATTLE_SRC, "bmbattle_poisoned.o")
+            poisoned = Path(tmp) / "bmbattle_poisoned.c"
+            poisoned.write_text(
+                "#include \"constants/items_expansion.h\"\n"
+                "#pragma GCC poison ITEM_EXPANSION_CE\n"
+                + BMBATTLE_SRC.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            completed = compile_battle(poisoned, "bmbattle_poisoned.o")
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
             mutated = Path(tmp) / "bmbattle_special_case_mutation.c"
             mutated.write_text(
-                BMBATTLE_SRC.read_text(encoding="utf-8")
+                poisoned.read_text(encoding="utf-8")
                 + "\nint ItemExpansionSpecialCaseMutation(int item)\n"
                 + "{\n"
                 + "    if (item == ITEM_EXPANSION_CE)\n"
