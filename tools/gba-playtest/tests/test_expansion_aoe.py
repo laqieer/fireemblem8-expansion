@@ -260,8 +260,13 @@ class AoEArmAndBudgetTests(unittest.TestCase):
 class AoEProductionDispatchObjectTests(unittest.TestCase):
     """Each production item/AI entry point reaches the public dispatch seam."""
 
-    def _compile_enabled(self, work: Path, source: Path) -> Path:
-        obj = work / (source.stem + "-aoe.o")
+    def _compile_production_caller(
+        self, work: Path, source: Path, provider_enabled: bool
+    ) -> Path:
+        obj = work / (source.stem + ("-provider.o" if provider_enabled else "-core.o"))
+        defines = ["-DFE8_EXPANSION_MODERN_BUILD=1"]
+        if provider_enabled:
+            defines.append("-DFE8_EXPANSION_AOE_REFERENCE=1")
         completed = run(
             [
                 ARM_CC,
@@ -274,8 +279,7 @@ class AoEProductionDispatchObjectTests(unittest.TestCase):
                 "-fno-builtin",
                 "-w",
                 *INCLUDES,
-                "-DFE8_EXPANSION_MODERN_BUILD=1",
-                "-DFE8_EXPANSION_AOE_REFERENCE=1",
+                *defines,
                 "-c",
                 str(source),
                 "-o",
@@ -285,7 +289,7 @@ class AoEProductionDispatchObjectTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         return obj
 
-    def test_each_production_caller_retains_the_public_dispatch_relocations(self):
+    def test_provider_disabled_modern_callers_retain_public_dispatch_relocations(self):
         expected_counts = {
             "bmitemuse.c": 2,
             "bmusemind.c": 1,
@@ -298,11 +302,33 @@ class AoEProductionDispatchObjectTests(unittest.TestCase):
                 with self.subTest(source=source.name):
                     self.assertEqual(
                         _relocation_count(
-                            self._compile_enabled(work, source),
+                            self._compile_production_caller(
+                                work, source, provider_enabled=False
+                            ),
                             "ExpansionAoE_DispatchItem",
                         ),
                         expected_counts[source.name],
                     )
+
+    def test_provider_flag_does_not_remove_production_dispatch_relocations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            for source in PRODUCTION_DISPATCH_CALLERS:
+                with self.subTest(source=source.name):
+                    disabled_count = _relocation_count(
+                        self._compile_production_caller(
+                            work, source, provider_enabled=False
+                        ),
+                        "ExpansionAoE_DispatchItem",
+                    )
+                    enabled_count = _relocation_count(
+                        self._compile_production_caller(
+                            work, source, provider_enabled=True
+                        ),
+                        "ExpansionAoE_DispatchItem",
+                    )
+                    self.assertGreater(disabled_count, 0)
+                    self.assertEqual(enabled_count, disabled_count)
 
 
 class AoEConfigAndSeamTests(unittest.TestCase):

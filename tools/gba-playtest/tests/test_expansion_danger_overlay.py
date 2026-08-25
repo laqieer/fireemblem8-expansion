@@ -107,6 +107,21 @@ def _object_section_names(obj):
     return names
 
 
+def _section_relocation_symbols(obj, section):
+    if OBJDUMP is None:
+        raise unittest.SkipTest("no host 'objdump' available")
+    proc = subprocess.run(
+        [OBJDUMP, "-r", "-j", section, str(obj)], capture_output=True, text=True
+    )
+    if proc.returncode:
+        raise AssertionError(proc.stdout + proc.stderr)
+    return {
+        re.sub(r"-0x[0-9a-fA-F]+$", "", line.split()[-1])
+        for line in proc.stdout.splitlines()
+        if line.split()
+    }
+
+
 def _section_is_all_zero(obj, section):
     if OBJDUMP is None:
         raise unittest.SkipTest("no host 'objdump' available")
@@ -199,13 +214,25 @@ class DangerOverlayWrapperTests(unittest.TestCase):
     def test_enabled_bmmenu_defines_the_wrapper(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
-            rc, out, obj = _compile(tmp, BMMENU_SRC, "bmmenu_enabled.o", defines=[FLAG + "=1"])
+            rc, out, obj = _compile(
+                tmp,
+                BMMENU_SRC,
+                "bmmenu_enabled.o",
+                defines=[FLAG + "=1"],
+                extra=["-ffunction-sections"],
+            )
             self.assertEqual(rc, 0, out)
-            refs = _referenced_symbol_names(obj)
-        self.assertIn("ExpansionDangerOverlay_MenuSelect", refs)
+            sections = _object_section_names(obj)
+            wrapper_sections = [
+                section
+                for section in sections
+                if section.endswith("ExpansionDangerOverlay_MenuSelect")
+            ]
+            self.assertEqual(wrapper_sections, [".text.ExpansionDangerOverlay_MenuSelect"])
+            relocations = _section_relocation_symbols(obj, wrapper_sections[0])
         self.assertIn(
             "MapMenu_DangerZone_UnusedEffect",
-            refs,
+            relocations,
             "enabled wrapper must delegate through the existing danger-zone effect",
         )
 
