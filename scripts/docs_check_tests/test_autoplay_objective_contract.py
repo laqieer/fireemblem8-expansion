@@ -29,6 +29,18 @@ class AutoplayObjectiveContractTests(unittest.TestCase):
             "Generated\n  `chapterobjectives` and `chapterbundle` data",
             typed_section,
         )
+        self.assertIn(
+            "**Profiles:** generated homebrew/libmGBA host integration, modern AAPCS debug",
+            typed_section,
+        )
+        self.assertIn(
+            "**Save/config/data:** no save field, migration, compatibility epoch,",
+            typed_section,
+        )
+        self.assertIn(
+            "**ROM/RAM/archival:** the modern generated objective table and evaluator add",
+            typed_section,
+        )
         self.assertNotIn("no target source, ROM bytes, RAM allocation", typed_section)
         self.assertNotIn("later integration\n  work (#89)", typed_section)
         self.assertNotIn("generated game data, or\n  localization change", typed_section)
