@@ -345,7 +345,8 @@ another chapter's defaults. Objective areas are additionally bounded by the
 owner chapter's authored map width and height. Its only initial kinds are:
 
 - `protect`: keep one referenced character alive until another typed
-  objective completes;
+  objective completes, latching a pre-completion violation in a required
+  existing `failureFlag`;
 - `reach_area`: every live member of one AI group reaches an inclusive,
   bounded rectangle;
 - `defeat_group`: every live member of one AI group is absent or defeated;
