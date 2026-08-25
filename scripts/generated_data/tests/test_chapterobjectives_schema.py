@@ -515,6 +515,26 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
         self.assertFalse(diagnostics.ok)
         self.assertIn("must belong to a validated chapter unit group", diagnostics.render())
 
+    def test_objective_members_must_uniquely_resolve_in_owning_chapter_data(self):
+        records = schema.load_records(objective_fixture("valid.json"))
+        diagnostics = DiagnosticCollector()
+        duplicate_units = units_schema.load_records(objective_fixture("deps_units_duplicate_eirika.json"))
+        duplicate_bundle = chapterbundle_schema.load_records(objective_fixture("duplicate_eirika_bundle.json"))
+        schema.validate(
+            records,
+            diagnostics,
+            {"units": duplicate_units, "chapterbundle": duplicate_bundle},
+        )
+        rendered = diagnostics.render()
+        self.assertIn(
+            "character 'CHARACTER_EIRIKA' resolves to 2 unit definitions in the owning chapter data",
+            rendered,
+        )
+        self.assertIn(
+            "protectedCharacter 'CHARACTER_EIRIKA' must resolve to exactly one unit definition",
+            rendered,
+        )
+
     def test_protect_completion_chain_rejects_a_terminal_defeat_of_the_protected_unit(self):
         records, diagnostics = _validate("valid.json")
         objectives = {objective.id: objective for objective in records[0].objectives}

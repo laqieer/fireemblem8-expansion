@@ -325,6 +325,43 @@ turn 1 and zero starts, completions, actions, failures, or debug activations.
 The generated homebrew fixture independently reaches every terminal reason
 and proves objective failure is selected before stall classification.
 
+## Compatibility and budgets
+
+- **Dependencies:** `BmMain_StartPhase`, `gProcScr_CpPhase`,
+  `BuildAiUnitList`, `Unit.ai[]`, `AreUnitsAllied`, `gba-playtest`, and the
+  tester-case catalog.
+- **Dependents:** issues #86, #87, #88, #89, and #90; #91 consumes the settled
+  telemetry through its own prerequisites. Issue #92 must not introduce a
+  competing observation/action seam.
+- **Conflicts:** none known. The default `PLAYER` path is the required
+  conflict-free negative.
+- **Configuration:** the #85 foundation has no build flag. The optional #87
+  command adds the strict default-off Autoconf/Make/C surface documented
+  above and folds it into configuration identity.
+- **Data/UI:** no generated-data, localization, menu, objective, or strategy
+  record in the #85 foundation. The optional #87 module adds only two
+  expansion-catalog messages and one gated map-menu row.
+- **Save:** no field, migration, preference, or compatibility-epoch change.
+- **Archival:** `src/expansion_autoplay.c` and all hooks are excluded from
+  `FE8_ARCHIVAL_BUILD`; the agbcc lane is unchanged.
+- **Modern budget:** 68 bytes persistent IWRAM total (64-byte telemetry plus
+  4-byte controller), moved together so they survive every map, battle, and UI
+  overlay. The tight all-locale debug profile retains 272 bytes of IWRAM static
+  growth headroom above the required 4 KiB user-stack margin and recovers 68
+  EWRAM bytes, turning the previous 24-byte overflow into 44 bytes of headroom.
+  Default debug/release EWRAM remains unchanged from the immediate base. The
+  module contributes 768 bytes of debug Thumb text and 692 bytes of release
+  Thumb text.
+- **Issue #87 budget:** the two stable catalog messages add 528 debug / 544
+  release linked ROM bytes to the disabled build. Enabling Charge adds another
+  840 debug / 808 release linked ROM bytes, including the dedicated module's
+  400/420 bytes of Thumb text and 24 bytes of ROM-resident Proc script data.
+  It adds zero static EWRAM/IWRAM: enabled/default builds retain 1,704/3,128
+  EWRAM bytes free (debug/release) and 1,552 IWRAM static-growth bytes above
+  the 4 KiB stack margin. The named all-locales/all-features release profile
+  enables Charge and Threat Range together and retains 732 EWRAM bytes plus
+  272 IWRAM static-growth bytes.
+
 ## Typed chapter objectives and AI groups
 
 Issue [#89](https://github.com/laqieer/fireemblem8-expansion/issues/89)
@@ -392,9 +429,9 @@ ties deterministically.
 
 The generated table budgets are 32 chapter bundles, eight objectives and
 eight groups per chapter, and 16 members per group. Modern generated data
-uses 12 bytes per bundle, 12 bytes plus members per group, and 32 bytes per
+uses 12 bytes per bundle, 12 bytes plus members per group, and 28 bytes per
 objective; the default empty table is one 12-byte sentinel. The telemetry
-record remains 16 EWRAM bytes; one transient readiness byte gates evaluation
+record remains 16 EWRAM bytes; two transient readiness bytes gate evaluation
 until beginning events complete. Neither changes IWRAM, save, migration, compatibility epoch,
 localization, configuration identity, or feature gate. Each authored
 telemetry refresh uses a bounded 1 KiB stack index and scans the 255 unit
@@ -419,9 +456,12 @@ This is host/runtime-test infrastructure only:
 - **Save/config/data:** no save field, migration, compatibility epoch,
   configuration identity, Autoconf/Make feature flag, generated game data, or
   localization change.
-- **ROM/RAM/archival:** no target source, ROM bytes, RAM allocation, linker
-  budget, or archival runtime behavior changes. The legacy lane remains a
-  compile-compatibility check only.
+- **ROM/RAM/archival:** the modern generated objective table and evaluator add
+  ROM data/code; the default table is a 12-byte sentinel and authored
+  objectives are 28 bytes each. Telemetry remains a 16-byte EWRAM record with
+  two transient readiness bytes; linker-budget owner reports capture the
+  resulting profile totals. The archival lane excludes objective runtime
+  behavior and remains a compile-compatibility check only.
 
 ## Compatibility and budgets
 

@@ -152,6 +152,13 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
             generated = generated_dir / "data_chapter_objectives.c"
             generated_object = temporary_path / "data_chapter_objectives.o"
             runtime_object = temporary_path / "expansion_chapter_objectives.o"
+            layout_source = temporary_path / "objective_layout.c"
+            layout_object = temporary_path / "objective_layout.o"
+            layout_source.write_text(
+                '#include "expansion_chapter_objectives.h"\n'
+                'typedef char ObjectiveAapcsSize[sizeof(struct ExpansionChapterObjective) == 28 ? 1 : -1];\n',
+                encoding="utf-8",
+            )
             generate = subprocess.run(
                 [
                     "python3",
@@ -193,7 +200,11 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
                 "-DFE8_EXPANSION_MODERN_BUILD=1",
                 "-c",
             ]
-            for source, output in ((generated, generated_object), (SOURCE, runtime_object)):
+            for source, output in (
+                (generated, generated_object),
+                (SOURCE, runtime_object),
+                (layout_source, layout_object),
+            ):
                 compiled = subprocess.run(
                     [*common, str(source), "-o", str(output)],
                     cwd=ROOT,

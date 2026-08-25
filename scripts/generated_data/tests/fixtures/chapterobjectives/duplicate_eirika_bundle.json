@@ -1,0 +1,24 @@
+{
+  "$schema": "fe8.chapterbundle.v1",
+  "chapter": {
+    "id": "CHAPTER_L_2",
+    "name": "Ch2",
+    "chapterSettingsIndex": 2,
+    "internalName": "L02",
+    "mapEventDataId": 13
+  },
+  "manifest": {"table": "eventlists", "symbol": "Ch2Events"},
+  "tables": {
+    "units": {
+      "source": "scripts/generated_data/tests/fixtures/chapterobjectives/deps_units_duplicate_eirika.json",
+      "symbols": ["UnitDef_Event_Ch2Ally", "UnitDef_DuplicateEirika"]
+    }
+  },
+  "supportOwners": {"source": "src/data/supports.json", "required": []},
+  "chapterObjectives": {
+    "source": "scripts/generated_data/tests/fixtures/chapterobjectives/valid.json",
+    "symbols": ["ChapterObjectives_Fixture"]
+  },
+  "externalReferences": [],
+  "dependencies": {"characters": [], "classes": [], "items": []}
+}

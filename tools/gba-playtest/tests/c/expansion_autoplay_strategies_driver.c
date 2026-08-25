@@ -131,6 +131,8 @@ static void ResetFixture(void)
     sBlueComputerPhase = false;
     sCombatCalls = 0;
     sMoveCalls = 0;
+    ExpansionChapterObjectives_ResetTelemetry();
+    ExpansionChapterObjectives_OnBeginningEventsComplete();
 }
 
 static int TestRegistryFailures(void)

@@ -684,7 +684,7 @@
       "domain": "chapter",
       "key": "include/expansion_chapter_objectives.h|struct-field|chapter|ExpansionChapterObjectiveBundle.chapterId",
       "kind": "struct-field",
-      "line": 76,
+      "line": 77,
       "path": "include/expansion_chapter_objectives.h",
       "reason": null,
       "record_count": null,
@@ -21259,7 +21259,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "a3a99cccdb97a53f78b0f83a0dc6d42de35ad0892d2defedc42ab5a7a5e77f0a",
+  "digest": "4ee960953dcca8414ad0c87bbb22b33c22f9f1a6f244c9ed7ce710782f224caa",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,

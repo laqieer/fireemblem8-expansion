@@ -2173,13 +2173,13 @@
         "Disposable generated Chapter 2 fixture",
         "Modern AAPCS debug ROM with #86 bounded default-PLAYER route"
       ],
-      "purpose": "Prove typed generic objective lifecycle evaluation, indexed same-chapter bundle ownership, continuous hold failure latching, pointer-free telemetry, and unchanged-chapter inertness.",
+      "purpose": "Prove typed generic objective lifecycle evaluation, indexed same-chapter bundle ownership, persistent protect completion/failure and hold terminal latching, pointer-free telemetry, and unchanged-chapter inertness.",
       "prerequisites": "Repository root with Python 3 and a host C compiler; the bounded debug ROM negative also requires the modern ARM toolchain and libmGBA. Start without a save or savestate.",
       "actions": "Run the focused generated-data/objective host selectors, then the bounded debug objective target.",
-      "expected_result": "All five generic kinds produce deterministic pending/success/failure state and progress; each authored chapter resolves only its indexed owner bundle; a hold violation latches its declared existing failure flag so leave/re-enter fails; the unchanged debug route exposes zero objective telemetry.",
+      "expected_result": "All five generic kinds produce deterministic pending/success/failure state and progress; each authored chapter resolves only its indexed owner bundle; protect and hold use declared persistent event flags, with protect completion and an unfailed hold deadline terminal across later regressions and Suspend/Resume; the unchanged debug route exposes zero objective telemetry.",
       "negative_control": "Missing, duplicate, stale, or cross-chapter bundle/unit-group ownership; duplicate/capacity/area/turn/flag/dependency/cycle errors fail closed; clearing transient telemetry cannot preserve hidden objective state.",
       "interactions": "Depends on #85/#86 only for semantic telemetry/probe transport and reuses the generated-data registry, indexed chapter bundles, unit groups, event flags, and helper catalog. It does not define AI strategy or a second router.",
-      "save_compatibility": "No save bytes, migration, preference, compatibility epoch, or serialized objective state. Runtime status is derived from existing chapter/event state; continuous holds use their author-declared existing event-flag latch.",
+      "save_compatibility": "No save bytes, migration, preference, compatibility epoch, or serialized objective state. Runtime status is derived from existing chapter/event state; protect and hold use their author-declared existing event-flag latches.",
       "cleanup": "The host fixture is temporary under build/. Use make clean_fast only for ignored artifacts.",
       "limitations": "No project strategy, route, balance claim, player-visible text, natural-language goal, or general event language.",
       "automation": [
