@@ -27,10 +27,10 @@ What is proven here:
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import importlib
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -62,9 +62,243 @@ _STAGED_ARTIFACT_RELATIVE_PATHS = (
     "build/expansion-modern/debug/aapcs/debugtools-fixtures/debugtools-current.sav",
 )
 
-# A repository ROM/ELF path may only be constructed in host_mode.py.
-_ROM_PATH_CONSTRUCTION_RE = re.compile(r"REPO_ROOT[^#\n]*fireemblem8\.(gba|elf)")
-_HOST_MODE_ROM_USE_RE = re.compile(r"host_mode\.(modern_rom|modern_elf|LIVE_ROMS|LIVE_ARTIFACTS)")
+_HOST_MODE_ARTIFACT_APIS = frozenset(
+    {
+        "capture_live_or_skip",
+        "modern_elf",
+        "modern_rom",
+        "require_built_rom",
+    }
+)
+_HOST_MODE_ARTIFACT_ATTRIBUTES = frozenset({"LIVE_ARTIFACTS", "LIVE_ROMS"})
+_ARTIFACT_ACCESSORS = frozenset(
+    {
+        "exists",
+        "is_file",
+        "open",
+        "read_bytes",
+        "read_text",
+        "stat",
+    }
+)
+_ARTIFACT_SUFFIXES = (".elf", ".gba")
+
+
+def _literal_string(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _has_artifact_suffix(node):
+    value = _literal_string(node)
+    return value is not None and value.lower().endswith(_ARTIFACT_SUFFIXES)
+
+
+class _ArtifactDiscovery(ast.NodeVisitor):
+    """Classify repository artifacts without relying on source spelling."""
+
+    def __init__(self):
+        self.class_stack = []
+        self.function_depth = 0
+        self.path_origins = {}
+        self.repository_owners = {}
+        self.direct_capture_owners = set()
+
+    def _owner(self):
+        return self.class_stack[-1] if self.class_stack else "<module>"
+
+    def _mark_repository(self, reason):
+        self.repository_owners.setdefault(self._owner(), set()).add(reason)
+
+    def _origin_key(self, name):
+        return (self._owner(), name)
+
+    def _path_origin(self, node):
+        if isinstance(node, ast.Name):
+            if node.id == "REPO_ROOT":
+                return (True, False)
+            return self.path_origins.get(
+                self._origin_key(node.id),
+                self.path_origins.get(("<module>", node.id), (False, False)),
+            )
+
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "host_mode"
+        ):
+            if node.attr == "REPO_ROOT":
+                return (True, False)
+            if node.attr in _HOST_MODE_ARTIFACT_ATTRIBUTES:
+                return (True, True)
+
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            rooted, artifact = self._path_origin(node.left)
+            return (rooted, artifact or (rooted and _has_artifact_suffix(node.right)))
+
+        if isinstance(node, ast.Call):
+            if (
+                isinstance(node.func, ast.Name)
+                and node.func.id == "Path"
+                and node.args
+            ):
+                origins = [self._path_origin(argument) for argument in node.args]
+                rooted = any(origin[0] for origin in origins)
+                artifact = any(origin[1] for origin in origins) or (
+                    rooted and any(_has_artifact_suffix(argument) for argument in node.args)
+                )
+                return (rooted, artifact)
+
+            if isinstance(node.func, ast.Attribute):
+                rooted, artifact = self._path_origin(node.func.value)
+                if node.func.attr in {"joinpath", "with_name", "with_suffix"}:
+                    artifact = artifact or (
+                        rooted and any(_has_artifact_suffix(argument) for argument in node.args)
+                    )
+                    return (rooted, artifact)
+                if (
+                    isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "host_mode"
+                    and node.func.attr in {"modern_elf", "modern_rom"}
+                ):
+                    return (True, True)
+
+        return (False, False)
+
+    def _remember_assignment(self, targets, value):
+        origin = self._path_origin(value)
+        for target in targets:
+            if isinstance(target, ast.Name):
+                self.path_origins[self._origin_key(target.id)] = origin
+
+    def visit_ClassDef(self, node):
+        if self.function_depth:
+            self.generic_visit(node)
+            return
+        self.class_stack.append(node.name)
+        self.generic_visit(node)
+        self.class_stack.pop()
+
+    def visit_FunctionDef(self, node):
+        self.function_depth += 1
+        self.generic_visit(node)
+        self.function_depth -= 1
+
+    def visit_AsyncFunctionDef(self, node):
+        self.function_depth += 1
+        self.generic_visit(node)
+        self.function_depth -= 1
+
+    def visit_Assign(self, node):
+        self._remember_assignment(node.targets, node.value)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node):
+        if node.value is not None:
+            self._remember_assignment((node.target,), node.value)
+        self.generic_visit(node)
+
+    def visit_BinOp(self, node):
+        rooted, artifact = self._path_origin(node)
+        if rooted and artifact:
+            self._mark_repository("repository-path construction")
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node):
+        if (
+            isinstance(node.value, ast.Name)
+            and node.value.id == "host_mode"
+            and node.attr in _HOST_MODE_ARTIFACT_ATTRIBUTES
+        ):
+            self._mark_repository(f"host_mode.{node.attr}")
+        self.generic_visit(node)
+
+    def visit_Call(self, node):
+        func = node.func
+        if (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Name)
+            and func.value.id == "host_mode"
+            and func.attr in _HOST_MODE_ARTIFACT_APIS
+        ):
+            self._mark_repository(f"host_mode.{func.attr}")
+
+        if (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Name)
+            and func.value.id == "gba_playtest"
+            and func.attr == "capture"
+        ):
+            self.direct_capture_owners.add(self._owner())
+            if node.args and self._path_origin(node.args[0])[1]:
+                self._mark_repository("direct gba_playtest.capture")
+
+        if (
+            isinstance(func, ast.Name)
+            and func.id == "open"
+            and node.args
+            and self._path_origin(node.args[0])[1]
+        ):
+            self._mark_repository("repository artifact open")
+
+        if (
+            isinstance(func, ast.Attribute)
+            and func.attr in _ARTIFACT_ACCESSORS
+            and self._path_origin(func.value)[1]
+        ):
+            self._mark_repository(f"repository artifact {func.attr}")
+
+        rooted, artifact = self._path_origin(node)
+        is_host_mode_factory = (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Name)
+            and func.value.id == "host_mode"
+            and func.attr in {"modern_elf", "modern_rom"}
+        )
+        if rooted and artifact and not is_host_mode_factory:
+            self._mark_repository("repository-path construction")
+        self.generic_visit(node)
+
+
+def _discover_artifacts(path, source=None):
+    if source is None:
+        source = path.read_text(encoding="utf-8")
+    visitor = _ArtifactDiscovery()
+    visitor.visit(ast.parse(source, filename=str(path)))
+    return visitor
+
+
+def _registered_owner_errors(module, owners, registered, guarded):
+    errors = []
+    module_classes = {
+        class_name for module_name, class_name in registered if module_name == module
+    }
+    if owners and not module_classes:
+        errors.append(f"{module}: repository artifact owner is not registered")
+    for owner in owners:
+        if owner == "<module>":
+            if any((module, class_name) not in guarded for class_name in module_classes):
+                errors.append(f"{module}: module artifact owner lacks a central guard")
+        elif (module, owner) not in registered:
+            module_object = None
+            try:
+                module_object = importlib.import_module(module)
+            except ModuleNotFoundError:
+                pass
+            owner_class = getattr(module_object, owner, None)
+            if not isinstance(owner_class, type) or not any(
+                issubclass(
+                    getattr(importlib.import_module(module), class_name),
+                    owner_class,
+                )
+                and (module, class_name) in guarded
+                for class_name in module_classes
+            ):
+                errors.append(f"{module}.{owner}: artifact owner is not registered")
+        elif (module, owner) not in guarded:
+            errors.append(f"{module}.{owner}: artifact owner lacks a central guard")
+    return errors
 
 
 def _run_case(test_class) -> unittest.TestResult:
@@ -225,30 +459,116 @@ class HostOnlyClassificationTests(unittest.TestCase):
                 self.assertEqual(result.skipped, [])
 
     def test_repository_rom_paths_are_only_built_in_host_mode(self):
-        offenders = []
+        offenders = {}
         for path in sorted(TESTS_DIR.glob("*.py")):
             if path.name in ("host_mode.py", Path(__file__).name):
                 continue
-            if _ROM_PATH_CONSTRUCTION_RE.search(path.read_text(encoding="utf-8")):
-                offenders.append(path.name)
+            discovery = _discover_artifacts(path)
+            direct = {
+                owner: reasons
+                for owner, reasons in discovery.repository_owners.items()
+                if "repository-path construction" in reasons
+            }
+            if direct:
+                offenders[path.name] = direct
         self.assertEqual(
-            offenders, [],
+            offenders, {},
             "repository ROM/ELF paths must come from tests/host_mode.py so a "
             "single contract owns every artifact-dependent test",
         )
 
     def test_modules_using_repository_roms_are_registered_as_live(self):
-        registered_modules = set(host_mode.LIVE_TEST_MODULES)
+        registered = set(host_mode.LIVE_TEST_CLASSES)
+        guarded = set()
+        for module_name, class_name in registered:
+            test_class = getattr(importlib.import_module(module_name), class_name)
+            if getattr(test_class, "is_live_artifact_testcase", False):
+                guarded.add((module_name, class_name))
+
         for path in sorted(TESTS_DIR.glob("test_*.py")):
             if path.name == Path(__file__).name:
                 continue
-            if _HOST_MODE_ROM_USE_RE.search(path.read_text(encoding="utf-8")):
-                with self.subTest(module=path.stem):
-                    self.assertIn(
-                        path.stem, registered_modules,
-                        f"{path.stem} consumes a repository ROM but is not "
-                        f"registered in host_mode.LIVE_TEST_CLASSES",
-                    )
+            discovery = _discover_artifacts(path)
+            errors = _registered_owner_errors(
+                path.stem,
+                discovery.repository_owners,
+                registered,
+                guarded,
+            )
+            with self.subTest(module=path.stem):
+                self.assertEqual(errors, [])
+
+        qualified_fixture = _discover_artifacts(
+            Path("fixture.py"),
+            """
+class RegisteredByContract:
+    def run(self):
+        return host_mode.modern_rom("release")
+
+LIVE = host_mode.LIVE_ROMS
+""",
+        )
+        self.assertEqual(
+            set(qualified_fixture.repository_owners),
+            {"<module>", "RegisteredByContract"},
+        )
+        self.assertEqual(
+            _registered_owner_errors(
+                "fixture",
+                qualified_fixture.repository_owners,
+                registered={("fixture", "RegisteredByContract")},
+                guarded={("fixture", "RegisteredByContract")},
+            ),
+            [],
+            "qualified host-mode APIs and attributes must have a guarded owner",
+        )
+
+        direct_fixture = _discover_artifacts(
+            Path("fixture.py"),
+            """
+from pathlib import Path
+
+REPO_ROOT = Path("/repository")
+
+class EscapedLiveClass:
+    def run(self):
+        rom = (REPO_ROOT / "build").joinpath("fixture.gba")
+        rom.stat()
+        gba_playtest.capture(rom, object())
+        Path(REPO_ROOT, "fixture.elf").read_bytes()
+""",
+        )
+        self.assertEqual(direct_fixture.direct_capture_owners, {"EscapedLiveClass"})
+        self.assertTrue(
+            direct_fixture.repository_owners["EscapedLiveClass"],
+            "AST discovery must retain direct repository access and live capture",
+        )
+        self.assertTrue(
+            _registered_owner_errors(
+                "fixture",
+                direct_fixture.repository_owners,
+                registered=set(),
+                guarded=set(),
+            ),
+            "an unregistered direct repository/live-capture owner must fail closed",
+        )
+
+        local_fixture = _discover_artifacts(
+            Path("fixture.py"),
+            """
+from pathlib import Path
+
+class TemporaryCapture:
+    def run(self):
+        gba_playtest.capture(Path("fixture.gba"), object())
+""",
+        )
+        self.assertEqual(local_fixture.direct_capture_owners, {"TemporaryCapture"})
+        self.assertEqual(
+            local_fixture.repository_owners,
+            {},
+            "a temporary fixture capture is not a repository artifact consumer",
+        )
 
 
 class HostOnlyCentralGateTests(unittest.TestCase):

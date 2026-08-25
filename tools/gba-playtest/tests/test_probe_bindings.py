@@ -6,6 +6,8 @@ import contextlib
 import io
 import json
 import os
+import shlex
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -145,21 +147,49 @@ class ProbeBindingToolTests(unittest.TestCase):
         self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_make_threads_modern_nm_to_playtest_and_binding_tools(self):
-        modern_mk = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn(
-            '--elf "$(1)" --nm "$(MODERN_NM)"',
-            modern_mk,
+        configured_nm = "/semantic/toolchain/arm-none-eabi-nm"
+        checks = (
+            ("debug", "expansion-modern-starter-hook-check"),
+            ("release", "expansion-modern-starter-hook-check"),
+            ("debug", "expansion-modern-starter-qol-check"),
+            ("release", "expansion-modern-starter-qol-check"),
         )
-        self.assertGreaterEqual(
-            modern_mk.count('--elf "$(MODERN_ELF)" --nm "$(MODERN_NM)"'),
-            2,
-        )
-        self.assertGreaterEqual(
-            modern_mk.count(
-                '--elf "$(MODERN_STARTER_PROFILE_ELF)" --nm "$(MODERN_NM)"'
-            ),
-            2,
-        )
+
+        for config, target in checks:
+            with self.subTest(config=config, target=target):
+                result = subprocess.run(
+                    [
+                        "make",
+                        "-n",
+                        "--old-file=expansion-modern-boot-preflight",
+                        "--old-file=expansion-modern-rom",
+                        "--old-file=expansion-modern-starter-profile-rom",
+                        target,
+                        f"MODERN_CONFIG={config}",
+                        f"MODERN_NM={configured_nm}",
+                    ],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+                commands = [
+                    shlex.split(line)
+                    for line in result.stdout.splitlines()
+                    if "check_starter_probe_addresses.py" in line
+                ]
+                self.assertTrue(commands, result.stdout)
+                for command in commands:
+                    options = {
+                        command[index]: command[index + 1]
+                        for index in range(1, len(command) - 1)
+                        if command[index].startswith("--")
+                    }
+                    self.assertEqual(options.get("--nm"), configured_nm)
+                    self.assertTrue(options.get("--elf", "").endswith(".elf"))
+                    self.assertTrue(options.get("--scenario", "").endswith(".json"))
+                    self.assertTrue(options.get("--fingerprint", "").endswith(".json"))
 
 
 if __name__ == "__main__":

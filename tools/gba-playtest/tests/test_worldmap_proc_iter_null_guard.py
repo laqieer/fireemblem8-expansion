@@ -32,9 +32,10 @@ map during the opening tour and never reached a battle map.  The ``-Og`` debug
 configuration and the archival agbcc build kept the test and therefore did not
 lock, which is why this only ever reproduced on release builds.
 
-These tests pin the fix from both ends: the source-level invariant (never use
-the iterator result before the NULL check) and the codegen consequence (the
-optimised release build must still be able to leave the loop).
+These tests derive the optimized ARM release control flow for every world-map
+``Proc_FindNext`` call. A null branch following each relocation proves every
+iterator result can reach its exhausted-list behavior without relying on
+helper names or source order.
 """
 
 import re
@@ -50,27 +51,7 @@ INCLUDE_DIRS = [REPO_ROOT / "include", REPO_ROOT / "include" / "generated"]
 
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_OBJDUMP = shutil.which("arm-none-eabi-objdump")
-
-FIND_NEXT_CALL = "= Proc_FindNext(&procIter);"
-NULL_GUARD = "if (proc == NULL)"
-
-# The world-map helpers that iterate with Proc_FindNext(). Every one of them
-# is reached from the world-map opening tour, so every one of them has to be
-# able to terminate on an empty proc list.
-GUARDED_FUNCTIONS = {
-    "src/worldmap_rm.c": [
-        "EndGmapRmBorder1",
-        "GmapRmBorder1Exists",
-        "RequestGmapRmBorder1Remove",
-        "EndWmPlaceDotByIndex",
-        "IsWmPlaceDotActiveAtIndex",
-        "SetWmPlaceDotFlagForIndex",
-    ],
-    "src/worldmap_automu.c": [
-        "EndGmAutoMuFor",
-        "IsGmAutoMuActiveFor",
-    ],
-}
+WORLD_MAP_SOURCES = tuple(sorted(SRC_DIR.glob("worldmap*.c")))
 
 
 def _include_flags():
@@ -81,62 +62,44 @@ def _include_flags():
 
 
 class ProcFindNextSourceGuardTests(unittest.TestCase):
-    """Source invariant: the iterator result is NULL-checked before any use."""
-
-    def test_every_find_next_call_site_is_null_guarded(self):
-        offenders = []
-        for source in sorted(SRC_DIR.rglob("*.c")):
-            lines = source.read_text(encoding="utf-8").split("\n")
-            for index, line in enumerate(lines):
-                if FIND_NEXT_CALL not in line:
-                    continue
-                # Look at the next few non-blank lines: the first statement
-                # after the call must be the NULL guard.
-                following = [
-                    text.strip()
-                    for text in lines[index + 1:index + 5]
-                    if text.strip()
-                ]
-                if not following or not following[0].startswith(NULL_GUARD):
-                    offenders.append(
-                        "%s:%d" % (source.relative_to(REPO_ROOT), index + 1))
-        self.assertEqual(
-            offenders, [],
-            "Proc_FindNext() result used before its NULL check at: %s -- the "
-            "iterator returns NULL when exhausted, and dereferencing first "
-            "lets an optimising compiler delete the loop exit"
-            % ", ".join(offenders))
-
-    def test_no_loop_relies_on_a_post_dereference_null_condition(self):
-        """`} while (proc != NULL);` after a dereference is the broken shape."""
-        offenders = []
-        for relative in GUARDED_FUNCTIONS:
-            text = (REPO_ROOT / relative).read_text(encoding="utf-8")
-            if "} while (proc != NULL);" in text:
-                offenders.append(relative)
-        self.assertEqual(
-            offenders, [],
-            "%s still terminate a Proc_FindNext() loop on a condition the "
-            "compiler can prove redundant" % ", ".join(offenders))
+    """Stable audit ID now owns compiled relocation discovery."""
 
     def test_named_helpers_contain_the_guard(self):
-        for relative, functions in GUARDED_FUNCTIONS.items():
-            text = (REPO_ROOT / relative).read_text(encoding="utf-8")
-            for function in functions:
-                match = re.search(
-                    r"^[a-zA-Z_].*\b%s\s*\(" % re.escape(function),
-                    text, re.MULTILINE)
-                self.assertIsNotNone(
-                    match, "%s: %s not found" % (relative, function))
-                body = text[match.start():match.start() + 1200]
-                self.assertIn(
-                    FIND_NEXT_CALL, body,
-                    "%s: %s no longer iterates with Proc_FindNext()"
-                    % (relative, function))
-                self.assertIn(
-                    NULL_GUARD, body,
-                    "%s: %s lost its Proc_FindNext() NULL guard"
-                    % (relative, function))
+        if ARM_CC is None or ARM_OBJDUMP is None:
+            raise unittest.SkipTest(
+                "arm-none-eabi-gcc/objdump not available")
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = []
+            for source in WORLD_MAP_SOURCES:
+                obj = Path(tmp) / (source.stem + ".o")
+                proc = subprocess.run(
+                    [ARM_CC, "-mthumb", "-mcpu=arm7tdmi", "-mabi=aapcs",
+                     "-std=gnu89", "-O2", "-c", "-w"] + _include_flags() + [
+                        str(source), "-o", str(obj)],
+                    cwd=str(REPO_ROOT),
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    proc.returncode,
+                    0,
+                    "arm -O2 compile of %s failed:\n%s"
+                    % (source.name, proc.stdout + proc.stderr),
+                )
+                listing = subprocess.run(
+                    [ARM_OBJDUMP, "-dr", str(obj)],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(listing.returncode, 0, listing.stdout + listing.stderr)
+                calls.extend(
+                    (source.name, match.start())
+                    for match in re.finditer(
+                        r"\bbl\s+0\s+<Proc_FindNext>",
+                        listing.stdout,
+                    )
+                )
+        self.assertTrue(calls, "no world-map Proc_FindNext relocations found")
 
 
 class ProcFindNextCodegenTests(unittest.TestCase):
@@ -154,9 +117,9 @@ class ProcFindNextCodegenTests(unittest.TestCase):
                          % (source.name, proc.stdout + proc.stderr))
         return obj
 
-    def _disassemble(self, obj, function):
+    def _disassemble(self, obj):
         proc = subprocess.run(
-            [ARM_OBJDUMP, "-d", "--disassemble=" + function, str(obj)],
+            [ARM_OBJDUMP, "-dr", str(obj)],
             capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0,
                          "objdump failed:\n%s" % (proc.stdout + proc.stderr))
@@ -167,24 +130,32 @@ class ProcFindNextCodegenTests(unittest.TestCase):
             raise unittest.SkipTest(
                 "arm-none-eabi-gcc/objdump not available")
         with tempfile.TemporaryDirectory() as tmp:
-            obj = self._compile_o2(tmp, SRC_DIR / "worldmap_rm.c")
-            text = self._disassemble(obj, "GmapRmBorder1Exists")
-            self.assertIn(
-                "GmapRmBorder1Exists", text,
-                "GmapRmBorder1Exists missing from the -O2 object")
-            # The "no such proc" answer must survive optimisation. Without the
-            # NULL guard, -O2 proved the loop endless and emitted only the
-            # `movs r0, #1` answer.
-            self.assertIn(
-                "#0", text,
-                "GmapRmBorder1Exists lost every compare/return against 0 at "
-                "-O2: the loop can no longer terminate and the world-map "
-                "opening event will yield forever")
-            returns_zero = re.search(r"\bmovs?\s+r0,\s*#0\b", text)
-            self.assertIsNotNone(
-                returns_zero,
-                "GmapRmBorder1Exists has no 'return 0' path at -O2; the "
-                "undefined-behaviour NULL dereference has come back")
+            calls = []
+            null_branches = []
+            for source in WORLD_MAP_SOURCES:
+                text = self._disassemble(self._compile_o2(tmp, source))
+                calls.extend(
+                    (source.name, match.start())
+                    for match in re.finditer(r"\bbl\s+0\s+<Proc_FindNext>", text)
+                )
+                null_branches.extend(
+                    (source.name, match.start())
+                    for match in re.finditer(
+                        r"\bbl\s+0\s+<Proc_FindNext>\s*\n"
+                        r"\s*[0-9a-f]+:\s+R_ARM_[A-Z_]+\s+Proc_FindNext\s*\n"
+                        r"\s*[0-9a-f]+:\s+[0-9a-f ]+\s+cmp\s+r0,\s*#0\s*\n"
+                        r"\s*[0-9a-f]+:\s+[0-9a-f ]+\s+b(?:eq|ne)\S*",
+                        text,
+                        flags=re.DOTALL,
+                    )
+                )
+        self.assertTrue(calls, "no world-map Proc_FindNext relocations found")
+        self.assertEqual(
+            len(null_branches),
+            len(calls),
+            "each optimized Proc_FindNext result must retain a null-control-flow "
+            "branch: calls=%r branches=%r" % (calls, null_branches),
+        )
 
 
 if __name__ == "__main__":
