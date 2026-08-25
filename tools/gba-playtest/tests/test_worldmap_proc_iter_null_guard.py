@@ -56,6 +56,7 @@ _INSTRUCTION_RE = re.compile(
     r"^\s*([0-9a-f]+):\s+(?:[0-9a-f]{2,4}\s+){1,2}"
     r"([a-z][a-z0-9.]*)\s*(.*)$"
 )
+_FUNCTION_RE = re.compile(r"^([0-9a-f]+) <[^+>]+>:$")
 
 
 def _include_flags():
@@ -84,7 +85,7 @@ def _returns_before_next_iterator_call(instructions, start, iterator_calls):
         if address in iterator_calls:
             return False
         if address in trail:
-            return _bounded_cycle(set(trail[trail.index(address):]), instructions, by_address)
+            return False
         index = by_address.get(address)
         if index is None:
             return False
@@ -107,39 +108,21 @@ def _returns_before_next_iterator_call(instructions, start, iterator_calls):
         return all(walk(successor, trail + [address]) for successor in successors if successor is not None)
     return walk(start, [])
 
-def _bounded_cycle(component, instructions, by_address):
-    for address in component:
-        index = by_address[address]
-        _address, mnemonic, operands = instructions[index]
-        if not (mnemonic.split(".", 1)[0].startswith("b") and any(successor not in component for successor in _successors(index, instructions))):
-            continue
-        if index == 0:
-            continue
-        compared = set(re.findall(r"\br[0-9]+\b", instructions[index - 1][2]))
-        for candidate in component:
-            _candidate, operation, values = instructions[by_address[candidate]]
-            written = re.match(r"\s*(r[0-9]+)", values)
-            if operation.split(".", 1)[0] in {"add", "adds", "sub", "subs", "mov", "movs"} and written and written.group(1) in compared:
-                return True
-    return False
-
-def _successors(index, instructions):
-    _address, mnemonic, operands = instructions[index]
-    fallthrough = instructions[index + 1][0] if index + 1 < len(instructions) else None
-    target = _branch_target(operands)
-    base = mnemonic.split(".", 1)[0]
-    if base in {"bl", "blx"}: return (fallthrough,)
-    if base == "b": return (target,)
-    if base.startswith("b"): return (target, fallthrough)
-    return (fallthrough,)
-
 def _iterator_null_paths(text):
     instructions = _instructions(text)
+    labels, current, owners = [], None, {}
+    for line in text.splitlines():
+        if match := _FUNCTION_RE.match(line):
+            current = int(match.group(1), 16); labels.append(current)
+        elif match := _INSTRUCTION_RE.match(line):
+            owners[int(match.group(1), 16)] = current
     iterator_calls = {
         address
         for address, mnemonic, operands in instructions
         if mnemonic.split(".", 1)[0] == "bl" and "Proc_FindNext" in operands
     }
+    counts = {owner: sum(owners.get(call) == owner for call in iterator_calls) for owner in labels}
+    iterator_calls = {call for call in iterator_calls if counts.get(owners.get(call)) == 1}
     paths = []
     for index, (address, _mnemonic, _operands) in enumerate(instructions):
         if address not in iterator_calls:
@@ -185,7 +168,8 @@ class ProcFindNextSourceGuardTests(unittest.TestCase):
             listings = []
             for before, statement in (("", "break;"), ("", "continue;"),
                                       ("", "if (*flag) break; for (;;) {}"),
-                                      ("Observe(proc);", "break;")):
+                                      ("Observe(proc);", "break;"),
+                                      ("", "while (*flag) *flag += 2;")):
                 source = Path(tmp) / f"{len(listings)}.c"
                 obj = source.with_suffix(".o")
                 source.write_text(
@@ -208,6 +192,7 @@ class ProcFindNextSourceGuardTests(unittest.TestCase):
         continue_calls, continue_paths = listings[1]
         loop_calls, loop_paths = listings[2]
         precheck_calls, precheck_paths = listings[3]
+        parity_calls, parity_paths = listings[4]
         self.assertTrue(break_calls)
         self.assertEqual([exits for _address, exits in break_paths], [True])
         self.assertTrue(continue_calls)
@@ -216,6 +201,8 @@ class ProcFindNextSourceGuardTests(unittest.TestCase):
         self.assertEqual([exits for _address, exits in loop_paths], [False])
         self.assertTrue(precheck_calls)
         self.assertEqual(precheck_paths, [])
+        self.assertTrue(parity_calls)
+        self.assertEqual([exits for _address, exits in parity_paths], [False])
 
 
 class ProcFindNextCodegenTests(unittest.TestCase):

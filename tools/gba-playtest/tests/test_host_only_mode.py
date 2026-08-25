@@ -70,7 +70,9 @@ def _literal_string_tail(node):
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        return _literal_string_tail(node.right)
+        return "".join(part for part in (
+            _literal_string_tail(node.left), _literal_string_tail(node.right)
+        ) if part) or None
     if isinstance(node, ast.JoinedStr):
         for value in reversed(node.values):
             if isinstance(value, ast.Constant) and isinstance(value.value, str):
@@ -365,7 +367,9 @@ class _ArtifactDiscovery(ast.NodeVisitor):
         func = node.func
         host_symbol = self._host_mode_symbol(func)
         if host_symbol in _HOST_MODE_ARTIFACT_APIS:
-            if host_symbol in {"capture_live_or_skip", "require_built_rom"}:
+            if host_symbol in {"capture_live_or_skip", "require_built_rom"} or (
+                self.function_depth and not self.class_stack
+            ):
                 self._mark_io(f"host_mode.{host_symbol}")
             else:
                 self._mark_repository(f"host_mode.{host_symbol}")
@@ -422,7 +426,9 @@ class _ArtifactDiscovery(ast.NodeVisitor):
                         (
                             self._owner(),
                             self.function_stack[-1] if self.function_stack else None,
-                            node.args[0] if node.args else None,
+                            node.args[0].id if node.args and isinstance(node.args[0], ast.Name) else None,
+                            temporary,
+                            self._is_temporary_generated_path(node.args[0]) if node.args else False,
                         )
                     )
                 self._mark_io(
@@ -480,19 +486,14 @@ class _ArtifactDiscovery(ast.NodeVisitor):
     @property
     def live_capture_owners(self):
         owners = set()
-        for owner, function, argument in self.direct_capture_records:
-            if (
-                argument is not None
-                and self._path_origin(argument)[2]
-                and self._is_temporary_generated_path(argument)
-            ):
+        for owner, function, argument, temporary, generated in self.direct_capture_records:
+            if temporary and generated:
                 continue
             if (
                 function is not None
-                and isinstance(argument, ast.Name)
-                and argument.id in self.function_parameters[function]
+                and argument in self.function_parameters[function]
             ):
-                argument_index = self.function_parameters[function].index(argument.id)
+                argument_index = self.function_parameters[function].index(argument)
                 callers = [
                     arguments
                     for call_owner, method, arguments in self.method_calls
@@ -772,12 +773,17 @@ class Fstring:
     def run(self): (REPO_ROOT / f"{profile}.gba").read_bytes()
 class Concat:
     def run(self): (REPO_ROOT / (name + ".elf")).stat()
+class ConstantConcat:
+    def run(self): (REPO_ROOT / ("fireemblem8." + "gba")).read_bytes()
 class Unguarded:
     def run(self): read_live()
 class Guarded:
     def run(self): read_live()
 class Cross:
-    def live(self): rom = hm.modern_rom("release"); gba_playtest.capture(rom, object())
+    def live(self):
+        rom = hm.modern_rom("release"); gba_playtest.capture(rom, object())
+        with tf.TemporaryDirectory() as directory:
+            rom = Path(directory) / "fixture.gba"; build_homebrew_rom(rom)
     def temporary(self):
         with tf.TemporaryDirectory() as directory:
             rom = Path(directory) / "fixture.gba"; build_homebrew_rom(rom); gba_playtest.capture(rom, object())
@@ -790,7 +796,7 @@ class Cross:
         self.assertEqual(fixture.helper_owners, {"Unguarded", "Guarded"})
         self.assertTrue(_registered_owner_errors("fixture", fixture.helper_owners, guarded, guarded))
         self.assertEqual(fixture.live_capture_owners, {"Escaped", "Cross"})
-        self.assertTrue({"Fstring", "Concat", "Cross"} <= set(fixture.repository_owners))
+        self.assertTrue({"Fstring", "Concat", "ConstantConcat", "Cross"} <= set(fixture.repository_owners))
 
 
 class HostOnlyCentralGateTests(unittest.TestCase):
