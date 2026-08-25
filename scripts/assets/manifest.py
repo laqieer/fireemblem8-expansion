@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
-import unicodedata
 import struct
+import unicodedata
 import zlib
 
 from scripts.assets import tmx
@@ -19,7 +23,7 @@ from scripts.generated_data.diagnostics import (
 )
 from scripts.generated_data.json_loader import load_json_file
 
-from . import banim
+from . import banim, custom_spell
 
 
 SCHEMA_VERSION = 1
@@ -28,6 +32,8 @@ OUTPUT_INVENTORY = "asset_inventory.md"
 OUTPUT_PORTRAIT_DATA = "portrait_data.inc"
 OUTPUT_PORTRAIT_COMPONENTS = "portrait_components.inc"
 OUTPUT_PORTRAIT_SYMBOLS = "portrait_components.h"
+ATOMIC_WRITE_TEMP_PREFIX = ".asset-manifest-write-"
+GENERATION_LOCK_SUFFIX = ".asset-manifest-generate.lock"
 OUTPUT_NAMES = (
     OUTPUT_MAKEFILE,
     OUTPUT_INVENTORY,
@@ -36,10 +42,8 @@ OUTPUT_NAMES = (
     OUTPUT_PORTRAIT_SYMBOLS,
 )
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-ASSET_OUTPUT_ROOT = os.path.abspath(
-    os.path.join(REPO_ROOT, "build", "generated", "assets")
-)
-ASSET_OUTPUT_ROOT_REAL = os.path.realpath(ASSET_OUTPUT_ROOT)
+ASSET_BUILD_ROOT = os.path.abspath(os.path.join(REPO_ROOT, "build"))
+ASSET_BUILD_ROOT_REAL = os.path.realpath(ASSET_BUILD_ROOT)
 ID_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
@@ -59,6 +63,8 @@ class AssetRecord:
         "depends_on", "dependency_locs", "options", "option_locs",
         "ownership", "ownership_locs", "resources", "resource_locs",
         "provenance", "provenance_locs", "loc", "banim_package",
+        "custom_spell_package", "custom_spell_fallback_id",
+        "custom_spell_item_type", "custom_spell_render",
     )
 
     def __init__(
@@ -85,6 +91,10 @@ class AssetRecord:
         self.provenance_locs = provenance_locs
         self.loc = loc
         self.banim_package = None
+        self.custom_spell_package = None
+        self.custom_spell_fallback_id = None
+        self.custom_spell_item_type = None
+        self.custom_spell_render = None
 
 
 def _ensure_exact_keys(node, required, reference_path):
@@ -185,7 +195,196 @@ def load_manifest(path):
     return [_parse_record(node) for node in root.require("assets").as_list()]
 
 
-def _repo_path(path, loc, reference_path):
+def load_discovery(path):
+    records = load_manifest(path)
+    diagnostics = DiagnosticCollector()
+    tracked_paths = []
+    for record in records:
+        if not ID_RE.fullmatch(record.id):
+            diagnostics.add(GeneratedDataError(
+                "asset id must match {}".format(ID_RE.pattern),
+                record.id_loc,
+                "asset.id",
+            ))
+        kind = KIND_REGISTRY.resolve(record.kind)
+        if kind is None:
+            diagnostics.add(GeneratedDataError(
+                "unknown asset kind '{}'".format(record.kind),
+                record.kind_loc,
+                "{}.kind".format(record.id),
+            ))
+            continue
+        for source, loc in zip(record.sources, record.source_locs):
+            try:
+                tracked_paths.append(
+                    (
+                        _repo_path(
+                            source,
+                            loc,
+                            "{}.sources".format(record.id),
+                            verify_tracked=False,
+                        ),
+                        loc,
+                        "{}.sources".format(record.id),
+                    )
+                )
+            except GeneratedDataError as error:
+                diagnostics.add(error)
+        _validate_discovery_source_dependencies(
+            kind, record, diagnostics, tracked_paths
+        )
+    diagnostics.raise_if_any()
+    tracked = {path for path, _loc, _reference in tracked_paths}
+    for source in discovery_sources(records):
+        if source in tracked:
+            continue
+        try:
+            tracked_paths.append(
+                (
+                    _repo_path(
+                        source,
+                        None,
+                        "discovery source dependency",
+                        verify_tracked=False,
+                    ),
+                    None,
+                    "discovery source dependency",
+                )
+            )
+            tracked.add(source)
+        except GeneratedDataError as error:
+            diagnostics.add(error)
+    _validate_tracked_paths(tracked_paths, diagnostics)
+    diagnostics.raise_if_any()
+    return records
+
+
+def discovery_sources(records):
+    sources = {"assets/portrait_registry.json"}
+    for record in records:
+        sources.update(record.sources)
+        kind = KIND_REGISTRY.resolve(record.kind)
+        if kind is not None:
+            sources.update(kind.source_dependencies(record))
+    return tuple(sorted(sources))
+
+
+def render_source_stamp(records):
+    entries = []
+    for source in discovery_sources(records):
+        source_path = os.path.join(REPO_ROOT, source)
+        entries.append(
+            {
+                "mtime_ns": os.stat(source_path).st_mtime_ns,
+                "path": source,
+            }
+        )
+    return json.dumps({"sources": entries}, indent=2, sort_keys=True) + "\n"
+
+
+def render_discovery_makefile(records):
+    source_stamp = render_source_stamp(records).encode("utf-8")
+    groups = (
+        ("ASSET_PORTRAIT_INCBIN_CONSUMERS", portrait_incbin_consumer_ids(records)),
+        ("ASSET_TMX_INCBIN_CONSUMERS", tmx_incbin_consumer_ids(records)),
+        ("ASSET_BANIM_INCBIN_CONSUMERS", banim_incbin_consumer_ids(records)),
+        (
+            "ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS",
+            custom_spell_incbin_consumer_ids(records),
+        ),
+    )
+    lines = [
+        "# AUTO-GENERATED by scripts.assets -- DO NOT EDIT BY HAND.\n",
+        "ASSET_MANIFEST_SOURCE_DIGEST := {}\n".format(
+            hashlib.sha256(source_stamp).hexdigest()
+        ),
+    ]
+    lines.extend(
+        "{} := {}\n".format(name, " ".join(values)) for name, values in groups
+    )
+    return "".join(lines)
+
+
+
+
+
+def write_discovery_makefile(manifest_path, path):
+    records = load_discovery(manifest_path)
+    destination = _safe_output_path(path, ASSET_BUILD_ROOT)
+    _write_if_changed(destination, render_discovery_makefile(records))
+    return records
+
+
+def _validate_discovery_source_dependencies(kind, record, diagnostics, tracked_paths):
+    for field in getattr(kind, "_discovery_ownership_source_fields", ()):
+        reference = "{}.ownership.{}".format(record.id, field)
+        location = record.ownership_locs.get(field, record.loc)
+        if field not in record.ownership:
+            diagnostics.add(
+                GeneratedDataError(
+                    "missing ownership field '{}' required for dependency discovery".format(
+                        field
+                    ),
+                    location,
+                    reference,
+                )
+            )
+            continue
+        try:
+            tracked_paths.append(
+                (
+                    _repo_path(
+                        record.ownership[field],
+                        location,
+                        reference,
+                        verify_tracked=False,
+                    ),
+                    location,
+                    reference,
+                )
+            )
+        except GeneratedDataError as error:
+            diagnostics.add(error)
+
+
+def _validate_tracked_paths(paths, diagnostics):
+    if not paths:
+        return
+    requested = sorted({path for path, _loc, _reference in paths})
+    result = subprocess.run(
+        ["git", "-C", REPO_ROOT, "ls-files", "-z", "--", *requested],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode:
+        diagnostics.add(
+            GeneratedDataError(
+                "cannot verify tracked manifest sources: {}".format(
+                    result.stderr.decode("utf-8", "replace").strip()
+                )
+            )
+        )
+        return
+    tracked = {
+        path.decode("utf-8")
+        for path in result.stdout.split(b"\0")
+        if path
+    }
+    for path, loc, reference in paths:
+        if path not in tracked:
+            diagnostics.add(
+                GeneratedDataError(
+                    "declared source '{}' is not a tracked committed source".format(
+                        path
+                    ),
+                    loc,
+                    reference,
+                )
+            )
+
+
+def _repo_path(path, loc, reference_path, verify_tracked=True):
     if not isinstance(path, str) or not path:
         raise GeneratedDataError("expected a non-empty path", loc, reference_path)
     if path != unicodedata.normalize("NFC", path):
@@ -230,18 +429,10 @@ def _repo_path(path, loc, reference_path):
         raise GeneratedDataError("source path resolves outside repository root", loc, reference_path)
     if not os.path.isfile(absolute):
         raise GeneratedDataError("declared source '{}' does not exist".format(normalized), loc, reference_path)
-    result = subprocess.run(
-        ["git", "-C", REPO_ROOT, "ls-files", "--error-unmatch", "--", normalized],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    if result.returncode:
-        raise GeneratedDataError(
-            "declared source '{}' is not a tracked committed source".format(normalized),
-            loc,
-            reference_path,
-        )
+    if verify_tracked:
+        diagnostics = DiagnosticCollector()
+        _validate_tracked_paths([(normalized, loc, reference_path)], diagnostics)
+        diagnostics.raise_if_any()
     return normalized
 
 
@@ -251,11 +442,21 @@ def _canonical_source_key(path):
 
 def safe_output_dir(path):
     requested = os.path.abspath(path)
-    if os.path.commonpath((ASSET_OUTPUT_ROOT, requested)) != ASSET_OUTPUT_ROOT:
+    if os.path.commonpath((ASSET_BUILD_ROOT, requested)) != ASSET_BUILD_ROOT:
         raise GeneratedDataError(
-            "generated output directory '{}' must stay under {}".format(path, ASSET_OUTPUT_ROOT)
+            "generated output directory '{}' must stay under {}".format(path, ASSET_BUILD_ROOT)
         )
     relative = os.path.relpath(requested, REPO_ROOT)
+    components = relative.split(os.sep)
+    if not any(
+        components[index:index + 2] == ["generated", "assets"]
+        for index in range(len(components) - 1)
+    ):
+        raise GeneratedDataError(
+            "generated output directory '{}' must stay under a build generated/assets root".format(
+                path
+            )
+        )
     current = REPO_ROOT
     for component in relative.split(os.sep):
         current = os.path.join(current, component)
@@ -264,9 +465,9 @@ def safe_output_dir(path):
                 "generated output directory '{}' must not traverse a symbolic link".format(path)
             )
     resolved = os.path.realpath(requested)
-    if os.path.commonpath((ASSET_OUTPUT_ROOT_REAL, resolved)) != ASSET_OUTPUT_ROOT_REAL:
+    if os.path.commonpath((ASSET_BUILD_ROOT_REAL, resolved)) != ASSET_BUILD_ROOT_REAL:
         raise GeneratedDataError(
-            "generated output directory '{}' must stay under {}".format(path, ASSET_OUTPUT_ROOT)
+            "generated output directory '{}' must stay under {}".format(path, ASSET_BUILD_ROOT)
         )
     return requested
 
@@ -298,7 +499,7 @@ def _write_if_changed(path, content):
     directory = os.path.dirname(path)
     os.makedirs(directory, exist_ok=True)
     descriptor, temporary_path = tempfile.mkstemp(
-        prefix=".asset-manifest-",
+        prefix=ATOMIC_WRITE_TEMP_PREFIX,
         dir=directory,
         text=True,
     )
@@ -323,7 +524,7 @@ def _write_bytes_if_changed(path, content):
     directory = os.path.dirname(path)
     os.makedirs(directory, exist_ok=True)
     descriptor, temporary_path = tempfile.mkstemp(
-        prefix=".asset-manifest-",
+        prefix=ATOMIC_WRITE_TEMP_PREFIX,
         dir=directory,
     )
     try:
@@ -609,6 +810,10 @@ class ChapterMapLayoutKind:
     _object = "src/data/data_8B363C.o"
     _modern_object = "$(MODERN_OUTPUT_DIR)/src/data/data_8B363C.o"
     _map_buffer_bytes = 0x800
+    _discovery_ownership_source_fields = (
+        "chapterSettings",
+        "tableSource",
+    )
 
     @staticmethod
     def _map_payload_bytes(tile_count):
@@ -1055,6 +1260,7 @@ class FormattedPortraitPackageKind:
         "mouthOpen": (96, 72, 32, 16),
     }
     _c_symbol_re = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+    _discovery_ownership_source_fields = ("registrySource",)
 
     def _validate_metadata(self, record, diagnostics):
         metadata_path = record.sources[1]
@@ -1322,6 +1528,11 @@ class BattleAnimationPackageKind:
         "linkerScript": "linker_script_banim.txt",
         "consumer": "GetBattleAnimationId",
     }
+    _discovery_ownership_source_fields = (
+        "classData",
+        "tableSource",
+        "linkerScript",
+    )
     _object = "src/banim_data.o"
     _definitions_object = "src/data_banimconf.o"
     _banim_object = "banim/data_banim.o"
@@ -1386,7 +1597,7 @@ class BattleAnimationPackageKind:
             if not package.data["animConf"].startswith("AnimConf_"):
                 raise ValueError("animConf must name an existing AnimConf_* declaration")
             _outputs, _paths, metadata = banim.runtime_outputs(
-                package, os.path.join(ASSET_OUTPUT_ROOT, "banim")
+                package, os.path.join(ASSET_BUILD_ROOT, "generated", "assets", "validation", "banim")
             )
             if metadata["total_oam_entries"] > record.resources["oamEntries"]:
                 raise ValueError(
@@ -1401,7 +1612,12 @@ class BattleAnimationPackageKind:
             if metadata["runtime_bytes"] > record.resources["romBytes"]:
                 raise ValueError("generated runtime data exceeds resources.romBytes")
             self._validate_class_binding(package.data, record)
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
+        except (
+            OSError,
+            ValueError,
+            json.JSONDecodeError,
+            custom_spell.generated_idspace.CapError,
+        ) as exc:
             diagnostics.add(GeneratedDataError(str(exc), record.loc, "{}.package".format(record.id)))
             return
         record.banim_package = package
@@ -1444,6 +1660,160 @@ class BattleAnimationPackageKind:
         return banim_derived_outputs([record], out_dir)
 
 
+class CustomSpellEffectKind:
+    """Generate one bounded custom-spell descriptor through the #77 ABI."""
+
+    name = "custom-spell-effect"
+    _options = {
+        "importFormat": custom_spell.IMPORT_FORMAT,
+        "runtimeAbi": custom_spell.RUNTIME_ABI,
+        "compression": custom_spell.COMPRESSION,
+    }
+    _ownership = {
+        "seam": "spell-effect-dispatch",
+        "spellAssociationSource": "src/spellassoc-data.c",
+    }
+    _resources = (
+        "frames", "totalFrames", "hitFrame", "objBytes", "bgBytes",
+        "bgTsaBytes", "objOamEntries", "objPalettes", "bgPalettes",
+        "soundEvents", "romBytes",
+    )
+
+    def validate(self, record, diagnostics, item_id_cap=None):
+        valid = _validate_exact_values(
+            record.options, record.option_locs, self._options, diagnostics,
+            record.loc, "{}.options".format(record.id),
+        )
+        valid = _validate_exact_values(
+            record.ownership, record.ownership_locs,
+            (
+                "seam", "item", "effectSymbol", "fallbackVanillaEffect",
+                "spellAssociationSource",
+            ),
+            diagnostics, record.loc, "{}.ownership".format(record.id),
+        ) and valid
+        valid = _validate_exact_values(
+            record.resources, record.resource_locs, self._resources, diagnostics,
+            record.loc, "{}.resources".format(record.id),
+        ) and valid
+        if not valid:
+            return
+        fixed_values_valid = True
+        for key, expected in self._options.items():
+            if not _has_exact_value(record.options[key], expected):
+                diagnostics.add(GeneratedDataError(
+                    "custom-spell-effect options.{} must be {!r}".format(
+                        key, expected
+                    ),
+                    record.option_locs[key],
+                    "{}.options.{}".format(record.id, key),
+                ))
+                fixed_values_valid = False
+        for key, expected in self._ownership.items():
+            if record.ownership[key] != expected:
+                diagnostics.add(GeneratedDataError(
+                    "custom-spell-effect ownership.{} must be '{}'".format(
+                        key, expected
+                    ),
+                    record.ownership_locs[key],
+                    "{}.ownership.{}".format(record.id, key),
+                ))
+                fixed_values_valid = False
+        if not fixed_values_valid:
+            return
+        if (
+            len(record.sources) < 4
+            or os.path.basename(record.sources[0]) != "spell.json"
+            or os.path.basename(record.sources[1]) != "animation.txt"
+            or any(not path.lower().endswith(".png") for path in record.sources[2:])
+        ):
+            diagnostics.add(GeneratedDataError(
+                "custom-spell-effect requires ordered spell.json, animation.txt, and referenced PNG sources",
+                record.loc,
+                "{}.sources".format(record.id),
+            ))
+            return
+        effect_symbol = record.ownership["effectSymbol"]
+        if (
+            isinstance(effect_symbol, str)
+            and effect_symbol in custom_spell.public_effect_symbols(REPO_ROOT)
+        ):
+            diagnostics.add(GeneratedDataError(
+                "ownership.effectSymbol '{}' collides with a public/test "
+                "CUSTOM_SPELL_* symbol".format(effect_symbol),
+                record.ownership_locs["effectSymbol"],
+                "{}.ownership.effectSymbol".format(record.id),
+            ))
+            return
+        try:
+            fallback, item_type = custom_spell.validate_runtime_binding(
+                REPO_ROOT, record.ownership, item_id_cap=item_id_cap
+            )
+            package = custom_spell.load_package(
+                REPO_ROOT,
+                record.sources[0],
+                record.sources[1],
+                record.sources,
+                "include/constants/songs.h",
+                record.ownership["effectSymbol"],
+            )
+            custom_spell.validate_declared_resources(package, record.resources)
+        except (
+            OSError,
+            ValueError,
+            json.JSONDecodeError,
+            custom_spell.generated_idspace.CapError,
+        ) as exc:
+            diagnostics.add(GeneratedDataError(
+                str(exc), record.loc, "{}.package".format(record.id)
+            ))
+            return
+        record.custom_spell_package = package
+        record.custom_spell_fallback_id = fallback
+        record.custom_spell_item_type = item_type
+
+    def ownership_key(self, record):
+        return "{}:{}:{}".format(
+            record.ownership["seam"],
+            record.ownership["spellAssociationSource"],
+            record.ownership["item"],
+        )
+
+    def make_dependencies(self, record):
+        sources = tuple(record.sources) + self.source_dependencies(record)
+        return (
+            ("src/custom_spell_effect.o", sources),
+            ("src/data/custom_spell_effect_data.o", sources),
+            ("src/spellassoc-data.o", sources),
+            ("$(MODERN_OUTPUT_DIR)/src/custom_spell_effect.o", sources),
+            ("$(MODERN_OUTPUT_DIR)/src/data/custom_spell_effect_data.o", sources),
+            ("$(MODERN_OUTPUT_DIR)/src/spellassoc-data.o", sources),
+        )
+
+    def source_dependencies(self, record):
+        del record
+        return (
+            "include/constants/songs.h",
+            "include/constants/items.h",
+            "include/constants/items_expansion.h",
+            "include/custom_spell_effect.h",
+            "include/spellassoc.h",
+            "src/banim-efxmagic.c",
+            "src/data/custom_spell_effect_data.c",
+            "src/data/items.json",
+            "src/data/items_expansion.json",
+            "src/spellassoc-data.c",
+        )
+
+    def generated_outputs(self, record, out_dir):
+        del record, out_dir
+        return {}
+
+    def transient_outputs(self, record, out_dir):
+        del record, out_dir
+        return ()
+
+
 class KindRegistry:
     """The sole static extension seam for asset kinds."""
 
@@ -1464,9 +1834,10 @@ KIND_REGISTRY.register(ChapterMapLayoutKind())
 KIND_REGISTRY.register(FormattedPortraitPackageKind())
 KIND_REGISTRY.register(TiledTmxMapLayoutKind())
 KIND_REGISTRY.register(BattleAnimationPackageKind())
+KIND_REGISTRY.register(CustomSpellEffectKind())
 
 
-def validate(records):
+def validate(records, item_id_cap=None):
     diagnostics = DiagnosticCollector()
     by_id = {}
     ownership = {}
@@ -1516,10 +1887,19 @@ def validate(records):
         if len(normalized_sources) == len(record.sources):
             record.sources = normalized_sources
         _validate_provenance(record, diagnostics)
-        metadata = kind.validate(record, diagnostics)
+        if len(normalized_sources) != len(record.sources):
+            continue
+        if isinstance(kind, CustomSpellEffectKind):
+            metadata = kind.validate(
+                record, diagnostics, item_id_cap=item_id_cap
+            )
+        else:
+            metadata = kind.validate(record, diagnostics)
         if record.kind == FormattedPortraitPackageKind.name:
             portrait_metadata[id(record)] = metadata
         if isinstance(kind, BattleAnimationPackageKind) and record.banim_package is None:
+            continue
+        if isinstance(kind, CustomSpellEffectKind) and record.custom_spell_package is None:
             continue
         try:
             key = kind.ownership_key(record)
@@ -1616,6 +1996,10 @@ def validate(records):
                     "dangling dependency '{}'".format(dependency), loc, "{}.dependsOn".format(record.id)
                 ))
     _validate_dependencies(records, by_id, diagnostics)
+    try:
+        custom_spell.validate_collection(records)
+    except ValueError as exc:
+        diagnostics.add(GeneratedDataError(str(exc), reference_path="custom-spell-effect"))
     diagnostics.raise_if_any()
     return records
 
@@ -1658,8 +2042,27 @@ def _validate_dependencies(records, by_id, diagnostics):
             visit(record)
 
 
-def load_and_validate(path):
-    return validate(load_manifest(path))
+def validate_custom_spell_selection(records, enabled):
+    if enabled not in (0, 1):
+        raise GeneratedDataError("EXPANSION_CUSTOM_SPELL_EFFECTS must be 0 or 1")
+    count = sum(
+        record.kind == CustomSpellEffectKind.name for record in records
+    )
+    if enabled == 0 and count:
+        raise GeneratedDataError(
+            "custom-spell-effect record(s) require EXPANSION_CUSTOM_SPELL_EFFECTS=1"
+        )
+    if enabled == 1 and count == 0:
+        raise GeneratedDataError(
+            "EXPANSION_CUSTOM_SPELL_EFFECTS=1 requires at least one custom-spell-effect record"
+        )
+
+
+def load_and_validate(path, custom_spell_effects=None, item_id_cap=None):
+    records = validate(load_manifest(path), item_id_cap=item_id_cap)
+    if custom_spell_effects is not None:
+        validate_custom_spell_selection(records, custom_spell_effects)
+    return records
 
 
 def portrait_incbin_consumer_ids(records):
@@ -1692,14 +2095,37 @@ def banim_incbin_consumer_ids(records):
     )
 
 
+def custom_spell_incbin_consumer_ids(records):
+    """Return custom-spell records whose generated includes require the default root."""
+
+    return tuple(
+        record.id
+        for record in records
+        if record.kind == CustomSpellEffectKind.name
+    )
+
+
 def render_makefile(records):
     lines = [
         "# AUTO-GENERATED by scripts.assets -- DO NOT EDIT BY HAND.\n",
         "# Source: assets/manifest.json\n",
         "# This is an ordinary Make dependency fragment, not a runtime registry.\n",
+        "ASSET_GENERATE_TOOL ?= $(ASSET_TOOL)\n",
         "\n",
     ]
     by_id = {record.id: record for record in records}
+    repository_sources = set()
+    for record in records:
+        kind = KIND_REGISTRY.resolve(record.kind)
+        repository_sources.update(record.sources)
+        repository_sources.update(kind.source_dependencies(record))
+    def render_prerequisites(prerequisites):
+        non_sources = [
+            path for path in prerequisites if path not in repository_sources
+        ]
+        if any(path in repository_sources for path in prerequisites):
+            non_sources.append("$(ASSET_MANIFEST_SOURCE_STAMP)")
+        return " ".join(non_sources)
 
     def dependency_sources(record):
         sources = []
@@ -1726,7 +2152,7 @@ def render_makefile(records):
             prerequisites = list(sources) + dependency_sources(record)
             if isinstance(target, tuple):
                 target = " ".join(target)
-            lines.append("{}: {}\n".format(target, " ".join(prerequisites)))
+            lines.append("{}: {}\n".format(target, render_prerequisites(prerequisites)))
     packages = [
         record for record in records if record.kind == BattleAnimationPackageKind.name
     ]
@@ -1742,7 +2168,7 @@ def render_makefile(records):
     else:
         lines.append("\n{}: $(ASSET_OUTPUT_MK)\n".format(generated[0]))
     lines.append(
-        '\t$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate\n'
+        '\t$(ASSET_GENERATE_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate\n'
     )
     for output in generated:
         lines.append("\t@test -f {}\n".format(output))
@@ -1765,6 +2191,68 @@ def render_makefile(records):
                 ),
             )
         )
+    custom_records = [
+        record for record in records
+        if record.kind == CustomSpellEffectKind.name
+    ]
+    if custom_records:
+        generated = custom_spell.output_paths(
+            custom_records, "$(ASSET_OUTPUT_DIR)"
+        )
+        custom_dependencies = []
+        seen_dependencies = set()
+        for record in custom_records:
+            kind = KIND_REGISTRY.resolve(record.kind)
+            for source in tuple(record.sources) + kind.source_dependencies(record):
+                if source not in seen_dependencies:
+                    seen_dependencies.add(source)
+                    custom_dependencies.append(source)
+        lines.append(
+            "\n{} &: $(ASSET_OUTPUT_MK) $(ASSET_MANIFEST_SOURCE_STAMP)\n".format(
+                " ".join(generated)
+            )
+        )
+        lines.append(
+            '\t$(ASSET_GENERATE_TOOL) --manifest "$(ASSET_MANIFEST)" '
+            '--out-dir "$(ASSET_OUTPUT_DIR)" generate\n'
+        )
+        for output in generated:
+            lines.append("\t@test -f {}\n".format(output))
+        data_include = (
+            "$(ASSET_OUTPUT_DIR)/custom_spell/custom_spell_effect_data.inc"
+        )
+        assoc_include = (
+            "$(ASSET_OUTPUT_DIR)/custom_spell/"
+            "custom_spell_effect_spellassoc.inc"
+        )
+        generated_header = (
+            "$(ASSET_OUTPUT_DIR)/custom_spell/custom_spell_effect_generated.h"
+        )
+        runtime_test_header = (
+            "$(ASSET_OUTPUT_DIR)/custom_spell/custom_spell_effect_runtime_test.h"
+        )
+        binary_outputs = [
+            path for path in generated
+            if not path.endswith((".h", ".inc", ".json"))
+        ]
+        lines.append(
+            "\nsrc/custom_spell_effect.o $(MODERN_OUTPUT_DIR)/src/custom_spell_effect.o: "
+            "{}\n".format(generated_header)
+        )
+        lines.append(
+            "src/data/custom_spell_effect_data.o "
+            "$(MODERN_OUTPUT_DIR)/src/data/custom_spell_effect_data.o: "
+            "{} {}\n".format(data_include, " ".join(binary_outputs))
+        )
+        lines.append(
+            "src/spellassoc-data.o $(MODERN_OUTPUT_DIR)/src/spellassoc-data.o: "
+            "{}\n".format(assoc_include)
+        )
+        lines.append(
+            "$(MODERN_OUTPUT_DIR)/src/custom_spell_effect_test.o: {}\n".format(
+                runtime_test_header
+            )
+        )
     return "".join(lines)
 
 
@@ -1781,7 +2269,13 @@ def render_inventory(records):
         lines.append(
             "| {} | {} | {} | {} | {} |\n".format(
                 record.id, record.kind, "<br>".join(record.sources),
-                record.ownership["seam"], record.ownership["consumer"],
+                record.ownership["seam"],
+                record.ownership.get(
+                    "consumer",
+                    "CustomSpellEffect_Lookup"
+                    if record.kind == CustomSpellEffectKind.name
+                    else "<unspecified>",
+                ),
             )
         )
     return "".join(lines)
@@ -1863,7 +2357,8 @@ def portrait_registration_ids(manifest_path=os.path.join(REPO_ROOT, "assets", "m
     return tuple(sorted(entries))
 
 
-def render_portrait_data(records):
+def render_portrait_data(records, out_dir=None):
+    del out_dir
     portrait_records = _portrait_records(records)
     registry_paths = {record.ownership["registrySource"] for record in portrait_records}
     if len(registry_paths) > 1:
@@ -1892,7 +2387,7 @@ def render_portrait_data(records):
         "/* AUTO-GENERATED by scripts.assets -- DO NOT EDIT BY HAND. */\n",
         "#include \"global.h\"\n\n",
         "#include \"portrait_pointer.h\"\n",
-        "#include \"build/generated/assets/portrait_components.h\"\n\n",
+        "#include \"portrait_components.h\"\n\n",
         "struct FaceData CONST_DATA portrait_data[] =\n{\n",
     ]
     for portrait_id in sorted(entries):
@@ -1920,7 +2415,8 @@ def _portrait_component_files(record):
     }
 
 
-def render_portrait_components(records):
+def render_portrait_components(records, out_dir):
+    asset_root = os.path.relpath(out_dir, REPO_ROOT).replace(os.sep, "/")
     lines = ["/* AUTO-GENERATED by scripts.assets -- DO NOT EDIT BY HAND. */\n"]
     for record in _portrait_records(records):
         metadata = _read_portrait_metadata(record)
@@ -1929,17 +2425,17 @@ def render_portrait_components(records):
         prefix = "portrait_{}".format(record.ownership["symbol"])
         files = _portrait_component_files(record)
         lines.extend([
-            "u8 __attribute__((aligned(4))) {}_tileset[] = INCBIN_U8(\"build/generated/assets/{}\");\n".format(
-                prefix, files["tileset_lz"]
+            "u8 __attribute__((aligned(4))) {}_tileset[] = INCBIN_U8(\"{}/{}\");\n".format(
+                prefix, asset_root, files["tileset_lz"]
             ),
-            "u8 __attribute__((aligned(4))) {}_chibi[] = INCBIN_U8(\"build/generated/assets/{}\");\n".format(
-                prefix, files["chibi_lz"]
+            "u8 __attribute__((aligned(4))) {}_chibi[] = INCBIN_U8(\"{}/{}\");\n".format(
+                prefix, asset_root, files["chibi_lz"]
             ),
-            "u8 __attribute__((aligned(4))) {}_mouth[] = INCBIN_U8(\"build/generated/assets/{}\");\n".format(
-                prefix, files["mouth"]
+            "u8 __attribute__((aligned(4))) {}_mouth[] = INCBIN_U8(\"{}/{}\");\n".format(
+                prefix, asset_root, files["mouth"]
             ),
-            "u16 __attribute__((aligned(4))) {}_palette[] = INCBIN_U16(\"build/generated/assets/{}\");\n".format(
-                prefix, files["palette"]
+            "u16 __attribute__((aligned(4))) {}_palette[] = INCBIN_U16(\"{}/{}\");\n".format(
+                prefix, asset_root, files["palette"]
             ),
         ])
     return "".join(lines)
@@ -2116,8 +2612,8 @@ def expected_outputs(records, out_dir):
     outputs = {
         os.path.join(out_dir, OUTPUT_MAKEFILE): render_makefile(records).encode("utf-8"),
         os.path.join(out_dir, OUTPUT_INVENTORY): render_inventory(records).encode("utf-8"),
-        os.path.join(out_dir, OUTPUT_PORTRAIT_DATA): render_portrait_data(records).encode("utf-8"),
-        os.path.join(out_dir, OUTPUT_PORTRAIT_COMPONENTS): render_portrait_components(records).encode("utf-8"),
+        os.path.join(out_dir, OUTPUT_PORTRAIT_DATA): render_portrait_data(records, out_dir).encode("utf-8"),
+        os.path.join(out_dir, OUTPUT_PORTRAIT_COMPONENTS): render_portrait_components(records, out_dir).encode("utf-8"),
         os.path.join(out_dir, OUTPUT_PORTRAIT_SYMBOLS): render_portrait_symbols(records).encode("utf-8"),
     }
     outputs.update(portrait_component_outputs(records, out_dir))
@@ -2126,22 +2622,130 @@ def expected_outputs(records, out_dir):
         outputs.update(kind.generated_outputs(record, out_dir))
     for path, content in banim_expected_outputs(records, out_dir).items():
         outputs[path] = content.encode("utf-8") if isinstance(content, str) else content
+    outputs.update(custom_spell.expected_outputs(records, out_dir))
     return outputs
 
 
-def generate(manifest_path, out_dir):
-    records = load_and_validate(manifest_path)
+def _prune_obsolete_custom_spell_outputs(out_dir, expected_paths):
+    custom_spell_dir = os.path.join(out_dir, "custom_spell")
+    if not os.path.lexists(custom_spell_dir):
+        return
+    if os.path.islink(custom_spell_dir) or not os.path.isdir(custom_spell_dir):
+        raise ValueError(
+            "custom spell generated output path must be a real directory"
+        )
+    expected = {
+        os.path.abspath(path)
+        for path in expected_paths
+        if os.path.commonpath(
+            (os.path.abspath(path), os.path.abspath(custom_spell_dir))
+        ) == os.path.abspath(custom_spell_dir)
+    }
+    for directory, directories, files in os.walk(custom_spell_dir, topdown=False):
+        for name in files:
+            if name.startswith(ATOMIC_WRITE_TEMP_PREFIX):
+                continue
+            path = os.path.abspath(os.path.join(directory, name))
+            if path in expected:
+                continue
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+        for name in directories:
+            try:
+                os.rmdir(os.path.join(directory, name))
+            except OSError:
+                pass
+    try:
+        os.rmdir(custom_spell_dir)
+    except OSError:
+        pass
+
+
+def _prune_retired_outputs(out_dir):
+    path = os.path.join(out_dir, "ch2_main_map.inc")
+    if not os.path.lexists(path):
+        return
+    if os.path.islink(path) or not os.path.isfile(path):
+        raise ValueError("retired generated output path must be a real file")
+    os.unlink(path)
+
+
+def _write_selection_stamp(
+    path, out_dir, manifest_path, custom_spell_effects, item_id_cap
+):
+    expected = out_dir + ".manifest-selection"
+    if os.path.abspath(path) != expected:
+        raise GeneratedDataError(
+            "asset selection stamp '{}' must be {}".format(path, expected)
+        )
+    _write_if_changed(
+        expected,
+        "manifest={}\ncustom_spell_effects={}\nitem_id_cap=0x{:02X}\n".format(
+            os.path.abspath(manifest_path),
+            custom_spell_effects,
+            item_id_cap,
+        ),
+    )
+
+
+@contextlib.contextmanager
+def _generation_lock(out_dir):
+    lock_path = out_dir + GENERATION_LOCK_SUFFIX
+    if os.path.lexists(lock_path) and os.path.islink(lock_path):
+        raise GeneratedDataError(
+            "generated output lock '{}' must not be a symbolic link".format(lock_path)
+        )
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    descriptor = os.open(
+        lock_path,
+        os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+    )
+    with os.fdopen(descriptor, "r+") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        yield
+
+
+def generate(
+    manifest_path,
+    out_dir,
+    custom_spell_effects=None,
+    item_id_cap=None,
+    selection_stamp=None,
+):
     out_dir = safe_output_dir(out_dir)
-    outputs = expected_outputs(records, out_dir)
-    for path in outputs:
-        _safe_output_path(path, out_dir)
-    for path, content in outputs.items():
-        _write_bytes_if_changed(path, content)
+    with _generation_lock(out_dir):
+        records = load_and_validate(
+            manifest_path,
+            custom_spell_effects,
+            item_id_cap=item_id_cap,
+        )
+        outputs = expected_outputs(records, out_dir)
+        _prune_obsolete_custom_spell_outputs(out_dir, outputs)
+        _prune_retired_outputs(out_dir)
+        for path in outputs:
+            _safe_output_path(path, out_dir)
+        for path, content in outputs.items():
+            _write_bytes_if_changed(path, content)
+        if selection_stamp is not None:
+            _write_selection_stamp(
+                selection_stamp,
+                out_dir,
+                manifest_path,
+                custom_spell_effects,
+                item_id_cap,
+            )
     return records
 
 
-def check(manifest_path, out_dir):
-    records = load_and_validate(manifest_path)
+def check(manifest_path, out_dir, custom_spell_effects=None, item_id_cap=None):
+    records = load_and_validate(
+        manifest_path,
+        custom_spell_effects,
+        item_id_cap=item_id_cap,
+    )
     out_dir = safe_output_dir(out_dir)
     expected = expected_outputs(records, out_dir)
     errors = []

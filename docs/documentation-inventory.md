@@ -71,7 +71,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/starter_features.md | laqieer | current | Four default-off starter flags, typed mechanics/content API, QoL, and runtime matrices (issue #6)
 - docs/aoe.md | laqieer | current | Typed bounded AoE targeting/effects, shared item/action/AI seam, and default-off reference (issue #42)
 - docs/autoplay.md | laqieer | current | Transient typed blue controller/telemetry, bounded semantic outcomes, optional Charge command, and accelerated-fidelity profile (issues #85/#86/#87/#88)
-- docs/custom_spell_effects.md | laqieer | current | Default-off typed battle spell-effect runtime foundation and resource contract (issue #77)
+- docs/custom_spell_effects.md | laqieer | current | Default-off typed custom spell runtime, strict package adapter, authoring contract, and tester procedures (issues #77/#78)
 - docs/portrait_resolver.md | laqieer | current | Typed character/class/chapter/flag portrait and minimug resolver with legacy fallback (issue #35)
 - docs/community_asset_coverage.md | laqieer | current | Authoritative community asset-family ownership, build/runtime seam, provenance boundary, and gap catalog (issue #59)
 - docs/asset_manifest.md | laqieer | current | Versioned source-owned asset manifest, ownership dependency generation, and adapter contract (issue #60)

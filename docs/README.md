@@ -21,7 +21,7 @@ the authoritative technical documentation and are checked by CI.
 | Add a bounded area-of-effect target/effect or item route | [`aoe.md`](aoe.md) |
 | Drive or optionally delegate blue units through the existing AI, including bounded semantic runtime scenarios | [`autoplay.md`](autoplay.md) |
 | Author typed chapter objectives and AI-group membership for bounded autoplay | [`generated_data_tutorial.md`](generated_data_tutorial.md), [`autoplay.md`](autoplay.md) |
-| Enable the typed custom battle spell-effect runtime foundation | [`custom_spell_effects.md`](custom_spell_effects.md) |
+| Author and enable strict custom battle spell-effect packages | [`custom_spell_effects.md`](custom_spell_effects.md) |
 | Configure casual defeat restoration | [`starter_features.md`](starter_features.md#optional-casual-defeat-policy-issue-34) |
 | Enable the optional high-resolution MP2K PCM mixer | [`audio.md`](audio.md) |
 | Configure portrait/minimug rules | [`portrait_resolver.md`](portrait_resolver.md) |
@@ -87,7 +87,7 @@ numbers mark merged (closed) contracts only:
 | Typed chapter objectives and AI groups (issue #89) | `include/expansion_chapter_objectives.h`; generated `chapterobjectives` records, chapter-bundle ownership, and semantic telemetry | [`generated_data_tutorial.md`](generated_data_tutorial.md), [`autoplay.md`](autoplay.md) |
 | Optional one-phase Charge delegation (issue #87) | `include/expansion_autoplay.h`; default-off one-phase map command built on the #85 control/telemetry API | [`autoplay.md`](autoplay.md) |
 | Accelerated-fidelity comparison (issue #88) | `tools/gba-playtest` schema v3, profile-contained game-speed/BANIM-off configuration, semantic differential traces, and fixed-frame reduction | [`autoplay.md`](autoplay.md), [`../tools/gba-playtest/README.md`](../tools/gba-playtest/README.md) |
-| Custom battle spell effects (issue #77) | `include/custom_spell_effect.h`; typed descriptor lookup/start API and `0x80..0x8F` generated-private range | [`custom_spell_effects.md`](custom_spell_effects.md) |
+| Custom battle spell effects (issues #77/#78) | `include/custom_spell_effect.h` plus the `custom-spell-effect` manifest kind; typed runtime and strict generated package binding | [`custom_spell_effects.md`](custom_spell_effects.md) |
 | Portrait/minimug resolver (issue #35) | Typed character/class/chapter/flag registry with legacy fallback | [`portrait_resolver.md`](portrait_resolver.md) |
 | Community asset coverage (issue #59) | Asset-family ownership/gap catalog; not an importer or runtime API | [`community_asset_coverage.md`](community_asset_coverage.md) |
 | Asset manifest (issue #60) | Versioned source-owned asset records and generated existing-seam dependencies | [`asset_manifest.md`](asset_manifest.md) |
@@ -142,7 +142,7 @@ and
 | [`starter_features.md`](starter_features.md) | Current | Four opt-in flags, typed mechanics/content API, QoL and matrices (issue #6) |
 | [`aoe.md`](aoe.md) | Current | Typed bounded AoE targeting/effects, shared item seam, and default-off reference (issue #42) |
 | [`autoplay.md`](autoplay.md) | Current | Transient blue control/telemetry, bounded semantic outcomes, optional Charge delegation, and accelerated-fidelity comparison (issues #85/#86/#87/#88) |
-| [`custom_spell_effects.md`](custom_spell_effects.md) | Current | Default-off typed battle spell-effect runtime foundation and resource contract (issue #77) |
+| [`custom_spell_effects.md`](custom_spell_effects.md) | Current | Default-off typed custom spell runtime, strict FEditor subset adapter, package schema, resources, and tester cases (issues #77/#78) |
 | [`portrait_resolver.md`](portrait_resolver.md) | Current | Typed data-driven portrait/minimug resolver and validation contract (issue #35) |
 | [`community_asset_coverage.md`](community_asset_coverage.md) | Current | Authoritative community asset family ownership, build/runtime seam, and gap catalog (issue #59) |
 | [`asset_manifest.md`](asset_manifest.md) | Current | Versioned asset manifest, generated existing-seam dependencies, and adapter contract (issue #60) |

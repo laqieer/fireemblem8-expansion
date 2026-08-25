@@ -8,10 +8,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
 static std::string g_inputPath;
+static std::map<std::string, std::string> g_incbinDefines;
+static std::map<std::string, std::string> g_incbinPathRewrites;
 
 static void fail(const std::string &msg)
 {
@@ -71,14 +74,31 @@ static int incbinWidth(const std::string &ident)
 
 int main(int argc, char **argv)
 {
-    if (argc != 2)
+    int argIndex = 1;
+    while (argIndex < argc && argv[argIndex][0] == '-'
+        && (argv[argIndex][1] == 'D' || argv[argIndex][1] == 'R'))
     {
-        fprintf(stderr, "usage: %s <file.c>\n", argv[0]);
+        std::string define = argv[argIndex] + 2;
+        size_t equals = define.find('=');
+        if (equals == std::string::npos || equals == 0 || equals + 1 == define.size())
+        {
+            fprintf(stderr, "usage: %s [-DNAME=path] [-Rfrom=to] <file.c>\n", argv[0]);
+            return 1;
+        }
+        if (argv[argIndex][1] == 'D')
+            g_incbinDefines[define.substr(0, equals)] = define.substr(equals + 1);
+        else
+            g_incbinPathRewrites[define.substr(0, equals)] = define.substr(equals + 1);
+        argIndex++;
+    }
+    if (argc != argIndex + 1)
+    {
+        fprintf(stderr, "usage: %s [-DNAME=path] [-Rfrom=to] <file.c>\n", argv[0]);
         return 1;
     }
 
-    g_inputPath = argv[1];
-    std::string in = readFileText(argv[1]);
+    g_inputPath = argv[argIndex];
+    std::string in = readFileText(argv[argIndex]);
     std::string out;
     out.reserve(in.size() * 2);
 
@@ -211,7 +231,30 @@ int main(int argc, char **argv)
                     if (j >= len)
                         fail(ident + ": unterminated path string");
                     j++; // closing quote
-                    fb = readFileBytes(path);
+                    std::map<std::string, std::string>::const_iterator rewrite =
+                        g_incbinPathRewrites.find(path);
+                    fb = readFileBytes(
+                        rewrite == g_incbinPathRewrites.end() ? path : rewrite->second
+                    );
+                    haveFile = true;
+                    numIndex = 0;
+                    sliceOffset = 0;
+                    sliceHasSize = false;
+                    sliceSize = 0;
+                    continue;
+                }
+                if (isIdentStart(in[j]))
+                {
+                    size_t identifierStart = j;
+                    while (j < len && isIdentChar(in[j]))
+                        j++;
+                    std::string pathDefine = in.substr(identifierStart, j - identifierStart);
+                    std::map<std::string, std::string>::const_iterator found =
+                        g_incbinDefines.find(pathDefine);
+                    if (found == g_incbinDefines.end())
+                        fail(ident + ": expected quoted path or configured path define");
+                    flushFile();
+                    fb = readFileBytes(found->second);
                     haveFile = true;
                     numIndex = 0;
                     sliceOffset = 0;
