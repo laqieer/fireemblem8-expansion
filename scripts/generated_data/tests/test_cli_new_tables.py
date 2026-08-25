@@ -154,6 +154,56 @@ class CliChapterBundleTests(unittest.TestCase):
         ])
         self.assertEqual(code, 0, msg=out + err)
 
+    def test_cli_validates_declared_chapter_objectives_source_before_inventory(self):
+        with scratch_dir() as tmp:
+            with open(fixture_path("chapterbundle", "cli_valid.json"), encoding="utf-8") as handle:
+                bundle = json.load(handle)
+            objective_source = fixture_path("chapterobjectives", "valid.json")
+            bundle["chapterObjectives"] = {
+                "source": objective_source,
+                "symbols": ["ChapterObjectives_Fixture"],
+            }
+            valid_path = os.path.join(tmp, "bundle-with-objectives.json")
+            with open(valid_path, "w", encoding="utf-8") as handle:
+                json.dump(bundle, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", valid_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 0, msg=out + err)
+
+            stale = json.loads(json.dumps(bundle))
+            stale["chapterObjectives"]["symbols"] = ["ChapterObjectives_Stale"]
+            stale_path = os.path.join(tmp, "bundle-with-stale-objective.json")
+            with open(stale_path, "w", encoding="utf-8") as handle:
+                json.dump(stale, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", stale_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn("chapterObjectives.symbols[ChapterObjectives_Stale]", err)
+
+            missing = json.loads(json.dumps(bundle))
+            missing["chapterObjectives"]["source"] = os.path.join(tmp, "missing-objectives.json")
+            missing_path = os.path.join(tmp, "bundle-with-missing-objective.json")
+            with open(missing_path, "w", encoding="utf-8") as handle:
+                json.dump(missing, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", missing_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn("chapterObjectives.source", err)
+            self.assertIn("missing-objectives.json", err)
+
+            out_dir = os.path.join(tmp, "missing-objective-out")
+            inventory_path = os.path.join(tmp, "missing-objective.md")
+            code, out, err = run_cli([
+                "generate", "--table", "chapterbundle", "--source", missing_path,
+                "--out-dir", out_dir, "--inventory", inventory_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn("chapterObjectives.source", err)
+            self.assertFalse(os.path.exists(inventory_path))
+
     def test_custom_bundle_cli_uses_declared_sources_for_file_and_directory_inputs(self):
         with scratch_dir() as tmp:
             source = fixture_path("chapterbundle", "cli_valid.json")
