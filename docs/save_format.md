@@ -506,6 +506,13 @@ classifier/diversion/menu relocations, and rejects forbidden save-internal
 relocations from the compatibility proc. Its parsed C-tree boundary rejects
 `SaveBlockInfo`, `SaveBlocks.xmap`, `xmap_magic`, and an adversarial
 `XMAP_MAGIC` field-access fixture, which a relocation-only check cannot see.
+The same test compiles every tracked production source that references one of
+the four save-internal APIs, maps each ARM relocation to its enclosing
+function, and compares the complete reverse-reference census to an explicit
+allowlist. Injected save-hook and normal-menu-bypass objects fail the census;
+the compiler CFG for `StartSaveMenu()` proves non-CURRENT diversion reaches a
+return path before the normal menu, and rejects an unconditional-start
+mutation.
 
 ### Issue #160 semantic-evidence migration map
 

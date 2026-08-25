@@ -38,6 +38,7 @@ SCENARIOS_DIR = ROOT / "tools" / "gba-playtest" / "scenarios"
 FINGERPRINTS_DIR = ROOT / "tools" / "gba-playtest" / "fingerprints"
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_NM = shutil.which("arm-none-eabi-nm")
+ARM_OBJDUMP = shutil.which("arm-none-eabi-objdump")
 INCLUDE_FLAGS = ["-I", str(ROOT / "include"), "-I", str(ROOT / "include" / "generated")]
 SAVE_MENU_BOUNDARY_OBJECTS = (
     SAVEMENU_C,
@@ -64,6 +65,51 @@ _FORBIDDEN_XMAP_TREE_TOKENS = (
     "xmap",
     "xmap_magic",
 )
+_SAVE_INTERNAL_APIS = (
+    "WriteSuspendSave",
+    "ReadSuspendSave",
+    "WriteGameSave",
+    "ReadGameSave",
+)
+_SAVE_API_ALLOWLIST = {
+    "WriteSuspendSave": {
+        ("src/bm.c", "BmMain_SuspendBeforePhase"),
+        ("src/bmarena.c", "ArenaContinueBattle"),
+        ("src/bmbattle.c", "BattleGenerateArena"),
+        ("src/bmdebug.c", "DebugChuudanMenu_ManualSave"),
+        ("src/bmtrap.c", "HandlePostActionTraps"),
+        ("src/cp_decide.c", "CpDecide_Suspend"),
+        ("src/playerphase.c", "PlayerPhase_PrepareAction"),
+        ("src/playerphase.c", "PlayerPhase_Suspend"),
+        ("src/uiarena.c", "WriteSuspendPlayerIdle"),
+    },
+    "ReadSuspendSave": {
+        ("src/bmdebug.c", "DebugContinueMenu_ContinueChapter"),
+        ("src/bmdebug.c", "DebugContinueMenu_ManualContinue"),
+        ("src/savemenu.c", "PostSaveMenuHandler"),
+    },
+    "WriteGameSave": {
+        ("src/bmdebug.c", "DebugClearMenu_ClearFile"),
+        ("src/bmdebug.c", "StartupDebugMenu_ChapterSelectEffect"),
+        ("src/bmdebug.c", "StartupDebugMenu_WorldMapEffect"),
+        ("src/bonusclaim.c", "BonusClaim_DrawItemSentPopup"),
+        ("src/savemenu.c", "ExecSaveMenuMiscOption"),
+    },
+    "ReadGameSave": {
+        ("src/savemenu.c", "ExecSaveMenuMiscOption"),
+        ("src/savemenu.c", "PostSaveMenuHandler"),
+        ("src/savemenu.c", "SaveMenuExtraSlotSelectLoop"),
+        ("src/sio_term.c", "LinkArenaTeamBuild_LoadSelectedSave"),
+    },
+}
+_SAVE_MENU_PROC_ALLOWLIST = {
+    ("src/savemenu.c", "StartSaveMenu"),
+    ("src/savemenu.c", "SaveMenu_SetDifficultyChoice"),
+}
+_START_SAVE_MENU_OBJECT_ALLOWLIST = {
+    "src/gamecontrol.c",
+    "src/save_compat_menu.c",
+}
 
 
 def _strip_comments(text: str) -> str:
@@ -172,6 +218,163 @@ def _gcc_original_tree(
     return tree.read_text(encoding="utf-8")
 
 
+def _gcc_cfg_tree(work: Path, source: Path, name: str, defines=(), extra_includes=()) -> str:
+    output = work / name
+    tree = work / (name + ".cfg")
+    completed = subprocess.run(
+        [
+            ARM_CC,
+            "-mcpu=arm7tdmi",
+            "-mthumb",
+            "-mthumb-interwork",
+            "-mabi=aapcs",
+            "-std=gnu89",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-w",
+            *INCLUDE_FLAGS,
+            *(value for path in extra_includes for value in ("-I", str(path))),
+            *defines,
+            "-fdump-tree-cfg=" + str(tree),
+            "-c",
+            str(source),
+            "-o",
+            str(output),
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return tree.read_text(encoding="utf-8")
+
+
+def _function_cfg(tree: str, name: str) -> str:
+    marker = ";; Function " + name + " ("
+    start = tree.find(marker)
+    if start < 0:
+        raise AssertionError("%s CFG function not found" % name)
+    end = tree.find("\n;; Function ", start + len(marker))
+    return tree[start:] if end < 0 else tree[start:end]
+
+
+def _has_start_save_gate_cfg(cfg: str) -> bool:
+    lines = cfg.splitlines()
+    branch_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if line.strip().startswith("if (compat != ")
+        ),
+        None,
+    )
+    if "ClassifySramSaveCompat ()" not in cfg or branch_index is None:
+        return False
+
+    targets = []
+    for line in lines[branch_index + 1:]:
+        match = re.search(r"goto <bb (\d+)>", line)
+        if match:
+            targets.append(match.group(1))
+            if len(targets) == 2:
+                break
+    if len(targets) != 2:
+        return False
+
+    def block(number: str) -> str:
+        marker = "<bb %s> :" % number
+        start = cfg.find(marker)
+        if start < 0:
+            return ""
+        end = cfg.find("\n  <bb ", start + len(marker))
+        return cfg[start:] if end < 0 else cfg[start:end]
+
+    compat_body = block(targets[0])
+    current_body = block(targets[1])
+    return (
+        "StartSaveCompatMenu" in compat_body
+        and "Proc_StartBlocking" not in compat_body
+        and "Proc_StartBlocking" in current_body
+    )
+
+
+def _production_sources() -> tuple[Path, ...]:
+    completed = subprocess.run(
+        ["git", "ls-files"],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return tuple(
+        ROOT / path
+        for path in completed.stdout.splitlines()
+        if path.startswith("src/") and path.endswith(".c")
+    )
+
+
+def _candidate_sources(sources: tuple[Path, ...], symbols: tuple[str, ...]) -> tuple[Path, ...]:
+    pattern = re.compile(r"\b(?:" + "|".join(map(re.escape, symbols)) + r")\b")
+    return tuple(
+        source
+        for source in sources
+        if pattern.search(
+            _strip_comments(source.read_text(encoding="utf-8", errors="replace"))
+        )
+    )
+
+
+def _object_relocation_edges(obj: Path, symbols: tuple[str, ...]) -> set[tuple[str, str]]:
+    completed = subprocess.run(
+        [ARM_OBJDUMP, "-dr", str(obj)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    edges = set()
+    function = None
+    symbol_pattern = re.compile(
+        r"R_ARM_[A-Z0-9_]+\s+(" + "|".join(map(re.escape, symbols)) + r")\b"
+    )
+    for line in completed.stdout.splitlines():
+        match = re.match(r"^[0-9a-fA-F]+ <([^>]+)>:", line)
+        if match:
+            function = match.group(1)
+        match = symbol_pattern.search(line)
+        if match and function is not None:
+            edges.add((function, match.group(1)))
+    return edges
+
+
+def _compiled_census_edges(
+    work: Path,
+    sources: tuple[Path, ...],
+    symbols: tuple[str, ...],
+) -> set[tuple[str, str, str]]:
+    edges = set()
+    for index, source in enumerate(_candidate_sources(sources, symbols)):
+        object_name = "census-%03d.o" % index
+        obj = _compile_arm(work, source, object_name)
+        relative = source.relative_to(ROOT).as_posix()
+        for function, symbol in _object_relocation_edges(obj, symbols):
+            edges.add((relative, function, symbol))
+    return edges
+
+
+def _compiled_undefined_sources(
+    work: Path,
+    sources: tuple[Path, ...],
+    symbol: str,
+) -> set[str]:
+    callers = set()
+    for index, source in enumerate(_candidate_sources(sources, (symbol,))):
+        obj = _compile_arm(work, source, "reference-%03d.o" % index)
+        if symbol in _undefined_symbols(obj):
+            callers.add(source.relative_to(ROOT).as_posix())
+    return callers
+
+
 def _boundary_modes(work: Path):
     yield "default", (), ()
     yield "modern", ("-DMODERN=1",), (_generate_message_ids(work),)
@@ -243,7 +446,10 @@ class SaveCompatDialogBackSemanticTests(unittest.TestCase):
             )
 
 
-@unittest.skipIf(ARM_CC is None or ARM_NM is None, "no arm-none-eabi compiler/binutils")
+@unittest.skipIf(
+    ARM_CC is None or ARM_NM is None or ARM_OBJDUMP is None,
+    "no arm-none-eabi compiler/binutils",
+)
 class SaveCompatCompiledBoundaryTests(unittest.TestCase):
     """The gate boundary is enforced from relocations, not source spelling."""
 
@@ -326,6 +532,140 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                         refs["gamecontrol.c"],
                         "game control must enter save UI through StartSaveMenu",
                     )
+
+    def test_startsavemenu_cfg_diverts_noncurrent_before_normal_menu(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            for mode, defines, includes in _boundary_modes(work):
+                with self.subTest(mode=mode):
+                    cfg = _function_cfg(
+                        _gcc_cfg_tree(
+                            work,
+                            SAVEMENU_C,
+                            mode + "-savemenu.o",
+                            defines,
+                            includes,
+                        ),
+                        "StartSaveMenu",
+                    )
+                    self.assertTrue(
+                        _has_start_save_gate_cfg(cfg),
+                        "StartSaveMenu CFG must branch non-CURRENT to the "
+                        "compatibility return path before normal menu start",
+                    )
+
+                    mutation = work / (mode + "-unconditional_save_menu.c")
+                    mutation.write_text(
+                        '#include "global.h"\n'
+                        '#include "savemenu.h"\n'
+                        '#include "save_format.h"\n'
+                        '#include "save_compat_menu.h"\n'
+                        'extern struct ProcCmd ProcScr_SaveMenu[];\n'
+                        'void StartSaveMenu(void *parent)\n'
+                        '{\n'
+                        '    enum SaveCompatState compat = ClassifySramSaveCompat();\n'
+                        '    StartSaveCompatMenu(parent, compat);\n'
+                        '    Proc_StartBlocking(ProcScr_SaveMenu, parent);\n'
+                        '}\n',
+                        encoding="utf-8",
+                    )
+                    mutated_cfg = _function_cfg(
+                        _gcc_cfg_tree(
+                            work,
+                            mutation,
+                            mode + "-unconditional_save_menu.o",
+                            defines,
+                            includes,
+                        ),
+                        "StartSaveMenu",
+                    )
+                    self.assertFalse(
+                        _has_start_save_gate_cfg(mutated_cfg),
+                        "unconditional normal-menu start must fail the CFG gate",
+                    )
+
+    def test_complete_production_reverse_reference_census(self):
+        sources = _production_sources()
+        self.assertGreater(len(sources), 400)
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            edges = _compiled_census_edges(work, sources, _SAVE_INTERNAL_APIS)
+            by_symbol = {
+                symbol: {
+                    (path, function)
+                    for path, function, edge_symbol in edges
+                    if edge_symbol == symbol
+                }
+                for symbol in _SAVE_INTERNAL_APIS
+            }
+            self.assertEqual(by_symbol, _SAVE_API_ALLOWLIST)
+
+            start_callers = _compiled_undefined_sources(
+                work,
+                sources,
+                "StartSaveMenu",
+            )
+            self.assertEqual(
+                start_callers,
+                _START_SAVE_MENU_OBJECT_ALLOWLIST,
+            )
+
+            menu_edges = _compiled_census_edges(
+                work,
+                sources,
+                ("ProcScr_SaveMenu",),
+            )
+            self.assertEqual(
+                {(path, function) for path, function, _ in menu_edges},
+                _SAVE_MENU_PROC_ALLOWLIST,
+            )
+
+            extra_caller = work / "extra_save_caller.c"
+            extra_caller.write_text(
+                '#include "global.h"\n'
+                '#include "bmsave.h"\n'
+                'void SaveCompatUnexpectedSaveHook(void)\n'
+                '{\n'
+                '    WriteGameSave(0);\n'
+                '}\n',
+                encoding="utf-8",
+            )
+            extra_edges = _object_relocation_edges(
+                _compile_arm(work, extra_caller, "extra_save_caller.o"),
+                _SAVE_INTERNAL_APIS,
+            )
+            self.assertNotIn(
+                ("SaveCompatUnexpectedSaveHook", "WriteGameSave"),
+                _SAVE_API_ALLOWLIST["WriteGameSave"],
+            )
+            self.assertIn(
+                ("SaveCompatUnexpectedSaveHook", "WriteGameSave"),
+                extra_edges,
+            )
+
+            bypass = work / "extra_save_menu_bypass.c"
+            bypass.write_text(
+                '#include "global.h"\n'
+                '#include "savemenu.h"\n'
+                'extern struct ProcCmd ProcScr_SaveMenu[];\n'
+                'void SaveCompatUnexpectedMenuBypass(ProcPtr parent)\n'
+                '{\n'
+                '    Proc_StartBlocking(ProcScr_SaveMenu, parent);\n'
+                '}\n',
+                encoding="utf-8",
+            )
+            bypass_edges = _object_relocation_edges(
+                _compile_arm(work, bypass, "extra_save_menu_bypass.o"),
+                ("ProcScr_SaveMenu",),
+            )
+            self.assertNotIn(
+                ("extra_save_menu_bypass.c", "SaveCompatUnexpectedMenuBypass"),
+                _SAVE_MENU_PROC_ALLOWLIST,
+            )
+            self.assertIn(
+                ("SaveCompatUnexpectedMenuBypass", "ProcScr_SaveMenu"),
+                bypass_edges,
+            )
 
     def test_gate_translation_units_compile_in_legacy_and_modern_modes(self):
         sources = (SAVEMENU_C, SAVE_COMPAT_MENU_C, ROOT / "src" / "gamecontrol.c")
