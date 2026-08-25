@@ -4,6 +4,7 @@ import copy
 import os
 import re
 import unittest
+from unittest.mock import patch
 
 from scripts.generated_data.chapterbundle import schema as chapterbundle_schema
 from scripts.generated_data.chapterobjectives import generate, schema
@@ -95,6 +96,28 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
         self.assertNotEqual(
             schema.stable_id_value("OBJECTIVE_FIXTURE_EVENT"),
             schema.stable_id_value("AI_GROUP_FIXTURE_EIRIKA"),
+        )
+
+    def test_runtime_id_zero_is_reserved_for_no_selected_objective(self):
+        records, diagnostics = _validate("valid.json")
+        with patch.object(schema, "stable_id_value", return_value=0):
+            schema.validate(
+                records,
+                diagnostics,
+                {
+                    "units": units_schema.load_records(
+                        os.path.join(REPO_ROOT, "src", "data", "ch2_units.json")
+                    ),
+                    "chapterbundle": chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json")),
+                },
+            )
+        self.assertTrue(
+            any(
+                error.reference_path == "stableIds[OBJECTIVE_FIXTURE_EVENT]"
+                and "reserved no-objective runtime hash 0" in error.message
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
         )
 
     def test_group_member_symbols_are_delimited_by_stable_id_hash_and_cross_chapter_members_fail(self):

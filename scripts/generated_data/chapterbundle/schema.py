@@ -452,7 +452,9 @@ def resolve_bundle_dependencies(record, diagnostics=None, dependency_records=Non
             resolved[table_name] = dependency_records[table_name]
             continue
         try:
-            resolved[table_name] = _dependency_loader(table_name)(_source_path(table.source))
+            resolved[table_name] = _dependency_loader(table_name)(
+                _source_path(table.source, record.repository_root)
+            )
         except (OSError, GeneratedDataError) as error:
             if diagnostics is not None:
                 diagnostics.add(
@@ -469,7 +471,7 @@ def resolve_bundle_dependencies(record, diagnostics=None, dependency_records=Non
     else:
         try:
             resolved["supports"] = _dependency_loader("supports")(
-                _source_path(record.support_owners.source)
+                _source_path(record.support_owners.source, record.repository_root)
             )
         except (OSError, GeneratedDataError) as error:
             if diagnostics is not None:
@@ -495,6 +497,64 @@ def read_chapter_settings_row(index, chapter_settings_path=CHAPTER_SETTINGS_JSON
     if not (0 <= index < len(chapters)):
         return None
     return chapters[index]
+
+
+def _validate_chapter_objectives_source(record, diagnostics):
+    objectives = record.chapter_objectives
+    if objectives is None:
+        return
+
+    from ..chapterobjectives import schema as objectives_schema
+
+    source_ref = "bundles[chapter={}].chapterObjectives.source".format(record.chapter.id)
+    source_path = _source_path(objectives.source, record.repository_root)
+    try:
+        source_records = objectives_schema.load_records(source_path)
+    except (OSError, GeneratedDataError) as error:
+        diagnostics.add(
+            _err(
+                "could not load chapterObjectives source '{}': {}".format(objectives.source, error),
+                objectives.source_loc,
+                source_ref,
+            )
+        )
+        return
+
+    diagnostics.extend(
+        validate_unique(
+            zip(objectives.symbols, objectives.symbol_locs),
+            "duplicate chapterObjectives symbol '{key}' (first at {first_loc})",
+            "bundles[chapter={}].chapterObjectives.symbols[{{key}}]".format(record.chapter.id),
+        )
+    )
+    source_symbols = {
+        source_record.symbol
+        for source_record in source_records
+        if source_record.chapter == record.chapter.id
+    }
+    for symbol, loc in zip(objectives.symbols, objectives.symbol_locs):
+        if symbol not in source_symbols:
+            diagnostics.add(
+                _err(
+                    "chapterObjectives symbol '{}' is not a record for chapter '{}' in source '{}'".format(
+                        symbol, record.chapter.id, objectives.source
+                    ),
+                    loc,
+                    "bundles[chapter={}].chapterObjectives.symbols[{}]".format(
+                        record.chapter.id, symbol
+                    ),
+                )
+            )
+    for symbol in sorted(source_symbols - set(objectives.symbols)):
+        diagnostics.add(
+            _err(
+                "chapterObjectives source '{}' contains chapter '{}' symbol '{}' not declared by this bundle".format(
+                    objectives.source, record.chapter.id, symbol
+                ),
+                objectives.source_loc,
+                source_ref,
+            )
+        )
 
 
 def read_asset_table_entries(asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE,
@@ -581,6 +641,7 @@ def _validate_record(records, diagnostics, dependency_records=None,
     dependency_records = dependency_records or {}
     chapter = records.chapter
     manifest = records.manifest
+    _validate_chapter_objectives_source(records, diagnostics)
 
     # -- 1. chapter ID / chapter-settings index / internalName / mapEventDataId --
     chapters_enum = extract_enum_constants(chapters_header, name_prefix="CHAPTER_")

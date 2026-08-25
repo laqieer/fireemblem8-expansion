@@ -1115,6 +1115,15 @@ def validate(records, diagnostics, dependency_records=None,
         if not _ID_RE.match(identifier):
             continue
         value = stable_id_value(identifier)
+        if value == 0:
+            diagnostics.add(
+                _err(
+                    "{} ID '{}' resolves to reserved no-objective runtime hash 0".format(kind, identifier),
+                    loc,
+                    "stableIds[{}]".format(identifier),
+                )
+            )
+            continue
         if value in hashes and hashes[value][0] != identifier:
             diagnostics.add(
                 _err(
