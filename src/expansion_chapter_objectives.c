@@ -8,6 +8,7 @@
 
 struct ExpansionChapterObjectiveTelemetry EWRAM_DATA
     gExpansionChapterObjectiveTelemetry = { 0 };
+static bool8 EWRAM_DATA sExpansionChapterObjectivesReady = FALSE;
 
 struct ObjectiveResult
 {
@@ -174,6 +175,12 @@ static struct ObjectiveResult EvaluateObjective(
             return result;
         }
 
+        if (CheckFlag(objective->completionFlag))
+        {
+            result.state = EXPANSION_CHAPTER_OBJECTIVE_SUCCESS;
+            return result;
+        }
+
         if (depth >= EXPANSION_CHAPTER_OBJECTIVE_PER_CHAPTER_CAPACITY)
         {
             result.state = EXPANSION_CHAPTER_OBJECTIVE_FAILURE;
@@ -192,7 +199,10 @@ static struct ObjectiveResult EvaluateObjective(
 
         result = EvaluateObjective(context, bundle, completion, depth + 1);
         if (result.state == EXPANSION_CHAPTER_OBJECTIVE_SUCCESS)
+        {
+            SetFlag(objective->completionFlag);
             return result;
+        }
 
         if (result.state == EXPANSION_CHAPTER_OBJECTIVE_INACTIVE)
             result.state = EXPANSION_CHAPTER_OBJECTIVE_PENDING;
@@ -253,6 +263,13 @@ static struct ObjectiveResult EvaluateObjective(
             return result;
         }
 
+        if (gPlaySt.chapterTurnNumber >= objective->untilTurn)
+        {
+            result.state = EXPANSION_CHAPTER_OBJECTIVE_SUCCESS;
+            result.progress = objective->group != NULL ? objective->group->memberCount : 0;
+            return result;
+        }
+
         result = GetGroupAreaResult(context, objective->group, objective);
         if (result.state != EXPANSION_CHAPTER_OBJECTIVE_SUCCESS)
         {
@@ -261,8 +278,7 @@ static struct ObjectiveResult EvaluateObjective(
             return result;
         }
 
-        if (gPlaySt.chapterTurnNumber < objective->untilTurn)
-            result.state = EXPANSION_CHAPTER_OBJECTIVE_PENDING;
+        result.state = EXPANSION_CHAPTER_OBJECTIVE_PENDING;
         return result;
 
     default:
@@ -327,6 +343,7 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
     int originalTurn;
     bool8 eventFlagWasSet;
     bool8 holdFailureFlagWasSet;
+    bool8 protectCompletionFlagWasSet;
 
     if (sExpansionChapterObjectiveRuntimeProbeComplete)
         return;
@@ -353,6 +370,7 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
     originalY = protectedUnit->yPos;
     originalTurn = gPlaySt.chapterTurnNumber;
     holdFailureFlagWasSet = CheckFlag(holdObjective->eventFlag);
+    protectCompletionFlagWasSet = CheckFlag(protectObjective->completionFlag);
 
     ClearFlag(eventObjective->eventFlag);
     state = ExpansionChapterObjectives_GetStatus(eventObjective->id, &progress);
@@ -377,6 +395,7 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
 
     ClearFlag(eventObjective->eventFlag);
     ClearFlag(protectObjective->eventFlag);
+    ClearFlag(protectObjective->completionFlag);
     protectedUnit->state |= US_DEAD;
     state = ExpansionChapterObjectives_GetStatus(protectObjective->id, &progress);
     gExpansionChapterObjectiveRuntimeProbe.protectFailureState = state;
@@ -390,6 +409,7 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
 
     ClearFlag(eventObjective->eventFlag);
     ClearFlag(protectObjective->eventFlag);
+    ClearFlag(protectObjective->completionFlag);
     protectedUnit->state |= US_DEAD;
     ExpansionChapterObjectives_GetStatus(protectObjective->id, &progress);
     protectedUnit->state = originalUnitState;
@@ -420,6 +440,10 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
         SetFlag(holdObjective->eventFlag);
     else
         ClearFlag(holdObjective->eventFlag);
+    if (protectCompletionFlagWasSet)
+        SetFlag(protectObjective->completionFlag);
+    else
+        ClearFlag(protectObjective->completionFlag);
     SetFlag(protectObjective->eventFlag);
 
     gExpansionChapterObjectiveRuntimeProbe.magic = EXPANSION_CHAPTER_OBJECTIVE_RUNTIME_PROBE_MAGIC;
@@ -429,6 +453,16 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
 
 void ExpansionChapterObjectives_ResetTelemetry(void)
 {
+    sExpansionChapterObjectivesReady = FALSE;
+    gExpansionChapterObjectiveTelemetry.objectiveId = 0;
+    gExpansionChapterObjectiveTelemetry.state = EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
+    gExpansionChapterObjectiveTelemetry.progress = 0;
+    gExpansionChapterObjectiveTelemetry.activeCount = 0;
+}
+
+void ExpansionChapterObjectives_OnBeginningEventsComplete(void)
+{
+    sExpansionChapterObjectivesReady = TRUE;
     gExpansionChapterObjectiveTelemetry.objectiveId = 0;
     gExpansionChapterObjectiveTelemetry.state = EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
     gExpansionChapterObjectiveTelemetry.progress = 0;
@@ -455,8 +489,20 @@ void ExpansionChapterObjectives_RefreshTelemetry(void)
         return;
     }
 
+    if (!sExpansionChapterObjectivesReady)
+    {
+        gExpansionChapterObjectiveTelemetry.objectiveId = 0;
+        gExpansionChapterObjectiveTelemetry.state = EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
+        gExpansionChapterObjectiveTelemetry.progress = 0;
+        gExpansionChapterObjectiveTelemetry.activeCount = 0;
+        return;
+    }
+
     bundle = GetCurrentBundle();
-    ExpansionChapterObjectives_ResetTelemetry();
+    gExpansionChapterObjectiveTelemetry.objectiveId = 0;
+    gExpansionChapterObjectiveTelemetry.state = EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
+    gExpansionChapterObjectiveTelemetry.progress = 0;
+    gExpansionChapterObjectiveTelemetry.activeCount = 0;
     if (bundle == NULL)
         return;
 
@@ -495,6 +541,9 @@ enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetStatus(u32 obj
 
     if (progressOut != NULL)
         *progressOut = 0;
+
+    if (!sExpansionChapterObjectivesReady)
+        return EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
 
     if (bundle == NULL)
         return EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;

@@ -78,6 +78,7 @@ def generate_c_source(records, source_path):
                         _flag(objective.failure_flag or objective.event_flag)
                     )
                 )
+                parts.append("        .completionFlag = {},\n".format(_flag(objective.completion_flag)))
                 parts.append("        .untilTurn = {},\n".format(objective.until_turn or 0))
                 parts.append("        .kind = {},\n".format(KIND_TO_C[objective.kind]))
                 parts.append("        .protectedCharacter = {},\n".format(objective.protected_character or 0))

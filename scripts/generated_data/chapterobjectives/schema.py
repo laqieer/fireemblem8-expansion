@@ -107,7 +107,8 @@ class Objective:
         "deactivation_flag", "deactivation_flag_loc", "group", "group_loc",
         "protected_character", "protected_character_loc", "completion_objective",
         "completion_objective_loc", "event_flag", "event_flag_loc", "until_turn",
-        "until_turn_loc", "failure_flag", "failure_flag_loc", "area", "loc",
+        "until_turn_loc", "failure_flag", "failure_flag_loc", "completion_flag",
+        "completion_flag_loc", "area", "loc",
     )
 
     def __init__(
@@ -115,7 +116,8 @@ class Objective:
         deactivation_flag, deactivation_flag_loc, group, group_loc,
         protected_character, protected_character_loc, completion_objective,
         completion_objective_loc, event_flag, event_flag_loc, until_turn,
-        until_turn_loc, failure_flag, failure_flag_loc, area, loc,
+        until_turn_loc, failure_flag, failure_flag_loc, completion_flag,
+        completion_flag_loc, area, loc,
     ):
         self.id = id_
         self.id_loc = id_loc
@@ -137,6 +139,8 @@ class Objective:
         self.until_turn_loc = until_turn_loc
         self.failure_flag = failure_flag
         self.failure_flag_loc = failure_flag_loc
+        self.completion_flag = completion_flag
+        self.completion_flag_loc = completion_flag_loc
         self.area = area
         self.loc = loc
 
@@ -258,6 +262,7 @@ def _load_records_file(source_path):
             event_flag, event_flag_loc = _optional_string(objective_node, "eventFlag")
             until_turn, until_turn_loc = _optional_int(objective_node, "untilTurn")
             failure_flag, failure_flag_loc = _optional_string(objective_node, "failureFlag")
+            completion_flag, completion_flag_loc = _optional_string(objective_node, "completionFlag")
             objectives.append(
                 Objective(
                     id_node.as_str(), id_node.loc, kind_node.as_str(), kind_node.loc,
@@ -265,6 +270,7 @@ def _load_records_file(source_path):
                     group, group_loc, protected_character, protected_character_loc,
                     completion_objective, completion_objective_loc, event_flag, event_flag_loc,
                     until_turn, until_turn_loc, failure_flag, failure_flag_loc,
+                    completion_flag, completion_flag_loc,
                     _parse_area(objective_node.get("area")), objective_node.loc,
                 )
             )
@@ -633,6 +639,7 @@ def validate(records, diagnostics, dependency_records=None,
         used_unit_groups = set()
         protected_character_groups = {}
         failure_flags = []
+        completion_flags = []
 
         for group_name, group_loc in zip(
             record.dependencies.unit_groups, record.dependencies.unit_group_locs
@@ -731,6 +738,7 @@ def validate(records, diagnostics, dependency_records=None,
                 (objective.deactivation_flag, objective.deactivation_flag_loc, "deactivationFlag"),
                 (objective.event_flag, objective.event_flag_loc, "eventFlag"),
                 (objective.failure_flag, objective.failure_flag_loc, "failureFlag"),
+                (objective.completion_flag, objective.completion_flag_loc, "completionFlag"),
             ):
                 if flag is None:
                     continue
@@ -766,15 +774,27 @@ def validate(records, diagnostics, dependency_records=None,
                 )
             if objective.failure_flag is not None and objective.failure_flag in (
                 objective.activation_flag, objective.deactivation_flag, objective.event_flag,
+                objective.completion_flag,
             ):
                 diagnostics.add(
                     _err(
-                        "failureFlag must be distinct from activationFlag, deactivationFlag, and eventFlag",
+                        "failureFlag must be distinct from activationFlag, deactivationFlag, eventFlag, and completionFlag",
                         objective.failure_flag_loc, objective_ref + ".failureFlag",
+                    )
+                )
+            if objective.completion_flag is not None and objective.completion_flag in (
+                objective.activation_flag, objective.deactivation_flag, objective.event_flag,
+            ):
+                diagnostics.add(
+                    _err(
+                        "completionFlag must be distinct from activationFlag, deactivationFlag, and eventFlag",
+                        objective.completion_flag_loc, objective_ref + ".completionFlag",
                     )
                 )
             if objective.kind in ("protect", "hold_until_turn") and objective.failure_flag is not None:
                 failure_flags.append((objective.failure_flag, objective.failure_flag_loc))
+            if objective.kind == "protect" and objective.completion_flag is not None:
+                completion_flags.append((objective.completion_flag, objective.completion_flag_loc))
 
             if objective.group is not None:
                 diagnostics.extend(
@@ -818,17 +838,17 @@ def validate(records, diagnostics, dependency_records=None,
 
             if objective.kind == "protect":
                 if objective.protected_character is None or objective.completion_objective is None \
-                        or objective.failure_flag is None:
+                        or objective.failure_flag is None or objective.completion_flag is None:
                     diagnostics.add(
                         _err(
-                            "protect objective requires protectedCharacter, completionObjective, and failureFlag",
+                            "protect objective requires protectedCharacter, completionObjective, failureFlag, and completionFlag",
                              objective.loc, objective_ref)
                     )
                 if objective.group is not None or objective.area is not None or objective.event_flag is not None \
                         or objective.until_turn is not None:
                     diagnostics.add(
                         _err(
-                            "protect objective accepts only protectedCharacter, completionObjective, and failureFlag",
+                            "protect objective accepts only protectedCharacter, completionObjective, failureFlag, and completionFlag",
                              objective.loc, objective_ref)
                     )
             elif objective.kind == "reach_area":
@@ -837,7 +857,7 @@ def validate(records, diagnostics, dependency_records=None,
                                          objective.loc, objective_ref))
                 if objective.protected_character is not None or objective.completion_objective is not None \
                         or objective.event_flag is not None or objective.until_turn is not None \
-                        or objective.failure_flag is not None:
+                        or objective.failure_flag is not None or objective.completion_flag is not None:
                     diagnostics.add(
                         _err("reach_area objective accepts only group and area", objective.loc, objective_ref)
                     )
@@ -846,7 +866,8 @@ def validate(records, diagnostics, dependency_records=None,
                     diagnostics.add(_err("defeat_group objective requires group", objective.loc, objective_ref))
                 if objective.protected_character is not None or objective.completion_objective is not None \
                         or objective.event_flag is not None or objective.until_turn is not None \
-                        or objective.area is not None or objective.failure_flag is not None:
+                        or objective.area is not None or objective.failure_flag is not None \
+                        or objective.completion_flag is not None:
                     diagnostics.add(
                         _err("defeat_group objective accepts only group", objective.loc, objective_ref)
                     )
@@ -855,7 +876,8 @@ def validate(records, diagnostics, dependency_records=None,
                     diagnostics.add(_err("event_flag objective requires eventFlag", objective.loc, objective_ref))
                 if objective.group is not None or objective.protected_character is not None \
                         or objective.completion_objective is not None or objective.area is not None \
-                        or objective.until_turn is not None or objective.failure_flag is not None:
+                        or objective.until_turn is not None or objective.failure_flag is not None \
+                        or objective.completion_flag is not None:
                     diagnostics.add(_err("event_flag objective accepts only eventFlag", objective.loc, objective_ref))
             elif objective.kind == "hold_until_turn":
                 if objective.group is None or objective.area is None or objective.until_turn is None \
@@ -868,7 +890,7 @@ def validate(records, diagnostics, dependency_records=None,
                                        objective_ref + ".untilTurn", field_name="untilTurn")
                     )
                 if objective.protected_character is not None or objective.completion_objective is not None \
-                        or objective.event_flag is not None:
+                        or objective.event_flag is not None or objective.completion_flag is not None:
                     diagnostics.add(
                         _err("hold_until_turn objective accepts only group, area, untilTurn, and failureFlag",
                              objective.loc, objective_ref)
@@ -901,6 +923,13 @@ def validate(records, diagnostics, dependency_records=None,
                 failure_flags,
                 "duplicate objective failureFlag '{key}' (first defined at {first_loc})",
                 record_ref + ".failureFlags[{key}]",
+            )
+        )
+        diagnostics.extend(
+            validate_unique(
+                completion_flags,
+                "duplicate protect completionFlag '{key}' (first defined at {first_loc})",
+                record_ref + ".completionFlags[{key}]",
             )
         )
         _validate_dependency_set(
