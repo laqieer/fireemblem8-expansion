@@ -44,6 +44,7 @@ ITEMTEST_HEADER = REPO_ROOT / "include" / "expansion_itemtest.h"
 RUNNER = REPO_ROOT / "tools" / "gba-playtest" / "run_item_expansion_checks.py"
 
 BMITEM_SRC = REPO_ROOT / "src" / "bmitem.c"
+BMBATTLE_SRC = REPO_ROOT / "src" / "bmbattle.c"
 ITEMS_EXPANSION_JSON = REPO_ROOT / "src" / "data" / "items_expansion.json"
 CONTENT_TEXT_HEADER_NAME = "items_expansion_content_text.h"
 CONTENT_TEXT_CATALOG_NAME = "items_expansion_content_text.json"
@@ -71,7 +72,8 @@ ISSUE_158_AUDIT_MIGRATIONS = {
     ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_cap_dependency_error_stays_actionable":
         ("CompileTimeDependencyTests", "test_content_at_default_cap_fails"),
     ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_no_double_slash_comments":
-        ("CompileTimeDependencyTests", "test_full_content_profile_compiles"),
+        ("StarterContentC89ContractTests",
+         "test_enabled_content_translation_units_compile_as_c89"),
     ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_content_registers_only_through_the_public_api":
         ("StarterContentRegistrationHostTests",
          "test_enabled_content_registers_once_and_applies_bounded_avoid"),
@@ -79,8 +81,8 @@ ISSUE_158_AUDIT_MIGRATIONS = {
         ("StarterContentRegistrationHostTests",
          "test_enabled_content_registers_once_and_applies_bounded_avoid"),
     ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_bmbattle_seam_is_not_content_aware":
-        ("StarterContentRegistrationHostTests",
-         "test_enabled_content_registers_once_and_applies_bounded_avoid"),
+        ("StarterContentBattleSeamTests",
+         "test_enabled_battle_object_references_only_the_generic_hook"),
     ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_content_effect_is_bounded":
         ("StarterContentRegistrationHostTests",
          "test_enabled_content_registers_once_and_applies_bounded_avoid"),
@@ -186,6 +188,11 @@ def _host_link(work_dir, objects, executable_name):
     return proc.returncode, proc.stdout + proc.stderr, executable
 
 
+def _referenced_symbols(obj):
+    output = subprocess.run([NM, str(obj)], capture_output=True, text=True, check=True).stdout
+    return {line.split()[-1] for line in output.splitlines() if line.split()}
+
+
 class TestQualityAuditMappingTests(unittest.TestCase):
     """TC-TEST-QUALITY-001 requires every #158 audit record to retain a
     stronger executable, generated-output, or compiled evidence target."""
@@ -231,6 +238,12 @@ class ItemExpansionProbeAbiTests(unittest.TestCase):
                 "sizeof(((struct ItemExpansionProbe *)0)->{0}) }},".format(field)
                 for field in fields
             )
+            type_rows = "\n".join(
+                "typedef char ItemExpansionProbe_{0}_is_u32["
+                "__builtin_types_compatible_p(__typeof__(((struct "
+                "ItemExpansionProbe *)0)->{0}), u32) ? 1 : -1];".format(field)
+                for field in fields
+            )
             source.write_text(
                 "#define FE8_EXPANSION_ITEMTEST_ENABLED 1\n"
                 "#define FE8_ITEM_ID_CAP 0xCE\n"
@@ -247,6 +260,8 @@ class ItemExpansionProbeAbiTests(unittest.TestCase):
                 "{\n"
                 + field_rows
                 + "\n};\n"
+                + type_rows
+                + "\n"
                 "int main(void)\n"
                 "{\n"
                 "    size_t index;\n"
@@ -276,6 +291,62 @@ class ItemExpansionProbeAbiTests(unittest.TestCase):
             self.assertNotIn(field, consumer_layout)
             consumer_layout[field] = (int(offset), int(width))
         self.assertEqual(consumer_layout, runner_layout)
+
+
+@unittest.skipIf(ARM_CC is None, "no arm-none-eabi toolchain")
+class StarterContentC89ContractTests(unittest.TestCase):
+    """The enabled production translation units must reject non-C89 syntax."""
+
+    def test_enabled_content_translation_units_compile_as_c89(self):
+        with _test_tempdir() as tmp:
+            generated = Path(tmp) / "generated"
+            self.assertEqual(generate_content_text(generated, 1).returncode, 0)
+            for source in (CONTENT_SRC, MECHANICS_SRC):
+                obj = Path(tmp) / (source.stem + ".o")
+                command = [
+                    ARM_CC,
+                    "-c",
+                    "-w",
+                    "-std=c89",
+                    "-pedantic-errors",
+                    "-mthumb",
+                    "-isystem",
+                    str(REPO_ROOT / "include"),
+                    "-isystem",
+                    str(generated),
+                ]
+                command.extend("-D" + define for define in CONTENT_DEFINES)
+                command.extend([str(source), "-o", str(obj)])
+                completed = subprocess.run(
+                    command,
+                    cwd=str(REPO_ROOT),
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    "{} must compile as strict C89:\n{}{}".format(
+                        source.name, completed.stdout, completed.stderr),
+                )
+
+
+@unittest.skipIf(ARM_CC is None or NM is None, "no arm-none-eabi toolchain")
+class StarterContentBattleSeamTests(unittest.TestCase):
+    """The compiled production battle object reaches content only through the
+    generic mechanics hook."""
+
+    def test_enabled_battle_object_references_only_the_generic_hook(self):
+        with _test_tempdir() as tmp:
+            code, output, obj = _arm_compile(
+                tmp, BMBATTLE_SRC, "bmbattle_content.o", CONTENT_DEFINES)
+            self.assertEqual(code, 0, output)
+            references = _referenced_symbols(obj)
+        self.assertIn("ExpansionMechanicsApplyBattleStats", references)
+        self.assertFalse(
+            any("ExpansionStarterContent" in symbol for symbol in references),
+            references,
+        )
 
 
 @unittest.skipIf(CC is None, "no host C compiler")
@@ -321,6 +392,7 @@ class StarterContentRegistrationHostTests(unittest.TestCase):
                 "    int contentCount = 0;\n"
                 "    char *name;\n"
                 "    ExpansionMechanicsReset();\n"
+                "    memset(&gExpansionMechanicsProbe, 0, sizeof(gExpansionMechanicsProbe));\n"
                 "    ExpansionMechanicsInstallBuiltins();\n"
                 "    ExpansionMechanicsInstallBuiltins();\n"
                 "    for (index = 0; index < ExpansionMechanicsCount(); index++)\n"
@@ -328,11 +400,22 @@ class StarterContentRegistrationHostTests(unittest.TestCase):
                 "            contentCount++;\n"
                 "    CHECK(ExpansionMechanicsCount() == 2);\n"
                 "    CHECK(contentCount == 1);\n"
+                "    CHECK(gExpansionMechanicsProbe.registerOkCount == 2);\n"
+                "    CHECK(gExpansionMechanicsProbe.registerErrCount == 0);\n"
                 "    CHECK(ExpansionStarterContentItemId() == ITEM_EXPANSION_CE);\n"
                 "    name = ExpansionStarterContentItemName(ITEM_EXPANSION_CE);\n"
                 "    CHECK(name != NULL);\n"
                 "    CHECK(strcmp(name, " + json.dumps(authored_name()) + ") == 0);\n"
                 "    CHECK(ExpansionStarterContentItemName(ITEM_ID_SENTINEL) == NULL);\n"
+                "    memset(&subject, 0, sizeof(subject));\n"
+                "    subject.unit.items[0] = ITEM_EXPANSION_CE;\n"
+                "    subject.unit.maxHP = 20;\n"
+                "    subject.unit.curHP = 20;\n"
+                "    subject.battleDefense = 5;\n"
+                "    subject.battleAvoidRate = 50;\n"
+                "    ExpansionMechanicsApplyBattleStats(&subject, NULL, 0);\n"
+                "    CHECK(subject.battleDefense == 6);\n"
+                "    CHECK(subject.battleAvoidRate == 50 + EXPANSION_STARTER_CONTENT_AVOID_BONUS);\n"
                 "    memset(&subject, 0, sizeof(subject));\n"
                 "    subject.unit.items[0] = ITEM_EXPANSION_CE;\n"
                 "    subject.battleAvoidRate = 118;\n"
@@ -402,6 +485,10 @@ class CompileTimeDependencyTests(unittest.TestCase):
             self.assertEqual(generate_content_text(generated, 1).returncode, 0)
             return _arm_compile(tmp, CONTENT_SRC, "probe.o", defines, [generated])[:2]
 
+    def _assert_actionable_cap_diagnostic(self, output):
+        self.assertIn("expanded item cap", output)
+        self.assertIn("FE8_ITEM_ID_CAP=0xCE", output)
+
     def test_content_without_hooks_fails(self):
         code, output = self._compile(
             ["FE8_EXPANSION_STARTER_CONTENT=1", "FE8_ITEM_ID_CAP=0xCE"])
@@ -412,7 +499,11 @@ class CompileTimeDependencyTests(unittest.TestCase):
         code, output = self._compile(
             ["FE8_EXPANSION_STARTER_CONTENT=1", "FE8_EXPANSION_MECHANICS_HOOKS=1"])
         self.assertNotEqual(code, 0)
-        self.assertIn("expanded item cap", output)
+        self._assert_actionable_cap_diagnostic(output)
+
+    def test_generic_only_cap_diagnostic_fixture_is_rejected(self):
+        with self.assertRaises(AssertionError):
+            self._assert_actionable_cap_diagnostic("error: expanded item cap")
 
     def test_full_content_profile_compiles(self):
         code, output = self._compile([
