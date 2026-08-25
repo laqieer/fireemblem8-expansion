@@ -1,0 +1,6 @@
+{
+  "issue": 124,
+  "category": "added",
+  "summary": "Add debug-only Flag/Chapter turn overrides and one-phase red/green CPU or BLOCKED controls, with safe lifecycle reset, phase-event ordering, and release omission.",
+  "semver_impact": "minor"
+}

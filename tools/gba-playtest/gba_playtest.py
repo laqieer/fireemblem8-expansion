@@ -2082,6 +2082,7 @@ def capture(
     scheduled_write: ScheduledWrite | None = None,
     work_dir: Path | None = None,
     backend_path: Path | None = None,
+    sram_output: Path | None = None,
 ) -> dict[str, Any]:
     if scenario.disabled:
         raise PlaytestError(f"scenario {scenario.name!r} is disabled: {scenario.blocker}")
@@ -2101,6 +2102,8 @@ def capture(
             work_dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             raise PlaytestError(f"cannot create capture work directory {work_dir}: {exc}") from exc
+    if sram_output is not None and sram_image is None:
+        raise PlaytestError("sram_output requires an input sram_image")
     with tempfile.TemporaryDirectory(
         prefix="gba-playtest-",
         dir=str(work_dir) if work_dir is not None else None,
@@ -2119,6 +2122,7 @@ def capture(
         except OSError as exc:
             raise PlaytestError(f"cannot stage ROM {rom} for deterministic execution: {exc}") from exc
         execution_sram: Path | None = None
+        execution_sram_output: Path | None = None
         if sram_image is not None:
             execution_sram = temporary_path / "input.sav"
             try:
@@ -2131,6 +2135,8 @@ def capture(
                 raise PlaytestError(
                     f"cannot stage SRAM image {sram_image} for deterministic execution: {exc}"
                 ) from exc
+        if sram_output is not None:
+            execution_sram_output = temporary_path / "output.sav"
         # The identity is computed from the immutable temporary copy passed to
         # libmGBA, avoiding a path-replacement race between hashing and loading.
         provenance = rom_provenance(execution_rom)
@@ -2151,6 +2157,8 @@ def capture(
         backend_args = [str(backend), str(execution_rom), str(plan)]
         if execution_sram is not None:
             backend_args.append(str(execution_sram))
+        if execution_sram_output is not None:
+            backend_args.append(str(execution_sram_output))
         try:
             result = _run_transient_retryable(
                 backend_args,
@@ -2172,6 +2180,10 @@ def capture(
             )
         fingerprint = _parse_backend_output(result.stdout, scenario)
         fingerprint["rom"] = provenance
+        if sram_output is not None:
+            output_path = Path(sram_output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(execution_sram_output, output_path)
     inline_differences = compare_inline_expectations(scenario, fingerprint)
     if inline_differences:
         raise PlaytestError(

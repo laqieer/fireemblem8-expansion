@@ -271,3 +271,7 @@ void DebugTools_RegisterMusicPreviewAction(void)
 void DebugTools_CleanupMusicPreview(void)
 {
 }
+
+void DebugToolsPhaseControl_Reset(void)
+{
+}

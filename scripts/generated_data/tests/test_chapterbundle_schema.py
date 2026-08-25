@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import unittest
+from pathlib import Path
 
 from scripts.generated_data.diagnostics import DiagnosticCollector, GeneratedDataError
 from scripts.generated_data.chapterbundle import schema as chapterbundle_schema
@@ -303,6 +304,31 @@ class ChapterBundleValidFixtureTests(unittest.TestCase):
             self.assertIn("src/data/ch2_bundle.json", multi_first)
             self.assertIn("src/data/l3_bundle.json", multi_first)
             self.assertNotIn(first_root, multi_first)
+            unit_source = Path(first_root) / "src" / "data" / "ch2_units.json"
+            unit_source.write_text(
+                unit_source.read_text(encoding="utf-8") + "\n",
+                encoding="utf-8",
+            )
+            self.assertNotEqual(multi_first, schema.build_inventory(multi_first_records))
+
+            objective_directory = Path(first_root) / "objective_sources"
+            objective_directory.mkdir()
+            objective_source = Path(first_root) / "src" / "data" / "chapter_objectives.json"
+            shutil.copyfile(objective_source, objective_directory / "default_objectives.json")
+            directory_owner = copy.deepcopy(copy_bundle_checkout(first_root, multiple=False)[0])
+            directory_owner.chapter_objectives.source = "objective_sources"
+            directory_inventory = schema.build_inventory(
+                chapterbundle_schema.ChapterBundleRecords([directory_owner])
+            )
+            self.assertIn("objective_sources/default_objectives.json", directory_inventory)
+            (objective_directory / "default_objectives.json").write_text(
+                (objective_directory / "default_objectives.json").read_text(encoding="utf-8") + "\n",
+                encoding="utf-8",
+            )
+            self.assertNotEqual(
+                directory_inventory,
+                schema.build_inventory(chapterbundle_schema.ChapterBundleRecords([directory_owner])),
+            )
 
             outside = copy.deepcopy(multi_first_records[1])
             outside.source_path = os.path.join(tmp, "outside", "l3_bundle.json")

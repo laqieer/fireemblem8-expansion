@@ -1,5 +1,9 @@
 #include "global.h"
 
+#ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_debugtools.h"
+#endif
+
 #include "expansion_casual_mode.h"
 
 #include <string.h>
@@ -982,6 +986,9 @@ void StartBattleMap(struct GameCtrlProc* gameCtrl) {
 
 #ifndef FE8_ARCHIVAL_BUILD
     ExpansionAutoplay_Reset();
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+    DebugToolsPhaseControl_Reset();
+#endif
 #endif
 #if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
     ExpansionChapterObjectives_ResetTelemetry();
@@ -1056,6 +1063,9 @@ void StartBattleMap(struct GameCtrlProc* gameCtrl) {
 void RestartBattleMap(void) {
 #ifndef FE8_ARCHIVAL_BUILD
     ExpansionAutoplay_Reset();
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+    DebugToolsPhaseControl_Reset();
+#endif
 #endif
 #if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
     ExpansionChapterObjectives_ResetTelemetry();
@@ -1106,6 +1116,9 @@ void GameCtrl_StartResumedGame(struct GameCtrlProc* gameCtrl) {
 
 #ifndef FE8_ARCHIVAL_BUILD
     ExpansionAutoplay_Reset();
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+    DebugToolsPhaseControl_Reset();
+#endif
 #endif
 #if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
     ExpansionChapterObjectives_ResetTelemetry();
@@ -1237,6 +1250,9 @@ void EndBMapMain(void) {
 
 #ifndef FE8_ARCHIVAL_BUILD
     ExpansionAutoplay_Reset();
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+    DebugToolsPhaseControl_Reset();
+#endif
 #endif
 #if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
     ExpansionChapterObjectives_ResetTelemetry();
@@ -1249,6 +1265,14 @@ void EndBMapMain(void) {
 
     Proc_End(mapMain);
 }
+
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+void EndBMapMainForChapterTransition(void)
+{
+    DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition();
+    EndBMapMain();
+}
+#endif
 
 void ChapterChangeUnitCleanup(void) {
     int i, j;

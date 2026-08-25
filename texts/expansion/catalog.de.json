@@ -121,6 +121,15 @@
     "debug.value.phase_player": "PLAYER",
     "debug.value.phase_enemy": "ENEMY",
     "debug.value.phase_npc": "NPC",
-    "debug.value.phase_other": "OTHER"
+    "debug.value.phase_other": "OTHER",
+    "debug.confirm.turn_increment": "Runde +1 anwenden",
+    "debug.confirm.turn_decrement": "Runde -1 anwenden",
+    "debug.confirm.red_computer": "Rot CPU anwenden",
+    "debug.confirm.red_blocked": "Rot blockieren",
+    "debug.confirm.green_computer": "Grün CPU anwenden",
+    "debug.confirm.green_blocked": "Grün blockieren",
+    "debug.status.turn": "RUNDE",
+    "debug.mode.computer": "CPU",
+    "debug.mode.blocked": "BLOCK"
   }
 }

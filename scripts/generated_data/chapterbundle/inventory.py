@@ -36,6 +36,33 @@ def _source_display_and_digest(record, source):
     return source_display_path(source_path, record.repository_root), digest
 
 
+def _objective_source_entries(record, source):
+    from ..chapterobjectives import schema as objectives_schema
+
+    source_path = _source_path(source, record.repository_root)
+    loaded = objectives_schema.load_records(source_path)
+    return tuple(
+        _source_display_and_digest(record, path)
+        for path in loaded.source_paths
+    )
+
+
+def _aggregate_digest(entries):
+    return _digest(json.dumps(sorted(entries), separators=(",", ":")))
+
+
+def _dependent_source_entries(record):
+    entries = []
+    for table_name in BUNDLE_TABLE_NAMES:
+        table = record.tables_by_name.get(table_name)
+        if table is not None:
+            entries.append(_source_display_and_digest(record, table.source))
+    entries.append(_source_display_and_digest(record, record.support_owners.source))
+    if record.chapter_objectives is not None:
+        entries.extend(_objective_source_entries(record, record.chapter_objectives.source))
+    return tuple(sorted(entries))
+
+
 def _build_single_inventory(records):
     graph = full_dependency_graph()
     lines = []
@@ -80,10 +107,12 @@ def _build_single_inventory(records):
     )
     if records.chapter_objectives is not None:
         objectives = records.chapter_objectives
-        source, digest = _source_display_and_digest(records, objectives.source)
+        entries = _objective_source_entries(records, objectives.source)
         lines.append(
             "| chapterobjectives | {} | {} | {} |\n".format(
-                source, len(objectives.symbols), digest
+                ", ".join(source for source, _digest_value in entries),
+                len(objectives.symbols),
+                _aggregate_digest(entries),
             )
         )
     lines.append("\n")
@@ -159,17 +188,20 @@ def build_inventory(records):
         "- Full multi-table dependency graph digest (sha256): `{}`\n".format(graph.digest()),
         "- Full multi-table topological order: {}\n".format(", ".join(graph.topo_order())),
         "\n",
-        "| Chapter | Bundle source | Source digest (sha256) | Manifest | Unit symbols | Objective symbols |\n",
-        "|---|---|---|---|---|---|\n",
+        "| Chapter | Bundle source | Source digest (sha256) | Dependent sources digest (sha256) | "
+        "Manifest | Unit symbols | Objective symbols |\n",
+        "|---|---|---|---|---|---|---|\n",
     ]
     for record in records:
         unit_groups = record.tables_by_name.get("units")
         objectives = record.chapter_objectives
+        dependent_entries = _dependent_source_entries(record)
         lines.append(
-            "| {} | {} | {} | {} | {} | {} |\n".format(
+            "| {} | {} | {} | {} | {} | {} | {} |\n".format(
                 record.chapter.id,
                 source_display_path(record.source_path, record.repository_root),
                 _source_display_and_digest(record, record.source_path)[1],
+                _aggregate_digest(dependent_entries),
                 record.manifest.symbol,
                 ", ".join(sorted(unit_groups.symbols)) if unit_groups is not None else "-",
                 ", ".join(sorted(objectives.symbols)) if objectives is not None else "-",
