@@ -245,6 +245,7 @@ enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_TryDecide(void)
         return result;
 
     strategy = FindStrategy(strategyId);
+    ExpansionChapterObjectives_RefreshTelemetry();
     objective = ExpansionChapterObjectives_GetActiveObjective();
     result = ValidateStrategyForObjective(strategy, objective);
     if (result != EXPANSION_AUTOPLAY_STRATEGY_OK)
@@ -349,8 +350,28 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
         if (xTarget != gActiveUnit->xPos || yTarget != gActiveUnit->yPos)
         {
             AiTryMoveTowards(xTarget, yTarget, 0, 0, 1);
-            if (gAiDecision.actionPerformed)
+            if (gAiDecision.actionPerformed
+                && gAiDecision.xMove >= objective->xMin
+                && gAiDecision.xMove <= objective->xMax
+                && gAiDecision.yMove >= objective->yMin
+                && gAiDecision.yMove <= objective->yMax)
                 return true;
+        }
+
+        if (objective->kind == EXPANSION_CHAPTER_OBJECTIVE_HOLD_UNTIL_TURN)
+        {
+            AiAttemptCombatWithinMovement(AiIsUnitEnemy);
+            if (gAiDecision.actionPerformed
+                && gAiDecision.xMove >= objective->xMin
+                && gAiDecision.xMove <= objective->xMax
+                && gAiDecision.yMove >= objective->yMin
+                && gAiDecision.yMove <= objective->yMax)
+            {
+                return true;
+            }
+
+            gAiDecision.actionPerformed = false;
+            return true;
         }
     }
 

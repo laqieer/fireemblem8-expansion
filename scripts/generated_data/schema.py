@@ -146,6 +146,10 @@ class TableSchema:
         """
         return len(records)
 
+    def configure_records(self, records, **options):
+        """Apply optional generation-profile inputs without changing validation."""
+        return records
+
     def round_trip_errors(self, records, hand_source):
         """Compare ``records`` against a hand-written C file at
         ``hand_source``. Returns a list of :class:`GeneratedDataError`

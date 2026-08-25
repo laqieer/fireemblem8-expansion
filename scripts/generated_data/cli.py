@@ -87,6 +87,13 @@ def _load_and_validate(schema, source_path, dep_source_overrides=None):
     return records, diagnostics
 
 
+def _configure_records(schema, records, args):
+    return schema.configure_records(
+        records,
+        reference_profiles=args.reference_profiles,
+    )
+
+
 def _roundtrip_errors(schema, records, hand_source, no_roundtrip):
     if no_roundtrip or not hand_source:
         return []
@@ -107,6 +114,7 @@ def cmd_validate(args):
     try:
         dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
         records, diagnostics = _load_and_validate(schema, source_path, dep_source_overrides)
+        records = _configure_records(schema, records, args)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -145,6 +153,7 @@ def cmd_generate(args):
     try:
         dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
         records, diagnostics = _load_and_validate(schema, source_path, dep_source_overrides)
+        records = _configure_records(schema, records, args)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -201,6 +210,7 @@ def cmd_check(args):
     try:
         dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
         records, diagnostics = _load_and_validate(schema, source_path, dep_source_overrides)
+        records = _configure_records(schema, records, args)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -388,6 +398,11 @@ def build_arg_parser():
             "--dep-source", action="append",
             help="override a table dependency's JSON source as NAME=PATH (repeatable); "
                  "only meaningful for tables whose schema declares dependency_tables()",
+        )
+        sub.add_argument(
+            "--reference-profiles",
+            choices=("0", "1"),
+            help="select generated built-in autoplay reference profiles",
         )
 
     validate_parser = subparsers.add_parser("validate", help="validate a table's JSON source")

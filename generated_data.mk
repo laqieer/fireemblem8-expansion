@@ -490,25 +490,76 @@ $(GENERATED_DATA_CHAPTEROBJECTIVES_C): $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE
 		--inventory $(GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY)
 	@test -e $@ || { echo "error: generated-data table 'chapterobjectives' did not produce $@" >&2; exit 1; }
 
-# Typed autoplay strategies are modern-only generated data. The default
-# source has no profiles or assignments, preserving the existing Unit.ai
-# decision path without a profile gate or hidden runtime state.
+# Typed autoplay strategies are modern-only generated data. The canonical
+# source contains the two reusable references; Make selects their generated
+# descriptors and assignments per profile while retaining non-reference
+# downstream records in every modern build.
+GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE ?= src/data/autoplay_strategies.json
+GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE ?= \
+	$(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE)
+GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE ?= \
+	$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE)
+GENERATED_DATA_AUTOPLAYSTRATEGIES_REFERENCE_PROFILES ?= \
+	$(EXPANSION_AUTOPLAY_STRATEGIES)
 GENERATED_DATA_AUTOPLAYSTRATEGIES_C := $(GENERATED_DATA_OUT_DIR)/data_autoplay_strategies.c
+GENERATED_DATA_AUTOPLAYSTRATEGIES_DEP_DISCOVERY := \
+	$(PYTHON) -m scripts.generated_data.autoplaystrategies.deps
+GENERATED_DATA_AUTOPLAYSTRATEGIES_DEPFILE := \
+	$(GENERATED_DATA_OUT_DIR)/autoplaystrategies.inputs.mk
+GENERATED_DATA_AUTOPLAYSTRATEGIES_STAMP := \
+	$(GENERATED_DATA_OUT_DIR)/.autoplaystrategies.stamp
 GENERATED_DATA_CONFIG_INPUTS_autoplaystrategies := \
 	include/constants/chapters.h \
 	include/constants/characters.h \
 	include/constants/event-flags.h \
 	include/expansion_autoplay_strategies.h \
-	include/expansion_chapter_objectives.h \
-	src/data/chapter_objectives.json
+	include/expansion_chapter_objectives.h
 
-$(GENERATED_DATA_AUTOPLAYSTRATEGIES_C): src/data/autoplay_strategies.json \
+.PHONY: FORCE_AUTOPLAYSTRATEGIES_DEPFILE
+FORCE_AUTOPLAYSTRATEGIES_DEPFILE:
+
+.PHONY: FORCE_AUTOPLAYSTRATEGIES_STAMP
+FORCE_AUTOPLAYSTRATEGIES_STAMP:
+
+$(GENERATED_DATA_AUTOPLAYSTRATEGIES_STAMP): FORCE_AUTOPLAYSTRATEGIES_STAMP
+	@mkdir -p $(@D)
+	@printf '%s\n' \
+		'reference_profiles=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_REFERENCE_PROFILES)' \
+		'source=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)' \
+		'objectives_source=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE)' \
+		'bundle_source=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE)' > "$@.tmp"
+	@if [ ! -f "$@" ] || ! cmp -s "$@.tmp" "$@"; then mv -f "$@.tmp" "$@"; else rm -f "$@.tmp"; fi
+
+$(GENERATED_DATA_AUTOPLAYSTRATEGIES_DEPFILE): FORCE_AUTOPLAYSTRATEGIES_DEPFILE \
+	$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE) \
+	$(GENERATED_DATA_SHARED_PY_SOURCES) \
+	$(wildcard scripts/generated_data/autoplaystrategies/*.py) \
+	$(wildcard scripts/generated_data/chapterobjectives/*.py) \
+	scripts/generated_data/chapterbundle/schema.py
+	@mkdir -p $(@D)
+	@$(GENERATED_DATA_AUTOPLAYSTRATEGIES_DEP_DISCOVERY) \
+		--source "$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)" \
+		--objectives-source "$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE)" \
+		--bundle-source "$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE)" \
+		--make-target "$(GENERATED_DATA_AUTOPLAYSTRATEGIES_C)" \
+		--depfile "$@"
+
+-include $(GENERATED_DATA_AUTOPLAYSTRATEGIES_DEPFILE)
+
+$(GENERATED_DATA_AUTOPLAYSTRATEGIES_C): $(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE) \
+	$(GENERATED_DATA_AUTOPLAYSTRATEGIES_DEPFILE) \
+	$(GENERATED_DATA_AUTOPLAYSTRATEGIES_STAMP) \
 	$(GENERATED_DATA_SHARED_PY_SOURCES) \
 	$(wildcard scripts/generated_data/autoplaystrategies/*.py) \
 	$(wildcard scripts/generated_data/chapterobjectives/*.py) \
 	$(GENERATED_DATA_CONFIG_INPUTS_autoplaystrategies)
 	@mkdir -p $(@D)
-	$(GENERATED_DATA_PY) generate --table autoplaystrategies --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_PY) generate --table autoplaystrategies \
+		--source $(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE) \
+		--dep-source chapterobjectives=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE) \
+		--dep-source chapterbundle=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE) \
+		--reference-profiles $(GENERATED_DATA_AUTOPLAYSTRATEGIES_REFERENCE_PROFILES) \
+		--out-dir $(GENERATED_DATA_OUT_DIR)
 	@test -e $@ || { echo "error: generated-data table 'autoplaystrategies' did not produce $@" >&2; exit 1; }
 
 # --- Issue #6 config-gated CONTENT text -----------------------------------
