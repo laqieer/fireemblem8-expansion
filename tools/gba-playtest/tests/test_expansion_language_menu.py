@@ -62,6 +62,15 @@ TEST_WORK_ROOT = REPO_ROOT / ".test-work"
 
 CC = shutil.which("gcc") or shutil.which("cc")
 NM = shutil.which("nm")
+XMAP_POISON_SYMBOL = "fe8_xmap_dependency_forbidden"
+XMAP_DEPENDENCY_TOKENS = (
+    "XMAP_MAGIC", "SAVEMAGIC32_XMAP", "SAVE_ID_XMAP", "SAVEBLOCK_KIND_XMAP",
+    "SRAM_SIZE_XMAP", "SRAM_OFFSET_XMAP", "EWRAM_XMAP_SIZE", "xmap",
+    "gExtraMapSaveHead", "gExtraMapInfo", "gpSramExtraData",
+    "ReadExtraMapSaveHead", "GetExtraMapMapReadAddr", "GetExtraMapMapSize",
+    "GetExtraMapInfoReadAddr", "GetExtraMapInfoSize", "ExtraMapChecksum",
+    "IsExtraMapAvailable", "ReadExtraMapInfo", "IsValidExtraMapAvilable",
+)
 
 
 def _skip_if_no_host_compiler():
@@ -127,6 +136,25 @@ def _undefined_symbols(obj: Path) -> set[str]:
     if completed.returncode != 0:
         raise AssertionError(completed.stdout + completed.stderr)
     return {line.split()[-1] for line in completed.stdout.splitlines() if line.split()}
+
+
+def _compile_with_xmap_poison(work_dir: Path, source: Path, generated: Path, inject=False):
+    wrapper = work_dir / (source.stem + ("-xmap-injected.c" if inject else "-xmap-clean.c"))
+    text = (
+        '#include "global.h"\n#include "bmsave.h"\n'
+        f"extern int {XMAP_POISON_SYMBOL};\n"
+        + "".join(
+            f"#define {token} {XMAP_POISON_SYMBOL}\n"
+            for token in XMAP_DEPENDENCY_TOKENS
+        )
+        + f'#include "{source}"\n'
+    )
+    if inject:
+        text += "int fe8_xmap_adversary(void) { return XMAP_MAGIC; }\n"
+    wrapper.write_text(text, encoding="ascii")
+    return _compile(
+        work_dir, wrapper, wrapper.stem + ".o", ["MODERN=1"], [generated]
+    )
 
 
 def _temporary_directory():
@@ -237,7 +265,7 @@ class ExpansionLanguageMenuProductionBehaviorTests(unittest.TestCase):
             "legacy Config object must not acquire language-menu references",
         )
 
-    def test_owned_locale_objects_do_not_link_vanilla_language_state(self):
+    def test_owned_locale_objects_reject_vanilla_language_and_xmap_dependencies(self):
         forbidden_relocations = {"GetLang", "SetLang", "gLanguageMode"}
         sources = (
             REPO_ROOT / "src" / "expansion_locale.c",
@@ -258,6 +286,16 @@ class ExpansionLanguageMenuProductionBehaviorTests(unittest.TestCase):
                         forbidden_relocations & _undefined_symbols(obj),
                         "%s must remain independent of vanilla language state" % source.name,
                     )
+                    rc, out, clean = _compile_with_xmap_poison(
+                        work, source, generated
+                    )
+                    self.assertEqual(rc, 0, out)
+                    self.assertNotIn(XMAP_POISON_SYMBOL, _undefined_symbols(clean))
+                    rc, out, injected = _compile_with_xmap_poison(
+                        work, source, generated, inject=True
+                    )
+                    self.assertEqual(rc, 0, out)
+                    self.assertIn(XMAP_POISON_SYMBOL, _undefined_symbols(injected))
 
 
 class ExpansionLanguageMenuGeneratedRegistryTests(unittest.TestCase):
