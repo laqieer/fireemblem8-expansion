@@ -414,6 +414,61 @@ def _validate_cycles(record, objectives_by_id, diagnostics):
         visit(identifier, [])
 
 
+def _validate_protect_flag_chains(record, objectives_by_id, diagnostics):
+    for objective in objectives_by_id.values():
+        if objective.kind != "protect":
+            continue
+        parent_ref = "chapters[symbol={}].objectives[id={}]".format(record.symbol, objective.id)
+        child_id = objective.completion_objective
+        visited = set()
+        while child_id in objectives_by_id and child_id not in visited:
+            visited.add(child_id)
+            child = objectives_by_id[child_id]
+            child_ref = "objectives[id={}]".format(child.id)
+            if child.kind in ("protect", "hold_until_turn") and child.failure_flag is not None:
+                if objective.completion_flag == child.failure_flag:
+                    diagnostics.add(
+                        _err(
+                            "protect completionFlag '{}' aliases {} failureFlag and can convert failure to success".format(
+                                objective.completion_flag, child_ref
+                            ),
+                            objective.completion_flag_loc, parent_ref + ".completionFlag",
+                        )
+                    )
+            if child.kind == "protect" and child.completion_flag is not None:
+                if objective.failure_flag == child.completion_flag:
+                    diagnostics.add(
+                        _err(
+                            "protect failureFlag '{}' aliases {} completionFlag and can convert success to failure".format(
+                                objective.failure_flag, child_ref
+                            ),
+                            objective.failure_flag_loc, parent_ref + ".failureFlag",
+                        )
+                    )
+            if child.kind == "event_flag" and child.event_flag is not None:
+                if objective.failure_flag == child.event_flag:
+                    diagnostics.add(
+                        _err(
+                            "protect failureFlag '{}' aliases {} eventFlag and can convert event success to failure".format(
+                                objective.failure_flag, child_ref
+                            ),
+                            objective.failure_flag_loc, parent_ref + ".failureFlag",
+                        )
+                    )
+                if objective.completion_flag == child.event_flag:
+                    diagnostics.add(
+                        _err(
+                            "protect completionFlag '{}' aliases {} eventFlag".format(
+                                objective.completion_flag, child_ref
+                            ),
+                            objective.completion_flag_loc, parent_ref + ".completionFlag",
+                        )
+                    )
+            if child.kind != "protect":
+                break
+            child_id = child.completion_objective
+
+
 def _bundle_records(dependency_records):
     bundles = dependency_records.get("chapterbundle")
     if bundles is None:
@@ -918,6 +973,7 @@ def validate(records, diagnostics, dependency_records=None,
                         )
 
         _validate_cycles(record, objectives_by_id, diagnostics)
+        _validate_protect_flag_chains(record, objectives_by_id, diagnostics)
         diagnostics.extend(
             validate_unique(
                 failure_flags,

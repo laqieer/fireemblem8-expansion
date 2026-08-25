@@ -106,6 +106,7 @@ struct ExpansionChapterObjectiveRuntimeProbe
     u32 holdReentryState;
     u32 protectCompletionThenDeathState;
     u32 protectLatchReconstructionState;
+    u32 replayMutationCount;
 };
 
 extern struct ExpansionChapterObjectiveRuntimeProbe gExpansionChapterObjectiveRuntimeProbe;

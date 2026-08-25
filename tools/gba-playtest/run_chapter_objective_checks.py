@@ -40,6 +40,7 @@ OBJECTIVE_RUNTIME_PROBE_BINDINGS = (
     OBJECTIVE_RUNTIME_PROBE_SYMBOL + "+0x2c",
     OBJECTIVE_RUNTIME_PROBE_SYMBOL + "+0x30",
     OBJECTIVE_RUNTIME_PROBE_SYMBOL + "+0x34",
+    OBJECTIVE_RUNTIME_PROBE_SYMBOL + "+0x38",
 )
 
 
@@ -138,7 +139,7 @@ def _check_fixture(capture: dict) -> list[str]:
         OBJECTIVE_TELEMETRY_SYMBOL + "+0x08",
         OBJECTIVE_TELEMETRY_SYMBOL + "+0x0c",
     )
-    expected_probe_values = {
+    expected_initial_probe_values = {
         OBJECTIVE_RUNTIME_PROBE_BINDINGS[0]: OBJECTIVE_RUNTIME_PROBE_MAGIC,
         OBJECTIVE_RUNTIME_PROBE_BINDINGS[1]: OBJECTIVE_FIXTURE_EVENT_ID,
         OBJECTIVE_RUNTIME_PROBE_BINDINGS[2]: 1,
@@ -153,6 +154,7 @@ def _check_fixture(capture: dict) -> list[str]:
         OBJECTIVE_RUNTIME_PROBE_BINDINGS[11]: 3,
         OBJECTIVE_RUNTIME_PROBE_BINDINGS[12]: 2,
         OBJECTIVE_RUNTIME_PROBE_BINDINGS[13]: 3,
+        OBJECTIVE_RUNTIME_PROBE_BINDINGS[14]: 1,
     }
 
     for address, expected in (
@@ -181,16 +183,28 @@ def _check_fixture(capture: dict) -> list[str]:
                 )
             )
 
-    for address, expected in expected_probe_values.items():
+    for address, expected in expected_initial_probe_values.items():
         if suspended.get(address) != expected:
             failures.append(
                 "fixture objective transition: {}={}, expected {}".format(
                     address, suspended.get(address), expected
                 )
             )
+    for address in OBJECTIVE_RUNTIME_PROBE_BINDINGS[1:13]:
+        if resumed.get(address) != 0:
+            failures.append(
+                "fixture objective resume replay: {}={}, expected 0".format(
+                    address, resumed.get(address)
+                )
+            )
+    for address, expected in (
+        (OBJECTIVE_RUNTIME_PROBE_BINDINGS[0], OBJECTIVE_RUNTIME_PROBE_MAGIC),
+        (OBJECTIVE_RUNTIME_PROBE_BINDINGS[13], 3),
+        (OBJECTIVE_RUNTIME_PROBE_BINDINGS[14], 0),
+    ):
         if resumed.get(address) != expected:
             failures.append(
-                "fixture objective transition after Resume: {}={}, expected {}".format(
+                "fixture objective read-only resume: {}={}, expected {}".format(
                     address, resumed.get(address), expected
                 )
             )
