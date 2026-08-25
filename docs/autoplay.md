@@ -431,8 +431,9 @@ The generated table budgets are 32 chapter bundles, eight objectives and
 eight groups per chapter, and 16 members per group. Modern generated data
 uses 12 bytes per bundle, 12 bytes plus members per group, and 28 bytes per
 objective; the default empty table is one 12-byte sentinel. The telemetry
-record remains 16 EWRAM bytes; two transient readiness bytes gate evaluation
-until beginning events complete. Neither changes IWRAM, save, migration, compatibility epoch,
+record remains 16 EWRAM bytes; both modern debug and release profiles allocate
+20 EWRAM bytes after the two transient readiness bytes and alignment. Neither
+changes IWRAM, save, migration, compatibility epoch,
 localization, configuration identity, or feature gate. Each authored
 telemetry refresh uses a bounded 1 KiB stack index and scans the 255 unit
 slots once, eliminating per-member character scans while remaining within the

@@ -512,6 +512,29 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             diagnostics.render(),
         )
 
+    def test_terminal_failure_and_completion_flags_cannot_alias(self):
+        records, diagnostics = _validate("valid.json")
+        objectives = {objective.id: objective for objective in records[0].objectives}
+        protect = objectives["OBJECTIVE_FIXTURE_PROTECT"]
+        protect.completion_flag = "EVFLAG_5"
+        schema.validate(
+            records,
+            diagnostics,
+            {
+                "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json")),
+                "chapterbundle": chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json")),
+            },
+        )
+        error = next(
+            error for error in diagnostics.errors
+            if error.message.startswith("protect completionFlag 'EVFLAG_5' aliases objective failureFlag")
+        )
+        self.assertEqual(error.location, protect.completion_flag_loc)
+        self.assertEqual(
+            error.reference_path,
+            "chapters[symbol=ChapterObjectives_Fixture].terminalFlags[EVFLAG_5]",
+        )
+
     def test_protect_chain_deactivation_flags_are_disjoint_or_fail_closed(self):
         _, diagnostics = _validate("nested_disjoint.json")
         self.assertTrue(diagnostics.ok, diagnostics.render())

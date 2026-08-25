@@ -7,6 +7,9 @@ from scripts.generated_data.tests._util import fixture_path, scratch_dir
 from scripts.generated_data.tests.test_cli import run_cli
 
 
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
+
 class CliUnitsTests(unittest.TestCase):
     def test_real_ch2_units_source_validates_and_roundtrips_clean(self):
         code, out, err = run_cli(["validate", "--table", "units"])
@@ -187,7 +190,14 @@ class CliChapterBundleTests(unittest.TestCase):
                 direct_report = handle.read()
             with open(directory_inventory, encoding="utf-8") as handle:
                 directory_report = handle.read()
-            self.assertEqual(direct_report, directory_report)
+            direct_source = os.path.relpath(bundle_path, REPO_ROOT).replace(os.sep, "/")
+            directory_source = os.path.relpath(directory_bundle, REPO_ROOT).replace(os.sep, "/")
+            self.assertIn("`{}`".format(direct_source), direct_report)
+            self.assertIn("`{}`".format(directory_source), directory_report)
+            self.assertEqual(
+                direct_report.replace(direct_source, directory_source),
+                directory_report,
+            )
 
             for field, source_key, expected_path in (
                 ("tables.units", ("tables", "units", "source"), "tables.units.source"),
