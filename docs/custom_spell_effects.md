@@ -1,11 +1,10 @@
-# Custom battle spell-effect runtime (issue #77)
+# Custom battle spell effects (issues #77 and #78)
 
-Issue #77 provides the **runtime foundation only** for an optional,
-project-selected custom battle spell effect. It is a typed, bounded extension
-to the existing `C05` -> `StartSpellAnimation()` route. It is not an item
-catalog, manifest adapter, FEditor/CSA parser, package format, external patch,
-or source of project spell assets. Issue #78 owns the sole future
-`custom-spell-effect` asset adapter and its generated bindings.
+Issue #77 provides the optional typed runtime extension to the existing
+`C05` -> `StartSpellAnimation()` route. Issue #78 adds the sole
+`custom-spell-effect` `KIND_REGISTRY` adapter and a committed synthetic
+reference package. It is source generation, not an editor patch, ROM importer,
+runtime parser, project spell catalog, or second item/effect registry.
 
 ## Configuration and compatibility
 
@@ -21,18 +20,27 @@ embedded build metadata, but it does not alter
 save migration. A battle Proc is transient and cannot survive an ordinary
 save/suspend boundary.
 
-Enabled identity also binds runtime ABI `1`, the synthetic descriptor
-inventory SHA-256, and the published resource-envelope SHA-256. The disabled
-metadata records ABI `0` and SHA-256-of-empty inventory/resource values, while
-the disabled fingerprint intentionally remains the pre-feature default.
+Enabled identity also binds runtime ABI `1`, the selected manifest's generated
+descriptor/asset inventory SHA-256 (including each frame's canonical OAM
+geometry hash), and resource-envelope SHA-256. The disabled metadata records
+ABI `0` and SHA-256-of-empty inventory/resource values, while the disabled
+fingerprint intentionally remains the pre-feature default.
 
 ```sh
-./configure --enable-custom-spell-effects
+./configure --enable-custom-spell-effects \
+  --with-asset-manifest=assets/manifests/custom-spell-reference.json
 make
 
 # One-off equivalent
-make expansion-modern-rom EXPANSION_CUSTOM_SPELL_EFFECTS=1
+make expansion-modern-rom EXPANSION_CUSTOM_SPELL_EFFECTS=1 \
+  ASSET_MANIFEST=assets/manifests/custom-spell-reference.json
 ```
+
+`--with-asset-manifest=PATH` persists the selected source-owned manifest in
+ignored `config.autotools.mk`; if omitted, `ASSET_MANIFEST` remains
+`assets/manifest.json`. Enabling custom spell effects against that catalog-free
+default fails during `configure` with the same actionable manifest diagnostic
+used by the build.
 
 Only modern AAPCS debug and release builds support the runtime. The archival
 lane always compiles with `FE8_EXPANSION_CUSTOM_SPELL_EFFECTS=0`; it has no
@@ -42,7 +50,9 @@ custom dispatch, descriptor, assets, or package support.
 
 Include `custom_spell_effect.h`. Generated bindings must use a stable
 `CUSTOM_SPELL_*` symbol and may only assign the private dense range
-`0x80..0x8F`; authored manifests never use dense values.
+`0x80..0x8F`; authored manifests never use dense values. An authored symbol
+must not redefine any existing public or test `CUSTOM_SPELL_*` name, including
+`CUSTOM_SPELL_EFFECT_BASE`.
 
 ```c
 const struct CustomSpellEffect *CustomSpellEffect_Lookup(u8 animationId);
@@ -62,12 +72,12 @@ The runtime accepts OBJ palette line 2 and BG palette line 1 only; a descriptor
 that names another lane is invalid before it can reserve anything.
 The fallback ID must be both inside the source-derived vanilla LUT bounds and
 bound to a non-NULL LUT entry. A malformed fallback is rejected and is never
-silently replaced by the synthetic reference fallback.
-The foundation's compiled synthetic descriptor proves the ABI without a
-manifest record or external asset. `CustomSpellEffect_Lookup()` accepts only
-the closed custom range. `StartSpellAnimation()` checks that range before
-indexing the vanilla LUT; every other animation ID keeps its prior
-`gEkrSpellAnimLut[]` and `SpellAssoc` ownership unchanged.
+silently replaced by the known-valid Fire fallback.
+The generated descriptor array is dense and ordered by stable manifest ID.
+`CustomSpellEffect_Lookup()` accepts only generated entries in the closed
+custom range. `StartSpellAnimation()` checks that range before indexing the
+vanilla LUT; every other animation ID keeps its prior `gEkrSpellAnimLut[]`
+and `SpellAssoc` ownership unchanged.
 
 Missing or invalid custom descriptors, a reentrant custom owner, an occupied
 spell semaphore, invalid presentation metadata, or `WITH_BACKGROUNDS` select
@@ -77,6 +87,160 @@ invalid descriptor may use its declared fallback only when that LUT entry is
 itself valid. No partial custom write occurs. The `OFF` presentation policy
 takes the same clean fallback path; only `DEFAULT`, `REDUCED`, and `SOLO` may
 acquire the custom spell lanes.
+
+## `custom-spell-effect` manifest and package
+
+The root [`assets/manifest.json`](../assets/manifest.json) contains no custom
+spell record, so the default-off build remains catalog-free. The committed
+reference profile is
+[`assets/manifests/custom-spell-reference.json`](../assets/manifests/custom-spell-reference.json).
+Feature `0` with a record is an error; feature `1` without a record is also an
+error.
+
+One record uses the exact kind-owned schema below:
+
+```json
+{
+  "id": "CUSTOM_SPELL_REFERENCE",
+  "kind": "custom-spell-effect",
+  "sources": [
+    "graphics/custom_spell/reference/spell.json",
+    "graphics/custom_spell/reference/animation.txt",
+    "graphics/custom_spell/reference/images/reference_obj_00.png",
+    "graphics/custom_spell/reference/images/reference_bg_00.png",
+    "graphics/custom_spell/reference/images/reference_obj_01.png",
+    "graphics/custom_spell/reference/images/reference_bg_01.png"
+  ],
+  "dependsOn": [],
+  "options": {
+    "importFormat": "feditor-magic-v1",
+    "runtimeAbi": 1,
+    "compression": "lz77"
+  },
+  "ownership": {
+    "seam": "spell-effect-dispatch",
+    "item": "ITEM_ANIMA_FORBLAZE",
+    "effectSymbol": "CUSTOM_SPELL_REFERENCE",
+    "fallbackVanillaEffect": "SASSOC_EFX_Fire",
+    "spellAssociationSource": "src/spellassoc-data.c"
+  },
+  "resources": {
+    "frames": 2,
+    "totalFrames": 4,
+    "hitFrame": 2,
+    "objBytes": 4096,
+    "bgBytes": 1280,
+    "bgTsaBytes": 1200,
+    "objOamEntries": 2,
+    "objPalettes": 1,
+    "bgPalettes": 1,
+    "soundEvents": 1,
+    "romBytes": 262144
+  }
+}
+```
+
+`sources` lists `spell.json`, `animation.txt`, then every referenced image in
+first-reference order. The package directory contains only those two files
+and `images/`; the directory, both top-level files, and every image must be
+real direct children rather than symbolic links or paths that resolve outside
+the package. Image names are safe ASCII basenames. `ITEM_*` must resolve to
+one existing anima/light/dark `IA_WEAPON | IA_MAGIC` record with no existing
+`SpellAssoc` entry. The fallback symbol must resolve to a non-NULL vanilla
+spell LUT entry. Duplicate item/effect ownership and more than 16 records fail.
+
+`spell.json` owns only declared SFX:
+
+```json
+{
+  "schemaVersion": 1,
+  "soundTable": [
+    { "id": "F1", "song": "SONG_F1" }
+  ]
+}
+```
+
+The object has exactly `schemaVersion` and `soundTable`. Each of at most eight
+rows has exactly canonical uppercase hexadecimal `id` and a `SONG_*` symbol
+whose value in `include/constants/songs.h` is identical. Duplicate, unused,
+undeclared, zero, or mismatched IDs fail.
+
+The exact `animation.txt` grammar is:
+
+```text
+file       := { blank | comment | marker | frame | sound } final-terminator
+comment    := ws? ("#" | "@") text
+marker     := ws? "///" text
+frame      := obj bg wait
+obj        := ws? "O" ws+ "p-" ws+ filename
+bg         := ws? "B" ws+ "p-" ws+ filename
+wait       := ws? decimal(1..255)
+sound      := ws? "S" hex(1..4)
+final-terminator := ws? "~~~"
+```
+
+There are 1..64 ordered frames and at most 255 total ticks. Sounds appear only
+between complete frames, belong to the following frame boundary, and preserve
+source order. One final `~~~` ends the file. Unknown tokens, `C...`, CSA
+records, arbitrary C/Event Assembler, missing or reordered triples, unsafe
+paths, and extra/mid-stream terminators fail with file/line diagnostics.
+
+Each OBJ PNG is exact indexed 4bpp 480x160; each BG PNG is exact indexed 4bpp
+240x64. Both have 1..16 palette entries and a non-empty `tRNS` whose index 0
+is transparent. Every decoded, used nonzero palette index must be opaque;
+unused nonzero palette entries may have any `tRNS` alpha. A PNG begins with
+one `IHDR`, has one `PLTE`, has `tRNS` after `PLTE` and before one or more
+consecutive `IDAT` chunks, and ends with a zero-payload `IEND`. The reader
+accepts chunk types made of exactly four ASCII letters with an uppercase
+reserved third letter. It accepts `cHRM`/`gAMA`/`iCCP`/`sBIT`/`sRGB` only before
+`PLTE`; `pHYs`/`sPLT` only before `IDAT`; `bKGD`/`hIST` only after `PLTE` and
+before `IDAT`; and text (`tEXt`/`zTXt`/`iTXt`) or `tIME` on either side of the
+consecutive `IDAT` run. Other syntactically valid ancillary chunks may appear
+in legal non-interrupting positions; their payloads are not runtime inputs.
+Known ancillary payloads still validate their PNG-defined lengths, methods,
+ranges, keywords, and terminators. `iTXt` language tags use the strict
+hyphenated language-tag grammar (or are empty), its translated keyword is
+UTF-8, and both compressed (bounded after decompression) and uncompressed text
+are valid UTF-8. `sPLT` may repeat only with distinct suggested-palette names.
+Unknown critical chunks, malformed/reserved chunk-type bits, duplicate or
+misordered required/known ancillary chunks, nonconsecutive `IDAT`, trailing
+bytes, and missing or malformed `IEND` fail. The runtime never parses source
+PNGs.
+
+### Deterministic conversion
+
+- OBJ splits into 240x160 front/back planes. The generator adds an invisible
+  transparent tile column, packs front then back into one zeroed 32x4-tile
+  seat, and greedily tries `8x4, 4x4, 4x2, 2x4, 2x2, 4x1, 1x4, 2x1, 1x2,
+  1x1` rectangles. Exact blocks are reused before first-free row-major
+  allocation. The full seat is always `0x1000` bytes.
+- Canonical OAM uses `x=tileX*8-0xAC`, `y=tileY*8-0x58`; the opposite
+  orientation uses `x=-width-canonicalX` plus horizontal flip. Right/left
+  origins are `(0xAC,0x58)` and `(0x44,0x58)`. Front entries precede back
+  entries. More than 16 entries or a full seat fails.
+- BG pre-scales vertically to 240x160 using nearest
+  `round(y*64/160)` (rounded row 64 becomes transparent), deduplicates 30x20
+  tiles with zero tile 0, and rejects more than 256 unique tiles. Every frame
+  pads to the package-wide maximum tile count; each generated TSA is exactly
+  600 `u16` entries/1200 bytes. Runtime supplies character base, palette line,
+  distance selection, and left-side horizontal flip.
+- `romBytes` accounts for every linked generated payload, including both
+  left/right OAM script streams and their terminators. The per-effect and
+  aggregate `0x40000` limits therefore bound actual emitted descriptor data.
+- Palettes pad to 16 BGR555 colors. Every frame's OBJ/BG/TSA is deterministically
+  LZ77-compressed. Generated C includes, descriptors, `SpellAssoc` entries,
+  canonical assets, inventory, provenance/digests, and Make dependencies live
+  only under the ignored
+  `<MODERN_BUILD_ROOT>/generated/assets/<resolved-profile>/custom_spell/`
+  tree.
+
+Run:
+
+```sh
+make assets-validate assets-generate assets-check assets-test \
+  EXPANSION_CUSTOM_SPELL_EFFECTS=1 \
+  ASSET_MANIFEST=assets/manifests/custom-spell-reference.json
+```
 
 ## Resource and lifecycle contract
 
@@ -108,11 +272,9 @@ object.
 | Runtime | one Proc, one hit, no concurrent custom effect |
 | Compressed module payload | at most `0x40000` bytes |
 
-The synthetic foundation reserves and validates this envelope but deliberately
-does not ship a package asset upload. #78 may fill the descriptor's generated
-frame/resource references only through #60's `KIND_REGISTRY`; it must not add
-a second router, Proc ABI, item/effect table, raw patch hook, or manual
-generated output.
+The adapter fills this envelope only through #60's `KIND_REGISTRY`; it does
+not add a second router, Proc ABI, item/effect table, raw patch hook, or
+hand-edited generated output.
 
 ## Tester cases and rollback
 
@@ -120,7 +282,9 @@ generated output.
 timing, ordered boundary SFX, one hit, final-display latch, termination,
 cleanup, and a subsequent vanilla LUT path.
 `TC-CUSTOM-SPELL-061-002` covers default-disabled builds and confirms no
-custom object symbols or dispatch are reachable. `TC-CUSTOM-SPELL-061-004`
+custom object symbols or dispatch are reachable. `TC-CUSTOM-SPELL-061-003`
+covers strict package parsing, conversion, binding, provenance, capacity, and
+generated-output drift. `TC-CUSTOM-SPELL-061-004`
 covers `WITH_BACKGROUNDS`, reentrancy, and resource-conflict fallback.
 `TC-CUSTOM-SPELL-061-005` covers save/suspend layout and epoch stability.
 Focused host/config/ARM object checks enforce the descriptor bounds, closed
@@ -139,16 +303,18 @@ roots so no production object cache is reused:
 
 ```sh
 make expansion-modern-custom-spell-check MODERN_CONFIG=debug \
-  MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-debug-enabled \
-  FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=1
+  MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue78-debug-enabled \
+  FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=1 \
+  ASSET_MANIFEST=assets/manifests/custom-spell-reference.json
 make expansion-modern-custom-spell-check MODERN_CONFIG=debug \
-  MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-debug-disabled \
+  MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue78-debug-disabled \
   FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=0
 make expansion-modern-custom-spell-check MODERN_CONFIG=release \
-  MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-release-enabled \
-  FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=1
+  MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue78-release-enabled \
+  FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=1 \
+  ASSET_MANIFEST=assets/manifests/custom-spell-reference.json
 make expansion-modern-custom-spell-check MODERN_CONFIG=release \
-  MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-release-disabled \
+  MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue78-release-disabled \
   FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=0
 ```
 
@@ -166,33 +332,38 @@ scalar probe, clears every partial Anim/global allocation, and only then
 continues. A real unexpected allocation failure records the same fail-closed
 probe instead of dereferencing NULL.
 
-Dependencies are #60's sole future manifest seam, the existing spell
+Dependencies are #60's sole manifest seam, the existing spell
 association/`C05` path, spell-FX helpers, Proc scheduler, presentation policy,
 configuration identity, linker budgets, and libmGBA harness. Conflicts are
 external FEditor/CSA/custom-magic patches, direct LUT or `SpellAssoc`
 replacement, duplicate item/effect ownership, manual spell-lane writes, and
 unsupported presentation envelopes. There are no starter-mechanics,
 casual-mode, AoE, localization-selection, or BGM-policy conflicts.
+Version 1 adds no user-facing text or locale catalog entry; diagnostics are
+stable ASCII source keys. It adds no permanent EWRAM and uses only #77's
+existing transient spell buffers.
 
-Rollback removes this default-off module before a dependent #78 adapter. No
-item renumbering, asset migration, save conversion, or epoch change is
-required; all runtime failures already use a vanilla fallback.
+Rollback reverts the #78 adapter/package layer before the #77 runtime layer.
+No item renumbering, committed generated asset migration, save conversion, or
+epoch change is required; all runtime failures already use a vanilla fallback.
 
 ## TC-CUSTOM-SPELL-061-001: Custom spell dispatch completes one bounded effect
 
 - **Profile:** run the enabled debug and release isolated-ROM commands above.
-- **Starting state:** use distinct empty `build/issue77-*-enabled` roots. No
-  save, chapter, event script, package, or external asset is loaded.
+- **Starting state:** use distinct empty `build/issue78-*-enabled` roots and
+  the committed alternate reference manifest. No save, chapter, event script,
+  editor, ROM input, or external patch is loaded.
 - **Actions:** run the host suite, then both enabled
   `expansion-modern-custom-spell-check` commands.
 - **Expected result:** custom ID `0x80` traverses the public
-  `StartSpellAnimation()` ABI, starts once, uploads all six visual resources
-  once per frame (two complete sets in the synthetic descriptor), applies one
-  ordered synthetic sound and one hit, keeps the final child through its last
+  `StartSpellAnimation()` ABI, starts once, performs five per-frame runtime
+  operations: OBJ graphics/palette, BG graphics/palette, and one
+  distance-selected TSA. It applies one ordered generated sound and one hit,
+  keeps the final child through its last
   display tick, creates/deletes one child, cleans once, and ends with no owner,
   semaphore, spell-cast Proc, or active spell state. Vanilla ID `24` still
   traverses the LUT and never increments custom dispatch.
-- **Interactions/save:** #78 is the only package adapter dependent. No starter,
+- **Interactions/save:** #78 uses #77's only generated package seam. No starter,
   casual, AoE, localization, BGM, save-field, item-encoding, or migration
   dependency exists.
 - **Automation:** `tools/gba-playtest/tests/test_custom_spell_effect.py` and
@@ -204,7 +375,7 @@ required; all runtime failures already use a vanilla fallback.
 - **Profile:** run the disabled debug and release isolated-ROM commands above,
   plus `python3 -m unittest
   tools.gba-playtest.tests.test_custom_spell_effect.CustomSpellArmTests -v`.
-- **Starting state:** use distinct empty `build/issue77-*-disabled` roots.
+- **Starting state:** use distinct empty `build/issue78-*-disabled` roots.
 - **Expected result:** vanilla LUT ID `24` dispatches once, custom dispatch is
   zero, and the disabled ELF/ARM object contains no public
   `CustomSpellEffect_*` runtime symbol. The archival lane fixes both feature
@@ -213,6 +384,24 @@ required; all runtime failures already use a vanilla fallback.
   `0x80`.
 - **Save/cleanup:** the default identity and save epoch remain unchanged.
   Remove only the named build roots if cleanup is needed. No manual criterion.
+
+## TC-CUSTOM-SPELL-061-003: Strict package conversion
+
+- **Profile:** selected alternate reference manifest with feature `1`.
+- **Starting state:** clean the selected
+  `<MODERN_BUILD_ROOT>/generated/assets/<resolved-profile>/` tree; no editor, ROM, external
+  patch, or generated source-tree file.
+- **Actions:** run `python3 -m unittest
+  scripts.assets.tests.test_custom_spell -v`, then the enabled
+  `assets-validate assets-generate assets-check assets-test` command above.
+- **Expected result:** the reference emits one dense `0x80` descriptor,
+  `ITEM_ANIMA_FORBLAZE` binding, two frame visual sets, one declared SFX,
+  deterministic inventory/resource digests, and current generated outputs.
+- **Negative control:** schema/option/token/C/CSA/path/PNG/item/fallback/
+  ownership/capacity/missing/stale/orphan variants fail before compilation
+  with a file/line or exact reason.
+- **Save/cleanup:** no save effect; `make assets-clean` removes only ignored
+  products. No material manual criterion.
 
 ## TC-CUSTOM-SPELL-061-004: Custom spell conflicts fall back without leaking resources
 
@@ -234,7 +423,8 @@ required; all runtime failures already use a vanilla fallback.
 - **Profile:** ordinary modern AAPCS debug/release production builds with the
   feature enabled, compared with the default-disabled profile.
 - **Actions:** run the identity unit test and
-  `expansion-modern-savefmt-check` for both enabled configurations.
+  `expansion-modern-savefmt-check` for both enabled configurations with the
+  alternate reference manifest.
 - **Expected result:** enabled/disabled fingerprints differ, their
   `EXPANSION_SAVE_COMPAT_EPOCH` remains identical, existing game/suspend checks
   pass, and the isolated lifecycle proof finishes with no transient Proc or

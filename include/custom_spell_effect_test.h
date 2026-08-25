@@ -107,6 +107,7 @@ struct CustomSpellEffectTestProbe
     /* 110 */ u32 allocationFailureCleanups;
     /* 114 */ u32 normalFinalDisplayLatches;
     /* 118 */ u32 reentrantFinalDisplayLatches;
+    /* 11C */ u32 normalDistanceType;
 };
 
 extern struct CustomSpellEffectTestProbe gCustomSpellEffectTestProbe;

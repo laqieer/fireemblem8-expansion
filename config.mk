@@ -141,11 +141,14 @@ EXPANSION_DANGER_OVERLAY_MENU ?= 0
 EXPANSION_STARTER_CONTENT     ?= 0
 EXPANSION_AOE_REFERENCE       ?= 0
 
-# EXPANSION_CUSTOM_SPELL_EFFECTS -- permanent, default-off battle-only
-# custom spell-effect runtime foundation (issue #77). It reserves a typed
-# descriptor/index seam for the later asset adapter; it does not add a
-# manifest record, package parser, item binding, or save data by itself.
+# EXPANSION_CUSTOM_SPELL_EFFECTS -- permanent, default-off custom battle
+# spell runtime and strict #78 package adapter. At 1, ASSET_MANIFEST must
+# select one or more validated custom-spell-effect records; generation emits
+# their typed descriptors, SpellAssoc bindings, and private assets under
+# build/generated/assets. The selected generated contract changes ROM identity
+# but adds no save data or migration.
 EXPANSION_CUSTOM_SPELL_EFFECTS ?= 0
+ASSET_MANIFEST ?= assets/manifest.json
 
 # --- Optional one-phase blue delegation (issue #87) ------------------------
 # Expose one localized map-menu command that delegates the remaining eligible

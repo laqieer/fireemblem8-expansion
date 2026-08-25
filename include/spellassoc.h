@@ -24,6 +24,7 @@ enum spellassoc_efxmagic_idx {
     SASSOC_EFX_JavlinFalcon,
     SASSOC_EFX_JavlinWyvernRider,
     SASSOC_EFX_JavlinWyvernLord,
+    SASSOC_EFX_Fire = 0x16,
 };
 
 struct SpellAssoc {
