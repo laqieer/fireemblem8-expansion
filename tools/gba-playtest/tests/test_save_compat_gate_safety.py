@@ -354,6 +354,21 @@ def _object_relocation_edges(obj: Path, symbols: tuple[str, ...]) -> list[tuple[
     return edges
 
 
+def _data_relocation_edges(obj: Path, symbol: str) -> list[tuple[str, str]]:
+    relocations = subprocess.run([ARM_OBJDUMP, "-r", str(obj)], capture_output=True, text=True, check=True).stdout
+    symbols = subprocess.run([ARM_NM, "-n", str(obj)], capture_output=True, text=True, check=True).stdout
+    starts = [(int(a, 16), n) for a, n in re.findall(r"^([0-9a-f]+) D (\w+)", symbols, re.MULTILINE)]
+    data = False
+    edges = []
+    for line in relocations.splitlines():
+        if line.startswith("RELOCATION RECORDS FOR"):
+            data = "[.data]" in line
+        match = re.match(r"([0-9a-f]+) R_ARM_\w+\s+" + re.escape(symbol) + r"\b", line)
+        if data and match:
+            edges.append((max((item for item in starts if item[0] <= int(match.group(1), 16)), default=(0, ""))[1], symbol))
+    return edges
+
+
 def _compiled_census_edges(
     work: Path,
     sources: tuple[Path, ...],
@@ -628,6 +643,11 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                 '#include "global.h"\n#include "bmsave.h"\nvoid SaveCompatModernOnlyHook(void)\n{\n#ifdef MODERN\n    WriteGameSave(0);\n#endif\n}\n',
                 encoding="utf-8",
             )
+            proc_replacement = work / "gamecontrol.c"
+            proc_replacement.write_text(
+                '#include "global.h"\nvoid GameControl_Null_0(ProcPtr p)\n{\n}\nstruct ProcCmd gProcScr_GameControl[] = { PROC_CALL(GameControl_Null_0), PROC_END };\n',
+                encoding="utf-8",
+            )
 
             for mode, defines, includes in _boundary_modes(work):
                 with self.subTest(mode=mode):
@@ -660,6 +680,20 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                             }
                         },
                         expected_menu_edges,
+                    )
+                    self.assertEqual(
+                        _data_relocation_edges(
+                            _compile_arm(work, ROOT / "src" / "gamecontrol.c", mode + "-gamecontrol-data.o", defines, includes),
+                            "StartSaveMenu",
+                        ),
+                        [("gProcScr_GameControl", "StartSaveMenu")],
+                    )
+                    self.assertNotEqual(
+                        _data_relocation_edges(
+                            _compile_arm(work, proc_replacement, mode + "-proc-replacement.o", defines, includes),
+                            "StartSaveMenu",
+                        ),
+                        [("gProcScr_GameControl", "StartSaveMenu")],
                     )
                     self.assertEqual(
                         _candidate_sources((hidden_caller,), _SAVE_INTERNAL_APIS),
