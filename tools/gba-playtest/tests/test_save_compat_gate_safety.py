@@ -74,11 +74,6 @@ _SAVE_API_COUNTS = {
     },
     "ReadGameSave": {"src/savemenu.c": 5, "src/sio_term.c": 1},
 }
-_SAVE_MENU_PROC_COUNTS = {"src/savemenu.c": 2}
-_START_SAVE_MENU_OBJECT_ALLOWLIST = {
-    "src/gamecontrol.c",
-    "src/save_compat_menu.c",
-}
 def _strip_comments(text: str) -> str:
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
     text = re.sub(r"//[^\n]*", "", text)
@@ -252,6 +247,9 @@ def _has_start_save_gate_cfg(cfg: str, current_value: int) -> bool:
         condition = re.search(r"if \((\w+) != " + str(current_value) + r"\)", branch_body)
         if condition is None:
             continue
+        ordered_successors = re.findall(r"goto <bb (\d+)>", branch_body)
+        if len(ordered_successors) < 2:
+            continue
         value = condition.group(1)
         classifier_blocks = {
             number for number, body in blocks.items()
@@ -261,7 +259,7 @@ def _has_start_save_gate_cfg(cfg: str, current_value: int) -> bool:
             continue
         for compat in compat_blocks & branch_successors:
             normal = next(iter(branch_successors - {compat}), None)
-            if normal not in normal_blocks:
+            if normal not in normal_blocks or ordered_successors[:2] != [compat, normal]:
                 continue
             if branch not in dominators.get(normal, set()):
                 continue
@@ -358,27 +356,6 @@ def _compiled_census_edges(
         for function, symbol in _object_relocation_edges(obj, symbols):
             edges.append((relative, function, symbol))
     return edges
-
-
-def _compiled_undefined_sources(
-    work: Path,
-    sources: tuple[Path, ...],
-    symbol: str,
-    defines=(),
-    extra_includes=(),
-) -> set[str]:
-    callers = set()
-    for index, source in enumerate(_candidate_sources(sources, (symbol,))):
-        obj = _compile_arm(
-            work,
-            source,
-            "reference-%03d.o" % index,
-            defines,
-            extra_includes,
-        )
-        if symbol in _undefined_symbols(obj):
-            callers.add(source.relative_to(ROOT).as_posix())
-    return callers
 
 
 def _boundary_modes(work: Path):
@@ -537,6 +514,7 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                     mutations = {
                         "unrelated": 'int other = 0;\n    enum SaveCompatState state = ClassifySramSaveCompat();\n    if (other != SAVE_COMPAT_CURRENT)\n        StartSaveCompatMenu(parent, state);\n    else\n        Proc_StartBlocking(ProcScr_SaveMenu, parent);',
                         "early": 'Proc_StartBlocking(ProcScr_SaveMenu, parent);\n    enum SaveCompatState state = ClassifySramSaveCompat();\n    if (state != SAVE_COMPAT_CURRENT)\n        StartSaveCompatMenu(parent, state);',
+                        "reversed": 'enum SaveCompatState state = ClassifySramSaveCompat();\n    if (state != SAVE_COMPAT_CURRENT)\n        Proc_StartBlocking(ProcScr_SaveMenu, parent);\n    else\n        StartSaveCompatMenu(parent, state);',
                     }
                     for suffix, body in mutations.items():
                         mutation = _gate_fixture(
@@ -642,25 +620,20 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                         for symbol in _SAVE_INTERNAL_APIS
                     }
                     self.assertEqual(by_symbol, _SAVE_API_COUNTS)
-                    self.assertEqual(
-                        _compiled_undefined_sources(
-                            work, sources, "StartSaveMenu", defines, includes
-                        ),
-                        _START_SAVE_MENU_OBJECT_ALLOWLIST,
+                    menu_symbols = ("ProcScr_SaveMenu", "Proc_StartBlocking", "Proc_Find")
+                    menu_edges = _object_relocation_edges(
+                        _compile_arm(work, SAVEMENU_C, mode + "-savemenu-menu.o", defines, includes),
+                        menu_symbols,
                     )
+                    expected_menu_edges = {
+                        ("StartSaveMenu", "ProcScr_SaveMenu"),
+                        ("StartSaveMenu", "Proc_StartBlocking"),
+                        ("SaveMenu_SetDifficultyChoice", "ProcScr_SaveMenu"),
+                        ("SaveMenu_SetDifficultyChoice", "Proc_Find"),
+                    }
                     self.assertEqual(
-                        dict(
-                            Counter(
-                                path for path, _, _ in _compiled_census_edges(
-                                    work,
-                                    sources,
-                                    ("ProcScr_SaveMenu",),
-                                    defines,
-                                    includes,
-                                )
-                            )
-                        ),
-                        _SAVE_MENU_PROC_COUNTS,
+                        {edge for edge in menu_edges if edge[0] in {"StartSaveMenu", "SaveMenu_SetDifficultyChoice"}},
+                        expected_menu_edges,
                     )
                     self.assertEqual(
                         _candidate_sources((hidden_caller,), _SAVE_INTERNAL_APIS),
@@ -713,6 +686,18 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                             )
                         ),
                         Counter({"ProcScr_SaveMenu": 1}),
+                    )
+                    same_file = work / "savemenu.c"
+                    same_file.write_text(
+                        '#include "global.h"\n#include "savemenu.h"\nextern struct ProcCmd ProcScr_SaveMenu[];\nvoid StartSaveMenu(void *p)\n{\n    Proc_StartBlocking(ProcScr_SaveMenu, p);\n}\nvoid SaveMenu_SetDifficultyChoice(int a, int b)\n{\n    Proc_StartBlocking(ProcScr_SaveMenu, 0);\n}\n',
+                        encoding="utf-8",
+                    )
+                    self.assertNotEqual(
+                        set(_object_relocation_edges(
+                            _compile_arm(work, same_file, mode + "-same_savemenu.o", defines, includes),
+                            menu_symbols,
+                        )),
+                        expected_menu_edges,
                     )
                     modern_edges = _object_relocation_edges(
                         _compile_arm(
