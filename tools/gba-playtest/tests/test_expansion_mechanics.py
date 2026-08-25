@@ -9,6 +9,7 @@ here. The small driver sources live in tools/gba-playtest/tests/c/ and are
 test-only (never referenced by modern.mk/Makefile).
 """
 
+import re
 import shutil
 import subprocess
 import unittest
@@ -34,6 +35,7 @@ DISABLED_DRIVER = C_FIXTURES_DIR / "expansion_mechanics_disabled_driver.c"
 CC = shutil.which("gcc") or shutil.which("cc")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 NM = shutil.which("nm")
+OBJDUMP = shutil.which("objdump")
 
 
 def _skip_if_no_host_compiler():
@@ -94,6 +96,23 @@ def _referenced_symbol_names(obj):
         parts = line.split()
         names.add(parts[-1])
     return names
+
+
+def _relocation_section_counts(obj, symbol):
+    if OBJDUMP is None:
+        raise unittest.SkipTest("no host 'objdump' available")
+    proc = subprocess.run([OBJDUMP, "-r", str(obj)], capture_output=True, text=True)
+    if proc.returncode:
+        raise AssertionError(proc.stdout + proc.stderr)
+    section = None
+    counts = {}
+    for line in proc.stdout.splitlines():
+        match = re.match(r"RELOCATION RECORDS FOR \[(.+)\]:", line)
+        if match:
+            section = match.group(1)
+        elif section is not None and symbol in line:
+            counts[section] = counts.get(section, 0) + 1
+    return counts
 
 
 class MechanicsRegistryHostTests(unittest.TestCase):
@@ -174,14 +193,22 @@ class MechanicsSeamWiringTests(unittest.TestCase):
             rc, out, obj = _compile(
                 tmp, BMBATTLE_SRC, "bmbattle_enabled.o",
                 defines=["FE8_EXPANSION_MECHANICS_HOOKS=1"],
+                extra=["-ffunction-sections"],
             )
             self.assertEqual(rc, 0, "compiling bmbattle.c (enabled) failed:\n" + out)
             refs = _referenced_symbol_names(obj)
+            relocation_sections = _relocation_section_counts(
+                obj, "ExpansionMechanicsApplyBattleStats"
+            )
         self.assertIn("ExpansionMechanicsApplyBattleStats", refs)
         self.assertFalse(
             any(name.startswith("ExpansionStarterContent") for name in refs),
             "battle must remain generic and reach bundled content only through "
             "ExpansionMechanicsApplyBattleStats",
+        )
+        self.assertEqual(
+            relocation_sections,
+            {".text.ComputeBattleUnitStats": 1},
         )
 
 
