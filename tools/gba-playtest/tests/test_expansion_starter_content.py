@@ -24,6 +24,7 @@ depends on:
     through the production name path.
 """
 
+import importlib
 import os
 import re
 import runpy
@@ -104,7 +105,8 @@ ISSUE_158_AUDIT_MIGRATIONS = {
     ISSUE_158_AUDIT_FILE + "::ContentTextGenerationTests.test_no_committed_source_hand_holds_the_authored_text":
         ("ContentTextGenerationTests", "test_default_profile_generates_nothing"),
     ISSUE_158_AUDIT_FILE + "::ContentTextGenerationTests.test_texts_table_carries_no_content_message":
-        ("ContentTextGenerationTests", "test_default_profile_removes_a_stale_artifact"),
+        ("scripts.generated_data.tests.test_items_expansion",
+         "AuthoredContentRecordTests", "test_record_consumes_no_shared_message_slot"),
     ISSUE_158_AUDIT_FILE + "::ProductionNamePathTests.test_default_bmitem_has_no_content_seam":
         ("ProductionNamePathTests", "test_default_bmitem_has_no_content_seam"),
     ISSUE_158_AUDIT_FILE + "::ProductionNamePathTests.test_content_module_carries_exactly_the_generated_text":
@@ -201,10 +203,16 @@ class TestQualityAuditMappingTests(unittest.TestCase):
         migrations = ISSUE_158_AUDIT_MIGRATIONS[TEST_QUALITY_CASE_ID]
 
         self.assertEqual(len(migrations), 18)
-        for audit_id, (class_name, method_name) in migrations.items():
+        for audit_id, evidence in migrations.items():
             with self.subTest(audit_id=audit_id):
                 self.assertTrue(audit_id.startswith(ISSUE_158_AUDIT_FILE + "::"))
-                test_case = globals().get(class_name)
+                if len(evidence) == 2:
+                    module = sys.modules[__name__]
+                    class_name, method_name = evidence
+                else:
+                    module_name, class_name, method_name = evidence
+                    module = importlib.import_module(module_name)
+                test_case = getattr(module, class_name, None)
                 self.assertIsNotNone(test_case)
                 self.assertTrue(issubclass(test_case, unittest.TestCase))
                 self.assertTrue(callable(getattr(test_case, method_name, None)))
