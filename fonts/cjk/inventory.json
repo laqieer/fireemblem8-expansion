@@ -30,8 +30,8 @@
       "sha256": "9a3e90a2e6bfd33e59bfbe881c5f5420f1766aed277488c973758a624aa7f664"
     },
     "texts/expansion/registry.json": {
-      "byte_count": 26536,
-      "sha256": "b7c9ea7b405f994acd3e24994eb876501379aa62374cb7a8cf9003a68130261f"
+      "byte_count": 26824,
+      "sha256": "ed628dd591cb52d1f7278d8c38ba7a307dd4e094a80be2ac6034876154aa7c40"
     },
     "texts/locales/authored/catalog.ja.json": {
       "byte_count": 53070,
