@@ -38,8 +38,30 @@ def _units_name(record):
 
 
 def generate_c_source(records, source_path):
-    strategies = records["strategies"]
-    chapters = records["chapters"]
+    reference_profiles_enabled = records.get("reference_profiles_enabled", True)
+    strategies = [
+        strategy
+        for strategy in records["strategies"]
+        if reference_profiles_enabled or strategy.id not in REFERENCE_STRATEGIES
+    ]
+    strategy_ids = {strategy.id for strategy in strategies}
+    chapters = []
+    for chapter in records["chapters"]:
+        chapter_assignment = chapter.chapter_assignment
+        if chapter_assignment is not None and chapter_assignment.strategy not in strategy_ids:
+            chapter_assignment = None
+        group_assignments = [
+            assignment
+            for assignment in chapter.group_assignments
+            if assignment.strategy in strategy_ids
+        ]
+        unit_assignments = [
+            assignment
+            for assignment in chapter.unit_assignments
+            if assignment.strategy in strategy_ids
+        ]
+        if chapter_assignment is not None or group_assignments or unit_assignments:
+            chapters.append((chapter, chapter_assignment, group_assignments, unit_assignments))
     parts = [render_banner(source=source_path, table="autoplaystrategies")]
     parts.append('#include "global.h"\n')
     parts.append('#include "constants/chapters.h"\n')
@@ -75,14 +97,14 @@ def generate_c_source(records, source_path):
     parts.append("    { 0 },\n")
     parts.append("};\n\n")
 
-    for chapter in chapters:
-        if chapter.group_assignments:
+    for chapter, _chapter_assignment, group_assignments, _unit_assignments in chapters:
+        if group_assignments:
             parts.append(
                 "static CONST_DATA const struct ExpansionAutoplayStrategyGroupAssignment {}[] = {{\n".format(
                     _groups_name(chapter)
                 )
             )
-            for assignment in chapter.group_assignments:
+            for assignment in group_assignments:
                 parts.append("    {\n")
                 parts.append("        .groupId = 0x{:08X},\n".format(stable_id_value(assignment.group)))
                 parts.append("        .strategyId = 0x{:08X},\n".format(stable_id_value(assignment.strategy)))
@@ -90,13 +112,13 @@ def generate_c_source(records, source_path):
                 parts.append("    },\n")
             parts.append("};\n\n")
 
-        if chapter.unit_assignments:
+        if _unit_assignments:
             parts.append(
                 "static CONST_DATA const struct ExpansionAutoplayStrategyUnitAssignment {}[] = {{\n".format(
                     _units_name(chapter)
                 )
             )
-            for assignment in chapter.unit_assignments:
+            for assignment in _unit_assignments:
                 parts.append("    {\n")
                 parts.append("        .character = {},\n".format(assignment.character))
                 parts.append("        .strategyId = 0x{:08X},\n".format(stable_id_value(assignment.strategy)))
@@ -105,12 +127,11 @@ def generate_c_source(records, source_path):
             parts.append("};\n\n")
 
     parts.append("CONST_DATA const struct ExpansionAutoplayStrategyBundle gExpansionAutoplayStrategyBundles[] = {\n")
-    for chapter in chapters:
-        assignment = chapter.chapter_assignment
+    for chapter, assignment, group_assignments, unit_assignments in chapters:
         parts.append("    {\n")
         parts.append("        .chapterId = {},\n".format(chapter.chapter))
-        parts.append("        .groupAssignmentCount = {},\n".format(len(chapter.group_assignments)))
-        parts.append("        .unitAssignmentCount = {},\n".format(len(chapter.unit_assignments)))
+        parts.append("        .groupAssignmentCount = {},\n".format(len(group_assignments)))
+        parts.append("        .unitAssignmentCount = {},\n".format(len(unit_assignments)))
         parts.append(
             "        .chapterStrategyId = {},\n".format(
                 "0x{:08X}".format(stable_id_value(assignment.strategy)) if assignment else "0"
@@ -123,12 +144,12 @@ def generate_c_source(records, source_path):
         )
         parts.append(
             "        .groupAssignments = {},\n".format(
-                _groups_name(chapter) if chapter.group_assignments else "NULL"
+                _groups_name(chapter) if group_assignments else "NULL"
             )
         )
         parts.append(
             "        .unitAssignments = {},\n".format(
-                _units_name(chapter) if chapter.unit_assignments else "NULL"
+                _units_name(chapter) if unit_assignments else "NULL"
             )
         )
         parts.append("    },\n")

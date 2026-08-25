@@ -12,6 +12,11 @@
 #include "expansion_autoplay_strategies.h"
 #include "eventinfo.h"
 
+#if FE8_EXPANSION_AUTOPLAY_STRATEGIES
+extern bool ExpansionAutoplayStrategy_ObjectiveFirst(
+    const struct ExpansionAutoplayStrategyContext* context);
+#endif
+
 #define CHECK(condition, message) \
     do \
     { \
@@ -33,6 +38,8 @@ static bool sFlags[0x100];
 static bool sBlueComputerPhase;
 static int sCombatCalls;
 static int sMoveCalls;
+static int sCombatMoveX;
+static int sCombatMoveY;
 
 bool CheckFlag(int flag)
 {
@@ -75,7 +82,7 @@ s8 AiAttemptCombatWithinMovement(s8 (*isEnemy)(struct Unit* unit))
 {
     (void)isEnemy;
     sCombatCalls++;
-    AiSetDecision(gActiveUnit->xPos, gActiveUnit->yPos, AI_ACTION_COMBAT, 0x81, 0, 0, 0);
+    AiSetDecision(sCombatMoveX, sCombatMoveY, AI_ACTION_COMBAT, 0x81, 0, 0, 0);
     return 1;
 }
 
@@ -131,6 +138,8 @@ static void ResetFixture(void)
     sBlueComputerPhase = false;
     sCombatCalls = 0;
     sMoveCalls = 0;
+    sCombatMoveX = sEirika.xPos;
+    sCombatMoveY = sEirika.yPos;
     ExpansionChapterObjectives_ResetTelemetry();
     ExpansionChapterObjectives_OnBeginningEventsComplete();
 }
@@ -178,6 +187,29 @@ static int TestRegistryFailures(void)
 static int TestReferenceProfiles(void)
 {
     enum ExpansionAutoplayStrategyResult result;
+    struct ExpansionChapterAiGroup holdGroup = {
+        0x79A64E39,
+        NULL,
+        0,
+    };
+    struct ExpansionChapterObjective holdObjective = {
+        0,
+        0,
+        &holdGroup,
+        0,
+        0,
+        0,
+        0,
+        3,
+        EXPANSION_CHAPTER_OBJECTIVE_HOLD_UNTIL_TURN,
+        0,
+        0,
+        3,
+        3,
+    };
+    struct ExpansionAutoplayStrategyContext holdContext = {
+        &holdObjective,
+    };
 
     ResetFixture();
     sFlags[EVFLAG_GAMEOVER] = true;
@@ -263,6 +295,17 @@ static int TestReferenceProfiles(void)
             0xDEADBEEF, EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA)
             == EXPANSION_AUTOPLAY_STRATEGY_ERR_UNKNOWN_ID,
         "unknown strategy IDs must fail explicitly"
+    );
+
+    ResetFixture();
+    sEirika.xPos = 2;
+    sEirika.yPos = 2;
+    sCombatMoveX = 8;
+    sCombatMoveY = 8;
+    CHECK(
+        ExpansionAutoplayStrategy_ObjectiveFirst(&holdContext)
+            && !gAiDecision.actionPerformed,
+        "hold must wait instead of accepting an outside combat move"
     );
     return 0;
 }

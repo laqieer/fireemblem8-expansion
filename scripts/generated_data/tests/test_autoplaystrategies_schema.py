@@ -21,11 +21,17 @@ def strategy_fixture(name):
 
 def _dependency_records(strategy_records):
     objective_records = objectives_schema.load_records(
-        fixture_path("chapterobjectives", "valid.json")
+        fixture_path(
+            "chapterobjectives",
+            "strategy_valid.json" if strategy_records["chapters"] else "valid.json",
+        )
     )
     units = units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json"))
     chapter_bundles = chapterbundle_schema.load_records(
-        fixture_path("chapterobjectives", "ch2_bundle.json")
+        fixture_path(
+            "chapterobjectives",
+            "strategy_bundle.json" if strategy_records["chapters"] else "ch2_bundle.json",
+        )
     )
 
     if strategy_records["chapters"]:
@@ -74,8 +80,32 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
         diagnostics = DiagnosticCollector()
         schema.validate(records, diagnostics, _dependency_records(records))
         self.assertTrue(diagnostics.ok, diagnostics.render())
-        output = generate.generate_c_source(records, "src/data/autoplay_strategies.json")
+        table = schema.AutoplayStrategiesTableSchema()
+        disabled = table.configure_records(records, reference_profiles="0")
+        output = generate.generate_c_source(disabled, "src/data/autoplay_strategies.json")
         self.assertIn("EXPANSION_AUTOPLAY_STRATEGY_CHAPTER_NONE", output)
+        self.assertNotIn("ExpansionAutoplayStrategy_Aggressive", output)
+        self.assertEqual(table.manifest_record_count(records), 2)
+
+        enabled = table.configure_records(records, reference_profiles="1")
+        output = generate.generate_c_source(enabled, "src/data/autoplay_strategies.json")
+        self.assertIn("ExpansionAutoplayStrategy_Aggressive", output)
+        self.assertIn("ExpansionAutoplayStrategy_ObjectiveFirst", output)
+
+    def test_disabled_profile_keeps_non_reference_descriptor(self):
+        records = schema.load_records(strategy_fixture("valid.json"))
+        custom = copy.deepcopy(records["strategies"][0])
+        custom.id = "AUTOPLAY_STRATEGY_CUSTOM"
+        custom.callback = "ExpansionAutoplayStrategy_Custom"
+        records["strategies"].append(custom)
+        output = generate.generate_c_source(
+            schema.AutoplayStrategiesTableSchema().configure_records(
+                records,
+                reference_profiles="0",
+            ),
+            strategy_fixture("valid.json"),
+        )
+        self.assertIn("ExpansionAutoplayStrategy_Custom", output)
         self.assertNotIn("ExpansionAutoplayStrategy_Aggressive", output)
 
     def test_authored_strategy_bundle_requires_its_chapter_owner_declaration(self):
@@ -87,6 +117,38 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "is not declared by its owning chapter bundle" in error.message
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
+    def test_strategy_owner_source_must_match_loaded_records(self):
+        records = schema.load_records(strategy_fixture("valid.json"))
+        dependencies = _dependency_records(records)
+        owner = dependencies["chapterbundle"].by_chapter["CHAPTER_L_2"][0]
+        owner.autoplay_strategies.source = strategy_fixture("invalid.json")
+        diagnostics = DiagnosticCollector()
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(
+            any(
+                error.reference_path == "autoplayStrategies.source"
+                and "does not match the loaded strategy source" in error.message
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
+    def test_selected_strategy_must_support_every_owned_objective_kind(self):
+        records = schema.load_records(strategy_fixture("valid.json"))
+        dependencies = _dependency_records(records)
+        dependencies["chapterobjectives"][0].objectives[0].kind = "event_flag"
+        diagnostics = DiagnosticCollector()
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(
+            any(
+                error.reference_path
+                == "chapters[symbol=AutoplayStrategies_Fixture].groupAssignments[group=AI_GROUP_FIXTURE_EIRIKA].strategy"
+                and "does not support chapter objective kind 'event_flag'" in error.message
                 for error in diagnostics.errors
             ),
             diagnostics.render(),
