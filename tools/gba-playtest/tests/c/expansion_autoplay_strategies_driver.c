@@ -193,7 +193,7 @@ static int TestReferenceProfiles(void)
         0,
     };
     struct ExpansionChapterObjective holdObjective = {
-        0,
+        0xC06E2F8C,
         0,
         &holdGroup,
         0,
@@ -304,8 +304,9 @@ static int TestReferenceProfiles(void)
     sCombatMoveY = 8;
     CHECK(
         ExpansionAutoplayStrategy_ObjectiveFirst(&holdContext)
-            && !gAiDecision.actionPerformed,
-        "hold must wait instead of accepting an outside combat move"
+            && gAiDecision.actionPerformed
+            && gAiDecision.actionId == AI_ACTION_COMBAT,
+        "completed hold must return to Aggressive instead of remaining constrained"
     );
     return 0;
 }

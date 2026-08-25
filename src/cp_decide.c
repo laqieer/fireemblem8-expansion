@@ -67,8 +67,7 @@ PROC_LABEL(0),
 void CpDecide_Suspend(ProcPtr proc)
 {
 #ifndef FE8_ARCHIVAL_BUILD
-    if (ExpansionAutoplay_IsBlueComputerPhase()
-        && ExpansionAutoplayStrategies_HasStrategies())
+    if (ExpansionAutoplay_IsBlueComputerPhase())
     {
         ExpansionAutoplay_RecordSuspendSuppressed();
         return;

@@ -4433,6 +4433,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-autoplay-check \
 		expansion-modern-autoplay-bounds-check \
 		expansion-modern-chapter-objectives-check \
+		expansion-modern-autoplay-strategy-runtime-check \
 		$(MODERN_LINKER_CHECK_ACCELERATED_FIDELITY) \
 		expansion-modern-blue-phase-delegate-check \
 		expansion-modern-starter-runtime-check \

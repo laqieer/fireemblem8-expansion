@@ -27,6 +27,19 @@
             "xMax": 3,
             "yMax": 3
           }
+        },
+        {
+          "id": "OBJECTIVE_STRATEGY_HOLD",
+          "kind": "hold_until_turn",
+          "group": "AI_GROUP_FIXTURE_EIRIKA",
+          "untilTurn": 1,
+          "failureFlag": "EVFLAG_5",
+          "area": {
+            "xMin": 0,
+            "yMin": 0,
+            "xMax": 3,
+            "yMax": 3
+          }
         }
       ],
       "dependencies": {
@@ -34,7 +47,8 @@
           "CHARACTER_EIRIKA"
         ],
         "eventFlags": [
-          "EVFLAG_GAMEOVER"
+          "EVFLAG_GAMEOVER",
+          "EVFLAG_5"
         ],
         "unitGroups": [
           "UnitDef_Event_Ch2Ally"

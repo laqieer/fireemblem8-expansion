@@ -352,11 +352,19 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
     const struct ExpansionAutoplayStrategyContext* context)
 {
     const struct ExpansionChapterObjective* objective = context->objective;
+    enum ExpansionChapterObjectiveState state;
+    u32 progress;
     int xTarget;
     int yTarget;
 
-    if (objective != NULL
-        && (objective->kind == EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA
+    if (objective == NULL)
+        return ExpansionAutoplayStrategy_Aggressive(context);
+
+    state = ExpansionChapterObjectives_GetStatus(objective->id, &progress);
+    if (state != EXPANSION_CHAPTER_OBJECTIVE_PENDING)
+        return ExpansionAutoplayStrategy_Aggressive(context);
+
+    if ((objective->kind == EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA
             || objective->kind == EXPANSION_CHAPTER_OBJECTIVE_HOLD_UNTIL_TURN)
         && ExpansionChapterObjectives_GroupContains(
             objective->group->id, gActiveUnit->pCharacterData->number))
