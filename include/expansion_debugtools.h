@@ -164,6 +164,8 @@ enum
     DEBUGTOOLS_HUB_MENU_SLOTS = 11, /* nine actions + Back + terminator */
     DEBUGTOOLS_MENU_WIDTH_TILES = 18,
     DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES = 17,
+    DEBUGTOOLS_FLAG_STATUS_CJK_WIDTH_TILES = 24,
+    DEBUGTOOLS_FLAG_STATUS_NON_CJK_WIDTH_TILES = 29,
     DEBUGTOOLS_BUILTIN_ID_MIN = 1,
     DEBUGTOOLS_BUILTIN_ID_MAX = 10,
     DEBUGTOOLS_CONTRIBUTOR_ID_MIN = 11,
@@ -756,6 +758,80 @@ u32 DebugTools_GetLastAssertCode(void);
 #define DEBUGTOOLS_ASSERT(cond, code) \
     do { if (!(cond)) DebugTools_RecordAssertFailure((u32)(code)); } while (0)
 
+/* --- Transient turn/faction phase control (issue #124) ------------------
+ * This is a debug-only request surface over the existing phase router. It
+ * never writes the persistent prototype debug-control option bits. Requests
+ * may be queued only from a stable blue PLAYER phase. A turn request is
+ * consumed after SwitchPhases and before RunPhaseSwitchEvents; faction
+ * requests stay routed by BmMain_StartPhase. PLAYER is intentionally a typed
+ * rejection: the existing PlayerPhase commit path is blue-only. BLOCKED is
+ * supported because the existing router can complete an otherwise empty
+ * red/green phase normally.
+ */
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+enum DebugToolsPhaseControlMode
+{
+    DEBUGTOOLS_PHASE_CONTROL_COMPUTER = 0,
+    DEBUGTOOLS_PHASE_CONTROL_PLAYER = 1,
+    DEBUGTOOLS_PHASE_CONTROL_BLOCKED = 2,
+};
+
+enum DebugToolsPhaseControlRequestKind
+{
+    DEBUGTOOLS_PHASE_CONTROL_REQUEST_NONE = 0,
+    DEBUGTOOLS_PHASE_CONTROL_REQUEST_TURN = 1,
+    DEBUGTOOLS_PHASE_CONTROL_REQUEST_FACTION = 2,
+};
+
+enum DebugToolsPhaseControlResult
+{
+    DEBUGTOOLS_PHASE_CONTROL_OK = 0,
+    DEBUGTOOLS_PHASE_CONTROL_ERR_INVALID_TURN = 1,
+    DEBUGTOOLS_PHASE_CONTROL_ERR_INVALID_FACTION = 2,
+    DEBUGTOOLS_PHASE_CONTROL_ERR_UNSUPPORTED_MODE = 3,
+    DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY = 4,
+    DEBUGTOOLS_PHASE_CONTROL_ERR_PENDING = 5,
+    DEBUGTOOLS_PHASE_CONTROL_EXPIRED = 6,
+};
+
+enum DebugToolsPhaseControlStartAction
+{
+    DEBUGTOOLS_PHASE_CONTROL_START_NORMAL = 0,
+    DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED = 1,
+};
+
+enum DebugToolsPhaseControlResult DebugToolsPhaseControl_RequestTurn(int turn);
+enum DebugToolsPhaseControlResult DebugToolsPhaseControl_RequestFactionMode(
+    int faction,
+    enum DebugToolsPhaseControlMode mode);
+void DebugToolsPhaseControl_ApplyTurnBeforePhaseEvents(void);
+enum DebugToolsPhaseControlStartAction DebugToolsPhaseControl_ApplyAtPhaseStart(int faction);
+void DebugToolsPhaseControl_AdvanceSuspendTurnAtNaturalIncrement(void);
+void DebugToolsPhaseControl_Reset(void);
+void DebugToolsPhaseControl_Sample(void);
+void DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition(void);
+
+#if !defined(FE8_ARCHIVAL_BUILD)
+/* The turn override is transient even when automatic phase suspends remain
+ * enabled. BmMain brackets only its real suspend writer with these calls. */
+void DebugToolsPhaseControl_BeginSuspendSerialization(void);
+bool DebugToolsPhaseControl_GetSerializedSuspendTurn(u16 *turn);
+void DebugToolsPhaseControl_EndSuspendSerialization(void);
+#else
+#define DebugToolsPhaseControl_BeginSuspendSerialization() ((void)0)
+#define DebugToolsPhaseControl_GetSerializedSuspendTurn(turn) (FALSE)
+#define DebugToolsPhaseControl_EndSuspendSerialization() ((void)0)
+#define DebugToolsPhaseControl_AdvanceSuspendTurnAtNaturalIncrement() ((void)0)
+#define DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition() ((void)0)
+#endif
+#else
+#define DebugToolsPhaseControl_BeginSuspendSerialization() ((void)0)
+#define DebugToolsPhaseControl_GetSerializedSuspendTurn(turn) (FALSE)
+#define DebugToolsPhaseControl_EndSuspendSerialization() ((void)0)
+#define DebugToolsPhaseControl_AdvanceSuspendTurnAtNaturalIncrement() ((void)0)
+#define DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition() ((void)0)
+#endif /* FE8_EXPANSION_DEBUGTOOLS_ENABLED */
+
 /* --- Five bounded validated tools ------------------------------------
  * Issue #11 closure requirement 5. Each is a single registry action (see
  * src/debugtools_tools.c) that samples/displays read-only state on
@@ -938,6 +1014,24 @@ struct DebugToolsProbe
                                       * reaches the deferred hub return
                                       * without clearing its actual menu frame tile */
     u32 saveCompatBackReturnCount; /* completed owned Save State Back returns */
+    /* --- Transient turn/faction phase control (issue #124) ---
+     * The request state and telemetry are debug-only. Keeping this extension
+     * out of release preserves the established gDebugToolsProbe layout and
+     * its all-zero release-negative contract. */
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
+    u32 phaseControlTurnSample;
+    u32 phaseControlRedModeSample;
+    u32 phaseControlGreenModeSample;
+    u32 phaseControlRequestedCount;
+    u32 phaseControlAppliedCount;
+    u32 phaseControlRejectedCount;
+    u32 phaseControlExpiredCount;
+    u32 phaseControlRestoredCount;
+    u32 phaseControlLastResult;
+    u32 phaseControlLastRequestKind;
+    u32 phaseControlLastFaction;
+    u32 phaseControlLastMode;
+#endif
 };
 
 /* Cursor-selected unit inspector/editor telemetry (issue #125). This is a

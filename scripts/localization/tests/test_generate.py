@@ -135,6 +135,64 @@ class BuildOutputsTests(unittest.TestCase):
             list(range(88, 121)),
         )
 
+    def test_debug_only_phase_messages_keep_ids_but_release_omits_payloads(self):
+        phase_keys = (
+            "debug.confirm.turn_increment",
+            "debug.confirm.turn_decrement",
+            "debug.confirm.red_computer",
+            "debug.confirm.red_blocked",
+            "debug.confirm.green_computer",
+            "debug.confirm.green_blocked",
+            "debug.status.turn",
+            "debug.mode.computer",
+            "debug.mode.blocked",
+        )
+        entries = {entry.key: entry for entry in self.catalog.active_entries}
+        header = build_msg_ids_header(self.catalog)
+        debug_source = build_catalog_c(
+            self.catalog, emission_profile=schema.EMISSION_PROFILE_DEBUG
+        )
+        release_source = build_catalog_c(
+            self.catalog, emission_profile=schema.EMISSION_PROFILE_RELEASE
+        )
+        release_budget = build_budget(
+            self.catalog, emission_profile=schema.EMISSION_PROFILE_RELEASE
+        )
+
+        self.assertEqual(
+            [entries[key].emission for key in phase_keys],
+            [schema.EMISSION_DEBUG_ONLY] * len(phase_keys),
+        )
+        for key in phase_keys:
+            entry = entries[key]
+            self.assertIn(
+                f"#define {key_to_macro(key)} {entry.id}u",
+                header,
+                "stable IDs remain available to all profiles",
+            )
+            self.assertIn(
+                self.catalog.en_strings[key],
+                debug_source,
+                "debug catalog must resolve the localized phase string",
+            )
+            self.assertNotIn(
+                self.catalog.en_strings[key],
+                release_source,
+                "release catalog must omit the debug-only phase payload",
+            )
+            self.assertNotIn(
+                f"    {entry.id}u,",
+                release_source,
+                "release catalog must omit the debug-only phase index",
+            )
+        self.assertEqual(
+            release_budget["omitted_active_message_count"], len(phase_keys)
+        )
+        self.assertEqual(
+            release_budget["active_message_count"],
+            len(self.catalog.active_entries) - len(phase_keys),
+        )
+
     def test_budget_reports_all_required_sections(self):
         budget = build_budget(self.catalog)
         for key in (

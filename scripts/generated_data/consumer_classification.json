@@ -2213,6 +2213,10 @@
       "category": "lookup-table",
       "reason": null
     },
+    "include/expansion_debugtools.h|function-signature|unit|DebugToolsPhaseControl_ApplyAtPhaseStart": {
+      "category": "reviewed-exclusion",
+      "reason": "phase faction base parameter only: the phase scheduler passes FACTION_BLUE 0x00, FACTION_GREEN 0x40, or FACTION_RED 0x80, never a deployment-slot unit ID"
+    },
     "include/expansion_debugtools.h|function-signature|chapter|DebugTools_ConsumePendingChapter2Launch": {
       "category": "external-interface",
       "reason": null
@@ -4388,6 +4392,10 @@
     "src/worldmap_shop_data.c|data-symbol|item|ItemList_WM_ZaalbulMarsh_Vendor": {
       "category": "lookup-table",
       "reason": null
+    },
+    "src/debugtools_tools.c|struct-field|unit|DebugToolsPhaseControlRequest.faction": {
+      "category": "reviewed-exclusion",
+      "reason": "queued phase faction base only: stores FACTION_BLUE 0x00, FACTION_GREEN 0x40, or FACTION_RED 0x80 for phase routing, not a deployment-slot unit ID"
     },
     "src/worldmap_shop_data.c|data-symbol|item|ItemList_WM_ZahaWoods_Armory": {
       "category": "lookup-table",

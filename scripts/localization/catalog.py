@@ -41,11 +41,23 @@ class RegistryEntry:
     max_width: Optional[int] = None
     max_decoded_bytes: Optional[int] = None
     pseudo_policy: str = schema.DEFAULT_PSEUDO_POLICY
+    emission: str = schema.DEFAULT_EMISSION
     notes: Optional[str] = None
 
     @property
     def is_active(self) -> bool:
         return self.status == schema.STATUS_ACTIVE
+
+    def emits_for(self, profile: str) -> bool:
+        if profile not in schema.EMISSION_PROFILES:
+            raise schema.SchemaError(
+                f"unknown localization emission profile {profile!r}; "
+                f"expected one of {schema.EMISSION_PROFILES}"
+            )
+        return (
+            self.emission == schema.EMISSION_ALWAYS
+            or profile == schema.EMISSION_PROFILE_DEBUG
+        )
 
 
 @dataclass(frozen=True)
@@ -59,6 +71,9 @@ class LoadedCatalog:
 
     def active_by_key(self) -> Dict[str, RegistryEntry]:
         return {entry.key: entry for entry in self.active_entries}
+
+    def emitted_active_entries(self, profile: str) -> Tuple[RegistryEntry, ...]:
+        return tuple(entry for entry in self.active_entries if entry.emits_for(profile))
 
     @property
     def en_strings(self) -> Dict[str, str]:
@@ -140,10 +155,10 @@ def parse_registry(data: dict) -> Tuple[RegistryEntry, ...]:
         previous_id = entry_id
 
         if status == schema.STATUS_TOMBSTONE:
-            if "pseudo_policy" in raw:
+            if "pseudo_policy" in raw or "emission" in raw:
                 raise schema.SchemaError(
                     f"message {key!r} (id {entry_id}) is a tombstone; "
-                    "pseudo_policy is only valid on active entries"
+                    "pseudo_policy and emission are only valid on active entries"
                 )
             entries.append(
                 RegistryEntry(
@@ -167,6 +182,12 @@ def parse_registry(data: dict) -> Tuple[RegistryEntry, ...]:
                 f"message {key!r} (id {entry_id}) has invalid pseudo_policy "
                 f"{pseudo_policy!r}; expected one of {schema.PSEUDO_POLICIES}"
             )
+        emission = raw.get("emission", schema.DEFAULT_EMISSION)
+        if emission not in schema.EMISSIONS:
+            raise schema.SchemaError(
+                f"message {key!r} (id {entry_id}) has invalid emission "
+                f"{emission!r}; expected one of {schema.EMISSIONS}"
+            )
         max_width = _require_int(raw.get("max_width"), f"{key} max_width")
         if not (schema.MAX_WIDTH_MIN <= max_width <= schema.MAX_WIDTH_MAX):
             raise schema.SchemaError(
@@ -188,6 +209,7 @@ def parse_registry(data: dict) -> Tuple[RegistryEntry, ...]:
                 max_width=max_width,
                 max_decoded_bytes=max_decoded_bytes,
                 pseudo_policy=pseudo_policy,
+                emission=emission,
                 notes=raw.get("notes"),
             )
         )

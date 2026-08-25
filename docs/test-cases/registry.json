@@ -17,6 +17,7 @@
       "bounded-semantic-run-until",
       "typed-chapter-autoplay-objectives",
       "typed-autoplay-strategy-profiles",
+      "transient-debugtools-phase-control",
       "accelerated-fidelity-harness",
       "custom-spell-runtime",
       "hq-pcm-mixer",
@@ -512,6 +513,18 @@
       "status": "current",
       "required_cases": [
         "TC-AUTOPLAY-STRATEGY-001"
+      ]
+    },
+    {
+      "id": "transient-debugtools-phase-control",
+      "title": "Transient debugtools turn and faction-control submenu",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/124"
+      ],
+      "reference": "docs/debugtools.md",
+      "status": "current",
+      "required_cases": [
+        "TC-DEBUGTOOLS-PROTOTYPE-002"
       ]
     },
     {
@@ -2124,6 +2137,48 @@
         {
           "command": "make expansion-modern-autoplay-bounds-check MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/fingerprints/autoplay-bounded-player-default-modern-release.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-DEBUGTOOLS-PROTOTYPE-002",
+      "title": "Transient debugtools turn and faction control",
+      "feature_id": "transient-debugtools-phase-control",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/124"
+      ],
+      "document": "docs/debugtools.md",
+      "anchor": "tc-debugtools-prototype-002-transient-turn-and-faction-control",
+      "profiles": [
+        "Modern AAPCS debug ROM with debugtools and the #87 one-phase Charge/resumed-map profile",
+        "Modern AAPCS release ROM with debugtools omitted",
+        "Every authored expansion locale catalog"
+      ],
+      "purpose": "Prove one confirmed bounded turn request reaches a real red phase event boundary through the sole router, restores ordinary ownership, and serializes only its pre-edit turn through suspend/resume.",
+      "prerequisites": "For manual use, a clean live blue PLAYER map with no event, battle, fade, camera, or action Proc; automation reuses #87's deterministic resumed Chapter 2 fixture.",
+      "actions": "Open the map debug hub, inspect Flag/Chapter, select Apply Turn +1, let #87's native Charge command advance the current blue phase and automatic suspend, then fresh-boot Resume from that suspend.",
+      "expected_result": "The typed request records requested/applied/restored telemetry; red phase events observe the selected turn; the automatic suspend and fresh Resume preserve the pre-edit turn; a later native green-to-blue boundary advances both live and persistent turn baselines once; Charge restores ordinary blue control and post-boundary cursor input.",
+      "negative_control": "Back, invalid turn/faction/mode, movement/MU, combat/item/rescue action stages, unsafe ownership, lifecycle expiry, repeated/failed/reset suspend paths, and release inputs leave persistent save/config state unchanged; release objects omit the phase-control state and symbols.",
+      "interactions": "Genuine child of #87 and depends on #85; Blue remains exclusively owned by #85/#87, so no duplicate phase router or controller exists.",
+      "save_compatibility": "No field, preference, layout, migration, epoch, configuration identity, or serialized request is added.",
+      "cleanup": "Apply returns to the live map; use make clean_fast only for ignored build artifacts.",
+      "limitations": "PLAYER red/green mode is intentionally rejected because existing PlayerPhase commit semantics are blue-only; this is not persistent AI policy or arbitrary memory editing.",
+      "automation": [
+        {
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_debugtools_phase_control.py\" -v",
+          "evidence": "tools/gba-playtest/tests/test_debugtools_phase_control.py"
+        },
+        {
+          "command": "make localization-validate",
+          "evidence": "texts/expansion/registry.json"
+        },
+        {
+          "command": "make expansion-modern-debugtools-phase-control-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/fingerprints/debugtools-phase-control-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-debugtools-phase-control-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/fingerprints/debugtools-phase-control-modern-release.json"
         }
       ]
     },
