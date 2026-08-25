@@ -3509,18 +3509,27 @@ MODERN_AUTOPLAY_STRATEGY_PROFILE_ROM := \
 	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
 MODERN_AUTOPLAY_STRATEGY_PROFILE_ELF := \
 	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT := \
+	build/expansion-modern-autoplay-strategy-disabled
+MODERN_AUTOPLAY_STRATEGY_DISABLED_GENERATED_DIR := \
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/generated-data
+MODERN_AUTOPLAY_STRATEGY_DISABLED_ROM := \
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_AUTOPLAY_STRATEGY_DISABLED_ELF := \
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
 MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR := \
 	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/runtime-check
 MODERN_AUTOPLAY_STRATEGY_RUNTIME_SCRIPT := \
 	tools/gba-playtest/run_autoplay_strategy_checks.py
 MODERN_AUTOPLAY_STRATEGY_OBJECTIVES_SOURCE := \
-	scripts/generated_data/tests/fixtures/chapterobjectives/strategy_valid.json
+	scripts/generated_data/tests/fixtures/chapterobjectives/strategy_runtime_valid.json
 MODERN_AUTOPLAY_STRATEGY_SOURCE := \
-	scripts/generated_data/tests/fixtures/autoplaystrategies/valid.json
+	scripts/generated_data/tests/fixtures/autoplaystrategies/runtime_valid.json
 MODERN_AUTOPLAY_STRATEGY_BUNDLE_SOURCE := \
-	scripts/generated_data/tests/fixtures/chapterobjectives/strategy_bundle.json
+	scripts/generated_data/tests/fixtures/chapterobjectives/strategy_runtime_bundle.json
 
 CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)
+CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)
 
 expansion-modern-autoplay-check: expansion-modern-boot-preflight expansion-modern-rom
 	@mkdir -p "$(MODERN_AUTOPLAY_RUNTIME_OUTDIR)/tmp"
@@ -3542,22 +3551,34 @@ expansion-modern-autoplay-strategy-profile-rom:
 		GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_SOURCE) \
 		GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_OBJECTIVES_SOURCE) \
 		GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_BUNDLE_SOURCE) \
-		EXPANSION_AUTOPLAY_STRATEGIES=1
+		EXPANSION_AUTOPLAY_STRATEGIES=1 \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_AUTOPLAY_STRATEGY_RUNTIME_TEST=1
+
+expansion-modern-autoplay-strategy-disabled-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT) \
+		GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_GENERATED_DIR) \
+		EXPANSION_AUTOPLAY_STRATEGIES=0 \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_AUTOPLAY_STRATEGY_RUNTIME_TEST=1
 
 ifeq ($(MODERN_CONFIG),debug)
 expansion-modern-autoplay-strategy-runtime-check: expansion-modern-boot-preflight \
-		expansion-modern-rom expansion-modern-autoplay-strategy-profile-rom
+		expansion-modern-autoplay-strategy-profile-rom \
+		expansion-modern-autoplay-strategy-disabled-profile-rom
 	@mkdir -p "$(MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR)/tmp"
 	TMPDIR="$(abspath $(MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR)/tmp)" \
 		"$(PYTHON)" "$(MODERN_AUTOPLAY_STRATEGY_RUNTIME_SCRIPT)" \
 		--enabled-rom "$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROM)" \
 		--enabled-elf "$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ELF)" \
-		--disabled-rom "$(MODERN_ROM)" \
-		--disabled-elf "$(MODERN_ELF)" \
+		--disabled-rom "$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROM)" \
+		--disabled-elf "$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ELF)" \
 		--nm "$(MODERN_NM)" \
 		--out-dir "$(MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR)"
 else
-expansion-modern-autoplay-strategy-runtime-check:
+expansion-modern-autoplay-strategy-runtime-check: \
+		expansion-modern-autoplay-strategy-profile-rom \
+		expansion-modern-autoplay-strategy-disabled-profile-rom
 	@printf 'Modern autoplay strategy runtime check skipped: CpDecide activation is debug-calibrated for config=%s\n' \
 		'$(MODERN_CONFIG)'
 endif

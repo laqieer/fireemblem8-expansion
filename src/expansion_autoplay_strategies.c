@@ -37,6 +37,11 @@ static u8 GetRegistryCount(void)
     return EXPANSION_AUTOPLAY_STRATEGY_CAPACITY + 1;
 }
 
+bool ExpansionAutoplayStrategies_HasStrategies(void)
+{
+    return GetRegistryCount() != 0;
+}
+
 static const struct ExpansionAutoplayStrategy* FindStrategy(u32 id)
 {
     u8 count = GetRegistryCount();
@@ -253,7 +258,29 @@ enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_TryDecide(void)
 
     context.objective = objective;
     if (strategy->callback(&context))
+    {
+#if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
+        if (strategy->id == EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID)
+        {
+            gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstCount++;
+            gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstObjectiveId =
+                objective != NULL ? objective->id : 0;
+            gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstActionId =
+                gAiDecision.actionId;
+            gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstX = gAiDecision.xMove;
+            gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstY = gAiDecision.yMove;
+        }
+        else if (strategy->id == EXPANSION_AUTOPLAY_STRATEGY_AGGRESSIVE_ID)
+        {
+            gExpansionAutoplayStrategyRuntimeProbe.aggressiveCount++;
+            gExpansionAutoplayStrategyRuntimeProbe.aggressiveActionId =
+                gAiDecision.actionId;
+        }
+
+        gExpansionAutoplayStrategyRuntimeProbe.magic = 0x53545254;
+#endif
         return EXPANSION_AUTOPLAY_STRATEGY_OK;
+    }
 
     return EXPANSION_AUTOPLAY_STRATEGY_FALLBACK;
 }
@@ -377,4 +404,9 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
 
     return ExpansionAutoplayStrategy_Aggressive(context);
 }
+#endif
+
+#if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
+struct ExpansionAutoplayStrategyRuntimeProbe EWRAM_DATA
+    gExpansionAutoplayStrategyRuntimeProbe = { 0 };
 #endif

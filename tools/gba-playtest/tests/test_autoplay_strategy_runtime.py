@@ -19,6 +19,14 @@ class AutoplayStrategyRuntimeScenarioTests(unittest.TestCase):
         self.assertEqual(scenario.schema_version, 2)
         self.assertEqual(scenario.run_until.max_frames, 18001)
         self.assertEqual(scenario.run_until.terminal_conditions[0].reason, "success")
+        self.assertEqual(
+            [
+                probe.binding
+                for probe in scenario.checkpoints[-1].probes
+                if probe.binding.startswith(strategy_checks.STRATEGY_PROBE_SYMBOL)
+            ],
+            list(strategy_checks.STRATEGY_PROBE_BINDINGS),
+        )
 
 
 if __name__ == "__main__":

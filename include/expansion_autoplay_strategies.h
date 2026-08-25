@@ -54,6 +54,15 @@ enum
     EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID = 0x7F2C07B5,
 };
 
+#ifndef FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
+#define FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST 0
+#endif
+
+#if (FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST != 0) \
+    && (FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST != 1)
+#error "FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST must be 0 or 1"
+#endif
+
 struct ExpansionAutoplayStrategyContext
 {
     const struct ExpansionChapterObjective* objective;
@@ -99,6 +108,7 @@ struct ExpansionAutoplayStrategyBundle
 extern const struct ExpansionAutoplayStrategy gExpansionAutoplayStrategies[];
 extern const struct ExpansionAutoplayStrategyBundle gExpansionAutoplayStrategyBundles[];
 
+bool ExpansionAutoplayStrategies_HasStrategies(void);
 enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ValidateRegistry(
     const struct ExpansionAutoplayStrategy* registry,
     u8 count);
@@ -110,5 +120,21 @@ enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_TryDecide(void)
 enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ActivateAssignment(
     u32 strategyId,
     u16 activationFlag);
+
+#if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
+struct ExpansionAutoplayStrategyRuntimeProbe
+{
+    u32 magic;
+    u32 objectiveFirstCount;
+    u32 objectiveFirstObjectiveId;
+    u32 objectiveFirstActionId;
+    u32 objectiveFirstX;
+    u32 objectiveFirstY;
+    u32 aggressiveCount;
+    u32 aggressiveActionId;
+};
+
+extern struct ExpansionAutoplayStrategyRuntimeProbe gExpansionAutoplayStrategyRuntimeProbe;
+#endif
 
 #endif /* GUARD_EXPANSION_AUTOPLAY_STRATEGIES_H */
