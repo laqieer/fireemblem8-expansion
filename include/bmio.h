@@ -1,6 +1,8 @@
 #ifndef GUARD_BMIO_H
 #define GUARD_BMIO_H
 
+#include "expansion_debugtools.h"
+
 enum {
     BM_BGPAL_6 = 6,
     BM_BGPAL_TILESET_BASE = 7,
@@ -78,6 +80,9 @@ void BMapDispResume_FromBattleDelayed(void);
 void RefreshBMapGraphics(void);
 struct BMapMainProc* StartBMapMain(struct GameCtrlProc* gameCtrl);
 void EndBMapMain(void);
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+void EndBMapMainForChapterTransition(void);
+#endif
 void ChapterChangeUnitCleanup(void);
 void MapMain_ResumeFromPhaseIdle(struct BMapMainProc* mapMain);
 void MapMain_ResumeFromAction(struct BMapMainProc* mapMain);

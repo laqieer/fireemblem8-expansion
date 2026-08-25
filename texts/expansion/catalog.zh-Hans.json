@@ -121,6 +121,15 @@
     "debug.value.phase_player": "我方",
     "debug.value.phase_enemy": "敌方",
     "debug.value.phase_npc": "友军",
-    "debug.value.phase_other": "其他"
+    "debug.value.phase_other": "其他",
+    "debug.confirm.turn_increment": "应用回合+1",
+    "debug.confirm.turn_decrement": "应用回合-1",
+    "debug.confirm.red_computer": "应用红军电脑",
+    "debug.confirm.red_blocked": "应用红军阻止",
+    "debug.confirm.green_computer": "应用绿军电脑",
+    "debug.confirm.green_blocked": "应用绿军阻止",
+    "debug.status.turn": "回合",
+    "debug.mode.computer": "电脑",
+    "debug.mode.blocked": "阻止"
   }
 }

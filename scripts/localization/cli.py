@@ -20,6 +20,7 @@ import json
 import sys
 from pathlib import Path
 
+from . import schema
 from .catalog import DEFAULT_REGISTRY_PATH, load_catalog
 from .generate import generate as generate_impl
 from .schema import SchemaError
@@ -58,6 +59,12 @@ def _catalog_paths(values):
 def _add_output_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--budget-json", type=Path, default=None)
+    parser.add_argument(
+        "--emission-profile",
+        choices=schema.EMISSION_PROFILES,
+        default=schema.EMISSION_PROFILE_DEBUG,
+        help="generated catalog payload profile (default: debug)",
+    )
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
@@ -71,6 +78,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
         budget_json_path=args.budget_json,
         registry_path=args.registry,
         catalog_paths=_catalog_paths(args.catalog),
+        emission_profile=args.emission_profile,
     )
     return 0
 
@@ -85,12 +93,13 @@ def cmd_budget(args: argparse.Namespace) -> int:
         budget_json_path=args.budget_json,
         registry_path=args.registry,
         catalog_paths=_catalog_paths(args.catalog),
+        emission_profile=args.emission_profile,
     )
     print(written["budget_json"].read_text(encoding="utf-8"), end="")
     return 0
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -109,6 +118,11 @@ def main(argv=None) -> int:
     _add_source_args(budget_p)
     _add_output_args(budget_p)
 
+    return parser
+
+
+def main(argv=None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     handlers = {
