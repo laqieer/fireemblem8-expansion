@@ -133,6 +133,7 @@ def _parse_assignment(node):
 
 
 def load_records(source_path):
+    source_path = os.path.realpath(os.path.abspath(source_path))
     root = load_json_file(source_path)
     schema_node = root.require("$schema")
     if schema_node.as_str() != SCHEMA_ID:
@@ -192,7 +193,11 @@ def load_records(source_path):
             )
         )
 
-    return {"strategies": strategies, "chapters": chapters}
+    return {
+        "strategies": strategies,
+        "chapters": chapters,
+        "source_paths": (source_path,),
+    }
 
 
 def _error(message, loc, ref):
@@ -246,6 +251,7 @@ def validate(records, diagnostics, dependency_records=None,
     objectives = {
         record.chapter: record for record in dependency_records.get("chapterobjectives", ())
     }
+    source_paths = set(records.get("source_paths", ()))
     chapter_bundles = _bundle_records(dependency_records)
     owners_by_chapter = {}
     for chapter_bundle in chapter_bundles:
@@ -415,6 +421,26 @@ def validate(records, diagnostics, dependency_records=None,
                     ref + ".symbol",
                 )
             )
+        elif os.path.realpath(
+                os.path.abspath(
+                    owners[0].autoplay_strategies.source
+                    if os.path.isabs(owners[0].autoplay_strategies.source)
+                    else os.path.join(
+                        owners[0].repository_root,
+                        owners[0].autoplay_strategies.source,
+                    )
+                )
+            ) not in source_paths:
+            diagnostics.add(
+                _error(
+                    "strategy assignment bundle '{}' owner source '{}' does not match "
+                    "the loaded strategy source".format(
+                        chapter.symbol, owners[0].autoplay_strategies.source
+                    ),
+                    owners[0].autoplay_strategies.source_loc,
+                    "autoplayStrategies.source",
+                )
+            )
         elif chapter.symbol not in owners[0].autoplay_strategies.symbols:
             diagnostics.add(
                 _error(
@@ -459,6 +485,37 @@ def validate(records, diagnostics, dependency_records=None,
 
         objective_record = objectives.get(chapter.chapter)
         groups = {group.id: group for group in objective_record.groups} if objective_record else {}
+        objective_kinds = {
+            objective.kind for objective in objective_record.objectives
+        } if objective_record else set()
+
+        for assignment, assignment_ref in (
+            (chapter.chapter_assignment, ref + ".chapterAssignment"),
+            *(
+                (item, ref + ".groupAssignments[group={}]".format(item.group))
+                for item in chapter.group_assignments
+            ),
+            *(
+                (item, ref + ".unitAssignments[character={}]".format(item.character))
+                for item in chapter.unit_assignments
+            ),
+        ):
+            if assignment is None:
+                continue
+            strategy = strategy_ids.get(assignment.strategy)
+            if strategy is None:
+                continue
+            for kind in sorted(objective_kinds - set(strategy.objectives)):
+                diagnostics.add(
+                    _error(
+                        "strategy '{}' does not support chapter objective kind '{}'".format(
+                            strategy.id, kind
+                        ),
+                        assignment.strategy_loc,
+                        assignment_ref + ".strategy",
+                    )
+                )
+
         for assignment in chapter.group_assignments:
             assignment_ref = ref + ".groupAssignments[group={}]".format(assignment.group)
             diagnostics.extend(
@@ -535,9 +592,18 @@ class AutoplayStrategiesTableSchema(TableSchema):
         from . import generate
         return generate.generate_c_source(records, source_path)
 
+    def configure_records(self, records, **options):
+        reference_profiles = options.get("reference_profiles")
+        if reference_profiles is not None:
+            records["reference_profiles_enabled"] = reference_profiles == "1"
+        return records
+
     def build_inventory(self, records):
         from . import inventory
         return inventory.build_inventory(records)
+
+    def manifest_record_count(self, records):
+        return len(records["strategies"])
 
 
 def dependency_graph():

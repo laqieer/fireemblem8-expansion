@@ -67,6 +67,8 @@ def generate(temporary_path, enabled):
                 "--inventory",
                 str(inventory),
                 "--no-roundtrip",
+                "--reference-profiles",
+                str(int(enabled)),
                 *extra_args,
             ]
         )

@@ -50,27 +50,12 @@ INCLUDE_DIRS = [REPO_ROOT / "include", REPO_ROOT / "include" / "generated"]
 
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_OBJDUMP = shutil.which("arm-none-eabi-objdump")
-
-FIND_NEXT_CALL = "= Proc_FindNext(&procIter);"
-NULL_GUARD = "if (proc == NULL)"
-
-# The world-map helpers that iterate with Proc_FindNext(). Every one of them
-# is reached from the world-map opening tour, so every one of them has to be
-# able to terminate on an empty proc list.
-GUARDED_FUNCTIONS = {
-    "src/worldmap_rm.c": [
-        "EndGmapRmBorder1",
-        "GmapRmBorder1Exists",
-        "RequestGmapRmBorder1Remove",
-        "EndWmPlaceDotByIndex",
-        "IsWmPlaceDotActiveAtIndex",
-        "SetWmPlaceDotFlagForIndex",
-    ],
-    "src/worldmap_automu.c": [
-        "EndGmAutoMuFor",
-        "IsGmAutoMuActiveFor",
-    ],
-}
+WORLD_MAP_SOURCES = tuple(sorted(SRC_DIR.glob("worldmap*.c")))
+_INSTRUCTION_RE = re.compile(
+    r"^\s*([0-9a-f]+):\s+(?:[0-9a-f]{2,4}\s+){1,2}"
+    r"([a-z][a-z0-9.]*)\s*(.*)$"
+)
+_FUNCTION_RE = re.compile(r"^[0-9a-f]+ <([^+>]+)>:$", re.MULTILINE)
 
 
 def _include_flags():
@@ -80,63 +65,166 @@ def _include_flags():
     return flags
 
 
+def _instructions(text):
+    return [
+        (int(match.group(1), 16), match.group(2), match.group(3))
+        for line in text.splitlines()
+        if (match := _INSTRUCTION_RE.match(line))
+    ]
+
+
+def _functions(text):
+    parts = _FUNCTION_RE.split(text)
+    return zip(parts[1::2], map(_instructions, parts[2::2]))
+
+
+def _branch_target(operands):
+    match = re.search(r"\b([0-9a-f]+)\s+<", operands)
+    return int(match.group(1), 16) if match else None
+
+
+def _register_written(instruction, register):
+    base, operands = instruction[1].split(".", 1)[0], instruction[2]
+    destination = re.match(r"\s*(r[0-9]+)", operands)
+    return (base not in {"cmp", "cmn", "tst", "push"}
+            and not base.startswith(("b", "str"))
+            and destination is not None and destination.group(1) == register)
+
+
+def _bounded_cycle(cycle, instructions, indexes):
+    component = set(cycle)
+    operations = {address: instructions[indexes[address]][1].split(".", 1)[0] for address in cycle}
+    if any(operations[address] in {"bl", "blx", "pop", "ldmia"}
+           or "!" in instructions[indexes[address]][2] for address in cycle):
+        return False
+    for guard in cycle:
+        index = indexes[guard]
+        if operations[guard] not in {"beq", "bne"} or index == 0:
+            continue
+        comparison = instructions[index - 1]
+        if comparison[0] not in component or comparison[1].split(".", 1)[0] != "cmp":
+            continue
+        target = _branch_target(instructions[index][2])
+        fallthrough = instructions[index + 1][0] if index + 1 < len(instructions) else None
+        equality, repeat = (target, fallthrough) if operations[guard] == "beq" else (fallthrough, target)
+        if equality in component or repeat not in component:
+            continue
+        compared = re.findall(r"\br[0-9]+\b", comparison[2])
+        for register in compared:
+            update_re = re.compile(r"\s*%s,\s*#(?:0x)?0*1\s*" % register)
+            updates = [address for address in cycle
+                       if operations[address] in {"add", "adds", "sub", "subs"}
+                       and update_re.fullmatch(instructions[indexes[address]][2])]
+            if (len(updates) == 1 and cycle.index(updates[0]) < cycle.index(guard)
+                    and all(address == updates[0] or not _register_written(
+                        instructions[indexes[address]], register) for address in cycle)
+                    and all(not _register_written(instructions[indexes[address]], bound)
+                            for address in cycle for bound in compared if bound != register)):
+                return True
+    return False
+
+
+def _all_paths_exit(instructions, start, iterator_calls):
+    indexes = {instruction[0]: index for index, instruction in enumerate(instructions)}
+
+    def walk(address, trail):
+        if address in iterator_calls:
+            return False
+        if address in trail:
+            return _bounded_cycle(trail[trail.index(address):], instructions, indexes)
+        index = indexes.get(address)
+        if index is None:
+            return False
+        _address, mnemonic, operands = instructions[index]
+        base = mnemonic.split(".", 1)[0]
+        if base == "bx" or (base == "pop" and "pc" in operands):
+            return True
+        fallthrough = instructions[index + 1][0] if index + 1 < len(instructions) else None
+        target = _branch_target(operands)
+        successors = ((fallthrough,) if base in {"bl", "blx"} else
+                      (target,) if base == "b" else
+                      (target, fallthrough) if base.startswith("b") else (fallthrough,))
+        return None not in successors and all(
+            walk(successor, trail + (address,)) for successor in successors)
+
+    return walk(start, ())
+
+
+def _iterator_null_paths(text):
+    paths = {}
+    for function, instructions in _functions(text):
+        iterator_calls = {
+            address
+            for address, mnemonic, operands in instructions
+            if mnemonic.split(".", 1)[0] in {"bl", "blx"} and "Proc_FindNext" in operands
+        }
+        for index, (address, _mnemonic, _operands) in enumerate(instructions):
+            if address not in iterator_calls:
+                continue
+            site = (function, address)
+            paths[site] = False
+            null_registers = {"r0"}
+            for candidate in range(index + 1, len(instructions)):
+                _candidate_address, mnemonic, operands = instructions[candidate]
+                base = mnemonic.split(".", 1)[0]
+                move = re.fullmatch(r"\s*(r[0-9]+),\s*(r[0-9]+)\s*", operands)
+                if base in {"mov", "movs"} and move and move.group(2) in null_registers:
+                    null_registers.add(move.group(1))
+                    continue
+                comparison = re.fullmatch(r"\s*(r[0-9]+),\s*#0\s*", operands)
+                if base == "cmp" and comparison and comparison.group(1) in null_registers:
+                    branch_index = candidate + 1
+                    if branch_index >= len(instructions):
+                        break
+                    _branch_address, branch_mnemonic, branch_operands = instructions[branch_index]
+                    branch = branch_mnemonic.split(".", 1)[0]
+                    target = _branch_target(branch_operands)
+                    fallthrough = instructions[branch_index + 1][0] if branch_index + 1 < len(instructions) else None
+                    null_path = target if branch == "beq" else fallthrough if branch == "bne" else None
+                    if null_path is not None:
+                        paths[site] = _all_paths_exit(instructions, null_path, iterator_calls)
+                    break
+                if base.startswith("b") or set(re.findall(r"\br[0-9]+\b", operands)) & null_registers:
+                    break
+    return paths
+
+
 class ProcFindNextSourceGuardTests(unittest.TestCase):
     """Source invariant: the iterator result is NULL-checked before any use."""
 
-    def test_every_find_next_call_site_is_null_guarded(self):
-        offenders = []
-        for source in sorted(SRC_DIR.rglob("*.c")):
-            lines = source.read_text(encoding="utf-8").split("\n")
-            for index, line in enumerate(lines):
-                if FIND_NEXT_CALL not in line:
-                    continue
-                # Look at the next few non-blank lines: the first statement
-                # after the call must be the NULL guard.
-                following = [
-                    text.strip()
-                    for text in lines[index + 1:index + 5]
-                    if text.strip()
-                ]
-                if not following or not following[0].startswith(NULL_GUARD):
-                    offenders.append(
-                        "%s:%d" % (source.relative_to(REPO_ROOT), index + 1))
-        self.assertEqual(
-            offenders, [],
-            "Proc_FindNext() result used before its NULL check at: %s -- the "
-            "iterator returns NULL when exhausted, and dereferencing first "
-            "lets an optimising compiler delete the loop exit"
-            % ", ".join(offenders))
-
-    def test_no_loop_relies_on_a_post_dereference_null_condition(self):
-        """`} while (proc != NULL);` after a dereference is the broken shape."""
-        offenders = []
-        for relative in GUARDED_FUNCTIONS:
-            text = (REPO_ROOT / relative).read_text(encoding="utf-8")
-            if "} while (proc != NULL);" in text:
-                offenders.append(relative)
-        self.assertEqual(
-            offenders, [],
-            "%s still terminate a Proc_FindNext() loop on a condition the "
-            "compiler can prove redundant" % ", ".join(offenders))
-
     def test_named_helpers_contain_the_guard(self):
-        for relative, functions in GUARDED_FUNCTIONS.items():
-            text = (REPO_ROOT / relative).read_text(encoding="utf-8")
-            for function in functions:
-                match = re.search(
-                    r"^[a-zA-Z_].*\b%s\s*\(" % re.escape(function),
-                    text, re.MULTILINE)
-                self.assertIsNotNone(
-                    match, "%s: %s not found" % (relative, function))
-                body = text[match.start():match.start() + 1200]
-                self.assertIn(
-                    FIND_NEXT_CALL, body,
-                    "%s: %s no longer iterates with Proc_FindNext()"
-                    % (relative, function))
-                self.assertIn(
-                    NULL_GUARD, body,
-                    "%s: %s lost its Proc_FindNext() NULL guard"
-                    % (relative, function))
+        if ARM_CC is None or ARM_OBJDUMP is None:
+            raise unittest.SkipTest("arm-none-eabi-gcc/objdump not available")
+        with tempfile.TemporaryDirectory() as tmp:
+            fixtures = ("if (proc == 0) break;", "if (proc == 0) continue;",
+                        "if (proc == 0) for (;;) {}",
+                        "if (proc == 0) while (*flag) *flag += 2;",
+                        "Observe(proc); if (proc == 0) break;")
+            listings = []
+            for guard in fixtures:
+                source = Path(tmp) / ("%d.c" % len(listings))
+                obj = source.with_suffix(".o")
+                source.write_text(
+                    "extern void *Proc_FindNext(void *);\nextern void Observe(void *);\n"
+                    "int Iterator(void *iter, volatile int *flag) { for (;;) { void *proc = Proc_FindNext(iter); "
+                    f"{guard} Observe(iter); return 1; }} return 0; }}\n",
+                    encoding="utf-8")
+                compiled = subprocess.run(
+                    [ARM_CC, "-mthumb", "-mcpu=arm7tdmi", "-mabi=aapcs",
+                     "-std=gnu89", "-O2", "-c", "-w", str(source), "-o", str(obj)],
+                    capture_output=True, text=True)
+                self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+                listing = subprocess.run(
+                    [ARM_OBJDUMP, "-dr", str(obj)],
+                    capture_output=True, text=True)
+                self.assertEqual(listing.returncode, 0, listing.stdout + listing.stderr)
+                listings.append(_iterator_null_paths(listing.stdout))
+
+        self.assertTrue(all(listings), "compiled fixture lost its Proc_FindNext call")
+        self.assertEqual(
+            [all(paths.values()) for paths in listings],
+            [True, False, False, False, False],
+        )
 
 
 class ProcFindNextCodegenTests(unittest.TestCase):
@@ -154,9 +242,9 @@ class ProcFindNextCodegenTests(unittest.TestCase):
                          % (source.name, proc.stdout + proc.stderr))
         return obj
 
-    def _disassemble(self, obj, function):
+    def _disassemble(self, obj):
         proc = subprocess.run(
-            [ARM_OBJDUMP, "-d", "--disassemble=" + function, str(obj)],
+            [ARM_OBJDUMP, "-dr", str(obj)],
             capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0,
                          "objdump failed:\n%s" % (proc.stdout + proc.stderr))
@@ -167,24 +255,17 @@ class ProcFindNextCodegenTests(unittest.TestCase):
             raise unittest.SkipTest(
                 "arm-none-eabi-gcc/objdump not available")
         with tempfile.TemporaryDirectory() as tmp:
-            obj = self._compile_o2(tmp, SRC_DIR / "worldmap_rm.c")
-            text = self._disassemble(obj, "GmapRmBorder1Exists")
-            self.assertIn(
-                "GmapRmBorder1Exists", text,
-                "GmapRmBorder1Exists missing from the -O2 object")
-            # The "no such proc" answer must survive optimisation. Without the
-            # NULL guard, -O2 proved the loop endless and emitted only the
-            # `movs r0, #1` answer.
-            self.assertIn(
-                "#0", text,
-                "GmapRmBorder1Exists lost every compare/return against 0 at "
-                "-O2: the loop can no longer terminate and the world-map "
-                "opening event will yield forever")
-            returns_zero = re.search(r"\bmovs?\s+r0,\s*#0\b", text)
-            self.assertIsNotNone(
-                returns_zero,
-                "GmapRmBorder1Exists has no 'return 0' path at -O2; the "
-                "undefined-behaviour NULL dereference has come back")
+            null_exit_paths = []
+            for source in WORLD_MAP_SOURCES:
+                text = self._disassemble(self._compile_o2(tmp, source))
+                paths = _iterator_null_paths(text)
+                null_exit_paths.extend(
+                    (source.name, function, address, exits)
+                    for (function, address), exits in paths.items()
+                )
+        self.assertTrue(null_exit_paths, "no world-map Proc_FindNext relocations found")
+        self.assertTrue(all(exits for _source, _function, _address, exits in null_exit_paths),
+                        "exhausted Proc_FindNext path lacks a function exit: %r" % (null_exit_paths,))
 
 
 if __name__ == "__main__":

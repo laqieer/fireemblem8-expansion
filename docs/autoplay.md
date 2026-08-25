@@ -475,8 +475,6 @@ This is production runtime infrastructure with host/runtime test coverage:
   resulting profile totals. The archival lane excludes objective runtime
   behavior and remains a compile-compatibility check only.
 
-## Compatibility and budgets
-
 ## Typed autoplay strategy profiles
 
 Issue [#90](https://github.com/laqieer/fireemblem8-expansion/issues/90)
@@ -484,9 +482,10 @@ adds one bounded generated registry and dispatch seam for reusable autoplay
 policy. It is an optional reusable module: the registry/assignment types are
 generic, while **Aggressive** and **Objective-first** are the two permanent
 default-off references selected by `EXPANSION_AUTOPLAY_STRATEGIES=1`.
-The default `src/data/autoplay_strategies.json` contains no strategy or
-assignment records, preserving the existing `Unit.ai[]` computer decision
-path exactly.
+The canonical `src/data/autoplay_strategies.json` records their typed
+descriptors once. Disabled builds omit only those reference descriptors and
+their assignments while retaining the generic strategy router for downstream
+custom records; enabled builds emit the references from that same source.
 
 The generated `autoplaystrategies` table is owned by `chapterbundle` alongside
 typed objectives. It has at most eight descriptors and eight group plus eight
@@ -502,12 +501,14 @@ pointer or link address.
 Aggressive calls the existing legal combat selector first, then leaves the
 unchanged low-level AI to pursue or fall back. Objective-first handles only
 the active `reach_area` or `hold_until_turn` group member: it projects the
-unit onto the inclusive rectangle, uses the existing movement selector, then
-falls back to Aggressive and the existing AI. The projection is coordinate
-only (clamp X then Y); combat uses existing slot/item/map scans. Neither
-profile consumes RNG or derives a decision from pointer/link addresses, so a
-fixed seed/configuration repeats its trace exactly. Existing low-level
-fallback behavior retains its own established RNG contract.
+unit onto the inclusive rectangle and uses the existing movement selector. A
+pending hold accepts combat only when its resulting decision stays in that
+rectangle; otherwise it waits, never falling through to unconstrained
+Aggressive. The projection is coordinate only (clamp X then Y); combat uses
+existing slot/item/map scans. Neither profile consumes RNG or derives a
+decision from pointer/link addresses, so a fixed seed/configuration repeats
+its trace exactly. Existing low-level fallback behavior retains its own
+established RNG contract.
 
 `ExpansionAutoplayStrategies_ValidateRegistry()` rejects capacity overflow,
 zero/duplicate IDs, missing callbacks, and undeclared capability bits.
@@ -537,6 +538,26 @@ text bytes. Strategy activation reconstructs from existing generated data and
 event flags. The strategy host/ARM selector enforces zero EWRAM and a 4 KiB
 aggregate object-text ceiling for both profile states. The archival lane
 excludes the runtime and generated table.
+
+### Strategy compatibility and budgets
+
+- **Dependencies:** typed chapter objectives/groups, `CpDecide_Main`, the
+  existing AI action helpers, generated-data ownership validation, and the
+  tester-case catalog.
+- **Configuration:** `EXPANSION_AUTOPLAY_STRATEGIES` selects only the two
+  reference descriptors/callbacks. It participates in ROM identity and has no
+  save migration or compatibility-epoch impact.
+- **Data/UI:** downstream custom strategy records remain available with the
+  reference profiles disabled; no player UI, localization string, or second
+  event language is introduced.
+- **ROM/RAM:** reference profiles add only generated ROM descriptors and
+  callback text. The shared router has no static EWRAM/IWRAM allocation, and
+  the focused object gate enforces zero strategy EWRAM and a 4 KiB text cap.
+- **Runtime evidence:** the debug strategy profile and default-disabled ROMs
+  execute bounded fixed-seed `CpDecide_Main` scenarios twice; their action and
+  telemetry captures must repeat exactly.
+
+## Autoplay controller and Charge compatibility and budgets
 
 - **Dependencies:** `BmMain_StartPhase`, `gProcScr_CpPhase`,
   `BuildAiUnitList`, `Unit.ai[]`, `AreUnitsAllied`, `gba-playtest`, and the
@@ -584,6 +605,7 @@ make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=a
 make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=release MODERN_ABI=aapcs
 make expansion-modern-autoplay-bounds-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-autoplay-bounds-check MODERN_CONFIG=release MODERN_ABI=aapcs
+make expansion-modern-autoplay-strategy-runtime-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=release MODERN_ABI=aapcs
 ```

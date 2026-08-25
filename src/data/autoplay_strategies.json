@@ -1,5 +1,24 @@
 {
   "$schema": "fe8.autoplaystrategies.v1",
-  "strategies": [],
+  "strategies": [
+    {
+      "id": "AUTOPLAY_STRATEGY_AGGRESSIVE",
+      "callback": "ExpansionAutoplayStrategy_Aggressive",
+      "objectiveKinds": [
+        "protect",
+        "reach_area",
+        "defeat_group",
+        "event_flag",
+        "hold_until_turn"
+      ],
+      "actionKinds": ["combat"]
+    },
+    {
+      "id": "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST",
+      "callback": "ExpansionAutoplayStrategy_ObjectiveFirst",
+      "objectiveKinds": ["reach_area", "hold_until_turn"],
+      "actionKinds": ["combat", "objective_move"]
+    }
+  ],
   "chapters": []
 }
