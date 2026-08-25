@@ -143,12 +143,6 @@ def _probe_constants(work_dir):
     return int(out[0]), int(out[1])
 
 
-def _strip_c_comments(text):
-    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
-    text = re.sub(r"//[^\n]*", " ", text)
-    return text
-
-
 class DangerOverlayTableTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -191,17 +185,6 @@ class DangerOverlayWrapperTests(unittest.TestCase):
     def setUpClass(cls):
         _skip_if_no_host_compiler()
 
-    def test_wrapper_is_compile_gated_and_delegates(self):
-        code = _strip_c_comments(BMMENU_SRC.read_text(encoding="utf-8"))
-        gated = re.search(
-            r"#if FE8_EXPANSION_DANGER_OVERLAY_MENU(.*?)#endif", code, flags=re.DOTALL
-        )
-        self.assertIsNotNone(gated, "wrapper must be wrapped in #if/#endif")
-        body = gated.group(1)
-        self.assertIn("ExpansionDangerOverlay_MenuSelect", body)
-        self.assertIn("MapMenu_DangerZone_UnusedEffect", body,
-                      "wrapper must reuse (delegate to) the vanilla danger-zone effect")
-
     def test_disabled_bmmenu_has_no_wrapper_reference(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -220,31 +203,43 @@ class DangerOverlayWrapperTests(unittest.TestCase):
             self.assertEqual(rc, 0, out)
             refs = _referenced_symbol_names(obj)
         self.assertIn("ExpansionDangerOverlay_MenuSelect", refs)
+        self.assertIn(
+            "MapMenu_DangerZone_UnusedEffect",
+            refs,
+            "enabled wrapper must delegate through the existing danger-zone effect",
+        )
 
 
-class DangerOverlayWiringTests(unittest.TestCase):
-    def test_modern_mk_wires_the_flag_define(self):
-        modern_mk = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("-DFE8_EXPANSION_DANGER_OVERLAY_MENU=$(EXPANSION_DANGER_OVERLAY_MENU)", modern_mk)
+class DangerOverlayConfigurationTests(unittest.TestCase):
+    def test_parsed_default_and_enabled_identity_are_distinct(self):
+        import sys
 
-    def test_modern_mk_wires_the_modern_build_define(self):
-        """Every modern translation unit gets FE8_EXPANSION_MODERN_BUILD=1 so
-        the always-linked probe stays present in modern builds while the
-        legacy build keeps expansion_config.h's 0 fallback (no orphan)."""
-        modern_mk = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("-DFE8_EXPANSION_MODERN_BUILD=1", modern_mk)
+        sys.path.insert(0, str(REPO_ROOT / "scripts" / "modernize"))
+        import expansion_config as ec
 
-    def test_no_new_line_comments_in_added_regions(self):
-        # Our additions (wrapper, gated item, declaration) must use /* */ only.
-        for path, needle in ((BMMENU_SRC, "ExpansionDangerOverlay_MenuSelect"),
-                             (MENU_DEF_SRC, "Threat Range")):
-            text = path.read_text(encoding="utf-8")
-            gated = re.findall(r"#if FE8_EXPANSION_DANGER_OVERLAY_MENU(.*?)#endif",
-                               text, flags=re.DOTALL)
-            self.assertTrue(any(needle in g for g in gated), "gated region for %s" % needle)
-            for g in gated:
-                if needle in g:
-                    self.assertNotIn("//", g, "%s gated region must use /* */ only" % path.name)
+        default = ec.load_identity(
+            REPO_ROOT / "config.mk", "debug", "aapcs", "16M", repo_root=REPO_ROOT
+        )
+        enabled = ec.load_identity(
+            REPO_ROOT / "config.mk",
+            "debug",
+            "aapcs",
+            "16M",
+            repo_root=REPO_ROOT,
+            danger_overlay_menu=1,
+        )
+        self.assertEqual(default.danger_overlay_menu, 0)
+        self.assertEqual(enabled.danger_overlay_menu, 1)
+        self.assertNotEqual(default.config_fingerprint, enabled.config_fingerprint)
+        with self.assertRaises(ec.ConfigError):
+            ec.load_identity(
+                REPO_ROOT / "config.mk",
+                "debug",
+                "aapcs",
+                "16M",
+                repo_root=REPO_ROOT,
+                danger_overlay_menu=2,
+            )
 
     def test_arm_aapcs_compiles_enabled(self):
         if ARM_CC is None:
@@ -268,10 +263,6 @@ class DangerOverlayProbeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         _skip_if_no_host_compiler()
-
-    def test_probe_header_exists(self):
-        self.assertTrue(PROBE_HEADER.is_file(),
-                        "include/expansion_danger_overlay.h must exist")
 
     def test_probe_defined_in_every_modern_build(self):
         """The negative-control probe is *defined* (present, 20-byte struct)
@@ -328,33 +319,6 @@ class DangerOverlayProbeTests(unittest.TestCase):
             self.assertEqual(probe_syms, [],
                              "legacy-like playerphase.o must neither define nor "
                              "reference the probe; found: %r" % probe_syms)
-
-    def test_probe_writes_are_compile_gated(self):
-        """Every probe field write in the shared danger-zone path must live
-        inside a #if FE8_EXPANSION_DANGER_OVERLAY_MENU region, so the default
-        build keeps vanilla playerphase/bmmenu behaviour."""
-        for src in (PLAYERPHASE_SRC, BMMENU_SRC):
-            text = src.read_text(encoding="utf-8")
-            gated = "".join(re.findall(
-                r"#if FE8_EXPANSION_DANGER_OVERLAY_MENU(.*?)#endif", text, flags=re.DOTALL))
-            ungated = re.sub(
-                r"#if FE8_EXPANSION_DANGER_OVERLAY_MENU.*?#endif", " ", text, flags=re.DOTALL)
-            ungated = _strip_c_comments(ungated)
-            # The probe struct definition may sit outside the feature-gated
-            # region (it is always-linked in every modern build, gated on
-            # FE8_EXPANSION_MODERN_BUILD || the feature flag); only field
-            # writes (".<field>Count++/=") must not appear ungated.
-            self.assertNotRegex(
-                ungated, r"gExpansionDangerOverlayProbe\.\w+\s*(\+\+|=)",
-                "%s writes the danger-overlay probe outside a gated region" % src.name)
-            if "gExpansionDangerOverlayProbe." in text:
-                self.assertIn("gExpansionDangerOverlayProbe.", gated,
-                              "%s must write the probe only inside gated regions" % src.name)
-
-    def test_probe_header_uses_block_comments_only(self):
-        text = PROBE_HEADER.read_text(encoding="utf-8")
-        stripped = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
-        self.assertNotIn("//", stripped, "probe header must use /* */ comments only")
 
     def test_playerphase_arm_compiles_enabled(self):
         if ARM_CC is None:

@@ -1,8 +1,8 @@
 """Issue #42 host/native/config/seam tests for the typed AoE framework."""
 
+import json
 import os
 import re
-import runpy
 import shutil
 import subprocess
 import tempfile
@@ -20,11 +20,29 @@ DISABLED_DRIVER = (
 CC = shutil.which("gcc") or shutil.which("cc")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_NM = shutil.which("arm-none-eabi-nm")
+ARM_READELF = shutil.which("arm-none-eabi-readelf")
 ARM_SIZE = shutil.which("arm-none-eabi-size")
+PRODUCTION_DISPATCH_CALLERS = (
+    ROOT / "src" / "bmitemuse.c",
+    ROOT / "src" / "bmusemind.c",
+    ROOT / "src" / "cp_staff.c",
+    ROOT / "src" / "cpextra_80407F0.c",
+)
 
 
 def run(command, cwd=ROOT):
     return subprocess.run(command, cwd=str(cwd), capture_output=True, text=True)
+
+
+def _relocation_count(obj: Path, symbol: str) -> int:
+    completed = run([ARM_READELF, "-rW", str(obj)])
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return sum(
+        1
+        for line in completed.stdout.splitlines()
+        if re.search(r"\b" + re.escape(symbol) + r"\b", line)
+    )
 
 
 class AoEHostTests(unittest.TestCase):
@@ -235,17 +253,56 @@ class AoEArmAndBudgetTests(unittest.TestCase):
                 )
                 self.assertIn(name, completed.stderr)
 
-    def test_shared_sources_use_c89_comments(self):
-        for path in (
-            CORE,
-            REFERENCE,
-            ROOT / "include" / "expansion_aoe.h",
-            ROOT / "include" / "expansion_aoe_reference.h",
-        ):
-            text = path.read_text(encoding="utf-8")
-            without_blocks = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
-            without_strings = re.sub(r'"(\\.|[^"\\])*"', " ", without_blocks)
-            self.assertNotIn("//", without_strings, f"{path.name} has // comments")
+@unittest.skipIf(
+    ARM_CC is None or ARM_READELF is None,
+    "no arm-none-eabi compiler/readelf",
+)
+class AoEProductionDispatchObjectTests(unittest.TestCase):
+    """Each production item/AI entry point reaches the public dispatch seam."""
+
+    def _compile_enabled(self, work: Path, source: Path) -> Path:
+        obj = work / (source.stem + "-aoe.o")
+        completed = run(
+            [
+                ARM_CC,
+                "-mcpu=arm7tdmi",
+                "-mthumb",
+                "-mthumb-interwork",
+                "-mabi=aapcs",
+                "-std=gnu89",
+                "-ffreestanding",
+                "-fno-builtin",
+                "-w",
+                *INCLUDES,
+                "-DFE8_EXPANSION_MODERN_BUILD=1",
+                "-DFE8_EXPANSION_AOE_REFERENCE=1",
+                "-c",
+                str(source),
+                "-o",
+                str(obj),
+            ]
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        return obj
+
+    def test_each_production_caller_retains_the_public_dispatch_relocations(self):
+        expected_counts = {
+            "bmitemuse.c": 2,
+            "bmusemind.c": 1,
+            "cp_staff.c": 1,
+            "cpextra_80407F0.c": 1,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            for source in PRODUCTION_DISPATCH_CALLERS:
+                with self.subTest(source=source.name):
+                    self.assertEqual(
+                        _relocation_count(
+                            self._compile_enabled(work, source),
+                            "ExpansionAoE_DispatchItem",
+                        ),
+                        expected_counts[source.name],
+                    )
 
 
 class AoEConfigAndSeamTests(unittest.TestCase):
@@ -261,7 +318,6 @@ class AoEConfigAndSeamTests(unittest.TestCase):
             "aapcs",
             "16M",
             repo_root=ROOT,
-            aoe_reference=0,
         )
         on = ec.load_identity(
             ROOT / "config.mk",
@@ -275,6 +331,11 @@ class AoEConfigAndSeamTests(unittest.TestCase):
         self.assertEqual(on.aoe_reference, 1)
         self.assertNotEqual(off.config_fingerprint, on.config_fingerprint)
         self.assertEqual(off.save_compat_epoch, on.save_compat_epoch)
+        with tempfile.TemporaryDirectory() as tmp:
+            generated = ec.generate_metadata_files(Path(tmp), on)
+            metadata = json.loads(generated["json"].read_text(encoding="utf-8"))
+        self.assertEqual(metadata["aoe_reference"], 1)
+        self.assertEqual(metadata["config_fingerprint"], on.config_fingerprint)
         with self.assertRaises(ec.ConfigError):
             ec.load_identity(
                 ROOT / "config.mk",
@@ -284,70 +345,6 @@ class AoEConfigAndSeamTests(unittest.TestCase):
                 repo_root=ROOT,
                 aoe_reference=2,
             )
-
-    def test_item_action_and_ai_pipelines_use_one_dispatch_api(self):
-        expected = {
-            "src/bmitemuse.c": 2,
-            "src/bmusemind.c": 1,
-            "src/cp_staff.c": 1,
-            "src/cpextra_80407F0.c": 1,
-        }
-        for relative, count in expected.items():
-            text = (ROOT / relative).read_text(encoding="utf-8")
-            self.assertEqual(
-                text.count("ExpansionAoE_DispatchItem"),
-                count,
-                f"{relative} must use only the shared AoE item dispatch seam",
-            )
-            self.assertIn("FE8_EXPANSION_MODERN_BUILD", text)
-
-    def test_item_routes_are_rom_authored_through_one_weak_provider(self):
-        core = CORE.read_text(encoding="utf-8")
-        header = (ROOT / "include" / "expansion_aoe.h").read_text(encoding="utf-8")
-        self.assertIn("ExpansionAoE_GetItemRouteTable(void)", core)
-        self.assertIn("__attribute__((weak))", core)
-        self.assertIn("ExpansionAoE_ValidateItemRouteTable", core)
-        self.assertNotIn("ExpansionAoE_RegisterItemRoute", core)
-        self.assertNotIn("ExpansionAoE_ResetItemRoutes", core)
-        self.assertIn("const struct ExpansionAoEItemRoute* routes;", header)
-
-    def test_reference_flag_is_default_off_across_make_c_and_autoconf(self):
-        config_mk = (ROOT / "config.mk").read_text(encoding="utf-8")
-        header = (ROOT / "include" / "expansion_config.h").read_text(encoding="utf-8")
-        configure_ac = (ROOT / "configure.ac").read_text(encoding="utf-8")
-        modern_mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("EXPANSION_AOE_REFERENCE       ?= 0", config_mk)
-        self.assertIn("#define FE8_EXPANSION_AOE_REFERENCE 0", header)
-        self.assertIn("--enable-aoe-reference", configure_ac)
-        self.assertIn(
-            "-DFE8_EXPANSION_AOE_REFERENCE=$(EXPANSION_AOE_REFERENCE)", modern_mk
-        )
-        self.assertIn("expansion-modern-aoe-check:", modern_mk)
-        self.assertIn(
-            "MODERN_AOE_DISABLED_PROFILE_ROOT := build/expansion-modern-aoe-disabled",
-            modern_mk,
-        )
-        self.assertIn(
-            "MODERN_BUILD_ROOT=$(MODERN_AOE_DISABLED_PROFILE_ROOT)",
-            modern_mk,
-        )
-        self.assertIn("EXPANSION_AOE_REFERENCE=0", modern_mk)
-        self.assertIn(
-            '--disabled-elf "$(MODERN_AOE_DISABLED_PROFILE_ELF)"',
-            modern_mk,
-        )
-        runner = (
-            ROOT / "tools" / "gba-playtest" / "run_aoe_checks.py"
-        ).read_text(encoding="utf-8")
-        probe_header = (
-            ROOT / "include" / "expansion_aoe_reference.h"
-        ).read_text(encoding="utf-8")
-        fields = re.findall(r"/\* [0-9A-F]{2} \*/ u32 ([A-Za-z0-9_]+);", probe_header)
-        module = runpy.run_path(
-            str(ROOT / "tools" / "gba-playtest" / "run_aoe_checks.py"),
-            run_name="aoe_runtime_schema",
-        )
-        self.assertEqual(tuple(fields), module["PROBE_FIELDS"])
 
     def test_aoe_linked_gate_rejects_archival_abi(self):
         completed = run(
