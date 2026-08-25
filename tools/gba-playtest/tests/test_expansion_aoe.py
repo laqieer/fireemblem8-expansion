@@ -34,15 +34,19 @@ def run(command, cwd=ROOT):
     return subprocess.run(command, cwd=str(cwd), capture_output=True, text=True)
 
 
-def _relocation_count(obj: Path, symbol: str) -> int:
+def _relocation_section_counts(obj: Path, symbol: str) -> dict[str, int]:
     completed = run([ARM_READELF, "-rW", str(obj)])
     if completed.returncode != 0:
         raise AssertionError(completed.stdout + completed.stderr)
-    return sum(
-        1
-        for line in completed.stdout.splitlines()
-        if re.search(r"\b" + re.escape(symbol) + r"\b", line)
-    )
+    section = None
+    counts = {}
+    for line in completed.stdout.splitlines():
+        match = re.match(r"Relocation section '(.+)'", line)
+        if match:
+            section = re.sub(r"^\.rel", "", match.group(1))
+        elif section is not None and re.search(r"\b" + re.escape(symbol) + r"\b", line):
+            counts[section] = counts.get(section, 0) + 1
+    return counts
 
 
 class AoEHostTests(unittest.TestCase):
@@ -278,6 +282,7 @@ class AoEProductionDispatchObjectTests(unittest.TestCase):
                 "-ffreestanding",
                 "-fno-builtin",
                 "-w",
+                "-ffunction-sections",
                 *INCLUDES,
                 *defines,
                 "-c",
@@ -289,46 +294,48 @@ class AoEProductionDispatchObjectTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         return obj
 
-    def test_provider_disabled_modern_callers_retain_public_dispatch_relocations(self):
-        expected_counts = {
-            "bmitemuse.c": 2,
-            "bmusemind.c": 1,
-            "cp_staff.c": 1,
-            "cpextra_80407F0.c": 1,
+    def test_provider_disabled_modern_callers_retain_public_dispatch_sections(self):
+        expected_sections = {
+            "bmitemuse.c": {
+                ".text.CanUnitUseItem",
+                ".text.DoItemUse",
+            },
+            "bmusemind.c": {".text.ActionStaffDoorChestUseItem"},
+            "cp_staff.c": {".text.AiTryDoStaff"},
+            "cpextra_80407F0.c": {".text.AiTryDoSpecialItems"},
         }
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             for source in PRODUCTION_DISPATCH_CALLERS:
                 with self.subTest(source=source.name):
-                    self.assertEqual(
-                        _relocation_count(
-                            self._compile_production_caller(
-                                work, source, provider_enabled=False
-                            ),
-                            "ExpansionAoE_DispatchItem",
+                    counts = _relocation_section_counts(
+                        self._compile_production_caller(
+                            work, source, provider_enabled=False
                         ),
-                        expected_counts[source.name],
+                        "ExpansionAoE_DispatchItem",
                     )
+                    self.assertEqual(set(counts), expected_sections[source.name])
+                    self.assertTrue(all(count > 0 for count in counts.values()))
 
     def test_provider_flag_does_not_remove_production_dispatch_relocations(self):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             for source in PRODUCTION_DISPATCH_CALLERS:
                 with self.subTest(source=source.name):
-                    disabled_count = _relocation_count(
+                    disabled_sections = _relocation_section_counts(
                         self._compile_production_caller(
                             work, source, provider_enabled=False
                         ),
                         "ExpansionAoE_DispatchItem",
                     )
-                    enabled_count = _relocation_count(
+                    enabled_sections = _relocation_section_counts(
                         self._compile_production_caller(
                             work, source, provider_enabled=True
                         ),
                         "ExpansionAoE_DispatchItem",
                     )
-                    self.assertGreater(disabled_count, 0)
-                    self.assertEqual(enabled_count, disabled_count)
+                    self.assertTrue(disabled_sections)
+                    self.assertEqual(enabled_sections, disabled_sections)
 
 
 class AoEConfigAndSeamTests(unittest.TestCase):

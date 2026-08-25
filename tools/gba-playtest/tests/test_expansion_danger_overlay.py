@@ -346,35 +346,86 @@ class DangerOverlayProbeTests(unittest.TestCase):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            rc, out, default_obj = _compile(
-                tmp,
-                PLAYERPHASE_SRC,
-                "pp_default_sections.o",
-                defines=[MODERN + "=1"],
-                extra=["-ffunction-sections"],
+            default_obj = self._compile_sectioned(
+                tmp, PLAYERPHASE_SRC, "pp_default_sections.o", [MODERN + "=1"]
             )
-            self.assertEqual(rc, 0, out)
-            rc, out, enabled_obj = _compile(
+            enabled_obj = self._compile_sectioned(
                 tmp,
                 PLAYERPHASE_SRC,
                 "pp_enabled_sections.o",
-                defines=[MODERN + "=1", FLAG + "=1"],
-                extra=["-ffunction-sections"],
+                [MODERN + "=1", FLAG + "=1"],
             )
-            self.assertEqual(rc, 0, out)
-
             self.assertEqual(
                 _relocation_section_counts(default_obj, "gExpansionDangerOverlayProbe"),
                 {},
                 "default modern playerphase code must not access the always-defined probe",
             )
-            self.assertEqual(
-                _relocation_section_counts(enabled_obj, "gExpansionDangerOverlayProbe"),
-                {
-                    ".text.PlayerPhase_DisplayDangerZone": 4,
-                    ".text.PlayerPhase_RangeDisplayIdle": 4,
-                },
+            self._assert_enabled_probe_sections(enabled_obj)
+
+            pointer_source = Path(tmp) / "playerphase_pointer_update.c"
+            pointer_source.write_text(
+                self._pointer_update_fixture(PLAYERPHASE_SRC.read_text(encoding="utf-8")),
+                encoding="utf-8",
             )
+            self._assert_enabled_probe_sections(
+                self._compile_sectioned(
+                    tmp,
+                    pointer_source,
+                    "pp_pointer_sections.o",
+                    [MODERN + "=1", FLAG + "=1"],
+                )
+            )
+
+    def _compile_sectioned(self, work, source, name, defines):
+        rc, out, obj = _compile(
+            work,
+            source,
+            name,
+            defines=defines,
+            extra=["-ffunction-sections"],
+        )
+        self.assertEqual(rc, 0, out)
+        return obj
+
+    def _assert_enabled_probe_sections(self, obj):
+        counts = _relocation_section_counts(obj, "gExpansionDangerOverlayProbe")
+        self.assertEqual(
+            set(counts),
+            {
+                ".text.PlayerPhase_DisplayDangerZone",
+                ".text.PlayerPhase_RangeDisplayIdle",
+            },
+        )
+        self.assertTrue(all(count > 0 for count in counts.values()))
+
+    def _pointer_update_fixture(self, source):
+        source = source.replace(
+            "    {\n        int rangeX, rangeY, rangeTiles = 0;",
+            "    {\n"
+            "        struct ExpansionDangerOverlayProbe* probe = "
+            "&gExpansionDangerOverlayProbe;\n"
+            "        int rangeX, rangeY, rangeTiles = 0;",
+            1,
+        )
+        source = source.replace(
+            "    u8 uid;\n    u8 action = -1;",
+            "    u8 uid;\n    u8 action = -1;\n"
+            "#if FE8_EXPANSION_DANGER_OVERLAY_MENU\n"
+            "    struct ExpansionDangerOverlayProbe* probe = "
+            "&gExpansionDangerOverlayProbe;\n"
+            "#endif",
+            1,
+        )
+        for field in (
+            "dangerDisplayCount",
+            "lastRangeTileCount",
+            "rangeGraphicsActive",
+            "cancelReturnCount",
+        ):
+            source = source.replace(
+                "gExpansionDangerOverlayProbe." + field, "probe->" + field
+            )
+        return source
 
     def test_legacy_like_build_emits_no_probe_and_no_ewram_orphan(self):
         """Standing anti-orphan regression (issue #6 Sprint 1 narrow fix): a
