@@ -39,6 +39,10 @@ BG_OUTPUT_HEIGHT = 160
 OBJ_SEAT_WIDTH = 256
 OBJ_SEAT_HEIGHT = 32
 CUSTOM_SPELL_BASE = 0x80
+PUBLIC_EFFECT_HEADER_PATHS = (
+    "include/custom_spell_effect.h",
+    "include/custom_spell_effect_test.h",
+)
 
 FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 EFFECT_SYMBOL_RE = re.compile(r"^CUSTOM_SPELL_[A-Z0-9_]+$")
@@ -46,6 +50,10 @@ ITEM_SYMBOL_RE = re.compile(r"^ITEM_[A-Z0-9_]+$")
 FALLBACK_SYMBOL_RE = re.compile(r"^SASSOC_EFX_[A-Za-z0-9_]+$")
 SONG_SYMBOL_RE = re.compile(r"^SONG_[A-Z0-9_]+$")
 SOUND_ID_RE = re.compile(r"^[1-9A-F][0-9A-F]{0,3}$")
+ITXT_LANGUAGE_TAG_RE = re.compile(
+    rb"^(?:[A-Za-z]{1,8}(?:-[A-Za-z0-9]{1,8})*"
+    rb"|[iIxX](?:-[A-Za-z0-9]{1,8})+)$"
+)
 
 RECTANGLES = (
     (8, 4, "ATTR0_WIDE", "ATTR1_SIZE_64"),
@@ -72,6 +80,16 @@ class CustomSpellPackage:
         self.bg_bytes = 0
         self.obj_oam_entries = 0
         self.runtime_bytes = 0
+
+
+def public_effect_symbols(root):
+    symbols = set()
+    for relative_path in PUBLIC_EFFECT_HEADER_PATHS:
+        with open(os.path.join(root, relative_path), encoding="utf-8") as handle:
+            symbols.update(
+                re.findall(r"\b(CUSTOM_SPELL_[A-Z0-9_]+)\b", handle.read())
+            )
+    return symbols
 
 
 def _exact_keys(value, keys, reference):
@@ -230,6 +248,14 @@ def _validate_bounded_zlib_stream(path, chunk, payload):
         or decoder.unused_data
     ):
         raise ValueError("{} {} has an incomplete or trailing zlib stream".format(path, chunk))
+    return output
+
+
+def _validate_utf8_text(path, chunk, field, value):
+    try:
+        value.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("{} {} {} must be valid UTF-8".format(path, chunk, field)) from exc
 
 
 def _validate_png_keyword(path, chunk, payload):
@@ -300,16 +326,23 @@ def _validate_known_ancillary(path, name, payload, palette_count, splt_names):
         if language_end < 2:
             raise ValueError("{} iTXt is missing a language terminator".format(path))
         language = remainder[2:language_end]
-        if any(byte < 32 or byte > 126 for byte in language):
-            raise ValueError("{} iTXt language tag must be ASCII".format(path))
+        if language and not ITXT_LANGUAGE_TAG_RE.fullmatch(language):
+            raise ValueError("{} iTXt language tag has invalid grammar".format(path))
         translated_end = remainder.find(b"\0", language_end + 1)
         if translated_end < 0:
             raise ValueError("{} iTXt is missing a translated-keyword terminator".format(path))
+        _validate_utf8_text(
+            path,
+            chunk,
+            "translated keyword",
+            remainder[language_end + 1:translated_end],
+        )
         text = remainder[translated_end + 1:]
         if remainder[0] and not text:
             raise ValueError("{} compressed iTXt must contain text data".format(path))
         if remainder[0]:
-            _validate_bounded_zlib_stream(path, chunk, text)
+            text = _validate_bounded_zlib_stream(path, chunk, text)
+        _validate_utf8_text(path, chunk, "text", text)
     elif name == b"tIME":
         if (
             len(payload) != 7
@@ -896,18 +929,45 @@ def load_package(
     ):
         raise ValueError("custom spell package must begin with colocated spell.json and animation.txt")
     absolute_dir = os.path.join(root, package_dir)
+    root_real = os.path.realpath(root)
+    if (
+        os.path.islink(absolute_dir)
+        or not os.path.isdir(absolute_dir)
+        or os.path.commonpath((root_real, os.path.realpath(absolute_dir))) != root_real
+    ):
+        raise ValueError("custom spell package directory must be a real repository directory")
+    package_real = os.path.realpath(absolute_dir)
     entries = sorted(os.listdir(absolute_dir))
     if entries != ["animation.txt", "images", "spell.json"]:
         raise ValueError(
             "custom spell package must contain only spell.json, animation.txt, and images/"
         )
+
+    def direct_child(name, kind):
+        path = os.path.join(absolute_dir, name)
+        if (
+            os.path.islink(path)
+            or not os.path.isfile(path)
+            or os.path.dirname(os.path.realpath(path)) != package_real
+        ):
+            raise ValueError(
+                "custom spell package {} must be a real direct package child".format(
+                    kind
+                )
+            )
+        return path
+
+    spell_path = direct_child("spell.json", "spell.json")
+    animation_path = direct_child("animation.txt", "animation.txt")
     images_dir = os.path.join(absolute_dir, "images")
-    if not os.path.isdir(images_dir) or os.path.islink(images_dir):
+    if (
+        not os.path.isdir(images_dir)
+        or os.path.islink(images_dir)
+        or os.path.dirname(os.path.realpath(images_dir)) != package_real
+    ):
         raise ValueError("custom spell package images must be a real directory")
-    spell = _read_spell(os.path.join(root, spell_source), os.path.join(root, songs_source))
-    frames, sound_ids, referenced = parse_animation(
-        os.path.join(root, animation_source), spell["by_id"]
-    )
+    spell = _read_spell(spell_path, os.path.join(root, songs_source))
+    frames, sound_ids, referenced = parse_animation(animation_path, spell["by_id"])
     expected_sources = [spell_source, animation_source] + [
         os.path.join(package_dir, value).replace(os.sep, "/") for value in referenced
     ]
@@ -920,6 +980,8 @@ def load_package(
     if actual_images != expected_images or any(
         not os.path.isfile(os.path.join(images_dir, name))
         or os.path.islink(os.path.join(images_dir, name))
+        or os.path.dirname(os.path.realpath(os.path.join(images_dir, name)))
+        != os.path.realpath(images_dir)
         for name in actual_images
     ):
         raise ValueError("custom spell images/ must contain exactly the referenced PNG files")
@@ -981,9 +1043,9 @@ def runtime_bytes(package, effect_symbol):
         (len(frame["oam"]) + 1) * 12 * 2
         for frame in package.frames
     )
-    script_words = sum(
-        (frame["duration"] + 62) // 63 for frame in package.frames
-    ) + 1
+    script_words = 2 * (
+        sum((frame["duration"] + 62) // 63 for frame in package.frames) + 1
+    )
     metadata_bytes = (
         len(package.frames) * 24
         + _align4(len(package.sound_ids) * 2)
@@ -1499,6 +1561,12 @@ def validate_runtime_binding(root, ownership, item_id_cap=None):
         or not EFFECT_SYMBOL_RE.fullmatch(effect_symbol)
     ):
         raise ValueError("ownership.effectSymbol must be a CUSTOM_SPELL_* symbol")
+    if effect_symbol in public_effect_symbols(root):
+        raise ValueError(
+            "ownership.effectSymbol '{}' collides with a public/test CUSTOM_SPELL_* symbol".format(
+                effect_symbol
+            )
+        )
     if (
         not isinstance(fallback_symbol, str)
         or not FALLBACK_SYMBOL_RE.fullmatch(fallback_symbol)

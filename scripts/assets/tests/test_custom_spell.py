@@ -174,7 +174,7 @@ class CustomSpellAdapterTests(unittest.TestCase):
         self.assertEqual(package.sound_ids, [0xF1])
         self.assertEqual(package.bg_bytes, 0x500)
         self.assertEqual(package.obj_oam_entries, 2)
-        self.assertEqual(package.runtime_bytes, 2448)
+        self.assertEqual(package.runtime_bytes, 2460)
         first = [
             (
                 frame["obj_lz"],
@@ -210,16 +210,77 @@ class CustomSpellAdapterTests(unittest.TestCase):
         package.frames[0]["duration"] = 64
         package.frames[1]["duration"] = 126
         script_lines = []
-        custom_spell._script(script_lines, "Script", ["A", "B"], package.frames)
+        custom_spell._script(script_lines, "LeftScript", ["A", "B"], package.frames)
+        custom_spell._script(script_lines, "RightScript", ["A", "B"], package.frames)
         words = [
             line for line in script_lines
             if "ANIMSCR_FORCE_SPRITE" in line or "ANIMSCR_BLOCKED" in line
         ]
-        self.assertEqual(len(words), 5)
+        self.assertEqual(len(words), 10)
+        actual = custom_spell.runtime_bytes(package, "CUSTOM_SPELL_REFERENCE")
         self.assertEqual(
-            custom_spell.runtime_bytes(package, "CUSTOM_SPELL_REFERENCE"),
-            baseline + 8,
+            actual,
+            baseline + 16,
         )
+        old_one_script_accounting = actual - 16
+        aggregate_records = [
+            SimpleNamespace(
+                custom_spell_package=SimpleNamespace(
+                    runtime_bytes=custom_spell.MAX_ROM_BYTES
+                    - old_one_script_accounting
+                ),
+                ownership={"item": "ITEM_ANIMA_FORBLAZE", "effectSymbol": "A"},
+            ),
+            SimpleNamespace(
+                custom_spell_package=SimpleNamespace(runtime_bytes=actual),
+                ownership={"item": "ITEM_LIGHT_LUCE", "effectSymbol": "B"},
+            ),
+        ]
+        with self.assertRaisesRegex(ValueError, "aggregate custom spell runtime payload"):
+            custom_spell.validate_collection(aggregate_records)
+
+    def test_cli_requires_an_explicit_item_id_cap(self):
+        with mock.patch.dict(os.environ, {"FE8_ITEM_ID_CAP": "0xCE"}, clear=False):
+            self.assertEqual(
+                cli.main(["--manifest", DEFAULT_MANIFEST, "validate"]),
+                1,
+            )
+        self.assertEqual(
+            cli.main(
+                [
+                    "--item-id-cap",
+                    "0xCD",
+                    "--manifest",
+                    DEFAULT_MANIFEST,
+                    "validate",
+                ]
+            ),
+            0,
+        )
+
+    def test_assets_make_forwards_the_configured_item_cap(self):
+        config = os.path.join(TEST_ROOT, "configured-item-cap.mk")
+        with open(config, "w", encoding="utf-8") as handle:
+            handle.write("FE8_ITEM_ID_CAP := 0xCE\n")
+        environment = os.environ.copy()
+        environment["FE8_ITEM_ID_CAP"] = "0xCD"
+        result = subprocess.run(
+            [
+                "make",
+                "--no-print-directory",
+                "-n",
+                "assets-validate",
+                "AUTOTOOLS_CONFIG_MK={}".format(config),
+            ],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('--item-id-cap "0xCE"', result.stdout)
+        self.assertNotIn('--item-id-cap "0xCD"', result.stdout)
 
     def test_reference_manifest_generates_runtime_binding_and_identity(self):
         records = manifest.load_and_validate(REFERENCE_MANIFEST, 1)
@@ -640,6 +701,56 @@ class CustomSpellAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-empty IEND"):
             custom_spell.read_indexed_png(nonempty_iend, 240, 64)
 
+    def test_custom_spell_package_rejects_symlinked_direct_children(self):
+        package_dir = os.path.join(
+            ROOT, "scripts", "assets", "tests", ".custom-spell-symlink-package"
+        )
+        reference_dir = os.path.join(ROOT, "graphics", "custom_spell", "reference")
+        relative = os.path.relpath(package_dir, ROOT).replace(os.sep, "/")
+        sources = [
+            relative + "/spell.json",
+            relative + "/animation.txt",
+            relative + "/images/reference_obj_00.png",
+            relative + "/images/reference_bg_00.png",
+            relative + "/images/reference_obj_01.png",
+            relative + "/images/reference_bg_01.png",
+        ]
+
+        def cleanup():
+            if os.path.islink(package_dir):
+                os.unlink(package_dir)
+            elif os.path.exists(package_dir):
+                shutil.rmtree(package_dir)
+
+        def load():
+            return custom_spell.load_package(
+                ROOT,
+                sources[0],
+                sources[1],
+                sources,
+                "include/constants/songs.h",
+                "CUSTOM_SPELL_REFERENCE",
+            )
+
+        self.addCleanup(cleanup)
+        os.symlink(reference_dir, package_dir)
+        with self.assertRaisesRegex(ValueError, "package directory"):
+            load()
+
+        for filename, expected in (
+            ("spell.json", "spell.json"),
+            ("animation.txt", "animation.txt"),
+            ("images/reference_obj_00.png", "images"),
+        ):
+            with self.subTest(filename=filename):
+                cleanup()
+                shutil.copytree(reference_dir, package_dir)
+                path = os.path.join(package_dir, filename)
+                os.unlink(path)
+                os.symlink(os.path.join(reference_dir, filename), path)
+                with self.assertRaisesRegex(ValueError, expected):
+                    load()
+
     def test_png_accepts_legal_ancillary_and_consecutive_idat_chunks(self):
         path = os.path.join(TEST_ROOT, "ancillary-multi-idat.png")
         _write_png(
@@ -816,6 +927,39 @@ class CustomSpellAdapterTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "suggested-palette name is duplicated"):
             custom_spell.read_indexed_png(path, 240, 64)
+
+        strict_itxt_cases = (
+            (
+                b"note\0\0\0en us\0title\0text",
+                "language tag has invalid grammar",
+            ),
+            (
+                b"note\0\0\0en_US\0title\0text",
+                "language tag has invalid grammar",
+            ),
+            (
+                b"note\0\0\0en\0title\xff\0text",
+                "translated keyword must be valid UTF-8",
+            ),
+            (
+                b"note\0\0\0en\0title\0text\xff",
+                "text must be valid UTF-8",
+            ),
+            (
+                b"note\0\1\0en\0title\0" + zlib.compress(b"text\xff"),
+                "text must be valid UTF-8",
+            ),
+        )
+        for payload, message in strict_itxt_cases:
+            with self.subTest(message=message):
+                _write_png(
+                    path,
+                    240,
+                    64,
+                    ancillary_before_idat=((b"iTXt", payload),),
+                )
+                with self.assertRaisesRegex(ValueError, message):
+                    custom_spell.read_indexed_png(path, 240, 64)
 
     def test_compressed_ancillary_streams_are_bounded_and_complete(self):
         path = os.path.join(TEST_ROOT, "compressed-ancillary.png")
@@ -1233,6 +1377,34 @@ class CustomSpellAdapterTests(unittest.TestCase):
             ):
                 manifest.load_and_validate(path)
 
+    def test_public_effect_symbol_collisions_are_source_located(self):
+        with open(REFERENCE_MANIFEST, encoding="utf-8") as handle:
+            document = json.load(handle)
+        record = next(
+            row for row in document["assets"]
+            if row["kind"] == "custom-spell-effect"
+        )
+        path = os.path.join(TEST_ROOT, "manifest.json")
+        for symbol in (
+            "CUSTOM_SPELL_EFFECT_BASE",
+            "CUSTOM_SPELL_EFFECT_TEST_PROBE_MAGIC",
+        ):
+            with self.subTest(symbol=symbol):
+                changed = copy.deepcopy(document)
+                target = next(
+                    row for row in changed["assets"]
+                    if row["kind"] == "custom-spell-effect"
+                )
+                target["ownership"]["effectSymbol"] = symbol
+                with open(path, "w", encoding="utf-8") as handle:
+                    json.dump(changed, handle)
+                with self.assertRaises(GeneratedDataValidationError) as raised:
+                    manifest.load_and_validate(path, 1)
+                diagnostic = str(raised.exception)
+                self.assertIn(path, diagnostic)
+                self.assertIn("ownership.effectSymbol", diagnostic)
+                self.assertIn("collides with a public/test", diagnostic)
+
     def test_invalid_ownership_stops_before_conversion_or_access(self):
         with open(REFERENCE_MANIFEST, encoding="utf-8") as handle:
             document = json.load(handle)
@@ -1444,6 +1616,8 @@ class CustomSpellAdapterTests(unittest.TestCase):
                         [
                             "--custom-spell-effects",
                             "1",
+                            "--item-id-cap",
+                            "0xCD",
                             "--manifest",
                             manifest_path,
                             "--discovery-makefile",
@@ -1541,6 +1715,8 @@ class CustomSpellAdapterTests(unittest.TestCase):
                     sys.executable,
                     "-m",
                     "scripts.assets",
+                    "--item-id-cap",
+                    "0xCD",
                     "--manifest",
                     manifest_path,
                     "--discovery-makefile",
@@ -1652,7 +1828,14 @@ class CustomSpellAdapterTests(unittest.TestCase):
     def test_custom_dependency_touch_regenerates_outputs(self):
         output = os.path.join(ROOT, "build", "generated", "assets")
         fragment = os.path.join(output, "asset_manifest.mk")
-        source_stamp = output + ".manifest-discovery.mk"
+        source_stamp = os.path.join(
+            ROOT,
+            "build",
+            "generated",
+            "asset-discovery",
+            "build_generated_assets.mk",
+        )
+        stale_source_stamp = output + ".manifest-discovery.mk"
         custom_dir = os.path.join(output, "custom_spell")
         data_include = os.path.join(
             custom_dir, "custom_spell_effect_data.inc"
@@ -1685,6 +1868,20 @@ class CustomSpellAdapterTests(unittest.TestCase):
             )
             with open(source_stamp, encoding="utf-8") as handle:
                 self.assertIn("ASSET_MANIFEST_SOURCE_DIGEST :=", handle.read())
+            os.unlink(source_stamp)
+            with open(stale_source_stamp, "w", encoding="utf-8") as handle:
+                handle.write("ASSET_MANIFEST_SOURCE_DIGEST := stale\n")
+            regenerated = run(data_include)
+            self.assertEqual(
+                regenerated.returncode, 0, regenerated.stdout + regenerated.stderr
+            )
+            with open(source_stamp, encoding="utf-8") as handle:
+                self.assertIn("ASSET_MANIFEST_SOURCE_DIGEST :=", handle.read())
+            with open(stale_source_stamp, encoding="utf-8") as handle:
+                self.assertEqual(
+                    handle.read(),
+                    "ASSET_MANIFEST_SOURCE_DIGEST := stale\n",
+                )
 
             os.utime(
                 dependency,
@@ -1702,6 +1899,8 @@ class CustomSpellAdapterTests(unittest.TestCase):
             os.utime(
                 dependency, ns=(original.st_atime_ns, original.st_mtime_ns)
             )
+            if os.path.exists(stale_source_stamp):
+                os.unlink(stale_source_stamp)
             shutil.rmtree(custom_dir, ignore_errors=True)
             restored = subprocess.run(
                 [
@@ -1721,6 +1920,152 @@ class CustomSpellAdapterTests(unittest.TestCase):
             )
             if restored.returncode != 0:
                 raise AssertionError(restored.stdout + restored.stderr)
+
+    def test_concurrent_make_profile_generation_keeps_one_coherent_output_tree(self):
+        output = os.path.join(ROOT, "build", "generated", "assets")
+
+        def run(manifest_path, enabled):
+            return subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-f",
+                    "assets.mk",
+                    "assets-generate",
+                    "PYTHON={}".format(sys.executable),
+                    "ASSET_MANIFEST={}".format(manifest_path),
+                    "EXPANSION_CUSTOM_SPELL_EFFECTS={}".format(enabled),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        try:
+            cleaned = subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-f",
+                    "assets.mk",
+                    "assets-clean",
+                    "PYTHON={}".format(sys.executable),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(cleaned.returncode, 0, cleaned.stdout + cleaned.stderr)
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = tuple(
+                    future.result()
+                    for future in (
+                        executor.submit(run, REFERENCE_MANIFEST, 1),
+                        executor.submit(run, DEFAULT_MANIFEST, 0),
+                    )
+                )
+            for result in results:
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            custom_dir = os.path.join(output, "custom_spell")
+            if os.path.isdir(custom_dir):
+                manifest.check(REFERENCE_MANIFEST, output, 1, item_id_cap=0xCD)
+                expected_selection = "custom_spell_effects=1"
+            else:
+                manifest.check(DEFAULT_MANIFEST, output, 0, item_id_cap=0xCD)
+                expected_selection = "custom_spell_effects=0"
+            with open(output + ".manifest-selection", encoding="utf-8") as handle:
+                self.assertIn(expected_selection, handle.read())
+        finally:
+            restored = run(DEFAULT_MANIFEST, 0)
+            if restored.returncode != 0:
+                raise AssertionError(restored.stdout + restored.stderr)
+
+    def test_concurrent_make_selection_stamp_uses_unique_temporary_files(self):
+        manifest_path = os.path.join(TEST_ROOT, "empty-manifest.json")
+        output = "build/generated/assets/test-work/concurrent-selection-stamp"
+        stamp = os.path.join(ROOT, output + ".manifest-selection")
+        discovery = os.path.join(
+            ROOT,
+            "build",
+            "generated",
+            "asset-discovery",
+            "build_generated_assets_test-work_concurrent-selection-stamp.mk",
+        )
+        with open(manifest_path, "w", encoding="utf-8") as handle:
+            json.dump({"schemaVersion": 1, "assets": []}, handle)
+
+        def run(enabled):
+            return subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-f",
+                    "assets.mk",
+                    output + ".manifest-selection",
+                    "PYTHON={}".format(sys.executable),
+                    "ASSET_MANIFEST={}".format(manifest_path),
+                    "ASSET_OUTPUT_DIR={}".format(output),
+                    "EXPANSION_CUSTOM_SPELL_EFFECTS={}".format(enabled),
+                    "FE8_ITEM_ID_CAP=0xCE",
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        try:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = tuple(
+                    future.result()
+                    for future in (
+                        executor.submit(run, 0),
+                        executor.submit(run, 1),
+                    )
+                )
+            for result in results:
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            with open(stamp, encoding="utf-8") as handle:
+                content = handle.read()
+            self.assertIn("item_id_cap=0xCE", content)
+            self.assertIn(
+                content,
+                (
+                    "manifest={}\ncustom_spell_effects=0\nitem_id_cap=0xCE\n".format(
+                        os.path.abspath(manifest_path)
+                    ),
+                    "manifest={}\ncustom_spell_effects=1\nitem_id_cap=0xCE\n".format(
+                        os.path.abspath(manifest_path)
+                    ),
+                ),
+            )
+            self.assertFalse(os.path.exists(stamp + ".tmp"))
+            self.assertEqual(
+                [
+                    name
+                    for name in os.listdir(os.path.dirname(stamp))
+                    if name.startswith(os.path.basename(stamp) + ".")
+                    and name.endswith(".tmp")
+                ],
+                [],
+            )
+        finally:
+            shutil.rmtree(os.path.join(ROOT, output), ignore_errors=True)
+            if os.path.exists(stamp):
+                os.unlink(stamp)
+            lock = os.path.join(
+                ROOT, output + ".asset-manifest-generate.lock"
+            )
+            if os.path.exists(lock):
+                os.unlink(lock)
+            if os.path.exists(discovery):
+                os.unlink(discovery)
+            shutil.rmtree(
+                os.path.join(ROOT, "build", "generated", "assets", "test-work"),
+                ignore_errors=True,
+            )
 
     def test_dense_index_allocation_is_sorted_and_capacity_bounded(self):
         package = self.load_reference()

@@ -605,7 +605,14 @@ class AssetManifestTests(unittest.TestCase):
 
     def test_sources_command_includes_portrait_registry_dependency(self):
         result = subprocess.run(
-            [sys.executable, "-m", "scripts.assets", "sources"],
+            [
+                sys.executable,
+                "-m",
+                "scripts.assets",
+                "--item-id-cap",
+                "0xCD",
+                "sources",
+            ],
             cwd=REPO_ROOT,
             capture_output=True,
             check=True,
@@ -643,7 +650,18 @@ class AssetManifestTests(unittest.TestCase):
                     mock.patch.object(manifest, "_write_bytes_if_changed") as write_output,
                     contextlib.redirect_stderr(stderr),
                 ):
-                    self.assertEqual(cli.main(["--manifest", source, "sources"]), 1)
+                    self.assertEqual(
+                        cli.main(
+                            [
+                                "--item-id-cap",
+                                "0xCD",
+                                "--manifest",
+                                source,
+                                "sources",
+                            ]
+                        ),
+                        1,
+                    )
                 self.assertIn("ownership.{}".format(field), stderr.getvalue())
                 tmx_convert.assert_not_called()
                 banim_convert.assert_not_called()
@@ -1762,7 +1780,7 @@ class BattleAnimationPackageTests(unittest.TestCase):
                 "ASSET_OUTPUT_DIR := {}\n"
                 "ASSET_OUTPUT_MK := {}/asset_manifest.mk\n"
                 "ASSET_BANIM_COMBINED_LINKER_SCRIPT := {}\n"
-                "ASSET_TOOL := $(PYTHON) -m scripts.assets\n"
+                "ASSET_TOOL := $(PYTHON) -m scripts.assets --item-id-cap 0xCD\n"
                 "include {}/asset_manifest.mk\n"
                 "banim/data_banim.o: $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)\n"
                 "\t@test -f $<\n".format(
@@ -1950,7 +1968,7 @@ class BattleAnimationPackageTests(unittest.TestCase):
         ):
             self.assertIn("\t@test -f $({})".format(output), rules)
         self.assertIn(
-            '$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate',
+            '$(ASSET_GENERATE_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate',
             rules,
         )
 

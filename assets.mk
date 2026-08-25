@@ -7,7 +7,20 @@
 ASSET_MANIFEST ?= assets/manifest.json
 ASSET_OUTPUT_DIR ?= build/generated/assets
 EXPANSION_CUSTOM_SPELL_EFFECTS ?= 0
-ASSET_TOOL := $(PYTHON) -m scripts.assets --custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)"
+# Resolve the cap from Make's selected configuration rather than allowing the
+# asset CLI to read an ambient environment/default value. Standalone assets.mk
+# invocations use the same explicit, safely quoted resolver as generated data.
+ifeq ($(strip $(GENERATED_DATA_ITEM_CAP)),)
+ASSET__SQ := '
+ASSET_ITEM_CAP_SHELL_ARG := $(ASSET__SQ)$(subst $(ASSET__SQ),$(ASSET__SQ)\$(ASSET__SQ)$(ASSET__SQ),$(FE8_ITEM_ID_CAP))$(ASSET__SQ)
+ASSET_RESOLVED_ITEM_ID_CAP := $(shell FE8_ITEM_ID_CAP=$(ASSET_ITEM_CAP_SHELL_ARG) $(PYTHON) -c "import scripts.generated_data.idspace as i; print('0x%02X' % i.resolve_item_id_cap())" 2>/dev/null)
+else
+ASSET_RESOLVED_ITEM_ID_CAP := $(GENERATED_DATA_ITEM_CAP)
+endif
+ifeq ($(ASSET_RESOLVED_ITEM_ID_CAP),)
+$(error FE8_ITEM_ID_CAP='$(FE8_ITEM_ID_CAP)' is not a valid item ID cap; see scripts/generated_data/idspace.py resolve_item_id_cap)
+endif
+ASSET_TOOL := $(PYTHON) -m scripts.assets --custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" --item-id-cap "$(ASSET_RESOLVED_ITEM_ID_CAP)"
 ASSET_OUTPUT_MK := $(ASSET_OUTPUT_DIR)/asset_manifest.mk
 ASSET_DISCOVERY_KEY := $(subst /,_,$(subst .,_,$(ASSET_OUTPUT_DIR)))
 ASSET_DISCOVERY_MK := build/generated/asset-discovery/$(ASSET_DISCOVERY_KEY).mk
@@ -47,6 +60,7 @@ endif
 # tree so switching profiles rebuilds that fragment even when both manifests
 # predate it.
 ASSET_SELECTION_STAMP := $(ASSET_OUTPUT_DIR).manifest-selection
+ASSET_GENERATE_TOOL := $(ASSET_TOOL) --selection-stamp "$(ASSET_SELECTION_STAMP)"
 ASSET_BANIM_DATA_ENTRIES := $(ASSET_OUTPUT_DIR)/banim/banim_data_entries.inc
 ASSET_BANIM_DEFS := $(ASSET_OUTPUT_DIR)/banim/banim_defs.inc
 ASSET_BANIM_DEFS_HEADER := $(ASSET_OUTPUT_DIR)/banim/banim_defs.h
@@ -61,19 +75,21 @@ assets-validate:
 	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" validate
 
 assets-generate:
-	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
+	$(ASSET_GENERATE_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
 
 assets-check:
 	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" check
 
 assets-clean:
 	$(PYTHON) -m scripts.assets --out-dir "$(ASSET_OUTPUT_DIR)" clean
-	$(RM) -f "$(ASSET_SELECTION_STAMP)" "$(ASSET_DISCOVERY_MK)"
+	$(RM) -f "$(ASSET_SELECTION_STAMP)" "$(ASSET_DISCOVERY_MK)" \
+		"$(ASSET_OUTPUT_DIR).asset-manifest-generate.lock"
 
 assets-test:
 	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES \
 		-u ASSET_MANIFEST -u ASSET_OUTPUT_DIR \
 		-u EXPANSION_CUSTOM_SPELL_EFFECTS \
+		-u FE8_ITEM_ID_CAP \
 		$(PYTHON) -m unittest discover -s scripts/assets/tests -v
 
 # Remake this included Makefile before resolving object prerequisites. The
@@ -86,14 +102,16 @@ FORCE_ASSET_SOURCES:
 
 $(ASSET_SELECTION_STAMP): FORCE_ASSET_SELECTION
 	@mkdir -p "$(dir $@)"
-	@printf '%s\n' \
+	@tmp="$@.$$$$.tmp"; \
+	trap 'rm -f "$$tmp"' EXIT HUP INT TERM; \
+	printf '%s\n' \
 		'manifest=$(abspath $(ASSET_MANIFEST))' \
 		'custom_spell_effects=$(EXPANSION_CUSTOM_SPELL_EFFECTS)' \
-		'item_id_cap=$(FE8_ITEM_ID_CAP)' > "$@.tmp"
-	@if test -f "$@" && cmp -s "$@.tmp" "$@"; then \
-		rm -f "$@.tmp"; \
+		'item_id_cap=$(ASSET_RESOLVED_ITEM_ID_CAP)' > "$$tmp"; \
+	if test -f "$@" && cmp -s "$$tmp" "$@"; then \
+		rm -f "$$tmp"; \
 	else \
-		mv -f "$@.tmp" "$@"; \
+		mv -f "$$tmp" "$@"; \
 	fi
 
 ifeq ($(MAKE_RESTARTS),)
@@ -105,11 +123,11 @@ $(ASSET_DISCOVERY_MK): ;
 endif
 
 $(ASSET_OUTPUT_MK): $(ASSET_SELECTION_STAMP) $(ASSET_MANIFEST_SOURCE_STAMP) $(ASSET_MANIFEST) $(ASSET_TOOL_INPUTS)
-	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
+	$(ASSET_GENERATE_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
 
 $(ASSET_BANIM_DATA_ENTRIES) $(ASSET_BANIM_DEFS) $(ASSET_BANIM_DEFS_HEADER) \
 $(ASSET_BANIM_RUNTIME_TEST_DEFS) $(ASSET_BANIM_RUNTIME_SYMBOLS) &: $(ASSET_OUTPUT_MK)
-	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
+	$(ASSET_GENERATE_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
 	@test -f $(ASSET_BANIM_DATA_ENTRIES)
 	@test -f $(ASSET_BANIM_DEFS)
 	@test -f $(ASSET_BANIM_DEFS_HEADER)
@@ -128,7 +146,7 @@ $(ASSET_BANIM_RUNTIME_TEST_DEFS)
 # clean or an interrupted asset generation. Regenerate both together before
 # Make reaches the ordinary `.mar -> .bin -> .bin.lz` conversion chain.
 $(ASSET_OUTPUT_DIR)/tmx/%.mar $(ASSET_OUTPUT_DIR)/tmx/%.json &: $(ASSET_OUTPUT_MK)
-	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
+	$(ASSET_GENERATE_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
 
 # A strict maintenance/check command must report a missing or stale output
 # instead of Make remaking this include before the target runs. Any ordinary

@@ -11,6 +11,7 @@ from scripts.generated_data.diagnostics import (
     GeneratedDataError,
     GeneratedDataValidationError,
 )
+from scripts.generated_data import idspace as generated_idspace
 
 from . import manifest
 
@@ -28,6 +29,11 @@ def _parser():
         help="resolved EXPANSION_CUSTOM_SPELL_EFFECTS value (default: %(default)s)",
     )
     parser.add_argument(
+        "--item-id-cap",
+        default=None,
+        help="resolved FE8_ITEM_ID_CAP (required for validation and generation)",
+    )
+    parser.add_argument(
         "--manifest", default=DEFAULT_MANIFEST,
         help="version-1 source-owned manifest (default: %(default)s)",
     )
@@ -39,6 +45,11 @@ def _parser():
         "--discovery-makefile",
         default=None,
         help="build-local discovery Make artifact output",
+    )
+    parser.add_argument(
+        "--selection-stamp",
+        default=None,
+        help="build-local selected-profile stamp updated with generation",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name in (
@@ -63,22 +74,52 @@ def _render_error(error):
     return str(error)
 
 
+def _item_id_cap(value):
+    if value is None:
+        raise GeneratedDataError(
+            "--item-id-cap is required for validation, generation, and discovery"
+        )
+    try:
+        cap = int(value, 0)
+    except ValueError as exc:
+        raise GeneratedDataError(
+            "--item-id-cap {!r} is not an integer".format(value)
+        ) from exc
+    return generated_idspace.validate_domain_cap(
+        generated_idspace.domain_by_key("item"), cap
+    )
+
+
 def main(argv=None):
     args = _parser().parse_args(argv)
     custom_spell_effects = int(args.custom_spell_effects)
     try:
         args.out_dir = manifest.safe_output_dir(args.out_dir)
+        item_id_cap = (
+            None if args.command == "clean" else _item_id_cap(args.item_id_cap)
+        )
         if args.command == "validate":
-            records = manifest.load_and_validate(args.manifest, custom_spell_effects)
+            records = manifest.load_and_validate(
+                args.manifest,
+                custom_spell_effects,
+                item_id_cap=item_id_cap,
+            )
             print("OK: {} asset record(s) validated".format(len(records)))
         elif args.command == "generate":
             records = manifest.generate(
-                args.manifest, args.out_dir, custom_spell_effects
+                args.manifest,
+                args.out_dir,
+                custom_spell_effects,
+                item_id_cap=item_id_cap,
+                selection_stamp=args.selection_stamp,
             )
             print("OK: generated {} asset record(s) under {}".format(len(records), args.out_dir))
         elif args.command == "check":
             records = manifest.check(
-                args.manifest, args.out_dir, custom_spell_effects
+                args.manifest,
+                args.out_dir,
+                custom_spell_effects,
+                item_id_cap=item_id_cap,
             )
             print("OK: {} generated asset record(s) are current".format(len(records)))
         elif args.command == "sources":

@@ -50,7 +50,9 @@ custom dispatch, descriptor, assets, or package support.
 
 Include `custom_spell_effect.h`. Generated bindings must use a stable
 `CUSTOM_SPELL_*` symbol and may only assign the private dense range
-`0x80..0x8F`; authored manifests never use dense values.
+`0x80..0x8F`; authored manifests never use dense values. An authored symbol
+must not redefine any existing public or test `CUSTOM_SPELL_*` name, including
+`CUSTOM_SPELL_EFFECT_BASE`.
 
 ```c
 const struct CustomSpellEffect *CustomSpellEffect_Lookup(u8 animationId);
@@ -140,7 +142,9 @@ One record uses the exact kind-owned schema below:
 
 `sources` lists `spell.json`, `animation.txt`, then every referenced image in
 first-reference order. The package directory contains only those two files
-and `images/`; image names are safe ASCII basenames. `ITEM_*` must resolve to
+and `images/`; the directory, both top-level files, and every image must be
+real direct children rather than symbolic links or paths that resolve outside
+the package. Image names are safe ASCII basenames. `ITEM_*` must resolve to
 one existing anima/light/dark `IA_WEAPON | IA_MAGIC` record with no existing
 `SpellAssoc` entry. The fallback symbol must resolve to a non-NULL vanilla
 spell LUT entry. Duplicate item/effect ownership and more than 16 records fail.
@@ -194,8 +198,10 @@ before `IDAT`; and text (`tEXt`/`zTXt`/`iTXt`) or `tIME` on either side of the
 consecutive `IDAT` run. Other syntactically valid ancillary chunks may appear
 in legal non-interrupting positions; their payloads are not runtime inputs.
 Known ancillary payloads still validate their PNG-defined lengths, methods,
-ranges, keywords, and terminators. `sPLT` may repeat only with distinct
-suggested-palette names.
+ranges, keywords, and terminators. `iTXt` language tags use the strict
+hyphenated language-tag grammar (or are empty), its translated keyword is
+UTF-8, and both compressed (bounded after decompression) and uncompressed text
+are valid UTF-8. `sPLT` may repeat only with distinct suggested-palette names.
 Unknown critical chunks, malformed/reserved chunk-type bits, duplicate or
 misordered required/known ancillary chunks, nonconsecutive `IDAT`, trailing
 bytes, and missing or malformed `IEND` fail. The runtime never parses source
@@ -218,6 +224,9 @@ PNGs.
   pads to the package-wide maximum tile count; each generated TSA is exactly
   600 `u16` entries/1200 bytes. Runtime supplies character base, palette line,
   distance selection, and left-side horizontal flip.
+- `romBytes` accounts for every linked generated payload, including both
+  left/right OAM script streams and their terminators. The per-effect and
+  aggregate `0x40000` limits therefore bound actual emitted descriptor data.
 - Palettes pad to 16 BGR555 colors. Every frame's OBJ/BG/TSA is deterministically
   LZ77-compressed. Generated C includes, descriptors, `SpellAssoc` entries,
   canonical assets, inventory, provenance/digests, and Make dependencies live
