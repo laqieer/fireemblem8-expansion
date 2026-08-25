@@ -2300,6 +2300,10 @@
         {
           "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_strategies.AutoplayStrategiesRuntimeTests.test_arm_profiles_are_ewram_free_and_gate_reference_callbacks -v",
           "evidence": "tools/gba-playtest/tests/test_autoplay_strategies.py"
+        },
+        {
+          "command": "make expansion-modern-autoplay-strategy-runtime-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_autoplay_strategy_checks.py"
         }
       ]
     },

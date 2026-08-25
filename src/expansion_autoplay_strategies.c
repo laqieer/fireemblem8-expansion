@@ -1,6 +1,7 @@
 #include "global.h"
 
 #include "bm.h"
+#include "bmmap.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "cp_script.h"
@@ -282,6 +283,7 @@ enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_TryDecide(void)
         return EXPANSION_AUTOPLAY_STRATEGY_OK;
     }
 
+    AiClearDecision();
     return EXPANSION_AUTOPLAY_STRATEGY_FALLBACK;
 }
 
@@ -384,13 +386,29 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
 
         if (xTarget != gActiveUnit->xPos || yTarget != gActiveUnit->yPos)
         {
+            u8 currentRange;
+            u8 decisionRange;
+
             AiTryMoveTowards(xTarget, yTarget, 0, 0, 1);
-            if (gAiDecision.actionPerformed
-                && gAiDecision.xMove >= objective->xMin
-                && gAiDecision.xMove <= objective->xMax
-                && gAiDecision.yMove >= objective->yMin
-                && gAiDecision.yMove <= objective->yMax)
+            if (!gAiDecision.actionPerformed)
                 return true;
+
+            if (gAiDecision.xMove < 0 || gAiDecision.xMove >= gBmMapSize.x
+                || gAiDecision.yMove < 0 || gAiDecision.yMove >= gBmMapSize.y)
+            {
+                gAiDecision.actionPerformed = false;
+                return true;
+            }
+
+            currentRange = gBmMapRange[gActiveUnit->yPos][gActiveUnit->xPos];
+            decisionRange = gBmMapRange[gAiDecision.yMove][gAiDecision.xMove];
+            if (gAiDecision.actionPerformed
+                && currentRange < MAP_MOVEMENT_MAX
+                && decisionRange < currentRange)
+                return true;
+
+            gAiDecision.actionPerformed = false;
+            return true;
         }
 
         if (objective->kind == EXPANSION_CHAPTER_OBJECTIVE_HOLD_UNTIL_TURN)

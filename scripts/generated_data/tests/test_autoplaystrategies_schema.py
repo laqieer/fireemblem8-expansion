@@ -2,7 +2,10 @@
 
 import copy
 import os
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from scripts.generated_data.autoplaystrategies import generate, schema
 from scripts.generated_data.chapterbundle import schema as chapterbundle_schema
@@ -68,7 +71,13 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
     def test_reference_profiles_generate_c89_with_stable_ids(self):
         records, diagnostics = _validate("valid.json")
         self.assertTrue(diagnostics.ok, diagnostics.render())
-        output = generate.generate_c_source(records, strategy_fixture("valid.json"))
+        output = generate.generate_c_source(
+            schema.AutoplayStrategiesTableSchema().configure_records(
+                records,
+                reference_profiles="1",
+            ),
+            strategy_fixture("valid.json"),
+        )
         self.assertIn("gExpansionAutoplayStrategies", output)
         self.assertIn("gExpansionAutoplayStrategyBundles", output)
         self.assertIn("0x8A98AADD", output)
@@ -107,6 +116,44 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
         )
         self.assertIn("ExpansionAutoplayStrategy_Custom", output)
         self.assertNotIn("ExpansionAutoplayStrategy_Aggressive", output)
+
+    def test_cli_default_omits_reference_profiles(self):
+        with tempfile.TemporaryDirectory(dir=os.path.join(REPO_ROOT, "build")) as temporary:
+            temporary_path = Path(temporary)
+            generated = temporary_path / "generated"
+            inventory = temporary_path / "inventory.md"
+            completed = subprocess.run(
+                [
+                    "python3",
+                    "-m",
+                    "scripts.generated_data",
+                    "generate",
+                    "--table",
+                    "autoplaystrategies",
+                    "--source",
+                    strategy_fixture("valid.json"),
+                    "--dep-source",
+                    "chapterobjectives={}".format(
+                        fixture_path("chapterobjectives", "strategy_valid.json")
+                    ),
+                    "--dep-source",
+                    "chapterbundle={}".format(
+                        fixture_path("chapterobjectives", "strategy_bundle.json")
+                    ),
+                    "--out-dir",
+                    str(generated),
+                    "--inventory",
+                    str(inventory),
+                    "--no-roundtrip",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            output = (generated / "data_autoplay_strategies.c").read_text(encoding="utf-8")
+        self.assertNotIn("ExpansionAutoplayStrategy_Aggressive", output)
+        self.assertIn("ExpansionAutoplayStrategy_TentativeFallback", output)
 
     def test_authored_strategy_bundle_requires_its_chapter_owner_declaration(self):
         records = schema.load_records(strategy_fixture("valid.json"))

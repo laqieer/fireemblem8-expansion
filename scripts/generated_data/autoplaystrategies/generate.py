@@ -38,7 +38,7 @@ def _units_name(record):
 
 
 def generate_c_source(records, source_path):
-    reference_profiles_enabled = records.get("reference_profiles_enabled", True)
+    reference_profiles_enabled = records.get("reference_profiles_enabled", False)
     strategies = [
         strategy
         for strategy in records["strategies"]
