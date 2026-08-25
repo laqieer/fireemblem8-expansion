@@ -1868,7 +1868,8 @@ expansion-modern-localization-profile-en-ja-zh-hans-qps:
 		EXPANSION_PSEUDO_LOCALE=1
 
 expansion-modern-localization-profile-en-fr-de-es-it:
-	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+	+$(MAKE) expansion-modern-rom expansion-modern-game-localization-config-check \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_ROM_SIZE=32M MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_EN_EU_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,fr,de,es,it
 
@@ -3970,7 +3971,10 @@ else
 endif
 
 # 5. Production European profile: fresh preferences show all five rows and
-#    a real DOWN+A selection persists French (stable locale id 3).
+#    a real DOWN+A selection persists French (stable locale id 3). A second
+#    deterministic route starts from explicit English preferences, opens the
+#    virtual More row, selects Italian, closes the submenu, and proves the
+#    parent Configuration screen redrew with the persisted locale.
 MODERN_LOCALE_EU_ROM := \
 	$(MODERN_LOCALE_PROFILE_EN_EU_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
 MODERN_LOCALE_EU_ELF := \
@@ -3978,13 +3982,19 @@ MODERN_LOCALE_EU_ELF := \
 
 expansion-modern-localization-runtime-eu-check: expansion-modern-boot-preflight \
 		expansion-modern-localization-profile-en-fr-de-es-it \
-		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav
+		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav \
+		$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav
 ifeq ($(MODERN_CONFIG),debug)
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_EU_ROM)" \
 		--elf "$(MODERN_LOCALE_EU_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-eu-first-start-fr-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-eu-first-start-fr-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_EU_ROM)" \
+		--elf "$(MODERN_LOCALE_EU_ELF)" \
+		--scenario "$(MODERN_LOCALE_SCEN)/locale-settings-more-eu-modern-debug.json" \
+		--expected "$(MODERN_LOCALE_FP)/locale-settings-more-eu-modern-debug.json" \
+		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav" --policy behavior
 	@printf 'Modern ROM localization-runtime EU check passed: %s\n' "$(MODERN_LOCALE_EU_ROM)"
 else
 	@printf 'Modern ROM localization-runtime EU check skipped for config=%s (debug fingerprint only)\n' '$(MODERN_CONFIG)'
