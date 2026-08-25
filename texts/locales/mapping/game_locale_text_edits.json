@@ -601,6 +601,51 @@
         "ja": "その他",
         "key": "debug.value.phase_other",
         "zh-Hans": "其他"
+      },
+      {
+        "ja": "ターン+1",
+        "key": "debug.confirm.turn_increment",
+        "zh-Hans": "应用回合+1"
+      },
+      {
+        "ja": "ターン-1",
+        "key": "debug.confirm.turn_decrement",
+        "zh-Hans": "应用回合-1"
+      },
+      {
+        "ja": "R CPU",
+        "key": "debug.confirm.red_computer",
+        "zh-Hans": "应用红军电脑"
+      },
+      {
+        "ja": "R BLOCK",
+        "key": "debug.confirm.red_blocked",
+        "zh-Hans": "应用红军阻止"
+      },
+      {
+        "ja": "G CPU",
+        "key": "debug.confirm.green_computer",
+        "zh-Hans": "应用绿军电脑"
+      },
+      {
+        "ja": "G BLOCK",
+        "key": "debug.confirm.green_blocked",
+        "zh-Hans": "应用绿军阻止"
+      },
+      {
+        "ja": "ターン",
+        "key": "debug.status.turn",
+        "zh-Hans": "回合"
+      },
+      {
+        "ja": "CPU",
+        "key": "debug.mode.computer",
+        "zh-Hans": "电脑"
+      },
+      {
+        "ja": "BLOCK",
+        "key": "debug.mode.blocked",
+        "zh-Hans": "阻止"
       }
     ],
     "reason": "Expansion registry keys have no original FE8J/FE8CN indexed source."

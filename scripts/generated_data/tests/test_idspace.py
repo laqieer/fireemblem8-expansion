@@ -44,6 +44,36 @@ class ModelShapeTests(unittest.TestCase):
         self.assertGreater(len(audit_keys), 500,
                            "the census must audit the whole source surface, not a sample")
 
+    def test_phase_faction_bases_are_excluded_without_hiding_unit_consumers(self):
+        from scripts.generated_data import consumer_census
+
+        rows = {row["key"]: row for row in idspace.consumer_rows()}
+        phase_base_keys = (
+            "include/expansion_debugtools.h|function-signature|unit|"
+            "DebugToolsPhaseControl_ApplyAtPhaseStart",
+            "src/debugtools_tools.c|struct-field|unit|"
+            "DebugToolsPhaseControlRequest.faction",
+        )
+        for key in phase_base_keys:
+            with self.subTest(key=key):
+                self.assertEqual(
+                    rows[key]["category"],
+                    consumer_census.EXCLUSION_CATEGORY,
+                )
+                self.assertIn("0x00, FACTION_GREEN 0x40, or FACTION_RED 0x80",
+                              rows[key]["reason"])
+                self.assertNotIn(key, {
+                    row["key"]
+                    for row in idspace.consumer_rows()
+                    if row["domain"] == "unit"
+                    and row["category"] != consumer_census.EXCLUSION_CATEGORY
+                })
+
+        genuine_unit = rows[
+            "include/bmunit.h|struct-field|unit|UnitDefinition.allegiance"
+        ]
+        self.assertEqual(genuine_unit["category"], "runtime-struct")
+
     def test_curated_evidence_is_a_subset_not_the_coverage_proof(self):
         evidence = idspace.evidence_rows()
         self.assertTrue(evidence)
