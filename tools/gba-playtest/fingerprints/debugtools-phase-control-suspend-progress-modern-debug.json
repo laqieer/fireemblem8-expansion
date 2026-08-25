@@ -1,0 +1,205 @@
+{
+  "checkpoints": [
+    {
+      "frame": 17140,
+      "name": "player-before-request",
+      "probes": [
+        {
+          "address": "gActionData+0x11",
+          "size": 1,
+          "value": "0x01"
+        },
+        {
+          "address": "gBmSt+0x14",
+          "size": 1,
+          "value": "0x08"
+        },
+        {
+          "address": "gDebugToolsProbe+0x8c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0x98",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0x9c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0xa8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0xac",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gPlaySt+0x0f",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gPlaySt+0x10",
+          "size": 2,
+          "value": "0x0001"
+        }
+      ]
+    },
+    {
+      "frame": 19000,
+      "name": "red-overridden-turn",
+      "probes": [
+        {
+          "address": "gActionData+0x11",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gBmSt+0x14",
+          "size": 1,
+          "value": "0x07"
+        },
+        {
+          "address": "gDebugToolsProbe+0x8c",
+          "size": 4,
+          "value": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsProbe+0x98",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsProbe+0x9c",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsProbe+0xa8",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsProbe+0xac",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb0",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gPlaySt+0x0f",
+          "size": 1,
+          "value": "0x80"
+        },
+        {
+          "address": "gPlaySt+0x10",
+          "size": 2,
+          "value": "0x0002"
+        }
+      ]
+    },
+    {
+      "frame": 24990,
+      "name": "later-blue-natural-turn",
+      "probes": [
+        {
+          "address": "gActionData+0x11",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gBmSt+0x14",
+          "size": 1,
+          "value": "0x05"
+        },
+        {
+          "address": "gDebugToolsProbe+0x8c",
+          "size": 4,
+          "value": "0x00000002"
+        },
+        {
+          "address": "gDebugToolsProbe+0x98",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsProbe+0x9c",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsProbe+0xa8",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsProbe+0xac",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb0",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugToolsProbe+0xb8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gPlaySt+0x0f",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gPlaySt+0x10",
+          "size": 2,
+          "value": "0x0003"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram-normalized:7c6ec163eb6563be"
+    }
+  ],
+  "format_version": 2,
+  "scenario": "debugtools-phase-control-suspend-progress-modern-debug"
+}

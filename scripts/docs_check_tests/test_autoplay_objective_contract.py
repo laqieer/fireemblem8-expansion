@@ -4,10 +4,9 @@ import json
 import unittest
 from pathlib import Path
 
+from scripts.generated_data.chapterobjectives import schema as objectives_schema
 
 ROOT = Path(__file__).resolve().parents[2]
-AUTOPLAY = ROOT / "docs" / "autoplay.md"
-TUTORIAL = ROOT / "docs" / "generated_data_tutorial.md"
 REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
 
 
@@ -15,43 +14,21 @@ class AutoplayObjectiveContractTests(unittest.TestCase):
     def test_tester_case_and_public_contract_are_compatible(self):
         registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
         case = next(item for item in registry["cases"] if item["id"] == "TC-AUTOPLAY-OBJECTIVE-001")
-        self.assertIn("persistent event flags", case["expected_result"])
-        self.assertIn("No save bytes", case["save_compatibility"])
+        compatibility = case["compatibility"]
+        generated_data = compatibility["generated_data"]
+        runtime = compatibility["runtime"]
 
-        typed_section = AUTOPLAY.read_text(encoding="utf-8").split(
-            "## Typed chapter objectives and AI groups", 1
-        )[1].split("## Validation", 1)[0]
-        self.assertIn("12-byte sentinel", typed_section)
-        self.assertIn("28 bytes each", typed_section)
-        self.assertIn("16-byte EWRAM", typed_section)
-        self.assertIn("#85/#86's public control/telemetry", typed_section)
-        self.assertIn(
-            "Generated\n  `chapterobjectives` and `chapterbundle` data",
-            typed_section,
-        )
-        self.assertIn(
-            "**Profiles:** generated homebrew/libmGBA host integration, modern AAPCS debug",
-            typed_section,
-        )
-        self.assertIn(
-            "**Save/config/data:** no save field, migration, compatibility epoch,",
-            typed_section,
-        )
-        self.assertIn(
-            "**ROM/RAM/archival:** the modern generated objective table and evaluator add",
-            typed_section,
-        )
-        self.assertIn(
-            "both modern debug and release profiles allocate\n20 EWRAM bytes",
-            typed_section,
-        )
-        self.assertNotIn("no target source, ROM bytes, RAM allocation", typed_section)
-        self.assertNotIn("later integration\n  work (#89)", typed_section)
-        self.assertNotIn("generated game data, or\n  localization change", typed_section)
-        self.assertIn(
-            "every `deactivationFlag` must\nalso differ from every referenced `eventFlag`, `failureFlag`, and\n`completionFlag`",
-            TUTORIAL.read_text(encoding="utf-8"),
-        )
+        self.assertEqual(compatibility["dependent_issues"], [90, 91, 92])
+        self.assertEqual(generated_data["bundle_capacity"], objectives_schema.BUNDLE_CAPACITY)
+        self.assertEqual(generated_data["objective_capacity"], objectives_schema.OBJECTIVE_CAPACITY)
+        self.assertEqual(generated_data["group_capacity"], objectives_schema.GROUP_CAPACITY)
+        self.assertEqual(generated_data["group_member_capacity"], objectives_schema.GROUP_MEMBER_CAPACITY)
+        self.assertEqual(generated_data["bundle_bytes"], 12)
+        self.assertEqual(generated_data["objective_bytes"], 28)
+        self.assertEqual(runtime["telemetry_ewram_bytes"], 16)
+        self.assertEqual(runtime["total_ewram_bytes"], 20)
+        self.assertFalse(runtime["archival_runtime"])
+        self.assertFalse(runtime["serialized_objective_state"])
 
 
 if __name__ == "__main__":

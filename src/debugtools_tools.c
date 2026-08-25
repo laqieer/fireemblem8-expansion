@@ -14,12 +14,18 @@
 #include "bmcontainer.h"
 #include "event.h"
 #include "ekrbattle.h"
+#include "mu.h"
 #include "playerphase.h"
 #include "cp_common.h"
 #include "eventinfo.h"
 #include "rng.h"
 #include "bmsave.h"
 #include "save_format.h"
+#include "bm.h"
+#include "cp_common.h"
+#include "event.h"
+#include "playerphase.h"
+#include "expansion_autoplay.h"
 #if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
 #include "face.h"
 #endif
@@ -67,10 +73,8 @@ EWRAM_DATA struct PortraitPackageRuntimeProbe gPortraitPackageRuntimeProbe = {0}
 
 enum
 {
-    /* Distinct from Weather (0xE0) and Fog (0xE1), src/debugtools_actions.c,
-     * and from every static src/menu_def.c overrideId -- see that file's
-     * own comment on DEBUGTOOLS_WEATHER_OVERRIDE_ID for why this must
-     * never collide. */
+    /* Follow Weather/Fog (0xE0-0xE1) and the unit editor (0xE2-0xF5)
+     * without colliding with another debug menu override. */
     DEBUGTOOLS_UNIT_OVERRIDE_ID = 0xE2,
     DEBUGTOOLS_CONVOY_OVERRIDE_ID = 0xE3,
     DEBUGTOOLS_FLAG_OVERRIDE_ID = 0xE4,
@@ -163,10 +167,144 @@ static void DebugToolsTools_MenuOnInit(struct MenuProc* menu)
     if (status != NULL)
         DebugToolsDiagnostics_DrawStatusText(menu, status);
 }
-#define DEBUGTOOLS_UNIT_MENU_ON_INIT DebugToolsTools_MenuOnInit
+
+static void DebugToolsTools_DrawCjkStatusLine(const char* text)
+{
+    BG_Fill(BG_GetMapBuffer(2), 0);
+    PutDrawText(
+        NULL,
+        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
+        TEXT_COLOR_SYSTEM_WHITE,
+        0,
+        DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES,
+        text);
+    BG_EnableSyncByMask(BG2_SYNC_BIT);
+    gLCDControlBuffer.dispcnt.bg2_on = 1;
+}
+
+static void DebugToolsTools_DrawCjkFlagStatus(
+    const char* values,
+    const char* redMode,
+    const char* greenMode)
+{
+    BG_Fill(BG_GetMapBuffer(2), 0);
+    PutDrawText(
+        NULL,
+        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
+        TEXT_COLOR_SYSTEM_WHITE,
+        0,
+        DEBUGTOOLS_FLAG_STATUS_CJK_WIDTH_TILES,
+        values);
+    PutDrawText(
+        NULL,
+        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 3),
+        TEXT_COLOR_SYSTEM_WHITE,
+        0,
+        DEBUGTOOLS_FLAG_STATUS_CJK_WIDTH_TILES,
+        redMode);
+    PutDrawText(
+        NULL,
+        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 5),
+        TEXT_COLOR_SYSTEM_WHITE,
+        0,
+        DEBUGTOOLS_FLAG_STATUS_CJK_WIDTH_TILES,
+        greenMode);
+    BG_EnableSyncByMask(BG2_SYNC_BIT);
+    gLCDControlBuffer.dispcnt.bg2_on = 1;
+}
+
+static void DebugToolsTools_FormatFlagStatus(
+    char* values,
+    char* redMode,
+    char* greenMode);
+static void DebugToolsTools_DrawFlagStatus(
+    const char* values,
+    const char* redMode,
+    const char* greenMode);
+
+static void DebugToolsTools_UnitMenuOnInit(struct MenuProc* menu)
+{
+    char buf[64];
+
+    DebugToolsTools_MenuOnInit(menu);
+    if (!DebugToolsTools_UsesCjkText())
+        return;
+
+    if (gDebugToolsProbe.unitInspectTargetFound)
+        sprintf(buf, "%s %d/%d",
+            ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_UNIT_HP),
+            (int)gDebugToolsProbe.unitInspectLastCurHp,
+            (int)gDebugToolsProbe.unitInspectLastMaxHp);
+    else
+        sprintf(buf, "%s", ExpansionLocale_ResolveCurrent(
+            EXP_MSG_DEBUG_STATUS_UNIT_UNAVAILABLE));
+
+    DebugToolsTools_DrawCjkStatusLine(buf);
+}
+
+static void DebugToolsTools_ConvoyMenuOnInit(struct MenuProc* menu)
+{
+    char buf[64];
+
+    DebugToolsTools_MenuOnInit(menu);
+    if (!DebugToolsTools_UsesCjkText())
+        return;
+    sprintf(buf, "%s %d/%d",
+        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_CONVOY),
+        (int)gDebugToolsProbe.convoyLastItemCount,
+        (int)CONVOY_ITEM_COUNT);
+    DebugToolsTools_DrawCjkStatusLine(buf);
+}
+
+static void DebugToolsTools_FlagMenuOnInit(struct MenuProc* menu)
+{
+    char values[48];
+    char redMode[32];
+    char greenMode[32];
+
+    DebugToolsTools_MenuOnInit(menu);
+    DebugToolsTools_FormatFlagStatus(values, redMode, greenMode);
+    DebugToolsTools_DrawFlagStatus(values, redMode, greenMode);
+}
+
+static void DebugToolsTools_RngMenuOnInit(struct MenuProc* menu)
+{
+    char buf[64];
+
+    DebugToolsTools_MenuOnInit(menu);
+    if (!DebugToolsTools_UsesCjkText())
+        return;
+    sprintf(buf, "%s %04X",
+        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_RNG_SEED),
+        (unsigned int)gDebugToolsProbe.rngInspectSeedSample0);
+    DebugToolsTools_DrawCjkStatusLine(buf);
+}
+
+static void DebugToolsTools_SaveStateMenuOnInit(struct MenuProc* menu)
+{
+    char buf[64];
+
+    DebugToolsTools_MenuOnInit(menu);
+    if (!DebugToolsTools_UsesCjkText())
+        return;
+    sprintf(buf, "%s %d",
+        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_SAVE_STATE),
+        (int)gDebugToolsProbe.saveCompatLastState);
+    DebugToolsTools_DrawCjkStatusLine(buf);
+}
+
+#define DEBUGTOOLS_UNIT_MENU_ON_INIT DebugToolsTools_UnitMenuOnInit
+#define DEBUGTOOLS_CONVOY_MENU_ON_INIT DebugToolsTools_ConvoyMenuOnInit
+#define DEBUGTOOLS_FLAG_MENU_ON_INIT DebugToolsTools_FlagMenuOnInit
+#define DEBUGTOOLS_RNG_MENU_ON_INIT DebugToolsTools_RngMenuOnInit
+#define DEBUGTOOLS_SAVE_MENU_ON_INIT DebugToolsTools_SaveStateMenuOnInit
 #else
 #define DEBUGTOOLS_LOCALIZE_ITEM(item, message) ((void)0)
 #define DEBUGTOOLS_UNIT_MENU_ON_INIT 0
+#define DEBUGTOOLS_CONVOY_MENU_ON_INIT 0
+#define DEBUGTOOLS_FLAG_MENU_ON_INIT 0
+#define DEBUGTOOLS_RNG_MENU_ON_INIT 0
+#define DEBUGTOOLS_SAVE_MENU_ON_INIT 0
 static void DebugToolsTools_MenuOnInit(struct MenuProc* menu)
 {
     char* status = DebugToolsDiagnostics_GetStatusBuffer();
@@ -175,6 +313,62 @@ static void DebugToolsTools_MenuOnInit(struct MenuProc* menu)
         DebugToolsDiagnostics_DrawStatusText(menu, status);
 }
 #endif
+
+static void DebugToolsTools_FormatFlagStatus(
+    char* values,
+    char* redMode,
+    char* greenMode)
+{
+    DebugToolsPhaseControl_Sample();
+    sprintf(values, "%s %d C:%d F:%d",
+        DEBUGTOOLS_LOCALIZED_TEXT(EXP_MSG_DEBUG_STATUS_TURN, "TURN"),
+        (int)gDebugToolsProbe.phaseControlTurnSample,
+        (int)gDebugToolsProbe.chapterIndexSample,
+        (int)gDebugToolsProbe.debugFlagLastValue);
+#ifdef MODERN
+    sprintf(redMode, "R:%s",
+        ExpansionLocale_ResolveCurrent(
+            gDebugToolsProbe.phaseControlRedModeSample
+                    == DEBUGTOOLS_PHASE_CONTROL_BLOCKED
+                ? EXP_MSG_DEBUG_MODE_BLOCKED
+                : EXP_MSG_DEBUG_MODE_COMPUTER));
+    sprintf(greenMode, "G:%s",
+        ExpansionLocale_ResolveCurrent(
+            gDebugToolsProbe.phaseControlGreenModeSample
+                    == DEBUGTOOLS_PHASE_CONTROL_BLOCKED
+                ? EXP_MSG_DEBUG_MODE_BLOCKED
+                : EXP_MSG_DEBUG_MODE_COMPUTER));
+#else
+    sprintf(redMode, "R:%d", (int)gDebugToolsProbe.phaseControlRedModeSample);
+    sprintf(greenMode, "G:%d", (int)gDebugToolsProbe.phaseControlGreenModeSample);
+#endif
+}
+
+static void DebugToolsTools_DrawFlagStatus(
+    const char* values,
+    const char* redMode,
+    const char* greenMode)
+{
+#ifdef MODERN
+    if (DebugToolsTools_UsesCjkText())
+    {
+        DebugToolsTools_DrawCjkFlagStatus(values, redMode, greenMode);
+        return;
+    }
+#endif
+
+    SetupDebugFontForBG(2, 0);
+    PrintDebugStringToBG(
+        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
+        values);
+    PrintDebugStringToBG(
+        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 3),
+        redMode);
+    PrintDebugStringToBG(
+        BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 5),
+        greenMode);
+    gLCDControlBuffer.dispcnt.bg2_on = 1;
+}
 
 static void DebugToolsTools_ShowStatusLine(const char* text)
 {
@@ -207,6 +401,350 @@ static void DebugToolsTools_ShowStatusLine(const char* text)
     SetupDebugFontForBG(2, 0);
     PrintDebugStringToBG(BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1), text);
     gLCDControlBuffer.dispcnt.bg2_on = 1;
+}
+
+/* --- Transient turn/faction phase control (issue #124) ---------------- */
+
+enum
+{
+    DEBUGTOOLS_TURN_MIN = 1,
+    DEBUGTOOLS_TURN_MAX = 999,
+    DEBUGTOOLS_TURN_OVERRIDE_ID = 0xF6,
+    DEBUGTOOLS_TURN_DECREMENT_OVERRIDE_ID = 0xFC,
+    DEBUGTOOLS_RED_COMPUTER_OVERRIDE_ID = 0xF7,
+    DEBUGTOOLS_RED_BLOCKED_OVERRIDE_ID = 0xF8,
+    DEBUGTOOLS_GREEN_COMPUTER_OVERRIDE_ID = 0xF9,
+    DEBUGTOOLS_GREEN_BLOCKED_OVERRIDE_ID = 0xFA,
+};
+
+struct DebugToolsPhaseControlRequest
+{
+    int turn;
+    int faction;
+    enum DebugToolsPhaseControlMode mode;
+    enum DebugToolsPhaseControlRequestKind kind;
+};
+
+EWRAM_DATA static struct DebugToolsPhaseControlRequest sPhaseControlRequest = {0};
+
+struct DebugToolsPhaseControlSuspendTurn
+{
+    u16 originalTurn;
+    u16 liveTurn;
+    bool hasOriginalTurn;
+    u8 serializationDepth;
+};
+
+EWRAM_DATA static struct DebugToolsPhaseControlSuspendTurn sPhaseControlSuspendTurn = {0};
+
+static void DebugToolsPhaseControl_RecordResult(enum DebugToolsPhaseControlResult result)
+{
+    gDebugToolsProbe.phaseControlLastResult = result;
+}
+
+static void DebugToolsPhaseControl_RefreshProbe(void)
+{
+    gDebugToolsProbe.phaseControlTurnSample = gPlaySt.chapterTurnNumber;
+    gDebugToolsProbe.phaseControlRedModeSample =
+        (sPhaseControlRequest.kind == DEBUGTOOLS_PHASE_CONTROL_REQUEST_FACTION
+            && sPhaseControlRequest.faction == FACTION_RED)
+        ? sPhaseControlRequest.mode
+        : DEBUGTOOLS_PHASE_CONTROL_COMPUTER;
+    gDebugToolsProbe.phaseControlGreenModeSample =
+        (sPhaseControlRequest.kind == DEBUGTOOLS_PHASE_CONTROL_REQUEST_FACTION
+            && sPhaseControlRequest.faction == FACTION_GREEN)
+        ? sPhaseControlRequest.mode
+        : DEBUGTOOLS_PHASE_CONTROL_COMPUTER;
+}
+
+static enum DebugToolsPhaseControlResult DebugToolsPhaseControl_Reject(
+    enum DebugToolsPhaseControlResult result)
+{
+    gDebugToolsProbe.phaseControlRejectedCount++;
+    DebugToolsPhaseControl_RecordResult(result);
+    DebugToolsPhaseControl_RefreshProbe();
+    return result;
+}
+
+static bool DebugToolsPhaseControl_IsSafeRequestBoundary(void)
+{
+    const struct ExpansionAutoplayTelemetry* telemetry =
+        ExpansionAutoplay_GetTelemetry();
+    struct Proc* playerPhase = Proc_Find(gProcScr_PlayerPhase);
+    int gameLock = GetGameLock();
+
+    if (gPlaySt.faction != FACTION_BLUE
+        || ExpansionAutoplay_GetBlueControl() != EXPANSION_BLUE_CONTROL_PLAYER
+        || telemetry->state != EXPANSION_AUTOPLAY_STATE_PLAYER_PHASE
+        || telemetry->failure != EXPANSION_AUTOPLAY_FAILURE_NONE)
+        return false;
+
+    if (gameLock != 1
+        && !(gameLock == 2 && DebugTools_IsHubActive()))
+        return false;
+
+    if (!Proc_Find(gProc_BMapMain) || playerPhase == NULL
+        || Proc_Find(gProcScr_Playerphase_0)
+        || (gActiveUnit != NULL && GetUnitMu(gActiveUnit) != NULL)
+        || playerPhase->proc_idleCb != PlayerPhase_MainIdle
+        || Proc_Find(gProcScr_CpPhase)
+        || Proc_Find(gProcScr_BerserkCpPhase) || EventEngineExists()
+        || BattleEventEngineExists() || IsBattleDeamonActive()
+        || DoesBMXFADEExist() || Proc_Find(ProcScr_CamMove))
+        return false;
+
+    return true;
+}
+
+static enum DebugToolsPhaseControlResult DebugToolsPhaseControl_QueueRequest(
+    enum DebugToolsPhaseControlRequestKind kind,
+    int turn,
+    int faction,
+    enum DebugToolsPhaseControlMode mode)
+{
+    if (sPhaseControlRequest.kind != DEBUGTOOLS_PHASE_CONTROL_REQUEST_NONE)
+        return DebugToolsPhaseControl_Reject(DEBUGTOOLS_PHASE_CONTROL_ERR_PENDING);
+
+    if (!DebugToolsPhaseControl_IsSafeRequestBoundary())
+        return DebugToolsPhaseControl_Reject(DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY);
+
+    sPhaseControlRequest.kind = kind;
+    sPhaseControlRequest.turn = turn;
+    sPhaseControlRequest.faction = faction;
+    sPhaseControlRequest.mode = mode;
+
+    gDebugToolsProbe.phaseControlRequestedCount++;
+    gDebugToolsProbe.phaseControlLastRequestKind = kind;
+    gDebugToolsProbe.phaseControlLastFaction = faction;
+    gDebugToolsProbe.phaseControlLastMode = mode;
+    DebugToolsPhaseControl_RecordResult(DEBUGTOOLS_PHASE_CONTROL_OK);
+    DebugToolsPhaseControl_RefreshProbe();
+    return DEBUGTOOLS_PHASE_CONTROL_OK;
+}
+
+enum DebugToolsPhaseControlResult DebugToolsPhaseControl_RequestTurn(int turn)
+{
+    if (turn < DEBUGTOOLS_TURN_MIN || turn > DEBUGTOOLS_TURN_MAX)
+        return DebugToolsPhaseControl_Reject(DEBUGTOOLS_PHASE_CONTROL_ERR_INVALID_TURN);
+
+    return DebugToolsPhaseControl_QueueRequest(
+        DEBUGTOOLS_PHASE_CONTROL_REQUEST_TURN,
+        turn,
+        FACTION_BLUE,
+        DEBUGTOOLS_PHASE_CONTROL_COMPUTER);
+}
+
+enum DebugToolsPhaseControlResult DebugToolsPhaseControl_RequestFactionMode(
+    int faction,
+    enum DebugToolsPhaseControlMode mode)
+{
+    if (faction != FACTION_RED && faction != FACTION_GREEN)
+        return DebugToolsPhaseControl_Reject(DEBUGTOOLS_PHASE_CONTROL_ERR_INVALID_FACTION);
+
+    if (mode != DEBUGTOOLS_PHASE_CONTROL_COMPUTER
+        && mode != DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+        return DebugToolsPhaseControl_Reject(DEBUGTOOLS_PHASE_CONTROL_ERR_UNSUPPORTED_MODE);
+
+    return DebugToolsPhaseControl_QueueRequest(
+        DEBUGTOOLS_PHASE_CONTROL_REQUEST_FACTION,
+        0,
+        faction,
+        mode);
+}
+
+static void DebugToolsPhaseControl_CompleteRequest(void)
+{
+    gDebugToolsProbe.phaseControlAppliedCount++;
+    gDebugToolsProbe.phaseControlRestoredCount++;
+    DebugToolsPhaseControl_RecordResult(DEBUGTOOLS_PHASE_CONTROL_OK);
+    sPhaseControlRequest.kind = DEBUGTOOLS_PHASE_CONTROL_REQUEST_NONE;
+    DebugToolsPhaseControl_RefreshProbe();
+}
+
+void DebugToolsPhaseControl_ApplyTurnBeforePhaseEvents(void)
+{
+    if (sPhaseControlRequest.kind != DEBUGTOOLS_PHASE_CONTROL_REQUEST_TURN)
+        return;
+
+    if (!sPhaseControlSuspendTurn.hasOriginalTurn)
+    {
+        sPhaseControlSuspendTurn.originalTurn = gPlaySt.chapterTurnNumber;
+        sPhaseControlSuspendTurn.hasOriginalTurn = TRUE;
+    }
+    gPlaySt.chapterTurnNumber = (u16)sPhaseControlRequest.turn;
+    DebugToolsPhaseControl_CompleteRequest();
+}
+
+void DebugToolsPhaseControl_AdvanceSuspendTurnAtNaturalIncrement(void)
+{
+    if (sPhaseControlSuspendTurn.hasOriginalTurn
+        && sPhaseControlSuspendTurn.originalTurn < DEBUGTOOLS_TURN_MAX)
+        sPhaseControlSuspendTurn.originalTurn++;
+}
+
+enum DebugToolsPhaseControlStartAction DebugToolsPhaseControl_ApplyAtPhaseStart(int faction)
+{
+    enum DebugToolsPhaseControlStartAction action = DEBUGTOOLS_PHASE_CONTROL_START_NORMAL;
+
+    if (sPhaseControlRequest.kind != DEBUGTOOLS_PHASE_CONTROL_REQUEST_FACTION)
+        return action;
+
+    if (sPhaseControlRequest.faction != faction)
+        return action;
+
+    if (sPhaseControlRequest.mode == DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
+        action = DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED;
+
+    DebugToolsPhaseControl_CompleteRequest();
+    return action;
+}
+
+void DebugToolsPhaseControl_Reset(void)
+{
+    while (sPhaseControlSuspendTurn.serializationDepth != 0)
+        DebugToolsPhaseControl_EndSuspendSerialization();
+
+    if (sPhaseControlRequest.kind != DEBUGTOOLS_PHASE_CONTROL_REQUEST_NONE)
+    {
+        gDebugToolsProbe.phaseControlExpiredCount++;
+        gDebugToolsProbe.phaseControlRestoredCount++;
+        DebugToolsPhaseControl_RecordResult(DEBUGTOOLS_PHASE_CONTROL_EXPIRED);
+    }
+
+    sPhaseControlRequest.kind = DEBUGTOOLS_PHASE_CONTROL_REQUEST_NONE;
+    sPhaseControlSuspendTurn.hasOriginalTurn = FALSE;
+    DebugToolsPhaseControl_RefreshProbe();
+}
+
+void DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition(void)
+{
+    while (sPhaseControlSuspendTurn.serializationDepth != 0)
+        DebugToolsPhaseControl_EndSuspendSerialization();
+
+    if (!sPhaseControlSuspendTurn.hasOriginalTurn)
+        return;
+
+    gPlaySt.chapterTurnNumber = sPhaseControlSuspendTurn.originalTurn;
+    sPhaseControlSuspendTurn.hasOriginalTurn = FALSE;
+    DebugToolsPhaseControl_RefreshProbe();
+}
+
+void DebugToolsPhaseControl_Sample(void)
+{
+    DebugToolsPhaseControl_RefreshProbe();
+}
+
+void DebugToolsPhaseControl_BeginSuspendSerialization(void)
+{
+    if (!sPhaseControlSuspendTurn.hasOriginalTurn)
+        return;
+
+    if (sPhaseControlSuspendTurn.serializationDepth == 0)
+    {
+        sPhaseControlSuspendTurn.liveTurn = gPlaySt.chapterTurnNumber;
+        gPlaySt.chapterTurnNumber = sPhaseControlSuspendTurn.originalTurn;
+    }
+    sPhaseControlSuspendTurn.serializationDepth++;
+}
+
+bool DebugToolsPhaseControl_GetSerializedSuspendTurn(u16 *turn)
+{
+    if (!sPhaseControlSuspendTurn.hasOriginalTurn || turn == NULL)
+        return FALSE;
+
+    *turn = sPhaseControlSuspendTurn.originalTurn;
+    return TRUE;
+}
+
+void DebugToolsPhaseControl_EndSuspendSerialization(void)
+{
+    if (sPhaseControlSuspendTurn.serializationDepth == 0)
+        return;
+
+    sPhaseControlSuspendTurn.serializationDepth--;
+    if (sPhaseControlSuspendTurn.serializationDepth == 0)
+        gPlaySt.chapterTurnNumber = sPhaseControlSuspendTurn.liveTurn;
+}
+
+static u8 DebugToolsPhaseControl_ConfirmTurnIncrement(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)item;
+
+    if (DebugToolsPhaseControl_RequestTurn((int)gPlaySt.chapterTurnNumber + 1)
+        != DEBUGTOOLS_PHASE_CONTROL_OK)
+        return MENU_ACT_SND6B;
+
+    DebugTools_EndSessionAfterMenuEnd(menu);
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
+}
+
+static u8 DebugToolsPhaseControl_ConfirmTurnDecrement(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)item;
+
+    if (DebugToolsPhaseControl_RequestTurn((int)gPlaySt.chapterTurnNumber - 1)
+        != DEBUGTOOLS_PHASE_CONTROL_OK)
+        return MENU_ACT_SND6B;
+
+    DebugTools_EndSessionAfterMenuEnd(menu);
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
+}
+
+static u8 DebugToolsPhaseControl_ConfirmFactionMode(
+    struct MenuProc* menu,
+    int faction,
+    enum DebugToolsPhaseControlMode mode)
+{
+    if (DebugToolsPhaseControl_RequestFactionMode(faction, mode)
+        != DEBUGTOOLS_PHASE_CONTROL_OK)
+        return MENU_ACT_SND6B;
+
+    DebugTools_EndSessionAfterMenuEnd(menu);
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
+}
+
+static u8 DebugToolsPhaseControl_ConfirmRedComputer(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)item;
+    return DebugToolsPhaseControl_ConfirmFactionMode(
+        menu,
+        FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_COMPUTER);
+}
+
+static u8 DebugToolsPhaseControl_ConfirmRedBlocked(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)item;
+    return DebugToolsPhaseControl_ConfirmFactionMode(
+        menu,
+        FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED);
+}
+
+static u8 DebugToolsPhaseControl_ConfirmGreenComputer(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)item;
+    return DebugToolsPhaseControl_ConfirmFactionMode(
+        menu,
+        FACTION_GREEN, DEBUGTOOLS_PHASE_CONTROL_COMPUTER);
+}
+
+static u8 DebugToolsPhaseControl_ConfirmGreenBlocked(
+    struct MenuProc* menu,
+    struct MenuItemProc* item)
+{
+    (void)item;
+    return DebugToolsPhaseControl_ConfirmFactionMode(
+        menu,
+        FACTION_GREEN, DEBUGTOOLS_PHASE_CONTROL_BLOCKED);
 }
 
 /* --- 5. Unit inspection/edit -------------------------------------------- */
@@ -1741,12 +2279,14 @@ CONST_DATA static struct DebugToolsAction sUnitInspectAction = {
 
 /* --- 6. Convoy inspection/edit ------------------------------------------ */
 
-/* These tool submenus cannot coexist, so one three-item buffer serves all
- * three builders without consuming three copies of persistent EWRAM. */
+/* Convoy and RNG are mutually exclusive and each needs at most Back plus the
+ * terminator. #124's larger Flag/Chapter menu
+ * reuses gDebugToolsMenuItemDefs after the hub is ended by the deferred
+ * transition builder below. */
 EWRAM_DATA static struct MenuItemDef sDebugToolsToolMenuItemDefs[3] = {{0}};
 
 #define sConvoyMenuItemDefs sDebugToolsToolMenuItemDefs
-#define sFlagMenuItemDefs sDebugToolsToolMenuItemDefs
+#define sFlagMenuItemDefs gDebugToolsMenuItemDefs
 #define sRngMenuItemDefs sDebugToolsToolMenuItemDefs
 
 static void DebugToolsConvoy_OnEnd(struct MenuProc* menu)
@@ -1841,7 +2381,7 @@ CONST_DATA static struct DebugToolsAction sConvoyInspectAction = {
     6, "Convoy Inspect", DebugToolsActions_ConvoyInspectSelected
 };
 
-/* --- 7. Flag/chapter/event state action ---------------------------------- */
+/* --- 7. Flag/chapter/turn/faction state action --------------------------- */
 
 static void DebugToolsFlag_OnEnd(struct MenuProc* menu)
 {
@@ -1852,7 +2392,7 @@ CONST_DATA struct MenuDef gDebugToolsFlagMenuDef = {
     {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sFlagMenuItemDefs,
-    DebugToolsTools_MenuOnInit,
+    DEBUGTOOLS_FLAG_MENU_ON_INIT,
     DebugToolsFlag_OnEnd,
     0,
     DebugTools_CancelMenu,
@@ -1905,46 +2445,83 @@ static void DebugToolsFlag_BuildMenuItems(void)
         &sFlagMenuItemDefs[0],
         EXP_MSG_DEBUG_CONFIRM_TOGGLE_FLAG);
 
-    sFlagMenuItemDefs[1].name = "Back";
+    sFlagMenuItemDefs[1].name = "Apply Turn +1";
+    sFlagMenuItemDefs[1].overrideId = DEBUGTOOLS_TURN_OVERRIDE_ID;
     sFlagMenuItemDefs[1].isAvailable = MenuAlwaysEnabled;
-    sFlagMenuItemDefs[1].onSelected = DebugTools_CancelMenu;
+    sFlagMenuItemDefs[1].onSelected = DebugToolsPhaseControl_ConfirmTurnIncrement;
     DEBUGTOOLS_LOCALIZE_ITEM(
         &sFlagMenuItemDefs[1],
+        EXP_MSG_DEBUG_CONFIRM_TURN_INCREMENT);
+
+    sFlagMenuItemDefs[2].name = "Apply Turn -1";
+    sFlagMenuItemDefs[2].overrideId = DEBUGTOOLS_TURN_DECREMENT_OVERRIDE_ID;
+    sFlagMenuItemDefs[2].isAvailable = MenuAlwaysEnabled;
+    sFlagMenuItemDefs[2].onSelected = DebugToolsPhaseControl_ConfirmTurnDecrement;
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sFlagMenuItemDefs[2],
+        EXP_MSG_DEBUG_CONFIRM_TURN_DECREMENT);
+
+    sFlagMenuItemDefs[3].name = "Apply R CPU";
+    sFlagMenuItemDefs[3].overrideId = DEBUGTOOLS_RED_COMPUTER_OVERRIDE_ID;
+    sFlagMenuItemDefs[3].isAvailable = MenuAlwaysEnabled;
+    sFlagMenuItemDefs[3].onSelected = DebugToolsPhaseControl_ConfirmRedComputer;
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sFlagMenuItemDefs[3],
+        EXP_MSG_DEBUG_CONFIRM_RED_COMPUTER);
+
+    sFlagMenuItemDefs[4].name = "Apply R Block";
+    sFlagMenuItemDefs[4].overrideId = DEBUGTOOLS_RED_BLOCKED_OVERRIDE_ID;
+    sFlagMenuItemDefs[4].isAvailable = MenuAlwaysEnabled;
+    sFlagMenuItemDefs[4].onSelected = DebugToolsPhaseControl_ConfirmRedBlocked;
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sFlagMenuItemDefs[4],
+        EXP_MSG_DEBUG_CONFIRM_RED_BLOCKED);
+
+    sFlagMenuItemDefs[5].name = "Apply G CPU";
+    sFlagMenuItemDefs[5].overrideId = DEBUGTOOLS_GREEN_COMPUTER_OVERRIDE_ID;
+    sFlagMenuItemDefs[5].isAvailable = MenuAlwaysEnabled;
+    sFlagMenuItemDefs[5].onSelected = DebugToolsPhaseControl_ConfirmGreenComputer;
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sFlagMenuItemDefs[5],
+        EXP_MSG_DEBUG_CONFIRM_GREEN_COMPUTER);
+
+    sFlagMenuItemDefs[6].name = "Apply G Block";
+    sFlagMenuItemDefs[6].overrideId = DEBUGTOOLS_GREEN_BLOCKED_OVERRIDE_ID;
+    sFlagMenuItemDefs[6].isAvailable = MenuAlwaysEnabled;
+    sFlagMenuItemDefs[6].onSelected = DebugToolsPhaseControl_ConfirmGreenBlocked;
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sFlagMenuItemDefs[6],
+        EXP_MSG_DEBUG_CONFIRM_GREEN_BLOCKED);
+
+    sFlagMenuItemDefs[7].name = "Back";
+    sFlagMenuItemDefs[7].isAvailable = MenuAlwaysEnabled;
+    sFlagMenuItemDefs[7].onSelected = MenuCancelSelect;
+    DEBUGTOOLS_LOCALIZE_ITEM(
+        &sFlagMenuItemDefs[7],
         EXP_MSG_FRAMEWORK_BACK);
 
 }
 
 static u8 DebugToolsActions_FlagInspectSelected(struct MenuProc* menu, struct MenuItemProc* item)
 {
-    char buf[64];
-#ifdef MODERN
-    char chapterLabel[24];
-#endif
+    char values[48];
+    char redMode[32];
+    char greenMode[32];
 
     (void)item;
 
     gDebugToolsProbe.chapterIndexSample = (u32)(u8)gPlaySt.chapterIndex;
     gDebugToolsProbe.debugFlagLastValue = (u32)CheckFlag(DEBUGTOOLS_DEBUG_EVENT_FLAG_ID);
-#ifdef MODERN
-    strcpy(
-        chapterLabel,
-        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_CHAPTER));
-    sprintf(buf, "%s %d %s %d",
-        chapterLabel,
-        (int)(u8)gPlaySt.chapterIndex,
-        ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_FLAG),
-        (int)gDebugToolsProbe.debugFlagLastValue);
-#else
-    sprintf(buf, "CH %d FLAG %d", (int)(u8)gPlaySt.chapterIndex,
-        (int)gDebugToolsProbe.debugFlagLastValue);
-#endif
+    DebugToolsTools_FormatFlagStatus(values, redMode, greenMode);
 
     DebugTools_LogEvent(DEBUGTOOLS_LOG_FLAG_INSPECT,
         gDebugToolsProbe.chapterIndexSample, gDebugToolsProbe.debugFlagLastValue);
-    DebugToolsTools_ShowStatusLine(buf);
+    DebugToolsTools_DrawFlagStatus(values, redMode, greenMode);
 
-    DebugToolsFlag_BuildMenuItems();
-    DebugTools_QueueSubmenuTransition(menu, &gDebugToolsFlagMenuDef);
+    DebugTools_QueueSubmenuTransitionWithBuilder(
+        menu,
+        &gDebugToolsFlagMenuDef,
+        DebugToolsFlag_BuildMenuItems);
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }

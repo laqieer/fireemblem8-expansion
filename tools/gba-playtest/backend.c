@@ -1010,7 +1010,39 @@ static int run_until(struct mCore* core, const struct Plan* plan,
 	return 2;
 }
 
-static int run(const char* rom_path, const struct Plan* plan, const char* sram_path)
+static bool dump_sram(struct mCore* core, const char* output_path)
+{
+	FILE* output;
+
+	if (!output_path)
+		return true;
+
+	output = fopen(output_path, "wb");
+	if (!output) {
+		fprintf(stderr, "could not open SRAM output: %s\n", output_path);
+		return false;
+	}
+	for (uint32_t offset = 0; offset < GBA_SRAM_SIZE; ++offset) {
+		uint8_t byte = core->busRead8(core, GBA_SRAM_BASE + offset);
+
+		if (fwrite(&byte, 1, 1, output) != 1) {
+			fprintf(stderr, "could not write SRAM output: %s\n", output_path);
+			fclose(output);
+			return false;
+		}
+	}
+	if (fclose(output) != 0) {
+		fprintf(stderr, "could not close SRAM output: %s\n", output_path);
+		return false;
+	}
+	return true;
+}
+
+static int run(
+	const char* rom_path,
+	const struct Plan* plan,
+	const char* sram_path,
+	const char* sram_output_path)
 {
 	struct mCore* core = mCoreFind(rom_path);
 	int result;
@@ -1078,6 +1110,8 @@ static int run(const char* rom_path, const struct Plan* plan, const char* sram_p
 	result = plan->run_until
 	    ? run_until(core, plan, buffer, width, height)
 	    : run_fixed(core, plan, buffer, width, height);
+	if (result == 0 && !dump_sram(core, sram_output_path))
+		result = 2;
 	free(buffer);
 	mCoreConfigDeinit(&core->config);
 	core->deinit(core);
@@ -1089,8 +1123,8 @@ int main(int argc, char** argv)
 	const char* log_capture_path;
 	int result;
 
-	if (argc != 3 && argc != 4) {
-		fprintf(stderr, "usage: %s <rom.gba> <plan> [sram-image]\n", argv[0]);
+	if (argc != 3 && argc != 4 && argc != 5) {
+		fprintf(stderr, "usage: %s <rom.gba> <plan> [sram-image] [sram-output]\n", argv[0]);
 		return 2;
 	}
 	log_capture_path = getenv("GBA_PLAYTEST_LOG_CAPTURE");
@@ -1109,7 +1143,11 @@ int main(int argc, char** argv)
 			fclose(sLogCapture);
 		return 2;
 	}
-	result = run(argv[1], &plan, argc == 4 ? argv[3] : NULL);
+	result = run(
+		argv[1],
+		&plan,
+		argc >= 4 ? argv[3] : NULL,
+		argc == 5 ? argv[4] : NULL);
 	free_plan(&plan);
 	if (sLogCapture && fclose(sLogCapture) != 0) {
 		fprintf(stderr, "cannot finalize mGBA log capture: %s\n", log_capture_path);

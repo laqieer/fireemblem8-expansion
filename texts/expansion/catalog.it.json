@@ -121,6 +121,15 @@
     "debug.value.phase_player": "PLAYER",
     "debug.value.phase_enemy": "ENEMY",
     "debug.value.phase_npc": "NPC",
-    "debug.value.phase_other": "OTHER"
+    "debug.value.phase_other": "OTHER",
+    "debug.confirm.turn_increment": "Applica turno +1",
+    "debug.confirm.turn_decrement": "Applica turno -1",
+    "debug.confirm.red_computer": "Applica CPU rossa",
+    "debug.confirm.red_blocked": "Blocca rossa",
+    "debug.confirm.green_computer": "Applica CPU verde",
+    "debug.confirm.green_blocked": "Blocca verde",
+    "debug.status.turn": "TURNO",
+    "debug.mode.computer": "CPU",
+    "debug.mode.blocked": "BLOCCO"
   }
 }
