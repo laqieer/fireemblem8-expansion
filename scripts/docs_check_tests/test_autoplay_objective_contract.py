@@ -41,6 +41,10 @@ class AutoplayObjectiveContractTests(unittest.TestCase):
             "**ROM/RAM/archival:** the modern generated objective table and evaluator add",
             typed_section,
         )
+        self.assertIn(
+            "both modern debug and release profiles allocate\n20 EWRAM bytes",
+            typed_section,
+        )
         self.assertNotIn("no target source, ROM bytes, RAM allocation", typed_section)
         self.assertNotIn("later integration\n  work (#89)", typed_section)
         self.assertNotIn("generated game data, or\n  localization change", typed_section)

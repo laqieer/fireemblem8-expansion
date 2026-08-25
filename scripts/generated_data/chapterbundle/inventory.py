@@ -16,18 +16,24 @@ import hashlib
 import json
 import os
 
-from .schema import BUNDLE_TABLE_NAMES, SCHEMA_ID, full_dependency_graph
+from .schema import (
+    BUNDLE_TABLE_NAMES,
+    SCHEMA_ID,
+    _source_path,
+    full_dependency_graph,
+    source_display_path,
+)
 
 
 def _digest(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _table_digest(source_path):
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    full_path = source_path if os.path.isabs(source_path) else os.path.join(repo_root, source_path)
-    with open(full_path, "r", encoding="utf-8") as handle:
-        return _digest(handle.read())
+def _source_display_and_digest(record, source):
+    source_path = _source_path(source, record.repository_root)
+    with open(source_path, "r", encoding="utf-8") as handle:
+        digest = _digest(handle.read())
+    return source_display_path(source_path, record.repository_root), digest
 
 
 def _build_single_inventory(records):
@@ -45,6 +51,8 @@ def _build_single_inventory(records):
         records.chapter.id, records.chapter.internal_name,
         records.chapter.chapter_settings_index, records.chapter.map_event_data_id,
     ))
+    source, digest = _source_display_and_digest(records, records.source_path)
+    lines.append("- Bundle source: `{}` (sha256: `{}`)\n".format(source, digest))
     lines.append("- Manifest: `{}` (table `{}`)\n".format(records.manifest.symbol, records.manifest.table))
     lines.append("- Full multi-table dependency graph digest (sha256): `{}`\n".format(graph.digest()))
     lines.append("- Full multi-table topological order: {}\n".format(", ".join(graph.topo_order())))
@@ -58,22 +66,24 @@ def _build_single_inventory(records):
         table = records.tables_by_name.get(table_name)
         if table is None:
             continue
+        source, digest = _source_display_and_digest(records, table.source)
         lines.append(
             "| {} | {} | {} | {} |\n".format(
-                table_name, table.source, len(table.symbols), _table_digest(table.source)
+                table_name, source, len(table.symbols), digest
             )
         )
+    source, digest = _source_display_and_digest(records, records.support_owners.source)
     lines.append(
         "| supportOwners | {} | {} required | {} |\n".format(
-            records.support_owners.source, len(records.support_owners.required),
-            _table_digest(records.support_owners.source),
+            source, len(records.support_owners.required), digest,
         )
     )
     if records.chapter_objectives is not None:
         objectives = records.chapter_objectives
+        source, digest = _source_display_and_digest(records, objectives.source)
         lines.append(
             "| chapterobjectives | {} | {} | {} |\n".format(
-                objectives.source, len(objectives.symbols), _table_digest(objectives.source)
+                source, len(objectives.symbols), digest
             )
         )
     lines.append("\n")
@@ -83,7 +93,13 @@ def _build_single_inventory(records):
     lines.append("| Table | Symbol | File |\n")
     lines.append("|---|---|---|\n")
     for ref in sorted(records.external_references, key=lambda r: (r.table, r.symbol)):
-        lines.append("| {} | {} | {} |\n".format(ref.table, ref.symbol, ref.file))
+        lines.append(
+            "| {} | {} | {} |\n".format(
+                ref.table,
+                ref.symbol,
+                source_display_path(ref.file, records.repository_root),
+            )
+        )
     lines.append("\n")
 
     lines.append(
@@ -152,8 +168,8 @@ def build_inventory(records):
         lines.append(
             "| {} | {} | {} | {} | {} | {} |\n".format(
                 record.chapter.id,
-                record.source_path,
-                _table_digest(record.source_path),
+                source_display_path(record.source_path, record.repository_root),
+                _source_display_and_digest(record, record.source_path)[1],
                 record.manifest.symbol,
                 ", ".join(sorted(unit_groups.symbols)) if unit_groups is not None else "-",
                 ", ".join(sorted(objectives.symbols)) if objectives is not None else "-",
