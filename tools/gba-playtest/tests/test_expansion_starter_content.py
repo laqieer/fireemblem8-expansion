@@ -73,7 +73,7 @@ ISSUE_158_AUDIT_MIGRATIONS = {
         ("CompileTimeDependencyTests", "test_content_at_default_cap_fails"),
     ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_no_double_slash_comments":
         ("StarterContentC89ContractTests",
-         "test_enabled_content_translation_units_compile_as_c89"),
+         "test_enabled_content_translation_units_and_header_compile_as_c89"),
     ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_content_registers_only_through_the_public_api":
         ("StarterContentRegistrationHostTests",
          "test_enabled_content_registers_once_and_applies_bounded_avoid"),
@@ -82,7 +82,7 @@ ISSUE_158_AUDIT_MIGRATIONS = {
          "test_enabled_content_registers_once_and_applies_bounded_avoid"),
     ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_bmbattle_seam_is_not_content_aware":
         ("StarterContentBattleSeamTests",
-         "test_enabled_battle_object_references_only_the_generic_hook"),
+         "test_generic_hook_is_only_content_path_and_poisoned_special_case_fails"),
     ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_content_effect_is_bounded":
         ("StarterContentRegistrationHostTests",
          "test_enabled_content_registers_once_and_applies_bounded_avoid"),
@@ -297,12 +297,22 @@ class ItemExpansionProbeAbiTests(unittest.TestCase):
 class StarterContentC89ContractTests(unittest.TestCase):
     """The enabled production translation units must reject non-C89 syntax."""
 
-    def test_enabled_content_translation_units_compile_as_c89(self):
+    def test_enabled_content_translation_units_and_header_compile_as_c89(self):
         with _test_tempdir() as tmp:
-            generated = Path(tmp) / "generated"
+            work = Path(tmp)
+            generated = work / "generated"
             self.assertEqual(generate_content_text(generated, 1).returncode, 0)
-            for source in (CONTENT_SRC, MECHANICS_SRC):
-                obj = Path(tmp) / (source.stem + ".o")
+            headers = work / "headers"
+            shutil.copytree(REPO_ROOT / "include", headers / "include")
+
+            for path in headers.rglob("*.h"):
+                path.write_text(
+                    re.sub(r"//[^\n]*", "", path.read_text(encoding="utf-8")),
+                    encoding="utf-8",
+                )
+
+            def compile_source(source, obj_name):
+                obj = work / obj_name
                 command = [
                     ARM_CC,
                     "-c",
@@ -310,19 +320,24 @@ class StarterContentC89ContractTests(unittest.TestCase):
                     "-std=c89",
                     "-pedantic-errors",
                     "-mthumb",
-                    "-isystem",
-                    str(REPO_ROOT / "include"),
-                    "-isystem",
+                    "-I",
+                    str(headers / "include"),
+                    "-I",
                     str(generated),
+                    "-I",
+                    str(headers),
                 ]
                 command.extend("-D" + define for define in CONTENT_DEFINES)
                 command.extend([str(source), "-o", str(obj)])
-                completed = subprocess.run(
+                return subprocess.run(
                     command,
                     cwd=str(REPO_ROOT),
                     capture_output=True,
                     text=True,
                 )
+
+            for source in (CONTENT_SRC, MECHANICS_SRC, ITEMTEST_SRC):
+                completed = compile_source(source, source.stem + ".o")
                 self.assertEqual(
                     completed.returncode,
                     0,
@@ -330,23 +345,85 @@ class StarterContentC89ContractTests(unittest.TestCase):
                         source.name, completed.stdout, completed.stderr),
                 )
 
+            itemtest_header = headers / "include" / "expansion_itemtest.h"
+            itemtest_header.write_text(
+                "// strict-C89 mutation\n" + itemtest_header.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            completed = compile_source(ITEMTEST_SRC, "itemtest_mutated.o")
+            self.assertNotEqual(
+                completed.returncode,
+                0,
+                "a C++-style comment in expansion_itemtest.h must fail strict C89",
+            )
+
 
 @unittest.skipIf(ARM_CC is None or NM is None, "no arm-none-eabi toolchain")
 class StarterContentBattleSeamTests(unittest.TestCase):
     """The compiled production battle object reaches content only through the
     generic mechanics hook."""
 
-    def test_enabled_battle_object_references_only_the_generic_hook(self):
+    def test_generic_hook_is_only_content_path_and_poisoned_special_case_fails(self):
         with _test_tempdir() as tmp:
             code, output, obj = _arm_compile(
                 tmp, BMBATTLE_SRC, "bmbattle_content.o", CONTENT_DEFINES)
             self.assertEqual(code, 0, output)
             references = _referenced_symbols(obj)
-        self.assertIn("ExpansionMechanicsApplyBattleStats", references)
-        self.assertFalse(
-            any("ExpansionStarterContent" in symbol for symbol in references),
-            references,
-        )
+            self.assertIn("ExpansionMechanicsApplyBattleStats", references)
+            self.assertFalse(
+                any("ExpansionStarterContent" in symbol for symbol in references),
+                references,
+            )
+
+            poison = Path(tmp) / "starter_content_poison.h"
+            poison.write_text(
+                "#define ITEM_EXPANSION_CE ITEM_EXPANSION_CE_FORBIDDEN_IN_BMBATTLE\n",
+                encoding="utf-8",
+            )
+
+            def compile_battle(source, obj_name):
+                obj = Path(tmp) / obj_name
+                command = [
+                    ARM_CC,
+                    "-c",
+                    "-w",
+                    "-std=gnu89",
+                    "-mthumb",
+                    *_include_flags(),
+                    "-I",
+                    str(REPO_ROOT),
+                    "-include",
+                    str(poison),
+                ]
+                command.extend("-D" + define for define in CONTENT_DEFINES)
+                command.extend([str(source), "-o", str(obj)])
+                return subprocess.run(
+                    command,
+                    cwd=str(REPO_ROOT),
+                    capture_output=True,
+                    text=True,
+                )
+
+            completed = compile_battle(BMBATTLE_SRC, "bmbattle_poisoned.o")
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+            mutated = Path(tmp) / "bmbattle_special_case_mutation.c"
+            mutated.write_text(
+                BMBATTLE_SRC.read_text(encoding="utf-8")
+                + "\nint ItemExpansionSpecialCaseMutation(int item)\n"
+                + "{\n"
+                + "    if (item == ITEM_EXPANSION_CE)\n"
+                + "        return 1;\n"
+                + "    return 0;\n"
+                + "}\n",
+                encoding="utf-8",
+            )
+            completed = compile_battle(mutated, "bmbattle_mutated.o")
+            self.assertNotEqual(
+                completed.returncode,
+                0,
+                "a direct starter-content item special case must fail the generic seam contract",
+            )
 
 
 @unittest.skipIf(CC is None, "no host C compiler")
