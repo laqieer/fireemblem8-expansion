@@ -533,11 +533,23 @@ def _bundle_records(dependency_records):
     return (bundles,)
 
 
-def _owner_source_path(owner):
-    source_path = owner.chapter_objectives.source
-    if not os.path.isabs(source_path):
-        source_path = os.path.join(REPO_ROOT, source_path)
-    return _canonical_source_path(source_path)
+def _owner_source_paths(owner, diagnostics=None):
+    from ..chapterbundle import schema as chapterbundle_schema
+
+    source = owner.chapter_objectives
+    source_path = chapterbundle_schema._source_path(source.source, owner.repository_root)
+    try:
+        return frozenset(load_records(source_path).source_paths)
+    except (OSError, GeneratedDataError) as error:
+        if diagnostics is not None:
+            diagnostics.add(
+                _err(
+                    "could not load owning chapterObjectives source '{}': {}".format(source.source, error),
+                    source.source_loc,
+                    "bundles[chapter={}].chapterObjectives.source".format(owner.chapter.id),
+                )
+            )
+        return frozenset()
 
 
 def _owner_unit_groups(owner, diagnostics, record):
@@ -597,10 +609,14 @@ def validate(records, diagnostics, dependency_records=None,
         owner = chapter_bundle.chapter_objectives
         if owner is None:
             continue
-        owner_source_path = _owner_source_path(chapter_bundle)
-        actual_symbols = actual_symbols_by_source_chapter.get(
-            (owner_source_path, chapter_bundle.chapter.id), set()
-        )
+        owner_source_paths = _owner_source_paths(chapter_bundle, diagnostics)
+        actual_symbols = set()
+        for source_path in owner_source_paths:
+            actual_symbols.update(
+                actual_symbols_by_source_chapter.get(
+                    (source_path, chapter_bundle.chapter.id), set()
+                )
+            )
         diagnostics.extend(
             validate_unique(
                 zip(owner.symbols, owner.symbol_locs),
@@ -687,7 +703,7 @@ def validate(records, diagnostics, dependency_records=None,
                         record.symbol_loc, record_ref + ".symbol",
                     )
                 )
-            elif _owner_source_path(chapter_bundle) != record.source_path:
+            elif record.source_path not in _owner_source_paths(chapter_bundle, diagnostics):
                 diagnostics.add(
                     _err(
                         "chapter objective bundle '{}' is declared by '{}' but loaded from '{}'".format(
