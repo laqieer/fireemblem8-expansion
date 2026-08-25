@@ -6,6 +6,7 @@
 #include "bm.h"
 #include "bmio.h"
 #include "bmmind.h"
+#include "bmsave.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "event.h"
@@ -76,6 +77,16 @@ static int sPhaseSwitchEventTurn;
 static int sSuspendWriteCount;
 static int sSuspendWriteFailed;
 static int sSuspendSerializedTurn;
+static int sChapterStatsEnabled;
+static int sChapterStatsRankingsCount;
+static int sChapterStatsSaveRankingsCount;
+static int sChapterStatsStartMapCount;
+static int sChapterStatsCleanupCount;
+static int sChapterStatsRnCount;
+static u16 sChapterStatsStoredRn[3];
+
+extern struct ChapterStats gChapterStats[WIN_ARRAY_NUM];
+u16 gGmMonsterRnState[3];
 
 void PlayerPhase_MainIdle(ProcPtr proc)
 {
@@ -289,6 +300,48 @@ void ProcessTurnSupportExp(void)
 {
 }
 
+int CheckFlag(int flag)
+{
+    return flag == 3 && sChapterStatsEnabled;
+}
+
+void ComputeChapterRankings(void)
+{
+    sChapterStatsRankingsCount++;
+}
+
+void SaveEndgameRankings(void)
+{
+    sChapterStatsSaveRankingsCount++;
+}
+
+void StartBattleMap(struct GameCtrlProc* gameCtrl)
+{
+    (void)gameCtrl;
+    sChapterStatsStartMapCount++;
+}
+
+void ChapterChangeUnitCleanup(void)
+{
+    sChapterStatsCleanupCount++;
+}
+
+u32 GetGameClock(void)
+{
+    return 0;
+}
+
+int NextRN(void)
+{
+    sChapterStatsRnCount++;
+    return 0;
+}
+
+void StoreRNState(u16* seeds)
+{
+    memcpy(sChapterStatsStoredRn, seeds, sizeof(sChapterStatsStoredRn));
+}
+
 void DecayTraps(void)
 {
     sTrapDecayCount++;
@@ -327,6 +380,15 @@ static void ResetHarness(void)
     sSuspendWriteCount = 0;
     sSuspendWriteFailed = 0;
     sSuspendSerializedTurn = -1;
+    sChapterStatsEnabled = 1;
+    sChapterStatsRankingsCount = 0;
+    sChapterStatsSaveRankingsCount = 0;
+    sChapterStatsStartMapCount = 0;
+    sChapterStatsCleanupCount = 0;
+    sChapterStatsRnCount = 0;
+    memset(sChapterStatsStoredRn, 0, sizeof(sChapterStatsStoredRn));
+    memset(gGmMonsterRnState, 0, sizeof(gGmMonsterRnState));
+    memset(gChapterStats, 0, sizeof(gChapterStats));
     gActiveUnit = NULL;
     memset(&sActiveUnit, 0, sizeof(sActiveUnit));
     memset(&sActiveMu, 0, sizeof(sActiveMu));
@@ -426,6 +488,102 @@ static int TestTransientTurnSuspendSerialization(void)
     CHECK(sSuspendWriteCount == 1 && sSuspendSerializedTurn == 5
               && gPlaySt.chapterTurnNumber == 5,
           "expired request must not leave a serialization swap active");
+
+    return 0;
+}
+
+static int ApplyOverrideAndAdvanceNaturally(void)
+{
+    u16 persistentTurn;
+
+    gPlaySt.chapterTurnNumber = 5;
+    CHECK(DebugToolsPhaseControl_RequestTurn(9) == DEBUGTOOLS_PHASE_CONTROL_OK,
+          "chapter-stat override must queue from the stable player boundary");
+    CHECK(BmMain_ChangePhase() == true,
+          "chapter-stat override must apply at the real phase boundary");
+    CHECK(gPlaySt.chapterTurnNumber == 9,
+          "live chapter turn must retain the requested override");
+
+    gPlaySt.faction = FACTION_GREEN;
+    SwitchPhases();
+    CHECK(gPlaySt.faction == FACTION_BLUE && gPlaySt.chapterTurnNumber == 10,
+          "the live turn must advance naturally after the override");
+    CHECK(DebugToolsPhaseControl_GetSerializedSuspendTurn(&persistentTurn)
+              && persistentTurn == 6,
+          "the retained persistent turn must advance naturally before completion");
+    return 0;
+}
+
+static int CheckChapterStatsSaveBytes(int expectedTurn, int expectedChapter)
+{
+    struct ChapterStats* stats = GetChapterStats(0);
+    u16 savedWord;
+    u16 expectedWord;
+    u16 retainedTurn;
+
+    memcpy(&savedWord, stats, sizeof(savedWord));
+    expectedWord = (u16)(
+        ((u16)expectedChapter & 0x7F)
+        | (((u16)expectedTurn & 0x1FF) << 7));
+    CHECK(stats->chapter_index == expectedChapter
+              && stats->chapter_turn == expectedTurn,
+          "chapter statistics must retain the persistent turn, not the live override");
+    CHECK(savedWord == expectedWord,
+          "the packed chapter-stat save bytes must encode the persistent turn");
+    CHECK(!DebugToolsPhaseControl_GetSerializedSuspendTurn(&retainedTurn),
+          "the retained turn must clear only after chapter-stat registration");
+    return 0;
+}
+
+static int RegisterChapterStatsThroughPath(int path)
+{
+    struct GameCtrlProc gameCtrl;
+
+    switch (path)
+    {
+    case 0:
+        BmMain_BeginNextChapter();
+        break;
+
+    case 1:
+        GameCtrl_DeclareCompletedChapter();
+        break;
+
+    default:
+        memset(&gameCtrl, 0, sizeof(gameCtrl));
+        gameCtrl.nextChapter = (u8)(gPlaySt.chapterIndex + 1);
+        GameControl_ChapterSwitch(&gameCtrl);
+        break;
+    }
+
+    return 0;
+}
+
+static int TestChapterStatsPersistentTurn(void)
+{
+    int path;
+    int chapter;
+
+    for (path = 0; path < 3; path++)
+    {
+        ResetHarness();
+        chapter = 0x12 + path;
+        gPlaySt.chapterIndex = (u8)chapter;
+        CHECK(ApplyOverrideAndAdvanceNaturally() == 0,
+              "override setup for chapter-stat registration");
+        CHECK(RegisterChapterStatsThroughPath(path) == 0,
+              "chapter-stat override registration path");
+        CHECK(CheckChapterStatsSaveBytes(6, chapter) == 0,
+              "persistent chapter-stat save bytes");
+
+        ResetHarness();
+        gPlaySt.chapterIndex = (u8)chapter;
+        gPlaySt.chapterTurnNumber = 7;
+        CHECK(RegisterChapterStatsThroughPath(path) == 0,
+              "natural chapter-stat registration path");
+        CHECK(CheckChapterStatsSaveBytes(7, chapter) == 0,
+              "natural chapter-stat save-byte negative control");
+    }
 
     return 0;
 }
@@ -803,6 +961,8 @@ int main(void)
     CHECK(TestTurnRequestAtBoundary() == 0, "turn boundary contract");
     CHECK(TestTransientTurnSuspendSerialization() == 0,
           "transient turn suspend serialization contract");
+    CHECK(TestChapterStatsPersistentTurn() == 0,
+          "chapter-stat persistence contract");
     CHECK(TestPlayerActionOwnership() == 0, "player action ownership contract");
     CHECK(TestFactionModesAndRestoration() == 0, "faction ownership contract");
     CHECK(TestRejectedAndExpiredRequests() == 0, "rejection and cleanup contract");

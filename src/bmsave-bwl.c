@@ -7,6 +7,7 @@
 #include "worldmap.h"
 #include "bmsave.h"
 #include "sram-layout.h"
+#include "expansion_debugtools.h"
 
 EWRAM_DATA struct UnitUsageStats *gPidStatsSaveLoc = NULL;
 EWRAM_DATA struct UnitUsageStats gPidStatsData[BWL_ARRAY_NUM] = {0};
@@ -119,19 +120,32 @@ void RegisterChapterTimeAndTurnCount(struct PlaySt * play_st)
 {
     struct ChapterStats *chstat = GetChapterStats(GetNextChapterStatsSlot());
     int time, turn;
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    u16 persistentTurn;
+    bool hasPersistentTurn =
+        DebugToolsPhaseControl_GetSerializedSuspendTurn(&persistentTurn);
+#endif
     
     time = (GetGameClock() - play_st->time_chapter_started) / (FRAMES_PER_SECOND * 3);
     if (time > 50 * 60 * 20)
         time = 50 * 60 * 20;
 
     turn = play_st->chapterTurnNumber;
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    if (hasPersistentTurn)
+        turn = persistentTurn;
+#endif
     if (turn > 500)
         turn = 500;
 
     chstat->chapter_index = play_st->chapterIndex;
     chstat->chapter_turn = turn;
     chstat->chapter_time = time;
-    
+
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    if (hasPersistentTurn)
+        DebugToolsPhaseControl_Reset();
+#endif
 }
 
 int GetGameTotalTime_unused(void)

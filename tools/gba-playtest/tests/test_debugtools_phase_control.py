@@ -15,6 +15,8 @@ INCLUDES = ["-I", str(ROOT / "include"), "-I", str(ROOT / "include" / "generated
 TOOLS_SOURCE = ROOT / "src" / "debugtools_tools.c"
 BM_SOURCE = ROOT / "src" / "bm.c"
 BMIO_SOURCE = ROOT / "src" / "bmio.c"
+CHAPTER_STATS_SOURCE = ROOT / "src" / "bmsave-bwl.c"
+GAMECONTROL_SOURCE = ROOT / "src" / "gamecontrol.c"
 REGISTRY_SOURCE = ROOT / "src" / "debugtools_registry.c"
 AUTOPLAY_SOURCE = ROOT / "src" / "expansion_autoplay.c"
 DRIVER = Path(__file__).resolve().parent / "c" / "debugtools_phase_control_driver.c"
@@ -85,6 +87,7 @@ RELEASE_LOCALIZATION_BUDGET_REPORT = (
 CC = shutil.which("gcc") or shutil.which("cc")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 NM = shutil.which("nm")
+OBJCOPY = shutil.which("objcopy")
 ARM_NM = shutil.which("arm-none-eabi-nm")
 ARM_SIZE = shutil.which("arm-none-eabi-size")
 
@@ -129,8 +132,8 @@ def write_message_header(directory):
 
 class DebugToolsPhaseControlHostTests(unittest.TestCase):
     def test_real_router_and_controller_contract(self):
-        if CC is None:
-            self.skipTest("no host C compiler")
+        if CC is None or NM is None or OBJCOPY is None:
+            self.skipTest("no host compiler/binutils")
         BUILD.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=BUILD) as temporary:
             work = Path(temporary)
@@ -140,6 +143,8 @@ class DebugToolsPhaseControlHostTests(unittest.TestCase):
                 (TOOLS_SOURCE, "tools.o"),
                 (BM_SOURCE, "bm.o"),
                 (BMIO_SOURCE, "bmio.o"),
+                (CHAPTER_STATS_SOURCE, "chapter-stats.o"),
+                (GAMECONTROL_SOURCE, "gamecontrol.o"),
                 (AUTOPLAY_SOURCE, "autoplay.o"),
                 (DRIVER, "driver.o"),
             ):
@@ -172,6 +177,40 @@ class DebugToolsPhaseControlHostTests(unittest.TestCase):
                     0,
                     completed.stdout + completed.stderr,
                 )
+                if source in (BMIO_SOURCE, GAMECONTROL_SOURCE):
+                    preserved_symbols = {
+                        BMIO_SOURCE: {
+                            "EndBMapMain",
+                            "GameCtrl_DeclareCompletedChapter",
+                        },
+                        GAMECONTROL_SOURCE: {"GameControl_ChapterSwitch"},
+                    }[source]
+                    symbols = run([NM, "-g", "--defined-only", str(output)])
+                    self.assertEqual(
+                        symbols.returncode,
+                        0,
+                        symbols.stdout + symbols.stderr,
+                    )
+                    localize = [
+                        line.split()[-1]
+                        for line in symbols.stdout.splitlines()
+                        if line.split() and line.split()[-1] not in preserved_symbols
+                    ]
+                    completed = run(
+                        [
+                            OBJCOPY,
+                            *[
+                                f"--localize-symbol={symbol}"
+                                for symbol in localize
+                            ],
+                            str(output),
+                        ]
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stdout + completed.stderr,
+                    )
                 objects.append(output)
             executable = work / "phase-control-host"
             completed = run(
