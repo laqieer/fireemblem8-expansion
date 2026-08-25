@@ -274,6 +274,46 @@ class DebugToolsPhaseControlHostTests(unittest.TestCase):
             self.assertNotIn("DebugToolsPhaseControl", symbols.stdout)
             self.assertNotIn("sPhaseControlRequest", symbols.stdout)
 
+    def test_codeql_runtime_bounds_event_compile_resolves_transition_gate(self):
+        if CC is None:
+            self.skipTest("no host C compiler")
+
+        BUILD.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=BUILD) as temporary:
+            output = Path(temporary) / "event-runtime-bounds.o"
+            completed = run(
+                [
+                    CC,
+                    "-std=gnu11",
+                    "-DMODERN",
+                    "-I",
+                    str(ROOT / "include"),
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-Wno-unused-parameter",
+                    "-Wno-unused-variable",
+                    "-Wno-sequence-point",
+                    "-Wno-return-type",
+                    "-Wno-implicit-fallthrough",
+                    "-DNONMATCHING=1",
+                    "-Wno-int-to-pointer-cast",
+                    "-Wno-pointer-to-int-cast",
+                    "-Wno-tautological-compare",
+                    "-c",
+                    str(ROOT / "src" / "event.c"),
+                    "-o",
+                    str(output),
+                ]
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+
 
 class DebugToolsPhaseControlArmTests(unittest.TestCase):
     def test_arm_debug_budget_and_release_omission(self):

@@ -1,6 +1,8 @@
 #ifndef GUARD_BMIO_H
 #define GUARD_BMIO_H
 
+#include "expansion_debugtools.h"
+
 enum {
     BM_BGPAL_6 = 6,
     BM_BGPAL_TILESET_BASE = 7,
