@@ -66,16 +66,19 @@ _HOST_MODE_ARTIFACT_APIS = frozenset({"capture_live_or_skip", "modern_elf", "mod
 _HOST_MODE_ARTIFACT_ATTRIBUTES = frozenset({"LIVE_ARTIFACTS", "LIVE_ROMS"})
 _ARTIFACT_ACCESSORS = frozenset({"exists", "is_file", "open", "read_bytes", "read_text", "stat"})
 _ARTIFACT_SUFFIXES = (".elf", ".gba")
-
-def _literal_string(node):
+def _literal_string_tail(node):
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _literal_string_tail(node.right)
+    if isinstance(node, ast.JoinedStr):
+        for value in reversed(node.values):
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                return value.value
     return None
-
 def _has_artifact_suffix(node):
-    value = _literal_string(node)
+    value = _literal_string_tail(node)
     return value is not None and value.lower().endswith(_ARTIFACT_SUFFIXES)
-
 class _ArtifactDiscovery(ast.NodeVisitor):
     """Classify repository artifacts without relying on source spelling."""
 
@@ -84,26 +87,27 @@ class _ArtifactDiscovery(ast.NodeVisitor):
         self.function_depth, self.capture_mock_depth = 0, 0
         self.path_origins, self.generated_paths = {}, set()
         self.repository_owners, self.direct_capture_owners = {}, set()
+        self.module_io = set()
         self.direct_capture_records, self.method_calls = [], []
         self.function_parameters = {}
         self.host_mode_modules, self.gba_playtest_modules = set(), set()
         self.homebrew_modules, self.temporary_modules = set(), set()
         self.host_mode_symbols, self.gba_playtest_symbols = {}, {}
         self.homebrew_builders, self.temporary_factories = set(), set()
-
     def _owner(self):
         return self.class_stack[-1] if self.class_stack else "<module>"
-
     def _mark_repository(self, reason):
         self.repository_owners.setdefault(self._owner(), set()).add(reason)
-
+    def _mark_io(self, reason):
+        self._mark_repository(reason)
+        if self._owner() == "<module>" and self.function_depth == 0:
+            self.module_io.add(reason)
     def _origin_key(self, node):
         if isinstance(node, ast.Name):
             return (self._owner(), node.id)
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "self":
             return (self._owner(), f"self.{node.attr}")
         return None
-
     def _origin_for_key(self, key):
         if key is None:
             return (False, False, False, False)
@@ -111,7 +115,6 @@ class _ArtifactDiscovery(ast.NodeVisitor):
             key,
             self.path_origins.get(("<module>", key[1]), (False, False, False, False)),
         )
-
     @staticmethod
     def _qualified_symbol(node, modules, symbols):
         if isinstance(node, ast.Name):
@@ -119,10 +122,8 @@ class _ArtifactDiscovery(ast.NodeVisitor):
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in modules:
             return node.attr
         return None
-
     def _host_mode_symbol(self, node):
         return self._qualified_symbol(node, self.host_mode_modules, self.host_mode_symbols)
-
     def _is_temporary_factory(self, node):
         symbol = self._qualified_symbol(node.func, self.temporary_modules, {}) if isinstance(node, ast.Call) else None
         return (
@@ -133,7 +134,6 @@ class _ArtifactDiscovery(ast.NodeVisitor):
             or (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
                 and node.func.id in self.temporary_factories)
         )
-
     def _is_homebrew_builder(self, node):
         if not isinstance(node, ast.Call):
             return False
@@ -144,7 +144,6 @@ class _ArtifactDiscovery(ast.NodeVisitor):
             and node.func.value.id in self.homebrew_modules
             and node.func.attr == "build_homebrew_rom"
         )
-
     def _is_capture_mock(self, node):
         if not isinstance(node, ast.Call):
             return False
@@ -154,10 +153,9 @@ class _ArtifactDiscovery(ast.NodeVisitor):
             self._qualified_symbol(node.args[0], self.gba_playtest_modules, self.gba_playtest_symbols) is None
             and isinstance(node.args[0], ast.Name)
             and node.args[0].id in self.gba_playtest_modules
-            and _literal_string(node.args[1])
+            and _literal_string_tail(node.args[1])
             in {"_compiler_command", "build_backend", "capture", "subprocess"}
         )
-
     def _is_temporary_generated_path(self, node):
         key = self._origin_key(node)
         if key in self.generated_paths:
@@ -168,14 +166,12 @@ class _ArtifactDiscovery(ast.NodeVisitor):
                 for argument in node.args
             )
         return False
-
     def _contains_generated_path(self, node):
         return any(
             self._is_temporary_generated_path(candidate)
             for candidate in ast.walk(node)
             if isinstance(candidate, (ast.Name, ast.Call))
         )
-
     def _path_origin(self, node):
         if isinstance(node, ast.Name):
             if node.id == "REPO_ROOT":
@@ -258,7 +254,6 @@ class _ArtifactDiscovery(ast.NodeVisitor):
             return (False, False, False, True)
 
         return (False, False, False, False)
-
     def _remember_assignment(self, targets, value):
         origin = self._path_origin(value)
         for target in targets:
@@ -267,7 +262,6 @@ class _ArtifactDiscovery(ast.NodeVisitor):
                 self.path_origins[key] = origin
                 if self._contains_generated_path(value):
                     self.generated_paths.add(key)
-
     def visit_Module(self, node):
         self.temporary_factories = {
             function.name
@@ -280,7 +274,6 @@ class _ArtifactDiscovery(ast.NodeVisitor):
             )
         }
         self.generic_visit(node)
-
     def visit_Import(self, node):
         for alias in node.names:
             local = alias.asname or alias.name.split(".", 1)[0]
@@ -292,7 +285,6 @@ class _ArtifactDiscovery(ast.NodeVisitor):
                 self.homebrew_modules.add(local)
             elif alias.name == "tempfile":
                 self.temporary_modules.add(local)
-
     def visit_ImportFrom(self, node):
         for alias in node.names:
             local = alias.asname or alias.name
@@ -304,7 +296,6 @@ class _ArtifactDiscovery(ast.NodeVisitor):
                 self.homebrew_builders.add(local)
             elif node.module == "tempfile" and alias.name == "TemporaryDirectory":
                 self.temporary_modules.add(local)
-
     def visit_ClassDef(self, node):
         if self.function_depth:
             self.generic_visit(node)
@@ -312,7 +303,6 @@ class _ArtifactDiscovery(ast.NodeVisitor):
         self.class_stack.append(node.name)
         self.generic_visit(node)
         self.class_stack.pop()
-
     def _visit_function(self, node):
         key = (self._owner(), node.name)
         parameters = tuple(
@@ -329,44 +319,38 @@ class _ArtifactDiscovery(ast.NodeVisitor):
         self.generic_visit(node)
         self.function_depth -= 1
         self.function_stack.pop()
-
     def visit_FunctionDef(self, node):
         self._visit_function(node)
-
     def visit_AsyncFunctionDef(self, node):
         self._visit_function(node)
-
     def visit_Assign(self, node):
         self._remember_assignment(node.targets, node.value)
         self.generic_visit(node)
-
     def visit_AnnAssign(self, node):
         if node.value is not None:
             self._remember_assignment((node.target,), node.value)
         self.generic_visit(node)
-
     def visit_BinOp(self, node):
         rooted, artifact, _temporary, _dynamic = self._path_origin(node)
         if rooted and artifact:
             self._mark_repository("repository-path construction")
         self.generic_visit(node)
-
     def visit_Name(self, node):
         host_symbol = self._host_mode_symbol(node)
         if host_symbol in _HOST_MODE_ARTIFACT_ATTRIBUTES:
             self._mark_repository(f"host_mode.{host_symbol}")
-
     def visit_Attribute(self, node):
         host_symbol = self._host_mode_symbol(node)
         if host_symbol in _HOST_MODE_ARTIFACT_ATTRIBUTES:
             self._mark_repository(f"host_mode.{host_symbol}")
         self.generic_visit(node)
-
     def visit_Call(self, node):
         func = node.func
         host_symbol = self._host_mode_symbol(func)
         if host_symbol in _HOST_MODE_ARTIFACT_APIS:
             self._mark_repository(f"host_mode.{host_symbol}")
+            if host_symbol in {"capture_live_or_skip", "require_built_rom"}:
+                self._mark_io(f"host_mode.{host_symbol}")
 
         if self._is_homebrew_builder(node) and node.args:
             _rooted, _artifact, temporary, _dynamic = self._path_origin(node.args[0])
@@ -415,7 +399,7 @@ class _ArtifactDiscovery(ast.NodeVisitor):
                         node.args[0] if node.args else None,
                     )
                 )
-                self._mark_repository(
+                self._mark_io(
                     "environment-derived live capture"
                     if dynamic
                     else "direct gba_playtest.capture"
@@ -427,7 +411,7 @@ class _ArtifactDiscovery(ast.NodeVisitor):
             and node.args
             and self._path_origin(node.args[0])[1]
         ):
-            self._mark_repository("repository artifact open")
+            self._mark_io("repository artifact open")
 
         if (
             isinstance(func, ast.Attribute)
@@ -435,7 +419,7 @@ class _ArtifactDiscovery(ast.NodeVisitor):
         ):
             rooted, artifact, temporary, _dynamic = self._path_origin(func.value)
             if rooted and artifact and not temporary:
-                self._mark_repository(f"repository artifact {func.attr}")
+                self._mark_io(f"repository artifact {func.attr}")
 
         if (
             isinstance(func, ast.Attribute)
@@ -509,7 +493,7 @@ def _discover_artifacts(path, source=None):
     return visitor
 
 
-def _registered_owner_errors(module, owners, registered, guarded):
+def _registered_owner_errors(module, owners, registered, guarded, module_io=frozenset()):
     errors = []
     module_classes = {
         class_name for module_name, class_name in registered if module_name == module
@@ -518,7 +502,9 @@ def _registered_owner_errors(module, owners, registered, guarded):
         errors.append(f"{module}: repository artifact owner is not registered")
     for owner in owners:
         if owner == "<module>":
-            if any((module, class_name) not in guarded for class_name in module_classes):
+            if module_io:
+                errors.append(f"{module}: module-level artifact I/O is not guardable")
+            elif any((module, class_name) not in guarded for class_name in module_classes):
                 errors.append(f"{module}: module artifact owner lacks a central guard")
         elif (module, owner) not in registered:
             module_object = None
@@ -731,7 +717,7 @@ class HostOnlyClassificationTests(unittest.TestCase):
             discovery = _discover_artifacts(path)
             safe_capture_owners = discovery.direct_capture_owners - discovery.live_capture_owners
             owners = (set(discovery.repository_owners) - safe_capture_owners) | discovery.live_capture_owners
-            errors = _registered_owner_errors(path.stem, owners, registered, guarded)
+            errors = _registered_owner_errors(path.stem, owners, registered, guarded, discovery.module_io)
             with self.subTest(module=path.stem):
                 self.assertEqual(errors, [])
 
@@ -776,11 +762,27 @@ class EscapedLiveClass:
         gba_playtest.capture(rom, object())
         Path(REPO_ROOT, "fixture.elf").read_bytes()
         gba_playtest.capture(Path(os.environ["ROM"]), object())
+        (REPO_ROOT / f"{profile}.gba").read_bytes()
+        (REPO_ROOT / (name + ".elf")).stat()
 """,
         )
         self.assertEqual(direct_fixture.direct_capture_owners, {"EscapedLiveClass"})
         self.assertIn("environment-derived live capture", direct_fixture.repository_owners["EscapedLiveClass"])
         self.assertTrue(_registered_owner_errors("fixture", direct_fixture.repository_owners, set(), set()))
+
+        module_io_fixture = _discover_artifacts(
+            Path("fixture.py"),
+            'import host_mode as hm\nhm.modern_rom("release").read_bytes()\n',
+        )
+        self.assertTrue(
+            _registered_owner_errors(
+                "fixture",
+                module_io_fixture.repository_owners,
+                {("fixture", "Guarded")},
+                {("fixture", "Guarded")},
+                module_io_fixture.module_io,
+            )
+        )
 
         local_fixture = _discover_artifacts(
             Path("fixture.py"),

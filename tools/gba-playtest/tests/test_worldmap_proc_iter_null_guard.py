@@ -82,30 +82,41 @@ def _returns_before_next_iterator_call(instructions, start, iterator_calls):
     by_address = {address: index for index, (address, _mnemonic, _operands) in enumerate(instructions)}
     pending = [start]
     visited = set()
+    terminated = False
 
     while pending:
         address = pending.pop()
-        if address in visited or address in iterator_calls:
+        if address in iterator_calls:
+            return False
+        if address in visited:
             continue
         visited.add(address)
         index = by_address.get(address)
         if index is None:
-            continue
+            return False
         _address, mnemonic, operands = instructions[index]
         base = mnemonic.split(".", 1)[0]
         if base == "bx" or (base == "pop" and "pc" in operands):
-            return True
+            terminated = True
+            continue
 
         fallthrough = instructions[index + 1][0] if index + 1 < len(instructions) else None
         target = _branch_target(operands)
-        if base == "b" and target is not None:
+        if base in {"bl", "blx"}:
+            if fallthrough is not None:
+                pending.append(fallthrough)
+            else:
+                return False
+        elif base == "b" and target is not None:
             pending.append(target)
         elif base.startswith("b") and target is not None:
             pending.extend(value for value in (target, fallthrough) if value is not None)
         elif fallthrough is not None:
             pending.append(fallthrough)
+        else:
+            return False
 
-    return False
+    return terminated
 
 
 def _iterator_null_paths(text):
@@ -156,7 +167,7 @@ class ProcFindNextSourceGuardTests(unittest.TestCase):
             raise unittest.SkipTest("arm-none-eabi-gcc/objdump not available")
         with tempfile.TemporaryDirectory() as tmp:
             listings = []
-            for statement in ("break;", "continue;"):
+            for statement in ("break;", "continue;", "if (iter) break; continue;"):
                 source = Path(tmp) / f"{statement[:-1]}.c"
                 obj = source.with_suffix(".o")
                 source.write_text(
@@ -177,10 +188,13 @@ class ProcFindNextSourceGuardTests(unittest.TestCase):
 
         break_calls, break_paths = listings[0]
         continue_calls, continue_paths = listings[1]
+        mixed_calls, mixed_paths = listings[2]
         self.assertTrue(break_calls)
         self.assertEqual([exits for _address, exits in break_paths], [True])
         self.assertTrue(continue_calls)
         self.assertEqual([exits for _address, exits in continue_paths], [False])
+        self.assertTrue(mixed_calls)
+        self.assertEqual([exits for _address, exits in mixed_paths], [False])
 
 
 class ProcFindNextCodegenTests(unittest.TestCase):
