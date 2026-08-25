@@ -122,6 +122,23 @@ def _section_relocation_symbols(obj, section):
     }
 
 
+def _relocation_section_counts(obj, symbol):
+    if OBJDUMP is None:
+        raise unittest.SkipTest("no host 'objdump' available")
+    proc = subprocess.run([OBJDUMP, "-r", str(obj)], capture_output=True, text=True)
+    if proc.returncode:
+        raise AssertionError(proc.stdout + proc.stderr)
+    section = None
+    counts = {}
+    for line in proc.stdout.splitlines():
+        match = re.match(r"RELOCATION RECORDS FOR \[(.+)\]:", line)
+        if match:
+            section = match.group(1)
+        elif section is not None and symbol in line:
+            counts[section] = counts.get(section, 0) + 1
+    return counts
+
+
 def _section_is_all_zero(obj, section):
     if OBJDUMP is None:
         raise unittest.SkipTest("no host 'objdump' available")
@@ -324,6 +341,40 @@ class DangerOverlayProbeTests(unittest.TestCase):
                           "modern-disabled playerphase.o must emit the probe ewram_data")
             self.assertTrue(_section_is_all_zero(obj, "ewram_data"),
                             "modern-disabled probe (ewram_data) must be all-zero")
+
+    def test_probe_code_relocations_are_feature_gated(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, out, default_obj = _compile(
+                tmp,
+                PLAYERPHASE_SRC,
+                "pp_default_sections.o",
+                defines=[MODERN + "=1"],
+                extra=["-ffunction-sections"],
+            )
+            self.assertEqual(rc, 0, out)
+            rc, out, enabled_obj = _compile(
+                tmp,
+                PLAYERPHASE_SRC,
+                "pp_enabled_sections.o",
+                defines=[MODERN + "=1", FLAG + "=1"],
+                extra=["-ffunction-sections"],
+            )
+            self.assertEqual(rc, 0, out)
+
+            self.assertEqual(
+                _relocation_section_counts(default_obj, "gExpansionDangerOverlayProbe"),
+                {},
+                "default modern playerphase code must not access the always-defined probe",
+            )
+            self.assertEqual(
+                _relocation_section_counts(enabled_obj, "gExpansionDangerOverlayProbe"),
+                {
+                    ".text.PlayerPhase_DisplayDangerZone": 4,
+                    ".text.PlayerPhase_RangeDisplayIdle": 4,
+                },
+            )
 
     def test_legacy_like_build_emits_no_probe_and_no_ewram_orphan(self):
         """Standing anti-orphan regression (issue #6 Sprint 1 narrow fix): a
