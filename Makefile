@@ -478,7 +478,8 @@ include modern.mk
 include assets.mk
 
 # assets.mk is included after the simply-expanded CLEAN_DIRS assignment above.
-CLEAN_DIRS += $(ASSET_OUTPUT_DIR)
+# Remove every resolved-profile asset tree owned by this modern build root.
+CLEAN_DIRS += $(ASSET_PROFILE_ROOT)
 
 # Shared clean routine
 clean_common:
@@ -861,7 +862,7 @@ $(PREPROC): tools/preproc/preproc.cpp tools/preproc/Makefile
 	$(MAKE) -C tools/preproc
 
 $(DATA_SRC_C_OBJECTS): %.o: %.c $(PREPROC) $$(data_dep)
-	$(PREPROC) $< | $(CPP) $(CPPFLAGS) - | iconv -f UTF-8 -t CP932 | $(CC1) $(CC1FLAGS) -o $*.s
+	$(PREPROC) $(PREPROC_FLAGS) $< | $(CPP) $(CPPFLAGS) - | iconv -f UTF-8 -t CP932 | $(CC1) $(CC1FLAGS) -o $*.s
 	echo '.ALIGN 2, 0' >> $*.s
 ifeq ($(UNAME),Darwin)
 	$(SED) -f scripts/align_2_before_debug_section_for_osx.sed $*.s

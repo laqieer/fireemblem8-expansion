@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "soundTable": [
+    {
+      "id": "F1",
+      "song": "SONG_F1"
+    }
+  ]
+}

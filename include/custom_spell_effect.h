@@ -82,6 +82,10 @@ void CustomSpellEffect_Start(const struct CustomSpellEffect *effect, struct Anim
 bool8 CustomSpellEffect_Validate(const struct CustomSpellEffect *effect);
 bool8 CustomSpellEffect_IsActive(void);
 
+#if FE8_EXPANSION_MODERN_BUILD && FE8_EXPANSION_CUSTOM_SPELL_EFFECTS
+#include "custom_spell_effect_generated.h"
+#endif
+
 #if FE8_EXPANSION_MODERN_BUILD && FE8_EXPANSION_CUSTOM_SPELL_EFFECTS \
     && FE8_EXPANSION_DEBUG
 struct CustomSpellEffectDebugProbe

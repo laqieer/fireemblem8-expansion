@@ -134,6 +134,16 @@ owned by the generated-data platform. The TMX adapter deliberately reuses the
 ordinary map conversion path (`.mar` -> build-local `.bin` -> build-local
 `.lz`) after generating its canonical private inputs.
 
+The optional `custom-spell-effect` kind is documented in
+[`custom_spell_effects.md`](custom_spell_effects.md). It is the only kind whose
+presence is tied to `EXPANSION_CUSTOM_SPELL_EFFECTS`: a selected manifest
+record with the flag off fails, and the flag on requires at least one record.
+It emits build-local descriptors, per-frame canonical assets, the existing
+`gSpellAssocData` entry, dependency/provenance inventory, and configuration
+digests without adding a runtime parser or parallel item/effect table. The
+default root manifest remains custom-spell-free; the committed source-build
+proof is `assets/manifests/custom-spell-reference.json`.
+
 ## Adding a kind
 
 1. First add or update the asset family's row and ownership/capacity evidence
