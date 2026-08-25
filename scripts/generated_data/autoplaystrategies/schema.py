@@ -21,6 +21,7 @@ from ..chapterobjectives.schema import (
     KIND_TO_C,
     stable_id_value,
 )
+from ..chapterbundle import schema as chapterbundle_schema
 
 SCHEMA_NAME = "autoplaystrategies"
 SCHEMA_VERSION = 1
@@ -485,6 +486,18 @@ def validate(records, diagnostics, dependency_records=None,
 
         objective_record = objectives.get(chapter.chapter)
         groups = {group.id: group for group in objective_record.groups} if objective_record else {}
+        owner_unit_counts = {}
+        if len(owners) == 1:
+            owner_dependencies = chapterbundle_schema.resolve_bundle_dependencies(
+                owners[0],
+                diagnostics,
+            )
+            for unit_group in owner_dependencies.get("units", ()):
+                for unit in unit_group.units:
+                    if isinstance(unit.char_index, str):
+                        owner_unit_counts[unit.char_index] = (
+                            owner_unit_counts.get(unit.char_index, 0) + 1
+                        )
         objective_kinds = {
             objective.kind for objective in objective_record.objectives
         } if objective_record else set()
@@ -530,6 +543,18 @@ def validate(records, diagnostics, dependency_records=None,
                 validate_reference(assignment.character, characters, assignment.character_loc,
                                    assignment_ref + ".character", kind="character")
             )
+            if owner_unit_counts.get(assignment.character, 0) != 1:
+                diagnostics.add(
+                    _error(
+                        "assignment character '{}' resolves to {} unit definitions "
+                        "in the owning chapter data".format(
+                            assignment.character,
+                            owner_unit_counts.get(assignment.character, 0),
+                        ),
+                        assignment.character_loc,
+                        assignment_ref + ".character",
+                    )
+                )
             _validate_assignment(assignment, assignment_ref, strategy_ids, event_flags, diagnostics)
 
     for chapter_bundle in chapter_bundles:

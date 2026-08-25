@@ -118,7 +118,9 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
         self.assertNotIn("ExpansionAutoplayStrategy_Aggressive", output)
 
     def test_cli_default_omits_reference_profiles(self):
-        with tempfile.TemporaryDirectory(dir=os.path.join(REPO_ROOT, "build")) as temporary:
+        build_root = os.path.join(REPO_ROOT, "build")
+        os.makedirs(build_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
             temporary_path = Path(temporary)
             generated = temporary_path / "generated"
             inventory = temporary_path / "inventory.md"
@@ -180,6 +182,38 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
             any(
                 error.reference_path == "autoplayStrategies.source"
                 and "does not match the loaded strategy source" in error.message
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
+    def test_unit_assignment_must_resolve_once_in_owning_chapter_data(self):
+        records = schema.load_records(strategy_fixture("valid.json"))
+        dependencies = _dependency_records(records)
+        assignment = records["chapters"][0].unit_assignments[0]
+        assignment.character = "CHARACTER_EPHRAIM"
+        diagnostics = DiagnosticCollector()
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(
+            any(
+                "assignment character 'CHARACTER_EPHRAIM' resolves to 0" in error.message
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
+        records = schema.load_records(strategy_fixture("valid.json"))
+        dependencies = _dependency_records(records)
+        owner = dependencies["chapterbundle"].by_chapter["CHAPTER_L_2"][0]
+        owner.tables_by_name["units"].source = fixture_path(
+            "chapterobjectives",
+            "deps_units_duplicate_eirika.json",
+        )
+        diagnostics = DiagnosticCollector()
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(
+            any(
+                "assignment character 'CHARACTER_EIRIKA' resolves to 2" in error.message
                 for error in diagnostics.errors
             ),
             diagnostics.render(),
