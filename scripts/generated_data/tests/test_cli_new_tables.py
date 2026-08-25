@@ -1,8 +1,13 @@
+import json
 import os
+import shutil
 import unittest
 
 from scripts.generated_data.tests._util import fixture_path, scratch_dir
 from scripts.generated_data.tests.test_cli import run_cli
+
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 
 class CliUnitsTests(unittest.TestCase):
@@ -149,6 +154,188 @@ class CliChapterBundleTests(unittest.TestCase):
         ])
         self.assertEqual(code, 0, msg=out + err)
 
+    def test_cli_validates_declared_chapter_objectives_source_before_inventory(self):
+        with scratch_dir() as tmp:
+            with open(fixture_path("chapterbundle", "cli_valid.json"), encoding="utf-8") as handle:
+                bundle = json.load(handle)
+            objective_source = fixture_path("chapterobjectives", "valid.json")
+            bundle["chapterObjectives"] = {
+                "source": objective_source,
+                "symbols": ["ChapterObjectives_Fixture"],
+            }
+            valid_path = os.path.join(tmp, "bundle-with-objectives.json")
+            with open(valid_path, "w", encoding="utf-8") as handle:
+                json.dump(bundle, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", valid_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 0, msg=out + err)
+
+            stale = json.loads(json.dumps(bundle))
+            stale["chapterObjectives"]["symbols"] = ["ChapterObjectives_Stale"]
+            stale_path = os.path.join(tmp, "bundle-with-stale-objective.json")
+            with open(stale_path, "w", encoding="utf-8") as handle:
+                json.dump(stale, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", stale_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn("chapterObjectives.symbols[ChapterObjectives_Stale]", err)
+
+            missing = json.loads(json.dumps(bundle))
+            missing["chapterObjectives"]["source"] = os.path.join(tmp, "missing-objectives.json")
+            missing_path = os.path.join(tmp, "bundle-with-missing-objective.json")
+            with open(missing_path, "w", encoding="utf-8") as handle:
+                json.dump(missing, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", missing_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn("chapterObjectives.source", err)
+            self.assertIn("missing-objectives.json", err)
+
+            out_dir = os.path.join(tmp, "missing-objective-out")
+            inventory_path = os.path.join(tmp, "missing-objective.md")
+            code, out, err = run_cli([
+                "generate", "--table", "chapterbundle", "--source", missing_path,
+                "--out-dir", out_dir, "--inventory", inventory_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn("chapterObjectives.source", err)
+            self.assertFalse(os.path.exists(inventory_path))
+
+    def test_cli_directory_chapter_objectives_source_validates_and_generates(self):
+        with scratch_dir() as tmp:
+            with open(fixture_path("chapterbundle", "cli_valid.json"), encoding="utf-8") as handle:
+                bundle = json.load(handle)
+            objective_directory = os.path.join(tmp, "objective-sources")
+            os.mkdir(objective_directory)
+            source_directory = fixture_path("chapterobjectives", "source_identity_objectives")
+            for name in ("a_objectives.json", "b_objectives.json"):
+                shutil.copyfile(
+                    os.path.join(source_directory, name),
+                    os.path.join(objective_directory, name),
+                )
+            bundle["chapterObjectives"] = {
+                "source": objective_directory,
+                "symbols": ["ChapterObjectives_SourceA"],
+            }
+            valid_path = os.path.join(tmp, "bundle-with-objective-directory.json")
+            with open(valid_path, "w", encoding="utf-8") as handle:
+                json.dump(bundle, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", valid_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 0, msg=out + err)
+
+            out_dir = os.path.join(tmp, "out")
+            inventory_path = os.path.join(tmp, "inventory.md")
+            code, out, err = run_cli([
+                "generate", "--table", "chapterbundle", "--source", valid_path,
+                "--out-dir", out_dir, "--inventory", inventory_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 0, msg=out + err)
+            self.assertTrue(os.path.exists(inventory_path))
+            with open(inventory_path, encoding="utf-8") as handle:
+                inventory = handle.read()
+            self.assertIn("a_objectives.json, ", inventory)
+            self.assertIn("b_objectives.json", inventory)
+
+            undeclared = json.loads(json.dumps(bundle))
+            undeclared["chapterObjectives"]["symbols"] = []
+            undeclared_path = os.path.join(tmp, "bundle-with-undeclared-objective.json")
+            with open(undeclared_path, "w", encoding="utf-8") as handle:
+                json.dump(undeclared, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", undeclared_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn("contains chapter 'CHAPTER_L_2' symbol 'ChapterObjectives_SourceA'", err)
+
+            mismatch = json.loads(json.dumps(bundle))
+            mismatch["chapterObjectives"]["symbols"] = ["ChapterObjectives_SourceB"]
+            mismatch_path = os.path.join(tmp, "bundle-with-objective-member-mismatch.json")
+            with open(mismatch_path, "w", encoding="utf-8") as handle:
+                json.dump(mismatch, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", mismatch_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn("chapterObjectives.symbols[ChapterObjectives_SourceB]", err)
+
+    def test_custom_bundle_cli_uses_declared_sources_for_file_and_directory_inputs(self):
+        with scratch_dir() as tmp:
+            source = fixture_path("chapterbundle", "cli_valid.json")
+            with open(source, encoding="utf-8") as handle:
+                bundle = json.load(handle)
+
+            bundle_path = os.path.join(tmp, "custom_bundle.json")
+            with open(bundle_path, "w", encoding="utf-8") as handle:
+                json.dump(bundle, handle)
+
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", bundle_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 0, msg=out + err)
+
+            bundle_dir = os.path.join(tmp, "bundles")
+            os.mkdir(bundle_dir)
+            directory_bundle = os.path.join(bundle_dir, "custom_bundle.json")
+            shutil.copyfile(bundle_path, directory_bundle)
+            direct_out = os.path.join(tmp, "direct")
+            direct_inventory = os.path.join(tmp, "direct.md")
+            directory_out = os.path.join(tmp, "directory")
+            directory_inventory = os.path.join(tmp, "directory.md")
+            for bundle_source, out_dir, inventory in (
+                (bundle_path, direct_out, direct_inventory),
+                (bundle_dir, directory_out, directory_inventory),
+            ):
+                code, out, err = run_cli([
+                    "generate", "--table", "chapterbundle", "--source", bundle_source,
+                    "--out-dir", out_dir, "--inventory", inventory, "--no-roundtrip",
+                ])
+                self.assertEqual(code, 0, msg=out + err)
+            with open(direct_inventory, encoding="utf-8") as handle:
+                direct_report = handle.read()
+            with open(directory_inventory, encoding="utf-8") as handle:
+                directory_report = handle.read()
+            direct_source = os.path.relpath(bundle_path, REPO_ROOT).replace(os.sep, "/")
+            directory_source = os.path.relpath(directory_bundle, REPO_ROOT).replace(os.sep, "/")
+            self.assertIn("`{}`".format(direct_source), direct_report)
+            self.assertIn("`{}`".format(directory_source), directory_report)
+            self.assertEqual(
+                direct_report.replace(direct_source, directory_source),
+                directory_report,
+            )
+
+            for field, source_key, expected_path in (
+                ("tables.units", ("tables", "units", "source"), "tables.units.source"),
+                ("supportOwners", ("supportOwners", "source"), "supportOwners.source"),
+            ):
+                bad_bundle = json.loads(json.dumps(bundle))
+                cursor = bad_bundle
+                for key in source_key[:-1]:
+                    cursor = cursor[key]
+                cursor[source_key[-1]] = os.path.join(tmp, "missing-{}.json".format(field))
+                bad_path = os.path.join(tmp, "missing-{}.json".format(field))
+                with open(bad_path, "w", encoding="utf-8") as handle:
+                    json.dump(bad_bundle, handle)
+                code, out, err = run_cli([
+                    "validate", "--table", "chapterbundle", "--source", bad_path, "--no-roundtrip",
+                ])
+                self.assertEqual(code, 1)
+                self.assertIn(expected_path, err)
+
+                bad_out = os.path.join(tmp, "bad-{}".format(field))
+                bad_inventory = os.path.join(tmp, "bad-{}.md".format(field))
+                code, out, err = run_cli([
+                    "generate", "--table", "chapterbundle", "--source", bad_path,
+                    "--out-dir", bad_out, "--inventory", bad_inventory, "--no-roundtrip",
+                ])
+                self.assertEqual(code, 1)
+                self.assertIn(expected_path, err)
+                self.assertFalse(os.path.exists(bad_inventory))
+
     def test_generate_skips_c_output_for_metadata_only_table(self):
         with scratch_dir() as tmp:
             out_dir = os.path.join(tmp, "out")
@@ -189,6 +376,62 @@ class CliChapterBundleTests(unittest.TestCase):
             code, out, err = run_cli(["check"] + common)
             self.assertEqual(code, 1)
             self.assertIn("DRIFT", err)
+
+
+class CliChapterObjectivesTests(unittest.TestCase):
+    def test_validate_real_default_source_passes(self):
+        code, out, err = run_cli(["validate", "--table", "chapterobjectives"])
+        self.assertEqual(code, 0, msg=out + err)
+
+    def test_validate_fixture_and_invalid_dependency_diagnostics(self):
+        code, out, err = run_cli([
+            "validate", "--table", "chapterobjectives",
+            "--source", fixture_path("chapterobjectives", "valid.json"),
+            "--no-roundtrip",
+            "--dep-source",
+            "chapterbundle={}".format(fixture_path("chapterobjectives", "ch2_bundle.json")),
+        ])
+        self.assertEqual(code, 0, msg=out + err)
+
+        code, out, err = run_cli([
+            "validate", "--table", "chapterobjectives",
+            "--source", fixture_path("chapterobjectives", "missing_dependency.json"),
+            "--no-roundtrip",
+            "--dep-source",
+            "chapterbundle={}".format(fixture_path("chapterobjectives", "ch2_bundle.json")),
+        ])
+        self.assertEqual(code, 1)
+        self.assertIn("missing_dependency.json", err)
+        self.assertIn("is used by this chapter objective bundle", err)
+
+    def test_validate_multiple_chapters_with_indexed_bundle_owners(self):
+        code, out, err = run_cli([
+            "validate", "--table", "chapterobjectives",
+            "--source", fixture_path("chapterobjectives", "two_chapters.json"),
+            "--no-roundtrip",
+            "--dep-source",
+            "units={}".format(fixture_path("chapterobjectives", "deps_units_two_chapters.json")),
+            "--dep-source",
+            "chapterbundle={}".format(fixture_path("chapterobjectives", "two_chapter_bundles")),
+        ])
+        self.assertEqual(code, 0, msg=out + err)
+        self.assertIn("2 record(s)", out)
+
+    def test_rejects_owner_with_an_unrelated_objective_source(self):
+        code, out, err = run_cli([
+            "validate", "--table", "chapterobjectives",
+            "--source", fixture_path("chapterobjectives", "unrelated_objectives.json"),
+            "--no-roundtrip",
+            "--dep-source",
+            "chapterbundle={}".format(fixture_path("chapterobjectives", "ch2_bundle.json")),
+        ])
+        self.assertEqual(code, 1)
+        self.assertIn("chapterObjectives.source", err)
+        self.assertIn("unrelated_objectives.json", err)
+
+    def test_check_real_default_source_has_no_drift(self):
+        code, out, err = run_cli(["check", "--table", "chapterobjectives"])
+        self.assertEqual(code, 0, msg=out + err)
 
 
 class CliItemsTests(unittest.TestCase):

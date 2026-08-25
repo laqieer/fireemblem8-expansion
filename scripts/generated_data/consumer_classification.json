@@ -2181,6 +2181,18 @@
       "category": "lookup-table",
       "reason": null
     },
+    "include/expansion_chapter_objectives.h|struct-field|chapter|ExpansionChapterObjectiveBundle.chapterId": {
+      "category": "lookup-table",
+      "reason": null
+    },
+    "tools/gba-playtest/tests/test_chapter_objectives.py|tool-symbol|item|inventory": {
+      "category": "reviewed-exclusion",
+      "reason": "Temporary generated-data inventory path used only by the host test; it is not an item ID consumer."
+    },
+    "tools/gba-playtest/run_chapter_objective_checks.py|tool-symbol|event|OBJECTIVE_FIXTURE_EVENT_ID": {
+      "category": "reviewed-exclusion",
+      "reason": "Stable test-only objective hash used to verify generated telemetry, not an event ID consumer."
+    },
     "include/expansion_bgm.h|struct-field|character|ExpansionBgmActionSelector.characterId": {
       "category": "lookup-table",
       "reason": null
@@ -4444,10 +4456,6 @@
     "tools/gba-playtest/tests/test_debugtools_registry.py|tool-symbol|chapter|test_selector_default_and_commit_are_chapter4": {
       "category": "reviewed-exclusion",
       "reason": "a unittest method name describing a fixed regression assertion, not a runtime/generated-data chapter ID consumer"
-    },
-    "tools/gba-playtest/tests/test_expansion_starter_content.py|tool-symbol|item|test_no_raw_numeric_content_item_id": {
-      "category": "reviewed-exclusion",
-      "reason": "a unittest method NAME in a host test, not an ID consumer: the test asserts that no raw numeric item ID literal appears in the issue #6 sources, so it stores no ID and is never indexed by one"
     }
   },
   "schema_version": 1

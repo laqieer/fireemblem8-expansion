@@ -127,6 +127,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - reports/dump_resources_list.md | laqieer | historical | Point-in-time per-symbol dump/ resource classification table
 - reports/generated_data_manifest.md | laqieer | generated | Auto-generated generated-data platform table/record manifest
 - reports/generated_data_bundle_inventory.md | laqieer | generated | Auto-generated chapterbundle table inventory
+- reports/generated_data_chapterobjectives_inventory.md | laqieer | generated | Auto-generated chapterobjectives table inventory
 - reports/generated_data_characters_inventory.md | laqieer | generated | Auto-generated characters table inventory
 - reports/generated_data_classes_inventory.md | laqieer | generated | Auto-generated classes table inventory
 - reports/generated_data_eventlists_inventory.md | laqieer | generated | Auto-generated eventlists table inventory

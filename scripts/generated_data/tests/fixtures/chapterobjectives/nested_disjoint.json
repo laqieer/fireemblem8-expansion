@@ -1,0 +1,48 @@
+{
+  "$schema": "fe8.chapterobjectives.v1",
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "ChapterObjectives_NestedDisjoint",
+      "aiGroups": [],
+      "objectives": [
+        {
+          "id": "OBJECTIVE_DISJOINT_EVENT",
+          "kind": "event_flag",
+          "eventFlag": "EVFLAG_BATTLE_QUOTES"
+        },
+        {
+          "id": "OBJECTIVE_DISJOINT_CHILD",
+          "kind": "protect",
+          "protectedCharacter": "CHARACTER_EIRIKA",
+          "completionObjective": "OBJECTIVE_DISJOINT_EVENT",
+          "deactivationFlag": "EVFLAG_GAMEOVER",
+          "failureFlag": "EVFLAG_5",
+          "completionFlag": "EVFLAG_BGM_CHANGE"
+        },
+        {
+          "id": "OBJECTIVE_DISJOINT_ROOT",
+          "kind": "protect",
+          "protectedCharacter": "CHARACTER_EIRIKA",
+          "completionObjective": "OBJECTIVE_DISJOINT_CHILD",
+          "deactivationFlag": "EVFLAG_OBJWINDOW_DISABLE",
+          "failureFlag": "EVFLAG_DEFEAT_BOSS",
+          "completionFlag": "EVFLAG_WIN"
+        }
+      ],
+      "dependencies": {
+        "characters": ["CHARACTER_EIRIKA"],
+        "eventFlags": [
+          "EVFLAG_BATTLE_QUOTES",
+          "EVFLAG_GAMEOVER",
+          "EVFLAG_5",
+          "EVFLAG_BGM_CHANGE",
+          "EVFLAG_OBJWINDOW_DISABLE",
+          "EVFLAG_DEFEAT_BOSS",
+          "EVFLAG_WIN"
+        ],
+        "unitGroups": ["UnitDef_Event_Ch2Ally"]
+      }
+    }
+  ]
+}

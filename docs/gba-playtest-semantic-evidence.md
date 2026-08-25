@@ -45,14 +45,14 @@ hook fail without relying on comments or implementation spelling.
 
 The original `b20b060a` reports were stale, so this issue recorded their
 directly derived refresh. This is not a no-budget-change claim. After the
-normal merge of `dd46367e`, #124 remains the current localization owner:
-debug emits all 129 stable messages (index 4482, strings 11087) while release
-emits 120, omits the nine debug-only payloads, and retains the #159
-index/string values below.
+normal merges through `f65fe22b`, #124 remains the localization owner: debug
+emits all 129 stable messages (index 4482, strings 11087), while release emits
+120 and omits nine debug-only payloads. The latest generated reports also
+include #89 objective telemetry at 260424 debug / 259076 release EWRAM.
 
 | Owner | Old -> new | Provenance |
 | --- | ---: | --- |
-| Debug EWRAM | 260320 -> 260336 occupied (+16); 1824 -> 1808 free | PR #147 added the debug-only 6-byte `sSelectorState` after the previous report owner; linker section placement/alignment produces the measured +16 region delta. Release EWRAM remains 259056 occupied. |
+| Debug EWRAM | 260320 -> 260336 occupied (+16); 1824 -> 1808 free | PR #147 added the debug-only 6-byte `sSelectorState` after the previous report owner; linker section placement/alignment produced the measured +16 original delta. Later master-owned values are recorded above. |
 | Source catalog | 112 -> 120 messages; index 3904 -> 4176 (+272); strings 9094 -> 10183 (+1089) | The eight compact locale-name records were already merged by `b8a31859` (en/qps-ploc), `6a2c6eb4` (ja/zh-Hans), and `cae24675` (fr/de/es/it). |
 | Linked catalog | message-ID table 224 -> 240 (+16); eight string tables 3584 -> 3840 (+256) | Regeneration from those same parsed registry entries adds one `u16` ID and one pointer per locale for each of eight messages. |
 | Scratch/glyph report | maximum slot 33 -> 63; headroom 63 -> 33; glyphs 362 -> 396 | Direct output of the current catalog generator; the fixed scratch budget remains 96 and has positive headroom. |

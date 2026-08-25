@@ -1,0 +1,25 @@
+{
+  "$schema": "fe8.chapterobjectives.v1",
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "ChapterObjectives_Contradiction",
+      "aiGroups": [],
+      "objectives": [
+        {
+          "id": "OBJECTIVE_CONTRADICTION",
+          "kind": "event_flag",
+          "eventFlag": "EVFLAG_BATTLE_QUOTES",
+          "deactivationFlag": "EVFLAG_BATTLE_QUOTES"
+        }
+      ],
+      "dependencies": {
+        "characters": [],
+        "eventFlags": [
+          "EVFLAG_BATTLE_QUOTES"
+        ],
+        "unitGroups": []
+      }
+    }
+  ]
+}

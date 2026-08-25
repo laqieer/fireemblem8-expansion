@@ -1,0 +1,32 @@
+{
+  "$schema": "fe8.chapterobjectives.v1",
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "ChapterObjectives_MissingDependency",
+      "aiGroups": [
+        {
+          "id": "AI_GROUP_MISSING_DEPENDENCY",
+          "members": [
+            {
+              "character": "CHARACTER_EIRIKA",
+              "unitGroup": "UnitDef_Event_Ch2Ally"
+            }
+          ]
+        }
+      ],
+      "objectives": [
+        {
+          "id": "OBJECTIVE_MISSING_DEPENDENCY",
+          "kind": "event_flag",
+          "eventFlag": "EVFLAG_BATTLE_QUOTES"
+        }
+      ],
+      "dependencies": {
+        "characters": [],
+        "eventFlags": [],
+        "unitGroups": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "fe8.chapterobjectives.v1",
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_3",
+      "symbol": "ChapterObjectives_SourceB",
+      "aiGroups": [],
+      "objectives": [],
+      "dependencies": {
+        "characters": [],
+        "eventFlags": [],
+        "unitGroups": []
+      }
+    }
+  ]
+}

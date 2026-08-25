@@ -1,0 +1,79 @@
+{
+  "$schema": "fe8.chapterobjectives.v1",
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "ChapterObjectives_Fixture",
+      "aiGroups": [
+        {
+          "id": "AI_GROUP_FIXTURE_EIRIKA",
+          "members": [
+            {
+              "character": "CHARACTER_EIRIKA",
+              "unitGroup": "UnitDef_Event_Ch2Ally"
+            }
+          ]
+        }
+      ],
+      "objectives": [
+        {
+          "id": "OBJECTIVE_FIXTURE_EVENT",
+          "kind": "event_flag",
+          "eventFlag": "EVFLAG_BATTLE_QUOTES"
+        },
+        {
+          "id": "OBJECTIVE_FIXTURE_REACH",
+          "kind": "reach_area",
+          "group": "AI_GROUP_FIXTURE_EIRIKA",
+          "area": {
+            "xMin": 0,
+            "yMin": 0,
+            "xMax": 3,
+            "yMax": 3
+          }
+        },
+        {
+          "id": "OBJECTIVE_FIXTURE_DEFEAT",
+          "kind": "defeat_group",
+          "group": "AI_GROUP_FIXTURE_EIRIKA",
+          "activationFlag": "EVFLAG_BATTLE_QUOTES"
+        },
+        {
+          "id": "OBJECTIVE_FIXTURE_HOLD",
+          "kind": "hold_until_turn",
+          "group": "AI_GROUP_FIXTURE_EIRIKA",
+          "untilTurn": 2,
+          "failureFlag": "EVFLAG_5",
+          "area": {
+            "xMin": 0,
+            "yMin": 0,
+            "xMax": 3,
+            "yMax": 3
+          }
+        },
+        {
+          "id": "OBJECTIVE_FIXTURE_PROTECT",
+          "kind": "protect",
+          "protectedCharacter": "CHARACTER_EIRIKA",
+          "completionObjective": "OBJECTIVE_FIXTURE_EVENT",
+          "failureFlag": "EVFLAG_DEFEAT_BOSS",
+          "completionFlag": "EVFLAG_WIN"
+        }
+      ],
+      "dependencies": {
+        "characters": [
+          "CHARACTER_EIRIKA"
+        ],
+        "eventFlags": [
+          "EVFLAG_DEFEAT_BOSS",
+          "EVFLAG_5",
+          "EVFLAG_WIN",
+          "EVFLAG_BATTLE_QUOTES"
+        ],
+        "unitGroups": [
+          "UnitDef_Event_Ch2Ally"
+        ]
+      }
+    }
+  ]
+}

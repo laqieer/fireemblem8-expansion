@@ -256,6 +256,78 @@ claim balance, or prove arbitrary chapter completion. Explicit
 `controller_exhausted` telemetry must come from the controller/objective
 contract being tested and is not inferred from inactivity.
 
+## TC-AUTOPLAY-OBJECTIVE-001: Typed authored objective lifecycle
+
+- **Feature / originating issue:** `typed-chapter-autoplay-objectives` /
+  [#89](https://github.com/laqieer/fireemblem8-expansion/issues/89).
+- **Supported configuration or artifact:** default generated-data source and
+  an isolated generated Chapter 2 fixture profile; modern AAPCS debug ROMs
+  for the unchanged-chapter bounded negative and the authored Suspend/Resume
+  positive.
+- **Prerequisites and clean starting state:** repository root, Python 3, host
+  C compiler, modern ARM toolchain, and libmGBA for the runtime negative. Do
+  not reuse a save or savestate. The fixture output is build-local.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.generated_data.tests.test_chapterobjectives_schema scripts.generated_data.tests.test_chapterbundle_schema scripts.generated_data.tests.test_cli_new_tables.CliChapterObjectivesTests -v`.
+2. Run `python3 -m unittest tools.gba-playtest.tests.test_chapter_objectives -v`.
+3. Run
+   `make expansion-modern-chapter-objectives-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+
+### Expected result
+
+The generated fixture resolves every initial generic kind: a known event
+objective transitions pending -> success with progress 0 -> 1 after its
+existing event flag is set; a real Chapter 2 group moves from reach progress
+0 -> 1; defeating its protected unit produces a protect failure and a
+defeat-group success. Leaving a hold rectangle latches its declared existing
+failure flag, so re-entering before its deadline remains failure. The
+evaluator publishes those known states and stable IDs through a test-only
+profile probe. Resetting transient telemetry and refreshing it reproduces the
+same live state, proving no objective lifecycle state is hidden outside
+chapter units, flags, and turn state.
+
+The bounded debug ROM negative follows #86's default PLAYER route. Its one
+terminal checkpoint is `max_frames` and all four objective telemetry words
+are zero: no existing chapter was opted into an objective/group bundle. The
+isolated fixture profile links the same valid generated records used by the
+host evaluator and replays the ordinary Chapter 2 Map Menu Suspend,
+soft-reset, and Resume path. It observes a non-inactive authored objective
+before the real `WriteSuspendSave`, then requires all four recomputed
+telemetry words to match after the real `ReadSuspendSave`; no objective state
+is serialized.
+
+### Negative controls
+
+Empty or oversized groups, duplicate IDs, unknown/mismatched
+chapter-unit/character references (including a unit group owned by another
+chapter), invalid rectangles or turns, missing or stale dependency
+declarations, contradictory flags, protect cycles, and an unreachable
+chapter-bundle symbol fail with source locations and JSON breadcrumbs.
+Kind-specific unused fields, invalid non-ASCII stable IDs, and a protect
+objective that completes by defeating its protected unit also fail closed.
+The host reset/reconstruction assertion and the real fixture
+Suspend/Resume route both clear only transient telemetry, then derive the
+same state without serializing an objective field; a hold's already-set
+existing failure flag remains the explicit persistent failure state.
+
+### Interactions and save compatibility
+
+The table depends on #85/#86 telemetry only as an ELF-probe consumer and
+uses existing generated-data, chapter-bundle, `UnitDefinition`, and event
+flag/helper seams. It conflicts with a second manifest, router, event
+language, strategy policy, or save field; none is present. Existing chapters
+without records stay inactive. No save bytes, preference, migration,
+compatibility epoch, localization ID, or configuration identity changes.
+
+### Cleanup and limitations
+
+The host test removes its repository-local temporary fixture. Use
+`make clean_fast` only to remove ignored build artifacts. This case does not
+prove strategy quality, balance, a project route, recruitment/village/chest
+policy, player-facing text, or a general expression language.
 ## TC-AUTOPLAY-ACCEL-001: Accelerated-fidelity equivalence
 
 - **Feature / originating issue:** `accelerated-fidelity-harness` /
@@ -279,8 +351,7 @@ contract being tested and is not inferred from inactivity.
 
 ### Actions
 
-1. Run
-   `python3 tools/gba-playtest/tests/test_accelerated_fidelity.py -v`.
+1. Run `python3 tools/gba-playtest/tests/test_accelerated_fidelity.py -v`.
 2. Run
    `make expansion-modern-autoplay-accelerated-fidelity-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
 3. Inspect

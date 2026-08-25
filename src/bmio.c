@@ -30,6 +30,7 @@
 #include "bm.h"
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_autoplay_internal.h"
+#include "expansion_chapter_objectives.h"
 #endif
 #include "bmsave.h"
 #include "bmlib.h"
@@ -156,6 +157,9 @@ PROC_LABEL(0),
     PROC_CALL(PutUnitSpritesOam),
     PROC_CALL(WfxUpdate),
     PROC_CALL(UpdateBmMapDisplay),
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
+    PROC_CALL(ExpansionChapterObjectives_RefreshTelemetry),
+#endif
 
     PROC_SLEEP(0),
     PROC_GOTO(0)
@@ -986,6 +990,9 @@ void StartBattleMap(struct GameCtrlProc* gameCtrl) {
     DebugToolsPhaseControl_Reset();
 #endif
 #endif
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
+    ExpansionChapterObjectives_ResetTelemetry();
+#endif
 
     SetupBackgrounds(NULL);
 
@@ -1060,6 +1067,9 @@ void RestartBattleMap(void) {
     DebugToolsPhaseControl_Reset();
 #endif
 #endif
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
+    ExpansionChapterObjectives_ResetTelemetry();
+#endif
 
     SetupBackgrounds(NULL);
 
@@ -1110,6 +1120,9 @@ void GameCtrl_StartResumedGame(struct GameCtrlProc* gameCtrl) {
     DebugToolsPhaseControl_Reset();
 #endif
 #endif
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
+    ExpansionChapterObjectives_ResetTelemetry();
+#endif
 
     if (gPlaySt.chapterIndex == 0x7F) // TODO: CHAPTER_SPECIAL enum?
         ReadExtraMapInfo();
@@ -1135,6 +1148,9 @@ void GameCtrl_StartResumedGame(struct GameCtrlProc* gameCtrl) {
     gBmSt.just_resumed = true;
 
     mapMain = StartBMapMain(gameCtrl);
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
+    ExpansionChapterObjectives_OnBeginningEventsComplete();
+#endif
 
     gBmSt.camera.x = GetCameraCenteredX(16 * gBmSt.playerCursor.x);
     gBmSt.camera.y = GetCameraCenteredY(16 * gBmSt.playerCursor.y);
@@ -1237,6 +1253,9 @@ void EndBMapMain(void) {
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
     DebugToolsPhaseControl_Reset();
 #endif
+#endif
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
+    ExpansionChapterObjectives_ResetTelemetry();
 #endif
 
     Proc_EndEachMarked(PROC_MARK_DISP);
