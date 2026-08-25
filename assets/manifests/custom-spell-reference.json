@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "CH2_MAIN_MAP",
+      "kind": "tiled-tmx-map-layout",
+      "sources": [
+        "assets/tmx/Ch2Map.tmx"
+      ],
+      "dependsOn": [],
+      "options": {
+        "format": "tmx-safe-v1",
+        "compression": "lz77",
+        "layer": "Main",
+        "tilesetId": "fe8-metatiles-16px-4096"
+      },
+      "ownership": {
+        "seam": "chapter-data-asset-table",
+        "tableSource": "src/data/data_8B363C.c",
+        "chapterSettings": "src/data/chapter_settings.json",
+        "chapterSettingsIndex": 2,
+        "mainLayerId": 11,
+        "symbol": "Ch2Map",
+        "consumer": "GetChapterMapPointer"
+      },
+      "resources": {
+        "mapWidth": 15,
+        "mapHeight": 15,
+        "mapBufferBytes": 2048
+      },
+      "provenance": {
+        "origin": "repository extraction migrated to a project-owned TMX layout",
+        "license": "Repository provenance is recorded separately; this field is not legal clearance.",
+        "modifications": "TMX GIDs preserve the prior Chapter 2 metatile payload.",
+        "tools": [
+          "Tiled 1.10.x optional authoring boundary"
+        ]
+      }
+    },
+    {
+      "id": "LORM_SP1_PROOF",
+      "kind": "battle-animation-package",
+      "sources": [
+        "assets/banim/lorm_sp1/package.json",
+        "assets/banim/lorm_sp1/script.txt",
+        "graphics/banim/banim_lorm_sp1_sheet_0.png"
+      ],
+      "dependsOn": [],
+      "options": {
+        "format": "community-text-png-v1"
+      },
+      "ownership": {
+        "seam": "battle-animation-table",
+        "tableSource": "src/banim_data.c",
+        "classData": "src/data/classes.json",
+        "linkerScript": "linker_script_banim.txt",
+        "consumer": "GetBattleAnimationId"
+      },
+      "resources": {
+        "romBytes": 32768,
+        "objVramBytes": 32768,
+        "oamEntries": 32,
+        "paletteColors": 16
+      },
+      "provenance": {
+        "origin": "existing repository animation used as a package-adapter proof",
+        "license": "Repository provenance is recorded separately; this field is not legal clearance.",
+        "modifications": "metadata and script only; no art or runtime data changed",
+        "tools": [
+          "scripts.assets v1"
+        ]
+      }
+    },
+    {
+      "id": "EIRIKA_FORMATTED_PORTRAIT",
+      "kind": "formatted-portrait-package",
+      "sources": [
+        "assets/portraits/eirika/eirika.png",
+        "assets/portraits/eirika/metadata.json",
+        "assets/portraits/eirika/eirika.pal"
+      ],
+      "dependsOn": [],
+      "options": {
+        "format": "fe7-fe8-formatted-png",
+        "adapterVersion": 1,
+        "jascSidecar": true
+      },
+      "ownership": {
+        "seam": "portrait-data-table",
+        "tableSource": "src/portrait_data.c",
+        "registrySource": "assets/portrait_registry.json",
+        "portraitId": 2,
+        "symbol": "Eirika",
+        "consumer": "GetPortraitData"
+      },
+      "resources": {
+        "sheetWidth": 128,
+        "sheetHeight": 112,
+        "paletteColors": 16,
+        "mainBytes": 2880,
+        "minimugBytes": 512,
+        "eyeFrameBytes": 256,
+        "mouthFrameBytes": 256
+      },
+      "provenance": {
+        "origin": "repository-owned migration proof from the existing Eirika portrait",
+        "license": "Repository provenance is recorded separately; this field is not legal clearance.",
+        "modifications": "formatted-sheet structural migration; runtime components are explicit aliases",
+        "tools": [
+          "python3 standard library"
+        ]
+      }
+    },
+    {
+      "id": "CUSTOM_SPELL_REFERENCE",
+      "kind": "custom-spell-effect",
+      "sources": [
+        "graphics/custom_spell/reference/spell.json",
+        "graphics/custom_spell/reference/animation.txt",
+        "graphics/custom_spell/reference/images/reference_obj_00.png",
+        "graphics/custom_spell/reference/images/reference_bg_00.png",
+        "graphics/custom_spell/reference/images/reference_obj_01.png",
+        "graphics/custom_spell/reference/images/reference_bg_01.png"
+      ],
+      "dependsOn": [],
+      "options": {
+        "importFormat": "feditor-magic-v1",
+        "runtimeAbi": 1,
+        "compression": "lz77"
+      },
+      "ownership": {
+        "seam": "spell-effect-dispatch",
+        "item": "ITEM_ANIMA_FORBLAZE",
+        "effectSymbol": "CUSTOM_SPELL_REFERENCE",
+        "fallbackVanillaEffect": "SASSOC_EFX_Fire",
+        "spellAssociationSource": "src/spellassoc-data.c"
+      },
+      "resources": {
+        "frames": 2,
+        "totalFrames": 4,
+        "hitFrame": 2,
+        "objBytes": 4096,
+        "bgBytes": 1280,
+        "bgTsaBytes": 1200,
+        "objOamEntries": 2,
+        "objPalettes": 1,
+        "bgPalettes": 1,
+        "soundEvents": 1,
+        "romBytes": 262144
+      },
+      "provenance": {
+        "origin": "synthetic project-owned custom spell reference package",
+        "license": "Repository project source; no external editor patch or ROM data.",
+        "modifications": "Created as the issue #78 deterministic adapter/runtime proof.",
+        "tools": [
+          "Python 3 standard library",
+          "scripts.assets custom-spell-effect v1"
+        ]
+      }
+    }
+  ]
+}

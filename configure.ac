@@ -101,6 +101,17 @@ AC_ARG_ENABLE(
         [AC_MSG_ERROR([--enable-custom-spell-effects accepts only yes or no])])],
     [fe8_custom_spell_effects=])
 
+AC_ARG_WITH(
+    [asset-manifest],
+    [AS_HELP_STRING(
+        [--with-asset-manifest=PATH],
+        [persist the source-owned asset manifest selected by ordinary make])],
+    [AS_CASE(
+        [$withval],
+        [yes|no], [AC_MSG_ERROR([--with-asset-manifest requires a path])],
+        [fe8_asset_manifest=$withval])],
+    [fe8_asset_manifest=])
+
 AC_ARG_ENABLE(
     [localized-text-auto-wrap],
     [AS_HELP_STRING(
@@ -258,6 +269,10 @@ AS_IF(
     [FE8_CFG_CUSTOM_SPELL_EFFECTS="EXPANSION_CUSTOM_SPELL_EFFECTS := $fe8_custom_spell_effects"],
     [FE8_CFG_CUSTOM_SPELL_EFFECTS=])
 AS_IF(
+    [test -n "$fe8_asset_manifest"],
+    [FE8_CFG_ASSET_MANIFEST="ASSET_MANIFEST := $fe8_asset_manifest"],
+    [FE8_CFG_ASSET_MANIFEST=])
+AS_IF(
     [test -n "$fe8_localized_text_auto_wrap"],
     [FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP="EXPANSION_LOCALIZED_TEXT_AUTO_WRAP := $fe8_localized_text_auto_wrap"],
     [FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP=])
@@ -309,6 +324,7 @@ AC_SUBST([FE8_CFG_BLUE_PHASE_DELEGATE])
 AC_SUBST([FE8_CFG_STARTER_CONTENT])
 AC_SUBST([FE8_CFG_AOE_REFERENCE])
 AC_SUBST([FE8_CFG_CUSTOM_SPELL_EFFECTS])
+AC_SUBST([FE8_CFG_ASSET_MANIFEST])
 AC_SUBST([FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP])
 AC_SUBST([FE8_CFG_CASUAL_MODE])
 AC_SUBST([FE8_CFG_HQ_MIXER])
@@ -344,6 +360,7 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --starter-content "$fe8_starter_content" \
     --aoe-reference "$fe8_aoe_reference" \
     --custom-spell-effects "$fe8_custom_spell_effects" \
+    --asset-manifest "$fe8_asset_manifest" \
     --localized-text-auto-wrap "$fe8_localized_text_auto_wrap" \
     --casual-mode "$fe8_casual_mode" \
     --hq-mixer "$fe8_hq_mixer" \
