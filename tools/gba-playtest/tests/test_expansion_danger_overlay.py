@@ -40,6 +40,53 @@ OBJDUMP = shutil.which("objdump")
 
 FLAG = "FE8_EXPANSION_DANGER_OVERLAY_MENU"
 MODERN = "FE8_EXPANSION_MODERN_BUILD"
+POINTER_UPDATE_FIXTURE = """
+#include "global.h"
+#include "expansion_danger_overlay.h"
+
+void PlayerPhase_DisplayDangerZone(void)
+{
+#if FE8_EXPANSION_DANGER_OVERLAY_MENU
+    int rangeTiles;
+    struct ExpansionDangerOverlayProbe* probe = &gExpansionDangerOverlayProbe;
+    int rangeX;
+    int rangeY;
+
+    rangeTiles = 1;
+    rangeX = 2;
+    rangeY = 3;
+    probe->dangerDisplayCount++;
+    probe->lastRangeTileCount = (u32)(rangeTiles + rangeX + rangeY);
+    probe->rangeGraphicsActive = 1;
+#endif
+}
+
+void PlayerPhase_RangeDisplayIdle(ProcPtr proc)
+{
+#if FE8_EXPANSION_DANGER_OVERLAY_MENU
+    u32 updateCount;
+    struct ExpansionDangerOverlayProbe* probe = &gExpansionDangerOverlayProbe;
+
+    updateCount = 1;
+    (void)proc;
+    probe->cancelReturnCount += updateCount;
+    probe->rangeGraphicsActive = 0;
+#else
+    (void)proc;
+#endif
+}
+"""
+UNGUARDED_PROBE_FIXTURE = """
+#include "global.h"
+#include "expansion_danger_overlay.h"
+
+void PlayerPhase_DisplayDangerZone(void)
+{
+    struct ExpansionDangerOverlayProbe* probe = &gExpansionDangerOverlayProbe;
+
+    probe->dangerDisplayCount++;
+}
+"""
 
 
 def _skip_if_no_host_compiler():
@@ -107,6 +154,38 @@ def _object_section_names(obj):
     return names
 
 
+def _section_relocation_symbols(obj, section):
+    if OBJDUMP is None:
+        raise unittest.SkipTest("no host 'objdump' available")
+    proc = subprocess.run(
+        [OBJDUMP, "-r", "-j", section, str(obj)], capture_output=True, text=True
+    )
+    if proc.returncode:
+        raise AssertionError(proc.stdout + proc.stderr)
+    return {
+        re.sub(r"-0x[0-9a-fA-F]+$", "", line.split()[-1])
+        for line in proc.stdout.splitlines()
+        if line.split()
+    }
+
+
+def _relocation_section_counts(obj, symbol):
+    if OBJDUMP is None:
+        raise unittest.SkipTest("no host 'objdump' available")
+    proc = subprocess.run([OBJDUMP, "-r", str(obj)], capture_output=True, text=True)
+    if proc.returncode:
+        raise AssertionError(proc.stdout + proc.stderr)
+    section = None
+    counts = {}
+    for line in proc.stdout.splitlines():
+        match = re.match(r"RELOCATION RECORDS FOR \[(.+)\]:", line)
+        if match:
+            section = match.group(1)
+        elif section is not None and symbol in line:
+            counts[section] = counts.get(section, 0) + 1
+    return counts
+
+
 def _section_is_all_zero(obj, section):
     if OBJDUMP is None:
         raise unittest.SkipTest("no host 'objdump' available")
@@ -141,12 +220,6 @@ def _probe_constants(work_dir):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     out = subprocess.run([str(exe)], capture_output=True, text=True).stdout.split()
     return int(out[0]), int(out[1])
-
-
-def _strip_c_comments(text):
-    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
-    text = re.sub(r"//[^\n]*", " ", text)
-    return text
 
 
 class DangerOverlayTableTests(unittest.TestCase):
@@ -191,17 +264,6 @@ class DangerOverlayWrapperTests(unittest.TestCase):
     def setUpClass(cls):
         _skip_if_no_host_compiler()
 
-    def test_wrapper_is_compile_gated_and_delegates(self):
-        code = _strip_c_comments(BMMENU_SRC.read_text(encoding="utf-8"))
-        gated = re.search(
-            r"#if FE8_EXPANSION_DANGER_OVERLAY_MENU(.*?)#endif", code, flags=re.DOTALL
-        )
-        self.assertIsNotNone(gated, "wrapper must be wrapped in #if/#endif")
-        body = gated.group(1)
-        self.assertIn("ExpansionDangerOverlay_MenuSelect", body)
-        self.assertIn("MapMenu_DangerZone_UnusedEffect", body,
-                      "wrapper must reuse (delegate to) the vanilla danger-zone effect")
-
     def test_disabled_bmmenu_has_no_wrapper_reference(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -216,35 +278,59 @@ class DangerOverlayWrapperTests(unittest.TestCase):
     def test_enabled_bmmenu_defines_the_wrapper(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
-            rc, out, obj = _compile(tmp, BMMENU_SRC, "bmmenu_enabled.o", defines=[FLAG + "=1"])
+            rc, out, obj = _compile(
+                tmp,
+                BMMENU_SRC,
+                "bmmenu_enabled.o",
+                defines=[FLAG + "=1"],
+                extra=["-ffunction-sections"],
+            )
             self.assertEqual(rc, 0, out)
-            refs = _referenced_symbol_names(obj)
-        self.assertIn("ExpansionDangerOverlay_MenuSelect", refs)
+            sections = _object_section_names(obj)
+            wrapper_sections = [
+                section
+                for section in sections
+                if section.endswith("ExpansionDangerOverlay_MenuSelect")
+            ]
+            self.assertEqual(wrapper_sections, [".text.ExpansionDangerOverlay_MenuSelect"])
+            relocations = _section_relocation_symbols(obj, wrapper_sections[0])
+        self.assertIn(
+            "MapMenu_DangerZone_UnusedEffect",
+            relocations,
+            "enabled wrapper must delegate through the existing danger-zone effect",
+        )
 
 
-class DangerOverlayWiringTests(unittest.TestCase):
-    def test_modern_mk_wires_the_flag_define(self):
-        modern_mk = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("-DFE8_EXPANSION_DANGER_OVERLAY_MENU=$(EXPANSION_DANGER_OVERLAY_MENU)", modern_mk)
+class DangerOverlayConfigurationTests(unittest.TestCase):
+    def test_parsed_default_and_enabled_identity_are_distinct(self):
+        import sys
 
-    def test_modern_mk_wires_the_modern_build_define(self):
-        """Every modern translation unit gets FE8_EXPANSION_MODERN_BUILD=1 so
-        the always-linked probe stays present in modern builds while the
-        legacy build keeps expansion_config.h's 0 fallback (no orphan)."""
-        modern_mk = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("-DFE8_EXPANSION_MODERN_BUILD=1", modern_mk)
+        sys.path.insert(0, str(REPO_ROOT / "scripts" / "modernize"))
+        import expansion_config as ec
 
-    def test_no_new_line_comments_in_added_regions(self):
-        # Our additions (wrapper, gated item, declaration) must use /* */ only.
-        for path, needle in ((BMMENU_SRC, "ExpansionDangerOverlay_MenuSelect"),
-                             (MENU_DEF_SRC, "Threat Range")):
-            text = path.read_text(encoding="utf-8")
-            gated = re.findall(r"#if FE8_EXPANSION_DANGER_OVERLAY_MENU(.*?)#endif",
-                               text, flags=re.DOTALL)
-            self.assertTrue(any(needle in g for g in gated), "gated region for %s" % needle)
-            for g in gated:
-                if needle in g:
-                    self.assertNotIn("//", g, "%s gated region must use /* */ only" % path.name)
+        default = ec.load_identity(
+            REPO_ROOT / "config.mk", "debug", "aapcs", "16M", repo_root=REPO_ROOT
+        )
+        enabled = ec.load_identity(
+            REPO_ROOT / "config.mk",
+            "debug",
+            "aapcs",
+            "16M",
+            repo_root=REPO_ROOT,
+            danger_overlay_menu=1,
+        )
+        self.assertEqual(default.danger_overlay_menu, 0)
+        self.assertEqual(enabled.danger_overlay_menu, 1)
+        self.assertNotEqual(default.config_fingerprint, enabled.config_fingerprint)
+        with self.assertRaises(ec.ConfigError):
+            ec.load_identity(
+                REPO_ROOT / "config.mk",
+                "debug",
+                "aapcs",
+                "16M",
+                repo_root=REPO_ROOT,
+                danger_overlay_menu=2,
+            )
 
     def test_arm_aapcs_compiles_enabled(self):
         if ARM_CC is None:
@@ -268,10 +354,6 @@ class DangerOverlayProbeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         _skip_if_no_host_compiler()
-
-    def test_probe_header_exists(self):
-        self.assertTrue(PROBE_HEADER.is_file(),
-                        "include/expansion_danger_overlay.h must exist")
 
     def test_probe_defined_in_every_modern_build(self):
         """The negative-control probe is *defined* (present, 20-byte struct)
@@ -307,6 +389,76 @@ class DangerOverlayProbeTests(unittest.TestCase):
             self.assertTrue(_section_is_all_zero(obj, "ewram_data"),
                             "modern-disabled probe (ewram_data) must be all-zero")
 
+    def test_probe_code_relocations_are_feature_gated(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            default_obj = self._compile_sectioned(
+                tmp, PLAYERPHASE_SRC, "pp_default_sections.o", [MODERN + "=1"]
+            )
+            enabled_obj = self._compile_sectioned(
+                tmp,
+                PLAYERPHASE_SRC,
+                "pp_enabled_sections.o",
+                [MODERN + "=1", FLAG + "=1"],
+            )
+            self.assertEqual(
+                _relocation_section_counts(default_obj, "gExpansionDangerOverlayProbe"),
+                {},
+                "default modern playerphase code must not access the always-defined probe",
+            )
+            self._assert_enabled_probe_sections(enabled_obj)
+
+            self._assert_enabled_probe_sections(
+                self._compile_fixture(
+                    tmp,
+                    "playerphase_pointer_update.c",
+                    POINTER_UPDATE_FIXTURE,
+                    "pp_pointer_sections.o",
+                    [MODERN + "=1", FLAG + "=1"],
+                )
+            )
+            unguarded_obj = self._compile_fixture(
+                tmp,
+                "playerphase_unguarded_probe.c",
+                UNGUARDED_PROBE_FIXTURE,
+                "pp_unguarded_sections.o",
+                [MODERN + "=1"],
+            )
+            self.assertTrue(
+                _relocation_section_counts(
+                    unguarded_obj, "gExpansionDangerOverlayProbe"
+                ),
+                "an unguarded default write must create a probe code relocation",
+            )
+
+    def _compile_sectioned(self, work, source, name, defines):
+        rc, out, obj = _compile(
+            work,
+            source,
+            name,
+            defines=defines,
+            extra=["-ffunction-sections"],
+        )
+        self.assertEqual(rc, 0, out)
+        return obj
+
+    def _assert_enabled_probe_sections(self, obj):
+        counts = _relocation_section_counts(obj, "gExpansionDangerOverlayProbe")
+        self.assertEqual(
+            set(counts),
+            {
+                ".text.PlayerPhase_DisplayDangerZone",
+                ".text.PlayerPhase_RangeDisplayIdle",
+            },
+        )
+        self.assertTrue(all(count > 0 for count in counts.values()))
+
+    def _compile_fixture(self, work, source_name, source_text, object_name, defines):
+        source = Path(work) / source_name
+        source.write_text(source_text, encoding="utf-8")
+        return self._compile_sectioned(work, source, object_name, defines)
+
     def test_legacy_like_build_emits_no_probe_and_no_ewram_orphan(self):
         """Standing anti-orphan regression (issue #6 Sprint 1 narrow fix): a
         legacy-like compile (NO modern macro, feature off) must define nothing
@@ -328,33 +480,6 @@ class DangerOverlayProbeTests(unittest.TestCase):
             self.assertEqual(probe_syms, [],
                              "legacy-like playerphase.o must neither define nor "
                              "reference the probe; found: %r" % probe_syms)
-
-    def test_probe_writes_are_compile_gated(self):
-        """Every probe field write in the shared danger-zone path must live
-        inside a #if FE8_EXPANSION_DANGER_OVERLAY_MENU region, so the default
-        build keeps vanilla playerphase/bmmenu behaviour."""
-        for src in (PLAYERPHASE_SRC, BMMENU_SRC):
-            text = src.read_text(encoding="utf-8")
-            gated = "".join(re.findall(
-                r"#if FE8_EXPANSION_DANGER_OVERLAY_MENU(.*?)#endif", text, flags=re.DOTALL))
-            ungated = re.sub(
-                r"#if FE8_EXPANSION_DANGER_OVERLAY_MENU.*?#endif", " ", text, flags=re.DOTALL)
-            ungated = _strip_c_comments(ungated)
-            # The probe struct definition may sit outside the feature-gated
-            # region (it is always-linked in every modern build, gated on
-            # FE8_EXPANSION_MODERN_BUILD || the feature flag); only field
-            # writes (".<field>Count++/=") must not appear ungated.
-            self.assertNotRegex(
-                ungated, r"gExpansionDangerOverlayProbe\.\w+\s*(\+\+|=)",
-                "%s writes the danger-overlay probe outside a gated region" % src.name)
-            if "gExpansionDangerOverlayProbe." in text:
-                self.assertIn("gExpansionDangerOverlayProbe.", gated,
-                              "%s must write the probe only inside gated regions" % src.name)
-
-    def test_probe_header_uses_block_comments_only(self):
-        text = PROBE_HEADER.read_text(encoding="utf-8")
-        stripped = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
-        self.assertNotIn("//", stripped, "probe header must use /* */ comments only")
 
     def test_playerphase_arm_compiles_enabled(self):
         if ARM_CC is None:

@@ -20,6 +20,7 @@
 #include "eventinfo.h"
 #include "event.h"
 #include "eventscript.h"
+#include "expansion_debugtools.h"
 #if FE8_AUTOPLAY_EVENT_TRACE_TEST
 #include "expansion_autoplay_internal.h"
 #endif
@@ -150,7 +151,11 @@ void EventEngine_OnEnd(struct EventEngineProc* proc) {
 
         if (proc->evStateBits & EV_STATE_CHANGEGM) {
             EndAllMus();
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+            EndBMapMainForChapterTransition();
+#else
             EndBMapMain();
+#endif
             memset((u8*)(gEventCallQueue), 0, 0x80);
         }
 

@@ -1,0 +1,28 @@
+{
+  "checkpoints": [
+    {
+      "frame": 1400,
+      "name": "resumed-original-persistent-turn",
+      "probes": [
+        {
+          "address": "gPlaySt+0x0e",
+          "size": 1,
+          "value": "0x02"
+        },
+        {
+          "address": "gPlaySt+0x0f",
+          "size": 1,
+          "value": "0x80"
+        },
+        {
+          "address": "gPlaySt+0x10",
+          "size": 2,
+          "value": "0x0001"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram-normalized:89ead572ac55b51b"
+    }
+  ],
+  "format_version": 2,
+  "scenario": "debugtools-phase-control-suspend-resume-modern-debug"
+}

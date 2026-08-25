@@ -1,5 +1,8 @@
 import json
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from collections import Counter
 from pathlib import Path
@@ -15,9 +18,109 @@ from scripts.localization.legacy_spacing import (
     LEGACY_SJIS_SPACE_BYTES,
     LEGACY_SJIS_SPACE_WIDTH,
 )
+from scripts.localization import schema as localization_schema
 
 
 ROOT = Path(__file__).resolve().parents[3]
+BUILD = ROOT / "build"
+CC = shutil.which("gcc") or shutil.which("cc")
+
+FLAG_STATUS_RENDER_DRIVER = r'''
+#include "global.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "uimenu.h"
+#include "bmunit.h"
+#include "expansion_debugtools.h"
+#include "expansion_locale.h"
+#include "expansion_msg_ids.h"
+
+extern struct MenuDef CONST_DATA gDebugToolsFlagMenuDef;
+extern char gDebugToolsToolsHostStubStatusLines[3][64];
+extern int gDebugToolsToolsHostStubStatusLineCount;
+extern int gDebugToolsToolsHostStubPutDrawTextCallCount;
+extern int gDebugToolsToolsHostStubStatusLineTileWidths[3];
+extern void DebugToolsHostStub_ResetStatusLines(void);
+extern void DebugToolsHostStub_SetPhaseBoundaryIdle(void);
+
+static ExpansionLocaleId sLocale;
+static const char *sTurnText;
+static const char *sComputerText;
+static const char *sBlockedText;
+
+ExpansionLocaleId ExpansionLocale_GetCurrent(void)
+{
+    return sLocale;
+}
+
+const char *ExpansionLocale_ResolveCurrent(ExpansionMsgId message)
+{
+    switch (message)
+    {
+    case EXP_MSG_DEBUG_STATUS_TURN:
+        return sTurnText;
+
+    case EXP_MSG_DEBUG_MODE_COMPUTER:
+        return sComputerText;
+
+    case EXP_MSG_DEBUG_MODE_BLOCKED:
+        return sBlockedText;
+
+    default:
+        return "";
+    }
+}
+
+int main(int argc, char **argv)
+{
+    struct MenuProc menu;
+    int index;
+
+    if (argc != 7)
+        return 2;
+
+    sLocale = (ExpansionLocaleId)strtoul(argv[1], NULL, 0);
+    sTurnText = argv[2];
+    sComputerText = argv[3];
+    sBlockedText = argv[4];
+    memset(&menu, 0, sizeof(menu));
+    memset(&gPlaySt, 0, sizeof(gPlaySt));
+    memset(&gDebugToolsProbe, 0, sizeof(gDebugToolsProbe));
+    gPlaySt.faction = FACTION_BLUE;
+    gPlaySt.chapterTurnNumber = 999;
+    gDebugToolsProbe.chapterIndexSample = 255;
+    gDebugToolsProbe.debugFlagLastValue = 1;
+    DebugToolsHostStub_SetPhaseBoundaryIdle();
+    DebugToolsPhaseControl_Reset();
+
+    if (DebugToolsPhaseControl_RequestFactionMode(
+            (int)strtol(argv[5], NULL, 0),
+            (enum DebugToolsPhaseControlMode)strtol(argv[6], NULL, 0))
+        != DEBUGTOOLS_PHASE_CONTROL_OK)
+        return 3;
+
+    if (gDebugToolsFlagMenuDef.onInit == NULL)
+        return 4;
+
+    menu.def = &gDebugToolsFlagMenuDef;
+    DebugToolsHostStub_ResetStatusLines();
+    gDebugToolsFlagMenuDef.onInit(&menu);
+    if (gDebugToolsToolsHostStubStatusLineCount != 3)
+        return 5;
+
+    printf("RENDERER\t%d\n", gDebugToolsToolsHostStubPutDrawTextCallCount != 0 ? 2 : 1);
+    for (index = 0; index < gDebugToolsToolsHostStubStatusLineCount; index++)
+        printf("LINE\t%d\t%d\t%s\n",
+            index,
+            gDebugToolsToolsHostStubStatusLineTileWidths[index],
+            gDebugToolsToolsHostStubStatusLines[index]);
+
+    return 0;
+}
+'''
 
 
 class DebugToolsLocalizationTests(unittest.TestCase):
@@ -41,6 +144,12 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             "Confirm Add Item": 1,
             "Confirm Toggle Flag": 1,
             "Confirm Reseed": 1,
+            "Apply Turn +1": 1,
+            "Apply Turn -1": 1,
+            "Apply R CPU": 1,
+            "Apply R Block": 1,
+            "Apply G CPU": 1,
+            "Apply G Block": 1,
             "Weather": 1,
             "Fog": 1,
             "Music": 1,
@@ -68,13 +177,17 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         "Confirm Add Item": "debug.confirm.add_item",
         "Confirm Toggle Flag": "debug.confirm.toggle_flag",
         "Confirm Reseed": "debug.confirm.reseed",
+        "Apply Turn +1": "debug.confirm.turn_increment",
+        "Apply Turn -1": "debug.confirm.turn_decrement",
+        "Apply R CPU": "debug.confirm.red_computer",
+        "Apply R Block": "debug.confirm.red_blocked",
+        "Apply G CPU": "debug.confirm.green_computer",
+        "Apply G Block": "debug.confirm.green_blocked",
         "DBGTOOLS": "debug.status.hub",
         "DBGTOOLS ERR": "debug.status.hub_error",
         "UNIT HP": "debug.status.unit_hp",
         "UNIT N/A": "debug.status.unit_unavailable",
         "CONVOY": "debug.status.convoy",
-        "CH": "debug.status.chapter",
-        "FLAG": "debug.status.flag",
         "RNG SEED": "debug.status.rng_seed",
         "SAVE STATE": "debug.status.save_state",
         "Chapter": "debug.selector.chapter",
@@ -164,6 +277,133 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             raise AssertionError(f"{name} is missing from expansion_debugtools.h")
         return int(match.group(1))
 
+    @classmethod
+    def _write_message_header(cls, directory):
+        lines = [
+            "#ifndef TEST_EXPANSION_MSG_IDS_H",
+            "#define TEST_EXPANSION_MSG_IDS_H",
+        ]
+        for message in cls.registry["messages"]:
+            macro = "EXP_MSG_" + re.sub(r"[^A-Za-z0-9]+", "_", message["key"]).upper()
+            lines.append(f"#define {macro} {message['id']}u")
+        lines += ["#endif", ""]
+        (directory / "expansion_msg_ids.h").write_text(
+            "\n".join(lines),
+            encoding="utf-8",
+        )
+
+    @classmethod
+    def _compile_flag_status_driver(cls, directory):
+        source = directory / "debugtools_flag_status_host.c"
+        executable = directory / "debugtools_flag_status_host"
+        source.write_text(
+            FLAG_STATUS_RENDER_DRIVER,
+            encoding="utf-8",
+        )
+        common = [
+            "-std=gnu89",
+            "-w",
+            "-I",
+            str(directory),
+            "-I",
+            str(ROOT / "include"),
+            "-I",
+            str(ROOT / "include" / "generated"),
+            "-DFE8_EXPANSION_MODERN_BUILD=1",
+            "-DFE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+            "-DMODERN=1",
+        ]
+        sources = (
+            (ROOT / "src" / "debugtools_registry.c", "registry.o", ()),
+            (ROOT / "src" / "debugtools_tools.c", "tools.o", ()),
+            (ROOT / "src" / "debugtools_diag.c", "diagnostics.o", ()),
+            (
+                ROOT / "tools" / "gba-playtest" / "tests" / "c"
+                / "debugtools_tools_host_stubs.c",
+                "tools_stubs.o",
+                (
+                    "-DExpansionLocale_GetCurrent=DebugToolsHostStub_GetCurrent",
+                    "-DExpansionLocale_ResolveCurrent=DebugToolsHostStub_ResolveCurrent",
+                ),
+            ),
+            (
+                ROOT / "tools" / "gba-playtest" / "tests" / "c"
+                / "debugtools_registry_support_stubs.c",
+                "registry_support.o",
+                (),
+            ),
+            (source, "driver.o", ()),
+        )
+        objects = []
+        for source_path, object_name, defines in sources:
+            output = directory / object_name
+            completed = subprocess.run(
+                [
+                    CC,
+                    *common,
+                    *defines,
+                    "-c",
+                    str(source_path),
+                    "-o",
+                    str(output),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            if completed.returncode != 0:
+                raise AssertionError(completed.stdout + completed.stderr)
+            objects.append(output)
+        completed = subprocess.run(
+            [CC, *map(str, objects), "-o", str(executable)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            raise AssertionError(completed.stdout + completed.stderr)
+        return executable
+
+    def _run_flag_status_driver(
+        self,
+        executable,
+        locale,
+        strings,
+        faction,
+        mode,
+    ):
+        completed = subprocess.run(
+            [
+                str(executable),
+                str(localization_schema.LOCALE_INDEX[locale]),
+                strings["debug.status.turn"],
+                strings["debug.mode.computer"],
+                strings["debug.mode.blocked"],
+                hex(faction),
+                str(mode),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            completed.stdout + completed.stderr,
+        )
+
+        renderer = None
+        lines = []
+        for output in completed.stdout.splitlines():
+            fields = output.split("\t", 3)
+            if fields[0] == "RENDERER":
+                renderer = int(fields[1])
+            elif fields[0] == "LINE":
+                lines.append((int(fields[1]), int(fields[2]), fields[3]))
+        self.assertIsNotNone(renderer, completed.stdout)
+        self.assertEqual(len(lines), 3, completed.stdout)
+        return renderer, lines
+
     def test_direct_debug_ui_literal_inventory_is_exact_and_closed(self):
         action_labels = []
         for name in (
@@ -239,13 +479,20 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             "CONFIRM_ADD_ITEM",
             "CONFIRM_TOGGLE_FLAG",
             "CONFIRM_RESEED",
+            "CONFIRM_TURN_INCREMENT",
+            "CONFIRM_TURN_DECREMENT",
+            "CONFIRM_RED_COMPUTER",
+            "CONFIRM_RED_BLOCKED",
+            "CONFIRM_GREEN_COMPUTER",
+            "CONFIRM_GREEN_BLOCKED",
             "STATUS_UNIT_HP",
             "STATUS_UNIT_UNAVAILABLE",
             "STATUS_CONVOY",
-            "STATUS_CHAPTER",
-            "STATUS_FLAG",
             "STATUS_RNG_SEED",
             "STATUS_SAVE_STATE",
+            "STATUS_TURN",
+            "MODE_COMPUTER",
+            "MODE_BLOCKED",
         ):
             self.assertIn(f"EXP_MSG_DEBUG_{key_suffix}", tools)
 
@@ -439,6 +686,78 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             )
             with self.subTest(locale=locale, key="chapter+flag"):
                 self.assertLessEqual(combined_width, allocation_pixels)
+
+    def test_flag_status_formatter_and_configured_renderer_cover_authored_locales(self):
+        if CC is None:
+            self.skipTest("no host C compiler")
+
+        cjk_width = self._constant(
+            "DEBUGTOOLS_FLAG_STATUS_CJK_WIDTH_TILES"
+        ) * 8
+        non_cjk_width = self._constant(
+            "DEBUGTOOLS_FLAG_STATUS_NON_CJK_WIDTH_TILES"
+        ) * 8
+
+        BUILD.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=BUILD) as temporary:
+            work = Path(temporary)
+            self._write_message_header(work)
+            executable = self._compile_flag_status_driver(work)
+
+            for locale in localization_schema.AUTHORED_CATALOG_LOCALES:
+                strings = self.loaded_catalog.strings_for(locale)
+                for faction_name, faction in (
+                    ("red", 0x80),
+                    ("green", 0x40),
+                ):
+                    for mode_name, mode in (
+                        ("computer", 0),
+                        ("blocked", 2),
+                    ):
+                        with self.subTest(
+                            locale=locale,
+                            faction=faction_name,
+                            mode=mode_name,
+                        ):
+                            renderer, rendered = self._run_flag_status_driver(
+                                executable,
+                                locale,
+                                strings,
+                                faction,
+                                mode,
+                            )
+                            expected_red_mode = (
+                                strings["debug.mode.blocked"]
+                                if faction_name == "red" and mode_name == "blocked"
+                                else strings["debug.mode.computer"]
+                            )
+                            expected_green_mode = (
+                                strings["debug.mode.blocked"]
+                                if faction_name == "green" and mode_name == "blocked"
+                                else strings["debug.mode.computer"]
+                            )
+                            expected_lines = [
+                                f"{strings['debug.status.turn']} 999 C:255 F:1",
+                                f"R:{expected_red_mode}",
+                                f"G:{expected_green_mode}",
+                            ]
+                            is_cjk = locale in ("ja", "zh-Hans")
+                            self.assertEqual(renderer, 2 if is_cjk else 1)
+                            self.assertEqual(
+                                [text for _, _, text in rendered],
+                                expected_lines,
+                            )
+                            self.assertEqual(
+                                [width for _, width, _ in rendered],
+                                [24, 24, 24] if is_cjk else [0, 0, 0],
+                            )
+                            width_limit = cjk_width if is_cjk else non_cjk_width
+                            for line_index, _, text in rendered:
+                                with self.subTest(line=line_index):
+                                    self.assertLessEqual(
+                                        self._pixel_width(text, locale),
+                                        width_limit,
+                                    )
 
     def test_weather_and_fog_rows_fit_the_same_actual_menu_geometry(self):
         allocation_pixels = (

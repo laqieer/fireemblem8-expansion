@@ -32,6 +32,7 @@
 #include "bmmap.h"
 #include "bmudisp.h"
 #include "bmcontainer.h"
+#include "bm.h"
 #include "event.h"
 #include "ekrbattle.h"
 #include "playerphase.h"
@@ -40,7 +41,12 @@
 #include "rng.h"
 #include "bmsave.h"
 #include "save_format.h"
+#include "expansion_autoplay.h"
 #include "expansion_debugtools.h"
+#include "expansion_locale.h"
+#ifdef MODERN
+#include "expansion_msg_ids.h"
+#endif
 #include "debugtools_internal.h"
 
 /* --- Hardware/menu stand-ins (mirrors debugtools_actions_host_stubs.c) - */
@@ -106,6 +112,14 @@ int gDebugToolsToolsHostStubLastStartFaceId = -1;
 int gDebugToolsToolsHostStubLastEyeControl = -1;
 int gDebugToolsToolsHostStubFaceMouthInitCount = 0;
 int gDebugToolsToolsHostStubFaceMouthLoopCount = 0;
+char gDebugToolsToolsHostStubLastStatusLine[64] = {0};
+char gDebugToolsToolsHostStubStatusLines[3][64] = {{0}};
+int gDebugToolsToolsHostStubStatusLineTileWidths[3] = {0};
+int gDebugToolsToolsHostStubStatusLineCount = 0;
+int gDebugToolsToolsHostStubPutDrawTextCallCount = 0;
+#ifdef MODERN
+static ExpansionLocaleId sDebugToolsToolsLocale = EXPANSION_LOCALE_EN;
+#endif
 
 static struct FaceProc sDebugToolsToolsFakeFace;
 static struct FaceBlinkProc sDebugToolsToolsFakeMouth;
@@ -130,6 +144,12 @@ static void DebugToolsHostStub_MapVram(void)
 u16* BG_GetMapBuffer(int bg)
 {
     return sToolsStubBgMaps[bg & 3];
+}
+
+void BG_Fill(void* tm, int fill)
+{
+    (void)tm;
+    (void)fill;
 }
 
 void BG_EnableSyncByMask(int bgMask)
@@ -209,7 +229,111 @@ void SetupDebugFontForBG(int bg, int tileDataOffset)
 void PrintDebugStringToBG(u16* bg, const char* asciiStr)
 {
     (void)bg;
-    (void)asciiStr;
+    strncpy(
+        gDebugToolsToolsHostStubLastStatusLine,
+        asciiStr,
+        sizeof(gDebugToolsToolsHostStubLastStatusLine) - 1);
+    gDebugToolsToolsHostStubLastStatusLine[
+        sizeof(gDebugToolsToolsHostStubLastStatusLine) - 1] = '\0';
+    if (gDebugToolsToolsHostStubStatusLineCount < 3)
+    {
+        strncpy(
+            gDebugToolsToolsHostStubStatusLines[
+                gDebugToolsToolsHostStubStatusLineCount],
+            asciiStr,
+            sizeof(gDebugToolsToolsHostStubStatusLines[0]) - 1);
+        gDebugToolsToolsHostStubStatusLines[
+            gDebugToolsToolsHostStubStatusLineCount][
+                sizeof(gDebugToolsToolsHostStubStatusLines[0]) - 1] = '\0';
+        gDebugToolsToolsHostStubStatusLineCount++;
+    }
+}
+
+void PutDrawText(
+    struct Text* text,
+    u16* dest,
+    int colorId,
+    int x,
+    int tileWidth,
+    const char* string)
+{
+    (void)text;
+    (void)dest;
+    (void)colorId;
+    (void)x;
+    if (gDebugToolsToolsHostStubStatusLineCount < 3)
+        gDebugToolsToolsHostStubStatusLineTileWidths[
+            gDebugToolsToolsHostStubStatusLineCount] = tileWidth;
+    gDebugToolsToolsHostStubPutDrawTextCallCount++;
+    PrintDebugStringToBG(NULL, string);
+}
+
+void Text_InsertDrawString(
+    struct Text* text,
+    int x,
+    int colorId,
+    const char* string)
+{
+    (void)text;
+    (void)x;
+    (void)colorId;
+    (void)string;
+}
+
+void Text_InsertDrawNumberOrBlank(
+    struct Text* text,
+    int x,
+    int colorId,
+    int number)
+{
+    (void)text;
+    (void)x;
+    (void)colorId;
+    (void)number;
+}
+
+#ifdef MODERN
+ExpansionLocaleId ExpansionLocale_GetCurrent(void)
+{
+    return sDebugToolsToolsLocale;
+}
+
+const char* ExpansionLocale_ResolveCurrent(ExpansionMsgId message)
+{
+    switch (message)
+    {
+        case EXP_MSG_DEBUG_STATUS_TURN:
+            return "TURN";
+
+        case EXP_MSG_DEBUG_MODE_BLOCKED:
+            return "BLOCK";
+
+        default:
+            return "CPU";
+    }
+}
+
+void DebugToolsHostStub_SetLocale(ExpansionLocaleId locale)
+{
+    sDebugToolsToolsLocale = locale;
+}
+#endif
+
+u8 GetGameLock(void)
+{
+    return 1;
+}
+
+void DebugToolsHostStub_ResetStatusLines(void)
+{
+    memset(gDebugToolsToolsHostStubLastStatusLine, 0,
+        sizeof(gDebugToolsToolsHostStubLastStatusLine));
+    memset(gDebugToolsToolsHostStubStatusLines, 0,
+        sizeof(gDebugToolsToolsHostStubStatusLines));
+    memset(gDebugToolsToolsHostStubStatusLineTileWidths, 0,
+        sizeof(gDebugToolsToolsHostStubStatusLineTileWidths));
+    gDebugToolsToolsHostStubStatusLineCount = 0;
+    gDebugToolsToolsHostStubPutDrawTextCallCount = 0;
 }
 
 u8 MenuAlwaysEnabled(const struct MenuItemDef* def, int number)
@@ -282,14 +406,24 @@ static int sDebugToolsToolsPlayerPhaseActive = 1;
 static int sDebugToolsToolsEventActive = 0;
 static int sDebugToolsToolsBattleEventActive = 0;
 static int sDebugToolsToolsBattleActive = 0;
+static struct Proc sDebugToolsToolsMapMainProc;
+static struct Proc sDebugToolsToolsPlayerPhaseProc;
+
+void PlayerPhase_MainIdle(ProcPtr proc)
+{
+    (void)proc;
+}
 
 ProcPtr Proc_Find(const struct ProcCmd* script)
 {
     if (script == gProcScr_DebugToolsMenuTransition)
         return sDebugToolsToolsPendingTransition;
 
+    if (script == gProc_BMapMain)
+        return &sDebugToolsToolsMapMainProc;
+
     if (script == gProcScr_PlayerPhase && sDebugToolsToolsPlayerPhaseActive)
-        return (ProcPtr)1;
+        return &sDebugToolsToolsPlayerPhaseProc;
 
     return NULL;
 }
@@ -319,6 +453,15 @@ void DebugToolsHostStub_SetUnitEditContext(
     sDebugToolsToolsEventActive = eventActive;
     sDebugToolsToolsBattleEventActive = battleEventActive;
     sDebugToolsToolsBattleActive = battleActive;
+}
+
+void DebugToolsHostStub_SetPhaseBoundaryIdle(void)
+{
+    sDebugToolsToolsPlayerPhaseActive = 1;
+    sDebugToolsToolsEventActive = 0;
+    sDebugToolsToolsBattleEventActive = 0;
+    sDebugToolsToolsBattleActive = 0;
+    sDebugToolsToolsPlayerPhaseProc.proc_idleCb = PlayerPhase_MainIdle;
 }
 
 /* This driver links the real src/debugtools_registry.c alongside
@@ -381,6 +524,43 @@ struct Vec2 gBmMapSize = {
     DEBUGTOOLS_TOOLS_MAP_HEIGHT
 };
 u8** gBmMapUnit = sDebugToolsToolsMapUnitRows;
+
+/* The issue #124 request functions are linked into this existing
+ * extended-tools fixture but not selected by its legacy tool cases. These
+ * inert stable-player-phase seams keep the real source linkable without
+ * turning this fixture into a second controller test. */
+struct ProcCmd CONST_DATA gProc_BMapMain[] = { { 0 } };
+struct ProcCmd gProcScr_Playerphase_0[] = { { 0 } };
+struct ProcCmd CONST_DATA gProcScr_CpPhase[] = { { 0 } };
+struct ProcCmd CONST_DATA gProcScr_BerserkCpPhase[] = { { 0 } };
+struct ProcCmd CONST_DATA ProcScr_CamMove[] = { { 0 } };
+struct Unit* gActiveUnit = NULL;
+static struct ExpansionAutoplayTelemetry sDebugToolsToolsAutoplayTelemetry = {
+    EXPANSION_BLUE_CONTROL_PLAYER,
+    EXPANSION_AUTOPLAY_STATE_PLAYER_PHASE,
+    EXPANSION_AUTOPLAY_FAILURE_NONE,
+};
+
+bool8 DoesBMXFADEExist(void)
+{
+    return 0;
+}
+
+enum ExpansionBlueControl ExpansionAutoplay_GetBlueControl(void)
+{
+    return EXPANSION_BLUE_CONTROL_PLAYER;
+}
+
+const struct ExpansionAutoplayTelemetry* ExpansionAutoplay_GetTelemetry(void)
+{
+    return &sDebugToolsToolsAutoplayTelemetry;
+}
+
+struct MuProc* GetUnitMu(struct Unit* unit)
+{
+    (void)unit;
+    return NULL;
+}
 
 /* --- Unit inspector fakes -----------------------------------------------
  * GetUnitMaxHp/GetUnitCurrentHp/SetUnitHp/SetUnitStatus mirror

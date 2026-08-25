@@ -18,6 +18,8 @@ MODERN_GOALS := \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debugtools-phase-control-check \
+	expansion-modern-debugtools-phase-control-profile-rom \
 	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
@@ -396,12 +398,10 @@ tools/scaninc/scaninc$(EXE): $(wildcard tools/scaninc/*.cpp tools/scaninc/*.h to
 # modern.mk-only fixture tree (neither file present) safely no-ops instead
 # of failing to find a rule for a target nothing added to
 # MODERN_ALL_C_OBJECTS. The generated catalog/header/budget files
-# themselves live under $(MODERN_BUILD_ROOT) (their content never depends
-# on MODERN_CONFIG/MODERN_ABI/MODERN_ROM_SIZE -- only on
-# texts/expansion/registry.json + the authored locale catalogs), so every
-# MODERN_CONFIG/MODERN_ABI combination *within the same build root* shares
-# one generated copy instead of needlessly regenerating an identical copy
-# per $(MODERN_OUTPUT_DIR).
+# themselves live under $(MODERN_BUILD_ROOT) and use a config-specific
+# directory. A debug-only registry message retains its stable ID/header
+# macro in release but is intentionally omitted from the release catalog
+# payload, so debug and release content must never share generated output.
 #
 # Issue #18 sprint 5 root-cause fix: this used to be a single, hardcoded
 # "build/expansion-localization" path shared by *every* build root,
@@ -431,11 +431,18 @@ tools/scaninc/scaninc$(EXE): $(wildcard tools/scaninc/*.cpp tools/scaninc/*.h to
 MODERN_LOCALIZATION_CLI := scripts/localization/cli.py
 MODERN_LOCALIZATION_REGISTRY := texts/expansion/registry.json
 MODERN_LOCALIZATION_AVAILABLE := $(and $(wildcard $(MODERN_LOCALIZATION_CLI)),$(wildcard $(MODERN_LOCALIZATION_REGISTRY)))
-MODERN_LOCALIZATION_ROOT := $(MODERN_BUILD_ROOT)/expansion-localization
+MODERN_LOCALIZATION_ROOT := $(MODERN_BUILD_ROOT)/expansion-localization/$(MODERN_CONFIG)
 MODERN_LOCALIZATION_GENERATED_DIR := $(MODERN_LOCALIZATION_ROOT)/generated
 MODERN_LOCALIZATION_CATALOG_C := $(MODERN_LOCALIZATION_GENERATED_DIR)/expansion_locale_catalog.c
 MODERN_LOCALIZATION_MSG_IDS_H := $(MODERN_LOCALIZATION_GENERATED_DIR)/expansion_msg_ids.h
 MODERN_LOCALIZATION_BUDGET_JSON := $(MODERN_LOCALIZATION_GENERATED_DIR)/budget.json
+MODERN_LOCALIZATION_EMISSION_PROFILE := $(if $(filter debug,$(MODERN_CONFIG)),debug,release)
+# Kept only as an atomically published compatibility header for dependency
+# files written before catalog payloads became profile-specific. New objects
+# depend on MODERN_LOCALIZATION_MSG_IDS_H above; the stable-ID header here is
+# safe because it never filters debug-only IDs.
+MODERN_LOCALIZATION_LEGACY_GENERATED_DIR := $(MODERN_BUILD_ROOT)/expansion-localization/generated
+MODERN_LOCALIZATION_LEGACY_MSG_IDS_H := $(MODERN_LOCALIZATION_LEGACY_GENERATED_DIR)/expansion_msg_ids.h
 
 # --- Full-game CJK catalog (issue #18 game-catalog slice) -------------------
 # The validated production EXPANSION_ENABLED_LOCALES profile is the only
@@ -776,6 +783,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
@@ -1444,6 +1452,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
@@ -1455,6 +1464,8 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-hq-mixer-check \
 	expansion-modern-blue-phase-delegate-profile-rom \
 	expansion-modern-blue-phase-delegate-check \
+	expansion-modern-debugtools-phase-control-profile-rom \
+	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-autoplay-bounds-check \
 	expansion-modern-autoplay-accelerated-fidelity-check \
 	expansion-modern-aoe-profile-rom \
@@ -2117,7 +2128,27 @@ FORCE_MODERN_LOCALIZATION:
 
 $(MODERN_LOCALIZATION_CATALOG_C) $(MODERN_LOCALIZATION_MSG_IDS_H) $(MODERN_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_LOCALIZATION
 	@mkdir -p "$(MODERN_LOCALIZATION_GENERATED_DIR)"
-	@python3 -m scripts.localization.cli generate --out-dir "$(MODERN_LOCALIZATION_GENERATED_DIR)"
+	@python3 -m scripts.localization.cli generate \
+		--out-dir "$(MODERN_LOCALIZATION_GENERATED_DIR)" \
+		--emission-profile "$(MODERN_LOCALIZATION_EMISSION_PROFILE)"
+
+# Old compiler dependency files can name the former shared header path. Build
+# this invocation's private profile output first, then publish only the stable
+# header. The unique temporary path plus compare-and-rename avoids torn reads
+# or profile contamination when stale debug/release dependency files rebuild
+# concurrently in separate Make processes.
+$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H): $(MODERN_LOCALIZATION_MSG_IDS_H)
+	@set -eu; \
+	mkdir -p "$(MODERN_LOCALIZATION_LEGACY_GENERATED_DIR)"; \
+	tmp="$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H).tmp.$$$$"; \
+	trap 'rm -f "$$tmp"' EXIT HUP INT TERM; \
+	if test -f "$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H)" \
+		&& cmp -s "$(MODERN_LOCALIZATION_MSG_IDS_H)" "$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H)"; then \
+		:; \
+	else \
+		cp "$(MODERN_LOCALIZATION_MSG_IDS_H)" "$$tmp"; \
+		mv -f "$$tmp" "$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H)"; \
+	fi
 
 # Issue #18 sprint 3: ordinary compiles are not otherwise made to wait for
 # expansion_msg_ids.h -- only the synthetic expansion_locale-catalog.o
@@ -3474,6 +3505,54 @@ expansion-modern-blue-phase-delegate-check: expansion-modern-boot-preflight \
 		--config "$(MODERN_CONFIG)" \
 		--out-dir "$(MODERN_BLUE_PHASE_DELEGATE_RUNTIME_OUTDIR)"
 
+# Issue #124 applies a turn request through the real Flag/Chapter submenu,
+# then reuses #87's one-phase Charge profile to advance through an actual
+# red boundary and return to a player-controlled map. The profile is needed
+# only for the debug positive path; release replays the same inputs against
+# the normal release ROM and proves the established debugtools probe is zero.
+MODERN_DEBUGTOOLS_PHASE_CONTROL_ROOT := \
+	build/expansion-modern-debugtools-phase-control
+MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR := \
+	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ROOT)/debug/$(MODERN_ABI)
+MODERN_DEBUGTOOLS_PHASE_CONTROL_ROM := \
+	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR)/fireemblem8.gba
+MODERN_DEBUGTOOLS_PHASE_CONTROL_ELF := \
+	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR)/fireemblem8.elf
+MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_SCRIPT := \
+	tools/gba-playtest/run_debugtools_phase_control_checks.py
+MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_OUTDIR := \
+	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR)/runtime-check
+
+expansion-modern-debugtools-phase-control-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=debug MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ROOT) \
+		EXPANSION_BLUE_PHASE_DELEGATE=1
+
+ifeq ($(MODERN_CONFIG),debug)
+expansion-modern-debugtools-phase-control-check: expansion-modern-boot-preflight \
+		expansion-modern-debugtools-phase-control-profile-rom
+	@mkdir -p "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_OUTDIR)/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_SCRIPT)" \
+		--rom "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ROM)" \
+		--elf "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ELF)" \
+		--config debug \
+		--out-dir "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_OUTDIR)"
+else
+expansion-modern-debugtools-phase-control-check: expansion-modern-boot-preflight \
+		expansion-modern-rom
+	@mkdir -p "$(MODERN_OUTPUT_DIR)/debugtools-phase-control-runtime-check/tmp"
+	TMPDIR="$(abspath $(MODERN_OUTPUT_DIR)/debugtools-phase-control-runtime-check/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_SCRIPT)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--config release \
+		--out-dir "$(MODERN_OUTPUT_DIR)/debugtools-phase-control-runtime-check"
+endif
+
 # Issue #86 bounded semantic run-until classification. This reuses the #85
 # routes and telemetry while keeping fixed-frame scenarios and fingerprints
 # unchanged.
@@ -4186,6 +4265,8 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-debugtools-map-check \
 		expansion-modern-debugtools-music-check \
 		expansion-modern-debugtools-tools-check \
+		expansion-modern-debugtools-phase-control-check \
+		expansion-modern-debugtools-phase-control-profile-rom \
 		expansion-modern-debugtools-diagnostics-check \
 		expansion-modern-debugtools-prep-check \
 		expansion-modern-debugtools-ch4prep-check \
@@ -4218,6 +4299,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
