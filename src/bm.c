@@ -38,6 +38,7 @@
 #include "expansion_itemtest.h"
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_autoplay_internal.h"
+#include "expansion_debugtools.h"
 #endif
 
 struct PalFadeSt EWRAM_DATA sPalFadeSt[0x20] = { 0 };
@@ -46,6 +47,14 @@ struct PlaySt EWRAM_DATA gPlaySt = {};
 struct Vec2 EWRAM_DATA sLastCoordMapCursorDrawn = {};
 u32 EWRAM_DATA sLastTimeMapCursorDrawn = 0;
 s8 EWRAM_DATA sCameraAnimTable[0x100] = { 0 };
+
+enum
+{
+    BM_MAIN_LABEL_NEXT_PHASE = 3,
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    BM_MAIN_LABEL_TRAP_PROCESSING = 12,
+#endif
+};
 
 struct ProcCmd CONST_DATA gProc_BMapMain[] = {
     PROC_SLEEP(0),
@@ -105,6 +114,9 @@ PROC_LABEL(5),
     PROC_REPEAT(BmMain_StartPhase),
     PROC_START_CHILD_BLOCKING(gProcScr_BerserkCpPhase),
 
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+PROC_LABEL(BM_MAIN_LABEL_TRAP_PROCESSING),
+#endif
     PROC_CALL_2(BmMain_UpdateTraps),
 
     PROC_GOTO(3),
@@ -400,6 +412,9 @@ void SwitchPhases(void)
         if (gPlaySt.chapterTurnNumber < 999)
             gPlaySt.chapterTurnNumber++;
 
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+        DebugToolsPhaseControl_AdvanceSuspendTurnAtNaturalIncrement();
+#endif
         ProcessTurnSupportExp();
     }
 }
@@ -424,6 +439,10 @@ int BmMain_ChangePhase(void)
     ClearActiveFactionGrayedStates();
     RefreshUnitSprites();
     SwitchPhases();
+
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    DebugToolsPhaseControl_ApplyTurnBeforePhaseEvents();
+#endif
 
     if (RunPhaseSwitchEvents() == true)
         return false;
@@ -465,10 +484,29 @@ void BmMain_StartPhase(ProcPtr proc)
         break;
 
     case FACTION_RED:
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+        if (DebugToolsPhaseControl_ApplyAtPhaseStart(gPlaySt.faction)
+            == DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED)
+        {
+            /* The map-main berserk child follows this callback. Resume at
+             * traps so green retains its vanilla update/decay tail. */
+            Proc_Goto(proc, BM_MAIN_LABEL_TRAP_PROCESSING);
+            return;
+        }
+#endif
         Proc_StartBlocking(gProcScr_CpPhase, proc);
         break;
 
     case FACTION_GREEN:
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+        if (DebugToolsPhaseControl_ApplyAtPhaseStart(gPlaySt.faction)
+            == DEBUGTOOLS_PHASE_CONTROL_START_BLOCKED)
+        {
+            /* See the red branch: bypass AI children, then preserve traps. */
+            Proc_Goto(proc, BM_MAIN_LABEL_TRAP_PROCESSING);
+            return;
+        }
+#endif
         Proc_StartBlocking(gProcScr_CpPhase, proc);
         break;
     }
@@ -519,7 +557,13 @@ void BmMain_SuspendBeforePhase(void)
 #endif
 
     gActionData.suspendPointType = SUSPEND_POINT_PHASECHANGE;
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    DebugToolsPhaseControl_BeginSuspendSerialization();
+#endif
     WriteSuspendSave(SAVE_ID_SUSPEND);
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    DebugToolsPhaseControl_EndSuspendSerialization();
+#endif
 }
 
 //! FE8U = 0x0801550C

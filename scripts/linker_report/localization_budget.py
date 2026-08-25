@@ -299,6 +299,15 @@ def build_report(
     if localization_budget is not None:
         report["source_catalog_budget"] = {
             "active_message_count": localization_budget["active_message_count"],
+            "stable_active_message_count": localization_budget.get(
+                "stable_active_message_count",
+                localization_budget["active_message_count"],
+            ),
+            "omitted_active_message_count": localization_budget.get(
+                "omitted_active_message_count",
+                0,
+            ),
+            "emission_profile": localization_budget.get("emission_profile"),
             "tombstone_count": localization_budget["tombstone_count"],
             "pseudo_policy_counts": localization_budget.get(
                 "pseudo_policy_counts", {}
@@ -324,7 +333,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--localization-budget", default=None,
         help="Optional path to a generated localization budget.json "
-             "(e.g. build/expansion-modern/expansion-localization/generated/budget.json)",
+             "(e.g. build/expansion-modern/expansion-localization/"
+             "release/generated/budget.json)",
     )
     parser.add_argument("--output", required=True, help="Path to write JSON report")
     parser.add_argument(
