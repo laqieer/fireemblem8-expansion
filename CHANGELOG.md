@@ -26,6 +26,7 @@ Do not hand-edit the text between the two HTML comment markers below --
 - Add a typed ID space (include/id_space.h, generated from scripts/generated_data/idspace.py) with per-domain technical-max/configured-cap macros and compile-time range diagnostics, and raise the configurable item ID cap to 0xCE (the default build's cap is unchanged); no EXPANSION_SAVE_COMPAT_EPOCH change (see docs/id_space.md, reports/id_space_audit.md). (#10)
 - Add production 32 MiB Japanese and Simplified Chinese support: 3,414/3,414 compressed game messages and all 143 raw surfaces per locale, with zero fallback, exclusion, unresolved record, or runtime leakage; live-ROM-bound Japanese raw provenance; complete system/talk CJK font coverage; full FE control-stream tokenization and bounded UTF-8 substitutions; persisted first-start/Config switching; and localization host/build/runtime gates with captured CJK playtests (see docs/localization.md, docs/game_locale_sources.md, and docs/cjk_fonts.md). (#18)
 - Add a debug-only bounded chapter and skirmish selector backed by typed chapter/world-map metadata and a lifecycle-safe GameControl handoff. (#123)
+- Add typed, read-only title/map/prep debugtools State and Engine diagnostics with bounded views and exact forced display restoration. (#127)
 
 ### Changed
 
@@ -44,6 +45,7 @@ Do not hand-edit the text between the two HTML comment markers below --
 
 ### Security
 
+- Hash-lock Build and release Python dependencies before artifact publication.
 - Make modernization bitfield scanning linear-time for adversarial source declarations.
 - Add a three-way immutable binding validator for the mgfembp git submodule (.gitmodules section, HEAD tree gitlink, export-exclusion record, and provenance record must all agree exactly on path/URL/pinned commit); reject a non-https submodule URL scheme and any allowlist/exclusion contradiction. Never fetches or initializes the submodule. (#9)
 - Add explicit, factual export exclusions (docs/release_data/export_exclusions.json) and prove the included source allowlist and export exclusions are an exact, disjoint partition of the complete immutable HEAD tree; wire exact archive-member equality and non-git closed-world coverage into the rehearsal. (#9)
