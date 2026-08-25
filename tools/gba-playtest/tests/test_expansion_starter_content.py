@@ -103,7 +103,8 @@ ISSUE_158_AUDIT_MIGRATIONS = {
         ("ContentTextGenerationTests",
          "test_generated_output_is_deterministic_and_path_independent"),
     ISSUE_158_AUDIT_FILE + "::ContentTextGenerationTests.test_no_committed_source_hand_holds_the_authored_text":
-        ("ContentTextGenerationTests", "test_default_profile_generates_nothing"),
+        ("StarterContentRegistrationHostTests",
+         "test_enabled_content_registers_once_and_applies_bounded_avoid"),
     ISSUE_158_AUDIT_FILE + "::ContentTextGenerationTests.test_texts_table_carries_no_content_message":
         ("scripts.generated_data.tests.test_items_expansion",
          "AuthoredContentRecordTests", "test_record_consumes_no_shared_message_slot"),

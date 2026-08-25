@@ -171,19 +171,20 @@ Host:
   flag's default, both dependencies, invalid values, fingerprint impact,
   epoch independence, metadata JSON, idspace constant agreement, and the
   compile-time contract's presence in the headers and `modern.mk`.
-* `tools/gba-playtest/tests/test_expansion_starter_content.py` (26 tests):
-  no raw numeric content ID, no `//` comments, public-API-only registration,
-  a single install point, a content-free `bmbattle.c`, a bounded effect, a
-  distinct stat, probe field order matching the C struct, u32-scalar-only
-  probe fields, **zero data/bss in the disabled TU**, both compile-time
-  dependency errors -- plus the config-gated text half: the default profile
-  generates nothing and deletes a stale artifact, the content profile emits
-  the exact authored literal with a capacity that fits the module buffer,
-  output is deterministic and path-independent, no committed C hand-holds the
-  authored text, `texts/texts.txt`/`msg.h` carry no `MSG_EXPANSION_*` at all,
-  a default-compiled `bmitem.o`/content object has no content symbol and no
-  authored bytes, the content-profile objects have both, and over-long
-  authoring text fails the static assert.
+* `tools/gba-playtest/tests/test_expansion_starter_content.py` (**20 issue
+  tests**; **21 only when run with the separately mapped parsed
+  shared-message test**): a compiled public probe ABI verifies every runner
+  field's offset, width, and `u32` type; strict C89 compilation covers the
+  content, mechanics, and item-test translation units plus an audited-header
+  mutation; compiled default/enabled objects prove profile-specific accessor
+  symbols and omission; generated output proves authored-name determinism,
+  path independence, and capacity; and the executable host fixture proves
+  public registration counts, typed ID, generated authored-name consumption
+  (including an alternate generated-header mutation), exact/capped bearer
+  effects, non-bearer behavior, and no late duplicate registration. The
+  compiled battle mutation permits only the generic mechanics hook and rejects
+  a direct content-item special case. The existing over-long text and invalid
+  dependency adversaries remain fail-closed.
 * `tools/gba-playtest/tests/test_expansion_mechanics.py`: now links the real
   `src/expansion_starter_content.c` into its drivers, so the registry host
   tests still execute the real, unmodified sources.
