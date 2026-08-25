@@ -62,18 +62,31 @@ _SAVE_INTERNAL_APIS = (
     "WriteGameSave",
     "ReadGameSave",
 )
-_SAVE_API_COUNTS = {
-    "WriteSuspendSave": {
-        "src/bm.c": 1, "src/bmarena.c": 1, "src/bmbattle.c": 1,
-        "src/bmdebug.c": 1, "src/bmtrap.c": 1, "src/cp_decide.c": 1,
-        "src/playerphase.c": 2, "src/uiarena.c": 1,
-    },
-    "ReadSuspendSave": {"src/bmdebug.c": 2, "src/savemenu.c": 1},
-    "WriteGameSave": {
-        "src/bmdebug.c": 3, "src/bonusclaim.c": 1, "src/savemenu.c": 1,
-    },
-    "ReadGameSave": {"src/savemenu.c": 5, "src/sio_term.c": 1},
+_SAVE_API_EDGES = {
+    ("src/bm.c", "BmMain_SuspendBeforePhase", "WriteSuspendSave"),
+    ("src/bmarena.c", "ArenaContinueBattle", "WriteSuspendSave"),
+    ("src/bmbattle.c", "BattleGenerateArena", "WriteSuspendSave"),
+    ("src/bmdebug.c", "DebugChuudanMenu_ManualSave", "WriteSuspendSave"),
+    ("src/bmdebug.c", "DebugContinueMenu_ContinueChapter", "ReadSuspendSave"),
+    ("src/bmdebug.c", "DebugContinueMenu_ManualContinue", "ReadSuspendSave"),
+    ("src/bmdebug.c", "DebugClearMenu_ClearFile", "WriteGameSave"),
+    ("src/bmdebug.c", "StartupDebugMenu_ChapterSelectEffect", "WriteGameSave"),
+    ("src/bmdebug.c", "StartupDebugMenu_WorldMapEffect", "WriteGameSave"),
+    ("src/bmtrap.c", "HandlePostActionTraps", "WriteSuspendSave"),
+    ("src/bonusclaim.c", "BonusClaim_DrawItemSentPopup", "WriteGameSave"),
+    ("src/cp_decide.c", "CpDecide_Suspend", "WriteSuspendSave"),
+    ("src/playerphase.c", "PlayerPhase_PrepareAction", "WriteSuspendSave"),
+    ("src/playerphase.c", "PlayerPhase_Suspend", "WriteSuspendSave"),
+    ("src/savemenu.c", "ExecSaveMenuMiscOption", "ReadGameSave"),
+    ("src/savemenu.c", "ExecSaveMenuMiscOption", "WriteGameSave"),
+    ("src/savemenu.c", "PostSaveMenuHandler", "ReadGameSave"),
+    ("src/savemenu.c", "PostSaveMenuHandler", "ReadSuspendSave"),
+    ("src/savemenu.c", "SaveMenuExtraSlotSelectLoop", "ReadGameSave"),
+    ("src/sio_term.c", "LinkArenaTeamBuild_LoadSelectedSave", "ReadGameSave"),
+    ("src/uiarena.c", "WriteSuspendPlayerIdle", "WriteSuspendSave"),
 }
+_SAVE_API_MULTIPLICITY = Counter(_SAVE_API_EDGES)
+_SAVE_API_MULTIPLICITY[("src/savemenu.c", "SaveMenuExtraSlotSelectLoop", "ReadGameSave")] = 3
 def _strip_comments(text: str) -> str:
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
     text = re.sub(r"//[^\n]*", "", text)
@@ -418,6 +431,17 @@ class SaveCompatDialogBackSemanticTests(unittest.TestCase):
         self.assertTrue(
             all(checkpoint["sram_hash"] for checkpoint in scenario["checkpoints"])
         )
+        frames = {
+            checkpoint["name"]: checkpoint["frame"]
+            for checkpoint in scenario["checkpoints"]
+        }
+        actions = [
+            frame["keys"] for frame in scenario["frames"]
+            if frames["after-dismiss"] < frame["start"] <= frames["back-returned"]
+        ]
+        self.assertEqual(actions, [["A"]])
+        for mutation in ([["B"]], [["DOWN"], ["A"]]):
+            self.assertNotEqual(mutation, actions)
 
         fingerprints = sorted(
             FINGERPRINTS_DIR.glob("savecompat-dialog-back-*.json")
@@ -610,16 +634,7 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                     edges = _compiled_census_edges(
                         work, sources, _SAVE_INTERNAL_APIS, defines, includes
                     )
-                    by_symbol = {
-                        symbol: dict(
-                            Counter(
-                                path for path, _, edge_symbol in edges
-                                if edge_symbol == symbol
-                            )
-                        )
-                        for symbol in _SAVE_INTERNAL_APIS
-                    }
-                    self.assertEqual(by_symbol, _SAVE_API_COUNTS)
+                    self.assertEqual(Counter(edges), _SAVE_API_MULTIPLICITY)
                     menu_symbols = ("StartSaveMenu", "ProcScr_SaveMenu", "Proc_StartBlocking", "Proc_Find")
                     menu_edges = _compiled_census_edges(
                         work,
@@ -650,50 +665,51 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                         _candidate_sources((hidden_caller,), _SAVE_INTERNAL_APIS),
                         (hidden_caller,),
                     )
-                    self.assertEqual(
-                        Counter(
-                            symbol
-                            for _, symbol in _object_relocation_edges(
-                                _compile_arm(
-                                    work,
-                                    extra_caller,
-                                    mode + "-extra_save_caller.o",
-                                    defines,
-                                    includes,
-                                ),
-                                _SAVE_INTERNAL_APIS,
-                            )
-                        ),
-                        Counter({"WriteGameSave": 1}),
+                    extra_edges = {
+                        (extra_caller.name, *edge) for edge in _object_relocation_edges(
+                            _compile_arm(work, extra_caller, mode + "-extra_save_caller.o", defines, includes),
+                            _SAVE_INTERNAL_APIS,
+                        )
+                    }
+                    hidden_edges = {
+                        (hidden_caller.name, *edge) for edge in _object_relocation_edges(
+                            _compile_arm(work, hidden_caller, mode + "-hidden_save_caller.o", defines, (work, *includes)),
+                            _SAVE_INTERNAL_APIS,
+                        )
+                    }
+                    self.assertIn(
+                        ("extra_save_caller.c", "SaveCompatUnexpectedSaveHook", "WriteGameSave"),
+                        extra_edges,
                     )
-                    self.assertEqual(
-                        Counter(
-                            symbol
-                            for _, symbol in _object_relocation_edges(
-                                _compile_arm(
-                                    work,
-                                    hidden_caller,
-                                    mode + "-hidden_save_caller.o",
-                                    defines,
-                                    (work, *includes),
-                                ),
-                                _SAVE_INTERNAL_APIS,
-                            )
-                        ),
-                        Counter({"WriteGameSave": 1}),
+                    self.assertIn(
+                        ("hidden_save_caller.c", "SaveCompatHiddenSaveHook", "WriteGameSave"),
+                        hidden_edges,
+                    )
+                    self.assertNotEqual(
+                        Counter(edges) + Counter(extra_edges | hidden_edges),
+                        _SAVE_API_MULTIPLICITY,
                     )
                     same_file = work / "savemenu.c"
                     same_file.write_text(
                         '#include "global.h"\n#include "savemenu.h"\nextern struct ProcCmd ProcScr_SaveMenu[];\nvoid StartSaveMenu(void *p)\n{\n    Proc_StartBlocking(ProcScr_SaveMenu, p);\n}\nvoid SaveMenu_SetDifficultyChoice(int a, int b)\n{\n    Proc_StartBlocking(ProcScr_SaveMenu, 0);\n}\n',
                         encoding="utf-8",
                     )
-                    for fixture in (bypass, same_file):
-                        self.assertNotEqual(
-                            set(_compiled_census_edges(
-                                work, (fixture,), menu_symbols, defines, includes
-                            )),
-                            expected_menu_edges,
-                        )
+                    bypass_edges = set(_compiled_census_edges(
+                        work, (bypass,), menu_symbols, defines, includes
+                    ))
+                    same_edges = set(_compiled_census_edges(
+                        work, (same_file,), menu_symbols, defines, includes
+                    ))
+                    self.assertIn(
+                        ("extra_save_menu_bypass.c", "SaveCompatUnexpectedMenuBypass", "ProcScr_SaveMenu"),
+                        bypass_edges,
+                    )
+                    self.assertIn(
+                        ("savemenu.c", "SaveMenu_SetDifficultyChoice", "Proc_StartBlocking"),
+                        same_edges,
+                    )
+                    self.assertNotEqual(expected_menu_edges | bypass_edges, expected_menu_edges)
+                    self.assertNotEqual(expected_menu_edges | same_edges, expected_menu_edges)
                     modern_edges = _object_relocation_edges(
                         _compile_arm(
                             work,
