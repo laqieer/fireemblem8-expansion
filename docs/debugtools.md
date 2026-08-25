@@ -1729,11 +1729,12 @@ computer/berserk phase, event, battle, fade, or camera Proc may own the map;
 and #85 must report no failure. `GetGameLock()` must equal the normal stable
 map count of one, or exactly two while the active debugtools session owns the
 one additional lock; orphan and extra locks reject. Direct request API calls
-under those ownership guards fail closed: they record a rejection but never
-queue, apply, or restore a request. Only one request may be pending: a second
-returns the typed pending error without overwriting the original request,
-which then still consumes or expires through its ordinary lifecycle. The
-request is not applied from the menu callback.
+under those ownership guards fail closed: they increment rejected telemetry,
+record `DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY`, and refresh sampled
+turn/modes, but never queue, apply, or restore a request. Only one request
+may be pending: a second returns the typed pending error without overwriting
+the original request, which then still consumes or expires through its
+ordinary lifecycle. The request is not applied from the menu callback.
 `BmMain_StartPhase` remains the sole faction router and consumes a matching
 red/green request at the corresponding boundary. A turn request applies after
 the phase switch but before `RunPhaseSwitchEvents`, so destination-faction
@@ -1766,9 +1767,11 @@ behavior are unchanged.
 
 The existing submenu remains bounded: it has eight live rows plus its
 terminator, below `MENU_ITEM_MAX == 11`. All nine new message IDs (121--129)
-are in the expansion catalog for every authored locale. The debug-only
-request state is bounded to 16 bytes by the ARM object check; its 48-byte
-probe extension is debug-only, preserving release EWRAM/layout.
+remain stable and are translated in every authored catalog, but their
+`debug_only` emission omits their catalog indices and UTF-8 payloads from
+release ROMs. The debug-only request state is bounded to 16 bytes by the ARM
+object check; its 48-byte probe extension is debug-only, preserving release
+EWRAM/layout.
 
 ### TC-DEBUGTOOLS-PROTOTYPE-002: transient turn and faction control
 

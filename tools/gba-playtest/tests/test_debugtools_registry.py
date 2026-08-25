@@ -189,7 +189,14 @@ class DebugToolsOverrideIdRegistryTests(unittest.TestCase):
     compiles them as one switch so duplicate menu-dispatch cases fail in C."""
 
     DEBUGTOOLS_SOURCES = (ACTIONS_SRC, TOOLS_SRC, MUSIC_SRC)
-    PHASE_CONTROL_RESERVED_IDS = (*range(0xF6, 0xFB), 0xFC)
+    PHASE_CONTROL_OVERRIDE_IDS = {
+        "DEBUGTOOLS_TURN_OVERRIDE_ID": 0xF6,
+        "DEBUGTOOLS_RED_COMPUTER_OVERRIDE_ID": 0xF7,
+        "DEBUGTOOLS_RED_BLOCKED_OVERRIDE_ID": 0xF8,
+        "DEBUGTOOLS_GREEN_COMPUTER_OVERRIDE_ID": 0xF9,
+        "DEBUGTOOLS_GREEN_BLOCKED_OVERRIDE_ID": 0xFA,
+        "DEBUGTOOLS_TURN_DECREMENT_OVERRIDE_ID": 0xFC,
+    }
 
     @classmethod
     def setUpClass(cls):
@@ -220,13 +227,13 @@ class DebugToolsOverrideIdRegistryTests(unittest.TestCase):
                 self.assertIn(name, defined, (source, name))
 
         self.assertEqual(registry["DEBUGTOOLS_MUSIC_OVERRIDE_ID"], 0xFB)
+        self.assertEqual(
+            {name: registry[name] for name in self.PHASE_CONTROL_OVERRIDE_IDS},
+            self.PHASE_CONTROL_OVERRIDE_IDS,
+            "phase-control override constants must own their exact reserved IDs",
+        )
 
         entries = [(name, value) for name, value in registry.items()]
-        entries.extend(
-            (f"PHASE_CONTROL_RESERVED_{value:02X}", value)
-            for value in self.PHASE_CONTROL_RESERVED_IDS
-            if value not in registry.values()
-        )
         entries.extend(
             (f"MENU_DEF_DISPATCH_{value_text}", int(value_text, 0))
             for value_text in menu_dispatch.findall(
@@ -267,16 +274,27 @@ class DebugToolsOverrideIdRegistryTests(unittest.TestCase):
                 f"compiled override registry contains a duplicate case:\n{out}",
             )
 
-    def test_override_registry_rejects_duplicate_values_from_distinct_constants(self):
-        values = {"DEBUGTOOLS_TURN_OVERRIDE_ID": 0xF6}
+    def test_override_registry_rejects_parsed_phase_constant_collision(self):
+        source = _strip_c_comments(TOOLS_SRC.read_text(encoding="utf-8"))
+        collision = source.replace(
+            "DEBUGTOOLS_TURN_DECREMENT_OVERRIDE_ID = 0xFC",
+            "DEBUGTOOLS_TURN_DECREMENT_OVERRIDE_ID = 0xF6",
+            1,
+        )
+        declaration = re.compile(
+            r"\b(DEBUGTOOLS_[A-Z0-9_]+_OVERRIDE_ID)\s*=\s*(0x[0-9A-Fa-f]+|\d+)"
+        )
+        values = {}
         with self.assertRaisesRegex(AssertionError, "shared by"):
-            self.assertNotIn(
-                0xF6,
-                values.values(),
-                "override ID 0xF6 is shared by "
-                "DEBUGTOOLS_TURN_OVERRIDE_ID and "
-                "DEBUGTOOLS_TURN_DECREMENT_OVERRIDE_ID",
-            )
+            for name, value_text in declaration.findall(collision):
+                value = int(value_text, 0)
+                self.assertNotIn(
+                    value,
+                    values,
+                    f"override ID 0x{value:02X} is shared by "
+                    f"{values.get(value)} and {name}",
+                )
+                values[value] = name
 
 
 class DebugToolsRegistryHostTests(unittest.TestCase):

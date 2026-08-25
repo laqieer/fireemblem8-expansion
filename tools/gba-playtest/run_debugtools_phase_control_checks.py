@@ -301,7 +301,8 @@ def _check_positive(capture):
         failures.append("positive: fixture did not begin in an interactive blue phase")
     if requested[PHASE_REQUESTED_COUNT] != 1:
         failures.append(
-            "positive: Apply Turn +1 did not record exactly one live request"
+            "positive: the active debugtools-session lock did not accept "
+            "Apply Turn +1 exactly once"
         )
     if requested[PHASE_LAST_REQUEST_KIND] != PHASE_CONTROL_REQUEST_TURN:
         failures.append("positive: submenu did not select the typed turn request")

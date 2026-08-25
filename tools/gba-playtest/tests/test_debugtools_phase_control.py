@@ -43,6 +43,10 @@ RELEASE_RUNTIME_FINGERPRINT = (
     / "fingerprints"
     / "debugtools-phase-control-modern-release.json"
 )
+RELEASE_BUDGET_REPORT = ROOT / "reports" / "linker-budget" / "modern-release.json"
+RELEASE_LOCALIZATION_BUDGET_REPORT = (
+    ROOT / "reports" / "linker-budget" / "modern-localization-release.json"
+)
 CC = shutil.which("gcc") or shutil.which("cc")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 NM = shutil.which("nm")
@@ -64,6 +68,12 @@ MESSAGE_KEYS = {
     "debug.status.turn": 127,
     "debug.mode.computer": 128,
     "debug.mode.blocked": 129,
+}
+RELEASE_PHASE_BASELINE = {
+    "ewram_occupied_bytes": 259056,
+    "rom_occupied_bytes": 16776960,
+    "floating_end": 145962292,
+    "emitted_message_count": 120,
 }
 
 
@@ -333,6 +343,48 @@ class DebugToolsPhaseControlLocalizationTests(unittest.TestCase):
             for key in MESSAGE_KEYS:
                 self.assertTrue(strings[key], f"{locale} must translate {key}")
                 self.assertNotIn("\n", strings[key])
+
+    def test_release_catalog_omits_phase_payloads_at_the_pre_phase_boundary(self):
+        budget = json.loads(RELEASE_BUDGET_REPORT.read_text(encoding="utf-8"))
+        localization = json.loads(
+            RELEASE_LOCALIZATION_BUDGET_REPORT.read_text(encoding="utf-8")
+        )
+        regions = {region["name"]: region for region in budget["regions"]}
+        assignments = {
+            assignment["name"]: assignment["address"]
+            for assignment in budget["pinned_assignments"]
+        }
+        source_budget = localization["source_catalog_budget"]
+
+        self.assertEqual(
+            regions["ewram"]["occupied_bytes"],
+            RELEASE_PHASE_BASELINE["ewram_occupied_bytes"],
+        )
+        self.assertEqual(
+            regions["rom"]["occupied_bytes"],
+            RELEASE_PHASE_BASELINE["rom_occupied_bytes"],
+        )
+        self.assertEqual(
+            assignments["__floating_end"],
+            RELEASE_PHASE_BASELINE["floating_end"],
+        )
+        self.assertEqual(source_budget["emission_profile"], "release")
+        self.assertEqual(
+            source_budget["active_message_count"],
+            RELEASE_PHASE_BASELINE["emitted_message_count"],
+        )
+        self.assertEqual(
+            source_budget["omitted_active_message_count"],
+            len(MESSAGE_KEYS),
+        )
+        self.assertEqual(
+            localization["rom_catalog_index"]["symbols"]["gExpansionLocaleMsgIds"],
+            RELEASE_PHASE_BASELINE["emitted_message_count"] * 2,
+        )
+        self.assertEqual(
+            localization["rom_catalog_strings"]["symbols"]["gExpansionCatalog_en"],
+            RELEASE_PHASE_BASELINE["emitted_message_count"] * 4,
+        )
 
 
 class DebugToolsPhaseControlCaseCatalogTests(unittest.TestCase):

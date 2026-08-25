@@ -1,7 +1,8 @@
+#include "global.h"
+
 #include <stdio.h>
 #include <string.h>
 
-#include "global.h"
 #include "uimenu.h"
 #include "expansion_debugtools.h"
 #include "expansion_locale.h"

@@ -398,12 +398,10 @@ tools/scaninc/scaninc$(EXE): $(wildcard tools/scaninc/*.cpp tools/scaninc/*.h to
 # modern.mk-only fixture tree (neither file present) safely no-ops instead
 # of failing to find a rule for a target nothing added to
 # MODERN_ALL_C_OBJECTS. The generated catalog/header/budget files
-# themselves live under $(MODERN_BUILD_ROOT) (their content never depends
-# on MODERN_CONFIG/MODERN_ABI/MODERN_ROM_SIZE -- only on
-# texts/expansion/registry.json + the authored locale catalogs), so every
-# MODERN_CONFIG/MODERN_ABI combination *within the same build root* shares
-# one generated copy instead of needlessly regenerating an identical copy
-# per $(MODERN_OUTPUT_DIR).
+# themselves live under $(MODERN_BUILD_ROOT) and use a config-specific
+# directory. A debug-only registry message retains its stable ID/header
+# macro in release but is intentionally omitted from the release catalog
+# payload, so debug and release content must never share generated output.
 #
 # Issue #18 sprint 5 root-cause fix: this used to be a single, hardcoded
 # "build/expansion-localization" path shared by *every* build root,
@@ -433,11 +431,18 @@ tools/scaninc/scaninc$(EXE): $(wildcard tools/scaninc/*.cpp tools/scaninc/*.h to
 MODERN_LOCALIZATION_CLI := scripts/localization/cli.py
 MODERN_LOCALIZATION_REGISTRY := texts/expansion/registry.json
 MODERN_LOCALIZATION_AVAILABLE := $(and $(wildcard $(MODERN_LOCALIZATION_CLI)),$(wildcard $(MODERN_LOCALIZATION_REGISTRY)))
-MODERN_LOCALIZATION_ROOT := $(MODERN_BUILD_ROOT)/expansion-localization
+MODERN_LOCALIZATION_ROOT := $(MODERN_BUILD_ROOT)/expansion-localization/$(MODERN_CONFIG)
 MODERN_LOCALIZATION_GENERATED_DIR := $(MODERN_LOCALIZATION_ROOT)/generated
 MODERN_LOCALIZATION_CATALOG_C := $(MODERN_LOCALIZATION_GENERATED_DIR)/expansion_locale_catalog.c
 MODERN_LOCALIZATION_MSG_IDS_H := $(MODERN_LOCALIZATION_GENERATED_DIR)/expansion_msg_ids.h
 MODERN_LOCALIZATION_BUDGET_JSON := $(MODERN_LOCALIZATION_GENERATED_DIR)/budget.json
+MODERN_LOCALIZATION_EMISSION_PROFILE := $(if $(filter debug,$(MODERN_CONFIG)),debug,release)
+# Kept only as a generator-backed compatibility target for dependency files
+# written before catalog payloads became profile-specific. New objects depend
+# on MODERN_LOCALIZATION_MSG_IDS_H above; the stable-ID header here is safe
+# because it never filters debug-only IDs.
+MODERN_LOCALIZATION_LEGACY_GENERATED_DIR := $(MODERN_BUILD_ROOT)/expansion-localization/generated
+MODERN_LOCALIZATION_LEGACY_MSG_IDS_H := $(MODERN_LOCALIZATION_LEGACY_GENERATED_DIR)/expansion_msg_ids.h
 
 # --- Full-game CJK catalog (issue #18 game-catalog slice) -------------------
 # The validated production EXPANSION_ENABLED_LOCALES profile is the only
@@ -2121,7 +2126,18 @@ FORCE_MODERN_LOCALIZATION:
 
 $(MODERN_LOCALIZATION_CATALOG_C) $(MODERN_LOCALIZATION_MSG_IDS_H) $(MODERN_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_LOCALIZATION
 	@mkdir -p "$(MODERN_LOCALIZATION_GENERATED_DIR)"
-	@python3 -m scripts.localization.cli generate --out-dir "$(MODERN_LOCALIZATION_GENERATED_DIR)"
+	@python3 -m scripts.localization.cli generate \
+		--out-dir "$(MODERN_LOCALIZATION_GENERATED_DIR)" \
+		--emission-profile "$(MODERN_LOCALIZATION_EMISSION_PROFILE)"
+
+# Old compiler dependency files can name the former shared header path. Keep
+# that path buildable with the stable-ID debug profile, without allowing it to
+# supply a profile-specific catalog object to a new build.
+$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H): FORCE_MODERN_LOCALIZATION
+	@mkdir -p "$(MODERN_LOCALIZATION_LEGACY_GENERATED_DIR)"
+	@python3 -m scripts.localization.cli generate \
+		--out-dir "$(MODERN_LOCALIZATION_LEGACY_GENERATED_DIR)" \
+		--emission-profile debug
 
 # Issue #18 sprint 3: ordinary compiles are not otherwise made to wait for
 # expansion_msg_ids.h -- only the synthetic expansion_locale-catalog.o

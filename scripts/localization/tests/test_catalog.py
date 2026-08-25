@@ -160,6 +160,22 @@ class ParseRegistryTests(unittest.TestCase):
             schema.PSEUDO_POLICY_TRANSFORM,
         )
 
+    def test_emission_defaults_to_always(self):
+        entries = parse_registry(_base_registry())
+        self.assertEqual(entries[0].emission, schema.EMISSION_ALWAYS)
+
+    def test_debug_only_emission_is_accepted(self):
+        reg = _base_registry()
+        reg["messages"][0]["emission"] = schema.EMISSION_DEBUG_ONLY
+        entries = parse_registry(reg)
+        self.assertEqual(entries[0].emission, schema.EMISSION_DEBUG_ONLY)
+
+    def test_invalid_emission_rejected(self):
+        reg = _base_registry()
+        reg["messages"][0]["emission"] = "sometimes"
+        with self.assertRaises(SchemaError):
+            parse_registry(reg)
+
     def test_pseudo_policy_preserve_accepted(self):
         reg = _base_registry()
         reg["messages"][0]["pseudo_policy"] = schema.PSEUDO_POLICY_PRESERVE
@@ -183,6 +199,19 @@ class ParseRegistryTests(unittest.TestCase):
                 "key": "a.retired",
                 "status": "tombstone",
                 "pseudo_policy": schema.PSEUDO_POLICY_PRESERVE,
+            }
+        )
+        with self.assertRaises(SchemaError):
+            parse_registry(reg)
+
+    def test_tombstone_emission_rejected(self):
+        reg = _base_registry()
+        reg["messages"].append(
+            {
+                "id": 2,
+                "key": "a.retired",
+                "status": "tombstone",
+                "emission": schema.EMISSION_DEBUG_ONLY,
             }
         )
         with self.assertRaises(SchemaError):

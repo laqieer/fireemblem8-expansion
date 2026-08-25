@@ -1024,6 +1024,7 @@
       "id": 121,
       "key": "debug.confirm.turn_increment",
       "status": "active",
+      "emission": "debug_only",
       "surface": "debug_overlay",
       "max_width": 24,
       "max_decoded_bytes": 40
@@ -1032,6 +1033,7 @@
       "id": 122,
       "key": "debug.confirm.turn_decrement",
       "status": "active",
+      "emission": "debug_only",
       "surface": "debug_overlay",
       "max_width": 24,
       "max_decoded_bytes": 40
@@ -1040,6 +1042,7 @@
       "id": 123,
       "key": "debug.confirm.red_computer",
       "status": "active",
+      "emission": "debug_only",
       "surface": "debug_overlay",
       "max_width": 24,
       "max_decoded_bytes": 40
@@ -1048,6 +1051,7 @@
       "id": 124,
       "key": "debug.confirm.red_blocked",
       "status": "active",
+      "emission": "debug_only",
       "surface": "debug_overlay",
       "max_width": 24,
       "max_decoded_bytes": 40
@@ -1056,6 +1060,7 @@
       "id": 125,
       "key": "debug.confirm.green_computer",
       "status": "active",
+      "emission": "debug_only",
       "surface": "debug_overlay",
       "max_width": 24,
       "max_decoded_bytes": 40
@@ -1064,6 +1069,7 @@
       "id": 126,
       "key": "debug.confirm.green_blocked",
       "status": "active",
+      "emission": "debug_only",
       "surface": "debug_overlay",
       "max_width": 24,
       "max_decoded_bytes": 40
@@ -1072,6 +1078,7 @@
       "id": 127,
       "key": "debug.status.turn",
       "status": "active",
+      "emission": "debug_only",
       "surface": "debug_overlay",
       "max_width": 16,
       "max_decoded_bytes": 24
@@ -1080,6 +1087,7 @@
       "id": 128,
       "key": "debug.mode.computer",
       "status": "active",
+      "emission": "debug_only",
       "surface": "debug_overlay",
       "max_width": 16,
       "max_decoded_bytes": 24
@@ -1088,6 +1096,7 @@
       "id": 129,
       "key": "debug.mode.blocked",
       "status": "active",
+      "emission": "debug_only",
       "surface": "debug_overlay",
       "max_width": 16,
       "max_decoded_bytes": 24

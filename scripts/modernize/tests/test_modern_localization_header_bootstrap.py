@@ -206,7 +206,13 @@ class ModernLocalizationHeaderBootstrapTests(unittest.TestCase):
     def _run_real_isolated_build(self, config):
         with tempfile.TemporaryDirectory() as tmp:
             iso_root = Path(tmp) / "iso-build"
-            iso_header = iso_root / "expansion-localization" / "generated" / "expansion_msg_ids.h"
+            iso_header = (
+                iso_root
+                / "expansion-localization"
+                / config
+                / "generated"
+                / "expansion_msg_ids.h"
+            )
             result = self._make(
                 "expansion-modern-elf",
                 f"MODERN_CONFIG={config}",
@@ -320,7 +326,7 @@ class ModernLocalizationMultiCheckColdCleanTests(unittest.TestCase):
             # generated header must exist under *that* derived path.
             iso_multi_root = iso_root.parent / (iso_root.name + "-multi")
             iso_header = (
-                iso_multi_root / "expansion-localization" / "generated"
+                iso_multi_root / "expansion-localization" / config / "generated"
                 / "expansion_msg_ids.h"
             )
             self.assertTrue(

@@ -398,7 +398,7 @@ static int TestRejectedAndExpiredRequests(void)
     sEventLive = 1;
     CHECK(DebugToolsPhaseControl_RequestTurn(6)
               == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
-          "active events must reject a request without mutation");
+          "active events must reject without queueing a request");
     sEventLive = 0;
 
     requestsBeforeUnsafeOwnership = gDebugToolsProbe.phaseControlRequestedCount;
@@ -406,32 +406,32 @@ static int TestRejectedAndExpiredRequests(void)
     CHECK(DebugToolsPhaseControl_RequestFactionMode(
               FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
               == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
-          "map-action ownership must reject a request without mutation");
+          "map-action ownership must reject without queueing a request");
     sPlayerActionLive = 0;
 
     sCameraLive = 1;
     CHECK(DebugToolsPhaseControl_RequestFactionMode(
               FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
               == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
-          "camera Proc ownership must reject a request without mutation");
+          "camera Proc ownership must reject without queueing a request");
     sCameraLive = 0;
 
     sFadeLive = 1;
     CHECK(DebugToolsPhaseControl_RequestTurn(6)
               == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
-          "map fade ownership must reject a request without mutation");
+          "map fade ownership must reject without queueing a request");
     sFadeLive = 0;
 
     sBattleEventLive = 1;
     CHECK(DebugToolsPhaseControl_RequestTurn(6)
               == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
-          "battle-event ownership must reject a request without mutation");
+          "battle-event ownership must reject without queueing a request");
     sBattleEventLive = 0;
 
     sBattleLive = 1;
     CHECK(DebugToolsPhaseControl_RequestTurn(6)
               == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
-          "active battle ownership must reject a request without mutation");
+          "active battle ownership must reject without queueing a request");
     sBattleLive = 0;
     CHECK(gDebugToolsProbe.phaseControlRequestedCount == requestsBeforeUnsafeOwnership
               && gDebugToolsProbe.phaseControlAppliedCount == 0
@@ -513,6 +513,9 @@ static int TestRejectedAndExpiredRequests(void)
 static int TestLockOwnership(void)
 {
     u32 requestsBefore;
+    u32 rejectedBefore;
+    u32 appliedBefore;
+    u32 restoredBefore;
 
     ResetHarness();
     CHECK(DebugToolsPhaseControl_RequestFactionMode(
@@ -522,13 +525,27 @@ static int TestLockOwnership(void)
     DebugToolsPhaseControl_Reset();
 
     requestsBefore = gDebugToolsProbe.phaseControlRequestedCount;
+    rejectedBefore = gDebugToolsProbe.phaseControlRejectedCount;
+    appliedBefore = gDebugToolsProbe.phaseControlAppliedCount;
+    restoredBefore = gDebugToolsProbe.phaseControlRestoredCount;
     gBmSt.lock = 2;
     CHECK(DebugToolsPhaseControl_RequestFactionMode(
               FACTION_RED, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
               == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
           "orphan extra lock must reject a request");
-    CHECK(gDebugToolsProbe.phaseControlRequestedCount == requestsBefore,
-          "orphan extra lock must not queue a request");
+    CHECK(gDebugToolsProbe.phaseControlRequestedCount == requestsBefore
+              && gDebugToolsProbe.phaseControlAppliedCount == appliedBefore
+              && gDebugToolsProbe.phaseControlRestoredCount == restoredBefore,
+          "orphan extra lock must not queue, apply, or restore a request");
+    CHECK(gDebugToolsProbe.phaseControlRejectedCount == rejectedBefore + 1
+              && gDebugToolsProbe.phaseControlLastResult
+                  == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY
+              && gDebugToolsProbe.phaseControlTurnSample == gPlaySt.chapterTurnNumber
+              && gDebugToolsProbe.phaseControlRedModeSample
+                  == DEBUGTOOLS_PHASE_CONTROL_COMPUTER
+              && gDebugToolsProbe.phaseControlGreenModeSample
+                  == DEBUGTOOLS_PHASE_CONTROL_COMPUTER,
+          "orphan extra lock must preserve diagnostic rejection telemetry");
 
     sDebugSessionActive = 1;
     CHECK(DebugToolsPhaseControl_RequestFactionMode(
@@ -538,13 +555,27 @@ static int TestLockOwnership(void)
     DebugToolsPhaseControl_Reset();
 
     requestsBefore = gDebugToolsProbe.phaseControlRequestedCount;
+    rejectedBefore = gDebugToolsProbe.phaseControlRejectedCount;
+    appliedBefore = gDebugToolsProbe.phaseControlAppliedCount;
+    restoredBefore = gDebugToolsProbe.phaseControlRestoredCount;
     gBmSt.lock = 3;
     CHECK(DebugToolsPhaseControl_RequestFactionMode(
               FACTION_GREEN, DEBUGTOOLS_PHASE_CONTROL_BLOCKED)
               == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
           "extra lock state must reject a request");
-    CHECK(gDebugToolsProbe.phaseControlRequestedCount == requestsBefore,
-          "extra lock state must not queue a request");
+    CHECK(gDebugToolsProbe.phaseControlRequestedCount == requestsBefore
+              && gDebugToolsProbe.phaseControlAppliedCount == appliedBefore
+              && gDebugToolsProbe.phaseControlRestoredCount == restoredBefore,
+          "extra lock state must not queue, apply, or restore a request");
+    CHECK(gDebugToolsProbe.phaseControlRejectedCount == rejectedBefore + 1
+              && gDebugToolsProbe.phaseControlLastResult
+                  == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY
+              && gDebugToolsProbe.phaseControlTurnSample == gPlaySt.chapterTurnNumber
+              && gDebugToolsProbe.phaseControlRedModeSample
+                  == DEBUGTOOLS_PHASE_CONTROL_COMPUTER
+              && gDebugToolsProbe.phaseControlGreenModeSample
+                  == DEBUGTOOLS_PHASE_CONTROL_COMPUTER,
+          "extra lock state must preserve diagnostic rejection telemetry");
 
     sDebugSessionActive = 0;
     gBmSt.lock = 1;
