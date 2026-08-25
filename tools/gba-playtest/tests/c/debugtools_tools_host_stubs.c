@@ -114,6 +114,7 @@ int gDebugToolsToolsHostStubFaceMouthInitCount = 0;
 int gDebugToolsToolsHostStubFaceMouthLoopCount = 0;
 char gDebugToolsToolsHostStubLastStatusLine[64] = {0};
 char gDebugToolsToolsHostStubStatusLines[3][64] = {{0}};
+int gDebugToolsToolsHostStubStatusLineTileWidths[3] = {0};
 int gDebugToolsToolsHostStubStatusLineCount = 0;
 int gDebugToolsToolsHostStubPutDrawTextCallCount = 0;
 #ifdef MODERN
@@ -260,7 +261,9 @@ void PutDrawText(
     (void)dest;
     (void)colorId;
     (void)x;
-    (void)tileWidth;
+    if (gDebugToolsToolsHostStubStatusLineCount < 3)
+        gDebugToolsToolsHostStubStatusLineTileWidths[
+            gDebugToolsToolsHostStubStatusLineCount] = tileWidth;
     gDebugToolsToolsHostStubPutDrawTextCallCount++;
     PrintDebugStringToBG(NULL, string);
 }
@@ -327,6 +330,8 @@ void DebugToolsHostStub_ResetStatusLines(void)
         sizeof(gDebugToolsToolsHostStubLastStatusLine));
     memset(gDebugToolsToolsHostStubStatusLines, 0,
         sizeof(gDebugToolsToolsHostStubStatusLines));
+    memset(gDebugToolsToolsHostStubStatusLineTileWidths, 0,
+        sizeof(gDebugToolsToolsHostStubStatusLineTileWidths));
     gDebugToolsToolsHostStubStatusLineCount = 0;
     gDebugToolsToolsHostStubPutDrawTextCallCount = 0;
 }
@@ -401,14 +406,24 @@ static int sDebugToolsToolsPlayerPhaseActive = 1;
 static int sDebugToolsToolsEventActive = 0;
 static int sDebugToolsToolsBattleEventActive = 0;
 static int sDebugToolsToolsBattleActive = 0;
+static struct Proc sDebugToolsToolsMapMainProc;
+static struct Proc sDebugToolsToolsPlayerPhaseProc;
+
+void PlayerPhase_MainIdle(ProcPtr proc)
+{
+    (void)proc;
+}
 
 ProcPtr Proc_Find(const struct ProcCmd* script)
 {
     if (script == gProcScr_DebugToolsMenuTransition)
         return sDebugToolsToolsPendingTransition;
 
+    if (script == gProc_BMapMain)
+        return &sDebugToolsToolsMapMainProc;
+
     if (script == gProcScr_PlayerPhase && sDebugToolsToolsPlayerPhaseActive)
-        return (ProcPtr)1;
+        return &sDebugToolsToolsPlayerPhaseProc;
 
     return NULL;
 }
@@ -438,6 +453,15 @@ void DebugToolsHostStub_SetUnitEditContext(
     sDebugToolsToolsEventActive = eventActive;
     sDebugToolsToolsBattleEventActive = battleEventActive;
     sDebugToolsToolsBattleActive = battleActive;
+}
+
+void DebugToolsHostStub_SetPhaseBoundaryIdle(void)
+{
+    sDebugToolsToolsPlayerPhaseActive = 1;
+    sDebugToolsToolsEventActive = 0;
+    sDebugToolsToolsBattleEventActive = 0;
+    sDebugToolsToolsBattleActive = 0;
+    sDebugToolsToolsPlayerPhaseProc.proc_idleCb = PlayerPhase_MainIdle;
 }
 
 /* This driver links the real src/debugtools_registry.c alongside
@@ -510,6 +534,7 @@ struct ProcCmd gProcScr_Playerphase_0[] = { { 0 } };
 struct ProcCmd CONST_DATA gProcScr_CpPhase[] = { { 0 } };
 struct ProcCmd CONST_DATA gProcScr_BerserkCpPhase[] = { { 0 } };
 struct ProcCmd CONST_DATA ProcScr_CamMove[] = { { 0 } };
+struct Unit* gActiveUnit = NULL;
 static struct ExpansionAutoplayTelemetry sDebugToolsToolsAutoplayTelemetry = {
     EXPANSION_BLUE_CONTROL_PLAYER,
     EXPANSION_AUTOPLAY_STATE_PLAYER_PHASE,
@@ -529,6 +554,12 @@ enum ExpansionBlueControl ExpansionAutoplay_GetBlueControl(void)
 const struct ExpansionAutoplayTelemetry* ExpansionAutoplay_GetTelemetry(void)
 {
     return &sDebugToolsToolsAutoplayTelemetry;
+}
+
+struct MuProc* GetUnitMu(struct Unit* unit)
+{
+    (void)unit;
+    return NULL;
 }
 
 /* --- Unit inspector fakes -----------------------------------------------
