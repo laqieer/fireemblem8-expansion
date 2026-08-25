@@ -324,9 +324,12 @@ references fail with a source location and JSON breadcrumb.
 or clear those values only through the existing `helperScripts` `flag.set` /
 `flag.clear` operations or established event scripts; objectives introduce no
 event language, chapter manifest, router, or hidden runtime activation bit.
-`hold_until_turn` additionally requires a distinct existing `failureFlag`;
-the evaluator sets it on the first violated hold condition, making that
-failure persist through Suspend/Resume without new save data.
+`protect` and `hold_until_turn` each require a distinct existing
+`failureFlag`. `protect` latches a protected member's death, missing, or
+rescued state only while its completion objective remains pending; once that
+completion succeeds, success stays terminal. `hold_until_turn` sets its flag
+on the first violated hold condition. Both reconstruct through Suspend/Resume
+without new save data.
 For example, a continuous hold uses
 `"failureFlag": "EVFLAG_PROJECT_ESCORT_FAILED"` alongside its `group`,
 `area`, and `untilTurn`; the flag must be a project-defined existing

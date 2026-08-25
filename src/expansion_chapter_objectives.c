@@ -165,20 +165,15 @@ static struct ObjectiveResult EvaluateObjective(
     case EXPANSION_CHAPTER_OBJECTIVE_PROTECT:
     {
         const struct ExpansionChapterObjective* completion = NULL;
-        enum UnitObjectiveState protectedState =
-            GetUnitObjectiveState(context, objective->protectedCharacter);
+        enum UnitObjectiveState protectedState;
         int index;
 
-        if (protectedState == UNIT_OBJECTIVE_DEAD)
+        if (CheckFlag(objective->eventFlag))
         {
             result.state = EXPANSION_CHAPTER_OBJECTIVE_FAILURE;
             return result;
         }
 
-        if (protectedState == UNIT_OBJECTIVE_MISSING)
-            return result;
-
-        result.progress = 1;
         if (depth >= EXPANSION_CHAPTER_OBJECTIVE_PER_CHAPTER_CAPACITY)
         {
             result.state = EXPANSION_CHAPTER_OBJECTIVE_FAILURE;
@@ -196,8 +191,25 @@ static struct ObjectiveResult EvaluateObjective(
         }
 
         result = EvaluateObjective(context, bundle, completion, depth + 1);
+        if (result.state == EXPANSION_CHAPTER_OBJECTIVE_SUCCESS)
+            return result;
+
         if (result.state == EXPANSION_CHAPTER_OBJECTIVE_INACTIVE)
             result.state = EXPANSION_CHAPTER_OBJECTIVE_PENDING;
+
+        if (result.state != EXPANSION_CHAPTER_OBJECTIVE_PENDING)
+            return result;
+
+        protectedState = GetUnitObjectiveState(context, objective->protectedCharacter);
+        if (protectedState != UNIT_OBJECTIVE_ALIVE)
+        {
+            SetFlag(objective->eventFlag);
+            result.state = EXPANSION_CHAPTER_OBJECTIVE_FAILURE;
+            result.progress = 0;
+            return result;
+        }
+
+        result.progress = 1;
         return result;
     }
 
@@ -363,11 +375,26 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
     ExpansionChapterObjectives_GetStatus(reachObjective->id, &progress);
     gExpansionChapterObjectiveRuntimeProbe.reachSuccessProgress = progress;
 
+    ClearFlag(eventObjective->eventFlag);
+    ClearFlag(protectObjective->eventFlag);
     protectedUnit->state |= US_DEAD;
     state = ExpansionChapterObjectives_GetStatus(protectObjective->id, &progress);
     gExpansionChapterObjectiveRuntimeProbe.protectFailureState = state;
+
+    ClearFlag(protectObjective->eventFlag);
+    SetFlag(eventObjective->eventFlag);
     state = ExpansionChapterObjectives_GetStatus(defeatObjective->id, &progress);
     gExpansionChapterObjectiveRuntimeProbe.defeatSuccessState = state;
+    state = ExpansionChapterObjectives_GetStatus(protectObjective->id, &progress);
+    gExpansionChapterObjectiveRuntimeProbe.protectCompletionThenDeathState = state;
+
+    ClearFlag(eventObjective->eventFlag);
+    ClearFlag(protectObjective->eventFlag);
+    protectedUnit->state |= US_DEAD;
+    ExpansionChapterObjectives_GetStatus(protectObjective->id, &progress);
+    protectedUnit->state = originalUnitState;
+    state = ExpansionChapterObjectives_GetStatus(protectObjective->id, &progress);
+    gExpansionChapterObjectiveRuntimeProbe.protectLatchReconstructionState = state;
 
     ClearFlag(holdObjective->eventFlag);
     protectedUnit->xPos = 63;
@@ -393,6 +420,7 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
         SetFlag(holdObjective->eventFlag);
     else
         ClearFlag(holdObjective->eventFlag);
+    SetFlag(protectObjective->eventFlag);
 
     gExpansionChapterObjectiveRuntimeProbe.magic = EXPANSION_CHAPTER_OBJECTIVE_RUNTIME_PROBE_MAGIC;
 }

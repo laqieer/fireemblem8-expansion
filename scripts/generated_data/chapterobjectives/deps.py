@@ -34,6 +34,9 @@ def _implementation_module_paths():
         module_path = _canonical(module_path)
         if module_path.startswith(package_root + os.sep) and "/tests/" not in module_path:
             paths.add(module_path)
+    tmx_path = getattr(bundle_schema.tmx, "__file__", None)
+    if tmx_path is not None:
+        paths.add(_canonical(tmx_path))
     return tuple(sorted(paths))
 
 

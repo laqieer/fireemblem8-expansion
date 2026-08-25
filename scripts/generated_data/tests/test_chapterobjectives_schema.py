@@ -385,6 +385,39 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
         self.assertFalse(diagnostics.ok)
         self.assertIn("protectedCharacter must not be CHARACTER_NONE", diagnostics.render())
 
+    def test_protect_requires_a_unique_failure_flag(self):
+        records, diagnostics = _validate("valid.json")
+        objectives = {objective.id: objective for objective in records[0].objectives}
+        objectives["OBJECTIVE_FIXTURE_PROTECT"].failure_flag = None
+        schema.validate(
+            records,
+            diagnostics,
+            {
+                "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json")),
+                "chapterbundle": chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json")),
+            },
+        )
+        self.assertIn(
+            "protect objective requires protectedCharacter, completionObjective, and failureFlag",
+            diagnostics.render(),
+        )
+
+        records, diagnostics = _validate("valid.json")
+        objectives = {objective.id: objective for objective in records[0].objectives}
+        objectives["OBJECTIVE_FIXTURE_PROTECT"].failure_flag = "EVFLAG_5"
+        schema.validate(
+            records,
+            diagnostics,
+            {
+                "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json")),
+                "chapterbundle": chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json")),
+            },
+        )
+        self.assertIn(
+            "duplicate objective failureFlag 'EVFLAG_5'",
+            diagnostics.render(),
+        )
+
     def test_protect_objective_requires_a_validated_chapter_unit_group(self):
         records, diagnostics = _validate("valid.json")
         objectives = {objective.id: objective for objective in records[0].objectives}
