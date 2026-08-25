@@ -220,10 +220,6 @@ def _has_start_save_gate_cfg(cfg: str) -> bool:
         re.finditer(r"^\s*<bb (\d+)> :\n(.*?)(?=^\s*<bb |\Z)", cfg, re.MULTILINE | re.DOTALL)
     )
     blocks = {match.group(1): match.group(2) for match in block_matches}
-    classifier_blocks = {
-        number for number, body in blocks.items()
-        if "ClassifySramSaveCompat" in body
-    }
     compat_blocks = {
         number for number, body in blocks.items()
         if "StartSaveCompatMenu" in body
@@ -235,8 +231,9 @@ def _has_start_save_gate_cfg(cfg: str) -> bool:
     return_blocks = {
         number for number, body in blocks.items() if re.search(r"\breturn;", body)
     }
+    entry = min(successors, key=int)
 
-    def reaches(start: str, targets: set[str]) -> bool:
+    def reaches(start: str, targets: set[str], blocked=()) -> bool:
         pending = [start]
         seen = set()
         while pending:
@@ -244,6 +241,8 @@ def _has_start_save_gate_cfg(cfg: str) -> bool:
             if current in seen:
                 continue
             seen.add(current)
+            if current in blocked:
+                continue
             if current in targets:
                 return True
             pending.extend(successors.get(current, ()))
@@ -253,13 +252,21 @@ def _has_start_save_gate_cfg(cfg: str) -> bool:
         if len(branch_successors) != 2:
             continue
         branch_body = blocks.get(branch, "")
-        if not re.search(r"if \([^)]*!= 4\)", branch_body):
+        condition = re.search(r"if \((\w+) != 4\)", branch_body)
+        if condition is None:
             continue
-        if not any(reaches(classifier, {branch}) for classifier in classifier_blocks):
+        value = condition.group(1)
+        classifier_blocks = {
+            number for number, body in blocks.items()
+            if re.search(r"\b" + re.escape(value) + r" = ClassifySramSaveCompat", body)
+        }
+        if not classifier_blocks or not any(reaches(classifier, {branch}) for classifier in classifier_blocks):
             continue
         for compat in compat_blocks & branch_successors:
             normal = next(iter(branch_successors - {compat}), None)
             if normal not in normal_blocks:
+                continue
+            if reaches(entry, normal, {branch}):
                 continue
             if reaches(compat, normal_blocks):
                 continue
@@ -533,67 +540,31 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                         "compatibility return path before normal menu start",
                     )
 
-                    mutation = work / (mode + "-unconditional_save_menu.c")
-                    mutation.write_text(
-                        '#include "global.h"\n#include "savemenu.h"\n#include "save_format.h"\n#include "save_compat_menu.h"\nextern struct ProcCmd ProcScr_SaveMenu[];\nvoid StartSaveMenu(void *parent)\n{\n    enum SaveCompatState compat = ClassifySramSaveCompat();\n    StartSaveCompatMenu(parent, compat);\n    Proc_StartBlocking(ProcScr_SaveMenu, parent);\n}\n',
-                        encoding="utf-8",
-                    )
-                    mutated_cfg = _function_cfg(
-                        _gcc_cfg_tree(
-                            work,
-                            mutation,
-                            mode + "-unconditional_save_menu.o",
-                            defines,
-                            includes,
-                        ),
-                        "StartSaveMenu",
-                    )
-                    self.assertFalse(
-                        _has_start_save_gate_cfg(mutated_cfg),
-                        "unconditional normal-menu start must fail the CFG gate",
-                    )
-
-                    missing_return = work / (mode + "-missing_return_save_menu.c")
-                    missing_return.write_text(
-                        '#include "global.h"\n#include "savemenu.h"\n#include "save_format.h"\n#include "save_compat_menu.h"\nextern struct ProcCmd ProcScr_SaveMenu[];\nvoid StartSaveMenu(void *parent)\n{\n    enum SaveCompatState gate = ClassifySramSaveCompat();\n    if (gate != SAVE_COMPAT_CURRENT)\n        StartSaveCompatMenu(parent, gate);\n    Proc_StartBlocking(ProcScr_SaveMenu, parent);\n}\n',
-                        encoding="utf-8",
-                    )
-                    missing_return_cfg = _function_cfg(
-                        _gcc_cfg_tree(
-                            work,
-                            missing_return,
-                            mode + "-missing_return_save_menu.o",
-                            defines,
-                            includes,
-                        ),
-                        "StartSaveMenu",
-                    )
-                    self.assertFalse(
-                        _has_start_save_gate_cfg(missing_return_cfg),
-                        "compatibility fallthrough to the normal menu must "
-                        "fail the CFG gate",
-                    )
-
-                    inverted = work / (mode + "-inverted_save_menu.c")
-                    inverted.write_text(
-                        '#include "global.h"\n#include "savemenu.h"\n#include "save_format.h"\n#include "save_compat_menu.h"\nextern struct ProcCmd ProcScr_SaveMenu[];\nvoid StartSaveMenu(void *parent)\n{\n    enum SaveCompatState state = ClassifySramSaveCompat();\n    if (state == SAVE_COMPAT_CURRENT)\n        StartSaveCompatMenu(parent, state);\n    else\n        Proc_StartBlocking(ProcScr_SaveMenu, parent);\n}\n',
-                        encoding="utf-8",
-                    )
-                    self.assertFalse(
-                        _has_start_save_gate_cfg(
-                            _function_cfg(
-                                _gcc_cfg_tree(
-                                    work,
-                                    inverted,
-                                    mode + "-inverted_save_menu.o",
-                                    defines,
-                                    includes,
-                                ),
-                                "StartSaveMenu",
-                            )
-                        ),
-                        "inverted CURRENT classification must fail the CFG gate",
-                    )
+                    mutations = {
+                        "unrelated": 'int other = 0;\n    enum SaveCompatState state = ClassifySramSaveCompat();\n    if (other != SAVE_COMPAT_CURRENT)\n        StartSaveCompatMenu(parent, state);\n    else\n        Proc_StartBlocking(ProcScr_SaveMenu, parent);',
+                        "early": 'Proc_StartBlocking(ProcScr_SaveMenu, parent);\n    enum SaveCompatState state = ClassifySramSaveCompat();\n    if (state != SAVE_COMPAT_CURRENT)\n        StartSaveCompatMenu(parent, state);',
+                    }
+                    for suffix, body in mutations.items():
+                        mutation = work / (mode + "-" + suffix + "_save_menu.c")
+                        mutation.write_text(
+                            '#include "global.h"\n#include "savemenu.h"\n#include "save_format.h"\n#include "save_compat_menu.h"\nextern struct ProcCmd ProcScr_SaveMenu[];\nvoid StartSaveMenu(void *parent)\n{\n    ' + body + '\n}\n',
+                            encoding="utf-8",
+                        )
+                        self.assertFalse(
+                            _has_start_save_gate_cfg(
+                                _function_cfg(
+                                    _gcc_cfg_tree(
+                                        work,
+                                        mutation,
+                                        mode + "-" + suffix + "_save_menu.o",
+                                        defines,
+                                        includes,
+                                    ),
+                                    "StartSaveMenu",
+                                )
+                            ),
+                            suffix + " gate mutation must fail the CFG check",
+                        )
 
     def test_complete_production_reverse_reference_census(self):
         sources = _production_sources()

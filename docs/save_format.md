@@ -510,7 +510,9 @@ compares the complete reverse-reference census to an explicit allowlist.
 Injected direct and header-macro-hidden save hooks, plus normal-menu-bypass
 objects, fail the census; the compiler CFG for `StartSaveMenu()` proves
 non-CURRENT diversion reaches a return path before the normal menu, and
-rejects unconditional-start and missing-return mutations.
+rejects unrelated-branch and pre-classifier-start mutations. Every census and
+adversarial object runs in both default and `-DMODERN=1` forms with generated
+message IDs; continuation macros are joined before header discovery.
 
 ### Issue #160 semantic-evidence migration map
 
