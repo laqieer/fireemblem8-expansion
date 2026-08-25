@@ -352,7 +352,7 @@ def _compiled_census_edges(
     for index, source in enumerate(_candidate_sources(sources, symbols)):
         object_name = "census-%03d.o" % index
         obj = _compile_arm(work, source, object_name, defines, extra_includes)
-        relative = source.relative_to(ROOT).as_posix()
+        relative = source.relative_to(ROOT).as_posix() if source.is_relative_to(ROOT) else source.name
         for function, symbol in _object_relocation_edges(obj, symbols):
             edges.append((relative, function, symbol))
     return edges
@@ -620,19 +620,30 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                         for symbol in _SAVE_INTERNAL_APIS
                     }
                     self.assertEqual(by_symbol, _SAVE_API_COUNTS)
-                    menu_symbols = ("ProcScr_SaveMenu", "Proc_StartBlocking", "Proc_Find")
-                    menu_edges = _object_relocation_edges(
-                        _compile_arm(work, SAVEMENU_C, mode + "-savemenu-menu.o", defines, includes),
+                    menu_symbols = ("StartSaveMenu", "ProcScr_SaveMenu", "Proc_StartBlocking", "Proc_Find")
+                    menu_edges = _compiled_census_edges(
+                        work,
+                        _candidate_sources(sources, ("StartSaveMenu", "ProcScr_SaveMenu")),
                         menu_symbols,
+                        defines,
+                        includes,
                     )
                     expected_menu_edges = {
-                        ("StartSaveMenu", "ProcScr_SaveMenu"),
-                        ("StartSaveMenu", "Proc_StartBlocking"),
-                        ("SaveMenu_SetDifficultyChoice", "ProcScr_SaveMenu"),
-                        ("SaveMenu_SetDifficultyChoice", "Proc_Find"),
+                        ("src/savemenu.c", "StartSaveMenu", "ProcScr_SaveMenu"),
+                        ("src/savemenu.c", "StartSaveMenu", "Proc_StartBlocking"),
+                        ("src/savemenu.c", "SaveMenu_SetDifficultyChoice", "ProcScr_SaveMenu"),
+                        ("src/savemenu.c", "SaveMenu_SetDifficultyChoice", "Proc_Find"),
+                        ("src/save_compat_menu.c", "SaveCompatMenu_DoErase", "StartSaveMenu"),
                     }
                     self.assertEqual(
-                        {edge for edge in menu_edges if edge[0] in {"StartSaveMenu", "SaveMenu_SetDifficultyChoice"}},
+                        {
+                            edge for edge in menu_edges
+                            if edge[2] in {"StartSaveMenu", "ProcScr_SaveMenu"}
+                            or (edge[0], edge[1]) in {
+                                ("src/savemenu.c", "StartSaveMenu"),
+                                ("src/savemenu.c", "SaveMenu_SetDifficultyChoice"),
+                            }
+                        },
                         expected_menu_edges,
                     )
                     self.assertEqual(
@@ -671,34 +682,18 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                         ),
                         Counter({"WriteGameSave": 1}),
                     )
-                    self.assertEqual(
-                        Counter(
-                            symbol
-                            for _, symbol in _object_relocation_edges(
-                                _compile_arm(
-                                    work,
-                                    bypass,
-                                    mode + "-extra_save_menu_bypass.o",
-                                    defines,
-                                    includes,
-                                ),
-                                ("ProcScr_SaveMenu",),
-                            )
-                        ),
-                        Counter({"ProcScr_SaveMenu": 1}),
-                    )
                     same_file = work / "savemenu.c"
                     same_file.write_text(
                         '#include "global.h"\n#include "savemenu.h"\nextern struct ProcCmd ProcScr_SaveMenu[];\nvoid StartSaveMenu(void *p)\n{\n    Proc_StartBlocking(ProcScr_SaveMenu, p);\n}\nvoid SaveMenu_SetDifficultyChoice(int a, int b)\n{\n    Proc_StartBlocking(ProcScr_SaveMenu, 0);\n}\n',
                         encoding="utf-8",
                     )
-                    self.assertNotEqual(
-                        set(_object_relocation_edges(
-                            _compile_arm(work, same_file, mode + "-same_savemenu.o", defines, includes),
-                            menu_symbols,
-                        )),
-                        expected_menu_edges,
-                    )
+                    for fixture in (bypass, same_file):
+                        self.assertNotEqual(
+                            set(_compiled_census_edges(
+                                work, (fixture,), menu_symbols, defines, includes
+                            )),
+                            expected_menu_edges,
+                        )
                     modern_edges = _object_relocation_edges(
                         _compile_arm(
                             work,
