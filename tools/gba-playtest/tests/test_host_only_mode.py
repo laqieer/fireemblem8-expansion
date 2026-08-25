@@ -91,6 +91,7 @@ class _ArtifactDiscovery(ast.NodeVisitor):
         self.repository_owners, self.direct_capture_owners = {}, set()
         self.module_io = set()
         self.module_helpers, self.helper_ios, self.helper_callers = set(), {}, {}
+        self.helper_aliases = {}
         self.direct_capture_records, self.method_calls = [], []
         self.function_parameters = {}
         self.host_mode_modules, self.gba_playtest_modules = set(), set()
@@ -268,9 +269,19 @@ class _ArtifactDiscovery(ast.NodeVisitor):
         for target in targets:
             key = self._origin_key(target)
             if key is not None:
+                self.generated_paths.discard(key)
+                self.helper_aliases.pop(key, None)
                 self.path_origins[key] = origin
                 if self._contains_generated_path(value):
                     self.generated_paths.add(key)
+                helper = self._helper_for(value)
+                if helper:
+                    self.helper_aliases[key] = helper
+
+    def _helper_for(self, node):
+        if not isinstance(node, ast.Name):
+            return None
+        return self.helper_aliases.get(self._origin_key(node), ("<module>", node.id) if ("<module>", node.id) in self.module_helpers else None)
     def visit_Module(self, node):
         self.module_helpers = {
             ("<module>", statement.name)
@@ -374,7 +385,7 @@ class _ArtifactDiscovery(ast.NodeVisitor):
             else:
                 self._mark_repository(f"host_mode.{host_symbol}")
 
-        helper = ("<module>", func.id) if isinstance(func, ast.Name) else None
+        helper = self._helper_for(func)
         if helper in self.module_helpers:
             caller = self.function_stack[-1] if self.function_depth and not self.class_stack else self._owner()
             self.helper_callers.setdefault(helper, set()).add(caller)
@@ -776,7 +787,7 @@ class Concat:
 class ConstantConcat:
     def run(self): (REPO_ROOT / ("fireemblem8." + "gba")).read_bytes()
 class Unguarded:
-    def run(self): read_live()
+    def run(self): reader = read_live; reader()
 class Guarded:
     def run(self): read_live()
 class Cross:
@@ -787,6 +798,7 @@ class Cross:
     def temporary(self):
         with tf.TemporaryDirectory() as directory:
             rom = Path(directory) / "fixture.gba"; build_homebrew_rom(rom); gba_playtest.capture(rom, object())
+            rom = Path(directory) / "other.gba"; gba_playtest.capture(rom, object())
     def bind(self): self.rom = hm.modern_elf("release")
     def use(self): self.rom.read_bytes()
 """,
