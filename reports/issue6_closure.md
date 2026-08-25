@@ -52,13 +52,15 @@ published.
   a diagonal cross). It was chosen precisely because it depicts nothing; the
   repository ships no new artwork for this example. This is the documented
   "neutral existing slot" choice.
-* **No raw numeric IDs.** Every issue #6 implementation source names the item
-  symbolically (`ITEM_EXPANSION_CE`) or reaches it through the typed
-  `ExpansionStarterContentItemId()` accessor. Pinned by
-  `tools/gba-playtest/tests/test_expansion_starter_content.py`
-  (`test_no_raw_numeric_content_item_id`); the single permitted `0xCE`
-  mention is the `#error` string that tells a contributor which
-  `FE8_ITEM_ID_CAP` to pass, and that is asserted to stay actionable.
+* **Typed identity and generic battle seam.** Parsed generated-data evidence
+  resolves the authored expansion record at the configured cap; compiled
+  enabled/default objects prove the typed name accessor is linked only in the
+  content profile; and the starter-content host contract executes the public
+  registration, typed ID, generated authored-name, bounded bearer effect, and
+  non-bearer negative. The compiled battle object reaches that behavior only
+  through `ExpansionMechanicsApplyBattleStats`; a poisoned direct item
+  special-case mutation fails the same compiler contract. These are semantic
+  parsed/generated/compiled/runtime checks, not source-spelling pinning.
 * **Symbolic text IDs (generic schema capability, unused by this record).**
   A record *may* author `"nameTextId": "MSG_*"` and have it resolved against
   `include/constants/msg.h`, with an unknown symbol failing the data build

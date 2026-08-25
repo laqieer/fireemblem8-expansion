@@ -522,6 +522,8 @@ class StarterContentRegistrationHostTests(unittest.TestCase):
                 "    subject.battleAvoidRate = 50;\n"
                 "    ExpansionMechanicsApplyBattleStats(&subject, NULL, 0);\n"
                 "    CHECK(subject.battleAvoidRate == 50);\n"
+                "    CHECK(gExpansionMechanicsProbe.registerOkCount == 2);\n"
+                "    CHECK(gExpansionMechanicsProbe.registerErrCount == 0);\n"
                 "    return 0;\n"
                 "}\n",
                 encoding="utf-8",
@@ -539,7 +541,37 @@ class StarterContentRegistrationHostTests(unittest.TestCase):
                 work, [mechanics, content, driver_obj], "starter_content_host")
             self.assertEqual(code, 0, output)
             completed = subprocess.run([str(executable)], capture_output=True, text=True)
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+            alternate_name = "Fixture Charm"
+            header = generated / CONTENT_TEXT_HEADER_NAME
+            header_text = header.read_text(encoding="utf-8")
+            self.assertIn(json.dumps(authored_name()), header_text)
+            header_text = header_text.replace(
+                json.dumps(authored_name()), json.dumps(alternate_name))
+            header_text = re.sub(
+                r"(#define EXPANSION_CONTENT_TEXT_NAME_CAPACITY )\d+",
+                r"\g<1>{}".format(len(alternate_name) + 1),
+                header_text,
+            )
+            header.write_text(header_text, encoding="utf-8")
+            driver.write_text(
+                driver.read_text(encoding="utf-8").replace(
+                    json.dumps(authored_name()), json.dumps(alternate_name)),
+                encoding="utf-8",
+            )
+
+            code, output, content = _host_compile(
+                work, CONTENT_SRC, "content_mutated_name.o", CONTENT_DEFINES, [generated])
+            self.assertEqual(code, 0, output)
+            code, output, driver_obj = _host_compile(
+                work, driver, "driver_mutated_name.o", CONTENT_DEFINES, [generated])
+            self.assertEqual(code, 0, output)
+            code, output, executable = _host_link(
+                work, [mechanics, content, driver_obj], "starter_content_mutated_name_host")
+            self.assertEqual(code, 0, output)
+            completed = subprocess.run([str(executable)], capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
 
 @unittest.skipIf(ARM_CC is None or SIZE is None, "no arm-none-eabi toolchain")
