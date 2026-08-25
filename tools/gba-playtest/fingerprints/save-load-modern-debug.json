@@ -4,7 +4,7 @@
       "frame": 1140,
       "name": "pre-write-empty-slots",
       "probes": [],
-      "sram_hash": "fnv1a64-sram-normalized:aa4f39f06fb5855b"
+      "sram_hash": "fnv1a64-sram-normalized:5484987ccec6edea"
     },
     {
       "frame": 1400,
@@ -41,7 +41,7 @@
           "value": "0x01"
         }
       ],
-      "sram_hash": "fnv1a64-sram-normalized:aa4f39f06fb5855b"
+      "sram_hash": "fnv1a64-sram-normalized:c070965ed790aeb7"
     },
     {
       "frame": 2550,
