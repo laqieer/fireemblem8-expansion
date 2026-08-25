@@ -150,7 +150,7 @@ void EventEngine_OnEnd(struct EventEngineProc* proc) {
 
         if (proc->evStateBits & EV_STATE_CHANGEGM) {
             EndAllMus();
-            EndBMapMain();
+            EndBMapMainForChapterTransition();
             memset((u8*)(gEventCallQueue), 0, 0x80);
         }
 

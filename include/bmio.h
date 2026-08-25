@@ -78,6 +78,7 @@ void BMapDispResume_FromBattleDelayed(void);
 void RefreshBMapGraphics(void);
 struct BMapMainProc* StartBMapMain(struct GameCtrlProc* gameCtrl);
 void EndBMapMain(void);
+void EndBMapMainForChapterTransition(void);
 void ChapterChangeUnitCleanup(void);
 void MapMain_ResumeFromPhaseIdle(struct BMapMainProc* mapMain);
 void MapMain_ResumeFromAction(struct BMapMainProc* mapMain);

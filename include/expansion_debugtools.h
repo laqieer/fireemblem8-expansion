@@ -809,7 +809,7 @@ enum DebugToolsPhaseControlStartAction DebugToolsPhaseControl_ApplyAtPhaseStart(
 void DebugToolsPhaseControl_AdvanceSuspendTurnAtNaturalIncrement(void);
 void DebugToolsPhaseControl_Reset(void);
 void DebugToolsPhaseControl_Sample(void);
-void DebugToolsPhaseControl_RestorePersistentTurnAfterChapterStats(void);
+void DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition(void);
 
 #if !defined(FE8_ARCHIVAL_BUILD)
 /* The turn override is transient even when automatic phase suspends remain
@@ -822,14 +822,14 @@ void DebugToolsPhaseControl_EndSuspendSerialization(void);
 #define DebugToolsPhaseControl_GetSerializedSuspendTurn(turn) (FALSE)
 #define DebugToolsPhaseControl_EndSuspendSerialization() ((void)0)
 #define DebugToolsPhaseControl_AdvanceSuspendTurnAtNaturalIncrement() ((void)0)
-#define DebugToolsPhaseControl_RestorePersistentTurnAfterChapterStats() ((void)0)
+#define DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition() ((void)0)
 #endif
 #else
 #define DebugToolsPhaseControl_BeginSuspendSerialization() ((void)0)
 #define DebugToolsPhaseControl_GetSerializedSuspendTurn(turn) (FALSE)
 #define DebugToolsPhaseControl_EndSuspendSerialization() ((void)0)
 #define DebugToolsPhaseControl_AdvanceSuspendTurnAtNaturalIncrement() ((void)0)
-#define DebugToolsPhaseControl_RestorePersistentTurnAfterChapterStats() ((void)0)
+#define DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition() ((void)0)
 #endif /* FE8_EXPANSION_DEBUGTOOLS_ENABLED */
 
 /* --- Five bounded validated tools ------------------------------------

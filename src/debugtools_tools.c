@@ -616,7 +616,7 @@ void DebugToolsPhaseControl_Reset(void)
     DebugToolsPhaseControl_RefreshProbe();
 }
 
-void DebugToolsPhaseControl_RestorePersistentTurnAfterChapterStats(void)
+void DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition(void)
 {
     while (sPhaseControlSuspendTurn.serializationDepth != 0)
         DebugToolsPhaseControl_EndSuspendSerialization();

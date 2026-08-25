@@ -183,10 +183,15 @@ class DebugToolsPhaseControlHostTests(unittest.TestCase):
                     0,
                     completed.stdout + completed.stderr,
                 )
-                if source in (BMIO_SOURCE, GAME_SAVE_SOURCE, GAMECONTROL_SOURCE):
+                if source in (
+                    BMIO_SOURCE,
+                    GAME_SAVE_SOURCE,
+                    GAMECONTROL_SOURCE,
+                ):
                     preserved_symbols = {
                         BMIO_SOURCE: {
                             "EndBMapMain",
+                            "EndBMapMainForChapterTransition",
                             "GameCtrl_DeclareCompletedChapter",
                         },
                         GAME_SAVE_SOURCE: {"WriteGameSave"},

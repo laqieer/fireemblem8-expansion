@@ -663,7 +663,16 @@ static int RegisterChapterStatsThroughPath(int path)
         GameCtrl_DeclareCompletedChapter();
         break;
 
+    case 2:
+        memset(&gameCtrl, 0, sizeof(gameCtrl));
+        gameCtrl.nextChapter = (u8)(gPlaySt.chapterIndex + 1);
+        GameControl_ChapterSwitch(&gameCtrl);
+        break;
+
     default:
+        EndBMapMainForChapterTransition();
+        CHECK(!sMapMainLive,
+              "normal chapter-transition handoff must end the live battle map");
         memset(&gameCtrl, 0, sizeof(gameCtrl));
         gameCtrl.nextChapter = (u8)(gPlaySt.chapterIndex + 1);
         GameControl_ChapterSwitch(&gameCtrl);
@@ -678,7 +687,7 @@ static int TestChapterStatsPersistentTurn(void)
     int path;
     int chapter;
 
-    for (path = 0; path < 3; path++)
+    for (path = 0; path < 4; path++)
     {
         ResetHarness();
         chapter = 0x12 + path;
@@ -689,7 +698,7 @@ static int TestChapterStatsPersistentTurn(void)
               "chapter-stat override registration path");
         CHECK(CheckChapterStatsSaveBytes(6, chapter) == 0,
               "persistent chapter-stat save bytes");
-        if (path == 2)
+        if (path >= 2)
             CHECK(CheckPostChapterGameSaveBytes(6) == 0,
                   "post-switch persistent game-save bytes");
 
@@ -700,11 +709,26 @@ static int TestChapterStatsPersistentTurn(void)
               "natural chapter-stat registration path");
         CHECK(CheckChapterStatsSaveBytes(7, chapter) == 0,
               "natural chapter-stat save-byte negative control");
-        if (path == 2)
+        if (path >= 2)
             CHECK(CheckPostChapterGameSaveBytes(7) == 0,
                   "post-switch natural game-save negative control");
     }
 
+    return 0;
+}
+
+static int TestAbnormalMapTeardownClearsPersistentTurn(void)
+{
+    u16 retainedTurn;
+
+    ResetHarness();
+    CHECK(ApplyOverrideAndAdvanceNaturally() == 0,
+          "abnormal teardown override setup");
+    EndBMapMain();
+    CHECK(gPlaySt.chapterTurnNumber == 10,
+          "generic map teardown must not restore a stale persistent turn");
+    CHECK(!DebugToolsPhaseControl_GetSerializedSuspendTurn(&retainedTurn),
+          "generic map teardown must clear the retained turn");
     return 0;
 }
 
@@ -1083,6 +1107,8 @@ int main(void)
           "transient turn suspend serialization contract");
     CHECK(TestChapterStatsPersistentTurn() == 0,
           "chapter-stat persistence contract");
+    CHECK(TestAbnormalMapTeardownClearsPersistentTurn() == 0,
+          "abnormal map teardown contract");
     CHECK(TestPlayerActionOwnership() == 0, "player action ownership contract");
     CHECK(TestFactionModesAndRestoration() == 0, "faction ownership contract");
     CHECK(TestRejectedAndExpiredRequests() == 0, "rejection and cleanup contract");
