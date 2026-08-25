@@ -108,8 +108,8 @@ int main(void)
     CHECK(
         ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
             == EXPANSION_CHAPTER_OBJECTIVE_PENDING
-            && progress == 0,
-        "protect objective must wait for its referenced completion"
+            && progress == 1,
+        "protect objective must report its live member while completion is pending"
     );
 
     sEirika.state = US_RESCUED;
@@ -166,6 +166,34 @@ int main(void)
     );
 
     ResetFixture();
+    sEirika.state = US_DEAD;
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_FAILURE,
+        "protect objective must latch a death before its completion"
+    );
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_FAILURE,
+        "protect failure must remain stable after its first evaluation"
+    );
+    sEirika.state = US_NONE;
+    ExpansionChapterObjectives_ResetTelemetry();
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_FAILURE,
+        "protect failure latch must reconstruct after telemetry reset"
+    );
+
+    ResetFixture();
+    sEirika.state = US_RESCUED;
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_FAILURE,
+        "a rescued protected unit must latch failure before completion"
+    );
+
+    ResetFixture();
     sFlags[EVFLAG_BATTLE_QUOTES] = true;
     sEirika.state = US_DEAD;
     CHECK(
@@ -176,8 +204,8 @@ int main(void)
     );
     CHECK(
         ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
-            == EXPANSION_CHAPTER_OBJECTIVE_FAILURE,
-        "protected-unit death must be an explicit failure"
+            == EXPANSION_CHAPTER_OBJECTIVE_SUCCESS,
+        "completion success must remain terminal when the protected unit dies later"
     );
 
     ResetFixture();

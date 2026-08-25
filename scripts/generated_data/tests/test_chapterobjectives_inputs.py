@@ -92,6 +92,7 @@ class ChapterObjectivesInputTests(unittest.TestCase):
             ROOT / "scripts" / "generated_data" / "eventscripts" / "schema.py",
             ROOT / "scripts" / "generated_data" / "eventlists" / "schema.py",
             ROOT / "scripts" / "generated_data" / "supports" / "schema.py",
+            ROOT / "scripts" / "assets" / "tmx.py",
         ):
             self.assertIn(os.path.realpath(required), inputs)
 
@@ -138,6 +139,7 @@ class ChapterObjectivesInputTests(unittest.TestCase):
         for module in (
             ROOT / "scripts" / "generated_data" / "chapterbundle" / "schema.py",
             ROOT / "scripts" / "generated_data" / "units" / "schema.py",
+            ROOT / "scripts" / "assets" / "tmx.py",
         ):
             original_stat = module.stat()
             try:

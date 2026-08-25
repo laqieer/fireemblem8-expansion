@@ -55,7 +55,8 @@
           "id": "OBJECTIVE_FIXTURE_PROTECT",
           "kind": "protect",
           "protectedCharacter": "CHARACTER_EIRIKA",
-          "completionObjective": "OBJECTIVE_FIXTURE_EVENT"
+          "completionObjective": "OBJECTIVE_FIXTURE_EVENT",
+          "failureFlag": "EVFLAG_DEFEAT_BOSS"
         }
       ],
       "dependencies": {
@@ -63,6 +64,7 @@
           "CHARACTER_EIRIKA"
         ],
         "eventFlags": [
+          "EVFLAG_DEFEAT_BOSS",
           "EVFLAG_5",
           "EVFLAG_BATTLE_QUOTES"
         ],

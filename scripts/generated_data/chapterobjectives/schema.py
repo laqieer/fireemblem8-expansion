@@ -632,6 +632,7 @@ def validate(records, diagnostics, dependency_records=None,
         used_flags = set()
         used_unit_groups = set()
         protected_character_groups = {}
+        failure_flags = []
 
         for group_name, group_loc in zip(
             record.dependencies.unit_groups, record.dependencies.unit_group_locs
@@ -772,6 +773,8 @@ def validate(records, diagnostics, dependency_records=None,
                         objective.failure_flag_loc, objective_ref + ".failureFlag",
                     )
                 )
+            if objective.kind in ("protect", "hold_until_turn") and objective.failure_flag is not None:
+                failure_flags.append((objective.failure_flag, objective.failure_flag_loc))
 
             if objective.group is not None:
                 diagnostics.extend(
@@ -814,15 +817,18 @@ def validate(records, diagnostics, dependency_records=None,
             _validate_area(diagnostics, objective.area, objective_ref, map_dimensions)
 
             if objective.kind == "protect":
-                if objective.protected_character is None or objective.completion_objective is None:
+                if objective.protected_character is None or objective.completion_objective is None \
+                        or objective.failure_flag is None:
                     diagnostics.add(
-                        _err("protect objective requires protectedCharacter and completionObjective",
+                        _err(
+                            "protect objective requires protectedCharacter, completionObjective, and failureFlag",
                              objective.loc, objective_ref)
                     )
                 if objective.group is not None or objective.area is not None or objective.event_flag is not None \
-                        or objective.until_turn is not None or objective.failure_flag is not None:
+                        or objective.until_turn is not None:
                     diagnostics.add(
-                        _err("protect objective accepts only protectedCharacter and completionObjective",
+                        _err(
+                            "protect objective accepts only protectedCharacter, completionObjective, and failureFlag",
                              objective.loc, objective_ref)
                     )
             elif objective.kind == "reach_area":
@@ -890,6 +896,13 @@ def validate(records, diagnostics, dependency_records=None,
                         )
 
         _validate_cycles(record, objectives_by_id, diagnostics)
+        diagnostics.extend(
+            validate_unique(
+                failure_flags,
+                "duplicate objective failureFlag '{key}' (first defined at {first_loc})",
+                record_ref + ".failureFlags[{key}]",
+            )
+        )
         _validate_dependency_set(
             diagnostics, record, "characters", record.dependencies.characters,
             record.dependencies.character_locs, characters, used_characters, "character",
