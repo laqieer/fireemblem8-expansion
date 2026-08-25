@@ -40,6 +40,53 @@ OBJDUMP = shutil.which("objdump")
 
 FLAG = "FE8_EXPANSION_DANGER_OVERLAY_MENU"
 MODERN = "FE8_EXPANSION_MODERN_BUILD"
+POINTER_UPDATE_FIXTURE = """
+#include "global.h"
+#include "expansion_danger_overlay.h"
+
+void PlayerPhase_DisplayDangerZone(void)
+{
+#if FE8_EXPANSION_DANGER_OVERLAY_MENU
+    int rangeTiles;
+    struct ExpansionDangerOverlayProbe* probe = &gExpansionDangerOverlayProbe;
+    int rangeX;
+    int rangeY;
+
+    rangeTiles = 1;
+    rangeX = 2;
+    rangeY = 3;
+    probe->dangerDisplayCount++;
+    probe->lastRangeTileCount = (u32)(rangeTiles + rangeX + rangeY);
+    probe->rangeGraphicsActive = 1;
+#endif
+}
+
+void PlayerPhase_RangeDisplayIdle(ProcPtr proc)
+{
+#if FE8_EXPANSION_DANGER_OVERLAY_MENU
+    u32 updateCount;
+    struct ExpansionDangerOverlayProbe* probe = &gExpansionDangerOverlayProbe;
+
+    updateCount = 1;
+    (void)proc;
+    probe->cancelReturnCount += updateCount;
+    probe->rangeGraphicsActive = 0;
+#else
+    (void)proc;
+#endif
+}
+"""
+UNGUARDED_PROBE_FIXTURE = """
+#include "global.h"
+#include "expansion_danger_overlay.h"
+
+void PlayerPhase_DisplayDangerZone(void)
+{
+    struct ExpansionDangerOverlayProbe* probe = &gExpansionDangerOverlayProbe;
+
+    probe->dangerDisplayCount++;
+}
+"""
 
 
 def _skip_if_no_host_compiler():
@@ -362,18 +409,27 @@ class DangerOverlayProbeTests(unittest.TestCase):
             )
             self._assert_enabled_probe_sections(enabled_obj)
 
-            pointer_source = Path(tmp) / "playerphase_pointer_update.c"
-            pointer_source.write_text(
-                self._pointer_update_fixture(PLAYERPHASE_SRC.read_text(encoding="utf-8")),
-                encoding="utf-8",
-            )
             self._assert_enabled_probe_sections(
-                self._compile_sectioned(
+                self._compile_fixture(
                     tmp,
-                    pointer_source,
+                    "playerphase_pointer_update.c",
+                    POINTER_UPDATE_FIXTURE,
                     "pp_pointer_sections.o",
                     [MODERN + "=1", FLAG + "=1"],
                 )
+            )
+            unguarded_obj = self._compile_fixture(
+                tmp,
+                "playerphase_unguarded_probe.c",
+                UNGUARDED_PROBE_FIXTURE,
+                "pp_unguarded_sections.o",
+                [MODERN + "=1"],
+            )
+            self.assertTrue(
+                _relocation_section_counts(
+                    unguarded_obj, "gExpansionDangerOverlayProbe"
+                ),
+                "an unguarded default write must create a probe code relocation",
             )
 
     def _compile_sectioned(self, work, source, name, defines):
@@ -398,34 +454,10 @@ class DangerOverlayProbeTests(unittest.TestCase):
         )
         self.assertTrue(all(count > 0 for count in counts.values()))
 
-    def _pointer_update_fixture(self, source):
-        source = source.replace(
-            "    {\n        int rangeX, rangeY, rangeTiles = 0;",
-            "    {\n"
-            "        struct ExpansionDangerOverlayProbe* probe = "
-            "&gExpansionDangerOverlayProbe;\n"
-            "        int rangeX, rangeY, rangeTiles = 0;",
-            1,
-        )
-        source = source.replace(
-            "    u8 uid;\n    u8 action = -1;",
-            "    u8 uid;\n    u8 action = -1;\n"
-            "#if FE8_EXPANSION_DANGER_OVERLAY_MENU\n"
-            "    struct ExpansionDangerOverlayProbe* probe = "
-            "&gExpansionDangerOverlayProbe;\n"
-            "#endif",
-            1,
-        )
-        for field in (
-            "dangerDisplayCount",
-            "lastRangeTileCount",
-            "rangeGraphicsActive",
-            "cancelReturnCount",
-        ):
-            source = source.replace(
-                "gExpansionDangerOverlayProbe." + field, "probe->" + field
-            )
-        return source
+    def _compile_fixture(self, work, source_name, source_text, object_name, defines):
+        source = Path(work) / source_name
+        source.write_text(source_text, encoding="utf-8")
+        return self._compile_sectioned(work, source, object_name, defines)
 
     def test_legacy_like_build_emits_no_probe_and_no_ewram_orphan(self):
         """Standing anti-orphan regression (issue #6 Sprint 1 narrow fix): a
