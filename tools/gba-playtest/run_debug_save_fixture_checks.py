@@ -76,132 +76,141 @@ def _check_symbols(elf: Path, config: str) -> None:
         )
 
 
-def check_layout_anchor(elf: Path) -> None:
-    obj = elf.parent / "src" / "debugtools_tools.o"
-    fixture_obj = elf.parent / "src" / "debug_save_fixture.o"
-    if not obj.is_file():
-        raise RuntimeError(f"missing debugtools object for layout check: {obj}")
-    if not fixture_obj.is_file():
-        raise RuntimeError(
-            f"missing debug save-fixture object for layout check: {fixture_obj}"
+def _parse_nm_symbols(output: str) -> dict[str, tuple[int, int]]:
+    symbols = {}
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) != 4:
+            continue
+        try:
+            address = int(fields[0], 16)
+            size = int(fields[1], 16)
+        except ValueError:
+            continue
+        symbols[fields[3]] = (address, size)
+    return symbols
+
+
+def _check_layout_evidence(
+    object_symbols: str,
+    object_table: str,
+    fixture_symbols: str,
+    fixture_table: str,
+    elf_symbols: str,
+    language_symbols: str,
+    map_text: str,
+) -> None:
+    object_entries = _parse_nm_symbols(object_symbols)
+    fixture_entries = _parse_nm_symbols(fixture_symbols)
+    elf_entries = _parse_nm_symbols(elf_symbols)
+
+    stable = object_entries.get("sSaveStateStableLayout")
+    shared_menu = object_entries.get("sDebugToolsMenuItemDefs")
+    fixture_state = fixture_entries.get("sDebugSaveFixtureState")
+    fixture_probe = fixture_entries.get("gDebugSaveFixtureProbe")
+    elf_stable = elf_entries.get("sSaveStateStableLayout")
+    elf_menu = elf_entries.get("sDebugToolsMenuItemDefs")
+    elf_probe = elf_entries.get("gDebugToolsProbe")
+    elf_fixture_state = elf_entries.get("sDebugSaveFixtureState")
+    elf_fixture_probe = elf_entries.get("gDebugSaveFixtureProbe")
+    language_probe = elf_entries.get("gExpansionLanguageMenuProbe")
+
+    if not all(
+        (
+            stable,
+            shared_menu,
+            fixture_state,
+            fixture_probe,
+            elf_stable,
+            elf_menu,
+            elf_probe,
+            elf_fixture_state,
+            elf_fixture_probe,
+            language_probe,
         )
-
-    object_symbols = subprocess.run(
-        ["arm-none-eabi-nm", "-S", str(obj)],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    object_table = subprocess.run(
-        ["arm-none-eabi-objdump", "-t", str(obj)],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    fixture_object_symbols = subprocess.run(
-        ["arm-none-eabi-nm", "-S", str(fixture_obj)],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    fixture_object_table = subprocess.run(
-        ["arm-none-eabi-objdump", "-t", str(fixture_obj)],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    elf_symbols = subprocess.run(
-        ["arm-none-eabi-nm", "-S", str(elf)],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-
-    object_anchor = re.search(
-        r"^00000000 00000048 \w sSaveStateStableLayout$",
-        object_symbols,
-        re.MULTILINE,
-    )
-    object_section = re.search(
+    ):
+        raise RuntimeError("missing parsed debug save-fixture layout symbol")
+    if (
+        stable != (0, 0x48)
+        or shared_menu != (stable[0] + stable[1], 0xD8)
+        or fixture_state != (0, 0x6C)
+        or fixture_probe != (fixture_state[0] + fixture_state[1], 0x58)
+    ):
+        raise RuntimeError("shared debug menu or fixture object layout drifted")
+    if "U sDebugToolsMenuItemDefs" not in language_symbols:
+        raise RuntimeError("language menu no longer aliases shared debug storage")
+    if "sLanguageMenuItemDefs" in language_symbols:
+        raise RuntimeError("language menu emitted a separate item-definition buffer")
+    if elf_menu[0] != elf_stable[0] + elf_stable[1] or elf_menu[1] != 0xD8:
+        raise RuntimeError("linked shared debug menu storage drifted")
+    if elf_stable[0] < elf_probe[0] + elf_probe[1]:
+        raise RuntimeError("retained save-fixture storage overlaps the debug probe")
+    if elf_fixture_probe[0] != elf_fixture_state[0] + elf_fixture_state[1]:
+        raise RuntimeError("linked fixture state/probe span drifted")
+    if language_probe[0] - (elf_menu[0] + elf_menu[1]) != 4:
+        raise RuntimeError("shared menu to language probe alignment delta drifted")
+    if not re.search(
         r"^00000000\s+\w+\s+O\s+ewram_data\s+00000048 "
         r"sSaveStateStableLayout$",
         object_table,
         re.MULTILINE,
-    )
-    elf_anchor = re.search(
-        r"^([0-9a-fA-F]+) 00000048 \w sSaveStateStableLayout$",
-        elf_symbols,
-        re.MULTILINE,
-    )
-    stable_probe = re.search(
-        r"^([0-9a-fA-F]+) ([0-9a-fA-F]+) \w gDebugToolsProbe$",
-        elf_symbols,
-        re.MULTILINE,
-    )
-    shared_menu_storage = re.search(
-        r"^00000048 000000d8 \w sDebugToolsMenuItemDefs$",
-        object_symbols,
-        re.MULTILINE,
-    )
-    shared_menu_section = re.search(
+    ) or not re.search(
         r"^00000048\s+\w+\s+O\s+ewram_data\s+000000d8 "
         r"sDebugToolsMenuItemDefs$",
         object_table,
         re.MULTILINE,
-    )
-    fixture_probe = re.search(
-        r"^0000006c 00000058 \w gDebugSaveFixtureProbe$",
-        fixture_object_symbols,
-        re.MULTILINE,
-    )
-    fixture_state = re.search(
-        r"^00000000 0000006c \w sDebugSaveFixtureState$",
-        fixture_object_symbols,
-        re.MULTILINE,
-    )
-    fixture_probe_section = re.search(
-        r"^0000006c\s+\w+\s+O\s+debug_save_fixture_data\s+00000058 "
-        r"gDebugSaveFixtureProbe$",
-        fixture_object_table,
-        re.MULTILINE,
-    )
-    fixture_state_section = re.search(
+    ):
+        raise RuntimeError("shared menu object section placement drifted")
+    if not re.search(
         r"^00000000\s+\w+\s+O\s+debug_save_fixture_data\s+0000006c "
         r"sDebugSaveFixtureState$",
-        fixture_object_table,
+        fixture_table,
         re.MULTILINE,
-    )
-    recovered_menu_bytes = (3 * 4 + 6) * 0x24 - 0xD8
+    ) or not re.search(
+        r"^0000006c\s+\w+\s+O\s+debug_save_fixture_data\s+00000058 "
+        r"gDebugSaveFixtureProbe$",
+        fixture_table,
+        re.MULTILINE,
+    ):
+        raise RuntimeError("fixture object section placement drifted")
+    if not re.search(
+        r"^\s*ewram_data\s+0x[0-9a-fA-F]+\s+0x[0-9a-fA-F]+",
+        map_text,
+        re.MULTILINE,
+    ) or not re.search(
+        r"^\s*debug_save_fixture_data\s+0x[0-9a-fA-F]+\s+0xc4",
+        map_text,
+        re.MULTILINE,
+    ):
+        raise RuntimeError("linked EWRAM fixture section/headroom evidence drifted")
 
-    if not all(
-        (
-            object_anchor,
-            object_section,
-            elf_anchor,
-            stable_probe,
-            shared_menu_storage,
-            shared_menu_section,
-            fixture_probe,
-            fixture_state,
-            fixture_probe_section,
-            fixture_state_section,
-        )
-    ):
-        raise RuntimeError(
-            "debug Save State layout, shared menu storage, or the 0x100-byte "
-            "fixture state/preview/probe contract drifted"
-        )
-    if int(elf_anchor.group(1), 16) < (
-        int(stable_probe.group(1), 16) + int(stable_probe.group(2), 16)
-    ):
-        raise RuntimeError(
-            "retained save-fixture storage overlaps the debug probe"
-        )
-    if recovered_menu_bytes < 0x1B0:
-        raise RuntimeError(
-            "shared debugtools menu storage recovered less than 432 bytes "
-            "of persistent EWRAM"
-        )
+
+def check_layout_anchor(elf: Path) -> None:
+    obj = elf.parent / "src" / "debugtools_tools.o"
+    fixture_obj = elf.parent / "src" / "debug_save_fixture.o"
+    language_obj = elf.parent / "src" / "expansion_language_menu.o"
+    map_path = elf.with_suffix(".map")
+    for path in (obj, fixture_obj, language_obj, map_path):
+        if not path.is_file():
+            raise RuntimeError(f"missing layout evidence input: {path}")
+
+    def command_output(*command: str) -> str:
+        return subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+
+    _check_layout_evidence(
+        command_output("arm-none-eabi-nm", "-S", str(obj)),
+        command_output("arm-none-eabi-objdump", "-t", str(obj)),
+        command_output("arm-none-eabi-nm", "-S", str(fixture_obj)),
+        command_output("arm-none-eabi-objdump", "-t", str(fixture_obj)),
+        command_output("arm-none-eabi-nm", "-S", str(elf)),
+        command_output("arm-none-eabi-nm", "-S", str(language_obj)),
+        map_path.read_text(encoding="utf-8"),
+    )
 
 
 def _check_exact_positive_hash() -> None:
