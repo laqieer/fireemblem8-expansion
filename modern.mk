@@ -1058,7 +1058,7 @@ $(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: %.c $(MODERN_PREPROC)
 		printf '%s\n' "error: modern preprocessor not found or not executable: $(MODERN_PREPROC)" >&2; \
 		exit 1; \
 	fi
-	"$(MODERN_PREPROC)" "$<" > "$@" || { rm -f "$@"; exit 1; }
+	"$(MODERN_PREPROC)" $(MODERN_PREPROC_FLAGS) "$<" > "$@" || { rm -f "$@"; exit 1; }
 
 $(MODERN_ALL_DATA_OBJECTS): $(MODERN_OUTPUT_DIR)/%.o: $(MODERN_OUTPUT_DIR)/%.pre.c
 	@mkdir -p "$(@D)"
@@ -1613,6 +1613,7 @@ ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 		--starter-content "$(EXPANSION_STARTER_CONTENT)" \
 		--aoe-reference "$(EXPANSION_AOE_REFERENCE)" \
 		--custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
+		--asset-manifest "$(ASSET_MANIFEST)" \
 		--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 		--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 		--hq-mixer "$(EXPANSION_HQ_MIXER)" \
@@ -1680,6 +1681,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	--starter-content "$(EXPANSION_STARTER_CONTENT)" \
 	--aoe-reference "$(EXPANSION_AOE_REFERENCE)" \
 	--custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
+	--asset-manifest "$(ASSET_MANIFEST)" \
 	--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 	--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 	--hq-mixer "$(EXPANSION_HQ_MIXER)" \

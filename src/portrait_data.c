@@ -4,4 +4,4 @@
  * intentionally owns no hand-maintained FaceData initializers.
  */
 #include "global.h"
-#include "build/generated/assets/portrait_data.inc"
+#include "portrait_data.inc"

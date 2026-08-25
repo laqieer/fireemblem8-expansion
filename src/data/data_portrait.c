@@ -486,4 +486,4 @@ u8 __attribute__((aligned(4))) portrait_Mystery_1_palette[] = INCBIN_U8("graphic
 u8 __attribute__((aligned(4))) portrait_Mystery_1_mouth[] = INCBIN_U8("graphics/portrait/portrait_Mystery_1_mouth.4bpp");
 u8 __attribute__((aligned(4))) portrait_Mystery_1_chibi[] = INCBIN_U8("graphics/portrait/portrait_Mystery_1_chibi.4bpp.lz");
 u8 __attribute__((aligned(4))) portrait_Mystery_1_tileset[] = INCBIN_U8("graphics/portrait/portrait_Mystery_1_tileset.4bpp.fk");
-#include "build/generated/assets/portrait_components.inc"
+#include "portrait_components.inc"
