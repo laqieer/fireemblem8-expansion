@@ -338,6 +338,9 @@ Across a connected protect completion chain, every `deactivationFlag` must
 also differ from every referenced `eventFlag`, `failureFlag`, and
 `completionFlag`; otherwise it could return inactive before a terminal
 completion or failure latch is observed.
+Every `protect` completion latch is also distinct from every `protect` or
+`hold_until_turn` failure latch in its chapter, so one objective cannot turn
+another objective's terminal failure into success.
 For example, a continuous hold uses
 `"failureFlag": "EVFLAG_PROJECT_ESCORT_FAILED"` alongside its `group`,
 `area`, and `untilTurn`; the flag must be a project-defined existing

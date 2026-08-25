@@ -1075,6 +1075,21 @@ def validate(records, diagnostics, dependency_records=None,
                 record_ref + ".completionFlags[{key}]",
             )
         )
+        failure_flags_by_value = {}
+        for flag, loc in failure_flags:
+            failure_flags_by_value.setdefault(flag, loc)
+        for flag, loc in completion_flags:
+            if flag in failure_flags_by_value:
+                diagnostics.add(
+                    _err(
+                        "protect completionFlag '{}' aliases objective failureFlag "
+                        "(first defined at {}) and can convert failure to success".format(
+                            flag, failure_flags_by_value[flag]
+                        ),
+                        loc,
+                        record_ref + ".terminalFlags[{}]".format(flag),
+                    )
+                )
         _validate_dependency_set(
             diagnostics, record, "characters", record.dependencies.characters,
             record.dependencies.character_locs, characters, used_characters, "character",
