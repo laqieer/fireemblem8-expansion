@@ -937,12 +937,16 @@ def _validate_record(records, diagnostics, dependency_records=None,
     graph.topo_order()  # raises GeneratedDataError on a cycle
 
 
-def validate(records, diagnostics, dependency_records=None,
+def validate(records, diagnostics, dependency_records=None, use_supplied_dependencies=False,
              chapters_header=CHAPTERS_HEADER, characters_header=CHARACTERS_HEADER,
              classes_header=CLASSES_HEADER, items_header=ITEMS_HEADER,
              chapter_settings_path=CHAPTER_SETTINGS_JSON,
              asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE):
-    """Validate every authored bundle and reject duplicate chapter owners."""
+    """Validate every authored bundle and reject duplicate chapter owners.
+
+    ``use_supplied_dependencies`` is an explicit test-only hook. Production
+    callers always reload each dependency from the bundle's declared source.
+    """
     if not isinstance(records, ChapterBundleRecords):
         records = ChapterBundleRecords(records)
 
@@ -953,7 +957,6 @@ def validate(records, diagnostics, dependency_records=None,
             "bundles[chapter={key}].chapter",
         )
     )
-    use_supplied_dependencies = len(records) == 1 and dependency_records is not None
     for record in records:
         record_dependencies = resolve_bundle_dependencies(
             record,

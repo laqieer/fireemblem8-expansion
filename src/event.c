@@ -20,6 +20,9 @@
 #include "eventinfo.h"
 #include "event.h"
 #include "eventscript.h"
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
+#include "expansion_chapter_objectives.h"
+#endif
 #if FE8_AUTOPLAY_EVENT_TRACE_TEST
 #include "expansion_autoplay_internal.h"
 #endif
@@ -174,8 +177,12 @@ void EventEngine_OnEnd(struct EventEngineProc* proc) {
         EndEventFaces(proc);
     }
 
-    if (!(proc->evStateBits & EV_STATE_ABORT))
+    if (!(proc->evStateBits & EV_STATE_ABORT)) {
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
+        ExpansionChapterObjectives_OnMapChangeEventsComplete();
+#endif
         CallNextQueuedEvent();
+    }
 }
 
 void EnqueueEventCall(const u16* events, u8 execType) {

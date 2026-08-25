@@ -1,4 +1,6 @@
+import json
 import os
+import shutil
 import unittest
 
 from scripts.generated_data.tests._util import fixture_path, scratch_dir
@@ -148,6 +150,72 @@ class CliChapterBundleTests(unittest.TestCase):
             "--no-roundtrip",
         ])
         self.assertEqual(code, 0, msg=out + err)
+
+    def test_custom_bundle_cli_uses_declared_sources_for_file_and_directory_inputs(self):
+        with scratch_dir() as tmp:
+            source = fixture_path("chapterbundle", "cli_valid.json")
+            with open(source, encoding="utf-8") as handle:
+                bundle = json.load(handle)
+
+            bundle_path = os.path.join(tmp, "custom_bundle.json")
+            with open(bundle_path, "w", encoding="utf-8") as handle:
+                json.dump(bundle, handle)
+
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", bundle_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 0, msg=out + err)
+
+            bundle_dir = os.path.join(tmp, "bundles")
+            os.mkdir(bundle_dir)
+            directory_bundle = os.path.join(bundle_dir, "custom_bundle.json")
+            shutil.copyfile(bundle_path, directory_bundle)
+            direct_out = os.path.join(tmp, "direct")
+            direct_inventory = os.path.join(tmp, "direct.md")
+            directory_out = os.path.join(tmp, "directory")
+            directory_inventory = os.path.join(tmp, "directory.md")
+            for bundle_source, out_dir, inventory in (
+                (bundle_path, direct_out, direct_inventory),
+                (bundle_dir, directory_out, directory_inventory),
+            ):
+                code, out, err = run_cli([
+                    "generate", "--table", "chapterbundle", "--source", bundle_source,
+                    "--out-dir", out_dir, "--inventory", inventory, "--no-roundtrip",
+                ])
+                self.assertEqual(code, 0, msg=out + err)
+            with open(direct_inventory, encoding="utf-8") as handle:
+                direct_report = handle.read()
+            with open(directory_inventory, encoding="utf-8") as handle:
+                directory_report = handle.read()
+            self.assertEqual(direct_report, directory_report)
+
+            for field, source_key, expected_path in (
+                ("tables.units", ("tables", "units", "source"), "tables.units.source"),
+                ("supportOwners", ("supportOwners", "source"), "supportOwners.source"),
+            ):
+                bad_bundle = json.loads(json.dumps(bundle))
+                cursor = bad_bundle
+                for key in source_key[:-1]:
+                    cursor = cursor[key]
+                cursor[source_key[-1]] = os.path.join(tmp, "missing-{}.json".format(field))
+                bad_path = os.path.join(tmp, "missing-{}.json".format(field))
+                with open(bad_path, "w", encoding="utf-8") as handle:
+                    json.dump(bad_bundle, handle)
+                code, out, err = run_cli([
+                    "validate", "--table", "chapterbundle", "--source", bad_path, "--no-roundtrip",
+                ])
+                self.assertEqual(code, 1)
+                self.assertIn(expected_path, err)
+
+                bad_out = os.path.join(tmp, "bad-{}".format(field))
+                bad_inventory = os.path.join(tmp, "bad-{}.md".format(field))
+                code, out, err = run_cli([
+                    "generate", "--table", "chapterbundle", "--source", bad_path,
+                    "--out-dir", bad_out, "--inventory", bad_inventory, "--no-roundtrip",
+                ])
+                self.assertEqual(code, 1)
+                self.assertIn(expected_path, err)
+                self.assertFalse(os.path.exists(bad_inventory))
 
     def test_generate_skips_c_output_for_metadata_only_table(self):
         with scratch_dir() as tmp:
