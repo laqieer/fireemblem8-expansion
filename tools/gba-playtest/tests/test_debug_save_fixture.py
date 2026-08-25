@@ -124,6 +124,60 @@ class DebugSaveFixtureLayoutParserTests(unittest.TestCase):
                 language_symbols,
                 map_text,
             )
+
+    def test_boundary_itemtest_symbols_preserve_language_telemetry(self):
+        object_symbols = (
+            "00000000 00000048 D sSaveStateStableLayout\n"
+            "00000048 000000d8 D sDebugToolsMenuItemDefs\n"
+        )
+        object_table = (
+            "00000000 g O ewram_data 00000048 sSaveStateStableLayout\n"
+            "00000048 g O ewram_data 000000d8 sDebugToolsMenuItemDefs\n"
+        )
+        fixture_symbols = (
+            "00000000 0000006c d sDebugSaveFixtureState\n"
+            "0000006c 00000058 D gDebugSaveFixtureProbe\n"
+        )
+        fixture_table = (
+            "00000000 l O debug_save_fixture_data 0000006c sDebugSaveFixtureState\n"
+            "0000006c g O debug_save_fixture_data 00000058 gDebugSaveFixtureProbe\n"
+        )
+        elf_symbols = (
+            "02031818 0000008c B gDebugToolsProbe\n"
+            "020318ac 00000048 B sSaveStateStableLayout\n"
+            "020318f4 000000d8 B sDebugToolsMenuItemDefs\n"
+            "020319d8 000002d0 b sItemExpansionScratch\n"
+            "02031ca8 00000114 B gItemExpansionProbe\n"
+            "02031dbc 00000014 B gExpansionLanguageMenuProbe\n"
+            "0203f424 0000006c b sDebugSaveFixtureState\n"
+            "0203f490 00000058 B gDebugSaveFixtureProbe\n"
+        )
+        language_symbols = "                 U sDebugToolsMenuItemDefs\n"
+        map_text = (
+            "ewram_data      0x0202018c    0x1f35c\n"
+            "debug_save_fixture_data 0x0203f424 0xc4\n"
+        )
+
+        run_debug_save_fixture_checks._check_layout_evidence(
+            object_symbols,
+            object_table,
+            fixture_symbols,
+            fixture_table,
+            elf_symbols,
+            language_symbols,
+            map_text,
+        )
+        with self.assertRaisesRegex(RuntimeError, "item-test scratch/probe"):
+            run_debug_save_fixture_checks._check_layout_evidence(
+                object_symbols,
+                object_table,
+                fixture_symbols,
+                fixture_table,
+                elf_symbols.replace("000002d0", "000002cc"),
+                language_symbols,
+                map_text,
+            )
+
     def test_positive_case_drives_manual_suspend_through_map_menu_input(self):
         scenario = json.loads(
             (

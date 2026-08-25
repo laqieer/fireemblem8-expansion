@@ -114,6 +114,8 @@ def _check_layout_evidence(
     elf_fixture_state = elf_entries.get("sDebugSaveFixtureState")
     elf_fixture_probe = elf_entries.get("gDebugSaveFixtureProbe")
     language_probe = elf_entries.get("gExpansionLanguageMenuProbe")
+    itemtest_scratch = elf_entries.get("sItemExpansionScratch")
+    itemtest_probe = elf_entries.get("gItemExpansionProbe")
 
     if not all(
         (
@@ -147,8 +149,19 @@ def _check_layout_evidence(
         raise RuntimeError("retained save-fixture storage overlaps the debug probe")
     if elf_fixture_probe[0] != elf_fixture_state[0] + elf_fixture_state[1]:
         raise RuntimeError("linked fixture state/probe span drifted")
-    if language_probe[0] - (elf_menu[0] + elf_menu[1]) != 4:
-        raise RuntimeError("shared menu to language probe alignment delta drifted")
+    if (itemtest_scratch is None) != (itemtest_probe is None):
+        raise RuntimeError("incomplete item-test EWRAM layout")
+    if itemtest_scratch is None:
+        if language_probe[0] - (elf_menu[0] + elf_menu[1]) != 4:
+            raise RuntimeError("shared menu to language probe alignment delta drifted")
+    elif (
+        itemtest_scratch[1] != 0x2D0
+        or itemtest_probe[1] != 0x114
+        or itemtest_scratch[0] < elf_menu[0] + elf_menu[1]
+        or itemtest_probe[0] != itemtest_scratch[0] + itemtest_scratch[1]
+        or language_probe[0] != itemtest_probe[0] + itemtest_probe[1]
+    ):
+        raise RuntimeError("item-test scratch/probe layout drifted")
     if not re.search(
         r"^00000000\s+\w+\s+O\s+ewram_data\s+00000048 "
         r"sSaveStateStableLayout$",
