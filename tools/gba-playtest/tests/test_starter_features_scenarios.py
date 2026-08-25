@@ -23,6 +23,7 @@ sys.path.insert(0, str(PLAYTEST_DIR))
 
 import gba_playtest  # noqa: E402
 import check_starter_probe_addresses  # noqa: E402
+import host_mode  # noqa: E402
 
 POSITIVE = "starter-hook-modern-debug"
 NEGATIVE = "starter-hook-negative-modern-debug"
@@ -191,6 +192,7 @@ class StarterHookScenarioSchemaTests(unittest.TestCase):
                              "%s enemy must actually die in real combat" % name)
 
 
+@host_mode.live_artifact_testcase("starter-hook runtime coverage")
 class StarterHookRuntimeTests(unittest.TestCase):
     """Runtime libmGBA verification against built profile ROMs (skips unless a
     caller supplies them)."""
