@@ -119,6 +119,46 @@ int main(void)
 
     ResetFixture();
     CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_PENDING,
+        "initial beginning-event completion must make protect evaluation ready"
+    );
+    ExpansionChapterObjectives_OnMapChangeStarted();
+    sEirika.pCharacterData = NULL;
+    ExpansionChapterObjectives_RefreshTelemetry();
+    CHECK(
+        gExpansionChapterObjectiveTelemetry.state == EXPANSION_CHAPTER_OBJECTIVE_INACTIVE
+            && !CheckFlag(EVFLAG_DEFEAT_BOSS),
+        "map-change setup must remain inactive and cannot latch absent protected units"
+    );
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_INACTIVE
+            && !CheckFlag(EVFLAG_DEFEAT_BOSS),
+        "map-change setup status must not evaluate or latch protect failure"
+    );
+    sEirika.pCharacterData = &sEirikaData;
+    ExpansionChapterObjectives_OnMapChangeEventsComplete();
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_PENDING
+            && !CheckFlag(EVFLAG_DEFEAT_BOSS),
+        "post-map-change event completion must reactivate loaded protect units"
+    );
+
+    ResetFixture();
+    ExpansionChapterObjectives_ResetTelemetry();
+    sEirika.pCharacterData = NULL;
+    ExpansionChapterObjectives_OnMapChangeEventsComplete();
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_INACTIVE
+            && !CheckFlag(EVFLAG_DEFEAT_BOSS),
+        "an unmatched map-change completion must remain inactive without an early latch"
+    );
+
+    ResetFixture();
+    CHECK(
         ExpansionChapterObjectives_GetStatus(ObjectiveId(0), &progress)
             == EXPANSION_CHAPTER_OBJECTIVE_PENDING
             && progress == 0,
