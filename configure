@@ -629,6 +629,7 @@ FE8_CFG_BGM_CONTINUATION_POLICY
 FE8_CFG_HQ_MIXER
 FE8_CFG_CASUAL_MODE
 FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP
+FE8_CFG_ASSET_MANIFEST
 FE8_CFG_CUSTOM_SPELL_EFFECTS
 FE8_CFG_AOE_REFERENCE
 FE8_CFG_STARTER_CONTENT
@@ -686,6 +687,7 @@ enable_blue_phase_delegate
 enable_starter_content
 enable_aoe_reference
 enable_custom_spell_effects
+with_asset_manifest
 enable_localized_text_auto_wrap
 enable_casual_mode
 enable_hq_mixer
@@ -1347,6 +1349,9 @@ Optional Features:
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
   --without-PACKAGE       do not use PACKAGE (same as --with-PACKAGE=no)
+  --with-asset-manifest=PATH
+                          persist the source-owned asset manifest selected by
+                          ordinary make
   --with-bgm-continuation-policy=preserve|resume|restart
                           music continuation policy across map, battle, and
                           menu transitions
@@ -1981,6 +1986,21 @@ else $as_nop
 fi
 
 
+
+# Check whether --with-asset-manifest was given.
+if test ${with_asset_manifest+y}
+then :
+  withval=$with_asset_manifest; case $withval in #(
+  yes|no) :
+    as_fn_error $? "--with-asset-manifest requires a path" "$LINENO" 5 ;; #(
+  *) :
+    fe8_asset_manifest=$withval ;;
+esac
+else $as_nop
+  fe8_asset_manifest=
+fi
+
+
 # Check whether --enable-localized-text-auto-wrap was given.
 if test ${enable_localized_text_auto_wrap+y}
 then :
@@ -2181,6 +2201,12 @@ then :
 else $as_nop
   FE8_CFG_CUSTOM_SPELL_EFFECTS=
 fi
+if test -n "$fe8_asset_manifest"
+then :
+  FE8_CFG_ASSET_MANIFEST="ASSET_MANIFEST := $fe8_asset_manifest"
+else $as_nop
+  FE8_CFG_ASSET_MANIFEST=
+fi
 if test -n "$fe8_localized_text_auto_wrap"
 then :
   FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP="EXPANSION_LOCALIZED_TEXT_AUTO_WRAP := $fe8_localized_text_auto_wrap"
@@ -2258,6 +2284,9 @@ fi
 
 
 
+
+
+
 fe8_validate_rom_size=${fe8_rom_size:-16M}
 fe8_validate_text_shift=${fe8_text_shift:-0}
 fe8_abs_srcdir=`cd "$srcdir" && pwd`
@@ -2282,6 +2311,7 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --starter-content "$fe8_starter_content" \
     --aoe-reference "$fe8_aoe_reference" \
     --custom-spell-effects "$fe8_custom_spell_effects" \
+    --asset-manifest "$fe8_asset_manifest" \
     --localized-text-auto-wrap "$fe8_localized_text_auto_wrap" \
     --casual-mode "$fe8_casual_mode" \
     --hq-mixer "$fe8_hq_mixer" \

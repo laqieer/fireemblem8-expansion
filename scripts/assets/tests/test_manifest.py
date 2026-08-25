@@ -3,20 +3,23 @@
 from __future__ import annotations
 
 import copy
+import contextlib
 import hashlib
+import io
 import json
 import os
 import shutil
 import struct
 import subprocess
 import sys
+import threading
 import time
 import unittest
 import zlib
 from unittest import mock
 from types import SimpleNamespace
 
-from scripts.assets import banim, manifest, tmx
+from scripts.assets import banim, cli, manifest, tmx
 from scripts.generated_data.diagnostics import GeneratedDataError, GeneratedDataValidationError
 
 
@@ -240,10 +243,12 @@ class AssetManifestTests(unittest.TestCase):
         path = os.path.join(REPO_ROOT, "assets", "manifest.json")
         first = manifest.load_and_validate(path)
         second = manifest.load_and_validate(path)
-        self.assertEqual(manifest.render_makefile(first), manifest.render_makefile(second))
+        rendered = manifest.render_makefile(first)
+        self.assertEqual(rendered, manifest.render_makefile(second))
         self.assertIn(
-            "$(MODERN_OUTPUT_DIR)/src/data/data_8B363C.o: assets/tmx/Ch2Map.tmx",
-            manifest.render_makefile(first),
+            "$(MODERN_OUTPUT_DIR)/src/data/data_8B363C.o: "
+            "$(ASSET_MANIFEST_SOURCE_STAMP)",
+            rendered,
         )
 
     def test_eirika_existing_component_alias_preserves_face_data_row(self):
@@ -291,7 +296,7 @@ class AssetManifestTests(unittest.TestCase):
                 if line.startswith("#include ")
             ]
         self.assertEqual(includes[0], '#include "global.h"')
-        self.assertIn('#include "build/generated/assets/portrait_data.inc"', includes)
+        self.assertIn('#include "portrait_data.inc"', includes)
 
     def test_portrait_registry_is_complete_without_package_overrides(self):
         records = manifest.load_and_validate(self.write_manifest([valid_record()]))
@@ -548,7 +553,8 @@ class AssetManifestTests(unittest.TestCase):
         record = valid_portrait_record(TEST_ROOT)
         with open(os.path.join(REPO_ROOT, record["sources"][1]), "w", encoding="utf-8") as handle:
             handle.write("{ malformed metadata")
-        self.assert_validation_error([record], "cannot load portrait metadata")
+        with mock.patch.object(manifest, "_repo_path", side_effect=lambda path, *_: path):
+            self.assert_validation_error([record], "cannot load portrait metadata")
 
     def test_formatted_portrait_package_reports_unreadable_metadata_without_crashing(self):
         record = valid_portrait_record(TEST_ROOT)
@@ -560,7 +566,10 @@ class AssetManifestTests(unittest.TestCase):
                 raise OSError("metadata unavailable for test")
             return real_open(path, *args, **kwargs)
 
-        with mock.patch("builtins.open", side_effect=reject_metadata):
+        with (
+            mock.patch("builtins.open", side_effect=reject_metadata),
+            mock.patch.object(manifest, "_repo_path", side_effect=lambda path, *_: path),
+        ):
             self.assert_validation_error([record], "cannot load portrait metadata")
 
     def test_formatted_portrait_package_reports_missing_metadata_field_without_crashing(self):
@@ -580,7 +589,8 @@ class AssetManifestTests(unittest.TestCase):
         }
         with open(metadata_path, "w", encoding="utf-8") as handle:
             json.dump(metadata, handle)
-        self.assert_validation_error([record], "portrait metadata must contain exactly")
+        with mock.patch.object(manifest, "_repo_path", side_effect=lambda path, *_: path):
+            self.assert_validation_error([record], "portrait metadata must contain exactly")
 
     def test_formatted_portrait_package_requires_metadata_json(self):
         record = valid_portrait_record(TEST_ROOT)
@@ -590,11 +600,19 @@ class AssetManifestTests(unittest.TestCase):
             os.path.join(REPO_ROOT, record["sources"][1].replace("proof.json", "metadata.json")),
             source_path,
         )
-        self.assert_validation_error([record], "metadata.json")
+        with mock.patch.object(manifest, "_repo_path", side_effect=lambda path, *_: path):
+            self.assert_validation_error([record], "metadata.json")
 
     def test_sources_command_includes_portrait_registry_dependency(self):
         result = subprocess.run(
-            [sys.executable, "-m", "scripts.assets", "sources"],
+            [
+                sys.executable,
+                "-m",
+                "scripts.assets",
+                "--item-id-cap",
+                "0xCD",
+                "sources",
+            ],
             cwd=REPO_ROOT,
             capture_output=True,
             check=True,
@@ -606,17 +624,69 @@ class AssetManifestTests(unittest.TestCase):
         self.assertTrue(all("$(" not in source for source in sources))
         self.assertFalse(any(source.startswith("build/") for source in sources))
 
-    def test_make_rejects_output_override_with_portrait_incbin_consumer(self):
+    def test_discovery_rejects_missing_dependency_ownership_without_conversion(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            template = json.load(handle)
+        cases = (
+            ("tiled-tmx-map-layout", "chapterSettings"),
+            ("formatted-portrait-package", "registrySource"),
+            ("battle-animation-package", "classData"),
+        )
+        for kind_name, field in cases:
+            with self.subTest(kind=kind_name, field=field):
+                document = copy.deepcopy(template)
+                record = next(
+                    item for item in document["assets"] if item["kind"] == kind_name
+                )
+                del record["ownership"][field]
+                source = self.write_document(document)
+                stderr = io.StringIO()
+                with (
+                    mock.patch.object(tmx, "parse_tmx") as tmx_convert,
+                    mock.patch.object(banim, "load_package") as banim_convert,
+                    mock.patch.object(
+                        manifest.FormattedPortraitPackageKind, "_validate_metadata"
+                    ) as portrait_convert,
+                    mock.patch.object(manifest, "_write_bytes_if_changed") as write_output,
+                    contextlib.redirect_stderr(stderr),
+                ):
+                    self.assertEqual(
+                        cli.main(
+                            [
+                                "--item-id-cap",
+                                "0xCD",
+                                "--manifest",
+                                source,
+                                "sources",
+                            ]
+                        ),
+                        1,
+                    )
+                self.assertIn("ownership.{}".format(field), stderr.getvalue())
+                tmx_convert.assert_not_called()
+                banim_convert.assert_not_called()
+                portrait_convert.assert_not_called()
+                write_output.assert_not_called()
+
+    def test_make_supports_isolated_output_override_with_portrait_incbin_consumer(self):
         result = self.run_assets_make(
             os.path.join(REPO_ROOT, "assets", "manifest.json"),
             "build/generated/assets/test-work/portrait-output-override",
             "assets-generate",
         )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "ASSET_OUTPUT_DIR must be build/generated/assets while portrait package "
-            "INCBIN consumer(s) EIRIKA_FORMATTED_PORTRAIT are declared",
-            result.stdout + result.stderr,
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(
+                    REPO_ROOT,
+                    "build",
+                    "generated",
+                    "assets",
+                    "test-work",
+                    "portrait-output-override",
+                    "portrait_data.inc",
+                )
+            )
         )
 
     def test_make_allows_output_override_without_portrait_incbin_consumer(self):
@@ -914,17 +984,78 @@ class AssetManifestTests(unittest.TestCase):
             manifest.check(source, out_dir)
         self.assertIn("orphan generated output", str(raised.exception))
 
+    def test_generate_prunes_retired_chapter_map_include(self):
+        source = self.write_manifest([valid_record()])
+        out_dir = os.path.join(TEST_ROOT, "out")
+        manifest.generate(source, out_dir)
+        retired = os.path.join(out_dir, "ch2_main_map.inc")
+        with open(retired, "w", encoding="utf-8") as handle:
+            handle.write("retired generated include\n")
+        manifest.generate(source, out_dir)
+        self.assertFalse(os.path.exists(retired))
+        manifest.check(source, out_dir)
+
     def test_asset_makefile_tracks_declared_manifest_sources(self):
         with open(os.path.join(REPO_ROOT, "assets.mk"), encoding="utf-8") as handle:
             asset_makefile = handle.read()
-        self.assertIn(
-            'ASSET_MANIFEST_SOURCES := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" sources)',
-            asset_makefile,
+        self.assertNotIn("ASSET_MANIFEST_SOURCES := $(shell", asset_makefile)
+        rule = next(
+            line
+            for line in asset_makefile.splitlines()
+            if line.startswith("$(ASSET_OUTPUT_MK):")
         )
-        self.assertIn(
-            "$(ASSET_OUTPUT_MK): $(ASSET_MANIFEST) $(ASSET_MANIFEST_SOURCES) $(ASSET_TOOL_INPUTS)",
-            asset_makefile,
+        prerequisites = set(rule.split(":", 1)[1].split())
+        self.assertTrue(
+            {
+                "$(ASSET_SELECTION_STAMP)",
+                "$(ASSET_MANIFEST_SOURCE_STAMP)",
+                "$(ASSET_MANIFEST)",
+                "$(ASSET_TOOL_INPUTS)",
+            }.issubset(prerequisites)
         )
+        legacy = valid_record()
+        legacy["id"] = "CH1_MAIN_MAP"
+        legacy["kind"] = "chapter-map-layout"
+        legacy["sources"] = [
+            "graphics/map/layout/Ch1Map.mar",
+            "graphics/map/layout/Ch1Map.json",
+        ]
+        legacy["options"] = {"format": "mar", "compression": "lz77"}
+        legacy["ownership"].update(
+            {"chapterSettingsIndex": 1, "mainLayerId": 8, "symbol": "Ch1Map"}
+        )
+        legacy["resources"].update({"mapWidth": 15, "mapHeight": 10})
+        source = self.write_manifest([legacy])
+        output_dir = os.path.join(TEST_ROOT, "selection-stamp")
+        stamp = output_dir + ".manifest-selection"
+
+        def update_stamp(enabled):
+            return subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-f",
+                    "assets.mk",
+                    stamp,
+                    "PYTHON={}".format(sys.executable),
+                    "ASSET_MANIFEST={}".format(source),
+                    "ASSET_OUTPUT_DIR={}".format(output_dir),
+                    "EXPANSION_CUSTOM_SPELL_EFFECTS={}".format(enabled),
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        first = update_stamp(0)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        with open(stamp, encoding="utf-8") as handle:
+            self.assertIn("custom_spell_effects=0", handle.read())
+        second = update_stamp(1)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        with open(stamp, encoding="utf-8") as handle:
+            self.assertIn("custom_spell_effects=1", handle.read())
 
     def assert_asset_manifest_would_regenerate(
         self, manifest_path, output_dir, dependencies
@@ -1041,20 +1172,33 @@ class AssetManifestTests(unittest.TestCase):
             tiled_dependencies,
         )
 
-    def test_asset_makefile_guards_output_override_for_default_manifest(self):
-        guarded = subprocess.run(
+    def test_asset_makefile_supports_isolated_output_override_for_default_manifest(self):
+        isolated = subprocess.run(
             [
                 "make",
-                "ASSET_OUTPUT_DIR=build/generated/assets/alternate",
-                "assets-validate",
+                "ASSET_OUTPUT_DIR=build/generated/assets/test-work/alternate",
+                "assets-generate",
+                "assets-check",
             ],
             cwd=REPO_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
-        self.assertNotEqual(guarded.returncode, 0)
-        self.assertIn("must be build/generated/assets", guarded.stderr)
+        self.assertEqual(isolated.returncode, 0, isolated.stdout + isolated.stderr)
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(
+                    REPO_ROOT,
+                    "build",
+                    "generated",
+                    "assets",
+                    "test-work",
+                    "alternate",
+                    manifest.OUTPUT_MAKEFILE,
+                )
+            )
+        )
 
         legacy = valid_record()
         legacy["id"] = "CH1_MAIN_MAP"
@@ -1084,7 +1228,7 @@ class AssetManifestTests(unittest.TestCase):
         )
         self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
-    def test_make_rejects_output_override_with_banim_incbin_consumer(self):
+    def test_make_supports_isolated_output_override_with_banim_incbin_consumer(self):
         with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
             document = json.load(handle)
         document["assets"] = [
@@ -1096,11 +1240,20 @@ class AssetManifestTests(unittest.TestCase):
             "build/generated/assets/test-work/banim-output-override",
             "assets-generate",
         )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "ASSET_OUTPUT_DIR must be build/generated/assets while battle-animation package "
-            "INCBIN consumer(s) LORM_SP1_PROOF are declared",
-            result.stdout + result.stderr,
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(
+                    REPO_ROOT,
+                    "build",
+                    "generated",
+                    "assets",
+                    "test-work",
+                    "banim-output-override",
+                    "banim",
+                    "banim_data_entries.inc",
+                )
+            )
         )
 
     def test_check_detects_orphans_through_a_relative_output_path(self):
@@ -1142,6 +1295,56 @@ class AssetManifestTests(unittest.TestCase):
             [name for name in os.listdir(out_dir) if name.startswith(".asset-manifest-")],
             [],
         )
+
+    def test_parallel_custom_output_prune_preserves_active_atomic_writer(self):
+        out_dir = os.path.join(TEST_ROOT, "parallel-custom-spell")
+        custom_spell_dir = os.path.join(out_dir, "custom_spell")
+        path = os.path.join(custom_spell_dir, "custom_spell_effect_data.inc")
+        os.makedirs(custom_spell_dir)
+
+        writer_ready = threading.Event()
+        prune_finished = threading.Event()
+        writer_failures = []
+        active_temporary_paths = []
+        real_replace = manifest.os.replace
+
+        def replace_after_concurrent_prune(source, destination):
+            if destination == path:
+                active_temporary_paths.append(source)
+                writer_ready.set()
+                if not prune_finished.wait(timeout=5):
+                    raise RuntimeError("concurrent prune did not complete")
+            return real_replace(source, destination)
+
+        def write_output():
+            try:
+                manifest._write_bytes_if_changed(path, b"generated binding\n")
+            except Exception as error:
+                writer_failures.append(error)
+
+        def prune_custom_outputs():
+            if not writer_ready.wait(timeout=5):
+                writer_failures.append(RuntimeError("atomic writer did not create a temporary file"))
+                prune_finished.set()
+                return
+            manifest._prune_obsolete_custom_spell_outputs(out_dir, {path})
+            prune_finished.set()
+
+        with mock.patch.object(manifest.os, "replace", side_effect=replace_after_concurrent_prune):
+            writer = threading.Thread(target=write_output)
+            pruner = threading.Thread(target=prune_custom_outputs)
+            writer.start()
+            pruner.start()
+            writer.join(timeout=5)
+            pruner.join(timeout=5)
+
+        self.assertFalse(writer.is_alive())
+        self.assertFalse(pruner.is_alive())
+        self.assertEqual(writer_failures, [])
+        self.assertEqual(len(active_temporary_paths), 1)
+        self.assertFalse(os.path.exists(active_temporary_paths[0]))
+        with open(path, "rb") as handle:
+            self.assertEqual(handle.read(), b"generated binding\n")
 
     def test_cli_rejects_output_outside_ignored_generated_root(self):
         result = subprocess.run(
@@ -1197,7 +1400,7 @@ class AssetManifestTests(unittest.TestCase):
         )
         rendered = manifest.render_makefile(records)
         self.assertIn(
-            "src/data/data_8B363C.o: dependent.mar transitive.mar direct.mar\n",
+            "src/data/data_8B363C.o: $(ASSET_MANIFEST_SOURCE_STAMP)\n",
             rendered,
         )
 
@@ -1618,7 +1821,7 @@ class BattleAnimationPackageTests(unittest.TestCase):
                 "ASSET_OUTPUT_DIR := {}\n"
                 "ASSET_OUTPUT_MK := {}/asset_manifest.mk\n"
                 "ASSET_BANIM_COMBINED_LINKER_SCRIPT := {}\n"
-                "ASSET_TOOL := $(PYTHON) -m scripts.assets\n"
+                "ASSET_TOOL := $(PYTHON) -m scripts.assets --item-id-cap 0xCD\n"
                 "include {}/asset_manifest.mk\n"
                 "banim/data_banim.o: $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)\n"
                 "\t@test -f $<\n".format(
@@ -1773,20 +1976,20 @@ class BattleAnimationPackageTests(unittest.TestCase):
 
     def test_generated_banim_includes_are_root_relative(self):
         expected = {
-            "src/banim_data.c": "build/generated/assets/banim/banim_data_entries.inc",
-            "src/data_banimconf.c": "build/generated/assets/banim/banim_defs.inc",
+            "src/banim_data.c": "banim_data_entries.inc",
+            "src/data_banimconf.c": "banim_defs.inc",
             "src/banim_package_runtime_test.c":
-                "build/generated/assets/banim/banim_runtime_test_defs.h",
+                "banim_runtime_test_defs.h",
         }
         for source, generated in expected.items():
             with self.subTest(source=source):
                 with open(os.path.join(REPO_ROOT, source), encoding="utf-8") as handle:
                     text = handle.read()
                 self.assertIn('#include "{}"'.format(generated), text)
-                self.assertNotIn("../build/generated/assets", text)
+                self.assertNotIn("build/generated/assets", text)
         with open(os.path.join(REPO_ROOT, "src", "banim_data.c"), encoding="utf-8") as handle:
             self.assertIn(
-                '#include "build/generated/assets/banim/banim_runtime_symbols.h"',
+                '#include "banim_runtime_symbols.h"',
                 handle.read(),
             )
         with open(os.path.join(REPO_ROOT, "include", "ekrbattle.h"), encoding="utf-8") as handle:
@@ -1806,7 +2009,7 @@ class BattleAnimationPackageTests(unittest.TestCase):
         ):
             self.assertIn("\t@test -f $({})".format(output), rules)
         self.assertIn(
-            '$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate',
+            '$(ASSET_GENERATE_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate',
             rules,
         )
 

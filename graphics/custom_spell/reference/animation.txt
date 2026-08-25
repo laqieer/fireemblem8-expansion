@@ -1,0 +1,10 @@
+# Synthetic project-owned proof for feditor-magic-v1.
+/// - Start Animation
+O p- reference_obj_00.png
+B p- reference_bg_00.png
+2
+SF1
+O p- reference_obj_01.png
+B p- reference_bg_01.png
+2
+~~~

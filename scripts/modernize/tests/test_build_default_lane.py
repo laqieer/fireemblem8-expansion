@@ -334,6 +334,7 @@ class AutotoolsConfigureTests(unittest.TestCase):
             "--enable-starter-content",
             "--enable-localized-text-auto-wrap",
             "--enable-pseudo-locale",
+            "--with-asset-manifest=PATH",
             "--with-enabled-locales=LIST",
             "--with-default-locale=ID",
             "--with-rom-size=16M|32M",
@@ -388,6 +389,49 @@ class AutotoolsConfigureTests(unittest.TestCase):
             self.assertEqual(values["EXPANSION_STARTER_CONTENT"], "1")
             self.assertEqual(values["FE8_ITEM_ID_CAP"], "0xCE")
             self.assertEqual(values["GENERATED_DATA_ITEM_CAP"], "0xCE")
+
+    def test_configure_persists_custom_spell_asset_manifest(self):
+        with tempfile.TemporaryDirectory() as build_dir:
+            result = self.run_configure(
+                build_dir,
+                "--enable-custom-spell-effects",
+                "--with-asset-manifest=assets/manifests/custom-spell-reference.json",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout[-4000:])
+            fragment = parse_make_assignments(
+                (Path(build_dir) / "config.autotools.mk").read_text(encoding="utf-8")
+            )
+            self.assertEqual(fragment["EXPANSION_CUSTOM_SPELL_EFFECTS"], "1")
+            self.assertEqual(
+                fragment["ASSET_MANIFEST"],
+                "assets/manifests/custom-spell-reference.json",
+            )
+            make_result = subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "print-ASSET_MANIFEST",
+                    "assets-validate",
+                ],
+                cwd=build_dir,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(make_result.returncode, 0, make_result.stdout[-4000:])
+            values = parse_print_variables(make_result.stdout)
+            self.assertEqual(
+                values["ASSET_MANIFEST"],
+                "assets/manifests/custom-spell-reference.json",
+            )
+            self.assertIn("OK: 4 asset record(s) validated", make_result.stdout)
+
+    def test_configure_rejects_enabled_custom_spell_default_manifest(self):
+        with tempfile.TemporaryDirectory() as build_dir:
+            result = self.run_configure(build_dir, "--enable-custom-spell-effects")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires at least one custom-spell-effect", result.stdout)
 
     def test_recursive_wrapper_options_precede_makeoverrides(self):
         wrapper = GNUMAKEFILE_IN.read_text(encoding="utf-8")
