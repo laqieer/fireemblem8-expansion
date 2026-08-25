@@ -108,9 +108,9 @@ def _compile_arm(work: Path, source: Path, name: str, defines=(), extra_includes
         capture_output=True,
         text=True,
     )
-    if completed.returncode != 0:
-        raise AssertionError(completed.stdout + completed.stderr)
+    if completed.returncode != 0: raise AssertionError(completed.stdout + completed.stderr)
     return obj
+
 def _generate_message_ids(work: Path) -> Path:
     generated = work / "generated"
     completed = subprocess.run(
@@ -126,8 +126,7 @@ def _generate_message_ids(work: Path) -> Path:
         capture_output=True,
         text=True,
     )
-    if completed.returncode != 0:
-        raise AssertionError(completed.stdout + completed.stderr)
+    if completed.returncode != 0: raise AssertionError(completed.stdout + completed.stderr)
     return generated
 def _undefined_symbols(obj: Path) -> set[str]:
     completed = subprocess.run(
@@ -138,15 +137,9 @@ def _undefined_symbols(obj: Path) -> set[str]:
     if completed.returncode != 0:
         raise AssertionError(completed.stdout + completed.stderr)
     return {line.split()[-1] for line in completed.stdout.splitlines() if line.split()}
-def _gcc_original_tree(
-    work: Path,
-    source: Path,
-    name: str,
-    defines=(),
-    extra_includes=(),
-) -> str:
+def _gcc_tree(work: Path, source: Path, name: str, dump: str, defines=(), extra_includes=()) -> str:
     output = work / name
-    tree = work / (name + ".original")
+    tree = work / (name + "." + dump)
     completed = subprocess.run(
         [
             ARM_CC,
@@ -161,7 +154,7 @@ def _gcc_original_tree(
             *INCLUDE_FLAGS,
             *(value for path in extra_includes for value in ("-I", str(path))),
             *defines,
-            "-fdump-tree-original=" + str(tree),
+            "-fdump-tree-" + dump + "=" + str(tree),
             "-c",
             str(source),
             "-o",
@@ -174,44 +167,34 @@ def _gcc_original_tree(
     if completed.returncode != 0:
         raise AssertionError(completed.stdout + completed.stderr)
     return tree.read_text(encoding="utf-8")
-def _gcc_cfg_tree(work: Path, source: Path, name: str, defines=(), extra_includes=()) -> str:
-    output = work / name
-    tree = work / (name + ".cfg")
-    completed = subprocess.run(
-        [
-            ARM_CC,
-            "-mcpu=arm7tdmi",
-            "-mthumb",
-            "-mthumb-interwork",
-            "-mabi=aapcs",
-            "-std=gnu89",
-            "-ffreestanding",
-            "-fno-builtin",
-            "-w",
-            *INCLUDE_FLAGS,
-            *(value for path in extra_includes for value in ("-I", str(path))),
-            *defines,
-            "-fdump-tree-cfg=" + str(tree),
-            "-c",
-            str(source),
-            "-o",
-            str(output),
-        ],
-        cwd=str(ROOT),
-        capture_output=True,
-        text=True,
-    )
-    if completed.returncode != 0:
-        raise AssertionError(completed.stdout + completed.stderr)
-    return tree.read_text(encoding="utf-8")
+def _gcc_original_tree(work, source, name, defines=(), extra_includes=()) -> str:
+    return _gcc_tree(work, source, name, "original", defines, extra_includes)
+def _gcc_cfg_tree(work, source, name, defines=(), extra_includes=()) -> str:
+    return _gcc_tree(work, source, name, "cfg", defines, extra_includes)
 def _function_cfg(tree: str, name: str) -> str:
     marker = ";; Function " + name + " ("
     start = tree.find(marker)
-    if start < 0:
-        raise AssertionError("%s CFG function not found" % name)
+    if start < 0: raise AssertionError("%s CFG function not found" % name)
     end = tree.find("\n;; Function ", start + len(marker))
     return tree[start:] if end < 0 else tree[start:end]
-def _has_start_save_gate_cfg(cfg: str) -> bool:
+
+
+def _enum_value(work: Path, defines=(), extra_includes=(), expression="SAVE_COMPAT_CURRENT", declaration="") -> int:
+    source = work / "save_compat_current_probe.c"
+    source.write_text('#include "global.h"\n#include "save_format.h"\n' + declaration + '\nint Probe(void)\n{\n    return ' + expression + ';\n}\n', encoding="utf-8")
+    tree = _gcc_original_tree(work, source, "save_compat_current_probe.o", defines, extra_includes)
+    match = re.search(r"return (\d+);", tree)
+    if match is None: raise AssertionError("SaveCompatState enum representation not found")
+    return int(match.group(1))
+
+
+def _gate_fixture(work: Path, name: str, body: str, declaration="") -> Path:
+    source = work / name
+    source.write_text('#include "global.h"\n#include "savemenu.h"\n#include "save_format.h"\n#include "save_compat_menu.h"\nextern struct ProcCmd ProcScr_SaveMenu[];\n' + declaration + '\nvoid StartSaveMenu(void *parent)\n{\n    ' + body + '\n}\n', encoding="utf-8")
+    return source
+
+
+def _has_start_save_gate_cfg(cfg: str, current_value: int) -> bool:
     successors = {
         match.group(1): set(match.group(2).split())
         for match in re.finditer(r"^;; (\d+) succs \{([^}]*)\}", cfg, re.MULTILINE)
@@ -232,6 +215,20 @@ def _has_start_save_gate_cfg(cfg: str) -> bool:
         number for number, body in blocks.items() if re.search(r"\breturn;", body)
     }
     entry = min(successors, key=int)
+    predecessors = {number: set() for number in successors}
+    for number, targets in successors.items():
+        for target in targets:
+            predecessors.setdefault(target, set()).add(number)
+    dominators = {number: {entry} if number == entry else set(successors) for number in successors}
+    changed = True
+    while changed:
+        changed = False
+        for number in successors:
+            if number == entry or not predecessors.get(number):
+                continue
+            value = {number}.union(set.intersection(*(dominators[parent] for parent in predecessors[number])))
+            if value != dominators[number]:
+                dominators[number], changed = value, True
 
     def reaches(start: str, targets: set[str], blocked=()) -> bool:
         pending = [start]
@@ -252,7 +249,7 @@ def _has_start_save_gate_cfg(cfg: str) -> bool:
         if len(branch_successors) != 2:
             continue
         branch_body = blocks.get(branch, "")
-        condition = re.search(r"if \((\w+) != 4\)", branch_body)
+        condition = re.search(r"if \((\w+) != " + str(current_value) + r"\)", branch_body)
         if condition is None:
             continue
         value = condition.group(1)
@@ -266,7 +263,7 @@ def _has_start_save_gate_cfg(cfg: str) -> bool:
             normal = next(iter(branch_successors - {compat}), None)
             if normal not in normal_blocks:
                 continue
-            if reaches(entry, normal, {branch}):
+            if branch not in dominators.get(normal, set()):
                 continue
             if reaches(compat, normal_blocks):
                 continue
@@ -460,10 +457,7 @@ class SaveCompatDialogBackSemanticTests(unittest.TestCase):
             )
 
 
-@unittest.skipIf(
-    ARM_CC is None or ARM_NM is None or ARM_OBJDUMP is None,
-    "no arm-none-eabi compiler/binutils",
-)
+@unittest.skipIf(ARM_CC is None or ARM_NM is None or ARM_OBJDUMP is None, "no arm-none-eabi compiler/binutils")
 class SaveCompatCompiledBoundaryTests(unittest.TestCase):
     def test_compat_proc_has_no_forbidden_save_api_relocation(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -487,7 +481,6 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                     )
 
     def test_compat_proc_parsed_tree_has_no_save_block_type_or_field_access(self):
-        """Type/field access is parsed in both forms and XMAP is adversarial."""
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             for mode, defines, includes in _boundary_modes(work):
@@ -524,6 +517,7 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
             work = Path(tmp)
             for mode, defines, includes in _boundary_modes(work):
                 with self.subTest(mode=mode):
+                    current = _enum_value(work, defines, includes)
                     cfg = _function_cfg(
                         _gcc_cfg_tree(
                             work,
@@ -535,7 +529,7 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                         "StartSaveMenu",
                     )
                     self.assertTrue(
-                        _has_start_save_gate_cfg(cfg),
+                        _has_start_save_gate_cfg(cfg, current),
                         "StartSaveMenu CFG must branch non-CURRENT to the "
                         "compatibility return path before normal menu start",
                     )
@@ -545,10 +539,10 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                         "early": 'Proc_StartBlocking(ProcScr_SaveMenu, parent);\n    enum SaveCompatState state = ClassifySramSaveCompat();\n    if (state != SAVE_COMPAT_CURRENT)\n        StartSaveCompatMenu(parent, state);',
                     }
                     for suffix, body in mutations.items():
-                        mutation = work / (mode + "-" + suffix + "_save_menu.c")
-                        mutation.write_text(
-                            '#include "global.h"\n#include "savemenu.h"\n#include "save_format.h"\n#include "save_compat_menu.h"\nextern struct ProcCmd ProcScr_SaveMenu[];\nvoid StartSaveMenu(void *parent)\n{\n    ' + body + '\n}\n',
-                            encoding="utf-8",
+                        mutation = _gate_fixture(
+                            work,
+                            mode + "-" + suffix + "_save_menu.c",
+                            body,
                         )
                         self.assertFalse(
                             _has_start_save_gate_cfg(
@@ -561,10 +555,46 @@ class SaveCompatCompiledBoundaryTests(unittest.TestCase):
                                         includes,
                                     ),
                                     "StartSaveMenu",
-                                )
+                                ),
+                                current,
                             ),
                             suffix + " gate mutation must fail the CFG check",
                         )
+
+                    declaration = "enum { TEST_CURRENT = 9 };"
+                    reordered = _gate_fixture(
+                        work,
+                        mode + "-reordered_save_menu.c",
+                        'enum SaveCompatState state = ClassifySramSaveCompat();\n    if (state != TEST_CURRENT)\n        StartSaveCompatMenu(parent, state);\n    else\n        Proc_StartBlocking(ProcScr_SaveMenu, parent);',
+                        declaration,
+                    )
+                    reordered_cfg = _function_cfg(
+                        _gcc_cfg_tree(work, reordered, mode + "-reordered_save_menu.o", defines, includes),
+                        "StartSaveMenu",
+                    )
+                    reordered_current = _enum_value(
+                        work, defines, includes, "TEST_CURRENT", declaration
+                    )
+                    self.assertTrue(_has_start_save_gate_cfg(reordered_cfg, reordered_current))
+                    literal = _gate_fixture(
+                        work,
+                        mode + "-literal_save_menu.c",
+                        'enum SaveCompatState state = ClassifySramSaveCompat();\n    if (state != 4)\n        StartSaveCompatMenu(parent, state);\n    else\n        Proc_StartBlocking(ProcScr_SaveMenu, parent);',
+                        declaration,
+                    )
+                    literal_cfg = _function_cfg(
+                        _gcc_cfg_tree(
+                            work,
+                            literal,
+                            mode + "-literal_save_menu.o",
+                            defines,
+                            includes,
+                        ),
+                        "StartSaveMenu",
+                    )
+                    self.assertFalse(
+                        _has_start_save_gate_cfg(literal_cfg, reordered_current)
+                    )
 
     def test_complete_production_reverse_reference_census(self):
         sources = _production_sources()
