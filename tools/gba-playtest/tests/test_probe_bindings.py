@@ -19,7 +19,29 @@ PLAYTEST_DIR = REPO_ROOT / "tools" / "gba-playtest"
 sys.path.insert(0, str(PLAYTEST_DIR))
 
 import gba_playtest  # noqa: E402
+import check_starter_probe_addresses  # noqa: E402
 import probe_bindings  # noqa: E402
+
+
+def _logical_commands(output):
+    command = []
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if command or line.endswith("\\"):
+            command.append(line.removesuffix("\\").rstrip())
+            if not line.endswith("\\"):
+                yield shlex.split(" ".join(command))
+                command = []
+        elif line:
+            yield shlex.split(line)
+
+
+def _options(command):
+    return {
+        option: command[index + 1]
+        for index, option in enumerate(command[:-1])
+        if option.startswith("--") and not command[index + 1].startswith("--")
+    }
 
 
 class ProbeBindingToolTests(unittest.TestCase):
@@ -148,14 +170,25 @@ class ProbeBindingToolTests(unittest.TestCase):
 
     def test_make_threads_modern_nm_to_playtest_and_binding_tools(self):
         configured_nm = "/semantic/toolchain/arm-none-eabi-nm"
-        checks = (
-            ("debug", "expansion-modern-starter-hook-check"),
-            ("release", "expansion-modern-starter-hook-check"),
-            ("debug", "expansion-modern-starter-qol-check"),
-            ("release", "expansion-modern-starter-qol-check"),
-        )
+        checks = []
+        for prefix, target, symbol in (
+            ("starter-hook", "expansion-modern-starter-hook-check",
+             check_starter_probe_addresses.PROBE_SYMBOL),
+            ("starter-danger-overlay", "expansion-modern-starter-qol-check",
+             "gExpansionDangerOverlayProbe"),
+        ):
+            for config in ("debug", "release"):
+                clean = "clean-" if prefix == "starter-hook" and config == "release" else ""
+                profile = f"build/expansion-modern-starter/{config}/aapcs/fireemblem8"
+                default = f"build/expansion-modern/{config}/aapcs/fireemblem8"
+                names = (
+                    f"{prefix}-{clean}modern-{config}",
+                    f"{prefix}-{clean}negative-modern-{config}",
+                )
+                checks.append((config, target, ((names[0], profile, symbol),
+                                                (names[1], default, symbol))))
 
-        for config, target in checks:
+        for config, target, expected in checks:
             with self.subTest(config=config, target=target):
                 result = subprocess.run(
                     [
@@ -174,22 +207,67 @@ class ProbeBindingToolTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-                commands = [
-                    shlex.split(line)
-                    for line in result.stdout.splitlines()
-                    if "check_starter_probe_addresses.py" in line
+                commands = tuple(_logical_commands(result.stdout))
+                bindings = [
+                    _options(command)
+                    for command in commands
+                    if "tools/gba-playtest/check_starter_probe_addresses.py" in command
                 ]
-                self.assertTrue(commands, result.stdout)
-                for command in commands:
-                    options = {
-                        command[index]: command[index + 1]
-                        for index in range(1, len(command) - 1)
-                        if command[index].startswith("--")
-                    }
+                playtests = [
+                    _options(command)
+                    for command in commands
+                    if (
+                        "tools/gba-playtest/gba_playtest.py" in command
+                        and "verify" in command
+                    )
+                ]
+                self.assertEqual(len(bindings), 2, result.stdout)
+                self.assertEqual(len(playtests), 2, result.stdout)
+
+                expected_inputs = {
+                    (
+                        f"tools/gba-playtest/scenarios/{name}.json",
+                        f"tools/gba-playtest/fingerprints/{name}.json",
+                        elf,
+                        symbol,
+                    )
+                    for name, elf, symbol in expected
+                }
+                actual_bindings = {
+                    (
+                        options.get("--scenario"),
+                        options.get("--fingerprint"),
+                        options.get("--elf", "").removesuffix(".elf"),
+                        options.get(
+                            "--symbol",
+                            check_starter_probe_addresses.PROBE_SYMBOL,
+                        ),
+                    )
+                    for options in bindings
+                }
+                self.assertSetEqual(actual_bindings, expected_inputs)
+
+                actual_playtests = {
+                    (
+                        options.get("--scenario"),
+                        options.get("--expected"),
+                        options.get("--elf", "").removesuffix(".elf"),
+                        options.get("--rom", "").removesuffix(".gba"),
+                    )
+                    for options in playtests
+                }
+                expected_playtests = {
+                    (
+                        f"tools/gba-playtest/scenarios/{name}.json",
+                        f"tools/gba-playtest/fingerprints/{name}.json",
+                        elf,
+                        elf,
+                    )
+                    for name, elf, _symbol in expected
+                }
+                self.assertSetEqual(actual_playtests, expected_playtests)
+                for options in (*bindings, *playtests):
                     self.assertEqual(options.get("--nm"), configured_nm)
-                    self.assertTrue(options.get("--elf", "").endswith(".elf"))
-                    self.assertTrue(options.get("--scenario", "").endswith(".json"))
-                    self.assertTrue(options.get("--fingerprint", "").endswith(".json"))
 
 
 if __name__ == "__main__":
