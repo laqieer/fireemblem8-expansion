@@ -404,6 +404,19 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
 
         records, diagnostics = _validate("valid.json")
         objectives = {objective.id: objective for objective in records[0].objectives}
+        objectives["OBJECTIVE_FIXTURE_PROTECT"].completion_flag = "EVFLAG_ALWAYS_FALSE"
+        schema.validate(
+            records,
+            diagnostics,
+            {
+                "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json")),
+                "chapterbundle": chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json")),
+            },
+        )
+        self.assertIn("completionFlag must not be EVFLAG_ALWAYS_FALSE", diagnostics.render())
+
+        records, diagnostics = _validate("valid.json")
+        objectives = {objective.id: objective for objective in records[0].objectives}
         objectives["OBJECTIVE_FIXTURE_PROTECT"].failure_flag = "EVFLAG_5"
         schema.validate(
             records,

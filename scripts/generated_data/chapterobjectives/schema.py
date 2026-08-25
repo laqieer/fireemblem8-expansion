@@ -827,6 +827,11 @@ def validate(records, diagnostics, dependency_records=None,
                     _err("failureFlag must not be EVFLAG_ALWAYS_FALSE", objective.failure_flag_loc,
                          objective_ref + ".failureFlag")
                 )
+            if objective.completion_flag == "EVFLAG_ALWAYS_FALSE":
+                diagnostics.add(
+                    _err("completionFlag must not be EVFLAG_ALWAYS_FALSE", objective.completion_flag_loc,
+                         objective_ref + ".completionFlag")
+                )
             if objective.failure_flag is not None and objective.failure_flag in (
                 objective.activation_flag, objective.deactivation_flag, objective.event_flag,
                 objective.completion_flag,
