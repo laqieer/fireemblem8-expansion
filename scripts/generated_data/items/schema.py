@@ -778,6 +778,9 @@ class ItemsTableSchema(TableSchema):
         items_enum = extract_enum_constants(ITEMS_HEADER, name_prefix="ITEM_")
         return sum(1 for r in records if r.item in items_enum)
 
+    def active_manifest_record_count(self, records):
+        return len(records)
+
     def round_trip_errors(self, records, hand_source):
         if not hand_source or not os.path.exists(hand_source):
             return []
