@@ -426,6 +426,16 @@ struct DebugToolsPhaseControlRequest
 
 EWRAM_DATA static struct DebugToolsPhaseControlRequest sPhaseControlRequest = {0};
 
+struct DebugToolsPhaseControlSuspendTurn
+{
+    u16 originalTurn;
+    u16 liveTurn;
+    bool hasOriginalTurn;
+    u8 serializationDepth;
+};
+
+EWRAM_DATA static struct DebugToolsPhaseControlSuspendTurn sPhaseControlSuspendTurn = {0};
+
 static void DebugToolsPhaseControl_RecordResult(enum DebugToolsPhaseControlResult result)
 {
     gDebugToolsProbe.phaseControlLastResult = result;
@@ -551,6 +561,11 @@ void DebugToolsPhaseControl_ApplyTurnBeforePhaseEvents(void)
     if (sPhaseControlRequest.kind != DEBUGTOOLS_PHASE_CONTROL_REQUEST_TURN)
         return;
 
+    if (!sPhaseControlSuspendTurn.hasOriginalTurn)
+    {
+        sPhaseControlSuspendTurn.originalTurn = gPlaySt.chapterTurnNumber;
+        sPhaseControlSuspendTurn.hasOriginalTurn = TRUE;
+    }
     gPlaySt.chapterTurnNumber = (u16)sPhaseControlRequest.turn;
     DebugToolsPhaseControl_CompleteRequest();
 }
@@ -574,6 +589,9 @@ enum DebugToolsPhaseControlStartAction DebugToolsPhaseControl_ApplyAtPhaseStart(
 
 void DebugToolsPhaseControl_Reset(void)
 {
+    while (sPhaseControlSuspendTurn.serializationDepth != 0)
+        DebugToolsPhaseControl_EndSuspendSerialization();
+
     if (sPhaseControlRequest.kind != DEBUGTOOLS_PHASE_CONTROL_REQUEST_NONE)
     {
         gDebugToolsProbe.phaseControlExpiredCount++;
@@ -582,12 +600,45 @@ void DebugToolsPhaseControl_Reset(void)
     }
 
     sPhaseControlRequest.kind = DEBUGTOOLS_PHASE_CONTROL_REQUEST_NONE;
+    sPhaseControlSuspendTurn.hasOriginalTurn = FALSE;
     DebugToolsPhaseControl_RefreshProbe();
 }
 
 void DebugToolsPhaseControl_Sample(void)
 {
     DebugToolsPhaseControl_RefreshProbe();
+}
+
+void DebugToolsPhaseControl_BeginSuspendSerialization(void)
+{
+    if (!sPhaseControlSuspendTurn.hasOriginalTurn)
+        return;
+
+    if (sPhaseControlSuspendTurn.serializationDepth == 0)
+    {
+        sPhaseControlSuspendTurn.liveTurn = gPlaySt.chapterTurnNumber;
+        gPlaySt.chapterTurnNumber = sPhaseControlSuspendTurn.originalTurn;
+    }
+    sPhaseControlSuspendTurn.serializationDepth++;
+}
+
+bool DebugToolsPhaseControl_GetSerializedSuspendTurn(u16 *turn)
+{
+    if (!sPhaseControlSuspendTurn.hasOriginalTurn || turn == NULL)
+        return FALSE;
+
+    *turn = sPhaseControlSuspendTurn.originalTurn;
+    return TRUE;
+}
+
+void DebugToolsPhaseControl_EndSuspendSerialization(void)
+{
+    if (sPhaseControlSuspendTurn.serializationDepth == 0)
+        return;
+
+    sPhaseControlSuspendTurn.serializationDepth--;
+    if (sPhaseControlSuspendTurn.serializationDepth == 0)
+        gPlaySt.chapterTurnNumber = sPhaseControlSuspendTurn.liveTurn;
 }
 
 static u8 DebugToolsPhaseControl_ConfirmTurnIncrement(

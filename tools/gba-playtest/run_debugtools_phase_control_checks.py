@@ -15,10 +15,12 @@ PLAYTEST_DIR = REPO_ROOT / "tools" / "gba-playtest"
 FINGERPRINT_DIR = PLAYTEST_DIR / "fingerprints"
 BMUNIT_HEADER = REPO_ROOT / "include" / "bmunit.h"
 sys.path.insert(0, str(PLAYTEST_DIR))
+sys.path.insert(0, str(PLAYTEST_DIR / "tests"))
 
 import gba_playtest  # noqa: E402
 import run_autoplay_checks as autoplay  # noqa: E402
 from probe_bindings import ElfSymbolResolver  # noqa: E402
+import sram_fixture  # noqa: E402
 
 PHASE_PROBE = "gDebugToolsProbe"
 PHASE_TURN_SAMPLE = f"{PHASE_PROBE}+0x8c"
@@ -30,6 +32,9 @@ PHASE_LAST_REQUEST_KIND = f"{PHASE_PROBE}+0xb0"
 PHASE_LAST_FACTION = f"{PHASE_PROBE}+0xb4"
 PHASE_LAST_MODE = f"{PHASE_PROBE}+0xb8"
 FLAG_MENU_GREEN_BLOCK_ROW = 6
+SUSPEND_RESUME_SCENARIO = (
+    PLAYTEST_DIR / "scenarios" / "savesuspend-resume-modern-debug.json"
+)
 
 def _load_faction_constants():
     source = BMUNIT_HEADER.read_text(encoding="utf-8")
@@ -105,6 +110,131 @@ def _positive_frames():
         ],
         {"start": 25000, "end": 25006, "keys": ["RIGHT"]},
     ]
+
+
+def _suspend_resume_metadata_ranges():
+    scenario = json.loads(SUSPEND_RESUME_SCENARIO.read_text(encoding="utf-8"))
+    checkpoint = next(
+        item
+        for item in scenario["checkpoints"]
+        if item["name"] == "suspend-confirmed"
+    )
+    return tuple(
+        (item["offset"], item["length"])
+        for item in checkpoint["sram_hash_exclude_ranges"]
+    )
+
+
+SUSPEND_RESUME_METADATA_RANGES = _suspend_resume_metadata_ranges()
+
+
+def _phase_selection_frames(down_count):
+    if down_count < 1:
+        raise ValueError("phase selection requires a nonzero row offset")
+    selection_delay = (down_count - 1) * 60
+    selection_frame = 17810 + selection_delay
+    charge_delay = 120
+
+    return [
+        *autoplay._load_route("savesuspend-resume-modern-debug", 16986),
+        {"start": 17150, "end": 17156, "keys": ["SELECT", "L"]},
+        *[
+            {"start": frame, "end": frame + 6, "keys": ["DOWN"]}
+            for frame in range(17250, 17610, 60)
+        ],
+        {"start": 17630, "end": 17636, "keys": ["A"]},
+        *[
+            {
+                "start": 17750 + index * 60,
+                "end": 17756 + index * 60,
+                "keys": ["DOWN"],
+            }
+            for index in range(down_count)
+        ],
+        {"start": selection_frame, "end": selection_frame + 6, "keys": ["A"]},
+        {"start": 17970 + charge_delay, "end": 17976 + charge_delay, "keys": ["RIGHT"]},
+        {"start": 18120 + charge_delay, "end": 18126 + charge_delay, "keys": ["A"]},
+        {"start": 18220 + charge_delay, "end": 18226 + charge_delay, "keys": ["UP"]},
+        {"start": 18320 + charge_delay, "end": 18326 + charge_delay, "keys": ["R"]},
+        {"start": 18420 + charge_delay, "end": 18426 + charge_delay, "keys": ["B"]},
+        {"start": 18520 + charge_delay, "end": 18526 + charge_delay, "keys": ["A"]},
+    ]
+
+
+def _suspend_boundary_data(name, down_count):
+    boundary_frame = 19320
+
+    return {
+        "schema_version": 1,
+        "name": name,
+        "description": (
+            "TC-DEBUGTOOLS-PROTOTYPE-002 suspend serialization: the live "
+            "Flag/Chapter route applies a phase request, crosses the automatic "
+            "phase-boundary suspend, and preserves its completed SRAM image "
+            "for a separate fresh-process Resume capture."
+        ),
+        "frames": _phase_selection_frames(down_count),
+        "checkpoints": [
+            {
+                "name": "player-before-request",
+                "frame": 17140,
+                "framebuffer": False,
+                "probes": _phase_probes(),
+            },
+            {
+                "name": "red-boundary-after-automatic-suspend",
+                "frame": boundary_frame,
+                "framebuffer": False,
+                "sram_hash": True,
+                "sram_hash_exclude_ranges": [
+                    {"offset": offset, "length": length}
+                    for offset, length in SUSPEND_RESUME_METADATA_RANGES
+                ],
+                "probes": _phase_probes(),
+            },
+        ],
+    }
+
+
+def _resume_frames():
+    scenario = json.loads(
+        (PLAYTEST_DIR / "scenarios" / "save-load.json").read_text(encoding="utf-8")
+    )
+    return [
+        frame
+        for frame in scenario["frames"]
+        if frame["end"] <= 1156
+    ]
+
+
+def _resume_data():
+    return {
+        "schema_version": 1,
+        "name": "debugtools-phase-control-suspend-resume-modern-debug",
+        "description": (
+            "TC-DEBUGTOOLS-PROTOTYPE-002 suspend serialization: a fresh "
+            "emulator process loads the automatic boundary suspend through "
+            "the ordinary title Resume path."
+        ),
+        "frames": _resume_frames(),
+        "checkpoints": [
+            {
+                "name": "resumed-original-persistent-turn",
+                "frame": 1400,
+                "framebuffer": False,
+                "sram_hash": True,
+                "sram_hash_exclude_ranges": [
+                    {"offset": offset, "length": length}
+                    for offset, length in SUSPEND_RESUME_METADATA_RANGES
+                ],
+                "probes": [
+                    {"address": "gPlaySt+0x0e", "size": 1},
+                    {"address": "gPlaySt+0x0f", "size": 1},
+                    {"address": "gPlaySt+0x10", "size": 2},
+                ],
+            }
+        ],
+    }
 
 
 def _release_frames():
@@ -282,6 +412,30 @@ def _capture(rom, elf, data):
     return gba_playtest.capture(rom, scenario)
 
 
+def _capture_suspend_resume(rom, elf, data, input_sram, output_sram):
+    sram_fixture.write_deterministic_current_fixture(input_sram)
+    scenario = gba_playtest.parse_scenario_data(
+        data,
+        source=data["name"],
+        symbol_resolver=ElfSymbolResolver(elf),
+    )
+    return gba_playtest.capture(
+        rom,
+        scenario,
+        sram_image=input_sram,
+        sram_output=output_sram,
+    )
+
+
+def _capture_saved_resume(rom, elf, data, input_sram):
+    scenario = gba_playtest.parse_scenario_data(
+        data,
+        source=data["name"],
+        symbol_resolver=ElfSymbolResolver(elf),
+    )
+    return gba_playtest.capture(rom, scenario, sram_image=input_sram)
+
+
 def _checkpoint_values(capture, index):
     return {
         probe["address"]: int(probe["value"], 16)
@@ -358,6 +512,68 @@ def _check_blocked(capture):
     return failures
 
 
+def _check_suspend_resume_apply(capture):
+    before = _checkpoint_values(capture, 0)
+    boundary = _checkpoint_values(capture, 1)
+    failures = []
+
+    if boundary["gPlaySt+0x0f"] != RED_FACTION:
+        failures.append("suspend apply: no red boundary was observed")
+    if boundary["gPlaySt+0x10"] != before["gPlaySt+0x10"] + 1:
+        failures.append("suspend apply: live boundary did not observe the requested turn")
+    return failures
+
+
+def _check_suspend_resume_control(capture):
+    before = _checkpoint_values(capture, 0)
+    boundary = _checkpoint_values(capture, 1)
+    failures = []
+
+    if boundary["gPlaySt+0x0f"] != RED_FACTION:
+        failures.append("suspend control: no red boundary was observed")
+    if boundary["gPlaySt+0x10"] != before["gPlaySt+0x10"]:
+        failures.append("suspend control: control route changed the live turn")
+    return failures
+
+
+def _check_suspend_resume_restore(capture, original_turn):
+    resumed = _checkpoint_values(capture, 0)
+    if resumed["gPlaySt+0x10"] != original_turn:
+        return [
+            "suspend resume: fresh Resume did not restore the original "
+            "persistent turn"
+        ]
+    return []
+
+
+def _normalized_sram(image):
+    if len(image) != gba_playtest.SRAM_IMAGE_SIZE:
+        raise CheckError(
+            f"unexpected SRAM length {len(image)}; expected {gba_playtest.SRAM_IMAGE_SIZE}"
+        )
+    normalized = bytearray(image)
+    for offset, length in SUSPEND_RESUME_METADATA_RANGES:
+        normalized[offset:offset + length] = b"\0" * length
+    return bytes(normalized)
+
+
+def _check_suspend_sram_equality(control_path, apply_path):
+    control = _normalized_sram(control_path.read_bytes())
+    applied = _normalized_sram(apply_path.read_bytes())
+
+    if control == applied:
+        return []
+
+    first_difference = next(
+        index for index, (left, right) in enumerate(zip(control, applied))
+        if left != right
+    )
+    return [
+        "suspend serialization: edited and control SRAM images differ outside "
+        f"the existing metadata ranges at 0x{first_difference:04x}"
+    ]
+
+
 def _check_negative(capture):
     failures = []
     before = _checkpoint_values(capture, 0)
@@ -428,6 +644,74 @@ def main(argv=None):
             failures.extend(semantic_check(capture))
             failures.extend(
                 _verify_or_capture(capture, data["name"], args.capture_fingerprints)
+            )
+        if args.config == "debug":
+            apply_data = _suspend_boundary_data(
+                "debugtools-phase-control-suspend-apply-modern-debug",
+                1,
+            )
+            control_data = _suspend_boundary_data(
+                "debugtools-phase-control-suspend-control-modern-debug",
+                3,
+            )
+            apply_sram = args.out_dir / "phase-suspend-apply.sav"
+            control_sram = args.out_dir / "phase-suspend-control.sav"
+            apply_capture = _capture_suspend_resume(
+                args.rom,
+                args.elf,
+                apply_data,
+                args.out_dir / "phase-suspend-apply-input.sav",
+                apply_sram,
+            )
+            control_capture = _capture_suspend_resume(
+                args.rom,
+                args.elf,
+                control_data,
+                args.out_dir / "phase-suspend-control-input.sav",
+                control_sram,
+            )
+            for data, capture, semantic_check in (
+                (apply_data, apply_capture, _check_suspend_resume_apply),
+                (control_data, control_capture, _check_suspend_resume_control),
+            ):
+                capture_path = args.out_dir / f"{data['name']}.captured.json"
+                capture_path.write_text(
+                    gba_playtest.serialize_fingerprint(capture),
+                    encoding="utf-8",
+                )
+                failures.extend(semantic_check(capture))
+                failures.extend(
+                    _verify_or_capture(
+                        capture,
+                        data["name"],
+                        args.capture_fingerprints,
+                    )
+                )
+            failures.extend(_check_suspend_sram_equality(control_sram, apply_sram))
+            resume_data = _resume_data()
+            resume_capture = _capture_saved_resume(
+                args.rom,
+                args.elf,
+                resume_data,
+                apply_sram,
+            )
+            resume_path = args.out_dir / f"{resume_data['name']}.captured.json"
+            resume_path.write_text(
+                gba_playtest.serialize_fingerprint(resume_capture),
+                encoding="utf-8",
+            )
+            failures.extend(
+                _check_suspend_resume_restore(
+                    resume_capture,
+                    _checkpoint_values(apply_capture, 0)["gPlaySt+0x10"],
+                )
+            )
+            failures.extend(
+                _verify_or_capture(
+                    resume_capture,
+                    resume_data["name"],
+                    args.capture_fingerprints,
+                )
             )
         if failures:
             raise CheckError("\n".join(failures))

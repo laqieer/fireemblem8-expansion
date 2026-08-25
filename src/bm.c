@@ -550,7 +550,13 @@ void BmMain_SuspendBeforePhase(void)
 #endif
 
     gActionData.suspendPointType = SUSPEND_POINT_PHASECHANGE;
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    DebugToolsPhaseControl_BeginSuspendSerialization();
+#endif
     WriteSuspendSave(SAVE_ID_SUSPEND);
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    DebugToolsPhaseControl_EndSuspendSerialization();
+#endif
 }
 
 //! FE8U = 0x0801550C

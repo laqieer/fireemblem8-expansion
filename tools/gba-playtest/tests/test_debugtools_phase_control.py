@@ -43,6 +43,27 @@ RELEASE_RUNTIME_FINGERPRINT = (
     / "fingerprints"
     / "debugtools-phase-control-modern-release.json"
 )
+SUSPEND_APPLY_RUNTIME_FINGERPRINT = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "fingerprints"
+    / "debugtools-phase-control-suspend-apply-modern-debug.json"
+)
+SUSPEND_CONTROL_RUNTIME_FINGERPRINT = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "fingerprints"
+    / "debugtools-phase-control-suspend-control-modern-debug.json"
+)
+SUSPEND_RESUME_RUNTIME_FINGERPRINT = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "fingerprints"
+    / "debugtools-phase-control-suspend-resume-modern-debug.json"
+)
 RELEASE_BUDGET_REPORT = ROOT / "reports" / "linker-budget" / "modern-release.json"
 RELEASE_LOCALIZATION_BUDGET_REPORT = (
     ROOT / "reports" / "linker-budget" / "modern-localization-release.json"
@@ -437,9 +458,27 @@ class DebugToolsPhaseControlRuntimeContractTests(unittest.TestCase):
         release_capture = json.loads(
             RELEASE_RUNTIME_FINGERPRINT.read_text(encoding="utf-8")
         )
+        suspend_apply_capture = json.loads(
+            SUSPEND_APPLY_RUNTIME_FINGERPRINT.read_text(encoding="utf-8")
+        )
+        suspend_control_capture = json.loads(
+            SUSPEND_CONTROL_RUNTIME_FINGERPRINT.read_text(encoding="utf-8")
+        )
+        suspend_resume_capture = json.loads(
+            SUSPEND_RESUME_RUNTIME_FINGERPRINT.read_text(encoding="utf-8")
+        )
         self.assertEqual(module["_check_positive"](debug_capture), [])
         self.assertEqual(module["_check_blocked"](blocked_capture), [])
         self.assertEqual(module["_check_negative"](release_capture), [])
+        self.assertEqual(module["_check_suspend_resume_apply"](suspend_apply_capture), [])
+        self.assertEqual(
+            module["_check_suspend_resume_control"](suspend_control_capture),
+            [],
+        )
+        self.assertEqual(
+            module["_check_suspend_resume_restore"](suspend_resume_capture, 1),
+            [],
+        )
         frames = module["_positive_frames"]()
         key_sets = [tuple(frame["keys"]) for frame in frames]
         self.assertIn(("SELECT", "L"), key_sets)
@@ -491,6 +530,30 @@ class DebugToolsPhaseControlRuntimeContractTests(unittest.TestCase):
                 "green-block-requested",
                 "green-block-next-blue-restored",
             ],
+        )
+        self.assertEqual(
+            [
+                checkpoint["name"]
+                for checkpoint in module["_suspend_boundary_data"](
+                    "test-suspend", 1
+                )["checkpoints"]
+            ],
+            [
+                "player-before-request",
+                "red-boundary-after-automatic-suspend",
+            ],
+        )
+        resume_checkpoint = module["_resume_data"]()["checkpoints"][0]
+        self.assertEqual(
+            resume_checkpoint["name"],
+            "resumed-original-persistent-turn",
+        )
+        self.assertEqual(
+            tuple(
+                (item["offset"], item["length"])
+                for item in resume_checkpoint["sram_hash_exclude_ranges"]
+            ),
+            module["SUSPEND_RESUME_METADATA_RANGES"],
         )
 
 

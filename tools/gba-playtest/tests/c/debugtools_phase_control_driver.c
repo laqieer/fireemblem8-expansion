@@ -5,6 +5,7 @@
 
 #include "bm.h"
 #include "bmio.h"
+#include "bmmind.h"
 #include "cp_common.h"
 #include "event.h"
 #include "expansion_autoplay.h"
@@ -26,6 +27,7 @@
     } while (0)
 
 struct DebugToolsProbe gDebugToolsProbe;
+struct ActionData gActionData;
 
 struct ProcCmd CONST_DATA gProc_BMapMain[] = { { 0 } };
 struct ProcCmd gProcScr_PlayerPhase[] = { { 0 } };
@@ -65,6 +67,9 @@ static int sProcGotoLabel;
 static int sPhaseSwitchEventCount;
 static int sPhaseSwitchEventFaction;
 static int sPhaseSwitchEventTurn;
+static int sSuspendWriteCount;
+static int sSuspendWriteFailed;
+static int sSuspendSerializedTurn;
 
 ProcPtr Proc_Find(const struct ProcCmd* script)
 {
@@ -133,6 +138,26 @@ void DebugTools_ForceSessionCleanup(void)
 int DebugTools_IsHubActive(void)
 {
     return sDebugSessionActive;
+}
+
+int DebugTools_IsBootstrapSuppressionActive(void)
+{
+    return 0;
+}
+
+void WriteSuspendSave(int slot)
+{
+    (void)slot;
+
+    DebugToolsPhaseControl_BeginSuspendSerialization();
+    sSuspendWriteCount++;
+    sSuspendSerializedTurn = gPlaySt.chapterTurnNumber;
+    if (sSuspendWriteFailed)
+    {
+        DebugToolsPhaseControl_EndSuspendSerialization();
+        return;
+    }
+    DebugToolsPhaseControl_EndSuspendSerialization();
 }
 
 u8 MenuAlwaysEnabled(const struct MenuItemDef* def, int number)
@@ -259,6 +284,9 @@ static void ResetHarness(void)
     sPhaseSwitchEventCount = 0;
     sPhaseSwitchEventFaction = -1;
     sPhaseSwitchEventTurn = -1;
+    sSuspendWriteCount = 0;
+    sSuspendWriteFailed = 0;
+    sSuspendSerializedTurn = -1;
     sMapMainProc.gameCtrl = &sGameCtrl;
     sGameCtrl.proc_lockCnt = 1;
 
@@ -303,6 +331,51 @@ static int TestTurnRequestAtBoundary(void)
           "a completed turn request must record application and restoration");
     CHECK(memcmp(&gPlaySt.config, &configBefore, sizeof(configBefore)) == 0,
           "turn control must never write persistent debug-control option bits");
+
+    return 0;
+}
+
+static int TestTransientTurnSuspendSerialization(void)
+{
+    ResetHarness();
+    CHECK(DebugToolsPhaseControl_RequestTurn(9) == DEBUGTOOLS_PHASE_CONTROL_OK,
+          "turn request must queue before suspend serialization");
+    CHECK(BmMain_ChangePhase() == true,
+          "turn request must apply before the destination phase event");
+    CHECK(gPlaySt.chapterTurnNumber == 9 && sPhaseSwitchEventTurn == 9,
+          "live phase events must observe the requested turn");
+
+    BmMain_SuspendBeforePhase();
+    CHECK(sSuspendWriteCount == 1 && sSuspendSerializedTurn == 5
+              && gPlaySt.chapterTurnNumber == 9,
+          "first suspend must serialize the original turn and restore the live turn");
+
+    BmMain_SuspendBeforePhase();
+    CHECK(sSuspendWriteCount == 2 && sSuspendSerializedTurn == 5
+              && gPlaySt.chapterTurnNumber == 9,
+          "repeated suspend must retain the original serialized turn");
+
+    sSuspendWriteFailed = 1;
+    BmMain_SuspendBeforePhase();
+    CHECK(sSuspendWriteCount == 3 && sSuspendSerializedTurn == 5
+              && gPlaySt.chapterTurnNumber == 9,
+          "failed suspend writer path must still restore the live turn");
+    sSuspendWriteFailed = 0;
+
+    DebugToolsPhaseControl_Reset();
+    BmMain_SuspendBeforePhase();
+    CHECK(sSuspendWriteCount == 4 && sSuspendSerializedTurn == 9
+              && gPlaySt.chapterTurnNumber == 9,
+          "reset after an applied turn must not leak the serialization swap");
+
+    ResetHarness();
+    CHECK(DebugToolsPhaseControl_RequestTurn(9) == DEBUGTOOLS_PHASE_CONTROL_OK,
+          "turn request must queue before expiry");
+    DebugToolsPhaseControl_Reset();
+    BmMain_SuspendBeforePhase();
+    CHECK(sSuspendWriteCount == 1 && sSuspendSerializedTurn == 5
+              && gPlaySt.chapterTurnNumber == 5,
+          "expired request must not leave a serialization swap active");
 
     return 0;
 }
@@ -630,6 +703,8 @@ static int TestForcedLifecycleCleanup(void)
 int main(void)
 {
     CHECK(TestTurnRequestAtBoundary() == 0, "turn boundary contract");
+    CHECK(TestTransientTurnSuspendSerialization() == 0,
+          "transient turn suspend serialization contract");
     CHECK(TestFactionModesAndRestoration() == 0, "faction ownership contract");
     CHECK(TestRejectedAndExpiredRequests() == 0, "rejection and cleanup contract");
     CHECK(TestLockOwnership() == 0, "game lock ownership contract");

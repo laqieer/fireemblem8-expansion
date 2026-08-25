@@ -1755,7 +1755,14 @@ The request is fixed-size EWRAM state with no pointers or heap allocation.
 It is cleared by fresh-map, restart, resume, `EndBMapMain`, and forced
 debugtools-session cleanup. Resetting a queued request records
 expiration/restoration and cannot carry it into a save, suspend, chapter
-change, title return, or soft reset. In debug builds, the probe records
+change, title return, or soft reset. A completed turn edit retains its
+pre-edit turn only in debug-owned EWRAM: every `WriteSuspendSave` path
+temporarily serializes that original turn through an immutable play-state
+snapshot, then restores the live requested turn for phase events. The final
+suspend field is written from the same retained value before the save block
+is published. A fresh Resume therefore restores the original persistent turn;
+control and edited full SRAM images are equal apart from the established
+build-metadata normalization ranges. In debug builds, the probe records
 sampled turn/modes plus requested, applied, rejected, expired, and restored
 counters with the last typed request and result. Release builds keep the
 pre-#124 `gDebugToolsProbe` size and zero contract while physically omitting
@@ -1793,12 +1800,16 @@ EWRAM/layout.
   and restored telemetry transition. Turn changes after the switch and before
   destination-faction phase events; a blocked faction is skipped once;
   red/green CPU remains the existing route; map input returns after the
-  submenu/hub close.
+  submenu/hub close. The automatic boundary suspend saves the pre-edit turn,
+  while a fresh ordinary Resume restores that persistent original even though
+  the live boundary observed the requested turn.
 - **Negative control:** Back/cancel leaves state unchanged. Out-of-range turn,
   blue/unknown faction, `PLAYER` mode, active event/battle/camera state,
   pending request, live #85/#87 blue computer ownership, forced lifecycle
   reset, and release input reject/expire without a persistent write. Release
-  objects omit the request symbols and leave probe fields zero.
+  objects omit the request symbols and leave probe fields zero. Repeated,
+  failed, expired, and reset suspend paths restore the live turn and leave no
+  serialization swap state behind.
 - **Interactions and save compatibility:** depends on #85 and is a stacked
   child of #87; it has no independent controller, no conflict with the #87
   blue marker, no feature flag, no save field, migration, epoch, or config
@@ -1809,11 +1820,15 @@ EWRAM/layout.
   states; it verifies phase-event ordering, an eligible berserk child is
   bypassed while green trap update/decay remains live under BLOCKED,
   battle/fade rejection, ARM request-state bounds, release
-  layout/symbol omission, and every authored locale. The
+  layout/symbol omission, every authored locale, and repeated/failed/expired
+  suspend-writer adversaries. The
   `expansion-modern-debugtools-phase-control-check` libmGBA scenario selects
   **Apply Turn +1** from the live submenu, uses #87's native one-phase Charge
-  profile and resumed-map fixture to cross a real red boundary, observes
-  restored map interactivity, and runs the matching release all-zero negative.
+  profile and resumed-map fixture to cross a real red boundary, captures the
+  real automatic suspend, compares edited/control full SRAM images with only
+  existing metadata ranges normalized, then starts a fresh emulator process
+  and resumes the original saved turn. It also runs the matching release
+  all-zero negative.
 - **Cleanup and limitations:** exit with Back; use `make clean_fast` only for
   ignored artifacts. This is not red/green manual play, persistent AI policy,
   arbitrary turn editing, a strategy system, or a raw prototype menu import.

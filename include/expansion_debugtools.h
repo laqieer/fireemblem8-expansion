@@ -808,6 +808,22 @@ void DebugToolsPhaseControl_ApplyTurnBeforePhaseEvents(void);
 enum DebugToolsPhaseControlStartAction DebugToolsPhaseControl_ApplyAtPhaseStart(int faction);
 void DebugToolsPhaseControl_Reset(void);
 void DebugToolsPhaseControl_Sample(void);
+
+#if !defined(FE8_ARCHIVAL_BUILD)
+/* The turn override is transient even when automatic phase suspends remain
+ * enabled. BmMain brackets only its real suspend writer with these calls. */
+void DebugToolsPhaseControl_BeginSuspendSerialization(void);
+bool DebugToolsPhaseControl_GetSerializedSuspendTurn(u16 *turn);
+void DebugToolsPhaseControl_EndSuspendSerialization(void);
+#else
+#define DebugToolsPhaseControl_BeginSuspendSerialization() ((void)0)
+#define DebugToolsPhaseControl_GetSerializedSuspendTurn(turn) (FALSE)
+#define DebugToolsPhaseControl_EndSuspendSerialization() ((void)0)
+#endif
+#else
+#define DebugToolsPhaseControl_BeginSuspendSerialization() ((void)0)
+#define DebugToolsPhaseControl_GetSerializedSuspendTurn(turn) (FALSE)
+#define DebugToolsPhaseControl_EndSuspendSerialization() ((void)0)
 #endif /* FE8_EXPANSION_DEBUGTOOLS_ENABLED */
 
 /* --- Five bounded validated tools ------------------------------------
