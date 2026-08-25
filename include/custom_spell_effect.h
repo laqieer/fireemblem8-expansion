@@ -83,7 +83,7 @@ bool8 CustomSpellEffect_Validate(const struct CustomSpellEffect *effect);
 bool8 CustomSpellEffect_IsActive(void);
 
 #if FE8_EXPANSION_MODERN_BUILD && FE8_EXPANSION_CUSTOM_SPELL_EFFECTS
-#include "build/generated/assets/custom_spell/custom_spell_effect_generated.h"
+#include "custom_spell_effect_generated.h"
 #endif
 
 #if FE8_EXPANSION_MODERN_BUILD && FE8_EXPANSION_CUSTOM_SPELL_EFFECTS \

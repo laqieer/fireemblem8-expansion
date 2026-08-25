@@ -102,7 +102,8 @@ every emitted runtime product. It validates the derived 1024-sheet-tile,
 32-OAM-entry, 16-palette color, 128-total-OAM, 32KiB OBJ-VRAM, and declared ROM bounds before
 publishing.
 
-Generation writes only ignored `build/generated/assets/banim/` products:
+Generation writes only ignored
+`<MODERN_BUILD_ROOT>/generated/assets/<resolved-profile>/banim/` products:
 4bpp frames, palette payloads, left/right OAM, mode offsets, relocatable
 motion assembly, `banim_data_entries.inc`, runtime symbol declarations,
 `banim_defs.inc`, `banim_defs.h`, and a combined compressor-linker script.

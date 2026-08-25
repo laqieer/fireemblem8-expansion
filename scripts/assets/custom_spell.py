@@ -39,9 +39,13 @@ BG_OUTPUT_HEIGHT = 160
 OBJ_SEAT_WIDTH = 256
 OBJ_SEAT_HEIGHT = 32
 CUSTOM_SPELL_BASE = 0x80
-PUBLIC_EFFECT_HEADER_PATHS = (
+PUBLIC_EFFECT_SYMBOL_PATHS = (
     "include/custom_spell_effect.h",
     "include/custom_spell_effect_test.h",
+    "src/custom_spell_effect.c",
+    "src/custom_spell_effect_test.c",
+    "tools/gba-playtest/tests/c/custom_spell_effect_host_driver.c",
+    "tools/gba-playtest/tests/c/custom_spell_effect_layout_driver.c",
 )
 
 FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
@@ -84,10 +88,25 @@ class CustomSpellPackage:
 
 def public_effect_symbols(root):
     symbols = set()
-    for relative_path in PUBLIC_EFFECT_HEADER_PATHS:
+    for relative_path in PUBLIC_EFFECT_SYMBOL_PATHS:
         with open(os.path.join(root, relative_path), encoding="utf-8") as handle:
+            source = handle.read()
+        if relative_path.startswith("include/"):
+            symbols.update(re.findall(r"\b(CUSTOM_SPELL_[A-Z0-9_]+)\b", source))
+        else:
             symbols.update(
-                re.findall(r"\b(CUSTOM_SPELL_[A-Z0-9_]+)\b", handle.read())
+                re.findall(
+                    r"^\s*#\s*define\s+(CUSTOM_SPELL_[A-Z0-9_]+)\b",
+                    source,
+                    re.MULTILINE,
+                )
+            )
+            symbols.update(
+                re.findall(
+                    r"^\s*(CUSTOM_SPELL_[A-Z0-9_]+)\s*(?:=|,)",
+                    source,
+                    re.MULTILINE,
+                )
             )
     return symbols
 

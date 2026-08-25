@@ -296,7 +296,7 @@ class AssetManifestTests(unittest.TestCase):
                 if line.startswith("#include ")
             ]
         self.assertEqual(includes[0], '#include "global.h"')
-        self.assertIn('#include "build/generated/assets/portrait_data.inc"', includes)
+        self.assertIn('#include "portrait_data.inc"', includes)
 
     def test_portrait_registry_is_complete_without_package_overrides(self):
         records = manifest.load_and_validate(self.write_manifest([valid_record()]))
@@ -668,17 +668,25 @@ class AssetManifestTests(unittest.TestCase):
                 portrait_convert.assert_not_called()
                 write_output.assert_not_called()
 
-    def test_make_rejects_output_override_with_portrait_incbin_consumer(self):
+    def test_make_supports_isolated_output_override_with_portrait_incbin_consumer(self):
         result = self.run_assets_make(
             os.path.join(REPO_ROOT, "assets", "manifest.json"),
             "build/generated/assets/test-work/portrait-output-override",
             "assets-generate",
         )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "ASSET_OUTPUT_DIR must be build/generated/assets while portrait package "
-            "INCBIN consumer(s) EIRIKA_FORMATTED_PORTRAIT are declared",
-            result.stdout + result.stderr,
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(
+                    REPO_ROOT,
+                    "build",
+                    "generated",
+                    "assets",
+                    "test-work",
+                    "portrait-output-override",
+                    "portrait_data.inc",
+                )
+            )
         )
 
     def test_make_allows_output_override_without_portrait_incbin_consumer(self):
@@ -976,6 +984,17 @@ class AssetManifestTests(unittest.TestCase):
             manifest.check(source, out_dir)
         self.assertIn("orphan generated output", str(raised.exception))
 
+    def test_generate_prunes_retired_chapter_map_include(self):
+        source = self.write_manifest([valid_record()])
+        out_dir = os.path.join(TEST_ROOT, "out")
+        manifest.generate(source, out_dir)
+        retired = os.path.join(out_dir, "ch2_main_map.inc")
+        with open(retired, "w", encoding="utf-8") as handle:
+            handle.write("retired generated include\n")
+        manifest.generate(source, out_dir)
+        self.assertFalse(os.path.exists(retired))
+        manifest.check(source, out_dir)
+
     def test_asset_makefile_tracks_declared_manifest_sources(self):
         with open(os.path.join(REPO_ROOT, "assets.mk"), encoding="utf-8") as handle:
             asset_makefile = handle.read()
@@ -1153,20 +1172,33 @@ class AssetManifestTests(unittest.TestCase):
             tiled_dependencies,
         )
 
-    def test_asset_makefile_guards_output_override_for_default_manifest(self):
-        guarded = subprocess.run(
+    def test_asset_makefile_supports_isolated_output_override_for_default_manifest(self):
+        isolated = subprocess.run(
             [
                 "make",
-                "ASSET_OUTPUT_DIR=build/generated/assets/alternate",
-                "assets-validate",
+                "ASSET_OUTPUT_DIR=build/generated/assets/test-work/alternate",
+                "assets-generate",
+                "assets-check",
             ],
             cwd=REPO_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
-        self.assertNotEqual(guarded.returncode, 0)
-        self.assertIn("must be build/generated/assets", guarded.stderr)
+        self.assertEqual(isolated.returncode, 0, isolated.stdout + isolated.stderr)
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(
+                    REPO_ROOT,
+                    "build",
+                    "generated",
+                    "assets",
+                    "test-work",
+                    "alternate",
+                    manifest.OUTPUT_MAKEFILE,
+                )
+            )
+        )
 
         legacy = valid_record()
         legacy["id"] = "CH1_MAIN_MAP"
@@ -1196,7 +1228,7 @@ class AssetManifestTests(unittest.TestCase):
         )
         self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
-    def test_make_rejects_output_override_with_banim_incbin_consumer(self):
+    def test_make_supports_isolated_output_override_with_banim_incbin_consumer(self):
         with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
             document = json.load(handle)
         document["assets"] = [
@@ -1208,11 +1240,20 @@ class AssetManifestTests(unittest.TestCase):
             "build/generated/assets/test-work/banim-output-override",
             "assets-generate",
         )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "ASSET_OUTPUT_DIR must be build/generated/assets while battle-animation package "
-            "INCBIN consumer(s) LORM_SP1_PROOF are declared",
-            result.stdout + result.stderr,
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(
+                    REPO_ROOT,
+                    "build",
+                    "generated",
+                    "assets",
+                    "test-work",
+                    "banim-output-override",
+                    "banim",
+                    "banim_data_entries.inc",
+                )
+            )
         )
 
     def test_check_detects_orphans_through_a_relative_output_path(self):
@@ -1935,20 +1976,20 @@ class BattleAnimationPackageTests(unittest.TestCase):
 
     def test_generated_banim_includes_are_root_relative(self):
         expected = {
-            "src/banim_data.c": "build/generated/assets/banim/banim_data_entries.inc",
-            "src/data_banimconf.c": "build/generated/assets/banim/banim_defs.inc",
+            "src/banim_data.c": "banim_data_entries.inc",
+            "src/data_banimconf.c": "banim_defs.inc",
             "src/banim_package_runtime_test.c":
-                "build/generated/assets/banim/banim_runtime_test_defs.h",
+                "banim_runtime_test_defs.h",
         }
         for source, generated in expected.items():
             with self.subTest(source=source):
                 with open(os.path.join(REPO_ROOT, source), encoding="utf-8") as handle:
                     text = handle.read()
                 self.assertIn('#include "{}"'.format(generated), text)
-                self.assertNotIn("../build/generated/assets", text)
+                self.assertNotIn("build/generated/assets", text)
         with open(os.path.join(REPO_ROOT, "src", "banim_data.c"), encoding="utf-8") as handle:
             self.assertIn(
-                '#include "build/generated/assets/banim/banim_runtime_symbols.h"',
+                '#include "banim_runtime_symbols.h"',
                 handle.read(),
             )
         with open(os.path.join(REPO_ROOT, "include", "ekrbattle.h"), encoding="utf-8") as handle:

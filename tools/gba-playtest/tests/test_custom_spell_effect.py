@@ -1,5 +1,6 @@
 """Issue #77 configuration, dispatch, resource, and ARM-object checks."""
 
+import json
 import re
 import shutil
 import subprocess
@@ -34,20 +35,73 @@ def run(command):
     return subprocess.run(command, cwd=str(ROOT), capture_output=True, text=True)
 
 
+def generated_asset_dir(manifest, enabled, build_root="build/expansion-modern"):
+    completed = run(
+        [
+            "make",
+            "--no-print-directory",
+            "print-ASSET_OUTPUT_DIR",
+            "MODERN_BUILD_ROOT={}".format(build_root),
+            "ASSET_MANIFEST={}".format(manifest),
+            "EXPANSION_CUSTOM_SPELL_EFFECTS={}".format(enabled),
+        ]
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    for line in reversed(completed.stdout.splitlines()):
+        if line.startswith("build/"):
+            return ROOT / line
+    raise AssertionError(completed.stdout + completed.stderr)
+
+
 def generate_reference_assets():
     completed = run(
         [
             "make",
-            "build/generated/assets/asset_manifest.mk",
+            "--no-print-directory",
+            "assets-generate",
             "ASSET_MANIFEST={}".format(REFERENCE_MANIFEST),
             "EXPANSION_CUSTOM_SPELL_EFFECTS=1",
         ]
     )
     if completed.returncode != 0:
         raise AssertionError(completed.stdout + completed.stderr)
+    return generated_asset_dir(REFERENCE_MANIFEST, 1)
 
 
 class CustomSpellConfigTests(unittest.TestCase):
+    def test_tester_facing_runtime_operations_match_one_selected_tsa(self):
+        documentation = (ROOT / "docs" / "custom_spell_effects.md").read_text(
+            encoding="utf-8"
+        )
+        registry = json.loads(
+            (ROOT / "docs" / "test-cases" / "registry.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        case = next(
+            entry
+            for entry in registry["cases"]
+            if entry["id"] == "TC-CUSTOM-SPELL-061-001"
+        )
+        source = SOURCE.read_text(encoding="utf-8")
+        self.assertIn("five per-frame runtime\n  operations", documentation)
+        self.assertIn(
+            "OBJ graphics/palette, BG graphics/palette, and one\n"
+            "  distance-selected TSA",
+            documentation,
+        )
+        self.assertIn("five per-frame runtime operations exactly once", case["expected_result"])
+        self.assertIn("one distance-selected TSA", case["expected_result"])
+        for operation in (
+            "SpellFx_RegisterBgPal",
+            "SpellFx_RegisterBgGfx",
+            "SpellFx_RegisterObjPal",
+            "SpellFx_RegisterObjGfx",
+            "SpellFx_WriteBgMap",
+        ):
+            self.assertEqual(source.count(operation), 1)
+
     def test_identity_tracks_enabled_state_and_preserves_save_epoch(self):
         import sys
 
@@ -254,7 +308,7 @@ class CustomSpellLifecycleTests(unittest.TestCase):
         if HOST_CC is None:
             self.skipTest("no host C compiler")
 
-        generate_reference_assets()
+        generated_assets = generate_reference_assets()
         build_root = ROOT / "build"
         build_root.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=build_root) as tmp:
@@ -268,6 +322,8 @@ class CustomSpellLifecycleTests(unittest.TestCase):
                     "-Werror=implicit-int",
                     "-Iinclude",
                     "-I.",
+                    "-I{}".format(generated_assets),
+                    "-I{}".format(generated_assets / "custom_spell"),
                     "-DMODERN=1",
                     "-DBUGFIX=1",
                     "-DFE8_EXPANSION_MODERN_BUILD=1",
@@ -407,7 +463,7 @@ class CustomSpellArmTests(unittest.TestCase):
         if ARM_CC is None or ARM_NM is None:
             self.skipTest("arm-none-eabi compiler/binutils unavailable")
 
-        generate_reference_assets()
+        generated_assets = generate_reference_assets()
         common = [
             ARM_CC,
             "-mcpu=arm7tdmi",
@@ -420,6 +476,8 @@ class CustomSpellArmTests(unittest.TestCase):
             "-fno-common",
             "-Iinclude",
             "-I.",
+            "-I{}".format(generated_assets),
+            "-I{}".format(generated_assets / "custom_spell"),
             "-DMODERN=1",
             "-DBUGFIX=1",
             "-DFE8_EXPANSION_MODERN_BUILD=1",
@@ -520,6 +578,82 @@ class CustomSpellArmTests(unittest.TestCase):
                 [*common, "-c", str(LAYOUT_DRIVER), "-o", str(layout)]
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+
+class CustomSpellProfileAssetIsolationTests(unittest.TestCase):
+    def test_concurrent_enabled_disabled_full_modern_compiles_keep_assets_isolated(self):
+        if ARM_CC is None:
+            self.skipTest("arm-none-eabi compiler unavailable")
+
+        test_root = ROOT / "build" / "test-artifacts" / "custom-spell-profile-assets"
+        enabled_root = test_root / "enabled"
+        disabled_root = test_root / "disabled"
+        shutil.rmtree(test_root, ignore_errors=True)
+        test_root.mkdir(parents=True)
+        commands = (
+            [
+                "make",
+                "--no-print-directory",
+                "-j2",
+                "expansion-modern-all",
+                "MODERN_BUILD_ROOT={}".format(enabled_root.relative_to(ROOT)),
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+                "EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+                "ASSET_MANIFEST={}".format(REFERENCE_MANIFEST.relative_to(ROOT)),
+            ],
+            [
+                "make",
+                "--no-print-directory",
+                "-j2",
+                "expansion-modern-all",
+                "MODERN_BUILD_ROOT={}".format(disabled_root.relative_to(ROOT)),
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+                "EXPANSION_CUSTOM_SPELL_EFFECTS=0",
+            ],
+        )
+        processes = [
+            subprocess.Popen(
+                command,
+                cwd=str(ROOT),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            for command in commands
+        ]
+        try:
+            outputs = [process.communicate(timeout=600)[0] for process in processes]
+            for process, output in zip(processes, outputs):
+                self.assertEqual(process.returncode, 0, output)
+
+            enabled_assets = list((enabled_root / "generated" / "assets").glob(
+                "*/asset_manifest.mk"
+            ))
+            disabled_assets = list((disabled_root / "generated" / "assets").glob(
+                "*/asset_manifest.mk"
+            ))
+            self.assertEqual(len(enabled_assets), 1)
+            self.assertEqual(len(disabled_assets), 1)
+            self.assertNotEqual(enabled_assets[0].parent, disabled_assets[0].parent)
+            self.assertTrue(
+                (enabled_assets[0].parent / "custom_spell" / "custom_spell_effect_data.inc").is_file()
+            )
+            self.assertFalse((disabled_assets[0].parent / "custom_spell").exists())
+            for root in (enabled_root, disabled_root):
+                self.assertTrue(
+                    (root / "debug" / "aapcs" / "src" / "custom_spell_effect.o").is_file()
+                )
+                self.assertTrue(
+                    (root / "debug" / "aapcs" / "src" / "data" / "custom_spell_effect_data.o").is_file()
+                )
+        finally:
+            for process in processes:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+            shutil.rmtree(test_root, ignore_errors=True)
 
 
 if __name__ == "__main__":

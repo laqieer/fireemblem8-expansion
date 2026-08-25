@@ -1056,7 +1056,7 @@ $(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: %.c $(MODERN_PREPROC)
 		printf '%s\n' "error: modern preprocessor not found or not executable: $(MODERN_PREPROC)" >&2; \
 		exit 1; \
 	fi
-	"$(MODERN_PREPROC)" "$<" > "$@" || { rm -f "$@"; exit 1; }
+	"$(MODERN_PREPROC)" $(MODERN_PREPROC_FLAGS) "$<" > "$@" || { rm -f "$@"; exit 1; }
 
 $(MODERN_ALL_DATA_OBJECTS): $(MODERN_OUTPUT_DIR)/%.o: $(MODERN_OUTPUT_DIR)/%.pre.c
 	@mkdir -p "$(@D)"

@@ -5,8 +5,8 @@
 # than creating another runtime table, linker list, or opaque build product.
 
 ASSET_MANIFEST ?= assets/manifest.json
-ASSET_OUTPUT_DIR ?= build/generated/assets
 EXPANSION_CUSTOM_SPELL_EFFECTS ?= 0
+MODERN_BUILD_ROOT ?= build/expansion-modern
 # Resolve the cap from Make's selected configuration rather than allowing the
 # asset CLI to read an ambient environment/default value. Standalone assets.mk
 # invocations use the same explicit, safely quoted resolver as generated data.
@@ -20,10 +20,21 @@ endif
 ifeq ($(ASSET_RESOLVED_ITEM_ID_CAP),)
 $(error FE8_ITEM_ID_CAP='$(FE8_ITEM_ID_CAP)' is not a valid item ID cap; see scripts/generated_data/idspace.py resolve_item_id_cap)
 endif
+ASSET_MANIFEST_KEY := $(subst /,_,$(subst .,_,$(abspath $(ASSET_MANIFEST))))
+ASSET_PROFILE_KEY := $(ASSET_MANIFEST_KEY)-custom$(EXPANSION_CUSTOM_SPELL_EFFECTS)-cap$(ASSET_RESOLVED_ITEM_ID_CAP)
+ifeq ($(strip $(MODERN_OUTPUT_DIR)),)
+ASSET_PROFILE_ROOT := build/generated/assets
+ASSET_DISCOVERY_ROOT := build/generated/asset-discovery
+ASSET_OUTPUT_DIR ?= $(ASSET_PROFILE_ROOT)
+else
+ASSET_PROFILE_ROOT := $(MODERN_BUILD_ROOT)/generated/assets
+ASSET_DISCOVERY_ROOT := $(MODERN_BUILD_ROOT)/generated/asset-discovery
+ASSET_OUTPUT_DIR ?= $(ASSET_PROFILE_ROOT)/$(ASSET_PROFILE_KEY)
+endif
 ASSET_TOOL := $(PYTHON) -m scripts.assets --custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" --item-id-cap "$(ASSET_RESOLVED_ITEM_ID_CAP)"
 ASSET_OUTPUT_MK := $(ASSET_OUTPUT_DIR)/asset_manifest.mk
 ASSET_DISCOVERY_KEY := $(subst /,_,$(subst .,_,$(ASSET_OUTPUT_DIR)))
-ASSET_DISCOVERY_MK := build/generated/asset-discovery/$(ASSET_DISCOVERY_KEY).mk
+ASSET_DISCOVERY_MK := $(ASSET_DISCOVERY_ROOT)/$(ASSET_DISCOVERY_KEY).mk
 ASSET_MANIFEST_SOURCE_STAMP := $(ASSET_DISCOVERY_MK)
 ASSET_PORTRAIT_INCBIN_CONSUMERS ?=
 ASSET_TMX_INCBIN_CONSUMERS ?=
@@ -31,34 +42,10 @@ ASSET_BANIM_INCBIN_CONSUMERS ?=
 ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS ?=
 -include $(ASSET_DISCOVERY_MK)
 
-ifneq ($(strip $(ASSET_PORTRAIT_INCBIN_CONSUMERS)),)
-ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
-$(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while portrait package INCBIN consumer(s) $(ASSET_PORTRAIT_INCBIN_CONSUMERS) are declared)
-endif
-endif
-
-ifneq ($(strip $(ASSET_TMX_INCBIN_CONSUMERS)),)
-ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
-$(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while TMX map-layout INCBIN consumer(s) $(ASSET_TMX_INCBIN_CONSUMERS) are declared)
-endif
-endif
-
-ifneq ($(strip $(ASSET_BANIM_INCBIN_CONSUMERS)),)
-ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
-$(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while battle-animation package INCBIN consumer(s) $(ASSET_BANIM_INCBIN_CONSUMERS) are declared)
-endif
-endif
-
-ifneq ($(strip $(ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS)),)
-ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
-$(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while custom-spell-effect INCBIN consumer(s) $(ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS) are declared)
-endif
-endif
-
-# The generated fragment shares a stable path because consumers include it
-# directly. Record the active manifest/profile outside the checked output
-# tree so switching profiles rebuilds that fragment even when both manifests
-# predate it.
+# Every modern build root/profile owns an independent generated asset tree.
+# Compile-time path definitions select that tree for the existing source-owned
+# consumers, so a concurrent profile cannot prune or overwrite another
+# compiler's include/data files after generation releases its owner lock.
 ASSET_SELECTION_STAMP := $(ASSET_OUTPUT_DIR).manifest-selection
 ASSET_GENERATE_TOOL := $(ASSET_TOOL) --selection-stamp "$(ASSET_SELECTION_STAMP)"
 ASSET_BANIM_DATA_ENTRIES := $(ASSET_OUTPUT_DIR)/banim/banim_data_entries.inc
@@ -68,8 +55,34 @@ ASSET_BANIM_RUNTIME_TEST_DEFS := $(ASSET_OUTPUT_DIR)/banim/banim_runtime_test_de
 ASSET_BANIM_RUNTIME_SYMBOLS := $(ASSET_OUTPUT_DIR)/banim/banim_runtime_symbols.h
 ASSET_BANIM_COMBINED_LINKER_SCRIPT := $(ASSET_OUTPUT_DIR)/banim/linker_script_banim.txt
 ASSET_TOOL_INPUTS := $(filter-out scripts/assets/tests/%,$(sort $(shell find scripts/assets -type f -name '*.py' -print)))
+ASSET_PREPROC_FLAGS := -Rbuild/generated/assets/tmx/CH2_MAIN_MAP.bin.lz=$(ASSET_OUTPUT_DIR)/tmx/CH2_MAIN_MAP.bin.lz
+ASSET_INCLUDE_FLAGS := -I$(ASSET_OUTPUT_DIR) -I$(ASSET_OUTPUT_DIR)/banim -I$(ASSET_OUTPUT_DIR)/custom_spell
+MODERN_CFLAGS += $(ASSET_INCLUDE_FLAGS)
+MODERN_PREPROC_FLAGS += $(ASSET_PREPROC_FLAGS)
+CPPFLAGS += $(ASSET_INCLUDE_FLAGS)
+PREPROC_FLAGS += $(ASSET_PREPROC_FLAGS)
 
-.PHONY: assets-validate assets-generate assets-check assets-clean assets-test
+# GCC dependency files record generated headers included through
+# ASSET_INCLUDE_FLAGS by basename. These aliases never write shared files;
+# they map each basename back to this invocation's profile-qualified producer.
+custom_spell_effect_generated.h: $(ASSET_OUTPUT_DIR)/custom_spell/custom_spell_effect_generated.h ;
+custom_spell_effect_runtime_test.h: $(ASSET_OUTPUT_DIR)/custom_spell/custom_spell_effect_runtime_test.h ;
+custom_spell_effect_data.inc: $(ASSET_OUTPUT_DIR)/custom_spell/custom_spell_effect_data.inc ;
+custom_spell_effect_spellassoc.inc: $(ASSET_OUTPUT_DIR)/custom_spell/custom_spell_effect_spellassoc.inc ;
+banim_runtime_symbols.h: $(ASSET_BANIM_RUNTIME_SYMBOLS) ;
+banim_data_entries.inc: $(ASSET_BANIM_DATA_ENTRIES) ;
+banim_defs.h: $(ASSET_BANIM_DEFS_HEADER) ;
+banim_runtime_test_defs.h: $(ASSET_BANIM_RUNTIME_TEST_DEFS) ;
+banim_defs.inc: $(ASSET_BANIM_DEFS) ;
+portrait_data.inc: $(ASSET_OUTPUT_DIR)/portrait_data.inc ;
+portrait_components.inc: $(ASSET_OUTPUT_DIR)/portrait_components.inc ;
+portrait_components.h: $(ASSET_OUTPUT_DIR)/portrait_components.h ;
+build/generated/assets/tmx/CH2_MAIN_MAP.bin.lz: $(ASSET_OUTPUT_DIR)/tmx/CH2_MAIN_MAP.bin.lz ;
+
+.PHONY: assets-validate assets-generate assets-check assets-clean assets-test print-ASSET_OUTPUT_DIR
+
+print-ASSET_OUTPUT_DIR:
+	@printf '%s\n' "$(ASSET_OUTPUT_DIR)"
 
 assets-validate:
 	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" validate

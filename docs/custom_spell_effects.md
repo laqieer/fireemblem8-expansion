@@ -230,7 +230,9 @@ PNGs.
 - Palettes pad to 16 BGR555 colors. Every frame's OBJ/BG/TSA is deterministically
   LZ77-compressed. Generated C includes, descriptors, `SpellAssoc` entries,
   canonical assets, inventory, provenance/digests, and Make dependencies live
-  only under ignored `build/generated/assets/custom_spell/`.
+  only under the ignored
+  `<MODERN_BUILD_ROOT>/generated/assets/<resolved-profile>/custom_spell/`
+  tree.
 
 Run:
 
@@ -354,9 +356,10 @@ epoch change is required; all runtime failures already use a vanilla fallback.
 - **Actions:** run the host suite, then both enabled
   `expansion-modern-custom-spell-check` commands.
 - **Expected result:** custom ID `0x80` traverses the public
-  `StartSpellAnimation()` ABI, starts once, uploads all six visual resources
-  once per frame (two generated reference sets), applies one ordered generated
-  sound and one hit, keeps the final child through its last
+  `StartSpellAnimation()` ABI, starts once, performs five per-frame runtime
+  operations: OBJ graphics/palette, BG graphics/palette, and one
+  distance-selected TSA. It applies one ordered generated sound and one hit,
+  keeps the final child through its last
   display tick, creates/deletes one child, cleans once, and ends with no owner,
   semaphore, spell-cast Proc, or active spell state. Vanilla ID `24` still
   traverses the LUT and never increments custom dispatch.
@@ -385,7 +388,8 @@ epoch change is required; all runtime failures already use a vanilla fallback.
 ## TC-CUSTOM-SPELL-061-003: Strict package conversion
 
 - **Profile:** selected alternate reference manifest with feature `1`.
-- **Starting state:** clean `build/generated/assets`; no editor, ROM, external
+- **Starting state:** clean the selected
+  `<MODERN_BUILD_ROOT>/generated/assets/<resolved-profile>/` tree; no editor, ROM, external
   patch, or generated source-tree file.
 - **Actions:** run `python3 -m unittest
   scripts.assets.tests.test_custom_spell -v`, then the enabled

@@ -146,7 +146,7 @@ and lane cell records the family-specific coverage in addition to them.
 | Field | Current coverage |
 | --- | --- |
 | Community input | The strict `custom-spell-effect` kind accepts only documented `feditor-magic-v1` `spell.json`/text/indexed-PNG packages. CSA, arbitrary commands/C, patch binaries, ROM mutation, and external TSA/OAM are rejected. |
-| Canonical source/build product | Committed package sources generate deterministic per-frame compressed OBJ/BG/TSA/palettes, fixed OAM scripts, typed descriptors, `SpellAssoc` binding, inventory/provenance, and identity digests under ignored `build/generated/assets/custom_spell/`. |
+| Canonical source/build product | Committed package sources generate deterministic per-frame compressed OBJ/BG/TSA/palettes, fixed OAM scripts, typed descriptors, `SpellAssoc` binding, inventory/provenance, and identity digests under ignored `<MODERN_BUILD_ROOT>/generated/assets/<resolved-profile>/custom_spell/`. |
 | Runtime consumer/seam | #77's closed `C05` / `StartSpellAnimation` range and one typed owner Proc consume the generated ABI. `scripts/assets/manifest.py` remains the only source adapter registry. |
 | IDs and limits | Stable `CUSTOM_SPELL_*` IDs generate private dense `0x80..0x8F` indices; 1..64 frames, 255 ticks, OBJ `0x1000`, BG `0x2000`, 1200-byte TSA, 16 OAM, 8 SFX, and aggregate `0x40000` are fail-closed. |
 | Validation and lane | Host adversarial/determinism tests plus enabled debug/release libmGBA prove the reference; the default root is catalog-free and archival always disables runtime/assets. |

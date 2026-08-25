@@ -17,7 +17,7 @@
 #include "spellassoc.h"
 
 #if FE8_EXPANSION_CUSTOM_SPELL_EFFECTS
-#include "build/generated/assets/custom_spell/custom_spell_effect_runtime_test.h"
+#include "custom_spell_effect_runtime_test.h"
 #endif
 
 #define CUSTOM_SPELL_EFFECT_TEST_FALLBACK_INVALID 1

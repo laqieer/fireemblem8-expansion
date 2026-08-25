@@ -14,7 +14,7 @@
 
 #define CUSTOM_SPELL_EFFECT_REFERENCE_FALLBACK 22
 
-#include "build/generated/assets/custom_spell/custom_spell_effect_generated.h"
+#include "custom_spell_effect_generated.h"
 
 enum
 {

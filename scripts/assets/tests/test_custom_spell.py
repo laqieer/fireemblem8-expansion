@@ -1388,6 +1388,7 @@ class CustomSpellAdapterTests(unittest.TestCase):
         for symbol in (
             "CUSTOM_SPELL_EFFECT_BASE",
             "CUSTOM_SPELL_EFFECT_TEST_PROBE_MAGIC",
+            "CUSTOM_SPELL_EFFECT_FALLBACK_INVALID",
         ):
             with self.subTest(symbol=symbol):
                 changed = copy.deepcopy(document)
@@ -1529,7 +1530,7 @@ class CustomSpellAdapterTests(unittest.TestCase):
                 future.result()
         manifest.check(REFERENCE_MANIFEST, output, 1)
 
-    def test_custom_incbin_consumer_rejects_output_override(self):
+    def test_custom_incbin_consumer_uses_isolated_output_override(self):
         with open(REFERENCE_MANIFEST, encoding="utf-8") as handle:
             document = json.load(handle)
         document["assets"] = [
@@ -1545,21 +1546,32 @@ class CustomSpellAdapterTests(unittest.TestCase):
                 "--no-print-directory",
                 "-f",
                 "assets.mk",
-                "assets-validate",
+                "assets-generate",
+                "assets-check",
                 "PYTHON={}".format(sys.executable),
                 "EXPANSION_CUSTOM_SPELL_EFFECTS=1",
                 "ASSET_MANIFEST={}".format(manifest_path),
-                "ASSET_OUTPUT_DIR=build/generated/assets/custom-spell-override",
+                "ASSET_OUTPUT_DIR=build/generated/assets/custom-spell-test/custom-spell-override",
             ],
             cwd=ROOT,
             capture_output=True,
             text=True,
             check=False,
         )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "custom-spell-effect INCBIN consumer(s) CUSTOM_SPELL_REFERENCE",
-            result.stdout + result.stderr,
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(
+                    ROOT,
+                    "build",
+                    "generated",
+                    "assets",
+                    "custom-spell-test",
+                    "custom-spell-override",
+                    "custom_spell",
+                    "custom_spell_effect_data.inc",
+                )
+            )
         )
 
     def test_discovery_queries_skip_conversion_for_16x64_profile(self):
@@ -1772,6 +1784,21 @@ class CustomSpellAdapterTests(unittest.TestCase):
             )
 
         try:
+            cleaned = subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-f",
+                    "assets.mk",
+                    "assets-clean",
+                    "PYTHON={}".format(sys.executable),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(cleaned.returncode, 0, cleaned.stdout + cleaned.stderr)
             default = run(DEFAULT_MANIFEST, 0, fragment)
             self.assertEqual(
                 default.returncode, 0, default.stdout + default.stderr

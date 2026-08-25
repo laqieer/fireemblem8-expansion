@@ -1,5 +1,5 @@
 #include "banim_data.h"
-#include "build/generated/assets/banim/banim_runtime_symbols.h"
+#include "banim_runtime_symbols.h"
 __attribute__((section(".data.banim_array")))
 struct BattleAnim banim_data[] = {
 	{"lorm_sp1", &banim_lorm_sp1_modes_bin, &banim_lorm_sp1_motion_o, &banim_lorm_sp1_oam_r_bin, &banim_lorm_sp1_oam_l_bin, &banim_lorm_sp1_agbpal}, // 0x0
@@ -203,7 +203,7 @@ struct BattleAnim banim_data[] = {
 	{"mf_mi1", &banim_mf_mi1_modes_bin, &banim_mf_mi1_motion_o, &banim_mf_mi1_oam_r_bin, &banim_mf_mi1_oam_l_bin, &banim_mf_mi1_agbpal}, // 0xC6
 	{"prif_ro1", &banim_prif_ro1_2_modes_bin, &banim_prif_ro1_2_motion_o, &banim_prif_ro1_2_oam_r_bin, &banim_prif_ro1_2_oam_l_bin, &banim_prif_ro1_2_agbpal}, // 0xC7
 	{"fifd_mg1", &banim_fifd_mg1_2_modes_bin, &banim_fifd_mg1_2_motion_o, &banim_fifd_mg1_2_oam_r_bin, &banim_fifd_mg1_2_oam_l_bin, &banim_fifd_mg1_2_agbpal}, // 0xC8
-#include "build/generated/assets/banim/banim_data_entries.inc"
+#include "banim_data_entries.inc"
 };
 __attribute__((section(".data.banim_array_len")))
 long long banim_number = sizeof(banim_data) / sizeof(banim_data[0]);
