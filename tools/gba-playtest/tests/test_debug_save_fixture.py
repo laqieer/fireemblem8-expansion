@@ -189,29 +189,60 @@ class DebugSaveFixtureLayoutParserTests(unittest.TestCase):
         self.assertEqual(fixture[red:red + 2], b"\x47\x41")
         self.assertEqual(fixture[red + 0x0E:red + 0x10], b"\x14\x14")
 
-    def test_release_negative_keeps_its_noninteractive_source_baseline(self):
-        fixture = (
+    def test_release_negative_allows_only_normal_release_boot_writes(self):
+        source = (
             run_debug_save_fixture_checks.sram_fixture
             .build_debug_save_fixture_source_image(
                 ROOT,
                 include_runtime_roster=False,
             )
         )
+        fixture_tools = run_debug_save_fixture_checks.sram_fixture.sft
         self.assertEqual(
-            sram_hash_mirror.compute_sram_hash(fixture),
+            sram_hash_mirror.compute_sram_hash(source),
             "fnv1a64-sram:4c0f364a34fd1659",
+        )
+
+        after_probe = bytearray(source)
+        after_probe[
+            fixture_tools.SRAM_PROBE_OFFSET:
+            fixture_tools.SRAM_PROBE_OFFSET + fixture_tools.SRAM_PROBE_SIZE
+        ] = (0x12345678).to_bytes(4, "little")
+        self.assertEqual(
+            sram_hash_mirror.compute_sram_hash(bytes(after_probe)),
+            "fnv1a64-sram:e81bac1ff9c4a929",
+        )
+
+        after_title_music = bytearray(after_probe)
+        after_title_music[fixture_tools.SOUND_ROOM_OFFSET] = 0x02
+        after_title_music[
+            fixture_tools.SOUND_ROOM_CHECKSUM_OFFSET:
+            fixture_tools.SOUND_ROOM_CHECKSUM_OFFSET + 2
+        ] = (4).to_bytes(2, "little")
+        after_title_music[
+            fixture_tools.SOUND_ROOM_FORMAT_OFFSET:
+            fixture_tools.SOUND_ROOM_FORMAT_OFFSET + 2
+        ] = fixture_tools.SOUND_ROOM_FORMAT_CURRENT.to_bytes(2, "little")
+        self.assertEqual(
+            sram_hash_mirror.compute_sram_hash(bytes(after_title_music)),
+            "fnv1a64-sram:941cd9f46edd338a",
         )
 
         fingerprint = json.loads(
             (FINGERPRINTS / RELEASE_SCENARIO).read_text(encoding="utf-8")
         )
-        hashes = {
-            checkpoint["sram_hash"] for checkpoint in fingerprint["checkpoints"]
-        }
         self.assertEqual(
-            len(hashes),
-            1,
-            "release debug-hotkey pulses must not change any SRAM byte",
+            [
+                checkpoint["sram_hash"]
+                for checkpoint in fingerprint["checkpoints"]
+            ],
+            [
+                "fnv1a64-sram:e81bac1ff9c4a929",
+                "fnv1a64-sram:941cd9f46edd338a",
+                "fnv1a64-sram:941cd9f46edd338a",
+            ],
+            "only SramInit's hardware probe and title music's ordinary "
+            "Sound Room write may change the release source image",
         )
 
     def test_cancel_invalid_incompatible_and_interruption_are_exact(self):

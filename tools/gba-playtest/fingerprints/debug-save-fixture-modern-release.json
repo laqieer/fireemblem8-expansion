@@ -3,7 +3,7 @@
     {
       "frame": 550,
       "framebuffer_hash": "fnv1a64-rgb24:2d9ab45bcfc84b25",
-      "name": "release-before-hotkey",
+      "name": "release-after-sram-probe",
       "probes": [
         {
           "address": "0x020210ae",
@@ -21,11 +21,34 @@
           "value": "0x00000000"
         }
       ],
-      "sram_hash": "fnv1a64-sram:4c0f364a34fd1659"
+      "sram_hash": "fnv1a64-sram:e81bac1ff9c4a929"
     },
     {
       "frame": 700,
       "framebuffer_hash": "fnv1a64-rgb24:32d3f3d78906017f",
+      "name": "release-after-title-music",
+      "probes": [
+        {
+          "address": "0x020210ae",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02031504",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031508",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:941cd9f46edd338a"
+    },
+    {
+      "frame": 900,
+      "framebuffer_hash": "fnv1a64-rgb24:2a116c51210b437e",
       "name": "release-hotkey-inert",
       "probes": [
         {
@@ -44,7 +67,7 @@
           "value": "0x00000000"
         }
       ],
-      "sram_hash": "fnv1a64-sram:4c0f364a34fd1659"
+      "sram_hash": "fnv1a64-sram:941cd9f46edd338a"
     }
   ],
   "format_version": 2,
