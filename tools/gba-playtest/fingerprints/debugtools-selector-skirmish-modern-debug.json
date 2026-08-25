@@ -8,7 +8,7 @@
         {"address": "gPlaySt+0x0e", "size": 1, "value": "0x02"},
         {"address": "gPlaySt+0x0f", "size": 1, "value": "0x00"}
       ],
-      "sram_hash": "fnv1a64-sram:ff081a88b533792d"
+      "sram_hash": "fnv1a64-sram:1fb2612031f74d22"
     },
     {
       "frame": 14600,
@@ -50,7 +50,7 @@
         {"address": "gPlaySt+0x0f", "size": 1, "value": "0x40"},
         {"address": "gPlaySt+0x14", "size": 1, "value": "0x90"}
       ],
-      "sram_hash": "fnv1a64-sram:ff081a88b533792d"
+      "sram_hash": "fnv1a64-sram:1fb2612031f74d22"
     },
     {
       "frame": 16900,
@@ -64,7 +64,7 @@
         {"address": "gPlaySt+0x14", "size": 1, "value": "0x80"},
         {"address": "sSelectorState", "size": 2, "value": "0x2104"}
       ],
-      "sram_hash": "fnv1a64-sram:ff081a88b533792d"
+      "sram_hash": "fnv1a64-sram:1fb2612031f74d22"
     },
     {
       "frame": 17050,
@@ -75,7 +75,7 @@
         {"address": "gPlaySt+0x0f", "size": 1, "value": "0x00"},
         {"address": "gPlaySt+0x14", "size": 1, "value": "0x80"}
       ],
-      "sram_hash": "fnv1a64-sram:ff081a88b533792d"
+      "sram_hash": "fnv1a64-sram:1fb2612031f74d22"
     },
     {
       "frame": 17200,
@@ -86,7 +86,7 @@
         {"address": "gPlaySt+0x0f", "size": 1, "value": "0x00"},
         {"address": "gPlaySt+0x14", "size": 1, "value": "0x80"}
       ],
-      "sram_hash": "fnv1a64-sram:ff081a88b533792d"
+      "sram_hash": "fnv1a64-sram:1fb2612031f74d22"
     }
   ],
   "format_version": 2,

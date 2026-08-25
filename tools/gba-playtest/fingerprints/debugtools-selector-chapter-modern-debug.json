@@ -9,7 +9,7 @@
         {"address": "sSelectorState", "size": 2, "value": "0x1104"},
         {"address": "sSelectorState+0x02", "size": 1, "value": "0x00"}
       ],
-      "sram_hash": "fnv1a64-sram:ff081a88b533792d"
+      "sram_hash": "fnv1a64-sram:1fb2612031f74d22"
     },
     {
       "frame": 908,
@@ -41,7 +41,7 @@
         {"address": "gPlaySt+0x14", "size": 1, "value": "0x10"},
         {"address": "sSelectorState", "size": 2, "value": "0x1104"}
       ],
-      "sram_hash": "fnv1a64-sram:ff081a88b533792d"
+      "sram_hash": "fnv1a64-sram:1fb2612031f74d22"
     }
   ],
   "format_version": 2,

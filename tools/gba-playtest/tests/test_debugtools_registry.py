@@ -3107,8 +3107,8 @@ class DebugToolsChapterSelectorHostTests(unittest.TestCase):
             for checkpoint in skirmish["checkpoints"]
             if "sram_hash" in checkpoint
         }
-        self.assertEqual(chapter_hashes, {"fnv1a64-sram:ff081a88b533792d"})
-        self.assertEqual(skirmish_hashes, {"fnv1a64-sram:ff081a88b533792d"})
+        self.assertEqual(chapter_hashes, {"fnv1a64-sram:1fb2612031f74d22"})
+        self.assertEqual(skirmish_hashes, {"fnv1a64-sram:1fb2612031f74d22"})
 
         for checkpoint in release["checkpoints"]:
             for probe in checkpoint["probes"]:
