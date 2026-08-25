@@ -806,6 +806,7 @@ enum DebugToolsPhaseControlResult DebugToolsPhaseControl_RequestFactionMode(
     enum DebugToolsPhaseControlMode mode);
 void DebugToolsPhaseControl_ApplyTurnBeforePhaseEvents(void);
 enum DebugToolsPhaseControlStartAction DebugToolsPhaseControl_ApplyAtPhaseStart(int faction);
+void DebugToolsPhaseControl_AdvanceSuspendTurnAtNaturalIncrement(void);
 void DebugToolsPhaseControl_Reset(void);
 void DebugToolsPhaseControl_Sample(void);
 
@@ -819,11 +820,13 @@ void DebugToolsPhaseControl_EndSuspendSerialization(void);
 #define DebugToolsPhaseControl_BeginSuspendSerialization() ((void)0)
 #define DebugToolsPhaseControl_GetSerializedSuspendTurn(turn) (FALSE)
 #define DebugToolsPhaseControl_EndSuspendSerialization() ((void)0)
+#define DebugToolsPhaseControl_AdvanceSuspendTurnAtNaturalIncrement() ((void)0)
 #endif
 #else
 #define DebugToolsPhaseControl_BeginSuspendSerialization() ((void)0)
 #define DebugToolsPhaseControl_GetSerializedSuspendTurn(turn) (FALSE)
 #define DebugToolsPhaseControl_EndSuspendSerialization() ((void)0)
+#define DebugToolsPhaseControl_AdvanceSuspendTurnAtNaturalIncrement() ((void)0)
 #endif /* FE8_EXPANSION_DEBUGTOOLS_ENABLED */
 
 /* --- Five bounded validated tools ------------------------------------

@@ -14,6 +14,7 @@
 #include "bmcontainer.h"
 #include "event.h"
 #include "ekrbattle.h"
+#include "mu.h"
 #include "playerphase.h"
 #include "cp_common.h"
 #include "eventinfo.h"
@@ -469,6 +470,7 @@ static bool DebugToolsPhaseControl_IsSafeRequestBoundary(void)
 {
     const struct ExpansionAutoplayTelemetry* telemetry =
         ExpansionAutoplay_GetTelemetry();
+    struct Proc* playerPhase = Proc_Find(gProcScr_PlayerPhase);
     int gameLock = GetGameLock();
 
     if (gPlaySt.faction != FACTION_BLUE
@@ -481,8 +483,11 @@ static bool DebugToolsPhaseControl_IsSafeRequestBoundary(void)
         && !(gameLock == 2 && DebugTools_IsHubActive()))
         return false;
 
-    if (!Proc_Find(gProc_BMapMain) || !Proc_Find(gProcScr_PlayerPhase)
-        || Proc_Find(gProcScr_Playerphase_0) || Proc_Find(gProcScr_CpPhase)
+    if (!Proc_Find(gProc_BMapMain) || playerPhase == NULL
+        || Proc_Find(gProcScr_Playerphase_0)
+        || (gActiveUnit != NULL && GetUnitMu(gActiveUnit) != NULL)
+        || playerPhase->proc_idleCb != PlayerPhase_MainIdle
+        || Proc_Find(gProcScr_CpPhase)
         || Proc_Find(gProcScr_BerserkCpPhase) || EventEngineExists()
         || BattleEventEngineExists() || IsBattleDeamonActive()
         || DoesBMXFADEExist() || Proc_Find(ProcScr_CamMove))
@@ -568,6 +573,13 @@ void DebugToolsPhaseControl_ApplyTurnBeforePhaseEvents(void)
     }
     gPlaySt.chapterTurnNumber = (u16)sPhaseControlRequest.turn;
     DebugToolsPhaseControl_CompleteRequest();
+}
+
+void DebugToolsPhaseControl_AdvanceSuspendTurnAtNaturalIncrement(void)
+{
+    if (sPhaseControlSuspendTurn.hasOriginalTurn
+        && sPhaseControlSuspendTurn.originalTurn < DEBUGTOOLS_TURN_MAX)
+        sPhaseControlSuspendTurn.originalTurn++;
 }
 
 enum DebugToolsPhaseControlStartAction DebugToolsPhaseControl_ApplyAtPhaseStart(int faction)

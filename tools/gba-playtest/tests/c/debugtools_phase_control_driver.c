@@ -6,6 +6,7 @@
 #include "bm.h"
 #include "bmio.h"
 #include "bmmind.h"
+#include "bmunit.h"
 #include "cp_common.h"
 #include "event.h"
 #include "expansion_autoplay.h"
@@ -13,6 +14,7 @@
 #include "fontgrp.h"
 #include "gamecontrol.h"
 #include "hardware.h"
+#include "mu.h"
 #include "playerphase.h"
 #include "uimenu.h"
 
@@ -28,6 +30,7 @@
 
 struct DebugToolsProbe gDebugToolsProbe;
 struct ActionData gActionData;
+struct Unit *gActiveUnit;
 
 struct ProcCmd CONST_DATA gProc_BMapMain[] = { { 0 } };
 struct ProcCmd gProcScr_PlayerPhase[] = { { 0 } };
@@ -43,12 +46,15 @@ static struct BMapMainProc sMapMainProc;
 static struct GameCtrlProc sGameCtrl;
 static struct Proc sPlayerPhaseProc;
 static struct Proc sBlockingProc;
+static struct Unit sActiveUnit;
+static struct MuProc sActiveMu;
 static struct Font sFont;
 static u16 sBgMap[32 * 32];
 struct Font* gActiveFont = &sFont;
 static int sMapMainLive;
 static int sPlayerPhaseLive;
 static int sPlayerActionLive;
+static int sActiveMuLive;
 static int sComputerPhaseLive;
 static int sBerserkPhaseLive;
 static int sCameraLive;
@@ -71,6 +77,32 @@ static int sSuspendWriteCount;
 static int sSuspendWriteFailed;
 static int sSuspendSerializedTurn;
 
+void PlayerPhase_MainIdle(ProcPtr proc)
+{
+    (void)proc;
+}
+
+void PlayerPhase_WaitForUnitMovement(ProcPtr proc)
+{
+    (void)proc;
+}
+
+s8 PlayerPhase_PrepareAction(ProcPtr proc)
+{
+    (void)proc;
+    return 0;
+}
+
+void PlayerPhase_ApplyUnitMovement(ProcPtr proc)
+{
+    (void)proc;
+}
+
+void PlayerPhase_FinishAction(ProcPtr proc)
+{
+    (void)proc;
+}
+
 ProcPtr Proc_Find(const struct ProcCmd* script)
 {
     if (script == gProc_BMapMain)
@@ -86,6 +118,13 @@ ProcPtr Proc_Find(const struct ProcCmd* script)
     if (script == ProcScr_CamMove)
         return sCameraLive ? &sBlockingProc : NULL;
 
+    return NULL;
+}
+
+struct MuProc *GetUnitMu(struct Unit *unit)
+{
+    if (sActiveMuLive && unit == gActiveUnit)
+        return &sActiveMu;
     return NULL;
 }
 
@@ -266,6 +305,7 @@ static void ResetHarness(void)
     sMapMainLive = 1;
     sPlayerPhaseLive = 1;
     sPlayerActionLive = 0;
+    sActiveMuLive = 0;
     sComputerPhaseLive = 0;
     sBerserkPhaseLive = 0;
     sCameraLive = 0;
@@ -287,8 +327,12 @@ static void ResetHarness(void)
     sSuspendWriteCount = 0;
     sSuspendWriteFailed = 0;
     sSuspendSerializedTurn = -1;
+    gActiveUnit = NULL;
+    memset(&sActiveUnit, 0, sizeof(sActiveUnit));
+    memset(&sActiveMu, 0, sizeof(sActiveMu));
     sMapMainProc.gameCtrl = &sGameCtrl;
     sGameCtrl.proc_lockCnt = 1;
+    sPlayerPhaseProc.proc_idleCb = PlayerPhase_MainIdle;
 
     gPlaySt.faction = FACTION_BLUE;
     gPlaySt.chapterTurnNumber = 5;
@@ -338,34 +382,40 @@ static int TestTurnRequestAtBoundary(void)
 static int TestTransientTurnSuspendSerialization(void)
 {
     ResetHarness();
-    CHECK(DebugToolsPhaseControl_RequestTurn(9) == DEBUGTOOLS_PHASE_CONTROL_OK,
+    gPlaySt.chapterTurnNumber = 1;
+    CHECK(DebugToolsPhaseControl_RequestTurn(2) == DEBUGTOOLS_PHASE_CONTROL_OK,
           "turn request must queue before suspend serialization");
     CHECK(BmMain_ChangePhase() == true,
           "turn request must apply before the destination phase event");
-    CHECK(gPlaySt.chapterTurnNumber == 9 && sPhaseSwitchEventTurn == 9,
+    CHECK(gPlaySt.chapterTurnNumber == 2 && sPhaseSwitchEventTurn == 2,
           "live phase events must observe the requested turn");
 
     BmMain_SuspendBeforePhase();
-    CHECK(sSuspendWriteCount == 1 && sSuspendSerializedTurn == 5
-              && gPlaySt.chapterTurnNumber == 9,
+    CHECK(sSuspendWriteCount == 1 && sSuspendSerializedTurn == 1
+              && gPlaySt.chapterTurnNumber == 2,
           "first suspend must serialize the original turn and restore the live turn");
 
+    gPlaySt.faction = FACTION_GREEN;
+    CHECK(BmMain_ChangePhase() == true,
+          "green-to-blue must complete the native turn increment");
+    CHECK(gPlaySt.faction == FACTION_BLUE && gPlaySt.chapterTurnNumber == 3,
+          "live turn must continue naturally after the override");
     BmMain_SuspendBeforePhase();
-    CHECK(sSuspendWriteCount == 2 && sSuspendSerializedTurn == 5
-              && gPlaySt.chapterTurnNumber == 9,
-          "repeated suspend must retain the original serialized turn");
+    CHECK(sSuspendWriteCount == 2 && sSuspendSerializedTurn == 2
+              && gPlaySt.chapterTurnNumber == 3,
+          "later suspend must serialize the naturally advanced persistent turn");
 
     sSuspendWriteFailed = 1;
     BmMain_SuspendBeforePhase();
-    CHECK(sSuspendWriteCount == 3 && sSuspendSerializedTurn == 5
-              && gPlaySt.chapterTurnNumber == 9,
+    CHECK(sSuspendWriteCount == 3 && sSuspendSerializedTurn == 2
+              && gPlaySt.chapterTurnNumber == 3,
           "failed suspend writer path must still restore the live turn");
     sSuspendWriteFailed = 0;
 
     DebugToolsPhaseControl_Reset();
     BmMain_SuspendBeforePhase();
-    CHECK(sSuspendWriteCount == 4 && sSuspendSerializedTurn == 9
-              && gPlaySt.chapterTurnNumber == 9,
+    CHECK(sSuspendWriteCount == 4 && sSuspendSerializedTurn == 3
+              && gPlaySt.chapterTurnNumber == 3,
           "reset after an applied turn must not leak the serialization swap");
 
     ResetHarness();
@@ -376,6 +426,54 @@ static int TestTransientTurnSuspendSerialization(void)
     CHECK(sSuspendWriteCount == 1 && sSuspendSerializedTurn == 5
               && gPlaySt.chapterTurnNumber == 5,
           "expired request must not leave a serialization swap active");
+
+    return 0;
+}
+
+static int TestPlayerActionOwnership(void)
+{
+    u32 rejectedBefore;
+
+    ResetHarness();
+    gActiveUnit = &sActiveUnit;
+    sActiveMuLive = 1;
+    sPlayerPhaseProc.proc_idleCb = PlayerPhase_WaitForUnitMovement;
+    rejectedBefore = gDebugToolsProbe.phaseControlRejectedCount;
+    CHECK(DebugToolsPhaseControl_RequestTurn(6)
+              == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
+          "active unit movement MU must reject a request");
+
+    sActiveMuLive = 0;
+    gActionData.unitActionType = UNIT_ACTION_COMBAT;
+    sPlayerPhaseProc.proc_idleCb = (ProcFunc)PlayerPhase_PrepareAction;
+    CHECK(DebugToolsPhaseControl_RequestTurn(6)
+              == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
+          "combat action stage must reject a request");
+
+    gActionData.unitActionType = UNIT_ACTION_USE_ITEM;
+    sPlayerPhaseProc.proc_idleCb = (ProcFunc)PlayerPhase_ApplyUnitMovement;
+    CHECK(DebugToolsPhaseControl_RequestTurn(6)
+              == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
+          "item action stage must reject a request");
+
+    gActionData.unitActionType = UNIT_ACTION_RESCUE;
+    sPlayerPhaseProc.proc_idleCb = (ProcFunc)PlayerPhase_FinishAction;
+    CHECK(DebugToolsPhaseControl_RequestTurn(6)
+              == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
+          "rescue action stage must reject a request");
+
+    CHECK(gDebugToolsProbe.phaseControlRejectedCount == rejectedBefore + 4
+              && gDebugToolsProbe.phaseControlRequestedCount == 0
+              && gDebugToolsProbe.phaseControlLastResult
+                  == DEBUGTOOLS_PHASE_CONTROL_ERR_UNSAFE_BOUNDARY,
+          "player action ownership must reject without queueing a request");
+
+    gActiveUnit = NULL;
+    gActionData.unitActionType = 0;
+    sPlayerPhaseProc.proc_idleCb = PlayerPhase_MainIdle;
+    CHECK(DebugToolsPhaseControl_RequestTurn(6) == DEBUGTOOLS_PHASE_CONTROL_OK,
+          "idle player map must accept a request after action ownership clears");
+    DebugToolsPhaseControl_Reset();
 
     return 0;
 }
@@ -705,6 +803,7 @@ int main(void)
     CHECK(TestTurnRequestAtBoundary() == 0, "turn boundary contract");
     CHECK(TestTransientTurnSuspendSerialization() == 0,
           "transient turn suspend serialization contract");
+    CHECK(TestPlayerActionOwnership() == 0, "player action ownership contract");
     CHECK(TestFactionModesAndRestoration() == 0, "faction ownership contract");
     CHECK(TestRejectedAndExpiredRequests() == 0, "rejection and cleanup contract");
     CHECK(TestLockOwnership() == 0, "game lock ownership contract");

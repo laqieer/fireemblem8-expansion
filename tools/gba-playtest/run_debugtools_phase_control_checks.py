@@ -67,6 +67,7 @@ def _phase_probes():
         {"address": "gPlaySt+0x0f", "size": 1},
         {"address": "gPlaySt+0x10", "size": 2},
         {"address": "gBmSt+0x14", "size": 1},
+        {"address": "gActionData+0x11", "size": 1},
         {"address": PHASE_TURN_SAMPLE, "size": 4},
         {"address": PHASE_REQUESTED_COUNT, "size": 4},
         {"address": PHASE_APPLIED_COUNT, "size": 4},
@@ -207,10 +208,10 @@ def _resume_frames():
     ]
 
 
-def _resume_data():
+def _resume_data(name):
     return {
         "schema_version": 1,
-        "name": "debugtools-phase-control-suspend-resume-modern-debug",
+        "name": name,
         "description": (
             "TC-DEBUGTOOLS-PROTOTYPE-002 suspend serialization: a fresh "
             "emulator process loads the automatic boundary suspend through "
@@ -233,6 +234,45 @@ def _resume_data():
                     {"address": "gPlaySt+0x10", "size": 2},
                 ],
             }
+        ],
+    }
+
+
+def _suspend_progress_data():
+    return {
+        "schema_version": 1,
+        "name": "debugtools-phase-control-suspend-progress-modern-debug",
+        "description": (
+            "TC-DEBUGTOOLS-PROTOTYPE-002 suspend progression: Apply Turn +1 "
+            "reaches red turn 2, then the ordinary scheduler completes green "
+            "and reaches blue turn 3 before the completed SRAM image is "
+            "resumed by a fresh emulator process."
+        ),
+        "frames": _positive_frames()[:-1],
+        "checkpoints": [
+            {
+                "name": "player-before-request",
+                "frame": 17140,
+                "framebuffer": False,
+                "probes": _phase_probes(),
+            },
+            {
+                "name": "red-overridden-turn",
+                "frame": 19000,
+                "framebuffer": False,
+                "probes": _phase_probes(),
+            },
+            {
+                "name": "later-blue-natural-turn",
+                "frame": 24990,
+                "framebuffer": False,
+                "sram_hash": True,
+                "sram_hash_exclude_ranges": [
+                    {"offset": offset, "length": length}
+                    for offset, length in SUSPEND_RESUME_METADATA_RANGES
+                ],
+                "probes": _phase_probes(),
+            },
         ],
     }
 
@@ -546,6 +586,23 @@ def _check_suspend_resume_restore(capture, original_turn):
     return []
 
 
+def _check_suspend_progress(capture):
+    before = _checkpoint_values(capture, 0)
+    red = _checkpoint_values(capture, 1)
+    blue = _checkpoint_values(capture, 2)
+    failures = []
+
+    if red["gPlaySt+0x0f"] != RED_FACTION:
+        failures.append("suspend progression: no red override boundary was observed")
+    if red["gPlaySt+0x10"] != before["gPlaySt+0x10"] + 1:
+        failures.append("suspend progression: red boundary did not observe turn +1")
+    if blue["gPlaySt+0x0f"] != PLAYER_FACTION:
+        failures.append("suspend progression: no later blue boundary was observed")
+    if blue["gPlaySt+0x10"] != before["gPlaySt+0x10"] + 2:
+        failures.append("suspend progression: live turn did not advance naturally at green-to-blue")
+    return failures
+
+
 def _normalized_sram(image):
     if len(image) != gba_playtest.SRAM_IMAGE_SIZE:
         raise CheckError(
@@ -688,7 +745,9 @@ def main(argv=None):
                     )
                 )
             failures.extend(_check_suspend_sram_equality(control_sram, apply_sram))
-            resume_data = _resume_data()
+            resume_data = _resume_data(
+                "debugtools-phase-control-suspend-resume-modern-debug"
+            )
             resume_capture = _capture_saved_resume(
                 args.rom,
                 args.elf,
@@ -710,6 +769,57 @@ def main(argv=None):
                 _verify_or_capture(
                     resume_capture,
                     resume_data["name"],
+                    args.capture_fingerprints,
+                )
+            )
+            progress_data = _suspend_progress_data()
+            progress_sram = args.out_dir / "phase-suspend-progress.sav"
+            progress_capture = _capture_suspend_resume(
+                args.rom,
+                args.elf,
+                progress_data,
+                args.out_dir / "phase-suspend-progress-input.sav",
+                progress_sram,
+            )
+            progress_path = args.out_dir / f"{progress_data['name']}.captured.json"
+            progress_path.write_text(
+                gba_playtest.serialize_fingerprint(progress_capture),
+                encoding="utf-8",
+            )
+            failures.extend(_check_suspend_progress(progress_capture))
+            failures.extend(
+                _verify_or_capture(
+                    progress_capture,
+                    progress_data["name"],
+                    args.capture_fingerprints,
+                )
+            )
+            progress_resume_data = _resume_data(
+                "debugtools-phase-control-suspend-progress-resume-modern-debug"
+            )
+            progress_resume_capture = _capture_saved_resume(
+                args.rom,
+                args.elf,
+                progress_resume_data,
+                progress_sram,
+            )
+            progress_resume_path = (
+                args.out_dir / f"{progress_resume_data['name']}.captured.json"
+            )
+            progress_resume_path.write_text(
+                gba_playtest.serialize_fingerprint(progress_resume_capture),
+                encoding="utf-8",
+            )
+            failures.extend(
+                _check_suspend_resume_restore(
+                    progress_resume_capture,
+                    _checkpoint_values(progress_capture, 0)["gPlaySt+0x10"] + 1,
+                )
+            )
+            failures.extend(
+                _verify_or_capture(
+                    progress_resume_capture,
+                    progress_resume_data["name"],
                     args.capture_fingerprints,
                 )
             )

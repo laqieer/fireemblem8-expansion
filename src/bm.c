@@ -408,6 +408,9 @@ void SwitchPhases(void)
         if (gPlaySt.chapterTurnNumber < 999)
             gPlaySt.chapterTurnNumber++;
 
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+        DebugToolsPhaseControl_AdvanceSuspendTurnAtNaturalIncrement();
+#endif
         ProcessTurnSupportExp();
     }
 }

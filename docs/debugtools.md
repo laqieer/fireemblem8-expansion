@@ -1760,9 +1760,15 @@ pre-edit turn only in debug-owned EWRAM: every `WriteSuspendSave` path
 temporarily serializes that original turn through an immutable play-state
 snapshot, then restores the live requested turn for phase events. The final
 suspend field is written from the same retained value before the save block
-is published. A fresh Resume therefore restores the original persistent turn;
-control and edited full SRAM images are equal apart from the established
-build-metadata normalization ranges. In debug builds, the probe records
+is published. Each native green-to-blue turn increment advances that retained
+baseline with the engine's 999 cap, so later saves follow ordinary persistent
+turn progression instead of freezing the pre-edit value. A fresh Resume
+therefore restores the current persistent baseline; control and edited full
+SRAM images are equal apart from the established build-metadata normalization
+ranges. Requests are also rejected while the PlayerPhase scheduler is outside
+`PlayerPhase_MainIdle`, while the active unit owns a live MU, or while the
+unit-action pipeline is active; movement, combat, item, and rescue stages
+cannot queue a boundary override. In debug builds, the probe records
 sampled turn/modes plus requested, applied, rejected, expired, and restored
 counters with the last typed request and result. Release builds keep the
 pre-#124 `gDebugToolsProbe` size and zero contract while physically omitting
@@ -1802,12 +1808,15 @@ EWRAM/layout.
   red/green CPU remains the existing route; map input returns after the
   submenu/hub close. The automatic boundary suspend saves the pre-edit turn,
   while a fresh ordinary Resume restores that persistent original even though
-  the live boundary observed the requested turn.
+  the live boundary observed the requested turn. After a later natural
+  green-to-blue transition, both the live and persistent turns advance once
+  through the ordinary 999-capped scheduler.
 - **Negative control:** Back/cancel leaves state unchanged. Out-of-range turn,
   blue/unknown faction, `PLAYER` mode, active event/battle/camera state,
-  pending request, live #85/#87 blue computer ownership, forced lifecycle
-  reset, and release input reject/expire without a persistent write. Release
-  objects omit the request symbols and leave probe fields zero. Repeated,
+  pending request, movement/MU, combat, item, rescue, live #85/#87 blue
+  computer ownership, forced lifecycle reset, and release input reject/expire
+  without a persistent write. Release objects omit the request symbols and
+  leave probe fields zero. Repeated,
   failed, expired, and reset suspend paths restore the live turn and leave no
   serialization swap state behind.
 - **Interactions and save compatibility:** depends on #85 and is a stacked
@@ -1827,8 +1836,9 @@ EWRAM/layout.
   profile and resumed-map fixture to cross a real red boundary, captures the
   real automatic suspend, compares edited/control full SRAM images with only
   existing metadata ranges normalized, then starts a fresh emulator process
-  and resumes the original saved turn. It also runs the matching release
-  all-zero negative.
+  and resumes the original saved turn. A later blue-boundary capture proves
+  the retained suspend baseline advances to the native next turn before a
+  second fresh Resume. It also runs the matching release all-zero negative.
 - **Cleanup and limitations:** exit with Back; use `make clean_fast` only for
   ignored artifacts. This is not red/green manual play, persistent AI policy,
   arbitrary turn editing, a strategy system, or a raw prototype menu import.

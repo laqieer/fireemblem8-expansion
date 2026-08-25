@@ -64,6 +64,20 @@ SUSPEND_RESUME_RUNTIME_FINGERPRINT = (
     / "fingerprints"
     / "debugtools-phase-control-suspend-resume-modern-debug.json"
 )
+SUSPEND_PROGRESS_RUNTIME_FINGERPRINT = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "fingerprints"
+    / "debugtools-phase-control-suspend-progress-modern-debug.json"
+)
+SUSPEND_PROGRESS_RESUME_RUNTIME_FINGERPRINT = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "fingerprints"
+    / "debugtools-phase-control-suspend-progress-resume-modern-debug.json"
+)
 RELEASE_BUDGET_REPORT = ROOT / "reports" / "linker-budget" / "modern-release.json"
 RELEASE_LOCALIZATION_BUDGET_REPORT = (
     ROOT / "reports" / "linker-budget" / "modern-localization-release.json"
@@ -467,6 +481,14 @@ class DebugToolsPhaseControlRuntimeContractTests(unittest.TestCase):
         suspend_resume_capture = json.loads(
             SUSPEND_RESUME_RUNTIME_FINGERPRINT.read_text(encoding="utf-8")
         )
+        suspend_progress_capture = json.loads(
+            SUSPEND_PROGRESS_RUNTIME_FINGERPRINT.read_text(encoding="utf-8")
+        )
+        suspend_progress_resume_capture = json.loads(
+            SUSPEND_PROGRESS_RESUME_RUNTIME_FINGERPRINT.read_text(
+                encoding="utf-8"
+            )
+        )
         self.assertEqual(module["_check_positive"](debug_capture), [])
         self.assertEqual(module["_check_blocked"](blocked_capture), [])
         self.assertEqual(module["_check_negative"](release_capture), [])
@@ -477,6 +499,13 @@ class DebugToolsPhaseControlRuntimeContractTests(unittest.TestCase):
         )
         self.assertEqual(
             module["_check_suspend_resume_restore"](suspend_resume_capture, 1),
+            [],
+        )
+        self.assertEqual(module["_check_suspend_progress"](suspend_progress_capture), [])
+        self.assertEqual(
+            module["_check_suspend_resume_restore"](
+                suspend_progress_resume_capture, 2
+            ),
             [],
         )
         frames = module["_positive_frames"]()
@@ -543,7 +572,7 @@ class DebugToolsPhaseControlRuntimeContractTests(unittest.TestCase):
                 "red-boundary-after-automatic-suspend",
             ],
         )
-        resume_checkpoint = module["_resume_data"]()["checkpoints"][0]
+        resume_checkpoint = module["_resume_data"]("test-resume")["checkpoints"][0]
         self.assertEqual(
             resume_checkpoint["name"],
             "resumed-original-persistent-turn",
@@ -554,6 +583,17 @@ class DebugToolsPhaseControlRuntimeContractTests(unittest.TestCase):
                 for item in resume_checkpoint["sram_hash_exclude_ranges"]
             ),
             module["SUSPEND_RESUME_METADATA_RANGES"],
+        )
+        self.assertEqual(
+            [
+                checkpoint["name"]
+                for checkpoint in module["_suspend_progress_data"]()["checkpoints"]
+            ],
+            [
+                "player-before-request",
+                "red-overridden-turn",
+                "later-blue-natural-turn",
+            ],
         )
 
 
