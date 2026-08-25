@@ -80,26 +80,18 @@ def _branch_target(operands):
 
 def _returns_before_next_iterator_call(instructions, start, iterator_calls):
     by_address = {address: index for index, (address, _mnemonic, _operands) in enumerate(instructions)}
-    pending = [start]
-    edges, reachable, exits = {}, set(), set()
-
-    while pending:
-        address = pending.pop()
+    def walk(address, trail):
         if address in iterator_calls:
             return False
-        if address in reachable:
-            continue
-        reachable.add(address)
+        if address in trail:
+            return _bounded_cycle(set(trail[trail.index(address):]), instructions, by_address)
         index = by_address.get(address)
         if index is None:
             return False
         _address, mnemonic, operands = instructions[index]
         base = mnemonic.split(".", 1)[0]
         if base == "bx" or (base == "pop" and "pc" in operands):
-            exits.add(address)
-            edges[address] = ()
-            continue
-
+            return True
         fallthrough = instructions[index + 1][0] if index + 1 < len(instructions) else None
         target = _branch_target(operands)
         if base in {"bl", "blx"}:
@@ -112,19 +104,34 @@ def _returns_before_next_iterator_call(instructions, start, iterator_calls):
             successors = (fallthrough,)
         else:
             return False
-        edges[address] = tuple(successor for successor in successors if successor is not None)
-        pending.extend(edges[address])
+        return all(walk(successor, trail + [address]) for successor in successors if successor is not None)
+    return walk(start, [])
 
-    can_exit = set(exits)
-    while True:
-        expanded = can_exit | {
-            address for address, successors in edges.items()
-            if any(successor in can_exit for successor in successors)
-        }
-        if expanded == can_exit:
-            return bool(exits) and reachable <= can_exit
-        can_exit = expanded
+def _bounded_cycle(component, instructions, by_address):
+    for address in component:
+        index = by_address[address]
+        _address, mnemonic, operands = instructions[index]
+        if not (mnemonic.split(".", 1)[0].startswith("b") and any(successor not in component for successor in _successors(index, instructions))):
+            continue
+        if index == 0:
+            continue
+        compared = set(re.findall(r"\br[0-9]+\b", instructions[index - 1][2]))
+        for candidate in component:
+            _candidate, operation, values = instructions[by_address[candidate]]
+            written = re.match(r"\s*(r[0-9]+)", values)
+            if operation.split(".", 1)[0] in {"add", "adds", "sub", "subs", "mov", "movs"} and written and written.group(1) in compared:
+                return True
+    return False
 
+def _successors(index, instructions):
+    _address, mnemonic, operands = instructions[index]
+    fallthrough = instructions[index + 1][0] if index + 1 < len(instructions) else None
+    target = _branch_target(operands)
+    base = mnemonic.split(".", 1)[0]
+    if base in {"bl", "blx"}: return (fallthrough,)
+    if base == "b": return (target,)
+    if base.startswith("b"): return (target, fallthrough)
+    return (fallthrough,)
 
 def _iterator_null_paths(text):
     instructions = _instructions(text)
@@ -143,12 +150,14 @@ def _iterator_null_paths(text):
             _candidate_address, mnemonic, operands = instructions[candidate]
             base = mnemonic.split(".", 1)[0]
             move = re.fullmatch(r"\s*(r[0-9]+),\s*(r[0-9]+)\s*", operands)
-            if base in {"mov", "movs"} and move and move.group(2) in null_registers:
+            if base in {"mov", "movs"} and move and move.group(2) in null_registers and move.group(1) not in null_registers:
                 null_registers.add(move.group(1))
                 continue
             comparison = re.fullmatch(r"\s*(r[0-9]+),\s*#0\s*", operands)
             if base == "cmp" and comparison and comparison.group(1) in null_registers:
                 branch_index = candidate + 1
+                break
+            if base in {"bl", "blx"} or set(re.findall(r"\br[0-9]+\b", operands)) & null_registers:
                 break
         if branch_index is None or branch_index >= len(instructions):
             continue
@@ -174,13 +183,15 @@ class ProcFindNextSourceGuardTests(unittest.TestCase):
             raise unittest.SkipTest("arm-none-eabi-gcc/objdump not available")
         with tempfile.TemporaryDirectory() as tmp:
             listings = []
-            for statement in ("break;", "continue;", "if (*flag) break; for (;;) {}"):
-                source = Path(tmp) / f"{statement[:-1]}.c"
+            for before, statement in (("", "break;"), ("", "continue;"),
+                                      ("", "if (*flag) break; for (;;) {}"),
+                                      ("Observe(proc);", "break;")):
+                source = Path(tmp) / f"{len(listings)}.c"
                 obj = source.with_suffix(".o")
                 source.write_text(
                     "extern void *Proc_FindNext(void *);\nextern void Observe(void *);\n"
-                    "int Iterator(void *iter, volatile int *flag) { for (;;) { if (Proc_FindNext(iter) == 0) "
-                    f"{statement} Observe(iter); return 1; }} return 0; }}\n",
+                    "int Iterator(void *iter, volatile int *flag) { for (;;) { void *proc = Proc_FindNext(iter); "
+                    f"{before} if (proc == 0) {statement} Observe(iter); return 1; }} return 0; }}\n",
                     encoding="utf-8")
                 compiled = subprocess.run(
                     [ARM_CC, "-mthumb", "-mcpu=arm7tdmi", "-mabi=aapcs",
@@ -196,12 +207,15 @@ class ProcFindNextSourceGuardTests(unittest.TestCase):
         break_calls, break_paths = listings[0]
         continue_calls, continue_paths = listings[1]
         loop_calls, loop_paths = listings[2]
+        precheck_calls, precheck_paths = listings[3]
         self.assertTrue(break_calls)
         self.assertEqual([exits for _address, exits in break_paths], [True])
         self.assertTrue(continue_calls)
         self.assertEqual([exits for _address, exits in continue_paths], [False])
         self.assertTrue(loop_calls)
         self.assertEqual([exits for _address, exits in loop_paths], [False])
+        self.assertTrue(precheck_calls)
+        self.assertEqual(precheck_paths, [])
 
 
 class ProcFindNextCodegenTests(unittest.TestCase):
