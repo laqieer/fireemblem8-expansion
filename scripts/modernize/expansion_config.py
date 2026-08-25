@@ -16,8 +16,9 @@ fingerprint. This is the single source of truth consumed by:
     and the embedded ExpansionMetadata record (see
     include/expansion_metadata.h) against that same JSON.
 
-Deliberately dependency-free (Python stdlib only), matching this
-repository's existing scripts/modernize/*.py tools.
+Uses only Python stdlib and repository-owned validation modules. The selected
+asset manifest is resolved here so enabled custom-spell inventory/resource
+digests cannot diverge from the generated runtime package.
 """
 
 from __future__ import annotations
@@ -88,63 +89,8 @@ BUILD_ID_OVERRIDE_PATTERN = re.compile(r"^[0-9a-fA-F]{4,40}$")
 # First N hex characters of a SHA-256 digest used as the config fingerprint.
 FINGERPRINT_LEN = 16
 
-# Issue #77's runtime foundation has one synthetic descriptor until #78 owns
-# generated package inventory. Keep these full SHA-256 values in build metadata
-# and fold them into identity only when the default-off runtime is enabled.
 CUSTOM_SPELL_EFFECT_RUNTIME_ABI = 1
 CUSTOM_SPELL_EFFECT_EMPTY_DIGEST = hashlib.sha256(b"").hexdigest()
-CUSTOM_SPELL_EFFECT_REFERENCE_INVENTORY_DIGEST = hashlib.sha256(
-    json.dumps(
-        {
-            "effects": [
-                {
-                    "animation_id": 0x80,
-                    "fallback_animation_id": 22,
-                    "final_display_latch_ticks": 1,
-                    "frame_count": 2,
-                    "frames": [
-                        {
-                            "duration": 2,
-                            "sound_count": 1,
-                            "sound_start": 0,
-                            "visual_set": "FIRE_REFERENCE",
-                        },
-                        {
-                            "duration": 2,
-                            "sound_count": 0,
-                            "sound_start": 1,
-                            "visual_set": "FIRE_REFERENCE",
-                        },
-                    ],
-                    "hit_frame": 2,
-                    "oam_scripts": "FIRE_REFERENCE_ALL_ORIENTATIONS",
-                    "sound_ids": [0xF1],
-                    "symbol": "CUSTOM_SPELL_REFERENCE",
-                    "total_frames": 4,
-                }
-            ]
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("ascii")
-).hexdigest()
-CUSTOM_SPELL_EFFECT_RESOURCE_BUDGET_DIGEST = hashlib.sha256(
-    json.dumps(
-        {
-            "bg_bytes": 0x2000,
-            "bg_palette_line": 1,
-            "bg_tsa_bytes": 1200,
-            "max_effects": 16,
-            "obj_bytes": 0x1000,
-            "obj_oam_entries": 16,
-            "obj_palette_line": 2,
-            "rom_bytes": 0x40000,
-            "sound_events": 8,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("ascii")
-).hexdigest()
 
 # config.mk's fixed set of simple scalar assignments this tool understands.
 CONFIG_MK_KEYS = (
@@ -186,6 +132,66 @@ _ASSIGNMENT_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*[:?+]?=\s*(.*?)\s*$")
 
 class ConfigError(ValueError):
     """A configuration value is invalid, or an incompatible combination was given."""
+
+
+def resolve_custom_spell_contract(
+    repo_root, manifest_path, enabled, item_id_cap=None
+):
+    path = Path(manifest_path or "assets/manifest.json")
+    if not path.is_absolute():
+        path = Path(repo_root) / path
+    if not path.is_file():
+        if enabled:
+            raise ConfigError(
+                "EXPANSION_CUSTOM_SPELL_EFFECTS=1 requires a readable ASSET_MANIFEST"
+            )
+        return {
+            "inventory_digest": CUSTOM_SPELL_EFFECT_EMPTY_DIGEST,
+            "resource_digest": CUSTOM_SPELL_EFFECT_EMPTY_DIGEST,
+        }
+    if not enabled:
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ConfigError(
+                "cannot read ASSET_MANIFEST {}: {}".format(path, exc)
+            ) from exc
+        records = document.get("assets", []) if isinstance(document, dict) else []
+        if any(
+            isinstance(record, dict)
+            and record.get("kind") == "custom-spell-effect"
+            for record in records
+        ):
+            raise ConfigError(
+                "custom-spell-effect record(s) require EXPANSION_CUSTOM_SPELL_EFFECTS=1"
+            )
+        return {
+            "inventory_digest": CUSTOM_SPELL_EFFECT_EMPTY_DIGEST,
+            "resource_digest": CUSTOM_SPELL_EFFECT_EMPTY_DIGEST,
+        }
+    try:
+        from scripts.assets import custom_spell as custom_spell_assets
+        from scripts.assets import manifest as asset_manifest_tool
+        from scripts.generated_data.diagnostics import (
+            GeneratedDataError,
+            GeneratedDataValidationError,
+        )
+    except ImportError as exc:
+        raise ConfigError(
+            "custom spell asset validation modules are unavailable"
+        ) from exc
+    try:
+        records = asset_manifest_tool.load_and_validate(
+            str(path), 1, item_id_cap=item_id_cap
+        )
+        return custom_spell_assets.canonical_contract(records)
+    except (
+        GeneratedDataError,
+        GeneratedDataValidationError,
+        OSError,
+        ValueError,
+    ) as exc:
+        raise ConfigError("invalid custom spell ASSET_MANIFEST: {}".format(exc)) from exc
 
 
 # --- Field validation --------------------------------------------------------
@@ -827,6 +833,7 @@ def load_identity(
     starter_content=None,
     aoe_reference=None,
     custom_spell_effects=None,
+    asset_manifest=None,
     localized_text_auto_wrap=None,
     casual_mode=None,
     hq_mixer=None,
@@ -921,6 +928,12 @@ def load_identity(
         if custom_spell_effects not in (None, "")
         else cfg.get("EXPANSION_CUSTOM_SPELL_EFFECTS", "0"),
     )
+    custom_spell_contract = resolve_custom_spell_contract(
+        repo_root,
+        asset_manifest,
+        resolved_custom_spell_effects,
+        resolved_item_id_cap,
+    )
     resolved_blue_phase_delegate = validate_feature_flag(
         "EXPANSION_BLUE_PHASE_DELEGATE",
         blue_phase_delegate
@@ -983,12 +996,12 @@ def load_identity(
             CUSTOM_SPELL_EFFECT_RUNTIME_ABI if resolved_custom_spell_effects else 0
         ),
         custom_spell_effect_inventory_digest=(
-            CUSTOM_SPELL_EFFECT_REFERENCE_INVENTORY_DIGEST
+            custom_spell_contract["inventory_digest"]
             if resolved_custom_spell_effects
             else CUSTOM_SPELL_EFFECT_EMPTY_DIGEST
         ),
         custom_spell_effect_resource_budget_digest=(
-            CUSTOM_SPELL_EFFECT_RESOURCE_BUDGET_DIGEST
+            custom_spell_contract["resource_digest"]
             if resolved_custom_spell_effects
             else CUSTOM_SPELL_EFFECT_EMPTY_DIGEST
         ),
@@ -1131,6 +1144,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="override EXPANSION_CUSTOM_SPELL_EFFECTS (0 or 1)",
     )
     parser.add_argument(
+        "--asset-manifest",
+        default="assets/manifest.json",
+        help="selected source-owned asset manifest",
+    )
+    parser.add_argument(
         "--item-id-cap",
         default=None,
         help=(
@@ -1228,6 +1246,7 @@ def main(argv=None) -> int:
             starter_content=args.starter_content,
             aoe_reference=args.aoe_reference,
             custom_spell_effects=args.custom_spell_effects,
+            asset_manifest=args.asset_manifest,
             item_id_cap=args.item_id_cap,
             localized_text_auto_wrap=args.localized_text_auto_wrap,
             casual_mode=args.casual_mode,

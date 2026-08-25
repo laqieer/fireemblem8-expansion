@@ -302,16 +302,18 @@
     },
     {
       "id": "custom-spell-runtime",
-      "title": "Typed custom battle spell-effect runtime",
+      "title": "Typed custom battle spell runtime and strict package adapter",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/61",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/77"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/77",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/78"
       ],
       "reference": "docs/custom_spell_effects.md",
       "status": "current",
       "required_cases": [
         "TC-CUSTOM-SPELL-061-001",
         "TC-CUSTOM-SPELL-061-002",
+        "TC-CUSTOM-SPELL-061-003",
         "TC-CUSTOM-SPELL-061-004",
         "TC-CUSTOM-SPELL-061-005"
       ]
@@ -1283,7 +1285,8 @@
       "feature_id": "custom-spell-runtime",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/61",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/77"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/77",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/78"
       ],
       "document": "docs/custom_spell_effects.md",
       "anchor": "tc-custom-spell-061-001-custom-spell-dispatch-completes-one-bounded-effect",
@@ -1292,25 +1295,25 @@
         "Isolated modern AAPCS release test ROM with EXPANSION_CUSTOM_SPELL_EFFECTS=1"
       ],
       "purpose": "Exercise the public StartSpellAnimation dispatch ABI, typed descriptor, timing, hit, resource ownership, and cleanup on real libmGBA.",
-      "prerequisites": "Repository root with arm-none-eabi GCC, libmGBA, and distinct issue-77 build roots; no save, chapter, event script, or external package.",
+      "prerequisites": "Repository root with arm-none-eabi GCC and libmGBA; select assets/manifests/custom-spell-reference.json and use distinct enabled build roots.",
       "actions": "Run the custom-spell host suite, then the documented enabled debug and release expansion-modern-custom-spell-check commands.",
-      "expected_result": "The registered 0x80 descriptor starts once, uploads all six visual resources exactly once per frame (two complete sets), plays every ordered boundary sound, applies one hit, keeps the final child for its last display tick, creates and deletes one child, cleans once, and leaves no owner, semaphore, spell-cast Proc, or active spell state.",
+      "expected_result": "The registered 0x80 descriptor starts once and performs five per-frame runtime operations exactly once: OBJ graphics/palette, BG graphics/palette, and one distance-selected TSA. It plays every ordered boundary sound, applies one hit, keeps the final child for its last display tick, creates and deletes one child, cleans once, and leaves no owner, semaphore, spell-cast Proc, or active spell state.",
       "negative_control": "The same ROM dispatches vanilla index 24 through the unchanged LUT without incrementing the custom-dispatch counter.",
-      "interactions": "Depends on the existing C05/StartSpellAnimation, spell-FX, Proc, and presentation-policy seams; #78 is the sole dependent adapter. No starter, casual, AoE, localization, or BGM dependency.",
+      "interactions": "Depends on #60's sole KIND_REGISTRY plus the existing C05/StartSpellAnimation, spell-FX, Proc, and presentation-policy seams. No starter, casual, AoE, localization, or BGM dependency.",
       "save_compatibility": "The isolated effect ends with zero transient ownership and introduces no save field, item encoding, migration, or epoch change.",
-      "cleanup": "Remove only the named build/issue77-*-enabled roots if artifacts are no longer needed.",
-      "limitations": "The foundation descriptor reuses bounded vanilla Fire assets; package parsing and generated project bindings belong to #78.",
+      "cleanup": "Remove only the named build/issue78-*-enabled roots if artifacts are no longer needed.",
+      "limitations": "Visual and audio recognizability is supplementary; generated scalar/resource state is the pass oracle.",
       "automation": [
         {
           "command": "python3 -m unittest tools.gba-playtest.tests.test_custom_spell_effect -v",
           "evidence": "tools/gba-playtest/tests/test_custom_spell_effect.py"
         },
         {
-          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=debug MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-debug-enabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=debug MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue78-debug-enabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=1 ASSET_MANIFEST=assets/manifests/custom-spell-reference.json",
           "evidence": "tools/gba-playtest/run_custom_spell_effect_checks.py"
         },
         {
-          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=release MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-release-enabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=release MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue78-release-enabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=1 ASSET_MANIFEST=assets/manifests/custom-spell-reference.json",
           "evidence": "tools/gba-playtest/run_custom_spell_effect_checks.py"
         }
       ]
@@ -1450,7 +1453,8 @@
       "feature_id": "custom-spell-runtime",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/61",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/77"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/77",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/78"
       ],
       "document": "docs/custom_spell_effects.md",
       "anchor": "tc-custom-spell-061-002-default-off-custom-spell-profile-preserves-vanilla-dispatch",
@@ -1466,20 +1470,55 @@
       "negative_control": "The enabled test ROMs from TC-CUSTOM-SPELL-061-001 contain the public symbols and dispatch the registered 0x80 descriptor.",
       "interactions": "The default is independent of every other optional feature. The archival lane fixes both custom-spell macros at zero and has no package support.",
       "save_compatibility": "The default fingerprint and save compatibility epoch remain unchanged; no save bytes are added.",
-      "cleanup": "Remove only the named build/issue77-*-disabled roots if artifacts are no longer needed.",
+      "cleanup": "Remove only the named build/issue78-*-disabled roots if artifacts are no longer needed.",
       "limitations": "The test-only harness remains present only in explicitly flagged probe ROMs; ordinary disabled ROMs contain neither the harness nor runtime.",
       "automation": [
         {
-          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=debug MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-debug-disabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=0",
+          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=debug MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue78-debug-disabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=0",
           "evidence": "tools/gba-playtest/run_custom_spell_effect_checks.py"
         },
         {
-          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=release MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-release-disabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=0",
+          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=release MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue78-release-disabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=0",
           "evidence": "tools/gba-playtest/run_custom_spell_effect_checks.py"
         },
         {
           "command": "python3 -m unittest tools.gba-playtest.tests.test_custom_spell_effect.CustomSpellArmTests -v",
           "evidence": "tools/gba-playtest/tests/test_custom_spell_effect.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-CUSTOM-SPELL-061-003",
+      "title": "Strict custom spell package conversion rejects unsafe input",
+      "feature_id": "custom-spell-runtime",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/61",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/77",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/78"
+      ],
+      "document": "docs/custom_spell_effects.md",
+      "anchor": "tc-custom-spell-061-003-strict-package-conversion",
+      "profiles": [
+        "Host asset suite with the committed alternate custom-spell reference manifest",
+        "Modern AAPCS feature-enabled source profile"
+      ],
+      "purpose": "Prove exact feditor-magic-v1 parsing, PNG conversion, generated binding/inventory determinism, ownership, capacity, provenance, and drift handling.",
+      "prerequisites": "Start with a clean generated-output root and the committed assets/manifests/custom-spell-reference.json package selection.",
+      "actions": "Run the custom spell adapter unittest plus enabled assets-validate, assets-generate, assets-check, and assets-test; each adversarial fixture is reset before the next variant.",
+      "expected_result": "The reference package deterministically emits custom index 0x80, one ITEM_ANIMA_FORBLAZE SpellAssoc entry, ABI-1 descriptor/assets/OAM/SFX data, current inventory digests, and no source-tree generated products.",
+      "negative_control": "Unknown schema/options/tokens, C or CSA input, malformed triples/terminators/SFX, unsafe paths, malformed PNGs, invalid item/effect/fallback ownership, capacity excess, stale output, missing output, and orphan output all fail before compilation with a source location or exact reason.",
+      "interactions": "Uses only #60's static KIND_REGISTRY and #77's ABI. It conflicts with external FEditor/CSA patches, duplicate SpellAssoc ownership, and manual generated-output edits.",
+      "save_compatibility": "Package generation and binding add no save field, preference, migration, or compatibility-epoch change.",
+      "cleanup": "Run make assets-clean, or regenerate the selected manifest before another profile build.",
+      "limitations": "Only the documented feditor-magic-v1 text/PNG subset is supported; no arbitrary command, patch, ROM, external TSA/OAM, or runtime parser is accepted.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.assets.tests.test_custom_spell -v",
+          "evidence": "scripts/assets/tests/test_custom_spell.py"
+        },
+        {
+          "command": "make assets-validate assets-generate assets-check assets-test EXPANSION_CUSTOM_SPELL_EFFECTS=1 ASSET_MANIFEST=assets/manifests/custom-spell-reference.json",
+          "evidence": "scripts/assets/manifest.py"
         }
       ]
     },
@@ -1566,7 +1605,8 @@
       "feature_id": "custom-spell-runtime",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/61",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/77"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/77",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/78"
       ],
       "document": "docs/custom_spell_effects.md",
       "anchor": "tc-custom-spell-061-004-custom-spell-conflicts-fall-back-without-leaking-resources",
@@ -1584,7 +1624,7 @@
       "limitations": "The fault selector exists only behind FE8_EXPANSION_CUSTOM_SPELL_TEST and cannot be enabled by a production configure profile.",
       "automation": [
         {
-          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=debug MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue77-debug-enabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+          "command": "make expansion-modern-custom-spell-check MODERN_CONFIG=debug MODERN_ABI=aapcs MODERN_BUILD_ROOT=build/issue78-debug-enabled FE8_EXPANSION_CUSTOM_SPELL_TEST=1 EXPANSION_CUSTOM_SPELL_EFFECTS=1 ASSET_MANIFEST=assets/manifests/custom-spell-reference.json",
           "evidence": "tools/gba-playtest/run_custom_spell_effect_checks.py"
         },
         {
@@ -2136,7 +2176,8 @@
       "feature_id": "custom-spell-runtime",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/61",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/77"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/77",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/78"
       ],
       "document": "docs/custom_spell_effects.md",
       "anchor": "tc-custom-spell-061-005-custom-spell-runtime-remains-save-neutral",
@@ -2159,11 +2200,11 @@
           "evidence": "tools/gba-playtest/tests/test_custom_spell_effect.py"
         },
         {
-          "command": "make expansion-modern-savefmt-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+          "command": "make expansion-modern-savefmt-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_CUSTOM_SPELL_EFFECTS=1 ASSET_MANIFEST=assets/manifests/custom-spell-reference.json",
           "evidence": "tools/gba-playtest/run_save_compat_checks.py"
         },
         {
-          "command": "make expansion-modern-savefmt-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_CUSTOM_SPELL_EFFECTS=1",
+          "command": "make expansion-modern-savefmt-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_CUSTOM_SPELL_EFFECTS=1 ASSET_MANIFEST=assets/manifests/custom-spell-reference.json",
           "evidence": "tools/gba-playtest/run_save_compat_checks.py"
         }
       ]

@@ -9,8 +9,8 @@
 #include "banim_data.h"
 #include "ekrbattle.h"
 
-#include "build/generated/assets/banim/banim_defs.h"
-#include "build/generated/assets/banim/banim_runtime_test_defs.h"
+#include "banim_defs.h"
+#include "banim_runtime_test_defs.h"
 
 EWRAM_DATA struct BanimPackageRuntimeTestProbe gBanimPackageRuntimeTestProbe = {0};
 
