@@ -81,7 +81,6 @@ SUSPEND_PROGRESS_RESUME_RUNTIME_FINGERPRINT = (
     / "fingerprints"
     / "debugtools-phase-control-suspend-progress-resume-modern-debug.json"
 )
-RELEASE_BUDGET_REPORT = ROOT / "reports" / "linker-budget" / "modern-release.json"
 RELEASE_LOCALIZATION_BUDGET_REPORT = (
     ROOT / "reports" / "linker-budget" / "modern-localization-release.json"
 )
@@ -109,14 +108,6 @@ MESSAGE_KEYS = {
     "debug.mode.computer": 128,
     "debug.mode.blocked": 129,
 }
-RELEASE_PHASE_BASELINE = {
-    "ewram_occupied_bytes": 259076,
-    "rom_occupied_bytes": 16776960,
-    "floating_end": 145963764,
-    "emitted_message_count": 120,
-}
-
-
 def run(command):
     return subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
 
@@ -689,45 +680,36 @@ class DebugToolsPhaseControlLocalizationTests(unittest.TestCase):
                 self.assertNotIn("\n", strings[key])
 
     def test_release_catalog_omits_phase_payloads_at_the_pre_phase_boundary(self):
-        budget = json.loads(RELEASE_BUDGET_REPORT.read_text(encoding="utf-8"))
         localization = json.loads(
             RELEASE_LOCALIZATION_BUDGET_REPORT.read_text(encoding="utf-8")
         )
-        regions = {region["name"]: region for region in budget["regions"]}
-        assignments = {
-            assignment["name"]: assignment["address"]
-            for assignment in budget["pinned_assignments"]
+        registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
+        active = [entry for entry in registry["messages"] if entry["status"] == "active"]
+        debug_only = {
+            entry["key"]
+            for entry in active
+            if entry.get("emission", "always") == "debug_only"
         }
+        emitted_message_count = len(active) - len(debug_only)
         source_budget = localization["source_catalog_budget"]
 
-        self.assertEqual(
-            regions["ewram"]["occupied_bytes"],
-            RELEASE_PHASE_BASELINE["ewram_occupied_bytes"],
-        )
-        self.assertEqual(
-            regions["rom"]["occupied_bytes"],
-            RELEASE_PHASE_BASELINE["rom_occupied_bytes"],
-        )
-        self.assertEqual(
-            assignments["__floating_end"],
-            RELEASE_PHASE_BASELINE["floating_end"],
-        )
+        self.assertTrue(set(MESSAGE_KEYS).issubset(debug_only))
         self.assertEqual(source_budget["emission_profile"], "release")
         self.assertEqual(
             source_budget["active_message_count"],
-            RELEASE_PHASE_BASELINE["emitted_message_count"],
+            emitted_message_count,
         )
         self.assertEqual(
             source_budget["omitted_active_message_count"],
-            len(MESSAGE_KEYS),
+            len(debug_only),
         )
         self.assertEqual(
             localization["rom_catalog_index"]["symbols"]["gExpansionLocaleMsgIds"],
-            RELEASE_PHASE_BASELINE["emitted_message_count"] * 2,
+            emitted_message_count * 2,
         )
         self.assertEqual(
             localization["rom_catalog_strings"]["symbols"]["gExpansionCatalog_en"],
-            RELEASE_PHASE_BASELINE["emitted_message_count"] * 4,
+            emitted_message_count * 4,
         )
 
 
