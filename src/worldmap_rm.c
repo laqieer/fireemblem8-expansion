@@ -672,8 +672,9 @@ PROC_LABEL(1),
 //! FE8U = 0x080C2A40
 int StartGmapRmBorder1(void)
 {
+    int i;
+    int j;
     int count;
-    u32 used;
     struct ProcGmapRmBorder1 * proc;
     struct ProcFindIterator procIter;
 
@@ -701,8 +702,17 @@ int StartGmapRmBorder1(void)
         return 0;
     }
 
-    used = (count > 0 ? 1 << local_18[0] : 0) | (count > 1 ? 1 << local_18[1] : 0) | (count > 2 ? 1 << local_18[2] : 0);
-    if (!(used & 1)) return 0; if (!(used & 2)) return 1; if (!(used & 4)) return 2;
+    for (i = 0; i < 3; i++)
+    {
+        for (j = 0; j < count && i != local_18[j]; j++)
+        {
+        }
+
+        if (j == count)
+        {
+            return i;
+        }
+    }
 
     return -1;
 }

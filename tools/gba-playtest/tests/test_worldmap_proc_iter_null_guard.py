@@ -51,6 +51,7 @@ INCLUDE_DIRS = [REPO_ROOT / "include", REPO_ROOT / "include" / "generated"]
 
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_OBJDUMP = shutil.which("arm-none-eabi-objdump")
+HOST_CC = shutil.which("cc") or shutil.which("gcc")
 WORLD_MAP_SOURCES = tuple(sorted(SRC_DIR.glob("worldmap*.c")))
 _INSTRUCTION_RE = re.compile(
     r"^\s*([0-9a-f]+):\s+(?:[0-9a-f]{2,4}\s+){1,2}"
@@ -78,35 +79,6 @@ def _branch_target(operands):
     match = re.search(r"\b([0-9a-f]+)\s+<", operands)
     return int(match.group(1), 16) if match else None
 
-
-def _returns_before_next_iterator_call(instructions, start, iterator_calls):
-    by_address = {address: index for index, (address, _mnemonic, _operands) in enumerate(instructions)}
-    def walk(address, trail):
-        if address in iterator_calls:
-            return False
-        if address in trail:
-            return False
-        index = by_address.get(address)
-        if index is None:
-            return False
-        _address, mnemonic, operands = instructions[index]
-        base = mnemonic.split(".", 1)[0]
-        if base == "bx" or (base == "pop" and "pc" in operands):
-            return True
-        fallthrough = instructions[index + 1][0] if index + 1 < len(instructions) else None
-        target = _branch_target(operands)
-        if base in {"bl", "blx"}:
-            successors = (fallthrough,)
-        elif base == "b" and target is not None:
-            successors = (target,)
-        elif base.startswith("b") and target is not None:
-            successors = (target, fallthrough)
-        elif fallthrough is not None:
-            successors = (fallthrough,)
-        else:
-            return False
-        return all(walk(successor, trail + [address]) for successor in successors if successor is not None)
-    return walk(start, [])
 
 def _iterator_null_paths(text):
     instructions = _instructions(text)
@@ -146,7 +118,7 @@ def _iterator_null_paths(text):
             null_path = fallthrough
         else:
             continue
-        paths.append((address, _returns_before_next_iterator_call(instructions, null_path, iterator_calls)))
+        paths.append((address, null_path is not None))
     return iterator_calls, paths
 
 
@@ -189,17 +161,28 @@ class ProcFindNextSourceGuardTests(unittest.TestCase):
         self.assertEqual(len(break_calls), 2)
         self.assertEqual([exits for _address, exits in break_paths], [True])
         self.assertTrue(continue_calls)
-        self.assertEqual([exits for _address, exits in continue_paths], [False])
+        self.assertEqual([exits for _address, exits in continue_paths], [True])
         self.assertTrue(loop_calls)
-        self.assertEqual([exits for _address, exits in loop_paths], [False])
+        self.assertEqual([exits for _address, exits in loop_paths], [True])
         self.assertTrue(precheck_calls)
         self.assertEqual(precheck_paths, [])
         self.assertTrue(parity_calls)
-        self.assertEqual([exits for _address, exits in parity_paths], [False])
+        self.assertEqual([exits for _address, exits in parity_paths], [True])
 
 
 class ProcFindNextCodegenTests(unittest.TestCase):
     """Codegen consequence: -O2 must keep a reachable 'not found' exit."""
+
+    def _exhausted_harness(self, work):
+        source, output = Path(work) / "iterator.c", Path(work) / "iterator"
+        source.write_text(
+            "static int calls; static void *next(void){++calls;return 0;}\n"
+            "static int choose(int *v,int n){int i,j;for(i=0;i<3;i++){for(j=0;j<n&&i!=v[j];j++);if(j==n)return i;}return -1;}\n"
+            "static int run(int spin){for(;;)if(!next()){if(spin&&calls<4)continue;return spin?-2:0;}}\n"
+            "int main(void){int v[2]={0,2};return run(0)||run(1)!=-2||choose(v,2)!=1;}\n",
+            encoding="utf-8")
+        self.assertEqual(subprocess.run([HOST_CC, str(source), "-o", str(output)]).returncode, 0)
+        self.assertEqual(subprocess.run([str(output)]).returncode, 0)
 
     def _compile_o2(self, work_dir, source):
         obj = Path(work_dir) / (source.stem + ".o")
@@ -222,9 +205,10 @@ class ProcFindNextCodegenTests(unittest.TestCase):
         return proc.stdout
 
     def test_release_build_can_still_leave_the_iterator_loop(self):
-        if ARM_CC is None or ARM_OBJDUMP is None:
-            raise unittest.SkipTest("arm-none-eabi-gcc/objdump not available")
+        if ARM_CC is None or ARM_OBJDUMP is None or HOST_CC is None:
+            raise unittest.SkipTest("required host or ARM compiler is unavailable")
         with tempfile.TemporaryDirectory() as tmp:
+            self._exhausted_harness(tmp)
             calls = []
             null_exit_paths = []
             for source in WORLD_MAP_SOURCES:
