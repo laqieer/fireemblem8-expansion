@@ -350,14 +350,14 @@ static const ExpansionMsgId sLocaleShortNameMsgIds[EXPANSION_LOCALE_COUNT] =
 };
 
 /* RAM-resident MenuItemDef adapter, rebuilt every time either MenuDef
-* below is (re)shown -- same "contributor/runtime code never edits an
-* engine-owned const MenuItemDef table" idiom as
-* src/debugtools_registry.c's sHubMenuItemDefs. The first-start selector
-* and later settings submenu are never simultaneously live. When debug
-* tools are enabled, they also share the capacity-safe debug menu buffer:
-* the selector finishes before title input begins, and OpenSettings rejects
-* an active debug hub. Each build path fully rewrites its rows before
-* StartMenu, so no caller depends on prior contents. */
+ * below is (re)shown -- same "contributor/runtime code never edits an
+ * engine-owned const MenuItemDef table" idiom as
+ * src/debugtools_registry.c's sHubMenuItemDefs. The first-start selector
+ * and later settings submenu are never simultaneously live. When debug
+ * tools are enabled, they also share the capacity-safe debug menu buffer:
+ * the selector finishes before title input begins, and OpenSettings rejects
+ * an active debug hub. Each build path fully rewrites its rows before
+ * StartMenu, so no caller depends on prior contents. */
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
 #define sLanguageMenuItemDefs sDebugToolsMenuItemDefs
 #else
