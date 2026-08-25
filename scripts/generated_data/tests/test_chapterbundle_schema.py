@@ -12,7 +12,9 @@ so each negative-path scenario only has to vary the one field under test.
 """
 
 import copy
+import json
 import os
+import shutil
 import unittest
 
 from scripts.generated_data.diagnostics import DiagnosticCollector, GeneratedDataError
@@ -24,7 +26,7 @@ from scripts.generated_data.shops import schema as shops_schema
 from scripts.generated_data.supports import schema as supports_schema
 from scripts.generated_data.traps import schema as traps_schema
 from scripts.generated_data.units import schema as units_schema
-from scripts.generated_data.tests._util import fixture_path
+from scripts.generated_data.tests._util import fixture_path, scratch_dir
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
@@ -242,7 +244,10 @@ class ChapterBundleValidFixtureTests(unittest.TestCase):
         records = chapterbundle_schema.ChapterBundleRecords([first, second])
         inventory = chapterbundle_schema.ChapterBundleTableSchema().build_inventory(records)
 
-        self.assertIn(second.source_path, inventory)
+        self.assertIn(
+            "scripts/generated_data/tests/fixtures/chapterbundle/deps_units_second.json",
+            inventory,
+        )
         self.assertIn("UnitDef_EL_Alternate", inventory)
         changed = copy.deepcopy(second)
         changed.tables_by_name["units"].symbols = ["UnitDef_EL_Changed"]
@@ -250,6 +255,61 @@ class ChapterBundleValidFixtureTests(unittest.TestCase):
             chapterbundle_schema.ChapterBundleRecords([first, changed])
         )
         self.assertNotEqual(inventory, changed_inventory)
+
+    def test_inventory_paths_are_checkout_independent_and_reject_outside_root(self):
+        def copy_bundle_checkout(checkout_root, multiple):
+            source = repo_path("src", "data", "ch2_bundle.json")
+            with open(source, encoding="utf-8") as handle:
+                bundle = json.load(handle)
+            paths = [table["source"] for table in bundle["tables"].values()]
+            paths.append(bundle["supportOwners"]["source"])
+            if "chapterObjectives" in bundle:
+                paths.append(bundle["chapterObjectives"]["source"])
+            for path in paths:
+                destination = os.path.join(checkout_root, path)
+                os.makedirs(os.path.dirname(destination), exist_ok=True)
+                shutil.copyfile(repo_path(path), destination)
+
+            bundle_dir = os.path.join(checkout_root, "src", "data")
+            first = os.path.join(bundle_dir, "ch2_bundle.json")
+            with open(first, "w", encoding="utf-8") as handle:
+                json.dump(bundle, handle)
+            if not multiple:
+                return chapterbundle_schema.load_records(first, repository_root=checkout_root)
+
+            second_bundle = copy.deepcopy(bundle)
+            second_bundle["chapter"]["id"] = "CHAPTER_L_3"
+            with open(os.path.join(bundle_dir, "l3_bundle.json"), "w", encoding="utf-8") as handle:
+                json.dump(second_bundle, handle)
+            return chapterbundle_schema.load_records(bundle_dir, repository_root=checkout_root)
+
+        with scratch_dir() as tmp:
+            first_root = os.path.join(tmp, "first-checkout")
+            second_root = os.path.join(tmp, "second-checkout")
+            os.mkdir(first_root)
+            os.mkdir(second_root)
+            schema = chapterbundle_schema.ChapterBundleTableSchema()
+            single_first = schema.build_inventory(copy_bundle_checkout(first_root, multiple=False))
+            single_second = schema.build_inventory(copy_bundle_checkout(second_root, multiple=False))
+            self.assertEqual(single_first, single_second)
+            self.assertIn("src/data/ch2_bundle.json", single_first)
+            self.assertNotIn(first_root, single_first)
+
+            multi_first_records = copy_bundle_checkout(first_root, multiple=True)
+            multi_second_records = copy_bundle_checkout(second_root, multiple=True)
+            multi_first = schema.build_inventory(multi_first_records)
+            multi_second = schema.build_inventory(multi_second_records)
+            self.assertEqual(multi_first, multi_second)
+            self.assertIn("src/data/ch2_bundle.json", multi_first)
+            self.assertIn("src/data/l3_bundle.json", multi_first)
+            self.assertNotIn(first_root, multi_first)
+
+            outside = copy.deepcopy(multi_first_records[1])
+            outside.source_path = os.path.join(tmp, "outside", "l3_bundle.json")
+            with self.assertRaises(GeneratedDataError):
+                schema.build_inventory(
+                    chapterbundle_schema.ChapterBundleRecords([multi_first_records[0], outside])
+                )
 
 
 class ChapterCrossCheckTests(unittest.TestCase):

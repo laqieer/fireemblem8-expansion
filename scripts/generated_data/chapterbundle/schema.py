@@ -203,7 +203,7 @@ class ChapterBundleRecord:
     """The full parsed ``ch2_bundle.json`` document."""
 
     def __init__(self, chapter, manifest, tables, support_owners, external_references, dependencies,
-                 chapter_objectives, autoplay_strategies, source_path, loc):
+                 chapter_objectives, autoplay_strategies, source_path, repository_root, loc):
         self.chapter = chapter
         self.manifest = manifest
         self.tables = tables
@@ -214,6 +214,7 @@ class ChapterBundleRecord:
         self.chapter_objectives = chapter_objectives
         self.autoplay_strategies = autoplay_strategies
         self.source_path = source_path
+        self.repository_root = repository_root
         self.loc = loc
 
     def __len__(self):
@@ -245,7 +246,7 @@ class ChapterBundleRecords:
         return self.records[index]
 
 
-def _load_record(source_path):
+def _load_record(source_path, repository_root=REPO_ROOT):
     root = load_json_file(source_path)
     schema_node = root.require("$schema")
     if schema_node.as_str() != SCHEMA_ID:
@@ -369,12 +370,15 @@ def _load_record(source_path):
         support_owners=support_owners, external_references=external_references,
         dependencies=dependencies, chapter_objectives=chapter_objectives,
         autoplay_strategies=autoplay_strategies,
-        source_path=_source_path(source_path), loc=root.loc,
+        source_path=_source_path(source_path, repository_root),
+        repository_root=_source_path(repository_root),
+        loc=root.loc,
     )
 
 
-def load_records(source_path):
+def load_records(source_path, repository_root=REPO_ROOT):
     """Load one bundle file or every ``*_bundle.json`` file in a directory."""
+    source_path = _source_path(source_path, repository_root)
     if os.path.isdir(source_path):
         source_paths = sorted(glob.glob(os.path.join(source_path, "*_bundle.json")))
         if not source_paths:
@@ -384,8 +388,8 @@ def load_records(source_path):
     else:
         source_paths = [source_path]
     return ChapterBundleRecords(
-        [_load_record(path) for path in source_paths],
-        [_source_path(path) for path in source_paths],
+        [_load_record(path, repository_root) for path in source_paths],
+        [_source_path(path, repository_root) for path in source_paths],
     )
 
 
@@ -393,8 +397,29 @@ def _err(message, loc, ref):
     return GeneratedDataError(message, loc, ref)
 
 
-def _source_path(source):
-    return source if os.path.isabs(source) else os.path.join(REPO_ROOT, source)
+def _source_path(source, repository_root=REPO_ROOT):
+    path = source if os.path.isabs(source) else os.path.join(repository_root, source)
+    return os.path.realpath(os.path.abspath(path))
+
+
+def source_display_path(source, repository_root=REPO_ROOT):
+    """Return a stable repository-relative inventory path.
+
+    Source reads and digests retain canonical absolute paths. Inventories must
+    not contain a checkout-specific prefix, so outside-root paths fail rather
+    than silently serializing machine-local locations.
+    """
+    root = _source_path(repository_root)
+    path = _source_path(source, root)
+    try:
+        inside_root = os.path.commonpath((root, path)) == root
+    except ValueError:
+        inside_root = False
+    if not inside_root:
+        raise GeneratedDataError(
+            "inventory source '{}' is outside repository root '{}'".format(path, root)
+        )
+    return os.path.relpath(path, root).replace(os.sep, "/")
 
 
 def _dependency_loader(table_name):
