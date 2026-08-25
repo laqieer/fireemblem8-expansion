@@ -606,9 +606,27 @@ def read_chapter_map_dimensions(chapter_settings_index, chapter_settings_path=CH
     try:
         with open(layout_path, "r", encoding="utf-8") as handle:
             layout = json.load(handle)
-        return layout["width"], layout["height"]
-    except (OSError, KeyError):
+    except OSError:
         return None
+    except (json.JSONDecodeError, TypeError) as error:
+        raise GeneratedDataError(
+            "could not parse fallback map layout '{}': {}".format(layout_path, error)
+        )
+    try:
+        width = layout["width"]
+        height = layout["height"]
+    except (KeyError, TypeError) as error:
+        raise GeneratedDataError(
+            "fallback map layout '{}' has no usable width/height: {}".format(layout_path, error)
+        )
+    if (
+        isinstance(width, bool) or not isinstance(width, int) or width <= 0
+        or isinstance(height, bool) or not isinstance(height, int) or height <= 0
+    ):
+        raise GeneratedDataError(
+            "fallback map layout '{}' width/height must be positive integers".format(layout_path)
+        )
+    return width, height
 
 
 def _validate_record(records, diagnostics, dependency_records=None,

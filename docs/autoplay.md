@@ -456,8 +456,9 @@ This is production runtime infrastructure with host/runtime test coverage:
   contracts, the generated-data registry/chapter-bundle owner model,
   `tools/gba-playtest`, existing ELF probe bindings, libmGBA, and the
   tester-case catalog.
-- **Dependents:** none. Downstream strategy, route, batch, and planner
-  features may consume the typed status API through their own contracts.
+- **Dependents:** strategy profiles (#90), batch simulation (#91), and
+  planner/campaign work (#92) consume this typed status seam through their
+  own contracts.
 - **Conflicts:** none; fixed-frame scenarios and fingerprints remain valid and
   are exercised unchanged.
 - **Profiles:** generated homebrew/libmGBA host integration, modern AAPCS debug
