@@ -44,7 +44,7 @@ class ChapterObjectivesInputTests(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.work, ignore_errors=True)
 
-    def _make(self):
+    def _make(self, bundle_source=None):
         return subprocess.run(
             [
                 "make",
@@ -53,7 +53,7 @@ class ChapterObjectivesInputTests(unittest.TestCase):
                 "GENERATED_DATA_OUT_DIR={}".format(self.out_dir),
                 "GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE={}".format(self.objectives),
                 "GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE={}".format(
-                    self.work / "bundles"
+                    bundle_source or self.work / "bundles"
                 ),
                 "GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY={}".format(
                     self.work / "inventory.md"
@@ -99,6 +99,30 @@ class ChapterObjectivesInputTests(unittest.TestCase):
         initial = self._make()
         self.assertEqual(initial.returncode, 0, initial.stdout)
         self.assertTrue(self.target.is_file())
+        target_before_failure = self.target.read_bytes()
+        depfile = self.out_dir / "chapterobjectives.inputs.mk"
+        depfile_target, separator, depfile_inputs = depfile.read_text(encoding="utf-8").partition(": ")
+        self.assertEqual(depfile_target, str(self.target))
+        self.assertEqual(separator, ": ")
+        self.assertIn(os.path.realpath(self.l3_units), depfile_inputs.split())
+        self.assertIn(os.path.realpath(self.work / "bundles"), depfile_inputs.split())
+
+        warm = self._make()
+        self.assertEqual(warm.returncode, 0, warm.stdout)
+        self.assertNotIn("generate --table chapterobjectives", warm.stdout)
+
+        missing_bundle = self.work / "missing_bundles"
+        missing = self._make(missing_bundle)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("unable to read chapter objective dependency source", missing.stdout)
+        self.assertEqual(self.target.read_bytes(), target_before_failure)
+
+        malformed_bundle = self.work / "malformed_bundle.json"
+        malformed_bundle.write_text("{", encoding="utf-8")
+        malformed = self._make(malformed_bundle)
+        self.assertNotEqual(malformed.returncode, 0)
+        self.assertIn("error:", malformed.stdout)
+        self.assertEqual(self.target.read_bytes(), target_before_failure)
 
         l3_data = json.loads(self.l3_units.read_text(encoding="utf-8"))
         l3_data["groups"][0]["units"][0]["charIndex"] = "CHARACTER_EIRIKA"

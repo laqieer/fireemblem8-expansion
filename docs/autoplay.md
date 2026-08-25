@@ -456,9 +456,12 @@ This is host/runtime-test infrastructure only:
 - **Save/config/data:** no save field, migration, compatibility epoch,
   configuration identity, Autoconf/Make feature flag, generated game data, or
   localization change.
-- **ROM/RAM/archival:** no target source, ROM bytes, RAM allocation, linker
-  budget, or archival runtime behavior changes. The legacy lane remains a
-  compile-compatibility check only.
+- **ROM/RAM/archival:** the modern generated objective table and evaluator add
+  ROM data/code; the default table is a 12-byte sentinel and authored
+  objectives are 28 bytes each. Telemetry remains a 16-byte EWRAM record with
+  two transient readiness bytes; linker-budget owner reports capture the
+  resulting profile totals. The archival lane excludes objective runtime
+  behavior and remains a compile-compatibility check only.
 
 ## Validation
 
