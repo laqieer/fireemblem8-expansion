@@ -1,6 +1,7 @@
 """Semantic schema/generator coverage for issue #89 chapter objectives."""
 
 import copy
+import json
 import os
 import re
 import unittest
@@ -8,8 +9,8 @@ from unittest.mock import patch
 
 from scripts.generated_data.chapterbundle import schema as chapterbundle_schema
 from scripts.generated_data.chapterobjectives import generate, schema
-from scripts.generated_data.diagnostics import DiagnosticCollector
-from scripts.generated_data.tests._util import fixture_path
+from scripts.generated_data.diagnostics import DiagnosticCollector, GeneratedDataError
+from scripts.generated_data.tests._util import fixture_path, scratch_dir
 from scripts.generated_data.units import schema as units_schema
 
 
@@ -337,6 +338,41 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             [os.path.basename(record.source_path) for record in directory_records],
             ["a_objectives.json", "b_objectives.json"],
         )
+
+    def test_fallback_layout_metadata_fails_closed_with_owner_diagnostic(self):
+        with scratch_dir() as tmp:
+            layout_dir = os.path.join(tmp, "layouts")
+            os.mkdir(layout_dir)
+            layout_path = os.path.join(layout_dir, "Ch3Map.json")
+            kwargs = {
+                "chapter_settings_path": os.path.join(REPO_ROOT, "src", "data", "chapter_settings.json"),
+                "asset_table_path": os.path.join(REPO_ROOT, "src", "data", "data_8B363C.c"),
+                "asset_manifest_path": os.path.join(tmp, "missing-manifest.json"),
+                "map_layout_dir": layout_dir,
+            }
+            for content in (
+                "{",
+                json.dumps({"width": True, "height": 16}),
+                json.dumps({"width": 17, "height": 0}),
+                json.dumps({"width": "17", "height": 16}),
+            ):
+                with self.subTest(content=content):
+                    with open(layout_path, "w", encoding="utf-8") as handle:
+                        handle.write(content)
+                    with self.assertRaises(GeneratedDataError):
+                        chapterbundle_schema.read_chapter_map_dimensions(3, **kwargs)
+
+        records, diagnostics = _validate("valid.json")
+        owner = chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json"))[0]
+        error = GeneratedDataError("fallback map layout is malformed")
+        with patch.object(chapterbundle_schema, "read_chapter_map_dimensions", side_effect=error):
+            self.assertIsNone(schema._owner_map_dimensions(owner, diagnostics, records[0]))
+        owner_error = next(
+            item for item in diagnostics.errors
+            if item.reference_path == "bundles[chapter=CHAPTER_L_2].map"
+        )
+        self.assertEqual(owner_error.location, records[0].chapter_loc)
+        self.assertIn("fallback map layout is malformed", owner_error.message)
 
     def test_kind_specific_extras_and_protect_defeat_contradictions_fail_closed(self):
         records, diagnostics = _validate("valid.json")

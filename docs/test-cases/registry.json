@@ -2237,6 +2237,23 @@
       "save_compatibility": "No save bytes, migration, preference, compatibility epoch, or serialized objective state. Runtime status is derived from existing chapter/event state; protect and hold use their author-declared existing event-flag latches.",
       "cleanup": "The host fixture is temporary under build/. Use make clean_fast only for ignored artifacts.",
       "limitations": "No project strategy, route, balance claim, player-visible text, natural-language goal, or general event language.",
+      "compatibility": {
+        "dependent_issues": [90, 91, 92],
+        "generated_data": {
+          "bundle_capacity": 32,
+          "objective_capacity": 8,
+          "group_capacity": 8,
+          "group_member_capacity": 16,
+          "bundle_bytes": 12,
+          "objective_bytes": 28
+        },
+        "runtime": {
+          "telemetry_ewram_bytes": 16,
+          "total_ewram_bytes": 20,
+          "archival_runtime": false,
+          "serialized_objective_state": false
+        }
+      },
       "automation": [
         {
           "command": "python3 -m unittest scripts.generated_data.tests.test_chapterobjectives_schema scripts.generated_data.tests.test_chapterbundle_schema scripts.generated_data.tests.test_cli_new_tables.CliChapterObjectivesTests -v",

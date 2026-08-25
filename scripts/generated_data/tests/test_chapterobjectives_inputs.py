@@ -4,35 +4,40 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
-from scripts.generated_data.chapterobjectives import deps
-
-
 ROOT = Path(__file__).resolve().parents[3]
-FIXTURES = ROOT / "scripts" / "generated_data" / "tests" / "fixtures" / "chapterobjectives"
 SCRATCH_ROOT = ROOT / "build" / "test-chapterobjectives-inputs"
 
 
 class ChapterObjectivesInputTests(unittest.TestCase):
     def setUp(self):
-        self.work = SCRATCH_ROOT / self.id().rsplit(".", 1)[-1]
-        shutil.rmtree(self.work, ignore_errors=True)
+        self.sandbox = SCRATCH_ROOT / self.id().rsplit(".", 1)[-1]
+        shutil.rmtree(self.sandbox, ignore_errors=True)
+        self.repo = self.sandbox / "repo"
+        shutil.copytree(
+            ROOT,
+            self.repo,
+            ignore=shutil.ignore_patterns(".git", "build", "__pycache__", "*.pyc"),
+        )
+        self.work = self.repo / "build" / "chapterobjectives-inputs"
         (self.work / "bundles").mkdir(parents=True)
 
         self.objectives = self.work / "two_chapters.json"
-        objective_data = json.loads((FIXTURES / "two_chapters.json").read_text(encoding="utf-8"))
+        fixtures = self.repo / "scripts" / "generated_data" / "tests" / "fixtures" / "chapterobjectives"
+        objective_data = json.loads((fixtures / "two_chapters.json").read_text(encoding="utf-8"))
         objective_data["chapters"][0]["objectives"][0]["area"]["xMax"] = 14
         self.objectives.write_text(json.dumps(objective_data), encoding="utf-8")
 
         self.l2_units = self.work / "units_l2.json"
         self.l3_units = self.work / "units_l3.json"
-        shutil.copyfile(FIXTURES / "deps_units_l2.json", self.l2_units)
-        shutil.copyfile(FIXTURES / "deps_units_l3.json", self.l3_units)
+        shutil.copyfile(fixtures / "deps_units_l2.json", self.l2_units)
+        shutil.copyfile(fixtures / "deps_units_l3.json", self.l3_units)
         for name, units in (("l2_bundle.json", self.l2_units), ("l3_bundle.json", self.l3_units)):
             bundle = json.loads(
-                (FIXTURES / "two_chapter_bundles" / name).read_text(encoding="utf-8")
+                (fixtures / "two_chapter_bundles" / name).read_text(encoding="utf-8")
             )
             bundle["chapterObjectives"]["source"] = str(self.objectives)
             bundle["tables"]["units"]["source"] = str(units)
@@ -42,7 +47,7 @@ class ChapterObjectivesInputTests(unittest.TestCase):
         self.target = self.out_dir / "data_chapter_objectives.c"
 
     def tearDown(self):
-        shutil.rmtree(self.work, ignore_errors=True)
+        shutil.rmtree(self.sandbox, ignore_errors=True)
 
     def _make(self, bundle_source=None):
         return subprocess.run(
@@ -59,7 +64,7 @@ class ChapterObjectivesInputTests(unittest.TestCase):
                     self.work / "inventory.md"
                 ),
             ],
-            cwd=ROOT,
+            cwd=self.repo,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -67,7 +72,24 @@ class ChapterObjectivesInputTests(unittest.TestCase):
         )
 
     def test_discovery_and_make_track_each_owner_source_and_map_metadata(self):
-        inputs = set(deps.collect_input_paths(self.objectives, self.work / "bundles"))
+        discovery = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "scripts.generated_data.chapterobjectives.deps",
+                "--source",
+                str(self.objectives),
+                "--bundle-source",
+                str(self.work / "bundles"),
+            ],
+            cwd=self.repo,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(discovery.returncode, 0, discovery.stdout + discovery.stderr)
+        inputs = set(discovery.stdout.splitlines())
         for required in (
             self.objectives,
             self.work / "bundles" / "l2_bundle.json",
@@ -75,24 +97,24 @@ class ChapterObjectivesInputTests(unittest.TestCase):
             self.work / "bundles",
             self.l2_units,
             self.l3_units,
-            ROOT / "src" / "data" / "chapter_settings.json",
-            ROOT / "src" / "data" / "data_8B363C.c",
-            ROOT / "assets" / "manifest.json",
-            ROOT / "assets",
-            ROOT / "assets" / "tmx" / "Ch2Map.tmx",
-            ROOT / "assets" / "tmx",
-            ROOT / "graphics" / "map" / "layout" / "Ch3Map.json",
-            ROOT / "graphics" / "map" / "layout",
-            ROOT / "scripts" / "generated_data" / "chapterobjectives" / "schema.py",
-            ROOT / "scripts" / "generated_data" / "chapterobjectives" / "generate.py",
-            ROOT / "scripts" / "generated_data" / "chapterbundle" / "schema.py",
-            ROOT / "scripts" / "generated_data" / "units" / "schema.py",
-            ROOT / "scripts" / "generated_data" / "shops" / "schema.py",
-            ROOT / "scripts" / "generated_data" / "traps" / "schema.py",
-            ROOT / "scripts" / "generated_data" / "eventscripts" / "schema.py",
-            ROOT / "scripts" / "generated_data" / "eventlists" / "schema.py",
-            ROOT / "scripts" / "generated_data" / "supports" / "schema.py",
-            ROOT / "scripts" / "assets" / "tmx.py",
+            self.repo / "src" / "data" / "chapter_settings.json",
+            self.repo / "src" / "data" / "data_8B363C.c",
+            self.repo / "assets" / "manifest.json",
+            self.repo / "assets",
+            self.repo / "assets" / "tmx" / "Ch2Map.tmx",
+            self.repo / "assets" / "tmx",
+            self.repo / "graphics" / "map" / "layout" / "Ch3Map.json",
+            self.repo / "graphics" / "map" / "layout",
+            self.repo / "scripts" / "generated_data" / "chapterobjectives" / "schema.py",
+            self.repo / "scripts" / "generated_data" / "chapterobjectives" / "generate.py",
+            self.repo / "scripts" / "generated_data" / "chapterbundle" / "schema.py",
+            self.repo / "scripts" / "generated_data" / "units" / "schema.py",
+            self.repo / "scripts" / "generated_data" / "shops" / "schema.py",
+            self.repo / "scripts" / "generated_data" / "traps" / "schema.py",
+            self.repo / "scripts" / "generated_data" / "eventscripts" / "schema.py",
+            self.repo / "scripts" / "generated_data" / "eventlists" / "schema.py",
+            self.repo / "scripts" / "generated_data" / "supports" / "schema.py",
+            self.repo / "scripts" / "assets" / "tmx.py",
         ):
             self.assertIn(os.path.realpath(required), inputs)
 
@@ -132,11 +154,15 @@ class ChapterObjectivesInputTests(unittest.TestCase):
         self.assertIn("generate --table chapterobjectives", stale_membership.stdout)
         self.assertIn("character 'CHARACTER_SETH' is not a member", stale_membership.stdout)
 
-        shutil.copyfile(FIXTURES / "deps_units_l3.json", self.l3_units)
+        shutil.copyfile(
+            self.repo / "scripts" / "generated_data" / "tests" / "fixtures" / "chapterobjectives"
+            / "deps_units_l3.json",
+            self.l3_units,
+        )
         restored = self._make()
         self.assertEqual(restored.returncode, 0, restored.stdout)
 
-        layout_dir = ROOT / "graphics" / "map" / "layout"
+        layout_dir = self.repo / "graphics" / "map" / "layout"
         layout = layout_dir / "Ch3Map.json"
         membership = layout_dir / "chapterobjectives_dependency_membership.json"
         layout_original = layout.read_bytes()
@@ -161,9 +187,9 @@ class ChapterObjectivesInputTests(unittest.TestCase):
             os.utime(layout_dir, ns=(layout_dir_stat.st_atime_ns, layout_dir_stat.st_mtime_ns))
 
         for module in (
-            ROOT / "scripts" / "generated_data" / "chapterbundle" / "schema.py",
-            ROOT / "scripts" / "generated_data" / "units" / "schema.py",
-            ROOT / "scripts" / "assets" / "tmx.py",
+            self.repo / "scripts" / "generated_data" / "chapterbundle" / "schema.py",
+            self.repo / "scripts" / "generated_data" / "units" / "schema.py",
+            self.repo / "scripts" / "assets" / "tmx.py",
         ):
             original_stat = module.stat()
             try:
@@ -177,8 +203,8 @@ class ChapterObjectivesInputTests(unittest.TestCase):
             finally:
                 os.utime(module, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
 
-        manifest = ROOT / "assets" / "manifest.json"
-        tmx = ROOT / "assets" / "tmx" / "Ch2Map.tmx"
+        manifest = self.repo / "assets" / "manifest.json"
+        tmx = self.repo / "assets" / "tmx" / "Ch2Map.tmx"
         manifest_original = manifest.read_bytes()
         tmx_original = tmx.read_bytes()
         objectives_original = self.objectives.read_bytes()
