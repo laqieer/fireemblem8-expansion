@@ -90,6 +90,7 @@ ARM_CC = shutil.which("arm-none-eabi-gcc")
 NM = shutil.which("nm")
 OBJCOPY = shutil.which("objcopy")
 ARM_NM = shutil.which("arm-none-eabi-nm")
+ARM_OBJDUMP = shutil.which("arm-none-eabi-objdump")
 ARM_SIZE = shutil.which("arm-none-eabi-size")
 
 DEBUG_DEFINES = (
@@ -413,6 +414,118 @@ class DebugToolsPhaseControlArmTests(unittest.TestCase):
             0x8C,
             "release gDebugToolsProbe must retain the #127 release layout",
         )
+
+    def test_transition_handoff_is_debug_only_in_compiled_call_graph(self):
+        if ARM_CC is None or ARM_NM is None or ARM_OBJDUMP is None:
+            self.skipTest("ARM compiler/binutils unavailable")
+
+        profiles = {
+            "debug": (
+                "FE8_EXPANSION_MODERN_BUILD=1",
+                "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+            ),
+            "default": ("FE8_EXPANSION_MODERN_BUILD=1",),
+            "release": (
+                "FE8_EXPANSION_MODERN_BUILD=1",
+                "NDEBUG",
+            ),
+            "archival": (
+                "FE8_EXPANSION_MODERN_BUILD=1",
+                "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                "FE8_ARCHIVAL_BUILD=1",
+            ),
+        }
+
+        BUILD.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=BUILD) as temporary:
+            work = Path(temporary)
+            write_message_header(work)
+            common = [
+                ARM_CC,
+                "-mcpu=arm7tdmi",
+                "-mthumb",
+                "-mthumb-interwork",
+                "-mabi=aapcs",
+                "-std=gnu89",
+                "-ffreestanding",
+                "-fno-builtin",
+                "-ffunction-sections",
+                "-fdata-sections",
+                "-I",
+                str(work),
+                *INCLUDES,
+            ]
+
+            for profile, defines in profiles.items():
+                bmio_object = work / f"bmio-{profile}.o"
+                event_object = work / f"event-{profile}.o"
+                linked_object = work / f"transition-{profile}.o"
+
+                for source, output in (
+                    (BMIO_SOURCE, bmio_object),
+                    (ROOT / "src" / "event.c", event_object),
+                ):
+                    completed = run(
+                        [
+                            *common,
+                            *[f"-D{define}" for define in defines],
+                            "-c",
+                            str(source),
+                            "-o",
+                            str(output),
+                        ]
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stdout + completed.stderr,
+                    )
+
+                completed = run(
+                    [
+                        ARM_CC,
+                        "-nostdlib",
+                        "-r",
+                        str(bmio_object),
+                        str(event_object),
+                        "-o",
+                        str(linked_object),
+                    ]
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    completed.stdout + completed.stderr,
+                )
+
+                symbols = run([ARM_NM, str(linked_object)])
+                self.assertEqual(symbols.returncode, 0, symbols.stderr)
+                disassembly = run([ARM_OBJDUMP, "-dr", str(event_object)])
+                self.assertEqual(disassembly.returncode, 0, disassembly.stderr)
+
+                with self.subTest(profile=profile):
+                    if profile in ("debug", "default"):
+                        self.assertIn(
+                            "EndBMapMainForChapterTransition",
+                            symbols.stdout,
+                        )
+                        self.assertIn(
+                            "EndBMapMainForChapterTransition",
+                            disassembly.stdout,
+                        )
+                    else:
+                        self.assertNotIn(
+                            "EndBMapMainForChapterTransition",
+                            symbols.stdout,
+                        )
+                        self.assertNotIn(
+                            "EndBMapMainForChapterTransition",
+                            disassembly.stdout,
+                        )
+                        self.assertRegex(
+                            disassembly.stdout,
+                            r"R_ARM_THM_CALL\s+EndBMapMain",
+                        )
 
 
 class DebugToolsPhaseControlLocalizationTests(unittest.TestCase):

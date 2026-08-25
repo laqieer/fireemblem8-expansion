@@ -1247,15 +1247,13 @@ void EndBMapMain(void) {
     Proc_End(mapMain);
 }
 
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
 void EndBMapMainForChapterTransition(void)
 {
-#ifndef FE8_ARCHIVAL_BUILD
-#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
     DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition();
-#endif
-#endif
     EndBMapMain();
 }
+#endif
 
 void ChapterChangeUnitCleanup(void) {
     int i, j;

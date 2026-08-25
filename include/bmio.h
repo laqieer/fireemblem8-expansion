@@ -78,7 +78,9 @@ void BMapDispResume_FromBattleDelayed(void);
 void RefreshBMapGraphics(void);
 struct BMapMainProc* StartBMapMain(struct GameCtrlProc* gameCtrl);
 void EndBMapMain(void);
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
 void EndBMapMainForChapterTransition(void);
+#endif
 void ChapterChangeUnitCleanup(void);
 void MapMain_ResumeFromPhaseIdle(struct BMapMainProc* mapMain);
 void MapMain_ResumeFromAction(struct BMapMainProc* mapMain);
