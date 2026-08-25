@@ -1328,7 +1328,14 @@ class LoadIdentityFeatureFlagTests(unittest.TestCase):
     def test_fingerprint_features_cover_all_parsed_feature_config_keys(self):
         with tempfile.TemporaryDirectory() as tmp:
             default = self._identity(tmp)
-            custom_spell = self._identity(tmp, custom_spell_effects="1")
+            custom_spell = self._identity(
+                tmp,
+                custom_spell_effects="1",
+                asset_manifest=(
+                    ROOT / "assets" / "manifests"
+                    / "custom-spell-reference.json"
+                ),
+            )
 
         expected = {
             key.removeprefix("EXPANSION_").lower()
