@@ -513,6 +513,8 @@ non-CURRENT diversion reaches a return path before the normal menu, and
 rejects unrelated-branch and pre-classifier-start mutations. Every census and
 adversarial object runs in both default and `-DMODERN=1` forms with generated
 message IDs; continuation macros are joined before header discovery.
+The menu-entry census retains the allowed `StartSaveMenu` direct-start and
+difficulty-choice lookup relocation relations across the complete source set.
 
 The eight issue #99 rewrite records below map to [`TC-TEST-QUALITY-001`](test-cases/foundation.md#tc-test-quality-001-meaningful-test-evidence-policy-rejects-semantic-mutations) and preserve save bytes, classifier/schema, and scenarios.
 
