@@ -144,7 +144,7 @@ void RegisterChapterTimeAndTurnCount(struct PlaySt * play_st)
 
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
     if (hasPersistentTurn)
-        DebugToolsPhaseControl_Reset();
+        DebugToolsPhaseControl_RestorePersistentTurnAfterChapterStats();
 #endif
 }
 

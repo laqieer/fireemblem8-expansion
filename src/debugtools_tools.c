@@ -616,6 +616,19 @@ void DebugToolsPhaseControl_Reset(void)
     DebugToolsPhaseControl_RefreshProbe();
 }
 
+void DebugToolsPhaseControl_RestorePersistentTurnAfterChapterStats(void)
+{
+    while (sPhaseControlSuspendTurn.serializationDepth != 0)
+        DebugToolsPhaseControl_EndSuspendSerialization();
+
+    if (!sPhaseControlSuspendTurn.hasOriginalTurn)
+        return;
+
+    gPlaySt.chapterTurnNumber = sPhaseControlSuspendTurn.originalTurn;
+    sPhaseControlSuspendTurn.hasOriginalTurn = FALSE;
+    DebugToolsPhaseControl_RefreshProbe();
+}
+
 void DebugToolsPhaseControl_Sample(void)
 {
     DebugToolsPhaseControl_RefreshProbe();

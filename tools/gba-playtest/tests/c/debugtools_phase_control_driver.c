@@ -1,8 +1,10 @@
 #include "global.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "agb_sram.h"
 #include "bm.h"
 #include "bmio.h"
 #include "bmmind.h"
@@ -17,7 +19,9 @@
 #include "hardware.h"
 #include "mu.h"
 #include "playerphase.h"
+#include "sram-layout.h"
 #include "uimenu.h"
+#include "worldmap.h"
 
 #define CHECK(condition, message) \
     do \
@@ -84,9 +88,15 @@ static int sChapterStatsStartMapCount;
 static int sChapterStatsCleanupCount;
 static int sChapterStatsRnCount;
 static u16 sChapterStatsStoredRn[3];
+static struct GameSaveBlock sGameSave;
+static struct GlobalSaveInfo sGlobalSaveInfo;
+static struct CharacterData sGameSaveCharacter;
+static struct ClassData sGameSaveClass;
 
 extern struct ChapterStats gChapterStats[WIN_ARRAY_NUM];
 u16 gGmMonsterRnState[3];
+struct Unit gUnitArrayBlue[62];
+struct GMapData gGMData;
 
 void PlayerPhase_MainIdle(ProcPtr proc)
 {
@@ -342,6 +352,77 @@ void StoreRNState(u16* seeds)
     memcpy(sChapterStatsStoredRn, seeds, sizeof(sChapterStatsStoredRn));
 }
 
+void* GetSaveWriteAddr(int index)
+{
+    (void)index;
+    return &sGameSave;
+}
+
+u32 WriteAndVerifySramFast(void const* src, void* dest, u32 size)
+{
+    memcpy(dest, src, size);
+    return 0;
+}
+
+void WriteSaveBlockInfo(struct SaveBlockInfo* info, int index)
+{
+    (void)info;
+    (void)index;
+}
+
+bool ReadGlobalSaveInfo(struct GlobalSaveInfo* info)
+{
+    *info = sGlobalSaveInfo;
+    return TRUE;
+}
+
+void WriteGlobalSaveInfo(struct GlobalSaveInfo* info)
+{
+    sGlobalSaveInfo = *info;
+}
+
+void WriteGlobalSaveInfoNoChecksum(struct GlobalSaveInfo* info)
+{
+    sGlobalSaveInfo = *info;
+}
+
+void SGM_SetCharacterKnown(s32 characterId, struct GlobalSaveInfo* info)
+{
+    (void)characterId;
+    (void)info;
+}
+
+void WriteSupplyItems(void* sramDest)
+{
+    memset(sramDest, 0, GAMESAVE_SIZE_SUPPLY);
+}
+
+void WritePermanentFlags(void* sramDest)
+{
+    memset(sramDest, 0, GAMESAVE_SIZE_PERMANENTFLAGS);
+}
+
+void WriteWorldMapStuff(void* sramDest, void* source)
+{
+    (void)source;
+    memset(sramDest, 0, sizeof(sGameSave.wmStuff));
+}
+
+void SaveDungeonRecords(struct Dungeon* dungeon)
+{
+    memset(dungeon, 0, sizeof(sGameSave.dungeons));
+}
+
+void StoreGMMonsterRnState(void* sramDest)
+{
+    memset(sramDest, 0, sizeof(u32) * 2);
+}
+
+void ClearUnit(struct Unit* unit)
+{
+    memset(unit, 0, sizeof(*unit));
+}
+
 void DecayTraps(void)
 {
     sTrapDecayCount++;
@@ -389,6 +470,21 @@ static void ResetHarness(void)
     memset(sChapterStatsStoredRn, 0, sizeof(sChapterStatsStoredRn));
     memset(gGmMonsterRnState, 0, sizeof(gGmMonsterRnState));
     memset(gChapterStats, 0, sizeof(gChapterStats));
+    memset(&sGameSave, 0, sizeof(sGameSave));
+    memset(&sGlobalSaveInfo, 0, sizeof(sGlobalSaveInfo));
+    memset(&sGameSaveCharacter, 0, sizeof(sGameSaveCharacter));
+    memset(&sGameSaveClass, 0, sizeof(sGameSaveClass));
+    sGameSaveClass.number = 1;
+    memset(gUnitArrayBlue, 0, sizeof(gUnitArrayBlue));
+    for (sChapterStatsRnCount = 0;
+        sChapterStatsRnCount < 62;
+        sChapterStatsRnCount++)
+    {
+        gUnitArrayBlue[sChapterStatsRnCount].pCharacterData =
+            &sGameSaveCharacter;
+        gUnitArrayBlue[sChapterStatsRnCount].pClassData = &sGameSaveClass;
+    }
+    sChapterStatsRnCount = 0;
     gActiveUnit = NULL;
     memset(&sActiveUnit, 0, sizeof(sActiveUnit));
     memset(&sActiveMu, 0, sizeof(sActiveMu));
@@ -530,8 +626,26 @@ static int CheckChapterStatsSaveBytes(int expectedTurn, int expectedChapter)
           "chapter statistics must retain the persistent turn, not the live override");
     CHECK(savedWord == expectedWord,
           "the packed chapter-stat save bytes must encode the persistent turn");
+    CHECK(gPlaySt.chapterTurnNumber == expectedTurn,
+          "chapter completion must restore the natural turn before ordinary saves");
     CHECK(!DebugToolsPhaseControl_GetSerializedSuspendTurn(&retainedTurn),
           "the retained turn must clear only after chapter-stat registration");
+    return 0;
+}
+
+static int CheckPostChapterGameSaveBytes(int expectedTurn)
+{
+    u16 savedTurn;
+
+    WriteGameSave(SAVE_ID_GAME0);
+    memcpy(
+        &savedTurn,
+        (u8*)&sGameSave
+            + offsetof(struct GameSaveBlock, playSt)
+            + offsetof(struct PlaySt, chapterTurnNumber),
+        sizeof(savedTurn));
+    CHECK(savedTurn == expectedTurn,
+          "the real post-chapter game-save bytes must retain the natural turn");
     return 0;
 }
 
@@ -575,6 +689,9 @@ static int TestChapterStatsPersistentTurn(void)
               "chapter-stat override registration path");
         CHECK(CheckChapterStatsSaveBytes(6, chapter) == 0,
               "persistent chapter-stat save bytes");
+        if (path == 2)
+            CHECK(CheckPostChapterGameSaveBytes(6) == 0,
+                  "post-switch persistent game-save bytes");
 
         ResetHarness();
         gPlaySt.chapterIndex = (u8)chapter;
@@ -583,6 +700,9 @@ static int TestChapterStatsPersistentTurn(void)
               "natural chapter-stat registration path");
         CHECK(CheckChapterStatsSaveBytes(7, chapter) == 0,
               "natural chapter-stat save-byte negative control");
+        if (path == 2)
+            CHECK(CheckPostChapterGameSaveBytes(7) == 0,
+                  "post-switch natural game-save negative control");
     }
 
     return 0;

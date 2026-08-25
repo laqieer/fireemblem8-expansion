@@ -16,6 +16,7 @@ TOOLS_SOURCE = ROOT / "src" / "debugtools_tools.c"
 BM_SOURCE = ROOT / "src" / "bm.c"
 BMIO_SOURCE = ROOT / "src" / "bmio.c"
 CHAPTER_STATS_SOURCE = ROOT / "src" / "bmsave-bwl.c"
+GAME_SAVE_SOURCE = ROOT / "src" / "bmsave.c"
 GAMECONTROL_SOURCE = ROOT / "src" / "gamecontrol.c"
 REGISTRY_SOURCE = ROOT / "src" / "debugtools_registry.c"
 AUTOPLAY_SOURCE = ROOT / "src" / "expansion_autoplay.c"
@@ -144,6 +145,7 @@ class DebugToolsPhaseControlHostTests(unittest.TestCase):
                 (BM_SOURCE, "bm.o"),
                 (BMIO_SOURCE, "bmio.o"),
                 (CHAPTER_STATS_SOURCE, "chapter-stats.o"),
+                (GAME_SAVE_SOURCE, "game-save.o"),
                 (GAMECONTROL_SOURCE, "gamecontrol.o"),
                 (AUTOPLAY_SOURCE, "autoplay.o"),
                 (DRIVER, "driver.o"),
@@ -154,6 +156,10 @@ class DebugToolsPhaseControlHostTests(unittest.TestCase):
                     source_defines += (
                         "gProc_BMapMain=TestBmMainScript",
                         "ProcScr_CamMove=TestBmCamMoveScript",
+                    )
+                if source == GAME_SAVE_SOURCE:
+                    source_defines += (
+                        "WriteSuspendSave=DebugToolsPhaseControlHost_WriteSuspendSave",
                     )
                 completed = run(
                     [
@@ -177,12 +183,13 @@ class DebugToolsPhaseControlHostTests(unittest.TestCase):
                     0,
                     completed.stdout + completed.stderr,
                 )
-                if source in (BMIO_SOURCE, GAMECONTROL_SOURCE):
+                if source in (BMIO_SOURCE, GAME_SAVE_SOURCE, GAMECONTROL_SOURCE):
                     preserved_symbols = {
                         BMIO_SOURCE: {
                             "EndBMapMain",
                             "GameCtrl_DeclareCompletedChapter",
                         },
+                        GAME_SAVE_SOURCE: {"WriteGameSave"},
                         GAMECONTROL_SOURCE: {"GameControl_ChapterSwitch"},
                     }[source]
                     symbols = run([NM, "-g", "--defined-only", str(output)])
