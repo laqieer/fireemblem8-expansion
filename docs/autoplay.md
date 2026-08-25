@@ -441,21 +441,23 @@ slots once, eliminating per-member character scans while remaining within the
 The canonical procedure is
 [`TC-AUTOPLAY-OBJECTIVE-001`](test-cases/autoplay.md#tc-autoplay-objective-001-typed-authored-objective-lifecycle).
 
-This is host/runtime-test infrastructure only:
+This is production runtime infrastructure with host/runtime test coverage:
 
-- **Dependencies:** #85's public control/telemetry contract,
+- **Dependencies:** #85/#86's public control/telemetry and bounded probe
+  contracts, the generated-data registry/chapter-bundle owner model,
   `tools/gba-playtest`, existing ELF probe bindings, libmGBA, and the
   tester-case catalog.
-- **Dependents:** accelerated-fidelity comparison (#88), later integration
-  work (#89), and strategy/batch/planner layers through their own contracts.
+- **Dependents:** none. Downstream strategy, route, batch, and planner
+  features may consume the typed status API through their own contracts.
 - **Conflicts:** none; fixed-frame scenarios and fingerprints remain valid and
   are exercised unchanged.
 - **Profiles:** generated homebrew/libmGBA host integration, modern AAPCS debug
   positive, and modern AAPCS debug/release default negatives. Linux/libmGBA
   remains the CI runtime.
 - **Save/config/data:** no save field, migration, compatibility epoch,
-  configuration identity, Autoconf/Make feature flag, generated game data, or
-  localization change.
+  configuration identity, or Autoconf/Make feature flag. Generated
+  `chapterobjectives` and `chapterbundle` data own the emitted objective
+  tables; localization remains unchanged.
 - **ROM/RAM/archival:** the modern generated objective table and evaluator add
   ROM data/code; the default table is a 12-byte sentinel and authored
   objectives are 28 bytes each. Telemetry remains a 16-byte EWRAM record with

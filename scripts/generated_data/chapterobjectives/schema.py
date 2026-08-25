@@ -415,6 +415,59 @@ def _validate_cycles(record, objectives_by_id, diagnostics):
 
 
 def _validate_protect_flag_chains(record, objectives_by_id, diagnostics):
+    adjacency = {identifier: set() for identifier in objectives_by_id}
+    for objective in objectives_by_id.values():
+        if objective.kind == "protect" and objective.completion_objective in objectives_by_id:
+            adjacency[objective.id].add(objective.completion_objective)
+            adjacency[objective.completion_objective].add(objective.id)
+
+    seen = set()
+    for identifier in sorted(adjacency):
+        if identifier in seen:
+            continue
+        component = set()
+        pending = [identifier]
+        while pending:
+            current = pending.pop()
+            if current in component:
+                continue
+            component.add(current)
+            pending.extend(adjacency[current] - component)
+        seen.update(component)
+
+        semantic_flags = []
+        for target_id in sorted(component):
+            target = objectives_by_id[target_id]
+            if target.kind == "event_flag" and target.event_flag is not None:
+                semantic_flags.append(
+                    (target, target.event_flag, "eventFlag", "event completion")
+                )
+            if target.kind in ("protect", "hold_until_turn") and target.failure_flag is not None:
+                semantic_flags.append(
+                    (target, target.failure_flag, "failureFlag", "terminal failure")
+                )
+            if target.kind == "protect" and target.completion_flag is not None:
+                semantic_flags.append(
+                    (target, target.completion_flag, "completionFlag", "terminal success")
+                )
+
+        for source_id in sorted(component):
+            source = objectives_by_id[source_id]
+            if source.deactivation_flag is None:
+                continue
+            source_ref = "chapters[symbol={}].objectives[id={}]".format(record.symbol, source.id)
+            for target, flag, field, outcome in semantic_flags:
+                if source is target or source.deactivation_flag != flag:
+                    continue
+                diagnostics.add(
+                    _err(
+                        "deactivationFlag '{}' aliases objectives[id={}] {} and can suppress {}".format(
+                            source.deactivation_flag, target.id, field, outcome
+                        ),
+                        source.deactivation_flag_loc, source_ref + ".deactivationFlag",
+                    )
+                )
+
     for objective in objectives_by_id.values():
         if objective.kind != "protect":
             continue
