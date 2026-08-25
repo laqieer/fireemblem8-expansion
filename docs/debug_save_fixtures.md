@@ -124,7 +124,7 @@ written to persistent storage.
 - No SRAM/IWRAM allocation and no heap allocation.
 - The existing 32 KiB overlay is reused; persistent state/probe remains within
   the accepted 256-byte cap.
-- Expansion catalog IDs 63-76 provide all source, preview, confirmation, and
+- Expansion catalog IDs 121-134 provide all source, preview, confirmation, and
   status labels for supported locales.
 
 ## Validation
