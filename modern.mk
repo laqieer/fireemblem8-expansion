@@ -437,10 +437,10 @@ MODERN_LOCALIZATION_CATALOG_C := $(MODERN_LOCALIZATION_GENERATED_DIR)/expansion_
 MODERN_LOCALIZATION_MSG_IDS_H := $(MODERN_LOCALIZATION_GENERATED_DIR)/expansion_msg_ids.h
 MODERN_LOCALIZATION_BUDGET_JSON := $(MODERN_LOCALIZATION_GENERATED_DIR)/budget.json
 MODERN_LOCALIZATION_EMISSION_PROFILE := $(if $(filter debug,$(MODERN_CONFIG)),debug,release)
-# Kept only as a generator-backed compatibility target for dependency files
-# written before catalog payloads became profile-specific. New objects depend
-# on MODERN_LOCALIZATION_MSG_IDS_H above; the stable-ID header here is safe
-# because it never filters debug-only IDs.
+# Kept only as an atomically published compatibility header for dependency
+# files written before catalog payloads became profile-specific. New objects
+# depend on MODERN_LOCALIZATION_MSG_IDS_H above; the stable-ID header here is
+# safe because it never filters debug-only IDs.
 MODERN_LOCALIZATION_LEGACY_GENERATED_DIR := $(MODERN_BUILD_ROOT)/expansion-localization/generated
 MODERN_LOCALIZATION_LEGACY_MSG_IDS_H := $(MODERN_LOCALIZATION_LEGACY_GENERATED_DIR)/expansion_msg_ids.h
 
@@ -2130,14 +2130,23 @@ $(MODERN_LOCALIZATION_CATALOG_C) $(MODERN_LOCALIZATION_MSG_IDS_H) $(MODERN_LOCAL
 		--out-dir "$(MODERN_LOCALIZATION_GENERATED_DIR)" \
 		--emission-profile "$(MODERN_LOCALIZATION_EMISSION_PROFILE)"
 
-# Old compiler dependency files can name the former shared header path. Keep
-# that path buildable with the stable-ID debug profile, without allowing it to
-# supply a profile-specific catalog object to a new build.
-$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H): FORCE_MODERN_LOCALIZATION
-	@mkdir -p "$(MODERN_LOCALIZATION_LEGACY_GENERATED_DIR)"
-	@python3 -m scripts.localization.cli generate \
-		--out-dir "$(MODERN_LOCALIZATION_LEGACY_GENERATED_DIR)" \
-		--emission-profile debug
+# Old compiler dependency files can name the former shared header path. Build
+# this invocation's private profile output first, then publish only the stable
+# header. The unique temporary path plus compare-and-rename avoids torn reads
+# or profile contamination when stale debug/release dependency files rebuild
+# concurrently in separate Make processes.
+$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H): $(MODERN_LOCALIZATION_MSG_IDS_H)
+	@set -eu; \
+	mkdir -p "$(MODERN_LOCALIZATION_LEGACY_GENERATED_DIR)"; \
+	tmp="$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H).tmp.$$$$"; \
+	trap 'rm -f "$$tmp"' EXIT HUP INT TERM; \
+	if test -f "$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H)" \
+		&& cmp -s "$(MODERN_LOCALIZATION_MSG_IDS_H)" "$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H)"; then \
+		:; \
+	else \
+		cp "$(MODERN_LOCALIZATION_MSG_IDS_H)" "$$tmp"; \
+		mv -f "$$tmp" "$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H)"; \
+	fi
 
 # Issue #18 sprint 3: ordinary compiles are not otherwise made to wait for
 # expansion_msg_ids.h -- only the synthetic expansion_locale-catalog.o

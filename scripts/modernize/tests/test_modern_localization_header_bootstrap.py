@@ -243,6 +243,75 @@ class ModernLocalizationHeaderBootstrapTests(unittest.TestCase):
             self.skipTest("modern toolchain not available")
         self._run_real_isolated_build("release")
 
+    def test_parallel_profile_legacy_header_publication_is_atomic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            iso_root = Path(tmp) / "iso-build"
+            legacy_dir = iso_root / "expansion-localization" / "generated"
+            legacy_header = legacy_dir / "expansion_msg_ids.h"
+            profile_headers = {
+                config: (
+                    iso_root
+                    / "expansion-localization"
+                    / config
+                    / "generated"
+                    / "expansion_msg_ids.h"
+                )
+                for config in MODERN_CONFIGS
+            }
+            profile_catalogs = {
+                config: header.with_name("expansion_locale_catalog.c")
+                for config, header in profile_headers.items()
+            }
+            profile_budgets = {
+                config: header.with_name("budget.json")
+                for config, header in profile_headers.items()
+            }
+            processes = [
+                subprocess.Popen(
+                    [
+                        "make",
+                        "--no-print-directory",
+                        str(legacy_header),
+                        f"MODERN_CONFIG={config}",
+                        "MODERN_ABI=aapcs",
+                        f"MODERN_BUILD_ROOT={iso_root}",
+                    ],
+                    cwd=ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                )
+                for config in MODERN_CONFIGS
+            ]
+            outputs = [process.communicate(timeout=120) for process in processes]
+
+            for config, process, (output, _stderr) in zip(
+                MODERN_CONFIGS, processes, outputs
+            ):
+                self.assertEqual(process.returncode, 0, f"{config}:\n{output}")
+                self._assert_no_missing_rule(output)
+                self.assertTrue(profile_headers[config].is_file())
+                self.assertTrue(profile_catalogs[config].is_file())
+                self.assertTrue(profile_budgets[config].is_file())
+
+            debug_catalog = profile_catalogs["debug"].read_text(encoding="utf-8")
+            release_catalog = profile_catalogs["release"].read_text(encoding="utf-8")
+            legacy_bytes = legacy_header.read_bytes()
+            self.assertEqual(legacy_bytes, profile_headers["debug"].read_bytes())
+            self.assertEqual(legacy_bytes, profile_headers["release"].read_bytes())
+            self.assertIn("#ifndef GUARD_EXPANSION_MSG_IDS_H", legacy_bytes.decode())
+            self.assertIn("#define EXP_MSG_DEBUG_CONFIRM_TURN_INCREMENT 121u",
+                          legacy_bytes.decode())
+            self.assertIn("    121u,", debug_catalog)
+            self.assertNotIn("    121u,", release_catalog)
+            self.assertFalse((legacy_dir / "expansion_locale_catalog.c").exists())
+            self.assertFalse((legacy_dir / "budget.json").exists())
+            self.assertEqual(
+                list(legacy_dir.glob("expansion_msg_ids.h.tmp.*")),
+                [],
+                "atomic legacy publication must clean unique temporary files",
+            )
+
 
 def _libmgba_available():
     """Whether tools/gba-playtest/backend.c actually links against a real
