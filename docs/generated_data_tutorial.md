@@ -376,7 +376,7 @@ make generated-data-ch2-check
 
 Generated C is linked only by the modern framework. It emits a 12-byte bundle
 record per authored chapter, 12 bytes per AI group plus one byte per member,
-and 32 bytes per objective; the default empty table contains only its
+and 28 bytes per objective; the default empty table contains only its
 12-byte sentinel. Runtime state is one 16-byte EWRAM telemetry record, never
 save data. Each authored telemetry refresh uses a 1 KiB stack unit index and
 scans the 255 unit slots once, replacing per-member character scans while

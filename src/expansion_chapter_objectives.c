@@ -9,6 +9,7 @@
 struct ExpansionChapterObjectiveTelemetry EWRAM_DATA
     gExpansionChapterObjectiveTelemetry = { 0 };
 static bool8 EWRAM_DATA sExpansionChapterObjectivesReady = FALSE;
+static bool8 EWRAM_DATA sExpansionChapterObjectivesMapChangePending = FALSE;
 
 struct ObjectiveResult
 {
@@ -465,6 +466,7 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
 void ExpansionChapterObjectives_ResetTelemetry(void)
 {
     sExpansionChapterObjectivesReady = FALSE;
+    sExpansionChapterObjectivesMapChangePending = FALSE;
     gExpansionChapterObjectiveTelemetry.objectiveId = 0;
     gExpansionChapterObjectiveTelemetry.state = EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
     gExpansionChapterObjectiveTelemetry.progress = 0;
@@ -474,10 +476,29 @@ void ExpansionChapterObjectives_ResetTelemetry(void)
 void ExpansionChapterObjectives_OnBeginningEventsComplete(void)
 {
     sExpansionChapterObjectivesReady = TRUE;
+    sExpansionChapterObjectivesMapChangePending = FALSE;
     gExpansionChapterObjectiveTelemetry.objectiveId = 0;
     gExpansionChapterObjectiveTelemetry.state = EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
     gExpansionChapterObjectiveTelemetry.progress = 0;
     gExpansionChapterObjectiveTelemetry.activeCount = 0;
+}
+
+void ExpansionChapterObjectives_OnMapChangeStarted(void)
+{
+    sExpansionChapterObjectivesReady = FALSE;
+    sExpansionChapterObjectivesMapChangePending = TRUE;
+    gExpansionChapterObjectiveTelemetry.objectiveId = 0;
+    gExpansionChapterObjectiveTelemetry.state = EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
+    gExpansionChapterObjectiveTelemetry.progress = 0;
+    gExpansionChapterObjectiveTelemetry.activeCount = 0;
+}
+
+void ExpansionChapterObjectives_OnMapChangeEventsComplete(void)
+{
+    if (!sExpansionChapterObjectivesMapChangePending)
+        return;
+
+    ExpansionChapterObjectives_OnBeginningEventsComplete();
 }
 
 void ExpansionChapterObjectives_RefreshTelemetry(void)
