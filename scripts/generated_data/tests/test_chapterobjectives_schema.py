@@ -398,7 +398,7 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             },
         )
         self.assertIn(
-            "protect objective requires protectedCharacter, completionObjective, and failureFlag",
+            "protect objective requires protectedCharacter, completionObjective, failureFlag, and completionFlag",
             diagnostics.render(),
         )
 
@@ -415,6 +415,39 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
         )
         self.assertIn(
             "duplicate objective failureFlag 'EVFLAG_5'",
+            diagnostics.render(),
+        )
+
+        records, diagnostics = _validate("valid.json")
+        objectives = {objective.id: objective for objective in records[0].objectives}
+        objectives["OBJECTIVE_FIXTURE_PROTECT"].completion_flag = None
+        schema.validate(
+            records,
+            diagnostics,
+            {
+                "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json")),
+                "chapterbundle": chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json")),
+            },
+        )
+        self.assertIn(
+            "protect objective requires protectedCharacter, completionObjective, failureFlag, and completionFlag",
+            diagnostics.render(),
+        )
+
+        records, diagnostics = _validate("valid.json")
+        duplicate = copy.deepcopy(records[0].objectives[-1])
+        duplicate.id = "OBJECTIVE_FIXTURE_PROTECT_DUPLICATE"
+        records[0].objectives.append(duplicate)
+        schema.validate(
+            records,
+            diagnostics,
+            {
+                "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json")),
+                "chapterbundle": chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json")),
+            },
+        )
+        self.assertIn(
+            "duplicate protect completionFlag 'EVFLAG_WIN'",
             diagnostics.render(),
         )
 

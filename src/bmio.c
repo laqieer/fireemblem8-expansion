@@ -1135,6 +1135,9 @@ void GameCtrl_StartResumedGame(struct GameCtrlProc* gameCtrl) {
     gBmSt.just_resumed = true;
 
     mapMain = StartBMapMain(gameCtrl);
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
+    ExpansionChapterObjectives_OnBeginningEventsComplete();
+#endif
 
     gBmSt.camera.x = GetCameraCenteredX(16 * gBmSt.playerCursor.x);
     gBmSt.camera.y = GetCameraCenteredY(16 * gBmSt.playerCursor.y);

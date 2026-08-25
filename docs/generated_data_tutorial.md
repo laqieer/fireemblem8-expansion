@@ -352,12 +352,16 @@ mismatch stops before an AI action rather than falling back silently.
 or clear those values only through the existing `helperScripts` `flag.set` /
 `flag.clear` operations or established event scripts; objectives introduce no
 event language, chapter manifest, router, or hidden runtime activation bit.
-`protect` and `hold_until_turn` each require a distinct existing
-`failureFlag`. `protect` latches a protected member's death, missing, or
-rescued state only while its completion objective remains pending; once that
-completion succeeds, success stays terminal. `hold_until_turn` sets its flag
-on the first violated hold condition. Both reconstruct through Suspend/Resume
-without new save data.
+`protect` requires distinct existing `failureFlag` and `completionFlag`
+values. It latches a protected member's death, missing, or rescued state only
+while its completion objective remains pending; its first completion success
+latches `completionFlag`, so success stays terminal even if a dynamic
+completion condition later regresses. `hold_until_turn` requires its own
+`failureFlag`; once its deadline arrives without that latch it is terminal
+success, including after later departure. Both reconstruct through
+Suspend/Resume without new save data. State-mutating evaluation starts only
+after the engine's beginning events complete, so beginning-event unit loads
+cannot create setup-time failure latches.
 For example, a continuous hold uses
 `"failureFlag": "EVFLAG_PROJECT_ESCORT_FAILED"` alongside its `group`,
 `area`, and `untilTurn`; the flag must be a project-defined existing
@@ -400,7 +404,7 @@ make generated-data-ch2-check
 
 Generated C is linked only by the modern framework. It emits a 12-byte bundle
 record per authored chapter, 12 bytes per AI group plus one byte per member,
-and 28 bytes per objective; the default empty table contains only its
+and 32 bytes per objective; the default empty table contains only its
 12-byte sentinel. Runtime state is one 16-byte EWRAM telemetry record, never
 save data. Each authored telemetry refresh uses a 1 KiB stack unit index and
 scans the 255 unit slots once, replacing per-member character scans while

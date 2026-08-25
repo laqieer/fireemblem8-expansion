@@ -75,11 +75,47 @@ static void ResetFixture(void)
     sGetUnitCallCount = 0;
     sGetUnitFromCharIdCallCount = 0;
     ExpansionChapterObjectives_ResetTelemetry();
+    ExpansionChapterObjectives_OnBeginningEventsComplete();
+    ExpansionChapterObjectives_OnBeginningEventsComplete();
 }
 
 int main(void)
 {
     u32 progress;
+
+    ResetFixture();
+    ExpansionChapterObjectives_ResetTelemetry();
+    sEirika.pCharacterData = NULL;
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_INACTIVE
+            && !CheckFlag(EVFLAG_DEFEAT_BOSS),
+        "setup evaluation must not latch protect failure before beginning events"
+    );
+    sEirika.pCharacterData = &sEirikaData;
+    ExpansionChapterObjectives_OnBeginningEventsComplete();
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_PENDING,
+        "a beginning-event unit must enter protect pending without a failure latch"
+    );
+
+    ResetFixture();
+    ExpansionChapterObjectives_ResetTelemetry();
+    sEirika.pCharacterData = NULL;
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_INACTIVE
+            && !CheckFlag(EVFLAG_DEFEAT_BOSS),
+        "setup evaluation must not latch protect failure before beginning events"
+    );
+    sEirika.pCharacterData = &sEirikaData;
+    ExpansionChapterObjectives_OnBeginningEventsComplete();
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_PENDING,
+        "a unit loaded by beginning events must start protect pending without a failure latch"
+    );
 
     ResetFixture();
     CHECK(
@@ -147,6 +183,24 @@ int main(void)
             && progress == 1,
         "hold objective must complete at its bounded turn"
     );
+    sEirika.xPos = 63;
+    sEirika.yPos = 63;
+    ExpansionChapterObjectives_ResetTelemetry();
+    ExpansionChapterObjectives_OnBeginningEventsComplete();
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(3), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_SUCCESS,
+        "deadline hold success must survive departure and reconstruction"
+    );
+    sEirika.xPos = 63;
+    sEirika.yPos = 63;
+    ExpansionChapterObjectives_ResetTelemetry();
+    ExpansionChapterObjectives_OnBeginningEventsComplete();
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(3), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_SUCCESS,
+        "deadline hold success must remain terminal after departure and reconstruction"
+    );
 
     ResetFixture();
     sEirika.xPos = 63;
@@ -179,6 +233,7 @@ int main(void)
     );
     sEirika.state = US_NONE;
     ExpansionChapterObjectives_ResetTelemetry();
+    ExpansionChapterObjectives_OnBeginningEventsComplete();
     CHECK(
         ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
             == EXPANSION_CHAPTER_OBJECTIVE_FAILURE,
@@ -207,6 +262,18 @@ int main(void)
             == EXPANSION_CHAPTER_OBJECTIVE_SUCCESS,
         "completion success must remain terminal when the protected unit dies later"
     );
+    sFlags[EVFLAG_BATTLE_QUOTES] = false;
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_SUCCESS,
+        "protect completion flag must survive later completion regression"
+    );
+    sFlags[EVFLAG_BATTLE_QUOTES] = false;
+    CHECK(
+        ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_SUCCESS,
+        "protect completion flag must survive a later reach or event regression"
+    );
 
     ResetFixture();
     sFlags[EVFLAG_BATTLE_QUOTES] = true;
@@ -226,6 +293,7 @@ int main(void)
     );
 
     ExpansionChapterObjectives_ResetTelemetry();
+    ExpansionChapterObjectives_OnBeginningEventsComplete();
     CHECK(
         gExpansionChapterObjectiveTelemetry.objectiveId == 0
             && gExpansionChapterObjectiveTelemetry.state == EXPANSION_CHAPTER_OBJECTIVE_INACTIVE
