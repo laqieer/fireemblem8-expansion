@@ -334,6 +334,10 @@ success, including after later departure. Both reconstruct through
 Suspend/Resume without new save data. State-mutating evaluation starts only
 after the engine's beginning events complete, so beginning-event unit loads
 cannot create setup-time failure latches.
+Across a connected protect completion chain, every `deactivationFlag` must
+also differ from every referenced `eventFlag`, `failureFlag`, and
+`completionFlag`; otherwise it could return inactive before a terminal
+completion or failure latch is observed.
 For example, a continuous hold uses
 `"failureFlag": "EVFLAG_PROJECT_ESCORT_FAILED"` alongside its `group`,
 `area`, and `untilTurn`; the flag must be a project-defined existing

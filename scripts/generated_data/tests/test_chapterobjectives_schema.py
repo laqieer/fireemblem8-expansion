@@ -23,10 +23,17 @@ def _validate(name):
     records = schema.load_records(objective_fixture(name))
     diagnostics = DiagnosticCollector()
     units = units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json"))
-    bundle_name = (
-        "symbol_collision_bundles" if name == "symbol_collision.json" else "ch2_bundle.json"
-    )
-    chapter_bundle = chapterbundle_schema.load_records(objective_fixture(bundle_name))
+    if name == "symbol_collision.json":
+        chapter_bundle = chapterbundle_schema.load_records(objective_fixture("symbol_collision_bundles"))
+    else:
+        chapter_bundle = chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json"))
+        if name in (
+            "deactivation_event_alias.json",
+            "deactivation_chain_aliases.json",
+            "nested_disjoint.json",
+        ):
+            chapter_bundle[0].chapter_objectives.source = objective_fixture(name)
+            chapter_bundle[0].chapter_objectives.symbols = [records[0].symbol]
     schema.validate(records, diagnostics, {"units": units, "chapterbundle": chapter_bundle})
     return records, diagnostics
 
@@ -504,6 +511,54 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             "protect failureFlag 'EVFLAG_BATTLE_QUOTES' aliases objectives[id=OBJECTIVE_FIXTURE_EVENT] eventFlag",
             diagnostics.render(),
         )
+
+    def test_protect_chain_deactivation_flags_are_disjoint_or_fail_closed(self):
+        _, diagnostics = _validate("nested_disjoint.json")
+        self.assertTrue(diagnostics.ok, diagnostics.render())
+
+        records, diagnostics = _validate("deactivation_event_alias.json")
+        parent = records[0].objectives[1]
+        event_error = next(
+            error for error in diagnostics.errors
+            if error.message
+            == "deactivationFlag 'EVFLAG_BATTLE_QUOTES' aliases "
+            "objectives[id=OBJECTIVE_DEACTIVATION_EVENT] eventFlag and can suppress event completion"
+        )
+        self.assertEqual(event_error.location, parent.deactivation_flag_loc)
+        self.assertEqual(
+            event_error.reference_path,
+            "chapters[symbol=ChapterObjectives_DeactivationEventAlias]."
+            "objectives[id=OBJECTIVE_DEACTIVATION_PROTECT].deactivationFlag",
+        )
+
+        records, diagnostics = _validate("deactivation_chain_aliases.json")
+        objectives = {objective.id: objective for objective in records[0].objectives}
+        expected = (
+            (
+                "OBJECTIVE_CHAIN_ROOT",
+                "deactivationFlag 'EVFLAG_5' aliases objectives[id=OBJECTIVE_CHAIN_CHILD] "
+                "failureFlag and can suppress terminal failure",
+            ),
+            (
+                "OBJECTIVE_CHAIN_CHILD",
+                "deactivationFlag 'EVFLAG_DEFEAT_BOSS' aliases objectives[id=OBJECTIVE_CHAIN_ROOT] "
+                "failureFlag and can suppress terminal failure",
+            ),
+            (
+                "OBJECTIVE_CHAIN_SIBLING",
+                "deactivationFlag 'EVFLAG_WIN' aliases objectives[id=OBJECTIVE_CHAIN_ROOT] "
+                "completionFlag and can suppress terminal success",
+            ),
+        )
+        for identifier, message in expected:
+            with self.subTest(identifier=identifier):
+                error = next(error for error in diagnostics.errors if error.message == message)
+                self.assertEqual(error.location, objectives[identifier].deactivation_flag_loc)
+                self.assertEqual(
+                    error.reference_path,
+                    "chapters[symbol=ChapterObjectives_DeactivationChainAliases]."
+                    "objectives[id={}].deactivationFlag".format(identifier),
+                )
 
     def test_protect_objective_requires_a_validated_chapter_unit_group(self):
         records, diagnostics = _validate("valid.json")

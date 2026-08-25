@@ -1,0 +1,35 @@
+{
+  "$schema": "fe8.chapterobjectives.v1",
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "ChapterObjectives_DeactivationEventAlias",
+      "aiGroups": [],
+      "objectives": [
+        {
+          "id": "OBJECTIVE_DEACTIVATION_EVENT",
+          "kind": "event_flag",
+          "eventFlag": "EVFLAG_BATTLE_QUOTES"
+        },
+        {
+          "id": "OBJECTIVE_DEACTIVATION_PROTECT",
+          "kind": "protect",
+          "protectedCharacter": "CHARACTER_EIRIKA",
+          "completionObjective": "OBJECTIVE_DEACTIVATION_EVENT",
+          "deactivationFlag": "EVFLAG_BATTLE_QUOTES",
+          "failureFlag": "EVFLAG_DEFEAT_BOSS",
+          "completionFlag": "EVFLAG_WIN"
+        }
+      ],
+      "dependencies": {
+        "characters": ["CHARACTER_EIRIKA"],
+        "eventFlags": [
+          "EVFLAG_BATTLE_QUOTES",
+          "EVFLAG_DEFEAT_BOSS",
+          "EVFLAG_WIN"
+        ],
+        "unitGroups": ["UnitDef_Event_Ch2Ally"]
+      }
+    }
+  ]
+}
