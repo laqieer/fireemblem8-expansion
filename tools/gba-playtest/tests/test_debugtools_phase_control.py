@@ -527,6 +527,111 @@ class DebugToolsPhaseControlArmTests(unittest.TestCase):
                             r"R_ARM_THM_CALL\s+EndBMapMain",
                         )
 
+    def test_phase_control_script_label_is_debug_only(self):
+        if ARM_CC is None or ARM_NM is None or ARM_OBJDUMP is None:
+            self.skipTest("ARM compiler/binutils unavailable")
+
+        profiles = {
+            "debug": (
+                "FE8_EXPANSION_MODERN_BUILD=1",
+                "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+            ),
+            "default": ("FE8_EXPANSION_MODERN_BUILD=1",),
+            "release": (
+                "FE8_EXPANSION_MODERN_BUILD=1",
+                "NDEBUG",
+            ),
+            "archival": (
+                "FE8_EXPANSION_MODERN_BUILD=1",
+                "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                "FE8_ARCHIVAL_BUILD=1",
+            ),
+        }
+
+        BUILD.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=BUILD) as temporary:
+            work = Path(temporary)
+            write_message_header(work)
+            sizes = {}
+            for profile, defines in profiles.items():
+                object_path = work / f"bm-{profile}.o"
+                linked_path = work / f"bm-{profile}-linked.o"
+                completed = run(
+                    [
+                        ARM_CC,
+                        "-mcpu=arm7tdmi",
+                        "-mthumb",
+                        "-mthumb-interwork",
+                        "-mabi=aapcs",
+                        "-std=gnu89",
+                        "-ffreestanding",
+                        "-fno-builtin",
+                        "-ffunction-sections",
+                        "-fdata-sections",
+                        "-I",
+                        str(work),
+                        *INCLUDES,
+                        *[f"-D{define}" for define in defines],
+                        "-c",
+                        str(BM_SOURCE),
+                        "-o",
+                        str(object_path),
+                    ]
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    completed.stdout + completed.stderr,
+                )
+                completed = run(
+                    [
+                        ARM_CC,
+                        "-nostdlib",
+                        "-r",
+                        str(object_path),
+                        "-o",
+                        str(linked_path),
+                    ]
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    completed.stdout + completed.stderr,
+                )
+                symbols = run([ARM_NM, "-S", str(linked_path)])
+                self.assertEqual(symbols.returncode, 0, symbols.stderr)
+                match = re.search(
+                    r"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+[A-Za-z]\s+"
+                    r"gProc_BMapMain$",
+                    symbols.stdout,
+                    flags=re.MULTILINE,
+                )
+                self.assertIsNotNone(match, symbols.stdout)
+                sizes[profile] = int(match.group(1), 16)
+                symbols_by_section = run([ARM_OBJDUMP, "-t", str(linked_path)])
+                self.assertEqual(
+                    symbols_by_section.returncode,
+                    0,
+                    symbols_by_section.stderr,
+                )
+                symbol_line = next(
+                    line
+                    for line in symbols_by_section.stdout.splitlines()
+                    if line.endswith("gProc_BMapMain")
+                )
+                self.assertIn(
+                    next(
+                        field
+                        for field in symbol_line.split()
+                        if field.startswith(".")
+                    ),
+                    (".data", ".rodata"),
+                )
+
+            self.assertEqual(sizes["debug"], sizes["default"])
+            self.assertEqual(sizes["release"], sizes["archival"])
+            self.assertEqual(sizes["debug"], sizes["release"] + 8)
+
 
 class DebugToolsPhaseControlLocalizationTests(unittest.TestCase):
     def test_every_authored_locale_has_the_stable_phase_control_messages(self):

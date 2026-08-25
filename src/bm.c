@@ -51,7 +51,9 @@ s8 EWRAM_DATA sCameraAnimTable[0x100] = { 0 };
 enum
 {
     BM_MAIN_LABEL_NEXT_PHASE = 3,
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
     BM_MAIN_LABEL_TRAP_PROCESSING = 12,
+#endif
 };
 
 struct ProcCmd CONST_DATA gProc_BMapMain[] = {
@@ -112,7 +114,9 @@ PROC_LABEL(5),
     PROC_REPEAT(BmMain_StartPhase),
     PROC_START_CHILD_BLOCKING(gProcScr_BerserkCpPhase),
 
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
 PROC_LABEL(BM_MAIN_LABEL_TRAP_PROCESSING),
+#endif
     PROC_CALL_2(BmMain_UpdateTraps),
 
     PROC_GOTO(3),

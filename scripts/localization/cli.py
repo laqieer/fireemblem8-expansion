@@ -99,7 +99,7 @@ def cmd_budget(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -118,6 +118,11 @@ def main(argv=None) -> int:
     _add_source_args(budget_p)
     _add_output_args(budget_p)
 
+    return parser
+
+
+def main(argv=None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     handlers = {
