@@ -81,42 +81,49 @@ def _branch_target(operands):
 def _returns_before_next_iterator_call(instructions, start, iterator_calls):
     by_address = {address: index for index, (address, _mnemonic, _operands) in enumerate(instructions)}
     pending = [start]
-    visited = set()
-    terminated = False
+    edges, reachable, exits = {}, set(), set()
 
     while pending:
         address = pending.pop()
         if address in iterator_calls:
             return False
-        if address in visited:
+        if address in reachable:
             continue
-        visited.add(address)
+        reachable.add(address)
         index = by_address.get(address)
         if index is None:
             return False
         _address, mnemonic, operands = instructions[index]
         base = mnemonic.split(".", 1)[0]
         if base == "bx" or (base == "pop" and "pc" in operands):
-            terminated = True
+            exits.add(address)
+            edges[address] = ()
             continue
 
         fallthrough = instructions[index + 1][0] if index + 1 < len(instructions) else None
         target = _branch_target(operands)
         if base in {"bl", "blx"}:
-            if fallthrough is not None:
-                pending.append(fallthrough)
-            else:
-                return False
+            successors = (fallthrough,)
         elif base == "b" and target is not None:
-            pending.append(target)
+            successors = (target,)
         elif base.startswith("b") and target is not None:
-            pending.extend(value for value in (target, fallthrough) if value is not None)
+            successors = (target, fallthrough)
         elif fallthrough is not None:
-            pending.append(fallthrough)
+            successors = (fallthrough,)
         else:
             return False
+        edges[address] = tuple(successor for successor in successors if successor is not None)
+        pending.extend(edges[address])
 
-    return terminated
+    can_exit = set(exits)
+    while True:
+        expanded = can_exit | {
+            address for address, successors in edges.items()
+            if any(successor in can_exit for successor in successors)
+        }
+        if expanded == can_exit:
+            return bool(exits) and reachable <= can_exit
+        can_exit = expanded
 
 
 def _iterator_null_paths(text):
@@ -167,12 +174,12 @@ class ProcFindNextSourceGuardTests(unittest.TestCase):
             raise unittest.SkipTest("arm-none-eabi-gcc/objdump not available")
         with tempfile.TemporaryDirectory() as tmp:
             listings = []
-            for statement in ("break;", "continue;", "if (iter) break; continue;"):
+            for statement in ("break;", "continue;", "if (*flag) break; for (;;) {}"):
                 source = Path(tmp) / f"{statement[:-1]}.c"
                 obj = source.with_suffix(".o")
                 source.write_text(
                     "extern void *Proc_FindNext(void *);\nextern void Observe(void *);\n"
-                    "int Iterator(void *iter) { for (;;) { if (Proc_FindNext(iter) == 0) "
+                    "int Iterator(void *iter, volatile int *flag) { for (;;) { if (Proc_FindNext(iter) == 0) "
                     f"{statement} Observe(iter); return 1; }} return 0; }}\n",
                     encoding="utf-8")
                 compiled = subprocess.run(
@@ -188,13 +195,13 @@ class ProcFindNextSourceGuardTests(unittest.TestCase):
 
         break_calls, break_paths = listings[0]
         continue_calls, continue_paths = listings[1]
-        mixed_calls, mixed_paths = listings[2]
+        loop_calls, loop_paths = listings[2]
         self.assertTrue(break_calls)
         self.assertEqual([exits for _address, exits in break_paths], [True])
         self.assertTrue(continue_calls)
         self.assertEqual([exits for _address, exits in continue_paths], [False])
-        self.assertTrue(mixed_calls)
-        self.assertEqual([exits for _address, exits in mixed_paths], [False])
+        self.assertTrue(loop_calls)
+        self.assertEqual([exits for _address, exits in loop_paths], [False])
 
 
 class ProcFindNextCodegenTests(unittest.TestCase):

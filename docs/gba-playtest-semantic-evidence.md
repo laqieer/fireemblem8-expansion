@@ -1,8 +1,6 @@
 # GBA playtest semantic evidence
 
-Issue [#156](https://github.com/laqieer/fireemblem8-expansion/issues/156) owns five
-`gba-playtest-runtime` records from #105; it changes no game behavior or compatibility.
-
+Issue [#156](https://github.com/laqieer/fireemblem8-expansion/issues/156) owns five #105 records without changing behavior or compatibility.
 | Audit ID | Replacement evidence | Positive control | Adversarial control |
 | --- | --- | --- | --- |
 | `test_host_only_mode.py::HostOnlyClassificationTests.test_repository_rom_paths_are_only_built_in_host_mode` | Parsed AST canonicalizes `import`/`from` host-mode aliases, folds constant/f-string/concatenated artifact suffixes, and rejects module-scope artifact I/O. | All production test modules keep repository artifacts centralized in `host_mode.py`. | Alias, `REPO_ROOT` join, `Path`, f-string, concatenation, `stat`, and `read_bytes` fixtures are discovered. |
@@ -11,7 +9,4 @@ Issue [#156](https://github.com/laqieer/fireemblem8-expansion/issues/156) owns f
 | `test_worldmap_proc_iter_null_guard.py::ProcFindNextSourceGuardTests.test_named_helpers_contain_the_guard` | Stable audit ID compiles break/continue exhausted-iterator fixtures and traverses every null successor. | The `break` fixture reaches a compiled function exit. | `continue` and mixed break/continue mutations revisit an iterator call. |
 | `test_worldmap_proc_iter_null_guard.py::ProcFindNextCodegenTests.test_release_build_can_still_leave_the_iterator_loop` | Every optimized world-map `Proc_FindNext` relocation has only null successors that reach a function exit before another iterator call. | All generated release iterator calls preserve exhausted-list behavior. | The compiled mutations prove a branch shape alone is insufficient. |
 
-`TC-TEST-QUALITY-001` governs formatting/renaming-positive and artifact,
-symbol-tool, and iterator-mutation-negative controls. This #100-dependent root
-has no feature, save, generated-data, localization, or resource conflict; a
-revert restores only these five checks and their map.
+`TC-TEST-QUALITY-001` governs all positive/refactor and negative/mutation controls; this #100-dependent root has no feature, save, generated-data, localization, or resource conflict.
