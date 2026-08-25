@@ -175,7 +175,7 @@ PROC_LABEL(19),
     PROC_YIELD,
     PROC_GOTO(LGAMECTRL_EXEC_BM),
 
-PROC_LABEL(8),
+PROC_LABEL(LGAMECTRL_RESUME_SUSPEND),
     PROC_CALL(GameControl_SetupBackdropBlend),
     PROC_CALL(GameCtrl_StartResumedGame),
     PROC_YIELD,
@@ -456,7 +456,7 @@ void GameControl_PostIntro(struct GameCtrlProc * proc)
 
             if (fixtureContinue == DEBUG_SAVE_FIXTURE_CONTINUE_SUSPEND)
             {
-                Proc_Goto(proc, 8);
+                Proc_Goto(proc, LGAMECTRL_RESUME_SUSPEND);
                 break;
             }
 
@@ -732,7 +732,7 @@ void GameControl_SwitchPostSaveMenu(struct GameCtrlProc * proc)
         return;
 
     case GAME_ACTION_4:
-        Proc_Goto(proc, 8);
+        Proc_Goto(proc, LGAMECTRL_RESUME_SUSPEND);
         return;
 
     case GAME_ACTION_5:
@@ -1017,7 +1017,7 @@ void RestartGameAndGoto8(void) {
 
     proc = Proc_Start(gProcScr_GameControl, PROC_TREE_3);
 
-    Proc_Goto(proc, 8);
+    Proc_Goto(proc, LGAMECTRL_RESUME_SUSPEND);
 
     return;
 }
