@@ -196,7 +196,7 @@ class AutoplayStrategiesRuntimeTests(unittest.TestCase):
                         )
                     )
                     self.assertEqual(strategy_ewram_bytes, 0)
-                    self.assertEqual(ewram_bytes, 16)
+                    self.assertEqual(ewram_bytes, 20)
                     self.assertLessEqual(text_bytes, 4096)
 
 

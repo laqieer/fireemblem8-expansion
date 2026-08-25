@@ -34,6 +34,9 @@
 #include "eventinfo.h"
 #include "event.h"
 #include "eventscript.h"
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
+#include "expansion_chapter_objectives.h"
+#endif
 #include "EAstdlib.h"
 #include "constants/backgrounds.h"
 #include "eventcall.h"
@@ -1933,6 +1936,9 @@ u8 Event25_ChangeMap(struct EventEngineProc * proc)
     gPlaySt.chapterIndex = chIndex;
 
     RestartBattleMap();
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
+    ExpansionChapterObjectives_OnMapChangeStarted();
+#endif
 
     gBmSt.camera.x = GetCameraCenteredX(x * 16);
     gBmSt.camera.y = GetCameraCenteredY(y * 16);

@@ -415,6 +415,59 @@ def _validate_cycles(record, objectives_by_id, diagnostics):
 
 
 def _validate_protect_flag_chains(record, objectives_by_id, diagnostics):
+    adjacency = {identifier: set() for identifier in objectives_by_id}
+    for objective in objectives_by_id.values():
+        if objective.kind == "protect" and objective.completion_objective in objectives_by_id:
+            adjacency[objective.id].add(objective.completion_objective)
+            adjacency[objective.completion_objective].add(objective.id)
+
+    seen = set()
+    for identifier in sorted(adjacency):
+        if identifier in seen:
+            continue
+        component = set()
+        pending = [identifier]
+        while pending:
+            current = pending.pop()
+            if current in component:
+                continue
+            component.add(current)
+            pending.extend(adjacency[current] - component)
+        seen.update(component)
+
+        semantic_flags = []
+        for target_id in sorted(component):
+            target = objectives_by_id[target_id]
+            if target.kind == "event_flag" and target.event_flag is not None:
+                semantic_flags.append(
+                    (target, target.event_flag, "eventFlag", "event completion")
+                )
+            if target.kind in ("protect", "hold_until_turn") and target.failure_flag is not None:
+                semantic_flags.append(
+                    (target, target.failure_flag, "failureFlag", "terminal failure")
+                )
+            if target.kind == "protect" and target.completion_flag is not None:
+                semantic_flags.append(
+                    (target, target.completion_flag, "completionFlag", "terminal success")
+                )
+
+        for source_id in sorted(component):
+            source = objectives_by_id[source_id]
+            if source.deactivation_flag is None:
+                continue
+            source_ref = "chapters[symbol={}].objectives[id={}]".format(record.symbol, source.id)
+            for target, flag, field, outcome in semantic_flags:
+                if source is target or source.deactivation_flag != flag:
+                    continue
+                diagnostics.add(
+                    _err(
+                        "deactivationFlag '{}' aliases objectives[id={}] {} and can suppress {}".format(
+                            source.deactivation_flag, target.id, field, outcome
+                        ),
+                        source.deactivation_flag_loc, source_ref + ".deactivationFlag",
+                    )
+                )
+
     for objective in objectives_by_id.values():
         if objective.kind != "protect":
             continue
@@ -599,6 +652,7 @@ def validate(records, diagnostics, dependency_records=None,
         record_ref = "chapters[symbol={}]".format(record.symbol)
         unit_groups = fallback_unit_groups
         owned_unit_groups = set()
+        owned_character_counts = {}
         map_dimensions = None
         owners = owners_by_chapter.get(record.chapter, ())
         if not owners:
@@ -655,6 +709,15 @@ def validate(records, diagnostics, dependency_records=None,
             unit_owner = chapter_bundle.tables_by_name.get("units")
             if unit_owner is not None:
                 owned_unit_groups = set(unit_owner.symbols)
+                for group_name in owned_unit_groups:
+                    source_group = unit_groups.get(group_name)
+                    if source_group is None:
+                        continue
+                    for unit in source_group.units:
+                        if isinstance(unit.char_index, str):
+                            owned_character_counts[unit.char_index] = (
+                                owned_character_counts.get(unit.char_index, 0) + 1
+                            )
 
         diagnostics.extend(validate_reference(record.chapter, chapters, record.chapter_loc,
                                                record_ref + ".chapter", kind="chapter"))
@@ -744,6 +807,15 @@ def validate(records, diagnostics, dependency_records=None,
                     validate_reference(member.character, characters, member.character_loc,
                                        member_ref + ".character", kind="character")
                 )
+                if owned_character_counts.get(member.character, 0) != 1:
+                    diagnostics.add(
+                        _err(
+                            "character '{}' resolves to {} unit definitions in the owning chapter data".format(
+                                member.character, owned_character_counts.get(member.character, 0)
+                            ),
+                            member.character_loc, member_ref + ".character",
+                        )
+                    )
                 if member.unit_group not in unit_groups:
                     diagnostics.add(
                         _err(
@@ -876,6 +948,16 @@ def validate(records, diagnostics, dependency_records=None,
                         )
                     )
                 if objective.kind == "protect":
+                    if owned_character_counts.get(objective.protected_character, 0) != 1:
+                        diagnostics.add(
+                            _err(
+                                "protectedCharacter '{}' must resolve to exactly one unit definition in the owning chapter data".format(
+                                    objective.protected_character
+                                ),
+                                objective.protected_character_loc,
+                                objective_ref + ".protectedCharacter",
+                            )
+                        )
                     character_groups = protected_character_groups.get(objective.protected_character, set())
                     if not character_groups:
                         diagnostics.add(

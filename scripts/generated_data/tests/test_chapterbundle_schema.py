@@ -76,7 +76,8 @@ def _validate(bundle_fixture, dep_overrides=None, **validate_kwargs):
     )
     kwargs.update(validate_kwargs)
     chapterbundle_schema.validate(
-        records, diagnostics, _load_dependency_records(dep_overrides), **kwargs
+        records, diagnostics, _load_dependency_records(dep_overrides),
+        use_supplied_dependencies=True, **kwargs
     )
     return records, diagnostics
 
@@ -86,6 +87,36 @@ def _messages(diagnostics):
 
 
 class ChapterBundleValidFixtureTests(unittest.TestCase):
+    def test_single_bundle_uses_declared_sources_unless_test_hook_is_explicit(self):
+        records = chapterbundle_schema.load_records(cb_fixture("valid.json"))
+        records[0].tables_by_name["units"].source = (
+            "scripts/generated_data/tests/fixtures/chapterbundle/missing.json"
+        )
+        diagnostics = DiagnosticCollector()
+        kwargs = {
+            "chapters_header": cb_fixture("chapters.h"),
+            "chapter_settings_path": cb_fixture("chapter_settings.json"),
+            "asset_table_path": cb_fixture("data_8B363C.c"),
+        }
+        chapterbundle_schema.validate(records, diagnostics, _load_dependency_records(), **kwargs)
+        self.assertTrue(
+            any(
+                error.reference_path == "bundles[chapter=CHAPTER_EL].tables.units.source"
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
+        )
+
+        diagnostics = DiagnosticCollector()
+        chapterbundle_schema.validate(
+            records,
+            diagnostics,
+            _load_dependency_records(),
+            use_supplied_dependencies=True,
+            **kwargs
+        )
+        self.assertTrue(diagnostics.ok, _messages(diagnostics))
+
     def test_valid_fixture_has_no_diagnostics(self):
         records = chapterbundle_schema.load_records(cb_fixture("valid.json"))
         records[0].chapter_objectives = chapterbundle_schema.TableRef(

@@ -20,9 +20,18 @@ FIXTURE = ROOT / "scripts" / "generated_data" / "tests" / "fixtures" / "chaptero
 BUNDLE_FIXTURE = (
     ROOT / "scripts" / "generated_data" / "tests" / "fixtures" / "chapterobjectives" / "ch2_bundle.json"
 )
+DEACTIVATION_ALIAS_FIXTURE = (
+    ROOT / "scripts" / "generated_data" / "tests" / "fixtures" / "chapterobjectives"
+    / "deactivation_event_alias.json"
+)
+DEACTIVATION_ALIAS_DRIVER = (
+    Path(__file__).resolve().parent / "c" / "expansion_chapter_objectives_deactivation_alias_driver.c"
+)
 
 import gba_playtest  # noqa: E402
 import run_chapter_objective_checks as runtime_check  # noqa: E402
+from scripts.generated_data.chapterobjectives import generate as objectives_generate  # noqa: E402
+from scripts.generated_data.chapterobjectives import schema as objectives_schema  # noqa: E402
 
 
 class ChapterObjectivesRuntimeTests(unittest.TestCase):
@@ -139,6 +148,49 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
             self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
             self.assertIn("CHAPTER_OBJECTIVES_HOST_TEST: PASS", ran.stdout)
 
+    def test_event_alias_deactivates_before_protect_completion(self):
+        if CC is None:
+            self.skipTest("no host C compiler")
+
+        records = objectives_schema.load_records(DEACTIVATION_ALIAS_FIXTURE)
+        build_root = ROOT / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            temporary_path = Path(temporary)
+            generated = temporary_path / "data_chapter_objectives.c"
+            generated.write_text(
+                objectives_generate.generate_c_source(records, DEACTIVATION_ALIAS_FIXTURE),
+                encoding="utf-8",
+            )
+            executable = temporary_path / "chapter-objectives-deactivation-alias-host"
+            compiled = subprocess.run(
+                [
+                    CC,
+                    "-std=gnu89",
+                    "-Werror=declaration-after-statement",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    "-O2",
+                    "-I",
+                    str(ROOT / "include"),
+                    "-I",
+                    str(ROOT / "include" / "generated"),
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    str(SOURCE),
+                    str(generated),
+                    str(DEACTIVATION_ALIAS_DRIVER),
+                    "-o",
+                    str(executable),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+            ran = subprocess.run([str(executable)], cwd=ROOT, capture_output=True, text=True)
+            self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+            self.assertIn("CHAPTER_OBJECTIVES_DEACTIVATION_ALIAS: PASS", ran.stdout)
+
     def test_arm_aapcs_default_table_and_telemetry_budgets(self):
         if ARM_CC is None or ARM_NM is None or ARM_OBJDUMP is None:
             self.skipTest("arm-none-eabi compiler/binutils unavailable")
@@ -152,6 +204,13 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
             generated = generated_dir / "data_chapter_objectives.c"
             generated_object = temporary_path / "data_chapter_objectives.o"
             runtime_object = temporary_path / "expansion_chapter_objectives.o"
+            layout_source = temporary_path / "objective_layout.c"
+            layout_object = temporary_path / "objective_layout.o"
+            layout_source.write_text(
+                '#include "expansion_chapter_objectives.h"\n'
+                'typedef char ObjectiveAapcsSize[sizeof(struct ExpansionChapterObjective) == 28 ? 1 : -1];\n',
+                encoding="utf-8",
+            )
             generate = subprocess.run(
                 [
                     "python3",
@@ -193,7 +252,11 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
                 "-DFE8_EXPANSION_MODERN_BUILD=1",
                 "-c",
             ]
-            for source, output in ((generated, generated_object), (SOURCE, runtime_object)):
+            for source, output in (
+                (generated, generated_object),
+                (SOURCE, runtime_object),
+                (layout_source, layout_object),
+            ):
                 compiled = subprocess.run(
                     [*common, str(source), "-o", str(output)],
                     cwd=ROOT,
