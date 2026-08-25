@@ -196,6 +196,14 @@ the issue #85 lifecycle reset and therefore resumes as `PLAYER`. The feature
 does not add `NOBODY`, persistent autoplay, a settings screen, authored
 strategy/objective data, chapter rules, or a second phase router.
 
+Issue [#124](https://github.com/laqieer/fireemblem8-expansion/issues/124)
+is the genuine debugtools child of this layer. It never requests blue
+ownership: its red/green transient requests are accepted only while this
+controller is in stable blue `PLAYER`, so a live Charge marker or blue
+computer phase rejects the request. `BmMain_StartPhase` remains the sole
+router for both layers, and either layer's normal map lifecycle reset clears
+pending debugtools state without touching a save.
+
 The optional Threat Range row composes with Charge: the base map menu has
 eight visible rows, either option adds one, and both together use ten of
 `MENU_ITEM_MAX == 11`. A downstream project adding or replacing another row
