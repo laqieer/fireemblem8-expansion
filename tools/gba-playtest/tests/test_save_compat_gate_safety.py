@@ -21,7 +21,12 @@ behavior is separately proven by tools/gba-playtest scenarios):
    names these functions to explain what must never be called).
 """
 
+import json
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -29,7 +34,16 @@ ROOT = Path(__file__).resolve().parents[3]
 SAVEMENU_C = ROOT / "src" / "savemenu.c"
 SAVE_COMPAT_MENU_C = ROOT / "src" / "save_compat_menu.c"
 SAVE_COMPAT_MENU_H = ROOT / "include" / "save_compat_menu.h"
-SRC_DIR = ROOT / "src"
+SCENARIOS_DIR = ROOT / "tools" / "gba-playtest" / "scenarios"
+FINGERPRINTS_DIR = ROOT / "tools" / "gba-playtest" / "fingerprints"
+ARM_CC = shutil.which("arm-none-eabi-gcc")
+ARM_NM = shutil.which("arm-none-eabi-nm")
+INCLUDE_FLAGS = ["-I", str(ROOT / "include"), "-I", str(ROOT / "include" / "generated")]
+SAVE_MENU_BOUNDARY_OBJECTS = (
+    SAVEMENU_C,
+    SAVE_COMPAT_MENU_C,
+    ROOT / "src" / "gamecontrol.c",
+)
 
 # Slot/block/current-struct accessors the compatibility proc must never
 # call, per the issue's guardrails. Matched as whole-word identifiers so
@@ -42,7 +56,13 @@ _FORBIDDEN_IDENTIFIERS = (
     "ReadGameSavePlaySt",
     "ReadGameSaveCoreGfx",
     "InvalidateGameSave",
-    "struct SaveBlockInfo",
+)
+_FORBIDDEN_SAVE_BLOCK_TYPE = "SaveBlockInfo"
+_FORBIDDEN_XMAP_TREE_TOKENS = (
+    "SaveBlocks",
+    "ExtraMapSaveHead",
+    "xmap",
+    "xmap_magic",
 )
 
 
@@ -52,177 +72,307 @@ def _strip_comments(text: str) -> str:
     return text
 
 
-class StartSaveMenuGateStructureTests(unittest.TestCase):
-    """Proves StartSaveMenu() itself has the required gate shape."""
+def _compile_arm(work: Path, source: Path, name: str, defines=(), extra_includes=()) -> Path:
+    obj = work / name
+    completed = subprocess.run(
+        [
+            ARM_CC,
+            "-mcpu=arm7tdmi",
+            "-mthumb",
+            "-mthumb-interwork",
+            "-mabi=aapcs",
+            "-std=gnu89",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-w",
+            *INCLUDE_FLAGS,
+            *(value for path in extra_includes for value in ("-I", str(path))),
+            *defines,
+            "-c",
+            str(source),
+            "-o",
+            str(obj),
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return obj
 
-    def setUp(self):
-        self.text = SAVEMENU_C.read_text(encoding="utf-8")
-        match = re.search(
-            r"void StartSaveMenu\(ProcPtr parent\)\s*\{(.*?)\n\}",
-            self.text, re.DOTALL,
+
+def _generate_message_ids(work: Path) -> Path:
+    generated = work / "generated"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.localization.cli",
+            "generate",
+            "--out-dir",
+            str(generated),
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return generated
+
+
+def _undefined_symbols(obj: Path) -> set[str]:
+    completed = subprocess.run(
+        [ARM_NM, "--undefined-only", str(obj)],
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return {line.split()[-1] for line in completed.stdout.splitlines() if line.split()}
+
+
+def _gcc_original_tree(
+    work: Path,
+    source: Path,
+    name: str,
+    defines=(),
+    extra_includes=(),
+) -> str:
+    """Return GCC's parsed C tree, which retains type and field expressions."""
+    output = work / name
+    tree = work / (name + ".original")
+    completed = subprocess.run(
+        [
+            ARM_CC,
+            "-mcpu=arm7tdmi",
+            "-mthumb",
+            "-mthumb-interwork",
+            "-mabi=aapcs",
+            "-std=gnu89",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-w",
+            *INCLUDE_FLAGS,
+            *(value for path in extra_includes for value in ("-I", str(path))),
+            *defines,
+            "-fdump-tree-original=" + str(tree),
+            "-c",
+            str(source),
+            "-o",
+            str(output),
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return tree.read_text(encoding="utf-8")
+
+
+def _boundary_modes(work: Path):
+    yield "default", (), ()
+    yield "modern", ("-DMODERN=1",), (_generate_message_ids(work),)
+
+
+def _assert_no_save_block_or_xmap_access(test: unittest.TestCase, tree: str):
+    test.assertNotRegex(
+        tree,
+        r"\b(?:struct )?" + _FORBIDDEN_SAVE_BLOCK_TYPE + r"\b",
+        "compatibility proc must not declare or dereference SaveBlockInfo",
+    )
+    for token in _FORBIDDEN_XMAP_TREE_TOKENS:
+        test.assertNotRegex(
+            tree,
+            r"\b" + re.escape(token) + r"\b",
+            "compatibility proc must not access XMAP through %s" % token,
         )
-        self.assertIsNotNone(match, "StartSaveMenu() not found in src/savemenu.c")
-        self.body = match.group(1)
 
-    def test_classifies_before_anything_else(self):
-        self.assertIn("ClassifySramSaveCompat()", self.body)
 
-    def test_diverts_noncurrent_states_to_compat_menu(self):
-        diversion = re.search(
-            r"compat\s*!=\s*SAVE_COMPAT_CURRENT\s*\)\s*\{\s*"
-            r"StartSaveCompatMenu\s*\(\s*parent\s*,\s*compat\s*\)\s*;\s*"
-            r"return\s*;",
-            self.body,
+def _xmap_access_tree(work: Path, defines=(), extra_includes=()) -> str:
+    source = work / "xmap_access_negative.c"
+    source.write_text(
+        '#include "global.h"\n'
+        '#include "bmsave.h"\n'
+        'u32 SaveCompatXmapNegative(const struct SaveBlocks *blocks)\n'
+        '{\n'
+        '    return blocks->xmap.xmap_magic == XMAP_MAGIC;\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    return _gcc_original_tree(
+        work,
+        source,
+        "xmap_access_negative.o",
+        defines,
+        extra_includes,
+    )
+
+
+class SaveCompatDialogBackSemanticTests(unittest.TestCase):
+    """The existing runtime artifacts prove Back-first, byte-preserving UI."""
+
+    def test_every_noncurrent_back_fixture_preserves_sram(self):
+        scenario = json.loads(
+            (SCENARIOS_DIR / "savecompat-dialog-back.json").read_text(
+                encoding="utf-8"
+            )
         )
-        self.assertIsNotNone(
-            diversion,
-            "StartSaveMenu() must divert every non-CURRENT state to "
-            "StartSaveCompatMenu(parent, compat) and return immediately",
-        )
-
-    def test_gate_precedes_the_only_slot_menu_start_call(self):
-        gate_index = self.body.find("StartSaveCompatMenu")
-        real_menu_index = self.body.find("Proc_StartBlocking(ProcScr_SaveMenu")
-        self.assertNotEqual(gate_index, -1)
-        self.assertNotEqual(real_menu_index, -1)
-        self.assertLess(
-            gate_index, real_menu_index,
-            "the compat-menu diversion must appear before the real "
-            "save-menu Proc_StartBlocking() call in source order",
-        )
-
-    def test_savemenu_c_includes_save_format_and_compat_menu_headers(self):
-        self.assertIn('#include "save_format.h"', self.text)
-        self.assertIn('#include "save_compat_menu.h"', self.text)
-
-
-class NoBypassOfTheGateTests(unittest.TestCase):
-    """Proves StartSaveMenu() is the only directly-coupled entry point that
-    can reach ProcScr_SaveMenu from a proc script, and that no other file
-    starts ProcScr_SaveMenu directly."""
-
-    def test_procscr_savemenu_is_only_started_inside_startsavemenu(self):
-        offenders = []
-        for c_file in sorted(SRC_DIR.glob("*.c")):
-            text = _strip_comments(c_file.read_text(encoding="utf-8", errors="replace"))
-            for match in re.finditer(r"Proc_StartBlocking\s*\(\s*ProcScr_SaveMenu\b", text):
-                # Only src/savemenu.c itself (inside StartSaveMenu()) may
-                # start ProcScr_SaveMenu directly.
-                if c_file.name != "savemenu.c":
-                    offenders.append(f"{c_file.name}:{text.count(chr(10), 0, match.start()) + 1}")
         self.assertEqual(
-            offenders, [],
-            f"ProcScr_SaveMenu started outside StartSaveMenu()'s gate: {offenders}",
+            [checkpoint["name"] for checkpoint in scenario["checkpoints"]],
+            ["dialog-shown", "after-dismiss", "back-returned"],
+        )
+        self.assertTrue(
+            all(checkpoint["sram_hash"] for checkpoint in scenario["checkpoints"])
         )
 
-    def test_startsavemenu_has_exactly_one_proc_script_call_site(self):
-        """The only proc-script call site into StartSaveMenu() must be
-        gamecontrol.c's PROC_CALL(StartSaveMenu) (LGAMECTRL_EXEC_SAVEMENU).
-        save_compat_menu.c's own recursive call after a confirmed erase
-        re-enters the same gated function and is not a bypass."""
-        call_sites = []
-        for c_file in sorted(SRC_DIR.glob("*.c")):
-            if c_file.name in ("savemenu.c", "save_compat_menu.c"):
-                continue
-            text = _strip_comments(c_file.read_text(encoding="utf-8", errors="replace"))
-            # Matches both a direct call (StartSaveMenu(...)) and a
-            # function-pointer reference used by a proc script
-            # (PROC_CALL(StartSaveMenu)).
-            if re.search(r"\bStartSaveMenu\b", text):
-                call_sites.append(c_file.name)
-        self.assertEqual(
-            call_sites, ["gamecontrol.c"],
-            f"unexpected StartSaveMenu() call site(s): {call_sites}",
+        fingerprints = sorted(
+            FINGERPRINTS_DIR.glob("savecompat-dialog-back-*.json")
         )
+        self.assertTrue(fingerprints)
+        for path in fingerprints:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(data["scenario"], "savecompat-dialog-back")
+            hashes = [checkpoint["sram_hash"] for checkpoint in data["checkpoints"]]
+            self.assertEqual(
+                len(set(hashes)),
+                1,
+                "%s must keep SRAM unchanged through default Back" % path.name,
+            )
 
 
-class CompatMenuNeverTouchesSlotOrBlockApisTests(unittest.TestCase):
-    """Proves src/save_compat_menu.c's compiled code never references any
-    forbidden slot/block/current-struct accessor."""
+@unittest.skipIf(ARM_CC is None or ARM_NM is None, "no arm-none-eabi compiler/binutils")
+class SaveCompatCompiledBoundaryTests(unittest.TestCase):
+    """The gate boundary is enforced from relocations, not source spelling."""
 
-    def setUp(self):
-        self.text = _strip_comments(
-            SAVE_COMPAT_MENU_C.read_text(encoding="utf-8")
-        )
+    def test_compat_proc_has_no_forbidden_save_api_relocation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            for mode, defines, includes in _boundary_modes(work):
+                with self.subTest(mode=mode):
+                    refs = _undefined_symbols(
+                        _compile_arm(
+                            work,
+                            SAVE_COMPAT_MENU_C,
+                            mode + "-save_compat_menu.o",
+                            defines,
+                            includes,
+                        )
+                    )
+                    self.assertFalse(
+                        refs & set(_FORBIDDEN_IDENTIFIERS),
+                        "compatibility proc must classify globally before "
+                        "any slot/block API: %r"
+                        % sorted(refs & set(_FORBIDDEN_IDENTIFIERS)),
+                    )
 
-    def test_no_forbidden_identifier_present(self):
-        offenders = [
-            identifier
-            for identifier in _FORBIDDEN_IDENTIFIERS
-            if re.search(rf"\b{re.escape(identifier)}\b", self.text)
-        ]
-        self.assertEqual(
-            offenders, [],
-            f"src/save_compat_menu.c references forbidden API(s): {offenders}",
-        )
+    def test_compat_proc_parsed_tree_has_no_save_block_type_or_field_access(self):
+        """Type/field access is parsed in both forms and XMAP is adversarial."""
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            for mode, defines, includes in _boundary_modes(work):
+                with self.subTest(mode=mode):
+                    tree = _gcc_original_tree(
+                        work,
+                        SAVE_COMPAT_MENU_C,
+                        mode + "-save_compat_menu.ast",
+                        defines,
+                        includes,
+                    )
+                    _assert_no_save_block_or_xmap_access(self, tree)
 
-    def test_only_allowed_save_format_calls_present(self):
-        """The only save-format-related calls this file may make are the
-        global classifier and the whole-chip wipe/current initializer."""
-        allowed = {"ClassifySramSaveCompat", "InitGlobalSaveInfodata"}
-        found = set(re.findall(r"\b(ClassifySramSaveCompat|InitGlobalSaveInfodata)\s*\(", self.text))
-        self.assertTrue(found, "expected at least one classifier/initializer call")
-        self.assertTrue(found.issubset(allowed))
+                    negative = _xmap_access_tree(work, defines, includes)
+                    self.assertRegex(
+                        negative,
+                        r"\b(?:SaveBlocks|ExtraMapSaveHead|xmap|xmap_magic)\b",
+                        "parsed negative control must expose XMAP access",
+                    )
 
-    def test_erase_is_gated_behind_explicit_confirmation(self):
-        """DoErase() (the only InitGlobalSaveInfodata() call site) must
-        only be reachable via the PL_SAVECOMPAT_DO_ERASE script label,
-        which is only reached from PL_SAVECOMPAT_ERASE after routing a
-        SAVE_COMPAT_CHOICE_ERASE_CONFIRMED choice -- never from the
-        initial diagnostic display or a bare Back."""
-        self.assertIn("SAVE_COMPAT_CHOICE_ERASE_CONFIRMED", self.text)
-        do_erase_match = re.search(
-            r"static void SaveCompatMenu_DoErase\([^)]*\)\s*\{(.*?)\n\}",
-            self.text, re.DOTALL,
-        )
-        self.assertIsNotNone(do_erase_match)
-        self.assertIn("InitGlobalSaveInfodata()", do_erase_match.group(1))
-        # Exactly one destructive call in the whole file.
-        self.assertEqual(self.text.count("InitGlobalSaveInfodata()"), 1)
+    def test_single_gate_relocation_boundary_is_the_same_in_both_modes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            for mode, defines, includes in _boundary_modes(work):
+                with self.subTest(mode=mode):
+                    refs = {
+                        source.name: _undefined_symbols(
+                            _compile_arm(
+                                work,
+                                source,
+                                mode + "-" + source.stem + ".o",
+                                defines,
+                                includes,
+                            )
+                        )
+                        for source in SAVE_MENU_BOUNDARY_OBJECTS
+                    }
+                    self.assertTrue(
+                        {
+                            "ClassifySramSaveCompat",
+                            "StartSaveCompatMenu",
+                            "Proc_StartBlocking",
+                        }.issubset(refs["savemenu.c"]),
+                        "StartSaveMenu object must retain the complete "
+                        "classification/diversion/menu boundary",
+                    )
+                    self.assertNotIn(
+                        "ProcScr_SaveMenu",
+                        refs["save_compat_menu.c"],
+                        "compatibility dialog must not start the normal save menu",
+                    )
+                    self.assertIn(
+                        "StartSaveMenu",
+                        refs["gamecontrol.c"],
+                        "game control must enter save UI through StartSaveMenu",
+                    )
 
-    def test_back_never_calls_erase(self):
-        do_back_match = re.search(
-            r"static void SaveCompatMenu_DoBack\([^)]*\)\s*\{(.*?)\n\}",
-            self.text, re.DOTALL,
-        )
-        self.assertIsNotNone(do_back_match)
-        self.assertNotIn("InitGlobalSaveInfodata", do_back_match.group(1))
+    def test_gate_translation_units_compile_in_legacy_and_modern_modes(self):
+        sources = (SAVEMENU_C, SAVE_COMPAT_MENU_C, ROOT / "src" / "gamecontrol.c")
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            for mode, defines, includes in _boundary_modes(work):
+                for source in sources:
+                    with self.subTest(mode=mode, source=source.name):
+                        _compile_arm(
+                            work,
+                            source,
+                            mode + "-" + source.stem + ".o",
+                            defines,
+                            includes,
+                        )
 
-    def test_back_is_default_first_menu_item(self):
-        """Back is item 0 in *both* the legacy and modern-guarded
-        branches of gSaveCompatMenuItems (issue #18 sprint 3 wrapped the
-        array's first two rows in `#ifdef MODERN ... #else ... #endif`
-        so their labels resolve through the expansion catalog under
-        MODERN instead of the vanilla MSG_SAVE_COMPAT_BACK/
-        MSG_SAVE_COMPAT_ERASE_ALL lookup -- see src/save_compat_menu.c's
-        own header comment). The legacy (#else) branch must still use
-        the exact original vanilla MSG_SAVE_COMPAT_BACK literal,
-        unchanged."""
-        items_match = re.search(
-            r"CONST_DATA struct MenuItemDef gSaveCompatMenuItems\[\]\s*=\s*\{(.*?)MenuItemsEnd",
-            self.text, re.DOTALL,
-        )
-        self.assertIsNotNone(items_match)
-        body = items_match.group(1)
-
-        guard_match = re.search(
-            r"#ifdef MODERN\s*\n(.*?)\n#else\b(.*?)#endif",
-            body, re.DOTALL,
-        )
-        self.assertIsNotNone(
-            guard_match,
-            "expected an #ifdef MODERN/#else/#endif guard as the array's first rows",
-        )
-
-        modern_first_item = guard_match.group(1).strip().splitlines()[0]
-        legacy_first_item = guard_match.group(2).strip().splitlines()[0]
-
-        self.assertIn("SaveCompatMenu_DrawBackLabel", modern_first_item)
-        self.assertIn("SaveCompatMenu_SelectBack", modern_first_item)
-
-        self.assertIn("MSG_SAVE_COMPAT_BACK", legacy_first_item)
-        self.assertIn("SaveCompatMenu_SelectBack", legacy_first_item)
-
+    def test_public_diagnostic_probe_declarations_link_for_a_consumer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            for mode, defines, includes in _boundary_modes(work):
+                consumer = work / (mode + "-save_compat_probe_consumer.c")
+                consumer.write_text(
+                    '#include "global.h"\n'
+                    '#include "save_compat_menu.h"\n'
+                    'u8 ReadSaveCompatProbe(void)\n'
+                    '{\n'
+                    '    return gSaveCompatMenuActive | gSaveCompatMenuLastState;\n'
+                    '}\n',
+                    encoding="utf-8",
+                )
+                refs = _undefined_symbols(
+                    _compile_arm(
+                        work,
+                        consumer,
+                        mode + "-consumer.o",
+                        defines,
+                        includes,
+                    )
+                )
+                self.assertTrue(
+                    {
+                        "gSaveCompatMenuActive",
+                        "gSaveCompatMenuLastState",
+                    }.issubset(refs),
+                    "public header must declare both diagnostic probes for "
+                    "external consumers",
+                )
 
 class EraseConfirmWarningActiveTests(unittest.TestCase):
     """Proves the authored irreversible-erase warning
@@ -310,11 +460,6 @@ class EraseConfirmWarningActiveTests(unittest.TestCase):
 class DiagnosticProbeGlobalsTests(unittest.TestCase):
     """Proves the read-only diagnostic probe globals (requirement 4) are
     declared and are the only new EWRAM globals this feature adds."""
-
-    def test_probe_globals_declared_in_header(self):
-        text = SAVE_COMPAT_MENU_H.read_text(encoding="utf-8")
-        self.assertIn("extern EWRAM_DATA u8 gSaveCompatMenuActive;", text)
-        self.assertIn("extern EWRAM_DATA u8 gSaveCompatMenuLastState;", text)
 
     def test_probe_globals_defined_exactly_once(self):
         text = SAVE_COMPAT_MENU_C.read_text(encoding="utf-8")

@@ -498,15 +498,31 @@ rechecks and initializes EMPTY as a defensive fallback before routing every
 other non-CURRENT state to the compatibility menu.
 
 `scripts/modernize/tests/test_save_format_call_site_safety.py` and
-`tools/gba-playtest/tests/test_save_compat_gate_safety.py` both statically
-scan the shipped source (no execution required) to prove: (1)
-`StartSaveMenu()` is the sole directly-coupled entry point into
-`ProcScr_SaveMenu` reachable from any proc script, and it classifies and
-diverts before calling `Proc_StartBlocking(ProcScr_SaveMenu, ...)`; and (2)
-`src/save_compat_menu.c` never references `IsSaveValid`,
-`ReadSaveBlockInfo`, `ReadGameSave`, `ReadGameSavePlaySt`,
-`ReadGameSaveCoreGfx`, `InvalidateGameSave`, or `struct SaveBlockInfo`
-anywhere in its compiled code.
+`tools/gba-playtest/tests/test_save_compat_gate_safety.py` prove the
+boundary without relying on source spelling or statement order. The latter
+compiles `savemenu.c`, `save_compat_menu.c`, and `gamecontrol.c` in both
+default and `-DMODERN=1` forms (with generated message IDs), checks the
+classifier/diversion/menu relocations, and rejects forbidden save-internal
+relocations from the compatibility proc. Its parsed C-tree boundary rejects
+`SaveBlockInfo`, `SaveBlocks.xmap`, `xmap_magic`, and an adversarial
+`XMAP_MAGIC` field-access fixture, which a relocation-only check cannot see.
+
+### Issue #160 semantic-evidence migration map
+
+The eight issue #99 rewrite records below map to
+[`TC-TEST-QUALITY-001`](test-cases/foundation.md#tc-test-quality-001-meaningful-test-evidence-policy-rejects-semantic-mutations).
+They preserve the save bytes, classifier/schema, and existing scenarios.
+
+| Audit record | Replacement evidence |
+| --- | --- |
+| `test_save_compat_gate_safety.py::test_savemenu_c_includes_save_format_and_compat_menu_headers` | Default and MODERN compiled gate-object boundary |
+| `test_save_compat_gate_safety.py::test_procscr_savemenu_is_only_started_inside_startsavemenu` | Two-mode classifier/diversion/menu relocation boundary |
+| `test_save_compat_gate_safety.py::test_startsavemenu_has_exactly_one_proc_script_call_site` | Game-control-to-public-gate relocation boundary |
+| `test_save_compat_gate_safety.py::test_no_forbidden_identifier_present` | Two-mode forbidden save-API relocation boundary |
+| `test_save_compat_gate_safety.py::test_back_is_default_first_menu_item` | Parsed `savecompat-dialog-back` runtime artifacts with unchanged SRAM |
+| `test_save_compat_gate_safety.py::test_probe_globals_declared_in_header` | Two-mode diagnostic-probe consumer relocation |
+| `test_savesuspend_resume_scenario.py::test_no_new_direct_save_internal_call_site_in_src` | Save-compat compiled boundary plus ordinary-UI suspend scenario |
+| `test_savesuspend_resume_scenario.py::test_gba_playtest_tooling_itself_contains_no_save_internal_call` | Parsed suspend schema and deterministic resume/SRAM evidence |
 
 ### Compatibility proc / UI
 

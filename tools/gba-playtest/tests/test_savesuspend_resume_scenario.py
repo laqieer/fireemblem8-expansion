@@ -30,7 +30,6 @@ is not part of the release fingerprint set.
 from __future__ import annotations
 
 import json
-import re
 import sys
 import tempfile
 import unittest
@@ -251,83 +250,6 @@ class SavesuspendResumeRuntimeTests(unittest.TestCase):
             "SRAM must have changed from the initial fixture after the "
             "manual Suspend write",
         )
-
-
-# ---------------------------------------------------------------------
-# Static proof (no ROM/execution required): this task adds no new direct
-# C call site into the save-internal write/read functions -- the manual
-# Suspend in the scenario above goes exclusively through the ordinary Map
-# Menu UI's existing call site, never a new test-only hook.
-# ---------------------------------------------------------------------
-
-SRC_DIR = REPO_ROOT / "src"
-_SAVE_INTERNAL_CALL_RE = re.compile(
-    r"\b(WriteSuspendSave|ReadSuspendSave|WriteGameSave|ReadGameSave)\s*\("
-)
-
-# The exact, pre-existing call sites as of this task (src/bmsave.c itself,
-# which defines these functions, is excluded). Recorded once here so any
-# future diff that adds a *new* call site anywhere in src/ fails loudly --
-# proving this task did not add one, and guarding against a silent one
-# being added later without deliberate review of this list.
-_EXPECTED_CALL_SITE_COUNTS = {
-    "src/bm.c": 1,
-    "src/bmarena.c": 1,
-    "src/bmbattle.c": 1,
-    "src/bmdebug.c": 6,
-    "src/bmtrap.c": 1,
-    "src/bonusclaim.c": 1,
-    "src/cp_decide.c": 1,
-    "src/playerphase.c": 2,
-    "src/savemenu.c": 7,
-    "src/sio_term.c": 1,
-    "src/uiarena.c": 1,
-}
-
-
-class NoNewSaveInternalHookTests(unittest.TestCase):
-    """Proves this task's file domain (tools/gba-playtest only) added no
-    new C call site into the save-internal write/read functions, and that
-    src/'s existing call-site count is unchanged from the pre-recorded
-    baseline above."""
-
-    def test_no_new_direct_save_internal_call_site_in_src(self):
-        actual_counts: dict[str, int] = {}
-        for path in sorted(SRC_DIR.glob("*.c")):
-            if path.name == "bmsave.c":
-                continue  # defines the functions; not a "call site"
-            text = path.read_text(encoding="utf-8", errors="replace")
-            count = len(_SAVE_INTERNAL_CALL_RE.findall(text))
-            if count:
-                actual_counts[f"src/{path.name}"] = count
-        self.assertEqual(
-            actual_counts, _EXPECTED_CALL_SITE_COUNTS,
-            "src/'s save-internal write/read call sites changed -- this "
-            "task must not add a new one; if a legitimate engine change "
-            "added one outside this task's scope, update the baseline "
-            "deliberately",
-        )
-
-    def test_gba_playtest_tooling_itself_contains_no_save_internal_call(self):
-        """The Python harness/scenario/fixture tooling must never invoke
-        these C identifiers as a shortcut (they are C symbols with no
-        Python binding here to begin with, but this pins the intent).
-        This test file itself is excluded from the scan since its own
-        docstrings/comments legitimately name these identifiers in prose
-        to document what the scenario proves -- exactly the same
-        comment-naming allowance test_save_compat_gate_safety.py's module
-        docstring relies on for save_compat_menu.c."""
-        self_path = Path(__file__).resolve()
-        for path in sorted(PLAYTEST_DIR.rglob("*.py")):
-            if path.resolve() == self_path:
-                continue
-            text = path.read_text(encoding="utf-8", errors="replace")
-            self.assertFalse(
-                _SAVE_INTERNAL_CALL_RE.search(text),
-                f"{path} unexpectedly references a save-internal call: "
-                "the manual Suspend must be driven through the ordinary "
-                "UI input only",
-            )
 
 
 if __name__ == "__main__":
