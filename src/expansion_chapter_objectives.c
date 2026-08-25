@@ -363,6 +363,16 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
     if (protectedUnit == NULL || protectedUnit->pCharacterData == NULL)
         return;
 
+    if (CheckFlag(protectObjective->eventFlag))
+    {
+        sExpansionChapterObjectiveRuntimeProbeComplete = TRUE;
+        state = ExpansionChapterObjectives_GetStatus(protectObjective->id, &progress);
+        gExpansionChapterObjectiveRuntimeProbe.protectLatchReconstructionState = state;
+        gExpansionChapterObjectiveRuntimeProbe.replayMutationCount = 0;
+        gExpansionChapterObjectiveRuntimeProbe.magic = EXPANSION_CHAPTER_OBJECTIVE_RUNTIME_PROBE_MAGIC;
+        return;
+    }
+
     sExpansionChapterObjectiveRuntimeProbeComplete = TRUE;
     eventFlagWasSet = CheckFlag(eventObjective->eventFlag);
     originalUnitState = protectedUnit->state;
@@ -445,6 +455,7 @@ static void RunChapterObjectiveRuntimeProbe(const struct ExpansionChapterObjecti
     else
         ClearFlag(protectObjective->completionFlag);
     SetFlag(protectObjective->eventFlag);
+    gExpansionChapterObjectiveRuntimeProbe.replayMutationCount = 1;
 
     gExpansionChapterObjectiveRuntimeProbe.magic = EXPANSION_CHAPTER_OBJECTIVE_RUNTIME_PROBE_MAGIC;
 }

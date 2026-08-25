@@ -404,6 +404,19 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
 
         records, diagnostics = _validate("valid.json")
         objectives = {objective.id: objective for objective in records[0].objectives}
+        objectives["OBJECTIVE_FIXTURE_PROTECT"].completion_flag = "EVFLAG_ALWAYS_FALSE"
+        schema.validate(
+            records,
+            diagnostics,
+            {
+                "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json")),
+                "chapterbundle": chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json")),
+            },
+        )
+        self.assertIn("completionFlag must not be EVFLAG_ALWAYS_FALSE", diagnostics.render())
+
+        records, diagnostics = _validate("valid.json")
+        objectives = {objective.id: objective for objective in records[0].objectives}
         objectives["OBJECTIVE_FIXTURE_PROTECT"].failure_flag = "EVFLAG_5"
         schema.validate(
             records,
@@ -448,6 +461,47 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
         )
         self.assertIn(
             "duplicate protect completionFlag 'EVFLAG_WIN'",
+            diagnostics.render(),
+        )
+
+    def test_protect_chain_flag_aliases_fail_closed(self):
+        records, diagnostics = _validate("valid.json")
+        objectives = {objective.id: objective for objective in records[0].objectives}
+        parent = objectives["OBJECTIVE_FIXTURE_PROTECT"]
+        child = copy.deepcopy(parent)
+        child.id = "OBJECTIVE_FIXTURE_PROTECT_CHILD"
+        child.failure_flag = "EVFLAG_5"
+        child.completion_flag = "EVFLAG_BATTLE_QUOTES"
+        parent.completion_objective = child.id
+        parent.completion_flag = child.failure_flag
+        records[0].objectives.append(child)
+        schema.validate(
+            records,
+            diagnostics,
+            {
+                "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json")),
+                "chapterbundle": chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json")),
+            },
+        )
+        self.assertIn(
+            "protect completionFlag 'EVFLAG_5' aliases objectives[id=OBJECTIVE_FIXTURE_PROTECT_CHILD] failureFlag",
+            diagnostics.render(),
+        )
+
+        records, diagnostics = _validate("valid.json")
+        objectives = {objective.id: objective for objective in records[0].objectives}
+        parent = objectives["OBJECTIVE_FIXTURE_PROTECT"]
+        parent.failure_flag = "EVFLAG_BATTLE_QUOTES"
+        schema.validate(
+            records,
+            diagnostics,
+            {
+                "units": units_schema.load_records(os.path.join(REPO_ROOT, "src", "data", "ch2_units.json")),
+                "chapterbundle": chapterbundle_schema.load_records(objective_fixture("ch2_bundle.json")),
+            },
+        )
+        self.assertIn(
+            "protect failureFlag 'EVFLAG_BATTLE_QUOTES' aliases objectives[id=OBJECTIVE_FIXTURE_EVENT] eventFlag",
             diagnostics.render(),
         )
 
