@@ -79,6 +79,44 @@ def generate(temporary_path, enabled):
 
 
 class AutoplayStrategiesRuntimeTests(unittest.TestCase):
+    def test_public_header_is_include_order_independent(self):
+        if CC is None:
+            self.skipTest("no host C compiler")
+
+        source = """
+#include "expansion_autoplay_strategies.h"
+#include "event.h"
+
+static void (*sEventActivate)(struct EventEngineProc*) =
+    ExpansionAutoplayStrategies_EventActivate;
+
+int main(void)
+{
+    return sEventActivate == 0;
+}
+"""
+        completed = subprocess.run(
+            [
+                CC,
+                "-std=gnu89",
+                "-Werror",
+                "-I",
+                str(ROOT / "include"),
+                "-I",
+                str(ROOT / "include" / "generated"),
+                "-DFE8_EXPANSION_MODERN_BUILD=1",
+                "-x",
+                "c",
+                "-fsyntax-only",
+                "-",
+            ],
+            cwd=ROOT,
+            input=source,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
     def test_profiles_dispatch_deterministically_and_disabled_preserves_fallback(self):
         if CC is None:
             self.skipTest("no host C compiler")

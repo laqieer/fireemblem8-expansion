@@ -646,7 +646,7 @@
       "domain": "chapter",
       "key": "include/expansion_autoplay_strategies.h|struct-field|chapter|ExpansionAutoplayStrategyBundle.chapterId",
       "kind": "struct-field",
-      "line": 99,
+      "line": 101,
       "path": "include/expansion_autoplay_strategies.h",
       "reason": null,
       "record_count": null,
@@ -21297,7 +21297,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "1d4d716b9f409d7e45670e6dbab2cfb7864124d2549c4c61ffe2b7bb461080fe",
+  "digest": "969a775a4db4a50cfca2ddc6fe57ef27b273e3c703924ed38995c538b16ff4d1",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,

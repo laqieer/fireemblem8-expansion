@@ -1839,7 +1839,8 @@ FORCE_CH2_EVENTLISTS_CONFIG_STAMP:
 $(GENERATED_DATA_CH2_EVENTLISTS_CONFIG_STAMP): FORCE_CH2_EVENTLISTS_CONFIG_STAMP
 	@mkdir -p $(@D)
 	@printf '%s\n' \
-		'autoplaystrategies_source=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)' > "$@.tmp"
+		'autoplaystrategies_source=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)' \
+		'chapterbundle_source=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE)' > "$@.tmp"
 	@if [ ! -f "$@" ] || ! cmp -s "$@.tmp" "$@"; then mv -f "$@.tmp" "$@"; else rm -f "$@.tmp"; fi
 
 .PHONY: FORCE_CH2_EVENTLISTS_DEPFILE
@@ -1847,12 +1848,15 @@ FORCE_CH2_EVENTLISTS_DEPFILE:
 
 $(GENERATED_DATA_CH2_EVENTLISTS_DEPFILE): FORCE_CH2_EVENTLISTS_DEPFILE \
 	$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE) \
+	$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE) \
 	$(GENERATED_DATA_SHARED_PY_SOURCES) \
 	$(wildcard scripts/generated_data/autoplaystrategies/*.py) \
+	$(wildcard scripts/generated_data/chapterbundle/*.py) \
 	$(wildcard scripts/generated_data/eventlists/*.py)
 	@mkdir -p $(@D)
 	@$(GENERATED_DATA_CH2_EVENTLISTS_DEP_DISCOVERY) \
 		--strategy-source "$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)" \
+		--bundle-source "$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE)" \
 		--make-target "$(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP)" \
 		--depfile "$@"
 
@@ -1878,6 +1882,7 @@ $(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP): src/data/ch2_eventlists.json \
 	$(GENERATED_DATA_PY) generate --table eventlists \
 		--source "src/data/ch2_eventlists.json" \
 		--dep-source "autoplaystrategies=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)" \
+		--dep-source "chapterbundle=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE)" \
 		--out-dir "$(GENERATED_DATA_OUT_DIR)"
 	@test -e $(GENERATED_DATA_CH2_EVENTLISTS_C) || { echo "error: generated-data table 'eventlists' did not produce $(GENERATED_DATA_CH2_EVENTLISTS_C) (schema default_output_name mismatch?)" >&2; exit 1; }
 	@touch "$@"

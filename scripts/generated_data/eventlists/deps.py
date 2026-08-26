@@ -7,6 +7,7 @@ import os
 import sys
 
 from ..autoplaystrategies import schema as strategies_schema
+from ..chapterbundle import schema as bundle_schema
 from ..diagnostics import GeneratedDataError
 
 
@@ -14,10 +15,13 @@ def _canonical(path):
     return os.path.normcase(os.path.realpath(os.path.abspath(path)))
 
 
-def collect_input_paths(strategy_source):
-    records = strategies_schema.load_records(strategy_source)
-    paths = set(records["source_paths"])
+def collect_input_paths(strategy_source, bundle_source):
+    strategy_records = strategies_schema.load_records(strategy_source)
+    bundle_records = bundle_schema.load_records(bundle_source)
+    paths = set(strategy_records["source_paths"])
+    paths.update(bundle_records.source_paths)
     paths.add(_canonical(strategy_source))
+    paths.add(_canonical(bundle_source))
     return tuple(sorted(paths))
 
 
@@ -41,13 +45,14 @@ def write_depfile(depfile, target, inputs):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--strategy-source", required=True)
+    parser.add_argument("--bundle-source", required=True)
     parser.add_argument("--make-target")
     parser.add_argument("--depfile")
     args = parser.parse_args(argv)
     if bool(args.make_target) != bool(args.depfile):
         parser.error("--make-target and --depfile must be supplied together")
     try:
-        inputs = collect_input_paths(args.strategy_source)
+        inputs = collect_input_paths(args.strategy_source, args.bundle_source)
     except OSError as error:
         print(
             "error: unable to read event-list strategy dependency source: {}".format(error),

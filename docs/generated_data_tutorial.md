@@ -348,7 +348,10 @@ Assignments have deterministic `unit > group > chapter > Unit.ai[]`
 precedence. An optional `activationFlag` is an existing `EVFLAG_*`; authored
 event scripts must change it through
 `{"helper": "strategy", "operation": "activate", "args": [STRATEGY_ID, EVFLAG]}`
-instead of raw `flag.set`.
+instead of raw `flag.set`. Pair validation is scoped through the chapter bundle
+that owns the event-list manifest: an assignment in another chapter neither
+authorizes `strategy.activate` nor reserves its flag against that chapter's
+ordinary `flag.set`.
 `ExpansionAutoplayStrategies_ActivateAssignment(strategyId, activationFlag)`
 is the one typed event bridge: it accepts only a declared assignment, writes
 only that existing flag outside an active blue computer phase, and stores no
