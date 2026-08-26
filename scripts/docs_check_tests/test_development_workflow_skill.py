@@ -536,6 +536,48 @@ def parse_labeled_policy(text, heading):
     return fields
 
 
+def parse_policy_clauses(text):
+    return tuple(
+        clause.strip()
+        for clause in re.split(r"(?<=[.!?])\s+", " ".join(text.split()))
+        if clause.strip()
+    )
+
+
+def policy_action_polarities(text, action):
+    action_words = normalize_policy(action).split()
+    polarities = []
+    negation_markers = {
+        "cannot",
+        "forbid",
+        "forbidden",
+        "never",
+        "not",
+        "prohibit",
+        "prohibited",
+        "without",
+    }
+    for clause in parse_policy_clauses(text):
+        words = normalize_policy(clause).split()
+        width = len(action_words)
+        for index in range(len(words) - width + 1):
+            if words[index:index + width] != action_words:
+                continue
+            context = words[max(0, index - 8):index]
+            polarities.append(any(word in negation_markers for word in context))
+    return tuple(polarities)
+
+
+def require_policy_action(violations, surface, text, action, *, prohibited=False):
+    polarities = policy_action_polarities(text, action)
+    if not polarities:
+        violations.append(f"{surface}: missing action {action}")
+        return
+    if any(polarity != prohibited for polarity in polarities):
+        expected = "prohibited" if prohibited else "affirmative"
+        violations.append(f"{surface}: {action} must be only {expected}")
+
+
 def manual_handoff_contract_violations(text):
     fields = parse_labeled_policy(text, MANUAL_HANDOFF_POLICY_HEADING)
     required_fields = {
@@ -628,7 +670,107 @@ def manual_handoff_contract_violations(text):
         for term in terms:
             if term not in value:
                 violations.append(f"{field} exact: {term}")
+
+    affirmative_actions = {
+        "Eligibility": ("use this handoff",),
+        "Pre-handoff evidence": (
+            "render the real non-instrumented positive and negative/control artifacts",
+            "inspect deterministic screenshots",
+            "semantic assertions remain the primary evidence",
+        ),
+        "Activation": (
+            "apply waiting-for-manual-testing",
+            "assign both the originating issue and each open implementation PR",
+        ),
+        "Handoff comment": (
+            "comment on each actionable issue and PR",
+            "ping laqieer",
+        ),
+        "Hold": (
+            "state in every handoff comment",
+            "merge and issue closure are blocked",
+        ),
+        "Completion": (
+            "post the actual result and evidence link",
+            "remove the waiting-for-manual-testing label",
+            "remove the temporary laqieer assignment",
+            "automatically resume exact-candidate gates and merge",
+        ),
+    }
+    for field, actions in affirmative_actions.items():
+        for action in actions:
+            require_policy_action(
+                violations,
+                field,
+                fields.get(field, ""),
+                action,
+            )
+
+    prohibited_actions = {
+        "Eligibility": (
+            "use it for vague review requests or deterministic behavior",
+        ),
+        "Queue": ("schedule notifications or comments",),
+    }
+    for field, actions in prohibited_actions.items():
+        for action in actions:
+            require_policy_action(
+                violations,
+                field,
+                fields.get(field, ""),
+                action,
+                prohibited=True,
+            )
     return violations
+
+
+def manual_handoff_case_violations(text):
+    case = "\n".join(
+        read_markdown_section(text, MANUAL_HANDOFF_CASE_HEADING)
+    )
+    actions = "\n".join(read_markdown_section(case, "Actions"))
+    expected = "\n".join(read_markdown_section(case, "Expected result"))
+    violations = []
+
+    for action in (
+        "render real non-instrumented positive and negative/control artifacts",
+        "inspect deterministic screenshots",
+        "apply the label to the originating issue and each open implementation PR",
+        "assign both items to laqieer",
+        "comment on each item",
+        "explicitly ping laqieer",
+        "verify each handoff comment includes",
+        "post the actual result and evidence link",
+        "remove the label from the issue and PR",
+        "remove the temporary assignment",
+        "automatically resume exact-candidate gates and merge",
+    ):
+        require_policy_action(violations, "Actions", actions, action)
+
+    for action in (
+        "enters the queue",
+        "become discoverable and assigned",
+        "remain blocked",
+        "cleanup removes temporary tracking",
+        "delivery resumes automatically",
+    ):
+        require_policy_action(
+            violations,
+            "Expected result",
+            expected,
+            action,
+        )
+    return violations
+
+
+def mutate_policy_phrase(text, phrase, replacement):
+    pattern = re.compile(
+        r"\s+".join(re.escape(part) for part in phrase.split())
+    )
+    mutated, count = pattern.subn(replacement, text)
+    if count == 0:
+        raise AssertionError(f"mutation phrase not found: {phrase}")
+    return mutated
 
 
 def read_skill():
@@ -1843,6 +1985,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 )
 
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual([], manual_handoff_case_violations(governance))
         case = "\n".join(
             read_markdown_section(governance, MANUAL_HANDOFF_CASE_HEADING)
         )
@@ -1852,7 +1995,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "short synchronized emulator A/V clip",
             "merge and issue closure are blocked",
             "remove the label from the issue and PR",
-            "automatically resumes exact-candidate gates and merge",
+            "automatically resume exact-candidate gates and merge",
             "issue #83 has a recorded accepted result",
             "issue #168 is agent-verifiable static UI",
             "issues #90, #91, and #92",
@@ -1939,12 +2082,130 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         }
         for mutation, (required, replacement) in mutations.items():
             with self.subTest(mutation=mutation):
-                pattern = re.compile(
-                    r"\s+".join(re.escape(part) for part in required.split())
+                mutated = mutate_policy_phrase(
+                    canonical,
+                    required,
+                    replacement,
                 )
-                mutated, count = pattern.subn(replacement, canonical)
-                self.assertGreater(count, 0)
                 self.assertTrue(manual_handoff_contract_violations(mutated))
+
+    def test_actionable_manual_handoff_polarity_mutations_fail_closed(self):
+        policy_mutations = {
+            "ineligible prohibition": (
+                "Do not use it for vague review requests or deterministic behavior",
+                "Use it for vague review requests or deterministic behavior",
+            ),
+            "activation": (
+                "apply `waiting-for-manual-testing`",
+                "do not apply `waiting-for-manual-testing`",
+            ),
+            "assignment": (
+                "assign both the originating issue and each open implementation PR",
+                "do not assign both the originating issue and each open implementation PR",
+            ),
+            "ping": (
+                "explicitly ping `@laqieer`",
+                "do not explicitly ping `@laqieer`",
+            ),
+            "hold": (
+                "State in every handoff comment",
+                "Do not state in every handoff comment",
+            ),
+            "post result": (
+                "post the actual result and evidence link",
+                "do not post the actual result and evidence link",
+            ),
+            "remove label": (
+                "remove the `waiting-for-manual-testing` label",
+                "do not remove the `waiting-for-manual-testing` label",
+            ),
+            "remove assignment": (
+                "remove the temporary `laqieer` assignment",
+                "do not remove the temporary `laqieer` assignment",
+            ),
+            "resume": (
+                "automatically resume exact-candidate gates and merge",
+                "do not automatically resume exact-candidate gates and merge",
+            ),
+        }
+        for path in (SKILL_PATH, CONTRIBUTING_PATH):
+            canonical = path.read_text(encoding="utf-8")
+            for mutation, (required, replacement) in policy_mutations.items():
+                with self.subTest(surface=str(path), mutation=mutation):
+                    mutated = mutate_policy_phrase(
+                        canonical,
+                        required,
+                        replacement,
+                    )
+                    self.assertTrue(
+                        manual_handoff_contract_violations(mutated)
+                    )
+
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        case_mutations = {
+            "render": (
+                "render real non-instrumented positive and negative/control artifacts",
+                "do not render real non-instrumented positive and negative/control artifacts",
+            ),
+            "activation": (
+                "apply the label to the originating issue and each open "
+                "implementation PR",
+                "do not apply the label to the originating issue and each "
+                "open implementation PR",
+            ),
+            "assignment": (
+                "assign both items to `laqieer`",
+                "do not assign both items to `laqieer`",
+            ),
+            "ping": (
+                "explicitly ping `@laqieer`",
+                "do not explicitly ping `@laqieer`",
+            ),
+            "handoff contents and hold": (
+                "Verify each handoff comment includes",
+                "Do not verify each handoff comment includes",
+            ),
+            "post result": (
+                "post the actual result and evidence link",
+                "do not post the actual result and evidence link",
+            ),
+            "remove label": (
+                "remove the label from the issue and PR",
+                "do not remove the label from the issue and PR",
+            ),
+            "remove assignment": (
+                "remove the temporary assignment",
+                "do not remove the temporary assignment",
+            ),
+            "resume": (
+                "automatically resume exact-candidate gates and merge",
+                "do not automatically resume exact-candidate gates and merge",
+            ),
+            "discoverability": (
+                "become discoverable and assigned",
+                "do not become discoverable and assigned",
+            ),
+            "merge hold": (
+                "merge and closure remain blocked",
+                "merge and closure do not remain blocked",
+            ),
+            "cleanup removal": (
+                "cleanup removes temporary tracking",
+                "do not assert that cleanup removes temporary tracking",
+            ),
+            "automatic resume": (
+                "delivery resumes automatically",
+                "do not assert that delivery resumes automatically",
+            ),
+        }
+        for mutation, (required, replacement) in case_mutations.items():
+            with self.subTest(surface="governance case", mutation=mutation):
+                mutated = mutate_policy_phrase(
+                    governance,
+                    required,
+                    replacement,
+                )
+                self.assertTrue(manual_handoff_case_violations(mutated))
 
 
 if __name__ == "__main__":

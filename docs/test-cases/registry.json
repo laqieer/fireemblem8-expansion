@@ -2083,7 +2083,7 @@
       "prerequisites": "Start at the repository root with the mirrored handoff policy and indexed governance case unchanged; no credentials, ROM, emulator, or remote mutation is required.",
       "actions": "Parse the mirrored labeled handoff contract, verify pre-handoff non-instrumented screenshot or synchronized A/V inspection, run the focused mutation suite, and inspect the documented queue.",
       "expected_result": "Only a precise non-agent-verifiable visual/audio/UX judgment activates issue-and-PR labeling, assignment, and explicit pinging; acceptance removes temporary state and resumes exact-candidate delivery.",
-      "negative_control": "Changing the label, ping, issue-and-PR assignment, queue URL, pre-handoff media rule, merge hold, or cleanup lifecycle fails the focused suite; deterministic work never enters the queue.",
+      "negative_control": "Changing the label, ping, issue-and-PR assignment, query URL, pre-handoff media rule, merge hold, cleanup lifecycle, or phrase-preserving polarity reversals fails the focused suite; deterministic work never enters the queue.",
       "interactions": "Depends on GitHub issue/PR labels, assignments, and comments for live use; conflicts with blanket review gates, deterministic manual holds, stale labels, stale assignments, and empty-queue spam.",
       "save_compatibility": "Source-only governance; no save, generated-data, localization, ROM/RAM, debug/release, or archival impact.",
       "cleanup": "A live accepted result removes the label from issue and PR and removes the temporary assignment unless another ownership reason remains; this source-only case mutates nothing remotely.",

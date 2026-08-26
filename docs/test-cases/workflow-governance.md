@@ -87,18 +87,18 @@ and does not grant push credentials.
    UI or a short synchronized emulator A/V clip for time-dependent or
    audiovisual behavior. Keep semantic assertions as the primary evidence.
 3. For an actionable criterion, verify the documented lifecycle requires the
-   label on the originating issue and each open implementation PR, assigns both
-   items to `laqieer`, and comments on each item with an explicit `@laqieer`
-   ping.
+   agent to apply the label to the originating issue and each open
+   implementation PR, assign both items to `laqieer`, comment on each item, and
+   explicitly ping `@laqieer`.
 4. Verify each handoff comment includes the tester-case ID, exact commit,
    exact artifact path or link, artifact hash, environment, clean starting
    state, numbered steps, expected result, negative/control artifact, one
    precise judgment, and an explicit statement that merge and issue closure
    are blocked.
-5. Verify an accepted result posts the actual result and evidence link, removes
-   the label from the issue and PR, removes the temporary assignment unless
-   another ownership reason remains, and automatically resumes exact-candidate
-   gates and merge.
+5. Verify an accepted result requires the lifecycle to post the actual result
+   and evidence link, remove the label from the issue and PR, remove the
+   temporary assignment unless another ownership reason remains, and
+   automatically resume exact-candidate gates and merge.
 6. Run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 7. Open the documented queue:
@@ -119,10 +119,12 @@ resumes automatically.
 Mutations that remove or change the exact label, explicit `@laqieer` ping,
 issue-and-PR assignment, clickable query URL, pre-handoff screenshot/A/V
 inspection, merge-and-closure hold, or accepted-result cleanup lifecycle must
-fail the focused suite. This narrowly scoped exact-source coverage is required
-because label names, mentions, assignees, and query URLs are an externally
-consumed GitHub workflow protocol; the remaining assertions are parsed as
-labeled document-contract fields.
+fail the focused suite. Phrase-preserving polarity reversals such as `do not
+apply` or `do not remove` must also fail. This narrowly scoped exact-source
+coverage is required because label names, mentions, assignees, and query URLs
+are an externally consumed GitHub workflow protocol; the remaining assertions
+are parsed as labeled document-contract fields with affirmative activation,
+hold, completion, cleanup, and resume semantics.
 
 ### Current queue audit
 

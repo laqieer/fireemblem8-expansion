@@ -935,20 +935,48 @@ class TesterCaseRegistryTests(unittest.TestCase):
         cases = {entry["id"]: entry for entry in registry["cases"]}
         contracts = {
             "battle-animation-package": {
-                "case_id": "TC-BANIM-PACKAGE-062",
                 "reference": "docs/battle_animation_packages.md",
-                "document": "docs/test-cases/asset-authoring.md",
-                "commands": {
-                    "python3 -m unittest scripts.assets.tests.test_manifest -v",
-                    "make expansion-modern-banim-package-runtime-check",
+                "cases": {
+                    "TC-BANIM-PACKAGE-062": {
+                        "document": "docs/test-cases/asset-authoring.md",
+                        "commands": {
+                            "python3 -m unittest scripts.assets.tests.test_manifest -v",
+                            "make expansion-modern-banim-package-runtime-check",
+                        },
+                        "negative_control_terms": set(),
+                    },
                 },
             },
             "workflow-governance": {
-                "case_id": "TC-WORKFLOW-CI-WAIT-001",
                 "reference": ".github/skills/development-workflow/SKILL.md",
-                "document": "docs/test-cases/workflow-governance.md",
-                "commands": {
-                    "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+                "cases": {
+                    "TC-WORKFLOW-CI-WAIT-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.docs_check_tests."
+                            "test_development_workflow_skill -v",
+                        },
+                        "negative_control_terms": set(),
+                    },
+                    "TC-WORKFLOW-MANUAL-HANDOFF-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.docs_check_tests."
+                            "test_development_workflow_skill -v",
+                        },
+                        "negative_control_terms": {
+                            "label",
+                            "ping",
+                            "issue-and-PR assignment",
+                            "query URL",
+                            "pre-handoff media rule",
+                            "merge hold",
+                            "cleanup lifecycle",
+                            "phrase-preserving polarity reversals",
+                        },
+                    },
                 },
             },
         }
@@ -958,28 +986,37 @@ class TesterCaseRegistryTests(unittest.TestCase):
                 self.assertIn(feature_id, expected_feature_ids)
                 feature = features[feature_id]
                 self.assertEqual(feature["reference"], contract["reference"])
-                self.assertEqual(feature["required_cases"], [contract["case_id"]])
-                case = cases[contract["case_id"]]
-                self.assertEqual(case["feature_id"], feature_id)
-                self.assertEqual(case["document"], contract["document"])
-                self.assertTrue(
-                    contract["commands"].issubset({
-                        record["command"] for record in case["automation"]
-                    })
+                self.assertEqual(
+                    feature["required_cases"],
+                    list(contract["cases"]),
                 )
-                procedure = check_docs.read_text(
-                    os.path.join(REAL_REPO_ROOT, case["document"])
-                )
-                self.assertIn("## " + contract["case_id"] + ":", procedure)
-                for heading in (
-                    "### Actions",
-                    "### Expected result",
-                    "### Negative control",
-                    "### Interactions and save compatibility",
-                    "### Automation",
-                    "### Cleanup and limitations",
-                ):
-                    self.assertIn(heading, procedure)
+                for case_id, case_contract in contract["cases"].items():
+                    case = cases[case_id]
+                    self.assertEqual(case["feature_id"], feature_id)
+                    self.assertEqual(
+                        case["document"],
+                        case_contract["document"],
+                    )
+                    self.assertTrue(
+                        case_contract["commands"].issubset({
+                            record["command"] for record in case["automation"]
+                        })
+                    )
+                    for term in case_contract["negative_control_terms"]:
+                        self.assertIn(term, case["negative_control"])
+                    procedure = check_docs.read_text(
+                        os.path.join(REAL_REPO_ROOT, case["document"])
+                    )
+                    self.assertIn("## " + case_id + ":", procedure)
+                    for heading in (
+                        "### Actions",
+                        "### Expected result",
+                        "### Negative control",
+                        "### Interactions and save compatibility",
+                        "### Automation",
+                        "### Cleanup and limitations",
+                    ):
+                        self.assertIn(heading, procedure)
 
     def test_patch_release_cases_are_indexed_with_complete_procedures(self):
         registry_path = os.path.join(REAL_REPO_ROOT, check_docs.TEST_CASE_REGISTRY_PATH)
