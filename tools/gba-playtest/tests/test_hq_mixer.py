@@ -129,6 +129,31 @@ class HqMixerConfigurationTests(unittest.TestCase):
             with self.subTest(enabled=enabled):
                 self.assertEqual("src/m4a_hq_mixer.s" in source_list, bool(enabled))
 
+    def test_listening_roms_are_isolated_and_non_instrumented(self) -> None:
+        result = run(
+            [
+                "make",
+                "-n",
+                "expansion-modern-hq-mixer-listening-roms",
+                "MAKE=:",
+                "MODERN_CONFIG=release",
+                "MODERN_ABI=aapcs",
+            ]
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        text = result.stdout + result.stderr
+        self.assertIn(
+            "MODERN_BUILD_ROOT=build/expansion-modern-hq-mixer-listening/enabled",
+            text,
+        )
+        self.assertIn(
+            "MODERN_BUILD_ROOT=build/expansion-modern-hq-mixer-listening/stock-control",
+            text,
+        )
+        self.assertIn("EXPANSION_HQ_MIXER=1", text)
+        self.assertIn("EXPANSION_HQ_MIXER=0", text)
+        self.assertNotIn("FE8_HQ_MIXER_TEST_FIXTURE", text)
+
     def test_documented_budget_matches_enforced_hq_contract(self) -> None:
         audio_doc = (ROOT / "docs" / "audio.md").read_text(encoding="utf-8")
         for value in (
@@ -138,6 +163,14 @@ class HqMixerConfigurationTests(unittest.TestCase):
             f"0x{hq.HQ_IWRAM_STATIC_DELTA:X}",
         ):
             self.assertIn(value, audio_doc)
+        self.assertIn(
+            "build/expansion-modern-hq-mixer-listening/enabled",
+            audio_doc,
+        )
+        self.assertIn(
+            "build/expansion-modern-hq-mixer-listening/stock-control",
+            audio_doc,
+        )
 
 
 class HqMixerCompiledArtifactTests(unittest.TestCase):
@@ -211,6 +244,30 @@ class HqMixerCompiledArtifactTests(unittest.TestCase):
 
 
 class HqMixerQualityFixtureTests(unittest.TestCase):
+    def test_pre_fix_player_alias_collision_is_rejected(self) -> None:
+        players = {
+            symbol: (0x03006A80, hq.MPLAY_INFO_BYTES)
+            for symbol in hq.MPLAY_INFO_SYMBOLS
+        }
+        with self.assertRaisesRegex(RuntimeError, "player-info symbols overlap"):
+            hq.validate_player_ranges(
+                players,
+                (0x03006A80, hq.HQ_MIX_BUFFER_BYTES),
+            )
+
+    def test_early_pcm_cannot_hide_a_silent_final_window(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "enabled late PCM window is silent at frame 3290",
+        ):
+            hq.require_sustained_late_audio(
+                [120, 600, 3280, 3290],
+                [[1], [2], [3], [0]],
+                [[4], [5], [6], [0]],
+                [1, 1, 1, 0],
+                "enabled",
+            )
+
     def test_final_quantization_has_lower_rms_error(self) -> None:
         stock_rms, hq_rms = hq.quantization_rms()
         self.assertGreater(stock_rms, 0)
