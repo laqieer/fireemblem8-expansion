@@ -351,6 +351,9 @@ policy, player-facing text, or a general expression language.
    to parse the ARM symbol set for both enabled and disabled profiles.
 4. Run
    `make expansion-modern-autoplay-strategy-runtime-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+5. Run `make expansion-modern-autoplay-strategy-budget` to rebuild the
+   pre-router/current-disabled/current-enabled full-link comparison and
+   regenerate `reports/autoplay_strategy_budget.json`.
 
 ### Expected result
 
@@ -368,6 +371,11 @@ and lifecycle/Suspend-resume reset discards it. Unknown IDs,
 duplicate/missing callbacks, invalid capability bits, capacity overflow, and
 Objective-first with an unsupported objective kind fail explicitly before an
 action commits.
+
+The structured budget result reports the profiles-disabled shared router
+separately from the enabled references: +1,784 debug / +2,184 release ROM
+bytes for the router and another +472 debug / +408 release bytes for the two
+reference descriptors/callbacks.
 
 ### Negative control
 

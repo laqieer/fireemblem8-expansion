@@ -521,9 +521,12 @@ than selecting a success-shaped fallback. The typed event helpers
 schema-validated assignment to `AUTOPLAY_STRATEGY_ACTIVATE` /
 `AUTOPLAY_STRATEGY_DEACTIVATE` and the matching typed C bridge. They validate
 the same generated strategy-ID/activation-flag pair, set or clear only that
-existing event flag, and queue one validated pair plus operation during an
-active blue computer phase without changing the current units. Computer-phase
-completion is the next safe boundary and applies that operation exactly once.
+existing event flag, and return `ERR_PHASE_ACTIVE` without queueing when
+called directly from C during an active blue computer phase. Only the
+`EventActivate` / `EventDeactivate` wrappers convert that validated result
+into one pending pair plus operation without changing the current units.
+Computer-phase completion is the next safe boundary and applies that operation
+exactly once.
 One later valid request replaces the pending operation, duplicates coalesce,
 and invalid pairs cannot replace it. Raw `flag.set` and `flag.clear` cannot
 target a declared strategy activation flag. The pending operation is cleared
@@ -626,6 +629,16 @@ strategy host/ARM selector enforces exactly eight strategy EWRAM bytes and a
 4 KiB aggregate object-text ceiling for both profile states. The archival
 lane excludes the runtime and generated table.
 
+The parsed full-link evidence is
+`reports/autoplay_strategy_budget.json`. Against the merged pre-router master
+linker reports, the shared router with reference profiles **disabled** adds
+1,784 debug / 2,184 release ROM bytes. Enabling the two reference
+descriptors/callbacks adds a separate 472 debug / 408 release ROM bytes over
+that disabled-router build. These are distinct costs: downstream projects pay
+the shared-router delta by default, while the reference increment is paid only
+when `EXPANSION_AUTOPLAY_STRATEGIES=1`. The budget owner rebuilds all four
+ELFs and derives both deltas from their `__floating_end` assignments.
+
 ### Strategy compatibility and budgets
 
 - **Dependencies:** typed chapter objectives/groups, `CpDecide_Main`, the
@@ -640,7 +653,9 @@ lane excludes the runtime and generated table.
 - **ROM/RAM:** reference profiles add only generated ROM descriptors and
   callback text. The shared router uses one eight-byte EWRAM pending pair and
   no IWRAM; the focused object gate enforces that exact bound and a 4 KiB text
-  cap.
+  cap. Parsed full-link evidence records the profiles-disabled shared router
+  at +1,784 debug / +2,184 release ROM bytes and the enabled references at an
+  additional +472 debug / +408 release bytes.
 - **Runtime evidence:** the debug strategy profile and default-disabled ROMs
   execute bounded fixed-seed `CpDecide_Main` scenarios twice; their action and
   telemetry captures must repeat exactly.

@@ -354,14 +354,38 @@ the event-list manifest: an assignment in another chapter neither authorizes
 the typed operation nor reserves its flag against that chapter's ordinary flag
 helpers. `ExpansionAutoplayStrategies_ActivateAssignment()` and
 `ExpansionAutoplayStrategies_DeactivateAssignment()` accept only a declared
-pair, set or clear only that existing flag outside an active blue computer
-phase, and queue one validated pair plus operation when the phase is active.
-The latest distinct valid request replaces the pending operation, duplicates
+pair and set or clear only that existing flag at a safe boundary. A direct C
+call during an active blue computer phase returns
+`EXPANSION_AUTOPLAY_STRATEGY_ERR_PHASE_ACTIVE` and **does not queue** a
+request. Only the generated `EventActivate` / `EventDeactivate` wrappers
+convert that validated result into one pending pair plus operation. The latest
+distinct valid event request replaces the pending operation, duplicates
 coalesce, and computer phase completion applies it exactly once. The
 eight-byte transient is cleared on map/chapter lifecycle reset (including
 Suspend resume) and is never serialized. A selected strategy/objective
 capability mismatch stops before an AI action rather than falling back
 silently.
+
+### Direct C assignment changes
+
+Direct callers must handle every result and retry at their own later safe
+boundary; `ERR_PHASE_ACTIVE` is a rejection, not deferred success:
+
+```c
+enum ExpansionAutoplayStrategyResult RequestProjectStrategy(void)
+{
+    enum ExpansionAutoplayStrategyResult result;
+
+    result = ExpansionAutoplayStrategies_ActivateAssignment(
+        EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID,
+        EVFLAG_HIDE_BLINKING_ICON
+    );
+    if (result == EXPANSION_AUTOPLAY_STRATEGY_ERR_PHASE_ACTIVE)
+        return result; /* Nothing was queued; the caller may retry later. */
+
+    return result;
+}
+```
 
 `activationFlag` and `deactivationFlag` use existing `EVFLAG_*` state.
 Strategy assignment flags use only `strategy.activate` /
