@@ -322,8 +322,6 @@ class MapMenuSuspendHelpTests(unittest.TestCase):
     def test_modern_mk_wires_the_flag_define(self):
         modern_mk = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
         self.assertIn("-DFE8_EXPANSION_DANGER_OVERLAY_MENU=$(EXPANSION_DANGER_OVERLAY_MENU)", modern_mk)
-        modern_mk = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("-DFE8_EXPANSION_DANGER_OVERLAY_MENU=$(EXPANSION_DANGER_OVERLAY_MENU)", modern_mk)
 
     def test_parsed_default_and_enabled_identity_are_distinct(self):
         import sys
