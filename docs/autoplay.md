@@ -659,6 +659,10 @@ input. The absent seam is private to this measurement target: it is not an
 Autoconf/Make project option, configuration identity, save behavior, shipped
 runtime, or alternate fallback. The measured shared-router and reference
 increments are reported separately so later unrelated ROM changes cancel out.
+Every recursive router-absent and profiles-disabled build explicitly forces
+`EXPANSION_AUTOPLAY_STRATEGIES=0`; references-enabled builds force `=1`.
+Therefore a persisted `./configure` choice, environment value, or caller
+override cannot contaminate the matched variants.
 The current matched result is +1,560 debug / +1,896 release ROM bytes for the
 profiles-disabled shared router, then another +456 debug / +408 release bytes
 for the enabled reference descriptors/callbacks.
