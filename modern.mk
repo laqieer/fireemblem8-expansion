@@ -64,6 +64,7 @@ MODERN_GOALS := \
 	expansion-modern-chapter-objectives-profile-boot-check \
 	expansion-modern-chapter-objectives-check \
 	expansion-modern-autoplay-strategy-runtime-check \
+	expansion-modern-autoplay-strategy-router-absent-budget \
 	expansion-modern-autoplay-strategy-enabled-budget \
 	expansion-modern-autoplay-strategy-budget \
 	expansion-modern-autoplay-strategies-objects \
@@ -363,6 +364,9 @@ endif
 # `include generated_data.mk`): GENERATED_DATA_LINKED_HAND_SOURCES is then
 # simply empty/undefined, so this filters out nothing.
 MODERN_ALL_C_SOURCES := $(filter-out $(GENERATED_DATA_LINKED_HAND_SOURCES),$(MODERN_ALL_C_SOURCES))
+ifeq ($(MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT),1)
+MODERN_ALL_C_SOURCES := $(filter-out src/expansion_autoplay_strategies.c,$(MODERN_ALL_C_SOURCES))
+endif
 
 MODERN_ALL_DATA_C_SOURCES ?= $(wildcard src/data/*.c src/data/mapanim/*.c src/data/menu/*.c src/data/ending/*.c src/data/worldmap/*.c src/data/ui/*.c)
 
@@ -651,7 +655,9 @@ MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-da
 endif
 
 ifneq ($(strip $(GENERATED_DATA_AUTOPLAYSTRATEGIES_C)),)
+ifneq ($(MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT),1)
 MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies-data.o
+endif
 endif
 
 # Issue #5 Batch 1 (mechanics): $(GENERATED_DATA_TERRAINSTATS_OBJECT)
@@ -3558,6 +3564,12 @@ MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_INVENTORY = \
 	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG)-inventory.md
 MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_REPORT = \
 	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG).json
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_BUILD_ROOT = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-$(MODERN_CONFIG)-build
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_REPORT = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-$(MODERN_CONFIG).json
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_ELF = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_BUILD_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
 MODERN_AUTOPLAY_STRATEGY_BUDGET_REPORT := reports/autoplay_strategy_budget.json
 MODERN_AUTOPLAY_STRATEGY_BUDGET_SCRIPT := \
 	scripts/linker_report/autoplay_strategy_budget.py
@@ -3572,6 +3584,14 @@ CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)
 CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)
 CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)
 
+expansion-modern-autoplay-strategy-router-absent-budget:
+	+$(MAKE) expansion-modern-budget \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_BUILD_ROOT) \
+		MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT=1 \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT=1 \
+		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_REPORT)
+
 expansion-modern-autoplay-strategy-enabled-budget:
 	+$(MAKE) expansion-modern-budget \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
@@ -3582,6 +3602,10 @@ expansion-modern-autoplay-strategy-enabled-budget:
 		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_REPORT)
 
 expansion-modern-autoplay-strategy-budget:
+	+$(MAKE) expansion-modern-autoplay-strategy-router-absent-budget \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs
+	+$(MAKE) expansion-modern-autoplay-strategy-router-absent-budget \
+		MODERN_CONFIG=release MODERN_ABI=aapcs
 	+$(MAKE) expansion-modern-budget MODERN_CONFIG=debug MODERN_ABI=aapcs
 	+$(MAKE) expansion-modern-budget MODERN_CONFIG=release MODERN_ABI=aapcs
 	+$(MAKE) expansion-modern-autoplay-strategy-enabled-budget \
@@ -3589,11 +3613,19 @@ expansion-modern-autoplay-strategy-budget:
 	+$(MAKE) expansion-modern-autoplay-strategy-enabled-budget \
 		MODERN_CONFIG=release MODERN_ABI=aapcs
 	"$(PYTHON)" "$(MODERN_AUTOPLAY_STRATEGY_BUDGET_SCRIPT)" \
-		--baseline reports/autoplay_strategy_pre_router_budget.json \
+		--nm "$(MODERN_NM)" \
+		--absent-debug $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-debug.json \
+		--absent-release $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-release.json \
 		--disabled-debug reports/linker-budget/modern-debug.json \
 		--disabled-release reports/linker-budget/modern-release.json \
 		--enabled-debug $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-debug.json \
 		--enabled-release $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-release.json \
+		--absent-debug-elf $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-debug-build/debug/aapcs/fireemblem8.elf \
+		--absent-release-elf $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-release-build/release/aapcs/fireemblem8.elf \
+		--disabled-debug-elf build/expansion-modern/debug/aapcs/fireemblem8.elf \
+		--disabled-release-elf build/expansion-modern/release/aapcs/fireemblem8.elf \
+		--enabled-debug-elf $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-debug-build/debug/aapcs/fireemblem8.elf \
+		--enabled-release-elf $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-release-build/release/aapcs/fireemblem8.elf \
 		--output "$(MODERN_AUTOPLAY_STRATEGY_BUDGET_REPORT)"
 
 expansion-modern-autoplay-check: expansion-modern-boot-preflight expansion-modern-rom

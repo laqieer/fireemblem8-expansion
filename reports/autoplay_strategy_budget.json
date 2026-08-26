@@ -3,35 +3,71 @@
   "metric": "__floating_end full-link ROM address delta in bytes",
   "configs": {
     "debug": {
-      "pre_router": {
-        "source": "reports/autoplay_strategy_pre_router_budget.json",
-        "floating_end": 145968628
+      "router_absent": {
+        "source": "build/expansion-modern-autoplay-strategy-budget/absent-debug.json",
+        "elf": "build/expansion-modern-autoplay-strategy-budget/absent-debug-build/debug/aapcs/fireemblem8.elf",
+        "floating_end": 145968852,
+        "symbols": {
+          "ExpansionAutoplayStrategies_TryDecide": false,
+          "gExpansionAutoplayStrategies": false,
+          "gExpansionAutoplayStrategyBundles": false
+        }
       },
       "profiles_disabled": {
         "source": "reports/linker-budget/modern-debug.json",
+        "elf": "build/expansion-modern/debug/aapcs/fireemblem8.elf",
         "floating_end": 145970412,
-        "shared_router_delta_bytes": 1784
+        "shared_router_delta_bytes": 1560,
+        "symbols": {
+          "ExpansionAutoplayStrategies_TryDecide": true,
+          "gExpansionAutoplayStrategies": true,
+          "gExpansionAutoplayStrategyBundles": true
+        }
       },
       "references_enabled": {
         "source": "build/expansion-modern-autoplay-strategy-budget/enabled-debug.json",
-        "floating_end": 145970884,
-        "reference_incremental_delta_bytes": 472
+        "elf": "build/expansion-modern-autoplay-strategy-budget/enabled-debug-build/debug/aapcs/fireemblem8.elf",
+        "floating_end": 145970868,
+        "reference_incremental_delta_bytes": 456,
+        "symbols": {
+          "ExpansionAutoplayStrategies_TryDecide": true,
+          "gExpansionAutoplayStrategies": true,
+          "gExpansionAutoplayStrategyBundles": true
+        }
       }
     },
     "release": {
-      "pre_router": {
-        "source": "reports/autoplay_strategy_pre_router_budget.json",
-        "floating_end": 145965748
+      "router_absent": {
+        "source": "build/expansion-modern-autoplay-strategy-budget/absent-release.json",
+        "elf": "build/expansion-modern-autoplay-strategy-budget/absent-release-build/release/aapcs/fireemblem8.elf",
+        "floating_end": 145966036,
+        "symbols": {
+          "ExpansionAutoplayStrategies_TryDecide": false,
+          "gExpansionAutoplayStrategies": false,
+          "gExpansionAutoplayStrategyBundles": false
+        }
       },
       "profiles_disabled": {
         "source": "reports/linker-budget/modern-release.json",
+        "elf": "build/expansion-modern/release/aapcs/fireemblem8.elf",
         "floating_end": 145967932,
-        "shared_router_delta_bytes": 2184
+        "shared_router_delta_bytes": 1896,
+        "symbols": {
+          "ExpansionAutoplayStrategies_TryDecide": true,
+          "gExpansionAutoplayStrategies": true,
+          "gExpansionAutoplayStrategyBundles": true
+        }
       },
       "references_enabled": {
         "source": "build/expansion-modern-autoplay-strategy-budget/enabled-release.json",
+        "elf": "build/expansion-modern-autoplay-strategy-budget/enabled-release-build/release/aapcs/fireemblem8.elf",
         "floating_end": 145968340,
-        "reference_incremental_delta_bytes": 408
+        "reference_incremental_delta_bytes": 408,
+        "symbols": {
+          "ExpansionAutoplayStrategies_TryDecide": true,
+          "gExpansionAutoplayStrategies": true,
+          "gExpansionAutoplayStrategyBundles": true
+        }
       }
     }
   }

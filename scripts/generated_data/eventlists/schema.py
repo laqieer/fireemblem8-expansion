@@ -74,7 +74,7 @@ from ..json_loader import load_json_file
 from ..schema import DependencyGraph, TableSchema
 from .. import character_refs
 from ..chapterobjectives.schema import stable_id_value
-from ..autoplaystrategies.schema import selected_records as selected_strategy_records
+from ..autoplaystrategies import schema as autoplaystrategies_schema
 from ..validators import extract_enum_constants, validate_range, validate_reference, validate_unique
 from . import helper_specs
 
@@ -830,7 +830,13 @@ def _chapter_bundle_records(dependency_records):
     return (bundles,)
 
 
-def _strategy_pairs_for_owner(records, chapters, dependency_records, diagnostics):
+def _strategy_pairs_for_owner(
+    records,
+    strategy_records,
+    chapters,
+    dependency_records,
+    diagnostics,
+):
     if not chapters:
         return set()
 
@@ -855,10 +861,70 @@ def _strategy_pairs_for_owner(records, chapters, dependency_records, diagnostics
         )
         return set()
 
-    owner_chapter = owners[0].chapter.id
+    owner_bundle = owners[0]
+    owner = owner_bundle.autoplay_strategies
+    if owner is None:
+        diagnostics.add(
+            _err(
+                "event-list owner has no autoplayStrategies source declaration",
+                records.manifest.symbol_loc,
+                "dependencies.autoplaystrategies.source",
+            )
+        )
+        return set()
+
+    owner_source = (
+        owner.source
+        if os.path.isabs(owner.source)
+        else os.path.join(owner_bundle.repository_root, owner.source)
+    )
+    try:
+        owner_records = autoplaystrategies_schema.load_records(owner_source)
+    except (OSError, GeneratedDataError) as error:
+        diagnostics.add(
+            _err(
+                "could not load event-list owner autoplayStrategies source '{}': {}".format(
+                    owner.source,
+                    error,
+                ),
+                records.manifest.symbol_loc,
+                "dependencies.autoplaystrategies.source",
+            )
+        )
+        return set()
+
+    selected_source_paths = set(strategy_records.get("source_paths", ()))
+    owner_source_paths = set(owner_records.get("source_paths", ()))
+    if selected_source_paths != owner_source_paths:
+        diagnostics.add(
+            _err(
+                "selected autoplaystrategies dependency sources {} do not match "
+                "event-list owner sources {}".format(
+                    sorted(selected_source_paths),
+                    sorted(owner_source_paths),
+                ),
+                records.manifest.symbol_loc,
+                "dependencies.autoplaystrategies.source",
+            )
+        )
+        return set()
+
+    owner_chapter = owner_bundle.chapter.id
     strategy_pairs = set()
     for chapter, chapter_assignment, group_assignments, unit_assignments in chapters:
         if chapter.chapter != owner_chapter:
+            continue
+        if chapter.source_path not in owner_source_paths or chapter.symbol not in owner.symbols:
+            diagnostics.add(
+                _err(
+                    "selected strategy assignment bundle '{}' is not declared by "
+                    "the event-list owner's autoplayStrategies symbols".format(
+                        chapter.symbol
+                    ),
+                    records.manifest.symbol_loc,
+                    "dependencies.autoplaystrategies.symbols",
+                )
+            )
             continue
         assignments = [chapter_assignment]
         assignments.extend(group_assignments)
@@ -881,7 +947,7 @@ def _selected_strategy_dependency(records, dependency_records, diagnostics):
         )
         return [], []
     try:
-        return selected_strategy_records(strategy_records)
+        return autoplaystrategies_schema.selected_records(strategy_records)
     except (GeneratedDataError, AttributeError, KeyError, TypeError) as error:
         diagnostics.add(
             _err(
@@ -907,6 +973,7 @@ def validate(records, diagnostics, dependency_records=None, characters_header=CH
     trap_symbols = {r.symbol for r in dependency_records.get("traps", ())}
     eventscripts_by_symbol = {r.symbol: r for r in dependency_records.get("eventscripts", ())}
     helper_scripts_by_symbol = {script.symbol: script for script in records.helper_scripts}
+    strategy_records = dependency_records.get("autoplaystrategies", {})
     selected_strategies, selected_chapters = _selected_strategy_dependency(
         records,
         dependency_records,
@@ -915,6 +982,7 @@ def validate(records, diagnostics, dependency_records=None, characters_header=CH
     strategy_ids = {strategy.id for strategy in selected_strategies}
     strategy_pairs = _strategy_pairs_for_owner(
         records,
+        strategy_records,
         selected_chapters,
         dependency_records,
         diagnostics,

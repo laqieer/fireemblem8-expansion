@@ -352,9 +352,9 @@ policy, player-facing text, or a general expression language.
 4. Run
    `make expansion-modern-autoplay-strategy-runtime-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
 5. Run `make expansion-modern-autoplay-strategy-budget` to rebuild the
-   immutable-pre-router/current-disabled/current-enabled full-link comparison
-   and regenerate `reports/autoplay_strategy_budget.json` without consulting
-   the current default branch.
+   current-tree router-absent/current-disabled/current-enabled full-link
+   comparison and regenerate `reports/autoplay_strategy_budget.json` using
+   only matched current-tree artifacts and no Git input.
 
 ### Expected result
 
@@ -377,11 +377,18 @@ are absent from emitted strategy C. Strategy-assigned groups must be disjoint
 by character and owned unit group; overlap fails identically under reversed
 assignment order, equal strategies, and unit overrides, while unassigned
 objective-only group overlap remains valid.
+Event helpers additionally require the owning bundle's exact strategy source
+members and symbol declarations; a same-chapter custom source with canonical
+ownership fails. Disabled built-ins consume neither registry capacity nor
+capability/overlap checks, while selected custom records retain diagnostics
+and match the generated/ACTIVE counts.
 
 The structured budget result reports the profiles-disabled shared router
-separately from the enabled references: +1,784 debug / +2,184 release ROM
-bytes for the router and another +472 debug / +408 release bytes for the two
-reference descriptors/callbacks.
+separately from the enabled references and carries parsed symbol evidence that
+the internal absent ELF omits the router hook/tables while both present ELFs
+contain them. The matched current-tree deltas are +1,560 debug / +1,896
+release bytes for the shared router and +456 debug / +408 release bytes for
+the references.
 
 ### Negative control
 

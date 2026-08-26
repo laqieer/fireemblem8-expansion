@@ -222,6 +222,21 @@ class AutoplayStrategyCaseContractTests(unittest.TestCase):
             )
         )
         self.assertEqual(evidence["schema"], "fe8.autoplay-strategy-budget.v1")
+        internal_seam = "MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT"
+        self.assertIn(
+            internal_seam,
+            (ROOT / "modern.mk").read_text(encoding="utf-8"),
+        )
+        for public_surface in (
+            ROOT / "configure.ac",
+            ROOT / "scripts" / "modernize" / "expansion_config.py",
+            ROOT / "docs" / "config_identity.md",
+        ):
+            self.assertNotIn(
+                internal_seam,
+                public_surface.read_text(encoding="utf-8"),
+                str(public_surface),
+            )
 
         registry = json.loads(
             (ROOT / "docs" / "test-cases" / "registry.json").read_text(
@@ -261,7 +276,7 @@ class AutoplayStrategyCaseContractTests(unittest.TestCase):
             )
             self.assertEqual(
                 values["profiles_disabled"]["shared_router_delta_bytes"],
-                current_end - values["pre_router"]["floating_end"],
+                current_end - values["router_absent"]["floating_end"],
             )
             self.assertEqual(
                 values["references_enabled"]["reference_incremental_delta_bytes"],
@@ -275,26 +290,15 @@ class AutoplayStrategyCaseContractTests(unittest.TestCase):
                 values["references_enabled"]["reference_incremental_delta_bytes"],
                 0,
             )
+            self.assertFalse(any(values["router_absent"]["symbols"].values()))
+            self.assertTrue(all(values["profiles_disabled"]["symbols"].values()))
+            self.assertTrue(all(values["references_enabled"]["symbols"].values()))
 
     def test_budget_regeneration_is_independent_of_git_and_router_source(self):
         build_root = ROOT / "build"
         build_root.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=build_root) as temporary:
             work = Path(temporary)
-            baseline = work / "baseline.json"
-            baseline.write_text(
-                json.dumps({
-                    "schema": "fe8.autoplay-strategy-pre-router-budget.v1",
-                    "metric": "__floating_end full-link ROM address",
-                    "contract": "synthetic immutable baseline",
-                    "configs": {
-                        "debug": {"floating_end": 1000},
-                        "release": {"floating_end": 2000},
-                    },
-                }),
-                encoding="utf-8",
-            )
-
             def write_linker_report(path, floating_end):
                 path.write_text(
                     json.dumps({
@@ -308,15 +312,36 @@ class AutoplayStrategyCaseContractTests(unittest.TestCase):
                     encoding="utf-8",
                 )
 
+            absent_debug = work / "absent-debug.json"
+            absent_release = work / "absent-release.json"
             disabled_debug = work / "disabled-debug.json"
             disabled_release = work / "disabled-release.json"
             enabled_debug = work / "enabled-debug.json"
             enabled_release = work / "enabled-release.json"
+            write_linker_report(absent_debug, 1000)
+            write_linker_report(absent_release, 2000)
             write_linker_report(disabled_debug, 1100)
             write_linker_report(disabled_release, 2200)
             write_linker_report(enabled_debug, 1130)
             write_linker_report(enabled_release, 2240)
             output = work / "report.json"
+            fake_nm = work / "fake-nm.py"
+            fake_nm.write_text(
+                "#!/usr/bin/env python3\n"
+                "import pathlib, sys\n"
+                "if 'absent' not in pathlib.Path(sys.argv[-1]).name:\n"
+                "    print('00000000 T ExpansionAutoplayStrategies_TryDecide')\n"
+                "    print('00000004 D gExpansionAutoplayStrategies')\n"
+                "    print('00000008 D gExpansionAutoplayStrategyBundles')\n",
+                encoding="utf-8",
+            )
+            fake_nm.chmod(0o755)
+            elf_paths = {}
+            for profile in ("absent", "disabled", "enabled"):
+                for config in ("debug", "release"):
+                    path = work / "{}-{}.elf".format(profile, config)
+                    path.write_bytes(b"")
+                    elf_paths[(profile, config)] = path
             env = dict(os.environ)
             env["GIT_DIR"] = str(work / "missing-git-directory")
             completed = subprocess.run(
@@ -328,8 +353,12 @@ class AutoplayStrategyCaseContractTests(unittest.TestCase):
                         / "linker_report"
                         / "autoplay_strategy_budget.py"
                     ),
-                    "--baseline",
-                    str(baseline),
+                    "--nm",
+                    str(fake_nm),
+                    "--absent-debug",
+                    str(absent_debug),
+                    "--absent-release",
+                    str(absent_release),
                     "--disabled-debug",
                     str(disabled_debug),
                     "--disabled-release",
@@ -338,6 +367,18 @@ class AutoplayStrategyCaseContractTests(unittest.TestCase):
                     str(enabled_debug),
                     "--enabled-release",
                     str(enabled_release),
+                    "--absent-debug-elf",
+                    str(elf_paths[("absent", "debug")]),
+                    "--absent-release-elf",
+                    str(elf_paths[("absent", "release")]),
+                    "--disabled-debug-elf",
+                    str(elf_paths[("disabled", "debug")]),
+                    "--disabled-release-elf",
+                    str(elf_paths[("disabled", "release")]),
+                    "--enabled-debug-elf",
+                    str(elf_paths[("enabled", "debug")]),
+                    "--enabled-release-elf",
+                    str(elf_paths[("enabled", "release")]),
                     "--output",
                     str(output),
                 ],

@@ -1,5 +1,8 @@
 import copy
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from scripts.generated_data.diagnostics import DiagnosticCollector
@@ -114,6 +117,15 @@ class EventListsStrategyHelperTests(unittest.TestCase):
             fixture_path("chapterbundle", "valid.json")
         )
         dependencies["chapterbundle"][0].chapter.id = "CHAPTER_L_2"
+        bundle = dependencies["chapterbundle"][0]
+        bundle.autoplay_strategies = chapterbundle_schema.TableRef(
+            "autoplaystrategies",
+            fixture_path("autoplaystrategies", "valid.json"),
+            bundle.loc,
+            ["AutoplayStrategies_Fixture"],
+            [bundle.loc],
+            bundle.loc,
+        )
         return dependencies
 
     def _strategy_call(
@@ -263,6 +275,61 @@ class EventListsStrategyHelperTests(unittest.TestCase):
                 ),
                 messages,
             )
+
+    def test_pair_authorization_requires_exact_owner_source_and_symbols(self):
+        records = eventlists_schema.load_records(
+            fixture_path("eventlists", "helpers_valid.json")
+        )
+        records.helper_scripts[0].entries.append(self._activation(records))
+
+        wrong_source = self._strategy_dependencies()
+        wrong_source["chapterbundle"][0].autoplay_strategies.source = (
+            "src/data/autoplay_strategies.json"
+        )
+        diagnostics = DiagnosticCollector()
+        eventlists_schema.validate(records, diagnostics, wrong_source)
+        self.assertTrue(
+            any(
+                error.reference_path == "dependencies.autoplaystrategies.source"
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
+        wrong_symbols = self._strategy_dependencies()
+        wrong_symbols["chapterbundle"][0].autoplay_strategies.symbols = []
+        diagnostics = DiagnosticCollector()
+        eventlists_schema.validate(records, diagnostics, wrong_symbols)
+        self.assertTrue(
+            any(
+                error.reference_path == "dependencies.autoplaystrategies.symbols"
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
+        build_root = Path("build")
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            source_dir = Path(temporary)
+            source = source_dir / "custom_strategies.json"
+            shutil.copyfile(
+                fixture_path("autoplaystrategies", "valid.json"),
+                source,
+            )
+            dependencies = self._strategy_dependencies()
+            dependencies["autoplaystrategies"] = (
+                autoplaystrategies_schema.AutoplayStrategiesTableSchema().configure_records(
+                    autoplaystrategies_schema.load_records(str(source_dir)),
+                    reference_profiles="1",
+                )
+            )
+            dependencies["chapterbundle"][0].autoplay_strategies.source = str(
+                source_dir.resolve()
+            )
+            diagnostics = DiagnosticCollector()
+            eventlists_schema.validate(records, diagnostics, dependencies)
+            self.assertTrue(diagnostics.ok, diagnostics.render())
 
     def test_raw_flag_changes_cannot_bypass_declared_strategy_pair(self):
         for operation, typed_operation in (

@@ -20,6 +20,7 @@ from scripts.generated_data import idspace
 
 
 EXPANDED_ENV = {idspace.ITEM_CAP_ENV: '0xCE'}
+AUTOPLAY_ENABLED_ENV = {idspace.AUTOPLAY_STRATEGIES_ENV: "1"}
 
 
 def _args(out_dir):
@@ -95,12 +96,52 @@ class ActiveContractModelTests(unittest.TestCase):
         )
         self.assertEqual(
             default_rows["autoplaystrategies"]["active_record_count"],
+            0,
+        )
+        self.assertTrue(default_rows["autoplaystrategies"]["differs_from_committed"])
+        enabled_rows = {
+            r["table"]: r
+            for r in idspace.active_manifest_rows(env=AUTOPLAY_ENABLED_ENV)
+        }
+        self.assertEqual(
+            enabled_rows["autoplaystrategies"]["active_record_count"],
             2,
         )
-        self.assertFalse(default_rows["autoplaystrategies"]["differs_from_committed"])
+        self.assertFalse(
+            enabled_rows["autoplaystrategies"]["differs_from_committed"]
+        )
         for table, row in expanded_rows.items():
-            if table != 'items':
+            if table not in ('items', 'autoplaystrategies'):
                 self.assertFalse(row['differs_from_committed'], table)
+
+    def test_autoplay_active_count_keeps_selected_custom_records(self):
+        from scripts.generated_data.autoplaystrategies import schema
+        from scripts.generated_data.tests._util import fixture_path
+
+        table = schema.AutoplayStrategiesTableSchema()
+        records = schema.load_records(
+            fixture_path("autoplaystrategies", "valid.json")
+        )
+        disabled = table.configure_records(
+            records,
+            reference_profiles=idspace.resolve_autoplay_strategies({}),
+        )
+        self.assertEqual(table.active_manifest_record_count(disabled), 1)
+        enabled = table.configure_records(
+            records,
+            reference_profiles=idspace.resolve_autoplay_strategies(
+                AUTOPLAY_ENABLED_ENV
+            ),
+        )
+        self.assertEqual(table.active_manifest_record_count(enabled), 3)
+
+    def test_invalid_autoplay_profile_env_fails_closed(self):
+        for value in ("-1", "2", "true", "yes"):
+            with self.subTest(value=value):
+                with self.assertRaises(idspace.CapError):
+                    idspace.active_manifest_rows(
+                        env={idspace.AUTOPLAY_STRATEGIES_ENV: value}
+                    )
 
     def test_impossible_cap_count_pair_is_rejected(self):
         payload = idspace.active_contract(env={})

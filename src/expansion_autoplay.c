@@ -74,7 +74,9 @@ void ExpansionAutoplay_Reset(void)
 
     sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
     gExpansionAutoplayTelemetry.controller = EXPANSION_BLUE_CONTROL_PLAYER;
+#if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
     ExpansionAutoplayStrategies_ResetPendingActivation();
+#endif
 }
 
 enum ExpansionAutoplayResult ExpansionAutoplay_SetBlueControl(enum ExpansionBlueControl control)
@@ -217,13 +219,17 @@ void ExpansionAutoplay_OnBlueComputerPhaseComplete(void)
 {
     if (gExpansionAutoplayTelemetry.state == EXPANSION_AUTOPLAY_STATE_FAILURE)
     {
+#if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
         ExpansionAutoplayStrategies_ResetPendingActivation();
+#endif
         return;
     }
 
     if (!ExpansionAutoplay_IsBlueComputerPhase())
     {
+#if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
         ExpansionAutoplayStrategies_ResetPendingActivation();
+#endif
         if (gExpansionAutoplayTelemetry.state != EXPANSION_AUTOPLAY_STATE_FAILURE)
             SetFailure(EXPANSION_AUTOPLAY_FAILURE_INVALID_PHASE);
         return;
@@ -231,7 +237,9 @@ void ExpansionAutoplay_OnBlueComputerPhaseComplete(void)
 
     IncrementBounded(&gExpansionAutoplayTelemetry.bluePhaseCompleteCount);
     gExpansionAutoplayTelemetry.state = EXPANSION_AUTOPLAY_STATE_COMPUTER_PHASE_COMPLETE;
+#if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
     ExpansionAutoplayStrategies_ApplyPendingActivation();
+#endif
 }
 
 void ExpansionAutoplay_RecordEligibleActors(int side, int count)
