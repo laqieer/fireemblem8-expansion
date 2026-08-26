@@ -90,6 +90,12 @@ SCRIPT_HELPERS = {
     "escape": {
         "warp_out": HelperSpec("WARP_OUT", (("x", "coord"), ("y", "coord"))),
     },
+    "strategy": {
+        "activate": HelperSpec(
+            "AUTOPLAY_STRATEGY_ACTIVATE",
+            (("strategy", "strategy_id"), ("flag", "flag")),
+        ),
+    },
 }
 
 

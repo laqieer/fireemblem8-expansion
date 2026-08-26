@@ -65,7 +65,9 @@ def _load_dependency_records(schema, dep_source_overrides):
     (in declaration order) through the schema registry, returning ``None``
     when the table has no table-level dependencies (so callers can fall
     back to the plain 2-argument ``validate`` signature unchanged)."""
-    dep_tables = tuple(schema.dependency_tables())
+    dep_tables = tuple(schema.dependency_tables()) + tuple(
+        getattr(schema, "optional_dependency_tables", lambda: ())()
+    )
     if not dep_tables:
         return None
     dependency_records = {}

@@ -125,6 +125,40 @@ class CliEventListsTests(unittest.TestCase):
                 self.assertIn("EventListScr_EL_Turn", content)
                 self.assertIn("CONST_DATA struct ChapterEventGroup ELEvents", content)
 
+    def test_strategy_helper_uses_optional_strategy_validation_input(self):
+        with scratch_dir() as tmp:
+            with open(fixture_path("eventlists", "helpers_valid.json"), encoding="utf-8") as handle:
+                source = json.load(handle)
+            source["helperScripts"][0]["entries"].append(
+                {
+                    "helper": "strategy",
+                    "operation": "activate",
+                    "args": [
+                        "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST",
+                        "EVFLAG_HIDE_BLINKING_ICON",
+                    ],
+                }
+            )
+            source_path = os.path.join(tmp, "strategy-helper.json")
+            with open(source_path, "w", encoding="utf-8") as handle:
+                json.dump(source, handle)
+            code, out, err = run_cli(
+                [
+                    "validate",
+                    "--table",
+                    "eventlists",
+                    "--source",
+                    source_path,
+                    "--no-roundtrip",
+                    "--dep-source",
+                    "autoplaystrategies={}".format(
+                        fixture_path("autoplaystrategies", "valid.json")
+                    ),
+                ]
+                + _eventlists_dep_source_args()
+            )
+            self.assertEqual(code, 0, msg=out + err)
+
     def test_check_real_ch2_eventlists_table_has_no_drift(self):
         code, out, err = run_cli(["check", "--table", "eventlists"])
         self.assertEqual(code, 0, msg=out + err)

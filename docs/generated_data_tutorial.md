@@ -257,6 +257,8 @@ Supported script families are:
   `EvtBgmFadeIn`, `MUSS`, and `MURE`;
 * `recovery.set_hp` -> `SET_HP` (the established event-slot-1 HP contract);
 * `escape.warp_out` -> `WARP_OUT`.
+* `strategy.activate` -> typed strategy/flag slots plus
+  `ASMC(ExpansionAutoplayStrategies_EventActivate)`.
 
 List helpers are `shop.armory`/`shop.vendor`/`shop.secret_shop`,
 `turn.event`, `flag.event`, and `escape.area`. IDs resolve against the live
@@ -341,16 +343,20 @@ bundle references.
 
 Assignments have deterministic `unit > group > chapter > Unit.ai[]`
 precedence. An optional `activationFlag` is an existing `EVFLAG_*`; authored
-event scripts continue to change it through the existing `flag.set` helper.
+event scripts must change it through
+`{"helper": "strategy", "operation": "activate", "args": [STRATEGY_ID, EVFLAG]}`
+instead of raw `flag.set`.
 `ExpansionAutoplayStrategies_ActivateAssignment(strategyId, activationFlag)`
 is the one typed event bridge: it accepts only a declared assignment, writes
 only that existing flag outside an active blue computer phase, and stores no
 separate runtime or save state. A selected strategy/objective capability
 mismatch stops before an AI action rather than falling back silently.
 
-`activationFlag` and `deactivationFlag` use existing `EVFLAG_*` state. Set
-or clear those values only through the existing `helperScripts` `flag.set` /
-`flag.clear` operations or established event scripts; objectives introduce no
+`activationFlag` and `deactivationFlag` use existing `EVFLAG_*` state.
+Strategy assignment activation uses only `strategy.activate`, which validates
+the declared pair and defers active-blue-phase changes; objective flags use
+the existing `helperScripts` `flag.set` / `flag.clear` operations or
+established event scripts. Objectives introduce no
 event language, chapter manifest, router, or hidden runtime activation bit.
 `protect` requires distinct existing `failureFlag` and `completionFlag`
 values. It latches a protected member's death, missing, or rescued state only

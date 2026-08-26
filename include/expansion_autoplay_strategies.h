@@ -120,6 +120,7 @@ enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_TryDecide(void)
 enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ActivateAssignment(
     u32 strategyId,
     u16 activationFlag);
+void ExpansionAutoplayStrategies_EventActivate(struct EventEngineProc* proc);
 
 #if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
 struct ExpansionAutoplayStrategyRuntimeProbe

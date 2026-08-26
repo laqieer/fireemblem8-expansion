@@ -13,6 +13,7 @@
 #include "cp_utility.h"
 #include "expansion_autoplay_strategies.h"
 #include "eventinfo.h"
+#include "event.h"
 
 #if FE8_EXPANSION_AUTOPLAY_STRATEGIES
 extern bool ExpansionAutoplayStrategy_ObjectiveFirst(
@@ -33,6 +34,7 @@ struct PlaySt gPlaySt;
 struct Unit* gActiveUnit;
 u8 gActiveUnitId;
 struct AiDecision gAiDecision;
+u32 gEventSlots[EVENT_SLOT_COUNT];
 struct Vec2 gBmMapSize;
 u8 ** gBmMapRange;
 
@@ -173,6 +175,7 @@ static void ResetFixture(void)
     sCombatMoveY = sEirika.yPos;
     sMoveDecisionX = 3;
     sMoveDecisionY = 3;
+    memset(gEventSlots, 0, sizeof(gEventSlots));
     gBmMapSize.x = 16;
     gBmMapSize.y = 16;
     for (index = 0; index < 16; index++)
@@ -196,6 +199,9 @@ static int TestRegistryFailures(void)
     const struct ExpansionAutoplayStrategy missingCallback[] = {
         { 1, 0, EXPANSION_AUTOPLAY_STRATEGY_ACTION_COMBAT, NULL, 0 },
     };
+    const struct ExpansionAutoplayStrategy reservedSentinel[] = {
+        { 0, 0, EXPANSION_AUTOPLAY_STRATEGY_ACTION_COMBAT, DummyStrategy, 0 },
+    };
     const struct ExpansionAutoplayStrategy invalidCapability[] = {
         { 1, 0x80000000, EXPANSION_AUTOPLAY_STRATEGY_ACTION_COMBAT, DummyStrategy, 0 },
     };
@@ -210,6 +216,12 @@ static int TestRegistryFailures(void)
             missingCallback, ARRAY_COUNT(missingCallback))
             == EXPANSION_AUTOPLAY_STRATEGY_ERR_MISSING_CALLBACK,
         "missing callback must fail"
+    );
+    CHECK(
+        ExpansionAutoplayStrategies_ValidateRegistry(
+            reservedSentinel, ARRAY_COUNT(reservedSentinel))
+            == EXPANSION_AUTOPLAY_STRATEGY_ERR_UNKNOWN_ID,
+        "reserved zero ID must not truncate a runtime registry"
     );
     CHECK(
         ExpansionAutoplayStrategies_ValidateRegistry(
@@ -334,12 +346,30 @@ static int TestReferenceProfiles(void)
         "typed event helper must reject undeclared assignment flags"
     );
 
-    sBlueComputerPhase = true;
+    ResetFixture();
+    gEventSlots[EVT_SLOT_B] = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
+    gEventSlots[EVT_SLOT_C] = EVFLAG_HIDE_BLINKING_ICON;
+    ExpansionAutoplayStrategies_EventActivate(NULL);
     CHECK(
-        ExpansionAutoplayStrategies_ActivateAssignment(
-            EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID, EVFLAG_HIDE_BLINKING_ICON)
-            == EXPANSION_AUTOPLAY_STRATEGY_ERR_PHASE_ACTIVE,
-        "event changes must defer until the next safe phase boundary"
+        CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
+        "typed event production helper must activate its declared pair"
+    );
+
+    sBlueComputerPhase = true;
+    sFlags[EVFLAG_HIDE_BLINKING_ICON] = false;
+    ExpansionAutoplayStrategies_EventActivate(NULL);
+    CHECK(
+        !CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
+        "same-phase event activation must defer until the next safe boundary"
+    );
+
+    ResetFixture();
+    gEventSlots[EVT_SLOT_B] = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
+    gEventSlots[EVT_SLOT_C] = EVFLAG_BATTLE_QUOTES;
+    ExpansionAutoplayStrategies_EventActivate(NULL);
+    CHECK(
+        !CheckFlag(EVFLAG_BATTLE_QUOTES),
+        "event activation wrapper must reject undeclared strategy-flag pairs"
     );
 
     CHECK(

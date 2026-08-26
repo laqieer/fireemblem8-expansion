@@ -29,6 +29,15 @@ def _flag(flag):
     return flag if flag is not None else "EXPANSION_AUTOPLAY_STRATEGY_FLAG_NONE"
 
 
+def _strategy_id(strategy_id):
+    value = stable_id_value(strategy_id)
+    if value == 0:
+        raise ValueError(
+            "strategy ID '{}' hashes to reserved runtime sentinel 0".format(strategy_id)
+        )
+    return value
+
+
 def _groups_name(record):
     return "s{}GroupAssignments".format(record.symbol)
 
@@ -82,7 +91,7 @@ def generate_c_source(records, source_path):
     for strategy in strategies:
         flags = "EXPANSION_AUTOPLAY_STRATEGY_FLAG_REFERENCE_PROFILE" if strategy.id in REFERENCE_STRATEGIES else "0"
         parts.append("    {\n")
-        parts.append("        .id = 0x{:08X},\n".format(stable_id_value(strategy.id)))
+        parts.append("        .id = 0x{:08X},\n".format(_strategy_id(strategy.id)))
         parts.append(
             "        .objectiveCapabilities = {},\n".format(
                 _capabilities(strategy.objectives, OBJECTIVE_CAPABILITY_TO_C)
@@ -107,7 +116,7 @@ def generate_c_source(records, source_path):
             for assignment in group_assignments:
                 parts.append("    {\n")
                 parts.append("        .groupId = 0x{:08X},\n".format(stable_id_value(assignment.group)))
-                parts.append("        .strategyId = 0x{:08X},\n".format(stable_id_value(assignment.strategy)))
+                parts.append("        .strategyId = 0x{:08X},\n".format(_strategy_id(assignment.strategy)))
                 parts.append("        .activationFlag = {},\n".format(_flag(assignment.activation_flag)))
                 parts.append("    },\n")
             parts.append("};\n\n")
@@ -121,7 +130,7 @@ def generate_c_source(records, source_path):
             for assignment in _unit_assignments:
                 parts.append("    {\n")
                 parts.append("        .character = {},\n".format(assignment.character))
-                parts.append("        .strategyId = 0x{:08X},\n".format(stable_id_value(assignment.strategy)))
+                parts.append("        .strategyId = 0x{:08X},\n".format(_strategy_id(assignment.strategy)))
                 parts.append("        .activationFlag = {},\n".format(_flag(assignment.activation_flag)))
                 parts.append("    },\n")
             parts.append("};\n\n")
@@ -134,7 +143,7 @@ def generate_c_source(records, source_path):
         parts.append("        .unitAssignmentCount = {},\n".format(len(unit_assignments)))
         parts.append(
             "        .chapterStrategyId = {},\n".format(
-                "0x{:08X}".format(stable_id_value(assignment.strategy)) if assignment else "0"
+                "0x{:08X}".format(_strategy_id(assignment.strategy)) if assignment else "0"
             )
         )
         parts.append(

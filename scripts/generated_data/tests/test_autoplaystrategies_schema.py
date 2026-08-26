@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.generated_data.autoplaystrategies import generate, schema
 from scripts.generated_data.chapterbundle import schema as chapterbundle_schema
@@ -234,6 +235,28 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
             ),
             diagnostics.render(),
         )
+
+    def test_reserved_zero_hash_rejects_before_registry_generation(self):
+        records = schema.load_records(strategy_fixture("valid.json"))
+        diagnostics = DiagnosticCollector()
+        with mock.patch.object(schema, "stable_id_value", return_value=0):
+            schema.validate(records, diagnostics, _dependency_records(records))
+        self.assertTrue(
+            any(
+                "reserved runtime sentinel 0" in error.message
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+        with mock.patch.object(generate, "stable_id_value", return_value=0):
+            with self.assertRaisesRegex(ValueError, "reserved runtime sentinel 0"):
+                generate.generate_c_source(
+                    schema.AutoplayStrategiesTableSchema().configure_records(
+                        records,
+                        reference_profiles="1",
+                    ),
+                    strategy_fixture("valid.json"),
+                )
 
     def test_multi_chapter_strategy_owners_resolve_by_chapter_index(self):
         records = schema.load_records(strategy_fixture("valid.json"))

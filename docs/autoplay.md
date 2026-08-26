@@ -517,11 +517,14 @@ unknown/unsupported profile-objective pair explicit. Before a selected
 strategy can commit a computer-phase action, dispatch checks those contracts.
 It records a typed autoplay failure and terminates the strategy path rather
 than selecting a success-shaped fallback. The typed event helper
-`ExpansionAutoplayStrategies_ActivateAssignment()` validates a generated
+`strategy.activate` lowers a symbolic, schema-validated assignment to
+`AUTOPLAY_STRATEGY_ACTIVATE` and
+`ExpansionAutoplayStrategies_ActivateAssignment()`. It validates a generated
 strategy-ID/activation-flag pair, changes only that existing event flag, and
 rejects calls during the active blue computer phase; the next phase is its
-safe boundary. It introduces no event language, hidden state, save byte,
-epoch, migration, localization string, or player UI.
+safe boundary. Raw `flag.set` cannot target a declared strategy activation
+flag. It introduces no event language, hidden state, save byte, epoch,
+migration, localization string, or player UI.
 
 For a third strategy, define one callback with the public context signature,
 declare its stable ID/capabilities in `autoplay_strategies.json`, and add its

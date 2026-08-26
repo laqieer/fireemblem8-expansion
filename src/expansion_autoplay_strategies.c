@@ -7,6 +7,7 @@
 #include "cp_script.h"
 #include "cp_utility.h"
 #include "eventinfo.h"
+#include "event.h"
 
 #include "expansion_autoplay.h"
 #include "expansion_autoplay_internal.h"
@@ -340,6 +341,15 @@ enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ActivateAssignm
         }
 
     return EXPANSION_AUTOPLAY_STRATEGY_ERR_INVALID_EVENT_ASSIGNMENT;
+}
+
+void ExpansionAutoplayStrategies_EventActivate(struct EventEngineProc* proc)
+{
+    (void)proc;
+    ExpansionAutoplayStrategies_ActivateAssignment(
+        gEventSlots[EVT_SLOT_B],
+        (u16)gEventSlots[EVT_SLOT_C]
+    );
 }
 
 #if FE8_EXPANSION_AUTOPLAY_STRATEGIES

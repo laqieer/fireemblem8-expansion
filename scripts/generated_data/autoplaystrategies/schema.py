@@ -365,6 +365,17 @@ def validate(records, diagnostics, dependency_records=None,
             )
 
         value = stable_id_value(strategy.id)
+        if value == 0:
+            diagnostics.add(
+                _error(
+                    "strategy ID '{}' hashes to reserved runtime sentinel 0".format(
+                        strategy.id
+                    ),
+                    strategy.id_loc,
+                    ref + ".id",
+                )
+            )
+            continue
         if value in hashes and hashes[value] != strategy.id:
             diagnostics.add(
                 _error(
