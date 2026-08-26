@@ -65,6 +65,10 @@ def _dependency_records(strategy_records):
 
 def _validate(name):
     strategy_records = schema.load_records(strategy_fixture(name))
+    strategy_records = schema.AutoplayStrategiesTableSchema().configure_records(
+        strategy_records,
+        reference_profiles="1",
+    )
     diagnostics = DiagnosticCollector()
     schema.validate(strategy_records, diagnostics, _dependency_records(strategy_records))
     return strategy_records, diagnostics
@@ -73,6 +77,10 @@ def _validate(name):
 class AutoplayStrategiesSchemaTests(unittest.TestCase):
     def _with_second_assigned_group(self, overlap):
         records = schema.load_records(strategy_fixture("valid.json"))
+        records = schema.AutoplayStrategiesTableSchema().configure_records(
+            records,
+            reference_profiles="1",
+        )
         dependencies = _dependency_records(records)
         objective_record = dependencies["chapterobjectives"][0]
         first_group = objective_record.groups[0]
@@ -127,6 +135,83 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
         output = generate.generate_c_source(enabled, "src/data/autoplay_strategies.json")
         self.assertIn("ExpansionAutoplayStrategy_Aggressive", output)
         self.assertIn("ExpansionAutoplayStrategy_ObjectiveFirst", output)
+
+    def test_profile_selected_capacity_matches_generated_descriptor_count(self):
+        table = schema.AutoplayStrategiesTableSchema()
+        records = schema.load_records(
+            os.path.join(REPO_ROOT, "src", "data", "autoplay_strategies.json")
+        )
+        template = records["strategies"][0]
+        for index in range(schema.STRATEGY_CAPACITY):
+            custom = copy.deepcopy(template)
+            custom.id = "AUTOPLAY_STRATEGY_CUSTOM_{}".format(index)
+            custom.callback = "ExpansionAutoplayStrategy_Custom{}".format(index)
+            records["strategies"].append(custom)
+
+        disabled = table.configure_records(
+            copy.deepcopy(records),
+            reference_profiles="0",
+        )
+        diagnostics = DiagnosticCollector()
+        schema.validate(disabled, diagnostics, _dependency_records(disabled))
+        self.assertTrue(diagnostics.ok, diagnostics.render())
+        selected, _chapters = schema.selected_records(disabled)
+        output = generate.generate_c_source(disabled, "custom_strategies.json")
+        self.assertEqual(len(selected), schema.STRATEGY_CAPACITY)
+        self.assertEqual(table.active_manifest_record_count(disabled), len(selected))
+        self.assertEqual(output.count("        .id = "), len(selected))
+
+        enabled = table.configure_records(
+            copy.deepcopy(records),
+            reference_profiles="1",
+        )
+        diagnostics = DiagnosticCollector()
+        schema.validate(enabled, diagnostics, _dependency_records(enabled))
+        self.assertTrue(
+            any("strategy registry entries" in error.message for error in diagnostics.errors),
+            diagnostics.render(),
+        )
+
+    def test_disabled_references_do_not_participate_but_custom_errors_do(self):
+        records, dependencies, _second_group = self._with_second_assigned_group(
+            "character"
+        )
+        records["strategies"][0].actions = []
+        table = schema.AutoplayStrategiesTableSchema()
+
+        disabled = table.configure_records(
+            copy.deepcopy(records),
+            reference_profiles="0",
+        )
+        diagnostics = DiagnosticCollector()
+        schema.validate(disabled, diagnostics, dependencies)
+        self.assertTrue(diagnostics.ok, diagnostics.render())
+
+        enabled = table.configure_records(
+            copy.deepcopy(records),
+            reference_profiles="1",
+        )
+        diagnostics = DiagnosticCollector()
+        schema.validate(enabled, diagnostics, dependencies)
+        rendered = diagnostics.render()
+        self.assertIn("frozen callback and capabilities", rendered)
+        self.assertIn("belongs to both strategy-assigned groups", rendered)
+
+        custom_invalid = table.configure_records(
+            copy.deepcopy(records),
+            reference_profiles="0",
+        )
+        custom_invalid["strategies"][2].actions = []
+        diagnostics = DiagnosticCollector()
+        schema.validate(custom_invalid, diagnostics, dependencies)
+        self.assertTrue(
+            any(
+                "strategy requires at least one action capability" in error.message
+                and "AUTOPLAY_STRATEGY_TENTATIVE_FALLBACK" in error.reference_path
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
 
     def test_disabled_profile_keeps_non_reference_descriptor(self):
         records = schema.load_records(strategy_fixture("valid.json"))
@@ -495,6 +580,10 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
 
     def test_selected_strategy_must_support_every_owned_objective_kind(self):
         records = schema.load_records(strategy_fixture("valid.json"))
+        records = schema.AutoplayStrategiesTableSchema().configure_records(
+            records,
+            reference_profiles="1",
+        )
         dependencies = _dependency_records(records)
         dependencies["chapterobjectives"][0].objectives[0].kind = "event_flag"
         diagnostics = DiagnosticCollector()
@@ -533,6 +622,10 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
 
     def test_multi_chapter_strategy_owners_resolve_by_chapter_index(self):
         records = schema.load_records(strategy_fixture("valid.json"))
+        records = schema.AutoplayStrategiesTableSchema().configure_records(
+            records,
+            reference_profiles="1",
+        )
         records["chapters"][0].group_assignments = []
         l3_record = copy.deepcopy(records["chapters"][0])
         l3_record.chapter = "CHAPTER_L_3"

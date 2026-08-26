@@ -118,6 +118,7 @@ next_unit:
 
             AiClearDecision();
 #ifndef FE8_ARCHIVAL_BUILD
+#if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
             if (ExpansionAutoplay_IsBlueComputerPhase())
             {
                 enum ExpansionAutoplayStrategyResult strategyResult =
@@ -135,6 +136,7 @@ next_unit:
                     AiDecideMainFunc();
             }
             else
+#endif
 #endif
             AiDecideMainFunc();
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import glob
 import os
 import re
@@ -252,26 +253,43 @@ def selected_records(records):
         for strategy in records["strategies"]
         if reference_profiles_enabled or strategy.id not in REFERENCE_STRATEGIES
     ]
-    strategy_ids = {strategy.id for strategy in strategies}
+    omitted_reference_ids = (
+        set() if reference_profiles_enabled else set(REFERENCE_STRATEGIES)
+    )
     chapters = []
     for chapter in records["chapters"]:
         chapter_assignment = chapter.chapter_assignment
-        if chapter_assignment is not None and chapter_assignment.strategy not in strategy_ids:
+        if (
+            chapter_assignment is not None
+            and chapter_assignment.strategy in omitted_reference_ids
+        ):
             chapter_assignment = None
         group_assignments = [
             assignment
             for assignment in chapter.group_assignments
-            if assignment.strategy in strategy_ids
+            if assignment.strategy not in omitted_reference_ids
         ]
         unit_assignments = [
             assignment
             for assignment in chapter.unit_assignments
-            if assignment.strategy in strategy_ids
+            if assignment.strategy not in omitted_reference_ids
         ]
         if chapter_assignment is not None or group_assignments or unit_assignments:
             chapters.append(
                 (chapter, chapter_assignment, group_assignments, unit_assignments)
             )
+    return strategies, chapters
+
+
+def selected_validation_records(records):
+    strategies, chapter_views = selected_records(records)
+    chapters = []
+    for chapter, chapter_assignment, group_assignments, unit_assignments in chapter_views:
+        selected = copy.copy(chapter)
+        selected.chapter_assignment = chapter_assignment
+        selected.group_assignments = list(group_assignments)
+        selected.unit_assignments = list(unit_assignments)
+        chapters.append(selected)
     return strategies, chapters
 
 
@@ -384,8 +402,7 @@ def validate(records, diagnostics, dependency_records=None,
              chapters_header=CHAPTERS_HEADER, event_flags_header=EVENT_FLAGS_HEADER,
              characters_header=character_refs.CHARACTERS_HEADER):
     dependency_records = dependency_records or {}
-    strategies = records["strategies"]
-    chapters = records["chapters"]
+    strategies, chapters = selected_validation_records(records)
     strategy_ids = {strategy.id: strategy for strategy in strategies}
     chapter_ids = extract_enum_constants(chapters_header, name_prefix="CHAPTER_")
     event_flags = extract_enum_constants(event_flags_header, name_prefix="EVFLAG_")
@@ -704,13 +721,7 @@ def validate(records, diagnostics, dependency_records=None,
         owner = chapter_bundle.autoplay_strategies
         if owner is None:
             continue
-        owner_source_paths = _owner_source_paths(chapter_bundle, diagnostics)
-        actual_symbols = {
-            chapter.symbol
-            for chapter in chapters
-            if chapter.chapter == chapter_bundle.chapter.id
-            and chapter.source_path in owner_source_paths
-        }
+        _owner_source_paths(chapter_bundle, diagnostics)
         diagnostics.extend(
             validate_unique(
                 zip(owner.symbols, owner.symbol_locs),
@@ -719,16 +730,6 @@ def validate(records, diagnostics, dependency_records=None,
                 "autoplayStrategies.symbols[{key}]",
             )
         )
-        for symbol, loc in zip(owner.symbols, owner.symbol_locs):
-            if symbol not in actual_symbols:
-                diagnostics.add(
-                    _error(
-                        "strategy assignment bundle '{}' is declared by chapter '{}' but absent from "
-                        "its strategy source".format(symbol, chapter_bundle.chapter.id),
-                        loc,
-                        "autoplayStrategies.symbols[{}]".format(symbol),
-                    )
-                )
 
 
 class AutoplayStrategiesTableSchema(TableSchema):
@@ -776,6 +777,10 @@ class AutoplayStrategiesTableSchema(TableSchema):
 
     def manifest_record_count(self, records):
         return len(records["strategies"])
+
+    def active_manifest_record_count(self, records):
+        strategies, _chapters = selected_records(records)
+        return len(strategies)
 
 
 def dependency_graph():
