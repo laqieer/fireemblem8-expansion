@@ -19,12 +19,33 @@ applied to HQ PCM output.
 The value is strictly `0` or `1`. It is part of
 `FE8_EXPANSION_CONFIG_FINGERPRINT`, but does not alter
 `EXPANSION_SAVE_COMPAT_EPOCH`, save bytes, generated data, IDs, locale data,
-or the MP2K public API. Use an isolated build root when comparing profiles:
+or the MP2K public API. The automated runtime gate uses isolated,
+instrumented build roots:
 
 ```bash
 make expansion-modern-hq-mixer-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-hq-mixer-check MODERN_CONFIG=release MODERN_ABI=aapcs
 ```
+
+Those profile ROMs define `FE8_HQ_MIXER_TEST_FIXTURE`, which starts an
+automation-only song before normal startup. They are not manual listening
+controls. Build fresh normal-game release ROMs without that fixture with:
+
+```bash
+make expansion-modern-hq-mixer-listening-roms \
+    MODERN_CONFIG=release MODERN_ABI=aapcs
+```
+
+The outputs are:
+
+- enabled:
+  `build/expansion-modern-hq-mixer-listening/enabled/release/aapcs/fireemblem8.gba`
+- stock control:
+  `build/expansion-modern-hq-mixer-listening/stock-control/release/aapcs/fireemblem8.gba`
+
+Both follow the normal clean startup sequence: initial silence, the same
+button input, then the opening BGM. Their only intended audio difference is
+the selected PCM mixer.
 
 The enabled configuration is supported only by linked modern AAPCS debug and
 release English or English-plus-pseudo-locale outputs. Real localized-game
@@ -64,6 +85,12 @@ EWRAM, and IWRAM maps. The runtime gate emits the exact profile map values in
 The padded 16 MiB ROM file remains the configured size in both profiles; the
 `+0x724` mixer-object delta above is the meaningful ROM-content delta.
 
+The nine `gMPlayInfo_*` player records remain distinct. Disabled builds own
+them at their historical IWRAM addresses; enabled builds own their
+`0x40`-byte objects in persistent EWRAM. None may overlap the HQ
+`SoundMainRAM_MixBuffer` interval. ELF symbol and parsed map-section checks
+enforce both ownership modes.
+
 The imported configuration disables its DMA3 fast path and mixer reverb pass.
 This avoids claiming DMA ownership and preserves compatibility with existing
 HBlank and other DMA-sensitive effects. DMA-on, mono, direct-sound reverb,
@@ -74,14 +101,16 @@ runtime switching, and archival decomp matching are unsupported.
 
 `expansion-modern-hq-mixer-check` builds separate enabled and disabled ROMs,
 checks the exact selected mixer symbols, copy extent, aligned IWRAM buffer,
-absent disabled symbols, linker stack floor, and the 16-bit buffer size. Its
-libmGBA's fixed scripted-battle progression captures both PCM FIFO buffers and live interrupt
-state from the linked ELF symbols, verifies bounded non-silent left/right
-output with distinct captured channel values, checks the one-time
-ROM-to-IWRAM copy checksum before self-modifying mixer execution, and runs the
-ordinary scripted-battle HBlank/DMA progression on both profiles. This is
-evidence for the fixed paired-channel output, not for a selectable stereo
-mode.
+absent disabled symbols, distinct player records, positive EWRAM/IWRAM
+ownership, linker stack floor, and the 16-bit buffer size. Its libmGBA fixed
+scripted-battle progression captures both PCM FIFO buffers, live player and
+channel ownership, and interrupt state from the linked ELF symbols. It
+requires the BGM player to survive initialization, every declared late-window
+checkpoint to retain active owned channels and non-silent left/right PCM, the
+final checkpoint to remain non-silent, a matching one-time ROM/IWRAM copy
+checksum, and ordinary scripted-battle HBlank/DMA progression on both
+profiles. This is evidence for fixed paired-channel output, not for a
+selectable stereo mode.
 
 The deterministic host fixture compares stock per-voice rounding against one
 final high-resolution quantization and requires lower RMS error for the latter.
