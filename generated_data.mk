@@ -1802,6 +1802,10 @@ GENERATED_DATA_CH2_EVENTLISTS_CONFIG_STAMP := \
 	$(GENERATED_DATA_OUT_DIR)/.ch2-eventlists.config
 GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP := \
 	$(GENERATED_DATA_OUT_DIR)/.ch2-eventlists.validated
+GENERATED_DATA_CH2_EVENTLISTS_DEP_DISCOVERY := \
+	$(PYTHON) -m scripts.generated_data.eventlists.deps
+GENERATED_DATA_CH2_EVENTLISTS_DEPFILE := \
+	$(GENERATED_DATA_OUT_DIR)/eventlists.inputs.mk
 
 # `eventlists`' own generator "config" inputs: include/constants/
 # characters.h (CHARACTER_* designators, via the shared
@@ -1838,6 +1842,22 @@ $(GENERATED_DATA_CH2_EVENTLISTS_CONFIG_STAMP): FORCE_CH2_EVENTLISTS_CONFIG_STAMP
 		'autoplaystrategies_source=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)' > "$@.tmp"
 	@if [ ! -f "$@" ] || ! cmp -s "$@.tmp" "$@"; then mv -f "$@.tmp" "$@"; else rm -f "$@.tmp"; fi
 
+.PHONY: FORCE_CH2_EVENTLISTS_DEPFILE
+FORCE_CH2_EVENTLISTS_DEPFILE:
+
+$(GENERATED_DATA_CH2_EVENTLISTS_DEPFILE): FORCE_CH2_EVENTLISTS_DEPFILE \
+	$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE) \
+	$(GENERATED_DATA_SHARED_PY_SOURCES) \
+	$(wildcard scripts/generated_data/autoplaystrategies/*.py) \
+	$(wildcard scripts/generated_data/eventlists/*.py)
+	@mkdir -p $(@D)
+	@$(GENERATED_DATA_CH2_EVENTLISTS_DEP_DISCOVERY) \
+		--strategy-source "$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)" \
+		--make-target "$(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP)" \
+		--depfile "$@"
+
+-include $(GENERATED_DATA_CH2_EVENTLISTS_DEPFILE)
+
 # The 9 symbols this table's generated object must define exactly once
 # each -- the 7 EventListScr_Ch2_* list symbols, the
 # EventListScr_Ch2_Tutorial pointer-list symbol, and the Ch2Events
@@ -1850,6 +1870,7 @@ GENERATED_DATA_CH2_EVENTLISTS_SYMBOLS := $(shell $(PYTHON) -c \
 
 $(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP): src/data/ch2_eventlists.json \
 	$(GENERATED_DATA_CH2_EVENTLISTS_CONFIG_STAMP) \
+	$(GENERATED_DATA_CH2_EVENTLISTS_DEPFILE) \
 	$(GENERATED_DATA_SHARED_PY_SOURCES) \
 	$(wildcard scripts/generated_data/eventlists/*.py) \
 	$(GENERATED_DATA_CONFIG_INPUTS_eventlists)

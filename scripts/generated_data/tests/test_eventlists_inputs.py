@@ -48,10 +48,11 @@ class EventListsInputTests(unittest.TestCase):
             self.repo / "src" / "data" / "autoplay_strategies.json"
         )
         self._set_pair(self.canonical_strategies, VALID_FLAG)
-        self.custom_strategies = (
-            self.repo / "build" / "eventlists-inputs" / "custom_strategies.json"
+        self.custom_strategy_dir = (
+            self.repo / "build" / "eventlists-inputs" / "custom-strategy-sources"
         )
-        self.custom_strategies.parent.mkdir(parents=True)
+        self.custom_strategy_dir.mkdir(parents=True)
+        self.custom_strategies = self.custom_strategy_dir / "custom_strategies.json"
         self._set_pair(self.custom_strategies, VALID_FLAG)
 
         self.out_dir = self.repo / "build" / "eventlists-inputs" / "generated"
@@ -126,15 +127,19 @@ class EventListsInputTests(unittest.TestCase):
         self.assertEqual(canonical_restored.returncode, 0, canonical_restored.stdout)
 
         self._set_pair(self.canonical_strategies, INVALID_FLAG)
-        custom_valid = self._make(self.custom_strategies)
+        custom_valid = self._make(self.custom_strategy_dir)
         self.assertEqual(custom_valid.returncode, 0, custom_valid.stdout)
         self.assertIn(
-            "autoplaystrategies={}".format(self.custom_strategies),
+            "autoplaystrategies={}".format(self.custom_strategy_dir),
             custom_valid.stdout,
         )
+        depfile = self.out_dir / "eventlists.inputs.mk"
+        depfile_inputs = depfile.read_text(encoding="utf-8").partition(": ")[2].split()
+        self.assertIn(os.path.realpath(self.custom_strategy_dir), depfile_inputs)
+        self.assertIn(os.path.realpath(self.custom_strategies), depfile_inputs)
 
         self._set_pair(self.custom_strategies, INVALID_FLAG)
-        custom_invalid = self._make(self.custom_strategies)
+        custom_invalid = self._make(self.custom_strategy_dir)
         self.assertNotEqual(custom_invalid.returncode, 0)
         self.assertIn("generate --table eventlists", custom_invalid.stdout)
         self.assertIn(
@@ -143,12 +148,12 @@ class EventListsInputTests(unittest.TestCase):
         )
 
         self._set_pair(self.custom_strategies, VALID_FLAG)
-        custom_restored = self._make(self.custom_strategies)
+        custom_restored = self._make(self.custom_strategy_dir)
         self.assertEqual(custom_restored.returncode, 0, custom_restored.stdout)
         target_mtime = self.target.stat().st_mtime_ns
 
         self._set_pair(self.canonical_strategies, VALID_FLAG)
-        unrelated = self._make(self.custom_strategies)
+        unrelated = self._make(self.custom_strategy_dir)
         self.assertEqual(unrelated.returncode, 0, unrelated.stdout)
         self.assertNotIn("generate --table eventlists", unrelated.stdout)
         self.assertEqual(self.target.stat().st_mtime_ns, target_mtime)

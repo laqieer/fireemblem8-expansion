@@ -1,6 +1,7 @@
 """Semantic schema/generator coverage for issue #90 autoplay strategies."""
 
 import copy
+import json
 import os
 import subprocess
 import tempfile
@@ -11,7 +12,7 @@ from unittest import mock
 from scripts.generated_data.autoplaystrategies import generate, schema
 from scripts.generated_data.chapterbundle import schema as chapterbundle_schema
 from scripts.generated_data.chapterobjectives import schema as objectives_schema
-from scripts.generated_data.diagnostics import DiagnosticCollector
+from scripts.generated_data.diagnostics import DiagnosticCollector, GeneratedDataError
 from scripts.generated_data.tests._util import fixture_path
 from scripts.generated_data.units import schema as units_schema
 
@@ -187,6 +188,57 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
             ),
             diagnostics.render(),
         )
+
+    def test_directory_source_tracks_member_origins_and_owner_boundaries(self):
+        build_root = os.path.join(REPO_ROOT, "build")
+        os.makedirs(build_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            source_dir = Path(temporary)
+            primary = source_dir / "a_strategies.json"
+            secondary = source_dir / "b_strategies.json"
+            primary.write_bytes(Path(strategy_fixture("valid.json")).read_bytes())
+            secondary.write_text(
+                json.dumps({
+                    "$schema": "fe8.autoplaystrategies.v1",
+                    "strategies": [],
+                    "chapters": [],
+                }),
+                encoding="utf-8",
+            )
+
+            records = schema.load_records(str(source_dir))
+            self.assertEqual(
+                records["source_paths"],
+                (os.path.realpath(primary), os.path.realpath(secondary)),
+            )
+            self.assertEqual(records["chapters"][0].source_path, os.path.realpath(primary))
+
+            dependencies = _dependency_records(records)
+            owner = dependencies["chapterbundle"].by_chapter["CHAPTER_L_2"][0]
+            owner.autoplay_strategies.source = str(source_dir)
+            diagnostics = DiagnosticCollector()
+            schema.validate(records, diagnostics, dependencies)
+            self.assertTrue(diagnostics.ok, diagnostics.render())
+
+            owner.autoplay_strategies.source = str(secondary)
+            diagnostics = DiagnosticCollector()
+            schema.validate(records, diagnostics, dependencies)
+            self.assertTrue(
+                any(
+                    error.reference_path == "autoplayStrategies.source"
+                    and "does not match the loaded strategy source" in error.message
+                    for error in diagnostics.errors
+                ),
+                diagnostics.render(),
+            )
+
+            empty_dir = source_dir / "empty"
+            empty_dir.mkdir()
+            with self.assertRaisesRegex(
+                GeneratedDataError,
+                r"has no \*_strategies.json sources",
+            ):
+                schema.load_records(str(empty_dir))
 
     def test_unit_assignment_must_resolve_once_in_owning_chapter_data(self):
         records = schema.load_records(strategy_fixture("valid.json"))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import glob
 import os
 import re
 
@@ -108,10 +109,10 @@ class UnitAssignment(Assignment):
 
 class Chapter:
     __slots__ = ("chapter", "chapter_loc", "symbol", "symbol_loc", "chapter_assignment",
-                 "group_assignments", "unit_assignments", "loc")
+                 "group_assignments", "unit_assignments", "source_path", "loc")
 
     def __init__(self, chapter, chapter_loc, symbol, symbol_loc, chapter_assignment,
-                 group_assignments, unit_assignments, loc):
+                 group_assignments, unit_assignments, source_path, loc):
         self.chapter = chapter
         self.chapter_loc = chapter_loc
         self.symbol = symbol
@@ -119,6 +120,7 @@ class Chapter:
         self.chapter_assignment = chapter_assignment
         self.group_assignments = group_assignments
         self.unit_assignments = unit_assignments
+        self.source_path = source_path
         self.loc = loc
 
 
@@ -133,8 +135,12 @@ def _parse_assignment(node):
     return Assignment(strategy.as_str(), strategy.loc, activation_flag, activation_flag_loc, node.loc)
 
 
-def load_records(source_path):
-    source_path = os.path.realpath(os.path.abspath(source_path))
+def _canonical_source_path(source_path):
+    return os.path.normcase(os.path.realpath(os.path.abspath(source_path)))
+
+
+def _load_records_file(source_path):
+    source_path = _canonical_source_path(source_path)
     root = load_json_file(source_path)
     schema_node = root.require("$schema")
     if schema_node.as_str() != SCHEMA_ID:
@@ -190,14 +196,39 @@ def load_records(source_path):
         chapters.append(
             Chapter(
                 chapter_node.as_str(), chapter_node.loc, symbol_node.as_str(), symbol_node.loc,
-                chapter_assignment, group_assignments, unit_assignments, node.loc,
+                chapter_assignment, group_assignments, unit_assignments, source_path, node.loc,
             )
         )
 
     return {
         "strategies": strategies,
         "chapters": chapters,
-        "source_paths": (source_path,),
+    }
+
+
+def load_records(source_path):
+    """Load one strategy file or every ``*_strategies.json`` file in a directory."""
+    if os.path.isdir(source_path):
+        source_paths = sorted(glob.glob(os.path.join(source_path, "*_strategies.json")))
+        if not source_paths:
+            raise GeneratedDataError(
+                "autoplay strategies directory '{}' has no *_strategies.json sources".format(
+                    source_path
+                )
+            )
+    else:
+        source_paths = [source_path]
+
+    strategies = []
+    chapters = []
+    for path in source_paths:
+        records = _load_records_file(path)
+        strategies.extend(records["strategies"])
+        chapters.extend(records["chapters"])
+    return {
+        "strategies": strategies,
+        "chapters": chapters,
+        "source_paths": tuple(_canonical_source_path(path) for path in source_paths),
     }
 
 
@@ -239,6 +270,27 @@ def _bundle_records(dependency_records):
     return (bundles,)
 
 
+def _owner_source_paths(owner, diagnostics=None):
+    source = owner.autoplay_strategies
+    source_path = chapterbundle_schema._source_path(source.source, owner.repository_root)
+    try:
+        return frozenset(load_records(source_path)["source_paths"])
+    except (OSError, GeneratedDataError) as error:
+        if diagnostics is not None:
+            diagnostics.add(
+                _error(
+                    "could not load owning autoplayStrategies source '{}': {}".format(
+                        source.source, error
+                    ),
+                    source.source_loc,
+                    "bundles[chapter={}].autoplayStrategies.source".format(
+                        owner.chapter.id
+                    ),
+                )
+            )
+        return frozenset()
+
+
 def validate(records, diagnostics, dependency_records=None,
              chapters_header=CHAPTERS_HEADER, event_flags_header=EVENT_FLAGS_HEADER,
              characters_header=character_refs.CHARACTERS_HEADER):
@@ -252,7 +304,6 @@ def validate(records, diagnostics, dependency_records=None,
     objectives = {
         record.chapter: record for record in dependency_records.get("chapterobjectives", ())
     }
-    source_paths = set(records.get("source_paths", ()))
     chapter_bundles = _bundle_records(dependency_records)
     owners_by_chapter = {}
     for chapter_bundle in chapter_bundles:
@@ -433,16 +484,7 @@ def validate(records, diagnostics, dependency_records=None,
                     ref + ".symbol",
                 )
             )
-        elif os.path.realpath(
-                os.path.abspath(
-                    owners[0].autoplay_strategies.source
-                    if os.path.isabs(owners[0].autoplay_strategies.source)
-                    else os.path.join(
-                        owners[0].repository_root,
-                        owners[0].autoplay_strategies.source,
-                    )
-                )
-            ) not in source_paths:
+        elif chapter.source_path not in _owner_source_paths(owners[0], diagnostics):
             diagnostics.add(
                 _error(
                     "strategy assignment bundle '{}' owner source '{}' does not match "
@@ -572,8 +614,12 @@ def validate(records, diagnostics, dependency_records=None,
         owner = chapter_bundle.autoplay_strategies
         if owner is None:
             continue
+        owner_source_paths = _owner_source_paths(chapter_bundle, diagnostics)
         actual_symbols = {
-            chapter.symbol for chapter in chapters if chapter.chapter == chapter_bundle.chapter.id
+            chapter.symbol
+            for chapter in chapters
+            if chapter.chapter == chapter_bundle.chapter.id
+            and chapter.source_path in owner_source_paths
         }
         diagnostics.extend(
             validate_unique(

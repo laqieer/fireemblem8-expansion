@@ -201,12 +201,31 @@ class ChapterBundleValidFixtureTests(unittest.TestCase):
 
         wrong_source = copy.deepcopy(records)
         wrong_source[0].autoplay_strategies.source = cb_fixture("deps_units.json")
+        wrong_source[0].autoplay_strategies.symbols = []
+        wrong_source[0].autoplay_strategies.symbol_locs = []
         diagnostics = validate_owner(wrong_source)
         self.assertTrue(
             any(
                 error.reference_path
                 == "bundles[chapter=CHAPTER_EL].autoplayStrategies.source"
                 and "unexpected $schema" in error.message
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
+        )
+
+        missing_source = copy.deepcopy(records)
+        missing_source[0].autoplay_strategies.source = cb_fixture(
+            "missing_autoplay_strategies.json"
+        )
+        missing_source[0].autoplay_strategies.symbols = []
+        missing_source[0].autoplay_strategies.symbol_locs = []
+        diagnostics = validate_owner(missing_source)
+        self.assertTrue(
+            any(
+                error.reference_path
+                == "bundles[chapter=CHAPTER_EL].autoplayStrategies.source"
+                and "could not load autoplayStrategies source" in error.message
                 for error in diagnostics.errors
             ),
             _messages(diagnostics),

@@ -328,7 +328,10 @@ Source: `src/data/autoplay_strategies.json`. This modern-only table is empty
 by default, so existing `Unit.ai[]` values continue to drive the existing
 low-level computer AI. It owns one registry and one assignment bundle per
 chapter; it does not add a campaign router, player selector, save field, or
-project-specific policy.
+project-specific policy. As with chapter objectives, `--source` may select one
+file or a directory; directory sources compose sorted `*_strategies.json`
+members, and every member participates in dependency invalidation, ownership
+validation, and chapter-bundle inventory digests.
 
 Each strategy has an uppercase stable ID, one C callback implementing
 `bool Callback(const struct ExpansionAutoplayStrategyContext*)`, explicit
