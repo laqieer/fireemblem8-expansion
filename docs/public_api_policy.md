@@ -21,6 +21,11 @@ a built ROM) can depend on:
 * **The supported build entry points**: `make`/`make legacy`/
   `make expansion-modern-*` target names and their documented command-line
   overrides (see [`docs/quickstart.md`](quickstart.md)).
+* **Typed framework extension contracts** explicitly documented for
+  downstream use, including `include/expansion_debugtools.h` and the
+  debug-only `include/expansion_debug_save_fixture.h` target/state API (see
+  [`docs/debugtools.md`](debugtools.md) and
+  [`docs/debug_save_fixtures.md`](debug_save_fixtures.md)).
 * **The host-side tooling CLIs** under `scripts/modernize/*.py` and
   `scripts/release_rehearsal/*.py`: subcommand names, argument names, and exit-code
   contracts.

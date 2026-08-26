@@ -28,6 +28,7 @@ LAUNCHER_SRC = REPO_ROOT / "src" / "debugtools_launcher.c"
 ACTIONS_SRC = REPO_ROOT / "src" / "debugtools_actions.c"
 DIAG_SRC = REPO_ROOT / "src" / "debugtools_diag.c"
 TOOLS_SRC = REPO_ROOT / "src" / "debugtools_tools.c"
+SAVE_FIXTURE_SRC = REPO_ROOT / "src" / "debug_save_fixture.c"
 SELECTOR_SRC = REPO_ROOT / "src" / "debugtools_selector.c"
 BMUNIT_SRC = REPO_ROOT / "src" / "bmunit.c"
 EVENTSCR3_SRC = REPO_ROOT / "src" / "eventscr3.c"
@@ -606,6 +607,8 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
                 "DebugToolsHub_ShowDiagnostics",
                 "DebugToolsHub_BackSelected",
                 "DebugToolsHub_OnEnd",
+                "DebugTools_QueueSubmenuTransition",
+                "DebugTools_ReturnToHubAfterMenuEnd",
                 "DebugTools_EndSessionAfterMenuEnd",
                 "DebugTools_IsMenuTransitionScheduled",
             }
@@ -624,7 +627,10 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
             )
 
             rc, out, driver_obj = _compile(
-                work, C_FIXTURES_DIR / "debugtools_disabled_driver.c", "disabled_driver.o"
+                work,
+                C_FIXTURES_DIR / "debugtools_disabled_driver.c",
+                "disabled_driver.o",
+                defines=["FE8_EXPANSION_DEBUGTOOLS_ENABLED=0"],
             )
             self.assertEqual(rc, 0, f"compiling debugtools_disabled_driver.c failed:\n{out}")
 
@@ -634,6 +640,104 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
             rc, out = _run(exe)
             self.assertEqual(rc, 0, f"disabled-path host test failed:\n{out}")
             self.assertIn("DEBUGTOOLS_DISABLED_HOST_TEST: PASS", out)
+
+
+class DebugSaveFixtureHostTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        _skip_if_no_host_compiler()
+
+    def test_real_fixture_state_machine_and_exact_bytes(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            defines = [
+                "MODERN=1",
+                "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                "FE8_EXPANSION_SAVE_COMPAT_EPOCH=2",
+            ]
+
+            rc, out, fixture_obj = _compile(
+                work,
+                SAVE_FIXTURE_SRC,
+                "debug_save_fixture.o",
+                defines=defines,
+                extra_flags=["-std=gnu89"],
+            )
+            self.assertEqual(
+                rc,
+                0,
+                f"compiling real debug_save_fixture.c failed:\n{out}",
+            )
+
+            rc, out, stubs_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debug_save_fixture_host_stubs.c",
+                "debug_save_fixture_stubs.o",
+                defines=defines,
+                extra_flags=["-std=gnu89"],
+            )
+            self.assertEqual(
+                rc,
+                0,
+                f"compiling debug save fixture stubs failed:\n{out}",
+            )
+
+            rc, out, driver_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debug_save_fixture_driver.c",
+                "debug_save_fixture_driver.o",
+                defines=defines,
+                extra_flags=["-std=gnu89"],
+            )
+            self.assertEqual(
+                rc,
+                0,
+                f"compiling debug save fixture driver failed:\n{out}",
+            )
+
+            rc, out, exe = _link(
+                work,
+                [fixture_obj, stubs_obj, driver_obj],
+                "debug_save_fixture_test",
+            )
+            self.assertEqual(
+                rc,
+                0,
+                f"linking debug save fixture host test failed:\n{out}",
+            )
+
+            rc, out = _run(exe)
+            self.assertEqual(rc, 0, f"debug save fixture host test failed:\n{out}")
+            self.assertIn("DEBUG_SAVE_FIXTURE_HOST_TEST: PASS", out)
+
+    def test_disabled_object_omits_fixture_symbols(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            rc, out, obj = _compile(
+                work,
+                SAVE_FIXTURE_SRC,
+                "debug_save_fixture_disabled.o",
+                defines=["MODERN=1", "FE8_EXPANSION_DEBUGTOOLS_ENABLED=0"],
+                extra_flags=["-std=gnu89"],
+            )
+            self.assertEqual(
+                rc,
+                0,
+                f"compiling disabled debug save fixture object failed:\n{out}",
+            )
+            symbols = _defined_symbol_names(obj)
+            self.assertFalse(
+                any(
+                    name.startswith("DebugSaveFixture_")
+                    or name == "gDebugSaveFixtureProbe"
+                    for name in symbols
+                ),
+                symbols,
+            )
 
 
 class DebugToolsHotkeyCollisionHostTests(unittest.TestCase):

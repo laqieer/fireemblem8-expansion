@@ -911,6 +911,11 @@ required) and their only in-console options are Back or a full erase.
 
 ## Limitations
 
+Issue #128's volatile debug fixture does not change the limitations below. It
+uses the existing 32 KiB EWRAM game-start overlay, never an SRAM scratch
+block, and blocks all cartridge writes while its one-shot continued state is
+active. See [`debug_save_fixtures.md`](debug_save_fixtures.md).
+
 * **No automatic in-console structural migration.** The host-only
   `migrate` command can stamp v0 metadata and refresh the supported additive
   version-1 metadata to current while preserving its reserved tail. The console

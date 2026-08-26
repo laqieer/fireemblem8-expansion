@@ -501,6 +501,8 @@ GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE ?= \
 	$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE)
 GENERATED_DATA_AUTOPLAYSTRATEGIES_REFERENCE_PROFILES ?= \
 	$(EXPANSION_AUTOPLAY_STRATEGIES)
+GENERATED_DATA_AUTOPLAYSTRATEGIES_INVENTORY ?= \
+	reports/generated_data_autoplaystrategies_inventory.md
 GENERATED_DATA_AUTOPLAYSTRATEGIES_C := $(GENERATED_DATA_OUT_DIR)/data_autoplay_strategies.c
 GENERATED_DATA_AUTOPLAYSTRATEGIES_DEP_DISCOVERY := \
 	$(PYTHON) -m scripts.generated_data.autoplaystrategies.deps
@@ -559,7 +561,8 @@ $(GENERATED_DATA_AUTOPLAYSTRATEGIES_C): $(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOUR
 		--dep-source chapterobjectives=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE) \
 		--dep-source chapterbundle=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE) \
 		--reference-profiles $(GENERATED_DATA_AUTOPLAYSTRATEGIES_REFERENCE_PROFILES) \
-		--out-dir $(GENERATED_DATA_OUT_DIR)
+		--out-dir $(GENERATED_DATA_OUT_DIR) \
+		--inventory $(GENERATED_DATA_AUTOPLAYSTRATEGIES_INVENTORY)
 	@test -e $@ || { echo "error: generated-data table 'autoplaystrategies' did not produce $@" >&2; exit 1; }
 
 # --- Issue #6 config-gated CONTENT text -----------------------------------
@@ -1795,6 +1798,14 @@ GENERATED_DATA_CH2_EVENTLISTS_HAND_HEADER := src/events/ch2-eventinfo.h
 GENERATED_DATA_CH2_EVENTLISTS_GUARD_MACRO := GENERATED_DATA_EVENTLISTS_CH2_LINKED
 GENERATED_DATA_CH2_EVENTLISTS_C      := $(GENERATED_DATA_OUT_DIR)/data_ch2_eventlists.c
 GENERATED_DATA_CH2_EVENTLISTS_OBJECT := $(GENERATED_DATA_CH2_EVENTLISTS_C:.c=.o)
+GENERATED_DATA_CH2_EVENTLISTS_CONFIG_STAMP := \
+	$(GENERATED_DATA_OUT_DIR)/.ch2-eventlists.config
+GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP := \
+	$(GENERATED_DATA_OUT_DIR)/.ch2-eventlists.validated
+GENERATED_DATA_CH2_EVENTLISTS_DEP_DISCOVERY := \
+	$(PYTHON) -m scripts.generated_data.eventlists.deps
+GENERATED_DATA_CH2_EVENTLISTS_DEPFILE := \
+	$(GENERATED_DATA_OUT_DIR)/eventlists.inputs.mk
 
 # `eventlists`' own generator "config" inputs: include/constants/
 # characters.h (CHARACTER_* designators, via the shared
@@ -1804,8 +1815,9 @@ GENERATED_DATA_CH2_EVENTLISTS_OBJECT := $(GENERATED_DATA_CH2_EVENTLISTS_C:.c=.o)
 # include/constants/songs.h (BGM helper IDs) -- plus the
 # 4 cross-table JSON sources its schema's dependency_tables() loads
 # (src/data/ch2_units.json/ch2_shops.json/ch2_traps.json/
-# ch2_eventscripts.json), so a change to any of those also triggers a
-# regenerate, exactly like a real `generate --table eventlists`
+# ch2_eventscripts.json), plus the selected autoplay strategy source from
+# optional_dependency_tables(), so a change to any validation input also
+# triggers a regenerate exactly like a real `generate --table eventlists`
 # invocation would pick up new cross-table content.
 GENERATED_DATA_CONFIG_INPUTS_eventlists := \
 	include/constants/characters.h \
@@ -1818,7 +1830,37 @@ GENERATED_DATA_CONFIG_INPUTS_eventlists := \
 	src/data/ch2_units.json \
 	src/data/ch2_shops.json \
 	src/data/ch2_traps.json \
-	src/data/ch2_eventscripts.json
+	src/data/ch2_eventscripts.json \
+	$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)
+
+.PHONY: FORCE_CH2_EVENTLISTS_CONFIG_STAMP
+FORCE_CH2_EVENTLISTS_CONFIG_STAMP:
+
+$(GENERATED_DATA_CH2_EVENTLISTS_CONFIG_STAMP): FORCE_CH2_EVENTLISTS_CONFIG_STAMP
+	@mkdir -p $(@D)
+	@printf '%s\n' \
+		'autoplaystrategies_source=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)' \
+		'chapterbundle_source=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE)' > "$@.tmp"
+	@if [ ! -f "$@" ] || ! cmp -s "$@.tmp" "$@"; then mv -f "$@.tmp" "$@"; else rm -f "$@.tmp"; fi
+
+.PHONY: FORCE_CH2_EVENTLISTS_DEPFILE
+FORCE_CH2_EVENTLISTS_DEPFILE:
+
+$(GENERATED_DATA_CH2_EVENTLISTS_DEPFILE): FORCE_CH2_EVENTLISTS_DEPFILE \
+	$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE) \
+	$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE) \
+	$(GENERATED_DATA_SHARED_PY_SOURCES) \
+	$(wildcard scripts/generated_data/autoplaystrategies/*.py) \
+	$(wildcard scripts/generated_data/chapterbundle/*.py) \
+	$(wildcard scripts/generated_data/eventlists/*.py)
+	@mkdir -p $(@D)
+	@$(GENERATED_DATA_CH2_EVENTLISTS_DEP_DISCOVERY) \
+		--strategy-source "$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)" \
+		--bundle-source "$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE)" \
+		--make-target "$(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP)" \
+		--depfile "$@"
+
+-include $(GENERATED_DATA_CH2_EVENTLISTS_DEPFILE)
 
 # The 9 symbols this table's generated object must define exactly once
 # each -- the 7 EventListScr_Ch2_* list symbols, the
@@ -1830,10 +1872,27 @@ GENERATED_DATA_CONFIG_INPUTS_eventlists := \
 GENERATED_DATA_CH2_EVENTLISTS_SYMBOLS := $(shell $(PYTHON) -c \
 	"import json; d = json.load(open('src/data/ch2_eventlists.json')); print(' '.join([l['symbol'] for l in d['lists']] + [d['tutorial']['symbol'], d['manifest']['symbol']]))")
 
-$(GENERATED_DATA_CH2_EVENTLISTS_C): src/data/ch2_eventlists.json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/eventlists/*.py) $(GENERATED_DATA_CONFIG_INPUTS_eventlists)
-	@mkdir -p $(@D)
-	$(GENERATED_DATA_PY) generate --table eventlists --out-dir $(GENERATED_DATA_OUT_DIR)
-	@test -e $@ || { echo "error: generated-data table 'eventlists' did not produce $@ (schema default_output_name mismatch?)" >&2; exit 1; }
+$(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP): src/data/ch2_eventlists.json \
+	$(GENERATED_DATA_CH2_EVENTLISTS_CONFIG_STAMP) \
+	$(GENERATED_DATA_CH2_EVENTLISTS_DEPFILE) \
+	$(GENERATED_DATA_SHARED_PY_SOURCES) \
+	$(wildcard scripts/generated_data/eventlists/*.py) \
+	$(GENERATED_DATA_CONFIG_INPUTS_eventlists)
+	@mkdir -p $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_PY) generate --table eventlists \
+		--source "src/data/ch2_eventlists.json" \
+		--dep-source "autoplaystrategies=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)" \
+		--dep-source "chapterbundle=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE)" \
+		--out-dir "$(GENERATED_DATA_OUT_DIR)"
+	@test -e $(GENERATED_DATA_CH2_EVENTLISTS_C) || { echo "error: generated-data table 'eventlists' did not produce $(GENERATED_DATA_CH2_EVENTLISTS_C) (schema default_output_name mismatch?)" >&2; exit 1; }
+	@touch "$@"
+
+$(GENERATED_DATA_CH2_EVENTLISTS_C): | $(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP)
+	@if [ ! -e "$@" ]; then \
+		rm -f "$(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP)"; \
+		$(MAKE) --no-print-directory "$(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP)"; \
+	fi
+	@test -e "$@"
 
 # Same legacy compile/assemble pipeline as GENERATED_DATA_CH2_UNITS_OBJECT
 # above (see that rule's own comment for why $(@:.o=.s), not $*.s).

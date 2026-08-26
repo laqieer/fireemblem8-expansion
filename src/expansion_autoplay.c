@@ -75,6 +75,7 @@ void ExpansionAutoplay_Reset(void)
 
     sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
     gExpansionAutoplayTelemetry.controller = EXPANSION_BLUE_CONTROL_PLAYER;
+    ExpansionAutoplayStrategies_ResetPendingActivation();
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
     ExpansionAutoplayPlanner_Reset();
 #endif
@@ -222,10 +223,14 @@ void ExpansionAutoplay_OnBlueComputerPhaseStart(void)
 void ExpansionAutoplay_OnBlueComputerPhaseComplete(void)
 {
     if (gExpansionAutoplayTelemetry.state == EXPANSION_AUTOPLAY_STATE_FAILURE)
+    {
+        ExpansionAutoplayStrategies_ResetPendingActivation();
         return;
+    }
 
     if (!ExpansionAutoplay_IsBlueComputerPhase())
     {
+        ExpansionAutoplayStrategies_ResetPendingActivation();
         if (gExpansionAutoplayTelemetry.state != EXPANSION_AUTOPLAY_STATE_FAILURE)
             SetFailure(EXPANSION_AUTOPLAY_FAILURE_INVALID_PHASE);
         return;
@@ -233,6 +238,7 @@ void ExpansionAutoplay_OnBlueComputerPhaseComplete(void)
 
     IncrementBounded(&gExpansionAutoplayTelemetry.bluePhaseCompleteCount);
     gExpansionAutoplayTelemetry.state = EXPANSION_AUTOPLAY_STATE_COMPUTER_PHASE_COMPLETE;
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
 }
 
 void ExpansionAutoplay_RecordEligibleActors(int side, int count)

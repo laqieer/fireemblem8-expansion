@@ -433,7 +433,7 @@ def active_manifest_rows(env=None):
         else:
             records = schema.load_records(schema.default_source)
         committed = schema.manifest_record_count(records)
-        active = len(records)
+        active = schema.active_manifest_record_count(records)
         rows.append({
             "table": name,
             "committed_record_count": committed,

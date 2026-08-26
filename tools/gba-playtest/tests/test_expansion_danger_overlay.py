@@ -301,7 +301,28 @@ class DangerOverlayWrapperTests(unittest.TestCase):
         )
 
 
-class DangerOverlayConfigurationTests(unittest.TestCase):
+class MapMenuSuspendHelpTests(unittest.TestCase):
+    def test_tutorial_disabled_suspend_uses_msg_864_and_fixture_suppresses_help(self):
+        source = BMMENU_SRC.read_text(encoding="utf-8")
+        body = source.split("u8 MapMenu_SuspendCommand(", 1)[1].split(
+            "u8 CommandEffectEndPlayerPhase(", 1
+        )[0]
+
+        self.assertIn('#include "constants/msg.h"', source)
+        self.assertIn("DebugSaveFixture_RecordBlockedWrite(", body)
+        self.assertIn("DEBUG_SAVE_FIXTURE_WRITE_SUSPEND", body)
+        self.assertIn("MenuFrozenHelpBox(menu, MSG_864)", body)
+        self.assertNotRegex(body, r"MenuFrozenHelpBox\(menu,\s*0x[0-9A-Fa-f]+")
+        record = body.index("DebugSaveFixture_RecordBlockedWrite(")
+        fixture_return = body.index("return MENU_ACT_SND6B;", record)
+        help_box = body.index("MenuFrozenHelpBox(menu, MSG_864)")
+        self.assertLess(record, fixture_return)
+        self.assertLess(fixture_return, help_box)
+
+    def test_modern_mk_wires_the_flag_define(self):
+        modern_mk = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
+        self.assertIn("-DFE8_EXPANSION_DANGER_OVERLAY_MENU=$(EXPANSION_DANGER_OVERLAY_MENU)", modern_mk)
+
     def test_parsed_default_and_enabled_identity_are_distinct(self):
         import sys
 

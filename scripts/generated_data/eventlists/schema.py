@@ -73,6 +73,7 @@ from ..diagnostics import GeneratedDataError
 from ..json_loader import load_json_file
 from ..schema import DependencyGraph, TableSchema
 from .. import character_refs
+from ..chapterobjectives.schema import stable_id_value
 from ..validators import extract_enum_constants, validate_range, validate_reference, validate_unique
 from . import helper_specs
 
@@ -640,10 +641,22 @@ def _lower_helper(call, context):
                 "{}.{}.{}".format(context, call.family, call.operation),
             )
         ]
+    args = list(call.args)
+    if (
+        context == "script"
+        and call.family == "strategy"
+        and call.operation == "activate"
+        and args[0].kind == "symbol"
+    ):
+        args[0] = MacroArg(
+            "int",
+            stable_id_value(args[0].value),
+            args[0].loc,
+        )
     return MacroCall(
         macro=spec.macro,
         macro_loc=call.operation_loc,
-        args=call.args,
+        args=args,
         loc=call.loc,
     ), []
 
@@ -696,6 +709,8 @@ def _validate_helper_script(
     characters,
     songs,
     unit_symbols,
+    strategy_ids,
+    strategy_pairs,
 ):
     temp_flag_uses = []
     for index, entry in enumerate(script.entries):
@@ -715,6 +730,56 @@ def _validate_helper_script(
         if lowered is None:
             continue
         spec = helper_specs.get_spec("script", entry.family, entry.operation)
+        if (
+            entry.family == "flag"
+            and entry.operation == "set"
+            and entry.args
+            and entry.args[0].kind == "symbol"
+            and any(flag == entry.args[0].value for _strategy, flag in strategy_pairs)
+        ):
+            diagnostics.add(
+                _err(
+                    "flag.set for strategy activation flag '{}' must use strategy.activate".format(
+                        entry.args[0].value
+                    ),
+                    entry.args[0].loc,
+                    ref,
+                )
+            )
+        if entry.family == "strategy" and entry.operation == "activate":
+            strategy_arg, flag_arg = entry.args
+            diagnostics.extend(
+                _validate_symbol_arg(
+                    strategy_arg,
+                    strategy_ids,
+                    "{}.strategy".format(ref),
+                    "strategy",
+                )
+            )
+            errors, _flag_uses = _validate_flag_arg(
+                flag_arg,
+                evflags,
+                evflag_tmp_low,
+                evflag_tmp_high,
+                "{}.flag".format(ref),
+            )
+            diagnostics.extend(errors)
+            if (
+                strategy_arg.kind == "symbol"
+                and flag_arg.kind == "symbol"
+                and (strategy_arg.value, flag_arg.value) not in strategy_pairs
+            ):
+                diagnostics.add(
+                    _err(
+                        "strategy activation pair '{}.{}' is not declared by autoplay strategy assignments".format(
+                            strategy_arg.value,
+                            flag_arg.value,
+                        ),
+                        entry.loc,
+                        ref,
+                    )
+                )
+            continue
         for (arg_name, kind), arg in zip(spec.args, entry.args):
             arg_ref = "{}.{}".format(ref, arg_name)
             if kind == "flag":
@@ -745,6 +810,57 @@ def _validate_helper_script(
     return temp_flag_uses
 
 
+def _chapter_bundle_records(dependency_records):
+    bundles = dependency_records.get("chapterbundle")
+    if bundles is None:
+        return ()
+    if hasattr(bundles, "records"):
+        return tuple(bundles.records)
+    if isinstance(bundles, (list, tuple)):
+        return tuple(bundles)
+    return (bundles,)
+
+
+def _strategy_pairs_for_owner(records, strategy_records, dependency_records, diagnostics):
+    chapters = strategy_records.get("chapters", ())
+    if not chapters:
+        return set()
+
+    owners = [
+        bundle
+        for bundle in _chapter_bundle_records(dependency_records)
+        if bundle.manifest.table == "eventlists"
+        and bundle.manifest.symbol == records.manifest.symbol
+    ]
+    if len(owners) != 1:
+        message = (
+            "event-list manifest '{}' has no owning chapter bundle"
+            if not owners
+            else "event-list manifest '{}' has multiple owning chapter bundles"
+        )
+        diagnostics.add(
+            _err(
+                message.format(records.manifest.symbol),
+                records.manifest.symbol_loc,
+                "manifest.symbol",
+            )
+        )
+        return set()
+
+    owner_chapter = owners[0].chapter.id
+    strategy_pairs = set()
+    for chapter in chapters:
+        if chapter.chapter != owner_chapter:
+            continue
+        assignments = [chapter.chapter_assignment]
+        assignments.extend(chapter.group_assignments)
+        assignments.extend(chapter.unit_assignments)
+        for assignment in assignments:
+            if assignment is not None and assignment.activation_flag is not None:
+                strategy_pairs.add((assignment.strategy, assignment.activation_flag))
+    return strategy_pairs
+
+
 def validate(records, diagnostics, dependency_records=None, characters_header=CHARACTERS_HEADER):
     """Validate the 7 event lists, the tutorial pointer array, and the
     ``Ch2Events`` manifest, cross-referencing ``dependency_records``
@@ -757,6 +873,16 @@ def validate(records, diagnostics, dependency_records=None, characters_header=CH
     trap_symbols = {r.symbol for r in dependency_records.get("traps", ())}
     eventscripts_by_symbol = {r.symbol: r for r in dependency_records.get("eventscripts", ())}
     helper_scripts_by_symbol = {script.symbol: script for script in records.helper_scripts}
+    strategy_records = dependency_records.get("autoplaystrategies", {})
+    strategy_ids = {
+        strategy.id for strategy in strategy_records.get("strategies", ())
+    }
+    strategy_pairs = _strategy_pairs_for_owner(
+        records,
+        strategy_records,
+        dependency_records,
+        diagnostics,
+    )
 
     characters = character_refs.read_character_designators(characters_header)
     factions = extract_enum_constants(BMUNIT_HEADER, name_prefix="FACTION_ID_")
@@ -849,6 +975,8 @@ def validate(records, diagnostics, dependency_records=None, characters_header=CH
                 characters,
                 songs,
                 unit_symbols,
+                strategy_ids,
+                strategy_pairs,
             )
         )
 
@@ -1161,8 +1289,8 @@ class EventListsTableSchema(TableSchema):
 
     def dependencies(self):
         return (
-            "units", "shops", "traps", "eventscripts",
-            "constants.characters", "constants.songs", "bmunit.FACTION_ID",
+            "units", "shops", "traps", "eventscripts", "constants.characters",
+            "constants.songs", "bmunit.FACTION_ID",
             "constants.event-flags.EVFLAG_TMP",
         )
 
@@ -1172,6 +1300,12 @@ class EventListsTableSchema(TableSchema):
         # `--dep-source NAME=PATH`) -- see `cli.py`'s
         # `_load_dependency_records()`.
         return ("units", "shops", "traps", "eventscripts")
+
+    def optional_dependency_tables(self):
+        # Strategy records and their chapter owner validate `strategy.activate`
+        # pairs, but cannot be manifest-DAG edges: chapterbundle already owns
+        # this event-list manifest.
+        return ("autoplaystrategies", "chapterbundle")
 
     def load_records(self, source_path):
         return load_records(source_path)

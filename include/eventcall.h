@@ -939,6 +939,7 @@ extern CONST_DATA EventListScr EventScr_Ruin_80[];
 extern CONST_DATA EventListScr EventScr_Ruin_81[];
 extern CONST_DATA EventListScr EventScr_Ruin_82[];
 
+#ifndef EVENTCALL_UDEFS_DATA_OWNER
 extern CONST_DATA struct UnitDefinition UnitDef_Event_PrologueAlly[];
 extern CONST_DATA struct UnitDefinition UnitDef_Event_PrologueEnemy[];
 extern CONST_DATA struct UnitDefinition UnitDef_Event_PrologueThroneRoomUnits[];
@@ -2902,6 +2903,7 @@ extern CONST_DATA struct REDA REDA_UnusedAlly_6_EIRIKA[];
 extern CONST_DATA struct REDA REDA_UnusedAlly_6_EPHRAIM[];
 extern CONST_DATA struct REDA REDA_UnusedAlly_7_EPHRAIM[];
 extern CONST_DATA struct REDA REDA_UnusedAlly_7_EIRIKA[];
+#endif
 
 extern CONST_DATA EventScr EventScr_WM_FadeCommon[];
 extern CONST_DATA EventScr EventScrWM_Prologue_Beginning[];

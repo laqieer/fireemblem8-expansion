@@ -34,13 +34,13 @@ void Text_SetColor(struct Text* text, int colorId)
     (void)colorId;
 }
 
-void Text_DrawString(struct Text* text, const char* string)
+void __attribute__((weak)) Text_DrawString(struct Text* text, const char* string)
 {
     (void)text;
     (void)string;
 }
 
-void PutText(struct Text* text, u16* dest)
+void __attribute__((weak)) PutText(struct Text* text, u16* dest)
 {
     (void)text;
     (void)dest;

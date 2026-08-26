@@ -502,7 +502,7 @@ Aggressive calls the existing legal combat selector first, then leaves the
 unchanged low-level AI to pursue or fall back. Objective-first handles only
 the active `reach_area` or `hold_until_turn` group member: it projects the
 unit onto the inclusive rectangle and uses the existing movement selector. A
-pending hold accepts combat only when its resulting decision stays in that
+pending reach or hold accepts combat only when its resulting decision stays in that
 rectangle; otherwise it waits, never falling through to unconstrained
 Aggressive. The projection is coordinate only (clamp X then Y); combat uses
 existing slot/item/map scans. Neither profile consumes RNG or derives a
@@ -517,11 +517,18 @@ unknown/unsupported profile-objective pair explicit. Before a selected
 strategy can commit a computer-phase action, dispatch checks those contracts.
 It records a typed autoplay failure and terminates the strategy path rather
 than selecting a success-shaped fallback. The typed event helper
-`ExpansionAutoplayStrategies_ActivateAssignment()` validates a generated
+`strategy.activate` lowers a symbolic, schema-validated assignment to
+`AUTOPLAY_STRATEGY_ACTIVATE` and
+`ExpansionAutoplayStrategies_ActivateAssignment()`. It validates a generated
 strategy-ID/activation-flag pair, changes only that existing event flag, and
-rejects calls during the active blue computer phase; the next phase is its
-safe boundary. It introduces no event language, hidden state, save byte,
-epoch, migration, localization string, or player UI.
+queues one validated pair during an active blue computer phase without
+changing the current units. Computer-phase completion is the next safe
+boundary and applies that pair exactly once. One later valid request replaces
+the pending pair, duplicates coalesce, and invalid pairs cannot replace it.
+Raw `flag.set` cannot target a declared strategy activation flag. The pending
+pair is cleared by every map/chapter lifecycle reset, including Suspend
+resume, and is never serialized; there is no save byte, epoch, migration,
+localization string, player UI, or second event language.
 
 For a third strategy, define one callback with the public context signature,
 declare its stable ID/capabilities in `autoplay_strategies.json`, and add its
@@ -530,14 +537,14 @@ reference; the shared dispatcher remains unchanged. The default references
 are not a taxonomy: Balanced, EXP, Treasure, Support, campaign, and
 project-specific character/chapter policies remain out of scope.
 
-The runtime creates no EWRAM or IWRAM state. The empty generated registry and
-bundle sentinels occupy 40 ROM bytes (20 bytes each). In the focused AAPCS
-objects, profiles-off/on text is 1016/1196 bytes in debug and 1268/1468 bytes
-in release; the reference callbacks therefore add 180 debug or 200 release
-text bytes. Strategy activation reconstructs from existing generated data and
-event flags. The strategy host/ARM selector enforces zero EWRAM and a 4 KiB
-aggregate object-text ceiling for both profile states. The archival lane
-excludes the runtime and generated table.
+The runtime uses one bounded eight-byte EWRAM pending pair (strategy ID,
+activation flag, and owning chapter ID) and no IWRAM. The empty generated
+registry and bundle sentinels occupy 40 ROM bytes (20 bytes each). Strategy
+selection reconstructs from generated data and existing event flags; only an
+in-flight active-phase request uses the transient pair. The strategy host/ARM
+selector enforces exactly eight strategy EWRAM bytes and a 4 KiB aggregate
+object-text ceiling for both profile states. The archival lane excludes the
+runtime and generated table.
 
 ### Strategy compatibility and budgets
 
@@ -551,8 +558,9 @@ excludes the runtime and generated table.
   reference profiles disabled; no player UI, localization string, or second
   event language is introduced.
 - **ROM/RAM:** reference profiles add only generated ROM descriptors and
-  callback text. The shared router has no static EWRAM/IWRAM allocation, and
-  the focused object gate enforces zero strategy EWRAM and a 4 KiB text cap.
+  callback text. The shared router uses one eight-byte EWRAM pending pair and
+  no IWRAM; the focused object gate enforces that exact bound and a 4 KiB text
+  cap.
 - **Runtime evidence:** the debug strategy profile and default-disabled ROMs
   execute bounded fixed-seed `CpDecide_Main` scenarios twice; their action and
   telemetry captures must repeat exactly.

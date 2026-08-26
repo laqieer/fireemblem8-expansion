@@ -125,6 +125,51 @@ class CliEventListsTests(unittest.TestCase):
                 self.assertIn("EventListScr_EL_Turn", content)
                 self.assertIn("CONST_DATA struct ChapterEventGroup ELEvents", content)
 
+    def test_strategy_helper_uses_optional_strategy_validation_input(self):
+        with scratch_dir() as tmp:
+            with open(fixture_path("eventlists", "helpers_valid.json"), encoding="utf-8") as handle:
+                source = json.load(handle)
+            source["helperScripts"][0]["entries"].append(
+                {
+                    "helper": "strategy",
+                    "operation": "activate",
+                    "args": [
+                        "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST",
+                        "EVFLAG_HIDE_BLINKING_ICON",
+                    ],
+                }
+            )
+            source_path = os.path.join(tmp, "strategy-helper.json")
+            with open(source_path, "w", encoding="utf-8") as handle:
+                json.dump(source, handle)
+            with open(
+                fixture_path("chapterbundle", "valid.json"),
+                encoding="utf-8",
+            ) as handle:
+                bundle = json.load(handle)
+            bundle["chapter"]["id"] = "CHAPTER_L_2"
+            bundle_path = os.path.join(tmp, "strategy-helper-bundle.json")
+            with open(bundle_path, "w", encoding="utf-8") as handle:
+                json.dump(bundle, handle)
+            code, out, err = run_cli(
+                [
+                    "validate",
+                    "--table",
+                    "eventlists",
+                    "--source",
+                    source_path,
+                    "--no-roundtrip",
+                    "--dep-source",
+                    "autoplaystrategies={}".format(
+                        fixture_path("autoplaystrategies", "valid.json")
+                    ),
+                    "--dep-source",
+                    "chapterbundle={}".format(bundle_path),
+                ]
+                + _eventlists_dep_source_args()
+            )
+            self.assertEqual(code, 0, msg=out + err)
+
     def test_check_real_ch2_eventlists_table_has_no_drift(self):
         code, out, err = run_cli(["check", "--table", "eventlists"])
         self.assertEqual(code, 0, msg=out + err)
@@ -203,6 +248,234 @@ class CliChapterBundleTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("chapterObjectives.source", err)
             self.assertFalse(os.path.exists(inventory_path))
+
+    def test_cli_validates_declared_autoplay_strategy_source_before_inventory(self):
+        with scratch_dir() as tmp:
+            with open(fixture_path("chapterbundle", "cli_valid.json"), encoding="utf-8") as handle:
+                bundle = json.load(handle)
+            strategy_source = fixture_path("autoplaystrategies", "valid.json")
+            bundle["autoplayStrategies"] = {
+                "source": strategy_source,
+                "symbols": ["AutoplayStrategies_Fixture"],
+            }
+            valid_path = os.path.join(tmp, "bundle-with-strategies.json")
+            with open(valid_path, "w", encoding="utf-8") as handle:
+                json.dump(bundle, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", valid_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 0, msg=out + err)
+
+            out_dir = os.path.join(tmp, "strategy-out")
+            inventory_path = os.path.join(tmp, "strategy-inventory.md")
+            code, out, err = run_cli([
+                "generate", "--table", "chapterbundle", "--source", valid_path,
+                "--out-dir", out_dir, "--inventory", inventory_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 0, msg=out + err)
+            with open(inventory_path, encoding="utf-8") as handle:
+                inventory = handle.read()
+            self.assertIn("| autoplaystrategies |", inventory)
+            self.assertIn("fixtures/autoplaystrategies/valid.json", inventory)
+
+            stale = json.loads(json.dumps(bundle))
+            stale["autoplayStrategies"]["symbols"] = ["AutoplayStrategies_Stale"]
+            stale_path = os.path.join(tmp, "bundle-with-stale-strategy.json")
+            with open(stale_path, "w", encoding="utf-8") as handle:
+                json.dump(stale, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", stale_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn(
+                "autoplayStrategies.symbols[AutoplayStrategies_Stale]",
+                err,
+            )
+
+            undeclared = json.loads(json.dumps(bundle))
+            undeclared["autoplayStrategies"]["symbols"] = []
+            undeclared_path = os.path.join(tmp, "bundle-with-undeclared-strategy.json")
+            with open(undeclared_path, "w", encoding="utf-8") as handle:
+                json.dump(undeclared, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle",
+                "--source", undeclared_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn(
+                "contains chapter 'CHAPTER_L_2' symbol 'AutoplayStrategies_Fixture'",
+                err,
+            )
+
+            wrong = json.loads(json.dumps(bundle))
+            wrong["autoplayStrategies"]["source"] = "src/data/autoplay_strategies.json"
+            wrong_path = os.path.join(tmp, "bundle-with-wrong-strategy-source.json")
+            with open(wrong_path, "w", encoding="utf-8") as handle:
+                json.dump(wrong, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", wrong_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn(
+                "is not a record for chapter 'CHAPTER_L_2'",
+                err,
+            )
+
+            missing = json.loads(json.dumps(bundle))
+            missing["autoplayStrategies"]["source"] = os.path.join(
+                tmp, "missing-strategies.json"
+            )
+            missing_path = os.path.join(tmp, "bundle-with-missing-strategy.json")
+            with open(missing_path, "w", encoding="utf-8") as handle:
+                json.dump(missing, handle)
+            code, out, err = run_cli([
+                "generate", "--table", "chapterbundle", "--source", missing_path,
+                "--out-dir", os.path.join(tmp, "missing-strategy-out"),
+                "--inventory", os.path.join(tmp, "missing-strategy.md"),
+                "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn("autoplayStrategies.source", err)
+            self.assertFalse(os.path.exists(os.path.join(tmp, "missing-strategy.md")))
+
+    def test_cli_directory_autoplay_source_validates_and_hashes_every_member(self):
+        def write_source(path, chapter, symbol):
+            chapters = []
+            if chapter is not None:
+                chapters.append({
+                    "chapter": chapter,
+                    "symbol": symbol,
+                    "groupAssignments": [],
+                    "unitAssignments": [],
+                })
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump({
+                    "$schema": "fe8.autoplaystrategies.v1",
+                    "strategies": [],
+                    "chapters": chapters,
+                }, handle)
+
+        with scratch_dir() as tmp:
+            with open(fixture_path("chapterbundle", "cli_valid.json"), encoding="utf-8") as handle:
+                bundle = json.load(handle)
+            strategy_dir = os.path.join(tmp, "strategy-sources")
+            os.mkdir(strategy_dir)
+            source_a = os.path.join(strategy_dir, "a_strategies.json")
+            source_b = os.path.join(strategy_dir, "b_strategies.json")
+            write_source(source_a, "CHAPTER_L_2", "AutoplayStrategies_SourceA")
+            write_source(source_b, "CHAPTER_L_3", "AutoplayStrategies_SourceB")
+            bundle["autoplayStrategies"] = {
+                "source": strategy_dir,
+                "symbols": ["AutoplayStrategies_SourceA"],
+            }
+            bundle_path = os.path.join(tmp, "bundle-with-strategy-directory.json")
+            with open(bundle_path, "w", encoding="utf-8") as handle:
+                json.dump(bundle, handle)
+
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle", "--source", bundle_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 0, msg=out + err)
+
+            first_inventory = os.path.join(tmp, "strategy-directory-first.md")
+            code, out, err = run_cli([
+                "generate", "--table", "chapterbundle", "--source", bundle_path,
+                "--out-dir", os.path.join(tmp, "first-out"),
+                "--inventory", first_inventory, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 0, msg=out + err)
+            with open(first_inventory, encoding="utf-8") as handle:
+                first_report = handle.read()
+            self.assertIn("a_strategies.json, ", first_report)
+            self.assertIn("b_strategies.json", first_report)
+            first_strategy_row = next(
+                line for line in first_report.splitlines()
+                if line.startswith("| autoplaystrategies |")
+            )
+
+            with open(source_b, "a", encoding="utf-8") as handle:
+                handle.write("\n")
+            second_inventory = os.path.join(tmp, "strategy-directory-second.md")
+            code, out, err = run_cli([
+                "generate", "--table", "chapterbundle", "--source", bundle_path,
+                "--out-dir", os.path.join(tmp, "second-out"),
+                "--inventory", second_inventory, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 0, msg=out + err)
+            with open(second_inventory, encoding="utf-8") as handle:
+                second_report = handle.read()
+            second_strategy_row = next(
+                line for line in second_report.splitlines()
+                if line.startswith("| autoplaystrategies |")
+            )
+            self.assertNotEqual(first_strategy_row, second_strategy_row)
+
+            mismatch = json.loads(json.dumps(bundle))
+            mismatch["autoplayStrategies"]["symbols"] = ["AutoplayStrategies_SourceB"]
+            mismatch_path = os.path.join(tmp, "bundle-with-strategy-member-mismatch.json")
+            with open(mismatch_path, "w", encoding="utf-8") as handle:
+                json.dump(mismatch, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle",
+                "--source", mismatch_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn(
+                "autoplayStrategies.symbols[AutoplayStrategies_SourceB]",
+                err,
+            )
+
+            undeclared = json.loads(json.dumps(bundle))
+            undeclared["autoplayStrategies"]["symbols"] = []
+            undeclared_path = os.path.join(tmp, "bundle-with-undeclared-directory-strategy.json")
+            with open(undeclared_path, "w", encoding="utf-8") as handle:
+                json.dump(undeclared, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle",
+                "--source", undeclared_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn(
+                "contains chapter 'CHAPTER_L_2' symbol 'AutoplayStrategies_SourceA'",
+                err,
+            )
+
+            missing = json.loads(json.dumps(bundle))
+            missing["autoplayStrategies"] = {
+                "source": os.path.join(tmp, "missing-strategy-sources"),
+                "symbols": [],
+            }
+            missing_path = os.path.join(tmp, "bundle-with-missing-strategy-directory.json")
+            with open(missing_path, "w", encoding="utf-8") as handle:
+                json.dump(missing, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle",
+                "--source", missing_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn("autoplayStrategies.source", err)
+
+            wrong_dir = os.path.join(tmp, "wrong-strategy-sources")
+            os.mkdir(wrong_dir)
+            shutil.copyfile(
+                fixture_path("chapterbundle", "deps_units.json"),
+                os.path.join(wrong_dir, "wrong_strategies.json"),
+            )
+            wrong = json.loads(json.dumps(bundle))
+            wrong["autoplayStrategies"] = {
+                "source": wrong_dir,
+                "symbols": [],
+            }
+            wrong_path = os.path.join(tmp, "bundle-with-wrong-strategy-directory.json")
+            with open(wrong_path, "w", encoding="utf-8") as handle:
+                json.dump(wrong, handle)
+            code, out, err = run_cli([
+                "validate", "--table", "chapterbundle",
+                "--source", wrong_path, "--no-roundtrip",
+            ])
+            self.assertEqual(code, 1)
+            self.assertIn("autoplayStrategies.source", err)
+            self.assertIn("unexpected $schema", err)
 
     def test_cli_directory_chapter_objectives_source_validates_and_generates(self):
         with scratch_dir() as tmp:
