@@ -347,6 +347,35 @@ class MapMenuHelpSizingTests(unittest.TestCase):
             statscreen,
         )
 
+    def test_archival_preprocessed_help_sizing_path_is_unchanged(self):
+        if CC is None:
+            self.skipTest("no host C preprocessor")
+        with tempfile.TemporaryDirectory(dir=BUILD) as temporary:
+            graphics = Path(temporary) / "graphics"
+            graphics.mkdir()
+            (graphics / "debug_font.4bpp.h").write_text("", encoding="utf-8")
+            completed = _run(
+                [
+                    CC,
+                    "-E",
+                    "-P",
+                    "-I",
+                    temporary,
+                    "-I",
+                    str(ROOT / "include"),
+                    str(ROOT / "src" / "fontgrp.c"),
+                ]
+            )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("GetStringTextBoxFromString", completed.stdout)
+        function = re.search(
+            r"void GetStringTextBox\([^;]*\)\s*\{.*?\n\}",
+            completed.stdout,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(function)
+        self.assertIn("str = StringInsertSpecialPrefixByCtrl();", function.group(0))
+
 
 class MapMenuRuntimeContractTests(unittest.TestCase):
     def test_checked_named_release_scenario_is_semantic_and_framebuffer_pinned(self):

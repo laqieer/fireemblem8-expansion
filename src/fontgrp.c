@@ -716,13 +716,35 @@ int GetStringTextCenteredPos(int x, const char *str)
 
 void GetStringTextBox(const char* _str, int *out_width, int *out_height)
 {
+#ifdef MODERN
     (void)_str;
     GetStringTextBoxFromString(
         StringInsertSpecialPrefixByCtrl(),
         out_width,
         out_height);
+#else
+    char *str;
+
+    *out_width = 0;
+    *out_height = 0;
+
+    str = StringInsertSpecialPrefixByCtrl();
+    while (*str != 0 && *str != CHAR_NEWLINE) {
+        int width = GetStringTextLen(str);
+
+        if (*out_width < width)
+            *out_width = width;
+        *out_height += 16;
+
+        str = GetStringLineEnd(str);
+        if (*str == 0)
+            break;
+        str++;
+    }
+#endif
 }
 
+#ifdef MODERN
 void GetStringTextBoxFromString(const char* str, int *out_width, int *out_height)
 {
     *out_width = 0;
@@ -741,6 +763,7 @@ void GetStringTextBoxFromString(const char* str, int *out_width, int *out_height
         str++;
     }
 }
+#endif
 
 char *GetStringLineEnd(char *str)
 {
