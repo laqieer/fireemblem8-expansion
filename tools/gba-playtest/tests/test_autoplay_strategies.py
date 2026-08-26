@@ -1,6 +1,8 @@
 """Issue #90 typed autoplay strategy registry and profile contract."""
 
+import json
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -76,6 +78,96 @@ def generate(temporary_path, enabled):
             raise AssertionError(completed.stdout + completed.stderr)
 
     return objective, strategy
+
+
+class AutoplayStrategyCaseContractTests(unittest.TestCase):
+    def test_canonical_arm_command_is_exact_and_runnable(self):
+        registry = json.loads(
+            (ROOT / "docs" / "test-cases" / "registry.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        case = next(
+            item for item in registry["cases"]
+            if item["id"] == "TC-AUTOPLAY-STRATEGY-001"
+        )
+        expected = (
+            "python3 -m unittest "
+            "tools.gba-playtest.tests.test_autoplay_strategies."
+            "AutoplayStrategiesRuntimeTests."
+            "test_arm_profiles_bound_pending_ewram_and_gate_reference_callbacks -v"
+        )
+        commands = [entry["command"] for entry in case["automation"]]
+        self.assertIn(expected, commands)
+
+        command = shlex.split(expected)
+        self.assertEqual(
+            command[-2].rsplit(".", 1)[-1],
+            "test_arm_profiles_bound_pending_ewram_and_gate_reference_callbacks",
+        )
+        completed = run(command)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_downstream_strategy_example_parses_and_compiles(self):
+        docs = (ROOT / "docs" / "autoplay.md").read_text(encoding="utf-8")
+        section = docs.split("### Downstream strategy example", 1)[1].split(
+            "The runtime uses", 1
+        )[0]
+        c_source = re.search(r"```c\n(.*?)```", section, re.DOTALL).group(1)
+        descriptor = json.loads(
+            re.search(r"```json\n(.*?)```", section, re.DOTALL).group(1)
+        )
+
+        strategy = descriptor["strategies"][0]
+        self.assertEqual(
+            strategy,
+            {
+                "id": "AUTOPLAY_STRATEGY_ADVANCE_ONLY",
+                "callback": "ExpansionAutoplayStrategy_AdvanceOnly",
+                "objectiveKinds": ["reach_area"],
+                "actionKinds": ["objective_move"],
+            },
+        )
+        assignment = descriptor["chapters"][0]["groupAssignments"][0]
+        self.assertEqual(
+            assignment["strategy"],
+            "AUTOPLAY_STRATEGY_ADVANCE_ONLY",
+        )
+        for required in (
+            "return false;",
+            "return true;",
+            "AiClearDecision();",
+            "gAiDecision.actionId != AI_ACTION_NONE",
+        ):
+            self.assertIn(required, c_source)
+
+        if CC is not None:
+            completed = subprocess.run(
+                [
+                    CC,
+                    "-std=gnu89",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    "-I",
+                    str(ROOT / "include"),
+                    "-I",
+                    str(ROOT / "include" / "generated"),
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-x",
+                    "c",
+                    "-fsyntax-only",
+                    "-",
+                ],
+                cwd=ROOT,
+                input=c_source,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
 
 
 class AutoplayStrategiesRuntimeTests(unittest.TestCase):

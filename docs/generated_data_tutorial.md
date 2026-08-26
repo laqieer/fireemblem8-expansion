@@ -256,9 +256,9 @@ Supported script families are:
 * `bgm.start`, `bgm.fade_in`, `bgm.override`, `bgm.restore` -> `MUSC`,
   `EvtBgmFadeIn`, `MUSS`, and `MURE`;
 * `recovery.set_hp` -> `SET_HP` (the established event-slot-1 HP contract);
-* `escape.warp_out` -> `WARP_OUT`.
-* `strategy.activate` -> typed strategy/flag slots plus
-  `ASMC(ExpansionAutoplayStrategies_EventActivate)`.
+* `escape.warp_out` -> `WARP_OUT`;
+* `strategy.activate` / `strategy.deactivate` -> typed strategy/flag slots
+  plus the matching safe-boundary `ASMC` bridge.
 
 List helpers are `shop.armory`/`shop.vendor`/`shop.secret_shop`,
 `turn.event`, `flag.event`, and `escape.area`. IDs resolve against the live
@@ -348,25 +348,27 @@ Assignments have deterministic `unit > group > chapter > Unit.ai[]`
 precedence. An optional `activationFlag` is an existing `EVFLAG_*`; authored
 event scripts must change it through
 `{"helper": "strategy", "operation": "activate", "args": [STRATEGY_ID, EVFLAG]}`
-instead of raw `flag.set`. Pair validation is scoped through the chapter bundle
-that owns the event-list manifest: an assignment in another chapter neither
-authorizes `strategy.activate` nor reserves its flag against that chapter's
-ordinary `flag.set`.
-`ExpansionAutoplayStrategies_ActivateAssignment(strategyId, activationFlag)`
-is the one typed event bridge: it accepts only a declared assignment, writes
-only that existing flag outside an active blue computer phase, and queues one
-validated strategy/flag pair when the phase is active. The latest distinct
-valid request replaces the pending pair, duplicates coalesce, and computer
-phase completion applies it exactly once. The eight-byte transient is cleared
-on map/chapter lifecycle reset (including Suspend resume) and is never
-serialized. A selected strategy/objective capability mismatch stops before an
-AI action rather than falling back silently.
+or the corresponding `deactivate` operation instead of raw `flag.set` /
+`flag.clear`. Pair validation is scoped through the chapter bundle that owns
+the event-list manifest: an assignment in another chapter neither authorizes
+the typed operation nor reserves its flag against that chapter's ordinary flag
+helpers. `ExpansionAutoplayStrategies_ActivateAssignment()` and
+`ExpansionAutoplayStrategies_DeactivateAssignment()` accept only a declared
+pair, set or clear only that existing flag outside an active blue computer
+phase, and queue one validated pair plus operation when the phase is active.
+The latest distinct valid request replaces the pending operation, duplicates
+coalesce, and computer phase completion applies it exactly once. The
+eight-byte transient is cleared on map/chapter lifecycle reset (including
+Suspend resume) and is never serialized. A selected strategy/objective
+capability mismatch stops before an AI action rather than falling back
+silently.
 
 `activationFlag` and `deactivationFlag` use existing `EVFLAG_*` state.
-Strategy assignment activation uses only `strategy.activate`, which validates
-the declared pair and defers active-blue-phase changes; objective flags use
-the existing `helperScripts` `flag.set` / `flag.clear` operations or
-established event scripts. Objectives introduce no
+Strategy assignment flags use only `strategy.activate` /
+`strategy.deactivate`, which validate the declared pair and defer
+active-blue-phase changes; non-strategy objective flags use the existing
+`helperScripts` `flag.set` / `flag.clear` operations or established event
+scripts. Objectives introduce no
 event language, chapter manifest, router, or hidden runtime activation bit.
 `protect` requires distinct existing `failureFlag` and `completionFlag`
 values. It latches a protected member's death, missing, or rescued state only

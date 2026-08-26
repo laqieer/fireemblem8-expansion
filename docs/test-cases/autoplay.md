@@ -359,11 +359,12 @@ a deterministic reachable movement decision only when its generated range
 strictly decreases; no progress waits, and a completed objective returns to
 Aggressive/current AI. A unit assignment overrides the group and chapter
 assignments, a group overrides chapter, and the profiles repeat the same action
-trace without an RNG draw. The typed event helper accepts only its declared
-activation flag. An active-blue-phase request leaves current units unchanged,
-then applies once at computer-phase completion; duplicates coalesce, the last
-distinct valid pair replaces the pending pair, invalid pairs cannot replace
-it, and lifecycle/Suspend-resume reset discards it. Unknown IDs,
+trace without an RNG draw. The typed event helpers accept only their declared
+activation flag for both activation and deactivation. An active-blue-phase
+request leaves current units unchanged, then sets or clears once at
+computer-phase completion; duplicates coalesce, the last distinct valid
+operation replaces the pending operation, invalid pairs cannot replace it,
+and lifecycle/Suspend-resume reset discards it. Unknown IDs,
 duplicate/missing callbacks, invalid capability bits, capacity overflow, and
 Objective-first with an unsupported objective kind fail explicitly before an
 action commits.
@@ -383,9 +384,9 @@ The case depends on the #85 blue computer executor and #89 typed
 objective/group records. It has no known feature conflicts, no player UI,
 locale text, save field, migration, compatibility-epoch change, or archival
 behavior. Generated activation flags are existing event state. The pending
-pair is transient only: Suspend/load invokes the ordinary autoplay lifecycle
-reset, discards any in-flight request, and reconstructs assignment selection
-from generated data and event flags.
+operation is transient only: Suspend/load invokes the ordinary autoplay
+lifecycle reset, discards any in-flight set/clear request, and reconstructs
+assignment selection from generated data and event flags.
 
 ### Automation
 

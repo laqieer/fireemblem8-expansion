@@ -95,6 +95,10 @@ SCRIPT_HELPERS = {
             "AUTOPLAY_STRATEGY_ACTIVATE",
             (("strategy", "strategy_id"), ("flag", "flag")),
         ),
+        "deactivate": HelperSpec(
+            "AUTOPLAY_STRATEGY_DEACTIVATE",
+            (("strategy", "strategy_id"), ("flag", "flag")),
+        ),
     },
 }
 

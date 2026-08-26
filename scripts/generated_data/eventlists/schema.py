@@ -645,7 +645,7 @@ def _lower_helper(call, context):
     if (
         context == "script"
         and call.family == "strategy"
-        and call.operation == "activate"
+        and call.operation in ("activate", "deactivate")
         and args[0].kind == "symbol"
     ):
         args[0] = MacroArg(
@@ -732,21 +732,29 @@ def _validate_helper_script(
         spec = helper_specs.get_spec("script", entry.family, entry.operation)
         if (
             entry.family == "flag"
-            and entry.operation == "set"
+            and entry.operation in ("set", "clear")
             and entry.args
             and entry.args[0].kind == "symbol"
             and any(flag == entry.args[0].value for _strategy, flag in strategy_pairs)
         ):
+            strategy_operation = (
+                "activate" if entry.operation == "set" else "deactivate"
+            )
             diagnostics.add(
                 _err(
-                    "flag.set for strategy activation flag '{}' must use strategy.activate".format(
-                        entry.args[0].value
+                    "flag.{} for strategy activation flag '{}' must use strategy.{}".format(
+                        entry.operation,
+                        entry.args[0].value,
+                        strategy_operation,
                     ),
                     entry.args[0].loc,
                     ref,
                 )
             )
-        if entry.family == "strategy" and entry.operation == "activate":
+        if (
+            entry.family == "strategy"
+            and entry.operation in ("activate", "deactivate")
+        ):
             strategy_arg, flag_arg = entry.args
             diagnostics.extend(
                 _validate_symbol_arg(
