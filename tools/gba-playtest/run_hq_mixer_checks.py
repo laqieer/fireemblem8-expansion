@@ -24,9 +24,40 @@ HQ_EWRAM_BOOKKEEPING_BYTES = 0x418
 HQ_DISABLED_IWRAM_STATIC_END = 0x030067F0
 HQ_ENABLED_IWRAM_STATIC_END = 0x03006E00
 HQ_IWRAM_STATIC_DELTA = HQ_ENABLED_IWRAM_STATIC_END - HQ_DISABLED_IWRAM_STATIC_END
+MPLAY_INFO_BYTES = 0x40
+MPLAY_INFO_TRACKS_OFFSET = 0x2C
+MPLAY_INFO_IDENT_OFFSET = 0x34
+MPLAY_ID_NUMBER = 0x68736D53
+MPLAY_INFO_SYMBOLS = (
+    "gMPlayInfo_SE4_BMP2",
+    "gMPlayInfo_SE5_BMP3",
+    "gMPlayInfo_BGM1",
+    "gMPlayInfo_SE6_BMP4",
+    "gMPlayInfo_BGM2",
+    "gMPlayInfo_SE1_SYS1",
+    "gMPlayInfo_SE3_BMP1",
+    "gMPlayInfo_SE7_EVT",
+    "gMPlayInfo_SE2_SYS2",
+)
+DISABLED_MPLAY_INFO_ADDRESSES = {
+    "gMPlayInfo_SE4_BMP2": 0x030063C0,
+    "gMPlayInfo_SE5_BMP3": 0x03006400,
+    "gMPlayInfo_BGM1": 0x03006440,
+    "gMPlayInfo_SE6_BMP4": 0x03006610,
+    "gMPlayInfo_BGM2": 0x03006650,
+    "gMPlayInfo_SE1_SYS1": 0x03006690,
+    "gMPlayInfo_SE3_BMP1": 0x030066D0,
+    "gMPlayInfo_SE7_EVT": 0x03006720,
+    "gMPlayInfo_SE2_SYS2": 0x03006760,
+}
+SOUND_INFO_CHANNEL_OFFSET = 0x50
+SOUND_CHANNEL_STRIDE = 0x40
+SOUND_CHANNEL_TRACK_OFFSET = 0x2C
+SOUND_CHANNEL_COUNT = 12
 SOUND_INFO_PCM_BUFFER_OFFSET = 0x350
 PCM_CHANNEL_STRIDE = 0x630
 PCM_SAMPLE_OFFSETS = (0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xD0)
+LATE_WINDOW_CHECKPOINT_INDEX = 2
 RUNTIME_SCENARIOS = {
     "debug": (
         ROOT / "tools/gba-playtest/scenarios/starter-hook-modern-debug.json",
@@ -78,6 +109,96 @@ def require_absent_symbol(elf: Path, symbol: str, nm: str) -> None:
     fail(f"{symbol} must be absent from disabled ELF {elf}")
 
 
+def validate_player_ranges(
+    players: dict[str, tuple[int, int]],
+    mix_buffer: tuple[int, int] | None,
+) -> None:
+    ranges = sorted(
+        (address, address + size, symbol)
+        for symbol, (address, size) in players.items()
+    )
+    for (_, previous_end, previous_symbol), (start, _, symbol) in zip(ranges, ranges[1:]):
+        if start < previous_end:
+            fail(
+                f"MP2K player-info symbols overlap: {previous_symbol} and {symbol}"
+            )
+    if mix_buffer is None:
+        return
+    mix_start, mix_size = mix_buffer
+    mix_end = mix_start + mix_size
+    for start, end, symbol in ranges:
+        if start < mix_end and mix_start < end:
+            fail(
+                f"{symbol} overlaps HQ mix-buffer interval "
+                f"[0x{mix_start:08x}, 0x{mix_end:08x})"
+            )
+
+
+def map_section_for_range(
+    sections: list[budget.OutputSection],
+    address: int,
+    size: int,
+    label: str,
+    map_path: Path,
+) -> str:
+    matches = [
+        section.name
+        for section in sections
+        if section.address <= address
+        and address + size <= section.address + section.size
+    ]
+    if len(matches) != 1:
+        fail(
+            f"{label} at [0x{address:08x}, 0x{address + size:08x}) "
+            f"has ambiguous map ownership in {map_path}: {matches}"
+        )
+    return matches[0]
+
+
+def check_player_layout(
+    elf: Path,
+    map_path: Path,
+    map_sections: list[budget.OutputSection],
+    nm: str,
+    enabled: bool,
+    mix_buffer: tuple[int, int] | None,
+) -> dict[str, dict[str, int | str]]:
+    resolver = ElfSymbolResolver(elf, nm)
+    players = {
+        symbol: require_symbol(resolver, symbol)
+        for symbol in MPLAY_INFO_SYMBOLS
+    }
+    validate_player_ranges(players, mix_buffer)
+    expected_section = "ewram_data" if enabled else "IWRAM"
+    report = {}
+    for symbol, (address, size) in players.items():
+        if size != MPLAY_INFO_BYTES:
+            fail(
+                f"{symbol} size is 0x{size:x}, expected 0x{MPLAY_INFO_BYTES:x}"
+            )
+        if enabled:
+            if not 0x02000000 <= address < 0x02040000:
+                fail(f"{symbol} is not owned by EWRAM in enabled ELF: 0x{address:08x}")
+        elif address != DISABLED_MPLAY_INFO_ADDRESSES[symbol]:
+            fail(
+                f"{symbol} disabled address is 0x{address:08x}, expected "
+                f"0x{DISABLED_MPLAY_INFO_ADDRESSES[symbol]:08x}"
+            )
+        section = map_section_for_range(
+            map_sections, address, size, symbol, map_path
+        )
+        if section != expected_section:
+            fail(
+                f"{symbol} map owner is {section}, expected {expected_section}"
+            )
+        report[symbol] = {
+            "address": address,
+            "bytes": size,
+            "map_section": section,
+        }
+    return report
+
+
 def check_budget(map_path: Path, elf_path: Path, enabled: bool) -> dict:
     regions, sections, assignments = budget.parse_map(map_path.read_text(encoding="utf-8"))
     elf_sections = budget.parse_elf_sections(str(elf_path))
@@ -124,13 +245,25 @@ def check_budget(map_path: Path, elf_path: Path, enabled: bool) -> dict:
     return {"iwram": iwram, "ewram": ewram}
 
 
-def check_link_selection(enabled_elf: Path, disabled_elf: Path, nm: str) -> dict:
+def check_link_selection(
+    enabled_elf: Path,
+    enabled_map: Path,
+    disabled_elf: Path,
+    disabled_map: Path,
+    nm: str,
+) -> dict:
     enabled = ElfSymbolResolver(enabled_elf, nm)
     code, code_size = require_symbol(enabled, "SoundMainRAM")
     code_end, _ = require_symbol(enabled, "SoundMainRAM_End")
     code_buffer, code_buffer_size = require_symbol(enabled, "SoundMainRAM_Buffer")
     mix_buffer, mix_buffer_size = require_symbol(enabled, "SoundMainRAM_MixBuffer")
     probe, probe_size = require_symbol(enabled, "gExpansionHqMixerProbe")
+    _, enabled_map_sections, _ = budget.parse_map(
+        enabled_map.read_text(encoding="utf-8")
+    )
+    _, disabled_map_sections, _ = budget.parse_map(
+        disabled_map.read_text(encoding="utf-8")
+    )
 
     if not 0x08000000 <= code < 0x0A000000:
         fail(f"HQ SoundMainRAM is not linked in ROM: 0x{code:08x}")
@@ -158,6 +291,32 @@ def check_link_selection(enabled_elf: Path, disabled_elf: Path, nm: str) -> dict
         )
     if probe_size != 0x2C:
         fail(f"HQ runtime probe size is 0x{probe_size:x}, expected 0x2c")
+    mix_section = map_section_for_range(
+        enabled_map_sections,
+        mix_buffer,
+        mix_buffer_size,
+        "SoundMainRAM_MixBuffer",
+        enabled_map,
+    )
+    if mix_section != "IWRAM":
+        fail(f"HQ mix-buffer map owner is {mix_section}, expected IWRAM")
+
+    enabled_players = check_player_layout(
+        enabled_elf,
+        enabled_map,
+        enabled_map_sections,
+        nm,
+        enabled=True,
+        mix_buffer=(mix_buffer, mix_buffer_size),
+    )
+    disabled_players = check_player_layout(
+        disabled_elf,
+        disabled_map,
+        disabled_map_sections,
+        nm,
+        enabled=False,
+        mix_buffer=None,
+    )
 
     for symbol in ("SoundMainRAM_End", "SoundMainRAM_MixBuffer", "gExpansionHqMixerProbe"):
         require_absent_symbol(disabled_elf, symbol, nm)
@@ -170,6 +329,8 @@ def check_link_selection(enabled_elf: Path, disabled_elf: Path, nm: str) -> dict
         "mix_buffer_address": mix_buffer,
         "mix_buffer_bytes": mix_buffer_size,
         "probe_address": probe,
+        "enabled_player_info": enabled_players,
+        "disabled_player_info": disabled_players,
     }
 
 
@@ -189,25 +350,42 @@ def capture_pcm_profile(
     config: str,
 ) -> dict:
     resolver = ElfSymbolResolver(elf, nm)
-    probes = [
+    common_probes = [
         _probe(resolver, "gSoundInfo+0x04", 1),
         _probe(resolver, "gSoundInfo+0x0b", 1),
+        _probe(resolver, f"gMPlayInfo_BGM1+0x{MPLAY_INFO_TRACKS_OFFSET:x}", 4),
+        _probe(resolver, f"gMPlayInfo_BGM1+0x{MPLAY_INFO_IDENT_OFFSET:x}", 4),
     ]
-    if enabled:
-        for offset in range(0, 0x2C, 4):
-            probes.append(_probe(resolver, f"gExpansionHqMixerProbe+0x{offset:x}", 4))
-
-    pcm_probe_start = len(probes)
+    for channel in range(SOUND_CHANNEL_COUNT):
+        channel_offset = SOUND_INFO_CHANNEL_OFFSET + channel * SOUND_CHANNEL_STRIDE
+        common_probes.append(_probe(resolver, f"gSoundInfo+0x{channel_offset:x}", 1))
+        common_probes.append(
+            _probe(
+                resolver,
+                f"gSoundInfo+0x{channel_offset + SOUND_CHANNEL_TRACK_OFFSET:x}",
+                4,
+            )
+        )
     for offset in PCM_SAMPLE_OFFSETS:
-        probes.append(_probe(resolver, f"gSoundInfo+0x{SOUND_INFO_PCM_BUFFER_OFFSET + offset:x}", 4))
+        common_probes.append(
+            _probe(resolver, f"gSoundInfo+0x{SOUND_INFO_PCM_BUFFER_OFFSET + offset:x}", 4)
+        )
     for offset in PCM_SAMPLE_OFFSETS:
-        probes.append(
+        common_probes.append(
             _probe(
                 resolver,
                 f"gSoundInfo+0x{SOUND_INFO_PCM_BUFFER_OFFSET + PCM_CHANNEL_STRIDE + offset:x}",
                 4,
             )
         )
+
+    first_checkpoint_probes = list(common_probes[:2])
+    if enabled:
+        for offset in range(0, 0x2C, 4):
+            first_checkpoint_probes.append(
+                _probe(resolver, f"gExpansionHqMixerProbe+0x{offset:x}", 4)
+            )
+    first_checkpoint_probes.extend(common_probes[2:])
 
     input_scenario_path, checkpoint_frames = RUNTIME_SCENARIOS[config]
     input_scenario = json.loads(input_scenario_path.read_text(encoding="utf-8"))
@@ -231,9 +409,9 @@ def capture_pcm_profile(
                 expected_sram_hash=None,
                 sram_hash_exclude_ranges=(),
                 probes=(
-                    tuple(probes)
+                    tuple(first_checkpoint_probes)
                     if frame == checkpoint_frames[0]
-                    else tuple(probes[:2] + probes[pcm_probe_start:])
+                    else tuple(common_probes)
                 ),
                 regions=(),
                 pixel_probes=(),
@@ -250,23 +428,122 @@ def capture_pcm_profile(
     return gba_playtest.capture(rom, scenario)
 
 
-def parse_probe_value(capture: dict, index: int, checkpoint_index: int = -1) -> int:
-    return int(capture["checkpoints"][checkpoint_index]["probes"][index]["value"], 16)
+def checkpoint_probe_values(checkpoint: dict) -> dict[str, int]:
+    return {
+        probe["address"]: int(probe["value"], 16)
+        for probe in checkpoint["probes"]
+    }
+
+
+def require_sustained_late_audio(
+    checkpoint_frames: list[int],
+    left_by_checkpoint: list[list[int]],
+    right_by_checkpoint: list[list[int]],
+    active_channel_counts: list[int],
+    profile: str,
+) -> None:
+    if not (
+        len(checkpoint_frames)
+        == len(left_by_checkpoint)
+        == len(right_by_checkpoint)
+        == len(active_channel_counts)
+    ):
+        fail(f"{profile} PCM checkpoint data has inconsistent lengths")
+    late_rows = list(
+        zip(
+            checkpoint_frames[LATE_WINDOW_CHECKPOINT_INDEX:],
+            left_by_checkpoint[LATE_WINDOW_CHECKPOINT_INDEX:],
+            right_by_checkpoint[LATE_WINDOW_CHECKPOINT_INDEX:],
+            active_channel_counts[LATE_WINDOW_CHECKPOINT_INDEX:],
+        )
+    )
+    if not late_rows:
+        fail(f"{profile} PCM capture has no declared late window")
+    for frame, left, right, active_channels in late_rows:
+        if not any(left) or not any(right):
+            fail(f"{profile} late PCM window is silent at frame {frame}")
+        if left == right:
+            fail(
+                f"{profile} late PCM window has identical left/right samples "
+                f"at frame {frame}"
+            )
+        if active_channels == 0:
+            fail(f"{profile} late PCM window has no active MP2K channel at frame {frame}")
+    if not any(left_by_checkpoint[-1]) or not any(right_by_checkpoint[-1]):
+        fail(f"{profile} final PCM checkpoint is silent")
 
 
 def validate_pcm_capture(capture: dict, enabled: bool, selection: dict | None = None) -> dict:
+    profile = "enabled" if enabled else "disabled"
     framebuffer_hashes = [
         checkpoint.get("framebuffer_hash") for checkpoint in capture["checkpoints"]
     ]
     if len(set(framebuffer_hashes)) < 3:
         fail("scripted battle/HBlank progression did not produce distinct rendered states")
 
-    counter = parse_probe_value(capture, 0)
-    period = parse_probe_value(capture, 1)
-    if period == 0 or counter > period:
-        fail(f"invalid PCM interrupt-buffer state: counter={counter} period={period}")
+    values_by_checkpoint = [
+        checkpoint_probe_values(checkpoint)
+        for checkpoint in capture["checkpoints"]
+    ]
+    checkpoint_frames = [
+        int(checkpoint["frame"]) for checkpoint in capture["checkpoints"]
+    ]
+    counters = [values["gSoundInfo+0x04"] for values in values_by_checkpoint]
+    periods = [values["gSoundInfo+0x0b"] for values in values_by_checkpoint]
+    for frame, counter, period in zip(checkpoint_frames, counters, periods):
+        if period == 0 or counter > period:
+            fail(
+                f"invalid PCM interrupt-buffer state at frame {frame}: "
+                f"counter={counter} period={period}"
+            )
 
-    index = 2
+    player_states = []
+    active_channel_counts = []
+    left_by_checkpoint = []
+    right_by_checkpoint = []
+    for frame, values in zip(checkpoint_frames, values_by_checkpoint):
+        tracks = values[f"gMPlayInfo_BGM1+0x{MPLAY_INFO_TRACKS_OFFSET:x}"]
+        ident = values[f"gMPlayInfo_BGM1+0x{MPLAY_INFO_IDENT_OFFSET:x}"]
+        if tracks == 0 or ident != MPLAY_ID_NUMBER:
+            fail(
+                f"{profile} MP2K BGM player state did not survive initialization "
+                f"at frame {frame}: tracks=0x{tracks:08x} ident=0x{ident:08x}"
+            )
+        player_states.append({"frame": frame, "tracks": tracks, "ident": ident})
+
+        active_channels = 0
+        orphan_channels = []
+        for channel in range(SOUND_CHANNEL_COUNT):
+            channel_offset = SOUND_INFO_CHANNEL_OFFSET + channel * SOUND_CHANNEL_STRIDE
+            status = values[f"gSoundInfo+0x{channel_offset:x}"]
+            track = values[
+                f"gSoundInfo+0x{channel_offset + SOUND_CHANNEL_TRACK_OFFSET:x}"
+            ]
+            if status & 0xC7:
+                active_channels += 1
+                if track == 0:
+                    orphan_channels.append(channel)
+        if orphan_channels:
+            fail(
+                f"{profile} MP2K channels are active without track ownership at "
+                f"frame {frame}: {orphan_channels}"
+            )
+        active_channel_counts.append(active_channels)
+        left_by_checkpoint.append(
+            [
+                values[f"gSoundInfo+0x{SOUND_INFO_PCM_BUFFER_OFFSET + offset:x}"]
+                for offset in PCM_SAMPLE_OFFSETS
+            ]
+        )
+        right_by_checkpoint.append(
+            [
+                values[
+                    f"gSoundInfo+0x{SOUND_INFO_PCM_BUFFER_OFFSET + PCM_CHANNEL_STRIDE + offset:x}"
+                ]
+                for offset in PCM_SAMPLE_OFFSETS
+            ]
+        )
+
     probe = {}
     if enabled:
         names = (
@@ -283,10 +560,9 @@ def validate_pcm_capture(capture: dict, enabled: bool, selection: dict | None = 
             "invalid_dma_buffer_count",
         )
         probe = {
-            name: parse_probe_value(capture, index + value, checkpoint_index=0)
+            name: values_by_checkpoint[0][f"gExpansionHqMixerProbe+0x{value * 4:x}"]
             for value, name in enumerate(names)
         }
-        index += len(names)
         if probe["initialization_count"] == 0 or probe["sound_main_count"] == 0:
             fail("HQ mixer did not initialize and execute SoundMain")
         if probe["code_bytes"] != HQ_NO_REVERB_CODE_BYTES:
@@ -309,27 +585,17 @@ def validate_pcm_capture(capture: dict, enabled: bool, selection: dict | None = 
         if probe["invalid_dma_buffer_count"] != 0:
             fail("HQ mixer observed an invalid PCM interrupt-buffer state")
 
-    final_pcm_start = 2
-    final_left = [
-        parse_probe_value(capture, final_pcm_start + offset)
-        for offset in range(len(PCM_SAMPLE_OFFSETS))
-    ]
-    final_right = [
-        parse_probe_value(capture, final_pcm_start + len(PCM_SAMPLE_OFFSETS) + offset)
-        for offset in range(len(PCM_SAMPLE_OFFSETS))
-    ]
-    left = []
-    right = []
-    for checkpoint_index, checkpoint in enumerate(capture["checkpoints"]):
-        pcm_start = 2 + (len(probe) if enabled and checkpoint_index == 0 else 0)
-        values = [int(item["value"], 16) for item in checkpoint["probes"]]
-        left.extend(values[pcm_start:pcm_start + len(PCM_SAMPLE_OFFSETS)])
-        right.extend(
-            values[
-                pcm_start + len(PCM_SAMPLE_OFFSETS):
-                pcm_start + 2 * len(PCM_SAMPLE_OFFSETS)
-            ]
-        )
+    require_sustained_late_audio(
+        checkpoint_frames,
+        left_by_checkpoint,
+        right_by_checkpoint,
+        active_channel_counts,
+        profile,
+    )
+    final_left = left_by_checkpoint[-1]
+    final_right = right_by_checkpoint[-1]
+    left = [word for checkpoint in left_by_checkpoint for word in checkpoint]
+    right = [word for checkpoint in right_by_checkpoint for word in checkpoint]
     if not any(left):
         fail("left PCM output is silent at every captured sample")
     if not any(right):
@@ -338,13 +604,20 @@ def validate_pcm_capture(capture: dict, enabled: bool, selection: dict | None = 
         fail("PCM capture has no observable stereo channel distinction")
     return {
         "framebuffer_hashes": framebuffer_hashes,
-        "pcm_dma_counter": counter,
-        "pcm_dma_period": period,
+        "pcm_dma_counter": counters[-1],
+        "pcm_dma_period": periods[-1],
         "stereo_output_observed": True,
         "final_left_pcm_words": final_left,
         "final_right_pcm_words": final_right,
         "left_pcm_words": left,
         "right_pcm_words": right,
+        "late_window_frames": checkpoint_frames[LATE_WINDOW_CHECKPOINT_INDEX:],
+        "late_left_pcm_words": left_by_checkpoint[LATE_WINDOW_CHECKPOINT_INDEX:],
+        "late_right_pcm_words": right_by_checkpoint[LATE_WINDOW_CHECKPOINT_INDEX:],
+        "late_active_channel_counts": active_channel_counts[
+            LATE_WINDOW_CHECKPOINT_INDEX:
+        ],
+        "player_states": player_states,
         "hq_probe": probe,
     }
 
@@ -392,7 +665,13 @@ def main() -> int:
     temporary_root = args.out_dir / "tmp"
     temporary_root.mkdir(exist_ok=True)
     os.environ["TMPDIR"] = str(temporary_root)
-    selection = check_link_selection(args.enabled_elf, args.disabled_elf, args.nm)
+    selection = check_link_selection(
+        args.enabled_elf,
+        args.enabled_map,
+        args.disabled_elf,
+        args.disabled_map,
+        args.nm,
+    )
     enabled_budget = check_budget(args.enabled_map, args.enabled_elf, enabled=True)
     disabled_budget = check_budget(args.disabled_map, args.disabled_elf, enabled=False)
     if (

@@ -354,7 +354,9 @@ policy, player-facing text, or a general expression language.
 5. Run `make expansion-modern-autoplay-strategy-budget` to rebuild the
    current-tree router-absent/current-disabled/current-enabled full-link
    comparison and regenerate `reports/autoplay_strategy_budget.json` using
-   only matched current-tree artifacts and no Git input.
+   only matched current-tree artifacts and no Git input. Repeat with caller
+   `EXPANSION_AUTOPLAY_STRATEGIES=1`; absent/disabled sub-builds remain forced
+   to `0`, enabled sub-builds remain `1`, and the report is identical.
 
 ### Expected result
 

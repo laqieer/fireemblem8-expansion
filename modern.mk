@@ -52,6 +52,9 @@ MODERN_GOALS := \
 	expansion-modern-starter-runtime-check \
 	expansion-modern-hq-mixer-profile-rom \
 	expansion-modern-hq-mixer-disabled-profile-rom \
+	expansion-modern-hq-mixer-listening-enabled-rom \
+	expansion-modern-hq-mixer-listening-control-rom \
+	expansion-modern-hq-mixer-listening-roms \
 	expansion-modern-hq-mixer-check \
 	expansion-modern-bgm-registry-check \
 	expansion-modern-autoplay-check \
@@ -3464,9 +3467,15 @@ MODERN_HQ_MIXER_DISABLED_ELF := $(MODERN_HQ_MIXER_DISABLED_ROOT)/$(MODERN_CONFIG
 MODERN_HQ_MIXER_DISABLED_MAP := $(MODERN_HQ_MIXER_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.map
 MODERN_HQ_MIXER_RUNTIME_DIR := $(MODERN_OUTPUT_DIR)/hq-mixer-runtime
 MODERN_HQ_MIXER_RUNTIME_SCRIPT := tools/gba-playtest/run_hq_mixer_checks.py
+MODERN_HQ_MIXER_LISTENING_ROOT := build/expansion-modern-hq-mixer-listening
+MODERN_HQ_MIXER_LISTENING_ENABLED_ROOT := $(MODERN_HQ_MIXER_LISTENING_ROOT)/enabled
+MODERN_HQ_MIXER_LISTENING_CONTROL_ROOT := $(MODERN_HQ_MIXER_LISTENING_ROOT)/stock-control
+MODERN_HQ_MIXER_LISTENING_ENABLED_ROM := $(MODERN_HQ_MIXER_LISTENING_ENABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_HQ_MIXER_LISTENING_CONTROL_ROM := $(MODERN_HQ_MIXER_LISTENING_CONTROL_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
 
 CLEAN_DIRS += $(MODERN_HQ_MIXER_PROFILE_ROOT)
 CLEAN_DIRS += $(MODERN_HQ_MIXER_DISABLED_ROOT)
+CLEAN_DIRS += $(MODERN_HQ_MIXER_LISTENING_ROOT)
 
 expansion-modern-hq-mixer-profile-rom:
 	+$(MAKE) expansion-modern-rom \
@@ -3481,6 +3490,27 @@ expansion-modern-hq-mixer-disabled-profile-rom:
 		MODERN_BUILD_ROOT=$(MODERN_HQ_MIXER_DISABLED_ROOT) \
 		EXPANSION_HQ_MIXER=0 \
 		MODERN_INTERNAL_TEST_DEFINES=-DFE8_HQ_MIXER_TEST_FIXTURE=1
+
+expansion-modern-hq-mixer-listening-enabled-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_HQ_MIXER_LISTENING_ENABLED_ROOT) \
+		EXPANSION_HQ_MIXER=1 MODERN_INTERNAL_TEST_DEFINES=
+
+expansion-modern-hq-mixer-listening-control-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_HQ_MIXER_LISTENING_CONTROL_ROOT) \
+		EXPANSION_HQ_MIXER=0 MODERN_INTERNAL_TEST_DEFINES=
+
+expansion-modern-hq-mixer-listening-roms:
+	+$(MAKE) expansion-modern-hq-mixer-listening-enabled-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI)
+	+$(MAKE) expansion-modern-hq-mixer-listening-control-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI)
+	@printf 'HQ mixer normal-game listening ROMs built (no automation fixture):\n  enabled: %s\n  stock control: %s\n' \
+		'$(MODERN_HQ_MIXER_LISTENING_ENABLED_ROM)' \
+		'$(MODERN_HQ_MIXER_LISTENING_CONTROL_ROM)'
 
 expansion-modern-hq-mixer-check: expansion-modern-boot-preflight \
 		expansion-modern-hq-mixer-profile-rom \
@@ -3607,6 +3637,7 @@ expansion-modern-autoplay-strategy-router-absent-budget:
 		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_BUILD_ROOT) \
 		MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT=1 \
 		MODERN_INTERNAL_TEST_DEFINES=-DFE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT=1 \
+		EXPANSION_AUTOPLAY_STRATEGIES=0 \
 		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_REPORT)
 
 expansion-modern-autoplay-strategy-enabled-budget:
@@ -3623,8 +3654,10 @@ expansion-modern-autoplay-strategy-budget:
 		MODERN_CONFIG=debug MODERN_ABI=aapcs
 	+$(MAKE) expansion-modern-autoplay-strategy-router-absent-budget \
 		MODERN_CONFIG=release MODERN_ABI=aapcs
-	+$(MAKE) expansion-modern-budget MODERN_CONFIG=debug MODERN_ABI=aapcs
-	+$(MAKE) expansion-modern-budget MODERN_CONFIG=release MODERN_ABI=aapcs
+	+$(MAKE) expansion-modern-budget MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		EXPANSION_AUTOPLAY_STRATEGIES=0
+	+$(MAKE) expansion-modern-budget MODERN_CONFIG=release MODERN_ABI=aapcs \
+		EXPANSION_AUTOPLAY_STRATEGIES=0
 	+$(MAKE) expansion-modern-autoplay-strategy-enabled-budget \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs
 	+$(MAKE) expansion-modern-autoplay-strategy-enabled-budget \

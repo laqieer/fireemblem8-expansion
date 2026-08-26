@@ -324,7 +324,7 @@ class AutoplayStrategyCaseContractTests(unittest.TestCase):
             write_linker_report(disabled_release, 2200)
             write_linker_report(enabled_debug, 1130)
             write_linker_report(enabled_release, 2240)
-            output = work / "report.json"
+            outputs = []
             fake_nm = work / "fake-nm.py"
             fake_nm.write_text(
                 "#!/usr/bin/env python3\n"
@@ -342,57 +342,62 @@ class AutoplayStrategyCaseContractTests(unittest.TestCase):
                     path = work / "{}-{}.elf".format(profile, config)
                     path.write_bytes(b"")
                     elf_paths[(profile, config)] = path
-            env = dict(os.environ)
-            env["GIT_DIR"] = str(work / "missing-git-directory")
-            completed = subprocess.run(
-                [
-                    "python3",
-                    str(
-                        ROOT
-                        / "scripts"
-                        / "linker_report"
-                        / "autoplay_strategy_budget.py"
-                    ),
-                    "--nm",
-                    str(fake_nm),
-                    "--absent-debug",
-                    str(absent_debug),
-                    "--absent-release",
-                    str(absent_release),
-                    "--disabled-debug",
-                    str(disabled_debug),
-                    "--disabled-release",
-                    str(disabled_release),
-                    "--enabled-debug",
-                    str(enabled_debug),
-                    "--enabled-release",
-                    str(enabled_release),
-                    "--absent-debug-elf",
-                    str(elf_paths[("absent", "debug")]),
-                    "--absent-release-elf",
-                    str(elf_paths[("absent", "release")]),
-                    "--disabled-debug-elf",
-                    str(elf_paths[("disabled", "debug")]),
-                    "--disabled-release-elf",
-                    str(elf_paths[("disabled", "release")]),
-                    "--enabled-debug-elf",
-                    str(elf_paths[("enabled", "debug")]),
-                    "--enabled-release-elf",
-                    str(elf_paths[("enabled", "release")]),
-                    "--output",
-                    str(output),
-                ],
-                cwd=work,
-                env=env,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(
-                completed.returncode,
-                0,
-                completed.stdout + completed.stderr,
-            )
-            report = json.loads(output.read_text(encoding="utf-8"))
+            for caller_profile in ("0", "1"):
+                output = work / "report-{}.json".format(caller_profile)
+                env = dict(os.environ)
+                env["GIT_DIR"] = str(work / "missing-git-directory")
+                env["EXPANSION_AUTOPLAY_STRATEGIES"] = caller_profile
+                completed = subprocess.run(
+                    [
+                        "python3",
+                        str(
+                            ROOT
+                            / "scripts"
+                            / "linker_report"
+                            / "autoplay_strategy_budget.py"
+                        ),
+                        "--nm",
+                        str(fake_nm),
+                        "--absent-debug",
+                        str(absent_debug),
+                        "--absent-release",
+                        str(absent_release),
+                        "--disabled-debug",
+                        str(disabled_debug),
+                        "--disabled-release",
+                        str(disabled_release),
+                        "--enabled-debug",
+                        str(enabled_debug),
+                        "--enabled-release",
+                        str(enabled_release),
+                        "--absent-debug-elf",
+                        str(elf_paths[("absent", "debug")]),
+                        "--absent-release-elf",
+                        str(elf_paths[("absent", "release")]),
+                        "--disabled-debug-elf",
+                        str(elf_paths[("disabled", "debug")]),
+                        "--disabled-release-elf",
+                        str(elf_paths[("disabled", "release")]),
+                        "--enabled-debug-elf",
+                        str(elf_paths[("enabled", "debug")]),
+                        "--enabled-release-elf",
+                        str(elf_paths[("enabled", "release")]),
+                        "--output",
+                        str(output),
+                    ],
+                    cwd=work,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    completed.stdout + completed.stderr,
+                )
+                outputs.append(json.loads(output.read_text(encoding="utf-8")))
+            self.assertEqual(outputs[0], outputs[1])
+            report = outputs[0]
             self.assertEqual(
                 report["configs"]["debug"]["profiles_disabled"][
                     "shared_router_delta_bytes"
@@ -405,6 +410,47 @@ class AutoplayStrategyCaseContractTests(unittest.TestCase):
                 ],
                 40,
             )
+
+    def test_budget_make_forces_profiles_under_enabled_caller(self):
+        env = dict(os.environ)
+        env["EXPANSION_AUTOPLAY_STRATEGIES"] = "1"
+
+        def dry_run(target):
+            completed = subprocess.run(
+                [
+                    "make",
+                    "-n",
+                    "--no-print-directory",
+                    target,
+                    "MAKE=true",
+                ],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            return completed.stdout
+
+        absent = dry_run("expansion-modern-autoplay-strategy-router-absent-budget")
+        self.assertIn("EXPANSION_AUTOPLAY_STRATEGIES=0", absent)
+        enabled = dry_run("expansion-modern-autoplay-strategy-enabled-budget")
+        self.assertIn("EXPANSION_AUTOPLAY_STRATEGIES=1", enabled)
+        owner = dry_run("expansion-modern-autoplay-strategy-budget")
+        logical_owner = owner.replace("\\\n", " ")
+        disabled_lines = [
+            line for line in logical_owner.splitlines()
+            if "true expansion-modern-budget MODERN_CONFIG=" in line
+        ]
+        self.assertEqual(len(disabled_lines), 2, owner)
+        self.assertTrue(
+            all("EXPANSION_AUTOPLAY_STRATEGIES=0" in line for line in disabled_lines),
+            owner,
+        )
 
 
 class AutoplayStrategiesRuntimeTests(unittest.TestCase):
