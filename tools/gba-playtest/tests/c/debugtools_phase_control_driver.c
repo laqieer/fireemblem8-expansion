@@ -37,6 +37,14 @@ struct DebugToolsProbe gDebugToolsProbe;
 struct ActionData gActionData;
 struct Unit *gActiveUnit;
 
+void ExpansionAutoplayStrategies_ResetPendingActivation(void)
+{
+}
+
+void ExpansionAutoplayStrategies_ApplyPendingActivation(void)
+{
+}
+
 struct ProcCmd CONST_DATA gProc_BMapMain[] = { { 0 } };
 struct ProcCmd gProcScr_PlayerPhase[] = { { 0 } };
 struct ProcCmd gProcScr_Playerphase_0[] = { { 0 } };

@@ -354,9 +354,13 @@ authorizes `strategy.activate` nor reserves its flag against that chapter's
 ordinary `flag.set`.
 `ExpansionAutoplayStrategies_ActivateAssignment(strategyId, activationFlag)`
 is the one typed event bridge: it accepts only a declared assignment, writes
-only that existing flag outside an active blue computer phase, and stores no
-separate runtime or save state. A selected strategy/objective capability
-mismatch stops before an AI action rather than falling back silently.
+only that existing flag outside an active blue computer phase, and queues one
+validated strategy/flag pair when the phase is active. The latest distinct
+valid request replaces the pending pair, duplicates coalesce, and computer
+phase completion applies it exactly once. The eight-byte transient is cleared
+on map/chapter lifecycle reset (including Suspend resume) and is never
+serialized. A selected strategy/objective capability mismatch stops before an
+AI action rather than falling back silently.
 
 `activationFlag` and `deactivationFlag` use existing `EVFLAG_*` state.
 Strategy assignment activation uses only `strategy.activate`, which validates
