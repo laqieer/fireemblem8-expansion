@@ -261,7 +261,7 @@
     },
     {
       "frame": 5130,
-      "framebuffer_hash": "fnv1a64-rgb24:50fa04c3ddcfbdc8",
+      "framebuffer_hash": "fnv1a64-rgb24:0b03a05fd6d8667b",
       "name": "danger-help-complete",
       "probes": [
         {

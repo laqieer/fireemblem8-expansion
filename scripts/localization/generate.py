@@ -69,7 +69,7 @@ def _c_string_literal(text: str) -> str:
         elif ch == '"':
             out.append('\\"')
         elif ch == "\n":
-            out.append("\\n")
+            out.append("\\001")
         elif 0x20 <= ord(ch) <= 0x7E:
             out.append(ch)
         else:

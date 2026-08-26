@@ -10,7 +10,7 @@ import unicodedata
 import unittest
 from pathlib import Path
 
-from scripts.localization.generate import generate
+from scripts.localization.generate import _c_string_literal, generate
 from scripts.localization.game_locales.ending_metrics import (
     _ascii_widths,
     _cjk_widths,
@@ -242,12 +242,13 @@ class MapMenuLocalizationTests(unittest.TestCase):
         rows = []
         for locale in PRODUCTION_LOCALES:
             for key in (*LABEL_KEYS, *HELP_KEYS):
+                runtime_text = self.catalogs[locale][key].replace("\n", "\x01")
                 rows.append(
                     "    {%s, %s, %s},"
                     % (
                         locale_constants[locale],
                         id_constants[key],
-                        json.dumps(self.catalogs[locale][key], ensure_ascii=False),
+                        _c_string_literal(runtime_text),
                     )
                 )
         driver = """
