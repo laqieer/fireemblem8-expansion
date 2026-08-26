@@ -49,6 +49,7 @@ static u8 sRangeData[16][16];
 static u8 * sRangeRows[16];
 static bool sFlags[0x100];
 static int sSetFlagCalls[0x100];
+static int sClearFlagCalls[0x100];
 static bool sBlueComputerPhase;
 static int sCombatCalls;
 static int sMoveCalls;
@@ -70,6 +71,15 @@ void SetFlag(int flag)
     {
         sFlags[flag] = true;
         sSetFlagCalls[flag]++;
+    }
+}
+
+void ClearFlag(int flag)
+{
+    if (flag >= 0 && flag < (int)ARRAY_COUNT(sFlags))
+    {
+        sFlags[flag] = false;
+        sClearFlagCalls[flag]++;
     }
 }
 
@@ -174,6 +184,7 @@ static void ResetFixture(void)
     {
         sFlags[index] = false;
         sSetFlagCalls[index] = 0;
+        sClearFlagCalls[index] = 0;
     }
 
     sEirikaCharacter.number = CHARACTER_EIRIKA;
@@ -403,6 +414,21 @@ static int TestReferenceProfiles(void)
             == EXPANSION_AUTOPLAY_STRATEGY_ERR_INVALID_EVENT_ASSIGNMENT,
         "typed event helper must reject undeclared assignment flags"
     );
+    CHECK(
+        ExpansionAutoplayStrategies_DeactivateAssignment(
+            EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID,
+            EVFLAG_BATTLE_QUOTES)
+            == EXPANSION_AUTOPLAY_STRATEGY_ERR_INVALID_EVENT_ASSIGNMENT,
+        "typed deactivation must reject undeclared assignment flags"
+    );
+    CHECK(
+        ExpansionAutoplayStrategies_DeactivateAssignment(
+            EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID,
+            EVFLAG_HIDE_BLINKING_ICON)
+            == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && !CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
+        "safe typed deactivation must clear only its declared activation flag"
+    );
 
     ResetFixture();
     gEventSlots[EVT_SLOT_B] = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
@@ -411,6 +437,11 @@ static int TestReferenceProfiles(void)
     CHECK(
         CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
         "typed event production helper must activate its declared pair"
+    );
+    ExpansionAutoplayStrategies_EventDeactivate(NULL);
+    CHECK(
+        !CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
+        "typed event production helper must deactivate its declared pair"
     );
 
     sBlueComputerPhase = true;
@@ -463,6 +494,39 @@ static int TestReferenceProfiles(void)
     );
 
     ResetFixture();
+    sFlags[EVFLAG_GAMEOVER] = true;
+    sFlags[EVFLAG_HIDE_BLINKING_ICON] = true;
+    sBlueComputerPhase = true;
+    gEventSlots[EVT_SLOT_B] = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
+    gEventSlots[EVT_SLOT_C] = EVFLAG_HIDE_BLINKING_ICON;
+    ExpansionAutoplayStrategies_EventDeactivate(NULL);
+    result = ExpansionAutoplayStrategies_TryDecide();
+    CHECK(
+        result == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && gAiDecision.actionId == AI_ACTION_NONE
+            && CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
+        "pending deactivation must leave the current phase on its selected strategy"
+    );
+    sBlueComputerPhase = false;
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
+    AiClearDecision();
+    sCombatCalls = 0;
+    sMoveCalls = 0;
+    result = ExpansionAutoplayStrategies_TryDecide();
+    CHECK(
+        result == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && gAiDecision.actionId == AI_ACTION_COMBAT
+            && !CheckFlag(EVFLAG_HIDE_BLINKING_ICON)
+            && sClearFlagCalls[EVFLAG_HIDE_BLINKING_ICON] == 1,
+        "pending deactivation must clear once at the safe boundary"
+    );
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
+    CHECK(
+        sClearFlagCalls[EVFLAG_HIDE_BLINKING_ICON] == 1,
+        "pending deactivation must apply exactly once"
+    );
+
+    ResetFixture();
     sBlueComputerPhase = true;
     gEventSlots[EVT_SLOT_B] = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
     gEventSlots[EVT_SLOT_C] = EVFLAG_HIDE_BLINKING_ICON;
@@ -474,6 +538,22 @@ static int TestReferenceProfiles(void)
         CheckFlag(EVFLAG_HIDE_BLINKING_ICON)
             && sSetFlagCalls[EVFLAG_HIDE_BLINKING_ICON] == 1,
         "duplicate pending requests must coalesce into one application"
+    );
+
+    ResetFixture();
+    sBlueComputerPhase = true;
+    gEventSlots[EVT_SLOT_B] = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
+    gEventSlots[EVT_SLOT_C] = EVFLAG_HIDE_BLINKING_ICON;
+    ExpansionAutoplayStrategies_EventActivate(NULL);
+    ExpansionAutoplayStrategies_EventDeactivate(NULL);
+    ExpansionAutoplayStrategies_EventDeactivate(NULL);
+    sBlueComputerPhase = false;
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
+    CHECK(
+        !CheckFlag(EVFLAG_HIDE_BLINKING_ICON)
+            && sSetFlagCalls[EVFLAG_HIDE_BLINKING_ICON] == 0
+            && sClearFlagCalls[EVFLAG_HIDE_BLINKING_ICON] == 1,
+        "latest deactivation must replace activation and duplicate clears must coalesce"
     );
 
     ResetFixture();
@@ -525,6 +605,20 @@ static int TestReferenceProfiles(void)
     CHECK(
         !CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
         "chapter and suspend-resume lifecycle reset must discard pending activation"
+    );
+
+    ResetFixture();
+    sFlags[EVFLAG_HIDE_BLINKING_ICON] = true;
+    sBlueComputerPhase = true;
+    gEventSlots[EVT_SLOT_B] = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
+    gEventSlots[EVT_SLOT_C] = EVFLAG_HIDE_BLINKING_ICON;
+    ExpansionAutoplayStrategies_EventDeactivate(NULL);
+    ExpansionAutoplayStrategies_ResetPendingActivation();
+    sBlueComputerPhase = false;
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
+    CHECK(
+        CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
+        "suspend-resume lifecycle reset must discard pending deactivation"
     );
 
     CHECK(
@@ -593,6 +687,15 @@ static int TestDisabledProfileNegative(void)
     CHECK(
         !CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
         "disabled/default profile must not queue or apply strategy activation"
+    );
+    sFlags[EVFLAG_HIDE_BLINKING_ICON] = true;
+    sBlueComputerPhase = true;
+    ExpansionAutoplayStrategies_EventDeactivate(NULL);
+    sBlueComputerPhase = false;
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
+    CHECK(
+        CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
+        "disabled/default profile must not queue or apply strategy deactivation"
     );
     return 0;
 }

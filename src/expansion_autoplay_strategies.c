@@ -17,11 +17,19 @@ struct ExpansionAutoplayPendingActivation
 {
     u32 strategyId;
     u16 activationFlag;
-    u16 chapterId;
+    u8 chapterId;
+    u8 operation;
 };
 
 typedef char ExpansionAutoplayPendingActivationSizeCheck[
     sizeof(struct ExpansionAutoplayPendingActivation) == 8 ? 1 : -1];
+
+enum ExpansionAutoplayPendingOperation
+{
+    EXPANSION_AUTOPLAY_PENDING_NONE,
+    EXPANSION_AUTOPLAY_PENDING_ACTIVATE,
+    EXPANSION_AUTOPLAY_PENDING_DEACTIVATE,
+};
 
 EWRAM_DATA static struct ExpansionAutoplayPendingActivation
     sExpansionAutoplayPendingActivation = { 0 };
@@ -371,9 +379,20 @@ static enum ExpansionAutoplayStrategyResult ValidateActivationPair(
     return EXPANSION_AUTOPLAY_STRATEGY_ERR_INVALID_EVENT_ASSIGNMENT;
 }
 
-enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ActivateAssignment(
+static void ApplyActivationFlag(
+    u16 activationFlag,
+    enum ExpansionAutoplayPendingOperation operation)
+{
+    if (operation == EXPANSION_AUTOPLAY_PENDING_ACTIVATE)
+        SetFlag(activationFlag);
+    else if (operation == EXPANSION_AUTOPLAY_PENDING_DEACTIVATE)
+        ClearFlag(activationFlag);
+}
+
+static enum ExpansionAutoplayStrategyResult ChangeAssignmentActivation(
     u32 strategyId,
-    u16 activationFlag)
+    u16 activationFlag,
+    enum ExpansionAutoplayPendingOperation operation)
 {
     enum ExpansionAutoplayStrategyResult result =
         ValidateActivationPair(GetCurrentBundle(), strategyId, activationFlag);
@@ -384,8 +403,30 @@ enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ActivateAssignm
     if (ExpansionAutoplay_IsBlueComputerPhase())
         return EXPANSION_AUTOPLAY_STRATEGY_ERR_PHASE_ACTIVE;
 
-    SetFlag(activationFlag);
+    ApplyActivationFlag(activationFlag, operation);
     return EXPANSION_AUTOPLAY_STRATEGY_OK;
+}
+
+enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ActivateAssignment(
+    u32 strategyId,
+    u16 activationFlag)
+{
+    return ChangeAssignmentActivation(
+        strategyId,
+        activationFlag,
+        EXPANSION_AUTOPLAY_PENDING_ACTIVATE
+    );
+}
+
+enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_DeactivateAssignment(
+    u32 strategyId,
+    u16 activationFlag)
+{
+    return ChangeAssignmentActivation(
+        strategyId,
+        activationFlag,
+        EXPANSION_AUTOPLAY_PENDING_DEACTIVATE
+    );
 }
 
 void ExpansionAutoplayStrategies_ResetPendingActivation(void)
@@ -393,43 +434,60 @@ void ExpansionAutoplayStrategies_ResetPendingActivation(void)
     sExpansionAutoplayPendingActivation.strategyId = 0;
     sExpansionAutoplayPendingActivation.activationFlag = 0;
     sExpansionAutoplayPendingActivation.chapterId =
-        EXPANSION_AUTOPLAY_STRATEGY_CHAPTER_NONE;
+        (u8)EXPANSION_AUTOPLAY_STRATEGY_CHAPTER_NONE;
+    sExpansionAutoplayPendingActivation.operation =
+        EXPANSION_AUTOPLAY_PENDING_NONE;
 }
 
 void ExpansionAutoplayStrategies_ApplyPendingActivation(void)
 {
     u16 activationFlag;
+    enum ExpansionAutoplayPendingOperation operation;
 
     if (sExpansionAutoplayPendingActivation.strategyId == 0)
         return;
 
     if (sExpansionAutoplayPendingActivation.chapterId
-        != (u16)(u8)gPlaySt.chapterIndex)
+        != (u8)gPlaySt.chapterIndex)
     {
         ExpansionAutoplayStrategies_ResetPendingActivation();
         return;
     }
 
     activationFlag = sExpansionAutoplayPendingActivation.activationFlag;
+    operation = sExpansionAutoplayPendingActivation.operation;
     ExpansionAutoplayStrategies_ResetPendingActivation();
-    SetFlag(activationFlag);
+    ApplyActivationFlag(activationFlag, operation);
 }
 
-void ExpansionAutoplayStrategies_EventActivate(struct EventEngineProc* proc)
+static void EventChangeAssignmentActivation(
+    enum ExpansionAutoplayPendingOperation operation)
 {
     u32 strategyId = gEventSlots[EVT_SLOT_B];
     u16 activationFlag = (u16)gEventSlots[EVT_SLOT_C];
     enum ExpansionAutoplayStrategyResult result;
 
-    (void)proc;
-    result = ExpansionAutoplayStrategies_ActivateAssignment(strategyId, activationFlag);
+    result = ChangeAssignmentActivation(strategyId, activationFlag, operation);
     if (result != EXPANSION_AUTOPLAY_STRATEGY_ERR_PHASE_ACTIVE)
         return;
 
     sExpansionAutoplayPendingActivation.strategyId = strategyId;
     sExpansionAutoplayPendingActivation.activationFlag = activationFlag;
     sExpansionAutoplayPendingActivation.chapterId =
-        (u16)(u8)gPlaySt.chapterIndex;
+        (u8)gPlaySt.chapterIndex;
+    sExpansionAutoplayPendingActivation.operation = operation;
+}
+
+void ExpansionAutoplayStrategies_EventActivate(struct EventEngineProc* proc)
+{
+    (void)proc;
+    EventChangeAssignmentActivation(EXPANSION_AUTOPLAY_PENDING_ACTIVATE);
+}
+
+void ExpansionAutoplayStrategies_EventDeactivate(struct EventEngineProc* proc)
+{
+    (void)proc;
+    EventChangeAssignmentActivation(EXPANSION_AUTOPLAY_PENDING_DEACTIVATE);
 }
 
 #if FE8_EXPANSION_AUTOPLAY_STRATEGIES

@@ -516,35 +516,115 @@ zero/duplicate IDs, missing callbacks, and undeclared capability bits.
 unknown/unsupported profile-objective pair explicit. Before a selected
 strategy can commit a computer-phase action, dispatch checks those contracts.
 It records a typed autoplay failure and terminates the strategy path rather
-than selecting a success-shaped fallback. The typed event helper
-`strategy.activate` lowers a symbolic, schema-validated assignment to
-`AUTOPLAY_STRATEGY_ACTIVATE` and
-`ExpansionAutoplayStrategies_ActivateAssignment()`. It validates a generated
-strategy-ID/activation-flag pair, changes only that existing event flag, and
-queues one validated pair during an active blue computer phase without
-changing the current units. Computer-phase completion is the next safe
-boundary and applies that pair exactly once. One later valid request replaces
-the pending pair, duplicates coalesce, and invalid pairs cannot replace it.
-Raw `flag.set` cannot target a declared strategy activation flag. The pending
-pair is cleared by every map/chapter lifecycle reset, including Suspend
-resume, and is never serialized; there is no save byte, epoch, migration,
-localization string, player UI, or second event language.
+than selecting a success-shaped fallback. The typed event helpers
+`strategy.activate` and `strategy.deactivate` lower a symbolic,
+schema-validated assignment to `AUTOPLAY_STRATEGY_ACTIVATE` /
+`AUTOPLAY_STRATEGY_DEACTIVATE` and the matching typed C bridge. They validate
+the same generated strategy-ID/activation-flag pair, set or clear only that
+existing event flag, and queue one validated pair plus operation during an
+active blue computer phase without changing the current units. Computer-phase
+completion is the next safe boundary and applies that operation exactly once.
+One later valid request replaces the pending operation, duplicates coalesce,
+and invalid pairs cannot replace it. Raw `flag.set` and `flag.clear` cannot
+target a declared strategy activation flag. The pending operation is cleared
+by every map/chapter lifecycle reset, including Suspend resume, and is never
+serialized; there is no save byte, epoch, migration, localization string,
+player UI, or second event language.
 
-For a third strategy, define one callback with the public context signature,
-declare its stable ID/capabilities in `autoplay_strategies.json`, and add its
-chapter/group/unit assignment. The generated registry emits its typed callback
-reference; the shared dispatcher remains unchanged. The default references
-are not a taxonomy: Balanced, EXP, Treasure, Support, campaign, and
-project-specific character/chapter policies remain out of scope.
+### Downstream strategy example
 
-The runtime uses one bounded eight-byte EWRAM pending pair (strategy ID,
-activation flag, and owning chapter ID) and no IWRAM. The empty generated
-registry and bundle sentinels occupy 40 ROM bytes (20 bytes each). Strategy
-selection reconstructs from generated data and existing event flags; only an
-in-flight active-phase request uses the transient pair. The strategy host/ARM
-selector enforces exactly eight strategy EWRAM bytes and a 4 KiB aggregate
-object-text ceiling for both profile states. The archival lane excludes the
-runtime and generated table.
+A callback returns `false` to request the clean existing `Unit.ai[]` fallback.
+It must leave no tentative decision behind (the router also clears before the
+fallback). Returning `true` consumes the strategy decision. That includes an
+intentional wait: clear `gAiDecision`, return `true`, and no low-level fallback
+runs.
+
+This movement-only strategy handles a reach objective, consumes a legal move,
+and intentionally waits when the movement helper finds no action:
+
+```c
+#include "global.h"
+
+#include "cp_common.h"
+#include "cp_utility.h"
+#include "expansion_autoplay_strategies.h"
+
+bool ExpansionAutoplayStrategy_AdvanceOnly(
+    const struct ExpansionAutoplayStrategyContext* context)
+{
+    const struct ExpansionChapterObjective* objective = context->objective;
+
+    if (objective == NULL
+        || objective->kind != EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA)
+        return false;
+
+    AiTryMoveTowards(objective->xMin, objective->yMin, 0, 0, 1);
+    if (!gAiDecision.actionPerformed)
+    {
+        AiClearDecision();
+        return true;
+    }
+
+    if (gAiDecision.actionId != AI_ACTION_NONE)
+    {
+        AiClearDecision();
+        return false;
+    }
+
+    return true;
+}
+```
+
+The matching descriptor and assignment use a group and event flag that the
+downstream project defines and owns in the same chapter bundle:
+
+```json
+{
+  "$schema": "fe8.autoplaystrategies.v1",
+  "strategies": [
+    {
+      "id": "AUTOPLAY_STRATEGY_ADVANCE_ONLY",
+      "callback": "ExpansionAutoplayStrategy_AdvanceOnly",
+      "objectiveKinds": ["reach_area"],
+      "actionKinds": ["objective_move"]
+    }
+  ],
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "AutoplayStrategies_ProjectL2",
+      "groupAssignments": [
+        {
+          "group": "AI_GROUP_PROJECT_ESCORT",
+          "strategy": "AUTOPLAY_STRATEGY_ADVANCE_ONLY",
+          "activationFlag": "EVFLAG_PROJECT_ESCORT"
+        }
+      ],
+      "unitAssignments": []
+    }
+  ]
+}
+```
+
+Declare `AutoplayStrategies_ProjectL2` in the owning bundle's
+`autoplayStrategies.symbols`. At runtime, `AI_ACTION_COMBAT` requires the
+descriptor's `combat` action capability and `AI_ACTION_NONE` (a movement
+decision) requires `objective_move`. A consumed intentional wait has
+`actionPerformed == false` and no action ID to classify. Staff, item, talk, or
+other action IDs are outside the current strategy action taxonomy and fail
+runtime capability validation; extend the typed schema/router contract before
+returning one. The default references are not a taxonomy: Balanced, EXP,
+Treasure, Support, campaign, and project-specific character/chapter policies
+remain out of scope.
+
+The runtime uses one bounded eight-byte EWRAM pending operation (strategy ID,
+activation flag, owning chapter ID, and set/clear operation) and no IWRAM. The
+empty generated registry and bundle sentinels occupy 40 ROM bytes (20 bytes
+each). Strategy selection reconstructs from generated data and existing event
+flags; only an in-flight active-phase request uses the transient record. The
+strategy host/ARM selector enforces exactly eight strategy EWRAM bytes and a
+4 KiB aggregate object-text ceiling for both profile states. The archival
+lane excludes the runtime and generated table.
 
 ### Strategy compatibility and budgets
 
