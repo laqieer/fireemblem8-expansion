@@ -95,6 +95,23 @@ class SaveLoadScenarioFilesTests(unittest.TestCase):
         self.assertTrue(by_name["pre-write-empty-slots"].sram_hash)
         self.assertTrue(by_name["new-game-created"].sram_hash)
 
+    def test_committed_fingerprint_preserves_the_persistent_write_delta(self):
+        fingerprint = gba_playtest.validate_fingerprint(
+            json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8")),
+            str(FINGERPRINT_PATH),
+            policy="behavior",
+        )
+        hashes = {
+            checkpoint["name"]: checkpoint["sram_hash"]
+            for checkpoint in fingerprint["checkpoints"]
+            if "sram_hash" in checkpoint
+        }
+        self.assertNotEqual(
+            hashes["pre-write-empty-slots"],
+            hashes["new-game-created"],
+            "writing slot 0 must change persisted SRAM rather than normalize away the save payload",
+        )
+
     def test_committed_fingerprint_matches(self):
         self.assertTrue(FINGERPRINT_PATH.exists(), f"missing: {FINGERPRINT_PATH}")
         fp = gba_playtest.validate_fingerprint(

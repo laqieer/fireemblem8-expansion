@@ -157,7 +157,7 @@ int main(void)
                     self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
                     self.assertIn("AUTOPLAY_STRATEGIES_HOST_TEST: PASS", ran.stdout)
 
-    def test_arm_profiles_are_ewram_free_and_gate_reference_callbacks(self):
+    def test_arm_profiles_bound_pending_ewram_and_gate_reference_callbacks(self):
         if ARM_CC is None or ARM_NM is None or ARM_SIZE is None:
             self.skipTest("arm-none-eabi compiler/binutils unavailable")
 
@@ -235,8 +235,8 @@ int main(void)
                             r"^ewram_data\s+(\d+)\s+", strategy_sizes.stdout, re.MULTILINE
                         )
                     )
-                    self.assertEqual(strategy_ewram_bytes, 0)
-                    self.assertEqual(ewram_bytes, 20)
+                    self.assertEqual(strategy_ewram_bytes, 8)
+                    self.assertEqual(ewram_bytes, 28)
                     self.assertLessEqual(text_bytes, 4096)
 
 

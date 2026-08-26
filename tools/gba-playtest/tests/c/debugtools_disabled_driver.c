@@ -56,6 +56,7 @@ int main(void)
     DebugTools_TitleHotkeyCheck();
     DebugTools_QueueSubmenuTransition(NULL, NULL);
     DebugTools_ReturnToHubAfterMenuEnd(NULL);
+    DebugTools_EndSessionAfterMenuEnd(NULL);
     rc = DebugTools_OpenHub();
     CHECK(rc == DEBUGTOOLS_ERR_DISABLED,
           "OpenHub must return DEBUGTOOLS_ERR_DISABLED explicitly in a disabled build, "

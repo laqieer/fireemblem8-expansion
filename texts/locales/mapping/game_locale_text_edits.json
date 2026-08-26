@@ -646,6 +646,76 @@
         "ja": "BLOCK",
         "key": "debug.mode.blocked",
         "zh-Hans": "阻止"
+      },
+      {
+        "ja": "ゲームスロット0",
+        "key": "debug.save_fixture.game0",
+        "zh-Hans": "游戏存档0"
+      },
+      {
+        "ja": "ゲームスロット1",
+        "key": "debug.save_fixture.game1",
+        "zh-Hans": "游戏存档1"
+      },
+      {
+        "ja": "ゲームスロット2",
+        "key": "debug.save_fixture.game2",
+        "zh-Hans": "游戏存档2"
+      },
+      {
+        "ja": "最新の中断",
+        "key": "debug.save_fixture.latest_suspend",
+        "zh-Hans": "最新中断"
+      },
+      {
+        "ja": "クリア回数:",
+        "key": "debug.save_fixture.completion",
+        "zh-Hans": "通关次数:"
+      },
+      {
+        "ja": "軍師名:",
+        "key": "debug.save_fixture.tactician",
+        "zh-Hans": "军师名:"
+      },
+      {
+        "ja": "そのまま",
+        "key": "debug.save_fixture.keep",
+        "zh-Hans": "保留"
+      },
+      {
+        "ja": "テスト",
+        "key": "debug.save_fixture.marker",
+        "zh-Hans": "测试"
+      },
+      {
+        "ja": "一時データ準備",
+        "key": "debug.save_fixture.arm",
+        "zh-Hans": "准备临时数据"
+      },
+      {
+        "ja": "RAMデータで再開",
+        "key": "debug.save_fixture.continue",
+        "zh-Hans": "从RAM继续"
+      },
+      {
+        "ja": "RAMテストデータ",
+        "key": "debug.save_fixture.preview",
+        "zh-Hans": "RAM测试数据"
+      },
+      {
+        "ja": "タイトル画面のみ",
+        "key": "debug.save_fixture.title_only",
+        "zh-Hans": "仅标题画面"
+      },
+      {
+        "ja": "データ無効",
+        "key": "debug.save_fixture.invalid",
+        "zh-Hans": "数据无效"
+      },
+      {
+        "ja": "保存禁止",
+        "key": "debug.save_fixture.blocked",
+        "zh-Hans": "禁止保存"
       }
     ],
     "reason": "Expansion registry keys have no original FE8J/FE8CN indexed source."

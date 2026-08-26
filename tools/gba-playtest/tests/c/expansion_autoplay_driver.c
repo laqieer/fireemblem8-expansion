@@ -24,6 +24,18 @@
     } while (0)
 
 struct PlaySt gPlaySt;
+static int sPendingActivationResetCount;
+static int sPendingActivationApplyCount;
+
+void ExpansionAutoplayStrategies_ResetPendingActivation(void)
+{
+    sPendingActivationResetCount++;
+}
+
+void ExpansionAutoplayStrategies_ApplyPendingActivation(void)
+{
+    sPendingActivationApplyCount++;
+}
 
 #if FE8_AUTOPLAY_EVENT_TRACE_TEST
 u32 gEventSlots[EVENT_SLOT_COUNT];
@@ -59,6 +71,8 @@ static int TestControllerAndLifecycle(void)
     ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER);
     for (i = 0; i < (int)sizeof(gExpansionAutoplayTelemetry); i++)
         byte[i] = 0xA5;
+    sPendingActivationResetCount = 0;
+    sPendingActivationApplyCount = 0;
     ExpansionAutoplay_Reset();
     telemetry = ExpansionAutoplay_GetTelemetry();
 
@@ -72,6 +86,8 @@ static int TestControllerAndLifecycle(void)
           "reset state must be explicit");
     CHECK(telemetry->committedActionCount == 0,
           "reset must clear committed actions");
+    CHECK(sPendingActivationResetCount == 1,
+          "autoplay reset must clear pending strategy activation");
 
     CHECK(ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER)
               == EXPANSION_AUTOPLAY_OK,
@@ -113,6 +129,8 @@ static int TestControllerAndLifecycle(void)
     CHECK(telemetry->state == EXPANSION_AUTOPLAY_STATE_COMPUTER_PHASE_COMPLETE
               && telemetry->failure == EXPANSION_AUTOPLAY_FAILURE_NONE,
           "successful phase must terminate without a failure");
+    CHECK(sPendingActivationApplyCount == 1,
+          "computer phase completion must apply pending strategy activation");
 
     return 0;
 }
@@ -120,6 +138,7 @@ static int TestControllerAndLifecycle(void)
 static int TestValidationAndBounds(void)
 {
     enum ExpansionBlueControl previous;
+    int pendingResetBefore;
 
     ExpansionAutoplay_Reset();
     previous = ExpansionAutoplay_GetBlueControl();
@@ -196,11 +215,14 @@ static int TestValidationAndBounds(void)
           "unsupported escape must be observable");
     CHECK(ExpansionAutoplay_IsBlueComputerPhase(),
           "failure telemetry must not disable blue-phase safety checks");
+    pendingResetBefore = sPendingActivationResetCount;
     ExpansionAutoplay_OnBlueComputerPhaseComplete();
     CHECK(gExpansionAutoplayTelemetry.failure
                   == EXPANSION_AUTOPLAY_FAILURE_UNSUPPORTED_ESCAPE
               && gExpansionAutoplayTelemetry.bluePhaseCompleteCount == 0,
           "phase cleanup must preserve a specific failure");
+    CHECK(sPendingActivationResetCount == pendingResetBefore + 1,
+          "failed phase cleanup must discard pending strategy activation");
 
     ExpansionAutoplay_Reset();
     ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER);

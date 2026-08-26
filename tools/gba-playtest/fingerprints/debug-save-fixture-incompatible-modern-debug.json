@@ -1,0 +1,29 @@
+{
+  "checkpoints": [
+    {
+      "frame": 1220,
+      "framebuffer_hash": "fnv1a64-rgb24:8debb32b811caa5f",
+      "name": "incompatible-source-rejected",
+      "probes": [
+        {
+          "address": "gDebugSaveFixtureProbe+0x00",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugSaveFixtureProbe+0x04",
+          "size": 4,
+          "value": "0x00000004"
+        },
+        {
+          "address": "gDebugSaveFixtureProbe+0x14",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:2d6e9ec16c75ff6d"
+    }
+  ],
+  "format_version": 2,
+  "scenario": "debug-save-fixture-incompatible-modern-debug"
+}

@@ -48,22 +48,15 @@ EWRAM_DATA static u8 sChapterBootRequested = 0;
 EWRAM_DATA static u8 sBootSuppressionActive = 0;
 EWRAM_DATA static u16 sTitleIdleFrames = 0;
 
-/* Scratch team buffer for the MultiArena/link roundtrip (stage 4) and
- * scratch combatants for the issue #6 content-mechanic stage (stage 7,
- * the very last stage this proc script runs -- see the PROC_CALL list
- * at the bottom of this file) share one EWRAM allocation below: the
- * proc script is a strictly sequential state machine (never concurrent,
- * never re-entrant), stage 4 fully drains sArenaTeamOut/sArenaTeamIn
- * into gItemExpansionProbe fields before it returns, and no stage
- * between 4 and 7 ever touches this buffer again, so stage 7's
- * combatants can safely reuse the same bytes once stage 4 is done with
- * them. EWRAM (not stack): struct Unit is far too large for
- * MULTIARENA_UNITS_PER_TEAM copies, and struct BattleUnit embeds a
- * whole struct Unit, on a proc's stack. This is scratch reuse only --
- * sContentBearer and sContentControl still get their own, separate
- * members (never merged with each other): the content stage keeps both
- * combatants concurrently live across a single
- * ExpansionMechanicsApplyBattleStats() call each way. */
+/* Stage 4's arena-team buffer, stages 5-6's serialization buffers, and
+ * stage 7's content combatants share one EWRAM allocation. The proc script
+ * is strictly sequential and never re-entrant: every stage copies its
+ * observations into gItemExpansionProbe before returning, and no pointer
+ * into a prior stage's scratch survives. EWRAM (not stack) is required:
+ * the arena stage needs two teams and the content stage keeps two
+ * BattleUnits concurrently live across ExpansionMechanicsApplyBattleStats().
+ * The content combatants remain separate union members because they are
+ * simultaneously live within stage 7. */
 EWRAM_DATA static union
 {
     struct
@@ -76,17 +69,23 @@ EWRAM_DATA static union
         struct BattleUnit bearer;
         struct BattleUnit control;
     } content;
-} sArenaContentScratch;
-#define sArenaTeamOut   (sArenaContentScratch.arena.out)
-#define sArenaTeamIn    (sArenaContentScratch.arena.in)
-#define sContentBearer  (sArenaContentScratch.content.bearer)
-#define sContentControl (sArenaContentScratch.content.control)
-
-/* Scratch packed-record buffers for the game-save/suspend pack+unpack
- * roundtrips below, and the unit the production unpackers restore into. */
-EWRAM_DATA static struct GameSavePackedUnit sPackedUnit;
-EWRAM_DATA static struct SuspendSavePackedUnit sSuspendUnit;
-EWRAM_DATA static struct Unit sUnpackedUnit;
+    struct
+    {
+        union
+        {
+            struct GameSavePackedUnit gameSave;
+            struct SuspendSavePackedUnit suspend;
+        } packed;
+        struct Unit unpacked;
+    } serialization;
+} sItemExpansionScratch;
+#define sArenaTeamOut   (sItemExpansionScratch.arena.out)
+#define sArenaTeamIn    (sItemExpansionScratch.arena.in)
+#define sContentBearer  (sItemExpansionScratch.content.bearer)
+#define sContentControl (sItemExpansionScratch.content.control)
+#define sPackedUnit     (sItemExpansionScratch.serialization.packed.gameSave)
+#define sSuspendUnit    (sItemExpansionScratch.serialization.packed.suspend)
+#define sUnpackedUnit   (sItemExpansionScratch.serialization.unpacked)
 
 /* Team name for the MultiArena/link roundtrip below (original, ASCII). */
 CONST_DATA static char sArenaTeamName[MULTIARENA_TEAMNAME_SIZE + 1] = "ITEMTEST";

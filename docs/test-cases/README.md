@@ -46,6 +46,8 @@ current feature.
 
 The localization and locale-persistence procedures are
 [`TC-LOCALIZATION-001` through `TC-LOCALIZATION-008`](localization.md).
+The volatile debug save-fixture procedure is
+[`TC-DEBUGSAVE-001`](debug-save-fixtures.md#tc-debugsave-001-volatile-save-fixture-isolation-and-recovery).
 
 ## Running catalog checks
 

@@ -347,7 +347,7 @@ policy, player-facing text, or a general expression language.
 2. Run
    `python3 -m unittest tools.gba-playtest.tests.test_autoplay_strategies -v`.
 3. Run
-   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_strategies.AutoplayStrategiesRuntimeTests.test_arm_profiles_are_ewram_free_and_gate_reference_callbacks -v`
+   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_strategies.AutoplayStrategiesRuntimeTests.test_arm_profiles_bound_pending_ewram_and_gate_reference_callbacks -v`
    to parse the ARM symbol set for both enabled and disabled profiles.
 4. Run
    `make expansion-modern-autoplay-strategy-runtime-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
@@ -360,7 +360,10 @@ strictly decreases; no progress waits, and a completed objective returns to
 Aggressive/current AI. A unit assignment overrides the group and chapter
 assignments, a group overrides chapter, and the profiles repeat the same action
 trace without an RNG draw. The typed event helper accepts only its declared
-activation flag and defers active-blue-phase changes. Unknown IDs,
+activation flag. An active-blue-phase request leaves current units unchanged,
+then applies once at computer-phase completion; duplicates coalesce, the last
+distinct valid pair replaces the pending pair, invalid pairs cannot replace
+it, and lifecycle/Suspend-resume reset discards it. Unknown IDs,
 duplicate/missing callbacks, invalid capability bits, capacity overflow, and
 Objective-first with an unsupported objective kind fail explicitly before an
 action commits.
@@ -371,15 +374,18 @@ With profiles disabled and the reference descriptors/assignments omitted,
 `ExpansionAutoplayStrategies_TryDecide()` returns fallback and creates no
 action; the original `Unit.ai[]` decision path remains authoritative. The
 ARM selector confirms reference callback symbols are absent from the disabled
-object set and both profile states allocate zero EWRAM.
+object set and both profile states allocate exactly the same bounded
+eight-byte pending pair.
 
 ### Interactions and save compatibility
 
 The case depends on the #85 blue computer executor and #89 typed
 objective/group records. It has no known feature conflicts, no player UI,
 locale text, save field, migration, compatibility-epoch change, or archival
-behavior. Generated activation flags are existing event state, so suspend/load
-reconstructs assignment selection without hidden runtime storage.
+behavior. Generated activation flags are existing event state. The pending
+pair is transient only: Suspend/load invokes the ordinary autoplay lifecycle
+reset, discards any in-flight request, and reconstructs assignment selection
+from generated data and event flags.
 
 ### Automation
 

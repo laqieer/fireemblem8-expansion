@@ -11,6 +11,7 @@
 #include "constants/event-flags.h"
 #include "cp_common.h"
 #include "cp_utility.h"
+#include "expansion_autoplay_internal.h"
 #include "expansion_autoplay_strategies.h"
 #include "eventinfo.h"
 #include "event.h"
@@ -30,6 +31,8 @@ extern bool ExpansionAutoplayStrategy_ObjectiveFirst(
         } \
     } while (0)
 
+#define AUTOPLAY_STRATEGY_TENTATIVE_FALLBACK_ID 0xA70E0F94
+
 struct PlaySt gPlaySt;
 struct Unit* gActiveUnit;
 u8 gActiveUnitId;
@@ -45,6 +48,7 @@ static struct Unit sSeth;
 static u8 sRangeData[16][16];
 static u8 * sRangeRows[16];
 static bool sFlags[0x100];
+static int sSetFlagCalls[0x100];
 static bool sBlueComputerPhase;
 static int sCombatCalls;
 static int sMoveCalls;
@@ -63,7 +67,10 @@ bool CheckFlag(int flag)
 void SetFlag(int flag)
 {
     if (flag >= 0 && flag < (int)ARRAY_COUNT(sFlags))
+    {
         sFlags[flag] = true;
+        sSetFlagCalls[flag]++;
+    }
 }
 
 struct Unit* GetUnitFromCharId(int character)
@@ -164,7 +171,10 @@ static void ResetFixture(void)
     int index;
 
     for (index = 0; index < (int)ARRAY_COUNT(sFlags); index++)
+    {
         sFlags[index] = false;
+        sSetFlagCalls[index] = 0;
+    }
 
     sEirikaCharacter.number = CHARACTER_EIRIKA;
     sEirika.pCharacterData = &sEirikaCharacter;
@@ -204,6 +214,7 @@ static void ResetFixture(void)
     sRangeData[sMoveDecisionY][sMoveDecisionX] = 5;
     ExpansionChapterObjectives_ResetTelemetry();
     ExpansionChapterObjectives_OnBeginningEventsComplete();
+    ExpansionAutoplayStrategies_ResetPendingActivation();
 }
 
 static int TestRegistryFailures(void)
@@ -407,7 +418,7 @@ static int TestReferenceProfiles(void)
     ExpansionAutoplayStrategies_EventActivate(NULL);
     CHECK(
         !CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
-        "same-phase event activation must defer until the next safe boundary"
+        "same-phase event activation must not change current units"
     );
 
     ResetFixture();
@@ -417,6 +428,103 @@ static int TestReferenceProfiles(void)
     CHECK(
         !CheckFlag(EVFLAG_BATTLE_QUOTES),
         "event activation wrapper must reject undeclared strategy-flag pairs"
+    );
+
+    ResetFixture();
+    sFlags[EVFLAG_GAMEOVER] = true;
+    sBlueComputerPhase = true;
+    gEventSlots[EVT_SLOT_B] = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
+    gEventSlots[EVT_SLOT_C] = EVFLAG_HIDE_BLINKING_ICON;
+    ExpansionAutoplayStrategies_EventActivate(NULL);
+    result = ExpansionAutoplayStrategies_TryDecide();
+    CHECK(
+        result == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && gAiDecision.actionId == AI_ACTION_COMBAT
+            && !CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
+        "pending activation must leave the current phase on its existing strategy"
+    );
+    sBlueComputerPhase = false;
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
+    AiClearDecision();
+    sCombatCalls = 0;
+    sMoveCalls = 0;
+    result = ExpansionAutoplayStrategies_TryDecide();
+    CHECK(
+        result == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && gAiDecision.actionId == AI_ACTION_NONE
+            && sMoveCalls == 1
+            && CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
+        "pending activation must apply at the next safe phase boundary"
+    );
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
+    CHECK(
+        sSetFlagCalls[EVFLAG_HIDE_BLINKING_ICON] == 1,
+        "pending activation must apply exactly once"
+    );
+
+    ResetFixture();
+    sBlueComputerPhase = true;
+    gEventSlots[EVT_SLOT_B] = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
+    gEventSlots[EVT_SLOT_C] = EVFLAG_HIDE_BLINKING_ICON;
+    ExpansionAutoplayStrategies_EventActivate(NULL);
+    ExpansionAutoplayStrategies_EventActivate(NULL);
+    sBlueComputerPhase = false;
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
+    CHECK(
+        CheckFlag(EVFLAG_HIDE_BLINKING_ICON)
+            && sSetFlagCalls[EVFLAG_HIDE_BLINKING_ICON] == 1,
+        "duplicate pending requests must coalesce into one application"
+    );
+
+    ResetFixture();
+    sBlueComputerPhase = true;
+    gEventSlots[EVT_SLOT_B] = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
+    gEventSlots[EVT_SLOT_C] = EVFLAG_HIDE_BLINKING_ICON;
+    ExpansionAutoplayStrategies_EventActivate(NULL);
+    gEventSlots[EVT_SLOT_B] = AUTOPLAY_STRATEGY_TENTATIVE_FALLBACK_ID;
+    gEventSlots[EVT_SLOT_C] = EVFLAG_BATTLE_QUOTES;
+    ExpansionAutoplayStrategies_EventActivate(NULL);
+    sBlueComputerPhase = false;
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
+    CHECK(
+        !CheckFlag(EVFLAG_HIDE_BLINKING_ICON)
+            && CheckFlag(EVFLAG_BATTLE_QUOTES),
+        "a later valid pending request must replace the earlier pair"
+    );
+
+    ResetFixture();
+    sBlueComputerPhase = true;
+    gEventSlots[EVT_SLOT_B] = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
+    gEventSlots[EVT_SLOT_C] = EVFLAG_HIDE_BLINKING_ICON;
+    ExpansionAutoplayStrategies_EventActivate(NULL);
+    CHECK(
+        ExpansionAutoplayStrategies_ActivateAssignment(
+            EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID,
+            EVFLAG_BATTLE_QUOTES)
+            == EXPANSION_AUTOPLAY_STRATEGY_ERR_INVALID_EVENT_ASSIGNMENT,
+        "active-phase requests must reject invalid pairs before queueing"
+    );
+    gEventSlots[EVT_SLOT_C] = EVFLAG_BATTLE_QUOTES;
+    ExpansionAutoplayStrategies_EventActivate(NULL);
+    sBlueComputerPhase = false;
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
+    CHECK(
+        CheckFlag(EVFLAG_HIDE_BLINKING_ICON)
+            && !CheckFlag(EVFLAG_BATTLE_QUOTES),
+        "an invalid request must not replace a valid pending pair"
+    );
+
+    ResetFixture();
+    sBlueComputerPhase = true;
+    gEventSlots[EVT_SLOT_B] = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
+    gEventSlots[EVT_SLOT_C] = EVFLAG_HIDE_BLINKING_ICON;
+    ExpansionAutoplayStrategies_EventActivate(NULL);
+    ExpansionAutoplayStrategies_ResetPendingActivation();
+    sBlueComputerPhase = false;
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
+    CHECK(
+        !CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
+        "chapter and suspend-resume lifecycle reset must discard pending activation"
     );
 
     CHECK(
@@ -475,6 +583,16 @@ static int TestDisabledProfileNegative(void)
     CHECK(
         ExpansionAutoplayStrategies_TryDecide() == EXPANSION_AUTOPLAY_STRATEGY_FALLBACK,
         "disabled profiles must not synthesize an action"
+    );
+    sBlueComputerPhase = true;
+    gEventSlots[EVT_SLOT_B] = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
+    gEventSlots[EVT_SLOT_C] = EVFLAG_HIDE_BLINKING_ICON;
+    ExpansionAutoplayStrategies_EventActivate(NULL);
+    sBlueComputerPhase = false;
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
+    CHECK(
+        !CheckFlag(EVFLAG_HIDE_BLINKING_ICON),
+        "disabled/default profile must not queue or apply strategy activation"
     );
     return 0;
 }

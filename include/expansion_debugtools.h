@@ -284,13 +284,40 @@ enum DebugToolsResult DebugTools_GetLastRegistrationResult(void);
  * finally released only when the reopened hub itself ends without another
  * queued transition.
  *
- * Both functions are inert when debug tools are disabled. Calls outside an
- * active hub/submenu session, duplicate transition requests, and a NULL
- * submenuDef are also safe no-ops. */
+ * Calls outside an active hub/submenu session, duplicate transition requests,
+ * and a NULL submenuDef are also safe no-ops. Disabled builds retain inline
+ * no-op forms so unconditional contributors need no extra preprocessor guard,
+ * while the linked hub implementation remains physically omitted. */
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
 void DebugTools_QueueSubmenuTransition(
     struct MenuProc* menu,
     const struct MenuDef* submenuDef);
 void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu);
+
+/* Finalizes an active submenu session without reopening the hub. The same
+ * one-yield transition restores the owning font/counter and clears session
+ * ownership; game-control handoffs may then consume their already-queued
+ * typed request. Calls outside an active submenu session are safe no-ops. */
+void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu);
+#else
+static inline void DebugTools_QueueSubmenuTransition(
+    struct MenuProc* menu,
+    const struct MenuDef* submenuDef)
+{
+    (void)menu;
+    (void)submenuDef;
+}
+
+static inline void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
+{
+    (void)menu;
+}
+
+static inline void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu)
+{
+    (void)menu;
+}
+#endif
 
 /* Opens the debug hub as a blocking child menu of the session's display-owner
  * Proc. Lazily registers all shipped built-in actions on first call.

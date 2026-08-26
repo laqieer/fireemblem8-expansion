@@ -709,27 +709,37 @@ static bool offset_excluded(const struct ByteRange* ranges, size_t range_count,
 static uint64_t hash_sram(struct mCore* core, const struct ByteRange* exclude_ranges,
                            size_t exclude_range_count)
 {
-	/* Same FNV-1a construction as hash_framebuffer(), applied to the raw
-	 * cart SRAM bus range (0x0E000000..0x0E007FFF): proves the entire
-	 * 0x8000-byte image -- minus any `exclude_ranges` bytes -- is
-	 * byte-for-byte unchanged across a checkpoint without needing one
-	 * probe per byte (the plan format caps probes per checkpoint at
-	 * 1024). With no exclude ranges (the common case) this proves the
-	 * *entire* image unchanged, exactly as before. `exclude_ranges` exists
-	 * only for checkpoints whose SRAM legitimately contains intentionally
-	 * build-variable diagnostic bytes (ExpansionSaveMeta's buildCommitShort
-	 * and its dependent checksum -- see docs/save_format.md's "SRAM hash
-	 * policy: exact vs. normalized"); excluded bytes are skipped entirely
-	 * (never substituted/zeroed), so the hash is still sensitive to every
-	 * other byte in the image. */
+	/* Clone libmGBA's actual save backing store rather than reading the
+	 * cartridge bus window: bus reads can expose transient mapper state even
+	 * when the persisted 0x8000-byte image is unchanged. */
+	void* save_data = NULL;
+	size_t save_size = 0;
+	bool owns_save_data = true;
+	bool use_bus = false;
 	uint64_t hash = UINT64_C(14695981039346656037);
+
+	if (core->savedataClone != NULL)
+		save_size = core->savedataClone(core, &save_data);
+
+	if (save_data == NULL || save_size != GBA_SRAM_SIZE) {
+		free(save_data);
+		use_bus = true;
+		owns_save_data = false;
+		save_data = NULL;
+		save_size = GBA_SRAM_SIZE;
+	}
+
 	for (uint32_t offset = 0; offset < GBA_SRAM_SIZE; ++offset) {
 		if (offset_excluded(exclude_ranges, exclude_range_count, offset))
 			continue;
-		uint8_t byte = core->busRead8(core, GBA_SRAM_BASE + offset);
+		uint8_t byte = use_bus
+		    ? core->busRead8(core, GBA_SRAM_BASE + offset)
+		    : ((const uint8_t*) save_data)[offset];
 		hash ^= byte;
 		hash *= UINT64_C(1099511628211);
 	}
+	if (owns_save_data)
+		free(save_data);
 	return hash;
 }
 
@@ -1063,6 +1073,15 @@ static int run(
 		return 2;
 	}
 	if (sram_path) {
+		FILE* file = fopen(sram_path, "rb");
+
+		if (file == NULL) {
+			fprintf(stderr, "mGBA could not open SRAM image: %s\n", sram_path);
+			mCoreConfigDeinit(&core->config);
+			core->deinit(core);
+			return 2;
+		}
+		fclose(file);
 		/*
 		 * Loaded before core->reset() so the pre-boot SRAM image is what
 		 * the game's own boot-time classifier (ClassifySramSaveCompat)
