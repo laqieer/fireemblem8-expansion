@@ -2,6 +2,7 @@
 
 #include "bm.h"
 #include "bmmap.h"
+#include "bmidoten.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "cp_script.h"
@@ -190,6 +191,13 @@ static bool IsDecisionSupported(const struct ExpansionAutoplayStrategy* strategy
     }
 
     return (strategy->actionCapabilities & capability) != 0;
+}
+
+static void PrepareCombatMovementMap(void)
+{
+    AiGenerateUnitMovementMapRespectStay(gActiveUnit);
+    if (UnitHasMagicRank(gActiveUnit))
+        GenerateMagicSealMap(-1);
 }
 
 enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ValidateObjectiveSupport(
@@ -494,6 +502,7 @@ void ExpansionAutoplayStrategies_EventDeactivate(struct EventEngineProc* proc)
 bool ExpansionAutoplayStrategy_Aggressive(const struct ExpansionAutoplayStrategyContext* context)
 {
     (void)context;
+    PrepareCombatMovementMap();
     AiAttemptCombatWithinMovement(AiIsUnitEnemy);
     return gAiDecision.actionPerformed && gAiDecision.actionId == AI_ACTION_COMBAT;
 }
@@ -559,6 +568,7 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
             return true;
         }
 
+        PrepareCombatMovementMap();
         AiAttemptCombatWithinMovement(AiIsUnitEnemy);
         if (gAiDecision.actionPerformed
             && gAiDecision.xMove >= objective->xMin
