@@ -161,24 +161,56 @@ class CliEventListsTests(unittest.TestCase):
             bundle_path = os.path.join(tmp, "strategy-helper-bundle.json")
             with open(bundle_path, "w", encoding="utf-8") as handle:
                 json.dump(bundle, handle)
+            common = [
+                "--table",
+                "eventlists",
+                "--source",
+                source_path,
+                "--no-roundtrip",
+                "--dep-source",
+                "autoplaystrategies={}".format(
+                    fixture_path("autoplaystrategies", "valid.json")
+                ),
+                "--dep-source",
+                "chapterbundle={}".format(bundle_path),
+            ] + _eventlists_dep_source_args()
+
             code, out, err = run_cli(
-                [
-                    "validate",
-                    "--table",
-                    "eventlists",
-                    "--source",
-                    source_path,
-                    "--no-roundtrip",
-                    "--dep-source",
-                    "autoplaystrategies={}".format(
-                        fixture_path("autoplaystrategies", "valid.json")
-                    ),
-                    "--dep-source",
-                    "chapterbundle={}".format(bundle_path),
-                ]
-                + _eventlists_dep_source_args()
+                ["validate", "--reference-profiles", "0"] + common
+            )
+            self.assertEqual(code, 1)
+            self.assertIn(
+                "undefined strategy reference 'AUTOPLAY_STRATEGY_OBJECTIVE_FIRST'",
+                err,
+            )
+
+            code, out, err = run_cli(
+                ["validate", "--reference-profiles", "1"] + common
             )
             self.assertEqual(code, 0, msg=out + err)
+
+            out_dir = os.path.join(tmp, "generated")
+            inventory = os.path.join(tmp, "inventory.md")
+            code, out, err = run_cli(
+                [
+                    "generate",
+                    "--reference-profiles",
+                    "1",
+                    "--out-dir",
+                    out_dir,
+                    "--inventory",
+                    inventory,
+                ]
+                + common
+            )
+            self.assertEqual(code, 0, msg=out + err)
+            with open(
+                os.path.join(out_dir, "data_ch2_eventlists.c"),
+                encoding="utf-8",
+            ) as handle:
+                generated = handle.read()
+            self.assertIn("AUTOPLAY_STRATEGY_ACTIVATE(", generated)
+            self.assertIn("AUTOPLAY_STRATEGY_DEACTIVATE(", generated)
 
     def test_check_real_ch2_eventlists_table_has_no_drift(self):
         code, out, err = run_cli(["check", "--table", "eventlists"])

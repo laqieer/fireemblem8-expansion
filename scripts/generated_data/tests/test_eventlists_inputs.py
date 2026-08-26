@@ -113,12 +113,15 @@ class EventListsInputTests(unittest.TestCase):
         source["helperScripts"][0]["entries"][0]["args"][1] = flag
         self._write_json(self.eventlists, source)
 
-    def _make(self, strategy_source=None):
+    def _make(self, strategy_source=None, reference_profiles="1"):
         command = [
             "make",
             "--no-print-directory",
             str(self.target),
             "GENERATED_DATA_OUT_DIR={}".format(self.out_dir),
+            "GENERATED_DATA_AUTOPLAYSTRATEGIES_REFERENCE_PROFILES={}".format(
+                reference_profiles
+            ),
         ]
         if strategy_source is not None:
             command.append(
@@ -137,6 +140,16 @@ class EventListsInputTests(unittest.TestCase):
         initial = self._make()
         self.assertEqual(initial.returncode, 0, initial.stdout)
         self.assertIn("generate --table eventlists", initial.stdout)
+
+        canonical_disabled = self._make(reference_profiles="0")
+        self.assertNotEqual(canonical_disabled.returncode, 0)
+        self.assertIn(
+            "undefined strategy reference 'AUTOPLAY_STRATEGY_OBJECTIVE_FIRST'",
+            canonical_disabled.stdout,
+        )
+        canonical_reenabled = self._make(reference_profiles="1")
+        self.assertEqual(canonical_reenabled.returncode, 0, canonical_reenabled.stdout)
+        self.assertIn("generate --table eventlists", canonical_reenabled.stdout)
 
         self._set_pair(self.canonical_strategies, INVALID_FLAG)
         canonical_invalid = self._make()
@@ -167,6 +180,22 @@ class EventListsInputTests(unittest.TestCase):
             os.path.realpath(self.repo / "src" / "data" / "ch2_bundle.json"),
             depfile_inputs,
         )
+
+        disabled = self._make(self.custom_strategy_dir, reference_profiles="0")
+        self.assertNotEqual(disabled.returncode, 0)
+        self.assertIn("generate --table eventlists", disabled.stdout)
+        self.assertIn(
+            "undefined strategy reference 'AUTOPLAY_STRATEGY_OBJECTIVE_FIRST'",
+            disabled.stdout,
+        )
+        stamp = self.out_dir / ".ch2-eventlists.config"
+        self.assertIn(
+            "reference_profiles=0",
+            stamp.read_text(encoding="utf-8"),
+        )
+        reenabled = self._make(self.custom_strategy_dir, reference_profiles="1")
+        self.assertEqual(reenabled.returncode, 0, reenabled.stdout)
+        self.assertIn("generate --table eventlists", reenabled.stdout)
 
         self._set_event_pair(OTHER_CHAPTER_FLAG)
         cross_chapter = self._make(self.custom_strategy_dir)

@@ -4,7 +4,7 @@
   "configs": {
     "debug": {
       "pre_router": {
-        "source": "git:origin/master:reports/linker-budget/modern-debug.json",
+        "source": "reports/autoplay_strategy_pre_router_budget.json",
         "floating_end": 145968628
       },
       "profiles_disabled": {
@@ -20,7 +20,7 @@
     },
     "release": {
       "pre_router": {
-        "source": "git:origin/master:reports/linker-budget/modern-release.json",
+        "source": "reports/autoplay_strategy_pre_router_budget.json",
         "floating_end": 145965748
       },
       "profiles_disabled": {

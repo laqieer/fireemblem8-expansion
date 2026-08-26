@@ -534,6 +534,13 @@ by every map/chapter lifecycle reset, including Suspend resume, and is never
 serialized; there is no save byte, epoch, migration, localization string,
 player UI, or second event language.
 
+Event-list helper validation consumes the same profile-selected descriptor and
+assignment view that generates `data_autoplay_strategies.c`. A disabled
+reference profile therefore cannot authorize `strategy.activate` /
+`strategy.deactivate` or reserve its flag, while emitted downstream custom
+records continue to validate. Profile flips participate in the event-list
+freshness stamp for both file and directory strategy sources.
+
 ### Downstream strategy example
 
 A callback returns `false` to request the clean existing `Unit.ai[]` fallback.
@@ -630,14 +637,17 @@ strategy host/ARM selector enforces exactly eight strategy EWRAM bytes and a
 lane excludes the runtime and generated table.
 
 The parsed full-link evidence is
-`reports/autoplay_strategy_budget.json`. Against the merged pre-router master
-linker reports, the shared router with reference profiles **disabled** adds
-1,784 debug / 2,184 release ROM bytes. Enabling the two reference
-descriptors/callbacks adds a separate 472 debug / 408 release ROM bytes over
-that disabled-router build. These are distinct costs: downstream projects pay
-the shared-router delta by default, while the reference increment is paid only
-when `EXPANSION_AUTOPLAY_STRATEGIES=1`. The budget owner rebuilds all four
-ELFs and derives both deltas from their `__floating_end` assignments.
+`reports/autoplay_strategy_budget.json`. Its immutable numeric pre-router
+input is `reports/autoplay_strategy_pre_router_budget.json`; it stores only
+the debug/release linker boundary measurement, not a source, object, ROM,
+hash, or Git identity. Against that contract, the shared router with reference
+profiles **disabled** adds 1,784 debug / 2,184 release ROM bytes. Enabling the
+two reference descriptors/callbacks adds a separate 472 debug / 408 release
+ROM bytes over that disabled-router build. These are distinct costs:
+downstream projects pay the shared-router delta by default, while the
+reference increment is paid only when `EXPANSION_AUTOPLAY_STRATEGIES=1`.
+The budget owner rebuilds the current disabled/enabled ELFs and derives both
+deltas from their `__floating_end` assignments without consulting Git.
 
 ### Strategy compatibility and budgets
 

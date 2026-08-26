@@ -1839,6 +1839,7 @@ FORCE_CH2_EVENTLISTS_CONFIG_STAMP:
 $(GENERATED_DATA_CH2_EVENTLISTS_CONFIG_STAMP): FORCE_CH2_EVENTLISTS_CONFIG_STAMP
 	@mkdir -p $(@D)
 	@printf '%s\n' \
+		'reference_profiles=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_REFERENCE_PROFILES)' \
 		'autoplaystrategies_source=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)' \
 		'chapterbundle_source=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE)' > "$@.tmp"
 	@if [ ! -f "$@" ] || ! cmp -s "$@.tmp" "$@"; then mv -f "$@.tmp" "$@"; else rm -f "$@.tmp"; fi
@@ -1883,6 +1884,7 @@ $(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP): src/data/ch2_eventlists.json \
 		--source "src/data/ch2_eventlists.json" \
 		--dep-source "autoplaystrategies=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)" \
 		--dep-source "chapterbundle=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE)" \
+		--reference-profiles "$(GENERATED_DATA_AUTOPLAYSTRATEGIES_REFERENCE_PROFILES)" \
 		--out-dir "$(GENERATED_DATA_OUT_DIR)"
 	@test -e $(GENERATED_DATA_CH2_EVENTLISTS_C) || { echo "error: generated-data table 'eventlists' did not produce $(GENERATED_DATA_CH2_EVENTLISTS_C) (schema default_output_name mismatch?)" >&2; exit 1; }
 	@touch "$@"

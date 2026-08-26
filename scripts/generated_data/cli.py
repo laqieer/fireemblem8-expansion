@@ -60,7 +60,7 @@ def _parse_dep_source_overrides(raw_pairs):
     return overrides
 
 
-def _load_dependency_records(schema, dep_source_overrides):
+def _load_dependency_records(schema, dep_source_overrides, reference_profiles=None):
     """Load this schema's declared ``dependency_tables()`` deterministically
     (in declaration order) through the schema registry, returning ``None``
     when the table has no table-level dependencies (so callers can fall
@@ -74,14 +74,26 @@ def _load_dependency_records(schema, dep_source_overrides):
     for dep_name in dep_tables:
         dep_schema = REGISTRY.resolve(dep_name)
         dep_source = dep_source_overrides.get(dep_name) or dep_schema.default_source
-        dependency_records[dep_name] = dep_schema.load_records(dep_source)
+        dependency_records[dep_name] = dep_schema.configure_records(
+            dep_schema.load_records(dep_source),
+            reference_profiles=reference_profiles,
+        )
     return dependency_records
 
 
-def _load_and_validate(schema, source_path, dep_source_overrides=None):
+def _load_and_validate(
+    schema,
+    source_path,
+    dep_source_overrides=None,
+    reference_profiles=None,
+):
     records = schema.load_records(source_path)
     diagnostics = DiagnosticCollector()
-    dependency_records = _load_dependency_records(schema, dep_source_overrides or {})
+    dependency_records = _load_dependency_records(
+        schema,
+        dep_source_overrides or {},
+        reference_profiles,
+    )
     if dependency_records is not None:
         schema.validate(records, diagnostics, dependency_records)
     else:
@@ -115,7 +127,12 @@ def cmd_validate(args):
     source_path = args.source or schema.default_source
     try:
         dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
-        records, diagnostics = _load_and_validate(schema, source_path, dep_source_overrides)
+        records, diagnostics = _load_and_validate(
+            schema,
+            source_path,
+            dep_source_overrides,
+            args.reference_profiles,
+        )
         records = _configure_records(schema, records, args)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
@@ -154,7 +171,12 @@ def cmd_generate(args):
 
     try:
         dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
-        records, diagnostics = _load_and_validate(schema, source_path, dep_source_overrides)
+        records, diagnostics = _load_and_validate(
+            schema,
+            source_path,
+            dep_source_overrides,
+            args.reference_profiles,
+        )
         records = _configure_records(schema, records, args)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
@@ -211,7 +233,12 @@ def cmd_check(args):
 
     try:
         dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
-        records, diagnostics = _load_and_validate(schema, source_path, dep_source_overrides)
+        records, diagnostics = _load_and_validate(
+            schema,
+            source_path,
+            dep_source_overrides,
+            args.reference_profiles,
+        )
         records = _configure_records(schema, records, args)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
