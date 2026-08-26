@@ -21,6 +21,14 @@ def _load_dependency_records():
         "shops": shops_schema.load_records(fixture_path("eventlists", "deps_shops.json")),
         "traps": traps_schema.load_records(fixture_path("eventlists", "deps_traps.json")),
         "eventscripts": eventscripts_schema.load_records(fixture_path("eventlists", "deps_eventscripts.json")),
+        "autoplaystrategies": (
+            autoplaystrategies_schema.AutoplayStrategiesTableSchema().configure_records(
+                autoplaystrategies_schema.load_records(
+                    "src/data/autoplay_strategies.json"
+                ),
+                reference_profiles="0",
+            )
+        ),
     }
 
 
@@ -39,6 +47,34 @@ class EventListsSchemaValidTests(unittest.TestCase):
         self.assertEqual(len(records.lists), 7)
         self.assertEqual(len(records.tutorial.entries), 30)
         self.assertEqual(records.manifest.symbol, "ELEvents")
+
+    def test_missing_or_malformed_strategy_dependency_reports_diagnostic(self):
+        records = eventlists_schema.load_records(
+            fixture_path("eventlists", "valid.json")
+        )
+        for strategy_dependency, expected in (
+            (None, "missing required autoplaystrategies validation dependency"),
+            (
+                {"strategies": []},
+                "invalid autoplaystrategies validation dependency",
+            ),
+        ):
+            with self.subTest(expected=expected):
+                dependencies = _load_dependency_records()
+                if strategy_dependency is None:
+                    dependencies.pop("autoplaystrategies")
+                else:
+                    dependencies["autoplaystrategies"] = strategy_dependency
+                diagnostics = DiagnosticCollector()
+                eventlists_schema.validate(records, diagnostics, dependencies)
+                matching = [
+                    error
+                    for error in diagnostics.errors
+                    if error.reference_path == "dependencies.autoplaystrategies"
+                ]
+                self.assertEqual(len(matching), 1, diagnostics.render())
+                self.assertIn(expected, matching[0].message)
+                self.assertEqual(matching[0].location, records.loc)
 
     def test_macro_call_structural_shape(self):
         records, diagnostics = _validate("valid.json")
@@ -602,6 +638,19 @@ class EventListsSchemaRealCh2SourceTests(unittest.TestCase):
             "traps": traps_schema.load_records(os.path.join(repo_root, "src", "data", "ch2_traps.json")),
             "eventscripts": eventscripts_schema.load_records(
                 os.path.join(repo_root, "src", "data", "ch2_eventscripts.json")
+            ),
+            "autoplaystrategies": (
+                autoplaystrategies_schema.AutoplayStrategiesTableSchema().configure_records(
+                    autoplaystrategies_schema.load_records(
+                        os.path.join(
+                            repo_root,
+                            "src",
+                            "data",
+                            "autoplay_strategies.json",
+                        )
+                    ),
+                    reference_profiles="0",
+                )
             ),
         }
         eventlists_schema.validate(records, diagnostics, dependency_records)
