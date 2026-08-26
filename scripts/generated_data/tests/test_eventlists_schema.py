@@ -1,7 +1,11 @@
 import unittest
 
 from scripts.generated_data.diagnostics import DiagnosticCollector
+from scripts.generated_data.autoplaystrategies import schema as autoplaystrategies_schema
+from scripts.generated_data.chapterbundle import schema as chapterbundle_schema
+from scripts.generated_data.chapterobjectives.schema import stable_id_value
 from scripts.generated_data.eventlists import schema as eventlists_schema
+from scripts.generated_data.eventlists import generate as eventlists_generate
 from scripts.generated_data.eventscripts import schema as eventscripts_schema
 from scripts.generated_data.shops import schema as shops_schema
 from scripts.generated_data.traps import schema as traps_schema
@@ -55,6 +59,102 @@ class EventListsSchemaValidTests(unittest.TestCase):
         misc_list = records.lists_by_field["miscBasedEvents"]
         self.assertEqual(misc_list.entries[1].macro, "CauseGameOverIfLordDies")
         self.assertEqual(misc_list.entries[1].args, [])
+
+
+class EventListsStrategyHelperTests(unittest.TestCase):
+    def _strategy_dependencies(self):
+        dependencies = _load_dependency_records()
+        dependencies["autoplaystrategies"] = autoplaystrategies_schema.load_records(
+            fixture_path("autoplaystrategies", "valid.json")
+        )
+        dependencies["chapterbundle"] = chapterbundle_schema.load_records(
+            fixture_path("chapterobjectives", "strategy_bundle.json")
+        )
+        return dependencies
+
+    def _activation(self, records):
+        location = records.helper_scripts[0].loc
+        return eventlists_schema.HelperCall(
+            "strategy",
+            location,
+            "activate",
+            location,
+            [
+                eventlists_schema.MacroArg(
+                    "symbol",
+                    "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST",
+                    location,
+                ),
+                eventlists_schema.MacroArg(
+                    "symbol",
+                    "EVFLAG_HIDE_BLINKING_ICON",
+                    location,
+                ),
+            ],
+            location,
+        )
+
+    def test_strategy_activation_lowers_to_production_asm_call(self):
+        records = eventlists_schema.load_records(fixture_path("eventlists", "helpers_valid.json"))
+        activation = self._activation(records)
+        records.helper_scripts[0].entries.append(activation)
+        diagnostics = DiagnosticCollector()
+        eventlists_schema.validate(records, diagnostics, self._strategy_dependencies())
+        self.assertTrue(diagnostics.ok, [str(error) for error in diagnostics.errors])
+        self.assertEqual(
+            eventlists_generate.render_call(activation, context="script"),
+            "AUTOPLAY_STRATEGY_ACTIVATE({}, EVFLAG_HIDE_BLINKING_ICON)".format(
+                stable_id_value("AUTOPLAY_STRATEGY_OBJECTIVE_FIRST")
+            ),
+        )
+
+    def test_raw_flag_set_cannot_bypass_declared_strategy_pair(self):
+        records = eventlists_schema.load_records(fixture_path("eventlists", "helpers_valid.json"))
+        location = records.helper_scripts[0].loc
+        records.helper_scripts[0].entries.append(
+            eventlists_schema.HelperCall(
+                "flag",
+                location,
+                "set",
+                location,
+                [
+                    eventlists_schema.MacroArg(
+                        "symbol",
+                        "EVFLAG_HIDE_BLINKING_ICON",
+                        location,
+                    ),
+                ],
+                location,
+            )
+        )
+        diagnostics = DiagnosticCollector()
+        eventlists_schema.validate(records, diagnostics, self._strategy_dependencies())
+        self.assertTrue(
+            any(
+                "must use strategy.activate" in error.message
+                for error in diagnostics.errors
+            ),
+            [str(error) for error in diagnostics.errors],
+        )
+
+    def test_undeclared_strategy_flag_pair_is_rejected(self):
+        records = eventlists_schema.load_records(fixture_path("eventlists", "helpers_valid.json"))
+        activation = self._activation(records)
+        activation.args[1] = eventlists_schema.MacroArg(
+            "symbol",
+            "EVFLAG_BATTLE_QUOTES",
+            activation.args[1].loc,
+        )
+        records.helper_scripts[0].entries.append(activation)
+        diagnostics = DiagnosticCollector()
+        eventlists_schema.validate(records, diagnostics, self._strategy_dependencies())
+        self.assertTrue(
+            any(
+                "is not declared by autoplay strategy assignments" in error.message
+                for error in diagnostics.errors
+            ),
+            [str(error) for error in diagnostics.errors],
+        )
 
 
 class EventListsSchemaCrossReferenceTests(unittest.TestCase):

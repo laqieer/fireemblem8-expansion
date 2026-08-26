@@ -1,13 +1,18 @@
 """Semantic schema/generator coverage for issue #90 autoplay strategies."""
 
 import copy
+import json
 import os
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from scripts.generated_data.autoplaystrategies import generate, schema
 from scripts.generated_data.chapterbundle import schema as chapterbundle_schema
 from scripts.generated_data.chapterobjectives import schema as objectives_schema
-from scripts.generated_data.diagnostics import DiagnosticCollector
+from scripts.generated_data.diagnostics import DiagnosticCollector, GeneratedDataError
 from scripts.generated_data.tests._util import fixture_path
 from scripts.generated_data.units import schema as units_schema
 
@@ -68,7 +73,13 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
     def test_reference_profiles_generate_c89_with_stable_ids(self):
         records, diagnostics = _validate("valid.json")
         self.assertTrue(diagnostics.ok, diagnostics.render())
-        output = generate.generate_c_source(records, strategy_fixture("valid.json"))
+        output = generate.generate_c_source(
+            schema.AutoplayStrategiesTableSchema().configure_records(
+                records,
+                reference_profiles="1",
+            ),
+            strategy_fixture("valid.json"),
+        )
         self.assertIn("gExpansionAutoplayStrategies", output)
         self.assertIn("gExpansionAutoplayStrategyBundles", output)
         self.assertIn("0x8A98AADD", output)
@@ -108,6 +119,46 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
         self.assertIn("ExpansionAutoplayStrategy_Custom", output)
         self.assertNotIn("ExpansionAutoplayStrategy_Aggressive", output)
 
+    def test_cli_default_omits_reference_profiles(self):
+        build_root = os.path.join(REPO_ROOT, "build")
+        os.makedirs(build_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            temporary_path = Path(temporary)
+            generated = temporary_path / "generated"
+            inventory = temporary_path / "inventory.md"
+            completed = subprocess.run(
+                [
+                    "python3",
+                    "-m",
+                    "scripts.generated_data",
+                    "generate",
+                    "--table",
+                    "autoplaystrategies",
+                    "--source",
+                    strategy_fixture("valid.json"),
+                    "--dep-source",
+                    "chapterobjectives={}".format(
+                        fixture_path("chapterobjectives", "strategy_valid.json")
+                    ),
+                    "--dep-source",
+                    "chapterbundle={}".format(
+                        fixture_path("chapterobjectives", "strategy_bundle.json")
+                    ),
+                    "--out-dir",
+                    str(generated),
+                    "--inventory",
+                    str(inventory),
+                    "--no-roundtrip",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            output = (generated / "data_autoplay_strategies.c").read_text(encoding="utf-8")
+        self.assertNotIn("ExpansionAutoplayStrategy_Aggressive", output)
+        self.assertIn("ExpansionAutoplayStrategy_TentativeFallback", output)
+
     def test_authored_strategy_bundle_requires_its_chapter_owner_declaration(self):
         records = schema.load_records(strategy_fixture("valid.json"))
         dependencies = _dependency_records(records)
@@ -138,6 +189,89 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
             diagnostics.render(),
         )
 
+    def test_directory_source_tracks_member_origins_and_owner_boundaries(self):
+        build_root = os.path.join(REPO_ROOT, "build")
+        os.makedirs(build_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            source_dir = Path(temporary)
+            primary = source_dir / "a_strategies.json"
+            secondary = source_dir / "b_strategies.json"
+            primary.write_bytes(Path(strategy_fixture("valid.json")).read_bytes())
+            secondary.write_text(
+                json.dumps({
+                    "$schema": "fe8.autoplaystrategies.v1",
+                    "strategies": [],
+                    "chapters": [],
+                }),
+                encoding="utf-8",
+            )
+
+            records = schema.load_records(str(source_dir))
+            self.assertEqual(
+                records["source_paths"],
+                (os.path.realpath(primary), os.path.realpath(secondary)),
+            )
+            self.assertEqual(records["chapters"][0].source_path, os.path.realpath(primary))
+
+            dependencies = _dependency_records(records)
+            owner = dependencies["chapterbundle"].by_chapter["CHAPTER_L_2"][0]
+            owner.autoplay_strategies.source = str(source_dir)
+            diagnostics = DiagnosticCollector()
+            schema.validate(records, diagnostics, dependencies)
+            self.assertTrue(diagnostics.ok, diagnostics.render())
+
+            owner.autoplay_strategies.source = str(secondary)
+            diagnostics = DiagnosticCollector()
+            schema.validate(records, diagnostics, dependencies)
+            self.assertTrue(
+                any(
+                    error.reference_path == "autoplayStrategies.source"
+                    and "does not match the loaded strategy source" in error.message
+                    for error in diagnostics.errors
+                ),
+                diagnostics.render(),
+            )
+
+            empty_dir = source_dir / "empty"
+            empty_dir.mkdir()
+            with self.assertRaisesRegex(
+                GeneratedDataError,
+                r"has no \*_strategies.json sources",
+            ):
+                schema.load_records(str(empty_dir))
+
+    def test_unit_assignment_must_resolve_once_in_owning_chapter_data(self):
+        records = schema.load_records(strategy_fixture("valid.json"))
+        dependencies = _dependency_records(records)
+        assignment = records["chapters"][0].unit_assignments[0]
+        assignment.character = "CHARACTER_EPHRAIM"
+        diagnostics = DiagnosticCollector()
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(
+            any(
+                "assignment character 'CHARACTER_EPHRAIM' resolves to 0" in error.message
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
+        records = schema.load_records(strategy_fixture("valid.json"))
+        dependencies = _dependency_records(records)
+        owner = dependencies["chapterbundle"].by_chapter["CHAPTER_L_2"][0]
+        owner.tables_by_name["units"].source = fixture_path(
+            "chapterobjectives",
+            "deps_units_duplicate_eirika.json",
+        )
+        diagnostics = DiagnosticCollector()
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(
+            any(
+                "assignment character 'CHARACTER_EIRIKA' resolves to 2" in error.message
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+
     def test_selected_strategy_must_support_every_owned_objective_kind(self):
         records = schema.load_records(strategy_fixture("valid.json"))
         dependencies = _dependency_records(records)
@@ -153,6 +287,28 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
             ),
             diagnostics.render(),
         )
+
+    def test_reserved_zero_hash_rejects_before_registry_generation(self):
+        records = schema.load_records(strategy_fixture("valid.json"))
+        diagnostics = DiagnosticCollector()
+        with mock.patch.object(schema, "stable_id_value", return_value=0):
+            schema.validate(records, diagnostics, _dependency_records(records))
+        self.assertTrue(
+            any(
+                "reserved runtime sentinel 0" in error.message
+                for error in diagnostics.errors
+            ),
+            diagnostics.render(),
+        )
+        with mock.patch.object(generate, "stable_id_value", return_value=0):
+            with self.assertRaisesRegex(ValueError, "reserved runtime sentinel 0"):
+                generate.generate_c_source(
+                    schema.AutoplayStrategiesTableSchema().configure_records(
+                        records,
+                        reference_profiles="1",
+                    ),
+                    strategy_fixture("valid.json"),
+                )
 
     def test_multi_chapter_strategy_owners_resolve_by_chapter_index(self):
         records = schema.load_records(strategy_fixture("valid.json"))

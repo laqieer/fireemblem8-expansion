@@ -1919,7 +1919,8 @@ expansion-modern-localization-profile-en-ja-zh-hans-qps:
 		EXPANSION_PSEUDO_LOCALE=1
 
 expansion-modern-localization-profile-en-fr-de-es-it:
-	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+	+$(MAKE) expansion-modern-rom expansion-modern-game-localization-config-check \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_ROM_SIZE=32M MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_EN_EU_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,fr,de,es,it
 
@@ -3505,22 +3506,39 @@ MODERN_AUTOPLAY_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/autoplay-runtime-check
 MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT := build/expansion-modern-autoplay-strategy
 MODERN_AUTOPLAY_STRATEGY_PROFILE_GENERATED_DIR := \
 	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/generated-data
+MODERN_AUTOPLAY_STRATEGY_PROFILE_OBJECTIVES_INVENTORY := \
+	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/generated_data_chapterobjectives_inventory.md
+MODERN_AUTOPLAY_STRATEGY_PROFILE_STRATEGIES_INVENTORY := \
+	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/generated_data_autoplaystrategies_inventory.md
 MODERN_AUTOPLAY_STRATEGY_PROFILE_ROM := \
 	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
 MODERN_AUTOPLAY_STRATEGY_PROFILE_ELF := \
 	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT := \
+	build/expansion-modern-autoplay-strategy-disabled
+MODERN_AUTOPLAY_STRATEGY_DISABLED_GENERATED_DIR := \
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/generated-data
+MODERN_AUTOPLAY_STRATEGY_DISABLED_OBJECTIVES_INVENTORY := \
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/generated_data_chapterobjectives_inventory.md
+MODERN_AUTOPLAY_STRATEGY_DISABLED_STRATEGIES_INVENTORY := \
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/generated_data_autoplaystrategies_inventory.md
+MODERN_AUTOPLAY_STRATEGY_DISABLED_ROM := \
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_AUTOPLAY_STRATEGY_DISABLED_ELF := \
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
 MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR := \
 	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/runtime-check
 MODERN_AUTOPLAY_STRATEGY_RUNTIME_SCRIPT := \
 	tools/gba-playtest/run_autoplay_strategy_checks.py
 MODERN_AUTOPLAY_STRATEGY_OBJECTIVES_SOURCE := \
-	scripts/generated_data/tests/fixtures/chapterobjectives/strategy_valid.json
+	scripts/generated_data/tests/fixtures/chapterobjectives/strategy_runtime_valid.json
 MODERN_AUTOPLAY_STRATEGY_SOURCE := \
-	scripts/generated_data/tests/fixtures/autoplaystrategies/valid.json
+	scripts/generated_data/tests/fixtures/autoplaystrategies/runtime_valid.json
 MODERN_AUTOPLAY_STRATEGY_BUNDLE_SOURCE := \
-	scripts/generated_data/tests/fixtures/chapterobjectives/strategy_bundle.json
+	scripts/generated_data/tests/fixtures/chapterobjectives/strategy_runtime_bundle.json
 
 CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)
+CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)
 
 expansion-modern-autoplay-check: expansion-modern-boot-preflight expansion-modern-rom
 	@mkdir -p "$(MODERN_AUTOPLAY_RUNTIME_OUTDIR)/tmp"
@@ -3539,25 +3557,41 @@ expansion-modern-autoplay-strategy-profile-rom:
 		GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_PROFILE_GENERATED_DIR) \
 		GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_OBJECTIVES_SOURCE) \
 		GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_BUNDLE_SOURCE) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_PROFILE_OBJECTIVES_INVENTORY) \
 		GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_SOURCE) \
 		GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_OBJECTIVES_SOURCE) \
 		GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_BUNDLE_SOURCE) \
-		EXPANSION_AUTOPLAY_STRATEGIES=1
+		GENERATED_DATA_AUTOPLAYSTRATEGIES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_PROFILE_STRATEGIES_INVENTORY) \
+		EXPANSION_AUTOPLAY_STRATEGIES=1 \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_AUTOPLAY_STRATEGY_RUNTIME_TEST=1
+
+expansion-modern-autoplay-strategy-disabled-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT) \
+		GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_GENERATED_DIR) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_OBJECTIVES_INVENTORY) \
+		GENERATED_DATA_AUTOPLAYSTRATEGIES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_STRATEGIES_INVENTORY) \
+		EXPANSION_AUTOPLAY_STRATEGIES=0 \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_AUTOPLAY_STRATEGY_RUNTIME_TEST=1
 
 ifeq ($(MODERN_CONFIG),debug)
 expansion-modern-autoplay-strategy-runtime-check: expansion-modern-boot-preflight \
-		expansion-modern-rom expansion-modern-autoplay-strategy-profile-rom
+		expansion-modern-autoplay-strategy-profile-rom \
+		expansion-modern-autoplay-strategy-disabled-profile-rom
 	@mkdir -p "$(MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR)/tmp"
 	TMPDIR="$(abspath $(MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR)/tmp)" \
 		"$(PYTHON)" "$(MODERN_AUTOPLAY_STRATEGY_RUNTIME_SCRIPT)" \
 		--enabled-rom "$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROM)" \
 		--enabled-elf "$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ELF)" \
-		--disabled-rom "$(MODERN_ROM)" \
-		--disabled-elf "$(MODERN_ELF)" \
+		--disabled-rom "$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROM)" \
+		--disabled-elf "$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ELF)" \
 		--nm "$(MODERN_NM)" \
 		--out-dir "$(MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR)"
 else
-expansion-modern-autoplay-strategy-runtime-check:
+expansion-modern-autoplay-strategy-runtime-check: \
+		expansion-modern-autoplay-strategy-profile-rom \
+		expansion-modern-autoplay-strategy-disabled-profile-rom
 	@printf 'Modern autoplay strategy runtime check skipped: CpDecide activation is debug-calibrated for config=%s\n' \
 		'$(MODERN_CONFIG)'
 endif
@@ -4195,7 +4229,10 @@ else
 endif
 
 # 5. Production European profile: fresh preferences show all five rows and
-#    a real DOWN+A selection persists French (stable locale id 3).
+#    a real DOWN+A selection persists French (stable locale id 3). A second
+#    deterministic route starts from explicit English preferences, opens the
+#    virtual More row, selects Italian, closes the submenu, and proves the
+#    parent Configuration screen redrew with the persisted locale.
 MODERN_LOCALE_EU_ROM := \
 	$(MODERN_LOCALE_PROFILE_EN_EU_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
 MODERN_LOCALE_EU_ELF := \
@@ -4203,13 +4240,19 @@ MODERN_LOCALE_EU_ELF := \
 
 expansion-modern-localization-runtime-eu-check: expansion-modern-boot-preflight \
 		expansion-modern-localization-profile-en-fr-de-es-it \
-		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav
+		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav \
+		$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav
 ifeq ($(MODERN_CONFIG),debug)
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_EU_ROM)" \
 		--elf "$(MODERN_LOCALE_EU_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-eu-first-start-fr-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-eu-first-start-fr-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_EU_ROM)" \
+		--elf "$(MODERN_LOCALE_EU_ELF)" \
+		--scenario "$(MODERN_LOCALE_SCEN)/locale-settings-more-eu-modern-debug.json" \
+		--expected "$(MODERN_LOCALE_FP)/locale-settings-more-eu-modern-debug.json" \
+		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav" --policy behavior
 	@printf 'Modern ROM localization-runtime EU check passed: %s\n' "$(MODERN_LOCALE_EU_ROM)"
 else
 	@printf 'Modern ROM localization-runtime EU check skipped for config=%s (debug fingerprint only)\n' '$(MODERN_CONFIG)'
@@ -4402,6 +4445,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-autoplay-check \
 		expansion-modern-autoplay-bounds-check \
 		expansion-modern-chapter-objectives-check \
+		expansion-modern-autoplay-strategy-runtime-check \
 		$(MODERN_LINKER_CHECK_ACCELERATED_FIDELITY) \
 		expansion-modern-blue-phase-delegate-check \
 		expansion-modern-starter-runtime-check \

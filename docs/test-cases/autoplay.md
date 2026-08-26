@@ -349,21 +349,25 @@ policy, player-facing text, or a general expression language.
 3. Run
    `python3 -m unittest tools.gba-playtest.tests.test_autoplay_strategies.AutoplayStrategiesRuntimeTests.test_arm_profiles_are_ewram_free_and_gate_reference_callbacks -v`
    to parse the ARM symbol set for both enabled and disabled profiles.
+4. Run
+   `make expansion-modern-autoplay-strategy-runtime-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
 
 ### Expected result
 
-Aggressive chooses the immediate legal combat decision. Objective-first chooses
-the deterministic nearest in-rectangle movement decision. A unit assignment
-overrides the group and chapter assignments, a group overrides chapter, and
-the profiles repeat the same action trace without an RNG draw. The typed event
-helper accepts only its declared activation flag and defers active-blue-phase
-changes. Unknown IDs, duplicate/missing callbacks, invalid capability bits,
-capacity overflow, and Objective-first with an unsupported objective kind
-fail explicitly before an action commits.
+Aggressive chooses the immediate legal combat decision. Objective-first accepts
+a deterministic reachable movement decision only when its generated range
+strictly decreases; no progress waits, and a completed objective returns to
+Aggressive/current AI. A unit assignment overrides the group and chapter
+assignments, a group overrides chapter, and the profiles repeat the same action
+trace without an RNG draw. The typed event helper accepts only its declared
+activation flag and defers active-blue-phase changes. Unknown IDs,
+duplicate/missing callbacks, invalid capability bits, capacity overflow, and
+Objective-first with an unsupported objective kind fail explicitly before an
+action commits.
 
 ### Negative control
 
-With profiles disabled and the default empty assignment source,
+With profiles disabled and the reference descriptors/assignments omitted,
 `ExpansionAutoplayStrategies_TryDecide()` returns fallback and creates no
 action; the original `Unit.ai[]` decision path remains authoritative. The
 ARM selector confirms reference callback symbols are absent from the disabled
@@ -387,6 +391,9 @@ reconstructs assignment selection without hidden runtime storage.
 - `test_autoplay_strategies` executes the real callback/dispatch API for
   chapter/group/unit precedence, event-boundary, unsupported-profile, disabled
   fallback, and ARM ROM/RAM assertions.
+- `expansion-modern-autoplay-strategy-runtime-check` executes repeated enabled
+  and disabled bounded `CpDecide_Main` profiles, asserting strategy/objective
+  selection, action telemetry, and the disabled fallback.
 
 ## TC-AUTOPLAY-BATCH-001: Deterministic finite autoplay batch report
 
@@ -440,6 +447,7 @@ Use
 `make clean_fast` for other build outputs. Three seeds prove report
 determinism, complete per-run visibility, and comparison structure only; they
 do not establish statistical power, difficulty, campaign quality, or balance.
+
 ## TC-AUTOPLAY-ACCEL-001: Accelerated-fidelity equivalence
 
 - **Feature / originating issue:** `accelerated-fidelity-harness` /

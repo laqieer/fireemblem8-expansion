@@ -1,11 +1,13 @@
 #include "global.h"
 
 #include "bm.h"
+#include "bmmap.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "cp_script.h"
 #include "cp_utility.h"
 #include "eventinfo.h"
+#include "event.h"
 
 #include "expansion_autoplay.h"
 #include "expansion_autoplay_internal.h"
@@ -35,6 +37,11 @@ static u8 GetRegistryCount(void)
             return count;
 
     return EXPANSION_AUTOPLAY_STRATEGY_CAPACITY + 1;
+}
+
+bool ExpansionAutoplayStrategies_HasStrategies(void)
+{
+    return GetRegistryCount() != 0;
 }
 
 static const struct ExpansionAutoplayStrategy* FindStrategy(u32 id)
@@ -138,6 +145,30 @@ static enum ExpansionAutoplayStrategyResult ValidateStrategyForObjective(
         return EXPANSION_AUTOPLAY_STRATEGY_ERR_UNSUPPORTED_OBJECTIVE;
 
     return EXPANSION_AUTOPLAY_STRATEGY_OK;
+}
+
+static bool IsDecisionSupported(const struct ExpansionAutoplayStrategy* strategy)
+{
+    u32 capability;
+
+    if (!gAiDecision.actionPerformed)
+        return true;
+
+    switch (gAiDecision.actionId)
+    {
+    case AI_ACTION_COMBAT:
+        capability = EXPANSION_AUTOPLAY_STRATEGY_ACTION_COMBAT;
+        break;
+
+    case AI_ACTION_NONE:
+        capability = EXPANSION_AUTOPLAY_STRATEGY_ACTION_OBJECTIVE_MOVE;
+        break;
+
+    default:
+        return false;
+    }
+
+    return (strategy->actionCapabilities & capability) != 0;
 }
 
 enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ValidateObjectiveSupport(
@@ -253,8 +284,37 @@ enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_TryDecide(void)
 
     context.objective = objective;
     if (strategy->callback(&context))
-        return EXPANSION_AUTOPLAY_STRATEGY_OK;
+    {
+        if (!IsDecisionSupported(strategy))
+        {
+            AiClearDecision();
+            return EXPANSION_AUTOPLAY_STRATEGY_ERR_UNSUPPORTED_CAPABILITY;
+        }
 
+#if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
+        if (strategy->id == EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID)
+        {
+            gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstCount++;
+            gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstObjectiveId =
+                objective != NULL ? objective->id : 0;
+            gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstActionId =
+                gAiDecision.actionId;
+            gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstX = gAiDecision.xMove;
+            gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstY = gAiDecision.yMove;
+        }
+        else if (strategy->id == EXPANSION_AUTOPLAY_STRATEGY_AGGRESSIVE_ID)
+        {
+            gExpansionAutoplayStrategyRuntimeProbe.aggressiveCount++;
+            gExpansionAutoplayStrategyRuntimeProbe.aggressiveActionId =
+                gAiDecision.actionId;
+        }
+
+        gExpansionAutoplayStrategyRuntimeProbe.magic = 0x53545254;
+#endif
+        return EXPANSION_AUTOPLAY_STRATEGY_OK;
+    }
+
+    AiClearDecision();
     return EXPANSION_AUTOPLAY_STRATEGY_FALLBACK;
 }
 
@@ -313,6 +373,15 @@ enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ActivateAssignm
     return EXPANSION_AUTOPLAY_STRATEGY_ERR_INVALID_EVENT_ASSIGNMENT;
 }
 
+void ExpansionAutoplayStrategies_EventActivate(struct EventEngineProc* proc)
+{
+    (void)proc;
+    ExpansionAutoplayStrategies_ActivateAssignment(
+        gEventSlots[EVT_SLOT_B],
+        (u16)gEventSlots[EVT_SLOT_C]
+    );
+}
+
 #if FE8_EXPANSION_AUTOPLAY_STRATEGIES
 bool ExpansionAutoplayStrategy_Aggressive(const struct ExpansionAutoplayStrategyContext* context)
 {
@@ -325,11 +394,19 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
     const struct ExpansionAutoplayStrategyContext* context)
 {
     const struct ExpansionChapterObjective* objective = context->objective;
+    enum ExpansionChapterObjectiveState state;
+    u32 progress;
     int xTarget;
     int yTarget;
 
-    if (objective != NULL
-        && (objective->kind == EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA
+    if (objective == NULL)
+        return ExpansionAutoplayStrategy_Aggressive(context);
+
+    state = ExpansionChapterObjectives_GetStatus(objective->id, &progress);
+    if (state != EXPANSION_CHAPTER_OBJECTIVE_PENDING)
+        return ExpansionAutoplayStrategy_Aggressive(context);
+
+    if ((objective->kind == EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA
             || objective->kind == EXPANSION_CHAPTER_OBJECTIVE_HOLD_UNTIL_TURN)
         && ExpansionChapterObjectives_GroupContains(
             objective->group->id, gActiveUnit->pCharacterData->number))
@@ -349,32 +426,50 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
 
         if (xTarget != gActiveUnit->xPos || yTarget != gActiveUnit->yPos)
         {
-            AiTryMoveTowards(xTarget, yTarget, 0, 0, 1);
-            if (gAiDecision.actionPerformed
-                && gAiDecision.xMove >= objective->xMin
-                && gAiDecision.xMove <= objective->xMax
-                && gAiDecision.yMove >= objective->yMin
-                && gAiDecision.yMove <= objective->yMax)
-                return true;
-        }
+            u8 currentRange;
+            u8 decisionRange;
 
-        if (objective->kind == EXPANSION_CHAPTER_OBJECTIVE_HOLD_UNTIL_TURN)
-        {
-            AiAttemptCombatWithinMovement(AiIsUnitEnemy);
-            if (gAiDecision.actionPerformed
-                && gAiDecision.xMove >= objective->xMin
-                && gAiDecision.xMove <= objective->xMax
-                && gAiDecision.yMove >= objective->yMin
-                && gAiDecision.yMove <= objective->yMax)
+            AiTryMoveTowards(xTarget, yTarget, 0, 0, 1);
+            if (!gAiDecision.actionPerformed)
+                return true;
+
+            if (gAiDecision.xMove < 0 || gAiDecision.xMove >= gBmMapSize.x
+                || gAiDecision.yMove < 0 || gAiDecision.yMove >= gBmMapSize.y)
             {
+                gAiDecision.actionPerformed = false;
                 return true;
             }
+
+            currentRange = gBmMapRange[gActiveUnit->yPos][gActiveUnit->xPos];
+            decisionRange = gBmMapRange[gAiDecision.yMove][gAiDecision.xMove];
+            if (gAiDecision.actionPerformed
+                && currentRange < MAP_MOVEMENT_MAX
+                && decisionRange < currentRange)
+                return true;
 
             gAiDecision.actionPerformed = false;
             return true;
         }
+
+        AiAttemptCombatWithinMovement(AiIsUnitEnemy);
+        if (gAiDecision.actionPerformed
+            && gAiDecision.xMove >= objective->xMin
+            && gAiDecision.xMove <= objective->xMax
+            && gAiDecision.yMove >= objective->yMin
+            && gAiDecision.yMove <= objective->yMax)
+        {
+            return true;
+        }
+
+        gAiDecision.actionPerformed = false;
+        return true;
     }
 
     return ExpansionAutoplayStrategy_Aggressive(context);
 }
+#endif
+
+#if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
+struct ExpansionAutoplayStrategyRuntimeProbe EWRAM_DATA
+    gExpansionAutoplayStrategyRuntimeProbe = { 0 };
 #endif

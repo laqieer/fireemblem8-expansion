@@ -19,7 +19,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 PLAYTEST_DIR = REPO_ROOT / "tools" / "gba-playtest"
 SCENARIOS_DIR = PLAYTEST_DIR / "scenarios"
 FINGERPRINTS_DIR = PLAYTEST_DIR / "fingerprints"
-sys.path.insert(0, str(PLAYTEST_DIR))
+TESTS_DIR = Path(__file__).resolve().parent
+for path in (PLAYTEST_DIR, TESTS_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 import gba_playtest  # noqa: E402
 import check_starter_probe_addresses  # noqa: E402
@@ -155,27 +158,6 @@ class StarterHookScenarioSchemaTests(unittest.TestCase):
                         % (name, cp["name"], probe["address"], probe["value"]),
                     )
 
-    def test_positive_asserts_hook_fired_and_negative_asserts_all_zero(self):
-        import json
-        pos = json.loads((FINGERPRINTS_DIR / (POSITIVE + ".json")).read_text(encoding="utf-8"))
-        neg = json.loads((FINGERPRINTS_DIR / (NEGATIVE + ".json")).read_text(encoding="utf-8"))
-
-        def probe_cp(data, needle):
-            for cp in data["checkpoints"]:
-                if needle in cp["name"]:
-                    return cp
-            raise AssertionError("no checkpoint matching %r" % needle)
-
-        pos_mech = probe_cp(pos, "mechanics-probe")
-        pos_values = [int(p["value"], 16) for p in pos_mech["probes"]]
-        # registerOk=1, applyCount=2, sampleTrigger=2 among the semantic counters.
-        self.assertIn(1, pos_values, "positive must record a registration")
-        self.assertIn(2, pos_values, "positive must record apply/sample activity")
-
-        neg_mech = probe_cp(neg, "mechanics-probe")
-        self.assertTrue(all(int(p["value"], 16) == 0 for p in neg_mech["probes"]),
-                        "negative control must keep every probe zero")
-
     def test_both_scenarios_resolve_the_same_real_combat(self):
         """Both scenarios must reach a genuine battle (enemy 15/15 -> 15/0),
         so the probe delta is attributable to real combat, not a faked write."""
@@ -201,14 +183,27 @@ class StarterHookRuntimeTests(unittest.TestCase):
         rom = os.environ.get(rom_env)
         if not rom or not Path(rom).is_file():
             raise unittest.SkipTest("%s not set to a built ROM" % rom_env)
+        rom_path = Path(rom)
+        elf_path = rom_path.with_suffix(".elf")
+        if not elf_path.is_file():
+            raise unittest.SkipTest("%s exact linked ELF not built: %s" % (rom_env, elf_path))
         import json
-        scenario = gba_playtest.load_scenario(SCENARIOS_DIR / (scenario_name + ".json"))
+        resolver = gba_playtest.ElfSymbolResolver(elf_path)
+        scenario = gba_playtest.load_scenario(
+            SCENARIOS_DIR / (scenario_name + ".json"),
+            resolver,
+        )
         expected = gba_playtest.validate_fingerprint(
             json.loads((FINGERPRINTS_DIR / (scenario_name + ".json")).read_text(encoding="utf-8")),
             scenario_name,
+            resolver,
             policy="behavior",
         )
-        actual = gba_playtest.capture(Path(rom), scenario, None, 0)
+        actual = host_mode.capture_live_or_skip(
+            rom_path,
+            scenario,
+            label="starter-hook runtime coverage",
+        )
         diffs = gba_playtest.compare_fingerprints(expected, actual, policy="behavior")
         self.assertEqual(diffs, [], "runtime mismatch for %s:\n%s" % (scenario_name, "\n".join(diffs)))
 

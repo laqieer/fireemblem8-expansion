@@ -89,6 +89,15 @@ class ActiveContractModelTests(unittest.TestCase):
         self.assertEqual(expanded_rows['items']['committed_record_count'], 206)
         self.assertEqual(expanded_rows['items']['active_record_count'], 207)
         self.assertTrue(expanded_rows['items']['differs_from_committed'])
+        self.assertEqual(
+            default_rows["autoplaystrategies"]["committed_record_count"],
+            2,
+        )
+        self.assertEqual(
+            default_rows["autoplaystrategies"]["active_record_count"],
+            2,
+        )
+        self.assertFalse(default_rows["autoplaystrategies"]["differs_from_committed"])
         for table, row in expanded_rows.items():
             if table != 'items':
                 self.assertFalse(row['differs_from_committed'], table)

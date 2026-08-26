@@ -18,35 +18,22 @@
       "callback": "ExpansionAutoplayStrategy_ObjectiveFirst",
       "objectiveKinds": ["reach_area", "hold_until_turn"],
       "actionKinds": ["combat", "objective_move"]
-    },
-    {
-      "id": "AUTOPLAY_STRATEGY_TENTATIVE_FALLBACK",
-      "callback": "ExpansionAutoplayStrategy_TentativeFallback",
-      "objectiveKinds": ["reach_area", "hold_until_turn"],
-      "actionKinds": ["combat"]
     }
   ],
   "chapters": [
     {
       "chapter": "CHAPTER_L_2",
-      "symbol": "AutoplayStrategies_Fixture",
+      "symbol": "AutoplayStrategies_Runtime",
       "chapterAssignment": {
         "strategy": "AUTOPLAY_STRATEGY_AGGRESSIVE"
       },
       "groupAssignments": [
         {
-          "group": "AI_GROUP_FIXTURE_EIRIKA",
-          "strategy": "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST",
-          "activationFlag": "EVFLAG_HIDE_BLINKING_ICON"
+          "group": "AI_GROUP_STRATEGY_RUNTIME_EIRIKA",
+          "strategy": "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST"
         }
       ],
-      "unitAssignments": [
-        {
-          "character": "CHARACTER_EIRIKA",
-          "strategy": "AUTOPLAY_STRATEGY_TENTATIVE_FALLBACK",
-          "activationFlag": "EVFLAG_BATTLE_QUOTES"
-        }
-      ]
+      "unitAssignments": []
     }
   ]
 }

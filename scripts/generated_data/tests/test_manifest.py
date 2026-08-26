@@ -24,7 +24,9 @@ class CollectEntriesTests(unittest.TestCase):
         by_name = {e.name: e for e in entries}
         for name in REGISTRY.all_names():
             schema = REGISTRY.resolve(name)
-            expected = len(schema.load_records(schema.default_source))
+            expected = schema.manifest_record_count(
+                schema.load_records(schema.default_source)
+            )
             self.assertEqual(by_name[name].record_count, expected,
                              "record count mismatch for {}".format(name))
 

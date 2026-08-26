@@ -17,6 +17,21 @@ import gba_playtest  # noqa: E402
 import run_autoplay_bounds_checks as bounds  # noqa: E402
 from probe_bindings import ElfSymbolResolver  # noqa: E402
 
+STRATEGY_PROBE_SYMBOL = "gExpansionAutoplayStrategyRuntimeProbe"
+STRATEGY_PROBE_MAGIC = 0x53545254
+STRATEGY_PROBE_BINDINGS = (
+    STRATEGY_PROBE_SYMBOL,
+    STRATEGY_PROBE_SYMBOL + "+0x04",
+    STRATEGY_PROBE_SYMBOL + "+0x08",
+    STRATEGY_PROBE_SYMBOL + "+0x0c",
+    STRATEGY_PROBE_SYMBOL + "+0x10",
+    STRATEGY_PROBE_SYMBOL + "+0x14",
+    STRATEGY_PROBE_SYMBOL + "+0x18",
+    STRATEGY_PROBE_SYMBOL + "+0x1c",
+)
+OBJECTIVE_FIRST_ID = 0x7F2C07B5
+OBJECTIVE_RUNTIME_ID = 0x5AFE4FD3
+
 
 class CheckError(RuntimeError):
     pass
@@ -28,6 +43,9 @@ def _scenario(name):
     data["description"] = (
         "TC-AUTOPLAY-STRATEGY-001: fixed-seed bounded CpDecide_Main execution "
         "captures the terminal action/telemetry trace for one strategy profile."
+    )
+    data["run_until"]["checkpoint"]["probes"].extend(
+        [{"address": binding, "size": 4} for binding in STRATEGY_PROBE_BINDINGS]
     )
     return data
 
@@ -50,10 +68,31 @@ def _symbols(nm, elf):
 
 
 def _check_profile(capture, label):
-    failures = bounds._check_positive(capture)
+    values = {
+        probe["address"]: int(probe["value"], 16)
+        for probe in capture["checkpoints"][0]["probes"]
+    }
+    failures = []
     if capture["terminal"]["reason"] != "success":
         failures.append("{}: terminal was not bounded semantic success".format(label))
+    if values["gExpansionAutoplayTelemetry"] != 1:
+        failures.append("{}: controller did not remain COMPUTER".format(label))
+    if values["gExpansionAutoplayTelemetry+0x08"] != 0:
+        failures.append("{}: strategy action reported failure telemetry".format(label))
+    if values["gExpansionAutoplayTelemetry+0x18"] < 1:
+        failures.append("{}: no committed action was observed".format(label))
     return failures
+
+
+def _probe_values(capture):
+    values = {
+        probe["address"]: int(probe["value"], 16)
+        for probe in capture["checkpoints"][0]["probes"]
+    }
+    return {
+        binding: values[binding]
+        for binding in STRATEGY_PROBE_BINDINGS
+    }
 
 
 def main(argv=None):
@@ -109,24 +148,37 @@ def main(argv=None):
                 policy="behavior",
             )
         )
+        enabled = _probe_values(captures["enabled-first"])
+        disabled = _probe_values(captures["disabled-fallback"])
+        expected_enabled = {
+            STRATEGY_PROBE_BINDINGS[0]: STRATEGY_PROBE_MAGIC,
+            STRATEGY_PROBE_BINDINGS[1]: 1,
+            STRATEGY_PROBE_BINDINGS[2]: OBJECTIVE_RUNTIME_ID,
+            STRATEGY_PROBE_BINDINGS[3]: 0,
+            STRATEGY_PROBE_BINDINGS[4]: 3,
+            STRATEGY_PROBE_BINDINGS[5]: 3,
+            STRATEGY_PROBE_BINDINGS[6]: 1,
+            STRATEGY_PROBE_BINDINGS[7]: 1,
+        }
+        for binding, expected in expected_enabled.items():
+            if enabled[binding] != expected:
+                failures.append(
+                    "enabled strategy probe {}={}, expected {}".format(
+                        binding, enabled[binding], expected
+                    )
+                )
+        if any(disabled[binding] != 0 for binding in STRATEGY_PROBE_BINDINGS):
+            failures.append("disabled fallback unexpectedly selected a strategy")
         if failures:
             raise CheckError("\n".join(failures))
 
-        enabled = captures["enabled-first"]["checkpoints"][0]
-        disabled = captures["disabled-fallback"]["checkpoints"][0]
         print(
-            "Autoplay strategy CpDecide checks passed: enabled actions={} "
-            "disabled-fallback actions={}".format(
-                next(
-                    probe["value"]
-                    for probe in enabled["probes"]
-                    if probe["address"].endswith("+0x18")
-                ),
-                next(
-                    probe["value"]
-                    for probe in disabled["probes"]
-                    if probe["address"].endswith("+0x18")
-                ),
+            "Autoplay strategy CpDecide checks passed: Objective-first={} "
+            "move=({}, {}) Aggressive={}".format(
+                enabled[STRATEGY_PROBE_BINDINGS[1]],
+                enabled[STRATEGY_PROBE_BINDINGS[4]],
+                enabled[STRATEGY_PROBE_BINDINGS[5]],
+                enabled[STRATEGY_PROBE_BINDINGS[6]],
             )
         )
         return 0

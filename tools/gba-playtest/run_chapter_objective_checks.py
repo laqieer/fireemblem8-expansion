@@ -80,8 +80,6 @@ def fixture_scenario_data() -> dict:
     )
     for checkpoint in scenario["checkpoints"]:
         if checkpoint["name"] in ("suspend-confirmed", "resumed-chapter2"):
-            for probe in checkpoint["probes"]:
-                probe.pop("expected", None)
             checkpoint["probes"].extend(
                 [
                     {"address": OBJECTIVE_TELEMETRY_SYMBOL, "size": 4},
@@ -135,6 +133,9 @@ def _check_fixture(capture: dict) -> list[str]:
     failures = []
     suspended = _checkpoint_values(capture, "suspend-confirmed")
     resumed = _checkpoint_values(capture, "resumed-chapter2")
+    inherited = json.loads(
+        (SCENARIOS_DIR / "savesuspend-resume-modern-debug.json").read_text(encoding="utf-8")
+    )
     objective_bindings = (
         OBJECTIVE_TELEMETRY_SYMBOL,
         OBJECTIVE_TELEMETRY_SYMBOL + "+0x04",
@@ -158,6 +159,22 @@ def _check_fixture(capture: dict) -> list[str]:
         OBJECTIVE_RUNTIME_PROBE_BINDINGS[13]: 3,
         OBJECTIVE_RUNTIME_PROBE_BINDINGS[14]: 1,
     }
+
+    for checkpoint in inherited["checkpoints"]:
+        if checkpoint["name"] not in ("suspend-confirmed", "resumed-chapter2"):
+            continue
+        values = suspended if checkpoint["name"] == "suspend-confirmed" else resumed
+        for probe in checkpoint["probes"]:
+            if "expected" not in probe:
+                continue
+            expected = int(probe["expected"], 16)
+            actual = values.get(probe["address"])
+            if actual != expected:
+                failures.append(
+                    "fixture {}: {}={}, expected {}".format(
+                        checkpoint["name"], probe["address"], actual, expected
+                    )
+                )
 
     for address, expected in (
         ("0x020210b2", 2),
