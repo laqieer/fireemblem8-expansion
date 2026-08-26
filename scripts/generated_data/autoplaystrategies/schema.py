@@ -238,6 +238,14 @@ def _error(message, loc, ref):
 
 def selected_records(records):
     """Return the exact descriptors and assignment views emitted for this profile."""
+    if (
+        not isinstance(records, dict)
+        or not isinstance(records.get("strategies"), list)
+        or not isinstance(records.get("chapters"), list)
+    ):
+        raise GeneratedDataError(
+            "autoplay strategy records must provide 'strategies' and 'chapters' lists"
+        )
     reference_profiles_enabled = records.get("reference_profiles_enabled", False)
     strategies = [
         strategy

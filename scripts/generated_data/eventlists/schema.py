@@ -830,8 +830,7 @@ def _chapter_bundle_records(dependency_records):
     return (bundles,)
 
 
-def _strategy_pairs_for_owner(records, strategy_records, dependency_records, diagnostics):
-    _strategies, chapters = selected_strategy_records(strategy_records)
+def _strategy_pairs_for_owner(records, chapters, dependency_records, diagnostics):
     if not chapters:
         return set()
 
@@ -870,6 +869,32 @@ def _strategy_pairs_for_owner(records, strategy_records, dependency_records, dia
     return strategy_pairs
 
 
+def _selected_strategy_dependency(records, dependency_records, diagnostics):
+    strategy_records = dependency_records.get("autoplaystrategies")
+    if strategy_records is None:
+        diagnostics.add(
+            _err(
+                "missing required autoplaystrategies validation dependency",
+                records.loc,
+                "dependencies.autoplaystrategies",
+            )
+        )
+        return [], []
+    try:
+        return selected_strategy_records(strategy_records)
+    except (GeneratedDataError, AttributeError, KeyError, TypeError) as error:
+        diagnostics.add(
+            _err(
+                "invalid autoplaystrategies validation dependency: {}".format(
+                    error
+                ),
+                records.loc,
+                "dependencies.autoplaystrategies",
+            )
+        )
+        return [], []
+
+
 def validate(records, diagnostics, dependency_records=None, characters_header=CHARACTERS_HEADER):
     """Validate the 7 event lists, the tutorial pointer array, and the
     ``Ch2Events`` manifest, cross-referencing ``dependency_records``
@@ -882,14 +907,15 @@ def validate(records, diagnostics, dependency_records=None, characters_header=CH
     trap_symbols = {r.symbol for r in dependency_records.get("traps", ())}
     eventscripts_by_symbol = {r.symbol: r for r in dependency_records.get("eventscripts", ())}
     helper_scripts_by_symbol = {script.symbol: script for script in records.helper_scripts}
-    strategy_records = dependency_records.get("autoplaystrategies", {})
-    selected_strategies, _selected_chapters = selected_strategy_records(
-        strategy_records
+    selected_strategies, selected_chapters = _selected_strategy_dependency(
+        records,
+        dependency_records,
+        diagnostics,
     )
     strategy_ids = {strategy.id for strategy in selected_strategies}
     strategy_pairs = _strategy_pairs_for_owner(
         records,
-        strategy_records,
+        selected_chapters,
         dependency_records,
         diagnostics,
     )
