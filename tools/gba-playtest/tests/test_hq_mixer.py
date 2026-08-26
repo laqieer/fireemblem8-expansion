@@ -130,18 +130,24 @@ class HqMixerConfigurationTests(unittest.TestCase):
                 self.assertEqual("src/m4a_hq_mixer.s" in source_list, bool(enabled))
 
     def test_listening_roms_are_isolated_and_non_instrumented(self) -> None:
-        result = run(
-            [
-                "make",
-                "-n",
-                "expansion-modern-hq-mixer-listening-roms",
-                "MAKE=:",
-                "MODERN_CONFIG=release",
-                "MODERN_ABI=aapcs",
-            ]
-        )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        text = result.stdout + result.stderr
+        outputs = []
+        for target in (
+            "expansion-modern-hq-mixer-listening-enabled-rom",
+            "expansion-modern-hq-mixer-listening-control-rom",
+        ):
+            result = run(
+                [
+                    "make",
+                    "-n",
+                    target,
+                    "MAKE=:",
+                    "MODERN_CONFIG=release",
+                    "MODERN_ABI=aapcs",
+                ]
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            outputs.append(result.stdout + result.stderr)
+        text = "\n".join(outputs)
         self.assertIn(
             "MODERN_BUILD_ROOT=build/expansion-modern-hq-mixer-listening/enabled",
             text,

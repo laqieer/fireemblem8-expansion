@@ -3452,9 +3452,11 @@ expansion-modern-hq-mixer-listening-control-rom:
 		MODERN_BUILD_ROOT=$(MODERN_HQ_MIXER_LISTENING_CONTROL_ROOT) \
 		EXPANSION_HQ_MIXER=0 MODERN_INTERNAL_TEST_DEFINES=
 
-expansion-modern-hq-mixer-listening-roms: \
-		expansion-modern-hq-mixer-listening-enabled-rom \
-		expansion-modern-hq-mixer-listening-control-rom
+expansion-modern-hq-mixer-listening-roms:
+	+$(MAKE) expansion-modern-hq-mixer-listening-enabled-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI)
+	+$(MAKE) expansion-modern-hq-mixer-listening-control-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI)
 	@printf 'HQ mixer normal-game listening ROMs built (no automation fixture):\n  enabled: %s\n  stock control: %s\n' \
 		'$(MODERN_HQ_MIXER_LISTENING_ENABLED_ROM)' \
 		'$(MODERN_HQ_MIXER_LISTENING_CONTROL_ROM)'
