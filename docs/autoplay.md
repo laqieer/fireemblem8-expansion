@@ -506,16 +506,27 @@ pointer or link address.
 Aggressive calls the existing legal combat selector first, then leaves the
 unchanged low-level AI to pursue or fall back. Objective-first handles only
 the active `reach_area` or `hold_until_turn` group member: it projects the
-unit onto the inclusive rectangle and uses the existing movement selector. A
-pending reach or hold accepts combat only when its resulting decision stays in that
-rectangle; otherwise it waits, never falling through to unconstrained
-Aggressive. The projection is coordinate only (clamp X then Y); combat uses
-existing slot/item/map scans. Neither profile consumes RNG or derives a
-decision from pointer/link addresses, so a fixed seed/configuration repeats
-its trace exactly. Every consumed wait calls `AiClearDecision()`, so rejected
-movement/combat coordinates, action IDs, targets, and item slots remain zero
-in runtime probes and telemetry. Existing low-level fallback behavior retains
-its own established RNG contract.
+unit onto the inclusive rectangle, generates one extended movement map for the
+current unit, and scans every unoccupied path-reachable rectangle tile. Target
+ranking is deterministic: lowest path cost, then shortest Manhattan distance
+from the projection, then lowest Y, then lowest X. Thus the projection wins an
+equal-cost tie only when legal; blocked, occupied, or unreachable projection
+tiles cannot hide another legal target. The chosen target is always inside the
+rectangle, and the existing movement helper must still produce a strict range
+reduction before its intermediate move is consumed. If no legal target or
+strictly progressive move exists, the callback returns one fully cleared
+intentional wait.
+
+A pending reach or hold accepts combat only when its resulting decision stays
+in that rectangle; otherwise it waits, never falling through to unconstrained
+Aggressive. The rectangle scan uses constant stack state, one current-unit
+extended map, and one final selected-target path map; it allocates no candidate
+array and consumes no RNG. Neither profile derives a decision from JSON order,
+pointer/link addresses, or stale prior-unit maps, so a fixed seed/configuration
+repeats its trace exactly. Every consumed wait calls `AiClearDecision()`, so
+rejected movement/combat coordinates, action IDs, targets, and item slots
+remain zero in runtime probes and telemetry. Existing low-level fallback
+behavior retains its own established RNG contract.
 
 `ExpansionAutoplayStrategies_ValidateRegistry()` rejects capacity overflow,
 zero/duplicate IDs, missing callbacks, and undeclared capability bits.
@@ -664,7 +675,7 @@ Every recursive router-absent and profiles-disabled build explicitly forces
 Therefore a persisted `./configure` choice, environment value, or caller
 override cannot contaminate the matched variants.
 The current matched result is +1,560 debug / +1,896 release ROM bytes for the
-profiles-disabled shared router, then another +456 debug / +408 release bytes
+profiles-disabled shared router, then another +856 debug / +680 release bytes
 for the enabled reference descriptors/callbacks.
 
 ### Strategy compatibility and budgets
@@ -687,7 +698,7 @@ for the enabled reference descriptors/callbacks.
   cap. Parsed full-link evidence records the profiles-disabled shared router
   separately from the incremental enabled references using matched
   current-tree technical variants (+1,560/+1,896 debug/release router bytes,
-  then +456/+408 reference bytes).
+  then +856/+680 reference bytes).
 - **Runtime evidence:** the debug strategy profile and default-disabled ROMs
   execute bounded fixed-seed `CpDecide_Main` scenarios twice; their action and
   telemetry captures must repeat exactly.

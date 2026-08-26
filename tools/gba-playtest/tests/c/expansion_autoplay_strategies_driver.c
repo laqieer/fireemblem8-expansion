@@ -41,6 +41,7 @@ u8 gActiveUnitId;
 struct AiDecision gAiDecision;
 u32 gEventSlots[EVENT_SLOT_COUNT];
 struct Vec2 gBmMapSize;
+u8 ** gBmMapUnit;
 u8 ** gBmMapMovement;
 u8 ** gBmMapRange;
 
@@ -52,6 +53,22 @@ static u8 sRangeData[16][16];
 static u8 * sRangeRows[16];
 static u8 sMovementData[16][16];
 static u8 * sMovementRows[16];
+static u8 sUnitData[16][16];
+static u8 * sUnitRows[16];
+static u8 sEirikaAreaCosts[16][16];
+static u8 sSethAreaCosts[16][16];
+
+struct AreaMoveResult
+{
+    bool action;
+    u8 xMove;
+    u8 yMove;
+    u8 currentRange;
+    u8 decisionRange;
+};
+
+static struct AreaMoveResult sEirikaAreaResults[16][16];
+static struct AreaMoveResult sSethAreaResults[16][16];
 static bool sFlags[0x100];
 static int sSetFlagCalls[0x100];
 static int sClearFlagCalls[0x100];
@@ -73,7 +90,12 @@ static int sMagicSealX;
 static int sMagicSealY;
 static int sMovementMapGenerationCount;
 static int sMagicSealGenerationCount;
+static int sExtendedMovementMapGenerationCount;
 static struct Unit* sLastMovementMapUnit;
+static struct Unit* sLastExtendedMovementMapUnit;
+static bool sUseAreaRouting;
+static int sLastMoveTargetX;
+static int sLastMoveTargetY;
 static bool sTentativeReturnsSuccess;
 static u8 sTentativeActionId;
 
@@ -219,10 +241,39 @@ void GenerateMagicSealMap(int value)
 
 void AiTryMoveTowards(s16 x, s16 y, u8 action, u8 maxDanger, u8 unk)
 {
+    struct AreaMoveResult* result;
+
     (void)action;
     (void)maxDanger;
     (void)unk;
     sMoveCalls++;
+    sLastMoveTargetX = x;
+    sLastMoveTargetY = y;
+    if (sUseAreaRouting)
+    {
+        result = (
+            gActiveUnit == &sEirika
+            ? &sEirikaAreaResults[y][x]
+            : &sSethAreaResults[y][x]
+        );
+        memset(sRangeData, MAP_MOVEMENT_MAX, sizeof(sRangeData));
+        sRangeData[gActiveUnit->yPos][gActiveUnit->xPos] =
+            result->currentRange;
+        if (!result->action)
+            return;
+        sRangeData[result->yMove][result->xMove] = result->decisionRange;
+        AiSetDecision(
+            result->xMove,
+            result->yMove,
+            AI_ACTION_NONE,
+            0,
+            0,
+            0,
+            0
+        );
+        return;
+    }
+
     AiSetDecision(
         sMoveDecisionX >= 0 ? sMoveDecisionX : x,
         sMoveDecisionY >= 0 ? sMoveDecisionY : y,
@@ -232,6 +283,42 @@ void AiTryMoveTowards(s16 x, s16 y, u8 action, u8 maxDanger, u8 unk)
         0,
         0
     );
+}
+
+void GenerateUnitExtendedMovementMap(struct Unit* unit)
+{
+    u8 (*costs)[16] = (
+        unit == &sEirika ? sEirikaAreaCosts : sSethAreaCosts
+    );
+
+    sExtendedMovementMapGenerationCount++;
+    sLastExtendedMovementMapUnit = unit;
+    memcpy(sMovementData, costs, sizeof(sMovementData));
+}
+
+static void SetAreaCandidate(
+    struct Unit* unit,
+    int targetX,
+    int targetY,
+    int cost,
+    int decisionX,
+    int decisionY,
+    int currentRange,
+    int decisionRange)
+{
+    u8 (*costs)[16] = (
+        unit == &sEirika ? sEirikaAreaCosts : sSethAreaCosts
+    );
+    struct AreaMoveResult (*results)[16] = (
+        unit == &sEirika ? sEirikaAreaResults : sSethAreaResults
+    );
+
+    costs[targetY][targetX] = cost;
+    results[targetY][targetX].action = true;
+    results[targetY][targetX].xMove = decisionX;
+    results[targetY][targetX].yMove = decisionY;
+    results[targetY][targetX].currentRange = currentRange;
+    results[targetY][targetX].decisionRange = decisionRange;
 }
 
 bool ExpansionAutoplay_IsBlueComputerPhase(void)
@@ -306,7 +393,12 @@ static void ResetFixture(void)
     sMagicSealY = -1;
     sMovementMapGenerationCount = 0;
     sMagicSealGenerationCount = 0;
+    sExtendedMovementMapGenerationCount = 0;
     sLastMovementMapUnit = NULL;
+    sLastExtendedMovementMapUnit = NULL;
+    sUseAreaRouting = false;
+    sLastMoveTargetX = -1;
+    sLastMoveTargetY = -1;
     sTentativeReturnsSuccess = false;
     sTentativeActionId = AI_ACTION_NONE;
     memset(gEventSlots, 0, sizeof(gEventSlots));
@@ -316,11 +408,20 @@ static void ResetFixture(void)
     {
         sRangeRows[index] = sRangeData[index];
         sMovementRows[index] = sMovementData[index];
+        sUnitRows[index] = sUnitData[index];
         memset(sRangeData[index], MAP_MOVEMENT_MAX, sizeof(sRangeData[index]));
         memset(sMovementData[index], 0xFF, sizeof(sMovementData[index]));
+        memset(sUnitData[index], 0, sizeof(sUnitData[index]));
+        memset(sEirikaAreaCosts[index], 0xFF, sizeof(sEirikaAreaCosts[index]));
+        memset(sSethAreaCosts[index], 0xFF, sizeof(sSethAreaCosts[index]));
+        memset(sEirikaAreaResults[index], 0, sizeof(sEirikaAreaResults[index]));
+        memset(sSethAreaResults[index], 0, sizeof(sSethAreaResults[index]));
     }
+    gBmMapUnit = sUnitRows;
     gBmMapMovement = sMovementRows;
     gBmMapRange = sRangeRows;
+    sEirikaAreaCosts[3][3] = 5;
+    sSethAreaCosts[3][3] = 5;
     sRangeData[sEirika.yPos][sEirika.xPos] = 10;
     sRangeData[sMoveDecisionY][sMoveDecisionX] = 5;
     ExpansionChapterObjectives_ResetTelemetry();
@@ -437,6 +538,141 @@ static int TestCombatMovementPreparation(void)
             && gBmMapMovement[8][8] > MAP_MOVEMENT_MAX,
         "magic-seal preparation must reject combat from a sealed destination"
     );
+    return 0;
+}
+
+static void InitAreaObjective(
+    struct ExpansionChapterObjective* objective,
+    enum ExpansionChapterObjectiveKind kind)
+{
+    memset(objective, 0, sizeof(*objective));
+    objective->kind = kind;
+    objective->xMin = 0;
+    objective->yMin = 0;
+    objective->xMax = 3;
+    objective->yMax = 3;
+}
+
+static int TestRectangleDestinationSelection(void)
+{
+    struct ExpansionChapterObjective objective;
+    enum ExpansionAutoplayStrategyResult result;
+    int x;
+    int y;
+
+    ResetFixture();
+    sFlags[EVFLAG_GAMEOVER] = true;
+    sFlags[EVFLAG_HIDE_BLINKING_ICON] = true;
+    sUseAreaRouting = true;
+    sEirikaAreaCosts[3][3] = 0xFF;
+    SetAreaCandidate(&sEirika, 2, 3, 6, 5, 5, 10, 5);
+    RefreshObjectiveTelemetry();
+    result = ExpansionAutoplayStrategies_TryDecide();
+    CHECK(
+        result == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && gAiDecision.actionPerformed
+            && sLastMoveTargetX == 2
+            && sLastMoveTargetY == 3,
+        "blocked projection must advance through an alternate reachable area tile"
+    );
+
+    ResetFixture();
+    sUseAreaRouting = true;
+    sUnitData[3][3] = 0x81;
+    SetAreaCandidate(&sEirika, 3, 3, 5, 4, 4, 10, 5);
+    SetAreaCandidate(&sEirika, 2, 3, 6, 5, 5, 10, 5);
+    InitAreaObjective(&objective, EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA);
+    CHECK(
+        ExpansionAutoplayStrategies_TestTryMoveToObjectiveArea(&objective)
+            && sLastMoveTargetX == 2
+            && sLastMoveTargetY == 3,
+        "occupied projection must use an alternate reachable area tile"
+    );
+
+    ResetFixture();
+    sUseAreaRouting = true;
+    sEirikaAreaCosts[3][3] = 0xFF;
+    SetAreaCandidate(&sEirika, 2, 3, 6, 5, 5, 10, 5);
+    SetAreaCandidate(&sEirika, 3, 2, 6, 5, 4, 10, 5);
+    InitAreaObjective(&objective, EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA);
+    CHECK(
+        ExpansionAutoplayStrategies_TestTryMoveToObjectiveArea(&objective)
+            && sLastMoveTargetX == 3
+            && sLastMoveTargetY == 2,
+        "equal progress and projection distance must use stable Y-then-X order"
+    );
+
+    ResetFixture();
+    sUseAreaRouting = true;
+    SetAreaCandidate(&sEirika, 3, 3, 5, 5, 5, 10, 5);
+    SetAreaCandidate(&sEirika, 2, 3, 5, 5, 5, 10, 5);
+    InitAreaObjective(&objective, EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA);
+    CHECK(
+        ExpansionAutoplayStrategies_TestTryMoveToObjectiveArea(&objective)
+            && sLastMoveTargetX == 3
+            && sLastMoveTargetY == 3,
+        "a legal projection must win equal-cost target ties"
+    );
+
+    ResetFixture();
+    sUseAreaRouting = true;
+    for (y = 0; y <= 3; y++)
+        for (x = 0; x <= 3; x++)
+            sUnitData[y][x] = 0x81;
+    memset(&gAiDecision, 0xA5, sizeof(gAiDecision));
+    InitAreaObjective(&objective, EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA);
+    CHECK(
+        !ExpansionAutoplayStrategies_TestTryMoveToObjectiveArea(&objective)
+            && IsDecisionClear()
+            && sMoveCalls == 0
+            && sExtendedMovementMapGenerationCount == 1
+            && sMovementMapGenerationCount == 1,
+        "all blocked area tiles must consume a clean wait and restore movement map"
+    );
+
+    ResetFixture();
+    sUseAreaRouting = true;
+    sEirikaAreaCosts[3][3] = 0xFF;
+    sSethAreaCosts[3][3] = 0xFF;
+    SetAreaCandidate(&sEirika, 2, 3, 6, 5, 5, 10, 5);
+    SetAreaCandidate(&sSeth, 1, 3, 7, 4, 5, 11, 6);
+    InitAreaObjective(&objective, EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA);
+    CHECK(
+        ExpansionAutoplayStrategies_TestTryMoveToObjectiveArea(&objective)
+            && sLastMoveTargetX == 2
+            && sLastExtendedMovementMapUnit == &sEirika,
+        "first unit must select from its own area map"
+    );
+    AiClearDecision();
+    gActiveUnit = &sSeth;
+    gActiveUnitId = 2;
+    CHECK(
+        ExpansionAutoplayStrategies_TestTryMoveToObjectiveArea(&objective)
+            && sLastMoveTargetX == 1
+            && sLastMoveTargetY == 3
+            && sLastExtendedMovementMapUnit == &sSeth,
+        "consecutive unit must replace stale area candidates"
+    );
+
+    for (x = EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA;
+         x <= EXPANSION_CHAPTER_OBJECTIVE_HOLD_UNTIL_TURN;
+         x += EXPANSION_CHAPTER_OBJECTIVE_HOLD_UNTIL_TURN
+             - EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA)
+    {
+        ResetFixture();
+        sUseAreaRouting = true;
+        SetAreaCandidate(&sEirika, 3, 3, 5, 5, 5, 10, 5);
+        InitAreaObjective(
+            &objective,
+            (enum ExpansionChapterObjectiveKind)x
+        );
+        CHECK(
+            ExpansionAutoplayStrategies_TestTryMoveToObjectiveArea(&objective)
+                && sLastMoveTargetX == 3
+                && sLastMoveTargetY == 3,
+            "reach and hold must share deterministic rectangle selection"
+        );
+    }
     return 0;
 }
 
@@ -947,6 +1183,7 @@ int main(void)
     CHECK(TestRegistryFailures() == 0, "registry validation");
 #if FE8_EXPANSION_AUTOPLAY_STRATEGIES
     CHECK(TestCombatMovementPreparation() == 0, "combat movement preparation");
+    CHECK(TestRectangleDestinationSelection() == 0, "rectangle destination selection");
     CHECK(TestReferenceProfiles() == 0, "reference profiles");
 #else
     CHECK(TestDisabledProfileNegative() == 0, "disabled profile negative");
