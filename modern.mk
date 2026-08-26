@@ -3590,6 +3590,7 @@ expansion-modern-autoplay-strategy-router-absent-budget:
 		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_BUILD_ROOT) \
 		MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT=1 \
 		MODERN_INTERNAL_TEST_DEFINES=-DFE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT=1 \
+		EXPANSION_AUTOPLAY_STRATEGIES=0 \
 		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_REPORT)
 
 expansion-modern-autoplay-strategy-enabled-budget:
@@ -3606,8 +3607,10 @@ expansion-modern-autoplay-strategy-budget:
 		MODERN_CONFIG=debug MODERN_ABI=aapcs
 	+$(MAKE) expansion-modern-autoplay-strategy-router-absent-budget \
 		MODERN_CONFIG=release MODERN_ABI=aapcs
-	+$(MAKE) expansion-modern-budget MODERN_CONFIG=debug MODERN_ABI=aapcs
-	+$(MAKE) expansion-modern-budget MODERN_CONFIG=release MODERN_ABI=aapcs
+	+$(MAKE) expansion-modern-budget MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		EXPANSION_AUTOPLAY_STRATEGIES=0
+	+$(MAKE) expansion-modern-budget MODERN_CONFIG=release MODERN_ABI=aapcs \
+		EXPANSION_AUTOPLAY_STRATEGIES=0
 	+$(MAKE) expansion-modern-autoplay-strategy-enabled-budget \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs
 	+$(MAKE) expansion-modern-autoplay-strategy-enabled-budget \
