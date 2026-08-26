@@ -1014,15 +1014,16 @@
       "document": "docs/test-cases/audio.md",
       "anchor": "tc-audio-hqmix-001-hq-pcm-mixer-produces-bounded-stereo-output",
       "profiles": [
-        "Modern AAPCS debug HQ mixer profile with EXPANSION_HQ_MIXER=1",
-        "Modern AAPCS release HQ mixer profile with EXPANSION_HQ_MIXER=1",
-        "Matching isolated default-disabled controls with EXPANSION_HQ_MIXER=0"
+        "Instrumented modern AAPCS debug HQ mixer profile with EXPANSION_HQ_MIXER=1",
+        "Instrumented modern AAPCS release HQ mixer profile with EXPANSION_HQ_MIXER=1",
+        "Matching isolated instrumented stock controls with EXPANSION_HQ_MIXER=0",
+        "Non-instrumented normal-game release enabled and stock-control listening ROMs"
       ],
-      "purpose": "Verify the selected mixer, IWRAM copy/buffer bounds, target PCM output, interrupt-buffer behavior, and default-disabled omission.",
+      "purpose": "Verify the selected mixer, distinct MP2K player ownership, IWRAM copy/buffer bounds, sustained late-window target PCM output, interrupt-buffer behavior, default-disabled omission, and normal-game listening comparison.",
       "prerequisites": "Repository root with the supported ARM toolchain, libmGBA, and build tools; no save or external source checkout is required.",
-      "actions": "Run the documented debug and release HQ mixer gates, retain archival rejection, then listen to the same fixed scripted-battle segment from both profiles.",
-      "expected_result": "The enabled target has bounded non-silent, distinct left/right PCM, valid interrupt-buffer state, a matching initial ROM/IWRAM code copy, a DMA-disabled no-reverb-feedback mixer, and lower deterministic fixture RMS error.",
-      "negative_control": "The matching disabled target has no HQ symbol, buffer, or probe and retains stock PCM mixing; archival opt-in fails before compilation.",
+      "actions": "Run the documented debug and release instrumented HQ mixer gates, build the non-instrumented release listening pair, retain archival rejection, then clean-boot each listening ROM, confirm startup silence, press A once at the first prompt, and compare the opening BGM at equal volume.",
+      "expected_result": "The enabled target has distinct persistent player records, bounded non-silent and distinct left/right PCM at every declared late checkpoint including the final checkpoint, valid player/channel and interrupt-buffer state, a matching initial ROM/IWRAM code copy, a DMA-disabled no-reverb-feedback mixer, and lower deterministic fixture RMS error. Both listening ROMs follow silence -> A -> opening BGM without noise or mute.",
+      "negative_control": "The matching disabled target has no HQ symbol, buffer, or probe, retains distinct historical IWRAM player records and stock PCM mixing, and the non-instrumented stock listening ROM has no automation-only startup song; archival opt-in fails before compilation.",
       "interactions": "Depends on MP2K, the modern AAPCS linker, IWRAM budget, and libmGBA; DMA-on and real localized-game profiles are excluded, while other optional modules have no conflict.",
       "save_compatibility": "Configuration fingerprint only; no save bytes, layout, migration, or compatibility-epoch change.",
       "cleanup": "Close the emulator; use make clean_fast only to remove ignored build artifacts.",
@@ -1039,6 +1040,10 @@
         {
           "command": "make expansion-modern-hq-mixer-check MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/run_hq_mixer_checks.py"
+        },
+        {
+          "command": "make expansion-modern-hq-mixer-listening-roms MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "modern.mk"
         }
       ]
     },
