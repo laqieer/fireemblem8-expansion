@@ -13,6 +13,14 @@ struct MenuProc;
 
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
 
+#define DEBUGTOOLS_SHARED_MENU_ITEM_MAX \
+    (((FE8_EXPANSION_ENABLED_LOCALE_COUNT + 2) > 6) \
+        ? (FE8_EXPANSION_ENABLED_LOCALE_COUNT + 2) \
+        : 6)
+
+extern struct MenuItemDef
+    sDebugToolsMenuItemDefs[DEBUGTOOLS_SHARED_MENU_ITEM_MAX];
+
 int DebugTools_RegisterBuiltinAction(const struct DebugToolsAction* action);
 void DebugToolsActions_ForceCleanup(void);
 void DebugTools_EndSessionAfterMenuEnd(struct MenuProc* menu);

@@ -226,6 +226,11 @@ SECTIONS
         *(debugtools_diagnostics_data)
         __debugtools_diagnostics_data_end = .;
 
+        /* Issue #128: fixture state stays persistent because save-write guards
+         * remain active after the title-only image is consumed. */
+        . = ALIGN(4);
+        *(debug_save_fixture_data)
+
         . = ALIGN(4);
         PROVIDE(gLoadUnitBuffer = .);
         PROVIDE(end = .);

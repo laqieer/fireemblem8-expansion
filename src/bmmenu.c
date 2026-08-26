@@ -4,6 +4,10 @@
 #ifdef MODERN
 #include "expansion_ui_prefs.h"
 #endif
+#ifndef FE8_ARCHIVAL_BUILD
+#include "debug_save_fixture_internal.h"
+#endif
+
 #if FE8_EXPANSION_BLUE_PHASE_DELEGATE
 #include "expansion_blue_phase_delegate.h"
 #include "expansion_locale.h"
@@ -56,6 +60,7 @@
 #include "constants/classes.h"
 #include "constants/terrains.h"
 #include "constants/items.h"
+#include "constants/msg.h"
 #include "constants/songs.h"
 
 extern u16 gBattleForecast_2[];
@@ -98,6 +103,11 @@ u8 MenuEffect_CloseMenu(struct MenuProc* menu, struct MenuItemProc* menuItem) {
 
 u8 MapMenu_IsSuspendCommandAvailable(const struct MenuItemDef* def, int number) {
 
+#ifndef FE8_ARCHIVAL_BUILD
+    if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED)
+        return MENU_DISABLED;
+#endif
+
     if (gPlaySt.chapterStateBits & PLAY_FLAG_TUTORIAL) {
         return MENU_DISABLED;
     }
@@ -106,8 +116,17 @@ u8 MapMenu_IsSuspendCommandAvailable(const struct MenuItemDef* def, int number) 
 }
 
 u8 MapMenu_SuspendCommand(struct MenuProc* menu, struct MenuItemProc* menuItem) {
+#ifndef FE8_ARCHIVAL_BUILD
+    if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED)
+    {
+        DebugSaveFixture_RecordBlockedWrite(
+            DEBUG_SAVE_FIXTURE_WRITE_SUSPEND);
+        return MENU_ACT_SND6B;
+    }
+#endif
+
     if (menuItem->availability == MENU_DISABLED) {
-        MenuFrozenHelpBox(menu, 0x864); // TODO: msgid "You cannot stop in the[NL]middle of the tutorial.[.]"
+        MenuFrozenHelpBox(menu, MSG_864);
         return MENU_ACT_SND6B;
     }
 

@@ -1,0 +1,57 @@
+{
+  "checkpoints": [
+    {
+      "frame": 1200,
+      "framebuffer_hash": "fnv1a64-rgb24:b013ecbb79753536",
+      "name": "cancel-preview-ready",
+      "probes": [
+        {
+          "address": "gDebugSaveFixtureProbe+0x00",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gDebugSaveFixtureProbe+0x0c",
+          "size": 4,
+          "value": "0x00000001"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:21f5b86eb60f31c6"
+    },
+    {
+      "frame": 1420,
+      "framebuffer_hash": "fnv1a64-rgb24:c707f2a1504193d0",
+      "name": "cancel-zeroized",
+      "probes": [
+        {
+          "address": "0x02000000",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020073a4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugSaveFixtureProbe+0x00",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugSaveFixtureProbe+0x14",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gDebugSaveFixtureProbe+0x1c",
+          "size": 4,
+          "value": "0x00000003"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:21f5b86eb60f31c6"
+    }
+  ],
+  "format_version": 2,
+  "scenario": "debug-save-fixture-cancel-modern-debug"
+}

@@ -36,6 +36,7 @@ LOCALE_REGISTRY = REPO_ROOT / "texts" / "expansion" / "registry.json"
 
 LANGUAGE_MENU_HEADER = REPO_ROOT / "include" / "expansion_language_menu.h"
 LANGUAGE_MENU_SRC = REPO_ROOT / "src" / "expansion_language_menu.c"
+LANGUAGE_MENU_HOST_STUBS = C_FIXTURES_DIR / "debugtools_lifecycle_host_stubs.c"
 GAMECONTROL_SRC = REPO_ROOT / "src" / "gamecontrol.c"
 UICONFIG_HEADER = REPO_ROOT / "include" / "uiconfig.h"
 UICONFIG_SRC = REPO_ROOT / "src" / "uiconfig.c"
@@ -62,6 +63,7 @@ TEST_WORK_ROOT = REPO_ROOT / ".test-work"
 
 CC = shutil.which("gcc") or shutil.which("cc")
 NM = shutil.which("nm")
+HOST_C_RUNTIME_SYMBOLS = {"memset"}
 XMAP_POISON_SYMBOL = "fe8_xmap_dependency_forbidden"
 XMAP_DEPENDENCY_TOKENS = (
     "XMAP_MAGIC", "SAVEMAGIC32_XMAP", "SAVE_ID_XMAP", "SAVEBLOCK_KIND_XMAP",
@@ -90,12 +92,14 @@ def _compile(
     src: Path,
     obj_name: str,
     defines=(),
+    *,
+    extra_include_dirs=(),
     extra_includes=(),
     extra_cflags=(),
 ):
     obj = work_dir / obj_name
     cmd = [CC, "-c", "-w"] + _include_flags() + list(extra_cflags)
-    for directory in extra_includes:
+    for directory in (*extra_include_dirs, *extra_includes):
         cmd += ["-I", str(directory)]
     for d in defines:
         cmd += ["-D", d]
@@ -138,6 +142,17 @@ def _undefined_symbols(obj: Path) -> set[str]:
     return {line.split()[-1] for line in completed.stdout.splitlines() if line.split()}
 
 
+def _defined_symbols(obj: Path) -> set[str]:
+    completed = subprocess.run(
+        [NM, "--extern-only", "--defined-only", str(obj)],
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return {line.split()[-1] for line in completed.stdout.splitlines() if line.split()}
+
+
 def _compile_with_xmap_poison(work_dir: Path, source: Path, generated: Path, inject=False):
     wrapper = work_dir / (source.stem + ("-xmap-injected.c" if inject else "-xmap-clean.c"))
     text = (
@@ -153,7 +168,11 @@ def _compile_with_xmap_poison(work_dir: Path, source: Path, generated: Path, inj
         text += "int fe8_xmap_adversary(void) { return XMAP_MAGIC; }\n"
     wrapper.write_text(text, encoding="ascii")
     return _compile(
-        work_dir, wrapper, wrapper.stem + ".o", ["MODERN=1"], [generated]
+        work_dir,
+        wrapper,
+        wrapper.stem + ".o",
+        ["MODERN=1"],
+        extra_include_dirs=[generated],
     )
 
 
@@ -206,7 +225,12 @@ class ExpansionLanguageMenuProductionBehaviorTests(unittest.TestCase):
             "FE8_EXPANSION_ENABLED_LOCALE_MASK=0x79u",
             "FE8_EXPANSION_DEFAULT_LOCALE_ID=0",
         ]
-        section_flags = ["-ffunction-sections", "-fdata-sections"]
+        section_flags = [
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-fno-stack-protector",
+            "-fno-pie",
+        ]
         with _temporary_directory() as tmp:
             work = Path(tmp)
             generated = _generate_locale_catalog(work)
@@ -215,8 +239,8 @@ class ExpansionLanguageMenuProductionBehaviorTests(unittest.TestCase):
                 LANGUAGE_MENU_SRC,
                 "language-menu-modern.o",
                 defines,
-                [generated],
-                section_flags,
+                extra_include_dirs=[generated],
+                extra_cflags=section_flags,
             )
             self.assertEqual(rc, 0, out)
             rc, out, driver_obj = _compile(
@@ -224,15 +248,40 @@ class ExpansionLanguageMenuProductionBehaviorTests(unittest.TestCase):
                 C_FIXTURES_DIR / "expansion_language_menu_runtime_driver.c",
                 "language-menu-runtime-driver.o",
                 defines,
-                [generated],
-                section_flags,
+                extra_include_dirs=[generated],
+                extra_cflags=section_flags,
             )
             self.assertEqual(rc, 0, out)
+            rc, out, stubs_obj = _compile(
+                work,
+                LANGUAGE_MENU_HOST_STUBS,
+                "language-menu-host-stubs.o",
+                [
+                    *defines,
+                    "DEBUGTOOLS_LIFECYCLE_LANGUAGE_MENU_SUPPORT=1",
+                ],
+                extra_include_dirs=[generated],
+                extra_cflags=section_flags,
+            )
+            self.assertEqual(rc, 0, out)
+
+            provided_symbols = (
+                _defined_symbols(driver_obj)
+                | _defined_symbols(stubs_obj)
+                | HOST_C_RUNTIME_SYMBOLS
+            )
+            self.assertEqual(
+                _undefined_symbols(impl_obj) - provided_symbols,
+                set(),
+                "every production language-menu dependency must have an "
+                "explicit host provider",
+            )
+
             rc, out, exe = _link(
                 work,
-                [impl_obj, driver_obj],
+                [impl_obj, driver_obj, stubs_obj],
                 "language-menu-runtime-test",
-                ["-Wl,--gc-sections"],
+                ["-Wl,--gc-sections", "-no-pie"],
             )
             self.assertEqual(rc, 0, out)
             rc, out = _run(exe)
@@ -249,7 +298,11 @@ class ExpansionLanguageMenuProductionBehaviorTests(unittest.TestCase):
             work = Path(tmp)
             generated = _generate_locale_catalog(work)
             rc, out, enabled = _compile(
-                work, UICONFIG_SRC, "uiconfig-modern.o", ["MODERN=1"], [generated]
+                work,
+                UICONFIG_SRC,
+                "uiconfig-modern.o",
+                ["MODERN=1"],
+                extra_include_dirs=[generated],
             )
             self.assertEqual(rc, 0, out)
             rc, out, disabled = _compile(work, UICONFIG_SRC, "uiconfig-legacy.o")
@@ -279,7 +332,11 @@ class ExpansionLanguageMenuProductionBehaviorTests(unittest.TestCase):
             for source in sources:
                 with self.subTest(source=source.name):
                     rc, out, obj = _compile(
-                        work, source, source.stem + ".o", ["MODERN=1"], [generated]
+                        work,
+                        source,
+                        source.stem + ".o",
+                        ["MODERN=1"],
+                        extra_include_dirs=[generated],
                     )
                     self.assertEqual(rc, 0, out)
                     self.assertFalse(
@@ -323,6 +380,34 @@ class ExpansionLanguageMenuGeneratedRegistryTests(unittest.TestCase):
         self.assertTrue(
             {"en", "fr", "de", "es", "it"}.issubset(budget["locales_generated"])
         )
+
+    def test_archival_debugtools_build_uses_private_language_rows(self):
+        from scripts.localization.catalog import load_catalog
+        from scripts.localization.generate import build_msg_ids_header
+
+        with _temporary_directory() as tmp:
+            work = Path(tmp)
+            (work / "expansion_msg_ids.h").write_text(
+                build_msg_ids_header(load_catalog()),
+                encoding="utf-8",
+            )
+            rc, out, _ = _compile(
+                work,
+                LANGUAGE_MENU_SRC,
+                "archival_debugtools.o",
+                defines=(
+                    "MODERN=1",
+                    "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                    "FE8_ARCHIVAL_BUILD=1",
+                ),
+                extra_include_dirs=(work,),
+            )
+            self.assertEqual(
+                rc,
+                0,
+                "archival debugtools build must not reference the omitted "
+                f"shared debug menu buffer:\n{out}",
+            )
 
 
 class ExpansionLanguageMenuHeaderHostCompileTests(unittest.TestCase):

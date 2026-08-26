@@ -28,6 +28,7 @@
 #include "bmunit.h"
 #include "cp_common.h"
 #include "expansion_debugtools.h"
+#include "expansion_debug_save_fixture.h"
 #include "expansion_locale.h"
 #include "debugtools_internal.h"
 #include "save_format.h"
@@ -80,6 +81,8 @@ extern void DebugToolsHostStub_SetUnitEditContext(
 extern void DebugToolsHostStub_SetFakeConvoy(int count, int full);
 extern void DebugToolsHostStub_ClearFakeFlags(void);
 extern void DebugToolsHostStub_SetFakeSaveCompatState(enum SaveCompatState state);
+extern void DebugToolsHostStub_SetFakeSaveFixtureEnabled(int enabled);
+extern int DebugToolsHostStub_GetFakeSaveFixtureContinueRequestCount(void);
 extern void DebugToolsHostStub_FillBgMap(u16 value);
 extern int DebugToolsHostStub_IsBgMapFilled(u16 value);
 extern void DebugToolsHostStub_SetBgMapTile(int bg, int x, int y, u16 value);
@@ -98,6 +101,9 @@ extern struct MenuDef CONST_DATA gDebugToolsConvoyMenuDef;
 extern struct MenuDef CONST_DATA gDebugToolsFlagMenuDef;
 extern struct MenuDef CONST_DATA gDebugToolsRngMenuDef;
 extern struct MenuDef CONST_DATA gDebugToolsSaveStateMenuDef;
+extern struct MenuDef CONST_DATA gDebugToolsSaveFixtureSourceMenuDef;
+extern struct MenuDef CONST_DATA gDebugToolsSaveFixturePreviewMenuDef;
+extern struct MenuDef CONST_DATA gDebugToolsSaveFixtureFinalMenuDef;
 extern struct MenuDef CONST_DATA gDebugToolsHubMenuDef;
 
 static int ReadUnitStatField(
@@ -983,6 +989,48 @@ int main(void)
     DebugToolsHostStub_RunPendingTransition();
     CHECK(gDebugToolsProbe.saveCompatLastState == (u32)SAVE_COMPAT_MIGRATABLE_OLDER, "a re-inspect must resample a changed save-compat state");
     CHECK(gDebugToolsProbe.saveCompatInspectCount == 2, "a second inspect must increment the counter again");
+
+    gDebugToolsSaveStateMenuDef.onEnd(&saveStateMenu);
+    DebugToolsHostStub_RunPendingTransition();
+
+    /* ================= 6. Volatile fixture confirmation ============== */
+
+    DebugToolsHostStub_SetFakeSaveFixtureEnabled(TRUE);
+    rc = DebugTools_GetRegisteredAction(4)->onSelected(NULL, NULL);
+    CHECK(rc == CLOSE_HUB_FLAGS, "fixture-enabled Save State must close the hub");
+    gDebugToolsHubMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
+    CHECK(gDebugToolsToolsHostStub_LastMenuDef == &gDebugToolsSaveFixtureSourceMenuDef,
+          "fixture-enabled Save State must open the source menu");
+
+    rc = gDebugToolsSaveFixtureSourceMenuDef.menuItems[3].onSelected(NULL, NULL);
+    CHECK(rc == CLOSE_HUB_FLAGS, "Suspend source selection must close the source menu");
+    gDebugToolsSaveFixtureSourceMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
+    CHECK(gDebugToolsToolsHostStub_LastMenuDef == &gDebugToolsSaveFixturePreviewMenuDef,
+          "Suspend source selection must open the preview menu");
+
+    rc = gDebugToolsSaveFixturePreviewMenuDef.menuItems[2].onSelected(NULL, NULL);
+    CHECK(rc == CLOSE_HUB_FLAGS, "Arm RAM must close the preview menu");
+    gDebugToolsSaveFixturePreviewMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
+    CHECK(gDebugToolsToolsHostStub_LastMenuDef == &gDebugToolsSaveFixtureFinalMenuDef,
+          "Arm RAM must open the final confirmation menu");
+
+    gKeyStatusPtr->heldKeys = L_BUTTON | R_BUTTON | A_BUTTON;
+    gKeyStatusPtr->newKeys = 0;
+    rc = gDebugToolsSaveFixtureFinalMenuDef.menuItems[1].onSelected(NULL, NULL);
+    CHECK(rc == MENU_ACT_SND6B, "a stale held L+R+A chord must be rejected");
+    CHECK(DebugToolsHostStub_GetFakeSaveFixtureContinueRequestCount() == 0,
+          "a stale held chord must not request fixture continuation");
+
+    gKeyStatusPtr->newKeys = A_BUTTON;
+    rc = gDebugToolsSaveFixtureFinalMenuDef.menuItems[1].onSelected(NULL, NULL);
+    CHECK(rc == CLOSE_HUB_FLAGS, "fresh A with held L+R must confirm Run RAM");
+    CHECK(DebugToolsHostStub_GetFakeSaveFixtureContinueRequestCount() == 1,
+          "fresh confirmation must request fixture continuation exactly once");
+    gKeyStatusPtr->heldKeys = 0;
+    gKeyStatusPtr->newKeys = 0;
 
     printf("DEBUGTOOLS_TOOLS_HOST_TEST: PASS\n");
     return 0;

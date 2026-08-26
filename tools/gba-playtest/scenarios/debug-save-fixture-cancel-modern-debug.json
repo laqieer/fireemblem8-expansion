@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "name": "debug-save-fixture-cancel-modern-debug",
+  "description": "TC-DEBUGSAVE-001 cancel control: prepare the latest suspend volatile preview, then press B before Arm. The full image is zeroized, session ownership returns to the hub, no continue is queued, and the exact whole SRAM image is unchanged.",
+  "frames": [
+    {"start": 90, "end": 95, "keys": ["A"]},
+    {"start": 150, "end": 155, "keys": ["START"]},
+    {"start": 210, "end": 215, "keys": ["A"]},
+    {"start": 270, "end": 275, "keys": ["START"]},
+    {"start": 330, "end": 335, "keys": ["A"]},
+    {"start": 390, "end": 395, "keys": ["START"]},
+    {"start": 450, "end": 455, "keys": ["A"]},
+    {"start": 600, "end": 606, "keys": ["SELECT", "R"]},
+    {"start": 660, "end": 664, "keys": ["DOWN"]},
+    {"start": 700, "end": 704, "keys": ["DOWN"]},
+    {"start": 740, "end": 744, "keys": ["DOWN"]},
+    {"start": 780, "end": 784, "keys": ["DOWN"]},
+    {"start": 820, "end": 824, "keys": ["DOWN"]},
+    {"start": 860, "end": 864, "keys": ["DOWN"]},
+    {"start": 900, "end": 904, "keys": ["DOWN"]},
+    {"start": 940, "end": 944, "keys": ["DOWN"]},
+    {"start": 980, "end": 984, "keys": ["A"]},
+    {"start": 1040, "end": 1044, "keys": ["DOWN"]},
+    {"start": 1080, "end": 1084, "keys": ["DOWN"]},
+    {"start": 1120, "end": 1124, "keys": ["DOWN"]},
+    {"start": 1160, "end": 1164, "keys": ["A"]},
+    {"start": 1220, "end": 1224, "keys": ["A"]},
+    {"start": 1260, "end": 1264, "keys": ["DOWN"]},
+    {"start": 1300, "end": 1304, "keys": ["A"]},
+    {"start": 1340, "end": 1344, "keys": ["B"]}
+  ],
+  "checkpoints": [
+    {
+      "frame": 1200,
+      "name": "cancel-preview-ready",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": [
+        {"address": "gDebugSaveFixtureProbe+0x00", "size": 4, "expected": "0x00000001"},
+        {"address": "gDebugSaveFixtureProbe+0x0c", "size": 4, "expected": "0x00000001"}
+      ]
+    },
+    {
+      "frame": 1420,
+      "name": "cancel-zeroized",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": [
+        {"address": "gDebugSaveFixtureProbe+0x00", "size": 4, "expected": "0x00000000"},
+        {"address": "gDebugSaveFixtureProbe+0x14", "size": 4, "expected": "0x00000000"},
+        {"address": "gDebugSaveFixtureProbe+0x1c", "size": 4, "expected": "0x00000003"},
+        {"address": "0x02000000", "size": 4, "expected": "0x00000000"},
+        {"address": "0x020073a4", "size": 4, "expected": "0x00000000"}
+      ]
+    }
+  ]
+}

@@ -11,6 +11,7 @@ enum game_ctrl_proc_lable {
 
     LGAMECTRL_EXEC_BM_EXT = 6,  /* Directly goto bmmap */
     LGAMECTRL_EXEC_BM = 7,      /* Judge on game-start or game end */
+    LGAMECTRL_RESUME_SUSPEND = 8,
 
     LGAMECTRL_POST_NORMAL_CHAPTER = 9,
     LGAMECTRL_POST_EXTRA_MAP = 10,

@@ -36,7 +36,7 @@ and
 | `tools/gba-playtest/scenarios/debugtools-{map,prep}-hub-modern-release.json` (slice 2) | Release mirrors proving both new hotkeys are compiled out (`gDebugToolsProbe` stays all-zero) atop the live opening world map -- semantic `gPlaySt`/cursor progress probes, no framebuffer oracle |
 | `tools/gba-playtest/fingerprints/debugtools-{hub,map-hub,prep-hub}-modern-{debug,release}.json` | Captured fingerprints for the scenarios above |
 | `src/debugtools_diag.c` (closure) | Diagnostics foundation: bounded log ring (`DebugTools_LogEvent`/`GetLogEntry`/`GetLogCount`) and non-fatal assert record (`DEBUGTOOLS_ASSERT`/`DebugTools_RecordAssertFailure`) |
-| `src/debugtools_tools.c` (closure + issue #125) | The five bounded validated tools. Unit Inspect resolves the live cursor target and exposes typed HP/stat/AI/status edits; Convoy Inspect, Flag/Chapter, RNG Inspect, and read-only Save State retain their issue #11 contracts |
+| `src/debugtools_tools.c` (closure + issues #125/#128) | The five bounded validated tools. Unit Inspect resolves the live cursor target and exposes typed HP/stat/AI/status edits; Convoy Inspect, Flag/Chapter, and RNG Inspect retain their issue #11 contracts; Save State adds only the isolated title-only volatile fixture flow |
 | `src/gamecontrol.c` (issue #123) | `GameControl_PostIntro` consumes the validated typed selector request, creates only transient chapter/skirmish state, arms boot-write suppression, and selects the direct or explicit Chapter 4 compatibility route from request provenance |
 | `tools/gba-playtest/scenarios/debugtools-selector-{chapter,skirmish}-modern-debug.json` | Title-origin Chapter 4 and live-map-origin Chapter 4 skirmish routes, including exact-once request/consume/handoff, interactive destinations, and byte-identical pre/post SRAM hashes |
 | `tools/gba-playtest/scenarios/debugtools-selector-modern-release.json` | Exact-input release mirror proving selector/action/request/handoff behavior and the private selector state symbol are omitted while the unchanged modern release debugtools probe stays zero |
@@ -1163,7 +1163,9 @@ No tool performs a raw/arbitrary address write or accepts an unvalidated
 index. Fixed operations use documented constants; Unit resolves and
 revalidates the cursor target through typed engine helpers. None touches SRAM
 or a save-block struct directly (RNG/flags/units/convoy are ordinary EWRAM
-runtime state; Save State is read-only).
+runtime state; Save State is read-only except for its title-only volatile
+fixture subflow, which sanitizes a validated source into EWRAM and never
+writes SRAM.
 
 1. **Unit Inspect** (id 5, extended by issue #125) -- resolves only the unit
    at the real live-map cursor: bounds-check `gBmSt.playerCursor`, read the
@@ -1245,22 +1247,20 @@ runtime state; Save State is read-only).
    constant from `DEBUGTOOLS_FASTBOOT_RNG_SEED`, so the two are never
    confused in logs/tests) -- incrementing
    `gDebugToolsProbe.rngReseedTransactionCount`.
-5. **Save State** (id 9) -- **read-only**, no Confirm item at all (nothing
-   to confirm): calls `ClassifySramSaveCompat()` (`src/bmsave-lib.c`),
+5. **Save State** (id 9) -- its compatibility inspection remains
+   **read-only**: calls `ClassifySramSaveCompat()` (`src/bmsave-lib.c`),
    which only inspects the global save header/expansion metadata record and
    never mutates SRAM or any save-block struct, sampling the result into
    `gDebugToolsProbe.saveCompatLastState` and incrementing
    `gDebugToolsProbe.saveCompatInspectCount`. This tool never calls
    `BuildCurrentExpansionSaveMeta` against a live SRAM target,
-   `InitGlobalSaveInfodata`, or any writer -- the safest of the five by
-   construction. Its only **Back** row and B handler both use
-   `DebugTools_CancelMenu`, never `MenuCancelSelect`, so their deferred
-   return-to-hub path cannot clear BG0/BG1. The tools host driver fills its
-   synthetic BG map before Back, verifies the no-clear result flags, and
-   verifies the same map survives the deferred hub return; the runtime
-   save-back checkpoint verifies the read-only return-to-hub route remains
-   interactive and reports a preserved nonzero BG1 frame tile before the
-   deferred hub redraw.
+   `InitGlobalSaveInfodata`, or any writer. Issue #128 extends this same
+   stable row at title only with a validated RAM-clone/preview/Arm/final
+   `L+R+A`/one-shot continue flow. Map/prep retain only the read-only Back
+   submenu. Its Back path captures the actual `MenuProc::backBg` frame
+   geometry, preserves the no-clear cancellation behavior, and reports the
+   deferred return result. See
+   [`debug_save_fixtures.md`](debug_save_fixtures.md).
 
 ### Host-executed evidence
 
@@ -1282,7 +1282,8 @@ collection and host-executes `SetUnitHp`, `UnitCheckStatCaps`,
 `SetUnitStatus[Ext]`, and `ChangeUnitAi` themselves--not fixture copies.
 The same suite proves registration (ids 5-9, deterministic and idempotent),
 the remaining tools' semantics, full-Convoy rejection, and Save State's
-read-only contract. A disabled-path test compiles the
+read-only contract. Issue #128's title-only fixture state machine has its own
+real-source host and libmGBA suites. A disabled-path test compiles the
 disabled path and proves both behavior and physical symbol omission -- the
 disabled object defines exactly the one no-op
 `DebugTools_RegisterExtendedToolActions()` entry point and links clean with

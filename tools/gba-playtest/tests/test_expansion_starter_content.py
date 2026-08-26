@@ -598,6 +598,79 @@ class DisabledBuildLayoutTests(unittest.TestCase):
                             "disabled content TU emits {} bytes of {}".format(
                                 parts[1], section))
 
+    def test_disabled_itemtest_object_has_no_data_or_bss(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            code, output, obj = _arm_compile(tmp, ITEMTEST_SRC, "itemtest_off.o")
+            self.assertEqual(code, 0, output)
+            sizes = subprocess.run(
+                [SIZE, "-A", str(obj)], capture_output=True, text=True, check=True
+            ).stdout
+            for section in (".data", ".bss", "ewram_data"):
+                for line in sizes.splitlines():
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[0] == section:
+                        self.assertEqual(
+                            int(parts[1]),
+                            0,
+                            "disabled item-test TU emits {} bytes of {}".format(
+                                parts[1], section),
+                        )
+
+
+@unittest.skipIf(ARM_CC is None or SIZE is None or NM is None,
+                 "no arm-none-eabi toolchain")
+class ItemExpansionScratchLayoutTests(unittest.TestCase):
+    """The boundary item-test profile must retain its complete probe while
+    keeping each strictly sequential temporary stage in one EWRAM union."""
+
+    def test_enabled_itemtest_reuses_sequential_scratch_storage(self):
+        import tempfile
+
+        defines = (
+            "FE8_EXPANSION_ITEMTEST_ENABLED=1",
+            *CONTENT_DEFINES,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            code, output, obj = _arm_compile(
+                tmp, ITEMTEST_SRC, "itemtest_on.o", defines)
+            self.assertEqual(code, 0, output)
+
+            symbols = subprocess.run(
+                [NM, "-S", str(obj)], capture_output=True, text=True, check=True
+            ).stdout
+            sizes = {}
+            for line in symbols.splitlines():
+                fields = line.split()
+                if len(fields) == 4:
+                    sizes[fields[3]] = int(fields[1], 16)
+
+            self.assertEqual(sizes.get("gItemExpansionProbe"), 0x114)
+            self.assertEqual(sizes.get("sItemExpansionScratch"), 0x2D0)
+            for standalone in ("sPackedUnit", "sSuspendUnit", "sUnpackedUnit"):
+                self.assertNotIn(
+                    standalone,
+                    sizes,
+                    "{} must share the sequential item-test scratch union".format(
+                        standalone),
+                )
+
+            section_sizes = subprocess.run(
+                [SIZE, "-A", str(obj)], capture_output=True, text=True, check=True
+            ).stdout
+            ewram_data = next(
+                int(line.split()[1])
+                for line in section_sizes.splitlines()
+                if len(line.split()) >= 2 and line.split()[0] == "ewram_data"
+            )
+            self.assertEqual(
+                ewram_data,
+                0x3EC,
+                "the boundary item-test object must not retain its former "
+                "0xA0-byte standalone serialization scratch",
+            )
+
 
 @unittest.skipIf(ARM_CC is None, "no arm-none-eabi toolchain")
 class CompileTimeDependencyTests(unittest.TestCase):

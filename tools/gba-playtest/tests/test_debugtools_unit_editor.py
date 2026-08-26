@@ -66,7 +66,7 @@ class DebugToolsUnitEditorLayoutTests(unittest.TestCase):
                 return int(match.group(1), 16), match.group(2)
         raise AssertionError(f"{symbol} missing from {obj}")
 
-    def test_private_snapshot_compacts_without_shrinking_public_telemetry(self):
+    def test_private_snapshot_shares_fixture_storage_without_shrinking_telemetry(self):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             tools = self._compile(work, "src/debugtools_tools.c", "tools.o")
@@ -76,8 +76,13 @@ class DebugToolsUnitEditorLayoutTests(unittest.TestCase):
 
             self.assertEqual(
                 self._symbol_info(tools, "sUnitEditor")[0],
-                0x24,
-                "private editor snapshot must stay at the reviewed 36-byte layout",
+                0x48,
+                "editor state must alias the retained 72-byte fixture storage",
+            )
+            self.assertEqual(
+                self._symbol_info(tools, "sSaveStateStableLayout")[0],
+                0x48,
+                "fixture preview storage must retain its reviewed 72-byte layout",
             )
             self.assertEqual(
                 self._symbol_info(registry, "gDebugToolsUnitEditorProbe")[0],
