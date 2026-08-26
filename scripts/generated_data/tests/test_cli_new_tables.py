@@ -158,22 +158,30 @@ class CliEventListsTests(unittest.TestCase):
             ) as handle:
                 bundle = json.load(handle)
             bundle["chapter"]["id"] = "CHAPTER_L_2"
+            bundle["autoplayStrategies"] = {
+                "source": fixture_path("autoplaystrategies", "valid.json"),
+                "symbols": ["AutoplayStrategies_Fixture"],
+            }
             bundle_path = os.path.join(tmp, "strategy-helper-bundle.json")
             with open(bundle_path, "w", encoding="utf-8") as handle:
                 json.dump(bundle, handle)
-            common = [
-                "--table",
-                "eventlists",
-                "--source",
-                source_path,
-                "--no-roundtrip",
-                "--dep-source",
-                "autoplaystrategies={}".format(
-                    fixture_path("autoplaystrategies", "valid.json")
-                ),
-                "--dep-source",
-                "chapterbundle={}".format(bundle_path),
-            ] + _eventlists_dep_source_args()
+
+            def common_args(owner_path):
+                return [
+                    "--table",
+                    "eventlists",
+                    "--source",
+                    source_path,
+                    "--no-roundtrip",
+                    "--dep-source",
+                    "autoplaystrategies={}".format(
+                        fixture_path("autoplaystrategies", "valid.json")
+                    ),
+                    "--dep-source",
+                    "chapterbundle={}".format(owner_path),
+                ] + _eventlists_dep_source_args()
+
+            common = common_args(bundle_path)
 
             code, out, err = run_cli(
                 ["validate", "--reference-profiles", "0"] + common
@@ -188,6 +196,35 @@ class CliEventListsTests(unittest.TestCase):
                 ["validate", "--reference-profiles", "1"] + common
             )
             self.assertEqual(code, 0, msg=out + err)
+
+            wrong_source = json.loads(json.dumps(bundle))
+            wrong_source["autoplayStrategies"]["source"] = (
+                "src/data/autoplay_strategies.json"
+            )
+            wrong_source_path = os.path.join(tmp, "wrong-strategy-source-bundle.json")
+            with open(wrong_source_path, "w", encoding="utf-8") as handle:
+                json.dump(wrong_source, handle)
+            code, out, err = run_cli(
+                ["validate", "--reference-profiles", "1"]
+                + common_args(wrong_source_path)
+            )
+            self.assertEqual(code, 1)
+            self.assertIn("do not match event-list owner sources", err)
+
+            wrong_symbols = json.loads(json.dumps(bundle))
+            wrong_symbols["autoplayStrategies"]["symbols"] = []
+            wrong_symbols_path = os.path.join(tmp, "wrong-strategy-symbols-bundle.json")
+            with open(wrong_symbols_path, "w", encoding="utf-8") as handle:
+                json.dump(wrong_symbols, handle)
+            code, out, err = run_cli(
+                ["validate", "--reference-profiles", "1"]
+                + common_args(wrong_symbols_path)
+            )
+            self.assertEqual(code, 1)
+            self.assertIn(
+                "is not declared by the event-list owner's autoplayStrategies symbols",
+                err,
+            )
 
             out_dir = os.path.join(tmp, "generated")
             inventory = os.path.join(tmp, "inventory.md")

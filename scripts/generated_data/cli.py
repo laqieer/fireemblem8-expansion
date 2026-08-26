@@ -87,7 +87,10 @@ def _load_and_validate(
     dep_source_overrides=None,
     reference_profiles=None,
 ):
-    records = schema.load_records(source_path)
+    records = schema.configure_records(
+        schema.load_records(source_path),
+        reference_profiles=reference_profiles,
+    )
     diagnostics = DiagnosticCollector()
     dependency_records = _load_dependency_records(
         schema,

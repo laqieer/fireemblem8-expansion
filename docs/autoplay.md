@@ -547,6 +547,10 @@ reference profile therefore cannot authorize `strategy.activate` /
 `strategy.deactivate` or reserve its flag, while emitted downstream custom
 records continue to validate. Profile flips participate in the event-list
 freshness stamp for both file and directory strategy sources.
+Authorization also requires the event-list owner's exact
+`autoplayStrategies.source` member set and declared chapter symbol; sharing a
+chapter ID alone cannot authorize a custom source. Missing, stale, or
+cross-source ownership fails before event C generation.
 
 ### Downstream strategy example
 
@@ -644,17 +648,20 @@ strategy host/ARM selector enforces exactly eight strategy EWRAM bytes and a
 lane excludes the runtime and generated table.
 
 The parsed full-link evidence is
-`reports/autoplay_strategy_budget.json`. Its immutable numeric pre-router
-input is `reports/autoplay_strategy_pre_router_budget.json`; it stores only
-the debug/release linker boundary measurement, not a source, object, ROM,
-hash, or Git identity. Against that contract, the shared router with reference
-profiles **disabled** adds 1,784 debug / 2,184 release ROM bytes. Enabling the
-two reference descriptors/callbacks adds a separate 472 debug / 408 release
-ROM bytes over that disabled-router build. These are distinct costs:
-downstream projects pay the shared-router delta by default, while the
-reference increment is paid only when `EXPANSION_AUTOPLAY_STRATEGIES=1`.
-The budget owner rebuilds the current disabled/enabled ELFs and derives both
-deltas from their `__floating_end` assignments without consulting Git.
+`reports/autoplay_strategy_budget.json`. The owner builds three matched
+variants from the current tree: an internal router-absent technical baseline,
+the normal router-present build with references disabled, and the
+references-enabled build. It derives both deltas from their `__floating_end`
+assignments and verifies with parsed ELF symbols that the absent variant omits
+the router hook and both generated tables while both present variants contain
+them. No source/object/ROM/commit snapshot, hash, branch, or Git identity is an
+input. The absent seam is private to this measurement target: it is not an
+Autoconf/Make project option, configuration identity, save behavior, shipped
+runtime, or alternate fallback. The measured shared-router and reference
+increments are reported separately so later unrelated ROM changes cancel out.
+The current matched result is +1,560 debug / +1,896 release ROM bytes for the
+profiles-disabled shared router, then another +456 debug / +408 release bytes
+for the enabled reference descriptors/callbacks.
 
 ### Strategy compatibility and budgets
 
@@ -663,7 +670,10 @@ deltas from their `__floating_end` assignments without consulting Git.
   tester-case catalog.
 - **Configuration:** `EXPANSION_AUTOPLAY_STRATEGIES` selects only the two
   reference descriptors/callbacks. It participates in ROM identity and has no
-  save migration or compatibility-epoch impact.
+  save migration or compatibility-epoch impact. Capacity, capability,
+  assignment-overlap, active-manifest counts, and event-helper validation all
+  consume the exact selected view emitted for that profile; disabled
+  references do not consume those contracts, while selected custom records do.
 - **Data/UI:** downstream custom strategy records remain available with the
   reference profiles disabled; no player UI, localization string, or second
   event language is introduced.
@@ -671,8 +681,9 @@ deltas from their `__floating_end` assignments without consulting Git.
   callback text. The shared router uses one eight-byte EWRAM pending pair and
   no IWRAM; the focused object gate enforces that exact bound and a 4 KiB text
   cap. Parsed full-link evidence records the profiles-disabled shared router
-  at +1,784 debug / +2,184 release ROM bytes and the enabled references at an
-  additional +472 debug / +408 release bytes.
+  separately from the incremental enabled references using matched
+  current-tree technical variants (+1,560/+1,896 debug/release router bytes,
+  then +456/+408 reference bytes).
 - **Runtime evidence:** the debug strategy profile and default-disabled ROMs
   execute bounded fixed-seed `CpDecide_Main` scenarios twice; their action and
   telemetry captures must repeat exactly.

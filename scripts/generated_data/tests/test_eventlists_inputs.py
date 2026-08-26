@@ -49,6 +49,12 @@ class EventListsInputTests(unittest.TestCase):
             self.repo / "src" / "data" / "autoplay_strategies.json"
         )
         self._set_pair(self.canonical_strategies, VALID_FLAG)
+        self.canonical_bundle = self.repo / "src" / "data" / "ch2_bundle.json"
+        self._write_bundle(
+            self.canonical_bundle,
+            self.canonical_strategies,
+            ["AutoplayStrategies_EventListsInputs"],
+        )
         self.custom_strategy_dir = (
             self.repo / "build" / "eventlists-inputs" / "custom-strategy-sources"
         )
@@ -57,6 +63,30 @@ class EventListsInputTests(unittest.TestCase):
         self._set_pair(self.custom_strategies, VALID_FLAG)
         self.other_strategies = self.custom_strategy_dir / "other_strategies.json"
         self._set_other_chapter_pair()
+        self.custom_bundle = (
+            self.repo / "build" / "eventlists-inputs" / "custom_bundle.json"
+        )
+        self.custom_file_bundle = (
+            self.repo / "build" / "eventlists-inputs" / "custom_file_bundle.json"
+        )
+        self.wrong_symbols_bundle = (
+            self.repo / "build" / "eventlists-inputs" / "wrong_symbols_bundle.json"
+        )
+        self._write_bundle(
+            self.custom_bundle,
+            self.custom_strategy_dir,
+            ["AutoplayStrategies_EventListsInputs"],
+        )
+        self._write_bundle(
+            self.custom_file_bundle,
+            self.custom_strategies,
+            ["AutoplayStrategies_EventListsInputs"],
+        )
+        self._write_bundle(
+            self.wrong_symbols_bundle,
+            self.custom_strategy_dir,
+            [],
+        )
 
         self.out_dir = self.repo / "build" / "eventlists-inputs" / "generated"
         self.target = self.out_dir / "data_ch2_eventlists.c"
@@ -113,7 +143,20 @@ class EventListsInputTests(unittest.TestCase):
         source["helperScripts"][0]["entries"][0]["args"][1] = flag
         self._write_json(self.eventlists, source)
 
-    def _make(self, strategy_source=None, reference_profiles="1"):
+    def _write_bundle(self, path, strategy_source, symbols):
+        bundle = json.loads(self.canonical_bundle.read_text(encoding="utf-8"))
+        bundle["autoplayStrategies"] = {
+            "source": str(strategy_source),
+            "symbols": symbols,
+        }
+        self._write_json(path, bundle)
+
+    def _make(
+        self,
+        strategy_source=None,
+        reference_profiles="1",
+        bundle_source=None,
+    ):
         command = [
             "make",
             "--no-print-directory",
@@ -126,6 +169,14 @@ class EventListsInputTests(unittest.TestCase):
         if strategy_source is not None:
             command.append(
                 "GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE={}".format(strategy_source)
+            )
+            if bundle_source is None:
+                bundle_source = self.custom_bundle
+        if bundle_source is not None:
+            command.append(
+                "GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE={}".format(
+                    bundle_source
+                )
             )
         return subprocess.run(
             command,
@@ -165,6 +216,25 @@ class EventListsInputTests(unittest.TestCase):
         self.assertEqual(canonical_restored.returncode, 0, canonical_restored.stdout)
 
         self._set_pair(self.canonical_strategies, INVALID_FLAG)
+        wrong_source = self._make(
+            self.custom_strategy_dir,
+            bundle_source=self.canonical_bundle,
+        )
+        self.assertNotEqual(wrong_source.returncode, 0)
+        self.assertIn(
+            "do not match event-list owner sources",
+            wrong_source.stdout,
+        )
+        wrong_symbols = self._make(
+            self.custom_strategy_dir,
+            bundle_source=self.wrong_symbols_bundle,
+        )
+        self.assertNotEqual(wrong_symbols.returncode, 0)
+        self.assertIn(
+            "is not declared by the event-list owner's autoplayStrategies symbols",
+            wrong_symbols.stdout,
+        )
+
         custom_valid = self._make(self.custom_strategy_dir)
         self.assertEqual(custom_valid.returncode, 0, custom_valid.stdout)
         self.assertIn(
@@ -177,9 +247,15 @@ class EventListsInputTests(unittest.TestCase):
         self.assertIn(os.path.realpath(self.custom_strategies), depfile_inputs)
         self.assertIn(os.path.realpath(self.other_strategies), depfile_inputs)
         self.assertIn(
-            os.path.realpath(self.repo / "src" / "data" / "ch2_bundle.json"),
+            os.path.realpath(self.custom_bundle),
             depfile_inputs,
         )
+
+        custom_file_valid = self._make(
+            self.custom_strategies,
+            bundle_source=self.custom_file_bundle,
+        )
+        self.assertEqual(custom_file_valid.returncode, 0, custom_file_valid.stdout)
 
         disabled = self._make(self.custom_strategy_dir, reference_profiles="0")
         self.assertNotEqual(disabled.returncode, 0)

@@ -357,11 +357,19 @@ selector as `data_autoplay_strategies.c`: with references disabled, their
 typed helpers are rejected and their flags are not reserved, while selected
 downstream custom descriptors/assignments remain available. File and directory
 sources use the same selection and dependency-freshness contract.
+The event-list owner must declare that exact file/directory member set and the
+selected chapter bundle symbol through `autoplayStrategies`; a custom source
+paired with a canonical or stale owner is rejected before generation.
 Two strategy-assigned groups in the same chapter may not share a character or
 owned `UnitDef_*` group. Validation reports the duplicated identity and both
 stable assignment paths regardless of JSON order, even for equal strategy IDs
 or a unit-level override. Overlap remains valid for objective-only groups that
 have no strategy assignment.
+Registry capacity, capability checks, assignment overlap, generation, and the
+build-local ACTIVE manifest all use this same selected record view. With
+references disabled the canonical two descriptors count as zero active
+records; enabled they count as two, and selected downstream custom descriptors
+remain counted in either profile.
 `ExpansionAutoplayStrategies_ActivateAssignment()` and
 `ExpansionAutoplayStrategies_DeactivateAssignment()` accept only a declared
 pair and set or clear only that existing flag at a safe boundary. A direct C
