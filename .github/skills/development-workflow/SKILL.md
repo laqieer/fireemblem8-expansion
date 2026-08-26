@@ -224,6 +224,46 @@ asserted reliably. Record the exact manual criterion and environment. If it is
 material and remains unverified, hold merge and closure on that criterion
 rather than requesting generic review.
 
+## Actionable manual-testing handoff
+
+This externally consumed workflow protocol applies only to a material visual,
+audio, or UX criterion that automation cannot reliably decide. It is not a
+human review gate, and deterministic criteria remain the agent's responsibility.
+
+- **Eligibility:** Use this handoff only for one precise visual, audio, or UX
+  judgment that semantic automation cannot reliably decide. Do not use it for
+  vague review requests or deterministic behavior the agent can verify.
+- **Pre-handoff evidence:** Render the real non-instrumented positive and
+  negative/control artifacts from the exact candidate commit, exercise the same
+  deterministic input route, and inspect deterministic screenshots for static
+  UI or a short synchronized emulator A/V clip for time-dependent or
+  audiovisual behavior. Semantic assertions remain the primary evidence; the
+  screenshot or clip is a required supplementary gross-failure check.
+- **Activation:** When the material criterion becomes actionable, apply
+  `waiting-for-manual-testing` (description: `Blocked until @laqieer records a
+  specific manual tester result`) to the originating issue and each open
+  implementation PR, and assign both the originating issue and each open
+  implementation PR to `laqieer`.
+- **Handoff comment:** Comment on each actionable issue and PR and explicitly
+  ping `@laqieer`. Each comment must include the tester-case ID, exact commit,
+  exact artifact path or link, artifact hash, environment, clean starting
+  state, numbered steps, expected result, negative/control artifact, and one
+  precise judgment requested.
+- **Hold:** State in every handoff comment that merge and issue closure are
+  blocked on that one judgment. Objective checks and review may continue, but
+  the implementation PR must not merge and the issue must not close.
+- **Completion:** When an accepted result is recorded, post the actual result
+  and evidence link on the issue and PR, remove the
+  `waiting-for-manual-testing` label from the issue and PR, remove the temporary
+  `laqieer` assignment unless the item remains assigned for another ownership
+  reason, and automatically resume exact-candidate gates and merge.
+- **Queue:** The actionable queue is
+  [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).
+  Do not schedule notifications or comments when this query is empty.
+
+The indexed source-only regression for this protocol is
+[`TC-WORKFLOW-MANUAL-HANDOFF-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-manual-handoff-001-surface-actionable-manual-testing-and-resume-automatically).
+
 ## Issue and pull-request boundaries
 
 Every independent issue must have one dedicated pull request. A pull request

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
 from typing import FrozenSet, Tuple
@@ -20,6 +21,22 @@ CONTRIBUTING_PATH = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 CLAUDE_PATH = ROOT / "CLAUDE.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
+WORKFLOW_GOVERNANCE_PATH = ROOT / "docs" / "test-cases" / "workflow-governance.md"
+TEST_CASE_REGISTRY_PATH = ROOT / "docs" / "test-cases" / "registry.json"
+MANUAL_HANDOFF_POLICY_HEADING = "Actionable manual-testing handoff"
+MANUAL_HANDOFF_CASE_HEADING = (
+    "TC-WORKFLOW-MANUAL-HANDOFF-001: "
+    "Surface actionable manual testing and resume automatically"
+)
+MANUAL_HANDOFF_QUERY = (
+    'repo:laqieer/fireemblem8-expansion is:open assignee:laqieer '
+    'label:"waiting-for-manual-testing"'
+)
+MANUAL_HANDOFF_QUERY_URL = (
+    "https://github.com/laqieer/fireemblem8-expansion/issues?"
+    "q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+"
+    "assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22"
+)
 MEANINGFUL_TEST_POLICY_HEADING = "Meaningful test evidence"
 POLICY_ATOM = re.compile(r"^[A-Za-z]+(?:[ /-][A-Za-z]+)*$")
 MEANINGFUL_TEST_POLICY_CLAUSE = re.compile(
@@ -501,6 +518,116 @@ def watcher_example_violations(text):
             normalized = " ".join(command.split())
             if re.search(r"\bgh run watch\b", normalized) and normalized != CANONICAL_WATCHER_COMMAND:
                 violations.append(normalized)
+    return violations
+
+
+def parse_labeled_policy(text, heading):
+    section = "\n".join(read_markdown_section(text, heading))
+    fields = {}
+    pattern = re.compile(
+        r"(?ms)^- \*\*(?P<name>[^*:]+):\*\* "
+        r"(?P<value>.*?)(?=^- \*\*|\Z)"
+    )
+    for match in pattern.finditer(section):
+        name = match.group("name")
+        if name in fields:
+            raise AssertionError(f"duplicate {heading!r} field {name!r}")
+        fields[name] = " ".join(match.group("value").split())
+    return fields
+
+
+def manual_handoff_contract_violations(text):
+    fields = parse_labeled_policy(text, MANUAL_HANDOFF_POLICY_HEADING)
+    required_fields = {
+        "Eligibility",
+        "Pre-handoff evidence",
+        "Activation",
+        "Handoff comment",
+        "Hold",
+        "Completion",
+        "Queue",
+    }
+    violations = [
+        f"missing field: {name}"
+        for name in sorted(required_fields - fields.keys())
+    ]
+
+    requirements = {
+        "Eligibility": (
+            "visual, audio, or UX judgment",
+            "semantic automation cannot reliably decide",
+            "deterministic behavior the agent can verify",
+        ),
+        "Pre-handoff evidence": (
+            "real non-instrumented",
+            "negative/control artifacts",
+            "exact candidate commit",
+            "deterministic screenshots for static UI",
+            "short synchronized emulator A/V clip",
+            "time-dependent or audiovisual behavior",
+            "Semantic assertions remain the primary evidence",
+        ),
+        "Activation": (
+            "waiting-for-manual-testing",
+            "originating issue and each open implementation PR",
+            "assign both the originating issue and each open implementation "
+            "PR to `laqieer`",
+        ),
+        "Handoff comment": (
+            "each actionable issue and PR",
+            "explicitly ping `@laqieer`",
+            "tester-case ID",
+            "exact commit",
+            "exact artifact path or link",
+            "artifact hash",
+            "environment",
+            "clean starting state",
+            "numbered steps",
+            "expected result",
+            "negative/control artifact",
+            "one precise judgment",
+        ),
+        "Hold": (
+            "merge and issue closure are blocked",
+            "PR must not merge",
+            "issue must not close",
+        ),
+        "Completion": (
+            "post the actual result and evidence link on the issue and PR",
+            "remove the `waiting-for-manual-testing` label from the issue and PR",
+            "remove the temporary `laqieer` assignment",
+            "unless the item remains assigned for another ownership reason",
+            "automatically resume exact-candidate gates and merge",
+        ),
+        "Queue": (
+            f"[`{MANUAL_HANDOFF_QUERY}`]({MANUAL_HANDOFF_QUERY_URL})",
+            "Do not schedule notifications or comments when this query is empty",
+        ),
+    }
+    for field, terms in requirements.items():
+        value = fields.get(field, "")
+        for term in terms:
+            if normalize_policy(term) not in normalize_policy(value):
+                violations.append(f"{field}: {term}")
+
+    # Exact spelling is irreplaceable here because these values are consumed
+    # directly by GitHub labels, mentions, assignments, and search.
+    exact_requirements = {
+        "Activation": (
+            "`waiting-for-manual-testing`",
+            "`laqieer`",
+        ),
+        "Handoff comment": ("`@laqieer`",),
+        "Completion": ("`waiting-for-manual-testing`", "`laqieer`"),
+        "Queue": (
+            f"[`{MANUAL_HANDOFF_QUERY}`]({MANUAL_HANDOFF_QUERY_URL})",
+        ),
+    }
+    for field, terms in exact_requirements.items():
+        value = fields.get(field, "")
+        for term in terms:
+            if term not in value:
+                violations.append(f"{field} exact: {term}")
     return violations
 
 
@@ -1704,6 +1831,120 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         for requirement in template_contract:
             with self.subTest(surface="template", requirement=requirement):
                 self.assertIn(requirement, template)
+
+    def test_actionable_manual_handoff_contract_is_parsed_and_indexed(self):
+        for path in (SKILL_PATH, CONTRIBUTING_PATH):
+            with self.subTest(surface=str(path)):
+                self.assertEqual(
+                    [],
+                    manual_handoff_contract_violations(
+                        path.read_text(encoding="utf-8")
+                    ),
+                )
+
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        case = "\n".join(
+            read_markdown_section(governance, MANUAL_HANDOFF_CASE_HEADING)
+        )
+        for requirement in (
+            "real non-instrumented positive and negative/control artifacts",
+            "deterministic screenshots for static UI",
+            "short synchronized emulator A/V clip",
+            "merge and issue closure are blocked",
+            "remove the label from the issue and PR",
+            "automatically resumes exact-candidate gates and merge",
+            "issue #83 has a recorded accepted result",
+            "issue #168 is agent-verifiable static UI",
+            "issues #90, #91, and #92",
+            "expected current queue is therefore empty",
+        ):
+            with self.subTest(surface="governance case", requirement=requirement):
+                self.assertIn(
+                    normalize_policy(requirement),
+                    normalize_policy(case),
+                )
+        self.assertIn(
+            f"[`{MANUAL_HANDOFF_QUERY}`]({MANUAL_HANDOFF_QUERY_URL})",
+            case,
+        )
+
+        registry = json.loads(
+            TEST_CASE_REGISTRY_PATH.read_text(encoding="utf-8")
+        )
+        feature = next(
+            item
+            for item in registry["features"]
+            if item["id"] == "workflow-governance"
+        )
+        self.assertIn(
+            "https://github.com/laqieer/fireemblem8-expansion/issues/169",
+            feature["issue_urls"],
+        )
+        self.assertIn(
+            "TC-WORKFLOW-MANUAL-HANDOFF-001",
+            feature["required_cases"],
+        )
+        indexed_case = next(
+            item
+            for item in registry["cases"]
+            if item["id"] == "TC-WORKFLOW-MANUAL-HANDOFF-001"
+        )
+        self.assertEqual(
+            indexed_case["document"],
+            "docs/test-cases/workflow-governance.md",
+        )
+        self.assertEqual(
+            indexed_case["anchor"],
+            "tc-workflow-manual-handoff-001-surface-actionable-manual-testing-"
+            "and-resume-automatically",
+        )
+        self.assertEqual(indexed_case["feature_id"], "workflow-governance")
+
+    def test_actionable_manual_handoff_protocol_mutations_fail_closed(self):
+        # Exact-source mutations are justified because this named protocol is
+        # externally consumed by GitHub labels, mentions, assignees, and URLs.
+        _, canonical = read_skill()
+        mutations = {
+            "label name": (
+                "waiting-for-manual-testing",
+                "waiting-for-testing",
+            ),
+            "explicit ping": ("`@laqieer`", "`manual tester`"),
+            "issue and PR assignment": (
+                "assign both the originating issue and each open "
+                "implementation PR to `laqieer`",
+                "record the tester name",
+            ),
+            "query URL": (
+                MANUAL_HANDOFF_QUERY_URL,
+                "https://github.com/laqieer/fireemblem8-expansion/issues",
+            ),
+            "pre-handoff screenshot and A/V rule": (
+                "inspect deterministic screenshots for static UI or a short "
+                "synchronized emulator A/V clip for time-dependent or "
+                "audiovisual behavior",
+                "inspect the artifact",
+            ),
+            "merge hold": (
+                "merge and issue closure are blocked",
+                "review is requested",
+            ),
+            "cleanup lifecycle": (
+                "remove the `waiting-for-manual-testing` label from the issue "
+                "and PR, remove the temporary `laqieer` assignment unless the "
+                "item remains assigned for another ownership reason, and "
+                "automatically resume exact-candidate gates and merge",
+                "archive the result",
+            ),
+        }
+        for mutation, (required, replacement) in mutations.items():
+            with self.subTest(mutation=mutation):
+                pattern = re.compile(
+                    r"\s+".join(re.escape(part) for part in required.split())
+                )
+                mutated, count = pattern.subn(replacement, canonical)
+                self.assertGreater(count, 0)
+                self.assertTrue(manual_handoff_contract_violations(mutated))
 
 
 if __name__ == "__main__":
