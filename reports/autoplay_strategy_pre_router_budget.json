@@ -1,0 +1,13 @@
+{
+  "schema": "fe8.autoplay-strategy-pre-router-budget.v1",
+  "metric": "__floating_end full-link ROM address",
+  "contract": "Immutable technical baseline measured before the shared autoplay strategy router",
+  "configs": {
+    "debug": {
+      "floating_end": 145968628
+    },
+    "release": {
+      "floating_end": 145965748
+    }
+  }
+}

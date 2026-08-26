@@ -1,6 +1,7 @@
 """Issue #90 typed autoplay strategy registry and profile contract."""
 
 import json
+import os
 import re
 import shlex
 import shutil
@@ -273,6 +274,95 @@ class AutoplayStrategyCaseContractTests(unittest.TestCase):
             self.assertGreater(
                 values["references_enabled"]["reference_incremental_delta_bytes"],
                 0,
+            )
+
+    def test_budget_regeneration_is_independent_of_git_and_router_source(self):
+        build_root = ROOT / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            work = Path(temporary)
+            baseline = work / "baseline.json"
+            baseline.write_text(
+                json.dumps({
+                    "schema": "fe8.autoplay-strategy-pre-router-budget.v1",
+                    "metric": "__floating_end full-link ROM address",
+                    "contract": "synthetic immutable baseline",
+                    "configs": {
+                        "debug": {"floating_end": 1000},
+                        "release": {"floating_end": 2000},
+                    },
+                }),
+                encoding="utf-8",
+            )
+
+            def write_linker_report(path, floating_end):
+                path.write_text(
+                    json.dumps({
+                        "pinned_assignments": [
+                            {
+                                "name": "__floating_end",
+                                "address": floating_end,
+                            }
+                        ]
+                    }),
+                    encoding="utf-8",
+                )
+
+            disabled_debug = work / "disabled-debug.json"
+            disabled_release = work / "disabled-release.json"
+            enabled_debug = work / "enabled-debug.json"
+            enabled_release = work / "enabled-release.json"
+            write_linker_report(disabled_debug, 1100)
+            write_linker_report(disabled_release, 2200)
+            write_linker_report(enabled_debug, 1130)
+            write_linker_report(enabled_release, 2240)
+            output = work / "report.json"
+            env = dict(os.environ)
+            env["GIT_DIR"] = str(work / "missing-git-directory")
+            completed = subprocess.run(
+                [
+                    "python3",
+                    str(
+                        ROOT
+                        / "scripts"
+                        / "linker_report"
+                        / "autoplay_strategy_budget.py"
+                    ),
+                    "--baseline",
+                    str(baseline),
+                    "--disabled-debug",
+                    str(disabled_debug),
+                    "--disabled-release",
+                    str(disabled_release),
+                    "--enabled-debug",
+                    str(enabled_debug),
+                    "--enabled-release",
+                    str(enabled_release),
+                    "--output",
+                    str(output),
+                ],
+                cwd=work,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            report = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                report["configs"]["debug"]["profiles_disabled"][
+                    "shared_router_delta_bytes"
+                ],
+                100,
+            )
+            self.assertEqual(
+                report["configs"]["release"]["references_enabled"][
+                    "reference_incremental_delta_bytes"
+                ],
+                40,
             )
 
 

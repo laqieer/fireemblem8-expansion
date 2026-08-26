@@ -352,7 +352,12 @@ or the corresponding `deactivate` operation instead of raw `flag.set` /
 `flag.clear`. Pair validation is scoped through the chapter bundle that owns
 the event-list manifest: an assignment in another chapter neither authorizes
 the typed operation nor reserves its flag against that chapter's ordinary flag
-helpers. `ExpansionAutoplayStrategies_ActivateAssignment()` and
+helpers. Event-list validation also receives the same reference-profile
+selector as `data_autoplay_strategies.c`: with references disabled, their
+typed helpers are rejected and their flags are not reserved, while selected
+downstream custom descriptors/assignments remain available. File and directory
+sources use the same selection and dependency-freshness contract.
+`ExpansionAutoplayStrategies_ActivateAssignment()` and
 `ExpansionAutoplayStrategies_DeactivateAssignment()` accept only a declared
 pair and set or clear only that existing flag at a safe boundary. A direct C
 call during an active blue computer phase returns

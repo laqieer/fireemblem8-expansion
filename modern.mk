@@ -3589,7 +3589,7 @@ expansion-modern-autoplay-strategy-budget:
 	+$(MAKE) expansion-modern-autoplay-strategy-enabled-budget \
 		MODERN_CONFIG=release MODERN_ABI=aapcs
 	"$(PYTHON)" "$(MODERN_AUTOPLAY_STRATEGY_BUDGET_SCRIPT)" \
-		--baseline-ref origin/master \
+		--baseline reports/autoplay_strategy_pre_router_budget.json \
 		--disabled-debug reports/linker-budget/modern-debug.json \
 		--disabled-release reports/linker-budget/modern-release.json \
 		--enabled-debug $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-debug.json \

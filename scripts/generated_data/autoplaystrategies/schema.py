@@ -236,6 +236,37 @@ def _error(message, loc, ref):
     return GeneratedDataError(message, loc, ref)
 
 
+def selected_records(records):
+    """Return the exact descriptors and assignment views emitted for this profile."""
+    reference_profiles_enabled = records.get("reference_profiles_enabled", False)
+    strategies = [
+        strategy
+        for strategy in records["strategies"]
+        if reference_profiles_enabled or strategy.id not in REFERENCE_STRATEGIES
+    ]
+    strategy_ids = {strategy.id for strategy in strategies}
+    chapters = []
+    for chapter in records["chapters"]:
+        chapter_assignment = chapter.chapter_assignment
+        if chapter_assignment is not None and chapter_assignment.strategy not in strategy_ids:
+            chapter_assignment = None
+        group_assignments = [
+            assignment
+            for assignment in chapter.group_assignments
+            if assignment.strategy in strategy_ids
+        ]
+        unit_assignments = [
+            assignment
+            for assignment in chapter.unit_assignments
+            if assignment.strategy in strategy_ids
+        ]
+        if chapter_assignment is not None or group_assignments or unit_assignments:
+            chapters.append(
+                (chapter, chapter_assignment, group_assignments, unit_assignments)
+            )
+    return strategies, chapters
+
+
 def _validate_assignment(assignment, ref, strategies, event_flags, diagnostics):
     diagnostics.extend(
         validate_reference(

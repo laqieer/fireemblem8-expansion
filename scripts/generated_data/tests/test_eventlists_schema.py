@@ -64,10 +64,15 @@ class EventListsSchemaValidTests(unittest.TestCase):
 
 
 class EventListsStrategyHelperTests(unittest.TestCase):
-    def _strategy_dependencies(self):
+    def _strategy_dependencies(self, reference_profiles="1"):
         dependencies = _load_dependency_records()
-        dependencies["autoplaystrategies"] = autoplaystrategies_schema.load_records(
-            fixture_path("autoplaystrategies", "valid.json")
+        dependencies["autoplaystrategies"] = (
+            autoplaystrategies_schema.AutoplayStrategiesTableSchema().configure_records(
+                autoplaystrategies_schema.load_records(
+                    fixture_path("autoplaystrategies", "valid.json")
+                ),
+                reference_profiles=reference_profiles,
+            )
         )
         dependencies["chapterbundle"] = chapterbundle_schema.load_records(
             fixture_path("chapterbundle", "valid.json")
@@ -75,7 +80,13 @@ class EventListsStrategyHelperTests(unittest.TestCase):
         dependencies["chapterbundle"][0].chapter.id = "CHAPTER_L_2"
         return dependencies
 
-    def _strategy_call(self, records, operation):
+    def _strategy_call(
+        self,
+        records,
+        operation,
+        strategy="AUTOPLAY_STRATEGY_OBJECTIVE_FIRST",
+        flag="EVFLAG_HIDE_BLINKING_ICON",
+    ):
         location = records.helper_scripts[0].loc
         return eventlists_schema.HelperCall(
             "strategy",
@@ -85,12 +96,12 @@ class EventListsStrategyHelperTests(unittest.TestCase):
             [
                 eventlists_schema.MacroArg(
                     "symbol",
-                    "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST",
+                    strategy,
                     location,
                 ),
                 eventlists_schema.MacroArg(
                     "symbol",
-                    "EVFLAG_HIDE_BLINKING_ICON",
+                    flag,
                     location,
                 ),
             ],
@@ -129,6 +140,93 @@ class EventListsStrategyHelperTests(unittest.TestCase):
                 stable_id_value("AUTOPLAY_STRATEGY_OBJECTIVE_FIRST")
             ),
         )
+
+    def test_profile_selection_matches_emitted_assignments_and_flag_reservations(self):
+        disabled = self._strategy_dependencies(reference_profiles="0")
+
+        for operation in ("activate", "deactivate"):
+            records = eventlists_schema.load_records(
+                fixture_path("eventlists", "helpers_valid.json")
+            )
+            reference_call = self._strategy_call(records, operation)
+            records.helper_scripts[0].entries.append(reference_call)
+            diagnostics = DiagnosticCollector()
+            eventlists_schema.validate(records, diagnostics, disabled)
+            self.assertTrue(
+                any(
+                    "undefined strategy reference 'AUTOPLAY_STRATEGY_OBJECTIVE_FIRST'"
+                    in error.message
+                    for error in diagnostics.errors
+                ),
+                [str(error) for error in diagnostics.errors],
+            )
+
+            records = eventlists_schema.load_records(
+                fixture_path("eventlists", "helpers_valid.json")
+            )
+            custom_call = self._strategy_call(
+                records,
+                operation,
+                strategy="AUTOPLAY_STRATEGY_TENTATIVE_FALLBACK",
+                flag="EVFLAG_BATTLE_QUOTES",
+            )
+            records.helper_scripts[0].entries.append(custom_call)
+            diagnostics = DiagnosticCollector()
+            eventlists_schema.validate(records, diagnostics, disabled)
+            self.assertTrue(diagnostics.ok, [str(error) for error in diagnostics.errors])
+
+        for operation in ("set", "clear"):
+            records = eventlists_schema.load_records(
+                fixture_path("eventlists", "helpers_valid.json")
+            )
+            location = records.helper_scripts[0].loc
+            records.helper_scripts[0].entries.extend(
+                [
+                    eventlists_schema.HelperCall(
+                        "flag",
+                        location,
+                        operation,
+                        location,
+                        [
+                            eventlists_schema.MacroArg(
+                                "symbol",
+                                "EVFLAG_HIDE_BLINKING_ICON",
+                                location,
+                            )
+                        ],
+                        location,
+                    ),
+                    eventlists_schema.HelperCall(
+                        "flag",
+                        location,
+                        operation,
+                        location,
+                        [
+                            eventlists_schema.MacroArg(
+                                "symbol",
+                                "EVFLAG_BATTLE_QUOTES",
+                                location,
+                            )
+                        ],
+                        location,
+                    ),
+                ]
+            )
+            diagnostics = DiagnosticCollector()
+            eventlists_schema.validate(records, diagnostics, disabled)
+            messages = [error.message for error in diagnostics.errors]
+            self.assertFalse(
+                any("EVFLAG_HIDE_BLINKING_ICON" in message for message in messages),
+                messages,
+            )
+            self.assertTrue(
+                any(
+                    "EVFLAG_BATTLE_QUOTES" in message
+                    and "must use strategy." in message
+                    for message in messages
+                ),
+                messages,
+            )
 
     def test_raw_flag_changes_cannot_bypass_declared_strategy_pair(self):
         for operation, typed_operation in (

@@ -5,32 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 from pathlib import Path
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-REPORT_PATHS = {
-    "debug": "reports/linker-budget/modern-debug.json",
-    "release": "reports/linker-budget/modern-release.json",
-}
 
 
 def _load(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
-
-
-def _load_git(ref, path):
-    completed = subprocess.run(
-        ["git", "show", "{}:{}".format(ref, path)],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        raise RuntimeError(completed.stderr.strip() or completed.stdout.strip())
-    return json.loads(completed.stdout)
 
 
 def _floating_end(report):
@@ -45,15 +24,18 @@ def _floating_end(report):
     return matches[0]
 
 
-def build_report(baseline_ref, disabled_paths, enabled_paths):
+def build_report(baseline_path, disabled_paths, enabled_paths):
+    baseline_report = _load(baseline_path)
+    if baseline_report.get("schema") != "fe8.autoplay-strategy-pre-router-budget.v1":
+        raise ValueError("unexpected autoplay strategy pre-router budget schema")
     configs = {}
     for config in ("debug", "release"):
-        baseline = _floating_end(_load_git(baseline_ref, REPORT_PATHS[config]))
+        baseline = baseline_report["configs"][config]["floating_end"]
         disabled = _floating_end(_load(disabled_paths[config]))
         enabled = _floating_end(_load(enabled_paths[config]))
         configs[config] = {
             "pre_router": {
-                "source": "git:{}:{}".format(baseline_ref, REPORT_PATHS[config]),
+                "source": baseline_path,
                 "floating_end": baseline,
             },
             "profiles_disabled": {
@@ -76,7 +58,7 @@ def build_report(baseline_ref, disabled_paths, enabled_paths):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--baseline-ref", required=True)
+    parser.add_argument("--baseline", required=True)
     parser.add_argument("--disabled-debug", required=True)
     parser.add_argument("--disabled-release", required=True)
     parser.add_argument("--enabled-debug", required=True)
@@ -84,7 +66,7 @@ def main(argv=None):
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     report = build_report(
-        args.baseline_ref,
+        args.baseline,
         {
             "debug": args.disabled_debug,
             "release": args.disabled_release,
