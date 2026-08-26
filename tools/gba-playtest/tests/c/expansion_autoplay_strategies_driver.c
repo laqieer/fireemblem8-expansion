@@ -17,6 +17,8 @@
 #include "event.h"
 
 #if FE8_EXPANSION_AUTOPLAY_STRATEGIES
+extern bool ExpansionAutoplayStrategy_Aggressive(
+    const struct ExpansionAutoplayStrategyContext* context);
 extern bool ExpansionAutoplayStrategy_ObjectiveFirst(
     const struct ExpansionAutoplayStrategyContext* context);
 #endif
@@ -39,6 +41,7 @@ u8 gActiveUnitId;
 struct AiDecision gAiDecision;
 u32 gEventSlots[EVENT_SLOT_COUNT];
 struct Vec2 gBmMapSize;
+u8 ** gBmMapMovement;
 u8 ** gBmMapRange;
 
 static struct CharacterData sEirikaCharacter;
@@ -47,6 +50,8 @@ static struct CharacterData sSethCharacter;
 static struct Unit sSeth;
 static u8 sRangeData[16][16];
 static u8 * sRangeRows[16];
+static u8 sMovementData[16][16];
+static u8 * sMovementRows[16];
 static bool sFlags[0x100];
 static int sSetFlagCalls[0x100];
 static int sClearFlagCalls[0x100];
@@ -57,6 +62,18 @@ static int sCombatMoveX;
 static int sCombatMoveY;
 static int sMoveDecisionX;
 static int sMoveDecisionY;
+static bool sUsePerUnitCombatMap;
+static int sEirikaCombatX;
+static int sEirikaCombatY;
+static int sSethCombatX;
+static int sSethCombatY;
+static bool sEirikaHasMagicRank;
+static bool sSethHasMagicRank;
+static int sMagicSealX;
+static int sMagicSealY;
+static int sMovementMapGenerationCount;
+static int sMagicSealGenerationCount;
+static struct Unit* sLastMovementMapUnit;
 static bool sTentativeReturnsSuccess;
 static u8 sTentativeActionId;
 
@@ -94,7 +111,7 @@ struct Unit* GetUnitFromCharId(int character)
 
 struct Unit* GetUnit(int unitId)
 {
-    if (unitId == gActiveUnitId)
+    if (unitId == 1)
         return &sEirika;
     if (unitId == 2)
         return &sSeth;
@@ -122,6 +139,11 @@ s8 AiAttemptCombatWithinMovement(s8 (*isEnemy)(struct Unit* unit))
 {
     (void)isEnemy;
     sCombatCalls++;
+    if (sCombatMoveX < 0 || sCombatMoveX >= gBmMapSize.x
+        || sCombatMoveY < 0 || sCombatMoveY >= gBmMapSize.y
+        || gBmMapMovement[sCombatMoveY][sCombatMoveX] > MAP_MOVEMENT_MAX)
+        return 0;
+
     AiSetDecision(sCombatMoveX, sCombatMoveY, AI_ACTION_COMBAT, 0x81, 0, 0, 0);
     return 1;
 }
@@ -130,6 +152,53 @@ s8 AiIsUnitEnemy(struct Unit* unit)
 {
     (void)unit;
     return true;
+}
+
+void AiGenerateUnitMovementMapRespectStay(struct Unit* unit)
+{
+    int x;
+    int y;
+    int reachableX = sCombatMoveX;
+    int reachableY = sCombatMoveY;
+
+    sMovementMapGenerationCount++;
+    sLastMovementMapUnit = unit;
+    for (y = 0; y < gBmMapSize.y; y++)
+        for (x = 0; x < gBmMapSize.x; x++)
+            sMovementData[y][x] = 0xFF;
+
+    sMovementData[unit->yPos][unit->xPos] = 0;
+    if (sUsePerUnitCombatMap)
+    {
+        if (unit == &sEirika)
+        {
+            reachableX = sEirikaCombatX;
+            reachableY = sEirikaCombatY;
+        }
+        else
+        {
+            reachableX = sSethCombatX;
+            reachableY = sSethCombatY;
+        }
+    }
+
+    if (reachableX >= 0 && reachableX < gBmMapSize.x
+        && reachableY >= 0 && reachableY < gBmMapSize.y)
+        sMovementData[reachableY][reachableX] = 1;
+}
+
+bool UnitHasMagicRank(struct Unit* unit)
+{
+    return unit == &sEirika ? sEirikaHasMagicRank : sSethHasMagicRank;
+}
+
+void GenerateMagicSealMap(int value)
+{
+    (void)value;
+    sMagicSealGenerationCount++;
+    if (sMagicSealX >= 0 && sMagicSealX < gBmMapSize.x
+        && sMagicSealY >= 0 && sMagicSealY < gBmMapSize.y)
+        sMovementData[sMagicSealY][sMagicSealX] = 0xFF;
 }
 
 void AiTryMoveTowards(s16 x, s16 y, u8 action, u8 maxDanger, u8 unk)
@@ -210,6 +279,18 @@ static void ResetFixture(void)
     sCombatMoveY = sEirika.yPos;
     sMoveDecisionX = 3;
     sMoveDecisionY = 3;
+    sUsePerUnitCombatMap = false;
+    sEirikaCombatX = sCombatMoveX;
+    sEirikaCombatY = sCombatMoveY;
+    sSethCombatX = sCombatMoveX;
+    sSethCombatY = sCombatMoveY;
+    sEirikaHasMagicRank = false;
+    sSethHasMagicRank = false;
+    sMagicSealX = -1;
+    sMagicSealY = -1;
+    sMovementMapGenerationCount = 0;
+    sMagicSealGenerationCount = 0;
+    sLastMovementMapUnit = NULL;
     sTentativeReturnsSuccess = false;
     sTentativeActionId = AI_ACTION_NONE;
     memset(gEventSlots, 0, sizeof(gEventSlots));
@@ -218,8 +299,11 @@ static void ResetFixture(void)
     for (index = 0; index < 16; index++)
     {
         sRangeRows[index] = sRangeData[index];
+        sMovementRows[index] = sMovementData[index];
         memset(sRangeData[index], MAP_MOVEMENT_MAX, sizeof(sRangeData[index]));
+        memset(sMovementData[index], 0xFF, sizeof(sMovementData[index]));
     }
+    gBmMapMovement = sMovementRows;
     gBmMapRange = sRangeRows;
     sRangeData[sEirika.yPos][sEirika.xPos] = 10;
     sRangeData[sMoveDecisionY][sMoveDecisionX] = 5;
@@ -277,6 +361,62 @@ static int TestRegistryFailures(void)
 }
 
 #if FE8_EXPANSION_AUTOPLAY_STRATEGIES
+static int TestCombatMovementPreparation(void)
+{
+    struct ExpansionAutoplayStrategyContext context = { NULL };
+
+    ResetFixture();
+    sUsePerUnitCombatMap = true;
+    sEirikaCombatX = 8;
+    sEirikaCombatY = 8;
+    sSethCombatX = 4;
+    sSethCombatY = 4;
+    sCombatMoveX = 8;
+    sCombatMoveY = 8;
+    CHECK(
+        ExpansionAutoplayStrategy_Aggressive(&context)
+            && gAiDecision.actionPerformed
+            && sLastMovementMapUnit == &sEirika,
+        "Aggressive must prepare and consume the first unit movement map"
+    );
+
+    AiClearDecision();
+    gActiveUnit = &sSeth;
+    gActiveUnitId = 2;
+    CHECK(
+        !ExpansionAutoplayStrategy_Aggressive(&context)
+            && !gAiDecision.actionPerformed
+            && sLastMovementMapUnit == &sSeth
+            && sMovementMapGenerationCount == 2,
+        "the next unit must replace stale movement data and reject an unreachable move"
+    );
+
+    sCombatMoveX = 4;
+    sCombatMoveY = 4;
+    CHECK(
+        ExpansionAutoplayStrategy_Aggressive(&context)
+            && gAiDecision.actionPerformed
+            && gAiDecision.xMove == 4
+            && gAiDecision.yMove == 4,
+        "the next unit must retain legal combat from its own movement map"
+    );
+
+    ResetFixture();
+    sCombatMoveX = 8;
+    sCombatMoveY = 8;
+    sEirikaHasMagicRank = true;
+    sMagicSealX = 8;
+    sMagicSealY = 8;
+    CHECK(
+        !ExpansionAutoplayStrategy_Aggressive(&context)
+            && !gAiDecision.actionPerformed
+            && sMagicSealGenerationCount == 1
+            && gBmMapMovement[8][8] > MAP_MOVEMENT_MAX,
+        "magic-seal preparation must reject combat from a sealed destination"
+    );
+    return 0;
+}
+
 static int TestReferenceProfiles(void)
 {
     enum ExpansionAutoplayStrategyResult result;
@@ -640,16 +780,41 @@ static int TestReferenceProfiles(void)
     sFlags[EVFLAG_HIDE_BLINKING_ICON] = true;
     sEirika.xPos = 2;
     sEirika.yPos = 2;
-    sCombatMoveX = 8;
-    sCombatMoveY = 8;
+    sCombatMoveX = 3;
+    sCombatMoveY = 3;
+    sUsePerUnitCombatMap = true;
+    sEirikaCombatX = 3;
+    sEirikaCombatY = 3;
+    RefreshObjectiveTelemetry();
+    result = ExpansionAutoplayStrategies_TryDecide();
+    CHECK(
+        result == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && gAiDecision.actionPerformed
+            && gAiDecision.actionId == AI_ACTION_COMBAT
+            && sCombatCalls == 1
+            && sMoveCalls == 0
+            && sLastMovementMapUnit == &sEirika,
+        "pending reach combat must use the current unit prepared movement map"
+    );
+
+    ResetFixture();
+    sFlags[EVFLAG_GAMEOVER] = true;
+    sFlags[EVFLAG_HIDE_BLINKING_ICON] = true;
+    sEirika.xPos = 2;
+    sEirika.yPos = 2;
+    sCombatMoveX = 3;
+    sCombatMoveY = 3;
+    sUsePerUnitCombatMap = true;
+    sEirikaCombatX = 4;
+    sEirikaCombatY = 4;
     RefreshObjectiveTelemetry();
     result = ExpansionAutoplayStrategies_TryDecide();
     CHECK(
         result == EXPANSION_AUTOPLAY_STRATEGY_OK
             && !gAiDecision.actionPerformed
             && sCombatCalls == 1
-            && sMoveCalls == 0,
-        "an in-area member must stay constrained while another member keeps reach pending"
+            && sMovementMapGenerationCount == 1,
+        "pending reach combat must reject a rectangle tile unreachable by this unit"
     );
 
     ResetFixture();
@@ -705,6 +870,7 @@ int main(void)
 {
     CHECK(TestRegistryFailures() == 0, "registry validation");
 #if FE8_EXPANSION_AUTOPLAY_STRATEGIES
+    CHECK(TestCombatMovementPreparation() == 0, "combat movement preparation");
     CHECK(TestReferenceProfiles() == 0, "reference profiles");
 #else
     CHECK(TestDisabledProfileNegative() == 0, "disabled profile negative");

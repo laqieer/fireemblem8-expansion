@@ -2295,7 +2295,7 @@
       "purpose": "Prove typed registry validation, deterministic chapter/group/unit precedence, capability failures, safe event activation/deactivation, and default Unit.ai fallback.",
       "prerequisites": "Repository root with Python 3, host C compiler, and modern ARM toolchain; no save or savestate.",
       "actions": "Run the focused strategy schema/bundle, host dispatch, and ARM symbol-omission selectors.",
-      "expected_result": "Aggressive selects legal combat, Objective-first advances the active reach objective deterministically, unit overrides group before chapter, and typed activation/deactivation applies at the safe boundary.",
+      "expected_result": "Aggressive selects legal combat, Objective-first advances the active reach objective deterministically, unit overrides group before chapter, typed activation/deactivation applies at the safe boundary, and structured full-link evidence separates the +1784/+2184-byte debug/release shared router from the +472/+408-byte enabled reference increment.",
       "negative_control": "Default empty/disabled data returns fallback without an action; malformed registry/assignment records and unsupported objectives fail explicitly before action commit.",
       "interactions": "Depends on #85 blue computer execution and #89 objectives/groups; no player UI, project chapter policy, alternate router, or extra taxonomy is introduced.",
       "save_compatibility": "No save bytes, migration, epoch, or preference; the bounded pending operation is EWRAM-only, cleared on Suspend resume, and assignments reconstruct from generated data and existing event flags.",
@@ -2317,6 +2317,10 @@
         {
           "command": "make expansion-modern-autoplay-strategy-runtime-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/run_autoplay_strategy_checks.py"
+        },
+        {
+          "command": "make expansion-modern-autoplay-strategy-budget",
+          "evidence": "reports/autoplay_strategy_budget.json"
         }
       ]
     },

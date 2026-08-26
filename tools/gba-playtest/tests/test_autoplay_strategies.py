@@ -169,6 +169,112 @@ class AutoplayStrategyCaseContractTests(unittest.TestCase):
                 completed.stdout + completed.stderr,
             )
 
+    def test_direct_c_example_handles_phase_active_without_claiming_deferral(self):
+        tutorial = (ROOT / "docs" / "generated_data_tutorial.md").read_text(
+            encoding="utf-8"
+        )
+        section = tutorial.split("### Direct C assignment changes", 1)[1].split(
+            "`activationFlag` and `deactivationFlag`", 1
+        )[0]
+        c_source = re.search(r"```c\n(.*?)```", section, re.DOTALL).group(1)
+        self.assertIn("EXPANSION_AUTOPLAY_STRATEGY_ERR_PHASE_ACTIVE", c_source)
+        self.assertIn("Nothing was queued", c_source)
+        self.assertNotIn("EventActivate", c_source)
+
+        if CC is not None:
+            completed = subprocess.run(
+                [
+                    CC,
+                    "-std=gnu89",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    "-I",
+                    str(ROOT / "include"),
+                    "-I",
+                    str(ROOT / "include" / "generated"),
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-x",
+                    "c",
+                    "-fsyntax-only",
+                    "-",
+                ],
+                cwd=ROOT,
+                input=(
+                    '#include "global.h"\n'
+                    '#include "constants/event-flags.h"\n'
+                    '#include "expansion_autoplay_strategies.h"\n\n'
+                    + c_source
+                ),
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+
+    def test_structured_budget_separates_router_and_reference_deltas(self):
+        evidence = json.loads(
+            (ROOT / "reports" / "autoplay_strategy_budget.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(evidence["schema"], "fe8.autoplay-strategy-budget.v1")
+
+        registry = json.loads(
+            (ROOT / "docs" / "test-cases" / "registry.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        case = next(
+            item for item in registry["cases"]
+            if item["id"] == "TC-AUTOPLAY-STRATEGY-001"
+        )
+        self.assertIn(
+            {
+                "command": "make expansion-modern-autoplay-strategy-budget",
+                "evidence": "reports/autoplay_strategy_budget.json",
+            },
+            case["automation"],
+        )
+
+        for config in ("debug", "release"):
+            values = evidence["configs"][config]
+            current = json.loads(
+                (
+                    ROOT
+                    / "reports"
+                    / "linker-budget"
+                    / "modern-{}.json".format(config)
+                ).read_text(encoding="utf-8")
+            )
+            current_end = next(
+                item["address"]
+                for item in current["pinned_assignments"]
+                if item["name"] == "__floating_end"
+            )
+            self.assertEqual(
+                values["profiles_disabled"]["floating_end"],
+                current_end,
+            )
+            self.assertEqual(
+                values["profiles_disabled"]["shared_router_delta_bytes"],
+                current_end - values["pre_router"]["floating_end"],
+            )
+            self.assertEqual(
+                values["references_enabled"]["reference_incremental_delta_bytes"],
+                values["references_enabled"]["floating_end"] - current_end,
+            )
+            self.assertGreater(
+                values["profiles_disabled"]["shared_router_delta_bytes"],
+                0,
+            )
+            self.assertGreater(
+                values["references_enabled"]["reference_incremental_delta_bytes"],
+                0,
+            )
+
 
 class AutoplayStrategiesRuntimeTests(unittest.TestCase):
     def test_public_header_is_include_order_independent(self):

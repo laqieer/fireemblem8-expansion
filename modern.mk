@@ -64,6 +64,8 @@ MODERN_GOALS := \
 	expansion-modern-chapter-objectives-profile-boot-check \
 	expansion-modern-chapter-objectives-check \
 	expansion-modern-autoplay-strategy-runtime-check \
+	expansion-modern-autoplay-strategy-enabled-budget \
+	expansion-modern-autoplay-strategy-budget \
 	expansion-modern-autoplay-strategies-objects \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
@@ -3546,6 +3548,19 @@ MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR := \
 	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/runtime-check
 MODERN_AUTOPLAY_STRATEGY_RUNTIME_SCRIPT := \
 	tools/gba-playtest/run_autoplay_strategy_checks.py
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT := \
+	build/expansion-modern-autoplay-strategy-budget
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_BUILD_ROOT = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG)-build
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_GENERATED_DIR = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG)-generated
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_INVENTORY = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG)-inventory.md
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_REPORT = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG).json
+MODERN_AUTOPLAY_STRATEGY_BUDGET_REPORT := reports/autoplay_strategy_budget.json
+MODERN_AUTOPLAY_STRATEGY_BUDGET_SCRIPT := \
+	scripts/linker_report/autoplay_strategy_budget.py
 MODERN_AUTOPLAY_STRATEGY_OBJECTIVES_SOURCE := \
 	scripts/generated_data/tests/fixtures/chapterobjectives/strategy_runtime_valid.json
 MODERN_AUTOPLAY_STRATEGY_SOURCE := \
@@ -3555,6 +3570,31 @@ MODERN_AUTOPLAY_STRATEGY_BUNDLE_SOURCE := \
 
 CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)
 CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)
+CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)
+
+expansion-modern-autoplay-strategy-enabled-budget:
+	+$(MAKE) expansion-modern-budget \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_BUILD_ROOT) \
+		GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_GENERATED_DIR) \
+		GENERATED_DATA_AUTOPLAYSTRATEGIES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_INVENTORY) \
+		EXPANSION_AUTOPLAY_STRATEGIES=1 \
+		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_REPORT)
+
+expansion-modern-autoplay-strategy-budget:
+	+$(MAKE) expansion-modern-budget MODERN_CONFIG=debug MODERN_ABI=aapcs
+	+$(MAKE) expansion-modern-budget MODERN_CONFIG=release MODERN_ABI=aapcs
+	+$(MAKE) expansion-modern-autoplay-strategy-enabled-budget \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs
+	+$(MAKE) expansion-modern-autoplay-strategy-enabled-budget \
+		MODERN_CONFIG=release MODERN_ABI=aapcs
+	"$(PYTHON)" "$(MODERN_AUTOPLAY_STRATEGY_BUDGET_SCRIPT)" \
+		--baseline-ref origin/master \
+		--disabled-debug reports/linker-budget/modern-debug.json \
+		--disabled-release reports/linker-budget/modern-release.json \
+		--enabled-debug $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-debug.json \
+		--enabled-release $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-release.json \
+		--output "$(MODERN_AUTOPLAY_STRATEGY_BUDGET_REPORT)"
 
 expansion-modern-autoplay-check: expansion-modern-boot-preflight expansion-modern-rom
 	@mkdir -p "$(MODERN_AUTOPLAY_RUNTIME_OUTDIR)/tmp"

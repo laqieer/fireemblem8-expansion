@@ -1,0 +1,38 @@
+{
+  "schema": "fe8.autoplay-strategy-budget.v1",
+  "metric": "__floating_end full-link ROM address delta in bytes",
+  "configs": {
+    "debug": {
+      "pre_router": {
+        "source": "git:origin/master:reports/linker-budget/modern-debug.json",
+        "floating_end": 145968628
+      },
+      "profiles_disabled": {
+        "source": "reports/linker-budget/modern-debug.json",
+        "floating_end": 145970412,
+        "shared_router_delta_bytes": 1784
+      },
+      "references_enabled": {
+        "source": "build/expansion-modern-autoplay-strategy-budget/enabled-debug.json",
+        "floating_end": 145970884,
+        "reference_incremental_delta_bytes": 472
+      }
+    },
+    "release": {
+      "pre_router": {
+        "source": "git:origin/master:reports/linker-budget/modern-release.json",
+        "floating_end": 145965748
+      },
+      "profiles_disabled": {
+        "source": "reports/linker-budget/modern-release.json",
+        "floating_end": 145967932,
+        "shared_router_delta_bytes": 2184
+      },
+      "references_enabled": {
+        "source": "build/expansion-modern-autoplay-strategy-budget/enabled-release.json",
+        "floating_end": 145968340,
+        "reference_incremental_delta_bytes": 408
+      }
+    }
+  }
+}
