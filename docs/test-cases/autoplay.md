@@ -373,7 +373,10 @@ duplicate/missing callbacks, invalid capability bits, capacity overflow, and
 Objective-first with an unsupported objective kind fail explicitly before an
 action commits. Enabled reference helpers lower to generated event C; the same
 helpers fail validation when references are disabled because their assignments
-are absent from emitted strategy C.
+are absent from emitted strategy C. Strategy-assigned groups must be disjoint
+by character and owned unit group; overlap fails identically under reversed
+assignment order, equal strategies, and unit overrides, while unassigned
+objective-only group overlap remains valid.
 
 The structured budget result reports the profiles-disabled shared router
 separately from the enabled references: +1,784 debug / +2,184 release ROM
