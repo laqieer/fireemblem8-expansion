@@ -166,13 +166,13 @@ PROVIDE(gUnk_62 = __iwram_start + 0x002C61);
 . = 0x005410 + __hq_mixer_layout_shift;
         . = ALIGN(4); *src/m4a.o(.bss.gSoundInfo);
 . = 0x0063C0 + __hq_mixer_layout_shift;
-PROVIDE(gMPlayInfo_SE4_BMP2 = .);
+        . = ALIGN(4); *src/m4a.o(.bss.gMPlayInfo_SE4_BMP2);
 . = (0x006400 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
     + __hq_mixer_layout_anchor * __hq_mixer_enabled;
-PROVIDE(gMPlayInfo_SE5_BMP3 = .);
+        . = ALIGN(4); *src/m4a.o(.bss.gMPlayInfo_SE5_BMP3);
 . = (0x006440 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
     + __hq_mixer_layout_anchor * __hq_mixer_enabled;
-PROVIDE(gMPlayInfo_BGM1 = .);
+        . = ALIGN(4); *src/m4a.o(.bss.gMPlayInfo_BGM1);
 . = (0x006480 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
     + __hq_mixer_layout_anchor * __hq_mixer_enabled;
         . = ALIGN(4); *src/m4a.o(.bss.gMPlayJumpTable);
@@ -184,25 +184,25 @@ PROVIDE(gUnk_86 = __iwram_start + 0x00650C + __hq_mixer_layout_shift);
         . = ALIGN(4); *src/m4a.o(.bss.gCgbChans);
 . = (0x006610 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
     + __hq_mixer_layout_anchor * __hq_mixer_enabled;
-PROVIDE(gMPlayInfo_SE6_BMP4 = .);
+        . = ALIGN(4); *src/m4a.o(.bss.gMPlayInfo_SE6_BMP4);
 . = (0x006650 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
     + __hq_mixer_layout_anchor * __hq_mixer_enabled;
-PROVIDE(gMPlayInfo_BGM2 = .);
+        . = ALIGN(4); *src/m4a.o(.bss.gMPlayInfo_BGM2);
 . = (0x006690 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
     + __hq_mixer_layout_anchor * __hq_mixer_enabled;
-PROVIDE(gMPlayInfo_SE1_SYS1 = .);
+        . = ALIGN(4); *src/m4a.o(.bss.gMPlayInfo_SE1_SYS1);
 . = (0x0066D0 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
     + __hq_mixer_layout_anchor * __hq_mixer_enabled;
-PROVIDE(gMPlayInfo_SE3_BMP1 = .);
+        . = ALIGN(4); *src/m4a.o(.bss.gMPlayInfo_SE3_BMP1);
 . = (0x006710 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
     + __hq_mixer_layout_anchor * __hq_mixer_enabled;
         . = ALIGN(4); *src/m4a.o(.bss.gMPlayMemAccArea);
 . = (0x006720 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
     + __hq_mixer_layout_anchor * __hq_mixer_enabled;
-PROVIDE(gMPlayInfo_SE7_EVT = .);
+        . = ALIGN(4); *src/m4a.o(.bss.gMPlayInfo_SE7_EVT);
 . = (0x006760 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
     + __hq_mixer_layout_anchor * __hq_mixer_enabled;
-PROVIDE(gMPlayInfo_SE2_SYS2 = .);
+        . = ALIGN(4); *src/m4a.o(.bss.gMPlayInfo_SE2_SYS2);
 
 /* *src/agb_sram.o(COMMON); */
 . = (0x0067A0 + __hq_mixer_layout_shift) * (1 - __hq_mixer_enabled)
