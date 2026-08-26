@@ -16,6 +16,23 @@ static enum DebugToolsDiagnosticsContext sDiagnosticsContext;
 struct LCDControlBuffer gLCDControlBuffer = {0};
 struct PlaySt gPlaySt = {0};
 
+/*
+ * The language-menu behavior harness reuses this lifecycle fixture for every
+ * engine-facing dependency in the production object. Calls are counted so the
+ * formatter/valid-prefs initializer test fails if it reaches selector UI.
+ */
+#if DEBUGTOOLS_LIFECYCLE_LANGUAGE_MENU_SUPPORT
+u16 gBG0TilemapBuffer[32 * 32];
+u16 gBG1TilemapBuffer[32 * 32];
+struct MenuItemDef sDebugToolsMenuItemDefs[DEBUGTOOLS_SHARED_MENU_ITEM_MAX];
+int gDebugToolsLifecycleLanguageMenuUiCallCount;
+
+#define RECORD_LANGUAGE_MENU_UI_CALL() \
+    (gDebugToolsLifecycleLanguageMenuUiCallCount++)
+#else
+#define RECORD_LANGUAGE_MENU_UI_CALL() ((void)0)
+#endif
+
 u8 DebugTools_CancelMenu(struct MenuProc* menu, struct MenuItemProc* item)
 {
     (void)menu;
@@ -71,23 +88,27 @@ void SetTextFont(struct Font* font)
 
 u16* BG_GetMapBuffer(int bg)
 {
+    RECORD_LANGUAGE_MENU_UI_CALL();
     (void)bg;
     return sDebugToolsLifecycleBgMap;
 }
 
 void BG_Fill(void* tm, int fill)
 {
+    RECORD_LANGUAGE_MENU_UI_CALL();
     (void)tm;
     (void)fill;
 }
 
 void BG_EnableSyncByMask(int bgMask)
 {
+    RECORD_LANGUAGE_MENU_UI_CALL();
     (void)bgMask;
 }
 
 void BG_SetPosition(u16 bg, u16 x, u16 y)
 {
+    RECORD_LANGUAGE_MENU_UI_CALL();
     (void)bg;
     (void)x;
     (void)y;
@@ -107,18 +128,21 @@ void PrintDebugStringToBG(u16* bg, const char* asciiStr)
 
 void Text_SetColor(struct Text* text, int colorId)
 {
+    RECORD_LANGUAGE_MENU_UI_CALL();
     (void)text;
     (void)colorId;
 }
 
 void Text_DrawString(struct Text* text, const char* str)
 {
+    RECORD_LANGUAGE_MENU_UI_CALL();
     (void)text;
     (void)str;
 }
 
 void PutText(struct Text* text, u16* dest)
 {
+    RECORD_LANGUAGE_MENU_UI_CALL();
     (void)text;
     (void)dest;
 }
@@ -172,13 +196,16 @@ void PutDrawText(
     (void)string;
 }
 
+#if !DEBUGTOOLS_LIFECYCLE_LANGUAGE_MENU_SUPPORT
 ExpansionLocaleId ExpansionLocale_GetCurrent(void)
 {
     return EXPANSION_LOCALE_QPS_PLOC;
 }
+#endif
 
 const char* ExpansionLocale_ResolveCurrent(ExpansionMsgId msgId)
 {
+    RECORD_LANGUAGE_MENU_UI_CALL();
     (void)msgId;
     return "[!! QPS !!]";
 }
@@ -217,9 +244,78 @@ struct MenuProc* DebugToolsLifecycle_StartOrphanMenu(const struct MenuDef* def)
     return &sDebugToolsLifecycleMenuProc;
 }
 
+#if DEBUGTOOLS_LIFECYCLE_LANGUAGE_MENU_SUPPORT
+void SetupBackgrounds(u16* bgConfig)
+{
+    RECORD_LANGUAGE_MENU_UI_CALL();
+    (void)bgConfig;
+}
+
+void SetPrimaryHBlankHandler(void (*hblankHandler)(void))
+{
+    RECORD_LANGUAGE_MENU_UI_CALL();
+    (void)hblankHandler;
+}
+
+void ResetText(void)
+{
+    RECORD_LANGUAGE_MENU_UI_CALL();
+    DebugToolsLifecycle_SetTextCounter(0);
+}
+
+void ApplySystemObjectsPalettes(void)
+{
+    RECORD_LANGUAGE_MENU_UI_CALL();
+}
+
+void LoadUiFrameGraphics(void)
+{
+    RECORD_LANGUAGE_MENU_UI_CALL();
+}
+
+void LockMenuScrollBar(void)
+{
+    RECORD_LANGUAGE_MENU_UI_CALL();
+}
+
+void UnlockMenuScrollBar(void)
+{
+    RECORD_LANGUAGE_MENU_UI_CALL();
+}
+
+void ResetTextFont(void)
+{
+    RECORD_LANGUAGE_MENU_UI_CALL();
+    gActiveFont->chr_counter = 0;
+}
+
+struct MenuProc* StartMenuAt(
+    const struct MenuDef* def,
+    struct MenuRect rect,
+    ProcPtr parent)
+{
+    RECORD_LANGUAGE_MENU_UI_CALL();
+    (void)rect;
+    (void)parent;
+    return DebugToolsLifecycle_StartOrphanMenu(def);
+}
+
+int DebugTools_IsHubActive(void)
+{
+    RECORD_LANGUAGE_MENU_UI_CALL();
+    return 0;
+}
+
+void Config_RedrawAfterLanguageMenu(void)
+{
+    RECORD_LANGUAGE_MENU_UI_CALL();
+}
+#endif
+
 #if !DEBUGTOOLS_LIFECYCLE_USE_REAL_UIMENU
 u8 MenuAlwaysEnabled(const struct MenuItemDef* def, int number)
 {
+    RECORD_LANGUAGE_MENU_UI_CALL();
     (void)def;
     (void)number;
     return MENU_ENABLED;
@@ -234,6 +330,7 @@ u8 MenuAlwaysDisabled(const struct MenuItemDef* def, int number)
 
 u8 MenuCancelSelect(struct MenuProc* menu, struct MenuItemProc* item)
 {
+    RECORD_LANGUAGE_MENU_UI_CALL();
     (void)menu;
     (void)item;
     return MENU_ACT_SKIPCURSOR | MENU_ACT_CLEAR | MENU_ACT_END | MENU_ACT_SND6B;
@@ -322,6 +419,7 @@ void ClearUiItemHoverExt(int bg, int x, int y, int width)
 
 ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
 {
+    RECORD_LANGUAGE_MENU_UI_CALL();
     (void)parent;
 
     if (script == gProcScr_DebugToolsMenuTransition)
