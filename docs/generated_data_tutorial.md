@@ -357,6 +357,11 @@ selector as `data_autoplay_strategies.c`: with references disabled, their
 typed helpers are rejected and their flags are not reserved, while selected
 downstream custom descriptors/assignments remain available. File and directory
 sources use the same selection and dependency-freshness contract.
+Two strategy-assigned groups in the same chapter may not share a character or
+owned `UnitDef_*` group. Validation reports the duplicated identity and both
+stable assignment paths regardless of JSON order, even for equal strategy IDs
+or a unit-level override. Overlap remains valid for objective-only groups that
+have no strategy assignment.
 `ExpansionAutoplayStrategies_ActivateAssignment()` and
 `ExpansionAutoplayStrategies_DeactivateAssignment()` accept only a declared
 pair and set or clear only that existing flag at a safe boundary. A direct C

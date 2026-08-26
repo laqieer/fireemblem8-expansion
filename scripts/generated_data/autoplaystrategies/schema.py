@@ -330,6 +330,56 @@ def _owner_source_paths(owner, diagnostics=None):
         return frozenset()
 
 
+def _validate_assigned_group_memberships(chapter, groups, diagnostics, chapter_ref):
+    assigned_groups = {}
+    for assignment in chapter.group_assignments:
+        group = groups.get(assignment.group)
+        if group is None or assignment.group in assigned_groups:
+            continue
+        assignment_ref = "{}.groupAssignments[group={}]".format(
+            chapter_ref, assignment.group
+        )
+        assigned_groups[assignment.group] = (group, assignment_ref)
+
+    seen = {
+        "character": {},
+        "unit group": {},
+    }
+    for group_id in sorted(assigned_groups):
+        group, assignment_ref = assigned_groups[group_id]
+        members = sorted(
+            group.members,
+            key=lambda member: (member.character, member.unit_group),
+        )
+        for member in members:
+            for kind, value, loc in (
+                ("character", member.character, member.character_loc),
+                ("unit group", member.unit_group, member.unit_group_loc),
+            ):
+                previous = seen[kind].get(value)
+                if previous is None:
+                    seen[kind][value] = (group_id, assignment_ref)
+                    continue
+                previous_group, previous_ref = previous
+                if previous_group == group_id:
+                    continue
+                diagnostics.add(
+                    _error(
+                        "{} '{}' belongs to both strategy-assigned groups "
+                        "'{}' ({}) and '{}' ({})".format(
+                            kind,
+                            value,
+                            previous_group,
+                            previous_ref,
+                            group_id,
+                            assignment_ref,
+                        ),
+                        loc,
+                        assignment_ref + ".group",
+                    )
+                )
+
+
 def validate(records, diagnostics, dependency_records=None,
              chapters_header=CHAPTERS_HEADER, event_flags_header=EVENT_FLAGS_HEADER,
              characters_header=character_refs.CHARACTERS_HEADER):
@@ -578,6 +628,7 @@ def validate(records, diagnostics, dependency_records=None,
 
         objective_record = objectives.get(chapter.chapter)
         groups = {group.id: group for group in objective_record.groups} if objective_record else {}
+        _validate_assigned_group_memberships(chapter, groups, diagnostics, ref)
         owner_unit_counts = {}
         if len(owners) == 1:
             owner_dependencies = chapterbundle_schema.resolve_bundle_dependencies(

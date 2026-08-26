@@ -494,7 +494,12 @@ ID, callback, objective/action capabilities, and reference-profile marker.
 The dispatcher chooses the first active assignment in this fixed order:
 **unit, group, chapter, existing low-level `Unit.ai[]` fallback**. Source
 order is never a tie-breaker between assignment scopes; duplicate targets are
-rejected during generation. Active objective selection retains the existing
+rejected during generation. Within the group scope, every strategy-assigned
+group must be disjoint by both character and owned unit-group identity.
+Overlaps fail even when both groups select the same strategy or the character
+also has a unit override, so JSON assignment order can never route a unit.
+Objective-only groups with no strategy assignment retain #89's existing
+overlap contract. Active objective selection retains the existing
 failure/pending/success priority and authored-record-order tie rule, never a
 pointer or link address.
 

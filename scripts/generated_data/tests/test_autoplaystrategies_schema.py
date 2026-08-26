@@ -3,6 +3,7 @@
 import copy
 import json
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -70,6 +71,30 @@ def _validate(name):
 
 
 class AutoplayStrategiesSchemaTests(unittest.TestCase):
+    def _with_second_assigned_group(self, overlap):
+        records = schema.load_records(strategy_fixture("valid.json"))
+        dependencies = _dependency_records(records)
+        objective_record = dependencies["chapterobjectives"][0]
+        first_group = objective_record.groups[0]
+        second_group = copy.deepcopy(first_group)
+        second_group.id = "AI_GROUP_FIXTURE_OVERLAP"
+        second_group.members = [copy.deepcopy(first_group.members[0])]
+        if overlap == "character":
+            second_group.members[0].unit_group = "UnitDef_Fixture_Alternate"
+        elif overlap == "unit_group":
+            second_group.members[0].character = "CHARACTER_FRANZ"
+        elif overlap == "none":
+            second_group.members[0].character = "CHARACTER_FRANZ"
+            second_group.members[0].unit_group = "UnitDef_Fixture_Alternate"
+        else:
+            raise AssertionError("unknown overlap kind")
+        objective_record.groups.append(second_group)
+
+        assignment = copy.deepcopy(records["chapters"][0].group_assignments[0])
+        assignment.group = second_group.id
+        records["chapters"][0].group_assignments.append(assignment)
+        return records, dependencies, second_group
+
     def test_reference_profiles_generate_c89_with_stable_ids(self):
         records, diagnostics = _validate("valid.json")
         self.assertTrue(diagnostics.ok, diagnostics.render())
@@ -239,6 +264,202 @@ class AutoplayStrategiesSchemaTests(unittest.TestCase):
                 r"has no \*_strategies.json sources",
             ):
                 schema.load_records(str(empty_dir))
+
+    def test_assigned_group_character_overlap_is_order_independent_with_unit_override(self):
+        records, dependencies, second_group = self._with_second_assigned_group(
+            "character"
+        )
+        self.assertTrue(records["chapters"][0].unit_assignments)
+
+        rendered = []
+        locations = []
+        for reverse in (False, True):
+            candidate = copy.deepcopy(records)
+            if reverse:
+                candidate["chapters"][0].group_assignments.reverse()
+            diagnostics = DiagnosticCollector()
+            schema.validate(candidate, diagnostics, dependencies)
+            errors = [
+                error
+                for error in diagnostics.errors
+                if "belongs to both strategy-assigned groups" in error.message
+            ]
+            self.assertEqual(len(errors), 1, diagnostics.render())
+            rendered.append(errors[0].message)
+            locations.append(errors[0].location)
+            self.assertIn("character 'CHARACTER_EIRIKA'", errors[0].message)
+            self.assertIn("AI_GROUP_FIXTURE_EIRIKA", errors[0].message)
+            self.assertIn("AI_GROUP_FIXTURE_OVERLAP", errors[0].message)
+            self.assertIn(
+                "groupAssignments[group=AI_GROUP_FIXTURE_EIRIKA]",
+                errors[0].message,
+            )
+            self.assertIn(
+                "groupAssignments[group=AI_GROUP_FIXTURE_OVERLAP]",
+                errors[0].message,
+            )
+        self.assertEqual(rendered[0], rendered[1])
+        self.assertEqual(
+            locations,
+            [second_group.members[0].character_loc] * 2,
+        )
+
+    def test_assigned_group_unit_group_overlap_is_rejected_even_for_same_strategy(self):
+        records, dependencies, second_group = self._with_second_assigned_group(
+            "unit_group"
+        )
+        assignments = records["chapters"][0].group_assignments
+        self.assertEqual(assignments[0].strategy, assignments[1].strategy)
+        diagnostics = DiagnosticCollector()
+        schema.validate(records, diagnostics, dependencies)
+        errors = [
+            error
+            for error in diagnostics.errors
+            if "unit group 'UnitDef_Event_Ch2Ally' belongs to both" in error.message
+        ]
+        self.assertEqual(len(errors), 1, diagnostics.render())
+        self.assertEqual(errors[0].location, second_group.members[0].unit_group_loc)
+
+    def test_nonoverlap_and_unassigned_overlap_remain_valid(self):
+        records, dependencies, _second_group = self._with_second_assigned_group(
+            "none"
+        )
+        records["chapters"][0].group_assignments[1].strategy = (
+            "AUTOPLAY_STRATEGY_AGGRESSIVE"
+        )
+        diagnostics = DiagnosticCollector()
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(diagnostics.ok, diagnostics.render())
+
+        groups = {
+            group.id: group for group in dependencies["chapterobjectives"][0].groups
+        }
+
+        def resolved_by_character(candidate, character):
+            _strategies, chapters = schema.selected_records(
+                schema.AutoplayStrategiesTableSchema().configure_records(
+                    candidate,
+                    reference_profiles="1",
+                )
+            )
+            group_assignments = chapters[0][2]
+            for assignment in group_assignments:
+                if any(
+                    member.character == character
+                    for member in groups[assignment.group].members
+                ):
+                    return assignment.strategy
+            return None
+
+        reversed_records = copy.deepcopy(records)
+        reversed_records["chapters"][0].group_assignments.reverse()
+        generated_pairs = []
+        for candidate in (records, reversed_records):
+            output = generate.generate_c_source(
+                schema.AutoplayStrategiesTableSchema().configure_records(
+                    candidate,
+                    reference_profiles="1",
+                ),
+                strategy_fixture("valid.json"),
+            )
+            generated_pairs.append(
+                set(
+                    re.findall(
+                        r"\.groupId = (0x[0-9A-F]+),.*?"
+                        r"\.strategyId = (0x[0-9A-F]+),",
+                        output,
+                        re.DOTALL,
+                    )
+                )
+            )
+        self.assertEqual(generated_pairs[0], generated_pairs[1])
+        self.assertEqual(len(generated_pairs[0]), 2)
+
+        for character, expected in (
+            ("CHARACTER_EIRIKA", "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST"),
+            ("CHARACTER_FRANZ", "AUTOPLAY_STRATEGY_AGGRESSIVE"),
+        ):
+            self.assertEqual(resolved_by_character(records, character), expected)
+            self.assertEqual(
+                resolved_by_character(reversed_records, character),
+                expected,
+            )
+
+        records, dependencies, _second_group = self._with_second_assigned_group(
+            "character"
+        )
+        records["chapters"][0].group_assignments.pop()
+        diagnostics = DiagnosticCollector()
+        schema.validate(records, diagnostics, dependencies)
+        self.assertTrue(diagnostics.ok, diagnostics.render())
+
+    def test_directory_backed_identical_memberships_are_scoped_per_chapter(self):
+        build_root = os.path.join(REPO_ROOT, "build")
+        os.makedirs(build_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            source_dir = Path(temporary)
+            source = json.loads(
+                Path(strategy_fixture("valid.json")).read_text(encoding="utf-8")
+            )
+            l2_chapter = source["chapters"][0]
+            l2_chapter["groupAssignments"][0]["group"] = "AI_GROUP_FIXTURE_L2"
+            l2_chapter["unitAssignments"] = []
+            l3_chapter = copy.deepcopy(l2_chapter)
+            l3_chapter["chapter"] = "CHAPTER_L_3"
+            l3_chapter["symbol"] = "AutoplayStrategies_FixtureL3"
+            l3_chapter["groupAssignments"][0]["group"] = "AI_GROUP_FIXTURE_L3"
+            (source_dir / "l2_strategies.json").write_text(
+                json.dumps(source),
+                encoding="utf-8",
+            )
+            (source_dir / "l3_strategies.json").write_text(
+                json.dumps({
+                    "$schema": "fe8.autoplaystrategies.v1",
+                    "strategies": [],
+                    "chapters": [l3_chapter],
+                }),
+                encoding="utf-8",
+            )
+            records = schema.load_records(str(source_dir))
+
+            objectives = objectives_schema.load_records(
+                fixture_path("chapterobjectives", "two_chapters.json")
+            )
+            objectives[1].groups[0].members[0].character = "CHARACTER_EIRIKA"
+            objectives[1].groups[0].members[0].unit_group = (
+                "UnitDef_Fixture_L2Ally"
+            )
+            chapter_bundles = chapterbundle_schema.load_records(
+                fixture_path("chapterobjectives", "two_chapter_bundles")
+            )
+            for chapter_id, bundles in chapter_bundles.by_chapter.items():
+                chapter_bundle = bundles[0]
+                owned = [
+                    chapter for chapter in records["chapters"]
+                    if chapter.chapter == chapter_id
+                ]
+                chapter_bundle.autoplay_strategies = chapterbundle_schema.TableRef(
+                    "autoplaystrategies",
+                    str(source_dir),
+                    chapter_bundle.loc,
+                    [chapter.symbol for chapter in owned],
+                    [chapter.symbol_loc for chapter in owned],
+                    chapter_bundle.loc,
+                )
+            diagnostics = DiagnosticCollector()
+            schema.validate(
+                records,
+                diagnostics,
+                {
+                    "chapterobjectives": objectives,
+                    "chapterbundle": chapter_bundles,
+                },
+            )
+            overlap_errors = [
+                error for error in diagnostics.errors
+                if "belongs to both strategy-assigned groups" in error.message
+            ]
+            self.assertEqual(overlap_errors, [], diagnostics.render())
 
     def test_unit_assignment_must_resolve_once_in_owning_chapter_data(self):
         records = schema.load_records(strategy_fixture("valid.json"))
