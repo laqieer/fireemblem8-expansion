@@ -265,12 +265,16 @@ Every non-root PR must record:
 
 Keep those links and the umbrella checklist current as the stack changes.
 Every issue-specific layer must remain buildable and testable against its
-immediate base. Review and merge the stack bottom-up; never merge a child while
-its required parent is open. After a parent merges, run
+immediate base. Keep a child based on its immediate parent while that parent is
+open, and run exact-head Build CI and Copilot review against that genuine base.
+Never temporarily retarget a child to `master`, close and reopen it, or
+otherwise misrepresent the stack solely to trigger CI.
+Review and merge the stack bottom-up; never merge a child while its required
+parent is open. After a parent merges, retarget the child once by running
 `gh pr edit <child-pr> --base master`, confirm that
 `git diff master...<child-branch>` contains only the child issue's scope, and
-rerun candidate Build CI and Copilot review whenever the candidate commit or
-tree changes.
+rerun exact-head Build CI and Copilot review because the candidate tree and
+base changed.
 
 Apply candidate-commit Build CI plus Copilot review, then post-merge
 consolidated Build verification, issue evidence and closure, and the remote
@@ -595,8 +599,9 @@ review or approval. Respect branch protection and never bypass a required
 GitHub control.
 
 For a stacked PR, satisfy those candidate Build/review conditions against its
-immediate base, merge only after its parent, then retarget and revalidate it as
-described above.
+immediate parent base without temporary base retargeting, merge only after its
+parent, then retarget once to `master`, verify the child-only diff, and rerun
+the exact-head gates as described above.
 
 Leave the PR open only when:
 

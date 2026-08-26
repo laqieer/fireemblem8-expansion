@@ -944,10 +944,15 @@ class TesterCaseRegistryTests(unittest.TestCase):
                 },
             },
             "workflow-governance": {
-                "case_id": "TC-WORKFLOW-CI-WAIT-001",
+                "case_id": "TC-WORKFLOW-STACKED-CI-001",
+                "case_ids": [
+                    "TC-WORKFLOW-CI-WAIT-001",
+                    "TC-WORKFLOW-STACKED-CI-001",
+                ],
                 "reference": ".github/skills/development-workflow/SKILL.md",
                 "document": "docs/test-cases/workflow-governance.md",
                 "commands": {
+                    'python3 -m unittest discover -s tests/workflows -p "test_*.py" -v',
                     "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
                 },
             },
@@ -958,7 +963,10 @@ class TesterCaseRegistryTests(unittest.TestCase):
                 self.assertIn(feature_id, expected_feature_ids)
                 feature = features[feature_id]
                 self.assertEqual(feature["reference"], contract["reference"])
-                self.assertEqual(feature["required_cases"], [contract["case_id"]])
+                self.assertEqual(
+                    feature["required_cases"],
+                    contract.get("case_ids", [contract["case_id"]]),
+                )
                 case = cases[contract["case_id"]]
                 self.assertEqual(case["feature_id"], feature_id)
                 self.assertEqual(case["document"], contract["document"])

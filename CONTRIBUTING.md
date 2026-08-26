@@ -115,10 +115,13 @@ Base independent issue branches directly on `master`. Stack a child issue only
 when it requires a parent's unmerged code or contract. A non-root PR must say
 `Depends on #...`, identify its immediate base branch and stack position, and
 list known dependents. Keep each layer buildable and testable against that
-base, merge bottom-up, and never merge a child before its required parent.
-After the parent merges, retarget the child to `master`, confirm its diff
-contains only the child issue, and rerun exact-candidate checks if the commit
-or candidate tree changes.
+base. While the parent is open, keep the child based on that immediate parent
+and run exact-head Build CI and Copilot review there. Never temporarily
+retarget a child to `master`, close and reopen it, or otherwise misrepresent
+the stack solely to trigger CI. Merge bottom-up and never merge a child before
+its required parent. After the parent merges, retarget the child once to
+`master`, confirm its diff contains only the child issue, and rerun exact-head
+Build CI and Copilot review because the candidate tree and base changed.
 
 Keep an issue's implementation, tests, documentation, generated outputs,
 migrations, and provenance evidence in the same PR. Do not split by file type
@@ -141,11 +144,14 @@ Suppose discussion `#100` tracks three accepted issues:
 Discussion `#100` keeps links and completion state for all three PRs, but has
 no umbrella implementation PR. PRs `#101` and `#102` are independent even if
 they touch a shared guide. PR `#103` is a genuine child because it cannot
-build against `master` until `#102` lands. After merging `#102` with the
-repository's merge-commit policy, run
+build against `master` until `#102` lands. Keep PR `#103` based on
+`feat/102-registry` while its parent is open and run its exact-head Build CI
+and Copilot review on that genuine base; do not flip it to `master` merely to
+trigger CI. After merging `#102` with the repository's merge-commit policy,
+retarget once by running
 `gh pr edit <child-pr-number> --base master`, inspect
-`git diff master...feat/103-selector`, and rerun candidate Build CI and
-Copilot review if the candidate commit or tree changed. After merge, let the
+`git diff master...feat/103-selector`, and rerun exact-head Build CI and
+Copilot review because the candidate tree and base changed. After merge, let the
 automatic master Build rerun the same consolidated evidence. Complete discussion
 `#100` only after all three issues are independently merged, verified on
 `master`, and closed.

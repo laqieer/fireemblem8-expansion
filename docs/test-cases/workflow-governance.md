@@ -63,3 +63,69 @@ replacement of the retired Full Matrix.
 No cleanup is required. The test validates repository policy text and its
 fail-closed fixtures; it does not dispatch or wait for a live GitHub workflow
 and does not grant push credentials.
+
+## TC-WORKFLOW-STACKED-CI-001: Run exact Build CI on a genuine stacked PR base
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #171](https://github.com/laqieer/fireemblem8-expansion/issues/171).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3 and the committed combined Build workflow; no GitHub token, live pull
+  request, workflow dispatch, ROM, or emulator is required.
+- **Prerequisites and clean starting state:** start at the repository root
+  with `.github/workflows/build.yml` and the stacked-PR guidance unchanged.
+
+### Actions
+
+1. Run
+   `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`.
+2. Run
+   `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
+3. Inspect the synthetic pull-request fixture targeting `agent/issue-170` and
+   its fail-closed master-filter mutation.
+
+### Expected result
+
+The synthetic non-master-base pull request selects the existing `host-tests`,
+`build`, `extended-host-tests`, `legacy`, and fail-closed `summary` jobs. Every
+candidate worker still checks out and verifies `pull_request.head.sha`. The
+publisher is absent from pull-request execution, while a push to `master`
+selects it and a push to any other branch selects no workflow jobs.
+
+The child remains based on its immediate parent while that parent is open, and
+exact-head Build CI and Copilot review run against that genuine base. After the
+parent merges, the child is retargeted once to `master`, its child-only diff is
+verified, and the exact-head gates rerun because the candidate tree and base
+changed.
+
+### Negative control
+
+Restoring `pull_request.branches: [master]`, removing either trigger, allowing
+non-master pushes, exposing the patch publisher to pull requests, weakening
+exact-head checkout verification, or documenting a temporary base flip solely
+to trigger CI makes the focused suites fail.
+
+### Interactions and save compatibility
+
+This source-only contract depends on the existing combined Build jobs, exact
+checkout binding, trusted owner-context pushes, and one watcher per exact run.
+It conflicts with temporary base retargeting, stale evidence after a base/tree
+change, duplicate workflows, duplicate matrices, weakened permissions, and PR
+publication. It changes no save, generated data, localization, ROM/RAM,
+debug/release, or archival behavior and needs no feature gate.
+
+### Automation
+
+`python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
+workflow, evaluates synthetic PR/push metadata, applies the master-only PR
+filter mutation, checks exact-head checkout binding, and preserves the
+fail-closed summary and publisher boundary.
+
+`python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
+validates the genuine-stack workflow and rejects guidance that relies on a
+temporary base flip solely to trigger CI.
+
+### Cleanup and limitations
+
+No cleanup is required. The case evaluates committed workflow and governance
+contracts without dispatching GitHub Actions; it does not prove live service
+availability or grant credentials.
