@@ -144,6 +144,15 @@
     "debug.value.phase_player": "PLAYER",
     "debug.value.phase_enemy": "ENEMY",
     "debug.value.phase_npc": "NPC",
-    "debug.value.phase_other": "OTHER"
+    "debug.value.phase_other": "OTHER",
+    "debug.confirm.turn_increment": "Appliquer tour +1",
+    "debug.confirm.turn_decrement": "Appliquer tour -1",
+    "debug.confirm.red_computer": "Appliquer CPU rouge",
+    "debug.confirm.red_blocked": "Bloquer rouge",
+    "debug.confirm.green_computer": "Appliquer CPU vert",
+    "debug.confirm.green_blocked": "Bloquer vert",
+    "debug.status.turn": "TOUR",
+    "debug.mode.computer": "CPU",
+    "debug.mode.blocked": "BLOQUE"
   }
 }

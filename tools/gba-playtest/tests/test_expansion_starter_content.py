@@ -15,8 +15,8 @@ depends on:
   * the disabled translation unit emits NO data at all, so a default build's
     EWRAM/BSS layout -- and therefore every committed scenario probe address
     -- is untouched by adding this feature;
-  * the issue #6 implementation sources name the content item symbolically
-    (ITEM_EXPANSION_CE), never as a raw numeric ID; and
+  * the enabled content registers once through the public mechanics API and
+    applies its typed, capped avoid effect only to a bearer; and
   * the ORIGINAL authored display text is config-gated end to end: the
     generator writes nothing at EXPANSION_STARTER_CONTENT=0, the default
     objects contain no such string and no call into the content seam, and the
@@ -24,8 +24,10 @@ depends on:
     through the production name path.
 """
 
+import importlib
 import os
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -43,9 +45,11 @@ ITEMTEST_HEADER = REPO_ROOT / "include" / "expansion_itemtest.h"
 RUNNER = REPO_ROOT / "tools" / "gba-playtest" / "run_item_expansion_checks.py"
 
 BMITEM_SRC = REPO_ROOT / "src" / "bmitem.c"
+BMBATTLE_SRC = REPO_ROOT / "src" / "bmbattle.c"
 ITEMS_EXPANSION_JSON = REPO_ROOT / "src" / "data" / "items_expansion.json"
 CONTENT_TEXT_HEADER_NAME = "items_expansion_content_text.h"
 CONTENT_TEXT_CATALOG_NAME = "items_expansion_content_text.json"
+TEST_ARTIFACTS_DIR = REPO_ROOT / "build" / "test-artifacts"
 
 CC = shutil.which("gcc") or shutil.which("cc")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
@@ -58,6 +62,63 @@ CONTENT_DEFINES = (
     "FE8_EXPANSION_MECHANICS_SAMPLE=1",
     "FE8_ITEM_ID_CAP=0xCE",
 )
+
+TEST_QUALITY_CASE_ID = "TC-TEST-QUALITY-001"
+ISSUE_158_AUDIT_FILE = "tools/gba-playtest/tests/test_expansion_starter_content.py"
+ISSUE_158_AUDIT_MIGRATIONS = {
+    TEST_QUALITY_CASE_ID: {
+    ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_no_raw_numeric_content_item_id":
+        ("StarterContentRegistrationHostTests",
+         "test_enabled_content_registers_once_and_applies_bounded_avoid"),
+    ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_cap_dependency_error_stays_actionable":
+        ("CompileTimeDependencyTests", "test_content_at_default_cap_fails"),
+    ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_no_double_slash_comments":
+        ("StarterContentC89ContractTests",
+         "test_enabled_content_translation_units_and_header_compile_as_c89"),
+    ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_content_registers_only_through_the_public_api":
+        ("StarterContentRegistrationHostTests",
+         "test_enabled_content_registers_once_and_applies_bounded_avoid"),
+    ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_single_builtin_install_point":
+        ("StarterContentRegistrationHostTests",
+         "test_enabled_content_registers_once_and_applies_bounded_avoid"),
+    ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_bmbattle_seam_is_not_content_aware":
+        ("StarterContentBattleSeamTests",
+         "test_generic_hook_is_only_content_path_and_poisoned_special_case_fails"),
+    ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_content_effect_is_bounded":
+        ("StarterContentRegistrationHostTests",
+         "test_enabled_content_registers_once_and_applies_bounded_avoid"),
+    ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_content_stat_differs_from_the_existing_sample":
+        ("StarterContentRegistrationHostTests",
+         "test_enabled_content_registers_once_and_applies_bounded_avoid"),
+    ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_probe_field_order_matches_the_c_struct":
+        ("ItemExpansionProbeAbiTests",
+         "test_probe_matches_every_runner_field_offset_and_width"),
+    ISSUE_158_AUDIT_FILE + "::SourceHygieneTests.test_every_probe_field_is_a_u32_scalar":
+        ("ItemExpansionProbeAbiTests",
+         "test_probe_matches_every_runner_field_offset_and_width"),
+    ISSUE_158_AUDIT_FILE + "::ContentTextGenerationTests.test_content_profile_emits_the_exact_authored_name":
+        ("StarterContentRegistrationHostTests",
+         "test_enabled_content_registers_once_and_applies_bounded_avoid"),
+    ISSUE_158_AUDIT_FILE + "::ContentTextGenerationTests.test_generated_output_is_deterministic_and_path_independent":
+        ("ContentTextGenerationTests",
+         "test_generated_output_is_deterministic_and_path_independent"),
+    ISSUE_158_AUDIT_FILE + "::ContentTextGenerationTests.test_no_committed_source_hand_holds_the_authored_text":
+        ("StarterContentRegistrationHostTests",
+         "test_enabled_content_registers_once_and_applies_bounded_avoid"),
+    ISSUE_158_AUDIT_FILE + "::ContentTextGenerationTests.test_texts_table_carries_no_content_message":
+        ("scripts.generated_data.tests.test_items_expansion",
+         "AuthoredContentRecordTests", "test_record_consumes_no_shared_message_slot"),
+    ISSUE_158_AUDIT_FILE + "::ProductionNamePathTests.test_default_bmitem_has_no_content_seam":
+        ("ProductionNamePathTests", "test_default_bmitem_has_no_content_seam"),
+    ISSUE_158_AUDIT_FILE + "::ProductionNamePathTests.test_content_module_carries_exactly_the_generated_text":
+        ("StarterContentRegistrationHostTests",
+         "test_enabled_content_registers_once_and_applies_bounded_avoid"),
+    ISSUE_158_AUDIT_FILE + "::ProductionNamePathTests.test_default_content_module_has_no_authored_text":
+        ("ProductionNamePathTests", "test_default_content_module_has_no_authored_text"),
+    ISSUE_158_AUDIT_FILE + "::ProductionNamePathTests.test_over_long_authoring_text_fails_the_build":
+        ("ProductionNamePathTests", "test_over_long_authoring_text_fails_the_build"),
+    },
+}
 
 
 def authored_name():
@@ -79,17 +140,18 @@ def generate_content_text(out_dir, content):
         cwd=str(REPO_ROOT), env=env, capture_output=True, text=True)
 
 
-def _strip_c_comments(text):
-    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
-    text = re.sub(r"//[^\n]*", " ", text)
-    return text
-
-
 def _include_flags():
     flags = []
     for directory in INCLUDE_DIRS:
         flags += ["-I", str(directory)]
     return flags
+
+
+def _test_tempdir():
+    import tempfile
+
+    TEST_ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    return tempfile.TemporaryDirectory(dir=str(TEST_ARTIFACTS_DIR))
 
 
 def _arm_compile(work_dir, src, obj_name, defines=(), extra_includes=()):
@@ -105,119 +167,412 @@ def _arm_compile(work_dir, src, obj_name, defines=(), extra_includes=()):
     return proc.returncode, proc.stdout + proc.stderr, obj
 
 
-class SourceHygieneTests(unittest.TestCase):
-    """Structural properties that need no toolchain, so they always run."""
+def _host_compile(work_dir, src, obj_name, defines=(), extra_includes=()):
+    obj = Path(work_dir) / obj_name
+    cmd = [CC, "-c", "-w", "-std=gnu89"] + _include_flags()
+    cmd += ["-I", str(REPO_ROOT)]
+    for directory in extra_includes:
+        cmd += ["-I", str(directory)]
+    for define in defines:
+        cmd += ["-D", define]
+    cmd += [str(src), "-o", str(obj)]
+    proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
+    return proc.returncode, proc.stdout + proc.stderr, obj
 
-    ISSUE6_SOURCES = (
-        "src/expansion_starter_content.c",
-        "include/expansion_starter_content.h",
-        "src/expansion_mechanics.c",
-        "include/expansion_mechanics.h",
-        "src/expansion_itemtest.c",
+
+def _host_link(work_dir, objects, executable_name):
+    executable = Path(work_dir) / executable_name
+    proc = subprocess.run(
+        [CC, *map(str, objects), "-o", str(executable)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
     )
+    return proc.returncode, proc.stdout + proc.stderr, executable
 
-    def test_no_raw_numeric_content_item_id(self):
-        """The bundled item is always named ITEM_EXPANSION_CE (or reached
-        through the typed accessor); a bare 0xCE literal in compiled code
-        would silently outlive any future re-numbering.
 
-        String literals are excluded and checked separately below: an
-        `#error` that names the exact FE8_ITEM_ID_CAP value to pass is a
-        diagnostic, not an ID reference, and dropping it would make the
-        failure less actionable."""
-        pattern = re.compile(r"\b0[xX]0*CE\b")
-        for relative in self.ISSUE6_SOURCES:
-            text = _strip_c_comments((REPO_ROOT / relative).read_text(encoding="utf-8"))
-            code = re.sub(r'"(?:[^"\\]|\\.)*"', '""', text)
-            self.assertIsNone(
-                pattern.search(code),
-                "{} contains a raw 0xCE item literal; use ITEM_EXPANSION_CE "
-                "or ExpansionStarterContentItemId()".format(relative))
+def _referenced_symbols(obj):
+    output = subprocess.run([NM, str(obj)], capture_output=True, text=True, check=True).stdout
+    return {line.split()[-1] for line in output.splitlines() if line.split()}
 
-    def test_cap_dependency_error_stays_actionable(self):
-        """The one permitted 0xCE mention is the #error text that tells the
-        contributor exactly which cap to build with."""
-        text = CONTENT_HEADER.read_text(encoding="utf-8")
-        message = re.search(r'#error "([^"]*expanded item cap[^"]*)"', text)
-        self.assertIsNotNone(message)
-        self.assertIn("FE8_ITEM_ID_CAP=0xCE", message.group(1))
 
-    def test_no_double_slash_comments(self):
-        """Shared C stays C89/agbcc-safe."""
-        for relative in self.ISSUE6_SOURCES:
-            text = (REPO_ROOT / relative).read_text(encoding="utf-8")
-            without_block = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
-            self.assertIsNone(
-                re.search(r"(^|[^:])//", without_block),
-                "{} contains a // comment".format(relative))
+class TestQualityAuditMappingTests(unittest.TestCase):
+    """TC-TEST-QUALITY-001 requires every #158 audit record to retain a
+    stronger executable, generated-output, or compiled evidence target."""
 
-    def test_content_registers_only_through_the_public_api(self):
-        text = _strip_c_comments(CONTENT_SRC.read_text(encoding="utf-8"))
-        self.assertIn("ExpansionMechanicsRegister(", text)
-        for forbidden in ("sEntries", "sCount", "gExpansionMechanicsProbe"):
-            self.assertNotIn(
-                forbidden, text,
-                "the content example must not touch the registry's internals")
+    def test_all_audited_rewrites_map_to_executable_evidence(self):
+        migrations = ISSUE_158_AUDIT_MIGRATIONS[TEST_QUALITY_CASE_ID]
 
-    def test_single_builtin_install_point(self):
-        """No second router: the content example is installed from the one
-        existing ExpansionMechanicsInstallBuiltins() entry point."""
-        text = _strip_c_comments(MECHANICS_SRC.read_text(encoding="utf-8"))
-        self.assertEqual(text.count("ExpansionStarterContentInstallMechanics()"), 1)
-        installs = re.findall(r"void ExpansionMechanicsInstallBuiltins\(void\)", text)
-        self.assertEqual(len(installs), 2)  # enabled body + disabled stub
+        self.assertEqual(len(migrations), 18)
+        for audit_id, evidence in migrations.items():
+            with self.subTest(audit_id=audit_id):
+                self.assertTrue(audit_id.startswith(ISSUE_158_AUDIT_FILE + "::"))
+                if len(evidence) == 2:
+                    module = sys.modules[__name__]
+                    class_name, method_name = evidence
+                else:
+                    module_name, class_name, method_name = evidence
+                    module = importlib.import_module(module_name)
+                test_case = getattr(module, class_name, None)
+                self.assertIsNotNone(test_case)
+                self.assertTrue(issubclass(test_case, unittest.TestCase))
+                self.assertTrue(callable(getattr(test_case, method_name, None)))
 
-    def test_bmbattle_seam_is_not_content_aware(self):
-        """The battle-stat seam must stay generic: no content/item special
-        case may leak into src/bmbattle.c."""
-        text = _strip_c_comments((REPO_ROOT / "src" / "bmbattle.c").read_text(encoding="utf-8"))
-        self.assertNotIn("ExpansionStarterContent", text)
-        self.assertNotIn("ITEM_EXPANSION", text)
 
-    def test_content_effect_is_bounded(self):
-        header = CONTENT_HEADER.read_text(encoding="utf-8")
-        bonus = int(re.search(r"#define EXPANSION_STARTER_CONTENT_AVOID_BONUS\s+(\d+)",
-                              header).group(1))
-        cap = int(re.search(r"#define EXPANSION_STARTER_CONTENT_AVOID_CAP\s+(\d+)",
-                            header).group(1))
-        self.assertGreater(bonus, 0)
-        self.assertLess(bonus, cap)
-        body = _strip_c_comments(CONTENT_SRC.read_text(encoding="utf-8"))
-        self.assertIn("EXPANSION_STARTER_CONTENT_AVOID_CAP", body)
+@unittest.skipIf(CC is None, "no host C compiler")
+class ItemExpansionProbeAbiTests(unittest.TestCase):
+    """Compile a separate consumer against the public probe ABI."""
 
-    def test_content_stat_differs_from_the_existing_sample(self):
-        """The pre-existing content-free sample keeps its own standalone
-        semantics: the two built-ins must adjust different stats so both are
-        independently observable."""
-        content = _strip_c_comments(CONTENT_SRC.read_text(encoding="utf-8"))
-        mechanics = _strip_c_comments(MECHANICS_SRC.read_text(encoding="utf-8"))
-        self.assertIn("battleAvoidRate", content)
-        self.assertNotIn("battleDefense", content)
-        self.assertIn("battleDefense", mechanics)
+    def test_probe_matches_every_runner_field_offset_and_width(self):
+        runner = runpy.run_path(str(RUNNER))
+        fields = tuple(runner["PROBE_FIELDS"])
+        expected_layout = {
+            field: (4 * index, 4)
+            for index, field in enumerate(fields)
+        }
+        base = 0x02000000
+        runner_probes = runner["build_scenario"](base, 1)["checkpoints"][0]["probes"]
+        self.assertEqual(len(runner_probes), len(fields))
+        runner_layout = {
+            field: (int(probe["address"], 16) - base, probe["size"])
+            for field, probe in zip(fields, runner_probes)
+        }
+        self.assertEqual(runner_layout, expected_layout)
 
-    def test_probe_field_order_matches_the_c_struct(self):
-        """run_item_expansion_checks.py reads the probe as base + 4*index, so
-        its field list must match struct ItemExpansionProbe exactly."""
-        header = ITEMTEST_HEADER.read_text(encoding="utf-8")
-        body = header[header.index("struct ItemExpansionProbe"):]
-        body = body[:body.index("\n};")]
-        body = _strip_c_comments(body)
-        fields = re.findall(r"\bu32\s+(\w+)\s*;", body)
-        runner = RUNNER.read_text(encoding="utf-8")
-        listed = re.search(r"PROBE_FIELDS = \((.*?)\n\)", runner, re.DOTALL).group(1)
-        names = re.findall(r'"(\w+)"', listed)
-        self.assertEqual(names, fields)
+        with _test_tempdir() as tmp:
+            work = Path(tmp)
+            source = work / "item_probe_abi.c"
+            field_rows = "\n".join(
+                "    {{ \"{0}\", offsetof(struct ItemExpansionProbe, {0}), "
+                "sizeof(((struct ItemExpansionProbe *)0)->{0}) }},".format(field)
+                for field in fields
+            )
+            type_rows = "\n".join(
+                "typedef char ItemExpansionProbe_{0}_is_u32["
+                "__builtin_types_compatible_p(__typeof__(((struct "
+                "ItemExpansionProbe *)0)->{0}), u32) ? 1 : -1];".format(field)
+                for field in fields
+            )
+            source.write_text(
+                "#define FE8_EXPANSION_ITEMTEST_ENABLED 1\n"
+                "#define FE8_ITEM_ID_CAP 0xCE\n"
+                "#include <stddef.h>\n"
+                "#include <stdio.h>\n"
+                "#include \"expansion_itemtest.h\"\n"
+                "struct ProbeFieldLayout\n"
+                "{\n"
+                "    const char *name;\n"
+                "    size_t offset;\n"
+                "    size_t width;\n"
+                "};\n"
+                "static const struct ProbeFieldLayout sProbeFields[] =\n"
+                "{\n"
+                + field_rows
+                + "\n};\n"
+                + type_rows
+                + "\n"
+                "int main(void)\n"
+                "{\n"
+                "    size_t index;\n"
+                "    printf(\"size %zu\\n\", sizeof(struct ItemExpansionProbe));\n"
+                "    for (index = 0; index < sizeof(sProbeFields) / sizeof(sProbeFields[0]); index++)\n"
+                "        printf(\"%s %zu %zu\\n\", sProbeFields[index].name,\n"
+                "            sProbeFields[index].offset, sProbeFields[index].width);\n"
+                "    return 0;\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            executable = work / "item_probe_abi"
+            completed = subprocess.run(
+                [CC, "-std=gnu89", "-w", *_include_flags(), str(source), "-o", str(executable)],
+                cwd=str(REPO_ROOT),
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            completed = subprocess.run([str(executable)], capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        lines = completed.stdout.splitlines()
+        self.assertEqual(lines[0], "size {}".format(4 * len(fields)))
+        consumer_layout = {}
+        for line in lines[1:]:
+            field, offset, width = line.split()
+            self.assertNotIn(field, consumer_layout)
+            consumer_layout[field] = (int(offset), int(width))
+        self.assertEqual(consumer_layout, runner_layout)
 
-    def test_every_probe_field_is_a_u32_scalar(self):
-        """Semantic scalars only -- never a pointer, never a framebuffer."""
-        header = ITEMTEST_HEADER.read_text(encoding="utf-8")
-        body = header[header.index("struct ItemExpansionProbe"):]
-        body = _strip_c_comments(body[:body.index("\n};")])
-        for line in body.splitlines():
-            line = line.strip()
-            if not line or line.startswith("struct") or line == "{":
-                continue
-            self.assertRegex(line, r"^u32 \w+;$")
+
+@unittest.skipIf(ARM_CC is None, "no arm-none-eabi toolchain")
+class StarterContentC89ContractTests(unittest.TestCase):
+    """The enabled production translation units must reject non-C89 syntax."""
+
+    def test_enabled_content_translation_units_and_header_compile_as_c89(self):
+        audited_headers = {
+            "expansion_starter_content.h",
+            "expansion_mechanics.h",
+            "expansion_itemtest.h",
+        }
+
+        with _test_tempdir() as tmp:
+            work = Path(tmp)
+            generated = work / "generated"
+            self.assertEqual(generate_content_text(generated, 1).returncode, 0)
+            headers = work / "headers"
+            shutil.copytree(REPO_ROOT / "include", headers / "include")
+
+            for path in (headers / "include").rglob("*.h"):
+                relative = path.relative_to(headers / "include").as_posix()
+                if relative in audited_headers:
+                    self.assertEqual(
+                        path.read_bytes(),
+                        (REPO_ROOT / "include" / relative).read_bytes(),
+                    )
+                    continue
+                path.write_text(
+                    re.sub(r"//[^\n]*", "", path.read_text(encoding="utf-8")),
+                    encoding="utf-8",
+                )
+
+            def compile_source(source, obj_name):
+                obj = work / obj_name
+                command = [
+                    ARM_CC,
+                    "-c",
+                    "-w",
+                    "-std=c89",
+                    "-pedantic-errors",
+                    "-mthumb",
+                    "-I",
+                    str(headers / "include"),
+                    "-I",
+                    str(generated),
+                    "-I",
+                    str(headers),
+                ]
+                command.extend("-D" + define for define in CONTENT_DEFINES)
+                command.extend([str(source), "-o", str(obj)])
+                return subprocess.run(
+                    command,
+                    cwd=str(REPO_ROOT),
+                    capture_output=True,
+                    text=True,
+                )
+
+            for source in (CONTENT_SRC, MECHANICS_SRC, ITEMTEST_SRC):
+                completed = compile_source(source, source.stem + ".o")
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    "{} must compile as strict C89:\n{}{}".format(
+                        source.name, completed.stdout, completed.stderr),
+                )
+
+            itemtest_header = headers / "include" / "expansion_itemtest.h"
+            itemtest_header.write_text(
+                "// strict-C89 mutation\n" + itemtest_header.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            completed = compile_source(ITEMTEST_SRC, "itemtest_mutated.o")
+            self.assertNotEqual(
+                completed.returncode,
+                0,
+                "a C++-style comment in expansion_itemtest.h must fail strict C89",
+            )
+
+
+@unittest.skipIf(ARM_CC is None or NM is None, "no arm-none-eabi toolchain")
+class StarterContentBattleSeamTests(unittest.TestCase):
+    """The compiled production battle object reaches content only through the
+    generic mechanics hook."""
+
+    def test_generic_hook_is_only_content_path_and_poisoned_special_case_fails(self):
+        with _test_tempdir() as tmp:
+            code, output, obj = _arm_compile(
+                tmp, BMBATTLE_SRC, "bmbattle_content.o", CONTENT_DEFINES)
+            self.assertEqual(code, 0, output)
+            references = _referenced_symbols(obj)
+            self.assertIn("ExpansionMechanicsApplyBattleStats", references)
+            self.assertFalse(
+                any("ExpansionStarterContent" in symbol for symbol in references),
+                references,
+            )
+
+            def compile_battle(source, obj_name):
+                obj = Path(tmp) / obj_name
+                command = [
+                    ARM_CC,
+                    "-c",
+                    "-w",
+                    "-std=gnu89",
+                    "-mthumb",
+                    *_include_flags(),
+                    "-I",
+                    str(REPO_ROOT),
+                ]
+                command.extend("-D" + define for define in CONTENT_DEFINES)
+                command.extend([str(source), "-o", str(obj)])
+                return subprocess.run(
+                    command,
+                    cwd=str(REPO_ROOT),
+                    capture_output=True,
+                    text=True,
+                )
+
+            poisoned = Path(tmp) / "bmbattle_poisoned.c"
+            poisoned.write_text(
+                "#include \"constants/items_expansion.h\"\n"
+                "#pragma GCC poison ITEM_EXPANSION_CE\n"
+                + BMBATTLE_SRC.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            completed = compile_battle(poisoned, "bmbattle_poisoned.o")
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+            mutated = Path(tmp) / "bmbattle_special_case_mutation.c"
+            mutated.write_text(
+                poisoned.read_text(encoding="utf-8")
+                + "\nint ItemExpansionSpecialCaseMutation(int item)\n"
+                + "{\n"
+                + "    if (item == ITEM_EXPANSION_CE)\n"
+                + "        return 1;\n"
+                + "    return 0;\n"
+                + "}\n",
+                encoding="utf-8",
+            )
+            completed = compile_battle(mutated, "bmbattle_mutated.o")
+            self.assertNotEqual(
+                completed.returncode,
+                0,
+                "a direct starter-content item special case must fail the generic seam contract",
+            )
+
+
+@unittest.skipIf(CC is None, "no host C compiler")
+class StarterContentRegistrationHostTests(unittest.TestCase):
+    """Execute the real enabled registry and content implementation through
+    their public APIs with generated authored text."""
+
+    def test_enabled_content_registers_once_and_applies_bounded_avoid(self):
+        import json
+
+        with _test_tempdir() as tmp:
+            work = Path(tmp)
+            generated = work / "generated"
+            self.assertEqual(generate_content_text(generated, 1).returncode, 0)
+            driver = work / "starter_content_driver.c"
+            driver.write_text(
+                "#include <stdio.h>\n"
+                "#include <string.h>\n"
+                "#include \"global.h\"\n"
+                "#include \"bmbattle.h\"\n"
+                "#include \"bmitem.h\"\n"
+                "#include \"bmlib.h\"\n"
+                "#include \"expansion_mechanics.h\"\n"
+                "#include \"expansion_starter_content.h\"\n"
+                "#include \"constants/items_expansion.h\"\n"
+                "#define CHECK(condition) do { if (!(condition)) return 1; } while (0)\n"
+                "int GetUnitItemSlot(struct Unit *unit, int itemIndex)\n"
+                "{\n"
+                "    int index;\n"
+                "    for (index = 0; index < UNIT_ITEM_COUNT; index++)\n"
+                "        if (ITEM_INDEX(unit->items[index]) == itemIndex)\n"
+                "            return index;\n"
+                "    return -1;\n"
+                "}\n"
+                "void CopyString(char *dst, const char *src)\n"
+                "{\n"
+                "    strcpy(dst, src);\n"
+                "}\n"
+                "int main(void)\n"
+                "{\n"
+                "    struct BattleUnit subject;\n"
+                "    int index;\n"
+                "    int contentCount = 0;\n"
+                "    char *name;\n"
+                "    ExpansionMechanicsReset();\n"
+                "    memset(&gExpansionMechanicsProbe, 0, sizeof(gExpansionMechanicsProbe));\n"
+                "    ExpansionMechanicsInstallBuiltins();\n"
+                "    ExpansionMechanicsInstallBuiltins();\n"
+                "    for (index = 0; index < ExpansionMechanicsCount(); index++)\n"
+                "        if (strcmp(ExpansionMechanicsKeyAt(index), EXPANSION_STARTER_CONTENT_KEY) == 0)\n"
+                "            contentCount++;\n"
+                "    CHECK(ExpansionMechanicsCount() == 2);\n"
+                "    CHECK(contentCount == 1);\n"
+                "    CHECK(gExpansionMechanicsProbe.registerOkCount == 2);\n"
+                "    CHECK(gExpansionMechanicsProbe.registerErrCount == 0);\n"
+                "    CHECK(ExpansionStarterContentItemId() == ITEM_EXPANSION_CE);\n"
+                "    name = ExpansionStarterContentItemName(ITEM_EXPANSION_CE);\n"
+                "    CHECK(name != NULL);\n"
+                "    CHECK(strcmp(name, " + json.dumps(authored_name()) + ") == 0);\n"
+                "    CHECK(ExpansionStarterContentItemName(ITEM_ID_SENTINEL) == NULL);\n"
+                "    memset(&subject, 0, sizeof(subject));\n"
+                "    subject.unit.items[0] = ITEM_EXPANSION_CE;\n"
+                "    subject.unit.maxHP = 20;\n"
+                "    subject.unit.curHP = 20;\n"
+                "    subject.battleDefense = 5;\n"
+                "    subject.battleAvoidRate = 50;\n"
+                "    ExpansionMechanicsApplyBattleStats(&subject, NULL, 0);\n"
+                "    CHECK(subject.battleDefense == 6);\n"
+                "    CHECK(subject.battleAvoidRate == 50 + EXPANSION_STARTER_CONTENT_AVOID_BONUS);\n"
+                "    memset(&subject, 0, sizeof(subject));\n"
+                "    subject.unit.items[0] = ITEM_EXPANSION_CE;\n"
+                "    subject.battleAvoidRate = 118;\n"
+                "    ExpansionMechanicsApplyBattleStats(&subject, NULL, 0);\n"
+                "    CHECK(subject.battleAvoidRate == EXPANSION_STARTER_CONTENT_AVOID_CAP);\n"
+                "    memset(&subject, 0, sizeof(subject));\n"
+                "    subject.battleAvoidRate = 50;\n"
+                "    ExpansionMechanicsApplyBattleStats(&subject, NULL, 0);\n"
+                "    CHECK(subject.battleAvoidRate == 50);\n"
+                "    CHECK(gExpansionMechanicsProbe.registerOkCount == 2);\n"
+                "    CHECK(gExpansionMechanicsProbe.registerErrCount == 0);\n"
+                "    return 0;\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            code, output, mechanics = _host_compile(
+                work, MECHANICS_SRC, "mechanics.o", CONTENT_DEFINES, [generated])
+            self.assertEqual(code, 0, output)
+            code, output, content = _host_compile(
+                work, CONTENT_SRC, "content.o", CONTENT_DEFINES, [generated])
+            self.assertEqual(code, 0, output)
+            code, output, driver_obj = _host_compile(
+                work, driver, "driver.o", CONTENT_DEFINES, [generated])
+            self.assertEqual(code, 0, output)
+            code, output, executable = _host_link(
+                work, [mechanics, content, driver_obj], "starter_content_host")
+            self.assertEqual(code, 0, output)
+            completed = subprocess.run([str(executable)], capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+            alternate_name = "Fixture Charm"
+            header = generated / CONTENT_TEXT_HEADER_NAME
+            header_text = header.read_text(encoding="utf-8")
+            self.assertIn(json.dumps(authored_name()), header_text)
+            header_text = header_text.replace(
+                json.dumps(authored_name()), json.dumps(alternate_name))
+            header_text = re.sub(
+                r"(#define EXPANSION_CONTENT_TEXT_NAME_CAPACITY )\d+",
+                r"\g<1>{}".format(len(alternate_name) + 1),
+                header_text,
+            )
+            header.write_text(header_text, encoding="utf-8")
+            driver.write_text(
+                driver.read_text(encoding="utf-8").replace(
+                    json.dumps(authored_name()), json.dumps(alternate_name)),
+                encoding="utf-8",
+            )
+
+            code, output, content = _host_compile(
+                work, CONTENT_SRC, "content_mutated_name.o", CONTENT_DEFINES, [generated])
+            self.assertEqual(code, 0, output)
+            code, output, driver_obj = _host_compile(
+                work, driver, "driver_mutated_name.o", CONTENT_DEFINES, [generated])
+            self.assertEqual(code, 0, output)
+            code, output, executable = _host_link(
+                work, [mechanics, content, driver_obj], "starter_content_mutated_name_host")
+            self.assertEqual(code, 0, output)
+            completed = subprocess.run([str(executable)], capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
 
 @unittest.skipIf(ARM_CC is None or SIZE is None, "no arm-none-eabi toolchain")
@@ -333,6 +688,10 @@ class CompileTimeDependencyTests(unittest.TestCase):
             self.assertEqual(generate_content_text(generated, 1).returncode, 0)
             return _arm_compile(tmp, CONTENT_SRC, "probe.o", defines, [generated])[:2]
 
+    def _assert_actionable_cap_diagnostic(self, output):
+        self.assertIn("expanded item cap", output)
+        self.assertIn("FE8_ITEM_ID_CAP=0xCE", output)
+
     def test_content_without_hooks_fails(self):
         code, output = self._compile(
             ["FE8_EXPANSION_STARTER_CONTENT=1", "FE8_ITEM_ID_CAP=0xCE"])
@@ -343,7 +702,11 @@ class CompileTimeDependencyTests(unittest.TestCase):
         code, output = self._compile(
             ["FE8_EXPANSION_STARTER_CONTENT=1", "FE8_EXPANSION_MECHANICS_HOOKS=1"])
         self.assertNotEqual(code, 0)
-        self.assertIn("expanded item cap", output)
+        self._assert_actionable_cap_diagnostic(output)
+
+    def test_generic_only_cap_diagnostic_fixture_is_rejected(self):
+        with self.assertRaises(AssertionError):
+            self._assert_actionable_cap_diagnostic("error: expanded item cap")
 
     def test_full_content_profile_compiles(self):
         code, output = self._compile([
@@ -427,28 +790,6 @@ class ContentTextGenerationTests(unittest.TestCase):
                 second = (Path(two) / name).read_text(encoding="utf-8")
                 self.assertEqual(first, second)
                 self.assertNotIn(str(REPO_ROOT), first)
-
-    def test_no_committed_source_hand_holds_the_authored_text(self):
-        """The literal lives in the JSON record and in generated build/
-        output only -- never hand-copied into a committed C file."""
-        name = authored_name()
-        for relative in ("src/expansion_starter_content.c",
-                         "include/expansion_starter_content.h",
-                         "src/bmitem.c",
-                         "src/expansion_itemtest.c"):
-            self.assertNotIn(
-                name, (REPO_ROOT / relative).read_text(encoding="utf-8"),
-                "{} hand-copies the authored content text".format(relative))
-
-    def test_texts_table_carries_no_content_message(self):
-        """The regression this whole path exists to prevent."""
-        texts = (REPO_ROOT / "texts" / "texts.txt").read_text(
-            encoding="utf-8", errors="replace")
-        self.assertNotIn("MSG_EXPANSION_", texts)
-        msg_header = (REPO_ROOT / "include" / "constants" / "msg.h").read_text(
-            encoding="utf-8")
-        self.assertNotIn("MSG_EXPANSION_", msg_header)
-
 
 @unittest.skipIf(ARM_CC is None or NM is None, "no arm-none-eabi toolchain")
 class ProductionNamePathTests(unittest.TestCase):

@@ -275,6 +275,38 @@ explicit 32 MiB builds as described above.
 
 ## Authoring
 
+### Registry emission contract
+
+Every **active** registry entry may use the public `emission` field. Omitting
+it means `always`. `debug_only` retains the entry's stable numeric ID and its
+required authored translations in every catalog source; it only controls
+whether a selected generation profile materializes that payload into generated
+locale tables. Tombstones cannot declare `emission`.
+
+```json
+{
+  "contract": "registry-emission-v1",
+  "field": "emission",
+  "active_default": "always",
+  "allowed_values": ["always", "debug_only"],
+  "stable_ids_and_authored_translations": "retained",
+  "materialized_values_by_profile": {
+    "debug": ["always", "debug_only"],
+    "release": ["always"]
+  },
+  "cli": {
+    "option": "--emission-profile",
+    "choices": ["debug", "release"],
+    "default": "debug"
+  }
+}
+```
+
+`python3 -m scripts.localization.cli generate`, `check`, and `budget` accept
+`--emission-profile`. The default `debug` profile materializes both values;
+`--emission-profile release` omits only `debug_only` payloads from generated
+catalogs while preserving their source IDs and translations.
+
 1. Add/edit entries in `texts/expansion/registry.json` (append-only IDs,
    never renumbering or reusing a retired id) and each authored
    `texts/expansion/catalog.<locale>.json`. English is the required fallback.

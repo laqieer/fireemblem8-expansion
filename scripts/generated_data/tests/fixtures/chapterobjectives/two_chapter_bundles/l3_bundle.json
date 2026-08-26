@@ -1,0 +1,24 @@
+{
+  "$schema": "fe8.chapterbundle.v1",
+  "chapter": {
+    "id": "CHAPTER_L_3",
+    "name": "L3",
+    "chapterSettingsIndex": 3,
+    "internalName": "L03",
+    "mapEventDataId": 14
+  },
+  "manifest": {"table": "eventlists", "symbol": "Ch3Events"},
+  "tables": {
+    "units": {
+      "source": "scripts/generated_data/tests/fixtures/chapterobjectives/deps_units_l3.json",
+      "symbols": ["UnitDef_Fixture_L3Ally"]
+    }
+  },
+  "supportOwners": {"source": "src/data/supports.json", "required": []},
+  "chapterObjectives": {
+    "source": "scripts/generated_data/tests/fixtures/chapterobjectives/two_chapters.json",
+    "symbols": ["ChapterObjectives_FixtureL3"]
+  },
+  "externalReferences": [],
+  "dependencies": {"characters": [], "classes": [], "items": []}
+}

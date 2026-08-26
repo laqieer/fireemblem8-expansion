@@ -867,10 +867,6 @@ void GameControlHandlePostNormalOrExtraChapter(struct GameCtrlProc* proc) {
 void GameControl_ChapterSwitch(struct GameCtrlProc* proc) {
     int i;
 
-#ifndef FE8_ARCHIVAL_BUILD
-    DebugTools_ForceSessionCleanup();
-#endif
-
     for (i = 0; i <= 2; i++) {
         NextRN();
     }
@@ -880,6 +876,10 @@ void GameControl_ChapterSwitch(struct GameCtrlProc* proc) {
     if (CheckFlag(3) != 0) {
         RegisterChapterTimeAndTurnCount(&gPlaySt);
     }
+
+#ifndef FE8_ARCHIVAL_BUILD
+    DebugTools_ForceSessionCleanup();
+#endif
 
     ComputeChapterRankings();
 

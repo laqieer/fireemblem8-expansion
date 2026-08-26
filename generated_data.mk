@@ -27,8 +27,8 @@
 
 GENERATED_DATA_PY       := $(PYTHON) -m scripts.generated_data
 GENERATED_DATA_OUT_DIR  := build/generated/data
-GENERATED_DATA_TABLES   := supports units shops traps items classes characters eventscripts eventlists chapterbundle terrainstats movecost weapontriangle ui_presentation
-GENERATED_DATA_CH2_TABLES := units shops traps eventscripts eventlists chapterbundle
+GENERATED_DATA_TABLES   := supports units shops traps items classes characters eventscripts eventlists chapterbundle chapterobjectives terrainstats movecost weapontriangle ui_presentation
+GENERATED_DATA_CH2_TABLES := units shops traps eventscripts eventlists chapterobjectives chapterbundle
 
 .PHONY: generated-data-validate generated-data-generate generated-data-check generated-data-test \
         generated-data-ch2-check generated-data-bundle-validate generated-data-bundle-check \
@@ -426,6 +426,69 @@ GENERATED_DATA_CONFIG_INPUTS_characters := \
 # Shared (every table) generator scripts. Test files/fixtures are
 # deliberately excluded -- they never affect generated output.
 GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)
+
+# Typed chapter objectives are a modern-only generated table.  The archival
+# lane retains its historical source/object set, while modern builds link this
+# additive generated record table and the pointer-free evaluator.
+GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE ?= src/data/chapter_objectives.json
+GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE ?= src/data
+GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY ?= \
+	reports/generated_data_chapterobjectives_inventory.md
+GENERATED_DATA_CHAPTEROBJECTIVES_ENABLE_DISCOVERY := \
+	$(PYTHON) -m scripts.generated_data.chapterobjectives.enabled
+GENERATED_DATA_CHAPTEROBJECTIVES_ENABLE_RESULT := $(shell \
+	$(GENERATED_DATA_CHAPTEROBJECTIVES_ENABLE_DISCOVERY) \
+		--source "$(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE)" 2>&1)
+ifeq ($(GENERATED_DATA_CHAPTEROBJECTIVES_ENABLE_RESULT),1)
+GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED := 1
+else ifeq ($(GENERATED_DATA_CHAPTEROBJECTIVES_ENABLE_RESULT),0)
+GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED := 0
+else
+$(error unable to resolve chapter objective enablement from '$(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE)': $(GENERATED_DATA_CHAPTEROBJECTIVES_ENABLE_RESULT))
+endif
+GENERATED_DATA_CHAPTEROBJECTIVES_C := $(GENERATED_DATA_OUT_DIR)/data_chapter_objectives.c
+GENERATED_DATA_CHAPTEROBJECTIVES_DEP_DISCOVERY := \
+	$(PYTHON) -m scripts.generated_data.chapterobjectives.deps
+GENERATED_DATA_CHAPTEROBJECTIVES_DEPFILE := \
+	$(GENERATED_DATA_OUT_DIR)/chapterobjectives.inputs.mk
+GENERATED_DATA_CHAPTEROBJECTIVES_STATIC_INPUTS := \
+	include/constants/chapters.h \
+	include/constants/characters.h \
+	include/constants/event-flags.h \
+	include/bmunit.h
+
+.PHONY: FORCE_CHAPTEROBJECTIVES_DEPFILE
+FORCE_CHAPTEROBJECTIVES_DEPFILE:
+
+$(GENERATED_DATA_CHAPTEROBJECTIVES_DEPFILE): FORCE_CHAPTEROBJECTIVES_DEPFILE \
+	$(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE) \
+	$(GENERATED_DATA_SHARED_PY_SOURCES) \
+	$(wildcard scripts/generated_data/chapterobjectives/*.py) \
+	scripts/generated_data/chapterbundle/schema.py
+	@mkdir -p $(@D)
+	@$(GENERATED_DATA_CHAPTEROBJECTIVES_DEP_DISCOVERY) \
+		--source "$(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE)" \
+		--bundle-source "$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE)" \
+		--make-target "$(GENERATED_DATA_CHAPTEROBJECTIVES_C)" \
+		--depfile "$@"
+
+-include $(GENERATED_DATA_CHAPTEROBJECTIVES_DEPFILE)
+
+GENERATED_DATA_CONFIG_INPUTS_chapterobjectives := \
+	$(GENERATED_DATA_CHAPTEROBJECTIVES_STATIC_INPUTS)
+
+$(GENERATED_DATA_CHAPTEROBJECTIVES_C): $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE) \
+	$(GENERATED_DATA_CHAPTEROBJECTIVES_DEPFILE) \
+	$(GENERATED_DATA_SHARED_PY_SOURCES) \
+	$(wildcard scripts/generated_data/chapterobjectives/*.py) \
+	$(GENERATED_DATA_CONFIG_INPUTS_chapterobjectives)
+	@mkdir -p $(@D)
+	$(GENERATED_DATA_PY) generate --table chapterobjectives \
+		--source $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE) \
+		--dep-source chapterbundle=$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE) \
+		--out-dir $(GENERATED_DATA_OUT_DIR) \
+		--inventory $(GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY)
+	@test -e $@ || { echo "error: generated-data table 'chapterobjectives' did not produce $@" >&2; exit 1; }
 
 # --- Issue #6 config-gated CONTENT text -----------------------------------
 # Placed AFTER GENERATED_DATA_SHARED_PY_SOURCES above on purpose: make

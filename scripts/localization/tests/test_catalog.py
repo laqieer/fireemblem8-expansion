@@ -1,4 +1,6 @@
+import argparse
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -7,8 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from scripts.localization import schema
-from scripts.localization.catalog import load_catalog, parse_registry
+from scripts.localization import cli, schema
+from scripts.localization.catalog import (
+    RegistryEntry,
+    load_catalog,
+    parse_registry,
+)
 from scripts.localization.pseudo import apply_pseudo_policy, pseudoize
 from scripts.localization.schema import SchemaError
 
@@ -49,6 +55,69 @@ def _load(registry_path: Path, catalog_path: Path):
         registry_path=registry_path,
         catalog_paths={"en": catalog_path},
     )
+
+
+class EmissionDocumentationContractTests(unittest.TestCase):
+    def test_authoring_contract_matches_schema_and_cli(self):
+        document = (ROOT / "docs" / "localization.md").read_text(encoding="utf-8")
+        contracts = [
+            json.loads(block)
+            for block in re.findall(
+                r"```json\n(.*?)\n```",
+                document,
+                flags=re.DOTALL,
+            )
+            if '"contract": "registry-emission-v1"' in block
+        ]
+        self.assertEqual(len(contracts), 1)
+        contract = contracts[0]
+
+        self.assertEqual(contract["field"], "emission")
+        self.assertEqual(contract["active_default"], schema.DEFAULT_EMISSION)
+        self.assertEqual(contract["allowed_values"], list(schema.EMISSIONS))
+        self.assertEqual(
+            contract["stable_ids_and_authored_translations"],
+            "retained",
+        )
+        self.assertEqual(
+            contract["materialized_values_by_profile"],
+            {
+                profile: [
+                    emission
+                    for emission in schema.EMISSIONS
+                    if RegistryEntry(
+                        id=0,
+                        key=emission,
+                        status=schema.STATUS_ACTIVE,
+                        emission=emission,
+                    ).emits_for(profile)
+                ]
+                for profile in schema.EMISSION_PROFILES
+            },
+        )
+
+        parser = cli.build_parser()
+        subparsers = next(
+            action
+            for action in parser._actions
+            if isinstance(action, argparse._SubParsersAction)
+        )
+        for command in ("generate", "check", "budget"):
+            action = next(
+                candidate
+                for candidate in subparsers.choices[command]._actions
+                if "--emission-profile" in candidate.option_strings
+            )
+            with self.subTest(command=command):
+                self.assertEqual(
+                    contract["cli"]["option"],
+                    "--emission-profile",
+                )
+                self.assertEqual(
+                    contract["cli"]["choices"],
+                    list(action.choices),
+                )
+                self.assertEqual(contract["cli"]["default"], action.default)
 
 
 class ParseRegistryTests(unittest.TestCase):
@@ -160,6 +229,22 @@ class ParseRegistryTests(unittest.TestCase):
             schema.PSEUDO_POLICY_TRANSFORM,
         )
 
+    def test_emission_defaults_to_always(self):
+        entries = parse_registry(_base_registry())
+        self.assertEqual(entries[0].emission, schema.EMISSION_ALWAYS)
+
+    def test_debug_only_emission_is_accepted(self):
+        reg = _base_registry()
+        reg["messages"][0]["emission"] = schema.EMISSION_DEBUG_ONLY
+        entries = parse_registry(reg)
+        self.assertEqual(entries[0].emission, schema.EMISSION_DEBUG_ONLY)
+
+    def test_invalid_emission_rejected(self):
+        reg = _base_registry()
+        reg["messages"][0]["emission"] = "sometimes"
+        with self.assertRaises(SchemaError):
+            parse_registry(reg)
+
     def test_pseudo_policy_preserve_accepted(self):
         reg = _base_registry()
         reg["messages"][0]["pseudo_policy"] = schema.PSEUDO_POLICY_PRESERVE
@@ -183,6 +268,19 @@ class ParseRegistryTests(unittest.TestCase):
                 "key": "a.retired",
                 "status": "tombstone",
                 "pseudo_policy": schema.PSEUDO_POLICY_PRESERVE,
+            }
+        )
+        with self.assertRaises(SchemaError):
+            parse_registry(reg)
+
+    def test_tombstone_emission_rejected(self):
+        reg = _base_registry()
+        reg["messages"].append(
+            {
+                "id": 2,
+                "key": "a.retired",
+                "status": "tombstone",
+                "emission": schema.EMISSION_DEBUG_ONLY,
             }
         )
         with self.assertRaises(SchemaError):

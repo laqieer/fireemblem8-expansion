@@ -1,0 +1,47 @@
+{
+  "$schema": "fe8.chapterobjectives.v1",
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "A",
+      "aiGroups": [
+        {
+          "id": "B_C",
+          "members": [
+            {
+              "character": "CHARACTER_EIRIKA",
+              "unitGroup": "UnitDef_Event_Ch2Ally"
+            }
+          ]
+        }
+      ],
+      "objectives": [],
+      "dependencies": {
+        "characters": ["CHARACTER_EIRIKA"],
+        "eventFlags": [],
+        "unitGroups": ["UnitDef_Event_Ch2Ally"]
+      }
+    },
+    {
+      "chapter": "CHAPTER_L_3",
+      "symbol": "A_B",
+      "aiGroups": [
+        {
+          "id": "C",
+          "members": [
+            {
+              "character": "CHARACTER_EIRIKA",
+              "unitGroup": "UnitDef_Event_Ch2Ally"
+            }
+          ]
+        }
+      ],
+      "objectives": [],
+      "dependencies": {
+        "characters": ["CHARACTER_EIRIKA"],
+        "eventFlags": [],
+        "unitGroups": ["UnitDef_Event_Ch2Ally"]
+      }
+    }
+  ]
+}

@@ -113,6 +113,10 @@
       "CHARACTER_VANESSA"
     ]
   },
+  "chapterObjectives": {
+    "source": "src/data/chapter_objectives.json",
+    "symbols": []
+  },
   "externalReferences": [
     {
       "table": "units",

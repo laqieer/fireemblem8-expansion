@@ -10,14 +10,11 @@ Two kinds of proof, both executable with no ARM/GBA/mgba environment:
    settings-row decision functions against startup state combinations
    and the 1/2/3/4/>4-locale inline/More thresholds.
 
-2. Structural/static -- proves, by scanning the real shipped .c/.h files,
-   that this sprint's guardrails hold: the selector Proc is spliced
-   between ProcScr_GameEarlyStartUI and the OpAnim label (never touching
-   Title_IDLE/#11 hotkeys), struct GameOption's selectors[4]/size and
-   struct DebugToolsAction's ABI stay unchanged, GAME_OPTION_LANGUAGE's
-   Config-screen integration is entirely #ifdef MODERN-guarded, and the
-   legacy branches of save_compat_menu.c/debugtools_registry.c keep their
-   exact original vanilla-MSG rendering untouched.
+2. Semantic integration -- executes the production locale-name formatter
+   and startup initializer, compiles the real modern/default Config
+   objects, parses generated catalog data, and binds the five-locale More
+   route to deterministic scenario state. Structural checks remain only
+   for the explicitly documented ABI and legacy-rendering boundaries.
 
 Full runtime behavior (blocking selector, inline Config choices, More
 submenu lifecycle, cache invalidation) is proven separately by
@@ -28,12 +25,14 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INCLUDE_DIRS = [REPO_ROOT / "include", REPO_ROOT / "include" / "generated"]
 C_FIXTURES_DIR = Path(__file__).resolve().parent / "c"
+LOCALE_REGISTRY = REPO_ROOT / "texts" / "expansion" / "registry.json"
 
 LANGUAGE_MENU_HEADER = REPO_ROOT / "include" / "expansion_language_menu.h"
 LANGUAGE_MENU_SRC = REPO_ROOT / "src" / "expansion_language_menu.c"
@@ -51,9 +50,27 @@ CJK_SETTINGS_FINGERPRINT = (
     REPO_ROOT / "tools" / "gba-playtest" / "fingerprints"
     / "locale-cjk-settings-inline-modern-debug.json"
 )
+MORE_SETTINGS_SCENARIO = (
+    REPO_ROOT / "tools" / "gba-playtest" / "scenarios"
+    / "locale-settings-more-eu-modern-debug.json"
+)
+MORE_SETTINGS_FINGERPRINT = (
+    REPO_ROOT / "tools" / "gba-playtest" / "fingerprints"
+    / "locale-settings-more-eu-modern-debug.json"
+)
 TEST_WORK_ROOT = REPO_ROOT / ".test-work"
 
 CC = shutil.which("gcc") or shutil.which("cc")
+NM = shutil.which("nm")
+XMAP_POISON_SYMBOL = "fe8_xmap_dependency_forbidden"
+XMAP_DEPENDENCY_TOKENS = (
+    "XMAP_MAGIC", "SAVEMAGIC32_XMAP", "SAVE_ID_XMAP", "SAVEBLOCK_KIND_XMAP",
+    "SRAM_SIZE_XMAP", "SRAM_OFFSET_XMAP", "EWRAM_XMAP_SIZE", "xmap",
+    "gExtraMapSaveHead", "gExtraMapInfo", "gpSramExtraData",
+    "ReadExtraMapSaveHead", "GetExtraMapMapReadAddr", "GetExtraMapMapSize",
+    "GetExtraMapInfoReadAddr", "GetExtraMapInfoSize", "ExtraMapChecksum",
+    "IsExtraMapAvailable", "ReadExtraMapInfo", "IsValidExtraMapAvilable",
+)
 
 
 def _skip_if_no_host_compiler():
@@ -68,10 +85,18 @@ def _include_flags():
     return flags
 
 
-def _compile(work_dir: Path, src: Path, obj_name: str, defines=(), extra_include_dirs=()):
+def _compile(
+    work_dir: Path,
+    src: Path,
+    obj_name: str,
+    defines=(),
+    extra_include_dirs=(),
+    extra_includes=(),
+    extra_cflags=(),
+):
     obj = work_dir / obj_name
-    cmd = [CC, "-c", "-w"] + _include_flags()
-    for directory in extra_include_dirs:
+    cmd = [CC, "-c", "-w"] + _include_flags() + list(extra_cflags)
+    for directory in (*extra_include_dirs, *extra_includes):
         cmd += ["-I", str(directory)]
     for d in defines:
         cmd += ["-D", d]
@@ -80,9 +105,22 @@ def _compile(work_dir: Path, src: Path, obj_name: str, defines=(), extra_include
     return proc.returncode, proc.stdout + proc.stderr, obj
 
 
-def _link(work_dir: Path, objects, exe_name: str):
+def _generate_locale_catalog(work_dir: Path) -> Path:
+    generated = work_dir / "generated"
+    completed = subprocess.run(
+        [sys.executable, "-m", "scripts.localization.cli", "generate", "--out-dir", str(generated)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return generated
+
+
+def _link(work_dir: Path, objects, exe_name: str, extra_ldflags=()):
     exe = work_dir / exe_name
-    cmd = [CC] + [str(o) for o in objects] + ["-o", str(exe)]
+    cmd = [CC] + [str(o) for o in objects] + list(extra_ldflags) + ["-o", str(exe)]
     proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
     return proc.returncode, proc.stdout + proc.stderr, exe
 
@@ -90,6 +128,34 @@ def _link(work_dir: Path, objects, exe_name: str):
 def _run(exe: Path):
     proc = subprocess.run([str(exe)], capture_output=True, text=True)
     return proc.returncode, proc.stdout + proc.stderr
+
+
+def _undefined_symbols(obj: Path) -> set[str]:
+    completed = subprocess.run(
+        [NM, "--undefined-only", str(obj)], capture_output=True, text=True
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout + completed.stderr)
+    return {line.split()[-1] for line in completed.stdout.splitlines() if line.split()}
+
+
+def _compile_with_xmap_poison(work_dir: Path, source: Path, generated: Path, inject=False):
+    wrapper = work_dir / (source.stem + ("-xmap-injected.c" if inject else "-xmap-clean.c"))
+    text = (
+        '#include "global.h"\n#include "bmsave.h"\n'
+        f"extern int {XMAP_POISON_SYMBOL};\n"
+        + "".join(
+            f"#define {token} {XMAP_POISON_SYMBOL}\n"
+            for token in XMAP_DEPENDENCY_TOKENS
+        )
+        + f'#include "{source}"\n'
+    )
+    if inject:
+        text += "int fe8_xmap_adversary(void) { return XMAP_MAGIC; }\n"
+    wrapper.write_text(text, encoding="ascii")
+    return _compile(
+        work_dir, wrapper, wrapper.stem + ".o", ["MODERN=1"], [generated]
+    )
 
 
 def _temporary_directory():
@@ -129,7 +195,135 @@ class ExpansionLanguageMenuDecisionHostTests(unittest.TestCase):
 
             rc, out = _run(exe)
             self.assertEqual(rc, 0, out)
-            self.assertIn("EXPANSION_LANGUAGE_MENU_DECISION_HOST_TEST: PASS", out)
+
+
+@unittest.skipIf(CC is None or NM is None, "no host compiler/nm")
+class ExpansionLanguageMenuProductionBehaviorTests(unittest.TestCase):
+    """Execute the public host seams and inspect compiled integration edges."""
+
+    def test_formatter_and_initializer_ignore_vanilla_language_and_xmap_state(self):
+        defines = [
+            "MODERN=1",
+            "FE8_EXPANSION_ENABLED_LOCALE_MASK=0x79u",
+            "FE8_EXPANSION_DEFAULT_LOCALE_ID=0",
+        ]
+        section_flags = ["-ffunction-sections", "-fdata-sections"]
+        with _temporary_directory() as tmp:
+            work = Path(tmp)
+            generated = _generate_locale_catalog(work)
+            rc, out, impl_obj = _compile(
+                work,
+                LANGUAGE_MENU_SRC,
+                "language-menu-modern.o",
+                defines,
+                [generated],
+                section_flags,
+            )
+            self.assertEqual(rc, 0, out)
+            rc, out, driver_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "expansion_language_menu_runtime_driver.c",
+                "language-menu-runtime-driver.o",
+                defines,
+                [generated],
+                section_flags,
+            )
+            self.assertEqual(rc, 0, out)
+            rc, out, exe = _link(
+                work,
+                [impl_obj, driver_obj],
+                "language-menu-runtime-test",
+                ["-Wl,--gc-sections"],
+            )
+            self.assertEqual(rc, 0, out)
+            rc, out = _run(exe)
+            self.assertEqual(rc, 0, out)
+
+    def test_modern_config_calls_public_more_menu_decisions(self):
+        required = {
+            "ExpansionLanguageMenu_DecideSettingsAction",
+            "ExpansionLanguageMenu_IsMoreSelected",
+            "ExpansionLanguageMenu_OpenSettings",
+            "ExpansionLanguageMenu_SelectSettingsLocale",
+        }
+        with _temporary_directory() as tmp:
+            work = Path(tmp)
+            generated = _generate_locale_catalog(work)
+            rc, out, enabled = _compile(
+                work, UICONFIG_SRC, "uiconfig-modern.o", ["MODERN=1"], [generated]
+            )
+            self.assertEqual(rc, 0, out)
+            rc, out, disabled = _compile(work, UICONFIG_SRC, "uiconfig-legacy.o")
+            self.assertEqual(rc, 0, out)
+            enabled_refs = _undefined_symbols(enabled)
+            disabled_refs = _undefined_symbols(disabled)
+        self.assertTrue(
+            required.issubset(enabled_refs),
+            "modern Config object must retain all public inline/More selection paths",
+        )
+        self.assertFalse(
+            required & disabled_refs,
+            "legacy Config object must not acquire language-menu references",
+        )
+
+    def test_owned_locale_objects_reject_vanilla_language_and_xmap_dependencies(self):
+        forbidden_relocations = {"GetLang", "SetLang", "gLanguageMode"}
+        sources = (
+            REPO_ROOT / "src" / "expansion_locale.c",
+            REPO_ROOT / "src" / "expansion_save_prefs.c",
+            LANGUAGE_MENU_SRC,
+            UICONFIG_SRC,
+        )
+        with _temporary_directory() as tmp:
+            work = Path(tmp)
+            generated = _generate_locale_catalog(work)
+            for source in sources:
+                with self.subTest(source=source.name):
+                    rc, out, obj = _compile(
+                        work, source, source.stem + ".o", ["MODERN=1"], [generated]
+                    )
+                    self.assertEqual(rc, 0, out)
+                    self.assertFalse(
+                        forbidden_relocations & _undefined_symbols(obj),
+                        "%s must remain independent of vanilla language state" % source.name,
+                    )
+                    rc, out, clean = _compile_with_xmap_poison(
+                        work, source, generated
+                    )
+                    self.assertEqual(rc, 0, out)
+                    self.assertNotIn(XMAP_POISON_SYMBOL, _undefined_symbols(clean))
+                    rc, out, injected = _compile_with_xmap_poison(
+                        work, source, generated, inject=True
+                    )
+                    self.assertEqual(rc, 0, out)
+                    self.assertIn(XMAP_POISON_SYMBOL, _undefined_symbols(injected))
+
+
+class ExpansionLanguageMenuGeneratedRegistryTests(unittest.TestCase):
+    """Bind the five-locale profile to parsed source and generated catalogs."""
+
+    def test_generated_registry_covers_every_more_profile_locale_name(self):
+        registry = json.loads(LOCALE_REGISTRY.read_text(encoding="utf-8"))
+        active = {
+            entry["key"]: entry["id"]
+            for entry in registry["messages"]
+            if entry["status"] == "active"
+        }
+        locale_keys = {
+            f"framework.locale_{kind}.{locale}"
+            for kind in ("name", "short_name")
+            for locale in ("en", "fr", "de", "es", "it")
+        }
+        self.assertEqual(locale_keys - active.keys(), set())
+
+        with _temporary_directory() as tmp:
+            generated = _generate_locale_catalog(Path(tmp))
+            budget = json.loads((generated / "budget.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(budget["active_message_count"], len(active))
+        self.assertTrue(
+            {"en", "fr", "de", "es", "it"}.issubset(budget["locales_generated"])
+        )
 
     def test_archival_debugtools_build_uses_private_language_rows(self):
         from scripts.localization.catalog import load_catalog
@@ -389,13 +583,6 @@ class GameControlIntegrationStructureTests(unittest.TestCase):
         self.assertLess(selector_idx, opanim_idx,
             "selector must run before ProcScr_OpAnim")
 
-    def test_title_idle_and_debug_hotkey_lifecycle_untouched(self):
-        # Presence-only proof (this sprint never edits these) -- a real
-        # regression removing/renaming either would fail this.
-        self.assertIn("Title_IDLE", self.text)
-        self.assertIn("gamecontrol.h", (REPO_ROOT / "src" / "gamecontrol.c").read_text())
-
-
 class GameOptionAbiUnchangedTests(unittest.TestCase):
     """struct GameOption's layout/size (in particular selectors[4]) must
     stay exactly as-is -- the language settings entry is a real Config
@@ -534,26 +721,6 @@ class UiConfigLanguageEntryStructureTests(unittest.TestCase):
         self.assertIn("ExpansionLanguageMenu_OpenSettings(proc)", body)
         self.assertIn("EXPANSION_LANGUAGE_SETTINGS_OPEN_MENU", body)
 
-    def test_more_submenu_lists_only_locales_outside_inline_slots(self):
-        language_text = LANGUAGE_MENU_SRC.read_text(encoding="utf-8")
-        match = re.search(
-            r"void ExpansionLanguageMenu_OpenSettings\(ProcPtr parent\)\s*\{(.*?)\n\}",
-            language_text,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(match)
-        body = match.group(1)
-        self.assertIn(
-            "skippedRows = EXPANSION_LANGUAGE_INLINE_MAX - 1;",
-            body,
-        )
-        self.assertRegex(
-            body,
-            r"ExpansionLanguageMenu_BuildLocaleRows\(\s*"
-            r"sLanguageMenuItemDefs,\s*TRUE,\s*skippedRows\)",
-        )
-        self.assertIn("if (skippedRows != 0)", body)
-
     def test_a_routes_to_more_only_for_virtual_more_slot(self):
         match = re.search(
             r"void Config_Loop_KeyHandler\(struct ConfigProc \* proc\)\s*\{(.*?)\n\}",
@@ -662,6 +829,53 @@ class CjkSettingsFingerprintContractTests(unittest.TestCase):
                 fingerprint_checkpoint["regions"],
                 [{**expected_region, "hash": expected_region_hashes[index]}],
             )
+
+
+class MoreSettingsFingerprintContractTests(unittest.TestCase):
+    """The five-locale profile must exercise the full More lifecycle live."""
+
+    def test_more_opens_selects_closes_and_redraws(self):
+        scenario = json.loads(MORE_SETTINGS_SCENARIO.read_text(encoding="utf-8"))
+        fingerprint = json.loads(MORE_SETTINGS_FINGERPRINT.read_text(encoding="utf-8"))
+        self.assertEqual(scenario["name"], fingerprint["scenario"])
+        self.assertEqual(
+            [checkpoint["name"] for checkpoint in scenario["checkpoints"]],
+            [
+                "five-locale-row-ready",
+                "more-open-after-third-inline-slot",
+                "more-selected-parent-redrawn",
+            ],
+        )
+        self.assertEqual(
+            [checkpoint["frame"] for checkpoint in fingerprint["checkpoints"]],
+            [5550, 6400, 7000],
+        )
+        self.assertTrue(
+            all(checkpoint["framebuffer_hash"] for checkpoint in fingerprint["checkpoints"])
+        )
+        values = {
+            checkpoint["name"]: {
+                probe["address"]: probe["value"]
+                for probe in checkpoint["probes"]
+            }
+            for checkpoint in fingerprint["checkpoints"]
+        }
+        self.assertEqual(
+            values["five-locale-row-ready"]["gExpansionLanguageMenuProbe+0x08"],
+            "0x05",
+        )
+        self.assertEqual(
+            values["more-open-after-third-inline-slot"]["gExpansionLanguageMenuProbe+0x01"],
+            "0x01",
+        )
+        self.assertEqual(
+            values["more-selected-parent-redrawn"]["gExpansionLanguageMenuProbe+0x01"],
+            "0x00",
+        )
+        self.assertEqual(
+            values["more-selected-parent-redrawn"]["gExpansionLanguageMenuProbe+0x07"],
+            "0x06",
+        )
 
 
 class LanguageSettingsLifecycleStructureTests(unittest.TestCase):
@@ -801,26 +1015,6 @@ class FrameworkUtf8DrawingTests(unittest.TestCase):
         self.assertIn("byteCount = (int)(next - cursor);", body)
         self.assertIn("Text_DrawString(text, clipped);", body)
         self.assertNotIn("GetStringTextLenASCII", body)
-
-
-class ExpansionLocaleVanillaIsolationTests(unittest.TestCase):
-    """Production locale selection stays independent of vanilla language
-    mode and XMAP save semantics across the owned runtime/UI files."""
-
-    def test_owned_runtime_files_have_no_vanilla_language_or_xmap_calls(self):
-        for path in (
-            REPO_ROOT / "src" / "expansion_locale.c",
-            REPO_ROOT / "src" / "expansion_save_prefs.c",
-            LANGUAGE_MENU_SRC,
-            UICONFIG_SRC,
-        ):
-            text = _strip_c_comments(path.read_text(encoding="utf-8"))
-            with self.subTest(path=path.name):
-                for token in ("GetLang", "SetLang", "gLanguageMode", "XMAP"):
-                    self.assertIsNone(
-                        re.search(rf"\b{re.escape(token)}\b", text),
-                        f"{path.name} references forbidden vanilla symbol {token}",
-                    )
 
 
 class SaveCompatMenuLegacyPathUnchangedTests(unittest.TestCase):

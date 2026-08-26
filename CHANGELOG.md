@@ -27,6 +27,8 @@ Do not hand-edit the text between the two HTML comment markers below --
 - Add production 32 MiB Japanese and Simplified Chinese support: 3,414/3,414 compressed game messages and all 143 raw surfaces per locale, with zero fallback, exclusion, unresolved record, or runtime leakage; live-ROM-bound Japanese raw provenance; complete system/talk CJK font coverage; full FE control-stream tokenization and bounded UTF-8 substitutions; persisted first-start/Config switching; and localization host/build/runtime gates with captured CJK playtests (see docs/localization.md, docs/game_locale_sources.md, and docs/cjk_fonts.md). (#18)
 - Add the modern-debug-only typed volatile save-fixture API and built-in Save State flow: validated CURRENT game/suspend sources are sanitized into the existing 32 KiB EWRAM overlay, previewed and confirmed twice, continued once by GameControl, and protected by hard cartridge-write blocking without changing the save format or compatibility epoch. (#128)
 - Add a debug-only bounded chapter and skirmish selector backed by typed chapter/world-map metadata and a lifecycle-safe GameControl handoff. (#123)
+- Add debug-only Flag/Chapter turn overrides and one-phase red/green CPU or BLOCKED controls, with safe lifecycle reset, phase-event ordering, and release omission. (#124)
+- Add typed, read-only title/map/prep debugtools State and Engine diagnostics with bounded views and exact forced display restoration. (#127)
 
 ### Changed
 

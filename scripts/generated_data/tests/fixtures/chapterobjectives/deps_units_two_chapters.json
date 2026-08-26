@@ -1,0 +1,33 @@
+{
+  "$schema": "fe8.units.v1",
+  "groups": [
+    {
+      "symbol": "UnitDef_Fixture_L2Ally",
+      "units": [
+        {
+          "charIndex": "CHARACTER_EIRIKA",
+          "classIndex": "CLASS_EIRIKA_LORD",
+          "allegiance": "FACTION_ID_BLUE",
+          "level": 1,
+          "xPosition": 1,
+          "yPosition": 0,
+          "items": ["ITEM_SWORD_RAPIER"]
+        }
+      ]
+    },
+    {
+      "symbol": "UnitDef_Fixture_L3Ally",
+      "units": [
+        {
+          "charIndex": "CHARACTER_SETH",
+          "classIndex": "CLASS_PALADIN",
+          "allegiance": "FACTION_ID_BLUE",
+          "level": 1,
+          "xPosition": 1,
+          "yPosition": 0,
+          "items": ["ITEM_SWORD_IRON"]
+        }
+      ]
+    }
+  ]
+}

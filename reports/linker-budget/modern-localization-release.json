@@ -32,10 +32,10 @@
   "regions_headroom": {
     "ewram": {
       "capacity_bytes": 262144,
-      "free_bytes": 3088,
-      "occupied_bytes": 259056,
+      "free_bytes": 3068,
+      "occupied_bytes": 259076,
       "overflow": false,
-      "physical_free_bytes": 3088
+      "physical_free_bytes": 3068
     },
     "iwram": {
       "capacity_bytes": 32768,
@@ -106,6 +106,7 @@
       "total": 11534,
       "zh-Hans": 1386
     },
+    "emission_profile": "release",
     "glyphs_used_count": 422,
     "locales_generated": [
       "en",
@@ -117,6 +118,7 @@
       "it",
       "qps-ploc"
     ],
+    "omitted_active_message_count": 9,
     "pseudo_policy_counts": {
       "compact": 37,
       "preserve": 6,
@@ -125,6 +127,7 @@
     "scratch_budget_bytes": 96,
     "scratch_headroom_bytes": 33,
     "scratch_slot_bytes_used_max": 63,
+    "stable_active_message_count": 143,
     "tombstone_count": 1
   }
 }

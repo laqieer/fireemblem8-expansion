@@ -15,6 +15,8 @@
       "transient-blue-computer-control",
       "one-phase-blue-delegation",
       "bounded-semantic-run-until",
+      "typed-chapter-autoplay-objectives",
+      "transient-debugtools-phase-control",
       "accelerated-fidelity-harness",
       "custom-spell-runtime",
       "hq-pcm-mixer",
@@ -487,6 +489,30 @@
       "status": "current",
       "required_cases": [
         "TC-AUTOPLAY-BOUNDS-001"
+      ]
+    },
+    {
+      "id": "typed-chapter-autoplay-objectives",
+      "title": "Typed chapter autoplay objectives and AI groups",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/89"
+      ],
+      "reference": "docs/autoplay.md",
+      "status": "current",
+      "required_cases": [
+        "TC-AUTOPLAY-OBJECTIVE-001"
+      ]
+    },
+    {
+      "id": "transient-debugtools-phase-control",
+      "title": "Transient debugtools turn and faction-control submenu",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/124"
+      ],
+      "reference": "docs/debugtools.md",
+      "status": "current",
+      "required_cases": [
+        "TC-DEBUGTOOLS-PROTOTYPE-002"
       ]
     },
     {
@@ -2115,6 +2141,48 @@
       ]
     },
     {
+      "id": "TC-DEBUGTOOLS-PROTOTYPE-002",
+      "title": "Transient debugtools turn and faction control",
+      "feature_id": "transient-debugtools-phase-control",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/124"
+      ],
+      "document": "docs/debugtools.md",
+      "anchor": "tc-debugtools-prototype-002-transient-turn-and-faction-control",
+      "profiles": [
+        "Modern AAPCS debug ROM with debugtools and the #87 one-phase Charge/resumed-map profile",
+        "Modern AAPCS release ROM with debugtools omitted",
+        "Every authored expansion locale catalog"
+      ],
+      "purpose": "Prove one confirmed bounded turn request reaches a real red phase event boundary through the sole router, restores ordinary ownership, and serializes only its pre-edit turn through suspend/resume.",
+      "prerequisites": "For manual use, a clean live blue PLAYER map with no event, battle, fade, camera, or action Proc; automation reuses #87's deterministic resumed Chapter 2 fixture.",
+      "actions": "Open the map debug hub, inspect Flag/Chapter, select Apply Turn +1, let #87's native Charge command advance the current blue phase and automatic suspend, then fresh-boot Resume from that suspend.",
+      "expected_result": "The typed request records requested/applied/restored telemetry; red phase events observe the selected turn; the automatic suspend and fresh Resume preserve the pre-edit turn; a later native green-to-blue boundary advances both live and persistent turn baselines once; Charge restores ordinary blue control and post-boundary cursor input.",
+      "negative_control": "Back, invalid turn/faction/mode, movement/MU, combat/item/rescue action stages, unsafe ownership, lifecycle expiry, repeated/failed/reset suspend paths, and release inputs leave persistent save/config state unchanged; release objects omit the phase-control state and symbols.",
+      "interactions": "Genuine child of #87 and depends on #85; Blue remains exclusively owned by #85/#87, so no duplicate phase router or controller exists.",
+      "save_compatibility": "No field, preference, layout, migration, epoch, configuration identity, or serialized request is added.",
+      "cleanup": "Apply returns to the live map; use make clean_fast only for ignored build artifacts.",
+      "limitations": "PLAYER red/green mode is intentionally rejected because existing PlayerPhase commit semantics are blue-only; this is not persistent AI policy or arbitrary memory editing.",
+      "automation": [
+        {
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_debugtools_phase_control.py\" -v",
+          "evidence": "tools/gba-playtest/tests/test_debugtools_phase_control.py"
+        },
+        {
+          "command": "make localization-validate",
+          "evidence": "texts/expansion/registry.json"
+        },
+        {
+          "command": "make expansion-modern-debugtools-phase-control-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/fingerprints/debugtools-phase-control-modern-debug.json"
+        },
+        {
+          "command": "make expansion-modern-debugtools-phase-control-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/fingerprints/debugtools-phase-control-modern-release.json"
+        }
+      ]
+    },
+    {
       "id": "TC-AUTOPLAY-ACCEL-001",
       "title": "Accelerated-fidelity equivalence",
       "feature_id": "accelerated-fidelity-harness",
@@ -2143,6 +2211,57 @@
         {
           "command": "make expansion-modern-autoplay-accelerated-fidelity-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/run_accelerated_fidelity_checks.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-AUTOPLAY-OBJECTIVE-001",
+      "title": "Typed authored objective lifecycle",
+      "feature_id": "typed-chapter-autoplay-objectives",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/89"
+      ],
+      "document": "docs/test-cases/autoplay.md",
+      "anchor": "tc-autoplay-objective-001-typed-authored-objective-lifecycle",
+      "profiles": [
+        "Default generated-data source with no objective records",
+        "Disposable generated Chapter 2 fixture",
+        "Modern AAPCS debug ROM with #86 bounded default-PLAYER route"
+      ],
+      "purpose": "Prove typed generic objective lifecycle evaluation, indexed same-chapter bundle ownership, persistent protect completion/failure and hold terminal latching, pointer-free telemetry, and unchanged-chapter inertness.",
+      "prerequisites": "Repository root with Python 3 and a host C compiler; the bounded debug ROM negative also requires the modern ARM toolchain and libmGBA. Start without a save or savestate.",
+      "actions": "Run the focused generated-data/objective host selectors, then the bounded debug objective target.",
+      "expected_result": "All five generic kinds produce deterministic pending/success/failure state and progress; each authored chapter resolves only its indexed owner bundle; protect and hold use declared persistent event flags, with protect completion and an unfailed hold deadline terminal across later regressions and Suspend/Resume; the unchanged debug route exposes zero objective telemetry.",
+      "negative_control": "Missing, duplicate, stale, or cross-chapter bundle/unit-group ownership; duplicate/capacity/area/turn/flag/dependency/cycle errors fail closed; clearing transient telemetry cannot preserve hidden objective state.",
+      "interactions": "Depends on #85/#86 only for semantic telemetry/probe transport and reuses the generated-data registry, indexed chapter bundles, unit groups, event flags, and helper catalog. It does not define AI strategy or a second router.",
+      "save_compatibility": "No save bytes, migration, preference, compatibility epoch, or serialized objective state. Runtime status is derived from existing chapter/event state; protect and hold use their author-declared existing event-flag latches.",
+      "cleanup": "The host fixture is temporary under build/. Use make clean_fast only for ignored artifacts.",
+      "limitations": "No project strategy, route, balance claim, player-visible text, natural-language goal, or general event language.",
+      "compatibility": {
+        "dependent_issues": [90, 91, 92],
+        "generated_data": {
+          "bundle_capacity": 32,
+          "objective_capacity": 8,
+          "group_capacity": 8,
+          "group_member_capacity": 16,
+          "bundle_bytes": 12,
+          "objective_bytes": 28
+        },
+        "runtime": {
+          "telemetry_ewram_bytes": 16,
+          "total_ewram_bytes": 20,
+          "archival_runtime": false,
+          "serialized_objective_state": false
+        }
+      },
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_chapterobjectives_schema scripts.generated_data.tests.test_chapterbundle_schema scripts.generated_data.tests.test_cli_new_tables.CliChapterObjectivesTests -v",
+          "evidence": "scripts/generated_data/tests/test_chapterobjectives_schema.py"
+        },
+        {
+          "command": "make expansion-modern-chapter-objectives-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/run_chapter_objective_checks.py"
         }
       ]
     },

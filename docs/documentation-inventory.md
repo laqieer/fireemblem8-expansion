@@ -110,6 +110,8 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/public_api_policy.md | laqieer | current | Public API/SemVer scope and branch/tag conventions for this pre-1.0 project (issue #9)
 - docs/migration_registry.md | laqieer | current | EXPANSION_SAVE_COMPAT_EPOCH transition registry: mechanical-vs-manual migrations (issue #9)
 - docs/release_closure_candidate.md | laqieer | evidence | Issue #9 closure-candidate evidence report; not a closure claim or publication approval
+- docs/gba-playtest-semantic-evidence.md | laqieer | evidence | Issue #159 language/More semantic-evidence and budget-refresh provenance
+- docs/gba-playtest-issue157-evidence.md | laqieer | evidence | Issue #157 map from source-text audit IDs to compiled, generated, and host-driver evidence
 - docs/dump_extraction_plan.md | laqieer | historical | Now-completed dump/ raw-blob-to-source extraction workflow
 - docs/lz_suffix_diagnostic.md | laqieer | historical | Point-in-time hidden-asset LZ diagnostic technique
 - docs/tsa_audit.md | laqieer | historical | Point-in-time tilemap (TSA) data audit snapshot
@@ -127,6 +129,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - reports/dump_resources_list.md | laqieer | historical | Point-in-time per-symbol dump/ resource classification table
 - reports/generated_data_manifest.md | laqieer | generated | Auto-generated generated-data platform table/record manifest
 - reports/generated_data_bundle_inventory.md | laqieer | generated | Auto-generated chapterbundle table inventory
+- reports/generated_data_chapterobjectives_inventory.md | laqieer | generated | Auto-generated chapterobjectives table inventory
 - reports/generated_data_characters_inventory.md | laqieer | generated | Auto-generated characters table inventory
 - reports/generated_data_classes_inventory.md | laqieer | generated | Auto-generated classes table inventory
 - reports/generated_data_eventlists_inventory.md | laqieer | generated | Auto-generated eventlists table inventory

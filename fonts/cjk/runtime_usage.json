@@ -28595,6 +28595,78 @@
           ]
         },
         {
+          "id": "expansion:debug.confirm.turn_increment",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.confirm.turn_decrement",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.confirm.red_computer",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.confirm.red_blocked",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.confirm.green_computer",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.confirm.green_blocked",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.status.turn",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.mode.computer",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.mode.blocked",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "expansion:debug.save_fixture.game0",
           "mapping_source_kind": "expansion",
           "reason": "expansion UI registry system-font consumer",
@@ -28726,12 +28798,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2059,
+          "system": 2068,
           "talk": 1172
         },
-        "expansion_key_count": 134,
+        "expansion_key_count": 143,
         "game_target_count": 3414,
-        "record_count": 3550,
+        "record_count": 3559,
         "unclassified_count": 0
       }
     },
@@ -57329,6 +57401,78 @@
           ]
         },
         {
+          "id": "expansion:debug.confirm.turn_increment",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.confirm.turn_decrement",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.confirm.red_computer",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.confirm.red_blocked",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.confirm.green_computer",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.confirm.green_blocked",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.status.turn",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.mode.computer",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:debug.mode.blocked",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "expansion:debug.save_fixture.game0",
           "mapping_source_kind": "expansion",
           "reason": "expansion UI registry system-font consumer",
@@ -57460,12 +57604,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2059,
+          "system": 2068,
           "talk": 1172
         },
-        "expansion_key_count": 134,
+        "expansion_key_count": 143,
         "game_target_count": 3414,
-        "record_count": 3550,
+        "record_count": 3559,
         "unclassified_count": 0
       }
     }

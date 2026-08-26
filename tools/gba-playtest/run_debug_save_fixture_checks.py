@@ -116,6 +116,9 @@ def _check_layout_evidence(
     language_probe = elf_entries.get("gExpansionLanguageMenuProbe")
     itemtest_scratch = elf_entries.get("sItemExpansionScratch")
     itemtest_probe = elf_entries.get("gItemExpansionProbe")
+    chapter_objective_telemetry = elf_entries.get(
+        "gExpansionChapterObjectiveTelemetry"
+    )
 
     if not all(
         (
@@ -152,7 +155,10 @@ def _check_layout_evidence(
     if (itemtest_scratch is None) != (itemtest_probe is None):
         raise RuntimeError("incomplete item-test EWRAM layout")
     if itemtest_scratch is None:
-        if language_probe[0] - (elf_menu[0] + elf_menu[1]) != 4:
+        if (
+            chapter_objective_telemetry is None
+            and language_probe[0] - (elf_menu[0] + elf_menu[1]) != 4
+        ):
             raise RuntimeError("shared menu to language probe alignment delta drifted")
     elif (
         itemtest_scratch[1] != 0x2D0
@@ -162,6 +168,13 @@ def _check_layout_evidence(
         or language_probe[0] != itemtest_probe[0] + itemtest_probe[1]
     ):
         raise RuntimeError("item-test scratch/probe layout drifted")
+    if chapter_objective_telemetry is not None and (
+        chapter_objective_telemetry[1] != 0x10
+        or chapter_objective_telemetry[0] < elf_menu[0] + elf_menu[1]
+        or language_probe[0]
+        < chapter_objective_telemetry[0] + chapter_objective_telemetry[1]
+    ):
+        raise RuntimeError("chapter-objective telemetry layout drifted")
     if not re.search(
         r"^00000000\s+\w+\s+O\s+ewram_data\s+00000048 "
         r"sSaveStateStableLayout$",

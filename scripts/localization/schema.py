@@ -100,6 +100,24 @@ PSEUDO_POLICIES = (
 )
 DEFAULT_PSEUDO_POLICY = PSEUDO_POLICY_TRANSFORM
 
+# Active messages always retain their stable registry ID and authored
+# translations. Emission controls only whether a build profile materializes
+# a message in its generated locale catalog.
+EMISSION_ALWAYS = "always"
+EMISSION_DEBUG_ONLY = "debug_only"
+EMISSIONS = (
+    EMISSION_ALWAYS,
+    EMISSION_DEBUG_ONLY,
+)
+DEFAULT_EMISSION = EMISSION_ALWAYS
+
+EMISSION_PROFILE_DEBUG = "debug"
+EMISSION_PROFILE_RELEASE = "release"
+EMISSION_PROFILES = (
+    EMISSION_PROFILE_DEBUG,
+    EMISSION_PROFILE_RELEASE,
+)
+
 # Message "surface" -- which framework UI/diagnostic surface a message is
 # rendered on -- purely descriptive metadata used for width-budget
 # validation; not itself a rendering feature in this sprint.

@@ -19,6 +19,8 @@ MODERN_GOALS := \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debug-save-fixture-check \
+	expansion-modern-debugtools-phase-control-check \
+	expansion-modern-debugtools-phase-control-profile-rom \
 	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
@@ -58,6 +60,9 @@ MODERN_GOALS := \
 	expansion-modern-blue-phase-delegate-check \
 	expansion-modern-autoplay-bounds-check \
 	expansion-modern-autoplay-accelerated-fidelity-check \
+	expansion-modern-chapter-objectives-profile-rom \
+	expansion-modern-chapter-objectives-profile-boot-check \
+	expansion-modern-chapter-objectives-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-idspace-active-check \
@@ -213,6 +218,9 @@ endif
 
 ifeq ($(FE8_BANIM_PACKAGE_RUNTIME_TEST),1)
 MODERN_DEFINE_FLAGS += -DFE8_BANIM_PACKAGE_RUNTIME_TEST=1
+endif
+ifeq ($(GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED),1)
+MODERN_DEFINE_FLAGS += -DFE8_CHAPTER_OBJECTIVES_ENABLED=1
 endif
 MODERN_INCLUDE_FLAGS := -Iinclude -I.
 
@@ -397,12 +405,10 @@ tools/scaninc/scaninc$(EXE): $(wildcard tools/scaninc/*.cpp tools/scaninc/*.h to
 # modern.mk-only fixture tree (neither file present) safely no-ops instead
 # of failing to find a rule for a target nothing added to
 # MODERN_ALL_C_OBJECTS. The generated catalog/header/budget files
-# themselves live under $(MODERN_BUILD_ROOT) (their content never depends
-# on MODERN_CONFIG/MODERN_ABI/MODERN_ROM_SIZE -- only on
-# texts/expansion/registry.json + the authored locale catalogs), so every
-# MODERN_CONFIG/MODERN_ABI combination *within the same build root* shares
-# one generated copy instead of needlessly regenerating an identical copy
-# per $(MODERN_OUTPUT_DIR).
+# themselves live under $(MODERN_BUILD_ROOT) and use a config-specific
+# directory. A debug-only registry message retains its stable ID/header
+# macro in release but is intentionally omitted from the release catalog
+# payload, so debug and release content must never share generated output.
 #
 # Issue #18 sprint 5 root-cause fix: this used to be a single, hardcoded
 # "build/expansion-localization" path shared by *every* build root,
@@ -432,11 +438,18 @@ tools/scaninc/scaninc$(EXE): $(wildcard tools/scaninc/*.cpp tools/scaninc/*.h to
 MODERN_LOCALIZATION_CLI := scripts/localization/cli.py
 MODERN_LOCALIZATION_REGISTRY := texts/expansion/registry.json
 MODERN_LOCALIZATION_AVAILABLE := $(and $(wildcard $(MODERN_LOCALIZATION_CLI)),$(wildcard $(MODERN_LOCALIZATION_REGISTRY)))
-MODERN_LOCALIZATION_ROOT := $(MODERN_BUILD_ROOT)/expansion-localization
+MODERN_LOCALIZATION_ROOT := $(MODERN_BUILD_ROOT)/expansion-localization/$(MODERN_CONFIG)
 MODERN_LOCALIZATION_GENERATED_DIR := $(MODERN_LOCALIZATION_ROOT)/generated
 MODERN_LOCALIZATION_CATALOG_C := $(MODERN_LOCALIZATION_GENERATED_DIR)/expansion_locale_catalog.c
 MODERN_LOCALIZATION_MSG_IDS_H := $(MODERN_LOCALIZATION_GENERATED_DIR)/expansion_msg_ids.h
 MODERN_LOCALIZATION_BUDGET_JSON := $(MODERN_LOCALIZATION_GENERATED_DIR)/budget.json
+MODERN_LOCALIZATION_EMISSION_PROFILE := $(if $(filter debug,$(MODERN_CONFIG)),debug,release)
+# Kept only as an atomically published compatibility header for dependency
+# files written before catalog payloads became profile-specific. New objects
+# depend on MODERN_LOCALIZATION_MSG_IDS_H above; the stable-ID header here is
+# safe because it never filters debug-only IDs.
+MODERN_LOCALIZATION_LEGACY_GENERATED_DIR := $(MODERN_BUILD_ROOT)/expansion-localization/generated
+MODERN_LOCALIZATION_LEGACY_MSG_IDS_H := $(MODERN_LOCALIZATION_LEGACY_GENERATED_DIR)/expansion_msg_ids.h
 
 # --- Full-game CJK catalog (issue #18 game-catalog slice) -------------------
 # The validated production EXPANSION_ENABLED_LOCALES profile is the only
@@ -629,6 +642,10 @@ ifneq ($(strip $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)),)
 MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o
 endif
 
+ifneq ($(strip $(GENERATED_DATA_CHAPTEROBJECTIVES_C)),)
+MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o
+endif
+
 # Issue #5 Batch 1 (mechanics): $(GENERATED_DATA_TERRAINSTATS_OBJECT)
 # (generated_data.mk) is the same kind of additive object as units/
 # traps/shops/eventlists just above -- src/data_terrains.c has no
@@ -778,6 +795,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debug-save-fixture-check \
+	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
@@ -991,6 +1009,10 @@ $(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o: $(GENERATED_DATA_CH2_SHOPS_C)
 # reachable, since nothing adds this path to MODERN_ALL_C_OBJECTS in that
 # case.
 $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o: $(GENERATED_DATA_CH2_EVENTLISTS_C)
+	@mkdir -p $(@D)
+	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+$(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o: $(GENERATED_DATA_CHAPTEROBJECTIVES_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 
@@ -1447,6 +1469,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debug-save-fixture-check \
+	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
@@ -1458,7 +1481,10 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-hq-mixer-check \
 	expansion-modern-blue-phase-delegate-profile-rom \
 	expansion-modern-blue-phase-delegate-check \
+	expansion-modern-debugtools-phase-control-profile-rom \
+	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-autoplay-bounds-check \
+	expansion-modern-chapter-objectives-check \
 	expansion-modern-autoplay-accelerated-fidelity-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
@@ -1871,7 +1897,8 @@ expansion-modern-localization-profile-en-ja-zh-hans-qps:
 		EXPANSION_PSEUDO_LOCALE=1
 
 expansion-modern-localization-profile-en-fr-de-es-it:
-	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+	+$(MAKE) expansion-modern-rom expansion-modern-game-localization-config-check \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_ROM_SIZE=32M MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_EN_EU_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,fr,de,es,it
 
@@ -2031,6 +2058,7 @@ ifneq (,$(MODERN_EXPANSION_DEFINES_ACTIVE))
 		printf '%s\n' 'item_id_cap=$(FE8_ITEM_ID_CAP)'; \
 		printf '%s\n' 'item_expansion_itemtest=$(FE8_EXPANSION_ITEMTEST)'; \
 		printf '%s\n' 'custom_spell_test=$(FE8_EXPANSION_CUSTOM_SPELL_TEST)'; \
+		printf '%s\n' 'chapter_objectives_enabled=$(GENERATED_DATA_CHAPTEROBJECTIVES_ENABLED)'; \
 		printf '%s\n' 'layout_flags=$(MODERN_LAYOUT_FLAGS)'; \
 		printf '%s\n' 'data_layout_flags=$(MODERN_DATA_LAYOUT_FLAGS)'; \
 		printf '%s\n' 'banim_overlay_layout_flags=$(MODERN_BANIM_OVERLAY_LAYOUT_FLAGS)'; \
@@ -2120,7 +2148,27 @@ FORCE_MODERN_LOCALIZATION:
 
 $(MODERN_LOCALIZATION_CATALOG_C) $(MODERN_LOCALIZATION_MSG_IDS_H) $(MODERN_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_LOCALIZATION
 	@mkdir -p "$(MODERN_LOCALIZATION_GENERATED_DIR)"
-	@python3 -m scripts.localization.cli generate --out-dir "$(MODERN_LOCALIZATION_GENERATED_DIR)"
+	@python3 -m scripts.localization.cli generate \
+		--out-dir "$(MODERN_LOCALIZATION_GENERATED_DIR)" \
+		--emission-profile "$(MODERN_LOCALIZATION_EMISSION_PROFILE)"
+
+# Old compiler dependency files can name the former shared header path. Build
+# this invocation's private profile output first, then publish only the stable
+# header. The unique temporary path plus compare-and-rename avoids torn reads
+# or profile contamination when stale debug/release dependency files rebuild
+# concurrently in separate Make processes.
+$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H): $(MODERN_LOCALIZATION_MSG_IDS_H)
+	@set -eu; \
+	mkdir -p "$(MODERN_LOCALIZATION_LEGACY_GENERATED_DIR)"; \
+	tmp="$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H).tmp.$$$$"; \
+	trap 'rm -f "$$tmp"' EXIT HUP INT TERM; \
+	if test -f "$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H)" \
+		&& cmp -s "$(MODERN_LOCALIZATION_MSG_IDS_H)" "$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H)"; then \
+		:; \
+	else \
+		cp "$(MODERN_LOCALIZATION_MSG_IDS_H)" "$$tmp"; \
+		mv -f "$$tmp" "$(MODERN_LOCALIZATION_LEGACY_MSG_IDS_H)"; \
+	fi
 
 # Issue #18 sprint 3: ordinary compiles are not otherwise made to wait for
 # expansion_msg_ids.h -- only the synthetic expansion_locale-catalog.o
@@ -3490,11 +3538,76 @@ expansion-modern-blue-phase-delegate-check: expansion-modern-boot-preflight \
 		--config "$(MODERN_CONFIG)" \
 		--out-dir "$(MODERN_BLUE_PHASE_DELEGATE_RUNTIME_OUTDIR)"
 
+# Issue #124 applies a turn request through the real Flag/Chapter submenu,
+# then reuses #87's one-phase Charge profile to advance through an actual
+# red boundary and return to a player-controlled map. The profile is needed
+# only for the debug positive path; release replays the same inputs against
+# the normal release ROM and proves the established debugtools probe is zero.
+MODERN_DEBUGTOOLS_PHASE_CONTROL_ROOT := \
+	build/expansion-modern-debugtools-phase-control
+MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR := \
+	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ROOT)/debug/$(MODERN_ABI)
+MODERN_DEBUGTOOLS_PHASE_CONTROL_ROM := \
+	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR)/fireemblem8.gba
+MODERN_DEBUGTOOLS_PHASE_CONTROL_ELF := \
+	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR)/fireemblem8.elf
+MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_SCRIPT := \
+	tools/gba-playtest/run_debugtools_phase_control_checks.py
+MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_OUTDIR := \
+	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR)/runtime-check
+
+expansion-modern-debugtools-phase-control-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=debug MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ROOT) \
+		EXPANSION_BLUE_PHASE_DELEGATE=1
+
+ifeq ($(MODERN_CONFIG),debug)
+expansion-modern-debugtools-phase-control-check: expansion-modern-boot-preflight \
+		expansion-modern-debugtools-phase-control-profile-rom
+	@mkdir -p "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_OUTDIR)/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_SCRIPT)" \
+		--rom "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ROM)" \
+		--elf "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ELF)" \
+		--config debug \
+		--out-dir "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_OUTDIR)"
+else
+expansion-modern-debugtools-phase-control-check: expansion-modern-boot-preflight \
+		expansion-modern-rom
+	@mkdir -p "$(MODERN_OUTPUT_DIR)/debugtools-phase-control-runtime-check/tmp"
+	TMPDIR="$(abspath $(MODERN_OUTPUT_DIR)/debugtools-phase-control-runtime-check/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_SCRIPT)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--config release \
+		--out-dir "$(MODERN_OUTPUT_DIR)/debugtools-phase-control-runtime-check"
+endif
+
 # Issue #86 bounded semantic run-until classification. This reuses the #85
 # routes and telemetry while keeping fixed-frame scenarios and fingerprints
 # unchanged.
 MODERN_AUTOPLAY_BOUNDS_RUNTIME_SCRIPT := tools/gba-playtest/run_autoplay_bounds_checks.py
 MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/autoplay-bounds-runtime-check
+MODERN_CHAPTER_OBJECTIVES_RUNTIME_SCRIPT := tools/gba-playtest/run_chapter_objective_checks.py
+MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/chapter-objectives-runtime-check
+MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT := build/expansion-modern-chapter-objectives
+MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR := \
+	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)/generated-data
+MODERN_CHAPTER_OBJECTIVES_PROFILE_INVENTORY := \
+	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)/generated_data_chapterobjectives_inventory.md
+MODERN_CHAPTER_OBJECTIVES_PROFILE_ROM := \
+	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_CHAPTER_OBJECTIVES_PROFILE_ELF := \
+	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_CHAPTER_OBJECTIVES_RUNTIME_FIXTURE := \
+	scripts/generated_data/tests/fixtures/chapterobjectives/valid.json
+MODERN_CHAPTER_OBJECTIVES_RUNTIME_CHAPTERBUNDLE_FIXTURE := \
+	scripts/generated_data/tests/fixtures/chapterobjectives/ch2_bundle.json
+
+CLEAN_DIRS += $(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)
 
 expansion-modern-autoplay-bounds-check: expansion-modern-boot-preflight expansion-modern-rom
 	@mkdir -p "$(MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR)/tmp"
@@ -3546,6 +3659,44 @@ expansion-modern-autoplay-accelerated-fidelity-check:
 	@printf '%s\n' \
 		"error: expansion-modern-autoplay-accelerated-fidelity-check requires MODERN_CONFIG=debug" >&2
 	@exit 1
+endif
+
+expansion-modern-chapter-objectives-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT) \
+		GENERATED_DATA_OUT_DIR=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_INVENTORY) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_FIXTURE) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_CHAPTERBUNDLE_FIXTURE) \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_CHAPTER_OBJECTIVES_RUNTIME_TEST=1
+
+expansion-modern-chapter-objectives-profile-boot-check:
+	+$(MAKE) expansion-modern-boot-check \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT) \
+		GENERATED_DATA_OUT_DIR=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_INVENTORY) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_FIXTURE) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_CHAPTERBUNDLE_FIXTURE) \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_CHAPTER_OBJECTIVES_RUNTIME_TEST=1
+
+ifeq ($(MODERN_CONFIG),debug)
+expansion-modern-chapter-objectives-check: expansion-modern-boot-preflight expansion-modern-rom \
+		expansion-modern-chapter-objectives-profile-rom
+	@mkdir -p "$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR)/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_SCRIPT)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--fixture-rom "$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROM)" \
+		--fixture-elf "$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ELF)" \
+		--out-dir "$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR)"
+else
+expansion-modern-chapter-objectives-check: expansion-modern-chapter-objectives-profile-boot-check
+	@printf 'Modern chapter-objectives runtime check skipped: the authored Suspend -> reset -> Resume scenario is debug-calibrated; the enabled authored-data profile was built and boot-verified for config=%s\n' \
+		'$(MODERN_CONFIG)'
 endif
 
 # Normal save/load runtime scenario (issue #13 closure). Reuses new-game.json's
@@ -3986,7 +4137,10 @@ else
 endif
 
 # 5. Production European profile: fresh preferences show all five rows and
-#    a real DOWN+A selection persists French (stable locale id 3).
+#    a real DOWN+A selection persists French (stable locale id 3). A second
+#    deterministic route starts from explicit English preferences, opens the
+#    virtual More row, selects Italian, closes the submenu, and proves the
+#    parent Configuration screen redrew with the persisted locale.
 MODERN_LOCALE_EU_ROM := \
 	$(MODERN_LOCALE_PROFILE_EN_EU_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
 MODERN_LOCALE_EU_ELF := \
@@ -3994,13 +4148,19 @@ MODERN_LOCALE_EU_ELF := \
 
 expansion-modern-localization-runtime-eu-check: expansion-modern-boot-preflight \
 		expansion-modern-localization-profile-en-fr-de-es-it \
-		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav
+		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav \
+		$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav
 ifeq ($(MODERN_CONFIG),debug)
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_EU_ROM)" \
 		--elf "$(MODERN_LOCALE_EU_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-eu-first-start-fr-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-eu-first-start-fr-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --nm "$(MODERN_NM)" --rom "$(MODERN_LOCALE_EU_ROM)" \
+		--elf "$(MODERN_LOCALE_EU_ELF)" \
+		--scenario "$(MODERN_LOCALE_SCEN)/locale-settings-more-eu-modern-debug.json" \
+		--expected "$(MODERN_LOCALE_FP)/locale-settings-more-eu-modern-debug.json" \
+		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav" --policy behavior
 	@printf 'Modern ROM localization-runtime EU check passed: %s\n' "$(MODERN_LOCALE_EU_ROM)"
 else
 	@printf 'Modern ROM localization-runtime EU check skipped for config=%s (debug fingerprint only)\n' '$(MODERN_CONFIG)'
@@ -4192,6 +4352,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-overlay-audit \
 		expansion-modern-autoplay-check \
 		expansion-modern-autoplay-bounds-check \
+		expansion-modern-chapter-objectives-check \
 		$(MODERN_LINKER_CHECK_ACCELERATED_FIDELITY) \
 		expansion-modern-blue-phase-delegate-check \
 		expansion-modern-starter-runtime-check \
@@ -4203,6 +4364,8 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-debugtools-music-check \
 		expansion-modern-debugtools-tools-check \
 		expansion-modern-debug-save-fixture-check \
+		expansion-modern-debugtools-phase-control-check \
+		expansion-modern-debugtools-phase-control-profile-rom \
 		expansion-modern-debugtools-diagnostics-check \
 		expansion-modern-debugtools-prep-check \
 		expansion-modern-debugtools-ch4prep-check \
@@ -4236,6 +4399,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debug-save-fixture-check \
+	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \

@@ -17,6 +17,7 @@
 #include "sram-layout.h"
 #include "eventinfo.h"
 #ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_debugtools.h"
 #include "expansion_ui_prefs.h"
 #include "debug_save_fixture_internal.h"
 #endif
@@ -566,6 +567,10 @@ void WriteSuspendSave(int slot)
     struct SaveBlockInfo chunk;
     u8 list[MENU_OVERRIDE_MAX];
     struct Dungeon dungeon[2];
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    struct PlaySt suspendPlaySt;
+    u16 persistentTurn;
+#endif
     int i, val;
     struct SuspendSavePackedUnit *buf;
 
@@ -576,16 +581,24 @@ void WriteSuspendSave(int slot)
         return;
 #endif
 
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    DebugToolsPhaseControl_BeginSuspendSerialization();
+#endif
     if (PLAY_FLAG_TUTORIAL & gPlaySt.chapterStateBits)
-        return;
+        goto end;
 
     if (!IsSramWorking())
-        return;
+        goto end;
 
     slot += GetNextSuspendSaveId();
     dest = GetSaveWriteAddr(slot);
     gPlaySt.time_saved = GetGameClock();
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    suspendPlaySt = gPlaySt;
+    WriteAndVerifySramFast(&suspendPlaySt, &dest->playSt, sizeof(suspendPlaySt));
+#else
     WriteAndVerifySramFast(&gPlaySt, &dest->playSt, sizeof(gPlaySt));
+#endif
     StoreRNStateToActionStruct();
     WriteAndVerifySramFast(&gActionData, &dest->action, sizeof(struct ActionData));
 
@@ -628,12 +641,26 @@ void WriteSuspendSave(int slot)
     val = GetEventSlotCounter();
     WriteAndVerifySramFast(&val, &dest->eventSlotCnt, sizeof(int));
 
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    if (DebugToolsPhaseControl_GetSerializedSuspendTurn(&persistentTurn))
+    {
+        WriteAndVerifySramFast(
+            &persistentTurn,
+            &dest->playSt.chapterTurnNumber,
+            sizeof(persistentTurn));
+    }
+#endif
     chunk.magic32 = SAVEMAGIC32;
     chunk.kind = SAVEBLOCK_KIND_SUSPEND;
     WriteSaveBlockInfo(&chunk, slot);
 
     gBmSt.just_resumed = false;
     WriteSwappedSuspendSaveId();
+
+end:
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    DebugToolsPhaseControl_EndSuspendSerialization();
+#endif
 }
 
 #if defined(FE8_ARCHIVAL_BUILD) || !FE8_EXPANSION_DEBUGTOOLS_ENABLED
@@ -645,6 +672,9 @@ void ReadSuspendSave(int slot)
     struct SuspendSaveBlock *src = GetSaveReadAddr(slot + gSuspendSaveIdOffset);
 
     ReadSramFast(&src->playSt, &gPlaySt, sizeof(gPlaySt));
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+    DebugToolsPhaseControl_Reset();
+#endif
     SetGameTime(gPlaySt.time_saved);
 
     ReadSramFast(&src->action, &gActionData, sizeof(struct ActionData));

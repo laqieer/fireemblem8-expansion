@@ -209,6 +209,10 @@ void DebugTools_CleanupMusicPreview(void)
 {
 }
 
+void DebugToolsPhaseControl_Reset(void)
+{
+}
+
 /* DebugToolsObserver_WaitForStablePlayerPhase is a PROC_REPEAT callback:
  * this host test drives it directly (see debugtools_launcher_driver.c),
  * so gProcScr_PlayerPhase only needs to exist as a distinguishable

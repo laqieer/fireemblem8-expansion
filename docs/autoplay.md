@@ -196,6 +196,14 @@ the issue #85 lifecycle reset and therefore resumes as `PLAYER`. The feature
 does not add `NOBODY`, persistent autoplay, a settings screen, authored
 strategy/objective data, chapter rules, or a second phase router.
 
+Issue [#124](https://github.com/laqieer/fireemblem8-expansion/issues/124)
+is the genuine debugtools child of this layer. It never requests blue
+ownership: its red/green transient requests are accepted only while this
+controller is in stable blue `PLAYER`, so a live Charge marker or blue
+computer phase rejects the request. `BmMain_StartPhase` remains the sole
+router for both layers, and either layer's normal map lifecycle reset clears
+pending debugtools state without touching a save.
+
 The optional Threat Range row composes with Charge: the base map menu has
 eight visible rows, either option adds one, and both together use ten of
 `MENU_ITEM_MAX == 11`. A downstream project adding or replacing another row
@@ -325,25 +333,6 @@ turn 1 and zero starts, completions, actions, failures, or debug activations.
 The generated homebrew fixture independently reaches every terminal reason
 and proves objective failure is selected before stall classification.
 
-This is host/runtime-test infrastructure only:
-
-- **Dependencies:** #85's public control/telemetry contract,
-  `tools/gba-playtest`, existing ELF probe bindings, libmGBA, and the
-  tester-case catalog.
-- **Dependents:** accelerated-fidelity comparison (#88), later integration
-  work (#89), and strategy/batch/planner layers through their own contracts.
-- **Conflicts:** none; fixed-frame scenarios and fingerprints remain valid and
-  are exercised unchanged.
-- **Profiles:** generated homebrew/libmGBA host integration, modern AAPCS debug
-  positive, and modern AAPCS debug/release default negatives. Linux/libmGBA
-  remains the CI runtime.
-- **Save/config/data:** no save field, migration, compatibility epoch,
-  configuration identity, Autoconf/Make feature flag, generated game data, or
-  localization change.
-- **ROM/RAM/archival:** no target source, ROM bytes, RAM allocation, linker
-  budget, or archival runtime behavior changes. The legacy lane remains a
-  compile-compatibility check only.
-
 ## Compatibility and budgets
 
 - **Dependencies:** `BmMain_StartPhase`, `gProcScr_CpPhase`,
@@ -380,6 +369,111 @@ This is host/runtime-test infrastructure only:
   the 4 KiB stack margin. The named all-locales/all-features release profile
   enables Charge and Threat Range together and retains 732 EWRAM bytes plus
   272 IWRAM static-growth bytes.
+
+## Typed chapter objectives and AI groups
+
+Issue [#89](https://github.com/laqieer/fireemblem8-expansion/issues/89)
+adds the generic authored-data seam that supplies objective state to bounded
+autoplay. It does not add a strategy policy, a route, an AI assignment
+precedence rule, player-visible objective text, or a project-specific chapter
+record. The default `src/data/chapter_objectives.json` has no chapter records;
+every existing chapter therefore remains objective-inactive. Its sentinel-only
+generated table also omits objective phase and map-task hooks, preserving the
+existing default combat-frame timing.
+
+The `chapterobjectives` generated-data table is owned by the existing
+chapter-bundle collection: every authored `src/data/*_bundle.json` is indexed
+by chapter identity, and each objective record resolves only through its one
+matching owner bundle. That bundle loads its own declared table sources,
+including unit and event-list data, before validation; it never inherits
+another chapter's defaults. Objective areas are additionally bounded by the
+owner chapter's authored map width and height. Its only initial kinds are:
+
+- `protect`: keep one referenced character alive until another typed
+  objective completes, latching a pre-completion violation in a required
+  existing `failureFlag` and latching its first completion in a distinct
+  `completionFlag`;
+- `reach_area`: every live member of one AI group reaches an inclusive,
+  bounded rectangle;
+- `defeat_group`: every live member of one AI group is absent or defeated;
+- `event_flag`: observe a named existing `EVFLAG_*`; and
+- `hold_until_turn`: keep one group in an inclusive rectangle through a
+  bounded chapter turn, latching its first violation in a required existing
+  `failureFlag`.
+
+AI groups expose validated membership only. They do not choose targets,
+movement, actions, scoring, or precedence; those decisions remain for the
+later strategy layer. Group members reference both a symbolic character and
+an existing unit-group symbol owned by the same chapter bundle, so an author
+cannot silently attach an objective to a similarly named or unrelated unit.
+
+Activation and deactivation are derived exclusively from existing event flags.
+Event scripts set/clear those flags through the existing `flag.set` and
+`flag.clear` helper operations (or existing hand-authored events); no
+objective opcode, event router, or alternate manifest exists. The evaluator
+recomputes pending/success/failure from the current chapter, flags, units,
+and turn on every battle-map task tick and phase start. `hold_until_turn`
+additionally sets its declared existing `failureFlag` on the first missing,
+rescued, dead, or out-of-area member; later re-entry cannot clear that latch.
+After an unfailed hold reaches its deadline it is terminal success before
+later unit-area checks. Objective evaluation may reset/show setup telemetry
+while chapter beginning events run, but cannot set protect/hold flags until
+the post-`CallBeginningEvents` readiness hook. All other authored history
+must likewise be represented by an existing event flag. Suspend/load therefore
+reconstructs the same state without hidden or serialized objective data.
+
+Recruitment, village, and chest events remain authored event-script behavior:
+their existing success path must set a named, persistent `EVFLAG_*`, and an
+`event_flag` objective observes that latched flag. Objectives never infer
+those outcomes from animation, menus, inventory, or unit appearance.
+
+`gExpansionChapterObjectiveTelemetry` is a separate 16-byte EWRAM,
+pointer-free record with the selected stable objective ID, state, progress,
+and active-objective count. The generic #86 ELF probe resolver can bind all
+four fields directly; this keeps #85/#86's existing 64-byte telemetry layout,
+fixed fingerprints, and terminal contracts unchanged. A failure wins telemetry
+selection over pending, which wins over success, with source order breaking
+ties deterministically.
+
+The generated table budgets are 32 chapter bundles, eight objectives and
+eight groups per chapter, and 16 members per group. Modern generated data
+uses 12 bytes per bundle, 12 bytes plus members per group, and 28 bytes per
+objective; the default empty table is one 12-byte sentinel. The telemetry
+record remains 16 EWRAM bytes; both modern debug and release profiles allocate
+20 EWRAM bytes after the two transient readiness bytes and alignment. Neither
+changes IWRAM, save, migration, compatibility epoch,
+localization, configuration identity, or feature gate. Each authored
+telemetry refresh uses a bounded 1 KiB stack index and scans the 255 unit
+slots once, eliminating per-member character scans while remaining within the
+4 KiB stack bound. It is excluded from the archival lane.
+
+The canonical procedure is
+[`TC-AUTOPLAY-OBJECTIVE-001`](test-cases/autoplay.md#tc-autoplay-objective-001-typed-authored-objective-lifecycle).
+
+This is production runtime infrastructure with host/runtime test coverage:
+
+- **Dependencies:** #85/#86's public control/telemetry and bounded probe
+  contracts, the generated-data registry/chapter-bundle owner model,
+  `tools/gba-playtest`, existing ELF probe bindings, libmGBA, and the
+  tester-case catalog.
+- **Dependents:** strategy profiles (#90), batch simulation (#91), and
+  planner/campaign work (#92) consume this typed status seam through their
+  own contracts.
+- **Conflicts:** none; fixed-frame scenarios and fingerprints remain valid and
+  are exercised unchanged.
+- **Profiles:** generated homebrew/libmGBA host integration, modern AAPCS debug
+  positive, and modern AAPCS debug/release default negatives. Linux/libmGBA
+  remains the CI runtime.
+- **Save/config/data:** no save field, migration, compatibility epoch,
+  configuration identity, or Autoconf/Make feature flag. Generated
+  `chapterobjectives` and `chapterbundle` data own the emitted objective
+  tables; localization remains unchanged.
+- **ROM/RAM/archival:** the modern generated objective table and evaluator add
+  ROM data/code; the default table is a 12-byte sentinel and authored
+  objectives are 28 bytes each. Telemetry remains a 16-byte EWRAM record with
+  two transient readiness bytes; linker-budget owner reports capture the
+  resulting profile totals. The archival lane excludes objective runtime
+  behavior and remains a compile-compatibility check only.
 
 ## Validation
 
