@@ -75,12 +75,12 @@ class EventListsStrategyHelperTests(unittest.TestCase):
         dependencies["chapterbundle"][0].chapter.id = "CHAPTER_L_2"
         return dependencies
 
-    def _activation(self, records):
+    def _strategy_call(self, records, operation):
         location = records.helper_scripts[0].loc
         return eventlists_schema.HelperCall(
             "strategy",
             location,
-            "activate",
+            operation,
             location,
             [
                 eventlists_schema.MacroArg(
@@ -97,6 +97,9 @@ class EventListsStrategyHelperTests(unittest.TestCase):
             location,
         )
 
+    def _activation(self, records):
+        return self._strategy_call(records, "activate")
+
     def test_strategy_activation_lowers_to_production_asm_call(self):
         records = eventlists_schema.load_records(fixture_path("eventlists", "helpers_valid.json"))
         activation = self._activation(records)
@@ -111,53 +114,89 @@ class EventListsStrategyHelperTests(unittest.TestCase):
             ),
         )
 
-    def test_raw_flag_set_cannot_bypass_declared_strategy_pair(self):
-        records = eventlists_schema.load_records(fixture_path("eventlists", "helpers_valid.json"))
-        location = records.helper_scripts[0].loc
-        records.helper_scripts[0].entries.append(
-            eventlists_schema.HelperCall(
-                "flag",
-                location,
-                "set",
-                location,
-                [
-                    eventlists_schema.MacroArg(
-                        "symbol",
-                        "EVFLAG_HIDE_BLINKING_ICON",
-                        location,
-                    ),
-                ],
-                location,
-            )
+    def test_strategy_deactivation_lowers_to_production_asm_call(self):
+        records = eventlists_schema.load_records(
+            fixture_path("eventlists", "helpers_valid.json")
         )
+        deactivation = self._strategy_call(records, "deactivate")
+        records.helper_scripts[0].entries.append(deactivation)
         diagnostics = DiagnosticCollector()
         eventlists_schema.validate(records, diagnostics, self._strategy_dependencies())
-        self.assertTrue(
-            any(
-                "must use strategy.activate" in error.message
-                for error in diagnostics.errors
+        self.assertTrue(diagnostics.ok, [str(error) for error in diagnostics.errors])
+        self.assertEqual(
+            eventlists_generate.render_call(deactivation, context="script"),
+            "AUTOPLAY_STRATEGY_DEACTIVATE({}, EVFLAG_HIDE_BLINKING_ICON)".format(
+                stable_id_value("AUTOPLAY_STRATEGY_OBJECTIVE_FIRST")
             ),
-            [str(error) for error in diagnostics.errors],
         )
 
+    def test_raw_flag_changes_cannot_bypass_declared_strategy_pair(self):
+        for operation, typed_operation in (
+            ("set", "activate"),
+            ("clear", "deactivate"),
+        ):
+            with self.subTest(operation=operation):
+                records = eventlists_schema.load_records(
+                    fixture_path("eventlists", "helpers_valid.json")
+                )
+                location = records.helper_scripts[0].loc
+                records.helper_scripts[0].entries.append(
+                    eventlists_schema.HelperCall(
+                        "flag",
+                        location,
+                        operation,
+                        location,
+                        [
+                            eventlists_schema.MacroArg(
+                                "symbol",
+                                "EVFLAG_HIDE_BLINKING_ICON",
+                                location,
+                            ),
+                        ],
+                        location,
+                    )
+                )
+                diagnostics = DiagnosticCollector()
+                eventlists_schema.validate(
+                    records,
+                    diagnostics,
+                    self._strategy_dependencies(),
+                )
+                self.assertTrue(
+                    any(
+                        "must use strategy.{}".format(typed_operation) in error.message
+                        for error in diagnostics.errors
+                    ),
+                    [str(error) for error in diagnostics.errors],
+                )
+
     def test_undeclared_strategy_flag_pair_is_rejected(self):
-        records = eventlists_schema.load_records(fixture_path("eventlists", "helpers_valid.json"))
-        activation = self._activation(records)
-        activation.args[1] = eventlists_schema.MacroArg(
-            "symbol",
-            "EVFLAG_BATTLE_QUOTES",
-            activation.args[1].loc,
-        )
-        records.helper_scripts[0].entries.append(activation)
-        diagnostics = DiagnosticCollector()
-        eventlists_schema.validate(records, diagnostics, self._strategy_dependencies())
-        self.assertTrue(
-            any(
-                "is not declared by autoplay strategy assignments" in error.message
-                for error in diagnostics.errors
-            ),
-            [str(error) for error in diagnostics.errors],
-        )
+        for operation in ("activate", "deactivate"):
+            with self.subTest(operation=operation):
+                records = eventlists_schema.load_records(
+                    fixture_path("eventlists", "helpers_valid.json")
+                )
+                call = self._strategy_call(records, operation)
+                call.args[1] = eventlists_schema.MacroArg(
+                    "symbol",
+                    "EVFLAG_BATTLE_QUOTES",
+                    call.args[1].loc,
+                )
+                records.helper_scripts[0].entries.append(call)
+                diagnostics = DiagnosticCollector()
+                eventlists_schema.validate(
+                    records,
+                    diagnostics,
+                    self._strategy_dependencies(),
+                )
+                self.assertTrue(
+                    any(
+                        "is not declared by autoplay strategy assignments"
+                        in error.message
+                        for error in diagnostics.errors
+                    ),
+                    [str(error) for error in diagnostics.errors],
+                )
 
     def test_pairs_and_raw_flag_restrictions_are_scoped_to_manifest_owner(self):
         dependencies = self._strategy_dependencies()
@@ -182,7 +221,7 @@ class EventListsStrategyHelperTests(unittest.TestCase):
             eventlists_generate.render_call(activation, context="script"),
             "AUTOPLAY_STRATEGY_ACTIVATE({}, EVFLAG_HIDE_BLINKING_ICON)".format(
                 stable_id_value("AUTOPLAY_STRATEGY_OBJECTIVE_FIRST")
-            ),
+            )
         )
 
         activation.args[1] = eventlists_schema.MacroArg(
@@ -200,29 +239,30 @@ class EventListsStrategyHelperTests(unittest.TestCase):
             [str(error) for error in diagnostics.errors],
         )
 
-        records = eventlists_schema.load_records(
-            fixture_path("eventlists", "helpers_valid.json")
-        )
-        location = records.helper_scripts[0].loc
-        records.helper_scripts[0].entries.append(
-            eventlists_schema.HelperCall(
-                "flag",
-                location,
-                "set",
-                location,
-                [eventlists_schema.MacroArg("symbol", "EVFLAG_5", location)],
-                location,
+        for operation in ("set", "clear"):
+            records = eventlists_schema.load_records(
+                fixture_path("eventlists", "helpers_valid.json")
             )
-        )
-        diagnostics = DiagnosticCollector()
-        eventlists_schema.validate(records, diagnostics, dependencies)
-        self.assertFalse(
-            any(
-                "must use strategy.activate" in error.message
-                for error in diagnostics.errors
-            ),
-            [str(error) for error in diagnostics.errors],
-        )
+            location = records.helper_scripts[0].loc
+            records.helper_scripts[0].entries.append(
+                eventlists_schema.HelperCall(
+                    "flag",
+                    location,
+                    operation,
+                    location,
+                    [eventlists_schema.MacroArg("symbol", "EVFLAG_5", location)],
+                    location,
+                )
+            )
+            diagnostics = DiagnosticCollector()
+            eventlists_schema.validate(records, diagnostics, dependencies)
+            self.assertFalse(
+                any(
+                    "must use strategy." in error.message
+                    for error in diagnostics.errors
+                ),
+                [str(error) for error in diagnostics.errors],
+            )
 
     def test_malformed_strategy_arguments_report_types_before_lowering(self):
         malformed_args = (
@@ -234,34 +274,41 @@ class EventListsStrategyHelperTests(unittest.TestCase):
                 None,
             ),
         )
-        for malformed in malformed_args:
-            with self.subTest(kind=malformed.kind):
-                records = eventlists_schema.load_records(
-                    fixture_path("eventlists", "helpers_valid.json")
-                )
-                activation = self._activation(records)
-                malformed.loc = activation.args[0].loc
-                activation.args[0] = malformed
-                records.helper_scripts[0].entries.append(activation)
-                diagnostics = DiagnosticCollector()
-                with mock.patch.object(
-                    eventlists_schema,
-                    "stable_id_value",
-                    side_effect=AssertionError("malformed strategy argument was hashed"),
-                ):
-                    eventlists_schema.validate(
-                        records,
-                        diagnostics,
-                        self._strategy_dependencies(),
+        for operation in ("activate", "deactivate"):
+            for malformed in malformed_args:
+                with self.subTest(operation=operation, kind=malformed.kind):
+                    records = eventlists_schema.load_records(
+                        fixture_path("eventlists", "helpers_valid.json")
                     )
-                matching = [
-                    error
-                    for error in diagnostics.errors
-                    if error.reference_path.endswith(".strategy")
-                    and "expected a strategy symbol reference" in error.message
-                ]
-                self.assertEqual(len(matching), 1, [str(error) for error in diagnostics.errors])
-                self.assertEqual(matching[0].location, malformed.loc)
+                    call = self._strategy_call(records, operation)
+                    malformed.loc = call.args[0].loc
+                    call.args[0] = malformed
+                    records.helper_scripts[0].entries.append(call)
+                    diagnostics = DiagnosticCollector()
+                    with mock.patch.object(
+                        eventlists_schema,
+                        "stable_id_value",
+                        side_effect=AssertionError(
+                            "malformed strategy argument was hashed"
+                        ),
+                    ):
+                        eventlists_schema.validate(
+                            records,
+                            diagnostics,
+                            self._strategy_dependencies(),
+                        )
+                    matching = [
+                        error
+                        for error in diagnostics.errors
+                        if error.reference_path.endswith(".strategy")
+                        and "expected a strategy symbol reference" in error.message
+                    ]
+                    self.assertEqual(
+                        len(matching),
+                        1,
+                        [str(error) for error in diagnostics.errors],
+                    )
+                    self.assertEqual(matching[0].location, malformed.loc)
 
 
 class EventListsSchemaCrossReferenceTests(unittest.TestCase):

@@ -140,7 +140,7 @@ class GenerateDeterminismTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_strategy_activation_helper_compiles_as_a_production_event_call(self):
+    def test_strategy_activation_helpers_compile_as_production_event_calls(self):
         compiler = shutil.which("gcc") or shutil.which("cc")
         if compiler is None:
             self.skipTest("no host C compiler")
@@ -160,10 +160,29 @@ class GenerateDeterminismTests(unittest.TestCase):
                 location,
             )
         )
+        records.helper_scripts[0].entries.append(
+            HelperCall(
+                "strategy",
+                location,
+                "deactivate",
+                location,
+                [
+                    MacroArg("symbol", "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST", location),
+                    MacroArg("symbol", "EVFLAG_HIDE_BLINKING_ICON", location),
+                ],
+                location,
+            )
+        )
         content = generate_c_source(records, "fixtures/eventlists/helpers_valid.json")
         self.assertIn('#include "expansion_autoplay_strategies.h"', content)
         self.assertIn(
             "AUTOPLAY_STRATEGY_ACTIVATE({}, EVFLAG_HIDE_BLINKING_ICON)".format(
+                stable_id_value("AUTOPLAY_STRATEGY_OBJECTIVE_FIRST")
+            ),
+            content,
+        )
+        self.assertIn(
+            "AUTOPLAY_STRATEGY_DEACTIVATE({}, EVFLAG_HIDE_BLINKING_ICON)".format(
                 stable_id_value("AUTOPLAY_STRATEGY_OBJECTIVE_FIRST")
             ),
             content,

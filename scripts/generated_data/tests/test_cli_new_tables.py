@@ -139,6 +139,16 @@ class CliEventListsTests(unittest.TestCase):
                     ],
                 }
             )
+            source["helperScripts"][0]["entries"].append(
+                {
+                    "helper": "strategy",
+                    "operation": "deactivate",
+                    "args": [
+                        "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST",
+                        "EVFLAG_HIDE_BLINKING_ICON",
+                    ],
+                }
+            )
             source_path = os.path.join(tmp, "strategy-helper.json")
             with open(source_path, "w", encoding="utf-8") as handle:
                 json.dump(source, handle)
