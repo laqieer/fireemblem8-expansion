@@ -548,12 +548,15 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
 
             AiTryMoveTowards(xTarget, yTarget, 0, 0, 1);
             if (!gAiDecision.actionPerformed)
+            {
+                AiClearDecision();
                 return true;
+            }
 
             if (gAiDecision.xMove < 0 || gAiDecision.xMove >= gBmMapSize.x
                 || gAiDecision.yMove < 0 || gAiDecision.yMove >= gBmMapSize.y)
             {
-                gAiDecision.actionPerformed = false;
+                AiClearDecision();
                 return true;
             }
 
@@ -564,7 +567,7 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
                 && decisionRange < currentRange)
                 return true;
 
-            gAiDecision.actionPerformed = false;
+            AiClearDecision();
             return true;
         }
 
@@ -579,7 +582,7 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
             return true;
         }
 
-        gAiDecision.actionPerformed = false;
+        AiClearDecision();
         return true;
     }
 

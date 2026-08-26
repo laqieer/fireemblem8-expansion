@@ -507,8 +507,10 @@ rectangle; otherwise it waits, never falling through to unconstrained
 Aggressive. The projection is coordinate only (clamp X then Y); combat uses
 existing slot/item/map scans. Neither profile consumes RNG or derives a
 decision from pointer/link addresses, so a fixed seed/configuration repeats
-its trace exactly. Existing low-level fallback behavior retains its own
-established RNG contract.
+its trace exactly. Every consumed wait calls `AiClearDecision()`, so rejected
+movement/combat coordinates, action IDs, targets, and item slots remain zero
+in runtime probes and telemetry. Existing low-level fallback behavior retains
+its own established RNG contract.
 
 `ExpansionAutoplayStrategies_ValidateRegistry()` rejects capacity overflow,
 zero/duplicate IDs, missing callbacks, and undeclared capability bits.

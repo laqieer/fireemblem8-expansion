@@ -431,6 +431,7 @@ int main(void)
                             str(ROOT / "include" / "generated"),
                             "-DFE8_EXPANSION_MODERN_BUILD=1",
                             "-DFE8_EXPANSION_AUTOPLAY_STRATEGIES={}".format(int(enabled)),
+                            "-DFE8_AUTOPLAY_STRATEGY_RUNTIME_TEST=1",
                             str(STRATEGY_SOURCE),
                             str(OBJECTIVE_SOURCE),
                             str(objective),

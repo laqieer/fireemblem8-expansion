@@ -135,6 +135,22 @@ void AiClearDecision(void)
     memset(&gAiDecision, 0, sizeof(gAiDecision));
 }
 
+static bool IsDecisionClear(void)
+{
+    struct AiDecision clear = { 0 };
+    return memcmp(&gAiDecision, &clear, sizeof(clear)) == 0;
+}
+
+#if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
+static bool IsRuntimeProbeDecisionClear(void)
+{
+    return gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstCount == 1
+        && gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstActionId == 0
+        && gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstX == 0
+        && gExpansionAutoplayStrategyRuntimeProbe.objectiveFirstY == 0;
+}
+#endif
+
 s8 AiAttemptCombatWithinMovement(s8 (*isEnemy)(struct Unit* unit))
 {
     (void)isEnemy;
@@ -271,7 +287,7 @@ static void ResetFixture(void)
     gPlaySt.chapterIndex = CHAPTER_L_2;
     gPlaySt.faction = FACTION_RED;
     gPlaySt.chapterTurnNumber = 1;
-    gAiDecision.actionPerformed = false;
+    AiClearDecision();
     sBlueComputerPhase = false;
     sCombatCalls = 0;
     sMoveCalls = 0;
@@ -310,6 +326,13 @@ static void ResetFixture(void)
     ExpansionChapterObjectives_ResetTelemetry();
     ExpansionChapterObjectives_OnBeginningEventsComplete();
     ExpansionAutoplayStrategies_ResetPendingActivation();
+#if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
+    memset(
+        &gExpansionAutoplayStrategyRuntimeProbe,
+        0,
+        sizeof(gExpansionAutoplayStrategyRuntimeProbe)
+    );
+#endif
 }
 
 static int TestRegistryFailures(void)
@@ -475,14 +498,38 @@ static int TestReferenceProfiles(void)
     sMoveDecisionX = 5;
     sMoveDecisionY = 5;
     sRangeData[sMoveDecisionY][sMoveDecisionX] = 10;
+    memset(&gAiDecision, 0xA5, sizeof(gAiDecision));
     RefreshObjectiveTelemetry();
     result = ExpansionAutoplayStrategies_TryDecide();
     CHECK(
         result == EXPANSION_AUTOPLAY_STRATEGY_OK
-            && !gAiDecision.actionPerformed
+            && IsDecisionClear()
             && sCombatCalls == 0
-            && sMoveCalls == 1,
+            && sMoveCalls == 1
+#if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
+            && IsRuntimeProbeDecisionClear()
+#endif
+            ,
         "no-progress objective movement must wait without unconstrained combat"
+    );
+
+    ResetFixture();
+    sFlags[EVFLAG_GAMEOVER] = true;
+    sFlags[EVFLAG_HIDE_BLINKING_ICON] = true;
+    sMoveDecisionX = gBmMapSize.x;
+    sMoveDecisionY = gBmMapSize.y;
+    memset(&gAiDecision, 0xA5, sizeof(gAiDecision));
+    RefreshObjectiveTelemetry();
+    result = ExpansionAutoplayStrategies_TryDecide();
+    CHECK(
+        result == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && IsDecisionClear()
+            && sMoveCalls == 1
+#if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
+            && IsRuntimeProbeDecisionClear()
+#endif
+            ,
+        "out-of-bounds objective movement must consume a fully clean wait"
     );
 
     sFlags[EVFLAG_BATTLE_QUOTES] = true;
@@ -807,14 +854,43 @@ static int TestReferenceProfiles(void)
     sUsePerUnitCombatMap = true;
     sEirikaCombatX = 4;
     sEirikaCombatY = 4;
+    memset(&gAiDecision, 0xA5, sizeof(gAiDecision));
     RefreshObjectiveTelemetry();
     result = ExpansionAutoplayStrategies_TryDecide();
     CHECK(
         result == EXPANSION_AUTOPLAY_STRATEGY_OK
-            && !gAiDecision.actionPerformed
+            && IsDecisionClear()
             && sCombatCalls == 1
-            && sMovementMapGenerationCount == 1,
+            && sMovementMapGenerationCount == 1
+#if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
+            && IsRuntimeProbeDecisionClear()
+#endif
+            ,
         "pending reach combat must reject a rectangle tile unreachable by this unit"
+    );
+
+    ResetFixture();
+    sFlags[EVFLAG_GAMEOVER] = true;
+    sFlags[EVFLAG_HIDE_BLINKING_ICON] = true;
+    sEirika.xPos = 2;
+    sEirika.yPos = 2;
+    sCombatMoveX = 8;
+    sCombatMoveY = 8;
+    sUsePerUnitCombatMap = true;
+    sEirikaCombatX = 8;
+    sEirikaCombatY = 8;
+    memset(&gAiDecision, 0xA5, sizeof(gAiDecision));
+    RefreshObjectiveTelemetry();
+    result = ExpansionAutoplayStrategies_TryDecide();
+    CHECK(
+        result == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && IsDecisionClear()
+            && sCombatCalls == 1
+#if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
+            && IsRuntimeProbeDecisionClear()
+#endif
+            ,
+        "out-of-rectangle combat must consume a fully clean wait"
     );
 
     ResetFixture();
