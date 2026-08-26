@@ -557,6 +557,70 @@ def _validate_chapter_objectives_source(record, diagnostics):
         )
 
 
+def _validate_autoplay_strategies_source(record, diagnostics):
+    strategies = record.autoplay_strategies
+    if strategies is None:
+        return
+
+    from ..autoplaystrategies import schema as strategies_schema
+
+    source_ref = "bundles[chapter={}].autoplayStrategies.source".format(record.chapter.id)
+    source_path = _source_path(strategies.source, record.repository_root)
+    try:
+        source_records = strategies_schema.load_records(source_path)
+    except (OSError, GeneratedDataError) as error:
+        diagnostics.add(
+            _err(
+                "could not load autoplayStrategies source '{}': {}".format(
+                    strategies.source, error
+                ),
+                strategies.source_loc,
+                source_ref,
+            )
+        )
+        return
+
+    diagnostics.extend(
+        validate_unique(
+            zip(strategies.symbols, strategies.symbol_locs),
+            "duplicate autoplayStrategies symbol '{key}' (first at {first_loc})",
+            "bundles[chapter={}].autoplayStrategies.symbols[{{key}}]".format(
+                record.chapter.id
+            ),
+        )
+    )
+    source_symbols = {
+        chapter.symbol
+        for chapter in source_records["chapters"]
+        if chapter.chapter == record.chapter.id
+    }
+    for symbol, loc in zip(strategies.symbols, strategies.symbol_locs):
+        if symbol not in source_symbols:
+            diagnostics.add(
+                _err(
+                    "autoplayStrategies symbol '{}' is not a record for chapter '{}' "
+                    "in source '{}'".format(
+                        symbol, record.chapter.id, strategies.source
+                    ),
+                    loc,
+                    "bundles[chapter={}].autoplayStrategies.symbols[{}]".format(
+                        record.chapter.id, symbol
+                    ),
+                )
+            )
+    for symbol in sorted(source_symbols - set(strategies.symbols)):
+        diagnostics.add(
+            _err(
+                "autoplayStrategies source '{}' contains chapter '{}' symbol '{}' "
+                "not declared by this bundle".format(
+                    strategies.source, record.chapter.id, symbol
+                ),
+                strategies.source_loc,
+                source_ref,
+            )
+        )
+
+
 def read_asset_table_entries(asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE,
                               symbol=CHAPTER_DATA_ASSET_TABLE_SYMBOL,
                               decl_pattern=CHAPTER_DATA_ASSET_TABLE_DECL):
@@ -660,6 +724,7 @@ def _validate_record(records, diagnostics, dependency_records=None,
     chapter = records.chapter
     manifest = records.manifest
     _validate_chapter_objectives_source(records, diagnostics)
+    _validate_autoplay_strategies_source(records, diagnostics)
 
     # -- 1. chapter ID / chapter-settings index / internalName / mapEventDataId --
     chapters_enum = extract_enum_constants(chapters_header, name_prefix="CHAPTER_")

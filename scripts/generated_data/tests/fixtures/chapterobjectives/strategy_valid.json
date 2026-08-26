@@ -11,6 +11,10 @@
             {
               "character": "CHARACTER_EIRIKA",
               "unitGroup": "UnitDef_Event_Ch2Ally"
+            },
+            {
+              "character": "CHARACTER_SETH",
+              "unitGroup": "UnitDef_Event_Ch2Ally"
             }
           ]
         }
@@ -44,7 +48,8 @@
       ],
       "dependencies": {
         "characters": [
-          "CHARACTER_EIRIKA"
+          "CHARACTER_EIRIKA",
+          "CHARACTER_SETH"
         ],
         "eventFlags": [
           "EVFLAG_GAMEOVER",

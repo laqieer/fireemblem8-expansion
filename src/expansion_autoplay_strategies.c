@@ -147,6 +147,30 @@ static enum ExpansionAutoplayStrategyResult ValidateStrategyForObjective(
     return EXPANSION_AUTOPLAY_STRATEGY_OK;
 }
 
+static bool IsDecisionSupported(const struct ExpansionAutoplayStrategy* strategy)
+{
+    u32 capability;
+
+    if (!gAiDecision.actionPerformed)
+        return true;
+
+    switch (gAiDecision.actionId)
+    {
+    case AI_ACTION_COMBAT:
+        capability = EXPANSION_AUTOPLAY_STRATEGY_ACTION_COMBAT;
+        break;
+
+    case AI_ACTION_NONE:
+        capability = EXPANSION_AUTOPLAY_STRATEGY_ACTION_OBJECTIVE_MOVE;
+        break;
+
+    default:
+        return false;
+    }
+
+    return (strategy->actionCapabilities & capability) != 0;
+}
+
 enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ValidateObjectiveSupport(
     u32 strategyId,
     enum ExpansionChapterObjectiveKind kind)
@@ -261,6 +285,12 @@ enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_TryDecide(void)
     context.objective = objective;
     if (strategy->callback(&context))
     {
+        if (!IsDecisionSupported(strategy))
+        {
+            AiClearDecision();
+            return EXPANSION_AUTOPLAY_STRATEGY_ERR_UNSUPPORTED_CAPABILITY;
+        }
+
 #if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
         if (strategy->id == EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID)
         {
@@ -421,21 +451,18 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
             return true;
         }
 
-        if (objective->kind == EXPANSION_CHAPTER_OBJECTIVE_HOLD_UNTIL_TURN)
+        AiAttemptCombatWithinMovement(AiIsUnitEnemy);
+        if (gAiDecision.actionPerformed
+            && gAiDecision.xMove >= objective->xMin
+            && gAiDecision.xMove <= objective->xMax
+            && gAiDecision.yMove >= objective->yMin
+            && gAiDecision.yMove <= objective->yMax)
         {
-            AiAttemptCombatWithinMovement(AiIsUnitEnemy);
-            if (gAiDecision.actionPerformed
-                && gAiDecision.xMove >= objective->xMin
-                && gAiDecision.xMove <= objective->xMax
-                && gAiDecision.yMove >= objective->yMin
-                && gAiDecision.yMove <= objective->yMax)
-            {
-                return true;
-            }
-
-            gAiDecision.actionPerformed = false;
             return true;
         }
+
+        gAiDecision.actionPerformed = false;
+        return true;
     }
 
     return ExpansionAutoplayStrategy_Aggressive(context);

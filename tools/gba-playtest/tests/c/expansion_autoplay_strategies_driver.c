@@ -40,6 +40,8 @@ u8 ** gBmMapRange;
 
 static struct CharacterData sEirikaCharacter;
 static struct Unit sEirika;
+static struct CharacterData sSethCharacter;
+static struct Unit sSeth;
 static u8 sRangeData[16][16];
 static u8 * sRangeRows[16];
 static bool sFlags[0x100];
@@ -50,6 +52,8 @@ static int sCombatMoveX;
 static int sCombatMoveY;
 static int sMoveDecisionX;
 static int sMoveDecisionY;
+static bool sTentativeReturnsSuccess;
+static u8 sTentativeActionId;
 
 bool CheckFlag(int flag)
 {
@@ -66,6 +70,8 @@ struct Unit* GetUnitFromCharId(int character)
 {
     if (character == CHARACTER_EIRIKA)
         return &sEirika;
+    if (character == CHARACTER_SETH)
+        return &sSeth;
     return NULL;
 }
 
@@ -73,6 +79,8 @@ struct Unit* GetUnit(int unitId)
 {
     if (unitId == gActiveUnitId)
         return &sEirika;
+    if (unitId == 2)
+        return &sSeth;
     return NULL;
 }
 
@@ -141,7 +149,8 @@ bool ExpansionAutoplayStrategy_TentativeFallback(
 {
     (void)context;
     AiTryMoveTowards(9, 9, 0, 0, 1);
-    return false;
+    gAiDecision.actionId = sTentativeActionId;
+    return sTentativeReturnsSuccess;
 }
 #endif
 
@@ -162,6 +171,11 @@ static void ResetFixture(void)
     sEirika.state = US_NONE;
     sEirika.xPos = 10;
     sEirika.yPos = 10;
+    sSethCharacter.number = CHARACTER_SETH;
+    sSeth.pCharacterData = &sSethCharacter;
+    sSeth.state = US_NONE;
+    sSeth.xPos = 10;
+    sSeth.yPos = 10;
     gActiveUnit = &sEirika;
     gActiveUnitId = 1;
     gPlaySt.chapterIndex = CHAPTER_L_2;
@@ -175,6 +189,8 @@ static void ResetFixture(void)
     sCombatMoveY = sEirika.yPos;
     sMoveDecisionX = 3;
     sMoveDecisionY = 3;
+    sTentativeReturnsSuccess = false;
+    sTentativeActionId = AI_ACTION_NONE;
     memset(gEventSlots, 0, sizeof(gEventSlots));
     gBmMapSize.x = 16;
     gBmMapSize.y = 16;
@@ -319,6 +335,37 @@ static int TestReferenceProfiles(void)
         "tentative callback decisions must clear before Unit.ai fallback"
     );
 
+    gAiDecision.actionPerformed = false;
+    sMoveCalls = 0;
+    sTentativeReturnsSuccess = true;
+    result = ExpansionAutoplayStrategies_TryDecide();
+    CHECK(
+        result == EXPANSION_AUTOPLAY_STRATEGY_ERR_UNSUPPORTED_CAPABILITY
+            && !gAiDecision.actionPerformed
+            && sMoveCalls == 1,
+        "combat-only strategies must reject and clear a produced move"
+    );
+
+    sMoveCalls = 0;
+    sTentativeActionId = AI_ACTION_STAFF;
+    result = ExpansionAutoplayStrategies_TryDecide();
+    CHECK(
+        result == EXPANSION_AUTOPLAY_STRATEGY_ERR_UNSUPPORTED_CAPABILITY
+            && !gAiDecision.actionPerformed
+            && sMoveCalls == 1,
+        "strategies must reject actions outside the public capability taxonomy"
+    );
+
+    sMoveCalls = 0;
+    sTentativeActionId = AI_ACTION_COMBAT;
+    result = ExpansionAutoplayStrategies_TryDecide();
+    CHECK(
+        result == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && gAiDecision.actionPerformed
+            && gAiDecision.actionId == AI_ACTION_COMBAT,
+        "a produced action declared by the strategy must remain accepted"
+    );
+
     ResetFixture();
     sFlags[EVFLAG_GAMEOVER] = true;
     RefreshObjectiveTelemetry();
@@ -384,6 +431,23 @@ static int TestReferenceProfiles(void)
             0xDEADBEEF, EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA)
             == EXPANSION_AUTOPLAY_STRATEGY_ERR_UNKNOWN_ID,
         "unknown strategy IDs must fail explicitly"
+    );
+
+    ResetFixture();
+    sFlags[EVFLAG_GAMEOVER] = true;
+    sFlags[EVFLAG_HIDE_BLINKING_ICON] = true;
+    sEirika.xPos = 2;
+    sEirika.yPos = 2;
+    sCombatMoveX = 8;
+    sCombatMoveY = 8;
+    RefreshObjectiveTelemetry();
+    result = ExpansionAutoplayStrategies_TryDecide();
+    CHECK(
+        result == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && !gAiDecision.actionPerformed
+            && sCombatCalls == 1
+            && sMoveCalls == 0,
+        "an in-area member must stay constrained while another member keeps reach pending"
     );
 
     ResetFixture();
