@@ -74,6 +74,7 @@ from ..json_loader import load_json_file
 from ..schema import DependencyGraph, TableSchema
 from .. import character_refs
 from ..chapterobjectives.schema import stable_id_value
+from ..autoplaystrategies.schema import selected_records as selected_strategy_records
 from ..validators import extract_enum_constants, validate_range, validate_reference, validate_unique
 from . import helper_specs
 
@@ -830,7 +831,7 @@ def _chapter_bundle_records(dependency_records):
 
 
 def _strategy_pairs_for_owner(records, strategy_records, dependency_records, diagnostics):
-    chapters = strategy_records.get("chapters", ())
+    _strategies, chapters = selected_strategy_records(strategy_records)
     if not chapters:
         return set()
 
@@ -857,12 +858,12 @@ def _strategy_pairs_for_owner(records, strategy_records, dependency_records, dia
 
     owner_chapter = owners[0].chapter.id
     strategy_pairs = set()
-    for chapter in chapters:
+    for chapter, chapter_assignment, group_assignments, unit_assignments in chapters:
         if chapter.chapter != owner_chapter:
             continue
-        assignments = [chapter.chapter_assignment]
-        assignments.extend(chapter.group_assignments)
-        assignments.extend(chapter.unit_assignments)
+        assignments = [chapter_assignment]
+        assignments.extend(group_assignments)
+        assignments.extend(unit_assignments)
         for assignment in assignments:
             if assignment is not None and assignment.activation_flag is not None:
                 strategy_pairs.add((assignment.strategy, assignment.activation_flag))
@@ -882,9 +883,10 @@ def validate(records, diagnostics, dependency_records=None, characters_header=CH
     eventscripts_by_symbol = {r.symbol: r for r in dependency_records.get("eventscripts", ())}
     helper_scripts_by_symbol = {script.symbol: script for script in records.helper_scripts}
     strategy_records = dependency_records.get("autoplaystrategies", {})
-    strategy_ids = {
-        strategy.id for strategy in strategy_records.get("strategies", ())
-    }
+    selected_strategies, _selected_chapters = selected_strategy_records(
+        strategy_records
+    )
+    strategy_ids = {strategy.id for strategy in selected_strategies}
     strategy_pairs = _strategy_pairs_for_owner(
         records,
         strategy_records,

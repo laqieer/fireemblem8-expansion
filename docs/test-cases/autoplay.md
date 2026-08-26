@@ -352,8 +352,9 @@ policy, player-facing text, or a general expression language.
 4. Run
    `make expansion-modern-autoplay-strategy-runtime-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
 5. Run `make expansion-modern-autoplay-strategy-budget` to rebuild the
-   pre-router/current-disabled/current-enabled full-link comparison and
-   regenerate `reports/autoplay_strategy_budget.json`.
+   immutable-pre-router/current-disabled/current-enabled full-link comparison
+   and regenerate `reports/autoplay_strategy_budget.json` without consulting
+   the current default branch.
 
 ### Expected result
 
@@ -370,7 +371,9 @@ operation replaces the pending operation, invalid pairs cannot replace it,
 and lifecycle/Suspend-resume reset discards it. Unknown IDs,
 duplicate/missing callbacks, invalid capability bits, capacity overflow, and
 Objective-first with an unsupported objective kind fail explicitly before an
-action commits.
+action commits. Enabled reference helpers lower to generated event C; the same
+helpers fail validation when references are disabled because their assignments
+are absent from emitted strategy C.
 
 The structured budget result reports the profiles-disabled shared router
 separately from the enabled references: +1,784 debug / +2,184 release ROM
@@ -384,7 +387,9 @@ With profiles disabled and the reference descriptors/assignments omitted,
 action; the original `Unit.ai[]` decision path remains authoritative. The
 ARM selector confirms reference callback symbols are absent from the disabled
 object set and both profile states allocate exactly the same bounded
-eight-byte pending pair.
+eight-byte pending pair. Disabled reference flags are not reserved against raw
+flag helpers, while emitted downstream custom assignments remain typed and
+reserved.
 
 ### Interactions and save compatibility
 

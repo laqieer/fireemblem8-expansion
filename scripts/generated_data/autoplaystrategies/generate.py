@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..cgen import render_banner
 from ..chapterobjectives.schema import stable_id_value
-from .schema import REFERENCE_STRATEGIES
+from .schema import REFERENCE_STRATEGIES, selected_records
 
 
 OBJECTIVE_CAPABILITY_TO_C = {
@@ -47,30 +47,7 @@ def _units_name(record):
 
 
 def generate_c_source(records, source_path):
-    reference_profiles_enabled = records.get("reference_profiles_enabled", False)
-    strategies = [
-        strategy
-        for strategy in records["strategies"]
-        if reference_profiles_enabled or strategy.id not in REFERENCE_STRATEGIES
-    ]
-    strategy_ids = {strategy.id for strategy in strategies}
-    chapters = []
-    for chapter in records["chapters"]:
-        chapter_assignment = chapter.chapter_assignment
-        if chapter_assignment is not None and chapter_assignment.strategy not in strategy_ids:
-            chapter_assignment = None
-        group_assignments = [
-            assignment
-            for assignment in chapter.group_assignments
-            if assignment.strategy in strategy_ids
-        ]
-        unit_assignments = [
-            assignment
-            for assignment in chapter.unit_assignments
-            if assignment.strategy in strategy_ids
-        ]
-        if chapter_assignment is not None or group_assignments or unit_assignments:
-            chapters.append((chapter, chapter_assignment, group_assignments, unit_assignments))
+    strategies, chapters = selected_records(records)
     parts = [render_banner(source=source_path, table="autoplaystrategies")]
     parts.append('#include "global.h"\n')
     parts.append('#include "constants/chapters.h"\n')
