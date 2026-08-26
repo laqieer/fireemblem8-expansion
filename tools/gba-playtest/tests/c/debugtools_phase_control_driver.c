@@ -14,6 +14,7 @@
 #include "event.h"
 #include "expansion_autoplay.h"
 #include "expansion_debugtools.h"
+#include "expansion_debug_save_fixture.h"
 #include "fontgrp.h"
 #include "gamecontrol.h"
 #include "hardware.h"
@@ -34,8 +35,15 @@
     } while (0)
 
 struct DebugToolsProbe gDebugToolsProbe;
+struct DebugSaveFixtureProbe gDebugSaveFixtureProbe;
 struct ActionData gActionData;
 struct Unit *gActiveUnit;
+
+int DebugSaveFixture_RecordBlockedWrite(enum DebugSaveFixtureWriteKind kind)
+{
+    (void)kind;
+    return FALSE;
+}
 
 struct ProcCmd CONST_DATA gProc_BMapMain[] = { { 0 } };
 struct ProcCmd gProcScr_PlayerPhase[] = { { 0 } };

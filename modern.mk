@@ -18,6 +18,7 @@ MODERN_GOALS := \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debug-save-fixture-check \
 	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-debugtools-phase-control-profile-rom \
 	expansion-modern-debugtools-diagnostics-check \
@@ -793,6 +794,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debug-save-fixture-check \
 	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
@@ -1466,6 +1468,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debug-save-fixture-check \
 	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \
@@ -2778,6 +2781,19 @@ expansion-modern-debugtools-tools-check: expansion-modern-boot-preflight expansi
 	@printf 'Modern ROM debugtools-tools-check passed (bounded tools + cursor unit editor live in debug, compiled-out all-zero in release): %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
+MODERN_DEBUG_SAVE_FIXTURE_CHECK := \
+	tools/gba-playtest/run_debug_save_fixture_checks.py
+MODERN_DEBUG_SAVE_FIXTURE_DIR := \
+	$(MODERN_OUTPUT_DIR)/debug-save-fixture
+
+expansion-modern-debug-save-fixture-check: expansion-modern-boot-preflight expansion-modern-rom
+	"$(PYTHON)" "$(MODERN_DEBUG_SAVE_FIXTURE_CHECK)" \
+		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
+		--config "$(MODERN_CONFIG)" \
+		--out-dir "$(MODERN_DEBUG_SAVE_FIXTURE_DIR)"
+	@printf 'Modern debug save-fixture check passed: %s (config=%s abi=%s)\n' \
+		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 # Issue #127: typed State/Engine diagnostics. The debug leg uses an isolated
 # runtime-test build that drives title restoration, battle rejection, valid
 # and empty cursor-unit captures, both views, explicit Refresh, and forced
@@ -4347,6 +4363,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-debugtools-map-check \
 		expansion-modern-debugtools-music-check \
 		expansion-modern-debugtools-tools-check \
+		expansion-modern-debug-save-fixture-check \
 		expansion-modern-debugtools-phase-control-check \
 		expansion-modern-debugtools-phase-control-profile-rom \
 		expansion-modern-debugtools-diagnostics-check \
@@ -4381,6 +4398,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 	expansion-modern-debugtools-map-check \
 	expansion-modern-debugtools-music-check \
 	expansion-modern-debugtools-tools-check \
+	expansion-modern-debug-save-fixture-check \
 	expansion-modern-debugtools-phase-control-check \
 	expansion-modern-debugtools-diagnostics-check \
 	expansion-modern-debugtools-prep-check \

@@ -112,8 +112,8 @@ MESSAGE_KEYS = {
 RELEASE_PHASE_BASELINE = {
     "ewram_occupied_bytes": 259076,
     "rom_occupied_bytes": 16776960,
-    "floating_end": 145963764,
-    "emitted_message_count": 120,
+    "floating_end": 145965748,
+    "emitted_message_count": 134,
 }
 
 
@@ -432,8 +432,18 @@ class DebugToolsPhaseControlArmTests(unittest.TestCase):
             sized_symbols.stdout,
             flags=re.MULTILINE,
         )
-        self.assertIsNotNone(request, "debug request state symbol missing")
-        self.assertLessEqual(int(request.group(1), 16), 16)
+        self.assertIsNone(
+            request,
+            "phase state must alias the existing stable fixture/editor storage",
+        )
+        stable = re.search(
+            r"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+[bBdD]\s+"
+            r"sSaveStateStableLayout$",
+            sized_symbols.stdout,
+            flags=re.MULTILINE,
+        )
+        self.assertIsNotNone(stable, "shared stable storage symbol missing")
+        self.assertEqual(int(stable.group(1), 16), 0x48)
         debug_probe = re.search(
             r"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+[bBdD]\s+"
             r"gDebugToolsProbe$",

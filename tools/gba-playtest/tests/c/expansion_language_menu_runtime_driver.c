@@ -34,6 +34,8 @@ static ExpansionLocaleId sCurrentLocale;
 static ExpansionLocaleId sResolvedLocale;
 static ExpansionMsgId sResolvedMsg;
 
+extern int gDebugToolsLifecycleLanguageMenuUiCallCount;
+
 void ExpansionUiPrefs_ApplySaved(void)
 {
     sApplySavedCalls++;
@@ -171,6 +173,8 @@ static int CheckFormatter(void)
     ExpansionLanguageMenu_ResolveLocaleName(EXPANSION_LOCALE_INVALID, FALSE);
     CHECK(sResolvedMsg == EXP_MSG_FRAMEWORK_LOCALE_NAME_EN,
         "unsupported locale must use the configured default name");
+    CHECK(gDebugToolsLifecycleLanguageMenuUiCallCount == 0,
+        "formatter must not execute menu or rendering host support");
     return 1;
 }
 
@@ -214,6 +218,8 @@ static int CheckInitializer(u32 xmapMagic, u8 vanillaLanguage)
         "initializer must not mutate vanilla language state");
     CHECK(memcmp(&gExtraMapSaveHead, &xmapBefore, sizeof(xmapBefore)) == 0,
         "initializer must not mutate XMAP state");
+    CHECK(gDebugToolsLifecycleLanguageMenuUiCallCount == 0,
+        "valid-prefs initializer must not execute selector UI host support");
     return 1;
 }
 

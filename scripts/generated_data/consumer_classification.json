@@ -4437,6 +4437,14 @@
       "category": "external-interface",
       "reason": null
     },
+    "tools/gba-playtest/tests/sram_fixture.py|tool-symbol|character|pid": {
+      "category": "reviewed-exclusion",
+      "reason": "test-only keyword parameter in the deterministic SRAM fixture encoder; it writes a fixed byte-level character ID into ignored playtest images and is never a production or generated-data consumer"
+    },
+    "tools/gba-playtest/tests/sram_fixture.py|tool-symbol|class|jid": {
+      "category": "reviewed-exclusion",
+      "reason": "test-only keyword parameter in the deterministic SRAM fixture encoder; it writes a fixed byte-level class ID into ignored playtest images and is never a production or generated-data consumer"
+    },
     "tools/gba-playtest/tests/test_accelerated_fidelity.py|tool-symbol|event|test_profile_covers_all_factions_events_flags_and_objective_result": {
       "category": "reviewed-exclusion",
       "reason": "a unittest method name containing 'events' for profile coverage; it neither stores nor consumes an event ID"

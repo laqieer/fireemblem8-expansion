@@ -65,7 +65,8 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/config_identity.md | laqieer | current | Config surface + ROM identity fingerprint reference (issue #8)
 - docs/save_format.md | laqieer | current | Save format + compatibility gate reference (issue #2)
 - docs/id_space.md | laqieer | current | Extensible ID space DEFAULT vs ACTIVE contract reference (issue #10)
-- docs/debugtools.md | laqieer | current | Debug-tools full closure reference: action registry, hotkey hub, five bounded tools, diagnostics, safety/release gating, non-goals (issue #11)
+- docs/debugtools.md | laqieer | current | Debug-tools reference: action registry, hotkey hub, bounded chapter/skirmish selector, save fixtures, diagnostics, lifecycle/release safety, and non-goals (issues #11/#123/#127/#128)
+- docs/debug_save_fixtures.md | laqieer | current | Typed volatile save-fixture isolation, confirmation, game-control, write-block, and recovery contract (issue #128)
 - docs/generated_data.md | laqieer | current | Full generated-data platform design/reference (issue #5)
 - docs/generated_data_tutorial.md | laqieer | current | Contributor-facing generated-data authoring walkthrough
 - docs/starter_features.md | laqieer | current | Four default-off starter flags, typed mechanics/content API, QoL, and runtime matrices (issue #6)
@@ -95,6 +96,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/test-cases/asset-authoring.md | laqieer | current | Indexed source-asset adapter procedure, controls, runtime evidence, and cleanup (issue #62)
 - docs/test-cases/workflow-governance.md | laqieer | current | Indexed trusted-push and centralized CI-wait orchestration procedure (issue #93)
 - docs/test-cases/codeql-alerts.md | laqieer | current | Link Arena and confirmed CodeQL alert regression procedures (issue #84)
+- docs/test-cases/debug-save-fixtures.md | laqieer | current | Byte-level volatile save-fixture isolation and recovery procedure (issue #128)
 - docs/localization.md | laqieer | current | Stable locale/message IDs, catalog authoring, prefs/UI, budgets, and runtime matrices (issue #18)
 - docs/patch_release.md | laqieer | current | Trusted BPS-only maximal-profile artifact and local verification contract (issue #49)
 - docs/game_localization_catalog.md | laqieer | current | Full-game FE8U-indexed CJK catalog generation, bounded runtime, and synthetic link gate

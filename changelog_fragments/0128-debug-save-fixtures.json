@@ -1,0 +1,6 @@
+{
+  "issue": 128,
+  "category": "added",
+  "summary": "Add the modern-debug-only typed volatile save-fixture API and built-in Save State flow: validated CURRENT game/suspend sources are sanitized into the existing 32 KiB EWRAM overlay, previewed and confirmed twice, continued once by GameControl, and protected by hard cartridge-write blocking without changing the save format or compatibility epoch.",
+  "semver_impact": "minor"
+}

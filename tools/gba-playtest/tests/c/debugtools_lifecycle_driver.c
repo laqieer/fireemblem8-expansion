@@ -26,6 +26,7 @@ extern struct MenuProc* gDebugToolsLifecycleLastMenuProc;
 extern void DebugToolsLifecycle_SetTextCounter(u16 value);
 extern u16 DebugToolsLifecycle_GetTextCounter(void);
 extern void DebugToolsLifecycle_RunPendingTransition(void);
+extern void DebugToolsLifecycle_SetDiagnosticsRestoring(int restoring);
 
 extern u8 DebugToolsLifecycle_Builtin1Selected(struct MenuProc*, struct MenuItemProc*);
 extern u8 DebugToolsLifecycle_Builtin2Selected(struct MenuProc*, struct MenuItemProc*);
@@ -550,6 +551,41 @@ int main(void)
           "final cleanup must restore the allocator to its pre-debug base");
     CHECK(DebugTools_IsHubActive() == 0,
           "the session guard must clear only after deferred final cleanup");
+
+    {
+        int transitionsBefore;
+        int endsBefore;
+
+        DebugToolsLifecycle_SetTextCounter(textBase);
+        CHECK(DebugTools_OpenHub() == DEBUGTOOLS_OK,
+              "restoration fixture must open a fresh session");
+        DebugTools_QueueSubmenuTransition(
+            gDebugToolsLifecycleLastMenuProc,
+            &sFakeSubmenuDef);
+        EndMenu(gDebugToolsLifecycleLastMenuProc);
+        DebugToolsLifecycle_RunPendingTransition();
+        CHECK(gDebugToolsLifecycleLastMenuDef == &sFakeSubmenuDef,
+              "restoration fixture must enter the real contributor submenu");
+
+        transitionsBefore = gDebugToolsLifecycleTransitionProcCount;
+        endsBefore = gDebugToolsLifecycleEndMenuCount;
+        DebugToolsLifecycle_SetDiagnosticsRestoring(TRUE);
+        DebugTools_EndSessionAfterMenuEnd(gDebugToolsLifecycleLastMenuProc);
+        CHECK(gDebugToolsLifecycleTransitionProcCount == transitionsBefore,
+              "restoring diagnostics must not schedule cleanup");
+        CHECK(gDebugToolsLifecycleEndMenuCount == endsBefore,
+              "restoring diagnostics must preserve the live submenu owner");
+        CHECK(DebugTools_IsHubActive() != 0,
+              "restoring diagnostics must retain session ownership");
+
+        DebugToolsLifecycle_SetDiagnosticsRestoring(FALSE);
+        DebugTools_EndSessionAfterMenuEnd(gDebugToolsLifecycleLastMenuProc);
+        CHECK(gDebugToolsLifecycleTransitionProcCount == transitionsBefore + 1,
+              "post-restoration end-session must schedule one cleanup");
+        DebugToolsLifecycle_RunPendingTransition();
+        CHECK(DebugTools_IsHubActive() == 0,
+              "post-restoration cleanup must release the session");
+    }
 
     {
         int startsBefore = gDebugToolsLifecycleStartMenuCount;

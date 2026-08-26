@@ -12,6 +12,7 @@
 #include "bonusclaim.h"
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_save_prefs.h"
+#include "debug_save_fixture_internal.h"
 #endif
 
 // TODO: Should be in "bmsave.h", but doing so causes a non-match (implicit declaration?) in "bonusclaim.c"
@@ -91,6 +92,13 @@ void WipeSram(void)
 {
     u32 buf[0x10];
     int i;
+
+#ifndef FE8_ARCHIVAL_BUILD
+    if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED
+        && DebugSaveFixture_RecordBlockedWrite(
+            DEBUG_SAVE_FIXTURE_WRITE_WIPE))
+        return;
+#endif
 
     for (i = 0; i < 0x10; i++)
         buf[i] = 0xFFFFFFFF;
@@ -517,6 +525,13 @@ static bool8 ExpansionUserPrefs_StoreRecord(
 {
     u32 errorAddr;
 
+#ifndef FE8_ARCHIVAL_BUILD
+    if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED
+        && DebugSaveFixture_RecordBlockedWrite(
+            DEBUG_SAVE_FIXTURE_WRITE_PREFS))
+        return FALSE;
+#endif
+
     if (localeId >= EXPANSION_LOCALE_COUNT)
         return FALSE;
 
@@ -635,6 +650,12 @@ bool ReadGlobalSaveInfo(struct GlobalSaveInfo *buf)
 {
     struct GlobalSaveInfo local_info;
 
+#ifndef FE8_ARCHIVAL_BUILD
+    if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED
+        && DebugSaveFixture_TryReadGlobalSaveInfo(buf))
+        return true;
+#endif
+
     if (!IsSramWorking())
         return false;
 
@@ -654,12 +675,26 @@ bool ReadGlobalSaveInfo(struct GlobalSaveInfo *buf)
 
 void WriteGlobalSaveInfo(struct GlobalSaveInfo *header)
 {
+#ifndef FE8_ARCHIVAL_BUILD
+    if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED
+        && DebugSaveFixture_RecordBlockedWrite(
+            DEBUG_SAVE_FIXTURE_WRITE_GLOBAL))
+        return;
+#endif
+
     header->checksum = Checksum16(header, GLOBALSIZEINFO_SIZE_FOR_CHECKSUM);
     WriteAndVerifySramFast(header, &gSram->globalSaveInfo, sizeof(struct GlobalSaveInfo));
 }
 
 void WriteGlobalSaveInfoNoChecksum(struct GlobalSaveInfo *header)
 {
+#ifndef FE8_ARCHIVAL_BUILD
+    if (DEBUG_SAVE_FIXTURE_WRITES_BLOCKED
+        && DebugSaveFixture_RecordBlockedWrite(
+            DEBUG_SAVE_FIXTURE_WRITE_GLOBAL))
+        return;
+#endif
+
     WriteAndVerifySramFast(header, &gSram->globalSaveInfo, sizeof(struct GlobalSaveInfo));
 }
 

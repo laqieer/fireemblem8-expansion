@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "name": "debug-save-fixture-modern-release",
+  "description": "TC-DEBUGSAVE-001 release negative: the generated valid fixture source is first booted through ordinary release initialization. SramInit writes its four-byte hardware probe by frame 550, then normal title music unlock tracking persists song 1 and upgrades the Sound Room record by frame 700. Only after that settled baseline do two SELECT+R debug-hotkey pulses run. DebugSaveFixture symbols remain omitted, the title remains idle, gDebugToolsProbe stays zero, and exact whole SRAM must stay unchanged from frame 700 through frame 900.",
+  "frames": [
+    {"start": 90, "end": 95, "keys": ["A"]},
+    {"start": 150, "end": 155, "keys": ["START"]},
+    {"start": 210, "end": 215, "keys": ["A"]},
+    {"start": 270, "end": 275, "keys": ["START"]},
+    {"start": 760, "end": 766, "keys": ["SELECT", "R"]},
+    {"start": 810, "end": 816, "keys": ["SELECT", "R"]}
+  ],
+  "checkpoints": [
+    {
+      "frame": 550,
+      "name": "release-after-sram-probe",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": [
+        {"address": "0x020210ae", "size": 1, "expected": "0x00"},
+        {"address": "0x02031504", "size": 4, "expected": "0x00000000"},
+        {"address": "0x02031508", "size": 4, "expected": "0x00000000"}
+      ]
+    },
+    {
+      "frame": 700,
+      "name": "release-after-title-music",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": [
+        {"address": "0x020210ae", "size": 1, "expected": "0x00"},
+        {"address": "0x02031504", "size": 4, "expected": "0x00000000"},
+        {"address": "0x02031508", "size": 4, "expected": "0x00000000"}
+      ]
+    },
+    {
+      "frame": 900,
+      "name": "release-hotkey-inert",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": [
+        {"address": "0x020210ae", "size": 1, "expected": "0x00"},
+        {"address": "0x02031504", "size": 4, "expected": "0x00000000"},
+        {"address": "0x02031508", "size": 4, "expected": "0x00000000"}
+      ]
+    }
+  ]
+}
