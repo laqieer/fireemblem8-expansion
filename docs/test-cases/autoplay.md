@@ -104,9 +104,10 @@ village, chest, resource, strategy, objective, balance, or campaign behavior.
 3. Run
    `make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
 4. In an enabled ROM, finish one blue unit's action, move the cursor to an
-   empty tile, open the map menu, move to the localized **Charge** row, press
-   `R` once to exercise the expansion/vanilla help-ID guard, then select the
-   row and provide no unit commands until the next blue phase.
+   empty tile, open the map menu, use the localized **Charge** first row (or
+   second row when Danger is also enabled), press `R` once to exercise the
+   expansion/vanilla help-ID guard, then select the row and provide no unit
+   commands until the next blue phase.
 
 ### Expected result
 
@@ -127,16 +128,17 @@ vanilla message ID.
 ### Negative control
 
 With `EXPANSION_BLUE_PHASE_DELEGATE=0`, the compiled map-menu table adds no
-row, the module exports no delegate symbol, and combining neither/one/both
-Charge and Threat Range gives exactly 8/9/10 visible rows within the
-11-row capacity. Clean debug and release Prologue runs remain idle in
+Charge row, the module exports no delegate symbol, and combining neither/one/both
+Charge and Danger gives exactly 8/9/10 visible rows within the 11-row
+capacity. Optional rows precede the vanilla rows in stable Danger-then-Charge
+order and End remains final. Clean debug and release Prologue runs remain idle in
 `PLAYER`, with zero blue computer starts, completions, or actions.
 Invalid `-1`, `2`, or textual config values and an enabled non-modern C
 profile fail before producing a ROM.
 
 ### Interactions and save compatibility
 
-The only code dependency is issue #85. Threat Range is explicitly supported
+The only code dependency is issue #85. Danger is explicitly supported
 at the same time; there are no other known feature conflicts or required
 dependents. A downstream map-menu replacement must resolve row order/capacity
 explicitly. Charge adds no save field, preference, migration, or compatibility

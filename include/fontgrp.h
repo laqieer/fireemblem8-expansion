@@ -192,6 +192,7 @@ int GetStringTextLen(const char * str);
 const char *GetCharTextLen(const char * str, u32 *pWidth);
 int GetStringTextCenteredPos(int x, const char* str);
 void GetStringTextBox(const char* str, int* outWidth, int* outHeight);
+void GetStringTextBoxFromString(const char* str, int* outWidth, int* outHeight);
 char *GetStringLineEnd(char * str);
 void Text_DrawString(struct Text * text, const char* str);
 void Text_DrawNumber(struct Text * text, int n);

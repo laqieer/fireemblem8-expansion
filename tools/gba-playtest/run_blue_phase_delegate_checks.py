@@ -60,7 +60,6 @@ def _positive_data() -> dict:
             *autoplay._load_route("savesuspend-resume-modern-debug", 16986),
             {"start": 17150, "end": 17156, "keys": ["RIGHT"]},
             {"start": 17300, "end": 17306, "keys": ["A"]},
-            {"start": 17400, "end": 17406, "keys": ["UP"]},
             {"start": 17500, "end": 17506, "keys": ["R"]},
             {"start": 17600, "end": 17606, "keys": ["B"]},
             {"start": 17700, "end": 17706, "keys": ["A"]},
@@ -83,7 +82,7 @@ def _positive_data() -> dict:
                 "probes": menu_probes,
             },
             {
-                "name": "charge-row-selected",
+                "name":                 "charge-first-row-selected",
                 "frame": 17450,
                 "framebuffer": True,
                 "probes": menu_probes,

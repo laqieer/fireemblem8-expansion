@@ -119,7 +119,7 @@ The optional sample is intentionally content-free and has no player-facing
 toggle. Resetting means rebuilding without the two flags; it is not a
 replacement for a downstream ruleset's mechanics.
 
-## TC-GAMEPLAY-003: Threat Range menu toggles and safely returns to the map
+## TC-GAMEPLAY-003: Danger menu toggles and safely returns to the map
 
 - **Feature / originating issue:** `danger-overlay-menu` /
   [#6](https://github.com/laqieer/fireemblem8-expansion/issues/6).
@@ -136,12 +136,12 @@ replacement for a downstream ruleset's mechanics.
    `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_expansion_danger_overlay.py" -v`.
 2. Run `make expansion-modern-starter-qol-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
 3. On the enabled ROM, open the map menu at Prologue player phase, select
-   **Threat Range**, press `B` to return, and repeat once; move the cursor
+   **Danger**, press `B` to return, and repeat once; move the cursor
    after each return.
 
 ### Expected result
 
-The enabled menu has exactly one additional **Threat Range** command. Each
+The enabled menu has exactly one additional **Danger** command. Each
 selection displays exactly `39` nonzero danger-range tiles, sets the active
 range display, and each `B` cancel clears it and returns control to the
 interactive map. The scenario records menu/display and cancel counters
@@ -173,6 +173,103 @@ router. It changes only config identity; it writes no save bytes.
 Exit the map menu with `B`; no scenario save is created. The visual tile
 overlay is automated through semantic range counters, not screenshots; no
 additional threat UI, persisted preference, or AI behavior is shipped.
+
+## TC-MAP-MENU-168: Optional map-menu presentation and help regression
+
+- **Feature / originating issue:** `optional-gameplay-combinations` /
+  [#168](https://github.com/laqieer/fireemblem8-expansion/issues/168), covering
+  the optional commands from [#6](https://github.com/laqieer/fireemblem8-expansion/issues/6)
+  and [#87](https://github.com/laqieer/fireemblem8-expansion/issues/87).
+- **Classification:** confirmed medium-severity UI regression. The commands
+  remain selectable and the table remains within capacity, but the reported
+  all-locales/all-features release visibly truncates Danger, clips Charge
+  help, omits Danger help/localization, misaligns both optional rows, and puts
+  End before optional commands.
+- **Supported configuration or artifact:** modern release AAPCS
+  `expansion-modern-all-locales-all-features` with
+  `EXPANSION_DANGER_OVERLAY_MENU=1`,
+  `EXPANSION_BLUE_PHASE_DELEGATE=1`, and all seven production locales
+  (`en`, `ja`, `zh-Hans`, `fr`, `de`, `es`, `it`). Host controls also cover
+  neither feature, Danger only, and Charge only.
+- **Prerequisites and clean starting state:** repository root with the modern
+  toolchain and libmGBA; no save or savestate. The named release starts from
+  blank SRAM and selects English; the Charge debug fixture reaches an
+  interactive blue phase with at least one eligible unmoved blue unit.
+
+### Actions
+
+1. Run the focused optional-map-menu host test.
+2. Build and run the named all-locales/all-features release Danger menu/help
+   scenario and the existing enabled Charge debug scenario.
+3. Open the map menu on an empty tile, inspect the first two rows and final
+   row, press `R` on localized Danger and Charge in their respective runtime
+   fixtures, then close help.
+4. Make all blue units ineligible or finish their actions and reopen the map
+   menu.
+
+### Expected result
+
+Danger and Charge occupy the first two visible rows in that stable order;
+End is the final visible command. Every production locale resolves a short,
+nonempty label and complete help text through stable expansion message IDs.
+Both labels begin at the same one-tile text inset as vanilla rows, remain
+inside the six-tile text allocation, and occupy independent two-tile-high
+rows. Helpbox sizing uses the resolved string rather than stale vanilla
+message-buffer state, so every authored help line and box stays on-screen.
+The named release checkpoints record the corrected Danger menu/help
+framebuffers and leave the map interactive. The Charge debug checkpoint
+records its complete help before delegating five eligible actors and restoring
+`PLAYER` on the next blue phase.
+
+Charge remains intentionally conditional: it is shown only while the ordinary
+map menu owns the sole game lock in a live blue `PLAYER` phase, with no event,
+fade, camera move, blocking player action, computer/berserk phase, prior
+delegation, controller failure, or pending delegate marker, and while at least
+one blue unit passes the shared AI eligibility predicate. When that exact
+predicate fails, Charge is absent while Danger may remain; restoring it makes
+Charge reappear without rebuilding or changing locale.
+
+### Negative controls
+
+With both options disabled, the compiled table has the original eight visible
+rows and no expansion label/help references. Danger-only and Charge-only
+profiles each add exactly one first row while keeping End last. Invalid Charge
+states return the documented typed availability reason and cannot start
+delegation; disabled builds retain the existing configuration identity and
+save behavior.
+
+### Dependencies, conflicts, and compatibility
+
+Danger depends only on the existing vanilla danger-zone path. Charge depends
+on issue #85's transient controller and shared eligibility predicate.
+Localization uses the existing expansion registry/resolver; the shared map
+menu has 10 of 11 rows with both options enabled. There are no known feature
+conflicts; a downstream eleventh row must still make an explicit capacity and
+order choice. No save field, preference layout, epoch, migration, generated
+game data, EWRAM/IWRAM allocation, or archival-lane behavior changes.
+
+### Automation
+
+- `python3 -m unittest tools.gba-playtest.tests.test_map_menu_presentation -v`
+  — semantic compiled-table order/composition, all-locale resolver and pixel
+  bounds, help IDs/content/sizing, and row geometry.
+- `python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v`
+  — the exact typed Charge visibility predicate, eligible/ineligible unit
+  matrix, menu capacity, and enabled/disabled linkage.
+- `make expansion-modern-map-menu-presentation-check`
+  — named all-locales/all-features release build plus deterministic libmGBA
+  Danger menu/help framebuffer and interactive-state scenario.
+- `make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
+  — eligible-unit Charge menu/help framebuffer, one-phase delegation, and
+  restored-player runtime scenario.
+
+### Cleanup and limitations
+
+Use `make clean_fast` only to remove build artifacts. The preserved issue
+screenshots are supplementary negative evidence; automation owns command
+order, localized strings, bounds, help sizing, typed availability, and runtime
+state. The case does not change Charge into an always-visible or persistent
+army-control setting.
 
 ## TC-GAMEPLAY-004: Starter Sample Charm composes generated data and hooks
 

@@ -116,7 +116,7 @@
     },
     {
       "id": "danger-overlay-menu",
-      "title": "Threat Range danger overlay menu",
+      "title": "Danger overlay menu",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/6"
       ],
@@ -171,7 +171,8 @@
       "reference": "docs/test-cases/optional-gameplay.md",
       "status": "current",
       "required_cases": [
-        "TC-GAMEPLAY-007"
+        "TC-GAMEPLAY-007",
+        "TC-MAP-MENU-168"
       ]
     },
     {
@@ -833,21 +834,21 @@
     },
     {
       "id": "TC-GAMEPLAY-003",
-      "title": "Threat Range menu toggles and safely returns to the map",
+      "title": "Danger menu toggles and safely returns to the map",
       "feature_id": "danger-overlay-menu",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/6",
         "https://github.com/laqieer/fireemblem8-expansion/issues/55"
       ],
       "document": "docs/test-cases/optional-gameplay.md",
-      "anchor": "tc-gameplay-003-threat-range-menu-toggles-and-safely-returns-to-the-map",
+      "anchor": "tc-gameplay-003-danger-menu-toggles-and-safely-returns-to-the-map",
       "profiles": [
         "Modern AAPCS debug or release starter QoL profile with danger overlay enabled",
         "Matching modern AAPCS default profile with danger overlay disabled"
       ],
       "purpose": "Verify the player-reachable overlay lifecycle and its default-disabled absence.",
       "prerequisites": "Repository root with libmGBA; the scenario starts clean and creates no save fixture.",
-      "actions": "Run the host table tests and the debug QoL gate; select Threat Range and cancel twice on the enabled Prologue map.",
+      "actions": "Run the host table tests and the debug QoL gate; select Danger and cancel twice on the enabled Prologue map.",
       "expected_result": "The menu adds one entry, displays exactly 39 danger tiles, cancels twice, and returns to an interactive map.",
       "negative_control": "The default menu is vanilla and its semantic overlay probe remains all-zero on the same route.",
       "interactions": "Independent of mechanics, content, casual mode, and AoE; reuses the vanilla danger-zone path.",
@@ -862,6 +863,50 @@
         {
           "command": "make expansion-modern-starter-qol-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/scenarios/starter-danger-overlay-modern-debug.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-MAP-MENU-168",
+      "title": "Optional map-menu presentation and help regression",
+      "feature_id": "optional-gameplay-combinations",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/6",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/87",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/168"
+      ],
+      "document": "docs/test-cases/optional-gameplay.md",
+      "anchor": "tc-map-menu-168-optional-map-menu-presentation-and-help-regression",
+      "profiles": [
+        "Modern AAPCS all-locales/all-features release with Danger and Charge enabled",
+        "Modern AAPCS host compositions with neither option, Danger only, and Charge only",
+        "Every production expansion locale: en, ja, zh-Hans, fr, de, es, it"
+      ],
+      "purpose": "Freeze issue #168's command order, localization, help, geometry, visibility, and runtime presentation regression.",
+      "prerequisites": "Repository root with the modern toolchain and libmGBA; blank-SRAM named release plus the Charge debug fixture with at least one eligible unmoved blue unit.",
+      "actions": "Run the focused host test, named release Danger runtime target, and enabled Charge debug target; inspect the first two and final menu rows, open both R-help boxes, then reopen after making every blue unit ineligible.",
+      "expected_result": "Danger then Charge are the first rows, End is last, all seven locales resolve bounded labels and complete help, both optional rows use the vanilla one-tile inset/two-tile stride, help boxes fit on-screen, the named release map remains interactive, and Charge restores PLAYER after delegation.",
+      "negative_control": "Neither/Danger-only/Charge-only builds preserve exact semantic composition and End-last order; Charge is absent with its typed reason whenever the documented live-blue-player/sole-lock/no-blocker/eligible-unit predicate fails.",
+      "interactions": "Danger uses issue #6's vanilla range path; Charge uses issue #85 and #87's transient controller and shared eligibility; both use the expansion localization registry and occupy 10 of 11 map-menu rows. No known feature conflict.",
+      "save_compatibility": "No save field, preference layout, epoch, migration, serialized controller, generated game data, or archival-lane change.",
+      "cleanup": "Use make clean_fast only to remove build artifacts; no save or savestate is created.",
+      "limitations": "Charge remains intentionally conditional and one-phase only; screenshots are supplementary rather than the behavioral oracle.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_map_menu_presentation -v",
+          "evidence": "tools/gba-playtest/tests/test_map_menu_presentation.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v",
+          "evidence": "tools/gba-playtest/tests/test_expansion_blue_phase_delegate.py"
+        },
+        {
+          "command": "make expansion-modern-map-menu-presentation-check",
+          "evidence": "tools/gba-playtest/fingerprints/map-menu-presentation-all-locales-all-features-release.json"
+        },
+        {
+          "command": "make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/fingerprints/autoplay-charge-modern-debug.json"
         }
       ]
     },
@@ -1574,10 +1619,10 @@
         "Default modern source checkout and EXPANSION_DANGER_OVERLAY_MENU=1 opt-in profile; Python 3 and a host C compiler"
       ],
       "purpose": "Prove descriptor availability, preference persistence, safe legacy/unknown defaults, and record isolation.",
-      "prerequisites": "Use synthetic ExpansionUserPrefs records; start with Threat Range unavailable in the default profile.",
+      "prerequisites": "Use synthetic ExpansionUserPrefs records; start with Danger unavailable in the default profile.",
       "actions": "Run the named UI/native tests and resolve both danger-overlay-menu profile values with expansion_config.py.",
-      "expected_result": "Battle presentation is available, Threat Range is profile-gated, and valid selections persist without corrupting other records.",
-      "negative_control": "Unknown policies, out-of-mask bits, newer schemas, and unavailable Threat Range safely reject or default.",
+      "expected_result": "Battle presentation is available, Danger is profile-gated, and valid selections persist without corrupting other records.",
+      "negative_control": "Unknown policies, out-of-mask bits, newer schemas, and unavailable Danger safely reject or default.",
       "interactions": "Uses the one descriptor registry and existing map-menu command; does not add a second settings screen.",
       "save_compatibility": "Reuses the fixed 12-byte preference record and does not reuse sound-room or casual bytes.",
       "cleanup": "No persistent fixture, ROM, or save is created.",
@@ -2079,7 +2124,7 @@
       "actions": "Run the Charge host suite and debug/release expansion-modern-blue-phase-delegate-check targets; manually open R-help and select Charge on the documented fixture.",
       "expected_result": "Only remaining eligible units act through the existing AI, the current blue phase completes once, failure evidence is retained, and the next blue phase is interactive PLAYER.",
       "negative_control": "Feature-disabled debug/release builds add no row or symbol, preserve the 8-row base menu and idle PLAYER behavior, and record zero blue AI actions.",
-      "interactions": "Depends only on issue #85; composes with Threat Range at 10 of 11 menu rows; downstream extra rows require an explicit capacity/order choice.",
+      "interactions": "Depends only on issue #85; composes with Danger at 10 of 11 menu rows; downstream extra rows require an explicit capacity/order choice.",
       "save_compatibility": "No field, preference, epoch, migration, or serialized controller; reset/suspend-resume restores PLAYER through issue #85.",
       "cleanup": "Use make clean_fast only to remove build artifacts.",
       "limitations": "One phase only; no NOBODY, persistent ownership, strategy/objective/campaign logic, fast-forward, or arbitrary chapter-completion claim.",

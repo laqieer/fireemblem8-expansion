@@ -159,7 +159,9 @@ class BluePhaseDelegateMenuTests(unittest.TestCase):
             "#define EXP_MSG_RAW_SURFACE_UNIT_ACTION_SUMMON 33u\n"
             "#define EXP_MSG_RAW_SURFACE_UNIT_ACTION_CALL_MONSTER 34u\n"
             "#define EXP_MSG_AUTOPLAY_CHARGE_LABEL 80u\n"
-            "#define EXP_MSG_AUTOPLAY_CHARGE_HELP 81u\n",
+            "#define EXP_MSG_AUTOPLAY_CHARGE_HELP 81u\n"
+            "#define EXP_MSG_DANGER_OVERLAY_LABEL 144u\n"
+            "#define EXP_MSG_DANGER_OVERLAY_HELP 145u\n",
             encoding="utf-8",
         )
         return path
@@ -246,23 +248,22 @@ class BluePhaseDelegateMenuTests(unittest.TestCase):
         bmmenu = BMMENU_SOURCE.read_text(encoding="utf-8")
         menu_def = MENU_DEF_SOURCE.read_text(encoding="utf-8")
         function = re.search(
-            r"u8 ExpansionBluePhaseDelegate_MenuRPress\(.*?\n\}",
+            r"u8 ExpansionMapMenuItem_RPress\(.*?\n\}",
             bmmenu,
             flags=re.DOTALL,
         )
         self.assertIsNotNone(function)
         self.assertIn("MenuAutoHelpBoxSelect(menu);", function.group(0))
         self.assertNotIn("MenuStdHelpBox", function.group(0))
-        self.assertIn("ExpansionBluePhaseDelegate_MenuHelpBox", bmmenu)
+        self.assertIn("ExpansionMapMenuItem_HelpBox", bmmenu)
         self.assertIn("StartHelpBoxString(", bmmenu)
         self.assertIn(
-            "ExpansionLocale_ResolveCurrentPersistent(EXP_MSG_AUTOPLAY_CHARGE_HELP)",
+            "ExpansionLocale_ResolveCurrentPersistent(menuItem->def->helpMsgId)",
             bmmenu,
         )
-        self.assertNotIn("sBluePhaseDelegateHelpText", bmmenu)
         self.assertIn("EXP_MSG_AUTOPLAY_CHARGE_HELP", menu_def)
-        self.assertIn("ExpansionBluePhaseDelegate_MenuRPress", menu_def)
-        self.assertIn("ExpansionBluePhaseDelegate_MenuHelpBox", menu_def)
+        self.assertIn("ExpansionMapMenuItem_RPress", menu_def)
+        self.assertIn("ExpansionMapMenuItem_HelpBox", menu_def)
 
 
 class BluePhaseDelegateLocalizationTests(unittest.TestCase):
@@ -352,8 +353,8 @@ class BluePhaseDelegateRuntimeContractTests(unittest.TestCase):
         scenario = module["_positive_data"]()
         key_sets = [tuple(frame["keys"]) for frame in scenario["frames"]]
         self.assertIn(("A",), key_sets)
-        self.assertIn(("UP",), key_sets)
         self.assertIn(("R",), key_sets)
+        self.assertNotIn(17400, [frame["start"] for frame in scenario["frames"]])
         self.assertNotIn(("SELECT", "START", "R"), key_sets)
         self.assertIn(
             "charge-r-help-domain-guard",

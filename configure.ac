@@ -45,7 +45,7 @@ AC_ARG_ENABLE(
     [danger-overlay-menu],
     [AS_HELP_STRING(
         [--enable-danger-overlay-menu],
-        [expose the player Threat Range map-menu entry])],
+        [expose the player Danger map-menu entry])],
     [AS_CASE(
         [$enableval],
         [yes], [fe8_danger_overlay_menu=1],

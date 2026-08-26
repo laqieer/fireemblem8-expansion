@@ -18,7 +18,7 @@ make expansion-modern-all-locales-all-features-check
 
 The target uses release/AAPCS and 32 MiB, enables
 `en,ja,zh-Hans,fr,de,es,it` with English as default, excludes `qps-ploc`, and
-enables mechanics hooks/sample, Threat Range, starter content, the AoE
+enables mechanics hooks/sample, Danger, starter content, the AoE
 reference, localized auto-wrap, casual mode, item cap `0xCE`, and the
 `preserve` BGM policy. The generated metadata and embedded
 `ExpansionMetadata` retain that complete identity and a distinct configuration

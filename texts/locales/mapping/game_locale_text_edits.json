@@ -403,9 +403,19 @@
         "zh-Hans": "冲锋"
       },
       {
-        "ja": "残りのユニットをこのフェイズだけAIに任せる",
+        "ja": "残りの味方をこのフェイズだけ\nAIに任せる",
         "key": "autoplay.charge.help",
-        "zh-Hans": "仅在本回合将剩余单位交给电脑控制"
+        "zh-Hans": "本回合让剩余单位\n交给电脑控制"
+      },
+      {
+        "ja": "危険",
+        "key": "danger_overlay.label",
+        "zh-Hans": "危险"
+      },
+      {
+        "ja": "敵の攻撃範囲を\n表示する",
+        "key": "danger_overlay.help",
+        "zh-Hans": "显示所有敌人的\n攻击范围"
       },
       {
         "ja": "章/魔物戦",

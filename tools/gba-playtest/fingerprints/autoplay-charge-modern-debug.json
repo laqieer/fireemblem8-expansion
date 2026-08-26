@@ -118,7 +118,7 @@
     },
     {
       "frame": 17350,
-      "framebuffer_hash": "fnv1a64-rgb24:dbc98e91d9262fc7",
+      "framebuffer_hash": "fnv1a64-rgb24:62771e7a026c1357",
       "name": "map-menu-open",
       "probes": [
         {
@@ -175,8 +175,8 @@
     },
     {
       "frame": 17450,
-      "framebuffer_hash": "fnv1a64-rgb24:98be8efbcb559614",
-      "name": "charge-row-selected",
+      "framebuffer_hash": "fnv1a64-rgb24:6fdf2eb73fc956d1",
+      "name": "charge-first-row-selected",
       "probes": [
         {
           "address": "gBmSt+0x01",
@@ -232,7 +232,7 @@
     },
     {
       "frame": 17550,
-      "framebuffer_hash": "fnv1a64-rgb24:efbc218d94d8029b",
+      "framebuffer_hash": "fnv1a64-rgb24:414a0b4b22b76580",
       "name": "charge-r-help-domain-guard",
       "probes": [
         {

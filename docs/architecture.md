@@ -35,7 +35,7 @@ hand-editing generated C under `build/generated/data/` is not.
 ## Starter extension layer (issue #6)
 
 Four independent, fingerprinted flags default to off: mechanics hooks, the
-content-free sample mechanic, the Threat Range menu, and starter content.
+content-free sample mechanic, the Danger menu, and starter content.
 `include/expansion_mechanics.h` exposes the typed fixed-capacity battle-stat
 registry; callbacks receive a mutable subject plus a read-only opponent/config
 context, with explicit capacity, lifetime-copy, duplicate, length, disabled,
@@ -141,7 +141,7 @@ reference: [`docs/upstream-porting.md`](upstream-porting.md).
 not a GitHub issue-state/closure action):
 
 - **#6 starter features:** four default-off flags, typed mechanics registry,
-  generated `ITEM_EXPANSION_CE` content-text example, and Threat Range QoL.
+  generated `ITEM_EXPANSION_CE` content-text example, and Danger QoL.
   No second registry, persisted option, new graphics, borrowed vanilla text,
   or broad content pack is promised.
 - **#10 typed IDs:** DEFAULT/ACTIVE ID-space contracts and the modern-only

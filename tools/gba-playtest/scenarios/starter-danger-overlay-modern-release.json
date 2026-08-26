@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "starter-danger-overlay-modern-release",
-  "description": "Issue #6 player QoL danger/range overlay runtime proof on a starter-foundation profile ROM (EXPANSION_DANGER_OVERLAY_MENU=1), reached by an ORDINARY clean-boot route with no save fixture, no debug launcher and no debug tools: the shared title/save-menu A/START cadence to the top-level Save Menu, New Game, one DOWN to select NORMAL difficulty (proven by difficultyConfigByte -- PlaySt.config.controller, bit 5 of gPlaySt+0x42 -- reading 0x20 while chapterStateBits keeps PLAY_FLAG_HARD (0x40) clear; Easy leaves that byte 0x00), the first empty slot, then eleven START presses on the engine's own event-skip path (EventEngine_CanStartSkip/EventEngine_StartSkip, src/event.c) through the intro monologue, the world-map tour and the Prologue opening event. That lands on the REAL Prologue battle map (mapSize 15x10, chapterIndex CHAPTER_L_PROLOGUE 0x00, faction FACTION_BLUE 0x00, chapterTurnNumber 1) with a live enemy (gUnitArrayRed[0] maxHP/curHP 23/23, the Prologue boss). One LEFT moves the cursor from Eirika's tile (4,5) to the empty tile (3,5) -- proving the map is interactive -- A opens the vanilla map menu there (PLAYER_SELECT_NOUNIT, src/playerphase.c), and one UP wraps the menu cursor to the gated 'Threat Range' item, which is the LAST entry of gMapMenuItems. Selecting it drives the real vanilla danger-zone path (ExpansionDangerOverlay_MenuSelect -> MapMenu_DangerZone_UnusedEffect -> PlayerPhase_DisplayDangerZone -> GenerateDangerZoneRange -> DisplayMoveRangeGraphics). The semantic scalar probes then show the full lifecycle: menuSelectCount and dangerDisplayCount go 0->1->2 over two independent selections, lastRangeTileCount is the exact count of non-zero gBmMapRange tiles generated for the Prologue's three enemies (39) on BOTH displays, rangeGraphicsActive toggles 1->0 on each B cancel through the vanilla ACT_CANCEL path, and cancelReturnCount goes 0->1->2. The final checkpoint moves the cursor again (3,5)->(4,5) with the enemy still 23/23 and faction still FACTION_BLUE, proving the map stayed interactive and undamaged after the overlay. Semantic scalars only -- never a pointer, never a framebuffer hash.",
+  "description": "Issue #6 player QoL danger/range overlay runtime proof on a starter-foundation profile ROM (EXPANSION_DANGER_OVERLAY_MENU=1), reached by an ORDINARY clean-boot route with no save fixture, no debug launcher and no debug tools: the shared title/save-menu A/START cadence to the top-level Save Menu, New Game, one DOWN to select NORMAL difficulty (proven by difficultyConfigByte -- PlaySt.config.controller, bit 5 of gPlaySt+0x42 -- reading 0x20 while chapterStateBits keeps PLAY_FLAG_HARD (0x40) clear; Easy leaves that byte 0x00), the first empty slot, then eleven START presses on the engine's own event-skip path (EventEngine_CanStartSkip/EventEngine_StartSkip, src/event.c) through the intro monologue, the world-map tour and the Prologue opening event. That lands on the REAL Prologue battle map (mapSize 15x10, chapterIndex CHAPTER_L_PROLOGUE 0x00, faction FACTION_BLUE 0x00, chapterTurnNumber 1) with a live enemy (gUnitArrayRed[0] maxHP/curHP 23/23, the Prologue boss). One LEFT moves the cursor from Eirika's tile (4,5) to the empty tile (3,5) -- proving the map is interactive -- A opens the vanilla map menu there (PLAYER_SELECT_NOUNIT, src/playerphase.c) with localized Danger as the first row and End as the final row. Selecting Danger drives the real vanilla danger-zone path (ExpansionDangerOverlay_MenuSelect -> MapMenu_DangerZone_UnusedEffect -> PlayerPhase_DisplayDangerZone -> GenerateDangerZoneRange -> DisplayMoveRangeGraphics). The semantic scalar probes then show the full lifecycle: menuSelectCount and dangerDisplayCount go 0->1->2 over two independent selections, lastRangeTileCount is the exact count of non-zero gBmMapRange tiles generated for the Prologue's three enemies (39) on BOTH displays, rangeGraphicsActive toggles 1->0 on each B cancel through the vanilla ACT_CANCEL path, and cancelReturnCount goes 0->1->2. The final checkpoint moves the cursor again (3,5)->(4,5) with the enemy still 23/23 and faction still FACTION_BLUE, proving the map stayed interactive and undamaged after the overlay. Semantic scalars only -- never a pointer, never a framebuffer hash.",
   "frames": [
     {
       "start": 90,
@@ -179,13 +179,6 @@
       ]
     },
     {
-      "start": 3660,
-      "end": 3666,
-      "keys": [
-        "UP"
-      ]
-    },
-    {
       "start": 3740,
       "end": 3746,
       "keys": [
@@ -204,13 +197,6 @@
       "end": 4026,
       "keys": [
         "A"
-      ]
-    },
-    {
-      "start": 4110,
-      "end": 4116,
-      "keys": [
-        "UP"
       ]
     },
     {

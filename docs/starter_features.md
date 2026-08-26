@@ -38,7 +38,7 @@ The indexed procedures and exact source profiles are in
 [`docs/test-cases/optional-gameplay.md`](test-cases/optional-gameplay.md):
 [`TC-GAMEPLAY-001`](test-cases/optional-gameplay.md#tc-gameplay-001-mechanics-registry-applies-ordered-bounded-hooks)
 through [`TC-GAMEPLAY-005`](test-cases/optional-gameplay.md#tc-gameplay-005-casual-defeat-restores-ordinary-player-defeats-only)
-cover the registry, Full-HP Guard, Threat Range, Sample Charm, and casual
+cover the registry, Full-HP Guard, Danger, Sample Charm, and casual
 defeat policy. [`TC-GAMEPLAY-007`](test-cases/optional-gameplay.md#tc-gameplay-007-optional-gameplay-profiles-compose-without-changing-saves)
 covers their supported combinations and dependency failures. The catalog maps
 every deterministic result to the existing host or ROM automation; it does not
@@ -332,12 +332,19 @@ unreferenced `MapMenu_DangerZone_UnusedEffect` into a real, player-reachable
 map-menu command.
 
 * **Surface**: one gated `gMapMenuItems` entry (`src/menu_def.c`) with an
-  original, copyright-free label ("Threat Range") drawn via `def->name`
-  (`nameMsgId 0`), the exact pattern the debug hub already uses. The disabled
-  build's compiled `gMapMenuItems` object is byte-for-byte the vanilla table
-  (asserted on the real compiled object by the host tests -- a table-level, not
-  ROM-level, claim); the enabled table adds exactly one `MenuItemDef`, staying
-  within `MENU_ITEM_MAX`.
+  original, copyright-free localized **Danger** label and help through stable
+  expansion message IDs `danger_overlay.label` (144) and
+  `danger_overlay.help` (145). The row is inserted before the vanilla
+  commands, uses the same one-tile text inset and two-tile row stride, and
+  leaves End as the final visible command. The disabled build's compiled
+  `gMapMenuItems` object is byte-for-byte the vanilla table (asserted on the
+  real compiled object by the host tests -- a table-level, not ROM-level,
+  claim); the enabled table adds exactly one `MenuItemDef`, staying within
+  `MENU_ITEM_MAX`.
+* **Localization / help**: `en`, `ja`, `zh-Hans`, `fr`, `de`, `es`, and `it`
+  provide bounded labels and complete two-line help. Expansion help is resolved
+  through the persistent expansion catalog and sized from that exact resolved
+  string, rather than from the unrelated vanilla message scratch buffer.
 * **Availability / effect contract**: shown and enabled whenever the map menu
   is open. Selecting it closes the menu and enters the danger-range display,
   reusing the existing path unchanged (`PlayerPhase` label `0xC` ->
@@ -349,6 +356,11 @@ map-menu command.
   is safe to open and exit repeatedly.
 * **No persistence**: the surface is a compile-time build flag only. It
   persists no option bit and no save field.
+
+The canonical presentation regression is
+[`TC-MAP-MENU-168`](test-cases/optional-gameplay.md#tc-map-menu-168-optional-map-menu-presentation-and-help-regression);
+the overlay lifecycle remains
+[`TC-GAMEPLAY-003`](test-cases/optional-gameplay.md#tc-gameplay-003-danger-menu-toggles-and-safely-returns-to-the-map).
 
 ### QoL semantic probe
 

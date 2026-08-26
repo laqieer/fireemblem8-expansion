@@ -1,0 +1,612 @@
+{
+  "checkpoints": [
+    {
+      "frame": 4850,
+      "name": "prologue-player-before-optional-menu",
+      "probes": [
+        {
+          "address": "0x020210ae",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210af",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b0",
+          "size": 2,
+          "value": "0x0001"
+        },
+        {
+          "address": "0x020210b4",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210e2",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021100",
+          "size": 2,
+          "value": "0x0009"
+        },
+        {
+          "address": "0x02021102",
+          "size": 2,
+          "value": "0x0005"
+        },
+        {
+          "address": "0x02021a9c",
+          "size": 2,
+          "value": "0x000f"
+        },
+        {
+          "address": "0x02021a9e",
+          "size": 2,
+          "value": "0x000a"
+        },
+        {
+          "address": "0x0202eb96",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x0202eb97",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x00",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x04",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x08",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x0c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x10",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 4950,
+      "name": "cursor-moved-map-interactive",
+      "probes": [
+        {
+          "address": "0x020210ae",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210af",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b0",
+          "size": 2,
+          "value": "0x0001"
+        },
+        {
+          "address": "0x020210b4",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210e2",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021100",
+          "size": 2,
+          "value": "0x0008"
+        },
+        {
+          "address": "0x02021102",
+          "size": 2,
+          "value": "0x0005"
+        },
+        {
+          "address": "0x02021a9c",
+          "size": 2,
+          "value": "0x000f"
+        },
+        {
+          "address": "0x02021a9e",
+          "size": 2,
+          "value": "0x000a"
+        },
+        {
+          "address": "0x0202eb96",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x0202eb97",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x00",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x04",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x08",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x0c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x10",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 5020,
+      "framebuffer_hash": "fnv1a64-rgb24:d9a946333f7d115e",
+      "name": "danger-first-map-menu",
+      "probes": [
+        {
+          "address": "0x020210ae",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210af",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b0",
+          "size": 2,
+          "value": "0x0001"
+        },
+        {
+          "address": "0x020210b4",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210e2",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021100",
+          "size": 2,
+          "value": "0x0008"
+        },
+        {
+          "address": "0x02021102",
+          "size": 2,
+          "value": "0x0005"
+        },
+        {
+          "address": "0x02021a9c",
+          "size": 2,
+          "value": "0x000f"
+        },
+        {
+          "address": "0x02021a9e",
+          "size": 2,
+          "value": "0x000a"
+        },
+        {
+          "address": "0x0202eb96",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x0202eb97",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x00",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x04",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x08",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x0c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x10",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 5130,
+      "framebuffer_hash": "fnv1a64-rgb24:50fa04c3ddcfbdc8",
+      "name": "danger-help-complete",
+      "probes": [
+        {
+          "address": "0x020210ae",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210af",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b0",
+          "size": 2,
+          "value": "0x0001"
+        },
+        {
+          "address": "0x020210b4",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210e2",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021100",
+          "size": 2,
+          "value": "0x0008"
+        },
+        {
+          "address": "0x02021102",
+          "size": 2,
+          "value": "0x0005"
+        },
+        {
+          "address": "0x02021a9c",
+          "size": 2,
+          "value": "0x000f"
+        },
+        {
+          "address": "0x02021a9e",
+          "size": 2,
+          "value": "0x000a"
+        },
+        {
+          "address": "0x0202eb96",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x0202eb97",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x00",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x04",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x08",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x0c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x10",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 5360,
+      "framebuffer_hash": "fnv1a64-rgb24:ba3e7f889d9f86c9",
+      "name": "danger-overlay-displayed",
+      "probes": [
+        {
+          "address": "0x020210ae",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210af",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b0",
+          "size": 2,
+          "value": "0x0001"
+        },
+        {
+          "address": "0x020210b4",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210e2",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021100",
+          "size": 2,
+          "value": "0x0008"
+        },
+        {
+          "address": "0x02021102",
+          "size": 2,
+          "value": "0x0005"
+        },
+        {
+          "address": "0x02021a9c",
+          "size": 2,
+          "value": "0x000f"
+        },
+        {
+          "address": "0x02021a9e",
+          "size": 2,
+          "value": "0x000a"
+        },
+        {
+          "address": "0x0202eb96",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x0202eb97",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x00",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x04",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x08",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x0c",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x10",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 5510,
+      "framebuffer_hash": "fnv1a64-rgb24:28568be69eacd5de",
+      "name": "danger-overlay-cancelled",
+      "probes": [
+        {
+          "address": "0x020210ae",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210af",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b0",
+          "size": 2,
+          "value": "0x0001"
+        },
+        {
+          "address": "0x020210b4",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210e2",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021100",
+          "size": 2,
+          "value": "0x0008"
+        },
+        {
+          "address": "0x02021102",
+          "size": 2,
+          "value": "0x0005"
+        },
+        {
+          "address": "0x02021a9c",
+          "size": 2,
+          "value": "0x000f"
+        },
+        {
+          "address": "0x02021a9e",
+          "size": 2,
+          "value": "0x000a"
+        },
+        {
+          "address": "0x0202eb96",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x0202eb97",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x00",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x04",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x08",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x0c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x10",
+          "size": 4,
+          "value": "0x00000001"
+        }
+      ]
+    },
+    {
+      "frame": 5610,
+      "name": "map-interactive-after-optional-menu",
+      "probes": [
+        {
+          "address": "0x020210ae",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210af",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b0",
+          "size": 2,
+          "value": "0x0001"
+        },
+        {
+          "address": "0x020210b4",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210e2",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021100",
+          "size": 2,
+          "value": "0x0009"
+        },
+        {
+          "address": "0x02021102",
+          "size": 2,
+          "value": "0x0005"
+        },
+        {
+          "address": "0x02021a9c",
+          "size": 2,
+          "value": "0x000f"
+        },
+        {
+          "address": "0x02021a9e",
+          "size": 2,
+          "value": "0x000a"
+        },
+        {
+          "address": "0x0202eb96",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x0202eb97",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x00",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x04",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x08",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x0c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "gExpansionDangerOverlayProbe+0x10",
+          "size": 4,
+          "value": "0x00000001"
+        }
+      ]
+    }
+  ],
+  "format_version": 2,
+  "scenario": "map-menu-presentation-all-locales-all-features-release"
+}

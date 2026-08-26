@@ -101,9 +101,23 @@ def _include_flags():
     return flags
 
 
+def _write_message_header(directory):
+    path = Path(directory) / "expansion_msg_ids.h"
+    path.write_text(
+        "#define EXP_MSG_RAW_SURFACE_UNIT_ACTION_SUMMON 33u\n"
+        "#define EXP_MSG_RAW_SURFACE_UNIT_ACTION_CALL_MONSTER 34u\n"
+        "#define EXP_MSG_AUTOPLAY_CHARGE_LABEL 80u\n"
+        "#define EXP_MSG_AUTOPLAY_CHARGE_HELP 81u\n"
+        "#define EXP_MSG_DANGER_OVERLAY_LABEL 144u\n"
+        "#define EXP_MSG_DANGER_OVERLAY_HELP 145u\n",
+        encoding="utf-8",
+    )
+
+
 def _compile(work_dir, src, obj_name, defines=(), extra=()):
+    _write_message_header(work_dir)
     obj = Path(work_dir) / obj_name
-    cmd = [CC, "-c", "-w"] + _include_flags()
+    cmd = [CC, "-c", "-w", "-I", str(work_dir)] + _include_flags()
     for define in defines:
         cmd += ["-D", define]
     cmd += list(extra) + [str(src), "-o", str(obj)]
@@ -231,9 +245,16 @@ class DangerOverlayTableTests(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             sizeof_item, menu_item_max = _probe_constants(tmp)
-            rc, out, dis = _compile(tmp, MENU_DEF_SRC, "md_dis.o")
+            rc, out, dis = _compile(
+                tmp, MENU_DEF_SRC, "md_dis.o", defines=["MODERN=1"]
+            )
             self.assertEqual(rc, 0, "compiling menu_def.c (disabled) failed:\n" + out)
-            rc, out, ena = _compile(tmp, MENU_DEF_SRC, "md_en.o", defines=[FLAG + "=1"])
+            rc, out, ena = _compile(
+                tmp,
+                MENU_DEF_SRC,
+                "md_en.o",
+                defines=["MODERN=1", FLAG + "=1"],
+            )
             self.assertEqual(rc, 0, "compiling menu_def.c (enabled) failed:\n" + out)
             dis_size = _symbol_size(dis, "gMapMenuItems")
             ena_size = _symbol_size(ena, "gMapMenuItems")
@@ -252,7 +273,12 @@ class DangerOverlayTableTests(unittest.TestCase):
     def test_enabled_object_references_the_promoted_effect(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
-            rc, out, ena = _compile(tmp, MENU_DEF_SRC, "md_en.o", defines=[FLAG + "=1"])
+            rc, out, ena = _compile(
+                tmp,
+                MENU_DEF_SRC,
+                "md_en.o",
+                defines=["MODERN=1", FLAG + "=1"],
+            )
             self.assertEqual(rc, 0, out)
             refs = _referenced_symbol_names(ena)
         self.assertIn("ExpansionDangerOverlay_MenuSelect", refs,
@@ -358,10 +384,12 @@ class MapMenuSuspendHelpTests(unittest.TestCase):
             raise unittest.SkipTest("arm-none-eabi-gcc not available")
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
+            _write_message_header(tmp)
             for src, name in ((MENU_DEF_SRC, "md.o"), (BMMENU_SRC, "bm.o")):
                 obj = Path(tmp) / name
                 cmd = [ARM_CC, "-mthumb", "-mcpu=arm7tdmi", "-mabi=aapcs", "-std=gnu89",
-                       "-c", "-w"] + _include_flags() + ["-D" + FLAG + "=1",
+                       "-c", "-w", "-I", tmp] + _include_flags() + ["-D" + FLAG + "=1",
+                       "-DMODERN=1",
                        str(src), "-o", str(obj)]
                 proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
                 self.assertEqual(proc.returncode, 0,

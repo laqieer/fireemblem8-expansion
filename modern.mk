@@ -58,6 +58,7 @@ MODERN_GOALS := \
 	expansion-modern-banim-package-runtime-check \
 	expansion-modern-blue-phase-delegate-profile-rom \
 	expansion-modern-blue-phase-delegate-check \
+	expansion-modern-map-menu-presentation-check \
 	expansion-modern-autoplay-bounds-check \
 	expansion-modern-autoplay-accelerated-fidelity-check \
 	expansion-modern-chapter-objectives-profile-rom \
@@ -1919,6 +1920,21 @@ expansion-modern-all-locales-all-features-check:
 		--output "$(MODERN_PATCH_RELEASE_BUDGET)" --validate-elf \
 		--require-positive-headroom ewram --require-positive-headroom iwram
 	@$(PYTHON) -c 'import json, pathlib; from scripts.modernize import patch_release; metadata = json.loads(pathlib.Path("$(MODERN_PATCH_RELEASE_METADATA)").read_text(encoding="utf-8")); patch_release.validate_profile_metadata(metadata, metadata["build_commit"]); print("all-locales/all-features profile identity validated")'
+
+MODERN_MAP_MENU_PRESENTATION_SCRIPT := \
+	tools/gba-playtest/run_map_menu_presentation_checks.py
+MODERN_MAP_MENU_PRESENTATION_OUTDIR := \
+	$(MODERN_PATCH_RELEASE_OUTPUT_DIR)/map-menu-presentation-check
+
+expansion-modern-map-menu-presentation-check: \
+		expansion-modern-all-locales-all-features-check
+	@mkdir -p "$(MODERN_MAP_MENU_PRESENTATION_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_MAP_MENU_PRESENTATION_OUTDIR)/tmp)" \
+		MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_MAP_MENU_PRESENTATION_SCRIPT)" \
+		--rom "$(MODERN_PATCH_RELEASE_ROM)" \
+		--elf "$(MODERN_PATCH_RELEASE_OUTPUT_DIR)/fireemblem8.elf" \
+		--out-dir "$(MODERN_MAP_MENU_PRESENTATION_OUTDIR)"
 
 # PATCH_BASE_ROM is deliberately a local/trusted input only. It is never
 # downloaded here, never a default, and never appears in artifact metadata.
