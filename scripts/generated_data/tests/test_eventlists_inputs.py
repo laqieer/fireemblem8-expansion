@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SCRATCH_ROOT = ROOT / "build" / "test-eventlists-inputs"
 VALID_FLAG = "EVFLAG_HIDE_BLINKING_ICON"
 INVALID_FLAG = "EVFLAG_BATTLE_QUOTES"
+OTHER_CHAPTER_FLAG = "EVFLAG_5"
 
 
 class EventListsInputTests(unittest.TestCase):
@@ -54,6 +55,8 @@ class EventListsInputTests(unittest.TestCase):
         self.custom_strategy_dir.mkdir(parents=True)
         self.custom_strategies = self.custom_strategy_dir / "custom_strategies.json"
         self._set_pair(self.custom_strategies, VALID_FLAG)
+        self.other_strategies = self.custom_strategy_dir / "other_strategies.json"
+        self._set_other_chapter_pair()
 
         self.out_dir = self.repo / "build" / "eventlists-inputs" / "generated"
         self.target = self.out_dir / "data_ch2_eventlists.c"
@@ -87,6 +90,28 @@ class EventListsInputTests(unittest.TestCase):
             }
         ]
         self._write_json(path, source)
+
+    def _set_other_chapter_pair(self):
+        source = json.loads(self.custom_strategies.read_text(encoding="utf-8"))
+        source["strategies"] = []
+        source["chapters"] = [
+            {
+                "chapter": "CHAPTER_L_3",
+                "symbol": "AutoplayStrategies_EventListsOtherChapter",
+                "chapterAssignment": {
+                    "strategy": "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST",
+                    "activationFlag": OTHER_CHAPTER_FLAG,
+                },
+                "groupAssignments": [],
+                "unitAssignments": [],
+            }
+        ]
+        self._write_json(self.other_strategies, source)
+
+    def _set_event_pair(self, flag):
+        source = json.loads(self.eventlists.read_text(encoding="utf-8"))
+        source["helperScripts"][0]["entries"][0]["args"][1] = flag
+        self._write_json(self.eventlists, source)
 
     def _make(self, strategy_source=None):
         command = [
@@ -137,6 +162,26 @@ class EventListsInputTests(unittest.TestCase):
         depfile_inputs = depfile.read_text(encoding="utf-8").partition(": ")[2].split()
         self.assertIn(os.path.realpath(self.custom_strategy_dir), depfile_inputs)
         self.assertIn(os.path.realpath(self.custom_strategies), depfile_inputs)
+        self.assertIn(os.path.realpath(self.other_strategies), depfile_inputs)
+        self.assertIn(
+            os.path.realpath(self.repo / "src" / "data" / "ch2_bundle.json"),
+            depfile_inputs,
+        )
+
+        self._set_event_pair(OTHER_CHAPTER_FLAG)
+        cross_chapter = self._make(self.custom_strategy_dir)
+        self.assertNotEqual(cross_chapter.returncode, 0)
+        self.assertIn(
+            "is not declared by autoplay strategy assignments",
+            cross_chapter.stdout,
+        )
+        self._set_event_pair(VALID_FLAG)
+        cross_chapter_restored = self._make(self.custom_strategy_dir)
+        self.assertEqual(
+            cross_chapter_restored.returncode,
+            0,
+            cross_chapter_restored.stdout,
+        )
 
         self._set_pair(self.custom_strategies, INVALID_FLAG)
         custom_invalid = self._make(self.custom_strategy_dir)

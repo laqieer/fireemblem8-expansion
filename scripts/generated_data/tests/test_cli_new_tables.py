@@ -142,6 +142,15 @@ class CliEventListsTests(unittest.TestCase):
             source_path = os.path.join(tmp, "strategy-helper.json")
             with open(source_path, "w", encoding="utf-8") as handle:
                 json.dump(source, handle)
+            with open(
+                fixture_path("chapterbundle", "valid.json"),
+                encoding="utf-8",
+            ) as handle:
+                bundle = json.load(handle)
+            bundle["chapter"]["id"] = "CHAPTER_L_2"
+            bundle_path = os.path.join(tmp, "strategy-helper-bundle.json")
+            with open(bundle_path, "w", encoding="utf-8") as handle:
+                json.dump(bundle, handle)
             code, out, err = run_cli(
                 [
                     "validate",
@@ -154,6 +163,8 @@ class CliEventListsTests(unittest.TestCase):
                     "autoplaystrategies={}".format(
                         fixture_path("autoplaystrategies", "valid.json")
                     ),
+                    "--dep-source",
+                    "chapterbundle={}".format(bundle_path),
                 ]
                 + _eventlists_dep_source_args()
             )

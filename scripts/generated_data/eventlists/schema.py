@@ -642,7 +642,12 @@ def _lower_helper(call, context):
             )
         ]
     args = list(call.args)
-    if context == "script" and call.family == "strategy" and call.operation == "activate":
+    if (
+        context == "script"
+        and call.family == "strategy"
+        and call.operation == "activate"
+        and args[0].kind == "symbol"
+    ):
         args[0] = MacroArg(
             "int",
             stable_id_value(args[0].value),
@@ -805,6 +810,57 @@ def _validate_helper_script(
     return temp_flag_uses
 
 
+def _chapter_bundle_records(dependency_records):
+    bundles = dependency_records.get("chapterbundle")
+    if bundles is None:
+        return ()
+    if hasattr(bundles, "records"):
+        return tuple(bundles.records)
+    if isinstance(bundles, (list, tuple)):
+        return tuple(bundles)
+    return (bundles,)
+
+
+def _strategy_pairs_for_owner(records, strategy_records, dependency_records, diagnostics):
+    chapters = strategy_records.get("chapters", ())
+    if not chapters:
+        return set()
+
+    owners = [
+        bundle
+        for bundle in _chapter_bundle_records(dependency_records)
+        if bundle.manifest.table == "eventlists"
+        and bundle.manifest.symbol == records.manifest.symbol
+    ]
+    if len(owners) != 1:
+        message = (
+            "event-list manifest '{}' has no owning chapter bundle"
+            if not owners
+            else "event-list manifest '{}' has multiple owning chapter bundles"
+        )
+        diagnostics.add(
+            _err(
+                message.format(records.manifest.symbol),
+                records.manifest.symbol_loc,
+                "manifest.symbol",
+            )
+        )
+        return set()
+
+    owner_chapter = owners[0].chapter.id
+    strategy_pairs = set()
+    for chapter in chapters:
+        if chapter.chapter != owner_chapter:
+            continue
+        assignments = [chapter.chapter_assignment]
+        assignments.extend(chapter.group_assignments)
+        assignments.extend(chapter.unit_assignments)
+        for assignment in assignments:
+            if assignment is not None and assignment.activation_flag is not None:
+                strategy_pairs.add((assignment.strategy, assignment.activation_flag))
+    return strategy_pairs
+
+
 def validate(records, diagnostics, dependency_records=None, characters_header=CHARACTERS_HEADER):
     """Validate the 7 event lists, the tutorial pointer array, and the
     ``Ch2Events`` manifest, cross-referencing ``dependency_records``
@@ -821,14 +877,12 @@ def validate(records, diagnostics, dependency_records=None, characters_header=CH
     strategy_ids = {
         strategy.id for strategy in strategy_records.get("strategies", ())
     }
-    strategy_pairs = set()
-    for chapter in strategy_records.get("chapters", ()):
-        assignments = [chapter.chapter_assignment]
-        assignments.extend(chapter.group_assignments)
-        assignments.extend(chapter.unit_assignments)
-        for assignment in assignments:
-            if assignment is not None and assignment.activation_flag is not None:
-                strategy_pairs.add((assignment.strategy, assignment.activation_flag))
+    strategy_pairs = _strategy_pairs_for_owner(
+        records,
+        strategy_records,
+        dependency_records,
+        diagnostics,
+    )
 
     characters = character_refs.read_character_designators(characters_header)
     factions = extract_enum_constants(BMUNIT_HEADER, name_prefix="FACTION_ID_")
@@ -1248,10 +1302,10 @@ class EventListsTableSchema(TableSchema):
         return ("units", "shops", "traps", "eventscripts")
 
     def optional_dependency_tables(self):
-        # Strategy records validate `strategy.activate` pairs, but cannot be
-        # a manifest-DAG edge: strategy ownership already flows through the
-        # chapter bundle that owns this event-list manifest.
-        return ("autoplaystrategies",)
+        # Strategy records and their chapter owner validate `strategy.activate`
+        # pairs, but cannot be manifest-DAG edges: chapterbundle already owns
+        # this event-list manifest.
+        return ("autoplaystrategies", "chapterbundle")
 
     def load_records(self, source_path):
         return load_records(source_path)

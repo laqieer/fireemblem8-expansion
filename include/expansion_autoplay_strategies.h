@@ -6,6 +6,8 @@
 #include "bmunit.h"
 #include "expansion_chapter_objectives.h"
 
+struct EventEngineProc;
+
 enum ExpansionAutoplayStrategyObjectiveCapability
 {
     EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_PROTECT = (1 << 0),
