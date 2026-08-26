@@ -274,6 +274,19 @@ class HqMixerQualityFixtureTests(unittest.TestCase):
                 "enabled",
             )
 
+    def test_early_stereo_cannot_hide_an_identical_late_window(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "enabled late PCM window has identical left/right samples at frame 3280",
+        ):
+            hq.require_sustained_late_audio(
+                [120, 600, 3280, 3290],
+                [[1, 2], [3, 4], [5, 6], [7, 8]],
+                [[9, 10], [11, 12], [5, 6], [7, 8]],
+                [1, 1, 1, 1],
+                "enabled",
+            )
+
     def test_final_quantization_has_lower_rms_error(self) -> None:
         stock_rms, hq_rms = hq.quantization_rms()
         self.assertGreater(stock_rms, 0)

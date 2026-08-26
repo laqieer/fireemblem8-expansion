@@ -462,6 +462,11 @@ def require_sustained_late_audio(
     for frame, left, right, active_channels in late_rows:
         if not any(left) or not any(right):
             fail(f"{profile} late PCM window is silent at frame {frame}")
+        if left == right:
+            fail(
+                f"{profile} late PCM window has identical left/right samples "
+                f"at frame {frame}"
+            )
         if active_channels == 0:
             fail(f"{profile} late PCM window has no active MP2K channel at frame {frame}")
     if not any(left_by_checkpoint[-1]) or not any(right_by_checkpoint[-1]):
@@ -607,6 +612,8 @@ def validate_pcm_capture(capture: dict, enabled: bool, selection: dict | None = 
         "left_pcm_words": left,
         "right_pcm_words": right,
         "late_window_frames": checkpoint_frames[LATE_WINDOW_CHECKPOINT_INDEX:],
+        "late_left_pcm_words": left_by_checkpoint[LATE_WINDOW_CHECKPOINT_INDEX:],
+        "late_right_pcm_words": right_by_checkpoint[LATE_WINDOW_CHECKPOINT_INDEX:],
         "late_active_channel_counts": active_channel_counts[
             LATE_WINDOW_CHECKPOINT_INDEX:
         ],
