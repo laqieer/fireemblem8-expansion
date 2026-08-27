@@ -62,6 +62,22 @@ class CheckError(RuntimeError):
     pass
 
 
+def _direct_charge_selection_frames(
+    move_frame,
+    open_frame,
+    help_frame,
+    close_help_frame,
+    select_frame,
+):
+    return [
+        {"start": move_frame, "end": move_frame + 6, "keys": ["RIGHT"]},
+        {"start": open_frame, "end": open_frame + 6, "keys": ["A"]},
+        {"start": help_frame, "end": help_frame + 6, "keys": ["R"]},
+        {"start": close_help_frame, "end": close_help_frame + 6, "keys": ["B"]},
+        {"start": select_frame, "end": select_frame + 6, "keys": ["A"]},
+    ]
+
+
 def _phase_probes():
     return [
         {"address": "gPlaySt+0x0f", "size": 1},
@@ -99,12 +115,7 @@ def _positive_frames():
         {"start": 17630, "end": 17636, "keys": ["A"]},
         {"start": 17750, "end": 17756, "keys": ["DOWN"]},
         {"start": 17810, "end": 17816, "keys": ["A"]},
-        {"start": 17970, "end": 17976, "keys": ["RIGHT"]},
-        {"start": 18120, "end": 18126, "keys": ["A"]},
-        {"start": 18220, "end": 18226, "keys": ["UP"]},
-        {"start": 18320, "end": 18326, "keys": ["R"]},
-        {"start": 18420, "end": 18426, "keys": ["B"]},
-        {"start": 18520, "end": 18526, "keys": ["A"]},
+        *_direct_charge_selection_frames(17970, 18120, 18320, 18420, 18520),
         *[
             {"start": frame, "end": frame + 4, "keys": ["A"]}
             for frame in range(23000, 24600, 60)
@@ -153,12 +164,13 @@ def _phase_selection_frames(down_count):
             for index in range(down_count)
         ],
         {"start": selection_frame, "end": selection_frame + 6, "keys": ["A"]},
-        {"start": 17970 + charge_delay, "end": 17976 + charge_delay, "keys": ["RIGHT"]},
-        {"start": 18120 + charge_delay, "end": 18126 + charge_delay, "keys": ["A"]},
-        {"start": 18220 + charge_delay, "end": 18226 + charge_delay, "keys": ["UP"]},
-        {"start": 18320 + charge_delay, "end": 18326 + charge_delay, "keys": ["R"]},
-        {"start": 18420 + charge_delay, "end": 18426 + charge_delay, "keys": ["B"]},
-        {"start": 18520 + charge_delay, "end": 18526 + charge_delay, "keys": ["A"]},
+        *_direct_charge_selection_frames(
+            17970 + charge_delay,
+            18120 + charge_delay,
+            18320 + charge_delay,
+            18420 + charge_delay,
+            18520 + charge_delay,
+        ),
     ]
 
 
@@ -359,12 +371,7 @@ def _blocked_frames():
             for index in range(FLAG_MENU_GREEN_BLOCK_ROW)
         ],
         {"start": 18110, "end": 18116, "keys": ["A"]},
-        {"start": 18270, "end": 18276, "keys": ["RIGHT"]},
-        {"start": 18420, "end": 18426, "keys": ["A"]},
-        {"start": 18520, "end": 18526, "keys": ["UP"]},
-        {"start": 18620, "end": 18626, "keys": ["R"]},
-        {"start": 18720, "end": 18726, "keys": ["B"]},
-        {"start": 18820, "end": 18826, "keys": ["A"]},
+        *_direct_charge_selection_frames(18270, 18420, 18620, 18720, 18820),
         *[
             {"start": frame, "end": frame + 4, "keys": ["A"]}
             for frame in range(23200, 24800, 60)

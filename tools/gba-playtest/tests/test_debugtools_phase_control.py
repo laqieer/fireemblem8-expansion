@@ -824,6 +824,29 @@ class DebugToolsPhaseControlRuntimeContractTests(unittest.TestCase):
         self.assertIn(("R",), key_sets)
         self.assertIn(("B",), key_sets)
         self.assertIn(("A",), key_sets)
+        self.assertNotIn(("UP",), key_sets)
+        self.assertEqual(
+            [
+                tuple(frame["keys"])
+                for frame in module["_direct_charge_selection_frames"](
+                    100,
+                    200,
+                    300,
+                    400,
+                    500,
+                )
+            ],
+            [("RIGHT",), ("A",), ("R",), ("B",), ("A",)],
+        )
+        for scenario_frames in (
+            module["_positive_frames"](),
+            module["_phase_selection_frames"](1),
+            module["_phase_selection_frames"](3),
+            module["_blocked_frames"](),
+        ):
+            self.assertFalse(
+                any("UP" in frame["keys"] for frame in scenario_frames)
+            )
         self.assertEqual(
             [
                 checkpoint["name"]
