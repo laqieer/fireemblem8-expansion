@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -921,6 +922,23 @@ class AutoplayBoundsEvidenceTests(unittest.TestCase):
 
 
 class RunUntilBackendIntegrationTests(unittest.TestCase):
+    def _build_backend_or_skip(self, backend: Path) -> None:
+        try:
+            gba_playtest.build_backend(backend)
+        except gba_playtest.PlaytestError as exc:
+            unavailable_markers = (
+                "C compiler ",
+                "mgba/core/core.h: No such file",
+                "'mgba/core/core.h' file not found",
+                "cannot find -lmgba",
+                "library not found for -lmgba",
+            )
+            if any(marker in str(exc) for marker in unavailable_markers):
+                raise unittest.SkipTest(
+                    f"libmGBA integration skipped explicitly: {exc}"
+                ) from exc
+            raise
+
     def _capture_or_skip(self, rom: Path, scenario: gba_playtest.Scenario, **kwargs):
         try:
             return gba_playtest.capture(rom, scenario, **kwargs)
@@ -937,6 +955,69 @@ class RunUntilBackendIntegrationTests(unittest.TestCase):
                     f"libmGBA integration skipped explicitly: {exc}"
                 ) from exc
             raise
+
+    def test_backend_rejects_unaligned_format_6_and_7_seed_writes(self):
+        scenario = gba_playtest.parse_scenario_data(run_until_data())
+        with tempfile.TemporaryDirectory(prefix="gba-run-until-plan-") as temporary:
+            root = Path(temporary)
+            backend = root / "gba-playtest-backend"
+            valid_plan = root / "valid.plan"
+            missing_rom = root / "missing.gba"
+            self._build_backend_or_skip(backend)
+            gba_playtest._write_plan(
+                valid_plan,
+                scenario,
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(
+                        PROBE_ADDRESS,
+                        int(PROBE_ADDRESS, 16),
+                        4,
+                        None,
+                    ),
+                    1,
+                ),
+            )
+            valid_text = valid_plan.read_text(encoding="ascii")
+
+            for version in (6, 7):
+                for size, address in ((2, 0x02000001), (4, 0x02000002)):
+                    with self.subTest(version=version, size=size, address=address):
+                        plan = root / f"invalid-{version}-{size}.plan"
+                        text = valid_text.replace(
+                            "GBA_PLAYTEST_PLAN 7",
+                            f"GBA_PLAYTEST_PLAN {version}",
+                            1,
+                        ).replace(
+                            f"SEED_WRITE 0 {int(PROBE_ADDRESS, 16)} 4 1",
+                            f"SEED_WRITE 0 {address} {size} 1",
+                            1,
+                        )
+                        plan.write_text(text, encoding="ascii")
+                        result = subprocess.run(
+                            [str(backend), str(missing_rom), str(plan)],
+                            capture_output=True,
+                            text=True,
+                        )
+                        self.assertEqual(result.returncode, 2)
+                        self.assertIn("malformed SEED_WRITE record", result.stderr)
+
+                aligned_plan = root / f"aligned-{version}.plan"
+                aligned_plan.write_text(
+                    valid_text.replace(
+                        "GBA_PLAYTEST_PLAN 7",
+                        f"GBA_PLAYTEST_PLAN {version}",
+                        1,
+                    ),
+                    encoding="ascii",
+                )
+                result = subprocess.run(
+                    [str(backend), str(missing_rom), str(aligned_plan)],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertNotIn("malformed SEED_WRITE record", result.stderr)
 
     def test_generated_homebrew_covers_every_terminal_reason_once(self):
         cases = (

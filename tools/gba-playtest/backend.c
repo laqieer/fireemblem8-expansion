@@ -627,6 +627,7 @@ static bool read_plan(const char* path, struct Plan* plan)
 		    plan->seed_frame >= plan->max_frames ||
 		    (plan->seed_write.size != 1 && plan->seed_write.size != 2 &&
 		     plan->seed_write.size != 4) ||
+		    plan->seed_write.address % plan->seed_write.size != 0 ||
 		    !probe_value_fits(plan->seed_write.size, plan->seed_value) ||
 		    !writable_probe_address(plan->seed_write.address,
 		                            plan->seed_write.size)) {
