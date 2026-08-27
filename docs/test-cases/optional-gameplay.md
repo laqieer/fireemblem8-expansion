@@ -281,11 +281,14 @@ data, EWRAM/IWRAM allocation, or archival-lane behavior changes.
 
 ### Cleanup and limitations
 
-Use `make clean_fast` only to remove build artifacts. The preserved issue
-screenshots are supplementary negative evidence; automation owns command
-order, localized strings, bounds, help sizing, typed availability, and runtime
-state. The case does not change Charge into an always-visible or persistent
-army-control setting.
+The nine-row runtime creates
+`build/expansion-modern-map-menu-nine-row/debug/aapcs/map-menu-presentation-check/debugtools-current.sav`
+as disposable, ignored build output. It is neither persistent input nor
+committed evidence; `make clean_fast` removes it with the registered
+`build/expansion-modern-map-menu-nine-row` target directory. The harness does
+not emit screenshot files, so its deterministic whole-frame and bottom-band
+hashes supplement the semantic assertions. The case does not change Charge
+into an always-visible or persistent army-control setting.
 
 ## TC-GAMEPLAY-004: Starter Sample Charm composes generated data and hooks
 

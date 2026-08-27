@@ -896,18 +896,19 @@
       "anchor": "tc-map-menu-168-optional-map-menu-presentation-and-help-regression",
       "profiles": [
         "Modern AAPCS all-locales/all-features release with Danger and Charge enabled",
+        "Modern AAPCS focused debug skirmish with Danger, Charge, unlocked Guide, and Retreat",
         "Modern AAPCS host compositions with neither option, Danger only, and Charge only",
         "Every production expansion locale: en, ja, zh-Hans, fr, de, es, it"
       ],
       "purpose": "Freeze issue #168's command order, localization, help, geometry, visibility, and runtime presentation regression.",
-      "prerequisites": "Repository root with the modern toolchain and libmGBA; blank-SRAM named release plus the Charge debug fixture with at least one eligible unmoved blue unit.",
-      "actions": "Run the focused host test, named release Danger runtime target, and enabled Charge debug target; inspect the first two and final menu rows, open both R-help boxes, then reopen after making every blue unit ineligible.",
-      "expected_result": "Danger then Charge are the first rows, End is last, all seven locales resolve bounded labels and complete help, both optional rows use the vanilla one-tile inset/two-tile stride, help boxes fit on-screen, the named release map remains interactive, and Charge restores PLAYER after delegation.",
-      "negative_control": "Neither/Danger-only/Charge-only builds preserve exact semantic composition and End-last order; Charge is absent with its typed reason whenever the documented live-blue-player/sole-lock/no-blocker/eligible-unit predicate fails.",
-      "interactions": "Danger uses issue #6's vanilla range path; Charge uses issue #85 and #87's transient controller and shared eligibility; both use the expansion localization registry and occupy 10 of 11 map-menu rows. No known feature conflict.",
+      "prerequisites": "Repository root with the modern toolchain and libmGBA; blank-SRAM named release, the generated disposable debugtools-current.sav for the nine-row skirmish route, and the Charge debug fixture with at least one eligible unmoved blue unit.",
+      "actions": "Run the focused host test, named release and nine-row skirmish presentation target, and enabled Charge debug target; inspect the first two and final menu rows, open both R-help boxes, then reopen after making every blue unit ineligible.",
+      "expected_result": "Danger then Charge are the first rows, End is last, all seven locales resolve bounded labels and complete help, both optional rows use the vanilla one-tile inset/two-tile stride, the nine-row frame spans visible tile rows 0 through 19 with End text ending at row 18, help boxes fit on-screen, the named release map remains interactive, and Charge restores PLAYER after delegation.",
+      "negative_control": "Neither/Danger-only/Charge-only builds preserve exact semantic composition and End-last order; locked-Guide skirmishes and story maps remain at eight or fewer visible rows with vanilla top tile 2; Charge is absent with its typed reason whenever the documented live-blue-player/sole-lock/no-blocker/eligible-unit predicate fails.",
+      "interactions": "Danger uses issue #6's vanilla range path; Charge uses issue #85 and #87's transient controller and shared eligibility; both use the expansion localization registry. The table has 10 definitions but skirmish/dungeon availability permits at most nine simultaneous rows within MENU_ITEM_MAX 11. No known feature conflict.",
       "save_compatibility": "No save field, preference layout, epoch, migration, serialized controller, generated game data, or archival-lane change.",
-      "cleanup": "Use make clean_fast only to remove build artifacts; no save or savestate is created.",
-      "limitations": "Charge remains intentionally conditional and one-phase only; screenshots are supplementary rather than the behavioral oracle.",
+      "cleanup": "The nine-row runtime creates build/expansion-modern-map-menu-nine-row/debug/aapcs/map-menu-presentation-check/debugtools-current.sav as disposable ignored build output, not persistent input or committed evidence; make clean_fast removes it with the registered target build directory.",
+      "limitations": "Charge remains intentionally conditional and one-phase only; the harness records deterministic framebuffer hashes and does not emit screenshot files.",
       "automation": [
         {
           "command": "python3 -m unittest tools.gba-playtest.tests.test_map_menu_presentation -v",

@@ -1973,6 +1973,8 @@ MODERN_MAP_MENU_NINE_ROW_ELF := \
 MODERN_MAP_MENU_NINE_ROW_SRAM := \
 	$(MODERN_MAP_MENU_NINE_ROW_OUTPUT_DIR)/map-menu-presentation-check/debugtools-current.sav
 
+CLEAN_DIRS += $(MODERN_MAP_MENU_NINE_ROW_ROOT)
+
 expansion-modern-map-menu-presentation-check: \
 		expansion-modern-all-locales-all-features-check
 	+$(MAKE) expansion-modern-rom \

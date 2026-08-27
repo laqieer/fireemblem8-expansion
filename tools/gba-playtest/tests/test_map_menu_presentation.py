@@ -29,6 +29,7 @@ PRODUCTION_LOCALES = ("en", "ja", "zh-Hans", "fr", "de", "es", "it")
 LABEL_KEYS = ("danger_overlay.label", "autoplay.charge.label")
 HELP_KEYS = ("danger_overlay.help", "autoplay.charge.help")
 RUNTIME_RUNNER = ROOT / "tools" / "gba-playtest" / "run_map_menu_presentation_checks.py"
+TEST_CASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
 RUNTIME_FINGERPRINT = (
     ROOT
     / "tools"
@@ -673,6 +674,19 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
                 )
             )
         )
+
+    def test_case_registry_owns_disposable_nine_row_sram_cleanup(self):
+        registry = json.loads(TEST_CASE_REGISTRY.read_text(encoding="utf-8"))
+        case = next(
+            entry
+            for entry in registry["cases"]
+            if entry["id"] == "TC-MAP-MENU-168"
+        )
+        cleanup = case["cleanup"]
+        self.assertIn("debugtools-current.sav", cleanup)
+        self.assertIn("disposable ignored build output", cleanup)
+        self.assertIn("make clean_fast removes it", cleanup)
+        self.assertNotIn("no save or savestate is created", cleanup)
 
 
 if __name__ == "__main__":
