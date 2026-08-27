@@ -156,6 +156,8 @@ def build_production_planner_rom(
     candidate_mode: int = 0,
     acknowledgement_override: tuple[int, int] | None = None,
     zero_digest: bool = False,
+    startup_delay_frames: int = 0,
+    startup_state_override: int = 0,
 ) -> None:
     """Link the production planner implementation into a tiny freestanding ROM."""
     if commit_delay_frames < 0:
@@ -164,6 +166,10 @@ def build_production_planner_rom(
         raise ValueError("planner transition subcode must be MNCH or MNC2")
     if candidate_mode not in {0, 1, 2}:
         raise ValueError("planner candidate mode is outside fixture bounds")
+    if not 0 <= startup_delay_frames <= 10000:
+        raise ValueError("planner startup delay is outside fixture bounds")
+    if not 0 <= startup_state_override <= 0xFFFFFFFF:
+        raise ValueError("planner startup state is outside u32")
     if acknowledgement_override is not None and (
         len(acknowledgement_override) != 2
         or any(
@@ -239,6 +245,12 @@ def build_production_planner_rom(
         ),
         "-DFE8_AUTOPLAY_PLANNER_RUNTIME_ZERO_DIGEST={}".format(
             int(zero_digest)
+        ),
+        "-DFE8_AUTOPLAY_PLANNER_RUNTIME_STARTUP_DELAY={}".format(
+            startup_delay_frames
+        ),
+        "-DFE8_AUTOPLAY_PLANNER_RUNTIME_STARTUP_STATE={}".format(
+            startup_state_override
         ),
     ]
     environment = dict(os.environ)

@@ -1,6 +1,8 @@
 #include "global.h"
 
+#ifndef FE8_ARCHIVAL_BUILD
 #include "bmtarget.h"
+#endif
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
 #include "action_semantics.h"
 #endif
@@ -18,7 +20,9 @@
 #include "eventinfo.h"
 
 #include "constants/classes.h"
+#ifndef FE8_ARCHIVAL_BUILD
 #include "constants/items.h"
+#endif
 #include "constants/terrains.h"
 
 struct Unit* EWRAM_DATA gSubjectUnit = NULL;
@@ -169,8 +173,12 @@ void TryAddTrapsToTargetList(void) {
             AddTarget(trap->xPos, trap->yPos + 1, 0, trap->extra);
         }
 
+#ifdef FE8_ARCHIVAL_BUILD
+        if ((gBmMapTerrain[trap->yPos][trap->xPos] == TERRAIN_SNAG) && (gMapRangeSigned[trap->yPos][trap->xPos] != 0)) {
+#else
         if (IsSnagObstacleTarget(trap->xPos, trap->yPos)
             && (gMapRangeSigned[trap->yPos][trap->xPos] != 0)) {
+#endif
             AddTarget(trap->xPos, trap->yPos, 0, trap->extra);
         }
     }
@@ -178,6 +186,7 @@ void TryAddTrapsToTargetList(void) {
     return;
 }
 
+#ifndef FE8_ARCHIVAL_BUILD
 bool IsSnagObstacleTarget(int x, int y)
 {
     struct Trap* trap;
@@ -205,6 +214,7 @@ bool IsSnagAttackTargetAt(
     return distance >= GetItemMinRange(item)
         && distance <= GetItemMaxRange(item);
 }
+#endif
 
 void AddUnitToTargetListIfNotAllied(struct Unit* unit) {
 
@@ -971,6 +981,7 @@ void MakeSummonTargetListNorth(struct Unit* unit) {
     return;
 }
 
+#ifndef FE8_ARCHIVAL_BUILD
 bool IsUnitInHealTargetList(
     const struct Unit* subject,
     const struct Unit* unit)
@@ -981,17 +992,32 @@ bool IsUnitInHealTargetList(
         && GetUnitCurrentHp((struct Unit*)unit)
             < GetUnitMaxHp((struct Unit*)unit);
 }
+#endif
 
 void TryAddUnitToHealTargetList(struct Unit* unit) {
+#ifdef FE8_ARCHIVAL_BUILD
+    if (!AreUnitsAllied(gSubjectUnit->index, unit->index)) {
+        return;
+    }
 
+    if (unit->state & US_RESCUED) {
+        return;
+    }
+
+    if (GetUnitCurrentHp(unit) == GetUnitMaxHp(unit)) {
+        return;
+    }
+#else
     if (!IsUnitInHealTargetList(gSubjectUnit, unit))
         return;
+#endif
 
     AddTarget(unit->xPos, unit->yPos, unit->index, 0);
 
     return;
 }
 
+#ifndef FE8_ARCHIVAL_BUILD
 bool HasRangedHealTargetAt(
     const struct Unit* subject,
     int x,
@@ -1015,6 +1041,7 @@ bool HasRangedHealTargetAt(
     }
     return false;
 }
+#endif
 
 void MakeTargetListForAdjacentHeal(struct Unit* unit) {
     int x = unit->xPos;
@@ -1275,6 +1302,7 @@ void MakeTargetListForUnlock(struct Unit* unit) {
     return;
 }
 
+#ifndef FE8_ARCHIVAL_BUILD
 bool IsUnitInHammerneTargetList(
     const struct Unit* subject,
     const struct Unit* unit)
@@ -1292,12 +1320,28 @@ bool IsUnitInHammerneTargetList(
 
     return false;
 }
+#endif
 
 void TryAddUnitToHammerneTargetList(struct Unit* unit) {
+#ifdef FE8_ARCHIVAL_BUILD
+    int i;
+
+    if (!IsSameAllegiance(gSubjectUnit->index, unit->index)) {
+        return;
+    }
+
+    for (i = 0; i < UNIT_ITEM_COUNT; i++) {
+        if (IsItemHammernable(unit->items[i])) {
+            AddTarget(unit->xPos, unit->yPos, unit->index, 0);
+            break;
+        }
+    }
+#else
     if (!IsUnitInHammerneTargetList(gSubjectUnit, unit))
         return;
 
     AddTarget(unit->xPos, unit->yPos, unit->index, 0);
+#endif
 }
 
 void MakeTargetListForHammerne(struct Unit* unit) {
@@ -1324,8 +1368,26 @@ void MakeTargetListForLatona(struct Unit* unit) {
     for (i = phase + 1; i < phase + 0x80; i++) {
         struct Unit* other = GetUnit(i);
 
+#ifdef FE8_ARCHIVAL_BUILD
+        if (!UNIT_IS_VALID(other)) {
+            continue;
+        }
+
+        if (other->state & US_UNAVAILABLE) {
+            continue;
+        }
+
+        if ((GetUnitCurrentHp(other) == GetUnitMaxHp(other)) && (other->statusIndex == UNIT_STATUS_NONE)) {
+            continue;
+        }
+
+        if (other == unit) {
+            continue;
+        }
+#else
         if (!IsUnitInLatonaTargetList(unit, other))
             continue;
+#endif
 
         AddTarget(other->xPos, other->yPos, other->index, 0);
     }
@@ -1333,6 +1395,7 @@ void MakeTargetListForLatona(struct Unit* unit) {
     return;
 }
 
+#ifndef FE8_ARCHIVAL_BUILD
 bool IsUnitInLatonaTargetList(
     const struct Unit* subject,
     const struct Unit* unit)
@@ -1421,6 +1484,7 @@ bool IsUnitInStaffTargetListAt(
         return false;
     }
 }
+#endif
 
 void PidStatsRecordTargetListDeaths(int unk) {
     int i;

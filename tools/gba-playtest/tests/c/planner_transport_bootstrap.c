@@ -13,6 +13,9 @@
 #define KEY_RIGHT UINT32_C(0x010)
 #define KEY_LEFT UINT32_C(0x020)
 #define KEY_DOWN UINT32_C(0x080)
+#define PLANNER_MAGIC UINT32_C(0x41504C4E)
+#define PLANNER_VERSION UINT32_C(2)
+#define PLANNER_OBSERVATION_BYTES UINT32_C(996)
 #define PLANNER_READY UINT32_C(1)
 
 struct BootstrapInput
@@ -53,18 +56,28 @@ static const struct BootstrapInput sBootstrapInputs[] = {
     { 3860, 3866, KEY_DOWN },
 };
 
-static uint32_t PlannerState(struct mCore* core)
+static bool PlannerReady(struct mCore* core)
 {
-    return core->busRead32(core, PLANNER_OBSERVATION_ADDR + 5 * 4);
+    return core->busRead32(core, PLANNER_OBSERVATION_ADDR)
+            == PLANNER_MAGIC
+        && core->busRead32(core, PLANNER_OBSERVATION_ADDR + 4)
+            == PLANNER_VERSION
+        && core->busRead32(core, PLANNER_OBSERVATION_ADDR + 8)
+            == PLANNER_OBSERVATION_BYTES
+        && core->busRead32(core, PLANNER_OBSERVATION_ADDR + 5 * 4)
+            == PLANNER_READY
+        && core->busRead32(core, PLANNER_OBSERVATION_ADDR + 6 * 4) == 0
+        && core->busRead32(core, PLANNER_OBSERVATION_ADDR + 7 * 4) == 1
+        && core->busRead32(core, PLANNER_OBSERVATION_ADDR + 8 * 4) == 0;
 }
 
 static bool RunFrameToReady(struct mCore* core)
 {
     core->runFrame(core);
-    return PlannerState(core) == PLANNER_READY;
+    return PlannerReady(core);
 }
 
-void PlannerTransport_TestBootstrap(struct mCore* core)
+bool PlannerTransport_TestBootstrap(struct mCore* core)
 {
     uint32_t frame = 4;
     unsigned index;
@@ -97,7 +110,7 @@ void PlannerTransport_TestBootstrap(struct mCore* core)
             goto ready;
         frame++;
     }
-    for (index = 0; index < 8 && PlannerState(core) != PLANNER_READY; index++)
+    for (index = 0; index < 8 && !PlannerReady(core); index++)
     {
         uint32_t count;
 
@@ -112,4 +125,5 @@ void PlannerTransport_TestBootstrap(struct mCore* core)
     }
 ready:
     core->setKeys(core, 0);
+    return PlannerReady(core);
 }

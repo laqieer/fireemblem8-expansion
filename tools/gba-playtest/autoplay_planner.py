@@ -24,6 +24,8 @@ MAX_TRACE_BYTES = 2 * 1024 * 1024
 MAX_TRANSCRIPT_EXCHANGE_BYTES = 64 * 1024
 MAX_SEARCH_BYTES = 64 * 1024 * 1024
 MAX_JSON_DEPTH = 64
+COMMAND_RESPONSE_FRAME_LIMIT = 600
+COMMIT_COMPLETION_FRAME_LIMIT = 18000
 PAGE_MAX_BYTES = 1024
 OBSERVATION_HEADER_BYTES = 100
 OBSERVATION_PAYLOAD_BYTES = 896
@@ -727,12 +729,12 @@ class PlannerTranscript:
                     not isinstance(command, dict)
                     or type(command.get("run_id")) is not int
                     or not 0 <= command["run_id"] <= 0xFFFFFFFF
-                    or not (
-                        isinstance(command.get("kind"), str)
-                        or type(command.get("kind")) is int
-                    )
                 ):
                     raise PlannerError("invalid transcript command")
+                if command.get("kind") not in _COMMAND_KIND_CODES:
+                    raise PlannerError(
+                        "transcript contains an unsupported command kind"
+                    )
                 pending_command = event
                 pending_ack = None
                 pending_completion = False
@@ -857,6 +859,21 @@ class PlannerTranscript:
                     or event.get("kind") != pending_ack.get("kind")
                 ):
                     raise PlannerError("planner transcript completion order")
+                response_frames = event.get("response_frames")
+                completion_limit = (
+                    COMMIT_COMPLETION_FRAME_LIMIT
+                    if pending_ack.get("kind") == 2
+                        and pending_ack.get("result") == 1
+                        and pending_ack.get("rejection") == 0
+                    else COMMAND_RESPONSE_FRAME_LIMIT
+                )
+                if (
+                    type(response_frames) is not int
+                    or not 0 <= response_frames <= completion_limit
+                ):
+                    raise PlannerError(
+                        "planner transcript completion timing is invalid"
+                    )
                 pending_completion = True
             elif kind == "settled":
                 settled_command = pending_command

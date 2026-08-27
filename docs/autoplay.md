@@ -1061,6 +1061,10 @@ up its action and token only in that exact observation's candidate set; PAGE
 binds both the command observation and requested index to the returned page.
 Re-chaining a stale, prior, future, or cross-swapped identity cannot bypass
 these checks.
+Only the four protocol command kinds are transcript-representable. Unknown
+numeric or text kinds reject during import before a replay factory starts;
+malformed fields on START/PAGE/COMMIT/CANCEL remain representable when the
+restricted backend can reproduce their typed rejection.
 Before selecting an action, both reference planners validate the complete
 typed inventory/resource/flag set, reject any candidate that names an
 unavailable actor or target, and retain the semantic digest they consumed.
@@ -1142,6 +1146,12 @@ READY boundary through a separately linked test-only bootstrap routine before
 stdin is exposed. Sending `STEP`, `RUN`, raw keys, or equivalent unknown input
 returns an error without advancing the emulator or changing observation, RNG,
 mailbox, checkpoint, or transcript state.
+Before any initial OBS or stdin handling, the backend requires the exact
+magic/version/size, READY state, control page zero, and one-page identity. The
+four-frame synthetic path and optional fixed launcher both pass this same
+gate. Delayed startup without a launcher, a timed-out launcher, WAITING or
+EXHAUSTED startup state, and a launcher that returns without READY terminate
+with an explicit startup error and no stdout.
 
 Every typed mailbox command now produces three distinct line-protocol stages:
 `ACK command_id kind result rejection` after the ROM consumes the exact
@@ -1162,6 +1172,10 @@ unknown results or rejections, and command-ID/kind mismatches fail. Every
 accepted COMMIT then validates its ordinal and all four token words; changing a
 pair to look rejected cannot bypass token validation while retaining a
 COMMITTED settlement.
+Completion timing is also typed protocol data: `response_frames` must be an
+exact nonnegative integer, at most 600 for ordinary or rejected commands, and
+at most 18,000 only for an accepted COMMIT. Booleans, strings, floats,
+negative values, overflow, and kind/bound mismatches reject before replay.
 
 START, PAGE, CANCEL, and rejected commands retain bounded fast-response
 handling. An accepted COMMIT instead waits up to 18,000 execution frames for a
@@ -1196,3 +1210,7 @@ planner-specific RNG counter and cancellation latch add five EWRAM bytes and
 no IWRAM, keeping total planner state at 1,145 bytes (2,951 bytes below 4 KiB).
 Disabled release and archival builds omit planner state and the normal-summon
 executor hook while retaining their original player/executor paths.
+The shared target-query functions are modern-only. `FE8_ARCHIVAL_BUILD`
+retains the original inline Snag, heal, Hammerne, and Latona bodies and call
+graph; pinned agbcc produces text identical to the pre-refactor archival
+object and exports none of the modern query symbols.

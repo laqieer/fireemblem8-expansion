@@ -658,12 +658,20 @@ resolve their action/token only from the named current observation.
 The recorded accepted two-chapter run and rejection/cancel run are each
 reissued through a newly booted production ROM/backend, and their complete
 transcripts must match byte-for-byte.
+Unknown numeric or text command kinds fail import before the replay factory is
+called. Stale PAGE and forged COMMIT fields remain valid-kind rejection
+records and replay exactly through the restricted backend.
 Transcript JSON is iteratively bounded to 64 structural containers before
 decode and canonicalization. Below-limit and exact-limit arrays/objects are
 accepted by that boundary; excess depth and explicit parser/canonicalizer
 recursion become typed invalid-transcript errors before transport creation.
 After its fixed test-only pre-stdin boot routine, the enabled production
 backend accepts only READ/status, START, PAGE, COMMIT, CANCEL, and QUIT.
+Both immediate synthetic startup and delayed fixed bootstrap must publish the
+exact READY control record before initial OBS. Delayed startup without
+bootstrap, never-ready timeout, WAITING, and EXHAUSTED startup fail with no
+stdout or stdin handling. Completion frame counts are exact integers bounded
+to 600, except accepted COMMIT may use up to 18,000.
 
 ### Negative control
 
@@ -707,6 +715,9 @@ deep inputs fail without state mutation. Client `STEP`, `RUN`, raw-key, and
 arbitrary-kind commands return an error and leave observation, RNG, mailbox,
 checkpoint, and transcript byte-identical; such commands cannot be encoded in
 a valid transcript.
+Unknown numeric command kinds likewise fail import before transport creation.
+Negative, oversized, boolean, string, float, or wrong-kind completion timings
+fail before replay.
 Out-of-range/occupied Warp destinations, opened or wrong Unlock tiles, stale
 Torch coordinates, consumed keys, non-repairable or wrong Hammerne slots, and
 a token copied from another Hammerne slot all reject without applying the
@@ -717,6 +728,8 @@ coordinates reject. Unknown live ACK rejections are rejected before any ACK
 or observation is emitted.
 Null or over-bound flag storage and null convoy storage are unavailable, while
 an available digest equal to zero must never be mistaken for absence.
+The archival target object exposes no modern query predicates and preserves
+the original Snag/heal/Hammerne/Latona call graph and pinned agbcc text.
 Archival agbcc compiles the inactive planner translation unit and its public
 header with warnings promoted to errors; unnamed no-instance unions or any
 size/offset drift therefore fail the legacy job. Host-only configuration

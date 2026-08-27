@@ -56,6 +56,14 @@
 #define FE8_AUTOPLAY_PLANNER_RUNTIME_ZERO_DIGEST 0
 #endif
 
+#ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_STARTUP_DELAY
+#define FE8_AUTOPLAY_PLANNER_RUNTIME_STARTUP_DELAY 0
+#endif
+
+#ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_STARTUP_STATE
+#define FE8_AUTOPLAY_PLANNER_RUNTIME_STARTUP_STATE 0
+#endif
+
 struct PlaySt gPlaySt;
 struct ActionData gActionData;
 struct ExpansionAutoplayTelemetry gExpansionAutoplayTelemetry;
@@ -580,6 +588,11 @@ static void InitializeRuntime(void)
     sMapMain.gameCtrl = &sGameControl;
     ExpansionAutoplayPlanner_Reset();
     ExpansionAutoplayPlanner_OnMapReady();
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_STARTUP_STATE
+    ExpansionAutoplayPlanner_PollStart();
+    gExpansionAutoplayPlannerObservation.state =
+        FE8_AUTOPLAY_PLANNER_RUNTIME_STARTUP_STATE;
+#endif
     sStage = PLANNER_RUNTIME_WAIT_START;
 }
 
@@ -620,6 +633,12 @@ static void TickRuntime(void)
     enum ExpansionAutoplayPlannerDecisionResult result;
 
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_IGNORE_COMMANDS
+    if (gExpansionAutoplayPlannerObservation.state
+        != EXPANSION_AUTOPLAY_PLANNER_STATE_READY)
+        ExpansionAutoplayPlanner_PollStart();
+    return;
+#endif
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_STARTUP_STATE
     return;
 #endif
     switch (sStage)
@@ -708,8 +727,16 @@ static void TickRuntime(void)
 void PlannerRuntime_Main(void)
 {
     volatile u16* vcount = (volatile u16*)0x04000006;
+    int startupDelay = FE8_AUTOPLAY_PLANNER_RUNTIME_STARTUP_DELAY;
 
     InitializeRuntime();
+    while (startupDelay-- > 0)
+    {
+        while (*vcount >= 160)
+            ;
+        while (*vcount < 160)
+            ;
+    }
     for (;;)
     {
         while (*vcount >= 160)

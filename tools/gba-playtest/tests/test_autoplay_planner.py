@@ -795,6 +795,135 @@ class PlannerBridgeTests(unittest.TestCase):
             ):
                 planner.PlannerTranscript.import_bytes(valid)
 
+    def test_completion_timing_is_typed_and_kind_bounded(self):
+        bridge = planner.PlannerBridge(PROVENANCE)
+        run_id = bridge.begin(PROVENANCE)
+        observation = bridge.observe(
+            1,
+            (),
+            tuple(
+                planner.Action("MOVE_WAIT", 1, (index + 1, 0))
+                for index in range(23)
+            ),
+        )
+        complete = planner.collect_observation_pages(
+            bridge,
+            observation,
+        )
+        choice = complete.actions[0]
+        bridge.commit(
+            planner.Command(
+                planner.CommandKind.COMMIT,
+                run_id,
+                observation.observation_id,
+                choice.ordinal,
+                choice.token,
+            )
+        )
+        encoded = bridge.transcript.export()
+
+        def mutate_completion(kind, response_frames):
+            document = json.loads(encoded)
+            completion = next(
+                event
+                for event in document["events"]
+                if event["event"] == "completion"
+                    and event["kind"] == kind
+            )
+            completion["response_frames"] = response_frames
+            previous = "0" * 64
+            for sequence, event in enumerate(document["events"]):
+                event.pop("event_digest", None)
+                event["sequence"] = sequence
+                event["previous_digest"] = previous
+                event["event_digest"] = planner._digest(event)
+                previous = event["event_digest"]
+            return planner._canonical(document)
+
+        for kind, response_frames in (
+            (4, planner.COMMAND_RESPONSE_FRAME_LIMIT),
+            (2, planner.COMMAND_RESPONSE_FRAME_LIMIT + 1),
+            (2, planner.COMMIT_COMPLETION_FRAME_LIMIT),
+        ):
+            with self.subTest(
+                valid_kind=kind,
+                response_frames=response_frames,
+            ):
+                imported = planner.PlannerTranscript.import_bytes(
+                    mutate_completion(kind, response_frames)
+                )
+                self.assertTrue(imported.events)
+
+        for kind, response_frames in (
+            (4, -1),
+            (4, planner.COMMAND_RESPONSE_FRAME_LIMIT + 1),
+            (2, planner.COMMIT_COMPLETION_FRAME_LIMIT + 1),
+            (4, True),
+            (4, "1"),
+            (4, 1.0),
+        ):
+            with self.subTest(
+                invalid_kind=kind,
+                response_frames=response_frames,
+            ):
+                with self.assertRaisesRegex(
+                    planner.PlannerError,
+                    "completion timing is invalid",
+                ):
+                    planner.PlannerTranscript.import_bytes(
+                        mutate_completion(kind, response_frames)
+                    )
+
+        rejected_commit = json.loads(encoded)
+        acknowledgement = next(
+            event
+            for event in rejected_commit["events"]
+            if event["event"] == "acknowledgement"
+                and event["kind"] == 2
+        )
+        acknowledgement["result"] = 0
+        acknowledgement["rejection"] = 4
+        completion = next(
+            event
+            for event in rejected_commit["events"]
+            if event["event"] == "completion"
+                and event["kind"] == 2
+        )
+        completion["response_frames"] = (
+            planner.COMMAND_RESPONSE_FRAME_LIMIT + 1
+        )
+        previous = "0" * 64
+        for sequence, event in enumerate(rejected_commit["events"]):
+            event.pop("event_digest", None)
+            event["sequence"] = sequence
+            event["previous_digest"] = previous
+            event["event_digest"] = planner._digest(event)
+            previous = event["event_digest"]
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "completion timing is invalid",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(rejected_commit)
+            )
+
+        factory_calls = 0
+
+        def factory():
+            nonlocal factory_calls
+            factory_calls += 1
+            raise AssertionError("invalid timing started transport")
+
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "completion timing is invalid",
+        ):
+            planner.replay_transcript_on_clean_transport(
+                mutate_completion(4, -1),
+                factory,
+            )
+        self.assertEqual(factory_calls, 0)
+
     def test_mailbox_has_no_arbitrary_memory_write_api(self):
         mailbox = planner.Mailbox()
         self.assertFalse(hasattr(mailbox, "write"))
@@ -2530,6 +2659,94 @@ raise SystemExit(child.returncode)
             self.assertNotIn("gExpansionAutoplayPlanner", symbols.stdout)
             self.assertNotIn("ActionSemantics_", symbols.stdout)
 
+    def test_archival_target_predicates_keep_original_call_graph(self):
+        compiler = shutil.which("arm-none-eabi-gcc")
+        nm = shutil.which("arm-none-eabi-nm")
+        objdump = shutil.which("arm-none-eabi-objdump")
+        if compiler is None or nm is None or objdump is None:
+            self.skipTest("ARM compiler/binutils unavailable")
+        root = TESTS_DIR.parents[2]
+        build_root = root / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            output = Path(temporary) / "bmtarget-archival.o"
+            completed = subprocess.run(
+                [
+                    compiler,
+                    "-mcpu=arm7tdmi",
+                    "-mthumb",
+                    "-mthumb-interwork",
+                    "-mabi=aapcs",
+                    "-std=gnu89",
+                    "-ffreestanding",
+                    "-fno-builtin",
+                    "-O2",
+                    "-ffunction-sections",
+                    "-I",
+                    str(root / "include"),
+                    "-I",
+                    str(root / "include" / "generated"),
+                    "-DFE8_ARCHIVAL_BUILD=1",
+                    "-c",
+                    str(root / "src" / "bmtarget.c"),
+                    "-o",
+                    str(output),
+                ],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            symbols = subprocess.run(
+                [nm, str(output)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(symbols.returncode, 0, symbols.stderr)
+            for predicate in (
+                "IsSnagObstacleTarget",
+                "IsSnagAttackTargetAt",
+                "IsUnitInHealTargetList",
+                "HasRangedHealTargetAt",
+                "IsUnitInHammerneTargetList",
+                "IsUnitInLatonaTargetList",
+                "HasLatonaTarget",
+                "IsUnitInStaffTargetListAt",
+            ):
+                self.assertNotIn(predicate, symbols.stdout)
+            disassembly = subprocess.run(
+                [objdump, "-dr", str(output)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                disassembly.returncode,
+                0,
+                disassembly.stderr,
+            )
+            heal = disassembly.stdout.split(
+                "<TryAddUnitToHealTargetList>:",
+                1,
+            )[1].split("\n\n", 1)[0]
+            hammerne = disassembly.stdout.split(
+                "<TryAddUnitToHammerneTargetList>:",
+                1,
+            )[1].split("\n\n", 1)[0]
+            latona = disassembly.stdout.split(
+                "<MakeTargetListForLatona>:",
+                1,
+            )[1].split("\n\n", 1)[0]
+            self.assertIn("AreUnitsAllied", heal)
+            self.assertIn("GetUnitCurrentHp", heal)
+            self.assertIn("IsSameAllegiance", hammerne)
+            self.assertIn("IsItemHammernable", hammerne)
+            self.assertIn("GetUnitCurrentHp", latona)
+            self.assertNotIn("IsUnitIn", heal + hammerne + latona)
+
 
 @dataclass(frozen=True)
 class TransportAcknowledgement:
@@ -2847,6 +3064,9 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
         candidate_mode: int = 0,
         acknowledgement_override: tuple[int, int] | None = None,
         zero_digest: bool = False,
+        startup_delay_frames: int = 0,
+        startup_state_override: int = 0,
+        test_bootstrap: bool = False,
     ) -> tuple[Path, Path]:
         rom = Path(temporary) / "planner-two-chapter.gba"
         elf = Path(temporary) / "planner-two-chapter.elf"
@@ -2861,12 +3081,15 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             candidate_mode=candidate_mode,
             acknowledgement_override=acknowledgement_override,
             zero_digest=zero_digest,
+            startup_delay_frames=startup_delay_frames,
+            startup_state_override=startup_state_override,
         )
         build_planner_transport_backend(
             backend,
             elf,
             acknowledgement_frame_limit=acknowledgement_frame_limit,
             commit_completion_frame_limit=commit_completion_frame_limit,
+            test_bootstrap=test_bootstrap,
         )
         return rom, backend
 
@@ -3109,6 +3332,15 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     transport.start(),
                 )
                 choice = planner.ScriptedPlanner().choose(first)
+                stale_page = transport.exchange(
+                    planner.Command(
+                        planner.CommandKind.PAGE,
+                        first.run_id,
+                        first.observation_id + 1,
+                        page_index=1,
+                    )
+                )
+                self.assertEqual(stale_page.rejection, 2)
                 forged = transport.exchange(
                     planner.Command(
                         planner.CommandKind.COMMIT,
@@ -3465,6 +3697,70 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             finally:
                 transport.close()
 
+    def test_backend_requires_exact_ready_before_stdin(self):
+        root = (
+            TESTS_DIR.parents[2]
+            / "build"
+            / "test-artifacts"
+            / "autoplay-planner"
+        )
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            immediate_dir = Path(temporary) / "immediate"
+            immediate_dir.mkdir()
+            rom, backend = self._build_transport(str(immediate_dir))
+            transport = PlannerProcessTransport(backend, rom)
+            try:
+                self.assertEqual(transport.observation.state, 1)
+            finally:
+                transport.close()
+
+            delayed_dir = Path(temporary) / "delayed"
+            delayed_dir.mkdir()
+            rom, backend = self._build_transport(
+                str(delayed_dir),
+                startup_delay_frames=8,
+                test_bootstrap=True,
+            )
+            transport = PlannerProcessTransport(backend, rom)
+            try:
+                self.assertEqual(transport.observation.state, 1)
+            finally:
+                transport.close()
+
+            failure_cases = (
+                ("delayed-no-bootstrap", 8, 0, False, "startup"),
+                ("never-ready", 10000, 0, True, "bootstrap"),
+                ("wrong-state", 0, 2, True, "bootstrap"),
+                ("exhausted-state", 0, 5, True, "bootstrap"),
+            )
+            for (
+                name,
+                delay,
+                state,
+                bootstrap,
+                diagnostic,
+            ) in failure_cases:
+                with self.subTest(startup=name):
+                    case_dir = Path(temporary) / name
+                    case_dir.mkdir()
+                    rom, backend = self._build_transport(
+                        str(case_dir),
+                        startup_delay_frames=delay,
+                        startup_state_override=state,
+                        test_bootstrap=bootstrap,
+                    )
+                    completed = subprocess.run(
+                        [str(backend), str(rom)],
+                        input="READ\nSTART 0 0 0 0\n",
+                        capture_output=True,
+                        text=True,
+                        timeout=20,
+                    )
+                    self.assertEqual(completed.returncode, 3)
+                    self.assertEqual(completed.stdout, "")
+                    self.assertIn(diagnostic, completed.stderr)
+
     def test_invalid_ack_is_rejected_before_ack_or_observation(self):
         root = (
             TESTS_DIR.parents[2]
@@ -3570,26 +3866,38 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             finally:
                 transport.close()
 
-            command_event = next(
-                event
-                for event in encoded["events"]
-                if event["event"] == "command"
-            )
-            command_event["command"]["kind"] = "RUN"
-            previous = "0" * 64
-            for sequence, event in enumerate(encoded["events"]):
-                event.pop("event_digest", None)
-                event["sequence"] = sequence
-                event["previous_digest"] = previous
-                event["event_digest"] = planner._digest(event)
-                previous = event["event_digest"]
-            with self.assertRaisesRegex(
-                planner.PlannerError,
-                "acknowledgement kind mismatch",
-            ):
-                planner.PlannerTranscript.import_bytes(
-                    planner._canonical(encoded)
-                )
+            for unsupported_kind in ("RUN", 0xFFFFFFFF):
+                with self.subTest(unsupported_kind=unsupported_kind):
+                    tampered = json.loads(planner._canonical(encoded))
+                    command_event = next(
+                        event
+                        for event in tampered["events"]
+                        if event["event"] == "command"
+                    )
+                    command_event["command"]["kind"] = unsupported_kind
+                    previous = "0" * 64
+                    for sequence, event in enumerate(tampered["events"]):
+                        event.pop("event_digest", None)
+                        event["sequence"] = sequence
+                        event["previous_digest"] = previous
+                        event["event_digest"] = planner._digest(event)
+                        previous = event["event_digest"]
+                    factory_calls = 0
+
+                    def factory():
+                        nonlocal factory_calls
+                        factory_calls += 1
+                        return PlannerProcessTransport(backend, rom)
+
+                    with self.assertRaisesRegex(
+                        planner.PlannerError,
+                        "unsupported command kind",
+                    ):
+                        planner.replay_transcript_on_clean_transport(
+                            planner._canonical(tampered),
+                            factory,
+                        )
+                    self.assertEqual(factory_calls, 0)
 
     def test_production_transcript_capacity_rejects_before_mailbox_write(self):
         root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
@@ -3807,6 +4115,19 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
         root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
         root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=root) as temporary:
+            blocked_backend = Path(temporary) / "planner-transport-blocked"
+            build_planner_transport_backend(blocked_backend, elf)
+            blocked = subprocess.run(
+                [str(blocked_backend), str(rom)],
+                input="READ\n",
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            self.assertEqual(blocked.returncode, 3)
+            self.assertEqual(blocked.stdout, "")
+            self.assertIn("startup is not READY", blocked.stderr)
+
             backend = Path(temporary) / "planner-transport"
             build_planner_transport_backend(
                 backend,

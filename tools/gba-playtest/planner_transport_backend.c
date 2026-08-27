@@ -60,7 +60,7 @@ struct command_acknowledgement
 };
 
 #if PLANNER_TRANSPORT_TEST_BOOTSTRAP
-void PlannerTransport_TestBootstrap(struct mCore* core);
+bool PlannerTransport_TestBootstrap(struct mCore* core);
 #endif
 
 static void discard_log(
@@ -227,6 +227,21 @@ static bool is_terminal_state(uint32_t state)
         || state == EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
 }
 
+static bool is_planner_ready(struct mCore* core)
+{
+    return read_word(core, PLANNER_OBSERVATION_ADDR, 0)
+            == EXPANSION_AUTOPLAY_PLANNER_MAGIC
+        && read_word(core, PLANNER_OBSERVATION_ADDR, 1)
+            == EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION
+        && read_word(core, PLANNER_OBSERVATION_ADDR, 2)
+            == OBSERVATION_WORD_COUNT * sizeof(uint32_t)
+        && read_word(core, PLANNER_OBSERVATION_ADDR, 5)
+            == UINT32_C(1)
+        && read_word(core, PLANNER_OBSERVATION_ADDR, 6) == 0
+        && read_word(core, PLANNER_OBSERVATION_ADDR, 7) == 1
+        && read_word(core, PLANNER_OBSERVATION_ADDR, 8) == 0;
+}
+
 bool PlannerTransport_IsAcknowledgementValid(
     uint32_t result,
     uint32_t rejection)
@@ -389,8 +404,23 @@ static int run_transport(const char* rom_path)
     for (startup_frames = 0; startup_frames < 4; startup_frames++)
         core->runFrame(core);
 #if PLANNER_TRANSPORT_TEST_BOOTSTRAP
-    PlannerTransport_TestBootstrap(core);
+    if (!PlannerTransport_TestBootstrap(core))
+    {
+        fprintf(stderr, "planner transport bootstrap did not reach READY\n");
+        free(buffer);
+        mCoreConfigDeinit(&core->config);
+        core->deinit(core);
+        return 3;
+    }
 #endif
+    if (!is_planner_ready(core))
+    {
+        fprintf(stderr, "planner transport startup is not READY\n");
+        free(buffer);
+        mCoreConfigDeinit(&core->config);
+        core->deinit(core);
+        return 3;
+    }
     emit_state(core);
 
     while (fgets(line, sizeof(line), stdin) != NULL)
