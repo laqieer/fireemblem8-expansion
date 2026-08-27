@@ -2077,7 +2077,7 @@
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-manual-handoff-001-surface-actionable-manual-testing-and-resume-automatically",
       "profiles": [
-        "Clean source checkout with Python 3 and no active manual hold"
+        "Clean source checkout with Python 3; the live queue may be empty or nonempty"
       ],
       "purpose": "Prove actionable manual-only judgments are discoverable, artifact-specific, merge-blocking, and automatically cleaned up after acceptance.",
       "prerequisites": "Start at the repository root with the mirrored handoff policy and indexed governance case unchanged; no credentials, ROM, emulator, or remote mutation is required.",
@@ -2087,7 +2087,7 @@
       "interactions": "Depends on GitHub issue/PR labels, assignments, and comments for live use; conflicts with blanket review gates, deterministic manual holds, stale labels, stale assignments, and empty-queue spam.",
       "save_compatibility": "Source-only governance; no save, generated-data, localization, ROM/RAM, debug/release, or archival impact.",
       "cleanup": "A live accepted result removes the label from issue and PR and removes the temporary assignment unless another ownership reason remains; this source-only case mutates nothing remotely.",
-      "limitations": "The suite validates the externally consumed workflow protocol but cannot make the precise subjective visual, audio, or UX judgment.",
+      "limitations": "The suite validates the externally consumed workflow protocol but cannot make the precise subjective visual, audio, or UX judgment; live queue contents remain release-time PR/issue evidence rather than a source invariant.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",

@@ -961,6 +961,9 @@ class TesterCaseRegistryTests(unittest.TestCase):
                     },
                     "TC-WORKFLOW-MANUAL-HANDOFF-001": {
                         "document": "docs/test-cases/workflow-governance.md",
+                        "profile_terms": {
+                            "live queue may be empty or nonempty",
+                        },
                         "commands": {
                             "python3 -m unittest "
                             "scripts.docs_check_tests."
@@ -1002,6 +1005,10 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             record["command"] for record in case["automation"]
                         })
                     )
+                    for term in case_contract.get("profile_terms", set()):
+                        self.assertTrue(
+                            any(term in profile for profile in case["profiles"])
+                        )
                     for term in case_contract["negative_control_terms"]:
                         self.assertIn(term, case["negative_control"])
                     procedure = check_docs.read_text(

@@ -126,28 +126,16 @@ are an externally consumed GitHub workflow protocol; the remaining assertions
 are parsed as labeled document-contract fields with affirmative activation,
 hold, completion, cleanup, and resume semantics.
 
-### Current queue audit
-
-Repository evidence audited on 2026-08-26 requires no current label
-application:
-
-- issue #83 has a recorded accepted result for the replacement
-  non-instrumented listening artifacts;
-- issue #168 is agent-verifiable static UI and should use deterministic
-  screenshots plus semantic assertions rather than a manual hold; and
-- issues #90, #91, and #92 and their open implementation PRs have no current
-  manual criterion.
-
-The expected current queue is therefore empty. Do not label, assign, ping, or
-schedule empty-queue reminders for these items.
-
 ### Interactions and save compatibility
 
 The protocol depends on GitHub issues, pull requests, labels, assignments, and
 comments when a real hold is active. It conflicts with blanket human review,
 manual gates for deterministic behavior, unlabeled requests, and leaving stale
-labels or assignments after acceptance. It changes no save, generated data,
-localization, ROM/RAM, debug/release, or archival behavior.
+labels or assignments after acceptance. The live queue may be empty or
+nonempty; its contents are release-time PR/issue evidence and are not frozen in
+this source contract. An empty query schedules no notifications or comments.
+The protocol changes no save, generated data, localization, ROM/RAM,
+debug/release, or archival behavior.
 
 ### Automation
 

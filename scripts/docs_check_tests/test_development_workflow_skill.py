@@ -763,6 +763,39 @@ def manual_handoff_case_violations(text):
     return violations
 
 
+def manual_handoff_queue_state_violations(governance, registry_case, live_queue):
+    source = "\n".join((
+        governance,
+        " ".join(registry_case["profiles"]),
+        registry_case["limitations"],
+    ))
+    normalized = normalize_policy(source)
+    violations = []
+    stale_invariants = (
+        ("dated queue-audit heading", r"\bcurrent queue audit\b"),
+        ("expected-empty live queue", r"\bexpected current queue\b.*\bempty\b"),
+        ("no-current-label claim", r"\brequires no current label application\b"),
+        ("no-active-hold profile", r"\bno active manual hold\b"),
+    )
+    for name, pattern in stale_invariants:
+        if re.search(pattern, normalized):
+            violations.append(f"permanent remote-state invariant: {name}")
+
+    if "live queue may be empty or nonempty" not in normalized:
+        violations.append("missing cardinality-neutral live queue contract")
+    if "release time pr issue evidence" not in normalized:
+        violations.append("missing release-time evidence boundary")
+
+    for item in live_queue:
+        if item.get("label") != "waiting-for-manual-testing":
+            violations.append("live item missing exact label")
+        if item.get("assignee") != "laqieer":
+            violations.append("live item missing exact assignee")
+        if not item.get("issue_url") or not item.get("pr_url"):
+            violations.append("live item missing issue/PR pair")
+    return violations
+
+
 def mutate_policy_phrase(text, phrase, replacement):
     pattern = re.compile(
         r"\s+".join(re.escape(part) for part in phrase.split())
@@ -1996,10 +2029,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "merge and issue closure are blocked",
             "remove the label from the issue and PR",
             "automatically resume exact-candidate gates and merge",
-            "issue #83 has a recorded accepted result",
-            "issue #168 is agent-verifiable static UI",
-            "issues #90, #91, and #92",
-            "expected current queue is therefore empty",
+            "live queue may be empty or nonempty",
+            "release-time PR/issue evidence",
         ):
             with self.subTest(surface="governance case", requirement=requirement):
                 self.assertIn(
@@ -2042,6 +2073,31 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "and-resume-automatically",
         )
         self.assertEqual(indexed_case["feature_id"], "workflow-governance")
+        self.assertEqual(
+            [],
+            manual_handoff_queue_state_violations(
+                governance,
+                indexed_case,
+                (),
+            ),
+        )
+
+        synthetic_live_queue = (
+            {
+                "issue_url": "https://example.invalid/issues/171",
+                "pr_url": "https://example.invalid/pulls/172",
+                "label": "waiting-for-manual-testing",
+                "assignee": "laqieer",
+            },
+        )
+        self.assertEqual(
+            [],
+            manual_handoff_queue_state_violations(
+                governance,
+                indexed_case,
+                synthetic_live_queue,
+            ),
+        )
 
     def test_actionable_manual_handoff_protocol_mutations_fail_closed(self):
         # Exact-source mutations are justified because this named protocol is
