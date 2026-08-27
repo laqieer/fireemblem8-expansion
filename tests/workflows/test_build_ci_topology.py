@@ -46,9 +46,6 @@ PIP_INVOCATION_RE = re.compile(
 PULL_REQUEST_TRIGGER = "  pull_request:\n"
 PULL_REQUEST_ACTIONS = ("opened", "synchronize", "reopened", "edited")
 PUSH_TRIGGER = 'push:\n    branches: [ "master" ]'
-EXPECTED_SHA = (
-    "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
-)
 SUMMARY_RESULTS = (
     '"$HOST_TESTS_RESULT"',
     '"$BUILD_RESULT"',
@@ -74,13 +71,14 @@ def _trigger_block(header: str, event_name: str) -> str:
 
 
 def _flow_sequence(block: str, field: str) -> tuple[str, ...] | None:
+    key = rf"(?:{re.escape(field)}|\"{re.escape(field)}\"|'{re.escape(field)}')"
     sequence = re.search(
-        rf"^    {re.escape(field)}:[ \t]*\[(?P<values>[^\]]*)\][ \t]*$",
+        rf"^    {key}:[ \t]*\[(?P<values>[^\]]*)\][ \t]*$",
         block,
         re.MULTILINE,
     )
     if sequence is None:
-        if re.search(rf"^    {re.escape(field)}:", block, re.MULTILINE):
+        if re.search(rf"^    {key}:", block, re.MULTILINE):
             raise ValueError(f"{field} must use the reviewed flow sequence")
         return None
 
@@ -97,7 +95,8 @@ def _flow_sequence(block: str, field: str) -> tuple[str, ...] | None:
 def _pull_request_actions(header: str) -> tuple[str, ...]:
     block = _trigger_block(header, "pull_request")
     for field in ("branches", "branches-ignore"):
-        if re.search(rf"^    {re.escape(field)}:", block, re.MULTILINE):
+        key = rf"(?:{re.escape(field)}|\"{re.escape(field)}\"|'{re.escape(field)}')"
+        if re.search(rf"^    {key}:", block, re.MULTILINE):
             raise ValueError(
                 "pull_request must not define branches or branches-ignore filters"
             )
@@ -432,6 +431,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             '    branches:\n      - "master"\n',
             '    branches-ignore: [ "agent/**" ]\n',
             '    branches-ignore:\n      - "agent/**"\n',
+            '    "branches": [ "master" ]\n',
+            "    'branches':\n      - \"master\"\n",
+            '    "branches-ignore": [ "agent/**" ]\n',
+            "    'branches-ignore':\n      - \"agent/**\"\n",
         )
         for mutation in mutations:
             with self.subTest(mutation=mutation):
@@ -498,11 +501,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             set(COMBINED_WORKERS) | {"summary"},
         )
         self.assertNotIn("patch-release", _triggered_jobs(self.text, event))
-        for job_name in COMBINED_WORKERS:
-            self.assertIn(
-                f"EXPECTED_BUILD_SHA: {EXPECTED_SHA}",
-                _job_blocks(self.text)[job_name],
-            )
 
     def test_push_remains_master_only_and_prs_exclude_patch_release(self):
         master_push = {

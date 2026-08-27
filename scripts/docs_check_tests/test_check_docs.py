@@ -985,7 +985,19 @@ class TesterCaseRegistryTests(unittest.TestCase):
                         procedure = check_docs.read_text(
                             os.path.join(REAL_REPO_ROOT, case["document"])
                         )
-                        self.assertIn("## " + case_id + ":", procedure)
+                        case_heading = "## " + case_id + ":"
+                        start = procedure.index(case_heading)
+                        next_heading = re.search(
+                            r"^## ",
+                            procedure[start + len(case_heading):],
+                            re.MULTILINE,
+                        )
+                        end = (
+                            start + len(case_heading) + next_heading.start()
+                            if next_heading is not None
+                            else len(procedure)
+                        )
+                        case_procedure = procedure[start:end]
                         for heading in (
                             "### Actions",
                             "### Expected result",
@@ -994,7 +1006,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "### Automation",
                             "### Cleanup and limitations",
                         ):
-                            self.assertIn(heading, procedure)
+                            self.assertIn(heading, case_procedure)
 
     def test_patch_release_cases_are_indexed_with_complete_procedures(self):
         registry_path = os.path.join(REAL_REPO_ROOT, check_docs.TEST_CASE_REGISTRY_PATH)
