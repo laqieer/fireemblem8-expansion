@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from itertools import product
 import json
 from pathlib import Path
 import re
@@ -639,6 +640,7 @@ class ActionRule:
     objects: Tuple[Tuple[str, ...], ...]
     targets: Tuple[Tuple[str, ...], ...] = ((),)
     scopes: Tuple[Tuple[str, ...], ...] = ((),)
+    allow_object_before: bool = False
 
 
 def action_words(text):
@@ -664,6 +666,7 @@ def action_rule(
     objects,
     targets=("",),
     scopes=("",),
+    allow_object_before=False,
 ):
     return ActionRule(
         atom=ActionAtom(
@@ -678,31 +681,75 @@ def action_rule(
         objects=action_aliases(*objects),
         targets=action_aliases(*targets),
         scopes=action_aliases(*scopes),
+        allow_object_before=allow_object_before,
     )
 
 
-def nearest_alias_positions(words, aliases, anchor):
+def ordered_alias_spans(words, aliases):
+    spans = []
     for alias in aliases:
         if not alias:
-            return ()
-        if not all(token in words for token in alias):
+            spans.append(())
             continue
-        positions = []
-        for token in alias:
-            candidates = [
-                index for index, word in enumerate(words)
-                if word == token and index not in positions
-            ]
-            if not candidates:
-                break
-            if anchor is None:
-                position = candidates[0]
+        for start, word in enumerate(words):
+            if word != alias[0]:
+                continue
+            positions = [start]
+            cursor = start + 1
+            for token in alias[1:]:
+                candidates = [
+                    index
+                    for index in range(cursor, min(len(words), cursor + 13))
+                    if words[index] == token
+                ]
+                if not candidates:
+                    break
+                positions.append(candidates[0])
+                cursor = candidates[0] + 1
             else:
-                position = min(candidates, key=lambda item: abs(item - anchor))
-            positions.append(position)
-        else:
-            return tuple(positions)
-    return None
+                spans.append(tuple(positions))
+    return tuple(spans)
+
+
+PASSIVE_MARKERS = {
+    "are",
+    "be",
+    "became",
+    "become",
+    "becomes",
+    "been",
+    "being",
+    "can",
+    "cannot",
+    "get",
+    "gets",
+    "is",
+    "may",
+    "must",
+    "shall",
+    "should",
+    "was",
+    "were",
+    "will",
+}
+MAX_ACTION_SPAN = 36
+
+
+def object_is_bound(words, verb_span, object_span, rule, action_verbs):
+    if not object_span or set(verb_span) & set(object_span):
+        return True
+    verb_start, verb_end = min(verb_span), max(verb_span)
+    object_start, object_end = min(object_span), max(object_span)
+    if verb_end < object_start:
+        between = words[verb_end + 1:object_start]
+        return not any(word in action_verbs for word in between)
+    if object_end < verb_start:
+        between = words[object_end + 1:verb_start]
+        return (
+            rule.allow_object_before
+            or any(word in PASSIVE_MARKERS for word in between)
+        )
+    return True
 
 
 def clause_has_negation(words, positions, atom):
@@ -725,20 +772,49 @@ def clause_has_negation(words, positions, atom):
 
 def parse_action_atoms(fields, rules):
     parsed = []
+    action_verbs = {
+        alias[0]
+        for rule in rules
+        for alias in rule.verbs
+        if alias
+    }
     for rule in rules:
         for clause in parse_policy_clauses(fields.get(rule.atom.field, "")):
             words = action_words(clause)
-            verb_positions = nearest_alias_positions(words, rule.verbs, None)
-            if verb_positions is None:
+            component_spans = tuple(
+                ordered_alias_spans(words, aliases)
+                for aliases in (
+                    rule.verbs,
+                    rule.objects,
+                    rule.targets,
+                    rule.scopes,
+                )
+            )
+            if any(not spans for spans in component_spans):
                 continue
-            component_positions = list(verb_positions)
-            anchor = sum(verb_positions) // len(verb_positions)
-            for aliases in (rule.objects, rule.targets, rule.scopes):
-                positions = nearest_alias_positions(words, aliases, anchor)
-                if positions is None:
-                    break
-                component_positions.extend(positions)
-            else:
+            for verb_span, object_span, target_span, scope_span in product(
+                *component_spans
+            ):
+                positions = tuple(
+                    position
+                    for span in (
+                        verb_span,
+                        object_span,
+                        target_span,
+                        scope_span,
+                    )
+                    for position in span
+                )
+                if max(positions) - min(positions) > MAX_ACTION_SPAN:
+                    continue
+                if not object_is_bound(
+                    words,
+                    verb_span,
+                    object_span,
+                    rule,
+                    action_verbs,
+                ):
+                    continue
                 parsed.append(
                     ActionAtom(
                         field=rule.atom.field,
@@ -750,7 +826,7 @@ def parse_action_atoms(fields, rules):
                             "prohibited"
                             if clause_has_negation(
                                 words,
-                                component_positions,
+                                positions,
                                 rule.atom,
                             )
                             else "required"
@@ -819,7 +895,10 @@ def manual_handoff_policy_rules():
             verbs=("render", "build", "create"),
             objects=("artifacts",),
             targets=("positive negative control", "positive control"),
-            scopes=("exact candidate non instrumented",),
+            scopes=(
+                "exact candidate non instrumented",
+                "non instrumented exact candidate",
+            ),
         ),
         action_rule(
             "Pre-handoff evidence", "inspect", "screenshots", "static UI",
@@ -844,13 +923,17 @@ def manual_handoff_policy_rules():
             verbs=("remain", "retain", "keep", "continue"),
             objects=("semantic assertions",),
             targets=("primary evidence",),
+            allow_object_before=True,
         ),
         action_rule(
             "Activation", "apply", "label", "issue and PR", "actionable",
             "required",
             verbs=("apply", "add"),
-            objects=("label", "waiting for manual testing"),
-            targets=("originating issue open implementation pr",),
+            objects=("waiting for manual testing",),
+            targets=(
+                "originating issue open implementation pr",
+                "open implementation pr originating issue",
+            ),
             scopes=("actionable",),
         ),
         action_rule(
@@ -918,15 +1001,15 @@ def manual_handoff_policy_rules():
             "accepted result", "required",
             verbs=("post", "record"),
             objects=("actual result evidence link", "result evidence"),
-            targets=("issue pr",),
+            targets=("issue pr", "pr issue"),
             scopes=("",),
         ),
         action_rule(
             "Completion", "remove", "label", "issue and PR",
             "accepted result", "required",
             verbs=("remove", "clear"),
-            objects=("label",),
-            targets=("issue pr", "both items"),
+            objects=("waiting for manual testing",),
+            targets=("issue pr", "pr issue", "both items"),
             scopes=("",),
         ),
         action_rule(
@@ -935,7 +1018,7 @@ def manual_handoff_policy_rules():
             verbs=("remove", "clear", "unassign"),
             objects=("assignment", "assignee", ""),
             targets=("laqieer",),
-            scopes=("unless another ownership reason", "unless another owner"),
+            scopes=("ownership reason", "another owner"),
         ),
         action_rule(
             "Completion", "resume", "gates and merge", "exact candidate",
@@ -949,8 +1032,8 @@ def manual_handoff_policy_rules():
             "Queue", "schedule", "notifications and comments", "empty query",
             "", "prohibited",
             verbs=("schedule", "send"),
-            objects=("notifications comments", "reminders"),
-            targets=("empty query", "no results"),
+            objects=("notifications comments", "comments notifications", "reminders"),
+            targets=("empty query", "query empty", "no results"),
         ),
     ))
     return tuple(rules)
@@ -965,8 +1048,14 @@ def manual_handoff_case_rules():
             "Handoff comment",
             "Completion",
         } and not (
-            rule.atom.field == "Completion"
-            and rule.atom.object == "assignment"
+            (
+                rule.atom.field == "Completion"
+                and rule.atom.object in {"assignment", "label"}
+            )
+            or (
+                rule.atom.field == "Activation"
+                and rule.atom.object == "label"
+            )
         ):
             rules.append(
                 ActionRule(
@@ -986,12 +1075,35 @@ def manual_handoff_case_rules():
             )
     rules.append(
         action_rule(
+            "Actions", "apply", "label", "issue and PR", "actionable",
+            "required",
+            verbs=("apply", "add"),
+            objects=("label",),
+            targets=(
+                "originating issue open implementation pr",
+                "open implementation pr originating issue",
+            ),
+            scopes=("actionable",),
+        )
+    )
+    rules.append(
+        action_rule(
+            "Actions", "remove", "label", "issue and PR",
+            "accepted result", "required",
+            verbs=("remove", "clear"),
+            objects=("label",),
+            targets=("issue pr", "pr issue", "both items"),
+            scopes=("",),
+        )
+    )
+    rules.append(
+        action_rule(
             "Actions", "remove", "assignment", "laqieer",
             "unless other owner", "required",
             verbs=("remove", "clear", "unassign"),
             objects=("assignment", "assignee"),
             targets=("",),
-            scopes=("unless another ownership reason", "unless another owner"),
+            scopes=("ownership reason", "another owner"),
         )
     )
     rules.extend((
@@ -1051,6 +1163,7 @@ def manual_handoff_case_rules():
             objects=("delivery",),
             targets=("",),
             scopes=("automatically", "automatic"),
+            allow_object_before=True,
         ),
     ))
     return tuple(rules)
@@ -1153,13 +1266,52 @@ def manual_handoff_queue_state_violations(governance, registry_case, live_queue)
     ):
         violations.append("missing release-time evidence boundary")
 
+    seen_urls = set()
+    open_items = []
     for item in live_queue:
+        url = item.get("url")
+        if not url:
+            violations.append("live item missing URL")
+            continue
+        if url in seen_urls:
+            violations.append(f"duplicate live item: {url}")
+        seen_urls.add(url)
+        if item.get("state", "open") != "open":
+            continue
+        open_items.append(item)
+        if not item.get("manual_pending", True):
+            if item.get("label") == "waiting-for-manual-testing":
+                violations.append(f"stale manual label: {url}")
+            if item.get("assignee") == "laqieer":
+                violations.append(f"stale manual assignee: {url}")
+            continue
         if item.get("label") != "waiting-for-manual-testing":
             violations.append("live item missing exact label")
         if item.get("assignee") != "laqieer":
             violations.append("live item missing exact assignee")
-        if not item.get("issue_url") or not item.get("pr_url"):
-            violations.append("live item missing issue/PR pair")
+
+    issues_by_origin = {
+        item["origin"]: item
+        for item in open_items
+        if item.get("kind") == "issue" and item.get("origin")
+    }
+    prs_by_origin = {}
+    for item in open_items:
+        if item.get("kind") != "pr" or not item.get("origin"):
+            continue
+        prs_by_origin.setdefault(item["origin"], set()).add(item["url"])
+        if item["origin"] not in issues_by_origin:
+            violations.append(f"orphan implementation PR: {item['url']}")
+
+    for origin, issue in issues_by_origin.items():
+        if "open_pr_urls" not in issue:
+            continue
+        declared = set(issue["open_pr_urls"])
+        actual = prs_by_origin.get(origin, set())
+        for missing in sorted(declared - actual):
+            violations.append(f"missing open implementation PR: {missing}")
+        for unrelated in sorted(actual - declared):
+            violations.append(f"undeclared open implementation PR: {unrelated}")
     return violations
 
 
@@ -2492,8 +2644,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
 
         synthetic_live_queue = (
             {
-                "issue_url": "https://example.invalid/issues/171",
-                "pr_url": "https://example.invalid/pulls/172",
+                "url": "https://example.invalid/issues/171",
+                "kind": "issue",
                 "label": "waiting-for-manual-testing",
                 "assignee": "laqieer",
             },
@@ -2535,6 +2687,148 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 synthetic_live_queue,
             )
         )
+
+    def test_manual_handoff_live_queue_relationships_are_conditional(self):
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        registry = json.loads(
+            TEST_CASE_REGISTRY_PATH.read_text(encoding="utf-8")
+        )
+        indexed_case = next(
+            item
+            for item in registry["cases"]
+            if item["id"] == "TC-WORKFLOW-MANUAL-HANDOFF-001"
+        )
+
+        def issue(url, *, origin=None, open_pr_urls=None, **overrides):
+            item = {
+                "url": url,
+                "kind": "issue",
+                "state": "open",
+                "manual_pending": True,
+                "label": "waiting-for-manual-testing",
+                "assignee": "laqieer",
+            }
+            if origin is not None:
+                item["origin"] = origin
+            if open_pr_urls is not None:
+                item["open_pr_urls"] = open_pr_urls
+            item.update(overrides)
+            return item
+
+        def pull(url, origin, **overrides):
+            item = {
+                "url": url,
+                "kind": "pr",
+                "state": "open",
+                "manual_pending": True,
+                "label": "waiting-for-manual-testing",
+                "assignee": "laqieer",
+                "origin": origin,
+            }
+            item.update(overrides)
+            return item
+
+        issue_url = "https://example.invalid/issues/171"
+        pr_one = "https://example.invalid/pulls/172"
+        pr_two = "https://example.invalid/pulls/173"
+        closed_pr = "https://example.invalid/pulls/174"
+        positive_queues = {
+            "issue only without relationship metadata": (
+                issue(issue_url),
+            ),
+            "issue with no open implementation PR": (
+                issue(issue_url, origin="issue-171", open_pr_urls=[]),
+            ),
+            "issue and one open PR": (
+                issue(
+                    issue_url,
+                    origin="issue-171",
+                    open_pr_urls=[pr_one],
+                ),
+                pull(pr_one, "issue-171"),
+            ),
+            "issue and multiple open PRs, closed PR excluded": (
+                issue(
+                    issue_url,
+                    origin="issue-171",
+                    open_pr_urls=[pr_one, pr_two],
+                ),
+                pull(pr_one, "issue-171"),
+                pull(pr_two, "issue-171"),
+                pull(
+                    closed_pr,
+                    "issue-171",
+                    state="closed",
+                    manual_pending=False,
+                    label=None,
+                    assignee=None,
+                ),
+            ),
+        }
+        for scenario, live_queue in positive_queues.items():
+            with self.subTest(scenario=scenario):
+                self.assertEqual(
+                    [],
+                    manual_handoff_queue_state_violations(
+                        governance,
+                        indexed_case,
+                        live_queue,
+                    ),
+                )
+
+        negative_queues = {
+            "orphan PR": (
+                pull(pr_one, "issue-171"),
+            ),
+            "missing declared open PR": (
+                issue(
+                    issue_url,
+                    origin="issue-171",
+                    open_pr_urls=[pr_one],
+                ),
+            ),
+            "undeclared open PR": (
+                issue(
+                    issue_url,
+                    origin="issue-171",
+                    open_pr_urls=[],
+                ),
+                pull(pr_one, "issue-171"),
+            ),
+            "duplicate item": (
+                issue(issue_url),
+                issue(issue_url),
+            ),
+            "wrong label": (
+                issue(issue_url, label="other-label"),
+            ),
+            "wrong assignee": (
+                issue(issue_url, assignee="other-tester"),
+            ),
+            "stale label": (
+                issue(
+                    issue_url,
+                    manual_pending=False,
+                    assignee=None,
+                ),
+            ),
+            "stale assignee": (
+                issue(
+                    issue_url,
+                    manual_pending=False,
+                    label=None,
+                ),
+            ),
+        }
+        for scenario, live_queue in negative_queues.items():
+            with self.subTest(scenario=scenario):
+                self.assertTrue(
+                    manual_handoff_queue_state_violations(
+                        governance,
+                        indexed_case,
+                        live_queue,
+                    )
+                )
 
     def test_actionable_manual_handoff_protocol_mutations_fail_closed(self):
         # Exact-source mutations are justified because this named protocol is
@@ -2674,6 +2968,53 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 self.assertEqual(
                     [],
                     manual_handoff_contract_violations(paraphrased),
+                )
+
+    def test_actionable_manual_handoff_binds_each_verb_to_its_object(self):
+        activation_adversaries = {
+            "review example": (
+                "For an actionable criterion, remove "
+                "`waiting-for-manual-testing` from the originating issue and "
+                "open implementation PR, then apply `other-label` to both "
+                "items and assign both items to `laqieer`."
+            ),
+            "swapped objects": (
+                "For an actionable criterion, apply the `laqieer` assignment "
+                "to the originating issue and open implementation PR, then "
+                "assign the `waiting-for-manual-testing` label to both items."
+            ),
+            "unrelated label verb": (
+                "For an actionable criterion, inspect "
+                "`waiting-for-manual-testing`, apply `other-label` to the "
+                "originating issue and open implementation PR, and assign "
+                "both items to `laqieer`."
+            ),
+        }
+        completion_inverse = (
+            "After an accepted result, post the actual result and evidence "
+            "link on the issue and PR; apply `waiting-for-manual-testing` to "
+            "both items, then remove `other-label`; remove the temporary "
+            "`laqieer` assignment unless another owner remains; resume the "
+            "exact candidate gates automatically and merge."
+        )
+        for path in (SKILL_PATH, CONTRIBUTING_PATH):
+            canonical = path.read_text(encoding="utf-8")
+            for mutation, activation in activation_adversaries.items():
+                with self.subTest(surface=str(path), mutation=mutation):
+                    mutated = replace_labeled_policy_fields(
+                        canonical,
+                        {"Activation": activation},
+                    )
+                    self.assertTrue(
+                        manual_handoff_contract_violations(mutated)
+                    )
+            with self.subTest(surface=str(path), mutation="inverse cleanup"):
+                mutated = replace_labeled_policy_fields(
+                    canonical,
+                    {"Completion": completion_inverse},
+                )
+                self.assertTrue(
+                    manual_handoff_contract_violations(mutated)
                 )
 
     def test_actionable_manual_handoff_scopes_do_not_leak(self):
