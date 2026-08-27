@@ -4,8 +4,9 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from scripts.generated_data.chapterobjectives.schema import stable_id_value
 from scripts.generated_data.eventlists.generate import generate_c_source
-from scripts.generated_data.eventlists.schema import load_records
+from scripts.generated_data.eventlists.schema import HelperCall, MacroArg, load_records
 from scripts.generated_data.tests._util import fixture_path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -108,6 +109,84 @@ class GenerateDeterminismTests(unittest.TestCase):
         content = generate_c_source(records, "fixtures/eventlists/helpers_valid.json")
         self.assertIn('#include "constants/songs.h"', content)
 
+        symbols = sorted(
+            set(re.findall(r"\b(?:EventScr|ShopList|UnitDef|TrapData)_[A-Za-z0-9_]+", content))
+        )
+        declarations = "".join(
+            "extern EventListScr {}[];\n".format(symbol) for symbol in symbols
+        )
+        content = content.replace(
+            '#include "constants/songs.h"\n\n',
+            '#include "constants/songs.h"\n\n{}\n'.format(declarations),
+            1,
+        )
+        result = subprocess.run(
+            [
+                compiler,
+                "-std=gnu89",
+                "-fsyntax-only",
+                "-w",
+                "-Iinclude",
+                "-I.",
+                "-x",
+                "c",
+                "-",
+            ],
+            cwd=ROOT,
+            input=content,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_strategy_activation_helpers_compile_as_production_event_calls(self):
+        compiler = shutil.which("gcc") or shutil.which("cc")
+        if compiler is None:
+            self.skipTest("no host C compiler")
+
+        records = load_records(fixture_path("eventlists", "helpers_valid.json"))
+        location = records.helper_scripts[0].loc
+        records.helper_scripts[0].entries.append(
+            HelperCall(
+                "strategy",
+                location,
+                "activate",
+                location,
+                [
+                    MacroArg("symbol", "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST", location),
+                    MacroArg("symbol", "EVFLAG_HIDE_BLINKING_ICON", location),
+                ],
+                location,
+            )
+        )
+        records.helper_scripts[0].entries.append(
+            HelperCall(
+                "strategy",
+                location,
+                "deactivate",
+                location,
+                [
+                    MacroArg("symbol", "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST", location),
+                    MacroArg("symbol", "EVFLAG_HIDE_BLINKING_ICON", location),
+                ],
+                location,
+            )
+        )
+        content = generate_c_source(records, "fixtures/eventlists/helpers_valid.json")
+        self.assertIn('#include "expansion_autoplay_strategies.h"', content)
+        self.assertIn(
+            "AUTOPLAY_STRATEGY_ACTIVATE({}, EVFLAG_HIDE_BLINKING_ICON)".format(
+                stable_id_value("AUTOPLAY_STRATEGY_OBJECTIVE_FIRST")
+            ),
+            content,
+        )
+        self.assertIn(
+            "AUTOPLAY_STRATEGY_DEACTIVATE({}, EVFLAG_HIDE_BLINKING_ICON)".format(
+                stable_id_value("AUTOPLAY_STRATEGY_OBJECTIVE_FIRST")
+            ),
+            content,
+        )
         symbols = sorted(
             set(re.findall(r"\b(?:EventScr|ShopList|UnitDef|TrapData)_[A-Za-z0-9_]+", content))
         )

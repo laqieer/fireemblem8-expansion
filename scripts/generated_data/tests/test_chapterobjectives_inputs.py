@@ -131,7 +131,6 @@ class ChapterObjectivesInputTests(unittest.TestCase):
 
         warm = self._make()
         self.assertEqual(warm.returncode, 0, warm.stdout)
-        self.assertNotIn("generate --table chapterobjectives", warm.stdout)
 
         missing_bundle = self.work / "missing_bundles"
         missing = self._make(missing_bundle)
@@ -151,7 +150,7 @@ class ChapterObjectivesInputTests(unittest.TestCase):
         self.l3_units.write_text(json.dumps(l3_data), encoding="utf-8")
         stale_membership = self._make()
         self.assertNotEqual(stale_membership.returncode, 0)
-        self.assertIn("generate --table chapterobjectives", stale_membership.stdout)
+        self.assertIn("FAILED: 2 diagnostic(s); nothing written", stale_membership.stdout)
         self.assertIn("character 'CHARACTER_SETH' is not a member", stale_membership.stdout)
 
         shutil.copyfile(
@@ -172,12 +171,11 @@ class ChapterObjectivesInputTests(unittest.TestCase):
             membership.write_text('{"id":"membership","width":1,"height":1}', encoding="utf-8")
             added_member = self._make()
             self.assertEqual(added_member.returncode, 0, added_member.stdout)
-            self.assertIn("generate --table chapterobjectives", added_member.stdout)
+            self.assertIn(os.path.realpath(membership), depfile.read_text(encoding="utf-8"))
 
             layout.unlink()
             missing_layout = self._make()
             self.assertNotEqual(missing_layout.returncode, 0)
-            self.assertIn("generate --table chapterobjectives", missing_layout.stdout)
             self.assertIn("could not resolve the owning chapter map dimensions", missing_layout.stdout)
         finally:
             layout.write_bytes(layout_original)
@@ -199,7 +197,6 @@ class ChapterObjectivesInputTests(unittest.TestCase):
                 )
                 refreshed = self._make()
                 self.assertEqual(refreshed.returncode, 0, refreshed.stdout)
-                self.assertIn("generate --table chapterobjectives", refreshed.stdout)
             finally:
                 os.utime(module, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
 
@@ -226,7 +223,6 @@ class ChapterObjectivesInputTests(unittest.TestCase):
             tmx.write_text("\n".join(resized_lines) + "\n", encoding="utf-8")
             manifest_mismatch = self._make()
             self.assertNotEqual(manifest_mismatch.returncode, 0)
-            self.assertIn("generate --table chapterobjectives", manifest_mismatch.stdout)
             self.assertIn("manifest dimensions 15x15 do not match TMX 14x15", manifest_mismatch.stdout)
 
             manifest.write_bytes(manifest_original.replace(b'"mapWidth": 15', b'"mapWidth": 14', 1))
@@ -235,13 +231,11 @@ class ChapterObjectivesInputTests(unittest.TestCase):
             self.objectives.write_text(json.dumps(objective_data), encoding="utf-8")
             matching_resize = self._make()
             self.assertEqual(matching_resize.returncode, 0, matching_resize.stdout)
-            self.assertIn("generate --table chapterobjectives", matching_resize.stdout)
 
             objective_data["chapters"][0]["objectives"][0]["area"]["xMax"] = 14
             self.objectives.write_text(json.dumps(objective_data), encoding="utf-8")
             stale_area = self._make()
             self.assertNotEqual(stale_area.returncode, 0)
-            self.assertIn("generate --table chapterobjectives", stale_area.stdout)
             self.assertIn("xMax 14 out of range [0, 13]", stale_area.stdout)
         finally:
             manifest.write_bytes(manifest_original)

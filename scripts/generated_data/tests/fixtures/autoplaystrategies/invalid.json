@@ -1,0 +1,30 @@
+{
+  "$schema": "fe8.autoplaystrategies.v1",
+  "strategies": [
+    {
+      "id": "AUTOPLAY_STRATEGY_AGGRESSIVE",
+      "callback": "ExpansionAutoplayStrategy_Aggressive",
+      "objectiveKinds": ["reach_area"],
+      "actionKinds": []
+    }
+  ],
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "AutoplayStrategies_Invalid",
+      "groupAssignments": [
+        {
+          "group": "AI_GROUP_DOES_NOT_EXIST",
+          "strategy": "AUTOPLAY_STRATEGY_UNKNOWN",
+          "activationFlag": "EVFLAG_ALWAYS_FALSE"
+        }
+      ],
+      "unitAssignments": [
+        {
+          "character": "CHARACTER_DOES_NOT_EXIST",
+          "strategy": "AUTOPLAY_STRATEGY_UNKNOWN"
+        }
+      ]
+    }
+  ]
+}

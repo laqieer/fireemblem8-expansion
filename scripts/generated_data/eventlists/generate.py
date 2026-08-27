@@ -50,6 +50,7 @@ def generate_c_source(records, source_path):
     parts.append('#include "event.h"\n')
     parts.append('#include "eventinfo.h"\n')
     parts.append('#include "eventcall.h"\n')
+    parts.append('#include "expansion_autoplay_strategies.h"\n')
     parts.append('#include "EAstdlib.h"\n')
     parts.append('#include "bmtrap.h"\n')
     parts.append('#include "chapterdata.h"\n')

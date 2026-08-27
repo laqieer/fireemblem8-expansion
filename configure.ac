@@ -148,6 +148,18 @@ AC_ARG_ENABLE(
         [AC_MSG_ERROR([--enable-hq-mixer accepts only yes or no])])],
     [fe8_hq_mixer=])
 
+AC_ARG_ENABLE(
+    [autoplay-strategies],
+    [AS_HELP_STRING(
+        [--enable-autoplay-strategies],
+        [enable Aggressive and Objective-first autoplay strategy references])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_autoplay_strategies=1],
+        [no], [fe8_autoplay_strategies=0],
+        [AC_MSG_ERROR([--enable-autoplay-strategies accepts only yes or no])])],
+    [fe8_autoplay_strategies=])
+
 AC_ARG_WITH(
     [bgm-continuation-policy],
     [AS_HELP_STRING(
@@ -273,6 +285,10 @@ AS_IF(
     [FE8_CFG_HQ_MIXER="EXPANSION_HQ_MIXER := $fe8_hq_mixer"],
     [FE8_CFG_HQ_MIXER=])
 AS_IF(
+    [test -n "$fe8_autoplay_strategies"],
+    [FE8_CFG_AUTOPLAY_STRATEGIES="EXPANSION_AUTOPLAY_STRATEGIES := $fe8_autoplay_strategies"],
+    [FE8_CFG_AUTOPLAY_STRATEGIES=])
+AS_IF(
     [test -n "$fe8_bgm_continuation_policy"],
     [FE8_CFG_BGM_CONTINUATION_POLICY="EXPANSION_BGM_CONTINUATION_POLICY := $fe8_bgm_continuation_policy"],
     [FE8_CFG_BGM_CONTINUATION_POLICY=])
@@ -312,6 +328,7 @@ AC_SUBST([FE8_CFG_ASSET_MANIFEST])
 AC_SUBST([FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP])
 AC_SUBST([FE8_CFG_CASUAL_MODE])
 AC_SUBST([FE8_CFG_HQ_MIXER])
+AC_SUBST([FE8_CFG_AUTOPLAY_STRATEGIES])
 AC_SUBST([FE8_CFG_BGM_CONTINUATION_POLICY])
 AC_SUBST([FE8_CFG_PSEUDO_LOCALE])
 AC_SUBST([FE8_CFG_ENABLED_LOCALES])
@@ -347,6 +364,7 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --localized-text-auto-wrap "$fe8_localized_text_auto_wrap" \
     --casual-mode "$fe8_casual_mode" \
     --hq-mixer "$fe8_hq_mixer" \
+    --autoplay-strategies "$fe8_autoplay_strategies" \
     --bgm-continuation-policy "$fe8_bgm_continuation_policy" \
     --item-id-cap "$fe8_item_id_cap" 2>&1`
 fe8_config_status=$?

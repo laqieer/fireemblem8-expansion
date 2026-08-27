@@ -256,7 +256,9 @@ Supported script families are:
 * `bgm.start`, `bgm.fade_in`, `bgm.override`, `bgm.restore` -> `MUSC`,
   `EvtBgmFadeIn`, `MUSS`, and `MURE`;
 * `recovery.set_hp` -> `SET_HP` (the established event-slot-1 HP contract);
-* `escape.warp_out` -> `WARP_OUT`.
+* `escape.warp_out` -> `WARP_OUT`;
+* `strategy.activate` / `strategy.deactivate` -> typed strategy/flag slots
+  plus the matching safe-boundary `ASMC` bridge.
 
 List helpers are `shop.armory`/`shop.vendor`/`shop.secret_shop`,
 `turn.event`, `flag.event`, and `escape.area`. IDs resolve against the live
@@ -320,9 +322,95 @@ fail with the member's source location and JSON breadcrumb. The required
 empty, over-capacity, contradictory, cyclic, invalid-area, or unknown
 references fail with a source location and JSON breadcrumb.
 
-`activationFlag` and `deactivationFlag` use existing `EVFLAG_*` state. Set
-or clear those values only through the existing `helperScripts` `flag.set` /
-`flag.clear` operations or established event scripts; objectives introduce no
+### Add typed **autoplay strategy profiles and assignments** (`--table autoplaystrategies`)
+
+Source: `src/data/autoplay_strategies.json`. This modern-only table is empty
+by default, so existing `Unit.ai[]` values continue to drive the existing
+low-level computer AI. It owns one registry and one assignment bundle per
+chapter; it does not add a campaign router, player selector, save field, or
+project-specific policy. As with chapter objectives, `--source` may select one
+file or a directory; directory sources compose sorted `*_strategies.json`
+members, and every member participates in dependency invalidation, ownership
+validation, and chapter-bundle inventory digests.
+
+Each strategy has an uppercase stable ID, one C callback implementing
+`bool Callback(const struct ExpansionAutoplayStrategyContext*)`, explicit
+`objectiveKinds`, and explicit `actionKinds`. The built-in reference IDs are
+`AUTOPLAY_STRATEGY_AGGRESSIVE` and `AUTOPLAY_STRATEGY_OBJECTIVE_FIRST`.
+Reference profiles are callable only with
+`EXPANSION_AUTOPLAY_STRATEGIES=1`; a downstream profile may add a third
+callback and JSON record without editing the dispatcher. The generator rejects
+duplicate/unknown IDs, invalid callback symbols/capabilities, capacity
+overflow, unknown objective groups/characters/event flags, and stale chapter
+bundle references.
+
+Assignments have deterministic `unit > group > chapter > Unit.ai[]`
+precedence. An optional `activationFlag` is an existing `EVFLAG_*`; authored
+event scripts must change it through
+`{"helper": "strategy", "operation": "activate", "args": [STRATEGY_ID, EVFLAG]}`
+or the corresponding `deactivate` operation instead of raw `flag.set` /
+`flag.clear`. Pair validation is scoped through the chapter bundle that owns
+the event-list manifest: an assignment in another chapter neither authorizes
+the typed operation nor reserves its flag against that chapter's ordinary flag
+helpers. Event-list validation also receives the same reference-profile
+selector as `data_autoplay_strategies.c`: with references disabled, their
+typed helpers are rejected and their flags are not reserved, while selected
+downstream custom descriptors/assignments remain available. File and directory
+sources use the same selection and dependency-freshness contract.
+The event-list owner must declare that exact file/directory member set and the
+selected chapter bundle symbol through `autoplayStrategies`; a custom source
+paired with a canonical or stale owner is rejected before generation.
+Two strategy-assigned groups in the same chapter may not share a character or
+owned `UnitDef_*` group. Validation reports the duplicated identity and both
+stable assignment paths regardless of JSON order, even for equal strategy IDs
+or a unit-level override. Overlap remains valid for objective-only groups that
+have no strategy assignment.
+Registry capacity, capability checks, assignment overlap, generation, and the
+build-local ACTIVE manifest all use this same selected record view. With
+references disabled the canonical two descriptors count as zero active
+records; enabled they count as two, and selected downstream custom descriptors
+remain counted in either profile.
+`ExpansionAutoplayStrategies_ActivateAssignment()` and
+`ExpansionAutoplayStrategies_DeactivateAssignment()` accept only a declared
+pair and set or clear only that existing flag at a safe boundary. A direct C
+call during an active blue computer phase returns
+`EXPANSION_AUTOPLAY_STRATEGY_ERR_PHASE_ACTIVE` and **does not queue** a
+request. Only the generated `EventActivate` / `EventDeactivate` wrappers
+convert that validated result into one pending pair plus operation. The latest
+distinct valid event request replaces the pending operation, duplicates
+coalesce, and computer phase completion applies it exactly once. The
+eight-byte transient is cleared on map/chapter lifecycle reset (including
+Suspend resume) and is never serialized. A selected strategy/objective
+capability mismatch stops before an AI action rather than falling back
+silently.
+
+### Direct C assignment changes
+
+Direct callers must handle every result and retry at their own later safe
+boundary; `ERR_PHASE_ACTIVE` is a rejection, not deferred success:
+
+```c
+enum ExpansionAutoplayStrategyResult RequestProjectStrategy(void)
+{
+    enum ExpansionAutoplayStrategyResult result;
+
+    result = ExpansionAutoplayStrategies_ActivateAssignment(
+        EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID,
+        EVFLAG_HIDE_BLINKING_ICON
+    );
+    if (result == EXPANSION_AUTOPLAY_STRATEGY_ERR_PHASE_ACTIVE)
+        return result; /* Nothing was queued; the caller may retry later. */
+
+    return result;
+}
+```
+
+`activationFlag` and `deactivationFlag` use existing `EVFLAG_*` state.
+Strategy assignment flags use only `strategy.activate` /
+`strategy.deactivate`, which validate the declared pair and defer
+active-blue-phase changes; non-strategy objective flags use the existing
+`helperScripts` `flag.set` / `flag.clear` operations or established event
+scripts. Objectives introduce no
 event language, chapter manifest, router, or hidden runtime activation bit.
 `protect` requires distinct existing `failureFlag` and `completionFlag`
 values. It latches a protected member's death, missing, or rescued state only

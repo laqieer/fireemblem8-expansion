@@ -351,6 +351,28 @@ def _validate_tracked_paths(paths, diagnostics):
     if not paths:
         return
     requested = sorted({path for path, _loc, _reference in paths})
+    checkout = subprocess.run(
+        ["git", "-C", REPO_ROOT, "rev-parse", "--show-toplevel"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if checkout.returncode or os.path.realpath(
+            checkout.stdout.decode("utf-8", "replace").strip()
+        ) != os.path.realpath(REPO_ROOT):
+        # Source-archive and sandbox fixtures can be nested under an
+        # unrelated outer checkout. Preserve path existence validation there
+        # without accidentally querying the outer repository's index.
+        for path, loc, reference in paths:
+            if not os.path.exists(os.path.join(REPO_ROOT, path)):
+                diagnostics.add(
+                    GeneratedDataError(
+                        "declared source '{}' does not exist".format(path),
+                        loc,
+                        reference,
+                    )
+                )
+        return
     result = subprocess.run(
         ["git", "-C", REPO_ROOT, "ls-files", "-z", "--", *requested],
         stdout=subprocess.PIPE,

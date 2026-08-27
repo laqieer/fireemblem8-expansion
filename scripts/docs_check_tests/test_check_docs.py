@@ -1061,6 +1061,19 @@ class TesterCaseRegistryTests(unittest.TestCase):
         self.assertTrue(any("no real command/scenario/test evidence" in message
                             for message in self._messages(directory)))
 
+        generated_artifact = self._valid_registry()
+        generated_artifact["cases"][0]["automation"][0]["evidence"] = "build/profile/output.o"
+        with TempRepo() as repo:
+            self._write_registry_fixture(repo.root, generated_artifact)
+            write(repo.root, "build/profile/output.o", "generated object\n")
+            messages = [
+                finding.message for finding in check_docs.check_test_case_registry(repo.root)
+            ]
+        self.assertTrue(
+            any("not generated build artifact" in message for message in messages),
+            messages,
+        )
+
     def test_manual_only_rationale_is_a_valid_automation_alternative(self):
         manual_only = self._valid_registry()
         manual_only["cases"][0]["automation"] = []

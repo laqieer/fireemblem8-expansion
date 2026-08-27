@@ -61,6 +61,7 @@ class LinkerCheckTargetTests(unittest.TestCase):
             "expansion-modern-shifted-check",
             "expansion-modern-linker-check",
             "expansion-modern-chapter-objectives-check",
+            "expansion-modern-autoplay-strategy-runtime-check",
         ):
             self.assertIn(target, goals)
 
@@ -132,6 +133,7 @@ class LinkerCheckTargetTests(unittest.TestCase):
             "scan_build_addrs.py",
             "scan_raw_casts.sh",
             "run_chapter_objective_checks.py",
+            "run_autoplay_strategy_checks.py",
         ):
             self.assertIn(expected, result.stdout)
 

@@ -39,6 +39,14 @@ struct DebugSaveFixtureProbe gDebugSaveFixtureProbe;
 struct ActionData gActionData;
 struct Unit *gActiveUnit;
 
+void ExpansionAutoplayStrategies_ResetPendingActivation(void)
+{
+}
+
+void ExpansionAutoplayStrategies_ApplyPendingActivation(void)
+{
+}
+
 int DebugSaveFixture_RecordBlockedWrite(enum DebugSaveFixtureWriteKind kind)
 {
     (void)kind;

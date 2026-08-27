@@ -117,6 +117,10 @@
     "source": "src/data/chapter_objectives.json",
     "symbols": []
   },
+  "autoplayStrategies": {
+    "source": "src/data/autoplay_strategies.json",
+    "symbols": []
+  },
   "externalReferences": [
     {
       "table": "units",
