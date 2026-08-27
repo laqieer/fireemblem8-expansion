@@ -5,9 +5,14 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import hashlib
 import json
+import os
+import re
 import sys
-from dataclasses import dataclass, replace
+import tempfile
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -15,7 +20,7 @@ import gba_playtest
 from probe_bindings import ElfSymbolResolver
 
 
-REPORT_FORMAT_VERSION = 1
+REPORT_FORMAT_VERSION = 2
 SPECIFICATION_VERSION = 1
 MAX_SEEDS = 256
 MAX_JOBS = 16
@@ -46,6 +51,7 @@ REQUIRED_METRIC_KINDS = frozenset(
 )
 ROOT = Path(__file__).resolve().parents[2]
 BUILD_ROOT = ROOT / "build"
+DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -125,6 +131,149 @@ def _metric_probe(
 
 def _normalized_probe(probe: MetricProbe) -> dict[str, Any]:
     return {"address": probe.binding, "size": probe.size}
+
+
+def _canonical_sha256(value: Any) -> str:
+    payload = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("ascii")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _scenario_probe(probe: gba_playtest.Probe) -> dict[str, Any]:
+    return {"address": probe.binding, "size": probe.size}
+
+
+def _scenario_definition(scenario: gba_playtest.Scenario) -> dict[str, Any]:
+    if scenario.run_until is None:
+        raise gba_playtest.PlaytestError(
+            "batch scenario normalization requires bounded run_until execution"
+        )
+    run_until = scenario.run_until
+    definition: dict[str, Any] = {
+        "frames": [
+            {
+                "end": frame_range.end,
+                "keys": [
+                    key
+                    for key, bit in gba_playtest.KEY_BITS.items()
+                    if frame_range.key_mask & bit
+                ],
+                "start": frame_range.start,
+            }
+            for frame_range in scenario.inputs
+        ],
+        "name": scenario.name,
+        "run_until": {
+            "checkpoint": {},
+            "max_frames": run_until.max_frames,
+            "terminal_conditions": [
+                {
+                    "all": [
+                        {
+                            **_scenario_probe(comparison.probe),
+                            "operator": comparison.operator,
+                            "value": (
+                                f"0x{comparison.value:0{comparison.probe.size * 2}x}"
+                            ),
+                        }
+                        for comparison in condition.comparisons
+                    ],
+                    "reason": condition.reason,
+                }
+                for condition in run_until.terminal_conditions
+            ],
+        },
+        "schema_version": scenario.schema_version,
+    }
+    checkpoint = scenario.checkpoints[0]
+    checkpoint_definition: dict[str, Any] = {
+        "framebuffer": checkpoint.framebuffer,
+        "name": checkpoint.name,
+        "probes": [_scenario_probe(probe) for probe in checkpoint.probes],
+    }
+    if checkpoint.expected_framebuffer_hash is not None:
+        checkpoint_definition["expected_framebuffer_hash"] = (
+            checkpoint.expected_framebuffer_hash
+        )
+    if checkpoint.sram_hash:
+        checkpoint_definition["sram_hash"] = True
+    if checkpoint.expected_sram_hash is not None:
+        checkpoint_definition["expected_sram_hash"] = checkpoint.expected_sram_hash
+    if checkpoint.sram_hash_exclude_ranges:
+        checkpoint_definition["sram_hash_exclude_ranges"] = [
+            {"length": length, "offset": offset}
+            for offset, length in checkpoint.sram_hash_exclude_ranges
+        ]
+    if checkpoint.regions:
+        checkpoint_definition["regions"] = [
+            {
+                "height": region.height,
+                "name": region.name,
+                "width": region.width,
+                "x": region.x,
+                "y": region.y,
+                **(
+                    {"expected_hash": region.expected_hash}
+                    if region.expected_hash is not None
+                    else {}
+                ),
+            }
+            for region in checkpoint.regions
+        ]
+    if checkpoint.pixel_probes:
+        checkpoint_definition["pixel_probes"] = [
+            {
+                "x": pixel.x,
+                "y": pixel.y,
+                **({"expected": pixel.expected} if pixel.expected is not None else {}),
+            }
+            for pixel in checkpoint.pixel_probes
+        ]
+    definition["run_until"]["checkpoint"] = checkpoint_definition
+    if run_until.stall is not None:
+        work_expected = run_until.stall.work_expected
+        definition["run_until"]["stall"] = {
+            "max_unchanged_frames": run_until.stall.max_unchanged_frames,
+            "progress": _scenario_probe(run_until.stall.progress),
+            "work_expected": {
+                **_scenario_probe(work_expected.probe),
+                "operator": work_expected.operator,
+                "value": (
+                    f"0x{work_expected.value:0{work_expected.probe.size * 2}x}"
+                ),
+            },
+        }
+    for field, counter in (
+        ("turn_limit", run_until.turn_limit),
+        ("action_limit", run_until.action_limit),
+    ):
+        if counter is not None:
+            definition["run_until"][field] = {
+                **_scenario_probe(counter.probe),
+                "maximum": counter.maximum,
+            }
+    return definition
+
+
+def _specification_definition(specification: BatchSpec) -> dict[str, Any]:
+    return {
+        "configuration": specification.configuration,
+        "metrics": [metric.definition for metric in specification.metrics],
+        "name": specification.name,
+        "profile": {
+            "fidelity": specification.fidelity,
+            "id": specification.profile,
+        },
+        "schema_version": SPECIFICATION_VERSION,
+        "seeding": {
+            **_normalized_probe(specification.seed_probe),
+            "frame": specification.seed_frame,
+        },
+    }
 
 
 def _parse_count_groups(
@@ -485,6 +634,15 @@ def _validate_request(
     max_turns: int,
     max_actions: int,
 ) -> None:
+    if scenario.schema_version != gba_playtest.RUN_UNTIL_SCENARIO_SCHEMA_VERSION:
+        raise gba_playtest.PlaytestError(
+            "batch scenarios must use schema_version exactly 2"
+        )
+    if scenario.execution_profile is not None:
+        raise gba_playtest.PlaytestError(
+            "batch scenarios must omit execution_profile; the #91 collector "
+            "accepts normal fidelity only"
+        )
     if scenario.run_until is None:
         raise gba_playtest.PlaytestError(
             "batch scenarios must use schema-version-2 bounded run_until execution"
@@ -541,6 +699,8 @@ def _provenance(
     max_turns: int,
     max_actions: int,
 ) -> dict[str, Any]:
+    scenario_definition = _scenario_definition(scenario)
+    specification_definition = _specification_definition(specification)
     return {
         "bounds": {
             "max_actions": max_actions,
@@ -551,6 +711,8 @@ def _provenance(
         "profile": {"fidelity": specification.fidelity, "id": specification.profile},
         "rom": rom,
         "scenario": {
+            "definition": scenario_definition,
+            "definition_sha256": _canonical_sha256(scenario_definition),
             "name": scenario.name,
             "schema_version": scenario.schema_version,
         },
@@ -560,6 +722,8 @@ def _provenance(
             "size": specification.seed_probe.size,
         },
         "specification": {
+            "definition": specification_definition,
+            "definition_sha256": _canonical_sha256(specification_definition),
             "name": specification.name,
             "schema_version": SPECIFICATION_VERSION,
         },
@@ -610,7 +774,7 @@ def run_batch(
         max_actions=max_actions,
     )
 
-    def run_seed(seed: int) -> dict[str, Any]:
+    def run_seed(seed: int, backend: Path) -> dict[str, Any]:
         scheduled_write = gba_playtest.ScheduledWrite(
             specification.seed_frame,
             gba_playtest.Probe(
@@ -627,6 +791,7 @@ def run_batch(
                 scenario,
                 scheduled_write=scheduled_write,
                 work_dir=work_dir,
+                backend_path=backend,
             )
             if captured["rom"] != requested_rom:
                 raise gba_playtest.PlaytestError(
@@ -655,11 +820,29 @@ def run_batch(
                 "status": "execution_failure",
             }
 
-    if max_jobs == 1:
-        runs = [run_seed(seed) for seed in ordered_seeds]
-    else:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_jobs) as executor:
-            runs = list(executor.map(run_seed, ordered_seeds))
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="autoplay-batch-backend-",
+            dir=work_dir,
+        ) as backend_directory:
+            backend = Path(backend_directory) / "gba-playtest-backend"
+            gba_playtest.build_backend(backend)
+            if max_jobs == 1:
+                runs = [run_seed(seed, backend) for seed in ordered_seeds]
+            else:
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=max_jobs
+                ) as executor:
+                    runs = list(
+                        executor.map(
+                            lambda seed: run_seed(seed, backend),
+                            ordered_seeds,
+                        )
+                    )
+    except OSError as exc:
+        raise gba_playtest.PlaytestError(
+            f"cannot create shared batch backend workspace under {work_dir}: {exc}"
+        ) from exc
     terminal_counts: dict[str, int] = {}
     for run in runs:
         if "terminal" in run:
@@ -697,6 +880,449 @@ def run_batch(
     }
 
 
+def _validate_digest(value: Any, path: str) -> str:
+    if not isinstance(value, str) or DIGEST_RE.fullmatch(value) is None:
+        raise gba_playtest.PlaytestError(
+            f"{path} must be 64 lowercase hexadecimal SHA-256 digits"
+        )
+    return value
+
+
+def _validate_rom(value: Any, path: str) -> dict[str, Any]:
+    rom = _object(value, path, {"game_code", "sha1", "size", "title"})
+    if not isinstance(rom["sha1"], str) or re.fullmatch(r"[0-9a-f]{40}", rom["sha1"]) is None:
+        raise gba_playtest.PlaytestError(f"{path}.sha1 must be 40 lowercase hex digits")
+    if not _is_int(rom["size"]) or rom["size"] <= 0:
+        raise gba_playtest.PlaytestError(f"{path}.size must be a positive integer")
+    for field, limit in (("title", 48), ("game_code", 16)):
+        if not isinstance(rom[field], str) or len(rom[field]) > limit:
+            raise gba_playtest.PlaytestError(
+                f"{path}.{field} must be a string no longer than {limit} characters"
+            )
+    return rom
+
+
+def _validate_probe_definition(value: Any, path: str) -> dict[str, Any]:
+    probe = _object(value, path, {"address", "size"})
+    size = probe["size"]
+    if not _is_int(size) or size not in (1, 2, 4):
+        raise gba_playtest.PlaytestError(f"{path}.size must be integer 1, 2, or 4")
+    gba_playtest._parse_address(probe["address"], size, f"{path}.address")
+    return probe
+
+
+def _validate_metric_definition(value: Any, path: str) -> dict[str, Any]:
+    metric = _object(value, path, {"id", "kind"}, {"delta_kind", "events", "groups"})
+    _name(metric["id"], f"{path}.id")
+    kind = metric["kind"]
+    if not isinstance(kind, str) or kind not in METRIC_KINDS:
+        raise gba_playtest.PlaytestError(
+            f"{path}.kind must be one of {', '.join(sorted(METRIC_KINDS))}"
+        )
+    payload_fields = set(metric) - {"id", "kind"}
+    if kind in {"terminal_reason", "emulated_frames", "turns", "committed_actions"}:
+        if payload_fields:
+            raise gba_playtest.PlaytestError(f"{path}.{kind} must not have payload fields")
+        return metric
+    if kind == "faction_group_counts":
+        if payload_fields != {"groups"}:
+            raise gba_playtest.PlaytestError(f"{path}.{kind} requires only groups")
+        groups = metric["groups"]
+        if not isinstance(groups, list) or not groups:
+            raise gba_playtest.PlaytestError(f"{path}.groups must be a non-empty array")
+        previous: tuple[str, str] | None = None
+        for index, value_group in enumerate(groups):
+            group_path = f"{path}.groups[{index}]"
+            group = _object(
+                value_group,
+                group_path,
+                {"casualties", "faction", "group", "survivors"},
+            )
+            identity = (
+                _name(group["faction"], f"{group_path}.faction"),
+                _name(group["group"], f"{group_path}.group"),
+            )
+            if previous is not None and identity <= previous:
+                raise gba_playtest.PlaytestError(
+                    f"{group_path} must be sorted and unique by faction/group"
+                )
+            previous = identity
+            _validate_probe_definition(group["survivors"], f"{group_path}.survivors")
+            _validate_probe_definition(group["casualties"], f"{group_path}.casualties")
+        return metric
+    if kind == "event_flag_outcomes":
+        if payload_fields != {"events"}:
+            raise gba_playtest.PlaytestError(f"{path}.{kind} requires only events")
+        events = metric["events"]
+        if not isinstance(events, list) or not events:
+            raise gba_playtest.PlaytestError(f"{path}.events must be a non-empty array")
+        previous_id: str | None = None
+        for index, value_event in enumerate(events):
+            event_path = f"{path}.events[{index}]"
+            event = _object(
+                value_event,
+                event_path,
+                {"id", "kind", "probe", "success_value"},
+            )
+            identifier = _name(event["id"], f"{event_path}.id")
+            if previous_id is not None and identifier <= previous_id:
+                raise gba_playtest.PlaytestError(
+                    f"{event_path}.id must be sorted and unique"
+                )
+            previous_id = identifier
+            if not isinstance(event["kind"], str) or event["kind"] not in EVENT_KINDS:
+                raise gba_playtest.PlaytestError(
+                    f"{event_path}.kind must be one of {', '.join(sorted(EVENT_KINDS))}"
+                )
+            probe = _validate_probe_definition(event["probe"], f"{event_path}.probe")
+            maximum = (1 << (probe["size"] * 8)) - 1
+            if not _is_int(event["success_value"]) or not 0 <= event["success_value"] <= maximum:
+                raise gba_playtest.PlaytestError(
+                    f"{event_path}.success_value must fit the declared probe"
+                )
+        return metric
+    if payload_fields != {"delta_kind", "groups"}:
+        raise gba_playtest.PlaytestError(
+            f"{path}.group_deltas requires only delta_kind and groups"
+        )
+    if not isinstance(metric["delta_kind"], str) or metric["delta_kind"] not in DELTA_KINDS:
+        raise gba_playtest.PlaytestError(
+            f"{path}.delta_kind must be one of {', '.join(sorted(DELTA_KINDS))}"
+        )
+    groups = metric["groups"]
+    if not isinstance(groups, list) or not groups:
+        raise gba_playtest.PlaytestError(f"{path}.groups must be a non-empty array")
+    previous_id = None
+    for index, value_group in enumerate(groups):
+        group_path = f"{path}.groups[{index}]"
+        group = _object(value_group, group_path, {"id", "probe"})
+        identifier = _name(group["id"], f"{group_path}.id")
+        if previous_id is not None and identifier <= previous_id:
+            raise gba_playtest.PlaytestError(
+                f"{group_path}.id must be sorted and unique"
+            )
+        previous_id = identifier
+        _validate_probe_definition(group["probe"], f"{group_path}.probe")
+    return metric
+
+
+def _validate_provenance(value: Any, path: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    provenance = _object(
+        value,
+        path,
+        {
+            "bounds",
+            "configuration",
+            "profile",
+            "rom",
+            "scenario",
+            "seed_injection",
+            "specification",
+        },
+    )
+    bounds = _object(
+        provenance["bounds"],
+        f"{path}.bounds",
+        {"max_actions", "max_frames", "max_turns"},
+    )
+    for field in ("max_actions", "max_frames", "max_turns"):
+        if not _is_int(bounds[field]) or bounds[field] < 1:
+            raise gba_playtest.PlaytestError(
+                f"{path}.bounds.{field} must be a positive integer"
+            )
+    _name(provenance["configuration"], f"{path}.configuration")
+    profile = _object(provenance["profile"], f"{path}.profile", {"fidelity", "id"})
+    _name(profile["id"], f"{path}.profile.id")
+    if profile["fidelity"] != "normal":
+        raise gba_playtest.PlaytestError(f"{path}.profile.fidelity must be 'normal'")
+    _validate_rom(provenance["rom"], f"{path}.rom")
+    scenario = _object(
+        provenance["scenario"],
+        f"{path}.scenario",
+        {"definition", "definition_sha256", "name", "schema_version"},
+    )
+    _name(scenario["name"], f"{path}.scenario.name")
+    if (
+        not _is_int(scenario["schema_version"])
+        or scenario["schema_version"] != gba_playtest.RUN_UNTIL_SCENARIO_SCHEMA_VERSION
+    ):
+        raise gba_playtest.PlaytestError(f"{path}.scenario.schema_version must be integer 2")
+    scenario_digest = _validate_digest(
+        scenario["definition_sha256"],
+        f"{path}.scenario.definition_sha256",
+    )
+    parsed_scenario = gba_playtest.parse_scenario_data(
+        scenario["definition"],
+        f"{path}.scenario.definition",
+    )
+    if (
+        parsed_scenario.schema_version
+        != gba_playtest.RUN_UNTIL_SCENARIO_SCHEMA_VERSION
+        or parsed_scenario.execution_profile is not None
+    ):
+        raise gba_playtest.PlaytestError(
+            f"{path}.scenario.definition must describe normal schema-version-2 execution"
+        )
+    normalized_scenario = _scenario_definition(parsed_scenario)
+    if normalized_scenario != scenario["definition"]:
+        raise gba_playtest.PlaytestError(
+            f"{path}.scenario.definition must be canonical normalized scenario JSON"
+        )
+    if parsed_scenario.name != scenario["name"]:
+        raise gba_playtest.PlaytestError(
+            f"{path}.scenario.name does not match its definition"
+        )
+    if _canonical_sha256(normalized_scenario) != scenario_digest:
+        raise gba_playtest.PlaytestError(
+            f"{path}.scenario.definition_sha256 does not match its definition"
+        )
+    seed = _object(
+        provenance["seed_injection"],
+        f"{path}.seed_injection",
+        {"address", "frame", "size"},
+    )
+    _validate_probe_definition(
+        {"address": seed["address"], "size": seed["size"]},
+        f"{path}.seed_injection",
+    )
+    if not _is_int(seed["frame"]) or seed["frame"] < 0:
+        raise gba_playtest.PlaytestError(
+            f"{path}.seed_injection.frame must be a non-negative integer"
+        )
+    specification = _object(
+        provenance["specification"],
+        f"{path}.specification",
+        {"definition", "definition_sha256", "name", "schema_version"},
+    )
+    _name(specification["name"], f"{path}.specification.name")
+    if (
+        not _is_int(specification["schema_version"])
+        or specification["schema_version"] != SPECIFICATION_VERSION
+    ):
+        raise gba_playtest.PlaytestError(
+            f"{path}.specification.schema_version must be integer {SPECIFICATION_VERSION}"
+        )
+    specification_digest = _validate_digest(
+        specification["definition_sha256"],
+        f"{path}.specification.definition_sha256",
+    )
+    definition = _object(
+        specification["definition"],
+        f"{path}.specification.definition",
+        {"configuration", "metrics", "name", "profile", "schema_version", "seeding"},
+    )
+    _name(definition["name"], f"{path}.specification.definition.name")
+    if (
+        not _is_int(definition["schema_version"])
+        or definition["schema_version"] != SPECIFICATION_VERSION
+    ):
+        raise gba_playtest.PlaytestError(
+            f"{path}.specification.definition.schema_version must be integer "
+            f"{SPECIFICATION_VERSION}"
+        )
+    _name(
+        definition["configuration"],
+        f"{path}.specification.definition.configuration",
+    )
+    definition_profile = _object(
+        definition["profile"],
+        f"{path}.specification.definition.profile",
+        {"fidelity", "id"},
+    )
+    _name(definition_profile["id"], f"{path}.specification.definition.profile.id")
+    if definition_profile["fidelity"] != "normal":
+        raise gba_playtest.PlaytestError(
+            f"{path}.specification.definition.profile.fidelity must be 'normal'"
+        )
+    definition_seed = _object(
+        definition["seeding"],
+        f"{path}.specification.definition.seeding",
+        {"address", "frame", "size"},
+    )
+    _validate_probe_definition(
+        {
+            "address": definition_seed["address"],
+            "size": definition_seed["size"],
+        },
+        f"{path}.specification.definition.seeding",
+    )
+    if not _is_int(definition_seed["frame"]) or definition_seed["frame"] < 0:
+        raise gba_playtest.PlaytestError(
+            f"{path}.specification.definition.seeding.frame must be a "
+            "non-negative integer"
+        )
+    if definition["name"] != specification["name"]:
+        raise gba_playtest.PlaytestError(
+            f"{path}.specification.name does not match its definition"
+        )
+    if definition["schema_version"] != specification["schema_version"]:
+        raise gba_playtest.PlaytestError(
+            f"{path}.specification.schema_version does not match its definition"
+        )
+    if definition["configuration"] != provenance["configuration"]:
+        raise gba_playtest.PlaytestError(
+            f"{path}.specification.definition.configuration does not match provenance"
+        )
+    if definition["profile"] != provenance["profile"]:
+        raise gba_playtest.PlaytestError(
+            f"{path}.specification.definition.profile does not match provenance"
+        )
+    if definition["seeding"] != provenance["seed_injection"]:
+        raise gba_playtest.PlaytestError(
+            f"{path}.specification.definition.seeding does not match provenance"
+        )
+    if _canonical_sha256(definition) != specification_digest:
+        raise gba_playtest.PlaytestError(
+            f"{path}.specification.definition_sha256 does not match its definition"
+        )
+    metrics = definition["metrics"]
+    if not isinstance(metrics, list) or not metrics:
+        raise gba_playtest.PlaytestError(
+            f"{path}.specification.metrics must be a non-empty array"
+        )
+    metric_definitions: dict[str, dict[str, Any]] = {}
+    previous_id: str | None = None
+    for index, raw_metric in enumerate(metrics):
+        metric_path = f"{path}.specification.metrics[{index}]"
+        metric = _validate_metric_definition(raw_metric, metric_path)
+        identifier = metric["id"]
+        if previous_id is not None and identifier <= previous_id:
+            raise gba_playtest.PlaytestError(
+                f"{metric_path}.id must be sorted and unique"
+            )
+        previous_id = identifier
+        metric_definitions[identifier] = metric
+    return provenance, metric_definitions
+
+
+def _validate_counter(value: Any, path: str) -> None:
+    if value is None:
+        return
+    counter = _object(value, path, {"address", "size", "value"})
+    probe = _validate_probe_definition(
+        {"address": counter["address"], "size": counter["size"]},
+        path,
+    )
+    pattern = re.compile(rf"^0x[0-9a-f]{{{probe['size'] * 2}}}$")
+    if not isinstance(counter["value"], str) or pattern.fullmatch(counter["value"]) is None:
+        raise gba_playtest.PlaytestError(
+            f"{path}.value must be lowercase hexadecimal matching size"
+        )
+
+
+def _validate_terminal(value: Any, path: str) -> dict[str, Any]:
+    terminal = _object(value, path, {"actions", "frame", "reason", "turn"})
+    if not isinstance(terminal["reason"], str) or terminal["reason"] not in gba_playtest.TERMINAL_REASONS:
+        raise gba_playtest.PlaytestError(
+            f"{path}.reason must be one of {', '.join(gba_playtest.TERMINAL_REASONS)}"
+        )
+    if not _is_int(terminal["frame"]) or terminal["frame"] < 0:
+        raise gba_playtest.PlaytestError(f"{path}.frame must be a non-negative integer")
+    _validate_counter(terminal["turn"], f"{path}.turn")
+    _validate_counter(terminal["actions"], f"{path}.actions")
+    return terminal
+
+
+def _validate_nonnegative_int(value: Any, path: str) -> None:
+    if not _is_int(value) or value < 0:
+        raise gba_playtest.PlaytestError(f"{path} must be a non-negative integer")
+
+
+def _validate_metric_value(value: Any, definition: dict[str, Any], path: str) -> None:
+    kind = definition["kind"]
+    if kind == "terminal_reason":
+        if not isinstance(value, str) or value not in gba_playtest.TERMINAL_REASONS:
+            raise gba_playtest.PlaytestError(f"{path} must be a supported terminal reason")
+        return
+    if kind in {"emulated_frames", "turns", "committed_actions"}:
+        _validate_nonnegative_int(value, path)
+        return
+    if not isinstance(value, list):
+        raise gba_playtest.PlaytestError(f"{path} must be an array for metric kind {kind}")
+    if kind == "faction_group_counts":
+        expected = definition["groups"]
+        if len(value) != len(expected):
+            raise gba_playtest.PlaytestError(
+                f"{path} must contain {len(expected)} faction/group record(s)"
+            )
+        for index, (raw_entry, expected_entry) in enumerate(zip(value, expected)):
+            entry_path = f"{path}[{index}]"
+            entry = _object(
+                raw_entry,
+                entry_path,
+                {"casualties", "faction", "group", "survivors"},
+            )
+            if (entry["faction"], entry["group"]) != (
+                expected_entry["faction"],
+                expected_entry["group"],
+            ):
+                raise gba_playtest.PlaytestError(
+                    f"{entry_path} does not match its declared faction/group"
+                )
+            _validate_nonnegative_int(entry["survivors"], f"{entry_path}.survivors")
+            _validate_nonnegative_int(entry["casualties"], f"{entry_path}.casualties")
+        return
+    if kind == "event_flag_outcomes":
+        expected = definition["events"]
+        if len(value) != len(expected):
+            raise gba_playtest.PlaytestError(
+                f"{path} must contain {len(expected)} event outcome(s)"
+            )
+        for index, (raw_entry, expected_entry) in enumerate(zip(value, expected)):
+            entry_path = f"{path}[{index}]"
+            entry = _object(raw_entry, entry_path, {"id", "kind", "succeeded"})
+            if (entry["id"], entry["kind"]) != (
+                expected_entry["id"],
+                expected_entry["kind"],
+            ):
+                raise gba_playtest.PlaytestError(
+                    f"{entry_path} does not match its declared event"
+                )
+            if not isinstance(entry["succeeded"], bool):
+                raise gba_playtest.PlaytestError(f"{entry_path}.succeeded must be boolean")
+        return
+    expected = definition["groups"]
+    if len(value) != len(expected):
+        raise gba_playtest.PlaytestError(
+            f"{path} must contain {len(expected)} group delta(s)"
+        )
+    for index, (raw_entry, expected_entry) in enumerate(zip(value, expected)):
+        entry_path = f"{path}[{index}]"
+        entry = _object(raw_entry, entry_path, {"delta", "group", "kind"})
+        if (entry["group"], entry["kind"]) != (
+            expected_entry["id"],
+            definition["delta_kind"],
+        ):
+            raise gba_playtest.PlaytestError(
+                f"{entry_path} does not match its declared group delta"
+            )
+        _validate_nonnegative_int(entry["delta"], f"{entry_path}.delta")
+
+
+def _metric_distributions(
+    runs: list[dict[str, Any]],
+    metric_definitions: dict[str, dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    distributions: dict[str, dict[str, dict[str, Any]]] = {
+        identifier: {} for identifier in metric_definitions
+    }
+    for run in runs:
+        for identifier, value in run.get("metrics", {}).items():
+            encoded = json.dumps(value, sort_keys=True, separators=(",", ":"))
+            bucket = distributions[identifier].setdefault(
+                encoded,
+                {"count": 0, "value": value},
+            )
+            bucket["count"] += 1
+    return {
+        identifier: [
+            distributions[identifier][encoded]
+            for encoded in sorted(distributions[identifier])
+        ]
+        for identifier in sorted(distributions)
+    }
+
+
 def validate_report(data: Any, source: str) -> dict[str, Any]:
     root = _object(data, source, {"format_version", "provenance", "runs", "summary"})
     if (
@@ -706,8 +1332,10 @@ def validate_report(data: Any, source: str) -> dict[str, Any]:
         raise gba_playtest.PlaytestError(
             f"{source}.format_version must be integer {REPORT_FORMAT_VERSION}"
         )
-    if not isinstance(root["provenance"], dict):
-        raise gba_playtest.PlaytestError(f"{source}.provenance must be an object")
+    provenance, metric_definitions = _validate_provenance(
+        root["provenance"],
+        f"{source}.provenance",
+    )
     if not isinstance(root["runs"], list) or not root["runs"]:
         raise gba_playtest.PlaytestError(f"{source}.runs must be a non-empty array")
     previous_seed = -1
@@ -718,19 +1346,72 @@ def validate_report(data: Any, source: str) -> dict[str, Any]:
         if not _is_int(seed) or not 0 <= seed <= 0xFFFFFFFF or seed <= previous_seed:
             raise gba_playtest.PlaytestError(f"{path}.seed must be unique ascending uint32")
         previous_seed = seed
-        if run["status"] not in {"success", "terminal_failure", "execution_failure"}:
+        if not isinstance(run["status"], str) or run["status"] not in {
+            "success",
+            "terminal_failure",
+            "execution_failure",
+        }:
             raise gba_playtest.PlaytestError(f"{path}.status is unsupported")
         if run["status"] == "execution_failure":
-            if set(run) != {"seed", "status", "error", "rom"} or not isinstance(
-                run["error"], str
-            ):
+            if set(run) != {"seed", "status", "error", "rom"}:
                 raise gba_playtest.PlaytestError(
-                    f"{path}.execution_failure must contain only a visible error"
+                    f"{path}.execution_failure must contain only error and ROM provenance"
+                )
+            if not isinstance(run["error"], str) or not run["error"]:
+                raise gba_playtest.PlaytestError(
+                    f"{path}.error must be a non-empty string"
                 )
         elif set(run) != {"seed", "status", "rom", "terminal", "metrics"}:
             raise gba_playtest.PlaytestError(
                 f"{path}.{run['status']} must contain terminal metrics and ROM provenance"
             )
+        rom = _validate_rom(run["rom"], f"{path}.rom")
+        if rom != provenance["rom"]:
+            raise gba_playtest.PlaytestError(
+                f"{path}.rom must exactly match report provenance"
+            )
+        if run["status"] == "execution_failure":
+            continue
+        terminal = _validate_terminal(run["terminal"], f"{path}.terminal")
+        if (run["status"] == "success") != (terminal["reason"] == "success"):
+            raise gba_playtest.PlaytestError(
+                f"{path}.status does not match terminal reason {terminal['reason']!r}"
+            )
+        metrics = run["metrics"]
+        if not isinstance(metrics, dict):
+            raise gba_playtest.PlaytestError(f"{path}.metrics must be an object")
+        if set(metrics) != set(metric_definitions):
+            raise gba_playtest.PlaytestError(
+                f"{path}.metrics must contain exactly the declared metric ids"
+            )
+        for identifier, definition in metric_definitions.items():
+            _validate_metric_value(
+                metrics[identifier],
+                definition,
+                f"{path}.metrics.{identifier}",
+            )
+            kind = definition["kind"]
+            if kind == "terminal_reason" and metrics[identifier] != terminal["reason"]:
+                raise gba_playtest.PlaytestError(
+                    f"{path}.metrics.{identifier} does not match terminal.reason"
+                )
+            if kind == "emulated_frames" and metrics[identifier] != terminal["frame"] + 1:
+                raise gba_playtest.PlaytestError(
+                    f"{path}.metrics.{identifier} does not match terminal.frame"
+                )
+            if kind in {"turns", "committed_actions"}:
+                counter_name = "turn" if kind == "turns" else "actions"
+                counter = terminal[counter_name]
+                if counter is None:
+                    raise gba_playtest.PlaytestError(
+                        f"{path}.terminal.{counter_name} must be non-null for "
+                        f"metric {identifier!r}"
+                    )
+                if metrics[identifier] != int(counter["value"], 16):
+                    raise gba_playtest.PlaytestError(
+                        f"{path}.metrics.{identifier} does not match "
+                        f"terminal.{counter_name}"
+                    )
     summary = _object(
         root["summary"],
         f"{source}.summary",
@@ -742,17 +1423,124 @@ def validate_report(data: Any, source: str) -> dict[str, Any]:
             "terminal_reasons",
         },
     )
-    if summary["run_count"] != len(root["runs"]):
+    for field in ("failure_count", "run_count", "success_count"):
+        _validate_nonnegative_int(summary[field], f"{source}.summary.{field}")
+    run_count = len(root["runs"])
+    success_count = sum(run["status"] == "success" for run in root["runs"])
+    if summary["run_count"] != run_count:
         raise gba_playtest.PlaytestError(f"{source}.summary.run_count does not match runs")
+    if summary["success_count"] != success_count:
+        raise gba_playtest.PlaytestError(
+            f"{source}.summary.success_count does not match runs"
+        )
+    if summary["failure_count"] != run_count - success_count:
+        raise gba_playtest.PlaytestError(
+            f"{source}.summary.failure_count does not match runs"
+        )
+    terminal_counts: dict[str, int] = {}
+    for run in root["runs"]:
+        if "terminal" in run:
+            reason = run["terminal"]["reason"]
+            terminal_counts[reason] = terminal_counts.get(reason, 0) + 1
     if not isinstance(summary["terminal_reasons"], dict):
         raise gba_playtest.PlaytestError(
             f"{source}.summary.terminal_reasons must be an object"
         )
-    if not isinstance(summary["metric_distributions"], dict):
+    for reason, count in summary["terminal_reasons"].items():
+        if not isinstance(reason, str) or reason not in gba_playtest.TERMINAL_REASONS:
+            raise gba_playtest.PlaytestError(
+                f"{source}.summary.terminal_reasons has unsupported reason {reason!r}"
+            )
+        if not _is_int(count) or count < 1:
+            raise gba_playtest.PlaytestError(
+                f"{source}.summary.terminal_reasons.{reason} must be a positive integer"
+            )
+    if summary["terminal_reasons"] != dict(sorted(terminal_counts.items())):
+        raise gba_playtest.PlaytestError(
+            f"{source}.summary.terminal_reasons does not match runs"
+        )
+    distributions = summary["metric_distributions"]
+    if not isinstance(distributions, dict):
         raise gba_playtest.PlaytestError(
             f"{source}.summary.metric_distributions must be an object"
         )
+    if set(distributions) != set(metric_definitions):
+        raise gba_playtest.PlaytestError(
+            f"{source}.summary.metric_distributions must contain exactly the "
+            "declared metric ids"
+        )
+    for identifier, definition in metric_definitions.items():
+        buckets = distributions[identifier]
+        if not isinstance(buckets, list):
+            raise gba_playtest.PlaytestError(
+                f"{source}.summary.metric_distributions.{identifier} must be an array"
+            )
+        previous_encoded: str | None = None
+        for index, raw_bucket in enumerate(buckets):
+            bucket_path = (
+                f"{source}.summary.metric_distributions.{identifier}[{index}]"
+            )
+            bucket = _object(raw_bucket, bucket_path, {"count", "value"})
+            if not _is_int(bucket["count"]) or bucket["count"] < 1:
+                raise gba_playtest.PlaytestError(
+                    f"{bucket_path}.count must be a positive integer"
+                )
+            _validate_metric_value(bucket["value"], definition, f"{bucket_path}.value")
+            encoded = json.dumps(
+                bucket["value"],
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            if previous_encoded is not None and encoded <= previous_encoded:
+                raise gba_playtest.PlaytestError(
+                    f"{bucket_path}.value must be sorted and unique"
+                )
+            previous_encoded = encoded
+    expected_distributions = _metric_distributions(root["runs"], metric_definitions)
+    if distributions != expected_distributions:
+        raise gba_playtest.PlaytestError(
+            f"{source}.summary.metric_distributions does not match run metrics"
+        )
     return root
+
+
+def _provenance_changes(
+    baseline: Any,
+    candidate: Any,
+    path: str = "",
+) -> list[dict[str, Any]]:
+    if isinstance(baseline, dict) and isinstance(candidate, dict):
+        changes = []
+        for key in sorted(set(baseline) | set(candidate)):
+            child_path = f"{path}.{key}" if path else key
+            if key not in baseline:
+                changes.append(
+                    {
+                        "baseline": "<absent>",
+                        "candidate": candidate[key],
+                        "field": child_path,
+                    }
+                )
+            elif key not in candidate:
+                changes.append(
+                    {
+                        "baseline": baseline[key],
+                        "candidate": "<absent>",
+                        "field": child_path,
+                    }
+                )
+            else:
+                changes.extend(
+                    _provenance_changes(
+                        baseline[key],
+                        candidate[key],
+                        child_path,
+                    )
+                )
+        return changes
+    if baseline != candidate:
+        return [{"baseline": baseline, "candidate": candidate, "field": path}]
+    return []
 
 
 def compare_reports(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
@@ -799,6 +1587,10 @@ def compare_reports(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict
             "baseline_provenance": baseline["provenance"],
             "candidate_provenance": candidate["provenance"],
             "changed_runs": changed_runs,
+            "provenance_changes": _provenance_changes(
+                baseline["provenance"],
+                candidate["provenance"],
+            ),
             "removed_seeds": sorted(baseline_seeds - candidate_seeds),
         },
         "format_version": REPORT_FORMAT_VERSION,
@@ -824,16 +1616,68 @@ def _output_path(path: Path) -> Path:
     return resolved
 
 
-def _reserve_output(path: Path):
+def _temporary_output_path(path: Path) -> Path:
+    return path.with_name(f".{path.name}.tmp")
+
+
+@contextmanager
+def _atomic_output(path: Path):
+    temporary = _temporary_output_path(path)
+    stream = None
+    published = False
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        return path.open("x", encoding="utf-8")
+        stream = temporary.open("x", encoding="utf-8")
     except FileExistsError as exc:
         raise gba_playtest.PlaytestError(
-            f"output collision: {path} already exists and will not be overwritten"
+            f"temporary output collision: {temporary} is already reserved"
         ) from exc
     except OSError as exc:
-        raise gba_playtest.PlaytestError(f"cannot reserve output {path}: {exc}") from exc
+        raise gba_playtest.PlaytestError(
+            f"cannot reserve temporary output {temporary}: {exc}"
+        ) from exc
+    try:
+        yield stream
+        stream.flush()
+        os.fsync(stream.fileno())
+        stream.close()
+        stream = None
+        if path.exists():
+            raise gba_playtest.PlaytestError(
+                f"output collision: {path} appeared while the report was running"
+            )
+        os.replace(temporary, path)
+        try:
+            directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError as exc:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            raise gba_playtest.PlaytestError(
+                f"cannot fsync output directory {path.parent}: {exc}"
+            ) from exc
+        published = True
+    except OSError as exc:
+        raise gba_playtest.PlaytestError(
+            f"cannot atomically publish output {path}: {exc}"
+        ) from exc
+    finally:
+        if stream is not None:
+            stream.close()
+        if not published:
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise gba_playtest.PlaytestError(
+                    f"cannot remove failed temporary output {temporary}: {exc}"
+                ) from exc
 
 
 def _make_parser() -> argparse.ArgumentParser:
@@ -878,7 +1722,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise gba_playtest.PlaytestError(
                     "comparison output must not replace either input report"
                 )
-            with _reserve_output(output) as reserved:
+            with _atomic_output(output) as reserved:
                 reserved.write(serialize_report(compare_reports(baseline, candidate)))
             print(f"autoplay batch comparison written: {output}")
             return 0
@@ -901,7 +1745,7 @@ def main(argv: list[str] | None = None) -> int:
             max_turns=args.max_turns,
             max_actions=args.max_actions,
         )
-        with _reserve_output(output) as reserved:
+        with _atomic_output(output) as reserved:
             report = run_batch(
                 args.rom,
                 scenario,
@@ -913,6 +1757,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_actions=args.max_actions,
                 work_dir=output.parent,
             )
+            validate_report(report, "<generated autoplay batch report>")
             reserved.write(serialize_report(report))
         failures = report["summary"]["failure_count"]
         print(

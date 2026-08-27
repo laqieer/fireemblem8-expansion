@@ -455,18 +455,25 @@ assignment selection from generated data and event flags.
 The normal-fidelity fixture runs three declared seed writes from independent
 clean boots. Serial and three-job parallel reports are byte-identical,
 versioned, sorted JSON. Every seed has exact ROM/configuration/scenario/profile
-provenance, a terminal record, and configured terminal/frame/turn/action,
+provenance, including validated canonical scenario/specification SHA-256
+identities, a terminal record, and configured terminal/frame/turn/action,
 faction/group, event, EXP, item, and resource metric records. A comparison
-reports a deliberately changed metric for its seed without claiming that either
-result is balanced or statistically significant.
+distinguishes changed scenario/specification semantics even when their
+names/versions match, and reports a deliberately changed metric without
+claiming either result is balanced or statistically significant.
 
 ### Negative controls
 
 Duplicate or implicit seed lists, a missing/non-positive hard bound,
-unsupported metric, existing output path, and `--sram-image` all fail before
-the capture function runs. A non-success terminal is retained as
-`terminal_failure`, contributes to the failure count, and makes the command
-return 1. Comparison leaves both input report bytes untouched.
+unsupported metric, schema version 3 or any execution profile, existing or
+concurrently reserved output path, and `--sram-image` all fail before backend
+or capture startup. Malformed nested report values fail comparison with status
+2 and an exact path instead of a traceback. Shared-backend/global setup failure
+returns 2 with no output or seed records; an individual seed failure is
+retained as `execution_failure` and returns 1. A non-success terminal is
+retained as `terminal_failure`, contributes to the failure count, and returns
+1. Failed staging is removed for retry, while comparison leaves both input
+report bytes untouched.
 
 ### Interactions and save compatibility
 

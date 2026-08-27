@@ -119,8 +119,10 @@ diagnostics identify the exact JSON path, expected value, and captured value.
 `TC-AUTOPLAY-BATCH-001`. It accepts a finite, explicit `--seeds` list of at
 most 256 distinct uint32 values, `--max-jobs` from 1 through 16, and all three
 positive per-run bounds. Every bound must exactly match the selected
-schema-version-2 `run_until` scenario; a missing turn/action bound or a looser
-CLI value is rejected before any emulator starts.
+schema-version-2 `run_until` scenario. Version 3 and every
+`execution_profile` are rejected: this collector accepts only normal-fidelity
+schema-version-2 execution. A wrong schema/profile, missing turn/action bound,
+or looser CLI value is rejected before backend compilation or emulator start.
 
 The required specification is versioned JSON. It names the configuration and
 strategy profile, requires `"fidelity": "normal"`, and declares a writable
@@ -133,9 +135,15 @@ survivor/casualty counts by faction/group, selected recruitment/village/chest
 event outcomes, and configured EXP/item/resource group deltas. Unknown metric
 kinds or unrecorded probes fail before execution.
 
-Reports use `format_version: 1`, sorted object keys, sorted numeric seed
+Reports use `format_version: 2`, sorted object keys, sorted numeric seed
 records, complete ROM/configuration/scenario/profile/seed-binding/bound
-provenance, one terminal and metric record per seed, and explicit
+provenance, and SHA-256 identities over canonical normalized scenario
+semantics and the complete specification/metric definitions. Comparison
+reports list provenance-field changes, so two inputs with the same display
+name/version but different behavior definitions cannot be treated as the same
+experiment. Report loading validates every nested provenance, ROM, terminal,
+metric, aggregate, and run value before comparison. Each report has one
+terminal and metric record per seed and explicit
 `terminal_failure` or `execution_failure` records. Non-success terminals such
 as a stall or exhausted bound remain in the report and make `run` return 1.
 Serial and parallel runs omit scheduling/timing details from the JSON, so the
@@ -144,12 +152,19 @@ terminal-reason counts and per-metric value distributions without omitting the
 individual records.
 
 Outputs are required to be new files beneath ignored `build/`; an existing
-path is an error, not an overwrite. Batch mode rejects `--sram-image`, so no
-writable save fixture can be reused. `compare` reads two reports and writes a
-third new file containing added/removed seeds plus terminal and metric changes.
-It has no update/refresh mode and never rewrites either report; comparisons
-describe observed differences only and make no statistical, difficulty, or
-balance conclusion.
+path or concurrent sibling reservation is an error, not an overwrite. The
+runner compiles one shared backend before launching workers; compiler,
+libmGBA, backend-build, and other global setup failures return 2 without any
+seed records, while an individual seed execution failure is retained in a
+published report and returns 1. Output is staged in an exclusively created
+sibling, flushed and atomically replaced only after successful
+run/validation/serialization; every failure removes the staging file and
+leaves the requested path absent for a corrected retry. Batch mode rejects
+`--sram-image`, so no writable save fixture can be reused. `compare` reads two
+deeply validated reports and writes a third new file containing provenance,
+added/removed seed, terminal, and metric changes. It has no update/refresh mode
+and never rewrites either report; comparisons describe observed differences
+only and make no statistical, difficulty, or balance conclusion.
 
 ### Baseline refresh policy
 
