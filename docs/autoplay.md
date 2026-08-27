@@ -830,11 +830,14 @@ faction/event/delta probe retains its canonical resolved address and size and
 must match a terminal-checkpoint probe; intentional sharing is deduplicated,
 but a missing or textually renamed-to-unrelated RAM probe is rejected.
 
-EXP, item, and resource metrics are signed changes. The format-6 backend
-deduplicates probes by resolved numeric `(address, size)`—so symbolic/literal
-aliases share one observation—and reads each once at the declared seed frame
-immediately before that frame's input and seed write (immediately after reset
-for the canonical frame-0 fixture), then reads the terminal checkpoint in that same execution.
+EXP, item, and resource metrics are signed changes. Before serializing the
+current format-7 plan, `run_batch` resolves and deduplicates intentional
+symbolic/literal metric aliases by numeric `(address, size)`. The backend
+rejects duplicate baseline records in the serialized plan, reads each declared
+probe once at the seed frame immediately before that frame's input and seed
+write (immediately after reset for the canonical frame-0 fixture), then reads
+the terminal checkpoint in that same execution. Format-6 input compatibility
+does not own or imply collector deduplication.
 Reports retain both unsigned width-bounded observations and compute `delta =
 terminal - baseline`, permitting gain, consumption, and zero change without a
 second divergent emulator run.
