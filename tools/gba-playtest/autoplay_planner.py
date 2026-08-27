@@ -95,6 +95,7 @@ _COMMAND_KIND_CODES = {
     CommandKind.PAGE.value: 4,
 }
 _VALID_WIRE_REJECTION_CODES = frozenset(range(1, 11))
+_WIRE_STALE_OBSERVATION = 2
 
 
 @dataclass(frozen=True)
@@ -618,8 +619,13 @@ class PlannerTranscript:
         pending_command: dict[str, object] | None = None
         pending_ack: dict[str, object] | None = None
         pending_completion = False
+        pending_response = False
+        awaiting_settlement = False
         expected_command_id = 1
-        latest_actions: list[object] = []
+        actions_by_observation: dict[
+            tuple[int, int],
+            list[object],
+        ] = {}
         latest_observation: dict[str, object] | None = None
         observation_pages: dict[tuple[int, int], list[dict[str, object]]] = {}
         active_identity_bound = False
@@ -643,7 +649,7 @@ class PlannerTranscript:
                         "planner transcript session must be first"
                     )
             elif kind == "command":
-                if pending_command is not None:
+                if pending_command is not None or awaiting_settlement:
                     raise PlannerError("planner transcript command overlap")
                 command = event.get("command")
                 if (
@@ -659,6 +665,7 @@ class PlannerTranscript:
                 pending_command = event
                 pending_ack = None
                 pending_completion = False
+                pending_response = False
             elif kind == "acknowledgement":
                 if (
                     pending_command is None
@@ -713,6 +720,26 @@ class PlannerTranscript:
                     raise PlannerError(
                         "accepted command run identity mismatch"
                     )
+                if (
+                    command_kind_code != 1
+                    and rejection != _WIRE_STALE_OBSERVATION
+                    and (
+                        latest_observation is None
+                        or type(command.get("observation_id")) is not int
+                        or command.get("observation_id")
+                            != latest_observation.get("observation_id")
+                    )
+                ):
+                    raise PlannerError(
+                        "command observation identity mismatch"
+                    )
+                if accepted and command_kind_code == 4 and (
+                    type(command.get("page_index")) is not int
+                    or latest_observation is None
+                    or not 1 <= command["page_index"]
+                        < latest_observation.get("page_count", 0)
+                ):
+                    raise PlannerError("PAGE command identity mismatch")
                 if accepted and command_kind_code == 1 and (
                     command.get("expected_identities")
                     != [
@@ -729,15 +756,22 @@ class PlannerTranscript:
                 expected_command_id += 1
                 if accepted and command_kind_code == 2:
                     ordinal = command.get("action_ordinal")
+                    actions = actions_by_observation.get(
+                        (
+                            command["run_id"],
+                            command.get("observation_id"),
+                        ),
+                        [],
+                    )
                     action = (
-                        latest_actions[ordinal]
+                        actions[ordinal]
                         if type(ordinal) is int
-                        and 0 <= ordinal < len(latest_actions)
+                        and 0 <= ordinal < len(actions)
                         else None
                     )
                     if (
                         type(ordinal) is not int
-                        or not 0 <= ordinal < len(latest_actions)
+                        or not 0 <= ordinal < len(actions)
                         or not isinstance(action, dict)
                         or command.get("token")
                             != action.get("token")
@@ -756,12 +790,20 @@ class PlannerTranscript:
             elif kind == "settled":
                 settled_command = pending_command
                 settled_ack = pending_ack
+                if not awaiting_settlement:
+                    raise PlannerError(
+                        "settled event has no response observation"
+                    )
                 if pending_command is not None:
-                    if not pending_completion:
-                        raise PlannerError("settled event precedes completion")
+                    if not pending_completion or not pending_response:
+                        raise PlannerError(
+                            "settled event precedes command response"
+                        )
                     pending_command = None
                     pending_ack = None
                     pending_completion = False
+                    pending_response = False
+                awaiting_settlement = False
                 if (
                     not isinstance(event.get("observation_identity"), list)
                     or len(event["observation_identity"]) != 6
@@ -843,11 +885,18 @@ class PlannerTranscript:
                             "rejected COMMIT cannot settle as COMMITTED"
                         )
             elif kind == "transport_error":
-                if sequence != len(document["events"]) - 1:
+                if (
+                    sequence != len(document["events"]) - 1
+                    or awaiting_settlement
+                ):
                     raise PlannerError("transport error must terminate transcript")
                 pending_command = None
                 pending_ack = None
             elif kind == "observation_complete":
+                if pending_command is not None or awaiting_settlement:
+                    raise PlannerError(
+                        "complete observation violates command ordering"
+                    )
                 observation = event.get("observation")
                 if not isinstance(observation, dict):
                     raise PlannerError("invalid complete observation")
@@ -907,6 +956,14 @@ class PlannerTranscript:
                     observation.get("observation_id"),
                 )
                 pages = observation_pages.pop(page_key, [])
+                if (
+                    session_provenance["transport"]
+                        == "restricted-libmgba"
+                    and not pages
+                ):
+                    raise PlannerError(
+                        "complete observation has no transport pages"
+                    )
                 if pages:
                     if (
                         len(pages) != observation.get("page_count")
@@ -987,9 +1044,23 @@ class PlannerTranscript:
                             raise PlannerError(
                                 "complete observation payload mismatch"
                             )
-                latest_actions = actions
+                actions_by_observation[
+                    (
+                        observation.get("run_id"),
+                        observation.get("observation_id"),
+                    )
+                ] = actions
                 latest_observation = observation
+                awaiting_settlement = True
             elif kind == "observation_page":
+                if awaiting_settlement:
+                    raise PlannerError(
+                        "response observation is missing settlement"
+                    )
+                if pending_command is not None and not pending_completion:
+                    raise PlannerError(
+                        "response observation precedes completion"
+                    )
                 observation = event.get("observation")
                 if not isinstance(observation, dict):
                     raise PlannerError("invalid observation page")
@@ -1008,10 +1079,32 @@ class PlannerTranscript:
                     observation_pages[page_key] = [observation]
                 elif pages is not None and page_index == len(pages):
                     pages.append(observation)
+                if pending_command is not None:
+                    command = pending_command["command"]
+                    command_kind = command.get("kind")
+                    accepted = (
+                        pending_ack is not None
+                        and pending_ack.get("result") == 1
+                        and pending_ack.get("rejection") == 0
+                    )
+                    if accepted and command_kind == CommandKind.PAGE.value:
+                        if (
+                            observation.get("run_id")
+                                != command.get("run_id")
+                            or observation.get("observation_id")
+                                != command.get("observation_id")
+                            or observation.get("page_index")
+                                != command.get("page_index")
+                        ):
+                            raise PlannerError(
+                                "PAGE response identity mismatch"
+                            )
+                    pending_response = True
                 latest_observation = observation
+                awaiting_settlement = True
             else:
                 raise PlannerError("unknown planner transcript event")
-        if pending_command is not None:
+        if pending_command is not None or awaiting_settlement:
             raise PlannerError("planner transcript is truncated")
         transcript._events = document["events"]
         return transcript
@@ -1163,7 +1256,11 @@ class PlannerBridge:
             record_count=len(field_tuple),
             total_record_count=len(field_tuple),
         )
-        self.transcript.record_complete_observation(complete_observation)
+        self.transcript.record_complete_and_settled(
+            complete_observation,
+            (0,) * 13,
+            (0,) * 16,
+        )
         observation = Observation(
             self._run_id,
             observation_id,
@@ -1836,6 +1933,93 @@ def collect_observation_pages(transport: object, first: Observation) -> Observat
     if callable(record_complete):
         record_complete(complete)
     return complete
+
+
+def replay_transcript_on_clean_transport(
+    data: bytes,
+    transport_factory: Callable[[], object],
+) -> bytes:
+    expected = PlannerTranscript.import_bytes(data)
+    transport = transport_factory()
+    pages: dict[tuple[int, int], dict[int, Observation]] = {}
+
+    class CapturedPageTransport:
+        def __init__(self, captured: dict[int, Observation]) -> None:
+            self.captured = captured
+
+        def exchange(self, command: Command) -> Observation:
+            return self.captured[command.page_index]
+
+    try:
+        for event in expected.events:
+            event_kind = event["event"]
+            response = None
+            if event_kind == "command":
+                command = event["command"]
+                kind = command["kind"]
+                if kind == CommandKind.START.value:
+                    response = transport.start(
+                        scenario_identity=command[
+                            "expected_identities"
+                        ][2],
+                    )
+                elif kind == CommandKind.PAGE.value:
+                    response = transport.exchange(
+                        Command(
+                            CommandKind.PAGE,
+                            command["run_id"],
+                            command["observation_id"],
+                            page_index=command["page_index"],
+                        )
+                    )
+                elif kind == CommandKind.COMMIT.value:
+                    response = transport.exchange(
+                        Command(
+                            CommandKind.COMMIT,
+                            command["run_id"],
+                            command["observation_id"],
+                            command["action_ordinal"],
+                            OpaqueToken(**command["token"]),
+                        )
+                    )
+                elif kind == CommandKind.CANCEL.value:
+                    response = transport.exchange(
+                        Command(
+                            CommandKind.CANCEL,
+                            command["run_id"],
+                            command["observation_id"],
+                        )
+                    )
+                elif type(kind) is int:
+                    response = transport.malformed(kind)
+                else:
+                    raise PlannerError(
+                        "transcript contains an unsupported command"
+                    )
+                if isinstance(response, Observation):
+                    key = (response.run_id, response.observation_id)
+                    pages.setdefault(key, {})[response.page_index] = response
+            elif event_kind == "observation_complete":
+                identity = event["page_identity"]
+                key = (identity[0], identity[1])
+                captured = pages.pop(key, {})
+                if set(captured) != set(range(identity[2])):
+                    raise PlannerError(
+                        "clean replay did not capture every observation page"
+                    )
+                complete = collect_observation_pages(
+                    CapturedPageTransport(captured),
+                    captured[0],
+                )
+                transport.record_complete_observation(complete)
+        actual = transport.transcript.export()
+        if actual != data:
+            raise PlannerError("clean transport transcript replay mismatch")
+        return actual
+    finally:
+        close = getattr(transport, "close", None)
+        if callable(close):
+            close()
 
 
 def _consume_semantic_observation(observation: Observation) -> str:

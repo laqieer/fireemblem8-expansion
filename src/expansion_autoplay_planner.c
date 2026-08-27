@@ -1341,7 +1341,7 @@ static u32 MapStateDigest(void)
     return digest;
 }
 
-static u32 FlagsDigest(void)
+static bool GetFlagsDigest(u32* result)
 {
     u32 digest = 2166136261u;
     u8* flags;
@@ -1351,16 +1351,17 @@ static u32 FlagsDigest(void)
     flags = GetPermanentFlagBits();
     size = GetPermanentFlagBitsSize();
     if (flags == NULL || size < 0 || size > PLANNER_FLAG_BYTE_CAPACITY)
-        return 0;
+        return false;
     for (index = 0; index < size; index++)
         digest = MixDigest(digest, flags[index]);
     flags = GetChapterFlagBits();
     size = GetChapterFlagBitsSize();
     if (flags == NULL || size < 0 || size > PLANNER_FLAG_BYTE_CAPACITY)
-        return 0;
+        return false;
     for (index = 0; index < size; index++)
         digest = MixDigest(digest, flags[index]);
-    return digest;
+    *result = digest;
+    return true;
 }
 
 static u32 InventoryDigest(const struct Unit* unit)
@@ -1373,17 +1374,18 @@ static u32 InventoryDigest(const struct Unit* unit)
     return digest;
 }
 
-static u32 ConvoyDigest(void)
+static bool GetConvoyDigest(u32* result)
 {
     u16* convoy = GetConvoyItemArray();
     u32 digest = 2166136261u;
     int index;
 
     if (convoy == NULL)
-        return 0;
+        return false;
     for (index = 0; index < CONVOY_ITEM_COUNT; index++)
         digest = MixDigest(digest, convoy[index]);
-    return digest;
+    *result = digest;
+    return true;
 }
 
 static void SetSemanticField(
@@ -1430,11 +1432,11 @@ static void PublishSummaryPage(void)
 #else
     objectiveAvailability = EXPANSION_AUTOPLAY_PLANNER_UNSUPPORTED_RULE;
 #endif
-    flagDigest = FlagsDigest();
-    if (flagDigest == 0)
+    flagDigest = 0;
+    if (!GetFlagsDigest(&flagDigest))
         flagAvailability = EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED;
-    convoyDigest = ConvoyDigest();
-    if (convoyDigest == 0)
+    convoyDigest = 0;
+    if (!GetConvoyDigest(&convoyDigest))
         resourceAvailability = EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED;
 
     SetSemanticField(

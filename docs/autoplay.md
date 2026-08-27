@@ -975,6 +975,10 @@ convoy slots with item ID and uses, and every word of autoplay telemetry.
 `FLAGS` pages expose every bounded permanent and chapter flag ID and state.
 The summary retains map, objective, flag, inventory, and resource digests as
 integrity fields rather than substitutes for those values.
+Flag and convoy/resource availability derives only from the backing pointer
+and bounded domain sizes. A valid 32-bit digest of zero remains `AVAILABLE`
+and is published unchanged; null storage or an out-of-range flag domain is
+`UNINITIALIZED`.
 
 Every semantic field or record has an explicit `AVAILABLE`, `NOT_APPLICABLE`,
 `NOT_VISIBLE`, `UNSUPPORTED_RULE`, `OUT_OF_RANGE`, `UNINITIALIZED`,
@@ -1042,6 +1046,15 @@ chapter-local identities may advance. Deep replay requires equivalent
 observations, commands, settlements, and terminal state; truncation,
 reordering, or field tampering fails. The bounded-search reference accepts at
 most 512 nodes and enforces the 64 MiB host-search ceiling.
+The importer is an explicit command state machine: each command must be
+followed by its matching ACK, matching COMPLETE, one response page, and that
+response's settlement. It rejects responses before completion, duplicate or
+interleaved stages, missing settlements, and terminal/settled disagreement.
+Every accepted non-START command names the current observation. COMMIT looks
+up its action and token only in that exact observation's candidate set; PAGE
+binds both the command observation and requested index to the returned page.
+Re-chaining a stale, prior, future, or cross-swapped identity cannot bypass
+these checks.
 Before selecting an action, both reference planners validate the complete
 typed inventory/resource/flag set, reject any candidate that names an
 unavailable actor or target, and retain the semantic digest they consumed.
@@ -1108,6 +1121,14 @@ does not self-write commands. The integration covers all semantic/action
 pages, opaque-token acceptance and rejection, same-ROM/config/seed scenario
 mismatch, malformed traffic timeout, cancellation, and same-run chapter-two
 checkpoint continuation.
+Canonical replay is transport-driven rather than a hard-coded observation
+fixture. It imports a recorded transcript, starts a new clean-boot ROM and
+libmGBA backend, reissues its START/PAGE/COMMIT/CANCEL or malformed commands at
+the recorded semantic boundaries, reconstructs complete observations from the
+newly returned pages, and requires the new transcript bytes to match. This
+compares every semantic page, ACK/result, completion, telemetry, RNG,
+checkpoint, and terminal state without a save, savestate, emulator snapshot,
+or raw-memory operation.
 
 Every typed mailbox command now produces three distinct line-protocol stages:
 `ACK command_id kind result rejection` after the ROM consumes the exact

@@ -617,6 +617,9 @@ Prologue route, accepts a host-selected nontrivial action, reaches the next
 planner observation with the actor at the committed destination, then cancels
 safely. Explicit exit, restart, load, new-game, full-reset, and cancel paths
 clear the run/checkpoint.
+Valid zero-valued flag and convoy/resource digests remain available and
+round-trip exactly; null backing domains and out-of-range flag sizes are
+uninitialized instead.
 Normal Summon enumerates each legal adjacent tile only when the real
 `gSummonConfig`, existing-summon, movement-state, terrain, occupancy, and fog
 contracts allow it. The executor preserves the chosen coordinates through
@@ -648,6 +651,13 @@ with no rejection or failure with one known nonzero rejection before an
 accepted COMMIT token is interpreted.
 The live backend applies the same exact `result/rejection` enum check before
 emitting ACK, COMPLETE, or OBS.
+Each command must then have one matching ACK, one matching COMPLETE, one exact
+response page, and one settlement. Accepted PAGE commands bind the current
+observation and requested index to that response; accepted COMMIT commands
+resolve their action/token only from the named current observation.
+The recorded accepted two-chapter run and rejection/cancel run are each
+reissued through a newly booted production ROM/backend, and their complete
+transcripts must match byte-for-byte.
 
 ### Negative control
 
@@ -680,6 +690,11 @@ IDs/kinds, and a rejected-pair rewrite that retains a COMMITTED observation
 all fail after recomputing the hash chain. Destructive exit/load/new-game,
 timeout, and cancel paths never record a transition checkpoint; cancellation
 after a real MNCH/MNC2 checkpoint zeros the entire record.
+Recomputed-chain stale/prior/future observation IDs, PAGE index cross-swaps,
+responses before completion, COMPLETE before ACK, duplicate ACK/COMPLETE,
+interleaved commands, missing responses/settlements, and terminal disagreement
+also fail before replay. A tampered transcript never starts the clean replay
+factory.
 Out-of-range/occupied Warp destinations, opened or wrong Unlock tiles, stale
 Torch coordinates, consumed keys, non-repairable or wrong Hammerne slots, and
 a token copied from another Hammerne slot all reject without applying the
@@ -688,6 +703,8 @@ Green-allied Hammerne targets, caster-only Fortify/Latona state, out-of-range
 Fortify allies, and stale, destroyed, non-Snag, or out-of-range obstacle
 coordinates reject. Unknown live ACK rejections are rejected before any ACK
 or observation is emitted.
+Null or over-bound flag storage and null convoy storage are unavailable, while
+an available digest equal to zero must never be mistaken for absence.
 Archival agbcc compiles the inactive planner translation unit and its public
 header with warnings promoted to errors; unnamed no-instance unions or any
 size/offset drift therefore fail the legacy job. Host-only configuration

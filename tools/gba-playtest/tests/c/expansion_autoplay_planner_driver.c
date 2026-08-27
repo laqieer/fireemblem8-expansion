@@ -70,6 +70,8 @@ static u8 sPermanentFlags[256];
 static u8 sChapterFlags[256];
 static int sPermanentFlagSize = 8;
 static int sChapterFlagSize = 8;
+static bool sFlagPointersAvailable = true;
+static bool sConvoyAvailable = true;
 static bool sUseMaxUnits;
 static int sMagRange = 1;
 static u16 sConvoy[CONVOY_ITEM_COUNT];
@@ -128,7 +130,7 @@ struct Unit* GetUnit(int id)
 
 u8* GetPermanentFlagBits(void)
 {
-    return sPermanentFlags;
+    return sFlagPointersAvailable ? sPermanentFlags : NULL;
 }
 
 int GetPermanentFlagBitsSize(void)
@@ -138,7 +140,7 @@ int GetPermanentFlagBitsSize(void)
 
 u8* GetChapterFlagBits(void)
 {
-    return sChapterFlags;
+    return sFlagPointersAvailable ? sChapterFlags : NULL;
 }
 
 int GetChapterFlagBitsSize(void)
@@ -148,7 +150,7 @@ int GetChapterFlagBitsSize(void)
 
 u16* GetConvoyItemArray(void)
 {
-    return sConvoy;
+    return sConvoyAvailable ? sConvoy : NULL;
 }
 
 s8 AreUnitsAllied(int left, int right)
@@ -494,6 +496,8 @@ static void ResetActionFixture(int width, int height)
     gSummonConfig[1][0] = 0;
     gSummonConfig[1][1] = 0;
     sMagRange = 1;
+    sFlagPointersAvailable = true;
+    sConvoyAvailable = true;
 }
 
 static int CountActionId(u32 count, int actionId)
@@ -1327,6 +1331,111 @@ static int TestMaximumSemanticPaging(void)
     return 0;
 }
 
+static int TestZeroDigestAvailability(void)
+{
+    struct AiDecision decision = { 0 };
+
+    ResetActionFixture(6, 6);
+    sMovementData[2][3] = 1;
+    memset(sPermanentFlags, 0, sizeof(sPermanentFlags));
+    memset(sChapterFlags, 0, sizeof(sChapterFlags));
+    sPermanentFlags[0] = 0xCC;
+    sPermanentFlags[1] = 0x24;
+    sPermanentFlags[2] = 0x31;
+    sPermanentFlags[3] = 0xC4;
+    sPermanentFlagSize = 4;
+    sChapterFlagSize = 0;
+    memset(sConvoy, 0, sizeof(sConvoy));
+    sConvoy[97] = 0xEDD0;
+    sConvoy[98] = 0xC25D;
+    gPlaySt.partyGoldAmount = 2166136261u;
+    ExpansionAutoplayPlanner_Reset();
+    ExpansionAutoplayPlanner_OnMapReady();
+    ExpansionAutoplayPlanner_PollStart();
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_START,
+        0,
+        0,
+        0,
+        0,
+        NULL);
+    CHECK(ExpansionAutoplayPlanner_PollStart(),
+          "zero-digest availability run must start");
+    CHECK(
+        ExpansionAutoplayPlanner_OfferDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation
+                    .payload.fields[6].availability
+                == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
+            && gExpansionAutoplayPlannerObservation
+                    .payload.fields[6].value == 0
+            && gExpansionAutoplayPlannerObservation
+                    .payload.fields[7].availability
+                == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
+            && gExpansionAutoplayPlannerObservation
+                    .payload.fields[7].value == 0,
+        "valid zero flag and convoy/resource digests must remain available"
+    );
+
+    ExpansionAutoplayPlanner_Reset();
+    sFlagPointersAvailable = false;
+    sConvoyAvailable = false;
+    ExpansionAutoplayPlanner_OnMapReady();
+    ExpansionAutoplayPlanner_PollStart();
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_START,
+        0,
+        0,
+        0,
+        0,
+        NULL);
+    CHECK(ExpansionAutoplayPlanner_PollStart(),
+          "null semantic-domain run must start");
+    CHECK(
+        ExpansionAutoplayPlanner_OfferDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation
+                    .payload.fields[6].availability
+                == EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED
+            && gExpansionAutoplayPlannerObservation
+                    .payload.fields[7].availability
+                == EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED,
+        "null flag and convoy domains must be unavailable"
+    );
+
+    ExpansionAutoplayPlanner_Reset();
+    sFlagPointersAvailable = true;
+    sConvoyAvailable = true;
+    sPermanentFlagSize = 257;
+    ExpansionAutoplayPlanner_OnMapReady();
+    ExpansionAutoplayPlanner_PollStart();
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_START,
+        0,
+        0,
+        0,
+        0,
+        NULL);
+    CHECK(ExpansionAutoplayPlanner_PollStart(),
+          "out-of-bounds flag-domain run must start");
+    CHECK(
+        ExpansionAutoplayPlanner_OfferDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation
+                    .payload.fields[6].availability
+                == EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED,
+        "out-of-bounds flag storage must be unavailable"
+    );
+    sPermanentFlagSize = 8;
+    sChapterFlagSize = 8;
+    gPlaySt.partyGoldAmount = 1234;
+    memset(sPermanentFlags, 0, sizeof(sPermanentFlags));
+    memset(sChapterFlags, 0, sizeof(sChapterFlags));
+    memset(sConvoy, 0, sizeof(sConvoy));
+    sControlRequests = 0;
+    return 0;
+}
+
 static int TestHammerneWireIdentity(void)
 {
     struct AiDecision decision = { 0 };
@@ -1597,6 +1706,8 @@ int main(void)
           "unavailable actor and target semantics test");
     CHECK(TestMaximumSemanticPaging() == 0,
           "maximum semantic paging test");
+    CHECK(TestZeroDigestAvailability() == 0,
+          "zero semantic digest availability test");
 
     gBmMapSize.x = 32;
     gBmMapSize.y = 17;

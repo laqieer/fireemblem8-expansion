@@ -155,6 +155,7 @@ def build_production_planner_rom(
     transition_subcode: int = 2,
     candidate_mode: int = 0,
     acknowledgement_override: tuple[int, int] | None = None,
+    zero_digest: bool = False,
 ) -> None:
     """Link the production planner implementation into a tiny freestanding ROM."""
     if commit_delay_frames < 0:
@@ -235,6 +236,9 @@ def build_production_planner_rom(
         "-DFE8_AUTOPLAY_PLANNER_RUNTIME_ACK_REJECTION={}u".format(
             0 if acknowledgement_override is None
             else acknowledgement_override[1]
+        ),
+        "-DFE8_AUTOPLAY_PLANNER_RUNTIME_ZERO_DIGEST={}".format(
+            int(zero_digest)
         ),
     ]
     environment = dict(os.environ)

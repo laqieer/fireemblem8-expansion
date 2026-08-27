@@ -52,6 +52,10 @@
 #define FE8_AUTOPLAY_PLANNER_RUNTIME_ACK_REJECTION 0
 #endif
 
+#ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_ZERO_DIGEST
+#define FE8_AUTOPLAY_PLANNER_RUNTIME_ZERO_DIGEST 0
+#endif
+
 struct PlaySt gPlaySt;
 struct ActionData gActionData;
 struct ExpansionAutoplayTelemetry gExpansionAutoplayTelemetry;
@@ -74,6 +78,8 @@ static struct ClassData sClass;
 static struct Unit sUnit;
 static u8 sPermanentFlags[8];
 static u8 sChapterFlags[8];
+static int sPermanentFlagSize = sizeof(sPermanentFlags);
+static int sChapterFlagSize = sizeof(sChapterFlags);
 static u16 sConvoy[CONVOY_ITEM_COUNT];
 static struct Trap sTraps[TRAP_MAX_COUNT];
 static u8 sMovementData[17][32];
@@ -273,7 +279,7 @@ u8* GetPermanentFlagBits(void)
 
 int GetPermanentFlagBitsSize(void)
 {
-    return sizeof(sPermanentFlags);
+    return sPermanentFlagSize;
 }
 
 u8* GetChapterFlagBits(void)
@@ -283,7 +289,7 @@ u8* GetChapterFlagBits(void)
 
 int GetChapterFlagBitsSize(void)
 {
-    return sizeof(sChapterFlags);
+    return sChapterFlagSize;
 }
 
 u16* GetConvoyItemArray(void)
@@ -559,6 +565,18 @@ static void InitializeRuntime(void)
     gPlaySt.chapterVisionRange = 3;
     gPlaySt.partyGoldAmount = 1000;
     sConvoy[0] = 1;
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_ZERO_DIGEST
+    sPermanentFlags[0] = 0xCC;
+    sPermanentFlags[1] = 0x24;
+    sPermanentFlags[2] = 0x31;
+    sPermanentFlags[3] = 0xC4;
+    sPermanentFlagSize = 4;
+    sChapterFlagSize = 0;
+    sConvoy[0] = 0;
+    sConvoy[97] = 0xEDD0;
+    sConvoy[98] = 0xC25D;
+    gPlaySt.partyGoldAmount = 2166136261u;
+#endif
     sMapMain.gameCtrl = &sGameControl;
     ExpansionAutoplayPlanner_Reset();
     ExpansionAutoplayPlanner_OnMapReady();

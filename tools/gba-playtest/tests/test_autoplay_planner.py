@@ -84,7 +84,10 @@ class PlannerBridgeTests(unittest.TestCase):
             bridge.commit(planner.Command(planner.CommandKind.COMMIT, run_id, observation.observation_id, 1, "forged"))
         with self.assertRaisesRegex(planner.PlannerError, planner.Rejection.TOKEN_MISMATCH.value):
             bridge.commit(planner.Command(planner.CommandKind.COMMIT, run_id, observation.observation_id, 0, "forged"))
-        self.assertEqual(len(bridge.trace), 2)
+        self.assertEqual(
+            tuple(event["event"] for event in bridge.trace),
+            ("session", "observation_complete", "settled"),
+        )
         with self.assertRaisesRegex(planner.PlannerError, planner.Rejection.CANCELLED.value):
             bridge.commit(planner.Command(planner.CommandKind.CANCEL, run_id, observation.observation_id))
         self.assertTrue(bridge.cancelled)
@@ -162,9 +165,9 @@ class PlannerBridgeTests(unittest.TestCase):
                     100,
                 ),
             ),
-            (
-                planner.Action("MOVE_WAIT", 1, (1, 0)),
-                planner.Action("MOVE_WAIT", 1, (2, 0)),
+            tuple(
+                planner.Action("MOVE_WAIT", 1, (index + 1, 0))
+                for index in range(23)
             ),
         )
         complete = planner.collect_observation_pages(bridge, observation)
@@ -330,6 +333,10 @@ class PlannerBridgeTests(unittest.TestCase):
         complete_event["candidate_set_digest"] = planner._digest(
             complete_event["observation"]["actions"]
         )
+        complete_index = token_tampered["events"].index(complete_event)
+        token_tampered["events"][complete_index + 1][
+            "observation_digest"
+        ] = planner._digest(complete_event["observation"])
         rechain(token_tampered)
         with self.assertRaisesRegex(
             planner.PlannerError,
@@ -466,6 +473,155 @@ class PlannerBridgeTests(unittest.TestCase):
         ):
             planner.PlannerTranscript.import_bytes(
                 planner._canonical(committed_rejection)
+            )
+
+        for command_kind in (
+            planner.CommandKind.PAGE.value,
+            planner.CommandKind.COMMIT.value,
+        ):
+            for observation_id in (0, 2):
+                with self.subTest(
+                    command_kind=command_kind,
+                    observation_id=observation_id,
+                ):
+                    stale_command = json.loads(exported)
+                    command = next(
+                        event["command"]
+                        for event in stale_command["events"]
+                        if event["event"] == "command"
+                            and event["command"]["kind"] == command_kind
+                    )
+                    command["observation_id"] = observation_id
+                    rechain(stale_command)
+                    with self.assertRaisesRegex(
+                        planner.PlannerError,
+                        "command observation identity mismatch",
+                    ):
+                        planner.PlannerTranscript.import_bytes(
+                            planner._canonical(stale_command)
+                        )
+
+        page_cross_swap = json.loads(exported)
+        page_commands = [
+            event["command"]
+            for event in page_cross_swap["events"]
+            if event["event"] == "command"
+                and event["command"]["kind"]
+                    == planner.CommandKind.PAGE.value
+        ]
+        page_commands[0]["page_index"], page_commands[1]["page_index"] = (
+            page_commands[1]["page_index"],
+            page_commands[0]["page_index"],
+        )
+        rechain(page_cross_swap)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "PAGE response identity mismatch",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(page_cross_swap)
+            )
+
+        base_events = json.loads(exported)["events"]
+        command_index = next(
+            index
+            for index, event in enumerate(base_events)
+            if event["event"] == "command"
+                and event["command"]["kind"]
+                    == planner.CommandKind.PAGE.value
+        )
+        ack_index = command_index + 1
+        completion_index = command_index + 2
+        response_index = command_index + 3
+
+        completion_before_ack = json.loads(exported)
+        events = completion_before_ack["events"]
+        events[ack_index], events[completion_index] = (
+            events[completion_index],
+            events[ack_index],
+        )
+        rechain(completion_before_ack)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "completion order",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(completion_before_ack)
+            )
+
+        response_before_completion = json.loads(exported)
+        events = response_before_completion["events"]
+        events[completion_index], events[response_index] = (
+            events[response_index],
+            events[completion_index],
+        )
+        rechain(response_before_completion)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "response observation precedes completion",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(response_before_completion)
+            )
+
+        duplicate_ack = json.loads(exported)
+        duplicate_ack["events"].insert(
+            completion_index,
+            dict(duplicate_ack["events"][ack_index]),
+        )
+        rechain(duplicate_ack)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "acknowledgement order",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(duplicate_ack)
+            )
+
+        duplicate_completion = json.loads(exported)
+        duplicate_completion["events"].insert(
+            response_index,
+            dict(duplicate_completion["events"][completion_index]),
+        )
+        rechain(duplicate_completion)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "completion order",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(duplicate_completion)
+            )
+
+        interleaved_command = json.loads(exported)
+        second_command = next(
+            event
+            for event in interleaved_command["events"][
+                command_index + 1 :
+            ]
+            if event["event"] == "command"
+        )
+        interleaved_command["events"].insert(
+            ack_index,
+            dict(second_command),
+        )
+        rechain(interleaved_command)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "command overlap",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(interleaved_command)
+            )
+
+        missing_response = json.loads(exported)
+        missing_response["events"].pop(response_index)
+        rechain(missing_response)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "settled event has no response observation",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(missing_response)
             )
 
         reordered = json.loads(exported)
@@ -2606,6 +2762,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
         transition_subcode: int = 2,
         candidate_mode: int = 0,
         acknowledgement_override: tuple[int, int] | None = None,
+        zero_digest: bool = False,
     ) -> tuple[Path, Path]:
         rom = Path(temporary) / "planner-two-chapter.gba"
         elf = Path(temporary) / "planner-two-chapter.elf"
@@ -2619,6 +2776,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             transition_subcode=transition_subcode,
             candidate_mode=candidate_mode,
             acknowledgement_override=acknowledgement_override,
+            zero_digest=zero_digest,
         )
         build_planner_transport_backend(
             backend,
@@ -2788,6 +2946,14 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 backend, rom, planner.BoundedSearchPlanner(max_nodes=512)
             )
             self.assertEqual(scripted, searched)
+            for recorded in (scripted[2], searched[2]):
+                self.assertEqual(
+                    planner.replay_transcript_on_clean_transport(
+                        recorded,
+                        lambda: PlannerProcessTransport(backend, rom),
+                    ),
+                    recorded,
+                )
             imported = planner.PlannerTranscript.import_bytes(scripted[2])
             self.assertEqual(imported.export(), scripted[2])
             identity_tampered = json.loads(scripted[2])
@@ -2832,6 +2998,99 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             ]
             self.assertTrue(settled_events)
             self.assertEqual(len(settled_events[-1]["telemetry"]), 16)
+
+    def test_clean_transport_replays_rejection_and_cancel(self):
+        root = (
+            TESTS_DIR.parents[2]
+            / "build"
+            / "test-artifacts"
+            / "autoplay-planner"
+        )
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            try:
+                rom, backend = self._build_transport(temporary)
+            except RuntimeError as error:
+                if (
+                    "planner runtime toolchain unavailable" in str(error)
+                    or "planner transport host compiler unavailable"
+                        in str(error)
+                ):
+                    self.skipTest(str(error))
+                raise
+            transport = PlannerProcessTransport(backend, rom)
+            try:
+                first = planner.collect_observation_pages(
+                    transport,
+                    transport.start(),
+                )
+                choice = planner.ScriptedPlanner().choose(first)
+                forged = transport.exchange(
+                    planner.Command(
+                        planner.CommandKind.COMMIT,
+                        first.run_id,
+                        first.observation_id,
+                        choice.ordinal,
+                        planner.OpaqueToken(
+                            choice.token.word0 ^ 1,
+                            choice.token.word1,
+                            choice.token.word2,
+                            choice.token.word3,
+                        ),
+                    )
+                )
+                self.assertEqual(forged.rejection, 4)
+                cancelled = transport.exchange(
+                    planner.Command(
+                        planner.CommandKind.CANCEL,
+                        first.run_id,
+                        first.observation_id,
+                    )
+                )
+                self.assertEqual(cancelled.state, 4)
+                recorded = transport.transcript.export()
+            finally:
+                transport.close()
+            self.assertEqual(
+                planner.replay_transcript_on_clean_transport(
+                    recorded,
+                    lambda: PlannerProcessTransport(backend, rom),
+                ),
+                recorded,
+            )
+
+            tampered = json.loads(recorded)
+            commit = next(
+                event["command"]
+                for event in tampered["events"]
+                if event["event"] == "command"
+                    and event["command"]["kind"]
+                        == planner.CommandKind.COMMIT.value
+            )
+            commit["observation_id"] += 1
+            previous = "0" * 64
+            for sequence, event in enumerate(tampered["events"]):
+                event.pop("event_digest", None)
+                event["sequence"] = sequence
+                event["previous_digest"] = previous
+                event["event_digest"] = planner._digest(event)
+                previous = event["event_digest"]
+            factory_calls = 0
+
+            def factory():
+                nonlocal factory_calls
+                factory_calls += 1
+                return PlannerProcessTransport(backend, rom)
+
+            with self.assertRaisesRegex(
+                planner.PlannerError,
+                "command observation identity mismatch",
+            ):
+                planner.replay_transcript_on_clean_transport(
+                    planner._canonical(tampered),
+                    factory,
+                )
+            self.assertEqual(factory_calls, 0)
 
     def test_world_map_transition_records_settled_checkpoint(self):
         root = (
@@ -2920,6 +3179,69 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         )
                     finally:
                         transport.close()
+
+    def test_available_zero_digests_round_trip_live_transport(self):
+        root = (
+            TESTS_DIR.parents[2]
+            / "build"
+            / "test-artifacts"
+            / "autoplay-planner"
+        )
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            try:
+                rom, backend = self._build_transport(
+                    temporary,
+                    zero_digest=True,
+                )
+            except RuntimeError as error:
+                if (
+                    "planner runtime toolchain unavailable" in str(error)
+                    or "planner transport host compiler unavailable"
+                        in str(error)
+                ):
+                    self.skipTest(str(error))
+                raise
+            for implementation in (
+                planner.ScriptedPlanner(),
+                planner.BoundedSearchPlanner(max_nodes=512),
+            ):
+                transport = PlannerProcessTransport(backend, rom)
+                try:
+                    first = planner.collect_observation_pages(
+                        transport,
+                        transport.start(),
+                    )
+                    fields = {field.name: field for field in first.fields}
+                    self.assertEqual(
+                        fields["flags_digest"].availability,
+                        planner.Availability.AVAILABLE,
+                    )
+                    self.assertEqual(fields["flags_digest"].value, 0)
+                    self.assertEqual(
+                        fields["resource_digest"].availability,
+                        planner.Availability.AVAILABLE,
+                    )
+                    self.assertEqual(fields["resource_digest"].value, 0)
+                    choice = implementation.choose(first)
+                    cancelled = transport.exchange(
+                        planner.Command(
+                            planner.CommandKind.CANCEL,
+                            first.run_id,
+                            first.observation_id,
+                        )
+                    )
+                    self.assertEqual(cancelled.state, 4)
+                    exported = transport.transcript.export()
+                    self.assertEqual(
+                        planner.PlannerTranscript.import_bytes(
+                            exported
+                        ).export(),
+                        exported,
+                    )
+                    self.assertIsNotNone(choice)
+                finally:
+                    transport.close()
 
     def test_commit_waits_beyond_legacy_120_frame_window(self):
         root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
