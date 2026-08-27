@@ -23,6 +23,10 @@
 
 #define GBA_SRAM_BASE 0x0E000000u
 #define GBA_SRAM_SIZE 0x8000u
+#define GBA_EWRAM_BASE 0x02000000u
+#define GBA_EWRAM_SIZE 0x40000u
+#define GBA_IWRAM_BASE 0x03000000u
+#define GBA_IWRAM_SIZE 0x8000u
 #define MAX_INPUT_RANGES 1000000u
 #define MAX_RUN_PROBES 128u
 #define MAX_TERMINALS 3u
@@ -30,6 +34,7 @@
 #define MAX_TRACE_PROBES 512u
 #define MAX_TRACE_RECORDS 450000u
 #define MAX_CHECKPOINT_PROBES 1536u
+#define MAX_BASELINE_PROBES 1536u
 
 #define PLAYST_CONFIG_GAME_SPEED_MASK (1u << 7)
 #define PLAYST_CONFIG_ANIMATION_TYPE_MASK (3u << 17)
@@ -149,6 +154,12 @@ struct Plan {
 	struct StallLimit stall;
 	struct CounterLimit turn_limit;
 	struct CounterLimit action_limit;
+	bool has_seed_write;
+	size_t baseline_probe_count;
+	struct Probe* baseline_probes;
+	uint32_t seed_frame;
+	struct Probe seed_write;
+	uint32_t seed_value;
 	unsigned execution_profile;
 	uint32_t config_apply_frame;
 	uint32_t play_state_config_address;
@@ -163,6 +174,14 @@ static bool probe_value_fits(unsigned size, uint32_t value)
 	if (size == 4)
 		return true;
 	return value < (UINT32_C(1) << (size * 8));
+}
+
+static bool writable_probe_address(uint32_t address, unsigned size)
+{
+	return (address >= GBA_EWRAM_BASE &&
+	        address <= GBA_EWRAM_BASE + GBA_EWRAM_SIZE - size) ||
+	       (address >= GBA_IWRAM_BASE &&
+	        address <= GBA_IWRAM_BASE + GBA_IWRAM_SIZE - size);
 }
 
 static void capture_log(struct mLogger* logger, int category,
@@ -200,6 +219,7 @@ static void free_plan(struct Plan* plan)
 	free(plan->run_probes);
 	free(plan->terminals);
 	free(plan->trace_probes);
+	free(plan->baseline_probes);
 	memset(plan, 0, sizeof(*plan));
 }
 
@@ -214,7 +234,8 @@ static bool read_plan(const char* path, struct Plan* plan)
 	unsigned version;
 	if (fscanf(file, "%31s %u", word, &version) != 2 ||
 	    strcmp(word, "GBA_PLAYTEST_PLAN") != 0 ||
-	    (version != 3 && version != 4 && version != 5)) {
+	    (version != 3 && version != 4 && version != 5 &&
+	     version != 6 && version != 7)) {
 		fprintf(stderr, "malformed plan header\n");
 		goto fail;
 	}
@@ -346,7 +367,7 @@ static bool read_plan(const char* path, struct Plan* plan)
 			}
 		}
 	}
-	if (version == 4 || version == 5) {
+	if (version >= 4) {
 		unsigned reason_mask = 0;
 		unsigned enabled;
 
@@ -568,6 +589,53 @@ static bool read_plan(const char* path, struct Plan* plan)
 			}
 		}
 	}
+	if (version == 6 || version == 7) {
+		if (fscanf(file, "%31s %zu", word, &plan->baseline_probe_count) != 2 ||
+		    strcmp(word, "BASELINE_PROBES") != 0 ||
+		    plan->baseline_probe_count > MAX_BASELINE_PROBES) {
+			fprintf(stderr, "malformed BASELINE_PROBES record\n");
+			goto fail;
+		}
+		plan->baseline_probes = calloc(
+		    plan->baseline_probe_count, sizeof(*plan->baseline_probes));
+		if (plan->baseline_probe_count && !plan->baseline_probes) {
+			fprintf(stderr, "out of memory reading baseline probes\n");
+			goto fail;
+		}
+		for (size_t i = 0; i < plan->baseline_probe_count; ++i) {
+			struct Probe* probe = &plan->baseline_probes[i];
+			if (fscanf(file, "%" SCNu32 " %u", &probe->address,
+			           &probe->size) != 2 ||
+			    (probe->size != 1 && probe->size != 2 &&
+			     probe->size != 4)) {
+				fprintf(stderr, "malformed baseline probe %zu\n", i);
+				goto fail;
+			}
+			for (size_t prior = 0; prior < i; ++prior) {
+				const struct Probe* previous = &plan->baseline_probes[prior];
+				if (previous->address == probe->address &&
+				    previous->size == probe->size) {
+					fprintf(stderr, "duplicate baseline probe %zu\n", i);
+					goto fail;
+				}
+			}
+		}
+		if (fscanf(file, "%31s %" SCNu32 " %" SCNu32 " %u %" SCNu32,
+		           word, &plan->seed_frame, &plan->seed_write.address,
+		           &plan->seed_write.size, &plan->seed_value) != 5 ||
+		    strcmp(word, "SEED_WRITE") != 0 ||
+		    plan->seed_frame >= plan->max_frames ||
+		    (plan->seed_write.size != 1 && plan->seed_write.size != 2 &&
+		     plan->seed_write.size != 4) ||
+		    plan->seed_write.address % plan->seed_write.size != 0 ||
+		    !probe_value_fits(plan->seed_write.size, plan->seed_value) ||
+		    !writable_probe_address(plan->seed_write.address,
+		                            plan->seed_write.size)) {
+			fprintf(stderr, "malformed SEED_WRITE record\n");
+			goto fail;
+		}
+		plan->has_seed_write = true;
+	}
 	if (fscanf(file, "%31s", word) == 1) {
 		fprintf(stderr, "unexpected trailing plan data\n");
 		goto fail;
@@ -646,6 +714,21 @@ static uint32_t read_probe(struct mCore* core, const struct Probe* probe)
 		return core->busRead16(core, probe->address);
 	default:
 		return core->busRead32(core, probe->address);
+	}
+}
+
+static void write_probe(struct mCore* core, const struct Probe* probe, uint32_t value)
+{
+	switch (probe->size) {
+	case 1:
+		core->busWrite8(core, probe->address, value);
+		break;
+	case 2:
+		core->busWrite16(core, probe->address, value);
+		break;
+	default:
+		core->busWrite32(core, probe->address, value);
+		break;
 	}
 }
 
@@ -835,7 +918,7 @@ static void emit_trace(struct mCore* core, const struct Plan* plan,
 	*have_previous_values = true;
 }
 
-static void apply_frame_input(struct mCore* core, const struct Plan* plan,
+static bool apply_frame_input(struct mCore* core, const struct Plan* plan,
                               size_t* range_index, uint32_t frame)
 {
 	uint32_t keys = 0;
@@ -846,8 +929,26 @@ static void apply_frame_input(struct mCore* core, const struct Plan* plan,
 	if (*range_index < plan->range_count &&
 	    plan->ranges[*range_index].start <= frame)
 		keys = plan->ranges[*range_index].keys;
+	if (plan->has_seed_write && plan->seed_frame == frame) {
+		uint32_t observed;
+
+		write_probe(core, &plan->seed_write, plan->seed_value);
+		observed = read_probe(core, &plan->seed_write);
+		if (observed != plan->seed_value) {
+			fprintf(stderr,
+			        "scheduled write mismatch at frame %" PRIu32
+			        " address %08" PRIx32 ": expected %" PRIu32
+			        ", read %" PRIu32 "\n",
+			        frame, plan->seed_write.address, plan->seed_value, observed);
+			return false;
+		}
+		printf("SEED_WRITE_APPLIED\t%" PRIu32 "\t%" PRIu32
+		       "\t%u\t%" PRIu32 "\n",
+		       frame, plan->seed_write.address, plan->seed_write.size, observed);
+	}
 	core->setKeys(core, keys);
 	core->runFrame(core);
+	return true;
 }
 
 static int run_fixed(struct mCore* core, const struct Plan* plan,
@@ -858,7 +959,8 @@ static int run_fixed(struct mCore* core, const struct Plan* plan,
 	uint32_t last_frame = plan->checkpoints[plan->checkpoint_count - 1].frame;
 
 	for (uint32_t frame = 0; frame <= last_frame; ++frame) {
-		apply_frame_input(core, plan, &range_index, frame);
+		if (!apply_frame_input(core, plan, &range_index, frame))
+			return 2;
 		if (checkpoint_index < plan->checkpoint_count &&
 		    plan->checkpoints[checkpoint_index].frame == frame) {
 			emit_checkpoint(core, buffer, width, height,
@@ -891,7 +993,13 @@ static int run_until(struct mCore* core, const struct Plan* plan,
 
 		if (!apply_accelerated_fidelity_config(core, plan, frame))
 			return 2;
-		apply_frame_input(core, plan, &range_index, frame);
+		if (plan->has_seed_write && frame == plan->seed_frame) {
+			for (size_t i = 0; i < plan->baseline_probe_count; ++i)
+				printf("BASELINE\t%zu\t%" PRIu32 "\n", i,
+				       read_probe(core, &plan->baseline_probes[i]));
+		}
+		if (!apply_frame_input(core, plan, &range_index, frame))
+			return 2;
 		if (plan->trace_probe_count != 0)
 			emit_trace(core, plan, frame, trace_values, &have_trace_values);
 		for (size_t i = 0; i < plan->run_probe_count; ++i)

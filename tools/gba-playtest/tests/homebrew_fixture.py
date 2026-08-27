@@ -67,3 +67,28 @@ def build_homebrew_rom(path: Path) -> None:
     # not needed by libmGBA's HLE boot and avoids embedding proprietary bytes.
     rom[0xBD] = (-sum(rom[0xA0:0xBD]) - 0x19) & 0xFF
     path.write_bytes(rom)
+
+
+def build_seed_batch_rom(path: Path) -> None:
+    """Build a fixture that mirrors the injected seed into terminal probes."""
+    rom = bytearray(ROM_SIZE)
+
+    _word(rom, 0, 0xEA000000 | ((ENTRY - 8) // 4))
+    rom[0xA0:0xAC] = b"GPTBATCH".ljust(12, b"\0")
+    rom[0xAC:0xB0] = b"GPB1"
+    rom[0xB0:0xB2] = b"00"
+    rom[0xB2] = 0x96
+
+    instructions = (
+        0xE59F000C,  # ldr r0, =0x02000000
+        0xE5901000,  # ldr r1, [r0]
+        0xE5801004,  # str r1, [r0, #4]
+        0xE5801008,  # str r1, [r0, #8]
+        0xEAFFFFFB,  # b loop
+    )
+    for index, instruction in enumerate(instructions):
+        _word(rom, ENTRY + index * 4, instruction)
+    _word(rom, ENTRY + len(instructions) * 4, 0x02000000)
+
+    rom[0xBD] = (-sum(rom[0xA0:0xBD]) - 0x19) & 0xFF
+    path.write_bytes(rom)

@@ -784,3 +784,99 @@ resource, survival, balance, or campaign planning. Existing low-level AI may
 move or attack but is not a chapter-completion oracle. Remove the controller
 module, its guarded hooks, runtime gate, and documentation to roll back; no
 save or generated-data recovery is required.
+
+## Deterministic finite autoplay batch reports
+
+Issue [#91](https://github.com/laqieer/fireemblem8-expansion/issues/91) adds
+the `tools/gba-playtest/autoplay_batch.py` host collector. It is a framework
+capability built directly on #85's telemetry, #86's bounded terminal contract,
+#89's semantic group/objective telemetry, and #90's profile identity. Its
+immediate stack parent is #90; #88 accelerated fidelity is explicitly not a
+stack parent or requirement. `TC-AUTOPLAY-BATCH-001` uses only normal fidelity.
+This follows the latest accepted issue #91 architecture-handoff correction,
+which supersedes the initial issue body: #88 remains optional integration and
+the initial batch collector is frozen to normal-fidelity schema version 2.
+
+The batch CLI requires one exact ROM/ELF, one bounded scenario with
+`schema_version` exactly 2 and no `execution_profile`, one versioned
+specification, an explicit finite unique seed list, bounded `--max-jobs`, and
+explicit frame/turn/action bounds. The values must match the scenario's hard
+limits exactly. Each seed starts a new libmGBA core from clean boot, using one
+shared backend compiled and validated before any worker starts. A
+specification supplies the only permitted seed mechanism: an exact linked
+EWRAM/IWRAM binding, its canonical resolved numeric address, and a frame at
+which that value is written. The full write range must remain in writable work
+RAM and the frame must precede canonical `max_frames`. The report therefore
+identifies a real seed injection rather than claiming that an arbitrary label
+changed the ROM's RNG. Every seed must fit that declared 1/2/4-byte field
+before backend setup. The underlying capture API rejects scheduled writes for
+fixed-frame scenarios before plan or backend work; plan format 7 always
+contains bounded `RUN_UNTIL` and requires one matching
+`SEED_WRITE_APPLIED` record before a terminal result is accepted. The backend
+continues accepting format 6 input plans for compatibility.
+
+The version-1 specification declares normal-fidelity profile/configuration
+identity and semantic metric descriptors. Metric probes must be part of the
+terminal checkpoint, keeping faction/group survivor and casualty counts,
+recruitment/village/chest outcomes, and configured EXP/item/resource deltas
+grounded in ROM-supplied semantic telemetry. Unsupported metrics, duplicate or
+implicit seeds, omitted bounds, unresolved metric probes, missing or duplicate
+required metric/delta kinds, version 3/profile scenarios, reuse of a writable
+SRAM image, and output collisions fail before execution.
+Faction/group, event-outcome, and each delta list contain 1 through 64 sorted
+unique definitions. Imported survivor/casualty and delta values must fit their
+declared probe widths before aggregate validation. Every imported
+faction/event/delta probe retains its canonical resolved address and size and
+must match a terminal-checkpoint probe; `run_batch` deduplicates intentional
+sharing by numeric `(address, size)`, while a missing or textually
+renamed-to-unrelated RAM probe is rejected.
+
+EXP, item, and resource metrics are signed changes. Before serializing the
+current format-7 plan, `run_batch` resolves and deduplicates intentional
+symbolic/literal metric aliases by numeric `(address, size)`. The backend
+rejects duplicate baseline records in the serialized plan, reads each declared
+probe once at the seed frame immediately before that frame's input and seed
+write (immediately after reset for the canonical frame-0 fixture), then reads
+the terminal checkpoint in that same execution. Format-6 input compatibility
+does not own or imply collector deduplication.
+Reports retain both unsigned width-bounded observations and compute `delta =
+terminal - baseline`, permitting gain, consumption, and zero change without a
+second divergent emulator run.
+
+The version-2 report contains sorted ROM/configuration/scenario/profile/bound
+provenance, canonical normalized scenario and specification definitions with
+validated SHA-256 identities, and one sorted run record per seed. Inline
+terminal-checkpoint probe expectations participate in that canonical identity;
+absence remains absent, while adding or changing an expectation changes the
+digest. A terminal success, objective failure, stall, or exhausted frame/turn/action budget is
+retained with its terminal counters and declared metrics; an individual seed
+execution failure remains a status-1 record containing only seed, status,
+stable error text, and ROM provenance because it has no trustworthy
+terminal/metric observation. Compiler, libmGBA,
+backend-build, or global setup failure returns 2 before seed records exist.
+Parallel scheduling cannot affect report order or bytes. The companion
+`compare` command deeply validates nested provenance, ROM, terminal, metric,
+aggregate, and run shapes, then reports provenance-definition,
+added/removed-seed, terminal, and metric deltas without inferring statistical
+significance, difficulty, or balance. Imported reports require 1 through 256
+unique ascending seeds; provenance limits must exactly match the canonical
+scenario's required frame/turn/action bounds and counter probes, and terminal
+plus metric values must remain within them. Batch-report counter addresses are
+serialized as resolved numeric literals, so symbolic aliases validate against executable
+identity. Objective failure must be scenario-declared, engine stall requires a
+stall detector and cannot occur before its configured unchanged-frame limit,
+`max_frames` occurs only on the final bounded frame, and
+turn/action exhaustion must reach its declared threshold. Output is exclusively staged
+beside the requested ignored `build/` path, fsynced, and hard-linked to an
+absent destination without clobbering; a competing creator is preserved and
+failure removes only this invocation's staging/link.
+The requested output must be a strict child of `build/`; the build root itself
+is rejected whether missing, present, or reached through a symlink. Per-seed
+execution errors preserve stable scenario/ROM/error-class context but
+canonicalize only random emulator/backend workspace paths.
+
+This host-only layer adds no ROM code, RAM allocation, feature gate,
+configuration-identity field, generated game data, localization, save byte,
+migration, compatibility epoch, or archival-lane behavior. Removing the batch
+script, its bounded backend seed-write record, tests, and documentation rolls
+back the feature without save recovery.
