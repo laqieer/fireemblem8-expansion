@@ -859,6 +859,54 @@ class RunUntilFingerprintTests(unittest.TestCase):
                 output("max_actions", 0, action_present=1, action_value=1),
                 "configured limit",
             ),
+            (
+                run_until_data(
+                    success_value=1,
+                    turn_limit=2,
+                    action_limit=2,
+                ),
+                output(
+                    "max_actions",
+                    0,
+                    turn_present=1,
+                    turn_value=2,
+                    action_present=1,
+                    action_value=2,
+                ),
+                "higher-priority max_turns",
+            ),
+            (
+                run_until_data(
+                    success_value=1,
+                    turn_limit=2,
+                    action_limit=2,
+                ),
+                output(
+                    "max_frames",
+                    4,
+                    turn_present=1,
+                    turn_value=2,
+                    action_present=1,
+                    action_value=1,
+                ),
+                "higher-priority max_turns",
+            ),
+            (
+                run_until_data(
+                    success_value=1,
+                    turn_limit=2,
+                    action_limit=2,
+                ),
+                output(
+                    "max_frames",
+                    4,
+                    turn_present=1,
+                    turn_value=1,
+                    action_present=1,
+                    action_value=2,
+                ),
+                "higher-priority max_actions",
+            ),
         )
         for data, backend_output, error in cases:
             with self.subTest(error=error):

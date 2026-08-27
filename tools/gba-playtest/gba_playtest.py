@@ -1773,6 +1773,28 @@ def validate_run_until_terminal_outcome(
             raise PlaytestError("max_actions is not configured by the scenario")
         if action_value < run_until.action_limit.maximum:
             raise PlaytestError("max_actions did not reach the configured limit")
+        if (
+            run_until.turn_limit is not None
+            and turn_value >= run_until.turn_limit.maximum
+        ):
+            raise PlaytestError(
+                "max_actions cannot occur after the higher-priority max_turns limit"
+            )
+    if reason == "max_frames":
+        if (
+            run_until.turn_limit is not None
+            and turn_value >= run_until.turn_limit.maximum
+        ):
+            raise PlaytestError(
+                "max_frames cannot occur after the higher-priority max_turns limit"
+            )
+        if (
+            run_until.action_limit is not None
+            and action_value >= run_until.action_limit.maximum
+        ):
+            raise PlaytestError(
+                "max_frames cannot occur after the higher-priority max_actions limit"
+            )
 
 
 def _parse_backend_output(
