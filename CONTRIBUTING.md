@@ -276,6 +276,8 @@ activation commit; a changed head needs fresh evidence. Retained assignment
 requires a nonblank ownership reason. Rejected evidence retains the label,
 assignee, holds, and actionable state.
 
+- **Eligibility:** Require a material visual, audio, or UX criterion. Require
+  automation to be unreliable for that criterion.
 - **Activation:** Apply `waiting-for-manual-testing` to the originating issue
   and each open implementation PR. Assign `laqieer` to those targets. Ping
   `@laqieer` in each comment.

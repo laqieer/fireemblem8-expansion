@@ -257,6 +257,8 @@ a fresh handoff and evidence. Retaining `laqieer` requires a nonblank independen
 ownership reason. Rejected evidence keeps the label, assignee, both holds, and
 actionable state.
 
+- **Eligibility:** Require a material visual, audio, or UX criterion. Require
+  automation to be unreliable for that criterion.
 - **Activation:** Apply `waiting-for-manual-testing` to the originating issue
   and each open implementation PR. Assign `laqieer` to those targets. Ping
   `@laqieer` in each comment.

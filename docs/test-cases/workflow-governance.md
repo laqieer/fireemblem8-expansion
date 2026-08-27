@@ -109,6 +109,8 @@ Human guidance links to that file without duplicating machine behavior.
 
 ### Lifecycle summary
 
+- **Eligibility:** Require a material visual, audio, or UX criterion. Require
+  automation to be unreliable for that criterion.
 - **Activation:** Apply `waiting-for-manual-testing` to the originating issue
   and each open implementation PR. Assign `laqieer` to those targets. Ping
   `@laqieer` in each comment.
@@ -124,16 +126,16 @@ Human guidance links to that file without duplicating machine behavior.
 
 Every leaf mutation in the structured contract fails, including a missing
 artifact role/path/hash/emulator/determinism/synchronization/inspection field,
-instrumented artifacts, missing or misplaced mention, invalid or empty numbered
-steps, false or mistyped comment holds, missing per-item comments, permissive
-activation, wrong identifiers or targets, disabled holds, incomplete historical
-cleanup, missing or mismatched completion evidence, malformed optional
-booleans, duplicate artifact identities, bare or unrelated evidence pages,
-malformed PR origins, stale open-PR heads, ownership exceptions without a
-reason, rejected cleanup/resumption, premature rejected-state cleanup,
-empty-queue notifications, and invalid independently discovered issue/PR
-relationships. Reversing any lifecycle summary action or removing this case's
-own subsection also fails locally.
+instrumented artifacts, missing or optional materiality, missing or misplaced
+mention, invalid or empty numbered steps, false or mistyped comment holds,
+missing per-item comments, permissive activation, wrong identifiers or targets,
+disabled holds, incomplete historical cleanup, missing or mismatched completion
+evidence, malformed optional booleans, duplicate artifact identities, bare or
+unrelated evidence pages, malformed PR origins, stale open-PR heads, ownership
+exceptions without a reason, rejected cleanup/resumption, premature
+rejected-state cleanup, empty-queue notifications, and invalid independently
+discovered issue/PR relationships. Reversing any lifecycle summary action or
+removing this case's own subsection also fails locally.
 
 ### Interactions and save compatibility
 

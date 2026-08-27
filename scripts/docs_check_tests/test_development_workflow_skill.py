@@ -527,6 +527,14 @@ def watcher_example_violations(text):
 
 
 HUMAN_LIFECYCLE_ACTIONS = {
+    "Eligibility": (
+        ("require material criterion", ("require",), {
+            "material", "visual", "audio", "ux", "criterion",
+        }),
+        ("require unreliable automation", ("require",), {
+            "automation", "unreliable", "criterion",
+        }),
+    ),
     "Activation": (
         ("apply label", ("apply", "add"), {
             "waiting", "for", "manual", "testing", "originating", "issue",
@@ -702,6 +710,7 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
     "schema": "fe8.manual-testing-handoff.v1",
     "eligibility": {
         "kinds": ["visual", "audio", "ux"],
+        "material": True,
         "automation_unreliable": True,
         "deterministic_criteria": False,
     },
@@ -3009,6 +3018,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             ),
         )
         actions = (
+            "Require a material visual, audio, or UX criterion",
+            "Require automation to be unreliable for that criterion",
             "Apply `waiting-for-manual-testing` to the originating issue and "
             "each open implementation PR",
             "Assign `laqieer` to those targets",
@@ -3021,22 +3032,22 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Resume exact-candidate gates and merge automatically",
         )
         contracted_reversals = {
-            actions[0]: (
+            actions[2]: (
                 "Don't apply `waiting-for-manual-testing` to the originating "
                 "issue and each open implementation PR"
             ),
-            actions[1]: "Won't assign `laqieer` to those targets",
-            actions[2]: "Won't ping `@laqieer` in each comment",
-            actions[3]: "Can't block merge for the manual criterion",
-            actions[4]: "Can't block issue closure for the manual criterion",
-            actions[5]: (
+            actions[3]: "Won't assign `laqieer` to those targets",
+            actions[4]: "Won't ping `@laqieer` in each comment",
+            actions[5]: "Can't block merge for the manual criterion",
+            actions[6]: "Can't block issue closure for the manual criterion",
+            actions[7]: (
                 "Can't remove `waiting-for-manual-testing` from the "
                 "originating issue and every labeled implementation PR"
             ),
-            actions[6]: (
+            actions[8]: (
                 "Can't remove the temporary `laqieer` assignment"
             ),
-            actions[7]: (
+            actions[9]: (
                 "Can't resume exact-candidate gates and merge automatically"
             ),
         }
@@ -3092,6 +3103,27 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     mutated = replace_whitespace_phrase(
                         text,
                         "After accepted evidence",
+                        replacement,
+                    )
+                    self.assertTrue(
+                        human_handoff_violations(
+                            mutated,
+                            governance=governance,
+                        )
+                    )
+            eligibility_reversals = (
+                "Allow an immaterial visual, audio, or UX criterion to trigger "
+                "the handoff.",
+                "Materiality may be optional for handoff activation.",
+            )
+            for replacement in eligibility_reversals:
+                with self.subTest(
+                    governance=governance,
+                    eligibility=replacement,
+                ):
+                    mutated = replace_whitespace_phrase(
+                        text,
+                        "Require a material visual, audio, or UX criterion",
                         replacement,
                     )
                     self.assertTrue(
@@ -3301,6 +3333,14 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             with self.subTest(blocker=name):
                 mutated = copy.deepcopy(contract)
                 mutated[section][key] = value
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+        for value in ("true", 1, [], {}):
+            with self.subTest(materiality_type=type(value).__name__):
+                mutated = copy.deepcopy(contract)
+                mutated["eligibility"]["material"] = value
                 self.assertTrue(compare_contract(
                     mutated,
                     EXPECTED_MANUAL_HANDOFF_CONTRACT,
