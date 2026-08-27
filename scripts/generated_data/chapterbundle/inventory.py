@@ -4,10 +4,10 @@ Unlike the per-symbol-table inventories (units/shops/traps/eventscripts/
 eventlists), this report covers every table the bundle composes: per-table
 record counts and a stable digest (so drift in *any* composed table's
 JSON is visible as a one-line diff here too), one overall bundle digest,
-and an explicit authored-vs-reference-only classification -- the bundle
-itself, and the 5 tables/support-owner set it composes, are Chapter 2's
-own authored data; the character/class/item ``dependencies`` are called
-out as reference-only (this slice does not claim to author them).
+and an explicit authored-vs-reference-only classification. The bundle,
+its five core tables/support-owner set, and its optional objective/strategy
+owners are authored data; character/class/item ``dependencies`` are
+reference-only (this slice does not claim to author them).
 """
 
 from __future__ import annotations
@@ -47,6 +47,17 @@ def _objective_source_entries(record, source):
     )
 
 
+def _strategy_source_entries(record, source):
+    from ..autoplaystrategies import schema as strategies_schema
+
+    source_path = _source_path(source, record.repository_root)
+    loaded = strategies_schema.load_records(source_path)
+    return tuple(
+        _source_display_and_digest(record, path)
+        for path in loaded["source_paths"]
+    )
+
+
 def _aggregate_digest(entries):
     return _digest(json.dumps(sorted(entries), separators=(",", ":")))
 
@@ -60,6 +71,8 @@ def _dependent_source_entries(record):
     entries.append(_source_display_and_digest(record, record.support_owners.source))
     if record.chapter_objectives is not None:
         entries.extend(_objective_source_entries(record, record.chapter_objectives.source))
+    if record.autoplay_strategies is not None:
+        entries.extend(_strategy_source_entries(record, record.autoplay_strategies.source))
     return tuple(sorted(entries))
 
 
@@ -115,6 +128,16 @@ def _build_single_inventory(records):
                 _aggregate_digest(entries),
             )
         )
+    if records.autoplay_strategies is not None:
+        strategies = records.autoplay_strategies
+        entries = _strategy_source_entries(records, strategies.source)
+        lines.append(
+            "| autoplaystrategies | {} | {} | {} |\n".format(
+                ", ".join(source for source, _digest_value in entries),
+                len(strategies.symbols),
+                _aggregate_digest(entries),
+            )
+        )
     lines.append("\n")
 
     lines.append("## External references (authored citations into hand source, out of typed-macro scope)\n")
@@ -160,6 +183,10 @@ def _build_single_inventory(records):
                 sorted(records.chapter_objectives.symbols)
                 if records.chapter_objectives is not None else []
             ),
+            "autoplayStrategies": (
+                sorted(records.autoplay_strategies.symbols)
+                if records.autoplay_strategies is not None else []
+            ),
             "dependencies": {
                 "characters": sorted(records.dependencies.characters),
                 "classes": sorted(records.dependencies.classes),
@@ -189,15 +216,15 @@ def build_inventory(records):
         "- Full multi-table topological order: {}\n".format(", ".join(graph.topo_order())),
         "\n",
         "| Chapter | Bundle source | Source digest (sha256) | Dependent sources digest (sha256) | "
-        "Manifest | Unit symbols | Objective symbols |\n",
-        "|---|---|---|---|---|---|---|\n",
+        "Manifest | Unit symbols | Objective symbols | Strategy symbols |\n",
+        "|---|---|---|---|---|---|---|---|\n",
     ]
     for record in records:
         unit_groups = record.tables_by_name.get("units")
         objectives = record.chapter_objectives
         dependent_entries = _dependent_source_entries(record)
         lines.append(
-            "| {} | {} | {} | {} | {} | {} | {} |\n".format(
+            "| {} | {} | {} | {} | {} | {} | {} | {} |\n".format(
                 record.chapter.id,
                 source_display_path(record.source_path, record.repository_root),
                 _source_display_and_digest(record, record.source_path)[1],
@@ -205,6 +232,8 @@ def build_inventory(records):
                 record.manifest.symbol,
                 ", ".join(sorted(unit_groups.symbols)) if unit_groups is not None else "-",
                 ", ".join(sorted(objectives.symbols)) if objectives is not None else "-",
+                ", ".join(sorted(record.autoplay_strategies.symbols))
+                if record.autoplay_strategies is not None else "-",
             )
         )
     return "".join(lines)

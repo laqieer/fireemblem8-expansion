@@ -19,9 +19,10 @@ Run `./configure --help` to see the persistent feature/profile interface.
 `configure` validates the selected combination with the same
 `scripts/modernize/expansion_config.py` implementation used by the build, then
 writes ignored `config.autotools.mk` and `GNUmakefile` files. Supported options
-cover the starter flags, one-phase blue delegation, AoE reference, casual-mode
-policy, HQ mixer, localized-text auto-wrap, enabled/default/pseudo locales,
-ROM size, item ID cap, and link-time text shift.
+cover the starter flags, one-phase blue delegation, autoplay strategy
+references, AoE reference, casual-mode policy, HQ mixer, localized-text
+auto-wrap, enabled/default/pseudo locales, ROM size, item ID cap, and link-time
+text shift.
 
 Only options explicitly passed to `configure` are written, so unspecified
 settings continue to use `config.mk`/`modern.mk` defaults. Precedence is:
@@ -62,6 +63,7 @@ regenerate the committed `configure` script with `autoreconf -fi`.
 | `ASSET_MANIFEST` | existing source-owned manifest path | `assets/manifest.json` | asset profile selected by direct Make or persisted through `./configure --with-asset-manifest=PATH`; custom-spell feature validation uses this exact manifest before configure succeeds |
 | `EXPANSION_CASUAL_MODE` | `0` or `1` | `0` | issue #34 optional ordinary player-defeat restoration (fingerprint); combat/arena defeats are restored at the next chapter boundary, while scripted deaths and explicit removals remain permanent |
 | `EXPANSION_HQ_MIXER` | `0` or `1`; only `en` or `en,qps-ploc` locale profiles | `0` | issue #83 optional modern-only high-resolution MP2K PCM mixer (fingerprint); archival and real-localized-game requests fail before compilation and save compatibility is unchanged |
+| `EXPANSION_AUTOPLAY_STRATEGIES` | `0` or `1` | `0` | issue #90 permanent default-off Aggressive and Objective-first reference profiles (fingerprint); the generic registry remains available, no save state or migration is added |
 | `EXPANSION_BGM_CONTINUATION_POLICY` | `preserve`, `resume`, or `restart` | `preserve` | issues #37/#39 typed BGM continuation policy (fingerprint); never save-compatible |
 
 Every value has a `?=` default, so an explicit `./configure` option, `make`

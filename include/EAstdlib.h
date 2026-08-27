@@ -42,6 +42,14 @@
 #define BLT EvtBLT
 #define ASMC EvtAsmCall
 #define ASMC2 EvtAsmCallEnableSkip
+#define AUTOPLAY_STRATEGY_ACTIVATE(strategy, flag) \
+    SVAL(EVT_SLOT_B, (strategy)) \
+    SVAL(EVT_SLOT_C, (flag)) \
+    ASMC(ExpansionAutoplayStrategies_EventActivate)
+#define AUTOPLAY_STRATEGY_DEACTIVATE(strategy, flag) \
+    SVAL(EVT_SLOT_B, (strategy)) \
+    SVAL(EVT_SLOT_C, (flag)) \
+    ASMC(ExpansionAutoplayStrategies_EventDeactivate)
 #define STAL EvtSleep
 #define STAL1 EvtSleepWithCancel
 #define STAL2 EvtSleepWithGameCtrl

@@ -1,0 +1,38 @@
+{
+  "$schema": "fe8.chapterobjectives.v1",
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "ChapterObjectives_StrategyRuntime",
+      "aiGroups": [
+        {
+          "id": "AI_GROUP_STRATEGY_RUNTIME_EIRIKA",
+          "members": [
+            {
+              "character": "CHARACTER_EIRIKA",
+              "unitGroup": "UnitDef_Event_Ch2Ally"
+            }
+          ]
+        }
+      ],
+      "objectives": [
+        {
+          "id": "OBJECTIVE_STRATEGY_RUNTIME_REACH",
+          "kind": "reach_area",
+          "group": "AI_GROUP_STRATEGY_RUNTIME_EIRIKA",
+          "area": {
+            "xMin": 3,
+            "yMin": 3,
+            "xMax": 3,
+            "yMax": 3
+          }
+        }
+      ],
+      "dependencies": {
+        "characters": ["CHARACTER_EIRIKA"],
+        "eventFlags": [],
+        "unitGroups": ["UnitDef_Event_Ch2Ally"]
+      }
+    }
+  ]
+}

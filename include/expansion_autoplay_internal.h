@@ -13,6 +13,8 @@ bool ExpansionAutoplay_TryRestorePlayerControlAfterPhase(void);
 void ExpansionAutoplay_OnPlayerPhaseStart(void);
 void ExpansionAutoplay_OnBlueComputerPhaseStart(void);
 void ExpansionAutoplay_OnBlueComputerPhaseComplete(void);
+void ExpansionAutoplayStrategies_ResetPendingActivation(void);
+void ExpansionAutoplayStrategies_ApplyPendingActivation(void);
 void ExpansionAutoplay_RecordEligibleActors(int side, int count);
 void ExpansionAutoplay_RecordCommittedAction(
     int side,
@@ -23,6 +25,7 @@ void ExpansionAutoplay_RecordCommittedAction(
 void ExpansionAutoplay_RecordRelationCheck(int leftSlot, int rightSlot, bool allied);
 void ExpansionAutoplay_RecordUnsupportedEscape(void);
 void ExpansionAutoplay_RecordSuspendSuppressed(void);
+void ExpansionAutoplay_RecordStrategyFailure(int result);
 #if FE8_AUTOPLAY_EVENT_TRACE_TEST
 void ExpansionAutoplay_RecordEventCommand(u8 command);
 #endif

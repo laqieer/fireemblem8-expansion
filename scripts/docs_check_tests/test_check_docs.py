@@ -935,20 +935,33 @@ class TesterCaseRegistryTests(unittest.TestCase):
         cases = {entry["id"]: entry for entry in registry["cases"]}
         contracts = {
             "battle-animation-package": {
-                "case_id": "TC-BANIM-PACKAGE-062",
                 "reference": "docs/battle_animation_packages.md",
-                "document": "docs/test-cases/asset-authoring.md",
-                "commands": {
-                    "python3 -m unittest scripts.assets.tests.test_manifest -v",
-                    "make expansion-modern-banim-package-runtime-check",
+                "cases": {
+                    "TC-BANIM-PACKAGE-062": {
+                        "document": "docs/test-cases/asset-authoring.md",
+                        "commands": {
+                            "python3 -m unittest scripts.assets.tests.test_manifest -v",
+                            "make expansion-modern-banim-package-runtime-check",
+                        },
+                    },
                 },
             },
             "workflow-governance": {
-                "case_id": "TC-WORKFLOW-CI-WAIT-001",
                 "reference": ".github/skills/development-workflow/SKILL.md",
-                "document": "docs/test-cases/workflow-governance.md",
-                "commands": {
-                    "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+                "cases": {
+                    "TC-WORKFLOW-CI-WAIT-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+                        },
+                    },
+                    "TC-WORKFLOW-STACKED-CI-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            'python3 -m unittest discover -s tests/workflows -p "test_*.py" -v',
+                            "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+                        },
+                    },
                 },
             },
         }
@@ -958,28 +971,42 @@ class TesterCaseRegistryTests(unittest.TestCase):
                 self.assertIn(feature_id, expected_feature_ids)
                 feature = features[feature_id]
                 self.assertEqual(feature["reference"], contract["reference"])
-                self.assertEqual(feature["required_cases"], [contract["case_id"]])
-                case = cases[contract["case_id"]]
-                self.assertEqual(case["feature_id"], feature_id)
-                self.assertEqual(case["document"], contract["document"])
-                self.assertTrue(
-                    contract["commands"].issubset({
-                        record["command"] for record in case["automation"]
-                    })
-                )
-                procedure = check_docs.read_text(
-                    os.path.join(REAL_REPO_ROOT, case["document"])
-                )
-                self.assertIn("## " + contract["case_id"] + ":", procedure)
-                for heading in (
-                    "### Actions",
-                    "### Expected result",
-                    "### Negative control",
-                    "### Interactions and save compatibility",
-                    "### Automation",
-                    "### Cleanup and limitations",
-                ):
-                    self.assertIn(heading, procedure)
+                self.assertCountEqual(feature["required_cases"], contract["cases"])
+                for case_id, case_contract in contract["cases"].items():
+                    with self.subTest(feature_id=feature_id, case_id=case_id):
+                        case = cases[case_id]
+                        self.assertEqual(case["feature_id"], feature_id)
+                        self.assertEqual(case["document"], case_contract["document"])
+                        self.assertTrue(
+                            case_contract["commands"].issubset({
+                                record["command"] for record in case["automation"]
+                            })
+                        )
+                        procedure = check_docs.read_text(
+                            os.path.join(REAL_REPO_ROOT, case["document"])
+                        )
+                        case_heading = "## " + case_id + ":"
+                        start = procedure.index(case_heading)
+                        next_heading = re.search(
+                            r"^## ",
+                            procedure[start + len(case_heading):],
+                            re.MULTILINE,
+                        )
+                        end = (
+                            start + len(case_heading) + next_heading.start()
+                            if next_heading is not None
+                            else len(procedure)
+                        )
+                        case_procedure = procedure[start:end]
+                        for heading in (
+                            "### Actions",
+                            "### Expected result",
+                            "### Negative control",
+                            "### Interactions and save compatibility",
+                            "### Automation",
+                            "### Cleanup and limitations",
+                        ):
+                            self.assertIn(heading, case_procedure)
 
     def test_patch_release_cases_are_indexed_with_complete_procedures(self):
         registry_path = os.path.join(REAL_REPO_ROOT, check_docs.TEST_CASE_REGISTRY_PATH)
@@ -1060,6 +1087,19 @@ class TesterCaseRegistryTests(unittest.TestCase):
         directory["cases"][0]["automation"][0]["evidence"] = "tests"
         self.assertTrue(any("no real command/scenario/test evidence" in message
                             for message in self._messages(directory)))
+
+        generated_artifact = self._valid_registry()
+        generated_artifact["cases"][0]["automation"][0]["evidence"] = "build/profile/output.o"
+        with TempRepo() as repo:
+            self._write_registry_fixture(repo.root, generated_artifact)
+            write(repo.root, "build/profile/output.o", "generated object\n")
+            messages = [
+                finding.message for finding in check_docs.check_test_case_registry(repo.root)
+            ]
+        self.assertTrue(
+            any("not generated build artifact" in message for message in messages),
+            messages,
+        )
 
     def test_manual_only_rationale_is_a_valid_automation_alternative(self):
         manual_only = self._valid_registry()

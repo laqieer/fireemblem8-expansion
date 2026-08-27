@@ -21,6 +21,7 @@ the authoritative technical documentation and are checked by CI.
 | Add a bounded area-of-effect target/effect or item route | [`aoe.md`](aoe.md) |
 | Drive or optionally delegate blue units through the existing AI, including bounded semantic runtime scenarios | [`autoplay.md`](autoplay.md) |
 | Author typed chapter objectives and AI-group membership for bounded autoplay | [`generated_data_tutorial.md`](generated_data_tutorial.md), [`autoplay.md`](autoplay.md) |
+| Author a bounded autoplay strategy assignment or downstream profile | [`generated_data_tutorial.md`](generated_data_tutorial.md), [`autoplay.md`](autoplay.md) |
 | Author and enable strict custom battle spell-effect packages | [`custom_spell_effects.md`](custom_spell_effects.md) |
 | Configure casual defeat restoration | [`starter_features.md`](starter_features.md#optional-casual-defeat-policy-issue-34) |
 | Enable the optional high-resolution MP2K PCM mixer | [`audio.md`](audio.md) |
@@ -85,6 +86,7 @@ numbers mark merged (closed) contracts only:
 | Transient blue computer control (issue #85) | `include/expansion_autoplay.h`; `PLAYER`/`COMPUTER` control and pointer-free semantic telemetry | [`autoplay.md`](autoplay.md) |
 | Bounded semantic run-until scenarios (issue #86) | `tools/gba-playtest` schema v2, fingerprint format v3, seven typed terminal reasons, and fixed-frame compatibility | [`autoplay.md`](autoplay.md), [`../tools/gba-playtest/README.md`](../tools/gba-playtest/README.md) |
 | Typed chapter objectives and AI groups (issue #89) | `include/expansion_chapter_objectives.h`; generated `chapterobjectives` records, chapter-bundle ownership, and semantic telemetry | [`generated_data_tutorial.md`](generated_data_tutorial.md), [`autoplay.md`](autoplay.md) |
+| Typed autoplay strategy profiles (issue #90) | `include/expansion_autoplay_strategies.h`; generated `autoplaystrategies` registry and chapter/group/unit assignments | [`generated_data_tutorial.md`](generated_data_tutorial.md), [`autoplay.md`](autoplay.md) |
 | Optional one-phase Charge delegation (issue #87) | `include/expansion_autoplay.h`; default-off one-phase map command built on the #85 control/telemetry API | [`autoplay.md`](autoplay.md) |
 | Accelerated-fidelity comparison (issue #88) | `tools/gba-playtest` schema v3, profile-contained game-speed/BANIM-off configuration, semantic differential traces, and fixed-frame reduction | [`autoplay.md`](autoplay.md), [`../tools/gba-playtest/README.md`](../tools/gba-playtest/README.md) |
 | Custom battle spell effects (issues #77/#78) | `include/custom_spell_effect.h` plus the `custom-spell-effect` manifest kind; typed runtime and strict generated package binding | [`custom_spell_effects.md`](custom_spell_effects.md) |

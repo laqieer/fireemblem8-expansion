@@ -60,31 +60,55 @@ def _parse_dep_source_overrides(raw_pairs):
     return overrides
 
 
-def _load_dependency_records(schema, dep_source_overrides):
+def _load_dependency_records(schema, dep_source_overrides, reference_profiles=None):
     """Load this schema's declared ``dependency_tables()`` deterministically
     (in declaration order) through the schema registry, returning ``None``
     when the table has no table-level dependencies (so callers can fall
     back to the plain 2-argument ``validate`` signature unchanged)."""
-    dep_tables = tuple(schema.dependency_tables())
+    dep_tables = tuple(schema.dependency_tables()) + tuple(
+        getattr(schema, "optional_dependency_tables", lambda: ())()
+    )
     if not dep_tables:
         return None
     dependency_records = {}
     for dep_name in dep_tables:
         dep_schema = REGISTRY.resolve(dep_name)
         dep_source = dep_source_overrides.get(dep_name) or dep_schema.default_source
-        dependency_records[dep_name] = dep_schema.load_records(dep_source)
+        dependency_records[dep_name] = dep_schema.configure_records(
+            dep_schema.load_records(dep_source),
+            reference_profiles=reference_profiles,
+        )
     return dependency_records
 
 
-def _load_and_validate(schema, source_path, dep_source_overrides=None):
-    records = schema.load_records(source_path)
+def _load_and_validate(
+    schema,
+    source_path,
+    dep_source_overrides=None,
+    reference_profiles=None,
+):
+    records = schema.configure_records(
+        schema.load_records(source_path),
+        reference_profiles=reference_profiles,
+    )
     diagnostics = DiagnosticCollector()
-    dependency_records = _load_dependency_records(schema, dep_source_overrides or {})
+    dependency_records = _load_dependency_records(
+        schema,
+        dep_source_overrides or {},
+        reference_profiles,
+    )
     if dependency_records is not None:
         schema.validate(records, diagnostics, dependency_records)
     else:
         schema.validate(records, diagnostics)
     return records, diagnostics
+
+
+def _configure_records(schema, records, args):
+    return schema.configure_records(
+        records,
+        reference_profiles=args.reference_profiles,
+    )
 
 
 def _roundtrip_errors(schema, records, hand_source, no_roundtrip):
@@ -106,7 +130,13 @@ def cmd_validate(args):
     source_path = args.source or schema.default_source
     try:
         dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
-        records, diagnostics = _load_and_validate(schema, source_path, dep_source_overrides)
+        records, diagnostics = _load_and_validate(
+            schema,
+            source_path,
+            dep_source_overrides,
+            args.reference_profiles,
+        )
+        records = _configure_records(schema, records, args)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -144,7 +174,13 @@ def cmd_generate(args):
 
     try:
         dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
-        records, diagnostics = _load_and_validate(schema, source_path, dep_source_overrides)
+        records, diagnostics = _load_and_validate(
+            schema,
+            source_path,
+            dep_source_overrides,
+            args.reference_profiles,
+        )
+        records = _configure_records(schema, records, args)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -200,7 +236,13 @@ def cmd_check(args):
 
     try:
         dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
-        records, diagnostics = _load_and_validate(schema, source_path, dep_source_overrides)
+        records, diagnostics = _load_and_validate(
+            schema,
+            source_path,
+            dep_source_overrides,
+            args.reference_profiles,
+        )
+        records = _configure_records(schema, records, args)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -388,6 +430,11 @@ def build_arg_parser():
             "--dep-source", action="append",
             help="override a table dependency's JSON source as NAME=PATH (repeatable); "
                  "only meaningful for tables whose schema declares dependency_tables()",
+        )
+        sub.add_argument(
+            "--reference-profiles",
+            choices=("0", "1"),
+            help="select generated built-in autoplay reference profiles",
         )
 
     validate_parser = subparsers.add_parser("validate", help="validate a table's JSON source")

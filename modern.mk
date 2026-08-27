@@ -67,6 +67,11 @@ MODERN_GOALS := \
 	expansion-modern-chapter-objectives-profile-rom \
 	expansion-modern-chapter-objectives-profile-boot-check \
 	expansion-modern-chapter-objectives-check \
+	expansion-modern-autoplay-strategy-runtime-check \
+	expansion-modern-autoplay-strategy-router-absent-budget \
+	expansion-modern-autoplay-strategy-enabled-budget \
+	expansion-modern-autoplay-strategy-budget \
+	expansion-modern-autoplay-strategies-objects \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-idspace-active-check \
@@ -363,6 +368,9 @@ endif
 # `include generated_data.mk`): GENERATED_DATA_LINKED_HAND_SOURCES is then
 # simply empty/undefined, so this filters out nothing.
 MODERN_ALL_C_SOURCES := $(filter-out $(GENERATED_DATA_LINKED_HAND_SOURCES),$(MODERN_ALL_C_SOURCES))
+ifeq ($(MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT),1)
+MODERN_ALL_C_SOURCES := $(filter-out src/expansion_autoplay_strategies.c,$(MODERN_ALL_C_SOURCES))
+endif
 
 MODERN_ALL_DATA_C_SOURCES ?= $(wildcard src/data/*.c src/data/mapanim/*.c src/data/menu/*.c src/data/ending/*.c src/data/worldmap/*.c src/data/ui/*.c)
 
@@ -648,6 +656,12 @@ endif
 
 ifneq ($(strip $(GENERATED_DATA_CHAPTEROBJECTIVES_C)),)
 MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o
+endif
+
+ifneq ($(strip $(GENERATED_DATA_AUTOPLAYSTRATEGIES_C)),)
+ifneq ($(MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT),1)
+MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies-data.o
+endif
 endif
 
 # Issue #5 Batch 1 (mechanics): $(GENERATED_DATA_TERRAINSTATS_OBJECT)
@@ -1019,6 +1033,21 @@ $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o: $(GENERATED_DATA_CH2_EVENTLIS
 $(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o: $(GENERATED_DATA_CHAPTEROBJECTIVES_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies-data.o: $(GENERATED_DATA_AUTOPLAYSTRATEGIES_C)
+	@mkdir -p $(@D)
+	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+.PHONY: expansion-modern-autoplay-strategies-objects
+expansion-modern-autoplay-strategies-objects: \
+	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay.o \
+	$(MODERN_OUTPUT_DIR)/src/cp_decide.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies-data.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o
+	@printf 'Modern autoplay strategy objects built (config=%s abi=%s profiles=%s)\n' \
+		'$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(EXPANSION_AUTOPLAY_STRATEGIES)'
 
 # Issue #5 Batch 1 (mechanics): same reasoning as the units/traps/shops/
 # eventlists synthetic-slot rules above, for the terrainstats table's
@@ -1647,6 +1676,7 @@ ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 		--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 		--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 		--hq-mixer "$(EXPANSION_HQ_MIXER)" \
+		--autoplay-strategies "$(EXPANSION_AUTOPLAY_STRATEGIES)" \
 		--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 		--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 		--output-dir "$(MODERN_GENERATED_DIR)"
@@ -1715,6 +1745,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 	--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 	--hq-mixer "$(EXPANSION_HQ_MIXER)" \
+	--autoplay-strategies "$(EXPANSION_AUTOPLAY_STRATEGIES)" \
 	--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 	--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 	--save-compat-epoch "$(EXPANSION_SAVE_COMPAT_EPOCH)" 2>&1)
@@ -1747,6 +1778,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
   MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS := $(patsubst MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS=%,%,$(filter MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_CASUAL_MODE := $(patsubst MODERN_EXPANSION_CASUAL_MODE=%,%,$(filter MODERN_EXPANSION_CASUAL_MODE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_HQ_MIXER := $(patsubst MODERN_EXPANSION_HQ_MIXER=%,%,$(filter MODERN_EXPANSION_HQ_MIXER=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_EXPANSION_AUTOPLAY_STRATEGIES := $(patsubst MODERN_EXPANSION_AUTOPLAY_STRATEGIES=%,%,$(filter MODERN_EXPANSION_AUTOPLAY_STRATEGIES=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_BGM_CONTINUATION_POLICY := $(patsubst MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,%,$(filter MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),preserve)
     MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 0
@@ -1801,6 +1833,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	-DFE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP=$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP) \
 	-DFE8_EXPANSION_CASUAL_MODE=$(EXPANSION_CASUAL_MODE) \
 	-DFE8_EXPANSION_HQ_MIXER=$(EXPANSION_HQ_MIXER) \
+	-DFE8_EXPANSION_AUTOPLAY_STRATEGIES=$(EXPANSION_AUTOPLAY_STRATEGIES) \
 	-DFE8_EXPANSION_BGM_CONTINUATION_POLICY=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID)
 
   # Internal modern-build provenance discriminator (NOT a user feature flag,
@@ -2071,6 +2104,7 @@ ifneq (,$(MODERN_EXPANSION_DEFINES_ACTIVE))
 		printf '%s\n' 'custom_spell_effects=$(EXPANSION_CUSTOM_SPELL_EFFECTS)'; \
 		printf '%s\n' 'casual_mode=$(EXPANSION_CASUAL_MODE)'; \
 		printf '%s\n' 'hq_mixer=$(EXPANSION_HQ_MIXER)'; \
+		printf '%s\n' 'autoplay_strategies=$(EXPANSION_AUTOPLAY_STRATEGIES)'; \
 		printf '%s\n' 'internal_test_defines=$(MODERN_INTERNAL_TEST_DEFINES)'; \
 		printf '%s\n' 'bgm_continuation_policy=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)'; \
 		printf '%s\n' 'modern_build=1'; \
@@ -3539,6 +3573,109 @@ expansion-modern-aoe-check: expansion-modern-boot-preflight \
 # then observes pointer-free ELF symbols.
 MODERN_AUTOPLAY_RUNTIME_SCRIPT := tools/gba-playtest/run_autoplay_checks.py
 MODERN_AUTOPLAY_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/autoplay-runtime-check
+MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT := build/expansion-modern-autoplay-strategy
+MODERN_AUTOPLAY_STRATEGY_PROFILE_GENERATED_DIR := \
+	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/generated-data
+MODERN_AUTOPLAY_STRATEGY_PROFILE_OBJECTIVES_INVENTORY := \
+	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/generated_data_chapterobjectives_inventory.md
+MODERN_AUTOPLAY_STRATEGY_PROFILE_STRATEGIES_INVENTORY := \
+	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/generated_data_autoplaystrategies_inventory.md
+MODERN_AUTOPLAY_STRATEGY_PROFILE_ROM := \
+	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_AUTOPLAY_STRATEGY_PROFILE_ELF := \
+	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT := \
+	build/expansion-modern-autoplay-strategy-disabled
+MODERN_AUTOPLAY_STRATEGY_DISABLED_GENERATED_DIR := \
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/generated-data
+MODERN_AUTOPLAY_STRATEGY_DISABLED_OBJECTIVES_INVENTORY := \
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/generated_data_chapterobjectives_inventory.md
+MODERN_AUTOPLAY_STRATEGY_DISABLED_STRATEGIES_INVENTORY := \
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/generated_data_autoplaystrategies_inventory.md
+MODERN_AUTOPLAY_STRATEGY_DISABLED_ROM := \
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_AUTOPLAY_STRATEGY_DISABLED_ELF := \
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR := \
+	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/runtime-check
+MODERN_AUTOPLAY_STRATEGY_RUNTIME_SCRIPT := \
+	tools/gba-playtest/run_autoplay_strategy_checks.py
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT := \
+	build/expansion-modern-autoplay-strategy-budget
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_BUILD_ROOT = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG)-build
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_GENERATED_DIR = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG)-generated
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_INVENTORY = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG)-inventory.md
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_REPORT = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG).json
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_BUILD_ROOT = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-$(MODERN_CONFIG)-build
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_REPORT = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-$(MODERN_CONFIG).json
+MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_ELF = \
+	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_BUILD_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_AUTOPLAY_STRATEGY_BUDGET_REPORT := reports/autoplay_strategy_budget.json
+MODERN_AUTOPLAY_STRATEGY_BUDGET_SCRIPT := \
+	scripts/linker_report/autoplay_strategy_budget.py
+MODERN_AUTOPLAY_STRATEGY_OBJECTIVES_SOURCE := \
+	scripts/generated_data/tests/fixtures/chapterobjectives/strategy_runtime_valid.json
+MODERN_AUTOPLAY_STRATEGY_SOURCE := \
+	scripts/generated_data/tests/fixtures/autoplaystrategies/runtime_valid.json
+MODERN_AUTOPLAY_STRATEGY_BUNDLE_SOURCE := \
+	scripts/generated_data/tests/fixtures/chapterobjectives/strategy_runtime_bundle.json
+
+CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)
+CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)
+CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)
+
+expansion-modern-autoplay-strategy-router-absent-budget:
+	+$(MAKE) expansion-modern-budget \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_BUILD_ROOT) \
+		MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT=1 \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT=1 \
+		EXPANSION_AUTOPLAY_STRATEGIES=0 \
+		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_REPORT)
+
+expansion-modern-autoplay-strategy-enabled-budget:
+	+$(MAKE) expansion-modern-budget \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_BUILD_ROOT) \
+		GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_GENERATED_DIR) \
+		GENERATED_DATA_AUTOPLAYSTRATEGIES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_INVENTORY) \
+		EXPANSION_AUTOPLAY_STRATEGIES=1 \
+		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_REPORT)
+
+expansion-modern-autoplay-strategy-budget:
+	+$(MAKE) expansion-modern-autoplay-strategy-router-absent-budget \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs
+	+$(MAKE) expansion-modern-autoplay-strategy-router-absent-budget \
+		MODERN_CONFIG=release MODERN_ABI=aapcs
+	+$(MAKE) expansion-modern-budget MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		EXPANSION_AUTOPLAY_STRATEGIES=0
+	+$(MAKE) expansion-modern-budget MODERN_CONFIG=release MODERN_ABI=aapcs \
+		EXPANSION_AUTOPLAY_STRATEGIES=0
+	+$(MAKE) expansion-modern-autoplay-strategy-enabled-budget \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs
+	+$(MAKE) expansion-modern-autoplay-strategy-enabled-budget \
+		MODERN_CONFIG=release MODERN_ABI=aapcs
+	"$(PYTHON)" "$(MODERN_AUTOPLAY_STRATEGY_BUDGET_SCRIPT)" \
+		--nm "$(MODERN_NM)" \
+		--absent-debug $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-debug.json \
+		--absent-release $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-release.json \
+		--disabled-debug reports/linker-budget/modern-debug.json \
+		--disabled-release reports/linker-budget/modern-release.json \
+		--enabled-debug $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-debug.json \
+		--enabled-release $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-release.json \
+		--absent-debug-elf $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-debug-build/debug/aapcs/fireemblem8.elf \
+		--absent-release-elf $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-release-build/release/aapcs/fireemblem8.elf \
+		--disabled-debug-elf build/expansion-modern/debug/aapcs/fireemblem8.elf \
+		--disabled-release-elf build/expansion-modern/release/aapcs/fireemblem8.elf \
+		--enabled-debug-elf $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-debug-build/debug/aapcs/fireemblem8.elf \
+		--enabled-release-elf $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-release-build/release/aapcs/fireemblem8.elf \
+		--output "$(MODERN_AUTOPLAY_STRATEGY_BUDGET_REPORT)"
 
 expansion-modern-autoplay-check: expansion-modern-boot-preflight expansion-modern-rom
 	@mkdir -p "$(MODERN_AUTOPLAY_RUNTIME_OUTDIR)/tmp"
@@ -3549,6 +3686,52 @@ expansion-modern-autoplay-check: expansion-modern-boot-preflight expansion-moder
 		--elf "$(MODERN_ELF)" \
 		--config "$(MODERN_CONFIG)" \
 		--out-dir "$(MODERN_AUTOPLAY_RUNTIME_OUTDIR)"
+
+expansion-modern-autoplay-strategy-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT) \
+		GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_PROFILE_GENERATED_DIR) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_OBJECTIVES_SOURCE) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_BUNDLE_SOURCE) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_PROFILE_OBJECTIVES_INVENTORY) \
+		GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_SOURCE) \
+		GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_OBJECTIVES_SOURCE) \
+		GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_BUNDLE_SOURCE) \
+		GENERATED_DATA_AUTOPLAYSTRATEGIES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_PROFILE_STRATEGIES_INVENTORY) \
+		EXPANSION_AUTOPLAY_STRATEGIES=1 \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_AUTOPLAY_STRATEGY_RUNTIME_TEST=1
+
+expansion-modern-autoplay-strategy-disabled-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT) \
+		GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_GENERATED_DIR) \
+		GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_OBJECTIVES_INVENTORY) \
+		GENERATED_DATA_AUTOPLAYSTRATEGIES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_STRATEGIES_INVENTORY) \
+		EXPANSION_AUTOPLAY_STRATEGIES=0 \
+		MODERN_INTERNAL_TEST_DEFINES=-DFE8_AUTOPLAY_STRATEGY_RUNTIME_TEST=1
+
+ifeq ($(MODERN_CONFIG),debug)
+expansion-modern-autoplay-strategy-runtime-check: expansion-modern-boot-preflight \
+		expansion-modern-autoplay-strategy-profile-rom \
+		expansion-modern-autoplay-strategy-disabled-profile-rom
+	@mkdir -p "$(MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR)/tmp"
+	TMPDIR="$(abspath $(MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR)/tmp)" \
+		"$(PYTHON)" "$(MODERN_AUTOPLAY_STRATEGY_RUNTIME_SCRIPT)" \
+		--enabled-rom "$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROM)" \
+		--enabled-elf "$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ELF)" \
+		--disabled-rom "$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROM)" \
+		--disabled-elf "$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ELF)" \
+		--nm "$(MODERN_NM)" \
+		--out-dir "$(MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR)"
+else
+expansion-modern-autoplay-strategy-runtime-check: \
+		expansion-modern-autoplay-strategy-profile-rom \
+		expansion-modern-autoplay-strategy-disabled-profile-rom
+	@printf 'Modern autoplay strategy runtime check skipped: CpDecide activation is debug-calibrated for config=%s\n' \
+		'$(MODERN_CONFIG)'
+endif
 
 # Issue #87 optional one-phase Charge command. The enabled build has its own
 # root; the matching ordinary build is the disabled PLAYER/menu negative.
@@ -4399,6 +4582,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-autoplay-check \
 		expansion-modern-autoplay-bounds-check \
 		expansion-modern-chapter-objectives-check \
+		expansion-modern-autoplay-strategy-runtime-check \
 		$(MODERN_LINKER_CHECK_ACCELERATED_FIDELITY) \
 		expansion-modern-blue-phase-delegate-check \
 		expansion-modern-starter-runtime-check \

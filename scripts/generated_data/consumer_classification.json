@@ -2185,7 +2185,15 @@
       "category": "lookup-table",
       "reason": null
     },
+    "include/expansion_autoplay_strategies.h|struct-field|chapter|ExpansionAutoplayStrategyBundle.chapterId": {
+      "category": "lookup-table",
+      "reason": null
+    },
     "tools/gba-playtest/tests/test_chapter_objectives.py|tool-symbol|item|inventory": {
+      "category": "reviewed-exclusion",
+      "reason": "Temporary generated-data inventory path used only by the host test; it is not an item ID consumer."
+    },
+    "tools/gba-playtest/tests/test_autoplay_strategies.py|tool-symbol|item|inventory": {
       "category": "reviewed-exclusion",
       "reason": "Temporary generated-data inventory path used only by the host test; it is not an item ID consumer."
     },
@@ -3967,6 +3975,10 @@
     },
     "src/events_shoplist.c|data-symbol|item|ShopList_Tower6_2": {
       "category": "lookup-table",
+      "reason": null
+    },
+    "src/expansion_autoplay_strategies.c|struct-field|chapter|ExpansionAutoplayPendingActivation.chapterId": {
+      "category": "runtime-struct",
       "reason": null
     },
     "src/monstergen_data.c|data-symbol|item|gMonsterItemTable": {

@@ -1451,7 +1451,17 @@ def check_test_case_registry(root):
                         TEST_CASE_REGISTRY_PATH, 0, "%s has no named command" % automation_label
                     ))
                     continue
-                evidence_path = _registry_root_path(root, record.get("evidence"))
+                evidence = record.get("evidence")
+                if isinstance(evidence, str):
+                    normalized_evidence = os.path.normpath(evidence)
+                    if normalized_evidence == "build" or normalized_evidence.startswith("build" + os.sep):
+                        findings.append(Finding(
+                            TEST_CASE_REGISTRY_PATH, 0,
+                            "%s must name source-controlled command, scenario, or test evidence, "
+                            "not generated build artifact %r" % (automation_label, evidence),
+                        ))
+                        continue
+                evidence_path = _registry_root_path(root, evidence)
                 if evidence_path is None or not os.path.isfile(evidence_path):
                     findings.append(Finding(
                         TEST_CASE_REGISTRY_PATH, 0,
