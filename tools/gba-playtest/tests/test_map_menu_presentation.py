@@ -36,6 +36,13 @@ RUNTIME_FINGERPRINT = (
     / "fingerprints"
     / "map-menu-presentation-all-locales-all-features-release.json"
 )
+NINE_ROW_RUNTIME_FINGERPRINT = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "fingerprints"
+    / "map-menu-presentation-nine-row-skirmish-modern-debug.json"
+)
 HELP_SIZING_DRIVER = (
     ROOT
     / "tools"
@@ -51,6 +58,14 @@ MAP_MENU_DRAW_DRIVER = (
     / "tests"
     / "c"
     / "map_menu_draw_driver.c"
+)
+MAP_MENU_GEOMETRY_DRIVER = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "tests"
+    / "c"
+    / "map_menu_geometry_driver.c"
 )
 
 
@@ -141,14 +156,17 @@ class MapMenuCompositionTests(unittest.TestCase):
             ):
                 with self.subTest(danger=danger, charge=charge):
                     entries = _menu_entries(temporary, danger, charge)
-                    visible = entries[:-1]
-                    message_ids = [entry[1] for entry in visible]
+                    definitions = entries[:-1]
+                    message_ids = [entry[1] for entry in definitions]
                     self.assertEqual(
                         tuple(message_ids[: len(expected_prefix)]),
                         expected_prefix,
                     )
                     self.assertEqual(message_ids[-1], "0x6A0")
-                    self.assertEqual(len(visible), 8 + int(danger) + int(charge))
+                    self.assertEqual(
+                        len(definitions),
+                        8 + int(danger) + int(charge),
+                    )
 
     def test_optional_rows_use_stable_ids_and_native_geometry(self):
         with tempfile.TemporaryDirectory(dir=BUILD) as temporary:
@@ -191,6 +209,43 @@ class MapMenuCompositionTests(unittest.TestCase):
                 completed.stdout + completed.stderr,
             )
             self.assertIn("MAP_MENU_DRAW_CALLBACK: PASS", completed.stdout)
+
+    def test_nine_row_non_story_is_shifted_while_shorter_menus_stay_vanilla(self):
+        with tempfile.TemporaryDirectory(dir=BUILD) as temporary:
+            binary = Path(temporary) / "map-menu-geometry"
+            completed = _run(
+                [
+                    CC,
+                    "-std=gnu89",
+                    "-O2",
+                    "-w",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                    "-I",
+                    str(ROOT / "include"),
+                    "-DMODERN=1",
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-DFE8_EXPANSION_DANGER_OVERLAY_MENU=1",
+                    "-DFE8_EXPANSION_BLUE_PHASE_DELEGATE=1",
+                    str(ROOT / "src" / "bmmenu.c"),
+                    str(MAP_MENU_GEOMETRY_DRIVER),
+                    "-Wl,--gc-sections",
+                    "-o",
+                    str(binary),
+                ]
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = _run([str(binary)])
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn("MAP_MENU_GEOMETRY: PASS", completed.stdout)
 
 
 class MapMenuLocalizationTests(unittest.TestCase):
@@ -467,6 +522,11 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
         capture = json.loads(RUNTIME_FINGERPRINT.read_text(encoding="utf-8"))
         return module, capture
 
+    def _nine_row_capture(self):
+        return json.loads(
+            NINE_ROW_RUNTIME_FINGERPRINT.read_text(encoding="utf-8")
+        )
+
     def _run_main_with_capture(self, module, capture, fingerprint, output):
         globals_ = module["main"].__globals__
         playtest = globals_["gba_playtest"]
@@ -474,9 +534,12 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
         original_capture = playtest.capture
         original_resolver = globals_["ElfSymbolResolver"]
         original_fingerprint = globals_["FINGERPRINT"]
+        nine_row_capture = self._nine_row_capture()
         try:
             playtest.parse_scenario_data = lambda *args, **kwargs: object()
-            playtest.capture = lambda *args, **kwargs: copy.deepcopy(capture)
+            playtest.capture = lambda rom, *args, **kwargs: copy.deepcopy(
+                nine_row_capture if "nine-row" in str(rom) else capture
+            )
             globals_["ElfSymbolResolver"] = lambda path: object()
             globals_["FINGERPRINT"] = fingerprint
             with contextlib.redirect_stdout(io.StringIO()), \
@@ -487,6 +550,12 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
                         str(output / "input.gba"),
                         "--elf",
                         str(output / "input.elf"),
+                        "--nine-row-rom",
+                        str(output / "nine-row-input.gba"),
+                        "--nine-row-elf",
+                        str(output / "nine-row-input.elf"),
+                        "--sram-image",
+                        str(output / "input.sav"),
                         "--out-dir",
                         str(output),
                     ]
@@ -573,6 +642,37 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
         ]
         self.assertEqual(len(framebuffer_hashes), 4)
         self.assertEqual(len(set(framebuffer_hashes)), 4)
+
+    def test_checked_nine_row_skirmish_is_semantic_and_framebuffer_pinned(self):
+        module, _ = self._runtime_module_and_capture()
+        capture = self._nine_row_capture()
+        scenario = module["_nine_row_scenario_data"]()
+        self.assertEqual(
+            module["_nine_row_semantic_failures"](capture, scenario),
+            [],
+        )
+        menu = capture["checkpoints"][-1]
+        self.assertIn("framebuffer_hash", menu)
+        self.assertEqual(
+            [region["name"] for region in menu["regions"]],
+            ["bottom-visible-tile-rows"],
+        )
+
+        clipped = copy.deepcopy(capture)
+        values = {
+            probe["address"]: probe
+            for probe in clipped["checkpoints"][-1]["probes"]
+        }
+        values["gExpansionMapMenuGeometryProbe+0x03"]["value"] = "0x14"
+        self.assertTrue(
+            any(
+                "clipped tile row 20" in failure
+                for failure in module["_nine_row_semantic_failures"](
+                    clipped,
+                    scenario,
+                )
+            )
+        )
 
 
 if __name__ == "__main__":

@@ -70,6 +70,10 @@ extern u8 gSummonConfig[4][2];
 
 EWRAM_OVERLAY(0) struct Font gItemSelectMenuFont = {};
 
+#if defined(FE8_MAP_MENU_GEOMETRY_RUNTIME_TEST)
+EWRAM_DATA struct ExpansionMapMenuGeometryProbe gExpansionMapMenuGeometryProbe = {0};
+#endif
+
 struct ProcCmd CONST_DATA gProcScr_BackToUnitMenu[] = {
     PROC_CALL(LockGame),
 
@@ -214,6 +218,45 @@ u8 MapMenu_DangerZone_UnusedEffect(void) {
 #endif
 
 #if FE8_EXPANSION_DANGER_OVERLAY_MENU || FE8_EXPANSION_BLUE_PHASE_DELEGATE
+#if defined(FE8_MAP_MENU_GEOMETRY_RUNTIME_TEST)
+void ExpansionMapMenu_PrepareGeometryRuntimeTest(void)
+{
+    BmGuideTextSetAllGreen();
+}
+#endif
+
+void ExpansionMapMenu_EnsureVerticalBounds(struct MenuProc* menu)
+{
+    int i;
+    int overflow = menu->rect.y + menu->rect.h - DISPLAY_HEIGHT / 8;
+
+    if (overflow > menu->rect.y)
+        overflow = menu->rect.y;
+
+    if (overflow > 0)
+    {
+        menu->rect.y -= overflow;
+
+        for (i = 0; i < menu->itemCount; ++i)
+            menu->menuItems[i]->yTile -= overflow;
+    }
+
+#if defined(FE8_MAP_MENU_GEOMETRY_RUNTIME_TEST)
+    gExpansionMapMenuGeometryProbe.visibleRowCount = menu->itemCount;
+    gExpansionMapMenuGeometryProbe.frameTopTile = menu->rect.y;
+    gExpansionMapMenuGeometryProbe.frameBottomTile =
+        menu->rect.y + menu->rect.h - 1;
+    gExpansionMapMenuGeometryProbe.endTextBottomTile =
+        menu->menuItems[menu->itemCount - 1]->yTile + 1;
+    gExpansionMapMenuGeometryProbe.firstMessageId =
+        menu->menuItems[0]->def->nameMsgId;
+    gExpansionMapMenuGeometryProbe.secondMessageId =
+        menu->menuItems[1]->def->nameMsgId;
+    gExpansionMapMenuGeometryProbe.lastMessageId =
+        menu->menuItems[menu->itemCount - 1]->def->nameMsgId;
+#endif
+}
+
 int ExpansionMapMenuItem_Draw(
     struct MenuProc* menu,
     struct MenuItemProc* menuItem)

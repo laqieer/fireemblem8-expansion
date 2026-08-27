@@ -1957,7 +1957,7 @@
       "domain": "character",
       "key": "include/bmmenu.h|function-signature|character|IsAdjacentForSupply",
       "kind": "function-signature",
-      "line": 127,
+      "line": 144,
       "path": "include/bmmenu.h",
       "reason": null,
       "record_count": 256,
@@ -21335,7 +21335,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "985eec87660b27c8124a9482e6ae485e716c236805adb9ce937fc68c4bac6c18",
+  "digest": "3a3e41a6b9e30883734d7761d320a8982d44c7bbd9d8876c645983eccb34af1a",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,

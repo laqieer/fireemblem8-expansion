@@ -185,23 +185,29 @@ additional threat UI, persisted preference, or AI behavior is shipped.
   all-locales/all-features release visibly truncates the literal Threat Range,
   clips Charge
   help, omits Danger help/localization, misaligns both optional rows, and puts
-  End before optional commands.
+  End before optional commands. A subsequent review found that the supported
+  nine-row skirmish/dungeon combinations also placed End's second text tile
+  on off-screen row 20 and extended the frame below the 160-pixel display.
 - **Supported configuration or artifact:** modern release AAPCS
   `expansion-modern-all-locales-all-features` with
   `EXPANSION_DANGER_OVERLAY_MENU=1`,
   `EXPANSION_BLUE_PHASE_DELEGATE=1`, and all seven production locales
   (`en`, `ja`, `zh-Hans`, `fr`, `de`, `es`, `it`). Host controls also cover
-  neither feature, Danger only, and Charge only.
+  neither feature, Danger only, Charge only, and the nine-row
+  skirmish/dungeon availability combinations.
 - **Prerequisites and clean starting state:** repository root with the modern
   toolchain and libmGBA; no save or savestate. The named release starts from
   blank SRAM and selects English; the Charge debug fixture reaches an
-  interactive blue phase with at least one eligible unmoved blue unit.
+  interactive blue phase with at least one eligible unmoved blue unit. The
+  nine-row runtime uses the deterministic current-save fixture and debug
+  chapter/skirmish selector to reach an unlocked-Guide skirmish.
 
 ### Actions
 
 1. Run the focused optional-map-menu host test.
 2. Build and run the named all-locales/all-features release Danger menu/help
-   scenario and the existing enabled Charge debug scenario.
+   scenario, the nine-row skirmish presentation scenario, and the existing
+   enabled Charge debug scenario.
 3. Open the map menu on an empty tile, inspect the first two rows and final
    row, press `R` on localized Danger and Charge in their respective runtime
    fixtures, then close help.
@@ -218,9 +224,13 @@ inside the six-tile text allocation, and occupy independent two-tile-high
 rows. Helpbox sizing uses the resolved string rather than stale vanilla
 message-buffer state, so every authored help line and box stays on-screen.
 The named release checkpoints record the corrected Danger menu/help
-framebuffers and leave the map interactive. The Charge debug checkpoint
-records its complete help before delegating five eligible actors and restoring
-`PLAYER` on the next blue phase.
+framebuffers and leave the map interactive. In the unlocked-Guide skirmish,
+all nine rows are present; the frame spans visible tile rows 0 through 19 and
+End's two text tiles occupy rows 17 and 18. Native coverage applies the same
+availability and geometry contract to a dungeon with Records. A whole-frame
+hash and an independent bottom-band region hash pin the rendered skirmish
+state. The Charge debug checkpoint records its complete help before delegating
+five eligible actors and restoring `PLAYER` on the next blue phase.
 
 Charge remains intentionally conditional: it is shown only while the ordinary
 map menu owns the sole game lock in a live blue `PLAYER` phase, with no event,
@@ -232,34 +242,39 @@ Charge reappear without rebuilding or changing locale.
 
 ### Negative controls
 
-With both options disabled, the compiled table has the original eight visible
-rows and no expansion label/help references. Danger-only and Charge-only
-profiles each add exactly one first row while keeping End last. Invalid Charge
-states return the documented typed availability reason and cannot start
-delegation; disabled builds retain the existing configuration identity and
-save behavior.
+With both options disabled, the compiled table has the original eight row
+definitions and no expansion label/help references. Danger-only and
+Charge-only profiles each add exactly one first row while keeping End last.
+Locked-Guide skirmishes and story maps stay at eight or fewer visible rows and
+retain vanilla top tile 2 rather than being shifted unnecessarily. Invalid
+Charge states return the documented typed availability reason and cannot
+start delegation; disabled builds retain the existing configuration identity
+and save behavior.
 
 ### Dependencies, conflicts, and compatibility
 
 Danger depends only on the existing vanilla danger-zone path. Charge depends
 on issue #85's transient controller and shared eligibility predicate.
 Localization uses the existing expansion registry/resolver; the shared map
-menu has 10 of 11 rows with both options enabled. There are no known feature
-conflicts; a downstream eleventh row must still make an explicit capacity and
-order choice. No save field, preference layout, epoch, migration, generated
-game data, EWRAM/IWRAM allocation, or archival-lane behavior changes.
+menu has 10 definitions and at most nine simultaneously visible rows with
+both options enabled. There are no known feature conflicts; a downstream
+additional row must still make an explicit capacity, geometry, and scrolling
+choice. No save field, preference layout, epoch, migration, generated game
+data, EWRAM/IWRAM allocation, or archival-lane behavior changes.
 
 ### Automation
 
 - `python3 -m unittest tools.gba-playtest.tests.test_map_menu_presentation -v`
   — semantic compiled-table order/composition, all-locale resolver and pixel
-  bounds, help IDs/content/sizing, and row geometry.
+  bounds, help IDs/content/sizing, nine-row skirmish/dungeon availability and
+  bounded frame/text geometry, plus shorter/story negative controls.
 - `python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v`
   — the exact typed Charge visibility predicate, eligible/ineligible unit
   matrix, menu capacity, and enabled/disabled linkage.
 - `make expansion-modern-map-menu-presentation-check`
   — named all-locales/all-features release build plus deterministic libmGBA
-  Danger menu/help framebuffer and interactive-state scenario.
+  Danger menu/help framebuffer and interactive-state scenario, with a focused
+  debug skirmish profile proving the nine-row frame and End row stay on-screen.
 - `make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
   — eligible-unit Charge menu/help framebuffer, one-phase delegation, and
   restored-player runtime scenario.

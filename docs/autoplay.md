@@ -208,12 +208,15 @@ computer phase rejects the request. `BmMain_StartPhase` remains the sole
 router for both layers, and either layer's normal map lifecycle reset clears
 pending debugtools state without touching a save.
 
-The optional Danger row composes with Charge: the base map menu has eight
-visible rows, either option adds one, and both together use ten of
-`MENU_ITEM_MAX == 11`. Optional rows always precede the vanilla rows in stable
-Danger-then-Charge order, while End remains the final visible command. A
-downstream project adding or replacing another row must make its capacity/order
-choice explicitly rather than silently displacing either command.
+The optional Danger row composes with Charge: the base map menu defines eight
+rows, conditionally shows at most seven at once, and both options produce at
+most nine visible rows within `MENU_ITEM_MAX == 11`. Optional rows always
+precede the vanilla rows in stable Danger-then-Charge order, while End remains
+the final visible command. The nine-row non-story combination shifts upward
+only by the amount needed to keep the frame and both tiles of End on-screen;
+all shorter configurations retain vanilla vertical geometry. A downstream
+project adding or replacing another row must make its capacity/order and
+scrolling choice explicitly rather than silently displacing either command.
 
 Charge disappearing while Danger remains is intentional, not a capacity
 failure. `ExpansionBluePhaseDelegate_GetAvailability()` returns a typed reason
