@@ -237,10 +237,10 @@ src/menu_def.o: CC1FLAGS += -Wno-error
 # unconditionally builds and real-emulator boot-verifies the modern release ROM end-to-end
 # (`expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs`),
 # and never requires, builds, or resolves to a tools/agbcc executable or
-# library. The generated GNUmakefile deliberately forwards its no-goal
-# `--enable-autoplay-planner` configuration to the explicit debug boot target
-# instead of this release-only `all` target. This is a structural guarantee,
-# not a configurable convention:
+# library. The generated GNUmakefile also forwards every no-goal invocation to
+# this release-only `all` target, including a persisted debug-only planner
+# request (which fails closed with an explicit debug-target instruction).
+# This is a structural guarantee, not a configurable convention:
 # `all:` takes no lane-selection variable of any kind, so no environment
 # variable and no `make VAR=value` command-line override (regardless of
 # name) can redirect it to the archival lane -- see

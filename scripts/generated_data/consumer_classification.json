@@ -1073,6 +1073,10 @@
       "category": "external-interface",
       "reason": null
     },
+    "include/debugtools_internal.h|function-signature|item|DebugTools_CancelMenu": {
+      "category": "reviewed-exclusion",
+      "reason": "internal MenuProc cancellation callback signature; MenuItemProc is a UI process type and this function stores no gameplay item ID"
+    },
     "include/debugtools_internal.h|struct-field|chapter|DebugToolsLaunchRequest.chapterId": {
       "category": "runtime-struct",
       "reason": null
@@ -1080,6 +1084,10 @@
     "include/debugtools_internal.h|struct-field|chapter|DebugToolsLaunchTarget.chapterId": {
       "category": "runtime-struct",
       "reason": null
+    },
+    "include/debugtools_internal.h|struct-field|unit|DebugToolsDiagnosticsProbe.lastCursorUnitId": {
+      "category": "external-interface",
+      "reason": "scalar playtest probe for a validated map-unit slot; it does not own or generate unit IDs"
     },
     "include/ekrbattle.h|function-signature|item|EkrCheckWeaponSieglindeSiegmund": {
       "category": "external-interface",
@@ -2173,18 +2181,6 @@
       "category": "runtime-struct",
       "reason": null
     },
-    "include/expansion_bgm.h|struct-field|chapter|ExpansionBgmContextRequest.chapterId": {
-      "category": "runtime-struct",
-      "reason": null
-    },
-    "include/expansion_bgm.h|struct-field|chapter|ExpansionBgmVariant.chapterId": {
-      "category": "lookup-table",
-      "reason": null
-    },
-    "include/expansion_chapter_objectives.h|struct-field|chapter|ExpansionChapterObjectiveBundle.chapterId": {
-      "category": "lookup-table",
-      "reason": null
-    },
     "include/expansion_autoplay_planner.h|struct-field|chapter|ExpansionAutoplayPlannerCampaignCheckpointV2.chapterIndex": {
       "category": "external-interface",
       "reason": null
@@ -2201,17 +2197,13 @@
       "category": "lookup-table",
       "reason": null
     },
-    "tools/gba-playtest/tests/test_chapter_objectives.py|tool-symbol|item|inventory": {
-      "category": "reviewed-exclusion",
-      "reason": "Temporary generated-data inventory path used only by the host test; it is not an item ID consumer."
+    "include/expansion_bgm.h|struct-field|chapter|ExpansionBgmContextRequest.chapterId": {
+      "category": "runtime-struct",
+      "reason": null
     },
-    "tools/gba-playtest/tests/test_autoplay_strategies.py|tool-symbol|item|inventory": {
-      "category": "reviewed-exclusion",
-      "reason": "Temporary generated-data inventory path used only by the host test; it is not an item ID consumer."
-    },
-    "tools/gba-playtest/run_chapter_objective_checks.py|tool-symbol|event|OBJECTIVE_FIXTURE_EVENT_ID": {
-      "category": "reviewed-exclusion",
-      "reason": "Stable test-only objective hash used to verify generated telemetry, not an event ID consumer."
+    "include/expansion_bgm.h|struct-field|chapter|ExpansionBgmVariant.chapterId": {
+      "category": "lookup-table",
+      "reason": null
     },
     "include/expansion_bgm.h|struct-field|character|ExpansionBgmActionSelector.characterId": {
       "category": "lookup-table",
@@ -2225,9 +2217,9 @@
       "category": "lookup-table",
       "reason": null
     },
-    "include/expansion_debugtools.h|function-signature|unit|DebugToolsPhaseControl_ApplyAtPhaseStart": {
-      "category": "reviewed-exclusion",
-      "reason": "phase faction base parameter only: the phase scheduler passes FACTION_BLUE 0x00, FACTION_GREEN 0x40, or FACTION_RED 0x80, never a deployment-slot unit ID"
+    "include/expansion_chapter_objectives.h|struct-field|chapter|ExpansionChapterObjectiveBundle.chapterId": {
+      "category": "lookup-table",
+      "reason": null
     },
     "include/expansion_debugtools.h|function-signature|chapter|DebugTools_ConsumePendingChapter2Launch": {
       "category": "external-interface",
@@ -2257,9 +2249,25 @@
       "category": "external-interface",
       "reason": null
     },
+    "include/expansion_debugtools.h|function-signature|unit|DebugToolsPhaseControl_ApplyAtPhaseStart": {
+      "category": "reviewed-exclusion",
+      "reason": "phase faction base parameter only: the phase scheduler passes FACTION_BLUE 0x00, FACTION_GREEN 0x40, or FACTION_RED 0x80, never a deployment-slot unit ID"
+    },
+    "include/expansion_debugtools.h|struct-field|chapter|DebugToolsDiagnosticsSnapshot.chapterIndex": {
+      "category": "external-interface",
+      "reason": "typed read-only debugtools diagnostics snapshot field; it reports the active engine chapter index and does not own or generate chapter IDs"
+    },
     "include/expansion_debugtools.h|struct-field|chapter|DebugToolsProbe.chapterIndexSample": {
       "category": "runtime-struct",
       "reason": null
+    },
+    "include/expansion_debugtools.h|struct-field|character|DebugToolsDiagnosticsSnapshot.characterId": {
+      "category": "external-interface",
+      "reason": "typed read-only debugtools diagnostics snapshot field; it reports a validated cursor unit's character ID and does not own or generate character IDs"
+    },
+    "include/expansion_debugtools.h|struct-field|class|DebugToolsDiagnosticsSnapshot.classId": {
+      "category": "external-interface",
+      "reason": "typed read-only debugtools diagnostics snapshot field; it reports a validated cursor unit's class ID and does not own or generate class IDs"
     },
     "include/expansion_debugtools.h|struct-field|event|DebugToolsProbe.logEventCount": {
       "category": "event-operand",
@@ -2268,6 +2276,14 @@
     "include/expansion_debugtools.h|struct-field|item|DebugToolsProbe.convoyLastItemCount": {
       "category": "runtime-struct",
       "reason": null
+    },
+    "include/expansion_debugtools.h|struct-field|unit|DebugToolsDiagnosticsSnapshot.cursorUnitId": {
+      "category": "external-interface",
+      "reason": "typed read-only diagnostics field for a validated map-unit slot; it does not own or generate unit IDs"
+    },
+    "include/expansion_debugtools.h|struct-field|unit|DebugToolsDiagnosticsSnapshot.faction": {
+      "category": "external-interface",
+      "reason": "typed read-only diagnostics field for the current phase faction; it does not own or generate unit IDs"
     },
     "include/expansion_itemtest.h|struct-field|chapter|ItemExpansionProbe.lastChapterIndex": {
       "category": "runtime-struct",
@@ -3813,6 +3829,10 @@
       "category": "lookup-table",
       "reason": null
     },
+    "src/debugtools_tools.c|struct-field|unit|DebugToolsPhaseControlRequest.faction": {
+      "category": "reviewed-exclusion",
+      "reason": "queued phase faction base only: stores FACTION_BLUE 0x00, FACTION_GREEN 0x40, or FACTION_RED 0x80 for phase routing, not a deployment-slot unit ID"
+    },
     "src/eventinfo.c|macro|event|EVT_CMD_B1": {
       "category": "event-operand",
       "reason": null
@@ -4409,10 +4429,6 @@
       "category": "lookup-table",
       "reason": null
     },
-    "src/debugtools_tools.c|struct-field|unit|DebugToolsPhaseControlRequest.faction": {
-      "category": "reviewed-exclusion",
-      "reason": "queued phase faction base only: stores FACTION_BLUE 0x00, FACTION_GREEN 0x40, or FACTION_RED 0x80 for phase routing, not a deployment-slot unit ID"
-    },
     "src/worldmap_shop_data.c|data-symbol|item|ItemList_WM_ZahaWoods_Armory": {
       "category": "lookup-table",
       "reason": null
@@ -4429,6 +4445,30 @@
       "category": "reviewed-exclusion",
       "reason": "free-form report label for grouping survivor/casualty metrics by faction name; it stores descriptive JSON text, not a deployment-slot unit ID"
     },
+    "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|CONVOY_ITEM": {
+      "category": "reviewed-exclusion",
+      "reason": "Planner protocol value-kind label for a bounded convoy slot record; the record value, not this enum member, carries an item ID."
+    },
+    "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|CONVOY_ITEM_COUNT": {
+      "category": "reviewed-exclusion",
+      "reason": "Bounded convoy slot count used by the planner protocol; it is not a game item ID."
+    },
+    "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|INVENTORY": {
+      "category": "reviewed-exclusion",
+      "reason": "Planner protocol page-kind label for typed inventory records; it is not a game item ID."
+    },
+    "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|UNIT_ITEM_COUNT": {
+      "category": "reviewed-exclusion",
+      "reason": "Fixed number of inventory slots per unit used as a protocol bound; it is not a game item ID."
+    },
+    "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|_decode_optional_item_slot": {
+      "category": "reviewed-exclusion",
+      "reason": "Protocol helper that decodes an inventory-slot ordinal and no-slot sentinel; it does not consume a game item ID."
+    },
+    "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|inventory": {
+      "category": "external-interface",
+      "reason": null
+    },
     "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|item_slot": {
       "category": "reviewed-exclusion",
       "reason": "Planner action item_slot is an inventory-slot ordinal, not a game item ID."
@@ -4437,37 +4477,13 @@
       "category": "reviewed-exclusion",
       "reason": "Planner action target_item_slot is a unit-inventory-slot ordinal, not a game item ID."
     },
-    "include/expansion_debugtools.h|struct-field|chapter|DebugToolsDiagnosticsSnapshot.chapterIndex": {
-      "category": "external-interface",
-      "reason": "typed read-only debugtools diagnostics snapshot field; it reports the active engine chapter index and does not own or generate chapter IDs"
-    },
-    "include/expansion_debugtools.h|struct-field|character|DebugToolsDiagnosticsSnapshot.characterId": {
-      "category": "external-interface",
-      "reason": "typed read-only debugtools diagnostics snapshot field; it reports a validated cursor unit's character ID and does not own or generate character IDs"
-    },
-    "include/expansion_debugtools.h|struct-field|class|DebugToolsDiagnosticsSnapshot.classId": {
-      "category": "external-interface",
-      "reason": "typed read-only debugtools diagnostics snapshot field; it reports a validated cursor unit's class ID and does not own or generate class IDs"
-    },
-    "include/debugtools_internal.h|function-signature|item|DebugTools_CancelMenu": {
-      "category": "reviewed-exclusion",
-      "reason": "internal MenuProc cancellation callback signature; MenuItemProc is a UI process type and this function stores no gameplay item ID"
-    },
-    "include/debugtools_internal.h|struct-field|unit|DebugToolsDiagnosticsProbe.lastCursorUnitId": {
-      "category": "external-interface",
-      "reason": "scalar playtest probe for a validated map-unit slot; it does not own or generate unit IDs"
-    },
-    "include/expansion_debugtools.h|struct-field|unit|DebugToolsDiagnosticsSnapshot.cursorUnitId": {
-      "category": "external-interface",
-      "reason": "typed read-only diagnostics field for a validated map-unit slot; it does not own or generate unit IDs"
-    },
-    "include/expansion_debugtools.h|struct-field|unit|DebugToolsDiagnosticsSnapshot.faction": {
-      "category": "external-interface",
-      "reason": "typed read-only diagnostics field for the current phase faction; it does not own or generate unit IDs"
-    },
     "tools/gba-playtest/gba_playtest.py|tool-symbol|item|item": {
       "category": "external-interface",
       "reason": null
+    },
+    "tools/gba-playtest/run_chapter_objective_checks.py|tool-symbol|event|OBJECTIVE_FIXTURE_EVENT_ID": {
+      "category": "reviewed-exclusion",
+      "reason": "Stable test-only objective hash used to verify generated telemetry, not an event ID consumer."
     },
     "tools/gba-playtest/run_item_expansion_checks.py|tool-symbol|item|STAGE_ITEMDATA": {
       "category": "external-interface",
@@ -4484,6 +4500,18 @@
     "tools/gba-playtest/tests/test_accelerated_fidelity.py|tool-symbol|event|test_profile_covers_all_factions_events_flags_and_objective_result": {
       "category": "reviewed-exclusion",
       "reason": "a unittest method name containing 'events' for profile coverage; it neither stores nor consumes an event ID"
+    },
+    "tools/gba-playtest/tests/test_autoplay_planner.py|tool-symbol|item|inventory": {
+      "category": "external-interface",
+      "reason": null
+    },
+    "tools/gba-playtest/tests/test_autoplay_strategies.py|tool-symbol|item|inventory": {
+      "category": "reviewed-exclusion",
+      "reason": "Temporary generated-data inventory path used only by the host test; it is not an item ID consumer."
+    },
+    "tools/gba-playtest/tests/test_chapter_objectives.py|tool-symbol|item|inventory": {
+      "category": "reviewed-exclusion",
+      "reason": "Temporary generated-data inventory path used only by the host test; it is not an item ID consumer."
     },
     "tools/gba-playtest/tests/test_debugtools_registry.py|tool-symbol|chapter|chapter": {
       "category": "reviewed-exclusion",

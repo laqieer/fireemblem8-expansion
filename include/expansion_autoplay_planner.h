@@ -68,6 +68,8 @@ enum ExpansionAutoplayPlannerAvailability
     EXPANSION_AUTOPLAY_PLANNER_UNSUPPORTED_RULE = 3,
     EXPANSION_AUTOPLAY_PLANNER_OUT_OF_RANGE = 4,
     EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED = 5,
+    EXPANSION_AUTOPLAY_PLANNER_UNAVAILABLE = 6,
+    EXPANSION_AUTOPLAY_PLANNER_EMPTY = 7,
 };
 
 enum ExpansionAutoplayPlannerSemanticFieldId
@@ -88,6 +90,19 @@ enum ExpansionAutoplayPlannerPageKind
     EXPANSION_AUTOPLAY_PLANNER_PAGE_MAP = 2,
     EXPANSION_AUTOPLAY_PLANNER_PAGE_UNITS = 3,
     EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS = 4,
+    EXPANSION_AUTOPLAY_PLANNER_PAGE_INVENTORY = 5,
+    EXPANSION_AUTOPLAY_PLANNER_PAGE_RESOURCES = 6,
+    EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS = 7,
+};
+
+enum ExpansionAutoplayPlannerValueKind
+{
+    EXPANSION_AUTOPLAY_PLANNER_VALUE_UNIT_ITEM = 1,
+    EXPANSION_AUTOPLAY_PLANNER_VALUE_GOLD = 2,
+    EXPANSION_AUTOPLAY_PLANNER_VALUE_CONVOY_ITEM = 3,
+    EXPANSION_AUTOPLAY_PLANNER_VALUE_PERMANENT_FLAG = 4,
+    EXPANSION_AUTOPLAY_PLANNER_VALUE_CHAPTER_FLAG = 5,
+    EXPANSION_AUTOPLAY_PLANNER_VALUE_AUTOPLAY_TELEMETRY = 6,
 };
 
 enum ExpansionAutoplayPlannerDecisionResult
@@ -113,7 +128,8 @@ enum
     EXPANSION_AUTOPLAY_PLANNER_SEMANTIC_FIELD_CAPACITY = 8,
     EXPANSION_AUTOPLAY_PLANNER_MAP_RECORD_CAPACITY = 224,
     EXPANSION_AUTOPLAY_PLANNER_UNIT_RECORD_CAPACITY = 56,
-    EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY = 28,
+    EXPANSION_AUTOPLAY_PLANNER_VALUE_RECORD_CAPACITY = 112,
+    EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY = 22,
     EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY = 512,
     EXPANSION_AUTOPLAY_PLANNER_TRACE_ACTION_CAPACITY = 4096,
     EXPANSION_AUTOPLAY_PLANNER_DECISION_TIMEOUT_FRAMES = 300,
@@ -134,8 +150,10 @@ struct ExpansionAutoplayPlannerActionV2
     u32 destination;
     u32 target;
     u32 itemSlot;
-    u32 tokenLo;
-    u32 tokenHi;
+    u32 token0;
+    u32 token1;
+    u32 token2;
+    u32 token3;
     u32 actionId;
 };
 
@@ -145,6 +163,12 @@ struct ExpansionAutoplayPlannerUnitV2
     u32 position;
     u32 state;
     u32 inventoryDigest;
+};
+
+struct ExpansionAutoplayPlannerValueRecordV2
+{
+    u32 identity;
+    u32 value;
 };
 
 union ExpansionAutoplayPlannerRecordStartV2
@@ -166,6 +190,12 @@ union ExpansionAutoplayPlannerPayloadV2
     u32 mapCells[EXPANSION_AUTOPLAY_PLANNER_MAP_RECORD_CAPACITY];
     struct ExpansionAutoplayPlannerUnitV2
         units[EXPANSION_AUTOPLAY_PLANNER_UNIT_RECORD_CAPACITY];
+    struct ExpansionAutoplayPlannerValueRecordV2
+        inventory[EXPANSION_AUTOPLAY_PLANNER_VALUE_RECORD_CAPACITY];
+    struct ExpansionAutoplayPlannerValueRecordV2
+        resources[EXPANSION_AUTOPLAY_PLANNER_VALUE_RECORD_CAPACITY];
+    struct ExpansionAutoplayPlannerValueRecordV2
+        flags[EXPANSION_AUTOPLAY_PLANNER_VALUE_RECORD_CAPACITY];
     struct ExpansionAutoplayPlannerActionV2
         actions[EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY];
 };
@@ -200,6 +230,33 @@ struct ExpansionAutoplayPlannerObservationV2
     union ExpansionAutoplayPlannerPayloadV2 payload;
 };
 
+struct ExpansionAutoplayPlannerStartCommandV2
+{
+    u32 expectedRomIdentity;
+    u32 expectedConfigIdentity;
+    u32 expectedScenarioIdentity;
+    u32 expectedSeedIdentity;
+    u32 reserved0;
+    u32 reserved1;
+};
+
+struct ExpansionAutoplayPlannerCommitCommandV2
+{
+    u32 token0;
+    u32 token1;
+    u32 token2;
+    u32 token3;
+    u32 reserved0;
+    u32 reserved1;
+};
+
+union ExpansionAutoplayPlannerCommandPayloadV2
+{
+    struct ExpansionAutoplayPlannerStartCommandV2 start;
+    struct ExpansionAutoplayPlannerCommitCommandV2 commit;
+    u32 words[6];
+};
+
 struct ExpansionAutoplayPlannerCommandV2
 {
     u32 magic;
@@ -210,12 +267,7 @@ struct ExpansionAutoplayPlannerCommandV2
     u32 observationId;
     u32 pageIndex;
     u32 actionOrdinal;
-    u32 tokenLo;
-    u32 tokenHi;
-    u32 expectedRomIdentity;
-    u32 expectedConfigIdentity;
-    u32 expectedScenarioIdentity;
-    u32 expectedSeedIdentity;
+    union ExpansionAutoplayPlannerCommandPayloadV2 payload;
     u32 result;
     u32 rejection;
 };

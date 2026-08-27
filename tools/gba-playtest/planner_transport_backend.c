@@ -102,13 +102,11 @@ static void write_command(
     uint32_t observation_id,
     uint32_t page_index,
     uint32_t ordinal,
-    uint32_t token_lo,
-    uint32_t token_hi,
-    uint32_t expected_rom,
-    uint32_t expected_config,
-    uint32_t expected_scenario,
-    uint32_t expected_seed)
+    const uint32_t token[4],
+    const uint32_t expected_identities[4])
 {
+    size_t index;
+
     clear_command(core);
     write_word(core, PLANNER_COMMAND_ADDR, 0, EXPANSION_AUTOPLAY_PLANNER_MAGIC);
     write_word(
@@ -125,12 +123,16 @@ static void write_command(
     write_word(core, PLANNER_COMMAND_ADDR, 5, observation_id);
     write_word(core, PLANNER_COMMAND_ADDR, 6, page_index);
     write_word(core, PLANNER_COMMAND_ADDR, 7, ordinal);
-    write_word(core, PLANNER_COMMAND_ADDR, 8, token_lo);
-    write_word(core, PLANNER_COMMAND_ADDR, 9, token_hi);
-    write_word(core, PLANNER_COMMAND_ADDR, 10, expected_rom);
-    write_word(core, PLANNER_COMMAND_ADDR, 11, expected_config);
-    write_word(core, PLANNER_COMMAND_ADDR, 12, expected_scenario);
-    write_word(core, PLANNER_COMMAND_ADDR, 13, expected_seed);
+    if (token != NULL)
+        for (index = 0; index < 4; index++)
+            write_word(core, PLANNER_COMMAND_ADDR, 8 + index, token[index]);
+    if (expected_identities != NULL)
+        for (index = 0; index < 4; index++)
+            write_word(
+                core,
+                PLANNER_COMMAND_ADDR,
+                8 + index,
+                expected_identities[index]);
     write_word(core, PLANNER_COMMAND_ADDR, 3, kind);
 }
 
@@ -455,12 +457,8 @@ static int run_transport(const char* rom_path)
                 0,
                 0,
                 0,
-                0,
-                0,
-                values[0],
-                values[1],
-                values[2],
-                values[3]);
+                NULL,
+                values);
             kind = EXPANSION_AUTOPLAY_PLANNER_COMMAND_START;
         }
         else if (strcmp(command, "PAGE") == 0)
@@ -478,18 +476,14 @@ static int run_transport(const char* rom_path)
                 values[1],
                 values[2],
                 0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0);
+                NULL,
+                NULL);
             kind = EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE;
             requested_page = values[2];
         }
         else if (strcmp(command, "COMMIT") == 0)
         {
-            if (!read_values(tokens, 5, values))
+            if (!read_values(tokens, 7, values))
             {
                 fputs("ERROR malformed COMMIT\n", stdout);
                 fflush(stdout);
@@ -502,12 +496,8 @@ static int run_transport(const char* rom_path)
                 values[1],
                 0,
                 values[2],
-                values[3],
-                values[4],
-                0,
-                0,
-                0,
-                0);
+                &values[3],
+                NULL);
             kind = EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT;
         }
         else if (strcmp(command, "CANCEL") == 0)
@@ -525,12 +515,8 @@ static int run_transport(const char* rom_path)
                 values[1],
                 0,
                 0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0);
+                NULL,
+                NULL);
             kind = EXPANSION_AUTOPLAY_PLANNER_COMMAND_CANCEL;
         }
         else if (strcmp(command, "MALFORMED") == 0)
@@ -548,12 +534,8 @@ static int run_transport(const char* rom_path)
                 values[2],
                 0,
                 0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0);
+                NULL,
+                NULL);
             kind = values[0];
         }
         else

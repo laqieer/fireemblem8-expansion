@@ -304,12 +304,8 @@ AS_IF(
     [test -n "$fe8_autoplay_planner"],
     [FE8_CFG_AUTOPLAY_PLANNER="EXPANSION_AUTOPLAY_PLANNER := $fe8_autoplay_planner"],
     [FE8_CFG_AUTOPLAY_PLANNER=])
-AS_IF(
-    [test "$fe8_autoplay_planner" = 1],
-    [FE8_CFG_MODERN_CONFIG="MODERN_CONFIG := debug"
-     FE8_AUTOTOOLS_DEFAULT_GOAL=expansion-modern-boot-check],
-    [FE8_CFG_MODERN_CONFIG=
-     FE8_AUTOTOOLS_DEFAULT_GOAL=all])
+FE8_CFG_MODERN_CONFIG=
+FE8_AUTOTOOLS_DEFAULT_GOAL=all
 AS_IF(
     [test -n "$fe8_bgm_continuation_policy"],
     [FE8_CFG_BGM_CONTINUATION_POLICY="EXPANSION_BGM_CONTINUATION_POLICY := $fe8_bgm_continuation_policy"],
@@ -413,6 +409,7 @@ AC_CONFIG_FILES([
 AC_MSG_NOTICE([configuration saved in config.autotools.mk])
 AS_IF(
     [test "$fe8_autoplay_planner" = 1],
-    [AC_MSG_NOTICE([run 'make' to build the configured modern debug planner ROM])],
+    [AC_MSG_NOTICE([bare 'make' remains release-only and rejects this debug-only planner profile])
+     AC_MSG_NOTICE([run 'make expansion-modern-boot-check MODERN_CONFIG=debug' explicitly])],
     [AC_MSG_NOTICE([run 'make' to build the configured modern release ROM])])
 AC_OUTPUT

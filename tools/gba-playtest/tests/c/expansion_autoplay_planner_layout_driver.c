@@ -17,6 +17,9 @@ int main(void)
         "unit_size=%lu\n",
         (unsigned long)sizeof(struct ExpansionAutoplayPlannerUnitV2));
     printf(
+        "value_size=%lu\n",
+        (unsigned long)sizeof(struct ExpansionAutoplayPlannerValueRecordV2));
+    printf(
         "start_union_size=%lu\n",
         (unsigned long)sizeof(union ExpansionAutoplayPlannerRecordStartV2));
     printf(
@@ -46,6 +49,16 @@ int main(void)
     printf(
         "command_size=%lu\n",
         (unsigned long)sizeof(struct ExpansionAutoplayPlannerCommandV2));
+    printf(
+        "command_payload_offset=%lu\n",
+        (unsigned long)offsetof(
+            struct ExpansionAutoplayPlannerCommandV2,
+            payload));
+    printf(
+        "command_result_offset=%lu\n",
+        (unsigned long)offsetof(
+            struct ExpansionAutoplayPlannerCommandV2,
+            result));
     printf(
         "checkpoint_size=%lu\n",
         (unsigned long)sizeof(

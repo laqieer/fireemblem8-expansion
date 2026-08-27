@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
@@ -103,7 +103,7 @@ class PlannerBridgeTests(unittest.TestCase):
             ),
         )
         maximum_complete = planner.collect_observation_pages(bounded, maximum)
-        self.assertEqual(maximum.page_count, 20)
+        self.assertEqual(maximum.page_count, 25)
         self.assertEqual(maximum_complete.actions[-1].ordinal, 511)
         with self.assertRaisesRegex(planner.PlannerError, "resource limit"):
             overflow = planner.PlannerBridge(PROVENANCE)
@@ -138,6 +138,179 @@ class PlannerBridgeTests(unittest.TestCase):
                 ),
             )
 
+    def test_transcript_round_trip_tamper_order_and_atomic_limits(self):
+        bridge = planner.PlannerBridge(PROVENANCE)
+        run_id = bridge.begin(PROVENANCE)
+        observation = bridge.observe(
+            1,
+            (
+                planner.Field(
+                    "gold",
+                    "gPlaySt.partyGoldAmount",
+                    0xFFFFFFFF,
+                    planner.Availability.AVAILABLE,
+                    100,
+                ),
+            ),
+            (
+                planner.Action("MOVE_WAIT", 1, (1, 0)),
+                planner.Action("MOVE_WAIT", 1, (2, 0)),
+            ),
+        )
+        complete = planner.collect_observation_pages(bridge, observation)
+        selected = complete.actions[0]
+        bridge.commit(
+            planner.Command(
+                planner.CommandKind.COMMIT,
+                run_id,
+                observation.observation_id,
+                selected.ordinal,
+                selected.token,
+            )
+        )
+        exported = bridge.transcript.export()
+        self.assertLessEqual(len(exported), planner.MAX_TRACE_BYTES)
+        imported = planner.PlannerTranscript.import_bytes(exported)
+        self.assertEqual(imported.export(), exported)
+        self.assertEqual(imported.digest(), bridge.transcript.digest())
+
+        def rechain(document):
+            previous = "0" * 64
+            for sequence, event in enumerate(document["events"]):
+                event.pop("event_digest", None)
+                event["sequence"] = sequence
+                event["previous_digest"] = previous
+                event["event_digest"] = planner._digest(event)
+                previous = event["event_digest"]
+
+        tampered = json.loads(exported)
+        complete_event = next(
+            event
+            for event in tampered["events"]
+            if event["event"] == "observation_complete"
+        )
+        complete_event["observation"]["actions"][0]["ordinal"] = 7
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "digest mismatch",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(tampered)
+            )
+
+        identity_tampered = json.loads(exported)
+        complete_event = next(
+            event
+            for event in identity_tampered["events"]
+            if event["event"] == "observation_complete"
+        )
+        complete_event["page_identity"][3] += 1
+        rechain(identity_tampered)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "page identity mismatch",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(identity_tampered)
+            )
+
+        token_tampered = json.loads(exported)
+        complete_event = next(
+            event
+            for event in token_tampered["events"]
+            if event["event"] == "observation_complete"
+        )
+        complete_event["observation"]["actions"][0]["token"]["word3"] ^= 1
+        complete_event["candidate_set_digest"] = planner._digest(
+            complete_event["observation"]["actions"]
+        )
+        rechain(token_tampered)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "accepted transcript token mismatch",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(token_tampered)
+            )
+
+        runtime_tampered = json.loads(exported)
+        settled_event = next(
+            event
+            for event in runtime_tampered["events"]
+            if event["event"] == "settled"
+        )
+        settled_event["terminal"]["state"] ^= 1
+        rechain(runtime_tampered)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "settled runtime state mismatch",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(runtime_tampered)
+            )
+
+        reordered = json.loads(exported)
+        reordered["events"][0], reordered["events"][1] = (
+            reordered["events"][1],
+            reordered["events"][0],
+        )
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "order is invalid|digest mismatch",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(reordered)
+            )
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "invalid planner transcript JSON|not canonical",
+        ):
+            planner.PlannerTranscript.import_bytes(exported[:-1])
+
+        bounded = planner.PlannerTranscript(max_bytes=512)
+        bounded.record_session({"run_id": 1})
+        before = bounded.export()
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            planner.Rejection.RESOURCE_LIMIT.value,
+        ):
+            bounded.record_complete_observation(complete)
+        self.assertEqual(bounded.export(), before)
+
+        probe = planner.PlannerTranscript()
+        probe.record_session({"run_id": 1})
+        probe.record_complete_observation(complete)
+        atomic = planner.PlannerTranscript(max_bytes=len(probe.export()))
+        atomic.record_session({"run_id": 1})
+        atomic_before = atomic.export()
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            planner.Rejection.RESOURCE_LIMIT.value,
+        ):
+            atomic.record_complete_and_settled(
+                complete,
+                (0,) * 13,
+                (0,) * 16,
+            )
+        self.assertEqual(atomic.export(), atomic_before)
+
+        second_token = planner._fixture_action_token(
+            run_id,
+            observation.observation_id,
+            1,
+            complete.actions[1].action,
+        )
+        self.assertEqual(len(set(selected.token.words)), 4)
+        self.assertTrue(
+            all(
+                left != right
+                for left, right in zip(
+                    selected.token.words,
+                    second_token.words,
+                )
+            )
+        )
+
     def test_mailbox_has_no_arbitrary_memory_write_api(self):
         mailbox = planner.Mailbox()
         self.assertFalse(hasattr(mailbox, "write"))
@@ -145,6 +318,197 @@ class PlannerBridgeTests(unittest.TestCase):
         mailbox.submit(planner.Command(planner.CommandKind.START, 1, 0))
         with self.assertRaisesRegex(planner.PlannerError, "unconsumed"):
             mailbox.submit(planner.Command(planner.CommandKind.START, 1, 0))
+
+    def test_maximum_semantic_transcript_fits_two_mib(self):
+        available = planner.Availability.AVAILABLE
+        map_cells = tuple(
+            planner.MapCell(
+                index % 64,
+                index // 64,
+                1,
+                0,
+                available,
+            )
+            for index in range(planner.MAX_MAP_CELLS)
+        )
+        units = tuple(
+            planner.UnitRecord(
+                index,
+                1,
+                1,
+                (0, 0),
+                (20, 20),
+                0,
+                0,
+                available,
+            )
+            for index in range(planner.MAX_UNITS)
+        )
+        inventory = tuple(
+            planner.InventoryRecord(
+                index // planner.UNIT_ITEM_COUNT,
+                index % planner.UNIT_ITEM_COUNT,
+                1,
+                30,
+                0x1E01,
+                available,
+            )
+            for index in range(
+                planner.MAX_UNITS * planner.UNIT_ITEM_COUNT
+            )
+        )
+        resources = (
+            planner.ResourceRecord(
+                planner.ValueKind.GOLD,
+                None,
+                999,
+                None,
+                None,
+                available,
+            ),
+            *(
+                planner.ResourceRecord(
+                    planner.ValueKind.CONVOY_ITEM,
+                    index,
+                    0,
+                    0,
+                    0,
+                    planner.Availability.EMPTY,
+                )
+                for index in range(planner.CONVOY_ITEM_COUNT)
+            ),
+            *(
+                planner.ResourceRecord(
+                    planner.ValueKind.AUTOPLAY_TELEMETRY,
+                    index,
+                    0,
+                    None,
+                    None,
+                    available,
+                )
+                for index in range(planner.AUTOPLAY_TELEMETRY_WORDS)
+            ),
+        )
+        flags = tuple(
+            planner.FlagRecord(
+                (
+                    planner.ValueKind.PERMANENT_FLAG
+                    if index < 2048
+                    else planner.ValueKind.CHAPTER_FLAG
+                ),
+                index % 2048,
+                index & 1,
+                available,
+            )
+            for index in range(4096)
+        )
+        actions = tuple(
+            planner.ActionRecord(
+                index,
+                planner.Action(
+                    "MOVE_WAIT",
+                    1,
+                    (index % 64, index // 64),
+                ),
+                planner.OpaqueToken(
+                    index,
+                    index + 1,
+                    index + 2,
+                    index + 3,
+                ),
+            )
+            for index in range(planner.MAX_ACTIONS)
+        )
+        components = (
+            (planner.PageKind.MAP, "map_cells", map_cells, 224),
+            (planner.PageKind.UNITS, "units", units, 56),
+            (
+                planner.PageKind.INVENTORY,
+                "inventory",
+                inventory,
+                112,
+            ),
+            (
+                planner.PageKind.RESOURCES,
+                "resources",
+                resources,
+                112,
+            ),
+            (planner.PageKind.FLAGS, "flags", flags, 112),
+            (
+                planner.PageKind.ACTIONS,
+                "actions",
+                actions,
+                planner.ACTIONS_PER_PAGE,
+            ),
+        )
+        page_count = 1 + sum(
+            (len(records) + capacity - 1) // capacity
+            for _, _, records, capacity in components
+        )
+        self.assertEqual(page_count, 92)
+        common = {
+            "run_id": 1,
+            "observation_id": 1,
+            "chapter": 1,
+            "fields": (),
+            "actions": (),
+            "page_count": page_count,
+            "total_action_count": planner.MAX_ACTIONS,
+        }
+        pages = [planner.Observation(**common)]
+        for page_kind, field, records, capacity in components:
+            for start in range(0, len(records), capacity):
+                pages.append(
+                    planner.Observation(
+                        **{
+                            **common,
+                            "page_index": len(pages),
+                            "page_kind": page_kind,
+                            field: records[start : start + capacity],
+                        }
+                    )
+                )
+        complete = planner.Observation(
+            1,
+            1,
+            1,
+            (),
+            actions,
+            page_count=page_count,
+            total_action_count=planner.MAX_ACTIONS,
+            map_cells=map_cells,
+            units=units,
+            inventory=inventory,
+            resources=resources,
+            flags=flags,
+        )
+        transcript = planner.PlannerTranscript()
+        transcript.record_session({"run_id": 1})
+        largest_page_exchange = 0
+        for page in pages:
+            size_before = len(transcript.export())
+            transcript.record_observation_page(page)
+            transcript.record_settled(page, (0,) * 13, (0,) * 16)
+            largest_page_exchange = max(
+                largest_page_exchange,
+                len(transcript.export()) - size_before,
+            )
+        self.assertLessEqual(
+            largest_page_exchange,
+            planner.MAX_TRANSCRIPT_EXCHANGE_BYTES,
+        )
+        transcript.record_complete_and_settled(
+            complete,
+            (0,) * 13,
+            (0,) * 16,
+        )
+        exported = transcript.export()
+        self.assertLessEqual(len(exported), planner.MAX_TRACE_BYTES)
+        self.assertEqual(
+            planner.PlannerTranscript.import_bytes(exported).export(),
+            exported,
+        )
 
     def test_action_page_decodes_actor_and_target_slots(self):
         words = [0] * 249
@@ -165,7 +529,7 @@ class PlannerBridgeTests(unittest.TestCase):
             0,
             7,
         ]
-        words[25:33] = [
+        words[25:35] = [
             3,
             1,
             2 | (3 << 16),
@@ -173,7 +537,9 @@ class PlannerBridgeTests(unittest.TestCase):
             1 | (3 << 8),
             0x12345678,
             0x9ABCDEF0,
-            2,
+            0x0BADCAFE,
+            0x10203040,
+            5,
         ]
         observation = planner.parse_transport_observation(words)
         action = observation.actions[0].action
@@ -181,9 +547,25 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertEqual(action.target_item_slot, 3)
         self.assertEqual(action.target_position, (4, 5))
 
-        words[29] = 1 | (0xFF << 8)
+        self.assertEqual(
+            observation.actions[0].token.words,
+            (0x12345678, 0x9ABCDEF0, 0x0BADCAFE, 0x10203040),
+        )
+
+        words[29] = 0xFF | (0xFF << 8)
         observation = planner.parse_transport_observation(words)
+        self.assertIsNone(observation.actions[0].action.item_slot)
         self.assertIsNone(observation.actions[0].action.target_item_slot)
+
+        words[29] = 0 | (0xFF << 8)
+        observation = planner.parse_transport_observation(words)
+        self.assertEqual(observation.actions[0].action.item_slot, 0)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "invalid optional item-slot sentinel",
+        ):
+            words[29] = planner.UNIT_ITEM_COUNT | (0xFF << 8)
+            planner.parse_transport_observation(words)
 
     def test_host_begin_and_commit_limits_are_atomic(self):
         boundary = planner.PlannerBridge(PROVENANCE)
@@ -196,10 +578,7 @@ class PlannerBridgeTests(unittest.TestCase):
         boundary_complete = planner.collect_observation_pages(
             boundary, boundary_observation
         )
-        boundary._trace = [
-            {"event": "committed", "ordinal": index}
-            for index in range(planner.MAX_TRACE_ACTIONS - 1)
-        ]
+        boundary._committed_count = planner.MAX_TRACE_ACTIONS - 1
         boundary.commit(
             planner.Command(
                 planner.CommandKind.COMMIT,
@@ -209,10 +588,7 @@ class PlannerBridgeTests(unittest.TestCase):
                 boundary_complete.actions[0].token,
             )
         )
-        self.assertEqual(
-            sum(entry.get("event") == "committed" for entry in boundary.trace),
-            planner.MAX_TRACE_ACTIONS,
-        )
+        self.assertEqual(boundary._committed_count, planner.MAX_TRACE_ACTIONS)
 
         bridge = planner.PlannerBridge(PROVENANCE)
         bridge.begin(PROVENANCE)
@@ -235,17 +611,14 @@ class PlannerBridgeTests(unittest.TestCase):
             0,
             complete.actions[0].token,
         )
-        bridge._trace = [
-            {"event": "committed", "ordinal": index}
-            for index in range(planner.MAX_TRACE_ACTIONS)
-        ]
-        trace_before = tuple(bridge._trace)
+        bridge._committed_count = planner.MAX_TRACE_ACTIONS
+        trace_before = bridge.transcript.export()
         with self.assertRaisesRegex(
             planner.PlannerError,
             planner.Rejection.RESOURCE_LIMIT.value,
         ):
             bridge.commit(command)
-        self.assertEqual(tuple(bridge._trace), trace_before)
+        self.assertEqual(bridge.transcript.export(), trace_before)
         self.assertIs(bridge._observation, observation)
         with self.assertRaisesRegex(
             planner.PlannerError,
@@ -275,24 +648,22 @@ class PlannerBridgeTests(unittest.TestCase):
             0,
             complete.actions[0].token,
         )
-        oversized._trace = [
-            {"event": "padding", "payload": "x" * planner.MAX_TRACE_BYTES}
-        ]
-        trace_before = tuple(oversized._trace)
+        oversized.transcript = planner.PlannerTranscript(
+            max_bytes=planner.MAX_TRANSCRIPT_EXCHANGE_BYTES
+        )
+        trace_before = oversized.transcript.export()
         with self.assertRaisesRegex(
             planner.PlannerError,
             planner.Rejection.RESOURCE_LIMIT.value,
         ):
             oversized.commit(command)
-        self.assertEqual(tuple(oversized._trace), trace_before)
+        self.assertEqual(oversized.transcript.export(), trace_before)
         self.assertIs(oversized._observation, observation)
 
         atomic = planner.PlannerBridge(PROVENANCE)
         atomic.begin(PROVENANCE)
-        atomic._trace = [
-            {"event": "padding", "payload": "x" * planner.MAX_TRACE_BYTES}
-        ]
-        trace_before = tuple(atomic._trace)
+        atomic.transcript = planner.PlannerTranscript(max_bytes=256)
+        trace_before = atomic.transcript.export()
         next_id_before = atomic._next_observation_id
         with self.assertRaisesRegex(
             planner.PlannerError,
@@ -303,7 +674,7 @@ class PlannerBridgeTests(unittest.TestCase):
                 (),
                 (planner.Action("MOVE_WAIT", 1, (1, 1)),),
             )
-        self.assertEqual(tuple(atomic._trace), trace_before)
+        self.assertEqual(atomic.transcript.export(), trace_before)
         self.assertEqual(atomic._next_observation_id, next_id_before)
         self.assertIsNone(atomic._observation)
 
@@ -438,7 +809,7 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertNotEqual(release.returncode, 0)
         self.assertIn("modern-debug-only", release.stderr)
 
-    def test_configure_planner_selects_debug_for_bare_make(self):
+    def test_configured_bare_make_selects_release_and_fails_closed(self):
         root = TESTS_DIR.parents[2]
         build_root = root / "build" / "test-artifacts" / "planner-configure"
         build_root.mkdir(parents=True, exist_ok=True)
@@ -480,7 +851,7 @@ exit 97
             fragment = (Path(temporary) / "config.autotools.mk").read_text(
                 encoding="utf-8"
             )
-            self.assertIn("MODERN_CONFIG := debug", fragment)
+            self.assertNotIn("MODERN_CONFIG :=", fragment)
             self.assertIn("EXPANSION_AUTOPLAY_PLANNER := 1", fragment)
 
             recorder = Path(temporary) / "recursive-make-recorder"
@@ -494,13 +865,8 @@ import sys
 
 arguments = sys.argv[1:]
 goal = arguments[-1]
-probe = subprocess.run(
-    [
-        os.environ["PLANNER_REAL_MAKE"],
-        *arguments[:-1],
-        "print-MODERN_CONFIG",
-        "print-EXPANSION_AUTOPLAY_PLANNER",
-    ],
+child = subprocess.run(
+    [os.environ["PLANNER_REAL_MAKE"], *arguments],
     capture_output=True,
     text=True,
 )
@@ -509,16 +875,16 @@ with open(os.environ["PLANNER_MAKE_RECORD"], "w", encoding="utf-8") as output:
         {
             "arguments": arguments,
             "goal": goal,
-            "probe_returncode": probe.returncode,
-            "probe_stdout": probe.stdout,
-            "probe_stderr": probe.stderr,
+            "child_returncode": child.returncode,
+            "child_stdout": child.stdout,
+            "child_stderr": child.stderr,
         },
         output,
         sort_keys=True,
     )
-sys.stdout.write(probe.stdout)
-sys.stderr.write(probe.stderr)
-raise SystemExit(probe.returncode)
+sys.stdout.write(child.stdout)
+sys.stderr.write(child.stderr)
+raise SystemExit(child.returncode)
 """,
                 encoding="utf-8",
             )
@@ -536,27 +902,17 @@ raise SystemExit(probe.returncode)
                 text=True,
                 env=environment,
             )
-            self.assertEqual(
-                bare_make.returncode,
-                0,
-                bare_make.stdout + bare_make.stderr,
-            )
+            self.assertNotEqual(bare_make.returncode, 0)
             record = json.loads(record_path.read_text(encoding="utf-8"))
-            self.assertEqual(record["goal"], "expansion-modern-boot-check")
-            self.assertEqual(record["probe_returncode"], 0)
+            self.assertEqual(record["goal"], "all")
+            self.assertNotEqual(record["child_returncode"], 0)
             self.assertIn(
-                "MODERN_CONFIG is a simple variable set to [debug]",
-                record["probe_stdout"],
+                "modern-debug-only",
+                record["child_stdout"] + record["child_stderr"],
             )
             self.assertIn(
-                "EXPANSION_AUTOPLAY_PLANNER is a simple variable set to [1]",
-                record["probe_stdout"],
-            )
-            self.assertTrue(
-                all(
-                    "MODERN_CONFIG=release" not in argument
-                    for argument in record["arguments"]
-                )
+                "make expansion-modern-boot-check MODERN_CONFIG=debug",
+                record["child_stdout"] + record["child_stderr"],
             )
             release = subprocess.run(
                 [
@@ -577,7 +933,7 @@ raise SystemExit(probe.returncode)
                 "host-only configure coverage invoked the ARM compiler",
             )
 
-    def test_configured_bare_make_builds_debug_in_toolchain_lane(self):
+    def test_configured_explicit_debug_goal_builds_in_toolchain_lane(self):
         if host_mode.host_only_enabled():
             self.skipTest("configured ROM build belongs to the toolchain lane")
         if shutil.which("arm-none-eabi-gcc") is None:
@@ -605,10 +961,15 @@ raise SystemExit(probe.returncode)
             fragment = (Path(temporary) / "config.autotools.mk").read_text(
                 encoding="utf-8"
             )
-            self.assertIn("MODERN_CONFIG := debug", fragment)
+            self.assertNotIn("MODERN_CONFIG :=", fragment)
             self.assertIn("EXPANSION_AUTOPLAY_PLANNER := 1", fragment)
             built = subprocess.run(
-                ["make", "--no-print-directory"],
+                [
+                    "make",
+                    "--no-print-directory",
+                    "expansion-modern-boot-check",
+                    "MODERN_CONFIG=debug",
+                ],
                 cwd=temporary,
                 capture_output=True,
                 text=True,
@@ -675,8 +1036,9 @@ raise SystemExit(probe.returncode)
                 layout,
                 {
                     "semantic_size": 8,
-                    "action_size": 32,
+                    "action_size": 40,
                     "unit_size": 16,
+                    "value_size": 8,
                     "start_union_size": 4,
                     "count_union_size": 4,
                     "payload_union_size": 896,
@@ -685,6 +1047,8 @@ raise SystemExit(probe.returncode)
                     "observation_count_offset": 40,
                     "observation_payload_offset": 100,
                     "command_size": 64,
+                    "command_payload_offset": 32,
+                    "command_result_offset": 56,
                     "checkpoint_size": 52,
                     "checkpoint_mode_offset": 20,
                 },
@@ -785,6 +1149,64 @@ raise SystemExit(probe.returncode)
                 completed.stdout + completed.stderr,
             )
             self.assertIn("ACTION_SEMANTICS_HOST_TEST: PASS", completed.stdout)
+
+    def test_real_target_builder_excludes_not_deployed_units(self):
+        compiler = shutil.which("gcc") or shutil.which("cc")
+        if compiler is None:
+            self.skipTest("no host C compiler")
+        root = TESTS_DIR.parents[2]
+        build_root = root / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            executable = Path(temporary) / "planner-target-availability"
+            completed = subprocess.run(
+                [
+                    compiler,
+                    "-std=gnu89",
+                    "-Werror=declaration-after-statement",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    "-O2",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                    "-I",
+                    str(root / "include"),
+                    "-I",
+                    str(root / "include" / "generated"),
+                    str(root / "src" / "bmtarget.c"),
+                    str(
+                        TESTS_DIR
+                        / "c"
+                        / "planner_target_availability_driver.c"
+                    ),
+                    "-Wl,--gc-sections",
+                    "-o",
+                    str(executable),
+                ],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = subprocess.run(
+                [str(executable)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn(
+                "PLANNER_TARGET_AVAILABILITY_TEST: PASS",
+                completed.stdout,
+            )
 
     def test_native_summon_executor_preserves_action_and_coordinates(self):
         compiler = shutil.which("gcc") or shutil.which("cc")
@@ -1288,7 +1710,23 @@ class PlannerProcessTransport:
         self.last_completion: TransportCompletion | None = None
         self._next_acknowledgement_id = 1
         self.frame_count = 4
+        self.transcript = planner.PlannerTranscript()
         self.observation = self._read_state()
+        self.transcript.record_session(
+            {
+                "transport": "restricted-libmgba",
+                "rom_identity": self.observation.actual_rom_identity,
+                "config_identity": self.observation.actual_config_identity,
+                "scenario_identity": self.observation.actual_scenario_identity,
+                "seed_identity": self.observation.actual_seed_identity,
+            }
+        )
+        self.transcript.record_observation_page(self.observation)
+        self.transcript.record_settled(
+            self.observation,
+            self.checkpoint,
+            self.command,
+        )
 
     def _read_protocol_line(self) -> tuple[list[str], str]:
         assert self.process.stdout is not None
@@ -1300,6 +1738,11 @@ class PlannerProcessTransport:
         if fields and fields[0] == "TRANSPORT_ERROR":
             if len(fields) != 4:
                 raise AssertionError(f"malformed transport error: {line}")
+            self.transcript.record_transport_error(
+                fields[1],
+                int(fields[2], 16),
+                int(fields[3], 16),
+            )
             raise PlannerTransportError(
                 fields[1],
                 int(fields[2], 16),
@@ -1322,6 +1765,12 @@ class PlannerProcessTransport:
             )
         self._next_acknowledgement_id += 1
         self.last_acknowledgement = acknowledgement
+        self.transcript.record_acknowledgement(
+            acknowledgement.command_id,
+            acknowledgement.kind,
+            acknowledgement.result,
+            acknowledgement.rejection,
+        )
         return acknowledgement
 
     def _read_completion(
@@ -1342,6 +1791,11 @@ class PlannerProcessTransport:
                 "planner completion does not match acknowledgement"
             )
         self.last_completion = completion
+        self.transcript.record_completion(
+            completion.command_id,
+            completion.kind,
+            completion.response_frames,
+        )
         return completion
 
     def _read_state(self) -> planner.Observation:
@@ -1373,16 +1827,27 @@ class PlannerProcessTransport:
         line: str,
         *,
         expect_acknowledgement: bool = True,
+        transcript_command: dict[str, object] | None = None,
     ) -> planner.Observation:
         assert self.process.stdin is not None
         self.last_acknowledgement = None
         self.last_completion = None
+        if transcript_command is not None:
+            self.transcript.reserve_exchange()
+            self.transcript.record_command(transcript_command)
         self.process.stdin.write(line + "\n")
         self.process.stdin.flush()
         if expect_acknowledgement:
             acknowledgement = self._read_acknowledgement()
             self._read_completion(acknowledgement)
-        return self._read_state()
+        observation = self._read_state()
+        self.transcript.record_observation_page(observation)
+        self.transcript.record_settled(
+            observation,
+            self.checkpoint,
+            self.command,
+        )
+        return observation
 
     def start(
         self,
@@ -1390,15 +1855,26 @@ class PlannerProcessTransport:
         scenario_identity: int | None = None,
     ) -> planner.Observation:
         ready = self.observation
-        return self._send(
-            "START {:08x} {:08x} {:08x} {:08x}".format(
-                ready.actual_rom_identity,
-                ready.actual_config_identity,
+        expected_identities = (
+            ready.actual_rom_identity,
+            ready.actual_config_identity,
+            (
                 ready.actual_scenario_identity
                 if scenario_identity is None
-                else scenario_identity,
-                ready.actual_seed_identity,
-            )
+                else scenario_identity
+            ),
+            ready.actual_seed_identity,
+        )
+        return self._send(
+            "START {:08x} {:08x} {:08x} {:08x}".format(
+                *expected_identities,
+            ),
+            transcript_command={
+                "kind": planner.CommandKind.START.value,
+                "run_id": 0,
+                "observation_id": 0,
+                "expected_identities": expected_identities,
+            },
         )
 
     def exchange(
@@ -1412,26 +1888,44 @@ class PlannerProcessTransport:
                     command.run_id,
                     command.observation_id,
                     command.page_index,
-                )
+                ),
+                transcript_command={
+                    "kind": planner.CommandKind.PAGE.value,
+                    "run_id": command.run_id,
+                    "observation_id": command.observation_id,
+                    "page_index": command.page_index,
+                },
             )
         if command.kind is planner.CommandKind.COMMIT:
             if command.action_ordinal is None or command.token is None:
                 raise AssertionError("COMMIT requires ordinal and opaque token")
             return self._send(
-                "COMMIT {:08x} {:08x} {:08x} {:08x} {:08x}".format(
+                "COMMIT {:08x} {:08x} {:08x} "
+                "{:08x} {:08x} {:08x} {:08x}".format(
                     command.run_id,
                     command.observation_id,
                     command.action_ordinal,
-                    command.token.lo,
-                    command.token.hi,
-                )
+                    *command.token.words,
+                ),
+                transcript_command={
+                    "kind": planner.CommandKind.COMMIT.value,
+                    "run_id": command.run_id,
+                    "observation_id": command.observation_id,
+                    "action_ordinal": command.action_ordinal,
+                    "token": asdict(command.token),
+                },
             )
         if command.kind is planner.CommandKind.CANCEL:
             return self._send(
                 "CANCEL {:08x} {:08x}".format(
                     command.run_id,
                     command.observation_id,
-                )
+                ),
+                transcript_command={
+                    "kind": planner.CommandKind.CANCEL.value,
+                    "run_id": command.run_id,
+                    "observation_id": command.observation_id,
+                },
             )
         raise AssertionError(f"unsupported transport command {command.kind}")
 
@@ -1441,7 +1935,22 @@ class PlannerProcessTransport:
                 kind,
                 self.observation.run_id,
                 self.observation.observation_id,
-            )
+            ),
+            transcript_command={
+                "kind": kind,
+                "run_id": self.observation.run_id,
+                "observation_id": self.observation.observation_id,
+            },
+        )
+
+    def record_complete_observation(
+        self,
+        observation: planner.Observation,
+    ) -> None:
+        self.transcript.record_complete_and_settled(
+            observation,
+            self.checkpoint,
+            self.command,
         )
 
     def step(self) -> planner.Observation:
@@ -1501,7 +2010,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
         backend: Path,
         rom: Path,
         implementation: planner.ScriptedPlanner | planner.BoundedSearchPlanner,
-    ) -> tuple[planner.Observation, tuple[int, ...]]:
+    ) -> tuple[planner.Observation, tuple[int, ...], bytes]:
         transport = PlannerProcessTransport(backend, rom)
         try:
             waiting = transport.start()
@@ -1510,7 +2019,29 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             self.assertEqual(len(first.fields), planner.SEMANTIC_FIELD_COUNT)
             self.assertEqual(len(first.map_cells), 8 * 8)
             self.assertEqual(len(first.units), 1)
+            self.assertEqual(len(first.inventory), planner.UNIT_ITEM_COUNT)
+            self.assertEqual(
+                len(first.resources),
+                1
+                + planner.CONVOY_ITEM_COUNT
+                + planner.AUTOPLAY_TELEMETRY_WORDS,
+            )
+            self.assertEqual(len(first.flags), 128)
             self.assertEqual(len(first.actions), 63)
+            self.assertTrue(
+                all(
+                    record.action.item_slot is None
+                    for record in first.actions
+                )
+            )
+            self.assertEqual(first.resources[0].kind, planner.ValueKind.GOLD)
+            self.assertEqual(first.resources[0].value, 1000)
+            self.assertEqual(
+                first.resources[1].kind,
+                planner.ValueKind.CONVOY_ITEM,
+            )
+            self.assertEqual(first.resources[1].item_id, 1)
+            self.assertEqual(first.flags[0].state, 0)
             fields = {field.name: field for field in first.fields}
             self.assertEqual(
                 fields["map_dimensions"].value,
@@ -1531,6 +2062,10 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             self.assertEqual(hidden.availability, planner.Availability.NOT_VISIBLE)
             self.assertEqual(hidden.unit, 0)
             choice = implementation.choose(first)
+            self.assertEqual(
+                implementation.last_semantic_digest,
+                planner._digest(planner._observation_semantics(first)),
+            )
             waiting = transport.exchange(
                 planner.Command(
                     planner.CommandKind.COMMIT,
@@ -1559,7 +2094,12 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             )
             self.assertEqual(committed.state, 2)
             self.assertEqual(transport.checkpoint[4], 2)
-            return committed, transport.checkpoint
+            settled = planner.collect_observation_pages(transport, committed)
+            return (
+                settled,
+                transport.checkpoint,
+                transport.transcript.export(),
+            )
         finally:
             transport.close()
 
@@ -1583,6 +2123,25 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 backend, rom, planner.BoundedSearchPlanner(max_nodes=512)
             )
             self.assertEqual(scripted, searched)
+            imported = planner.PlannerTranscript.import_bytes(scripted[2])
+            self.assertEqual(imported.export(), scripted[2])
+            complete_events = [
+                event
+                for event in imported.events
+                if event["event"] == "observation_complete"
+            ]
+            self.assertGreaterEqual(len(complete_events), 3)
+            self.assertTrue(complete_events[-1]["observation"]["inventory"])
+            self.assertTrue(complete_events[-1]["observation"]["resources"])
+            self.assertTrue(complete_events[-1]["observation"]["flags"])
+            settled_events = [
+                event
+                for event in imported.events
+                if event["event"] == "settled"
+                and event["telemetry"]
+            ]
+            self.assertTrue(settled_events)
+            self.assertEqual(len(settled_events[-1]["telemetry"]), 16)
 
     def test_commit_waits_beyond_legacy_120_frame_window(self):
         root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
@@ -1722,6 +2281,41 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             finally:
                 transport.close()
 
+    def test_production_transcript_capacity_rejects_before_mailbox_write(self):
+        root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            try:
+                rom, backend = self._build_transport(temporary)
+            except RuntimeError as error:
+                if (
+                    "planner runtime toolchain unavailable" in str(error)
+                    or "planner transport host compiler unavailable" in str(error)
+                ):
+                    self.skipTest(str(error))
+                raise
+
+            transport = PlannerProcessTransport(backend, rom)
+            try:
+                transport.transcript = planner.PlannerTranscript(
+                    max_bytes=planner.MAX_TRANSCRIPT_EXCHANGE_BYTES
+                )
+                transcript_before = transport.transcript.export()
+                command_before = transport.command
+                observation_before = transport.observation
+                with self.assertRaisesRegex(
+                    planner.PlannerError,
+                    planner.Rejection.RESOURCE_LIMIT.value,
+                ):
+                    transport.start()
+                self.assertEqual(transport.transcript.export(), transcript_before)
+                self.assertEqual(transport.command, command_before)
+                self.assertIs(transport.observation, observation_before)
+                self.assertIsNone(transport.last_acknowledgement)
+                self.assertIsNone(transport.last_completion)
+            finally:
+                transport.close()
+
     def test_host_driven_transport_rejects_and_times_out(self):
         root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
         root.mkdir(parents=True, exist_ok=True)
@@ -1788,7 +2382,12 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         complete.run_id,
                         complete.observation_id,
                         choice.ordinal,
-                        planner.OpaqueToken(choice.token.lo, choice.token.hi ^ 1),
+                        planner.OpaqueToken(
+                            choice.token.word0,
+                            choice.token.word1,
+                            choice.token.word2,
+                            choice.token.word3 ^ 1,
+                        ),
                     )
                 )
                 self.assertEqual(forged.rejection, 4)
@@ -1943,7 +2542,12 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         complete.run_id,
                         complete.observation_id,
                         choice.ordinal,
-                        planner.OpaqueToken(choice.token.lo ^ 1, choice.token.hi),
+                        planner.OpaqueToken(
+                            choice.token.word0 ^ 1,
+                            choice.token.word1,
+                            choice.token.word2,
+                            choice.token.word3,
+                        ),
                     )
                 )
                 self.assertEqual(forged.rejection, 4)

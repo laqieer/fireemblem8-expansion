@@ -291,10 +291,17 @@ s8 AiPillageAction(struct CpPerformProc* proc) {
     return 1;
 }
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+static bool PreparePlannerAction(void)
+{
+    return !ExpansionAutoplayPlanner_IsActive()
+        || ExpansionAutoplayPlanner_PrepareActionData(&gAiDecision);
+}
+#endif
+
 s8 AiStaffAction(struct CpPerformProc* proc) {
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
-    if (ExpansionAutoplayPlanner_IsActive()
-        && !ExpansionAutoplayPlanner_PrepareActionData(&gAiDecision))
+    if (!PreparePlannerAction())
     {
         gAiDecision.actionPerformed = false;
         return 1;
@@ -383,8 +390,7 @@ s8 AiDKNightmareAction(struct CpPerformProc* proc) {
 void AiDKSummonAction(struct CpPerformProc* proc) {
 
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
-    if (ExpansionAutoplayPlanner_IsActive()
-        && !ExpansionAutoplayPlanner_PrepareActionData(&gAiDecision))
+    if (!PreparePlannerAction())
     {
         gAiDecision.actionPerformed = false;
         return;
@@ -403,8 +409,7 @@ void AiDKSummonAction(struct CpPerformProc* proc) {
 
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
 s8 AiSummonAction(struct CpPerformProc* proc) {
-    if (ExpansionAutoplayPlanner_IsActive()
-        && !ExpansionAutoplayPlanner_PrepareActionData(&gAiDecision))
+    if (!PreparePlannerAction())
     {
         gAiDecision.actionPerformed = false;
         return 1;
@@ -426,8 +431,7 @@ s8 AiSummonAction(struct CpPerformProc* proc) {
 s8 AiPickAction(struct CpPerformProc* proc) {
 
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
-    if (ExpansionAutoplayPlanner_IsActive()
-        && !ExpansionAutoplayPlanner_PrepareActionData(&gAiDecision))
+    if (!PreparePlannerAction())
     {
         gAiDecision.actionPerformed = false;
         return 1;

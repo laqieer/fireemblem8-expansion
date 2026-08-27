@@ -26,6 +26,7 @@
 
 struct PlaySt gPlaySt;
 struct ActionData gActionData;
+struct ExpansionAutoplayTelemetry gExpansionAutoplayTelemetry;
 struct Unit* gActiveUnit;
 u8 gActiveUnitId;
 struct Vec2 gBmMapSize;
@@ -60,6 +61,7 @@ enum PlannerRuntimeStage
     PLANNER_RUNTIME_DELAY_CHAPTER_ONE,
     PLANNER_RUNTIME_WAIT_CHAPTER_TWO,
     PLANNER_RUNTIME_DELAY_CHAPTER_TWO,
+    PLANNER_RUNTIME_WAIT_FINAL,
     PLANNER_RUNTIME_DONE,
 };
 
@@ -361,7 +363,7 @@ static void PublishFinalObservation(struct AiDecision* decision)
     ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
     PrepareDecision(decision);
     ExpansionAutoplayPlanner_OfferDecision(decision);
-    sStage = PLANNER_RUNTIME_DONE;
+    sStage = PLANNER_RUNTIME_WAIT_FINAL;
 }
 
 static void TickRuntime(void)
@@ -435,6 +437,12 @@ static void TickRuntime(void)
     case PLANNER_RUNTIME_DELAY_CHAPTER_TWO:
         if (--sCommitDelayFrames == 0)
             PublishFinalObservation(&decision);
+        return;
+
+    case PLANNER_RUNTIME_WAIT_FINAL:
+        result = ExpansionAutoplayPlanner_PollDecision(&decision);
+        if (result != EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT)
+            sStage = PLANNER_RUNTIME_DONE;
         return;
 
     default:

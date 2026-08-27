@@ -31,6 +31,7 @@
 
 struct PlaySt gPlaySt;
 struct ActionData gActionData;
+struct ExpansionAutoplayTelemetry gExpansionAutoplayTelemetry;
 struct Unit* gActiveUnit;
 u8 gActiveUnitId;
 struct AiDecision gAiDecision;
@@ -62,8 +63,12 @@ static struct Unit sUnit;
 static struct Unit sAlly;
 static struct Unit sEnemy;
 static struct Unit sSummon;
-static u8 sPermanentFlags[8];
-static u8 sChapterFlags[8];
+static struct Unit sMaxUnits[132];
+static u8 sPermanentFlags[256];
+static u8 sChapterFlags[256];
+static int sPermanentFlagSize = 8;
+static int sChapterFlagSize = 8;
+static bool sUseMaxUnits;
 static u16 sConvoy[CONVOY_ITEM_COUNT];
 static u8 sMovementData[17][32];
 static u8* sMovementRows[17];
@@ -93,6 +98,20 @@ u32 GetRNConsumptionCount(void)
 
 struct Unit* GetUnit(int id)
 {
+    int ordinal;
+
+    if (sUseMaxUnits)
+    {
+        if (id >= 1 && id <= 0x3E)
+            ordinal = id - 1;
+        else if (id >= 0x41 && id <= 0x54)
+            ordinal = 62 + id - 0x41;
+        else if (id >= 0x81 && id <= 0xB2)
+            ordinal = 82 + id - 0x81;
+        else
+            return NULL;
+        return &sMaxUnits[ordinal];
+    }
     if (id == 1)
         return &sUnit;
     if (id == 2 && sAlly.pCharacterData != NULL)
@@ -111,7 +130,7 @@ u8* GetPermanentFlagBits(void)
 
 int GetPermanentFlagBitsSize(void)
 {
-    return sizeof(sPermanentFlags);
+    return sPermanentFlagSize;
 }
 
 u8* GetChapterFlagBits(void)
@@ -121,7 +140,7 @@ u8* GetChapterFlagBits(void)
 
 int GetChapterFlagBitsSize(void)
 {
-    return sizeof(sChapterFlags);
+    return sChapterFlagSize;
 }
 
 u16* GetConvoyItemArray(void)
@@ -310,28 +329,39 @@ static void WriteCommand(
     u32 observationId,
     u32 pageIndex,
     u32 ordinal,
-    u32 tokenLo,
-    u32 tokenHi)
+    const u32* token)
 {
+    memset(
+        (void*)&gExpansionAutoplayPlannerCommand,
+        0,
+        sizeof(gExpansionAutoplayPlannerCommand));
     gExpansionAutoplayPlannerCommand.magic = EXPANSION_AUTOPLAY_PLANNER_MAGIC;
     gExpansionAutoplayPlannerCommand.version = EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION;
     gExpansionAutoplayPlannerCommand.byteSize =
         sizeof(struct ExpansionAutoplayPlannerCommandV2);
-    gExpansionAutoplayPlannerCommand.kind = kind;
     gExpansionAutoplayPlannerCommand.runId = runId;
     gExpansionAutoplayPlannerCommand.observationId = observationId;
     gExpansionAutoplayPlannerCommand.pageIndex = pageIndex;
     gExpansionAutoplayPlannerCommand.actionOrdinal = ordinal;
-    gExpansionAutoplayPlannerCommand.tokenLo = tokenLo;
-    gExpansionAutoplayPlannerCommand.tokenHi = tokenHi;
-    gExpansionAutoplayPlannerCommand.expectedRomIdentity =
-        gExpansionAutoplayPlannerObservation.actualRomIdentity;
-    gExpansionAutoplayPlannerCommand.expectedConfigIdentity =
-        gExpansionAutoplayPlannerObservation.actualConfigIdentity;
-    gExpansionAutoplayPlannerCommand.expectedScenarioIdentity =
-        gExpansionAutoplayPlannerObservation.actualScenarioIdentity;
-    gExpansionAutoplayPlannerCommand.expectedSeedIdentity =
-        gExpansionAutoplayPlannerObservation.actualSeedIdentity;
+    if (token != NULL)
+    {
+        gExpansionAutoplayPlannerCommand.payload.commit.token0 = token[0];
+        gExpansionAutoplayPlannerCommand.payload.commit.token1 = token[1];
+        gExpansionAutoplayPlannerCommand.payload.commit.token2 = token[2];
+        gExpansionAutoplayPlannerCommand.payload.commit.token3 = token[3];
+    }
+    else if (kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_START)
+    {
+        gExpansionAutoplayPlannerCommand.payload.start.expectedRomIdentity =
+            gExpansionAutoplayPlannerObservation.actualRomIdentity;
+        gExpansionAutoplayPlannerCommand.payload.start.expectedConfigIdentity =
+            gExpansionAutoplayPlannerObservation.actualConfigIdentity;
+        gExpansionAutoplayPlannerCommand.payload.start.expectedScenarioIdentity =
+            gExpansionAutoplayPlannerObservation.actualScenarioIdentity;
+        gExpansionAutoplayPlannerCommand.payload.start.expectedSeedIdentity =
+            gExpansionAutoplayPlannerObservation.actualSeedIdentity;
+    }
+    gExpansionAutoplayPlannerCommand.kind = kind;
 }
 
 static struct AiDecision sEnumeratedActions[EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY];
@@ -445,7 +475,7 @@ static int TestCoordinateActionFamilies(void)
         ExpansionAutoplayPlanner_EnumerateLegalActions(
             CollectAction,
             &count,
-            NULL)
+            &count)
             == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK,
         "Torch enumeration must succeed"
     );
@@ -751,6 +781,8 @@ static int TestSummonActionFamily(void)
         if (candidate->actionId != AI_ACTION_SUMMON)
             continue;
         summonCount++;
+        CHECK(candidate->itemSlot == 0xFF,
+              "normal Summon must use the no-item sentinel");
         CHECK(
             ActionSemantics_IsNormalSummonTarget(
                 gActiveUnit,
@@ -867,6 +899,7 @@ static int TestSummonActionFamily(void)
     CHECK(first.actionPerformed
               && first.xTarget == 0
               && first.yTarget == 0
+              && first.itemSlot == 0xFF
               && ExpansionAutoplayPlanner_PrepareActionData(&first),
           "dark summon must retain its coordinate-free executor contract");
     first.xTarget = 1;
@@ -876,6 +909,210 @@ static int TestSummonActionFamily(void)
     first.actionId = AI_ACTION_SUMMON;
     CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&first),
           "dark summon candidate must not lower as normal Summon");
+    return 0;
+}
+
+static int TestUnavailableUnitSemantics(void)
+{
+    u32 count = 99;
+
+    ResetActionFixture(6, 6);
+    sUnit.state = US_NOT_DEPLOYED;
+    CHECK(
+        ExpansionAutoplayPlanner_EnumerateLegalActions(
+            CollectAction,
+            &count,
+            &count)
+            == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_UNAVAILABLE
+            && count == 0,
+        "not-deployed active unit must be unavailable before enumeration"
+    );
+
+    ResetActionFixture(6, 6);
+    sUnit.items[0] = ITEM_SWORD_IRON;
+    sEnemyCharacter.number = 3;
+    sEnemyClass.number = 3;
+    sEnemy.pCharacterData = &sEnemyCharacter;
+    sEnemy.pClassData = &sEnemyClass;
+    sEnemy.index = 0x81;
+    sEnemy.xPos = 3;
+    sEnemy.yPos = 2;
+    sEnemy.maxHP = 20;
+    sEnemy.curHP = 20;
+    sEnemy.state = US_NOT_DEPLOYED;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(CountActionId(count, AI_ACTION_COMBAT) == 0,
+          "not-deployed stale-coordinate target must not be legal");
+    sEnemy.state = 0;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(CountActionId(count, AI_ACTION_COMBAT) == 1,
+          "available in-range target must remain legal");
+    return 0;
+}
+
+static int TestMaximumSemanticPaging(void)
+{
+    struct AiDecision decision = { 0 };
+    int index;
+
+    ResetActionFixture(6, 6);
+    sUseMaxUnits = true;
+    for (index = 0; index < 132; index++)
+    {
+        int unitId;
+
+        if (index < 62)
+            unitId = index + 1;
+        else if (index < 82)
+            unitId = 0x41 + index - 62;
+        else
+            unitId = 0x81 + index - 82;
+        memset(&sMaxUnits[index], 0, sizeof(sMaxUnits[index]));
+        sMaxUnits[index].pCharacterData = &sCharacter;
+        sMaxUnits[index].pClassData = &sClass;
+        sMaxUnits[index].index = unitId;
+        sMaxUnits[index].xPos = 1;
+        sMaxUnits[index].yPos = 1;
+        sMaxUnits[index].maxHP = 20;
+        sMaxUnits[index].curHP = 20;
+        sMaxUnits[index].state =
+            index == 0 ? 0 : US_NOT_DEPLOYED;
+    }
+    gActiveUnit = &sMaxUnits[0];
+    gActiveUnitId = 1;
+    gBmMapUnit[2][2] = 0;
+    gBmMapUnit[1][1] = 1;
+    gBmMapMovement[2][2] = MAP_MOVEMENT_MAX + 1;
+    gBmMapMovement[1][2] = 1;
+    sPermanentFlagSize = sizeof(sPermanentFlags);
+    sChapterFlagSize = sizeof(sChapterFlags);
+    memset(sPermanentFlags, 0, sizeof(sPermanentFlags));
+    memset(sChapterFlags, 0, sizeof(sChapterFlags));
+    sPermanentFlags[255] = 0x80;
+    sChapterFlags[255] = 0x80;
+
+    ExpansionAutoplayPlanner_Reset();
+    ExpansionAutoplayPlanner_OnMapReady();
+    ExpansionAutoplayPlanner_PollStart();
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_START,
+        0,
+        0,
+        0,
+        0,
+        NULL);
+    CHECK(ExpansionAutoplayPlanner_PollStart(),
+          "maximum semantic-page run must start");
+    CHECK(
+        ExpansionAutoplayPlanner_OfferDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.pageCount == 51,
+        "maximum units and flags must use bounded canonical pages"
+    );
+
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        4,
+        0,
+        NULL);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.pageKind
+                == EXPANSION_AUTOPLAY_PLANNER_PAGE_UNITS
+            && gExpansionAutoplayPlannerObservation.start.recordStart == 112
+            && gExpansionAutoplayPlannerObservation.count.recordCount == 20,
+        "maximum unit page boundary must be exact"
+    );
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        10,
+        0,
+        NULL);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.pageKind
+                == EXPANSION_AUTOPLAY_PLANNER_PAGE_INVENTORY
+            && gExpansionAutoplayPlannerObservation.start.recordStart == 560
+            && gExpansionAutoplayPlannerObservation.count.recordCount == 100
+            && ((gExpansionAutoplayPlannerObservation
+                    .payload.inventory[0].identity >> 8) & 0xFF) == 0x9F
+            && ((gExpansionAutoplayPlannerObservation
+                    .payload.inventory[0].identity >> 16) & 0xFF) == 0
+            && ((gExpansionAutoplayPlannerObservation
+                    .payload.inventory[99].identity >> 8) & 0xFF) == 0xB2
+            && ((gExpansionAutoplayPlannerObservation
+                    .payload.inventory[99].identity >> 16) & 0xFF) == 4,
+        "maximum inventory page boundary must be exact"
+    );
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        12,
+        0,
+        NULL);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.pageKind
+                == EXPANSION_AUTOPLAY_PLANNER_PAGE_RESOURCES
+            && gExpansionAutoplayPlannerObservation.start.recordStart == 112
+            && gExpansionAutoplayPlannerObservation.count.recordCount == 5,
+        "maximum resource page boundary must be exact"
+    );
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        49,
+        0,
+        NULL);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.pageKind
+                == EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS
+            && gExpansionAutoplayPlannerObservation.start.recordStart == 4032
+            && gExpansionAutoplayPlannerObservation.count.recordCount == 64,
+        "maximum flag page boundary must be exact"
+    );
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        50,
+        0,
+        NULL);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.pageKind
+                == EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS
+            && gExpansionAutoplayPlannerObservation.count.actionCount == 1,
+        "action page must follow every maximum semantic page"
+    );
+
+    ExpansionAutoplayPlanner_Reset();
+    sUseMaxUnits = false;
+    sPermanentFlagSize = 8;
+    sChapterFlagSize = 8;
+    gActiveUnit = &sUnit;
+    gActiveUnitId = 1;
+    sControlRequests = 0;
     return 0;
 }
 
@@ -910,8 +1147,7 @@ static int TestHammerneWireIdentity(void)
         0,
         0,
         0,
-        0,
-        0);
+        NULL);
     CHECK(ExpansionAutoplayPlanner_PollStart(),
           "Hammerne wire run must start");
     CHECK(
@@ -926,8 +1162,7 @@ static int TestHammerneWireIdentity(void)
         gExpansionAutoplayPlannerObservation.observationId,
         actionPage,
         0,
-        0,
-        0);
+        NULL);
     CHECK(
         ExpansionAutoplayPlanner_PollDecision(&decision)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
@@ -941,8 +1176,10 @@ static int TestHammerneWireIdentity(void)
     CHECK(
         first.itemSlot == 0x0000
             && second.itemSlot == 0x0100
-            && (first.tokenLo != second.tokenLo
-                || first.tokenHi != second.tokenHi),
+            && (first.token0 != second.token0
+                || first.token1 != second.token1
+                || first.token2 != second.token2
+                || first.token3 != second.token3),
         "Hammerne target slot must be packed and token-bound"
     );
     WriteCommand(
@@ -951,8 +1188,7 @@ static int TestHammerneWireIdentity(void)
         gExpansionAutoplayPlannerObservation.observationId,
         0,
         gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 1,
-        first.tokenLo,
-        first.tokenHi);
+        &first.token0);
     CHECK(
         ExpansionAutoplayPlanner_PollDecision(&decision)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
@@ -966,8 +1202,7 @@ static int TestHammerneWireIdentity(void)
         gExpansionAutoplayPlannerObservation.observationId,
         0,
         gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 1,
-        second.tokenLo,
-        second.tokenHi);
+        &second.token0);
     CHECK(
         ExpansionAutoplayPlanner_PollDecision(&decision)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED
@@ -1097,11 +1332,12 @@ int main(void)
     struct AiDecision original;
     const struct ExpansionAutoplayPlannerActionV2* action;
     u32 selectedOrdinal;
-    u32 selectedTokenLo;
-    u32 selectedTokenHi;
+    u32 selectedToken[4];
+    u32 forgedToken[4];
     u32 previousScenarioIdentity;
     u32 previousSeedIdentity;
     int index;
+    int other;
 
     gPlaySt.chapterIndex = 1;
     gPlaySt.chapterTurnNumber = 1;
@@ -1141,6 +1377,10 @@ int main(void)
           "coordinate-sensitive action family test");
     CHECK(TestSummonActionFamily() == 0,
           "normal and dark summon action family test");
+    CHECK(TestUnavailableUnitSemantics() == 0,
+          "unavailable actor and target semantics test");
+    CHECK(TestMaximumSemanticPaging() == 0,
+          "maximum semantic paging test");
 
     gBmMapSize.x = 32;
     gBmMapSize.y = 17;
@@ -1151,6 +1391,24 @@ int main(void)
     sCharacter.number = 1;
     sClass.number = 1;
     sClass.attributes = 0;
+    sUnit.items[0] = ITEM_SWORD_IRON | (30 << 8);
+    sAllyCharacter.number = 2;
+    sAllyClass.number = 2;
+    sAlly.pCharacterData = &sAllyCharacter;
+    sAlly.pClassData = &sAllyClass;
+    sAlly.index = 2;
+    sAlly.xPos = 5;
+    sAlly.yPos = 5;
+    sAlly.maxHP = 20;
+    sAlly.curHP = 20;
+    sAlly.state = US_NOT_DEPLOYED;
+    sAlly.items[0] = ITEM_VULNERARY | (2 << 8);
+    sEnemy.pCharacterData = NULL;
+    sSummon.pCharacterData = NULL;
+    gPlaySt.partyGoldAmount = 1234;
+    sConvoy[0] = ITEM_CHESTKEY | (3 << 8);
+    sPermanentFlags[0] = 1;
+    sChapterFlags[0] = 2;
     for (index = 0; index < 17; index++)
     {
         int x;
@@ -1176,7 +1434,7 @@ int main(void)
     CHECK(!ExpansionAutoplayPlanner_PollStart(),
           "idle poll without a command must publish READY");
 
-    WriteCommand((enum ExpansionAutoplayPlannerCommandKind)99, 0, 0, 0, 0, 0, 0);
+    WriteCommand((enum ExpansionAutoplayPlannerCommandKind)99, 0, 0, 0, 0, NULL);
     CHECK(!ExpansionAutoplayPlanner_PollStart(), "unknown idle command must reject");
     CHECK(
         gExpansionAutoplayPlannerObservation.rejection
@@ -1193,8 +1451,8 @@ int main(void)
                 != previousSeedIdentity,
         "idle READY refresh must follow map/RNG initialization"
     );
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
-    gExpansionAutoplayPlannerCommand.expectedSeedIdentity =
+    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
+    gExpansionAutoplayPlannerCommand.payload.start.expectedSeedIdentity =
         previousSeedIdentity;
     CHECK(
         !ExpansionAutoplayPlanner_PollStart()
@@ -1207,8 +1465,8 @@ int main(void)
     ExpansionAutoplayPlanner_OnMapReady();
     ExpansionAutoplayPlanner_PollStart();
 
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
-    gExpansionAutoplayPlannerCommand.expectedRomIdentity ^= 1;
+    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
+    gExpansionAutoplayPlannerCommand.payload.start.expectedRomIdentity ^= 1;
     CHECK(
         !ExpansionAutoplayPlanner_PollStart()
             && gExpansionAutoplayPlannerObservation.rejection
@@ -1219,15 +1477,15 @@ int main(void)
     ExpansionAutoplayPlanner_OnMapReady();
     ExpansionAutoplayPlanner_PollStart();
 
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
-    gExpansionAutoplayPlannerCommand.expectedScenarioIdentity ^= 1;
+    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
+    gExpansionAutoplayPlannerCommand.payload.start.expectedScenarioIdentity ^= 1;
     CHECK(!ExpansionAutoplayPlanner_PollStart(), "mismatched provenance must reject");
 
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
+    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
     CHECK(ExpansionAutoplayPlanner_PollStart(), "typed START mailbox command must activate");
     CHECK(sControlRequests == 1, "valid provenance activates computer control once");
 
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
+    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
     CHECK(!ExpansionAutoplayPlanner_PollStart(), "duplicate START must reject");
     CHECK(
         gExpansionAutoplayPlannerObservation.rejection
@@ -1257,7 +1515,7 @@ int main(void)
     CHECK(
         sizeof(gExpansionAutoplayPlannerObservation)
                 <= EXPANSION_AUTOPLAY_PLANNER_PAGE_MAX_BYTES
-            && gExpansionAutoplayPlannerObservation.pageCount == 24
+            && gExpansionAutoplayPlannerObservation.pageCount == 34
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_SUMMARY
             && gExpansionAutoplayPlannerObservation.count.recordCount
@@ -1271,6 +1529,134 @@ int main(void)
             && gExpansionAutoplayPlannerObservation.payload.fields[2].value
                 == 0x010101,
         "summary page must expose actual map and active-unit semantics"
+    );
+
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        4,
+        0,
+        NULL);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.pageKind
+                == EXPANSION_AUTOPLAY_PLANNER_PAGE_UNITS
+            && gExpansionAutoplayPlannerObservation.count.recordCount == 2
+            && (gExpansionAutoplayPlannerObservation
+                    .payload.units[1].identity >> 24)
+                == EXPANSION_AUTOPLAY_PLANNER_UNAVAILABLE
+            && gExpansionAutoplayPlannerObservation.payload.units[1].state
+                == US_NOT_DEPLOYED,
+        "unit page must mark benched stale-coordinate units unavailable"
+    );
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        5,
+        0,
+        NULL);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.pageKind
+                == EXPANSION_AUTOPLAY_PLANNER_PAGE_INVENTORY
+            && gExpansionAutoplayPlannerObservation.count.recordCount == 10
+            && (gExpansionAutoplayPlannerObservation
+                    .payload.inventory[0].identity & 0xFF)
+                == EXPANSION_AUTOPLAY_PLANNER_VALUE_UNIT_ITEM
+            && (gExpansionAutoplayPlannerObservation
+                    .payload.inventory[0].identity >> 24)
+                == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
+            && gExpansionAutoplayPlannerObservation
+                    .payload.inventory[0].value
+                == (ITEM_SWORD_IRON | (30 << 8))
+            && (gExpansionAutoplayPlannerObservation
+                    .payload.inventory[1].identity >> 24)
+                == EXPANSION_AUTOPLAY_PLANNER_EMPTY
+            && (gExpansionAutoplayPlannerObservation
+                    .payload.inventory[5].identity >> 24)
+                == EXPANSION_AUTOPLAY_PLANNER_UNAVAILABLE
+            && gExpansionAutoplayPlannerObservation
+                    .payload.inventory[5].value
+                == (ITEM_VULNERARY | (2 << 8)),
+        "inventory page must expose present, empty, and unavailable unit slots"
+    );
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        6,
+        0,
+        NULL);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.pageKind
+                == EXPANSION_AUTOPLAY_PLANNER_PAGE_RESOURCES
+            && gExpansionAutoplayPlannerObservation.count.recordCount == 112
+            && gExpansionAutoplayPlannerObservation
+                    .payload.resources[0].value == 1234
+            && gExpansionAutoplayPlannerObservation
+                    .payload.resources[1].value
+                == (ITEM_CHESTKEY | (3 << 8))
+            && (gExpansionAutoplayPlannerObservation
+                    .payload.resources[2].identity >> 24)
+                == EXPANSION_AUTOPLAY_PLANNER_EMPTY,
+        "resource page must expose gold plus present and empty convoy slots"
+    );
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        7,
+        0,
+        NULL);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.pageKind
+                == EXPANSION_AUTOPLAY_PLANNER_PAGE_RESOURCES
+            && gExpansionAutoplayPlannerObservation.start.recordStart == 112
+            && gExpansionAutoplayPlannerObservation.count.recordCount == 5,
+        "resource paging must include the complete autoplay telemetry"
+    );
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        8,
+        0,
+        NULL);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.pageKind
+                == EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS
+            && gExpansionAutoplayPlannerObservation.count.recordCount == 112
+            && gExpansionAutoplayPlannerObservation
+                    .payload.flags[0].value == 1
+            && gExpansionAutoplayPlannerObservation
+                    .payload.flags[1].value == 0,
+        "flag page must expose explicit set and clear states"
+    );
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        9,
+        0,
+        NULL);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.pageKind
+                == EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS
+            && gExpansionAutoplayPlannerObservation.start.recordStart == 112
+            && gExpansionAutoplayPlannerObservation.count.recordCount == 16,
+        "flag paging must retain canonical record boundaries"
     );
 
     for (index = 0; index < 4; index++)
@@ -1293,22 +1679,21 @@ int main(void)
         EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
         gExpansionAutoplayPlannerObservation.runId,
         gExpansionAutoplayPlannerObservation.observationId,
-        23,
+        33,
         0,
-        0,
-        0);
+        NULL);
     CHECK(
         ExpansionAutoplayPlanner_PollDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
         "valid PAGE command must publish another page"
     );
     CHECK(
-        gExpansionAutoplayPlannerObservation.pageIndex == 23
+        gExpansionAutoplayPlannerObservation.pageIndex == 33
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS
             && gExpansionAutoplayPlannerObservation.start.actionStartOrdinal
-                == 504
-            && gExpansionAutoplayPlannerObservation.count.actionCount == 8,
+                == 506
+            && gExpansionAutoplayPlannerObservation.count.actionCount == 6,
         "last page must retain stable global ordinals"
     );
 
@@ -1318,8 +1703,7 @@ int main(void)
         gExpansionAutoplayPlannerObservation.observationId,
         0,
         0,
-        0,
-        0);
+        NULL);
     CHECK(
         ExpansionAutoplayPlanner_PollDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
@@ -1331,39 +1715,52 @@ int main(void)
         EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
         gExpansionAutoplayPlannerObservation.runId,
         gExpansionAutoplayPlannerObservation.observationId,
-        23,
+        33,
         0,
-        0,
-        0);
+        NULL);
     CHECK(
         ExpansionAutoplayPlanner_PollDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
         "page must republish after malformed command"
     );
 
-    action = &gExpansionAutoplayPlannerObservation.payload.actions[7];
+    action = &gExpansionAutoplayPlannerObservation.payload.actions[5];
     selectedOrdinal =
-        gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 7;
-    selectedTokenLo = action->tokenLo;
-    selectedTokenHi = action->tokenHi;
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        0,
-        selectedOrdinal,
-        action->tokenLo,
-        action->tokenHi ^ 1);
-    CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
-            == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
-        "forged token must not commit"
-    );
-    CHECK(
-        gExpansionAutoplayPlannerObservation.rejection
-            == EXPANSION_AUTOPLAY_PLANNER_REJECTION_TOKEN_MISMATCH,
-        "forged token must have explicit rejection"
-    );
+        gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 5;
+    selectedToken[0] = action->token0;
+    selectedToken[1] = action->token1;
+    selectedToken[2] = action->token2;
+    selectedToken[3] = action->token3;
+    for (index = 0; index < 4; index++)
+    {
+        for (other = 0; other < 4; other++)
+        {
+            CHECK(
+                index == other
+                    || selectedToken[index] != selectedToken[other],
+                "opaque token words must be independently mixed"
+            );
+            forgedToken[other] = selectedToken[other];
+        }
+        forgedToken[index] ^= 1;
+        WriteCommand(
+            EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
+            gExpansionAutoplayPlannerObservation.runId,
+            gExpansionAutoplayPlannerObservation.observationId,
+            0,
+            selectedOrdinal,
+            forgedToken);
+        CHECK(
+            ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
+            "every forged token word must reject"
+        );
+        CHECK(
+            gExpansionAutoplayPlannerObservation.rejection
+                == EXPANSION_AUTOPLAY_PLANNER_REJECTION_TOKEN_MISMATCH,
+            "forged token word must have explicit rejection"
+        );
+    }
 
     sMovementData[16][0] = MAP_MOVEMENT_MAX + 1;
     WriteCommand(
@@ -1372,8 +1769,7 @@ int main(void)
         gExpansionAutoplayPlannerObservation.observationId,
         0,
         selectedOrdinal,
-        selectedTokenLo,
-        selectedTokenHi);
+        selectedToken);
     CHECK(
         ExpansionAutoplayPlanner_PollDecision(&decision)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
@@ -1388,8 +1784,7 @@ int main(void)
         gExpansionAutoplayPlannerObservation.observationId,
         0,
         selectedOrdinal,
-        selectedTokenLo,
-        selectedTokenHi);
+        selectedToken);
     CHECK(
         ExpansionAutoplayPlanner_PollDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED,
@@ -1474,8 +1869,7 @@ int main(void)
             gExpansionAutoplayPlannerObservation.observationId,
             0,
             0,
-            0,
-            0);
+            NULL);
         CHECK(
             ExpansionAutoplayPlanner_PollDecision(&decision)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
@@ -1488,8 +1882,7 @@ int main(void)
         gExpansionAutoplayPlannerObservation.observationId,
         0,
         0,
-        0,
-        0);
+        NULL);
     CHECK(
         ExpansionAutoplayPlanner_PollDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED
@@ -1512,7 +1905,7 @@ int main(void)
     );
     ExpansionAutoplayPlanner_OnMapReady();
     ExpansionAutoplayPlanner_PollStart();
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
+    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
     CHECK(ExpansionAutoplayPlanner_PollStart(), "second run must start after reset");
     CHECK(
         gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
@@ -1538,8 +1931,7 @@ int main(void)
         gExpansionAutoplayPlannerObservation.observationId,
         0,
         0,
-        0,
-        0);
+        NULL);
     CHECK(
         ExpansionAutoplayPlanner_PollDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED
@@ -1555,7 +1947,7 @@ int main(void)
     ExpansionAutoplayPlanner_Reset();
     ExpansionAutoplayPlanner_OnMapReady();
     ExpansionAutoplayPlanner_PollStart();
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
+    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
     CHECK(ExpansionAutoplayPlanner_PollStart(), "wait-candidate run must start");
     CHECK(
         gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
@@ -1578,10 +1970,9 @@ int main(void)
         EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
         gExpansionAutoplayPlannerObservation.runId,
         gExpansionAutoplayPlannerObservation.observationId,
-        5,
+        10,
         0,
-        0,
-        0);
+        NULL);
     CHECK(
         ExpansionAutoplayPlanner_PollDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
@@ -1591,8 +1982,9 @@ int main(void)
     );
     action = &gExpansionAutoplayPlannerObservation.payload.actions[0];
     CHECK(
-        (action->destination & 0xFFFF) != sUnit.xPos
-            || (action->destination >> 16) != sUnit.yPos,
+        action->itemSlot == 0xFFFF
+            && ((action->destination & 0xFFFF) != sUnit.xPos
+                || (action->destination >> 16) != sUnit.yPos),
         "active unit current tile must not be a committed wait candidate"
     );
     WriteCommand(
@@ -1601,8 +1993,7 @@ int main(void)
         gExpansionAutoplayPlannerObservation.observationId,
         0,
         gExpansionAutoplayPlannerObservation.start.actionStartOrdinal,
-        action->tokenLo,
-        action->tokenHi);
+        &action->token0);
     CHECK(
         ExpansionAutoplayPlanner_PollDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED
@@ -1622,7 +2013,7 @@ int main(void)
     ExpansionAutoplayPlanner_Reset();
     ExpansionAutoplayPlanner_OnMapReady();
     ExpansionAutoplayPlanner_PollStart();
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
+    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
     CHECK(ExpansionAutoplayPlanner_PollStart(), "zero-candidate run must start");
     for (index = 0; index < 17; index++)
     {

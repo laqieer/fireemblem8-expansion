@@ -2281,14 +2281,8 @@ then :
 else $as_nop
   FE8_CFG_AUTOPLAY_PLANNER=
 fi
-if test "$fe8_autoplay_planner" = 1
-then :
-  FE8_CFG_MODERN_CONFIG="MODERN_CONFIG := debug"
-     FE8_AUTOTOOLS_DEFAULT_GOAL=expansion-modern-boot-check
-else $as_nop
-  FE8_CFG_MODERN_CONFIG=
-     FE8_AUTOTOOLS_DEFAULT_GOAL=all
-fi
+FE8_CFG_MODERN_CONFIG=
+FE8_AUTOTOOLS_DEFAULT_GOAL=all
 if test -n "$fe8_bgm_continuation_policy"
 then :
   FE8_CFG_BGM_CONTINUATION_POLICY="EXPANSION_BGM_CONTINUATION_POLICY := $fe8_bgm_continuation_policy"
@@ -2410,8 +2404,10 @@ ac_config_files="$ac_config_files GNUmakefile:GNUmakefile.in config.autotools.mk
 printf "%s\n" "$as_me: configuration saved in config.autotools.mk" >&6;}
 if test "$fe8_autoplay_planner" = 1
 then :
-  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: run 'make' to build the configured modern debug planner ROM" >&5
-printf "%s\n" "$as_me: run 'make' to build the configured modern debug planner ROM" >&6;}
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: bare 'make' remains release-only and rejects this debug-only planner profile" >&5
+printf "%s\n" "$as_me: bare 'make' remains release-only and rejects this debug-only planner profile" >&6;}
+     { printf "%s\n" "$as_me:${as_lineno-$LINENO}: run 'make expansion-modern-boot-check MODERN_CONFIG=debug' explicitly" >&5
+printf "%s\n" "$as_me: run 'make expansion-modern-boot-check MODERN_CONFIG=debug' explicitly" >&6;}
 else $as_nop
   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: run 'make' to build the configured modern release ROM" >&5
 printf "%s\n" "$as_me: run 'make' to build the configured modern release ROM" >&6;}

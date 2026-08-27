@@ -984,7 +984,9 @@ def load_identity(
     if resolved_autoplay_planner and resolved_preset != "debug":
         raise ConfigError(
             "EXPANSION_AUTOPLAY_PLANNER is modern-debug-only and requires MODERN_CONFIG=debug: "
-            "the local planner mailbox is never present in a release ROM"
+            "the local planner mailbox is never present in a release ROM; "
+            "use the explicit configured goal "
+            "'make expansion-modern-boot-check MODERN_CONFIG=debug'"
         )
     resolved_abi = validate_abi(abi)
     resolved_text_shift = validate_text_shift(text_shift)

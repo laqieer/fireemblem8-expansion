@@ -561,31 +561,41 @@ do not establish statistical power, difficulty, campaign quality, or balance.
    `python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests -v`.
 3. Run `make expansion-modern-autoplay-planner-check`.
 4. In an isolated build directory, run `./configure
-   --enable-autoplay-planner` and then bare `make`; verify it builds the modern
-   debug target. Explicitly request the release target with the planner
-   enabled and verify it fails before compilation.
+   --enable-autoplay-planner` and then bare `make`; verify it retains the
+   release `all` target and fails closed before compilation with the explicit
+   debug-target instruction. Then run
+   `make expansion-modern-boot-check MODERN_CONFIG=debug` and verify the
+   enabled debug ROM compiles, links, and boots. An explicit release request
+   must also fail before compilation.
 5. Start each Python planner through the typed adapter, read the summary plus
-   every map, unit, and action page using `PAGE`, and commit only the opaque
-   token words returned by the chosen action. Continue in the same emulator
-   through the chapter-one transition and inspect the chapter-two checkpoint.
+   every map, unit, inventory, resource, flag, and action page using `PAGE`,
+   and commit only the four opaque token words returned by the chosen action.
+   Export and import the canonical transcript, continue in the same emulator
+   through the chapter-one transition, and inspect the chapter-two checkpoint.
 
 ### Expected result
 
 The scripted reference chooser and bounded search chooser consume the same
 pointer-free observation/action records and produce a deterministic
-two-chapter trace. The ROM's pure visitor enumerates every legal choice in the
-declared six action families from current movement, terrain, visibility, unit,
-item, objective, and resource state without mutating decision, unit, map, or
-RNG state. Candidate records are unique and repeat in canonical row-major then
-action/item/target order. The 996-byte page carries either eight typed summary
-fields, 224 map cells, 56 units, or 28 actions; typed `PAGE` traversal reaches
-all 512 candidate ordinals without an in-process list shortcut.
+two-chapter transcript. The ROM's pure visitor enumerates every legal choice
+in the declared six action families from current movement, terrain,
+visibility, unit, item, objective, and resource state without mutating
+decision, unit, map, or RNG state. Candidate records are unique and repeat in
+canonical row-major then action/item/target order. The 996-byte page carries
+either eight typed summary fields, 224 map cells, 56 units, 112
+inventory/resource/flag values, or 22 40-byte actions; typed `PAGE` traversal
+reaches all 512 candidate ordinals without an in-process list shortcut.
 
 The summary and data pages expose actual map dimensions/terrain/occupancy,
 visible unit identity/position/HP/state/inventory, objective state/progress,
-event flags, gold, convoy, and RNG data with explicit availability on every
-semantic field or record. Both host planners echo the ROM's token words
-unchanged, commit through the #85 computer-action route, and preserve a
+every valid unit's five inventory slots, every bounded event flag, gold, all
+100 convoy slots, telemetry, and RNG data with explicit availability on every
+semantic field or record. `US_UNAVAILABLE` actors and targets remain
+unavailable even with stale in-bounds coordinates. Empty and present items
+retain their item IDs, uses, and availability. Both host planners echo the
+ROM's four independently mixed token words unchanged, validate and retain a
+digest of the complete typed semantic values before choosing, commit through
+the #85 computer-action route, and preserve a
 52-byte checkpoint through `MNCH`/`MNC2` into chapter two. The checkpoint
 records chapter route/mode and its digest changes for route-only and
 convoy-only mutations. Torch, Warp, and Unlock enumerate multiple bounded
@@ -610,9 +620,10 @@ later START exposes no prior chapter, run, or digest.
 The named-union C89 layout preserves the 996-byte observation, with start,
 count, and payload at byte offsets 36, 40, and 100; command and checkpoint
 remain 64 and 52 bytes. The host-only configure test actually executes bare
-generated Make through a recursive-Make recorder and observes the debug goal
-and enabled profile without an ARM compiler. The toolchain gate separately
-executes the real configured compile/link/boot path.
+generated Make through a recursive-Make recorder, observes the release `all`
+goal, and proves the persisted planner fails closed without an ARM compiler.
+The toolchain gate separately executes the real explicit debug-target
+compile/link/boot path.
 Each typed transport command first returns a matching monotonic `ACK`, then a
 matching `COMPLETE`, then its observation. Both planners execute a synthetic
 180-frame movement/camera/battle/event-style COMMIT and receive only the new
@@ -631,6 +642,13 @@ Prospective host observations exceeding 2 MiB fail without changing the trace,
 observation, or next ID. The transport accepts no address-bearing command and
 has no arbitrary-memory API. Release configuration rejects
 `EXPANSION_AUTOPLAY_PLANNER=1`; no bridge state is present when disabled.
+The canonical production transcript rejects truncation, event reordering,
+hash or semantic tampering, stale candidate/page identities, and mismatched
+ACK/COMPLETE settlement. Failed prospective 64 KiB exchanges do not write the
+mailbox or mutate transcript state. No-item actions encode both optional
+inventory slots as `0xFF`; slot zero round-trips distinctly, while every other
+invalid sentinel rejects. Forging any one of the four opaque token words
+rejects without execution.
 Out-of-range/occupied Warp destinations, opened or wrong Unlock tiles, stale
 Torch coordinates, consumed keys, non-repairable or wrong Hammerne slots, and
 a token copied from another Hammerne slot all reject without applying the
@@ -663,7 +681,9 @@ localization change.
 
 The focused host selector validates schema bounds, semantic availability,
 opaque token rejection, mailbox exclusivity, scenario/build/RNG provenance,
-typed paging, atomic trace limits, complete non-mutating enumeration,
+typed semantic paging at maximum unit, inventory, convoy, telemetry, and flag
+boundaries, canonical transcript export/import and atomic limits, complete
+non-mutating enumeration,
 deadline accounting, coordinate/slot lowering and execution, key consumption,
 C/Python v2 diagnostics, normal/DK summon availability, coordinate lowering,
 real summon creation, destructive checkpoint invalidation,

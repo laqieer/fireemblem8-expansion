@@ -952,24 +952,35 @@ the fixed-width, pointer-free `PlannerObservationV2`, `PlannerCommandV2`, and
 only one typed mailbox command. There is no raw-address, arbitrary-memory,
 save, savestate, socket, HTTP, model, or upload API.
 
-The 996-byte v2 observation is a tagged fixed-width page. Page zero contains
-eight semantic fields. Further pages carry up to 224 row-major map cells, 56
-unit records, or 28 pointer-free action records. Map and unit pages expose
-actual bounded runtime terrain, occupancy, visibility, identity, position,
-HP/state, and inventory digests; summary fields expose map dimensions/digest,
-the active unit, objective ID/state/progress, event-flag digest, and
-gold/100-slot-convoy resource digest. Every semantic value or record has an
-explicit `AVAILABLE`, `NOT_APPLICABLE`, `NOT_VISIBLE`, `UNSUPPORTED_RULE`,
-`OUT_OF_RANGE`, or `UNINITIALIZED` state.
+The 996-byte pre-release v2 observation is a tagged fixed-width page. This
+unreleased extension changes v2 in place; there is no deployed v2 peer to
+migrate. Page zero contains eight semantic fields. Further pages carry up to
+224 row-major map cells, 56 unit records, 112 typed value records, or 22
+pointer-free action records. Map and unit pages expose actual bounded runtime
+terrain, occupancy, visibility, identity, position, HP/state, and inventory
+digests. An `INVENTORY` page exposes all five item slots for every valid unit,
+including item ID and uses. `RESOURCES` pages expose current gold, all 100
+convoy slots with item ID and uses, and every word of autoplay telemetry.
+`FLAGS` pages expose every bounded permanent and chapter flag ID and state.
+The summary retains map, objective, flag, inventory, and resource digests as
+integrity fields rather than substitutes for those values.
 
-Each 32-byte action record keeps its existing eight `u32` fields. `destination`
-packs the acting unit's X/Y coordinates. `target` packs the target unit in its
-low byte and a coordinate target in the next two bytes. `itemSlot` packs the
-acting inventory slot in its low byte and the Hammerne target inventory slot
-in the next byte; `0xFF` is the no-slot sentinel. Both token words bind all of
-those values. This extends semantics without pointers, changing the page size,
-or changing the host command: the host still chooses only an ordinal and
-echoes the corresponding opaque token.
+Every semantic field or record has an explicit `AVAILABLE`, `NOT_APPLICABLE`,
+`NOT_VISIBLE`, `UNSUPPORTED_RULE`, `OUT_OF_RANGE`, `UNINITIALIZED`,
+`UNAVAILABLE`, or `EMPTY` state. `US_UNAVAILABLE` units, including benched
+units whose stale coordinates remain in bounds, are always `UNAVAILABLE` and
+are excluded before actor or target enumeration.
+
+Each 40-byte action record carries six action-identity words and four
+independently domain-mixed opaque token words. `destination` packs the acting
+unit's X/Y coordinates. `target` packs the target unit in its low byte and a
+coordinate target in the next two bytes. `itemSlot` packs the acting inventory
+slot in its low byte and the Hammerne target inventory slot in the next byte.
+Each absent slot is exactly `0xFF`, so normal and Demon King Summon, MOVE_WAIT,
+Rogue Pick, and every other no-item action remain distinct from inventory slot
+zero. Python decodes only `0xFF` as `None` and rejects every other invalid
+sentinel. All four token words bind every action identity field, remain opaque
+to the host, and are echoed unchanged.
 
 The observation's overlapping start/count aliases and tagged payload are
 declared as named C89 unions (`start`, `count`, and `payload`), not anonymous
@@ -979,13 +990,17 @@ while allowing the inactive header contract to compile under archival agbcc.
 The archival planner translation unit retains compile-time size and offset
 checks even though release and archival builds emit no planner runtime state.
 
-The host obtains all pages only by sending typed `PAGE` commands with a fixed
+The 64-byte command overlays a 24-byte typed payload after its common 32-byte
+header: START uses four expected identity words, while COMMIT uses the four
+opaque token words. Result and rejection remain at offsets 56 and 60. The host
+obtains all data only by sending typed `PAGE` commands with a fixed
 `page_index`; there is no in-process action-list shortcut. Up to 512 actions
-use at most 19 action pages. Global ordinals and the two token words returned
-by ROM are opaque to host planners and are echoed unchanged. The host never
-sends coordinates, targets, item IDs, `ActionData`, unit pointers, or RNG
-state: a commit carries only
-`{run_id, observation_id, ordinal, token}`. Stale pages, unknown commands,
+use at most 24 action pages. With maximum map, unit, inventory, resource, flag,
+and action records, the complete bounded observation uses at most 92 pages.
+Global ordinals and all four token words returned by ROM are opaque to host
+planners and are echoed unchanged. The host never sends coordinates, targets,
+item IDs, `ActionData`, unit pointers, or RNG state: a commit carries only
+`{run_id, observation_id, ordinal, token[4]}`. Stale pages, unknown commands,
 duplicate START, forged tokens, unsupported actions, cancellation, and
 resource overflow produce typed rejection and do not execute an action.
 The ROM does not retain a candidate array. It retains only compact count,
@@ -993,10 +1008,22 @@ deadline, run, and trace state, freezes normal AI while waiting, and invokes
 the pure enumerator for each action page and commit. Native adversarial tests
 digest decision, unit, map, and RNG state before/after enumeration and also
 prove candidate uniqueness and repeatable ordering.
-Each run is capped at 4,096 accepted commits. Host traces are capped at 2 MiB,
-and a prospective observation or commit is sized before any trace, ID, or
-mailbox state changes. The bounded-search reference accepts at most 512 nodes
-and enforces the 64 MiB host-search ceiling.
+Each run is capped at 4,096 accepted commits. Both host planners and the live
+transport use one canonical hash-chained transcript capped at 2 MiB. It
+records every full semantic observation and candidate/page-set identity, exact
+command, acknowledgement, completion or rejection, settled telemetry and RNG,
+checkpoint, and terminal state. A production command reserves and
+prospectively sizes one bounded 64 KiB exchange before any mailbox write,
+sequence increment, or transcript mutation. Canonical export/import validates
+the chain and event order, and deep replay requires equivalent observations,
+commands, settlements, and terminal state; truncation, reordering, or field
+tampering fails. The bounded-search reference accepts at most 512 nodes and
+enforces the 64 MiB host-search ceiling.
+Before selecting an action, both reference planners validate the complete
+typed inventory/resource/flag set, reject any candidate that names an
+unavailable actor or target, and retain the semantic digest they consumed.
+The digests therefore audit real bounded values received through PAGE rather
+than a disconnected Python-only mirror.
 The Python bridge and every public validation diagnostic consistently identify
 this as protocol v2; invalid chapter and action-cap inputs report the v2 range
 or resource boundary rather than the obsolete v1 label.
@@ -1039,7 +1066,7 @@ before activation, so no cancelled-run checkpoint can become readable again.
 
 `TC-AUTOPLAY-PLANNER-001` proves both a scripted chooser and a bounded search
 chooser consume the same page/token contract, reject negative commands, and
-produce deterministic two-chapter semantic traces. A separately compiled
+produce deterministic two-chapter semantic transcripts. A separately compiled
 libmGBA adapter is bound to the exact linked observation, command, and
 checkpoint symbols and accepts only `READ`, `START`, `PAGE`, `COMMIT`,
 `CANCEL`, malformed-kind, single-frame `STEP`, and bounded key-input `RUN`
@@ -1073,18 +1100,19 @@ terminates the adapter without emitting or serializing the old COMMITTED page.
 Host-only configuration coverage runs the generated GNUmakefile normally but
 replaces its recursive `$(MAKE)` boundary with a hermetic recorder. The
 recorder executes the child Makefile's variable probes with the same arguments
-and proves that bare Make selected `expansion-modern-boot-check`, debug, and
-the enabled planner without invoking an ARM compiler. The toolchain-equipped
-planner gate separately runs the real out-of-tree
-`configure --enable-autoplay-planner && make` compile/link/boot path. An
-explicit release request executes normally and rejects during configuration
-validation before compilation.
+and proves that bare Make selected `all` and release, then failed closed on the
+persisted debug-only planner before invoking an ARM compiler. The
+toolchain-equipped planner gate separately runs the real out-of-tree
+`configure --enable-autoplay-planner` followed by
+`make expansion-modern-boot-check MODERN_CONFIG=debug` to compile, link, and
+boot the enabled ROM. An explicit release request executes normally and
+rejects during configuration validation before compilation.
 
 The enabled ARM planner and shared action-semantics objects use 996-byte pages,
 64-byte commands, 52-byte checkpoints, 1,140 bytes of EWRAM/BSS, zero IWRAM,
-and 11,021 bytes of text/rodata. The planner-only normal-summon and existing
-action-lowering hooks add a 152-byte `cp_perform` text/rodata delta, for 11,173
-bytes across the complete planner/action seam (1,115 bytes below 12 KiB). The
+and 12,104 bytes of text/rodata. The planner-only normal-summon and existing
+action-lowering hooks add a 152-byte `cp_perform` text/rodata delta, for 12,256
+bytes across the complete planner/action seam (32 bytes below 12 KiB). The
 planner-specific RNG counter and cancellation latch add five EWRAM bytes and
 no IWRAM, keeping total planner state at 1,145 bytes (2,951 bytes below 4 KiB).
 Disabled release and archival builds omit planner state and the normal-summon
