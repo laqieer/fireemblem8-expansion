@@ -433,6 +433,110 @@ assignment selection from generated data and event flags.
 - `expansion-modern-autoplay-strategy-runtime-check` executes repeated enabled
   and disabled bounded `CpDecide_Main` profiles, asserting strategy/objective
   selection, action telemetry, and the disabled fallback.
+
+## TC-AUTOPLAY-BATCH-001: Deterministic finite autoplay batch report
+
+- **Feature / originating issue:** `deterministic-autoplay-batch-reports` /
+  [#91](https://github.com/laqieer/fireemblem8-expansion/issues/91).
+- **Supported configuration or artifact:** normal-fidelity generated homebrew
+  libmGBA fixture with three explicit seeds. Accelerated fidelity (#88) is not
+  required and is rejected by this initial collector. The latest accepted
+  issue #91 architecture-handoff correction supersedes the initial issue body
+  and freezes this contract to normal-fidelity schema version 2.
+- **Prerequisites and clean state:** Python 3, a host C compiler, libmGBA
+  development files, one exact ROM/ELF/scenario/specification, and a new
+  output path below ignored `build/`. Do not provide a save or savestate.
+
+### Actions
+
+1. Run
+   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_batch.AutoplayBatchHostTests -v`.
+2. Run
+   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_batch.AutoplayBatchLibmGBAIntegrationTests.test_three_seed_clean_boot_fixture_is_serial_parallel_identical -v`.
+
+### Expected result
+
+The normal-fidelity fixture runs three declared seed writes from independent
+clean boots. Serial and three-job parallel reports are byte-identical,
+versioned, sorted JSON. Every seed has exact ROM/configuration/scenario/profile
+provenance, including validated canonical scenario/specification SHA-256
+identities. Inline checkpoint expectations round-trip into that identity:
+absence remains absent, while adding or changing a value changes the digest.
+Successful and terminal-failure runs contain terminal and
+configured terminal/frame/turn/action, faction/group, event, EXP, item, and
+resource metric records. An execution-failure record instead contains only
+seed, status, stable error text, and ROM provenance. A comparison
+distinguishes changed scenario/specification semantics even when their
+names/versions match, and reports a deliberately changed metric without
+claiming either result is balanced or statistically significant.
+EXP/item/resource records contain unsigned baseline and terminal observations
+from one clean execution plus their signed difference. The baseline is read at
+the declared seed frame immediately before its input and seed write
+(immediately after reset for this frame-0 fixture), covering gain, consumption,
+and zero change without a second run. The collector resolves and deduplicates
+symbolic/literal aliases with one numeric `(address, size)` into one baseline
+observation; duplicate baseline entries passed directly to the capture API
+fail before backend work.
+
+### Negative controls
+
+Duplicate or implicit seed lists, a missing/non-positive hard bound,
+unsupported metric, schema version 3 or any execution profile, existing or
+concurrently reserved output path, and `--sram-image` all fail before backend
+or capture startup. Malformed nested report values fail comparison with status
+2 and an exact path instead of a traceback. This includes missing/duplicate
+required metric kinds, seeds outside their declared probe width, zero or more
+than 256 imported runs, provenance bounds that differ from the canonical
+scenario, unresolved/non-writable seed ranges or late seed frames,
+self-consistent terminal/metric values beyond those bounds, width-backed
+metrics beyond their 1/2/4-byte probes, and empty/duplicate/unsorted/over-64
+faction, event, or delta lists. Imported metric definitions whose canonical
+address/size is absent from the terminal checkpoint also fail even when their
+digest and aggregates were updated consistently. Batch-report symbol-backed
+counters normalize to resolved numeric literals; undeclared objective failure,
+unconfigured or pre-threshold stall, early `max_frames`, and below-threshold
+`max_turns`/`max_actions` are rejected.
+Shared-backend/global setup failure returns 2 with no output or seed records;
+an individual seed failure is retained as `execution_failure` and returns 1.
+Random emulator/backend workspace paths in those errors normalize to a stable
+placeholder while stable scenario, requested ROM basename, and error class
+remain, so serial and parallel reports stay byte-identical.
+A non-success terminal is retained as `terminal_failure`, contributes to the
+failure count, and returns 1. A destination created during publication is
+never overwritten; failed staging is removed for retry, while comparison
+leaves both input report bytes untouched.
+The `build/` root itself is rejected before creation/reservation when absent,
+present, or reached through a symlink. A dangling requested-output symlink is
+also an existing collision: its absent target remains absent, the symlink is
+unchanged, no staging file remains, and a distinct corrected child succeeds.
+
+The underlying plan negative also passes a scheduled write to a fixed-frame
+scenario and requires an actionable rejection before plan serialization or
+backend startup; the matching bounded scenario emits format 7 with
+`RUN_UNTIL`, `SEED_WRITE`, and exactly one matching
+`SEED_WRITE_APPLIED` acknowledgement. Missing, duplicate, mismatched,
+pre-baseline, or post-terminal acknowledgements fail, including an early
+terminal before the requested seed frame. A no-baseline scheduled write
+remains valid.
+
+### Interactions and save compatibility
+
+The collector depends on #86's bounded terminal/checkpoint semantics and #90's
+profile identity. Per the latest accepted issue #91 architecture-handoff
+correction, which supersedes the initial issue body, #88 accelerated fidelity
+is optional integration only, not a parent. The seed write is restricted to explicitly declared writable
+EWRAM/IWRAM at one declared frame; no save is loaded or retained. There are no
+ROM feature flags, target allocation, generated data, localization, save
+layout, migration, compatibility epoch, or archival impact.
+
+### Cleanup and limitations
+
+The fixture removes its random per-test child beneath
+`build/test-artifacts/autoplay-batch`; that ignored parent directory may
+remain. Use `make clean_fast` for other build outputs. Three seeds prove report
+determinism, complete per-run visibility, and comparison structure only; they
+do not establish statistical power, difficulty, campaign quality, or balance.
+
 ## TC-AUTOPLAY-ACCEL-001: Accelerated-fidelity equivalence
 
 - **Feature / originating issue:** `accelerated-fidelity-harness` /
