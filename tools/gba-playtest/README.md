@@ -109,9 +109,11 @@ python3 tools/gba-playtest/autoplay_batch.py compare \
   --output build/autoplay-batches/comparison.json
 ```
 
-Exit statuses are 0 for success, 1 for a valid-but-different fingerprint, and 2
-for malformed input, missing dependencies, or backend/setup failure. Verify
-diagnostics identify the exact JSON path, expected value, and captured value.
+For `gba_playtest.py`, exit status 0 means capture, verification, or
+`backend-check` succeeded; 1 is reserved for a valid verification whose
+fingerprint differs; and 2 means malformed input, missing dependencies, or
+backend/setup failure. Verify diagnostics identify the exact JSON path,
+expected value, and captured value.
 
 ### Bounded autoplay batch reports
 
@@ -133,7 +135,7 @@ only there after a fresh libmGBA boot; it never treats a seed as a label or
 silently mutates an unknown RNG state. Every seed must fit the declared probe
 before backend setup. Generic `gba_playtest.capture` also rejects a
 `ScheduledWrite` for fixed-frame scenarios before plan serialization or
-backend startup; format 6 is bounded-run-until-only. Its preexisting positional
+backend startup; scheduled-write plan formats are bounded-run-until-only. Its preexisting positional
 order through `backend_path` and `sram_output` remains stable; batch-only
 `scheduled_write` and `work_dir` options are appended. The terminal checkpoint must
 declare every semantic probe used by the selected metrics. Imported metric
@@ -149,8 +151,15 @@ execution. Every faction, event, and delta definition contains 1 through 64
 sorted unique records. Imported survivor/casualty and delta values must fit
 their declared 1/2/4-byte probes.
 
+`autoplay_batch.py run` returns 0 only when every seed succeeds, 1 when it
+successfully publishes a valid report containing at least one terminal or
+execution failure, and 2 for setup, input, validation, serialization, or
+output-publication failure. `autoplay_batch.py compare` returns 0 after any
+valid comparison, including one with semantic differences, and 2 for invalid
+reports, collisions, or write/publication failures.
+
 EXP/item/resource metrics are signed differences, not terminal snapshots.
-Plan format 6 deduplicates delta probes by the resolved numeric
+Plan format 7 deduplicates delta probes by the resolved numeric
 `(address, size)` pair and reads each pair once at the declared seed frame
 immediately before that frame's input and seed write (therefore immediately
 after reset for the canonical frame-0 fixture), then reads the same pair at the
@@ -159,6 +168,11 @@ one observation; duplicate baseline entries supplied directly through
 `ScheduledWrite` are rejected before backend startup. Each report entry retains the unsigned
 width-bounded `baseline` and `terminal` observations and their signed `delta =
 terminal - baseline`, bounded to `[-max, +max]` for that probe width.
+Format 7 retains format 6's input records and adds one mandatory
+`SEED_WRITE_APPLIED` acknowledgement containing frame, resolved address, size,
+and observed value. The parser requires exactly one matching acknowledgement
+after all baseline probes and before any terminal record; the backend continues
+to accept format 6 plans for compatibility.
 
 Reports use `format_version: 2`, sorted object keys, sorted numeric seed
 records, complete ROM/configuration/scenario/profile/seed-binding/bound

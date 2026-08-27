@@ -203,6 +203,12 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                 for probe in scheduled_write.baseline_probes
             ],
             "rom": gba_playtest.rom_provenance(rom),
+            "scheduled_write": {
+                "address": f"0x{scheduled_write.probe.address:08x}",
+                "frame": scheduled_write.frame,
+                "size": scheduled_write.probe.size,
+                "value": scheduled_write.value,
+            },
             "terminal": {
                 "reason": "success" if seed != 2 else "max_actions",
                 "frame": 1,
@@ -1118,6 +1124,7 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         for seed in range(256):
             run = copy.deepcopy(template)
             run["seed"] = seed
+            run["seed_write"]["value"] = seed
             maximum["runs"].append(run)
         self._refresh_report_summary(maximum)
         autoplay_batch.validate_report(maximum, "maximum-report")
@@ -1129,6 +1136,7 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         excessive = copy.deepcopy(maximum)
         extra = copy.deepcopy(template)
         extra["seed"] = 256
+        extra["seed_write"]["value"] = 256
         excessive["runs"].append(extra)
         cases.append(("excessive-runs", excessive, "exceeding the 256-run limit"))
         duplicate = copy.deepcopy(valid)

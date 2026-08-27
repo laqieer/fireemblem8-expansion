@@ -67,7 +67,7 @@
       }
     ]
   },
-  "census_digest": "5cc28fc051a4a314d02225617f4fbc68ca71ec53492fca46ad60ec6a879fe871",
+  "census_digest": "9a3a434ab8bf6246c511c000706c9af86cf9df4965c9584a6b62cd499d21466f",
   "consumers": [
     {
       "category": "event-operand",
@@ -20571,25 +20571,6 @@
       "technical_max": 63
     },
     {
-      "category": "external-interface",
-      "configured_cap": 63,
-      "declaration": "faction = _name(group[\"faction\"], f\"{group_path}.faction\")",
-      "domain": "unit",
-      "key": "tools/gba-playtest/autoplay_batch.py|tool-symbol|unit|faction",
-      "kind": "tool-symbol",
-      "line": 330,
-      "path": "tools/gba-playtest/autoplay_batch.py",
-      "reason": null,
-      "record_count": null,
-      "sentinel": 64,
-      "signed": 0,
-      "status": "frozen",
-      "storage_bits": 8,
-      "surface": "external-tool",
-      "symbol": "faction",
-      "technical_max": 63
-    },
-    {
       "category": "link-network",
       "configured_cap": 63,
       "declaration": "void LinkArenaBattleMap_AdvancePhase(int faction);",
@@ -20777,6 +20758,25 @@
       "storage_bits": 8,
       "surface": "runtime-source",
       "symbol": "DebugToolsPhaseControlRequest.faction",
+      "technical_max": 63
+    },
+    {
+      "category": "reviewed-exclusion",
+      "configured_cap": 63,
+      "declaration": "faction = _name(group[\"faction\"], f\"{group_path}.faction\")",
+      "domain": "unit",
+      "key": "tools/gba-playtest/autoplay_batch.py|tool-symbol|unit|faction",
+      "kind": "tool-symbol",
+      "line": 330,
+      "path": "tools/gba-playtest/autoplay_batch.py",
+      "reason": "free-form report label for grouping survivor/casualty metrics by faction name; it stores descriptive JSON text, not a deployment-slot unit ID",
+      "record_count": null,
+      "sentinel": 64,
+      "signed": 0,
+      "status": "frozen",
+      "storage_bits": 8,
+      "surface": "external-tool",
+      "symbol": "faction",
       "technical_max": 63
     },
     {
@@ -21354,7 +21354,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "e1f4029639878aeae0391896bdd834fbf9a411f54b57be2ba7aff4f03f5f82ba",
+  "digest": "f8d4fd1b693e174e5e4c21eb16c4279f02b16e3c8712115e3ea6cca843de9918",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,

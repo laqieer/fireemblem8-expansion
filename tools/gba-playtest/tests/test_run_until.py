@@ -378,8 +378,9 @@ class RunUntilSchemaTests(unittest.TestCase):
                 scheduled_write,
             )
             scheduled_text = scheduled_plan.read_text(encoding="ascii")
-            self.assertTrue(scheduled_text.startswith("GBA_PLAYTEST_PLAN 6\n"))
+            self.assertTrue(scheduled_text.startswith("GBA_PLAYTEST_PLAN 7\n"))
             self.assertIn("\nRUN_UNTIL 5\n", scheduled_text)
+            self.assertIn("\nBASELINE_PROBES 0\n", scheduled_text)
             self.assertIn(
                 f"\nSEED_WRITE 0 {int(PROBE_ADDRESS, 16)} 4 1\n",
                 scheduled_text,
@@ -394,6 +395,107 @@ class RunUntilSchemaTests(unittest.TestCase):
                     scheduled_write,
                 )
             self.assertFalse((Path(temporary) / "invalid-fixed.plan").exists())
+
+    def test_scheduled_write_acknowledgement_is_exact_and_precedes_terminal(self):
+        scenario = gba_playtest.parse_scenario_data(run_until_data())
+        scheduled_write = gba_playtest.ScheduledWrite(
+            0,
+            gba_playtest.Probe(
+                PROBE_ADDRESS,
+                int(PROBE_ADDRESS, 16),
+                4,
+                None,
+            ),
+            1,
+        )
+        checkpoint = (
+            "TERMINAL\tsuccess\t2\t0\t0\t0\t0\n"
+            "CHECKPOINT\t0\t2\t0000000000000000\n"
+            "PROBE\t0\t0\t1022\n"
+        )
+        acknowledgement = (
+            f"SEED_WRITE_APPLIED\t0\t{int(PROBE_ADDRESS, 16)}\t4\t1\n"
+        )
+        captured = gba_playtest._parse_backend_output(
+            acknowledgement + checkpoint,
+            scenario,
+            scheduled_write,
+        )
+        self.assertEqual(
+            captured["scheduled_write"],
+            {
+                "address": PROBE_ADDRESS,
+                "frame": 0,
+                "size": 4,
+                "value": 1,
+            },
+        )
+
+        cases = (
+            (
+                "early-terminal",
+                checkpoint,
+                "terminal record preceded scheduled write acknowledgement",
+            ),
+            (
+                "duplicate",
+                acknowledgement + acknowledgement + checkpoint,
+                "duplicate scheduled write acknowledgement",
+            ),
+            (
+                "mismatched",
+                (
+                    f"SEED_WRITE_APPLIED\t0\t{int(PROBE_ADDRESS, 16)}\t4\t2\n"
+                    + checkpoint
+                ),
+                "does not match the request",
+            ),
+        )
+        for name, output, expected in cases:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(gba_playtest.PlaytestError, expected):
+                    gba_playtest._parse_backend_output(
+                        output,
+                        scenario,
+                        scheduled_write,
+                    )
+
+        baseline_write = gba_playtest.ScheduledWrite(
+            scheduled_write.frame,
+            scheduled_write.probe,
+            scheduled_write.value,
+            (scheduled_write.probe,),
+        )
+        with self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            "preceded baseline probes",
+        ):
+            gba_playtest._parse_backend_output(
+                acknowledgement
+                + "BASELINE\t0\t0\n"
+                + checkpoint,
+                scenario,
+                baseline_write,
+            )
+
+        late_write = gba_playtest.ScheduledWrite(
+            2,
+            scheduled_write.probe,
+            scheduled_write.value,
+        )
+        with self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            "terminal record preceded scheduled write acknowledgement",
+        ):
+            gba_playtest._parse_backend_output(
+                (
+                    "TERMINAL\tsuccess\t0\t0\t0\t0\t0\n"
+                    "CHECKPOINT\t0\t0\t0000000000000000\n"
+                    "PROBE\t0\t0\t1022\n"
+                ),
+                scenario,
+                late_write,
+            )
 
     def test_capture_rejects_fixed_scheduled_write_before_backend_start(self):
         fixed = gba_playtest.parse_scenario_data(

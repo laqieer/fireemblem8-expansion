@@ -234,7 +234,8 @@ static bool read_plan(const char* path, struct Plan* plan)
 	unsigned version;
 	if (fscanf(file, "%31s %u", word, &version) != 2 ||
 	    strcmp(word, "GBA_PLAYTEST_PLAN") != 0 ||
-	    (version != 3 && version != 4 && version != 5 && version != 6)) {
+	    (version != 3 && version != 4 && version != 5 &&
+	     version != 6 && version != 7)) {
 		fprintf(stderr, "malformed plan header\n");
 		goto fail;
 	}
@@ -588,7 +589,7 @@ static bool read_plan(const char* path, struct Plan* plan)
 			}
 		}
 	}
-	if (version == 6) {
+	if (version == 6 || version == 7) {
 		if (fscanf(file, "%31s %zu", word, &plan->baseline_probe_count) != 2 ||
 		    strcmp(word, "BASELINE_PROBES") != 0 ||
 		    plan->baseline_probe_count > MAX_BASELINE_PROBES) {
@@ -916,7 +917,7 @@ static void emit_trace(struct mCore* core, const struct Plan* plan,
 	*have_previous_values = true;
 }
 
-static void apply_frame_input(struct mCore* core, const struct Plan* plan,
+static bool apply_frame_input(struct mCore* core, const struct Plan* plan,
                               size_t* range_index, uint32_t frame)
 {
 	uint32_t keys = 0;
@@ -927,10 +928,26 @@ static void apply_frame_input(struct mCore* core, const struct Plan* plan,
 	if (*range_index < plan->range_count &&
 	    plan->ranges[*range_index].start <= frame)
 		keys = plan->ranges[*range_index].keys;
-	if (plan->has_seed_write && plan->seed_frame == frame)
+	if (plan->has_seed_write && plan->seed_frame == frame) {
+		uint32_t observed;
+
 		write_probe(core, &plan->seed_write, plan->seed_value);
+		observed = read_probe(core, &plan->seed_write);
+		if (observed != plan->seed_value) {
+			fprintf(stderr,
+			        "scheduled write mismatch at frame %" PRIu32
+			        " address %08" PRIx32 ": expected %" PRIu32
+			        ", read %" PRIu32 "\n",
+			        frame, plan->seed_write.address, plan->seed_value, observed);
+			return false;
+		}
+		printf("SEED_WRITE_APPLIED\t%" PRIu32 "\t%" PRIu32
+		       "\t%u\t%" PRIu32 "\n",
+		       frame, plan->seed_write.address, plan->seed_write.size, observed);
+	}
 	core->setKeys(core, keys);
 	core->runFrame(core);
+	return true;
 }
 
 static int run_fixed(struct mCore* core, const struct Plan* plan,
@@ -941,7 +958,8 @@ static int run_fixed(struct mCore* core, const struct Plan* plan,
 	uint32_t last_frame = plan->checkpoints[plan->checkpoint_count - 1].frame;
 
 	for (uint32_t frame = 0; frame <= last_frame; ++frame) {
-		apply_frame_input(core, plan, &range_index, frame);
+		if (!apply_frame_input(core, plan, &range_index, frame))
+			return 2;
 		if (checkpoint_index < plan->checkpoint_count &&
 		    plan->checkpoints[checkpoint_index].frame == frame) {
 			emit_checkpoint(core, buffer, width, height,
@@ -979,7 +997,8 @@ static int run_until(struct mCore* core, const struct Plan* plan,
 				printf("BASELINE\t%zu\t%" PRIu32 "\n", i,
 				       read_probe(core, &plan->baseline_probes[i]));
 		}
-		apply_frame_input(core, plan, &range_index, frame);
+		if (!apply_frame_input(core, plan, &range_index, frame))
+			return 2;
 		if (plan->trace_probe_count != 0)
 			emit_trace(core, plan, frame, trace_values, &have_trace_values);
 		for (size_t i = 0; i < plan->run_probe_count; ++i)

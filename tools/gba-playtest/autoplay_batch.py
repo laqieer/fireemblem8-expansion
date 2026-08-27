@@ -993,6 +993,7 @@ def run_batch(
                 "metrics": metrics,
                 "rom": captured["rom"],
                 "seed": seed,
+                "seed_write": captured["scheduled_write"],
                 "status": "success"
                 if terminal["reason"] == "success"
                 else "terminal_failure",
@@ -1759,7 +1760,12 @@ def validate_report(data: Any, source: str) -> dict[str, Any]:
     previous_seed = -1
     for index, raw_run in enumerate(root["runs"]):
         path = f"{source}.runs[{index}]"
-        run = _object(raw_run, path, {"seed", "status"}, {"error", "metrics", "rom", "terminal"})
+        run = _object(
+            raw_run,
+            path,
+            {"seed", "status"},
+            {"error", "metrics", "rom", "seed_write", "terminal"},
+        )
         seed = run["seed"]
         if (
             not _is_int(seed)
@@ -1786,9 +1792,17 @@ def validate_report(data: Any, source: str) -> dict[str, Any]:
                 raise gba_playtest.PlaytestError(
                     f"{path}.error must be a non-empty string"
                 )
-        elif set(run) != {"seed", "status", "rom", "terminal", "metrics"}:
+        elif set(run) != {
+            "seed",
+            "status",
+            "rom",
+            "seed_write",
+            "terminal",
+            "metrics",
+        }:
             raise gba_playtest.PlaytestError(
-                f"{path}.{run['status']} must contain terminal metrics and ROM provenance"
+                f"{path}.{run['status']} must contain the acknowledged seed write, "
+                "terminal metrics, and ROM provenance"
             )
         rom = _validate_rom(run["rom"], f"{path}.rom")
         if rom != provenance["rom"]:
@@ -1797,6 +1811,21 @@ def validate_report(data: Any, source: str) -> dict[str, Any]:
             )
         if run["status"] == "execution_failure":
             continue
+        seed_write = _object(
+            run["seed_write"],
+            f"{path}.seed_write",
+            {"address", "frame", "size", "value"},
+        )
+        expected_seed_write = {
+            "address": f"0x{provenance['seed_injection']['resolved_address']:08x}",
+            "frame": provenance["seed_injection"]["frame"],
+            "size": provenance["seed_injection"]["size"],
+            "value": seed,
+        }
+        if seed_write != expected_seed_write:
+            raise gba_playtest.PlaytestError(
+                f"{path}.seed_write must exactly match the acknowledged requested seed"
+            )
         terminal, turn_value, action_value = _validate_terminal(
             run["terminal"],
             f"{path}.terminal",

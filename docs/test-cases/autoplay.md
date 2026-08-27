@@ -509,8 +509,12 @@ unchanged, no staging file remains, and a distinct corrected child succeeds.
 
 The underlying plan negative also passes a scheduled write to a fixed-frame
 scenario and requires an actionable rejection before plan serialization or
-backend startup; the matching bounded scenario emits format 6 with both
-`RUN_UNTIL` and `SEED_WRITE`.
+backend startup; the matching bounded scenario emits format 7 with
+`RUN_UNTIL`, `SEED_WRITE`, and exactly one matching
+`SEED_WRITE_APPLIED` acknowledgement. Missing, duplicate, mismatched,
+pre-baseline, or post-terminal acknowledgements fail, including an early
+terminal before the requested seed frame. A no-baseline scheduled write
+remains valid.
 
 ### Interactions and save compatibility
 

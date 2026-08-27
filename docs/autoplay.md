@@ -810,8 +810,10 @@ RAM and the frame must precede canonical `max_frames`. The report therefore
 identifies a real seed injection rather than claiming that an arbitrary label
 changed the ROM's RNG. Every seed must fit that declared 1/2/4-byte field
 before backend setup. The underlying capture API rejects scheduled writes for
-fixed-frame scenarios before plan or backend work; plan format 6 always
-contains bounded `RUN_UNTIL`.
+fixed-frame scenarios before plan or backend work; plan format 7 always
+contains bounded `RUN_UNTIL` and requires one matching
+`SEED_WRITE_APPLIED` record before a terminal result is accepted. The backend
+continues accepting format 6 input plans for compatibility.
 
 The version-1 specification declares normal-fidelity profile/configuration
 identity and semantic metric descriptors. Metric probes must be part of the

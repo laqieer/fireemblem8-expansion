@@ -399,7 +399,7 @@ def validate_scheduled_write(
     if scenario.run_until is None:
         raise PlaytestError(
             "scheduled writes require a bounded run-until scenario; fixed-frame "
-            "scenarios cannot emit plan format 6"
+            "scenarios cannot emit scheduled-write plan format 7"
         )
     if scenario.execution_profile is not None:
         raise PlaytestError(
@@ -1565,14 +1565,15 @@ def _write_plan(
     scheduled_write: ScheduledWrite | None = None,
 ) -> None:
     # Fixed scenarios retain plan format 3 exactly. Format 4 appends bounded
-    # semantic run-until records; format 5 carries accelerated traces, and
-    # format 6 carries one declared batch seed write.
+    # semantic run-until records; format 5 carries accelerated traces, format
+    # 6 introduced one declared batch seed write, and format 7 requires the
+    # backend to acknowledge that write before a terminal result is accepted.
     # Plans are generated and consumed within one capture/verify invocation;
     # scenario and fingerprint compatibility lives in their JSON versions.
     if scheduled_write is not None:
         validate_scheduled_write(scenario, scheduled_write)
     if scheduled_write is not None:
-        plan_version = 6
+        plan_version = 7
     elif scenario.execution_profile is not None:
         plan_version = 5
     elif scenario.run_until is not None:
@@ -1777,8 +1778,11 @@ def validate_run_until_terminal_outcome(
 def _parse_backend_output(
     stdout: str,
     scenario: Scenario,
-    baseline_probes: tuple[Probe, ...] = (),
+    scheduled_write: ScheduledWrite | None = None,
 ) -> dict[str, Any]:
+    baseline_probes = (
+        () if scheduled_write is None else scheduled_write.baseline_probes
+    )
     hashes: dict[int, str] = {}
     checkpoint_frames: dict[int, int] = {}
     sram_hashes: dict[int, str] = {}
@@ -1790,6 +1794,7 @@ def _parse_backend_output(
     trace_snapshots: list[tuple[int, dict[int, int]]] = []
     trace_record_count = 0
     baseline_values: dict[int, int] = {}
+    write_applied: tuple[int, int, int, int] | None = None
     for line_number, line in enumerate(stdout.splitlines(), 1):
         fields = line.split("\t")
         try:
@@ -1836,6 +1841,10 @@ def _parse_backend_output(
                 turn_value = int(fields[4])
                 action_present = int(fields[5])
                 action_value = int(fields[6])
+                if scheduled_write is not None and write_applied is None:
+                    raise ValueError(
+                        "terminal record preceded scheduled write acknowledgement"
+                    )
                 if turn_present not in (0, 1) or action_present not in (0, 1):
                     raise ValueError("terminal counter presence flag is not 0 or 1")
                 try:
@@ -1909,6 +1918,12 @@ def _parse_backend_output(
                     raise ValueError("duplicate trace probe")
                 values_at_frame[probe_index] = value
             elif len(fields) == 3 and fields[0] == "BASELINE":
+                if write_applied is not None:
+                    raise ValueError(
+                        "baseline probe followed scheduled write acknowledgement"
+                    )
+                if terminal is not None:
+                    raise ValueError("baseline probe followed terminal record")
                 probe_index = int(fields[1])
                 value = int(fields[2])
                 if probe_index in baseline_values:
@@ -1919,6 +1934,30 @@ def _parse_backend_output(
                 if not (0 <= value < 1 << (probe.size * 8)):
                     raise ValueError("baseline value exceeds declared width")
                 baseline_values[probe_index] = value
+            elif len(fields) == 5 and fields[0] == "SEED_WRITE_APPLIED":
+                if scheduled_write is None:
+                    raise ValueError("unexpected scheduled write acknowledgement")
+                if write_applied is not None:
+                    raise ValueError("duplicate scheduled write acknowledgement")
+                if terminal is not None:
+                    raise ValueError(
+                        "scheduled write acknowledgement followed terminal record"
+                    )
+                if len(baseline_values) != len(baseline_probes):
+                    raise ValueError(
+                        "scheduled write acknowledgement preceded baseline probes"
+                    )
+                write_applied = tuple(int(field) for field in fields[1:])
+                expected_write = (
+                    scheduled_write.frame,
+                    scheduled_write.probe.address,
+                    scheduled_write.probe.size,
+                    scheduled_write.value,
+                )
+                if write_applied != expected_write:
+                    raise ValueError(
+                        "scheduled write acknowledgement does not match the request"
+                    )
             elif len(fields) == 3 and fields[0] == "SRAMHASH":
                 checkpoint_index = int(fields[1])
                 if checkpoint_index in sram_hashes:
@@ -2069,6 +2108,8 @@ def _parse_backend_output(
             f"backend returned {len(baseline_values)} of "
             f"{len(baseline_probes)} baseline probes"
         )
+    if scheduled_write is not None and write_applied is None:
+        raise PlaytestError("backend returned no scheduled write acknowledgement")
     checkpoints: list[dict[str, Any]] = []
     for checkpoint_index, checkpoint in enumerate(scenario.checkpoints):
         captured: dict[str, Any] = {
@@ -2132,6 +2173,14 @@ def _parse_backend_output(
             }
             for index, probe in enumerate(baseline_probes)
         ]
+    if scheduled_write is not None:
+        assert scheduled_write.probe.address is not None
+        fingerprint["scheduled_write"] = {
+            "address": f"0x{scheduled_write.probe.address:08x}",
+            "frame": scheduled_write.frame,
+            "size": scheduled_write.probe.size,
+            "value": scheduled_write.value,
+        }
     if scenario.run_until is not None:
         assert terminal is not None
         reason, frame, turn_present, turn_value, action_present, action_value = terminal
@@ -2300,7 +2349,7 @@ def capture(
         fingerprint = _parse_backend_output(
             result.stdout,
             scenario,
-            () if scheduled_write is None else scheduled_write.baseline_probes,
+            scheduled_write,
         )
         fingerprint["rom"] = provenance
         if sram_output is not None:
