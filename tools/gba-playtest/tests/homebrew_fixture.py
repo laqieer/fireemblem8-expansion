@@ -154,6 +154,7 @@ def build_production_planner_rom(
     ignore_commands: bool = False,
     transition_subcode: int = 2,
     candidate_mode: int = 0,
+    flag_domain_mode: int = 0,
     acknowledgement_override: tuple[int, int] | None = None,
     zero_digest: bool = False,
     startup_delay_frames: int = 0,
@@ -162,10 +163,14 @@ def build_production_planner_rom(
     """Link the production planner implementation into a tiny freestanding ROM."""
     if commit_delay_frames < 0:
         raise ValueError("commit_delay_frames must be non-negative")
-    if transition_subcode not in {1, 2}:
-        raise ValueError("planner transition subcode must be MNCH or MNC2")
+    if transition_subcode not in {1, 2, 3}:
+        raise ValueError(
+            "planner transition subcode must be MNCH, MNC2, or MNC3"
+        )
     if candidate_mode not in {0, 1, 2}:
         raise ValueError("planner candidate mode is outside fixture bounds")
+    if flag_domain_mode not in range(7):
+        raise ValueError("planner flag-domain mode is outside fixture bounds")
     if not 0 <= startup_delay_frames <= 10000:
         raise ValueError("planner startup delay is outside fixture bounds")
     if not 0 <= startup_state_override <= 0xFFFFFFFF:
@@ -232,6 +237,7 @@ def build_production_planner_rom(
             transition_subcode
         ),
         f"-DFE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE={candidate_mode}",
+        f"-DFE8_AUTOPLAY_PLANNER_RUNTIME_FLAG_DOMAIN_MODE={flag_domain_mode}",
         "-DFE8_AUTOPLAY_PLANNER_RUNTIME_ACK_OVERRIDE={}".format(
             int(acknowledgement_override is not None)
         ),
@@ -256,7 +262,7 @@ def build_production_planner_rom(
     environment = dict(os.environ)
     environment["TMPDIR"] = str(path.parent)
     production_objects = []
-    for source_name in ("event", "eventscr", "bmio", "bmtarget"):
+    for source_name in ("event", "eventscr", "bmio", "bmtarget", "bm"):
         output = path.parent / f"planner-production-{source_name}.o"
         completed = subprocess.run(
             [
@@ -283,6 +289,8 @@ def build_production_planner_rom(
         "-Wl,-T,{}".format(linker),
         "-Wl,--gc-sections",
         "-Wl,--wrap=EndEventFaces",
+        "-Wl,--wrap=ReadGameSaveCoreGfx",
+        "-Wl,--wrap=UnlockGame",
         "-lgcc",
         "-o",
         str(elf),

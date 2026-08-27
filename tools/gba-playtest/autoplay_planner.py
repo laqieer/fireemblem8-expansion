@@ -243,6 +243,24 @@ class Command:
     page_index: int | None = None
 
 
+def _command_payload(command: Command) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "kind": command.kind.value,
+        "run_id": command.run_id,
+        "observation_id": command.observation_id,
+    }
+    if command.kind is CommandKind.PAGE:
+        payload["page_index"] = command.page_index
+    elif command.kind is CommandKind.COMMIT:
+        payload["action_ordinal"] = command.action_ordinal
+        payload["token"] = (
+            asdict(command.token)
+            if command.token is not None
+            else None
+        )
+    return payload
+
+
 def _validate_json_structure(value: object) -> None:
     stack = [(value, 1, False)]
     active: set[int] = set()
@@ -310,6 +328,275 @@ def _canonical(value: object) -> bytes:
             "invalid planner transcript JSON recursion"
         ) from error
     return encoded.encode("ascii")
+
+
+_OBSERVATION_KEYS = {
+    "run_id",
+    "observation_id",
+    "chapter",
+    "fields",
+    "actions",
+    "page_index",
+    "page_count",
+    "page_kind",
+    "total_action_count",
+    "map_cells",
+    "units",
+    "inventory",
+    "resources",
+    "flags",
+    "state",
+    "rejection",
+    "chapter_turn",
+    "rng_state",
+    "rng_lcg",
+    "rng_consumption",
+    "actual_rom_identity",
+    "actual_config_identity",
+    "actual_scenario_identity",
+    "actual_seed_identity",
+    "record_start",
+    "record_count",
+    "total_record_count",
+}
+_TRANSCRIPT_EVENT_KEYS = {
+    "session": {"provenance"},
+    "observation_page": {"observation"},
+    "observation_complete": {
+        "observation",
+        "candidate_set_digest",
+        "semantic_digest",
+        "page_identity",
+    },
+    "command": {"command"},
+    "acknowledgement": {
+        "command_id",
+        "kind",
+        "result",
+        "rejection",
+    },
+    "completion": {"command_id", "kind", "response_frames"},
+    "settled": {
+        "observation_identity",
+        "observation_digest",
+        "checkpoint",
+        "command_words",
+        "telemetry",
+        "rng",
+        "terminal",
+    },
+    "transport_error": {"code", "command_id", "kind"},
+}
+_TRANSCRIPT_COMMON_EVENT_KEYS = {
+    "sequence",
+    "previous_digest",
+    "event",
+    "event_digest",
+}
+
+
+def _require_exact_keys(
+    value: object,
+    keys: set[str],
+    context: str,
+) -> dict[str, object]:
+    if not isinstance(value, dict) or set(value) != keys:
+        raise PlannerError(
+            f"invalid planner transcript {context} schema"
+        )
+    return value
+
+
+def _validate_observation_schema(observation: object) -> None:
+    value = _require_exact_keys(
+        observation,
+        _OBSERVATION_KEYS,
+        "observation",
+    )
+    records = (
+        ("fields", {"name", "source", "bound", "availability", "value"}),
+        ("map_cells", {"x", "y", "terrain", "unit", "availability"}),
+        (
+            "units",
+            {
+                "slot",
+                "character",
+                "unit_class",
+                "position",
+                "hp",
+                "state",
+                "inventory_digest",
+                "availability",
+            },
+        ),
+        (
+            "inventory",
+            {
+                "unit",
+                "slot",
+                "item_id",
+                "uses",
+                "raw_item",
+                "availability",
+            },
+        ),
+        (
+            "resources",
+            {
+                "kind",
+                "slot",
+                "value",
+                "item_id",
+                "uses",
+                "availability",
+            },
+        ),
+        ("flags", {"kind", "flag_id", "state", "availability"}),
+    )
+    for name, keys in records:
+        if not isinstance(value[name], list):
+            raise PlannerError(
+                f"invalid planner transcript {name} schema"
+            )
+        for record in value[name]:
+            _require_exact_keys(record, keys, name)
+    if not isinstance(value["actions"], list):
+        raise PlannerError("invalid planner transcript actions schema")
+    for record in value["actions"]:
+        action_record = _require_exact_keys(
+            record,
+            {"ordinal", "action", "token"},
+            "action record",
+        )
+        _require_exact_keys(
+            action_record["action"],
+            {
+                "kind",
+                "actor",
+                "destination",
+                "target",
+                "item_slot",
+                "target_position",
+                "action_id",
+                "target_item_slot",
+            },
+            "action",
+        )
+        _require_exact_keys(
+            action_record["token"],
+            {"word0", "word1", "word2", "word3"},
+            "token",
+        )
+
+
+def _validate_session_schema(provenance: object) -> None:
+    required = {
+        "transport",
+        "rom_identity",
+        "config_identity",
+        "scenario_identity",
+        "seed_identity",
+        "ready_run_id",
+        "run_id",
+    }
+    if not isinstance(provenance, dict) or set(provenance) not in (
+        required,
+        required | {"source"},
+    ):
+        raise PlannerError(
+            "invalid planner transcript session provenance schema"
+        )
+    if "source" in provenance:
+        source = _require_exact_keys(
+            provenance["source"],
+            {"config", "rom", "scenario"},
+            "session source",
+        )
+        _require_exact_keys(
+            source["rom"],
+            {"sha1", "size"},
+            "session ROM",
+        )
+        _require_exact_keys(
+            source["scenario"],
+            {"name", "schema_version"},
+            "session scenario",
+        )
+
+
+def _validate_command_schema(command: object) -> None:
+    if not isinstance(command, dict):
+        raise PlannerError("invalid planner transcript command schema")
+    kind = command.get("kind")
+    keys = {
+        CommandKind.START.value: {
+            "kind",
+            "run_id",
+            "observation_id",
+            "expected_identities",
+        },
+        CommandKind.PAGE.value: {
+            "kind",
+            "run_id",
+            "observation_id",
+            "page_index",
+        },
+        CommandKind.COMMIT.value: {
+            "kind",
+            "run_id",
+            "observation_id",
+            "action_ordinal",
+            "token",
+        },
+        CommandKind.CANCEL.value: {
+            "kind",
+            "run_id",
+            "observation_id",
+        },
+    }.get(kind)
+    if keys is None:
+        raise PlannerError(
+            "transcript contains an unsupported command kind"
+        )
+    _require_exact_keys(command, keys, "command")
+    if kind == CommandKind.COMMIT.value:
+        _require_exact_keys(
+            command["token"],
+            {"word0", "word1", "word2", "word3"},
+            "command token",
+        )
+
+
+def _validate_event_schema(event: object) -> str:
+    if not isinstance(event, dict):
+        raise PlannerError("invalid planner transcript event schema")
+    kind = event.get("event")
+    payload = _TRANSCRIPT_EVENT_KEYS.get(kind)
+    if payload is None:
+        raise PlannerError("unknown planner transcript event")
+    _require_exact_keys(
+        event,
+        _TRANSCRIPT_COMMON_EVENT_KEYS | payload,
+        f"{kind} event",
+    )
+    if kind == "session":
+        _validate_session_schema(event["provenance"])
+    elif kind == "command":
+        _validate_command_schema(event["command"])
+    elif kind in {"observation_page", "observation_complete"}:
+        _validate_observation_schema(event["observation"])
+    elif kind == "settled":
+        _require_exact_keys(
+            event["rng"],
+            {"state", "lcg", "consumption"},
+            "settled RNG",
+        )
+        _require_exact_keys(
+            event["terminal"],
+            {"state", "rejection"},
+            "settled terminal",
+        )
+    return kind
 
 
 def _mix_digest(digest: int, value: int) -> int:
@@ -649,6 +936,11 @@ class PlannerTranscript:
             or not isinstance(document.get("events"), list)
         ):
             raise PlannerError("invalid planner transcript envelope")
+        _require_exact_keys(
+            document,
+            {"schema", "events"},
+            "envelope",
+        )
         events = document["events"]
         if (
             not events
@@ -664,6 +956,7 @@ class PlannerTranscript:
                 "planner transcript requires exactly one leading session"
             )
         session_provenance = events[0].get("provenance")
+        _validate_session_schema(session_provenance)
         required_session_fields = {
             "transport",
             "rom_identity",
@@ -715,7 +1008,7 @@ class PlannerTranscript:
             if event_digest != _digest(event_without_digest):
                 raise PlannerError("planner transcript digest mismatch")
             previous_digest = event_digest
-            kind = event.get("event")
+            kind = _validate_event_schema(event)
             if kind == "session":
                 if sequence != 0:
                     raise PlannerError(
@@ -901,6 +1194,15 @@ class PlannerTranscript:
                     or len(event["command_words"]) != 16
                     or not isinstance(event.get("telemetry"), list)
                     or len(event["telemetry"]) > AUTOPLAY_TELEMETRY_WORDS
+                    or any(
+                        type(value) is not int
+                        or not 0 <= value <= 0xFFFFFFFF
+                        for value in (
+                            event["checkpoint"]
+                            + event["command_words"]
+                            + event["telemetry"]
+                        )
+                    )
                     or latest_observation is None
                 ):
                     raise PlannerError("invalid settled transcript record")
@@ -913,6 +1215,20 @@ class PlannerTranscript:
                     or set(rng) != {"state", "lcg", "consumption"}
                     or not isinstance(rng.get("state"), list)
                     or len(rng["state"]) != 3
+                    or any(
+                        type(value) is not int
+                        or not 0 <= value <= 0xFFFFFFFF
+                        for value in rng["state"]
+                    )
+                    or any(
+                        type(rng.get(field)) is not int
+                        or not 0 <= rng[field] <= 0xFFFFFFFF
+                        for field in ("lcg", "consumption")
+                    )
+                    or any(
+                        type(terminal.get(field)) is not int
+                        for field in ("state", "rejection")
+                    )
                 ):
                     raise PlannerError("invalid settled runtime state")
                 expected_identity = [
@@ -1400,7 +1716,7 @@ class PlannerBridge:
             total_record_count=len(self._all_actions),
         )
         self.transcript.reserve_exchange()
-        self.transcript.record_command(asdict(command))
+        self.transcript.record_command(_command_payload(command))
         command_id = self._next_command_id
         self._next_command_id += 1
         self.transcript.record_acknowledgement(command_id, 4, 1, 0)
@@ -1417,7 +1733,7 @@ class PlannerBridge:
             if command.run_id != observation.run_id or command.observation_id != observation.observation_id:
                 raise PlannerError(Rejection.STALE_OBSERVATION.value)
             self.transcript.reserve_exchange()
-            self.transcript.record_command(asdict(command))
+            self.transcript.record_command(_command_payload(command))
             command_id = self._next_command_id
             self._next_command_id += 1
             self.transcript.record_acknowledgement(
@@ -1451,7 +1767,7 @@ class PlannerBridge:
         if self._committed_count >= MAX_TRACE_ACTIONS:
             raise PlannerError(Rejection.RESOURCE_LIMIT.value)
         self.transcript.reserve_exchange()
-        self.transcript.record_command(asdict(command))
+        self.transcript.record_command(_command_payload(command))
         command_id = self._next_command_id
         self._next_command_id += 1
         self.transcript.record_acknowledgement(command_id, 2, 1, 0)
@@ -1586,7 +1902,15 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
         or total_records > _PAGE_TOTAL_LIMITS[page_kind]
         or record_start + record_count > total_records
         or total_actions > MAX_ACTIONS
-        or page_kind is not PageKind.CONTROL and record_count == 0
+        or (
+            page_kind is not PageKind.CONTROL
+            and record_count == 0
+            and not (
+                page_kind is PageKind.FLAGS
+                and record_start == 0
+                and total_records == 0
+            )
+        )
     ):
         raise PlannerError("planner page bounds are inconsistent")
 

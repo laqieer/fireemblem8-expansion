@@ -916,6 +916,11 @@ state. If the complete set exceeds 512 entries, the observation fails with
 `RESOURCE_LIMIT` rather than silently truncating. A valid typed commit
 reconstructs the chosen ordinal and returns that `AiDecision` to the unchanged
 `CpPerform` / `ApplyUnitAction` path.
+`MOVE_WAIT` includes exactly one candidate for the active unit's current tile.
+An otherwise immobile valid actor can therefore end its turn normally instead
+of producing a false empty-set terminal. The accepted stationary action still
+enters `CpPerform`, runs ordinary wait-event, trap, status, map, equipment, and
+telemetry cleanup, and consumes no RN.
 
 Coordinate-sensitive choices remain distinct candidates. Torch publishes
 every in-bounds tile in the acting unit's staff range; Warp publishes every
@@ -978,7 +983,11 @@ integrity fields rather than substitutes for those values.
 Flag and convoy/resource availability derives only from the backing pointer
 and bounded domain sizes. A valid 32-bit digest of zero remains `AVAILABLE`
 and is published unchanged; null storage or an out-of-range flag domain is
-`UNINITIALIZED`.
+`UNINITIALIZED`. Each flag byte domain is capped at 256 bytes for semantic
+pages and campaign-checkpoint hashing. Zero bytes is a valid available domain
+and emits one explicit zero-record `FLAGS` page; 1- and 256-byte domains are
+read exactly, while negative, 257-byte, larger, or null domains are never
+dereferenced.
 
 Every semantic field or record has an explicit `AVAILABLE`, `NOT_APPLICABLE`,
 `NOT_VISIBLE`, `UNSUPPORTED_RULE`, `OUT_OF_RANGE`, `UNINITIALIZED`,
@@ -1052,6 +1061,12 @@ validator runs before canonicalization. Excess depth plus specifically
 JSON-decode, Unicode-decode, parser-recursion, and canonicalizer-recursion
 failures become stable invalid-transcript errors before state mutation or
 transport creation.
+Wire-v2 transcript objects also use exact allowed and required key sets at the
+envelope, event, provenance/source/ROM/scenario, command/token, observation
+and every record, ACK, completion, settlement, RNG, terminal, and transport
+error boundary. Unknown extension keys and missing required keys fail before a
+clean replay transport is created, even when an attacker recomputes the hash
+chain.
 The importer is an explicit command state machine: each command must be
 followed by its matching ACK, matching COMPLETE, one response page, and that
 response's settlement. It rejects responses before completion, duplicate or
@@ -1108,13 +1123,15 @@ RN state and read-only consumption counter. The checkpoint digest includes
 `gPlaySt.chapterModeIndex` and the complete bounded 100-slot convoy in addition
 to roster, held items, gold, flags, RNG, and accepted-token state. Route-only
 and convoy-only changes therefore produce distinct checkpoints. Only the
-`MNCH` and `MNC2` event paths set the typed transition flag. When the production
-event engine ends, it records the settled campaign checkpoint immediately
-before `EndBMapMainForChapterTransition` changes any map state, then preserves
-and re-arms that active run for the next initialized map. Ordinary actions do
-not rewrite that transition checkpoint. Other map exits, restart, suspend
-load, new game, full reset, timeout, resource termination, and CANCEL remain
-destructive boundaries and never use the recording path. Timeout and explicit
+`MNCH`, `MNC2`, and `MNC3` paths set the typed transition flag. For `MNCH` and
+`MNC2`, the production event engine records settled campaign state immediately
+before `EndBMapMainForChapterTransition` changes any map state. Because
+`MNC3`'s `GotoChapterWithoutSave` changes chapter identity synchronously, that
+path records immediately before the call, then the scheduled
+`StartBattleMap` reset preserves and re-arms the same run. Ordinary actions do
+not rewrite a transition checkpoint. Other map exits, restart, suspend load,
+new game, full reset, timeout, resource termination, and CANCEL remain
+destructive boundaries and never use a recording path. Timeout and explicit
 CANCEL first publish an invalid checkpoint magic value, then zero the entire
 52-byte record before deactivating the planner or restoring player control. A
 later START also clears the record before activation, so no cancelled-run
@@ -1201,11 +1218,12 @@ rejects during configuration validation before compilation.
 
 The enabled ARM planner and shared action-semantics objects use 996-byte pages,
 64-byte commands, 52-byte checkpoints, 1,140 bytes of EWRAM/BSS, zero IWRAM,
-and 12,004 bytes of text/rodata. Shared target predicates replace duplicated
+and 11,976 bytes of text/rodata. Shared target predicates replace duplicated
 planner rules. Planner-specific executor lowering adds a 176-byte
 `cp_perform` text/rodata delta, and the settled event-transition checkpoint
-adds four bytes, for 12,184 bytes across the complete
-planner/action/lifecycle seam (104 bytes below 12 KiB). The
+adds four bytes while the MNC3 pre-transition hook adds 16 bytes, for 12,172
+bytes across the complete planner/action/lifecycle seam (116 bytes below
+12 KiB). The
 planner-specific RNG counter and cancellation latch add five EWRAM bytes and
 no IWRAM, keeping total planner state at 1,145 bytes (2,951 bytes below 4 KiB).
 Disabled release and archival builds omit planner state and the normal-summon

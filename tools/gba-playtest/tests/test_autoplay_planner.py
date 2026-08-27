@@ -924,6 +924,298 @@ class PlannerBridgeTests(unittest.TestCase):
             )
         self.assertEqual(factory_calls, 0)
 
+    def test_transcript_schema_rejects_unknown_keys_pre_factory(self):
+        bridge = planner.PlannerBridge(PROVENANCE)
+        run_id = bridge.begin(PROVENANCE)
+        observation = bridge.observe(
+            1,
+            (
+                planner.Field(
+                    "gold",
+                    "gPlaySt.partyGoldAmount",
+                    0xFFFFFFFF,
+                    planner.Availability.AVAILABLE,
+                    100,
+                ),
+            ),
+            tuple(
+                planner.Action("MOVE_WAIT", 1, (index + 1, 0))
+                for index in range(23)
+            ),
+        )
+        complete = planner.collect_observation_pages(
+            bridge,
+            observation,
+        )
+        choice = complete.actions[0]
+        bridge.commit(
+            planner.Command(
+                planner.CommandKind.COMMIT,
+                run_id,
+                observation.observation_id,
+                choice.ordinal,
+                choice.token,
+            )
+        )
+        encoded = bridge.transcript.export()
+
+        def event(document, kind):
+            return next(
+                item
+                for item in document["events"]
+                if item["event"] == kind
+            )
+
+        def observation_payload(document):
+            return event(document, "observation_complete")[
+                "observation"
+            ]
+
+        def inject_record(document, name, record):
+            observation_value = observation_payload(document)
+            observation_value[name] = [record]
+            return observation_value[name][0]
+
+        def add_transport_error(document):
+            value = {
+                "event": "transport_error",
+                "code": "TEST",
+                "command_id": 99,
+                "kind": 1,
+            }
+            document["events"].append(value)
+            return value
+
+        selectors = (
+            ("envelope", lambda document: document),
+            ("session event", lambda document: event(document, "session")),
+            (
+                "session provenance",
+                lambda document: event(document, "session")["provenance"],
+            ),
+            (
+                "session source",
+                lambda document: event(document, "session")["provenance"][
+                    "source"
+                ],
+            ),
+            (
+                "session ROM",
+                lambda document: event(document, "session")["provenance"][
+                    "source"
+                ]["rom"],
+            ),
+            (
+                "session scenario",
+                lambda document: event(document, "session")["provenance"][
+                    "source"
+                ]["scenario"],
+            ),
+            (
+                "complete event",
+                lambda document: event(
+                    document,
+                    "observation_complete",
+                ),
+            ),
+            ("observation", observation_payload),
+            (
+                "field",
+                lambda document: observation_payload(document)["fields"][0],
+            ),
+            (
+                "action record",
+                lambda document: observation_payload(document)["actions"][0],
+            ),
+            (
+                "action",
+                lambda document: observation_payload(document)["actions"][0][
+                    "action"
+                ],
+            ),
+            (
+                "action token",
+                lambda document: observation_payload(document)["actions"][0][
+                    "token"
+                ],
+            ),
+            (
+                "map cell",
+                lambda document: inject_record(
+                    document,
+                    "map_cells",
+                    {
+                        "x": 0,
+                        "y": 0,
+                        "terrain": 1,
+                        "unit": 0,
+                        "availability": "AVAILABLE",
+                    },
+                ),
+            ),
+            (
+                "unit",
+                lambda document: inject_record(
+                    document,
+                    "units",
+                    {
+                        "slot": 1,
+                        "character": 1,
+                        "unit_class": 1,
+                        "position": [0, 0],
+                        "hp": [20, 20],
+                        "state": 0,
+                        "inventory_digest": 0,
+                        "availability": "AVAILABLE",
+                    },
+                ),
+            ),
+            (
+                "inventory",
+                lambda document: inject_record(
+                    document,
+                    "inventory",
+                    {
+                        "unit": 1,
+                        "slot": 0,
+                        "item_id": 0,
+                        "uses": 0,
+                        "raw_item": 0,
+                        "availability": "EMPTY",
+                    },
+                ),
+            ),
+            (
+                "resource",
+                lambda document: inject_record(
+                    document,
+                    "resources",
+                    {
+                        "kind": 2,
+                        "slot": None,
+                        "value": 0,
+                        "item_id": None,
+                        "uses": None,
+                        "availability": "AVAILABLE",
+                    },
+                ),
+            ),
+            (
+                "flag",
+                lambda document: inject_record(
+                    document,
+                    "flags",
+                    {
+                        "kind": 4,
+                        "flag_id": 0,
+                        "state": 0,
+                        "availability": "AVAILABLE",
+                    },
+                ),
+            ),
+            ("command event", lambda document: event(document, "command")),
+            (
+                "command",
+                lambda document: event(document, "command")["command"],
+            ),
+            (
+                "command token",
+                lambda document: next(
+                    item["command"]["token"]
+                    for item in document["events"]
+                    if item["event"] == "command"
+                        and item["command"]["kind"]
+                            == planner.CommandKind.COMMIT.value
+                ),
+            ),
+            (
+                "acknowledgement",
+                lambda document: event(document, "acknowledgement"),
+            ),
+            (
+                "completion",
+                lambda document: event(document, "completion"),
+            ),
+            (
+                "observation page event",
+                lambda document: event(document, "observation_page"),
+            ),
+            (
+                "settled event",
+                lambda document: event(document, "settled"),
+            ),
+            (
+                "settled RNG",
+                lambda document: event(document, "settled")["rng"],
+            ),
+            (
+                "settled terminal",
+                lambda document: event(document, "settled")["terminal"],
+            ),
+            ("transport error", add_transport_error),
+        )
+
+        def rechain(document):
+            previous = "0" * 64
+            for sequence, item in enumerate(document["events"]):
+                item.pop("event_digest", None)
+                item["sequence"] = sequence
+                item["previous_digest"] = previous
+                item["event_digest"] = planner._digest(item)
+                previous = item["event_digest"]
+
+        for name, selector in selectors:
+            with self.subTest(schema=name):
+                document = json.loads(encoded)
+                selector(document)["unexpected"] = 1
+                rechain(document)
+                factory_calls = 0
+
+                def factory():
+                    nonlocal factory_calls
+                    factory_calls += 1
+                    raise AssertionError("invalid schema started transport")
+
+                with self.assertRaisesRegex(
+                    planner.PlannerError,
+                    "schema",
+                ):
+                    planner.replay_transcript_on_clean_transport(
+                        planner._canonical(document),
+                        factory,
+                    )
+                self.assertEqual(factory_calls, 0)
+
+        for name in ("checkpoint", "telemetry"):
+            with self.subTest(payload=name):
+                document = json.loads(encoded)
+                settled = event(document, "settled")
+                if name == "checkpoint":
+                    settled[name][0] = {"unexpected": 1}
+                else:
+                    settled[name] = [{"unexpected": 1}]
+                rechain(document)
+                with self.assertRaisesRegex(
+                    planner.PlannerError,
+                    "invalid settled transcript record",
+                ):
+                    planner.PlannerTranscript.import_bytes(
+                        planner._canonical(document)
+                    )
+
+        missing_required = json.loads(encoded)
+        event(missing_required, "command")["command"].pop(
+            "observation_id"
+        )
+        rechain(missing_required)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "command schema",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(missing_required)
+            )
+
     def test_mailbox_has_no_arbitrary_memory_write_api(self):
         mailbox = planner.Mailbox()
         self.assertFalse(hasattr(mailbox, "write"))
@@ -1593,14 +1885,23 @@ class PlannerBridgeTests(unittest.TestCase):
         mnc2 = event_commands.split("case EVSUBCMD_MNC2:", 1)[1].split(
             "case EVSUBCMD_MNC3:", 1
         )[0]
+        mnc3 = event_commands.split("case EVSUBCMD_MNC3:", 1)[1].split(
+            "case EVSUBCMD_MNC4:", 1
+        )[0]
         mnts = event_commands.split("case EVSUBCMD_MNTS:", 1)[1].split(
             "case EVSUBCMD_MNCH:", 1
         )[0]
         mnc4 = event_commands.split("case EVSUBCMD_MNC4:", 1)[1].split(
             "} // switch", 1
         )[0]
-        for preserving in (mnch, mnc2):
+        for preserving in (mnch, mnc2, mnc3):
             self.assertIn("EV_STATE_PLANNER_CHAPTER_TRANSITION", preserving)
+        self.assertLess(
+            mnc3.index(
+                "ExpansionAutoplayPlanner_RecordCampaignCheckpoint()"
+            ),
+            mnc3.index("GotoChapterWithoutSave(chIndex)"),
+        )
         for destructive in (mnts, mnc4):
             self.assertNotIn("EV_STATE_PLANNER_CHAPTER_TRANSITION", destructive)
 
@@ -1995,6 +2296,75 @@ raise SystemExit(child.returncode)
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             self.assertIn("AUTOPLAY_PLANNER_HOST_TEST: PASS", completed.stdout)
 
+    def test_flag_checkpoint_bounds_under_sanitizers(self):
+        compiler = shutil.which("gcc") or shutil.which("clang")
+        if compiler is None:
+            self.skipTest("no sanitizer-capable host compiler")
+        root = TESTS_DIR.parents[2]
+        build_root = root / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            executable = Path(temporary) / "planner-flag-sanitizer"
+            environment = os.environ.copy()
+            environment["TMPDIR"] = temporary
+            completed = subprocess.run(
+                [
+                    compiler,
+                    "-std=gnu89",
+                    "-O1",
+                    "-g",
+                    "-fsanitize=address,undefined",
+                    "-fno-omit-frame-pointer",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                    "-I",
+                    str(root / "include"),
+                    "-I",
+                    str(root / "include" / "generated"),
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-DFE8_EXPANSION_DEBUG=1",
+                    "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
+                    "-DFE8_AUTOPLAY_PLANNER_RUNTIME_TEST=1",
+                    str(root / "src" / "action_semantics.c"),
+                    str(root / "src" / "bmtarget.c"),
+                    str(root / "src" / "expansion_autoplay_planner.c"),
+                    str(
+                        TESTS_DIR
+                        / "c"
+                        / "expansion_autoplay_planner_driver.c"
+                    ),
+                    "-Wl,--gc-sections",
+                    "-o",
+                    str(executable),
+                ],
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            environment["ASAN_OPTIONS"] = "detect_leaks=0"
+            completed = subprocess.run(
+                [str(executable)],
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn(
+                "AUTOPLAY_PLANNER_HOST_TEST: PASS",
+                completed.stdout,
+            )
+
     def test_native_action_semantics_execute_selected_fields(self):
         compiler = shutil.which("gcc") or shutil.which("cc")
         if compiler is None:
@@ -2108,6 +2478,73 @@ raise SystemExit(child.returncode)
             )
             self.assertIn(
                 "PLANNER_SNAG_EXECUTOR_TEST: PASS",
+                completed.stdout,
+            )
+
+    def test_stationary_wait_runs_normal_cleanup_and_telemetry(self):
+        compiler = shutil.which("gcc") or shutil.which("cc")
+        if compiler is None:
+            self.skipTest("no host C compiler")
+        root = TESTS_DIR.parents[2]
+        build_root = root / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            executable = Path(temporary) / "planner-stationary-wait"
+            environment = os.environ.copy()
+            environment["TMPDIR"] = temporary
+            completed = subprocess.run(
+                [
+                    compiler,
+                    "-std=gnu89",
+                    "-Werror=declaration-after-statement",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    "-O2",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                    "-I",
+                    str(root / "include"),
+                    "-I",
+                    str(root / "include" / "generated"),
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-DFE8_EXPANSION_DEBUG=1",
+                    "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
+                    "-DFE8_AUTOPLAY_PLANNER_RUNTIME_TEST=1",
+                    "-DFE8_PLANNER_STATIONARY_WAIT_TEST=1",
+                    str(root / "src" / "cp_decide.c"),
+                    str(root / "src" / "cp_perform.c"),
+                    str(
+                        TESTS_DIR
+                        / "c"
+                        / "planner_stationary_wait_driver.c"
+                    ),
+                    "-Wl,--gc-sections",
+                    "-o",
+                    str(executable),
+                ],
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = subprocess.run(
+                [str(executable)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn(
+                "PLANNER_STATIONARY_WAIT_TEST: PASS",
                 completed.stdout,
             )
 
@@ -2462,64 +2899,65 @@ raise SystemExit(child.returncode)
                 planner_code_size + hook_code_delta,
                 12 * 1024,
             )
-            transition_code_sizes: dict[bool, int] = {}
-            for enabled in (False, True):
-                output = temporary_path / (
-                    f"event-planner-{int(enabled)}.o"
-                )
-                completed = subprocess.run(
-                    [
-                        compiler,
-                        "-mcpu=arm7tdmi",
-                        "-mthumb",
-                        "-mthumb-interwork",
-                        "-mabi=aapcs",
-                        "-std=gnu89",
-                        "-ffreestanding",
-                        "-fno-builtin",
-                        "-O2",
-                        "-I",
-                        str(root / "include"),
-                        "-I",
-                        str(root / "include" / "generated"),
-                        "-DFE8_EXPANSION_MODERN_BUILD=1",
-                        "-DFE8_EXPANSION_DEBUG=1",
-                        f"-DFE8_EXPANSION_AUTOPLAY_PLANNER={int(enabled)}",
-                        "-c",
-                        str(root / "src" / "event.c"),
-                        "-o",
-                        str(output),
-                    ],
-                    cwd=root,
-                    capture_output=True,
-                    text=True,
-                )
-                self.assertEqual(
-                    completed.returncode,
-                    0,
-                    completed.stdout + completed.stderr,
-                )
-                sizes = subprocess.run(
-                    [size, "-A", str(output)],
-                    cwd=root,
-                    capture_output=True,
-                    text=True,
-                )
-                self.assertEqual(
-                    sizes.returncode,
-                    0,
-                    sizes.stdout + sizes.stderr,
-                )
-                transition_code_sizes[enabled] = sum(
-                    int(value)
-                    for section, value in re.findall(
-                        r"^(\S+)\s+(\d+)\s+\d+$",
-                        sizes.stdout,
-                        re.MULTILINE,
+            transition_code_sizes = {False: 0, True: 0}
+            for source_name in ("event", "eventscr"):
+                for enabled in (False, True):
+                    output = temporary_path / (
+                        f"{source_name}-planner-{int(enabled)}.o"
                     )
-                    if section
-                        in {".text", ".rodata", ".rodata.str1.4"}
-                )
+                    completed = subprocess.run(
+                        [
+                            compiler,
+                            "-mcpu=arm7tdmi",
+                            "-mthumb",
+                            "-mthumb-interwork",
+                            "-mabi=aapcs",
+                            "-std=gnu89",
+                            "-ffreestanding",
+                            "-fno-builtin",
+                            "-O2",
+                            "-I",
+                            str(root / "include"),
+                            "-I",
+                            str(root / "include" / "generated"),
+                            "-DFE8_EXPANSION_MODERN_BUILD=1",
+                            "-DFE8_EXPANSION_DEBUG=1",
+                            f"-DFE8_EXPANSION_AUTOPLAY_PLANNER={int(enabled)}",
+                            "-c",
+                            str(root / "src" / f"{source_name}.c"),
+                            "-o",
+                            str(output),
+                        ],
+                        cwd=root,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stdout + completed.stderr,
+                    )
+                    sizes = subprocess.run(
+                        [size, "-A", str(output)],
+                        cwd=root,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        sizes.returncode,
+                        0,
+                        sizes.stdout + sizes.stderr,
+                    )
+                    transition_code_sizes[enabled] += sum(
+                        int(value)
+                        for section, value in re.findall(
+                            r"^(\S+)\s+(\d+)\s+\d+$",
+                            sizes.stdout,
+                            re.MULTILINE,
+                        )
+                        if section
+                            in {".text", ".rodata", ".rodata.str1.4"}
+                    )
             transition_code_delta = (
                 transition_code_sizes[True]
                 - transition_code_sizes[False]
@@ -3101,6 +3539,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
         commit_completion_frame_limit: int = 18000,
         transition_subcode: int = 2,
         candidate_mode: int = 0,
+        flag_domain_mode: int = 0,
         acknowledgement_override: tuple[int, int] | None = None,
         zero_digest: bool = False,
         startup_delay_frames: int = 0,
@@ -3118,6 +3557,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             ignore_commands=ignore_commands,
             transition_subcode=transition_subcode,
             candidate_mode=candidate_mode,
+            flag_domain_mode=flag_domain_mode,
             acknowledgement_override=acknowledgement_override,
             zero_digest=zero_digest,
             startup_delay_frames=startup_delay_frames,
@@ -3154,7 +3594,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 + planner.AUTOPLAY_TELEMETRY_WORDS,
             )
             self.assertEqual(len(first.flags), 128)
-            self.assertEqual(len(first.actions), 63)
+            self.assertEqual(len(first.actions), 64)
             self.assertTrue(
                 all(
                     record.action.item_slot is None
@@ -3481,6 +3921,70 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 transcript,
             )
 
+    def test_no_save_transition_records_and_rearms_checkpoint(self):
+        root = (
+            TESTS_DIR.parents[2]
+            / "build"
+            / "test-artifacts"
+            / "autoplay-planner"
+        )
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            try:
+                rom, backend = self._build_transport(
+                    temporary,
+                    transition_subcode=3,
+                )
+            except RuntimeError as error:
+                if (
+                    "planner runtime toolchain unavailable" in str(error)
+                    or "planner transport host compiler unavailable"
+                        in str(error)
+                ):
+                    self.skipTest(str(error))
+                raise
+            symbols = subprocess.run(
+                ["arm-none-eabi-nm", str(rom.with_suffix(".elf"))],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(symbols.returncode, 0, symbols.stderr)
+            self.assertRegex(
+                symbols.stdout,
+                r"\bGotoChapterWithoutSave(?:\n|$)",
+            )
+            disassembly = subprocess.run(
+                [
+                    "arm-none-eabi-objdump",
+                    "-d",
+                    str(rom.with_suffix(".elf")),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                disassembly.returncode,
+                0,
+                disassembly.stderr,
+            )
+            no_save = disassembly.stdout.split(
+                "<GotoChapterWithoutSave>:",
+                1,
+            )[1].split("\n\n", 1)[0]
+            self.assertIn("<Proc_Goto>", no_save)
+            self.assertIn("<Proc_EndEach>", no_save)
+            _, checkpoint, transcript = self._run_planner(
+                backend,
+                rom,
+                planner.ScriptedPlanner(),
+            )
+            self.assertEqual(checkpoint[4], 1)
+            self.assertNotEqual(checkpoint[12], 0)
+            self.assertEqual(
+                planner.PlannerTranscript.import_bytes(transcript).export(),
+                transcript,
+            )
+
     def test_exhausted_runs_restore_without_fallback_or_reentry(self):
         root = (
             TESTS_DIR.parents[2]
@@ -3595,6 +4099,81 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         exported,
                     )
                     self.assertIsNotNone(choice)
+                finally:
+                    transport.close()
+
+    def test_flag_checkpoint_bounds_on_arm_transport(self):
+        root = (
+            TESTS_DIR.parents[2]
+            / "build"
+            / "test-artifacts"
+            / "autoplay-planner"
+        )
+        root.mkdir(parents=True, exist_ok=True)
+        cases = (
+            (1, planner.Availability.AVAILABLE, 0),
+            (2, planner.Availability.AVAILABLE, 8),
+            (3, planner.Availability.AVAILABLE, 2048),
+            (4, planner.Availability.UNINITIALIZED, 0),
+            (5, planner.Availability.UNINITIALIZED, 0),
+            (6, planner.Availability.UNINITIALIZED, 2048),
+        )
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            for mode, availability, flag_count in cases:
+                case_root = Path(temporary) / f"flags-{mode}"
+                case_root.mkdir()
+                try:
+                    rom, backend = self._build_transport(
+                        case_root,
+                        transition_subcode=3,
+                        flag_domain_mode=mode,
+                    )
+                except RuntimeError as error:
+                    if (
+                        "planner runtime toolchain unavailable" in str(error)
+                        or "planner transport host compiler unavailable"
+                            in str(error)
+                    ):
+                        self.skipTest(str(error))
+                    raise
+                transport = PlannerProcessTransport(backend, rom)
+                try:
+                    first = planner.collect_observation_pages(
+                        transport,
+                        transport.start(),
+                    )
+                    fields = {field.name: field for field in first.fields}
+                    self.assertEqual(
+                        fields["flags_digest"].availability,
+                        availability,
+                    )
+                    self.assertEqual(len(first.flags), flag_count)
+                    if flag_count:
+                        self.assertTrue(
+                            all(
+                                record.availability is availability
+                                for record in first.flags
+                            )
+                        )
+                    action = first.actions[0]
+                    waiting = transport.exchange(
+                        planner.Command(
+                            planner.CommandKind.COMMIT,
+                            first.run_id,
+                            first.observation_id,
+                            action.ordinal,
+                            action.token,
+                        )
+                    )
+                    self.assertEqual(waiting.chapter, 2)
+                    self.assertEqual(
+                        transport.checkpoint[0],
+                        0x41504C4E,
+                    )
+                    self.assertEqual(
+                        transport.checkpoint[4],
+                        first.chapter,
+                    )
                 finally:
                     transport.close()
 

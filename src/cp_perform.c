@@ -71,6 +71,7 @@ void CpPerform_WaitAction(struct CpPerformProc* proc);
 void CpPerform_Cleanup(struct CpPerformProc* proc);
 void CpPerform_EquipBest(struct CpPerformProc* proc);
 
+#if !FE8_PLANNER_STATIONARY_WAIT_TEST
 struct ProcCmd CONST_DATA gProcScr_CpPerform[] = {
     PROC_NAME("E_CPPERFORM"),
 
@@ -96,6 +97,7 @@ struct ProcCmd CONST_DATA gProcScr_CpPerform[] = {
 PROC_LABEL(1),
     PROC_END,
 };
+#endif
 
 s8 AiDummyAction(struct CpPerformProc*);
 s8 AiEscapeAction(struct CpPerformProc*);

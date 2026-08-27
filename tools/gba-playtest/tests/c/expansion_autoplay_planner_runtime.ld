@@ -23,7 +23,7 @@ SECTIONS
 
     /DISCARD/ :
     {
-        /* The fixture links three production functions, not their unrelated
+        /* The fixture links selected production paths, not their unrelated
          * event-dispatch and map-effect data tables. */
         *planner-production-event.o(.data* .rodata* .bss*)
         *planner-production-eventscr.o(.data* .rodata* .bss*)

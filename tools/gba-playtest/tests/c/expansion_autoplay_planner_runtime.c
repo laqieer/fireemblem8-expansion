@@ -40,6 +40,10 @@
 #define FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE 0
 #endif
 
+#ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_FLAG_DOMAIN_MODE
+#define FE8_AUTOPLAY_PLANNER_RUNTIME_FLAG_DOMAIN_MODE 0
+#endif
+
 #ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_ACK_OVERRIDE
 #define FE8_AUTOPLAY_PLANNER_RUNTIME_ACK_OVERRIDE 0
 #endif
@@ -64,7 +68,6 @@
 #define FE8_AUTOPLAY_PLANNER_RUNTIME_STARTUP_STATE 0
 #endif
 
-struct PlaySt gPlaySt;
 struct ActionData gActionData;
 struct ExpansionAutoplayTelemetry gExpansionAutoplayTelemetry;
 struct Unit* gActiveUnit;
@@ -84,10 +87,33 @@ static u32 sRestoreRequests;
 static struct CharacterData sCharacter;
 static struct ClassData sClass;
 static struct Unit sUnit;
-static u8 sPermanentFlags[8];
-static u8 sChapterFlags[8];
-static int sPermanentFlagSize = sizeof(sPermanentFlags);
-static int sChapterFlagSize = sizeof(sChapterFlags);
+static u8 sPermanentFlags[256];
+static u8 sChapterFlags[256];
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_ZERO_DIGEST
+static int sPermanentFlagSize = 4;
+static int sChapterFlagSize = 0;
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_FLAG_DOMAIN_MODE == 1
+static int sPermanentFlagSize = 0;
+static int sChapterFlagSize = 0;
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_FLAG_DOMAIN_MODE == 2
+static int sPermanentFlagSize = 1;
+static int sChapterFlagSize = 0;
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_FLAG_DOMAIN_MODE == 3
+static int sPermanentFlagSize = 256;
+static int sChapterFlagSize = 0;
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_FLAG_DOMAIN_MODE == 4
+static int sPermanentFlagSize = 257;
+static int sChapterFlagSize = 0;
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_FLAG_DOMAIN_MODE == 5
+static int sPermanentFlagSize = 0x7FFFFFFF;
+static int sChapterFlagSize = 0;
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_FLAG_DOMAIN_MODE == 6
+static int sPermanentFlagSize = 256;
+static int sChapterFlagSize = 0;
+#else
+static int sPermanentFlagSize = 8;
+static int sChapterFlagSize = 8;
+#endif
 static u16 sConvoy[CONVOY_ITEM_COUNT];
 static struct Trap sTraps[TRAP_MAX_COUNT];
 static u8 sMovementData[17][32];
@@ -115,6 +141,15 @@ static u32 sCommitDelayFrames;
 static struct GameCtrlProc sGameControl;
 static struct BMapMainProc sMapMain;
 struct ProcCmd gProc_BMapMain[] = {
+    PROC_END,
+};
+struct ProcCmd gProcScr_PlayerPhase[] = {
+    PROC_END,
+};
+struct ProcCmd gProcScr_CpPhase[] = {
+    PROC_END,
+};
+struct ProcCmd gProcScr_BerserkCpPhase[] = {
     PROC_END,
 };
 
@@ -150,7 +185,7 @@ void LoadUiFrameGraphics(void)
 {
 }
 
-void ReadGameSaveCoreGfx(void)
+void __wrap_ReadGameSaveCoreGfx(void)
 {
 }
 
@@ -167,7 +202,7 @@ void EndAllMus(void)
 {
 }
 
-void UnlockGame(void)
+void __wrap_UnlockGame(void)
 {
 }
 
@@ -210,11 +245,6 @@ void SetNextChapterId(int id)
     (void)id;
 }
 
-void GotoChapterWithoutSave(u16 chapter)
-{
-    (void)chapter;
-}
-
 void DeleteAll6CWaitMusicRelated(void)
 {
 }
@@ -233,6 +263,18 @@ ProcPtr Proc_Find(const struct ProcCmd* script)
 {
     (void)script;
     return (ProcPtr)&sMapMain;
+}
+
+void Proc_Goto(ProcPtr proc, int label)
+{
+    (void)proc;
+    if (label == 2)
+        ExpansionAutoplay_ResetForChapterTransition();
+}
+
+void Proc_EndEach(const struct ProcCmd* script)
+{
+    (void)script;
 }
 
 void Proc_End(ProcPtr proc)
@@ -282,7 +324,11 @@ struct Unit* GetUnit(int id)
 
 u8* GetPermanentFlagBits(void)
 {
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_FLAG_DOMAIN_MODE == 6
+    return NULL;
+#else
     return sPermanentFlags;
+#endif
 }
 
 int GetPermanentFlagBitsSize(void)
@@ -537,6 +583,8 @@ static void InitializeRuntime(void)
     sUnit.yPos = 0;
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 2
     sUnit.items[0] = ITEM_STAFF_TORCH;
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 1
+    sUnit.state = US_NOT_DEPLOYED;
 #endif
     gActiveUnit = &sUnit;
     gActiveUnitId = 1;
@@ -578,8 +626,6 @@ static void InitializeRuntime(void)
     sPermanentFlags[1] = 0x24;
     sPermanentFlags[2] = 0x31;
     sPermanentFlags[3] = 0xC4;
-    sPermanentFlagSize = 4;
-    sChapterFlagSize = 0;
     sConvoy[0] = 0;
     sConvoy[97] = 0xEDD0;
     sConvoy[98] = 0xC25D;

@@ -37,6 +37,10 @@
 #if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
 #include "expansion_chapter_objectives.h"
 #endif
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#include "expansion_autoplay_planner.h"
+#endif
 #include "EAstdlib.h"
 #include "constants/backgrounds.h"
 #include "eventcall.h"
@@ -2156,6 +2160,11 @@ u8 Event2A_MoveToChapter(struct EventEngineProc * proc)
         break;
 
     case EVSUBCMD_MNC3:
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+        ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+        proc->evStateBits |= EV_STATE_PLANNER_CHAPTER_TRANSITION;
+#endif
         GotoChapterWithoutSave(chIndex);
         break;
 

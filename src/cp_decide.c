@@ -212,8 +212,16 @@ static void CpDecide_CompleteDecision(ProcPtr proc)
 {
     gActiveUnit->state |= US_HAS_MOVED_AI;
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!gAiDecision.actionPerformed ||
+        (!ExpansionAutoplayPlanner_IsActive()
+            && gActiveUnit->xPos == gAiDecision.xMove
+            && gActiveUnit->yPos == gAiDecision.yMove
+            && gAiDecision.actionId == AI_ACTION_NONE))
+#else
     if (!gAiDecision.actionPerformed ||
         (gActiveUnit->xPos == gAiDecision.xMove && gActiveUnit->yPos == gAiDecision.yMove && gAiDecision.actionId == AI_ACTION_NONE))
+#endif
     {
         gAiState.unitIt++;
         Proc_Goto(proc, 0);
@@ -232,6 +240,13 @@ static void CpDecide_CompleteDecision(ProcPtr proc)
 #endif
     Proc_StartBlocking(gProcScr_CpPerform, proc);
 }
+
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_TEST
+void CpDecide_CompleteDecisionForTest(ProcPtr proc)
+{
+    CpDecide_CompleteDecision(proc);
+}
+#endif
 
 void AiClearDecision(void)
 {

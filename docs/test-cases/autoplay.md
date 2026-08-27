@@ -585,6 +585,10 @@ canonical row-major then action/item/target order. The 996-byte page carries
 either eight typed summary fields, 224 map cells, 56 units, 112
 inventory/resource/flag values, or 22 40-byte actions; typed `PAGE` traversal
 reaches all 512 candidate ordinals without an in-process list shortcut.
+Every reachable destination has one `MOVE_WAIT`, including exactly one
+current-tile action. An immobile valid actor can select that action; it enters
+the normal `CpPerform` wait/cleanup/telemetry route without moving or consuming
+RN.
 
 The summary and data pages expose actual map dimensions/terrain/occupancy,
 visible unit identity/position/HP/state/inventory, objective state/progress,
@@ -596,12 +600,14 @@ retain their item IDs, uses, and availability. Both host planners echo the
 ROM's four independently mixed token words unchanged, validate and retain a
 digest of the complete typed semantic values before choosing, commit through
 the #85 computer-action route, and preserve a
-52-byte checkpoint through `MNCH`/`MNC2` into chapter two. The checkpoint
+52-byte checkpoint through `MNCH`/`MNC2`/`MNC3` into chapter two. The checkpoint
 is recorded by the production event engine immediately before preserving map
 teardown, exactly matches the settled prior chapter/run/turn/RNG state, records
 chapter route/mode, and changes digest for route-only and convoy-only
-mutations. It survives next-map re-arming and is not rewritten by an ordinary
-chapter-two action. Torch, Warp, and Unlock enumerate multiple bounded
+mutations. MNC3 records before `GotoChapterWithoutSave` changes the chapter
+identity and survives the scheduled `StartBattleMap` reset. It survives
+next-map re-arming and is not rewritten by an ordinary chapter-two action.
+Torch, Warp, and Unlock enumerate multiple bounded
 coordinate targets and execute the selected coordinate rather than stale
 defaults. Hammerne enumerates and token-binds each repairable target inventory
 slot on a same-faction unit and repairs only the selected slot; green allies
@@ -619,7 +625,10 @@ safely. Explicit exit, restart, load, new-game, full-reset, and cancel paths
 clear the run/checkpoint.
 Valid zero-valued flag and convoy/resource digests remain available and
 round-trip exactly; null backing domains and out-of-range flag sizes are
-uninitialized instead.
+uninitialized instead. Zero-, 1-, and 256-byte flag domains traverse the ARM
+transport safely, including an explicit empty FLAGS page for zero bytes;
+257-byte, huge, and null domains never perform an out-of-bounds checkpoint
+read.
 Normal Summon enumerates each legal adjacent tile only when the real
 `gSummonConfig`, existing-summon, movement-state, terrain, occupancy, and fog
 contracts allow it. The executor preserves the chosen coordinates through
@@ -665,6 +674,10 @@ Transcript JSON is iteratively bounded to 64 structural containers before
 decode and canonicalization. Below-limit and exact-limit arrays/objects are
 accepted by that boundary; excess depth and explicit parser/canonicalizer
 recursion become typed invalid-transcript errors before transport creation.
+Every wire-v2 envelope, event, and nested provenance, command/token,
+observation/record, ACK, completion, settlement, RNG, terminal, and transport
+error object has an exact allowed/required schema; unknown or missing keys
+reject before transport creation even after re-chaining.
 After its fixed test-only pre-stdin boot routine, the enabled production
 backend accepts only READ/status, START, PAGE, COMMIT, CANCEL, and QUIT.
 Both immediate synthetic startup and delayed fixed bootstrap must publish the
@@ -682,9 +695,10 @@ unexpected command kinds, empty enumerations, page overflow, and resource
 overflow fail with explicit typed outcomes and no action commit. Repeated
 valid PAGE or native malformed-mailbox traffic cannot postpone the 300-frame
 deadline.
-Zero-candidate and over-512 enumerations publish typed EXHAUSTED, clear the
-checkpoint, deactivate, queue safe player restoration, execute no fallback,
-and reject stale re-entry; a nonterminal legal set remains active.
+Unavailable/no-actor zero-candidate and over-512 enumerations publish typed
+EXHAUSTED, clear the checkpoint, deactivate, queue safe player restoration,
+execute no fallback, and reject stale re-entry; an immobile valid actor instead
+retains its stationary Wait and remains nonterminal.
 Prospective host observations exceeding 2 MiB fail without changing the trace,
 observation, or next ID. The transport accepts no address-bearing command and
 has no arbitrary-memory API. Release configuration rejects
@@ -704,7 +718,9 @@ ACK result/rejection pairs, unknown results or rejections, mismatched command
 IDs/kinds, and a rejected-pair rewrite that retains a COMMITTED observation
 all fail after recomputing the hash chain. Destructive exit/load/new-game,
 timeout, and cancel paths never record a transition checkpoint; cancellation
-after a real MNCH/MNC2 checkpoint zeros the entire record.
+after a real MNCH/MNC2/MNC3 checkpoint zeros the entire record. Re-chained
+unknown keys at every wire-v2 object boundary and missing required keys reject
+before the replay factory is called.
 Recomputed-chain stale/prior/future observation IDs, PAGE index cross-swaps,
 responses before completion, COMPLETE before ACK, duplicate ACK/COMPLETE,
 interleaved commands, missing responses/settlements, and terminal disagreement
@@ -764,8 +780,9 @@ non-mutating enumeration,
 deadline accounting, coordinate/slot lowering and execution, key consumption,
 C/Python v2 diagnostics, normal/DK summon availability, coordinate lowering,
 real summon creation, destructive checkpoint invalidation,
-C/host command acknowledgement, long-action completion, repeated rejection,
-and explicit transport timeout behavior,
+C/host command acknowledgement, stationary Wait cleanup, bounded checkpoint
+flag domains, MNC3 no-save transition preservation, long-action completion,
+repeated rejection, and explicit transport timeout behavior,
 C89/agbcc and native/ARM layout, executable host-only recursive-Make routing,
 real configured toolchain build, and lifecycle teardown. The libmGBA selectors
 run both planner implementations and all negative commands against the

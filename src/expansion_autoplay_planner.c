@@ -532,8 +532,6 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateWait(
 {
     struct AiDecision decision;
 
-    if (xMove == gActiveUnit->xPos && yMove == gActiveUnit->yPos)
-        return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
     MakeDecision(
         &decision,
         xMove,
@@ -1307,9 +1305,11 @@ static u32 FlagRecordCount(void)
 
 static u32 FlagPageCount(void)
 {
-    return PageCountFor(
+    u32 pageCount = PageCountFor(
         FlagRecordCount(),
         EXPANSION_AUTOPLAY_PLANNER_VALUE_RECORD_CAPACITY);
+
+    return pageCount == 0 ? 1 : pageCount;
 }
 
 static u32 ActionPageCount(void)
@@ -1350,14 +1350,18 @@ static bool GetFlagsDigest(u32* result)
 
     flags = GetPermanentFlagBits();
     size = GetPermanentFlagBitsSize();
-    if (flags == NULL || size < 0 || size > PLANNER_FLAG_BYTE_CAPACITY)
+    if (flags == NULL
+        || (SafeFlagByteCount(size) == 0 && size != 0))
         return false;
+    size = SafeFlagByteCount(size);
     for (index = 0; index < size; index++)
         digest = MixDigest(digest, flags[index]);
     flags = GetChapterFlagBits();
     size = GetChapterFlagBitsSize();
-    if (flags == NULL || size < 0 || size > PLANNER_FLAG_BYTE_CAPACITY)
+    if (flags == NULL
+        || (SafeFlagByteCount(size) == 0 && size != 0))
         return false;
+    size = SafeFlagByteCount(size);
     for (index = 0; index < size; index++)
         digest = MixDigest(digest, flags[index]);
     *result = digest;
@@ -1938,9 +1942,8 @@ static bool PublishPage(u32 pageIndex)
 static u32 SemanticStateDigest(void)
 {
     u32 digest = 2166136261u;
+    u32 flagDigest = 0;
     u16* convoy;
-    u8* flags;
-    int size;
     int index;
 
     digest = MixDigest(digest, (u8)gPlaySt.chapterIndex);
@@ -1986,14 +1989,12 @@ static u32 SemanticStateDigest(void)
     if (convoy != NULL)
         for (index = 0; index < CONVOY_ITEM_COUNT; index++)
             digest = MixDigest(digest, convoy[index]);
-    flags = GetPermanentFlagBits();
-    size = GetPermanentFlagBitsSize();
-    for (index = 0; flags != NULL && index < size; index++)
-        digest = MixDigest(digest, flags[index]);
-    flags = GetChapterFlagBits();
-    size = GetChapterFlagBitsSize();
-    for (index = 0; flags != NULL && index < size; index++)
-        digest = MixDigest(digest, flags[index]);
+    digest = MixDigest(
+        digest,
+        GetFlagsDigest(&flagDigest)
+            ? EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
+            : EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED);
+    digest = MixDigest(digest, flagDigest);
     return MixDigest(digest, sPlannerTraceDigest);
 }
 
