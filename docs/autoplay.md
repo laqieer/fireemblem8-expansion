@@ -827,8 +827,9 @@ Faction/group, event-outcome, and each delta list contain 1 through 64 sorted
 unique definitions. Imported survivor/casualty and delta values must fit their
 declared probe widths before aggregate validation. Every imported
 faction/event/delta probe retains its canonical resolved address and size and
-must match a terminal-checkpoint probe; intentional sharing is deduplicated,
-but a missing or textually renamed-to-unrelated RAM probe is rejected.
+must match a terminal-checkpoint probe; `run_batch` deduplicates intentional
+sharing by numeric `(address, size)`, while a missing or textually
+renamed-to-unrelated RAM probe is rejected.
 
 EXP, item, and resource metrics are signed changes. Before serializing the
 current format-7 plan, `run_batch` resolves and deduplicates intentional
