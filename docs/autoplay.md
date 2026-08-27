@@ -923,12 +923,23 @@ empty, visible, traversable destination in range of the selected allied unit;
 and Unlock publishes every closed door in staff range. The committed
 coordinates are revalidated against live state and lowered to
 `ActionData.xOther/yOther` before their existing executors run. Hammerne
-publishes one candidate per repairable target inventory slot, revalidates that
-slot, and lowers it to `ActionData.trapType`. Rogue Pick candidates use the
-direct no-item path. Other units must have the target-appropriate Lockpick,
-Chest Key, or Door Key selected by the normal item helper; the committed slot
-is revalidated and consumed through `UnitUpdateUsedItem`. A missing, consumed,
-wrong-purpose, or stale item therefore rejects before the tile event.
+publishes one candidate per repairable inventory slot on a same-faction unit;
+blue-to-green allied targets remain ineligible exactly like the production
+Hammerne builder. It revalidates that slot and lowers it to
+`ActionData.trapType`. Weapon actions include every in-range obstacle trap on
+live Snag terrain after ordinary unit targets. They bind `targetId=0` plus the
+selected coordinates, revalidate the trap and weapon range, and use the
+existing obstacle battle setup and destruction path. Rogue Pick candidates
+use the direct no-item path. Other units must have the target-appropriate
+Lockpick, Chest Key, or Door Key selected by the normal item helper; the
+committed slot is revalidated and consumed through `UnitUpdateUsedItem`. A
+missing, consumed, wrong-purpose, or stale item therefore rejects before the
+tile event.
+Fortify uses the production ranged-heal predicate and therefore requires an
+injured allied non-caster from range 1 through MAG/2. Latona scans only the
+current phase's bounded 0x80-slot domain and excludes its caster while
+accepting non-casters with missing HP or status. Physic and other ordinary
+staff actions continue through their owning range and target predicates.
 Normal Summon is a separate `AI_ACTION_SUMMON` / `UNIT_ACTION_SUMMON` route:
 the active blue unit must have `CA_SUMMON`, an exact `gSummonConfig` entry, no
 available existing configured summon, and at least one legal adjacent tile.
@@ -997,6 +1008,13 @@ obtains all data only by sending typed `PAGE` commands with a fixed
 `page_index`; there is no in-process action-list shortcut. Up to 512 actions
 use at most 24 action pages. With maximum map, unit, inventory, resource, flag,
 and action records, the complete bounded observation uses at most 92 pages.
+The host rejects every non-control wire observation unless
+`1 <= page_count <= 92`, `page_index < page_count`, every word is an exact
+`u32`, and the projected fixed-page capture remains within 64 MiB. PAGE
+traversal then requires one summary followed by contiguous map, unit,
+inventory, resource, flag, and action spans in that order. Zero, oversized,
+negative/overflow, duplicate, missing, or reordered page identities fail
+without an unbounded exchange or retained partial observation.
 Global ordinals and all four token words returned by ROM are opaque to host
 planners and are echoed unchanged. The host never sends coordinates, targets,
 item IDs, `ActionData`, unit pointers, or RNG state: a commit carries only
@@ -1043,9 +1061,14 @@ rejects before computer control activation.
 
 Other action families remain unavailable and are never silently lowered to a
 raw engine call. A zero-candidate enumeration reports
-`EXHAUSTED/CAPABILITY_UNAVAILABLE` before entering `WAITING`. Cancellation is
-observed only at a decision safe point; it never interrupts a battle, event,
-movement, or Proc halfway through. Once an observation is published,
+`EXHAUSTED/CAPABILITY_UNAVAILABLE` before entering `WAITING`; a legal set above
+512 reports `EXHAUSTED/RESOURCE_LIMIT`. Both terminal paths atomically clear
+the checkpoint, deactivate the planner, and queue player-control restoration
+at the next safe phase without running fallback AI. The terminal observation
+remains stable and a stale START cannot reactivate it. Ordinary nonterminal
+observations remain active. Cancellation is observed only at a decision safe
+point; it never interrupts a battle, event, movement, or Proc halfway through.
+Once an observation is published,
 `CpDecide` moves to a dedicated mailbox-poll state. Every poll advances the
 single 300-frame deadline, including valid `PAGE` and malformed traffic, while
 never rerunning AI, consuming RN, or advancing a unit. Accepted commits alone
@@ -1094,6 +1117,10 @@ the command kind last, assigns monotonically increasing fixed-width host ACK
 IDs, and accepts the acknowledgement only after the ROM clears that kind and
 publishes its command result. Repeated commands with the same rejection code
 therefore remain distinct without comparing rejection values.
+Before emitting ACK, COMPLETE, or OBS, the live backend accepts only
+`result=1/rejection=0` or `result=0/rejection=1..10`; zero, unknown,
+out-of-range, and `0xFFFFFFFF` rejection values terminate with
+`INVALID_COMMAND_ACK`.
 Transcript import applies the same invariant before interpreting an ACK:
 success is exactly `result=1/rejection=NONE`, while rejection is exactly
 `result=0` with one known nonzero rejection. Zero/zero, success plus rejection,
@@ -1126,10 +1153,11 @@ rejects during configuration validation before compilation.
 
 The enabled ARM planner and shared action-semantics objects use 996-byte pages,
 64-byte commands, 52-byte checkpoints, 1,140 bytes of EWRAM/BSS, zero IWRAM,
-and 12,104 bytes of text/rodata. The planner-only normal-summon and existing
-action-lowering hooks add a 152-byte `cp_perform` text/rodata delta, and the
-settled event-transition checkpoint adds four bytes, for 12,260 bytes across
-the complete planner/action/lifecycle seam (28 bytes below 12 KiB). The
+and 12,004 bytes of text/rodata. Shared target predicates replace duplicated
+planner rules. Planner-specific executor lowering adds a 176-byte
+`cp_perform` text/rodata delta, and the settled event-transition checkpoint
+adds four bytes, for 12,184 bytes across the complete
+planner/action/lifecycle seam (104 bytes below 12 KiB). The
 planner-specific RNG counter and cancellation latch add five EWRAM bytes and
 no IWRAM, keeping total planner state at 1,145 bytes (2,951 bytes below 4 KiB).
 Disabled release and archival builds omit planner state and the normal-summon

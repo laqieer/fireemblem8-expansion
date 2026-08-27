@@ -28,7 +28,10 @@
 #define EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT UINT32_C(2)
 #define EXPANSION_AUTOPLAY_PLANNER_COMMAND_CANCEL UINT32_C(3)
 #define EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE UINT32_C(4)
+#define EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE UINT32_C(0)
+#define EXPANSION_AUTOPLAY_PLANNER_REJECTION_NOT_READY UINT32_C(1)
 #define EXPANSION_AUTOPLAY_PLANNER_REJECTION_CANCELLED UINT32_C(8)
+#define EXPANSION_AUTOPLAY_PLANNER_REJECTION_TIMEOUT UINT32_C(10)
 #define EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING UINT32_C(2)
 #define EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED UINT32_C(4)
 #define EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED UINT32_C(5)
@@ -220,13 +223,17 @@ static bool is_terminal_state(uint32_t state)
         || state == EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
 }
 
-static bool is_acknowledgement_valid(
-    const struct command_acknowledgement* acknowledgement)
+bool PlannerTransport_IsAcknowledgementValid(
+    uint32_t result,
+    uint32_t rejection)
 {
-    return (acknowledgement->result == 0
-            && acknowledgement->rejection != 0)
-        || (acknowledgement->result == 1
-            && acknowledgement->rejection == 0);
+    return (result == 0
+            && rejection
+                >= EXPANSION_AUTOPLAY_PLANNER_REJECTION_NOT_READY
+            && rejection
+                <= EXPANSION_AUTOPLAY_PLANNER_REJECTION_TIMEOUT)
+        || (result == 1
+            && rejection == EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE);
 }
 
 static bool is_command_response_complete(
@@ -557,8 +564,9 @@ static int run_transport(const char* rom_path)
             transport_result = 3;
             break;
         }
-        emit_acknowledgement(&acknowledgement);
-        if (!is_acknowledgement_valid(&acknowledgement))
+        if (!PlannerTransport_IsAcknowledgementValid(
+                acknowledgement.result,
+                acknowledgement.rejection))
         {
             emit_transport_error(
                 "INVALID_COMMAND_ACK",
@@ -567,6 +575,7 @@ static int run_transport(const char* rom_path)
             transport_result = 3;
             break;
         }
+        emit_acknowledgement(&acknowledgement);
         if (!wait_for_command_response(
                 core,
                 &acknowledgement,
@@ -596,6 +605,7 @@ static int run_transport(const char* rom_path)
     return transport_result;
 }
 
+#ifndef PLANNER_TRANSPORT_NO_MAIN
 int main(int argc, char** argv)
 {
     struct mLogger logger = { .log = discard_log, .filter = NULL };
@@ -608,3 +618,4 @@ int main(int argc, char** argv)
     mLogSetDefaultLogger(&logger);
     return run_transport(argv[1]);
 }
+#endif

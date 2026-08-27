@@ -604,8 +604,13 @@ mutations. It survives next-map re-arming and is not rewritten by an ordinary
 chapter-two action. Torch, Warp, and Unlock enumerate multiple bounded
 coordinate targets and execute the selected coordinate rather than stale
 defaults. Hammerne enumerates and token-binds each repairable target inventory
-slot and repairs only the selected slot. Rogue Pick opens chest/door targets
-without an item; a non-Rogue key path binds and consumes the applicable
+slot on a same-faction unit and repairs only the selected slot; green allies
+and enemies reject. Combat includes every legal Snag obstacle after ordinary
+unit targets, binds `targetId=0` plus coordinates, and executes real obstacle
+damage and destruction. Fortify requires an injured allied non-caster within
+MAG/2, while Latona excludes its caster and retains every eligible non-caster
+in the current phase domain. Rogue Pick opens chest/door targets without an
+item; a non-Rogue key path binds and consumes the applicable
 Lockpick, Chest Key, or Door Key; a thief without one publishes no such
 candidate. The enabled full expansion ROM follows the established clean-boot
 Prologue route, accepts a host-selected nontrivial action, reaches the next
@@ -627,6 +632,10 @@ generated Make through a recursive-Make recorder, observes the release `all`
 goal, and proves the persisted planner fails closed without an ARM compiler.
 The toolchain gate separately executes the real explicit debug-target
 compile/link/boot path.
+Every wire page has a count from 1 through 92 and an in-range index. Both
+planners traverse exactly one bounded, ordered summary/map/unit/inventory/
+resource/flag/action sequence with contiguous record spans under the 64 MiB
+host ceiling.
 Each typed transport command first returns a matching monotonic `ACK`, then a
 matching `COMPLETE`, then its observation. Both planners execute a synthetic
 180-frame movement/camera/battle/event-style COMMIT and receive only the new
@@ -637,6 +646,8 @@ ROM/configuration/scenario/seed plus ready/active run identities to subsequent
 observations and accepted START. Every imported ACK must be exactly success
 with no rejection or failure with one known nonzero rejection before an
 accepted COMMIT token is interpreted.
+The live backend applies the same exact `result/rejection` enum check before
+emitting ACK, COMPLETE, or OBS.
 
 ### Negative control
 
@@ -646,6 +657,9 @@ same-ROM/config/seed requests for another scenario, duplicate START,
 unexpected command kinds, empty enumerations, page overflow, and resource
 overflow fail with explicit typed outcomes and no action commit. Repeated
 valid PAGE or malformed traffic cannot postpone the 300-frame deadline.
+Zero-candidate and over-512 enumerations publish typed EXHAUSTED, clear the
+checkpoint, deactivate, queue safe player restoration, execute no fallback,
+and reject stale re-entry; a nonterminal legal set remains active.
 Prospective host observations exceeding 2 MiB fail without changing the trace,
 observation, or next ID. The transport accepts no address-bearing command and
 has no arbitrary-memory API. Release configuration rejects
@@ -657,6 +671,9 @@ mailbox or mutate transcript state. No-item actions encode both optional
 inventory slots as `0xFF`; slot zero round-trips distinctly, while every other
 invalid sentinel rejects. Forging any one of the four opaque token words
 rejects without execution.
+Page counts of zero, 93, one billion, or `0xFFFFFFFF`, negative/overflow words,
+out-of-range or duplicate indices, missing spans, and reordered or incomplete
+typed-page sequences fail before unbounded traversal or retention.
 Empty/sessionless, late-session, duplicate-session, moved-provenance, invalid
 ACK result/rejection pairs, unknown results or rejections, mismatched command
 IDs/kinds, and a rejected-pair rewrite that retains a COMMITTED observation
@@ -667,6 +684,10 @@ Out-of-range/occupied Warp destinations, opened or wrong Unlock tiles, stale
 Torch coordinates, consumed keys, non-repairable or wrong Hammerne slots, and
 a token copied from another Hammerne slot all reject without applying the
 selected action.
+Green-allied Hammerne targets, caster-only Fortify/Latona state, out-of-range
+Fortify allies, and stale, destroyed, non-Snag, or out-of-range obstacle
+coordinates reject. Unknown live ACK rejections are rejected before any ACK
+or observation is emitted.
 Archival agbcc compiles the inactive planner translation unit and its public
 header with warnings promoted to errors; unnamed no-instance unions or any
 size/offset drift therefore fail the legacy job. Host-only configuration

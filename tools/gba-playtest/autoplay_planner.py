@@ -18,6 +18,7 @@ PROTOCOL_VERSION = 2
 MAX_MAP_CELLS = 64 * 64
 MAX_UNITS = 62 + 20 + 50
 MAX_ACTIONS = 512
+MAX_PAGE_COUNT = 92
 MAX_TRACE_ACTIONS = 4096
 MAX_TRACE_BYTES = 2 * 1024 * 1024
 MAX_TRANSCRIPT_EXCHANGE_BYTES = 64 * 1024
@@ -223,6 +224,9 @@ class Observation:
     actual_config_identity: int = 0
     actual_scenario_identity: int = 0
     actual_seed_identity: int = 0
+    record_start: int = 0
+    record_count: int = 0
+    total_record_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -1156,6 +1160,8 @@ class PlannerBridge:
             records,
             page_count=page_count,
             total_action_count=len(records),
+            record_count=len(field_tuple),
+            total_record_count=len(field_tuple),
         )
         self.transcript.record_complete_observation(complete_observation)
         observation = Observation(
@@ -1166,6 +1172,8 @@ class PlannerBridge:
             (),
             page_count=page_count,
             total_action_count=len(records),
+            record_count=len(field_tuple),
+            total_record_count=len(field_tuple),
         )
         self._next_observation_id += 1
         self._observation = observation
@@ -1202,6 +1210,9 @@ class PlannerBridge:
             page_count=observation.page_count,
             page_kind=PageKind.ACTIONS,
             total_action_count=len(self._all_actions),
+            record_start=start,
+            record_count=len(actions),
+            total_record_count=len(self._all_actions),
         )
         self.transcript.reserve_exchange()
         self.transcript.record_command(asdict(command))
@@ -1316,6 +1327,26 @@ _SEMANTIC_FIELD_NAMES = {
 }
 _OBSERVATION_WORD_COUNT = 249
 _OBSERVATION_HEADER_WORDS = 25
+_PAGE_RECORD_CAPACITIES = {
+    PageKind.CONTROL: 0,
+    PageKind.SUMMARY: SEMANTIC_FIELD_COUNT,
+    PageKind.MAP: 224,
+    PageKind.UNITS: 56,
+    PageKind.INVENTORY: 112,
+    PageKind.RESOURCES: 112,
+    PageKind.FLAGS: 112,
+    PageKind.ACTIONS: ACTIONS_PER_PAGE,
+}
+_PAGE_TOTAL_LIMITS = {
+    PageKind.CONTROL: 0,
+    PageKind.SUMMARY: SEMANTIC_FIELD_COUNT,
+    PageKind.MAP: MAX_MAP_CELLS,
+    PageKind.UNITS: MAX_UNITS,
+    PageKind.INVENTORY: MAX_UNITS * UNIT_ITEM_COUNT,
+    PageKind.RESOURCES: 1 + CONVOY_ITEM_COUNT + AUTOPLAY_TELEMETRY_WORDS,
+    PageKind.FLAGS: 2 * 256 * 8,
+    PageKind.ACTIONS: MAX_ACTIONS,
+}
 
 
 def _decode_optional_item_slot(value: int) -> int | None:
@@ -1336,6 +1367,9 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
     values = tuple(words)
     if len(values) != _OBSERVATION_WORD_COUNT:
         raise PlannerError("malformed fixed-width observation")
+    if any(type(value) is not int or not 0 <= value <= 0xFFFFFFFF
+           for value in values):
+        raise PlannerError("observation word is outside fixed u32 range")
     if not any(values):
         return Observation(
             0,
@@ -1349,6 +1383,11 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
         raise PlannerError("unexpected planner protocol identity")
     if values[2] > PAGE_MAX_BYTES or values[2] != _OBSERVATION_WORD_COUNT * 4:
         raise PlannerError("unexpected planner observation size")
+    if (
+        not 1 <= values[7] <= MAX_PAGE_COUNT
+        or values[6] >= values[7]
+    ):
+        raise PlannerError("planner page identity is outside v2 bounds")
     try:
         page_kind = _PAGE_KIND_BY_VALUE[values[8]]
     except KeyError as error:
@@ -1357,7 +1396,13 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
     record_count = values[10]
     total_records = values[11]
     total_actions = values[12]
-    if record_start + record_count > total_records or total_actions > MAX_ACTIONS:
+    if (
+        record_count > _PAGE_RECORD_CAPACITIES[page_kind]
+        or total_records > _PAGE_TOTAL_LIMITS[page_kind]
+        or record_start + record_count > total_records
+        or total_actions > MAX_ACTIONS
+        or page_kind is not PageKind.CONTROL and record_count == 0
+    ):
         raise PlannerError("planner page bounds are inconsistent")
 
     payload = values[_OBSERVATION_HEADER_WORDS:]
@@ -1615,10 +1660,19 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
         actual_config_identity=values[22],
         actual_scenario_identity=values[23],
         actual_seed_identity=values[24],
+        record_start=record_start,
+        record_count=record_count,
+        total_record_count=total_records,
     )
 
 
 def collect_observation_pages(transport: object, first: Observation) -> Observation:
+    if (
+        not 1 <= first.page_count <= MAX_PAGE_COUNT
+        or first.page_index != 0
+        or first.page_count * PAGE_MAX_BYTES > MAX_SEARCH_BYTES
+    ):
+        raise PlannerError("planner page traversal exceeds host bounds")
     pages = [first]
     for page_index in range(1, first.page_count):
         page = transport.exchange(
@@ -1639,6 +1693,50 @@ def collect_observation_pages(transport: object, first: Observation) -> Observat
         ):
             raise PlannerError(Rejection.STALE_OBSERVATION.value)
         pages.append(page)
+    page_ranks = {
+        PageKind.SUMMARY: 0,
+        PageKind.MAP: 1,
+        PageKind.UNITS: 2,
+        PageKind.INVENTORY: 3,
+        PageKind.RESOURCES: 4,
+        PageKind.FLAGS: 5,
+        PageKind.ACTIONS: 6,
+    }
+    try:
+        ranks = [page_ranks[page.page_kind] for page in pages]
+    except KeyError as error:
+        raise PlannerError("control page cannot enter PAGE traversal") from error
+    if (
+        ranks[0] != 0
+        or ranks != sorted(ranks)
+        or ranks.count(0) != 1
+        or first.actual_rom_identity != 0
+            and set(ranks) != set(page_ranks.values())
+    ):
+        raise PlannerError("planner typed-page sequence is not canonical")
+    for page_kind in page_ranks:
+        kind_pages = tuple(
+            page for page in pages if page.page_kind is page_kind
+        )
+        if not kind_pages:
+            continue
+        total = kind_pages[0].total_record_count
+        expected_start = 0
+        for page in kind_pages:
+            if (
+                page.total_record_count != total
+                or page.record_start != expected_start
+                or page.record_count
+                    > _PAGE_RECORD_CAPACITIES[page_kind]
+            ):
+                raise PlannerError(
+                    "planner typed-page record span is not canonical"
+                )
+            expected_start += page.record_count
+        if expected_start != total:
+            raise PlannerError(
+                "planner typed-page sequence is incomplete"
+            )
     actions = tuple(
         action
         for page in pages
@@ -1726,6 +1824,9 @@ def collect_observation_pages(transport: object, first: Observation) -> Observat
         actual_config_identity=first.actual_config_identity,
         actual_scenario_identity=first.actual_scenario_identity,
         actual_seed_identity=first.actual_seed_identity,
+        record_start=first.record_start,
+        record_count=first.record_count,
+        total_record_count=first.total_record_count,
     )
     record_complete = getattr(
         transport,

@@ -10,6 +10,8 @@
 #include "bmmap.h"
 #include "bmmind.h"
 #include "bmphase.h"
+#include "bmtarget.h"
+#include "bmtrick.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "eventinfo.h"
@@ -321,6 +323,14 @@ static void ClearFullCommand(void)
         bytes[index] = 0;
 }
 
+static void EndPlannerRun(enum ExpansionAutoplayPlannerState state)
+{
+    ClearCheckpoint();
+    gExpansionAutoplayPlannerObservation.state = state;
+    sPlannerActive = false;
+    ExpansionAutoplay_RequestPlayerControlRestore();
+}
+
 static bool IsMapReady(void)
 {
     return gBmMapSize.x > 0
@@ -447,95 +457,19 @@ static bool IsCombatTargetLegal(
         && distance <= GetItemMaxRange(item);
 }
 
-static int StaffRange(int item)
-{
-    int range = GetItemMaxRange(item);
-
-    if (range == 0)
-        return GetUnitMagBy2Range(gActiveUnit);
-    return range;
-}
-
-static bool IsStaffTargetLegal(
+static bool __attribute__((noinline)) IsStaffTargetLegal(
     int item,
     const struct Unit* target,
     int xMove,
     int yMove)
 {
-    int itemId = GetItemIndex(item);
-    int distance;
-    bool allied;
-
-    if (!IsVisibleValidUnit(target) || target == gActiveUnit)
-        return false;
-    distance = RectDistance(xMove, yMove, target->xPos, target->yPos);
-    if (distance < GetItemMinRange(item) || distance > StaffRange(item))
-        return false;
-    allied = AreUnitsAllied(gActiveUnitId, target->index);
-
-    switch (itemId)
-    {
-    case ITEM_STAFF_HEAL:
-    case ITEM_STAFF_MEND:
-    case ITEM_STAFF_RECOVER:
-    case ITEM_STAFF_PHYSIC:
-        return allied && target->curHP < target->maxHP;
-
-    case ITEM_STAFF_RESTORE:
-        return allied && target->statusIndex != UNIT_STATUS_NONE;
-
-    case ITEM_STAFF_RESCUE:
-    case ITEM_STAFF_WARP:
-        return allied;
-
-    case ITEM_STAFF_REPAIR:
-        return allied;
-
-    case ITEM_STAFF_BARRIER:
-        return allied && target->barrierDuration < 7;
-
-    case ITEM_STAFF_SILENCE:
-        return !allied
-            && (target->statusIndex == UNIT_STATUS_NONE
-                || target->statusIndex == UNIT_STATUS_SILENCED);
-
-    case ITEM_STAFF_SLEEP:
-        return !allied
-            && (target->statusIndex == UNIT_STATUS_NONE
-                || target->statusIndex == UNIT_STATUS_SLEEP);
-
-    case ITEM_STAFF_BERSERK:
-        return !allied
-            && (target->statusIndex == UNIT_STATUS_NONE
-                || target->statusIndex == UNIT_STATUS_BERSERK);
-
-    default:
-        return false;
-    }
-}
-
-static bool HasGlobalStaffTarget(int item)
-{
-    int itemId = GetItemIndex(item);
-    int unitId;
-
-    if (itemId != ITEM_STAFF_FORTIFY && itemId != ITEM_STAFF_LATONA)
-        return false;
-
-    for (unitId = 1; unitId < 0xC0; unitId++)
-    {
-        struct Unit* target = GetUnit(unitId);
-
-        if (!IsCanonicalUnitSlot(unitId)
-            || !IsVisibleValidUnit(target)
-            || !AreUnitsAllied(gActiveUnitId, target->index))
-            continue;
-        if (target->curHP < target->maxHP
-            || (itemId == ITEM_STAFF_LATONA
-                && target->statusIndex != UNIT_STATUS_NONE))
-            return true;
-    }
-    return false;
+    return IsVisibleValidUnit(target)
+        && IsUnitInStaffTargetListAt(
+            gActiveUnit,
+            (struct Unit*)target,
+            item,
+            xMove,
+            yMove);
 }
 
 static bool IsSelfUseItemLegal(int item)
@@ -650,6 +584,35 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateCombat(
                 itemSlot,
                 0,
                 0);
+            result = EmitDecision(enumeration, &decision);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration->stopped)
+                return result;
+        }
+        for (targetId = 0; targetId < TRAP_MAX_COUNT; targetId++)
+        {
+            struct Trap* trap = GetTrap(targetId);
+            struct AiDecision decision;
+            enum ExpansionAutoplayPlannerEnumerationResult result;
+
+            if (trap->type == TRAP_NONE)
+                break;
+            if (!IsSnagAttackTargetAt(
+                    item,
+                    xMove,
+                    yMove,
+                    trap->xPos,
+                    trap->yPos))
+                continue;
+            MakeDecision(
+                &decision,
+                xMove,
+                yMove,
+                AI_ACTION_COMBAT,
+                0,
+                itemSlot,
+                trap->xPos,
+                trap->yPos);
             result = EmitDecision(enumeration, &decision);
             if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
                 || enumeration->stopped)
@@ -860,7 +823,9 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateStaff(
             struct AiDecision decision;
             enum ExpansionAutoplayPlannerEnumerationResult result;
 
-            if (!HasGlobalStaffTarget(item))
+            if (itemId == ITEM_STAFF_FORTIFY
+                ? !HasRangedHealTargetAt(gActiveUnit, xMove, yMove)
+                : !HasLatonaTarget(gActiveUnit))
                 continue;
             MakeDecision(
                 &decision,
@@ -2042,6 +2007,7 @@ static void PublishReadyState(void)
     gExpansionAutoplayPlannerObservation.byteSize =
         sizeof(struct ExpansionAutoplayPlannerObservationV2);
     gExpansionAutoplayPlannerObservation.runId = sPlannerRunId;
+    gExpansionAutoplayPlannerObservation.pageCount = 1;
     gExpansionAutoplayPlannerObservation.actualRomIdentity =
         ActualRomIdentity();
     gExpansionAutoplayPlannerObservation.actualConfigIdentity =
@@ -2096,7 +2062,11 @@ bool ExpansionAutoplayPlanner_PollStart(void)
     if (gExpansionAutoplayPlannerCommand.kind
         == EXPANSION_AUTOPLAY_PLANNER_COMMAND_NONE)
     {
-        if (!sPlannerActive)
+        if (!sPlannerActive
+            && gExpansionAutoplayPlannerObservation.state
+                != EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED
+            && gExpansionAutoplayPlannerObservation.state
+                != EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED)
             PublishReadyState();
         return false;
     }
@@ -2168,6 +2138,25 @@ bool ExpansionAutoplayPlanner_PrepareActionData(
         || gActiveUnit == NULL
         || decision->unitId != gActiveUnitId)
         return false;
+
+    if (decision->actionId == AI_ACTION_COMBAT
+        && decision->targetId == 0)
+    {
+        if (decision->itemSlot >= UNIT_ITEM_COUNT)
+            return false;
+        item = gActiveUnit->items[decision->itemSlot];
+        return CanUnitUseWeapon(gActiveUnit, item)
+            && !((GetItemAttributes(item) & IA_MAGIC)
+                && IsPositionMagicSealed(
+                    decision->xMove,
+                    decision->yMove))
+            && IsSnagAttackTargetAt(
+                item,
+                decision->xMove,
+                decision->yMove,
+                decision->xTarget,
+                decision->yTarget);
+    }
 
     if (decision->actionId == AI_ACTION_SUMMON)
     {
@@ -2310,19 +2299,17 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecisi
     if (enumerationResult
         == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_CAPACITY)
     {
-        gExpansionAutoplayPlannerObservation.state =
-            EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_RESOURCE_LIMIT);
+        EndPlannerRun(EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_EXHAUSTED;
     }
     if (enumerationResult
             == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_UNAVAILABLE
         || count == 0)
     {
-        gExpansionAutoplayPlannerObservation.state =
-            EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
         Reject(
             EXPANSION_AUTOPLAY_PLANNER_REJECTION_CAPABILITY_UNAVAILABLE);
+        EndPlannerRun(EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_EXHAUSTED;
     }
 
@@ -2342,11 +2329,7 @@ static bool AdvanceDecisionDeadline(void)
     if (waitFrames < EXPANSION_AUTOPLAY_PLANNER_DECISION_TIMEOUT_FRAMES)
         return true;
     Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_TIMEOUT);
-    ClearCheckpoint();
-    gExpansionAutoplayPlannerObservation.state =
-        EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED;
-    sPlannerActive = false;
-    ExpansionAutoplay_RequestPlayerControlRestore();
+    EndPlannerRun(EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED);
     return false;
 }
 
@@ -2387,11 +2370,7 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         }
 
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_CANCELLED);
-        ClearCheckpoint();
-        gExpansionAutoplayPlannerObservation.state =
-            EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED;
-        sPlannerActive = false;
-        ExpansionAutoplay_RequestPlayerControlRestore();
+        EndPlannerRun(EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED;
     }
 
@@ -2467,11 +2446,7 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         >= EXPANSION_AUTOPLAY_PLANNER_TRACE_ACTION_CAPACITY)
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_RESOURCE_LIMIT);
-        ClearCheckpoint();
-        gExpansionAutoplayPlannerObservation.state =
-            EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
-        sPlannerActive = false;
-        ExpansionAutoplay_RequestPlayerControlRestore();
+        EndPlannerRun(EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_EXHAUSTED;
     }
     MakeToken(

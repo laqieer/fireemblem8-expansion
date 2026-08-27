@@ -9,6 +9,7 @@ required or committed.
 from __future__ import annotations
 
 import os
+import shlex
 import struct
 import shutil
 import subprocess
@@ -152,12 +153,24 @@ def build_production_planner_rom(
     stall_after_commit: bool = False,
     ignore_commands: bool = False,
     transition_subcode: int = 2,
+    candidate_mode: int = 0,
+    acknowledgement_override: tuple[int, int] | None = None,
 ) -> None:
     """Link the production planner implementation into a tiny freestanding ROM."""
     if commit_delay_frames < 0:
         raise ValueError("commit_delay_frames must be non-negative")
     if transition_subcode not in {1, 2}:
         raise ValueError("planner transition subcode must be MNCH or MNC2")
+    if candidate_mode not in {0, 1, 2}:
+        raise ValueError("planner candidate mode is outside fixture bounds")
+    if acknowledgement_override is not None and (
+        len(acknowledgement_override) != 2
+        or any(
+            not 0 <= value <= 0xFFFFFFFF
+            for value in acknowledgement_override
+        )
+    ):
+        raise ValueError("planner acknowledgement override is outside u32")
     root = Path(__file__).resolve().parents[3]
     compiler = shutil.which("arm-none-eabi-gcc")
     objcopy = shutil.which("arm-none-eabi-objcopy")
@@ -211,11 +224,23 @@ def build_production_planner_rom(
         "-DFE8_AUTOPLAY_PLANNER_RUNTIME_TRANSITION_SUBCODE={}".format(
             transition_subcode
         ),
+        f"-DFE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE={candidate_mode}",
+        "-DFE8_AUTOPLAY_PLANNER_RUNTIME_ACK_OVERRIDE={}".format(
+            int(acknowledgement_override is not None)
+        ),
+        "-DFE8_AUTOPLAY_PLANNER_RUNTIME_ACK_RESULT={}u".format(
+            0 if acknowledgement_override is None
+            else acknowledgement_override[0]
+        ),
+        "-DFE8_AUTOPLAY_PLANNER_RUNTIME_ACK_REJECTION={}u".format(
+            0 if acknowledgement_override is None
+            else acknowledgement_override[1]
+        ),
     ]
     environment = dict(os.environ)
     environment["TMPDIR"] = str(path.parent)
     production_objects = []
-    for source_name in ("event", "eventscr", "bmio"):
+    for source_name in ("event", "eventscr", "bmio", "bmtarget"):
         output = path.parent / f"planner-production-{source_name}.o"
         completed = subprocess.run(
             [
@@ -351,6 +376,18 @@ def build_planner_transport_backend(
         "-o",
         str(path),
     ]
+    command.extend(_libmgba_flags())
+    completed = subprocess.run(
+        command,
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode:
+        raise RuntimeError(completed.stdout + completed.stderr)
+
+
+def _libmgba_flags() -> list[str]:
     pkg_config = shutil.which("pkg-config")
     if pkg_config is not None:
         flags = subprocess.run(
@@ -359,13 +396,44 @@ def build_planner_transport_backend(
             text=True,
         )
         if flags.returncode == 0:
-            import shlex
+            return shlex.split(flags.stdout)
+    return ["-lmgba"]
 
-            command.extend(shlex.split(flags.stdout))
-        else:
-            command.append("-lmgba")
-    else:
-        command.append("-lmgba")
+
+def build_planner_transport_ack_driver(path: Path) -> None:
+    root = Path(__file__).resolve().parents[3]
+    compiler = shutil.which(os.environ.get("CC", "cc"))
+    if compiler is None:
+        raise RuntimeError("planner transport host compiler unavailable")
+    command = [
+        compiler,
+        "-std=gnu11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-Wno-unused-function",
+        "-I",
+        str(root / "include"),
+        "-I",
+        str(root / "include" / "generated"),
+        "-DPLANNER_OBSERVATION_ADDR=0u",
+        "-DPLANNER_COMMAND_ADDR=0u",
+        "-DPLANNER_CHECKPOINT_ADDR=0u",
+        "-DPLANNER_TRANSPORT_NO_MAIN=1",
+        str(root / "tools" / "gba-playtest" / "planner_transport_backend.c"),
+        str(
+            root
+            / "tools"
+            / "gba-playtest"
+            / "tests"
+            / "c"
+            / "planner_transport_ack_driver.c"
+        ),
+        "-o",
+        str(path),
+        *_libmgba_flags(),
+    ]
     completed = subprocess.run(
         command,
         cwd=root,

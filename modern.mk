@@ -1062,6 +1062,7 @@ CLEAN_DIRS += $(MODERN_AUTOPLAY_PLANNER_ROOT)
 	expansion-modern-autoplay-planner-profile-rom
 expansion-modern-autoplay-planner-objects: \
 	$(MODERN_OUTPUT_DIR)/src/action_semantics.o \
+	$(MODERN_OUTPUT_DIR)/src/bmtarget.o \
 	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_planner.o \
 	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay.o \
 	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies.o \
@@ -1088,22 +1089,27 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_c_mailbox_adapter_accepts_only_typed_token_commit \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_public_protocol_layout_is_fixed_width_and_offset_stable \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_action_page_decodes_actor_and_target_slots \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_page_identity_and_sequence_are_bounded_before_traversal \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_bounds_availability_pages_and_provenance_fail_closed \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_transcript_round_trip_tamper_order_and_atomic_limits \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_maximum_semantic_transcript_fits_two_mib \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_configured_bare_make_selects_release_and_fails_closed \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_configured_explicit_debug_goal_builds_in_toolchain_lane \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_action_semantics_execute_selected_fields \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_snag_combat_executes_selected_obstacle \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_real_target_builder_excludes_not_deployed_units \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_transport_acknowledgement_enum_is_exact \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_summon_executor_preserves_action_and_coordinates \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_summon_effect_uses_selected_coordinates \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_public_validation_errors_name_protocol_v2 \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_arm_adapter_compiles_at_the_existing_computer_decision_boundary \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_production_mailbox_replays_two_chapters \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_world_map_transition_records_settled_checkpoint \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_exhausted_runs_restore_without_fallback_or_reentry \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_commit_waits_beyond_legacy_120_frame_window \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_acknowledged_commit_timeout_never_emits_stale_observation \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_unacknowledged_command_returns_typed_timeout \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_invalid_ack_is_rejected_before_ack_or_observation \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_production_transcript_capacity_rejects_before_mailbox_write \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_transport_rejects_and_times_out \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_enabled_production_rom_executes_host_selected_action

@@ -28,5 +28,6 @@ SECTIONS
         *planner-production-event.o(.data* .rodata* .bss*)
         *planner-production-eventscr.o(.data* .rodata* .bss*)
         *planner-production-bmio.o(.data* .rodata* .bss*)
+        *planner-production-bmtarget.o(.data* .rodata* .bss* ewram_data*)
     }
 }

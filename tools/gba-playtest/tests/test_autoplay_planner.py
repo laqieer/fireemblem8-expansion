@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 
@@ -25,6 +25,7 @@ import gba_playtest
 import host_mode
 from homebrew_fixture import (
     build_planner_transport_backend,
+    build_planner_transport_ack_driver,
     build_production_planner_rom,
 )
 
@@ -785,6 +786,203 @@ class PlannerBridgeTests(unittest.TestCase):
             words[29] = planner.UNIT_ITEM_COUNT | (0xFF << 8)
             planner.parse_transport_observation(words)
 
+    def test_page_identity_and_sequence_are_bounded_before_traversal(self):
+        def summary_words():
+            words = [0] * 249
+            words[:15] = [
+                0x41504C4E,
+                planner.PROTOCOL_VERSION,
+                249 * 4,
+                1,
+                2,
+                2,
+                0,
+                1,
+                1,
+                0,
+                planner.SEMANTIC_FIELD_COUNT,
+                planner.SEMANTIC_FIELD_COUNT,
+                1,
+                0,
+                7,
+            ]
+            for index in range(planner.SEMANTIC_FIELD_COUNT):
+                words[25 + index * 2] = (
+                    (4 << 24) | (index + 1)
+                )
+            return words
+
+        for page_count, page_index in (
+            (0, 0),
+            (planner.MAX_PAGE_COUNT + 1, 0),
+            (1_000_000_000, 0),
+            (0xFFFFFFFF, 0),
+            (1, 1),
+        ):
+            with self.subTest(
+                page_count=page_count,
+                page_index=page_index,
+            ):
+                words = summary_words()
+                words[6] = page_index
+                words[7] = page_count
+                with self.assertRaisesRegex(
+                    planner.PlannerError,
+                    "page identity is outside v2 bounds",
+                ):
+                    planner.parse_transport_observation(words)
+        for invalid_word in (-1, 0x100000000):
+            words = summary_words()
+            words[7] = invalid_word
+            with self.assertRaisesRegex(
+                planner.PlannerError,
+                "outside fixed u32 range",
+            ):
+                planner.parse_transport_observation(words)
+
+        class PageTransport:
+            def __init__(self, pages):
+                self.pages = pages
+                self.exchange_count = 0
+
+            def exchange(self, command):
+                self.exchange_count += 1
+                return self.pages[command.page_index]
+
+        oversized = planner.Observation(
+            1,
+            1,
+            1,
+            (),
+            (),
+            page_count=planner.MAX_PAGE_COUNT + 1,
+        )
+        transport = PageTransport({})
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "traversal exceeds host bounds",
+        ):
+            planner.collect_observation_pages(transport, oversized)
+        self.assertEqual(transport.exchange_count, 0)
+
+        action = planner.ActionRecord(
+            0,
+            planner.Action("MOVE_WAIT", 1, (1, 0)),
+            planner.OpaqueToken(1, 2, 3, 4),
+        )
+        first = planner.Observation(
+            1,
+            1,
+            1,
+            (),
+            (),
+            page_count=3,
+        )
+        out_of_order = PageTransport(
+            {
+                1: planner.Observation(
+                    1,
+                    1,
+                    1,
+                    (),
+                    (action,),
+                    page_index=1,
+                    page_count=3,
+                    page_kind=planner.PageKind.ACTIONS,
+                    total_action_count=1,
+                    record_count=1,
+                    total_record_count=1,
+                ),
+                2: planner.Observation(
+                    1,
+                    1,
+                    1,
+                    (),
+                    (),
+                    page_index=2,
+                    page_count=3,
+                    page_kind=planner.PageKind.MAP,
+                    total_action_count=1,
+                    record_count=1,
+                    total_record_count=1,
+                    map_cells=(
+                        planner.MapCell(
+                            0,
+                            0,
+                            1,
+                            0,
+                            planner.Availability.AVAILABLE,
+                        ),
+                    ),
+                ),
+            }
+        )
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "typed-page sequence is not canonical",
+        ):
+            planner.collect_observation_pages(out_of_order, first)
+        self.assertEqual(out_of_order.exchange_count, 2)
+
+        duplicate_index = PageTransport(
+            {
+                1: out_of_order.pages[1],
+                2: out_of_order.pages[1],
+            }
+        )
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            planner.Rejection.STALE_OBSERVATION.value,
+        ):
+            planner.collect_observation_pages(duplicate_index, first)
+        self.assertEqual(duplicate_index.exchange_count, 2)
+
+        missing_span = PageTransport(
+            {
+                1: replace(
+                    out_of_order.pages[1],
+                    page_count=3,
+                    record_start=0,
+                    total_record_count=2,
+                ),
+                2: replace(
+                    out_of_order.pages[1],
+                    page_index=2,
+                    page_count=3,
+                    record_start=2,
+                    total_record_count=3,
+                ),
+            }
+        )
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "record span is not canonical",
+        ):
+            planner.collect_observation_pages(missing_span, first)
+        self.assertEqual(missing_span.exchange_count, 2)
+
+        production_first = replace(
+            first,
+            page_count=2,
+            actual_rom_identity=1,
+        )
+        incomplete = PageTransport(
+            {
+                1: replace(
+                    out_of_order.pages[1],
+                    page_count=2,
+                ),
+            }
+        )
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "typed-page sequence is not canonical",
+        ):
+            planner.collect_observation_pages(
+                incomplete,
+                production_first,
+            )
+
     def test_host_begin_and_commit_limits_are_atomic(self):
         boundary = planner.PlannerBridge(PROVENANCE)
         boundary.begin(PROVENANCE)
@@ -1283,6 +1481,38 @@ raise SystemExit(child.returncode)
                 },
             )
 
+    def test_transport_acknowledgement_enum_is_exact(self):
+        root = TESTS_DIR.parents[2]
+        build_root = root / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            executable = Path(temporary) / "planner-transport-ack"
+            try:
+                build_planner_transport_ack_driver(executable)
+            except RuntimeError as error:
+                if (
+                    "planner transport host compiler unavailable"
+                        in str(error)
+                    or "mgba" in str(error).lower()
+                ):
+                    self.skipTest(str(error))
+                raise
+            completed = subprocess.run(
+                [str(executable)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn(
+                "PLANNER_TRANSPORT_ACK_TEST: PASS",
+                completed.stdout,
+            )
+
     def test_c_mailbox_adapter_accepts_only_typed_token_commit(self):
         compiler = shutil.which("gcc") or shutil.which("cc")
         if compiler is None:
@@ -1311,6 +1541,7 @@ raise SystemExit(child.returncode)
                     "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
                     "-DFE8_AUTOPLAY_PLANNER_RUNTIME_TEST=1",
                     str(root / "src" / "action_semantics.c"),
+                    str(root / "src" / "bmtarget.c"),
                     str(root / "src" / "expansion_autoplay_planner.c"),
                     str(TESTS_DIR / "c" / "expansion_autoplay_planner_driver.c"),
                     "-Wl,--gc-sections",
@@ -1378,6 +1609,71 @@ raise SystemExit(child.returncode)
                 completed.stdout + completed.stderr,
             )
             self.assertIn("ACTION_SEMANTICS_HOST_TEST: PASS", completed.stdout)
+
+    def test_native_snag_combat_executes_selected_obstacle(self):
+        compiler = shutil.which("gcc") or shutil.which("cc")
+        if compiler is None:
+            self.skipTest("no host C compiler")
+        root = TESTS_DIR.parents[2]
+        build_root = root / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            executable = Path(temporary) / "planner-snag-executor"
+            environment = os.environ.copy()
+            environment["TMPDIR"] = temporary
+            completed = subprocess.run(
+                [
+                    compiler,
+                    "-std=gnu89",
+                    "-Werror=declaration-after-statement",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    "-O2",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                    "-I",
+                    str(root / "include"),
+                    "-I",
+                    str(root / "include" / "generated"),
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-DFE8_EXPANSION_DEBUG=1",
+                    "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
+                    str(root / "src" / "cp_perform.c"),
+                    str(root / "src" / "bmbattle.c"),
+                    str(
+                        TESTS_DIR
+                        / "c"
+                        / "planner_snag_executor_driver.c"
+                    ),
+                    "-Wl,--gc-sections",
+                    "-o",
+                    str(executable),
+                ],
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = subprocess.run(
+                [str(executable)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn(
+                "PLANNER_SNAG_EXECUTOR_TEST: PASS",
+                completed.stdout,
+            )
 
     def test_real_target_builder_excludes_not_deployed_units(self):
         compiler = shutil.which("gcc") or shutil.which("cc")
@@ -2308,6 +2604,8 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
         acknowledgement_frame_limit: int = 120,
         commit_completion_frame_limit: int = 18000,
         transition_subcode: int = 2,
+        candidate_mode: int = 0,
+        acknowledgement_override: tuple[int, int] | None = None,
     ) -> tuple[Path, Path]:
         rom = Path(temporary) / "planner-two-chapter.gba"
         elf = Path(temporary) / "planner-two-chapter.elf"
@@ -2319,6 +2617,8 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             stall_after_commit=stall_after_commit,
             ignore_commands=ignore_commands,
             transition_subcode=transition_subcode,
+            candidate_mode=candidate_mode,
+            acknowledgement_override=acknowledgement_override,
         )
         build_planner_transport_backend(
             backend,
@@ -2567,6 +2867,60 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 transcript,
             )
 
+    def test_exhausted_runs_restore_without_fallback_or_reentry(self):
+        root = (
+            TESTS_DIR.parents[2]
+            / "build"
+            / "test-artifacts"
+            / "autoplay-planner"
+        )
+        root.mkdir(parents=True, exist_ok=True)
+        for candidate_mode, rejection in ((1, 5), (2, 7)):
+            with self.subTest(candidate_mode=candidate_mode):
+                with tempfile.TemporaryDirectory(dir=root) as temporary:
+                    try:
+                        rom, backend = self._build_transport(
+                            temporary,
+                            candidate_mode=candidate_mode,
+                        )
+                    except RuntimeError as error:
+                        if (
+                            "planner runtime toolchain unavailable"
+                                in str(error)
+                            or "planner transport host compiler unavailable"
+                                in str(error)
+                        ):
+                            self.skipTest(str(error))
+                        raise
+                    transport = PlannerProcessTransport(backend, rom)
+                    try:
+                        exhausted = transport.start()
+                        self.assertEqual(exhausted.state, 5)
+                        self.assertEqual(exhausted.rejection, rejection)
+                        self.assertEqual(exhausted.page_count, 1)
+                        self.assertTrue(
+                            all(
+                                value == 0
+                                for value in transport.checkpoint
+                            )
+                        )
+                        stale_start = transport.start()
+                        self.assertEqual(stale_start.state, 5)
+                        self.assertEqual(stale_start.rejection, 9)
+                        self.assertIsNotNone(
+                            transport.last_acknowledgement
+                        )
+                        self.assertEqual(
+                            transport.last_acknowledgement.result,
+                            0,
+                        )
+                        self.assertEqual(
+                            transport.last_acknowledgement.rejection,
+                            9,
+                        )
+                    finally:
+                        transport.close()
+
     def test_commit_waits_beyond_legacy_120_frame_window(self):
         root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
         root.mkdir(parents=True, exist_ok=True)
@@ -2700,6 +3054,46 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 self.assertIsNone(transport.last_acknowledgement)
                 self.assertIsNone(transport.last_completion)
                 remaining_stdout, _ = transport.process.communicate(timeout=10)
+                self.assertEqual(remaining_stdout, "")
+                self.assertEqual(transport.process.returncode, 3)
+            finally:
+                transport.close()
+
+    def test_invalid_ack_is_rejected_before_ack_or_observation(self):
+        root = (
+            TESTS_DIR.parents[2]
+            / "build"
+            / "test-artifacts"
+            / "autoplay-planner"
+        )
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            try:
+                rom, backend = self._build_transport(
+                    temporary,
+                    acknowledgement_override=(0, 0xFFFFFFFF),
+                )
+            except RuntimeError as error:
+                if (
+                    "planner runtime toolchain unavailable" in str(error)
+                    or "planner transport host compiler unavailable"
+                        in str(error)
+                ):
+                    self.skipTest(str(error))
+                raise
+            transport = PlannerProcessTransport(backend, rom)
+            try:
+                with self.assertRaises(PlannerTransportError) as raised:
+                    transport.start()
+                self.assertEqual(
+                    raised.exception.code,
+                    "INVALID_COMMAND_ACK",
+                )
+                self.assertIsNone(transport.last_acknowledgement)
+                self.assertIsNone(transport.last_completion)
+                remaining_stdout, _ = transport.process.communicate(
+                    timeout=10
+                )
                 self.assertEqual(remaining_stdout, "")
                 self.assertEqual(transport.process.returncode, 3)
             finally:

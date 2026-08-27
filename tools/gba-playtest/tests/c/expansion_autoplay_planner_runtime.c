@@ -7,6 +7,7 @@
 #include "bmmap.h"
 #include "bmmind.h"
 #include "bmphase.h"
+#include "bmtrick.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "event.h"
@@ -17,6 +18,7 @@
 #include "gamecontrol.h"
 #include "proc.h"
 #include "rng.h"
+#include "constants/items.h"
 
 #ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_COMMIT_DELAY_FRAMES
 #define FE8_AUTOPLAY_PLANNER_RUNTIME_COMMIT_DELAY_FRAMES 0
@@ -32,6 +34,22 @@
 
 #ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_TRANSITION_SUBCODE
 #define FE8_AUTOPLAY_PLANNER_RUNTIME_TRANSITION_SUBCODE EVSUBCMD_MNC2
+#endif
+
+#ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE
+#define FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE 0
+#endif
+
+#ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_ACK_OVERRIDE
+#define FE8_AUTOPLAY_PLANNER_RUNTIME_ACK_OVERRIDE 0
+#endif
+
+#ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_ACK_RESULT
+#define FE8_AUTOPLAY_PLANNER_RUNTIME_ACK_RESULT 0
+#endif
+
+#ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_ACK_REJECTION
+#define FE8_AUTOPLAY_PLANNER_RUNTIME_ACK_REJECTION 0
 #endif
 
 struct PlaySt gPlaySt;
@@ -57,6 +75,7 @@ static struct Unit sUnit;
 static u8 sPermanentFlags[8];
 static u8 sChapterFlags[8];
 static u16 sConvoy[CONVOY_ITEM_COUNT];
+static struct Trap sTraps[TRAP_MAX_COUNT];
 static u8 sMovementData[17][32];
 static u8* sMovementRows[17];
 static u8 sUnitData[17][32];
@@ -277,6 +296,45 @@ s8 AreUnitsAllied(int left, int right)
     return (left & 0xC0) == (right & 0xC0);
 }
 
+s8 IsSameAllegiance(int left, int right)
+{
+    return (left & 0xC0) == (right & 0xC0);
+}
+
+int GetCurrentPhase(void)
+{
+    return FACTION_BLUE;
+}
+
+int GetUnitCurrentHp(struct Unit* unit)
+{
+    return unit->curHP;
+}
+
+int GetUnitMaxHp(struct Unit* unit)
+{
+    return unit->maxHP;
+}
+
+struct Trap* GetTrap(int id)
+{
+    return &sTraps[id];
+}
+
+struct Trap* GetTrapAt(int x, int y)
+{
+    int index;
+
+    for (index = 0; index < TRAP_MAX_COUNT; index++)
+    {
+        if (sTraps[index].type == TRAP_NONE)
+            break;
+        if (sTraps[index].xPos == x && sTraps[index].yPos == y)
+            return &sTraps[index];
+    }
+    return NULL;
+}
+
 s8 CanUnitUseWeapon(struct Unit* unit, int item)
 {
     (void)unit;
@@ -287,15 +345,16 @@ s8 CanUnitUseWeapon(struct Unit* unit, int item)
 s8 CanUnitUseStaff(struct Unit* unit, int item)
 {
     (void)unit;
-    (void)item;
-    return false;
+    return FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 2
+        && GetItemIndex(item) == ITEM_STAFF_TORCH;
 }
 
 int GetUnitItemUseReachBits(struct Unit* unit, int itemSlot)
 {
     (void)unit;
     (void)itemSlot;
-    return REACH_RANGE1;
+    return FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 2
+        ? REACH_MAGBY2 : REACH_RANGE1;
 }
 
 int GetUnitKeyItemSlotForTerrain(struct Unit* unit, int terrain)
@@ -307,8 +366,9 @@ int GetUnitKeyItemSlotForTerrain(struct Unit* unit, int terrain)
 
 int GetItemAttributes(int item)
 {
-    (void)item;
-    return 0;
+    return FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 2
+        && GetItemIndex(item) == ITEM_STAFF_TORCH
+        ? IA_STAFF : 0;
 }
 
 int GetItemIndex(int item)
@@ -331,7 +391,8 @@ int GetItemMaxRange(int item)
 int GetUnitMagBy2Range(struct Unit* unit)
 {
     (void)unit;
-    return 1;
+    return FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 2
+        ? 4 : 1;
 }
 
 bool IsPositionMagicSealed(int x, int y)
@@ -442,6 +503,8 @@ static void PrepareDecision(struct AiDecision* decision)
 
 static void InitializeRuntime(void)
 {
+    int height = 8;
+    int width = 8;
     int y;
     int x;
 
@@ -458,17 +521,20 @@ static void InitializeRuntime(void)
     sUnit.curHP = 20;
     sUnit.xPos = 0;
     sUnit.yPos = 0;
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 2
+    sUnit.items[0] = ITEM_STAFF_TORCH;
+#endif
     gActiveUnit = &sUnit;
     gActiveUnitId = 1;
-    gBmMapSize.x = 8;
-    gBmMapSize.y = 8;
-    for (y = 0; y < 8; y++)
+    gBmMapSize.x = width;
+    gBmMapSize.y = height;
+    for (y = 0; y < height; y++)
     {
         sMovementRows[y] = sMovementData[y];
         sUnitRows[y] = sUnitData[y];
         sTerrainRows[y] = sTerrainData[y];
         sFogRows[y] = sFogData[y];
-        for (x = 0; x < 8; x++)
+        for (x = 0; x < width; x++)
         {
             sMovementData[y][x] = 1;
             sUnitData[y][x] = 0;
@@ -478,6 +544,12 @@ static void InitializeRuntime(void)
     }
     sFogData[0][1] = 0;
     sUnitData[0][0] = 1;
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 1
+    for (y = 0; y < height; y++)
+        for (x = 0; x < width; x++)
+            sMovementData[y][x] = MAP_MOVEMENT_MAX + 1;
+    sMovementData[0][0] = 0;
+#endif
     gBmMapMovement = sMovementRows;
     gBmMapUnit = sUnitRows;
     gBmMapTerrain = sTerrainRows;
@@ -537,6 +609,13 @@ static void TickRuntime(void)
     case PLANNER_RUNTIME_WAIT_START:
         if (!ExpansionAutoplayPlanner_PollStart())
             return;
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_ACK_OVERRIDE
+        gExpansionAutoplayPlannerCommand.result =
+            FE8_AUTOPLAY_PLANNER_RUNTIME_ACK_RESULT;
+        gExpansionAutoplayPlannerCommand.rejection =
+            FE8_AUTOPLAY_PLANNER_RUNTIME_ACK_REJECTION;
+        return;
+#endif
         PrepareDecision(&decision);
         if (ExpansionAutoplayPlanner_OfferDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT)

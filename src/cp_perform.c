@@ -203,8 +203,16 @@ void AiRefreshMap(void) {
     return;
 }
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+static bool PreparePlannerAction(void);
+#endif
+
 void AiStartCombatAction(struct CpPerformProc* proc) {
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!PreparePlannerAction())
+        return;
+#endif
     gActionData.subjectIndex = gActiveUnitId;
     gActionData.unitActionType = UNIT_ACTION_COMBAT;
     gActionData.targetIndex = gAiDecision.targetId;
@@ -294,18 +302,20 @@ s8 AiPillageAction(struct CpPerformProc* proc) {
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
 static bool PreparePlannerAction(void)
 {
-    return !ExpansionAutoplayPlanner_IsActive()
-        || ExpansionAutoplayPlanner_PrepareActionData(&gAiDecision);
+    if (ExpansionAutoplayPlanner_IsActive()
+        && !ExpansionAutoplayPlanner_PrepareActionData(&gAiDecision))
+    {
+        gAiDecision.actionPerformed = false;
+        return false;
+    }
+    return true;
 }
 #endif
 
 s8 AiStaffAction(struct CpPerformProc* proc) {
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
     if (!PreparePlannerAction())
-    {
-        gAiDecision.actionPerformed = false;
         return 1;
-    }
 #endif
     gActiveUnit->xPos = gAiDecision.xMove;
     gActiveUnit->yPos = gAiDecision.yMove;
@@ -391,10 +401,7 @@ void AiDKSummonAction(struct CpPerformProc* proc) {
 
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
     if (!PreparePlannerAction())
-    {
-        gAiDecision.actionPerformed = false;
         return;
-    }
 #endif
     gActionData.subjectIndex = gActiveUnitId;
     gActionData.unitActionType = UNIT_ACTION_SUMMON_DK;
@@ -410,10 +417,7 @@ void AiDKSummonAction(struct CpPerformProc* proc) {
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
 s8 AiSummonAction(struct CpPerformProc* proc) {
     if (!PreparePlannerAction())
-    {
-        gAiDecision.actionPerformed = false;
         return 1;
-    }
     gActionData.subjectIndex = gActiveUnitId;
     gActionData.unitActionType = UNIT_ACTION_SUMMON;
     gActionData.xOther = gAiDecision.xTarget;
@@ -432,10 +436,7 @@ s8 AiPickAction(struct CpPerformProc* proc) {
 
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
     if (!PreparePlannerAction())
-    {
-        gAiDecision.actionPerformed = false;
         return 1;
-    }
 #endif
     gActiveUnit->xPos = gAiDecision.xMove;
     gActiveUnit->yPos = gAiDecision.yMove;

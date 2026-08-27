@@ -1,5 +1,6 @@
 #include "global.h"
 
+#include "bmtarget.h"
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
 #include "action_semantics.h"
 #endif
@@ -17,6 +18,7 @@
 #include "eventinfo.h"
 
 #include "constants/classes.h"
+#include "constants/items.h"
 #include "constants/terrains.h"
 
 struct Unit* EWRAM_DATA gSubjectUnit = NULL;
@@ -167,12 +169,41 @@ void TryAddTrapsToTargetList(void) {
             AddTarget(trap->xPos, trap->yPos + 1, 0, trap->extra);
         }
 
-        if ((gBmMapTerrain[trap->yPos][trap->xPos] == TERRAIN_SNAG) && (gMapRangeSigned[trap->yPos][trap->xPos] != 0)) {
+        if (IsSnagObstacleTarget(trap->xPos, trap->yPos)
+            && (gMapRangeSigned[trap->yPos][trap->xPos] != 0)) {
             AddTarget(trap->xPos, trap->yPos, 0, trap->extra);
         }
     }
 
     return;
+}
+
+bool IsSnagObstacleTarget(int x, int y)
+{
+    struct Trap* trap;
+
+    if (x < 0 || x >= gBmMapSize.x
+        || y < 0 || y >= gBmMapSize.y
+        || gBmMapTerrain[y][x] != TERRAIN_SNAG)
+        return false;
+    trap = GetTrapAt(x, y);
+    return trap != NULL && trap->type == TRAP_OBSTACLE;
+}
+
+bool IsSnagAttackTargetAt(
+    int item,
+    int x,
+    int y,
+    int targetX,
+    int targetY)
+{
+    int distance;
+
+    if (!IsSnagObstacleTarget(targetX, targetY))
+        return false;
+    distance = ABS(x - targetX) + ABS(y - targetY);
+    return distance >= GetItemMinRange(item)
+        && distance <= GetItemMaxRange(item);
 }
 
 void AddUnitToTargetListIfNotAllied(struct Unit* unit) {
@@ -940,23 +971,49 @@ void MakeSummonTargetListNorth(struct Unit* unit) {
     return;
 }
 
+bool IsUnitInHealTargetList(
+    const struct Unit* subject,
+    const struct Unit* unit)
+{
+    return UNIT_IS_VALID(unit)
+        && AreUnitsAllied(subject->index, unit->index)
+        && !(unit->state & US_RESCUED)
+        && GetUnitCurrentHp((struct Unit*)unit)
+            < GetUnitMaxHp((struct Unit*)unit);
+}
+
 void TryAddUnitToHealTargetList(struct Unit* unit) {
 
-    if (!AreUnitsAllied(gSubjectUnit->index, unit->index)) {
+    if (!IsUnitInHealTargetList(gSubjectUnit, unit))
         return;
-    }
-
-    if (unit->state & US_RESCUED) {
-        return;
-    }
-
-    if (GetUnitCurrentHp(unit) == GetUnitMaxHp(unit)) {
-        return;
-    }
 
     AddTarget(unit->xPos, unit->yPos, unit->index, 0);
 
     return;
+}
+
+bool HasRangedHealTargetAt(
+    const struct Unit* subject,
+    int x,
+    int y)
+{
+    int unitId;
+    int range = GetUnitMagBy2Range((struct Unit*)subject);
+
+    for (unitId = 1; unitId < 0xC0; unitId++)
+    {
+        struct Unit* unit = GetUnit(unitId);
+        int distance;
+
+        if (unit == subject
+            || !IsUnitInHealTargetList(subject, unit)
+            || (unit->state & (US_UNAVAILABLE | US_HIDDEN)))
+            continue;
+        distance = ABS(x - unit->xPos) + ABS(y - unit->yPos);
+        if (distance >= 1 && distance <= range)
+            return true;
+    }
+    return false;
 }
 
 void MakeTargetListForAdjacentHeal(struct Unit* unit) {
@@ -1218,21 +1275,29 @@ void MakeTargetListForUnlock(struct Unit* unit) {
     return;
 }
 
-void TryAddUnitToHammerneTargetList(struct Unit* unit) {
+bool IsUnitInHammerneTargetList(
+    const struct Unit* subject,
+    const struct Unit* unit)
+{
     int i;
 
-    if (!IsSameAllegiance(gSubjectUnit->index, unit->index)) {
-        return;
-    }
+    if (!UNIT_IS_VALID(unit)
+        || !IsSameAllegiance(subject->index, unit->index))
+        return false;
 
     for (i = 0; i < UNIT_ITEM_COUNT; i++) {
-        if (IsItemHammernable(unit->items[i])) {
-            AddTarget(unit->xPos, unit->yPos, unit->index, 0);
-            break;
-        }
+        if (IsItemHammernable(unit->items[i]))
+            return true;
     }
 
-    return;
+    return false;
+}
+
+void TryAddUnitToHammerneTargetList(struct Unit* unit) {
+    if (!IsUnitInHammerneTargetList(gSubjectUnit, unit))
+        return;
+
+    AddTarget(unit->xPos, unit->yPos, unit->index, 0);
 }
 
 void MakeTargetListForHammerne(struct Unit* unit) {
@@ -1259,26 +1324,102 @@ void MakeTargetListForLatona(struct Unit* unit) {
     for (i = phase + 1; i < phase + 0x80; i++) {
         struct Unit* other = GetUnit(i);
 
-        if (!UNIT_IS_VALID(other)) {
+        if (!IsUnitInLatonaTargetList(unit, other))
             continue;
-        }
-
-        if (other->state & US_UNAVAILABLE) {
-            continue;
-        }
-
-        if ((GetUnitCurrentHp(other) == GetUnitMaxHp(other)) && (other->statusIndex == UNIT_STATUS_NONE)) {
-            continue;
-        }
-
-        if (other == unit) {
-            continue;
-        }
 
         AddTarget(other->xPos, other->yPos, other->index, 0);
     }
 
     return;
+}
+
+bool IsUnitInLatonaTargetList(
+    const struct Unit* subject,
+    const struct Unit* unit)
+{
+    return UNIT_IS_VALID(unit)
+        && !(unit->state & US_UNAVAILABLE)
+        && unit != subject
+        && (GetUnitCurrentHp((struct Unit*)unit)
+                < GetUnitMaxHp((struct Unit*)unit)
+            || unit->statusIndex != UNIT_STATUS_NONE);
+}
+
+bool HasLatonaTarget(const struct Unit* subject)
+{
+    int phase = GetCurrentPhase();
+    int unitId;
+
+    for (unitId = phase + 1; unitId < phase + 0x80; unitId++)
+    {
+        struct Unit* unit = GetUnit(unitId);
+
+        if (IsUnitInLatonaTargetList(subject, unit))
+            return true;
+    }
+    return false;
+}
+
+bool IsUnitInStaffTargetListAt(
+    struct Unit* subject,
+    struct Unit* unit,
+    int item,
+    int x,
+    int y)
+{
+    int itemId = GetItemIndex(item);
+    int range = GetItemMaxRange(item);
+    int distance;
+    bool allied;
+
+    if (!UNIT_IS_VALID(unit) || unit == subject)
+        return false;
+    distance = ABS(x - unit->xPos) + ABS(y - unit->yPos);
+    if (range == 0)
+        range = GetUnitMagBy2Range(subject);
+    if (distance < GetItemMinRange(item) || distance > range)
+        return false;
+    allied = AreUnitsAllied(subject->index, unit->index);
+
+    switch (itemId)
+    {
+    case ITEM_STAFF_HEAL:
+    case ITEM_STAFF_MEND:
+    case ITEM_STAFF_RECOVER:
+    case ITEM_STAFF_PHYSIC:
+        return IsUnitInHealTargetList(subject, unit);
+
+    case ITEM_STAFF_RESTORE:
+        return allied && unit->statusIndex != UNIT_STATUS_NONE;
+
+    case ITEM_STAFF_RESCUE:
+    case ITEM_STAFF_WARP:
+        return allied;
+
+    case ITEM_STAFF_REPAIR:
+        return IsUnitInHammerneTargetList(subject, unit);
+
+    case ITEM_STAFF_BARRIER:
+        return allied && unit->barrierDuration < 7;
+
+    case ITEM_STAFF_SILENCE:
+        return !allied
+            && (unit->statusIndex == UNIT_STATUS_NONE
+                || unit->statusIndex == UNIT_STATUS_SILENCED);
+
+    case ITEM_STAFF_SLEEP:
+        return !allied
+            && (unit->statusIndex == UNIT_STATUS_NONE
+                || unit->statusIndex == UNIT_STATUS_SLEEP);
+
+    case ITEM_STAFF_BERSERK:
+        return !allied
+            && (unit->statusIndex == UNIT_STATUS_NONE
+                || unit->statusIndex == UNIT_STATUS_BERSERK);
+
+    default:
+        return false;
+    }
 }
 
 void PidStatsRecordTargetListDeaths(int unk) {

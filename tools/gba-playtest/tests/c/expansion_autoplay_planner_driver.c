@@ -9,6 +9,7 @@
 #include "bmitem.h"
 #include "bmmap.h"
 #include "bmmind.h"
+#include "bmtrick.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "constants/characters.h"
@@ -63,12 +64,14 @@ static struct Unit sUnit;
 static struct Unit sAlly;
 static struct Unit sEnemy;
 static struct Unit sSummon;
+static struct Trap sTraps[TRAP_MAX_COUNT];
 static struct Unit sMaxUnits[132];
 static u8 sPermanentFlags[256];
 static u8 sChapterFlags[256];
 static int sPermanentFlagSize = 8;
 static int sChapterFlagSize = 8;
 static bool sUseMaxUnits;
+static int sMagRange = 1;
 static u16 sConvoy[CONVOY_ITEM_COUNT];
 static u8 sMovementData[17][32];
 static u8* sMovementRows[17];
@@ -114,11 +117,11 @@ struct Unit* GetUnit(int id)
     }
     if (id == 1)
         return &sUnit;
-    if (id == 2 && sAlly.pCharacterData != NULL)
+    if (id == (u8)sAlly.index && sAlly.pCharacterData != NULL)
         return &sAlly;
-    if (id == 3 && sSummon.pCharacterData != NULL)
+    if (id == (u8)sSummon.index && sSummon.pCharacterData != NULL)
         return &sSummon;
-    if (id == 0x81 && sEnemy.pCharacterData != NULL)
+    if (id == (u8)sEnemy.index && sEnemy.pCharacterData != NULL)
         return &sEnemy;
     return NULL;
 }
@@ -150,7 +153,27 @@ u16* GetConvoyItemArray(void)
 
 s8 AreUnitsAllied(int left, int right)
 {
+    return (left & 0x80) == (right & 0x80);
+}
+
+s8 IsSameAllegiance(int left, int right)
+{
     return (left & 0xC0) == (right & 0xC0);
+}
+
+int GetCurrentPhase(void)
+{
+    return FACTION_BLUE;
+}
+
+int GetUnitCurrentHp(struct Unit* unit)
+{
+    return unit->curHP;
+}
+
+int GetUnitMaxHp(struct Unit* unit)
+{
+    return unit->maxHP;
 }
 
 s8 CanUnitUseWeapon(struct Unit* unit, int item)
@@ -169,6 +192,8 @@ s8 CanUnitUseStaff(struct Unit* unit, int item)
     case ITEM_STAFF_TORCH:
     case ITEM_STAFF_REPAIR:
     case ITEM_STAFF_UNLOCK:
+    case ITEM_STAFF_FORTIFY:
+    case ITEM_STAFF_LATONA:
         return true;
 
     default:
@@ -238,7 +263,7 @@ int GetItemMaxRange(int item)
 int GetUnitMagBy2Range(struct Unit* unit)
 {
     (void)unit;
-    return 1;
+    return sMagRange;
 }
 
 bool IsPositionMagicSealed(int x, int y)
@@ -268,6 +293,25 @@ bool IsThereClosedDoorAt(s8 x, s8 y)
 s8 IsItemHammernable(int item)
 {
     return item != 0 && (item & 0xFF00) != 0xFF00;
+}
+
+struct Trap* GetTrap(int id)
+{
+    return &sTraps[id];
+}
+
+struct Trap* GetTrapAt(int x, int y)
+{
+    int index;
+
+    for (index = 0; index < TRAP_MAX_COUNT; index++)
+    {
+        if (sTraps[index].type == TRAP_NONE)
+            break;
+        if (sTraps[index].xPos == x && sTraps[index].yPos == y)
+            return &sTraps[index];
+    }
+    return NULL;
 }
 
 s8 CanUnitUseHealItem(struct Unit* unit)
@@ -426,6 +470,7 @@ static void ResetActionFixture(int width, int height)
     memset(&sAlly, 0, sizeof(sAlly));
     memset(&sEnemy, 0, sizeof(sEnemy));
     memset(&sSummon, 0, sizeof(sSummon));
+    memset(sTraps, 0, sizeof(sTraps));
     memset(&gActionData, 0, sizeof(gActionData));
     sCharacter.number = 1;
     sClass.number = 1;
@@ -448,6 +493,7 @@ static void ResetActionFixture(int width, int height)
     gSummonConfig[0][1] = CHARACTER_SUMMON_EWAN;
     gSummonConfig[1][0] = 0;
     gSummonConfig[1][1] = 0;
+    sMagRange = 1;
 }
 
 static int CountActionId(u32 count, int actionId)
@@ -743,6 +789,171 @@ static int TestCoordinateActionFamilies(void)
              && sEnumeratedActions[0].yTarget == 2
              && sEnumeratedActions[0].itemSlot == 0,
           "thief Lockpick must retain the normal bridge path");
+    return 0;
+}
+
+static int TestSnagActionFamily(void)
+{
+    u32 count = 0;
+    struct AiDecision* firstSnag;
+
+    ResetActionFixture(6, 6);
+    sUnit.items[0] = ITEM_SWORD_IRON | (30 << 8);
+    sEnemy.pCharacterData = &sEnemyCharacter;
+    sEnemy.pClassData = &sEnemyClass;
+    sEnemy.index = 0x81;
+    sEnemy.xPos = 1;
+    sEnemy.yPos = 2;
+    sEnemy.maxHP = 20;
+    sEnemy.curHP = 20;
+    sTraps[0].type = TRAP_OBSTACLE;
+    sTraps[0].xPos = 3;
+    sTraps[0].yPos = 2;
+    sTraps[0].extra = 20;
+    sTraps[1].type = TRAP_OBSTACLE;
+    sTraps[1].xPos = 2;
+    sTraps[1].yPos = 3;
+    sTraps[1].extra = 20;
+    sTerrainData[2][3] = TERRAIN_SNAG;
+    sTerrainData[3][2] = TERRAIN_SNAG;
+    CHECK(
+        ExpansionAutoplayPlanner_EnumerateLegalActions(
+            CollectAction,
+            &count,
+            &count)
+            == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+            && count == 3,
+        "combat enumeration must include one unit and two snag targets"
+    );
+    CHECK(
+        sEnumeratedActions[0].targetId == 0x81
+            && sEnumeratedActions[1].targetId == 0
+            && sEnumeratedActions[1].xTarget == 3
+            && sEnumeratedActions[1].yTarget == 2
+            && sEnumeratedActions[2].targetId == 0
+            && sEnumeratedActions[2].xTarget == 2
+            && sEnumeratedActions[2].yTarget == 3,
+        "snag candidates must follow unit targets in stable trap order"
+    );
+    firstSnag = &sEnumeratedActions[1];
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(firstSnag),
+          "live snag target must revalidate");
+    sTraps[0].type = TRAP_NONE;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(firstSnag),
+          "destroyed snag must reject before executor lowering");
+    sTraps[0].type = TRAP_OBSTACLE;
+    sTerrainData[2][3] = 1;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(firstSnag),
+          "stale non-snag terrain must reject");
+    sTerrainData[2][3] = TERRAIN_SNAG;
+    firstSnag->xTarget = 5;
+    firstSnag->yTarget = 5;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(firstSnag),
+          "out-of-range snag coordinates must reject");
+    return 0;
+}
+
+static int TestStaffTargetParity(void)
+{
+    u32 count = 0;
+
+    ResetActionFixture(8, 8);
+    sUnit.items[0] = ITEM_STAFF_REPAIR;
+    sAlly.pCharacterData = &sAllyCharacter;
+    sAlly.pClassData = &sAllyClass;
+    sAlly.index = 2;
+    sAlly.xPos = 3;
+    sAlly.yPos = 2;
+    sAlly.items[0] = 0x0101;
+    sAlly.items[1] = 0x0202;
+    sEnemy.pCharacterData = &sEnemyCharacter;
+    sEnemy.pClassData = &sEnemyClass;
+    sEnemy.index = 0x41;
+    sEnemy.xPos = 2;
+    sEnemy.yPos = 3;
+    sEnemy.items[0] = 0x0101;
+    sSummon.pCharacterData = &sSummonCharacter;
+    sSummon.pClassData = &sSummonClass;
+    sSummon.index = 0x81;
+    sSummon.xPos = 1;
+    sSummon.yPos = 2;
+    sSummon.items[0] = 0x0101;
+    CHECK(
+        ExpansionAutoplayPlanner_EnumerateLegalActions(
+            CollectAction,
+            &count,
+            &count)
+            == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+            && count == 2
+            && sEnumeratedActions[0].targetId == 2
+            && sEnumeratedActions[0].unk04 == 0
+            && sEnumeratedActions[1].targetId == 2
+            && sEnumeratedActions[1].unk04 == 1,
+        "Hammerne must retain only same-faction repairable slots"
+    );
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(
+              &sEnumeratedActions[1])
+              && gActionData.trapType == 1,
+          "Hammerne must revalidate and lower the same-faction slot");
+
+    ResetActionFixture(8, 8);
+    sUnit.items[0] = ITEM_STAFF_FORTIFY;
+    sUnit.curHP = 10;
+    sMagRange = 3;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        &count);
+    CHECK(CountActionId(count, AI_ACTION_STAFF) == 0,
+          "Fortify must not target an injured caster");
+    sAlly.pCharacterData = &sAllyCharacter;
+    sAlly.pClassData = &sAllyClass;
+    sAlly.index = 2;
+    sAlly.xPos = 6;
+    sAlly.yPos = 2;
+    sAlly.maxHP = 20;
+    sAlly.curHP = 10;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        &count);
+    CHECK(CountActionId(count, AI_ACTION_STAFF) == 0,
+          "Fortify must reject an ally outside MAG/2 range");
+    sAlly.xPos = 5;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        &count);
+    CHECK(CountActionId(count, AI_ACTION_STAFF) == 1,
+          "Fortify must retain an injured ally inside MAG/2 range");
+
+    ResetActionFixture(8, 8);
+    sUnit.items[0] = ITEM_STAFF_LATONA;
+    sUnit.curHP = 10;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        &count);
+    CHECK(CountActionId(count, AI_ACTION_STAFF) == 0,
+          "Latona must exclude an injured caster");
+    sAlly.pCharacterData = &sAllyCharacter;
+    sAlly.pClassData = &sAllyClass;
+    sAlly.index = 2;
+    sAlly.xPos = 7;
+    sAlly.yPos = 7;
+    sAlly.maxHP = 20;
+    sAlly.curHP = 10;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        &count);
+    CHECK(CountActionId(count, AI_ACTION_STAFF) == 1,
+          "Latona must retain an injured non-caster in its phase domain");
     return 0;
 }
 
@@ -1338,6 +1549,7 @@ int main(void)
     u32 previousSeedIdentity;
     int index;
     int other;
+    int restoreBefore;
 
     gPlaySt.chapterIndex = 1;
     gPlaySt.chapterTurnNumber = 1;
@@ -1375,6 +1587,10 @@ int main(void)
     CHECK(TestCompleteEnumerator() == 0, "complete action enumerator test");
     CHECK(TestCoordinateActionFamilies() == 0,
           "coordinate-sensitive action family test");
+    CHECK(TestSnagActionFamily() == 0,
+          "snag combat action family test");
+    CHECK(TestStaffTargetParity() == 0,
+          "staff target predicate parity test");
     CHECK(TestSummonActionFamily() == 0,
           "normal and dark summon action family test");
     CHECK(TestUnavailableUnitSemantics() == 0,
@@ -1505,7 +1721,8 @@ int main(void)
     original = decision;
     CHECK(
         ExpansionAutoplayPlanner_OfferDecision(&decision)
-            == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && ExpansionAutoplayPlanner_IsActive(),
         "first production decision must publish one legal token"
     );
     CHECK(
@@ -2023,14 +2240,59 @@ int main(void)
             sMovementData[index][x] = MAP_MOVEMENT_MAX + 1;
     }
     sMovementData[sUnit.yPos][sUnit.xPos] = 0;
+    restoreBefore = sRestoreRequests;
+    original = decision;
     CHECK(
         ExpansionAutoplayPlanner_OfferDecision(&decision)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_EXHAUSTED
             && gExpansionAutoplayPlannerObservation.state
                 == EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED
             && gExpansionAutoplayPlannerObservation.rejection
-                == EXPANSION_AUTOPLAY_PLANNER_REJECTION_CAPABILITY_UNAVAILABLE,
+                == EXPANSION_AUTOPLAY_PLANNER_REJECTION_CAPABILITY_UNAVAILABLE
+            && !ExpansionAutoplayPlanner_IsActive()
+            && gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
+            && sRestoreRequests == restoreBefore + 1
+            && memcmp(&decision, &original, sizeof(decision)) == 0,
         "zero candidates must fail before publishing WAITING page zero"
+    );
+    CHECK(
+        ExpansionAutoplayPlanner_OfferDecision(&decision)
+            == EXPANSION_AUTOPLAY_PLANNER_DECISION_FALLBACK,
+        "exhausted planner must not re-enter its stale terminal state"
+    );
+
+    for (index = 0; index < 17; index++)
+    {
+        int x;
+
+        for (x = 0; x < 32; x++)
+            sMovementData[index][x] = 1;
+    }
+    sUnitData[sUnit.yPos][sUnit.xPos] = 1;
+    ExpansionAutoplayPlanner_Reset();
+    ExpansionAutoplayPlanner_OnMapReady();
+    ExpansionAutoplayPlanner_PollStart();
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_START,
+        0,
+        0,
+        0,
+        0,
+        NULL);
+    CHECK(ExpansionAutoplayPlanner_PollStart(),
+          "capacity terminal run must start");
+    restoreBefore = sRestoreRequests;
+    CHECK(
+        ExpansionAutoplayPlanner_OfferDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_EXHAUSTED
+            && gExpansionAutoplayPlannerObservation.state
+                == EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED
+            && gExpansionAutoplayPlannerObservation.rejection
+                == EXPANSION_AUTOPLAY_PLANNER_REJECTION_RESOURCE_LIMIT
+            && !ExpansionAutoplayPlanner_IsActive()
+            && gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
+            && sRestoreRequests == restoreBefore + 1,
+        "capacity overflow must terminate and queue safe restoration"
     );
 
     puts("AUTOPLAY_PLANNER_HOST_TEST: PASS");
