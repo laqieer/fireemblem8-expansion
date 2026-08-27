@@ -38,6 +38,7 @@ MANUAL_HANDOFF_QUERY_URL = (
     "q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+"
     "assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22"
 )
+_MISSING = object()
 MEANINGFUL_TEST_POLICY_HEADING = "Meaningful test evidence"
 POLICY_ATOM = re.compile(r"^[A-Za-z]+(?:[ /-][A-Za-z]+)*$")
 MEANINGFUL_TEST_POLICY_CLAUSE = re.compile(
@@ -562,24 +563,62 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
             "required": True,
             "required_per_target": True,
             "mention": "@laqieer",
-            "steps_format": "numbered_list",
-            "minimum_steps": 1,
-            "true_fields": ["merge_hold", "closure_hold"],
-            "fields": [
-                "case_id",
-                "commit",
-                "positive_artifact_path",
-                "positive_artifact_sha256",
-                "control_artifact_path",
-                "control_artifact_sha256",
-                "environment",
-                "clean_state",
-                "steps",
-                "expected",
-                "requested_judgment",
-                "merge_hold",
-                "closure_hold",
-            ],
+            "fields": {
+                "case_id": {
+                    "type": "string",
+                    "pattern": "^TC-[A-Z0-9]+(?:-[A-Z0-9]+)*-[0-9]{3}$",
+                },
+                "commit": {
+                    "type": "string",
+                    "format": "git_sha40_lowercase",
+                },
+                "positive_artifact_path": {
+                    "type": "string",
+                    "format": "nonempty_path",
+                },
+                "positive_artifact_sha256": {
+                    "type": "string",
+                    "format": "sha256_lowercase",
+                },
+                "control_artifact_path": {
+                    "type": "string",
+                    "format": "nonempty_path",
+                },
+                "control_artifact_sha256": {
+                    "type": "string",
+                    "format": "sha256_lowercase",
+                },
+                "environment": {
+                    "type": "string",
+                    "min_length": 1,
+                },
+                "clean_state": {
+                    "type": "string",
+                    "min_length": 1,
+                },
+                "steps": {
+                    "type": "array",
+                    "format": "numbered_list",
+                    "min_items": 1,
+                    "items": "nonempty_string",
+                },
+                "expected": {
+                    "type": "string",
+                    "min_length": 1,
+                },
+                "requested_judgment": {
+                    "type": "string",
+                    "min_length": 1,
+                },
+                "merge_hold": {
+                    "type": "boolean",
+                    "const": True,
+                },
+                "closure_hold": {
+                    "type": "boolean",
+                    "const": True,
+                },
+            },
         },
     },
     "hold": {
@@ -609,6 +648,41 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
         "notify_when_empty": False,
         "live_cardinality": "dynamic",
         "relationship_source": "github_linked_open_implementation_prs",
+        "item_schema": {
+            "required_fields": [
+                "kind",
+                "url",
+                "state",
+                "manual_pending",
+            ],
+            "kind_enum": ["issue", "pr"],
+            "state_enum": [
+                "open",
+                "closed",
+                "superseded",
+                "completed",
+            ],
+            "issue_url_pattern": (
+                "^https://github\\.com/laqieer/fireemblem8-expansion/"
+                "issues/[1-9][0-9]*$"
+            ),
+            "pr_url_pattern": (
+                "^https://github\\.com/laqieer/fireemblem8-expansion/"
+                "pull/[1-9][0-9]*$"
+            ),
+        },
+        "relationship_schema": {
+            "required_fields": ["state", "issue_url", "pr_url"],
+            "state_enum": ["open", "closed"],
+            "issue_url_pattern": (
+                "^https://github\\.com/laqieer/fireemblem8-expansion/"
+                "issues/[1-9][0-9]*$"
+            ),
+            "pr_url_pattern": (
+                "^https://github\\.com/laqieer/fireemblem8-expansion/"
+                "pull/[1-9][0-9]*$"
+            ),
+        },
         "issue_only_when_no_open_implementation_pr": True,
         "require_every_linked_open_implementation_pr": True,
         "exclude_closed_implementation_prs": True,
@@ -690,41 +764,166 @@ def read_manual_handoff_contract():
     return json.loads(MANUAL_HANDOFF_CONTRACT_PATH.read_text(encoding="utf-8"))
 
 
+def validate_comment_field(name, value, specification):
+    violations = []
+    expected_type = specification["type"]
+    if expected_type == "string":
+        if not isinstance(value, str):
+            return [f"{name}: expected string"]
+        if specification.get("min_length") and not value.strip():
+            violations.append(f"{name}: expected nonempty text")
+        pattern = specification.get("pattern")
+        if pattern and re.fullmatch(pattern, value) is None:
+            violations.append(f"{name}: invalid pattern")
+        format_name = specification.get("format")
+        if format_name == "git_sha40_lowercase" and re.fullmatch(
+            r"[0-9a-f]{40}",
+            value,
+        ) is None:
+            violations.append(f"{name}: invalid Git SHA")
+        if format_name == "sha256_lowercase" and re.fullmatch(
+            r"[0-9a-f]{64}",
+            value,
+        ) is None:
+            violations.append(f"{name}: invalid SHA-256")
+        if format_name == "nonempty_path" and not value.strip():
+            violations.append(f"{name}: expected nonempty path")
+    elif expected_type == "array":
+        if not isinstance(value, list):
+            return [f"{name}: expected array"]
+        if len(value) < specification.get("min_items", 0):
+            violations.append(f"{name}: too few items")
+        if specification.get("items") == "nonempty_string" and any(
+            not isinstance(item, str) or not item.strip()
+            for item in value
+        ):
+            violations.append(f"{name}: invalid item")
+    elif expected_type == "boolean":
+        if type(value) is not bool:
+            return [f"{name}: expected boolean"]
+        if "const" in specification and value is not specification["const"]:
+            violations.append(f"{name}: wrong constant")
+    else:
+        violations.append(f"{name}: unsupported field type")
+    return violations
+
+
 def validate_handoff_comment(contract, comment):
     specification = contract["activation"]["comment"]
-    violations = []
     if not isinstance(comment, dict):
         return ["comment must be an object"]
+    violations = []
+    field_specs = specification["fields"]
+    expected_keys = set(field_specs) | {"mention"}
+    for extra in sorted(set(comment) - expected_keys):
+        violations.append(f"unexpected comment field: {extra}")
     if comment.get("mention") != specification["mention"]:
         violations.append("comment missing exact mention")
-    for field in specification["fields"]:
-        value = comment.get(field)
-        if value is None or value == "" or value == []:
+    for field, field_spec in field_specs.items():
+        if field not in comment:
             violations.append(f"comment missing {field}")
-    steps = comment.get("steps")
-    if specification["steps_format"] == "numbered_list":
-        if not isinstance(steps, list):
-            violations.append("steps must be a numbered list")
-        elif (
-            len(steps) < specification["minimum_steps"]
-            or any(not isinstance(step, str) or not step.strip() for step in steps)
-        ):
-            violations.append("steps list is empty or invalid")
-    for field in specification["true_fields"]:
-        if comment.get(field) is not True:
-            violations.append(f"{field} must be boolean true")
+            continue
+        violations.extend(
+            validate_comment_field(field, comment[field], field_spec)
+        )
     return violations
 
 
 def valid_handoff_comment(contract, steps=None):
-    fields = contract["activation"]["comment"]["fields"]
     comment = {
-        field: True if field.endswith("_hold") else f"value-{field}"
-        for field in fields
+        "case_id": "TC-WORKFLOW-MANUAL-HANDOFF-001",
+        "commit": "a" * 40,
+        "positive_artifact_path": "build/enabled/fireemblem8.gba",
+        "positive_artifact_sha256": "b" * 64,
+        "control_artifact_path": "build\\control\\fireemblem8.gba",
+        "control_artifact_sha256": "c" * 64,
+        "environment": "mGBA 0.10.2",
+        "clean_state": "Clean boot with default emulator settings",
+        "steps": steps or ["Open the artifact."],
+        "expected": "The documented presentation is correct.",
+        "requested_judgment": "Compare the one named visual criterion.",
+        "merge_hold": True,
+        "closure_hold": True,
+        "mention": contract["activation"]["comment"]["mention"],
     }
-    comment["mention"] = contract["activation"]["comment"]["mention"]
-    comment["steps"] = steps or ["Open the artifact."]
     return comment
+
+
+def validate_manual_item_shape(contract, item):
+    if not isinstance(item, dict):
+        return ["item must be an object"]
+    schema = contract["queue"]["item_schema"]
+    violations = []
+    for field in schema["required_fields"]:
+        if field not in item:
+            violations.append(f"item missing {field}")
+    kind = item.get("kind")
+    state = item.get("state")
+    url = item.get("url")
+    if not isinstance(kind, str) or kind not in schema["kind_enum"]:
+        violations.append("item has invalid kind")
+    if not isinstance(state, str) or state not in schema["state_enum"]:
+        violations.append("item has invalid state")
+    if type(item.get("manual_pending")) is not bool:
+        violations.append("item has invalid manual_pending")
+    if not isinstance(url, str):
+        violations.append("item has invalid URL type")
+    elif kind in schema["kind_enum"]:
+        pattern_key = "issue_url_pattern" if kind == "issue" else "pr_url_pattern"
+        if re.fullmatch(schema[pattern_key], url) is None:
+            violations.append(f"item has invalid {kind} URL")
+    return violations
+
+
+def validate_relationship_records(contract, relationships):
+    schema = contract["queue"]["relationship_schema"]
+    required_fields = set(schema["required_fields"])
+    violations = []
+    valid = []
+    seen = set()
+    pr_relationships = {}
+    for index, relationship in enumerate(relationships):
+        label = f"relationship[{index}]"
+        if not isinstance(relationship, dict):
+            violations.append(f"{label}: expected object")
+            continue
+        actual_fields = set(relationship)
+        for missing in sorted(required_fields - actual_fields):
+            violations.append(f"{label}: missing {missing}")
+        for extra in sorted(actual_fields - required_fields):
+            violations.append(f"{label}: unexpected {extra}")
+        if actual_fields != required_fields:
+            continue
+        state = relationship["state"]
+        issue_url = relationship["issue_url"]
+        pr_url = relationship["pr_url"]
+        if not isinstance(state, str) or state not in schema["state_enum"]:
+            violations.append(f"{label}: invalid state")
+            continue
+        if (
+            not isinstance(issue_url, str)
+            or re.fullmatch(schema["issue_url_pattern"], issue_url) is None
+        ):
+            violations.append(f"{label}: invalid issue URL")
+            continue
+        if (
+            not isinstance(pr_url, str)
+            or re.fullmatch(schema["pr_url_pattern"], pr_url) is None
+        ):
+            violations.append(f"{label}: invalid PR URL")
+            continue
+        identity = (issue_url, pr_url, state)
+        if identity in seen:
+            violations.append(f"{label}: duplicate relationship")
+            continue
+        seen.add(identity)
+        previous = pr_relationships.get(pr_url)
+        if previous is not None and previous != (issue_url, state):
+            violations.append(f"{label}: conflicting relationship")
+            continue
+        pr_relationships[pr_url] = (issue_url, state)
+        valid.append(relationship)
+    return violations, tuple(valid)
 
 
 def completed_item_cleanup_violations(contract, item):
@@ -750,18 +949,26 @@ def validate_live_manual_queue(contract, live_items, relationships):
     violations = []
     activation = contract["activation"]
     queue = contract["queue"]
+    relationship_violations, valid_relationships = (
+        validate_relationship_records(contract, relationships)
+    )
+    violations.extend(relationship_violations)
     seen_urls = set()
     pending_open_items = []
-    for item in live_items:
-        url = item.get("url")
-        if not url:
-            violations.append("item missing URL")
+    for index, item in enumerate(live_items):
+        shape_violations = validate_manual_item_shape(contract, item)
+        violations.extend(
+            f"item[{index}]: {finding}"
+            for finding in shape_violations
+        )
+        if shape_violations:
             continue
+        url = item.get("url")
         if url in seen_urls:
             violations.append(f"duplicate item: {url}")
         seen_urls.add(url)
-        state = item.get("state", "open")
-        pending = item.get("manual_pending", True)
+        state = item["state"]
+        pending = item["manual_pending"]
         if state != "open" and pending:
             violations.append(f"non-open item remains pending: {url}")
         if not pending:
@@ -808,7 +1015,7 @@ def validate_live_manual_queue(contract, live_items, relationships):
             violations.append(f"orphan PR: {item['url']}")
 
     discovered = {}
-    for relationship in relationships:
+    for relationship in valid_relationships:
         if relationship.get("state") != "open":
             continue
         issue_url = relationship.get("issue_url")
@@ -835,21 +1042,30 @@ def validate_live_manual_queue(contract, live_items, relationships):
 
 def validate_completion_cleanup(contract, item_history, cleanup):
     completion = contract["completion"]
+    violations = []
+    valid_history = []
+    for index, item in enumerate(item_history):
+        shape_violations = validate_manual_item_shape(contract, item)
+        violations.extend(
+            f"history[{index}]: {finding}"
+            for finding in shape_violations
+        )
+        if not shape_violations:
+            valid_history.append(item)
     labeled_urls = {
         item["url"]
-        for item in item_history
+        for item in valid_history
         if item.get("received_label")
         and item.get("kind") in {"issue", "pr"}
     }
     assignee_urls = {
         item["url"]
-        for item in item_history
+        for item in valid_history
         if item.get("received_label")
         and item.get("kind") in {"issue", "pr"}
         and not item.get("other_ownership", False)
     }
-    violations = []
-    for item in item_history:
+    for item in valid_history:
         if not item.get("received_label"):
             continue
         if item.get("manual_pending") is not False:
@@ -2426,7 +2642,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         for field in required_artifact_fields:
             with self.subTest(comment_field=field):
                 mutated = copy.deepcopy(contract)
-                mutated["activation"]["comment"]["fields"].remove(field)
+                del mutated["activation"]["comment"]["fields"][field]
                 self.assertTrue(compare_contract(
                     mutated,
                     EXPECTED_MANUAL_HANDOFF_CONTRACT,
@@ -2465,6 +2681,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 steps="Open the artifact and perform the comparison.",
             ),
             "empty steps": dict(comment, steps=[]),
+            "blank step": dict(comment, steps=["  "]),
+            "non-string step": dict(comment, steps=[1]),
         }
         for hold in ("merge_hold", "closure_hold"):
             for value in (False, None, "true", 0):
@@ -2474,6 +2692,90 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 )
         for scenario, invalid in invalid_comments.items():
             with self.subTest(scenario=scenario):
+                self.assertTrue(
+                    validate_handoff_comment(contract, invalid)
+                )
+
+        for field in contract["activation"]["comment"]["fields"]:
+            with self.subTest(field=field, mutation="missing"):
+                missing = copy.deepcopy(comment)
+                del missing[field]
+                self.assertTrue(
+                    validate_handoff_comment(contract, missing)
+                )
+
+        wrong_types = (False, [], {}, 7)
+        for field, specification in contract["activation"]["comment"][
+            "fields"
+        ].items():
+            for value in wrong_types:
+                expected_type = specification["type"]
+                if (
+                    (expected_type == "boolean" and type(value) is bool)
+                    or (expected_type == "array" and isinstance(value, list))
+                ):
+                    continue
+                with self.subTest(
+                    field=field,
+                    mutation="wrong type",
+                    value=repr(value),
+                ):
+                    invalid = copy.deepcopy(comment)
+                    invalid[field] = value
+                    self.assertTrue(
+                        validate_handoff_comment(contract, invalid)
+                    )
+
+        formatted_mutations = {
+            "case ID missing TC prefix": ("case_id", "WORKFLOW-001"),
+            "case ID unstable suffix": ("case_id", "TC-WORKFLOW-MANUAL"),
+            "commit short": ("commit", "a" * 39),
+            "commit nonhex": ("commit", "g" * 40),
+            "commit uppercase": ("commit", "A" * 40),
+            "positive hash short": (
+                "positive_artifact_sha256",
+                "b" * 63,
+            ),
+            "positive hash nonhex": (
+                "positive_artifact_sha256",
+                "g" * 64,
+            ),
+            "positive hash uppercase": (
+                "positive_artifact_sha256",
+                "B" * 64,
+            ),
+            "control hash short": (
+                "control_artifact_sha256",
+                "c" * 63,
+            ),
+            "control hash nonhex": (
+                "control_artifact_sha256",
+                "z" * 64,
+            ),
+            "control hash uppercase": (
+                "control_artifact_sha256",
+                "C" * 64,
+            ),
+        }
+        for scenario, (field, value) in formatted_mutations.items():
+            with self.subTest(scenario=scenario):
+                invalid = copy.deepcopy(comment)
+                invalid[field] = value
+                self.assertTrue(
+                    validate_handoff_comment(contract, invalid)
+                )
+
+        for field in (
+            "positive_artifact_path",
+            "control_artifact_path",
+            "environment",
+            "clean_state",
+            "expected",
+            "requested_judgment",
+        ):
+            with self.subTest(field=field, mutation="whitespace"):
+                invalid = copy.deepcopy(comment)
+                invalid[field] = " \t "
                 self.assertTrue(
                     validate_handoff_comment(contract, invalid)
                 )
@@ -2508,10 +2810,29 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             item.update(overrides)
             return item
 
-        issue_url = "https://example.invalid/issues/171"
-        pr_one = "https://example.invalid/pulls/172"
-        pr_two = "https://example.invalid/pulls/173"
-        closed_pr = "https://example.invalid/pulls/174"
+        issue_url = (
+            "https://github.com/laqieer/fireemblem8-expansion/issues/171"
+        )
+        pr_one = "https://github.com/laqieer/fireemblem8-expansion/pull/172"
+        pr_two = "https://github.com/laqieer/fireemblem8-expansion/pull/173"
+        closed_pr = (
+            "https://github.com/laqieer/fireemblem8-expansion/pull/174"
+        )
+        for kind, url in (("issue", issue_url), ("pr", pr_one)):
+            for state in contract["queue"]["item_schema"]["state_enum"]:
+                with self.subTest(kind=kind, supported_state=state):
+                    self.assertEqual(
+                        [],
+                        validate_manual_item_shape(
+                            contract,
+                            {
+                                "kind": kind,
+                                "url": url,
+                                "state": state,
+                                "manual_pending": state == "open",
+                            },
+                        ),
+                    )
         missing_origin_pr = pull(pr_one, issue_url)
         del missing_origin_pr["origin_url"]
         positive = {
@@ -2568,8 +2889,14 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "unrelated linked PR ignored": (
                 (issue(issue_url),),
                 ({
-                    "issue_url": "https://example.invalid/issues/999",
-                    "pr_url": "https://example.invalid/pulls/999",
+                    "issue_url": (
+                        "https://github.com/laqieer/"
+                        "fireemblem8-expansion/issues/999"
+                    ),
+                    "pr_url": (
+                        "https://github.com/laqieer/"
+                        "fireemblem8-expansion/pull/999"
+                    ),
                     "state": "open",
                 },),
             ),
@@ -2603,7 +2930,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     issue(issue_url),
                     pull(
                         pr_one,
-                        "https://example.invalid/issues/999",
+                        "https://github.com/laqieer/"
+                        "fireemblem8-expansion/issues/999",
                     ),
                 ),
                 ({
@@ -2829,13 +3157,152 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     )
                 )
 
+        def mutate_item(item, field, value):
+            mutated = copy.deepcopy(item)
+            if value is _MISSING:
+                mutated.pop(field)
+            else:
+                mutated[field] = value
+            return mutated
+
+        base_issue = issue(issue_url)
+        item_shape_mutations = {
+            "missing kind": mutate_item(base_issue, "kind", _MISSING),
+            "null kind": mutate_item(base_issue, "kind", None),
+            "misspelled kind": mutate_item(base_issue, "kind", "pull_request"),
+            "non-string kind": mutate_item(base_issue, "kind", 1),
+            "missing URL": mutate_item(base_issue, "url", _MISSING),
+            "null URL": mutate_item(base_issue, "url", None),
+            "malformed URL": mutate_item(
+                base_issue,
+                "url",
+                "https://example.invalid/issues/171",
+            ),
+            "issue with PR URL": mutate_item(base_issue, "url", pr_one),
+            "missing state": mutate_item(base_issue, "state", _MISSING),
+            "null state": mutate_item(base_issue, "state", None),
+            "misspelled state": mutate_item(base_issue, "state", "pending"),
+            "non-string state": mutate_item(base_issue, "state", 1),
+            "missing pending flag": mutate_item(
+                base_issue,
+                "manual_pending",
+                _MISSING,
+            ),
+            "non-boolean pending flag": mutate_item(
+                base_issue,
+                "manual_pending",
+                "true",
+            ),
+            "PR with issue URL": {
+                **pull(pr_one, issue_url),
+                "url": issue_url,
+            },
+        }
+        for scenario, invalid_item in item_shape_mutations.items():
+            with self.subTest(item_shape=scenario):
+                failures = validate_live_manual_queue(
+                    contract,
+                    (invalid_item,),
+                    (),
+                )
+                self.assertTrue(
+                    any("item[0]" in failure for failure in failures)
+                )
+
+        relationship = {
+            "issue_url": issue_url,
+            "pr_url": pr_one,
+            "state": "open",
+        }
+        relationship_mutations = {}
+        for field in ("issue_url", "pr_url", "state"):
+            missing = dict(relationship)
+            missing.pop(field)
+            relationship_mutations[f"missing {field}"] = (missing,)
+            relationship_mutations[f"null {field}"] = ({
+                **relationship,
+                field: None,
+            },)
+        relationship_mutations.update({
+            "extra field": ({
+                **relationship,
+                "kind": "pr",
+            },),
+            "malformed issue URL": ({
+                **relationship,
+                "issue_url": "https://example.invalid/issues/171",
+            },),
+            "malformed PR URL": ({
+                **relationship,
+                "pr_url": "https://example.invalid/pull/172",
+            },),
+            "swapped URL kinds": ({
+                "issue_url": pr_one,
+                "pr_url": issue_url,
+                "state": "open",
+            },),
+            "misspelled state": ({
+                **relationship,
+                "state": "superseded",
+            },),
+            "non-string state": ({
+                **relationship,
+                "state": 1,
+            },),
+            "malformed closed relationship": ({
+                **relationship,
+                "state": "closed",
+                "pr_url": "not-a-url",
+            },),
+            "duplicate relationship": (
+                relationship,
+                dict(relationship),
+            ),
+            "conflicting issue relationship": (
+                relationship,
+                {
+                    **relationship,
+                    "issue_url": (
+                        "https://github.com/laqieer/"
+                        "fireemblem8-expansion/issues/999"
+                    ),
+                },
+            ),
+            "conflicting state relationship": (
+                relationship,
+                {
+                    **relationship,
+                    "state": "closed",
+                },
+            ),
+        })
+        for scenario, invalid_relationships in relationship_mutations.items():
+            with self.subTest(relationship_shape=scenario):
+                failures = validate_live_manual_queue(
+                    contract,
+                    (issue(issue_url), pull(pr_one, issue_url)),
+                    invalid_relationships,
+                )
+                self.assertTrue(
+                    any(
+                        "relationship[" in failure
+                        for failure in failures
+                    )
+                )
+
     def test_manual_handoff_completion_cleans_labeled_history(self):
         contract = read_manual_handoff_contract()
-        issue_url = "https://example.invalid/issues/171"
-        open_pr = "https://example.invalid/pulls/172"
-        closed_pr = "https://example.invalid/pulls/173"
-        superseded_pr = "https://example.invalid/pulls/174"
-        never_labeled_pr = "https://example.invalid/pulls/175"
+        issue_url = (
+            "https://github.com/laqieer/fireemblem8-expansion/issues/171"
+        )
+        open_pr = "https://github.com/laqieer/fireemblem8-expansion/pull/172"
+        closed_pr = "https://github.com/laqieer/fireemblem8-expansion/pull/173"
+        superseded_pr = (
+            "https://github.com/laqieer/fireemblem8-expansion/pull/174"
+        )
+        never_labeled_pr = (
+            "https://github.com/laqieer/fireemblem8-expansion/pull/175"
+        )
         history = (
             {
                 "url": issue_url,
@@ -2886,6 +3353,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "url": never_labeled_pr,
                 "kind": "pr",
                 "state": "closed",
+                "manual_pending": False,
                 "received_label": False,
             },
         )
@@ -2988,6 +3456,41 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             unowned_assignee,
             cleanup,
         ))
+
+        history_shape_mutations = {}
+        for field, values in {
+            "kind": (_MISSING, None, "pull_request", 1),
+            "url": (
+                _MISSING,
+                None,
+                "https://example.invalid/issues/171",
+                open_pr,
+            ),
+            "state": (_MISSING, None, "pending", 1),
+            "manual_pending": (_MISSING, None, "false", 0),
+        }.items():
+            for value in values:
+                mutated = copy.deepcopy(history[0])
+                if value is _MISSING:
+                    mutated.pop(field)
+                    label = f"missing {field}"
+                else:
+                    mutated[field] = value
+                    label = f"{field}={value!r}"
+                history_shape_mutations[label] = mutated
+
+        for scenario, invalid_item in history_shape_mutations.items():
+            with self.subTest(history_shape=scenario):
+                invalid_history = list(copy.deepcopy(history))
+                invalid_history[0] = invalid_item
+                failures = validate_completion_cleanup(
+                    contract,
+                    invalid_history,
+                    cleanup,
+                )
+                self.assertTrue(
+                    any("history[0]" in failure for failure in failures)
+                )
 
     def test_manual_handoff_case_subsections_do_not_leak(self):
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")

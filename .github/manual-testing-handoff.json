@@ -46,27 +46,62 @@
       "required": true,
       "required_per_target": true,
       "mention": "@laqieer",
-      "steps_format": "numbered_list",
-      "minimum_steps": 1,
-      "true_fields": [
-        "merge_hold",
-        "closure_hold"
-      ],
-      "fields": [
-        "case_id",
-        "commit",
-        "positive_artifact_path",
-        "positive_artifact_sha256",
-        "control_artifact_path",
-        "control_artifact_sha256",
-        "environment",
-        "clean_state",
-        "steps",
-        "expected",
-        "requested_judgment",
-        "merge_hold",
-        "closure_hold"
-      ]
+      "fields": {
+        "case_id": {
+          "type": "string",
+          "pattern": "^TC-[A-Z0-9]+(?:-[A-Z0-9]+)*-[0-9]{3}$"
+        },
+        "commit": {
+          "type": "string",
+          "format": "git_sha40_lowercase"
+        },
+        "positive_artifact_path": {
+          "type": "string",
+          "format": "nonempty_path"
+        },
+        "positive_artifact_sha256": {
+          "type": "string",
+          "format": "sha256_lowercase"
+        },
+        "control_artifact_path": {
+          "type": "string",
+          "format": "nonempty_path"
+        },
+        "control_artifact_sha256": {
+          "type": "string",
+          "format": "sha256_lowercase"
+        },
+        "environment": {
+          "type": "string",
+          "min_length": 1
+        },
+        "clean_state": {
+          "type": "string",
+          "min_length": 1
+        },
+        "steps": {
+          "type": "array",
+          "format": "numbered_list",
+          "min_items": 1,
+          "items": "nonempty_string"
+        },
+        "expected": {
+          "type": "string",
+          "min_length": 1
+        },
+        "requested_judgment": {
+          "type": "string",
+          "min_length": 1
+        },
+        "merge_hold": {
+          "type": "boolean",
+          "const": true
+        },
+        "closure_hold": {
+          "type": "boolean",
+          "const": true
+        }
+      }
     }
   },
   "hold": {
@@ -96,6 +131,39 @@
     "notify_when_empty": false,
     "live_cardinality": "dynamic",
     "relationship_source": "github_linked_open_implementation_prs",
+    "item_schema": {
+      "required_fields": [
+        "kind",
+        "url",
+        "state",
+        "manual_pending"
+      ],
+      "kind_enum": [
+        "issue",
+        "pr"
+      ],
+      "state_enum": [
+        "open",
+        "closed",
+        "superseded",
+        "completed"
+      ],
+      "issue_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/issues/[1-9][0-9]*$",
+      "pr_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/pull/[1-9][0-9]*$"
+    },
+    "relationship_schema": {
+      "required_fields": [
+        "state",
+        "issue_url",
+        "pr_url"
+      ],
+      "state_enum": [
+        "open",
+        "closed"
+      ],
+      "issue_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/issues/[1-9][0-9]*$",
+      "pr_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/pull/[1-9][0-9]*$"
+    },
     "issue_only_when_no_open_implementation_pr": true,
     "require_every_linked_open_implementation_pr": true,
     "exclude_closed_implementation_prs": true
