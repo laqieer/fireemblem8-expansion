@@ -554,13 +554,15 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
             "Blocked until @laqieer records a specific manual tester result"
         ),
         "assignee": "laqieer",
-        "mention": "@laqieer",
         "targets": [
             "originating_issue",
             "each_open_implementation_pr",
         ],
         "comment": {
             "required": True,
+            "mention": "@laqieer",
+            "steps_format": "numbered_list",
+            "minimum_steps": 1,
             "fields": [
                 "case_id",
                 "commit",
@@ -675,6 +677,8 @@ def wrong_contract_value(value):
         return not value
     if isinstance(value, str):
         return value + "-wrong"
+    if isinstance(value, int):
+        return value + 1
     if isinstance(value, list):
         return value[:-1]
     raise TypeError(f"unsupported contract leaf: {type(value).__name__}")
@@ -682,6 +686,27 @@ def wrong_contract_value(value):
 
 def read_manual_handoff_contract():
     return json.loads(MANUAL_HANDOFF_CONTRACT_PATH.read_text(encoding="utf-8"))
+
+
+def validate_handoff_comment(contract, comment):
+    specification = contract["activation"]["comment"]
+    violations = []
+    if comment.get("mention") != specification["mention"]:
+        violations.append("comment missing exact mention")
+    for field in specification["fields"]:
+        value = comment.get(field)
+        if value is None or value == "" or value == []:
+            violations.append(f"comment missing {field}")
+    steps = comment.get("steps")
+    if specification["steps_format"] == "numbered_list":
+        if not isinstance(steps, list):
+            violations.append("steps must be a numbered list")
+        elif (
+            len(steps) < specification["minimum_steps"]
+            or any(not isinstance(step, str) or not step.strip() for step in steps)
+        ):
+            violations.append("steps list is empty or invalid")
+    return violations
 
 
 def validate_live_manual_queue(contract, live_items, relationships):
@@ -2223,11 +2248,6 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "assignee",
                 "other-tester",
             ),
-            "activation mention": (
-                "activation",
-                "mention",
-                "@other-tester",
-            ),
             "merge hold": ("hold", "merge", False),
             "closure hold": ("hold", "issue_closure", False),
             "cleanup label": (
@@ -2276,6 +2296,27 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     mutated,
                     EXPECTED_MANUAL_HANDOFF_CONTRACT,
                 ))
+        comment_mutations = {
+            "wrong comment mention": ("mention", "@other-tester"),
+            "paragraph steps format": ("steps_format", "paragraph"),
+            "zero minimum steps": ("minimum_steps", 0),
+        }
+        for name, (key, value) in comment_mutations.items():
+            with self.subTest(blocker=name):
+                mutated = copy.deepcopy(contract)
+                mutated["activation"]["comment"][key] = value
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+        misplaced_mention = copy.deepcopy(contract)
+        misplaced_mention["activation"]["mention"] = (
+            misplaced_mention["activation"]["comment"].pop("mention")
+        )
+        self.assertTrue(compare_contract(
+            misplaced_mention,
+            EXPECTED_MANUAL_HANDOFF_CONTRACT,
+        ))
         old_relationship_key = copy.deepcopy(contract)
         old_relationship_key["queue"].pop(
             "require_every_linked_open_implementation_pr"
@@ -2345,6 +2386,52 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     mutated,
                     EXPECTED_MANUAL_HANDOFF_CONTRACT,
                 ))
+
+    def test_manual_handoff_comment_payload_is_structured(self):
+        contract = read_manual_handoff_contract()
+        fields = contract["activation"]["comment"]["fields"]
+        comment = {
+            field: True if field.endswith("_hold") else f"value-{field}"
+            for field in fields
+        }
+        comment["mention"] = "@laqieer"
+        comment["steps"] = ["Open the artifact."]
+        self.assertEqual([], validate_handoff_comment(contract, comment))
+
+        multiple_steps = copy.deepcopy(comment)
+        multiple_steps["steps"] = [
+            "Open the artifact.",
+            "Perform the documented comparison.",
+        ]
+        self.assertEqual(
+            [],
+            validate_handoff_comment(contract, multiple_steps),
+        )
+
+        invalid_comments = {
+            "missing mention": {
+                key: value for key, value in comment.items()
+                if key != "mention"
+            },
+            "wrong mention": dict(comment, mention="@other-tester"),
+            "mention only elsewhere": {
+                **{
+                    key: value for key, value in comment.items()
+                    if key != "mention"
+                },
+                "activation_mention": "@laqieer",
+            },
+            "paragraph steps": dict(
+                comment,
+                steps="Open the artifact and perform the comparison.",
+            ),
+            "empty steps": dict(comment, steps=[]),
+        }
+        for scenario, invalid in invalid_comments.items():
+            with self.subTest(scenario=scenario):
+                self.assertTrue(
+                    validate_handoff_comment(contract, invalid)
+                )
 
     def test_manual_handoff_live_queue_relationships(self):
         contract = read_manual_handoff_contract()

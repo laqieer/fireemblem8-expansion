@@ -237,7 +237,8 @@ artifacts plus deterministic emulator screenshots or synchronized emulator A/V
 evidence before activation. GitHub-linked open PR discovery determines the
 active targets. Completion cleans the label from every labeled item and removes
 the temporary assignment unless independent ownership remains, including for a
-PR later closed or superseded.
+PR later closed or superseded. Each handoff comment uses the contract's exact
+`@laqieer` mention and at least one numbered step.
 
 Use the documented queue:
   [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).

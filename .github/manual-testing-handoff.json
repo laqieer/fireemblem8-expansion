@@ -38,13 +38,15 @@
     "label": "waiting-for-manual-testing",
     "label_description": "Blocked until @laqieer records a specific manual tester result",
     "assignee": "laqieer",
-    "mention": "@laqieer",
     "targets": [
       "originating_issue",
       "each_open_implementation_pr"
     ],
     "comment": {
       "required": true,
+      "mention": "@laqieer",
+      "steps_format": "numbered_list",
+      "minimum_steps": 1,
       "fields": [
         "case_id",
         "commit",

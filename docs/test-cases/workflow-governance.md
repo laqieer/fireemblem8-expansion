@@ -81,7 +81,8 @@ and does not grant push credentials.
 1. Parse `.github/manual-testing-handoff.json` and validate every required key,
    value, enum, boolean, target, comment field, and the separately identified
    positive/control artifact roles with deterministic emulator screenshot or
-   synchronized emulator A/V evidence.
+   synchronized emulator A/V evidence. Validate the comment's exact
+   `@laqieer` mention and nonempty numbered step list.
 2. Exercise the positive issue-only, one-PR, and multiple-open-PR queue shapes,
    using an independent GitHub-linked PR relationship map. Exercise malformed
    label, assignee, relationship, and stale-state controls.
@@ -102,10 +103,11 @@ Human guidance links to that file without duplicating machine behavior.
 
 Every leaf mutation in the structured contract fails, including a missing
 artifact role/path/hash/emulator/determinism/synchronization/inspection field,
-instrumented artifacts, permissive activation, wrong identifiers or targets,
-disabled holds, incomplete historical cleanup, empty-queue notifications, and
-invalid independently discovered issue/PR relationships. Removing this case's
-own required subsection also fails even when another case retains that heading.
+instrumented artifacts, missing or misplaced mention, invalid or empty numbered
+steps, permissive activation, wrong identifiers or targets, disabled holds,
+incomplete historical cleanup, empty-queue notifications, and invalid
+independently discovered issue/PR relationships. Removing this case's own
+required subsection also fails even when another case retains that heading.
 
 ### Interactions and save compatibility
 
