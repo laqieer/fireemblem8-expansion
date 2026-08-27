@@ -102,6 +102,16 @@ and does not grant push credentials.
 The focused suite accepts the canonical JSON and its supported queue shapes.
 Human guidance links to that file without duplicating machine behavior.
 
+### Lifecycle summary
+
+- **Activation:** Apply `waiting-for-manual-testing`. Assign `laqieer`. Ping
+  `@laqieer`.
+- **Hold:** Block merge. Block issue closure.
+- **Completion:** After an accepted result, remove
+  `waiting-for-manual-testing`. Remove the temporary `laqieer` assignment unless
+  independently owned. Resume exact-candidate gates and merge automatically.
+  A rejected result retains both holds and remains actionable.
+
 ### Negative control
 
 Every leaf mutation in the structured contract fails, including a missing
@@ -110,9 +120,9 @@ instrumented artifacts, missing or misplaced mention, invalid or empty numbered
 steps, false or mistyped comment holds, missing per-item comments, permissive
 activation, wrong identifiers or targets, disabled holds, incomplete historical
 cleanup, missing or mismatched completion evidence, malformed optional
-booleans, empty-queue notifications, and invalid independently discovered
-issue/PR relationships. Removing this case's own required subsection also
-fails even when another case retains that heading.
+booleans, rejected cleanup/resumption, empty-queue notifications, and invalid
+independently discovered issue/PR relationships. Reversing any lifecycle
+summary action or removing this case's own subsection also fails locally.
 
 ### Interactions and save compatibility
 

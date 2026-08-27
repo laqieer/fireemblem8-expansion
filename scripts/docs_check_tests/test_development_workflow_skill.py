@@ -649,6 +649,18 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
                     "type": "string",
                     "format": "github_evidence_url",
                 },
+                "outcome": {
+                    "type": "string",
+                    "enum": ["accepted", "rejected"],
+                },
+            },
+            "cleanup_allowed_outcome": "accepted",
+            "resume_allowed_outcome": "accepted",
+            "rejected_outcome": {
+                "value": "rejected",
+                "retain_merge_hold": True,
+                "retain_closure_hold": True,
+                "remain_actionable": True,
             },
         },
         "remove_label": "waiting-for-manual-testing",
@@ -804,6 +816,8 @@ def validate_comment_field(name, value, specification):
         pattern = specification.get("pattern")
         if pattern and re.fullmatch(pattern, value) is None:
             violations.append(f"{name}: invalid pattern")
+        if "enum" in specification and value not in specification["enum"]:
+            violations.append(f"{name}: invalid enum value")
         format_name = specification.get("format")
         if format_name == "git_sha40_lowercase" and re.fullmatch(
             r"[0-9a-f]{40}",
@@ -919,6 +933,7 @@ def valid_completion_comment(contract, activation_comment):
             "https://github.com/user-attachments/assets/"
             "11111111-2222-3333-4444-555555555555"
         ),
+        "outcome": "accepted",
     }
 
 
@@ -1190,14 +1205,22 @@ def validate_completion_cleanup(
         history_by_url = {item["url"]: item for item in valid_history}
         for url in sorted(expected_comment_urls & actual_comment_urls):
             item = history_by_url[url]
+            completion_comment = completion_comments[url]
             violations.extend(
                 f"{url}: {finding}"
                 for finding in validate_completion_comment(
                     contract,
-                    completion_comments[url],
+                    completion_comment,
                     item.get("comment"),
                 )
             )
+            if (
+                completion_comment.get("outcome")
+                != completion["comment"]["cleanup_allowed_outcome"]
+            ):
+                violations.append(
+                    f"{url}: completion outcome does not permit cleanup"
+                )
     if cleanup.get("label") != completion["remove_label"]:
         violations.append("wrong cleanup label")
     if cleanup.get("assignee") != completion["remove_temporary_assignee"]:
@@ -2705,6 +2728,32 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             misplaced_mention,
             EXPECTED_MANUAL_HANDOFF_CONTRACT,
         ))
+        completion_outcome_mutations = {
+            "cleanup accepts rejected": ("cleanup_allowed_outcome", "rejected"),
+            "resume accepts rejected": ("resume_allowed_outcome", "rejected"),
+        }
+        for name, (key, value) in completion_outcome_mutations.items():
+            with self.subTest(blocker=name):
+                mutated = copy.deepcopy(contract)
+                mutated["completion"]["comment"][key] = value
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+        for field in (
+            "retain_merge_hold",
+            "retain_closure_hold",
+            "remain_actionable",
+        ):
+            with self.subTest(rejected_outcome=field):
+                mutated = copy.deepcopy(contract)
+                mutated["completion"]["comment"]["rejected_outcome"][
+                    field
+                ] = False
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
         old_relationship_key = copy.deepcopy(contract)
         old_relationship_key["queue"].pop(
             "require_every_linked_open_implementation_pr"
@@ -3587,6 +3636,13 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             ),
             "case mismatch": ("case_id", "TC-WORKFLOW-OTHER-001"),
             "commit mismatch": ("commit", "d" * 40),
+            "rejected outcome": ("outcome", "rejected"),
+            "unsupported outcome": ("outcome", "failed"),
+            "outcome null": ("outcome", None),
+            "outcome boolean": ("outcome", False),
+            "outcome list": ("outcome", []),
+            "outcome object": ("outcome", {}),
+            "outcome integer": ("outcome", 1),
         }
         for scenario, (field, value) in completion_payload_mutations.items():
             with self.subTest(completion_payload=scenario):

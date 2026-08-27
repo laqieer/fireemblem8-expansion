@@ -134,7 +134,22 @@
         "evidence_url": {
           "type": "string",
           "format": "github_evidence_url"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "rejected"
+          ]
         }
+      },
+      "cleanup_allowed_outcome": "accepted",
+      "resume_allowed_outcome": "accepted",
+      "rejected_outcome": {
+        "value": "rejected",
+        "retain_merge_hold": true,
+        "retain_closure_hold": true,
+        "remain_actionable": true
       }
     },
     "remove_label": "waiting-for-manual-testing",

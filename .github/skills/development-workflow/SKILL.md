@@ -244,7 +244,16 @@ stable case ID, full Git SHA, artifact paths and SHA-256 values, and nonempty
 environment, state, expectation, and judgment fields.
 Before cleanup and automatic resumption, every labeled item also receives a
 typed completion comment whose nonblank actual result and GitHub evidence link
-match the original handoff case ID and commit.
+match the original handoff case ID and commit. Only an accepted outcome permits
+cleanup and resumption; a rejected outcome retains both holds and remains
+actionable.
+
+- **Activation:** Apply `waiting-for-manual-testing`. Assign `laqieer`. Ping
+  `@laqieer`.
+- **Hold:** Block merge. Block issue closure.
+- **Completion:** After an accepted result, remove
+  `waiting-for-manual-testing`. Remove the temporary `laqieer` assignment unless
+  independently owned. Resume exact-candidate gates and merge automatically.
 
 Use the documented queue:
   [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).
