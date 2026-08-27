@@ -61,6 +61,15 @@ def markdown_section(text, heading):
     return "\n".join(lines[start + 1:end])
 
 
+def membership_violations(actual, expected):
+    violations = []
+    if len(actual) != len(set(actual)):
+        violations.append("duplicate")
+    if set(actual) != set(expected):
+        violations.append("membership")
+    return violations
+
+
 class TempRepo:
     """A throwaway Git repo so discover_markdown_files()/parse_make_targets()
     (both Git- and filesystem-rooted) behave exactly as in the real repo."""
@@ -1002,10 +1011,33 @@ class TesterCaseRegistryTests(unittest.TestCase):
                 self.assertIn(feature_id, expected_feature_ids)
                 feature = features[feature_id]
                 self.assertEqual(feature["reference"], contract["reference"])
+                expected_cases = list(contract["cases"])
                 self.assertEqual(
-                    feature["required_cases"],
-                    list(contract["cases"]),
+                    [],
+                    membership_violations(
+                        feature["required_cases"],
+                        expected_cases,
+                    ),
                 )
+                self.assertEqual(
+                    [],
+                    membership_violations(
+                        list(reversed(feature["required_cases"])),
+                        expected_cases,
+                    ),
+                )
+                required_case_mutations = (
+                    feature["required_cases"][:-1],
+                    feature["required_cases"] + ["TC-WORKFLOW-OTHER-001"],
+                    feature["required_cases"] + [feature["required_cases"][0]],
+                )
+                for mutated_cases in required_case_mutations:
+                    self.assertTrue(
+                        membership_violations(
+                            mutated_cases,
+                            expected_cases,
+                        )
+                    )
                 for case_id, case_contract in contract["cases"].items():
                     case = cases[case_id]
                     self.assertEqual(case["feature_id"], feature_id)

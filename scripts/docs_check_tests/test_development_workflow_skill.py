@@ -614,9 +614,27 @@ def compare_contract(actual, expected, path=()):
                 compare_contract(actual[key], expected[key], path + (key,))
             )
         return violations
+    if isinstance(expected, list):
+        return compare_string_membership(actual, expected, location)
     if actual != expected:
         return [f"{location}: expected {expected!r}, got {actual!r}"]
     return []
+
+
+def compare_string_membership(actual, expected, location):
+    violations = []
+    if any(not isinstance(item, str) for item in actual):
+        violations.append(f"{location}: entries must be strings")
+        return violations
+    if len(actual) != len(set(actual)):
+        violations.append(f"{location}: duplicate entries")
+    actual_set = set(actual)
+    expected_set = set(expected)
+    for missing in sorted(expected_set - actual_set):
+        violations.append(f"{location}: missing {missing}")
+    for extra in sorted(actual_set - expected_set):
+        violations.append(f"{location}: unexpected {extra}")
+    return violations
 
 
 def contract_paths(value, path=()):
@@ -664,13 +682,13 @@ def validate_live_manual_queue(contract, live_items):
         seen_urls.add(url)
         if item.get("state", "open") != "open":
             continue
-        open_items.append(item)
         if not item.get("manual_pending", True):
             if item.get("label") == activation["label"]:
                 violations.append(f"stale label: {url}")
             if item.get("assignee") == activation["assignee"]:
                 violations.append(f"stale assignee: {url}")
             continue
+        open_items.append(item)
         if item.get("label") != activation["label"]:
             violations.append(f"wrong label: {url}")
         if item.get("assignee") != activation["assignee"]:
@@ -1954,13 +1972,42 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             for item in registry["features"]
             if item["id"] == "workflow-governance"
         )
+        expected_cases = [
+            "TC-WORKFLOW-CI-WAIT-001",
+            "TC-WORKFLOW-MANUAL-HANDOFF-001",
+        ]
         self.assertEqual(
-            feature["required_cases"],
-            [
-                "TC-WORKFLOW-CI-WAIT-001",
-                "TC-WORKFLOW-MANUAL-HANDOFF-001",
-            ],
+            [],
+            compare_string_membership(
+                feature["required_cases"],
+                expected_cases,
+                "workflow-governance.required_cases",
+            ),
         )
+        self.assertEqual(
+            [],
+            compare_string_membership(
+                list(reversed(feature["required_cases"])),
+                expected_cases,
+                "workflow-governance.required_cases",
+            ),
+        )
+        required_case_mutations = {
+            "missing": feature["required_cases"][:-1],
+            "extra": feature["required_cases"] + ["TC-WORKFLOW-OTHER-001"],
+            "duplicate": feature["required_cases"] + [
+                feature["required_cases"][0]
+            ],
+        }
+        for mutation, required_cases in required_case_mutations.items():
+            with self.subTest(required_cases=mutation):
+                self.assertTrue(
+                    compare_string_membership(
+                        required_cases,
+                        expected_cases,
+                        "workflow-governance.required_cases",
+                    )
+                )
         indexed_case = next(
             item
             for item in registry["cases"]
@@ -2056,6 +2103,41 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     mutated,
                     EXPECTED_MANUAL_HANDOFF_CONTRACT,
                 ))
+
+        list_paths = [
+            path
+            for path in contract_paths(EXPECTED_MANUAL_HANDOFF_CONTRACT)
+            if isinstance(contract_parent(contract, path)[0][path[-1]], list)
+        ]
+        for path in list_paths:
+            expected_parent, expected_key = contract_parent(contract, path)
+            expected_values = expected_parent[expected_key]
+            with self.subTest(path=".".join(path), mutation="permutation"):
+                permuted = copy.deepcopy(contract)
+                parent, key = contract_parent(permuted, path)
+                parent[key] = list(reversed(parent[key]))
+                self.assertEqual([], compare_contract(
+                    permuted,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+            list_mutations = {
+                "missing member": expected_values[:-1],
+                "extra member": expected_values + ["unexpected_member"],
+                "duplicate member": expected_values + [expected_values[0]],
+            }
+            for mutation, values in list_mutations.items():
+                with self.subTest(path=".".join(path), mutation=mutation):
+                    mutated = copy.deepcopy(contract)
+                    parent, key = contract_parent(mutated, path)
+                    parent[key] = values
+                    failures = compare_contract(
+                        mutated,
+                        EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                    )
+                    self.assertTrue(failures)
+                    self.assertTrue(
+                        all(".".join(path) in failure for failure in failures)
+                    )
 
     def test_manual_handoff_live_queue_relationships(self):
         contract = read_manual_handoff_contract()
@@ -2161,6 +2243,31 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     issue_url,
                     manual_pending=False,
                     label=None,
+                ),
+            ),
+            "completed issue cannot legitimize pending PR": (
+                issue(
+                    issue_url,
+                    origin="issue-171",
+                    open_pr_urls=[pr_one],
+                    manual_pending=False,
+                    label=None,
+                    assignee=None,
+                ),
+                pull(pr_one, "issue-171"),
+            ),
+            "completed PR cannot satisfy pending issue": (
+                issue(
+                    issue_url,
+                    origin="issue-171",
+                    open_pr_urls=[pr_one],
+                ),
+                pull(
+                    pr_one,
+                    "issue-171",
+                    manual_pending=False,
+                    label=None,
+                    assignee=None,
                 ),
             ),
         }
