@@ -458,7 +458,9 @@ The normal-fidelity fixture runs three declared seed writes from independent
 clean boots. Serial and three-job parallel reports are byte-identical,
 versioned, sorted JSON. Every seed has exact ROM/configuration/scenario/profile
 provenance, including validated canonical scenario/specification SHA-256
-identities. Successful and terminal-failure runs contain terminal and
+identities. Inline checkpoint expectations round-trip into that identity:
+absence remains absent, while adding or changing a value changes the digest.
+Successful and terminal-failure runs contain terminal and
 configured terminal/frame/turn/action, faction/group, event, EXP, item, and
 resource metric records. An execution-failure record instead contains only
 seed, status, stable error text, and ROM provenance. A comparison
@@ -489,7 +491,7 @@ faction, event, or delta lists. Imported metric definitions whose canonical
 address/size is absent from the terminal checkpoint also fail even when their
 digest and aggregates were updated consistently. Symbol-backed counters
 normalize to resolved numeric literals; undeclared objective failure,
-unconfigured stall, early `max_frames`, and below-threshold
+unconfigured or pre-threshold stall, early `max_frames`, and below-threshold
 `max_turns`/`max_actions` are rejected.
 Shared-backend/global setup failure returns 2 with no output or seed records;
 an individual seed failure is retained as `execution_failure` and returns 1.

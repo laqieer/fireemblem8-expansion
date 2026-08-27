@@ -602,6 +602,57 @@ class RunUntilSchemaTests(unittest.TestCase):
                         scheduled_write=scheduled_write,
                     )
 
+    def test_capture_preserves_preexisting_positional_parameter_order(self):
+        fixed = gba_playtest.parse_scenario_data(
+            {
+                "schema_version": 1,
+                "name": "fixed-positional",
+                "frames": [],
+                "checkpoints": [
+                    {
+                        "name": "fixed",
+                        "frame": 1,
+                        "framebuffer": False,
+                        "probes": [{"address": PROBE_ADDRESS, "size": 4}],
+                    }
+                ],
+            }
+        )
+        work_root = ROOT / "build" / "test-artifacts" / "capture-positional"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as temporary:
+            temporary_path = Path(temporary)
+            rom = temporary_path / "fixture.gba"
+            backend = temporary_path / "prebuilt-backend"
+            build_homebrew_rom(rom)
+            backend.write_bytes(b"prebuilt")
+            completed = mock.Mock(
+                returncode=0,
+                stderr="",
+                stdout=(
+                    "CHECKPOINT\t0\t1\t0000000000000000\n"
+                    "PROBE\t0\t0\t0\n"
+                ),
+            )
+            with mock.patch.object(
+                gba_playtest,
+                "_run_transient_retryable",
+                return_value=completed,
+            ), mock.patch.object(
+                gba_playtest.tempfile,
+                "tempdir",
+                str(temporary_path),
+            ):
+                fingerprint = gba_playtest.capture(
+                    rom,
+                    fixed,
+                    None,
+                    0,
+                    backend,
+                    None,
+                )
+        self.assertEqual(fingerprint["scenario"], "fixed-positional")
+
 
 class RunUntilFingerprintTests(unittest.TestCase):
     def test_format_three_validates_terminal_and_checkpoint(self):

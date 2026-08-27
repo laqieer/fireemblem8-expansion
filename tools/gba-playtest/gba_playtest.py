@@ -1753,8 +1753,13 @@ def validate_run_until_terminal_outcome(
     }
     if reason in TERMINAL_CONDITION_REASONS and reason not in declared_reasons:
         raise PlaytestError("terminal reason is not declared by the scenario")
-    if reason == "engine_stall" and run_until.stall is None:
-        raise PlaytestError("engine_stall is not configured by the scenario")
+    if reason == "engine_stall":
+        if run_until.stall is None:
+            raise PlaytestError("engine_stall is not configured by the scenario")
+        if frame < run_until.stall.max_unchanged_frames:
+            raise PlaytestError(
+                "engine_stall occurred before the configured unchanged-frame limit"
+            )
     if reason == "max_frames" and frame != run_until.max_frames - 1:
         raise PlaytestError("max_frames did not occur at the final bounded frame")
     if reason == "max_turns":
@@ -2191,10 +2196,10 @@ def capture(
     scenario: Scenario,
     sram_image: Path | None = None,
     retries: int = 0,
-    scheduled_write: ScheduledWrite | None = None,
-    work_dir: Path | None = None,
     backend_path: Path | None = None,
     sram_output: Path | None = None,
+    scheduled_write: ScheduledWrite | None = None,
+    work_dir: Path | None = None,
 ) -> dict[str, Any]:
     if scenario.disabled:
         raise PlaytestError(f"scenario {scenario.name!r} is disabled: {scenario.blocker}")

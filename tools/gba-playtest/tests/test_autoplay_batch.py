@@ -526,6 +526,34 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         self.assertIn("scenario.definition_sha256", changed_fields)
         self.assertIn("specification.definition_sha256", changed_fields)
 
+    def test_checkpoint_expectations_roundtrip_and_change_scenario_digest(self):
+        without_expected = gba_playtest.parse_scenario_data(scenario_data())
+        without_definition = autoplay_batch._scenario_definition(without_expected)
+        self.assertNotIn(
+            "expected",
+            without_definition["run_until"]["checkpoint"]["probes"][0],
+        )
+
+        digests = []
+        for expected in ("0x00000001", "0x00000002"):
+            data = scenario_data()
+            data["run_until"]["checkpoint"]["probes"][0][
+                "expected"
+            ] = expected
+            parsed = gba_playtest.parse_scenario_data(data)
+            definition = autoplay_batch._scenario_definition(parsed)
+            self.assertEqual(
+                definition["run_until"]["checkpoint"]["probes"][0]["expected"],
+                expected,
+            )
+            reparsed = gba_playtest.parse_scenario_data(definition)
+            self.assertEqual(
+                autoplay_batch._scenario_definition(reparsed),
+                definition,
+            )
+            digests.append(autoplay_batch._canonical_sha256(definition))
+        self.assertNotEqual(digests[0], digests[1])
+
     def test_imported_spec_reapplies_complete_required_metric_contract(self):
         baseline = self.output("metric-contract-baseline.json")
         self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
@@ -731,6 +759,40 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                     True,
                     actions,
                 )
+
+        stall = copy.deepcopy(valid)
+        stall_definition = stall["provenance"]["scenario"]["definition"]
+        stall_definition["run_until"]["stall"] = {
+            "max_unchanged_frames": 2,
+            "progress": {"address": PROBE_TURN, "size": 4},
+            "work_expected": {
+                "address": PROBE_ACTION,
+                "operator": "gt",
+                "size": 4,
+                "value": "0x00000000",
+            },
+        }
+        self._refresh_scenario_digest(stall)
+        stall_run = stall["runs"][0]
+        stall_run["status"] = "terminal_failure"
+        stall_run["terminal"]["reason"] = "engine_stall"
+        stall_run["terminal"]["frame"] = 1
+        stall_run["metrics"]["terminal"] = "engine_stall"
+        stall_run["metrics"]["frames"] = 2
+        self._refresh_report_summary(stall)
+        self._assert_compare_rejects(
+            baseline,
+            stall,
+            "early-configured-stall",
+            "before the configured unchanged-frame limit",
+        )
+
+        boundary = copy.deepcopy(stall)
+        boundary_run = boundary["runs"][0]
+        boundary_run["terminal"]["frame"] = 2
+        boundary_run["metrics"]["frames"] = 3
+        self._refresh_report_summary(boundary)
+        autoplay_batch.validate_report(boundary, "stall-boundary")
 
     def test_imported_seed_binding_is_resolved_writable_and_in_frame(self):
         baseline = self.output("seed-binding-baseline.json")

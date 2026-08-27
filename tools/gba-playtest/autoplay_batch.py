@@ -157,7 +157,10 @@ def _scenario_probe(probe: gba_playtest.Probe) -> dict[str, Any]:
         raise gba_playtest.PlaytestError(
             f"scenario probe {probe.binding!r} has no resolved execution address"
         )
-    return {"address": f"0x{probe.address:08x}", "size": probe.size}
+    normalized = {"address": f"0x{probe.address:08x}", "size": probe.size}
+    if probe.expected is not None:
+        normalized["expected"] = probe.expected
+    return normalized
 
 
 def _scenario_definition(scenario: gba_playtest.Scenario) -> dict[str, Any]:

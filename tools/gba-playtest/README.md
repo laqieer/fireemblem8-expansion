@@ -133,7 +133,9 @@ only there after a fresh libmGBA boot; it never treats a seed as a label or
 silently mutates an unknown RNG state. Every seed must fit the declared probe
 before backend setup. Generic `gba_playtest.capture` also rejects a
 `ScheduledWrite` for fixed-frame scenarios before plan serialization or
-backend startup; format 6 is bounded-run-until-only. The terminal checkpoint must
+backend startup; format 6 is bounded-run-until-only. Its preexisting positional
+order through `backend_path` and `sram_output` remains stable; batch-only
+`scheduled_write` and `work_dir` options are appended. The terminal checkpoint must
 declare every semantic probe used by the selected metrics. Imported metric
 definitions retain their canonical resolved address and size, which must match
 one terminal-checkpoint probe even when several metrics intentionally share
@@ -164,7 +166,8 @@ provenance, and SHA-256 identities over canonical normalized scenario
 semantics and the complete specification/metric definitions. Comparison
 reports list provenance-field changes, so two inputs with the same display
 name/version but different behavior definitions cannot be treated as the same
-experiment. Report loading validates every nested provenance, ROM, terminal,
+experiment. Inline checkpoint probe expectations are part of normalized
+scenario semantics, including their presence or absence. Report loading validates every nested provenance, ROM, terminal,
 metric, aggregate, and run value before comparison. `success` and
 `terminal_failure` records contain exactly seed, status, ROM provenance,
 terminal, and metrics. The explicit `execution_failure` exception contains
@@ -185,6 +188,8 @@ stored as resolved numeric literals, so a symbolic scenario such as
 objective failures must be declared, stalls require configured stall
 detection, `max_frames` must occur on the final bounded frame, and
 `max_turns`/`max_actions` must reach their corresponding limits.
+An `engine_stall` frame must also be at least its configured
+`max_unchanged_frames`, matching the earliest frame the backend can emit.
 Serial and parallel runs omit scheduling/timing details from the JSON, so the
 same inputs produce byte-identical reports. The summary adds deterministic
 terminal-reason counts and per-metric value distributions without omitting the

@@ -839,8 +839,10 @@ second divergent emulator run.
 
 The version-2 report contains sorted ROM/configuration/scenario/profile/bound
 provenance, canonical normalized scenario and specification definitions with
-validated SHA-256 identities, and one sorted run record per seed. A terminal
-success, objective failure, stall, or exhausted frame/turn/action budget is
+validated SHA-256 identities, and one sorted run record per seed. Inline
+terminal-checkpoint probe expectations participate in that canonical identity;
+absence remains absent, while adding or changing an expectation changes the
+digest. A terminal success, objective failure, stall, or exhausted frame/turn/action budget is
 retained with its terminal counters and declared metrics; an individual seed
 execution failure remains a status-1 record containing only seed, status,
 stable error text, and ROM provenance because it has no trustworthy
@@ -856,7 +858,8 @@ scenario's required frame/turn/action bounds and counter probes, and terminal
 plus metric values must remain within them. Counter addresses are serialized
 as resolved numeric literals, so symbolic aliases validate against executable
 identity. Objective failure must be scenario-declared, engine stall requires a
-stall detector, `max_frames` occurs only on the final bounded frame, and
+stall detector and cannot occur before its configured unchanged-frame limit,
+`max_frames` occurs only on the final bounded frame, and
 turn/action exhaustion must reach its declared threshold. Output is exclusively staged
 beside the requested ignored `build/` path, fsynced, and hard-linked to an
 absent destination without clobbering; a competing creator is preserved and

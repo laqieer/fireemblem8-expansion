@@ -20577,7 +20577,7 @@
       "domain": "unit",
       "key": "tools/gba-playtest/autoplay_batch.py|tool-symbol|unit|faction",
       "kind": "tool-symbol",
-      "line": 327,
+      "line": 330,
       "path": "tools/gba-playtest/autoplay_batch.py",
       "reason": null,
       "record_count": null,
@@ -21354,7 +21354,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "c3fe581d8ed2b995d55dc98d6f45c4e9746f284360e65b3a4d666b38ae533441",
+  "digest": "e1f4029639878aeae0391896bdd834fbf9a411f54b57be2ba7aff4f03f5f82ba",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,
