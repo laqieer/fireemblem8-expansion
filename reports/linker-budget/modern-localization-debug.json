@@ -71,43 +71,43 @@
     "missing": [],
     "symbols": {
       "gExpansionLocaleMsgCount": 2,
-      "gExpansionLocaleMsgIds": 286,
+      "gExpansionLocaleMsgIds": 290,
       "gExpansionLocaleTombstoneCount": 2
     },
-    "total_bytes": 290
+    "total_bytes": 294
   },
   "rom_catalog_strings": {
     "missing": [],
     "symbols": {
-      "gExpansionCatalog_de": 572,
-      "gExpansionCatalog_en": 572,
-      "gExpansionCatalog_es": 572,
-      "gExpansionCatalog_fr": 572,
-      "gExpansionCatalog_it": 572,
-      "gExpansionCatalog_ja": 572,
-      "gExpansionCatalog_qps_ploc": 572,
-      "gExpansionCatalog_zh_Hans": 572
+      "gExpansionCatalog_de": 580,
+      "gExpansionCatalog_en": 580,
+      "gExpansionCatalog_es": 580,
+      "gExpansionCatalog_fr": 580,
+      "gExpansionCatalog_it": 580,
+      "gExpansionCatalog_ja": 580,
+      "gExpansionCatalog_qps_ploc": 580,
+      "gExpansionCatalog_zh_Hans": 580
     },
-    "total_bytes": 4576,
+    "total_bytes": 4640,
     "unexpected": []
   },
   "schema_version": 1,
   "source_catalog_budget": {
-    "active_message_count": 143,
-    "catalog_index_bytes": 4958,
+    "active_message_count": 145,
+    "catalog_index_bytes": 5026,
     "catalog_string_bytes": {
-      "de": 1495,
-      "en": 1295,
-      "es": 1486,
-      "fr": 1513,
-      "it": 1479,
-      "ja": 1673,
-      "qps-ploc": 1984,
-      "total": 12438,
-      "zh-Hans": 1513
+      "de": 1534,
+      "en": 1336,
+      "es": 1531,
+      "fr": 1559,
+      "it": 1524,
+      "ja": 1710,
+      "qps-ploc": 2025,
+      "total": 12769,
+      "zh-Hans": 1550
     },
     "emission_profile": "debug",
-    "glyphs_used_count": 427,
+    "glyphs_used_count": 443,
     "locales_generated": [
       "en",
       "ja",
@@ -120,14 +120,14 @@
     ],
     "omitted_active_message_count": 0,
     "pseudo_policy_counts": {
-      "compact": 37,
+      "compact": 39,
       "preserve": 6,
       "transform": 100
     },
     "scratch_budget_bytes": 96,
-    "scratch_headroom_bytes": 33,
-    "scratch_slot_bytes_used_max": 63,
-    "stable_active_message_count": 143,
+    "scratch_headroom_bytes": 38,
+    "scratch_slot_bytes_used_max": 58,
+    "stable_active_message_count": 145,
     "tombstone_count": 1
   }
 }

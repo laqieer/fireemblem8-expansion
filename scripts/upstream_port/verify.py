@@ -358,12 +358,13 @@ def gates(jobs: int = 2) -> List[Gate]:
         ),
         Gate(
             name="modern-all-locales-all-features-profile",
-            command=["make", "expansion-modern-all-locales-all-features-check", "-j1"],
+            command=["make", "expansion-modern-map-menu-presentation-check", "-j1"],
             applicable_note=(
                 "issue #49 trusted-patch preflight: builds and validates the "
                 "isolated release/AAPCS 32 MiB all-production-locales and "
-                "maximal-supported-features profile without reading a base "
-                "image, creating a patch, or publishing an artifact"
+                "maximal-supported-features profile, then runs issue #168's "
+                "deterministic map-menu presentation scenario without reading "
+                "a base image, creating a patch, or publishing an artifact"
             ),
         ),
         Gate(

@@ -28779,6 +28779,22 @@
           ]
         },
         {
+          "id": "expansion:danger_overlay.label",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:danger_overlay.help",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "static:sTacticianGridJaHiragana",
           "mapping_source_kind": "static_ui",
           "reason": "tactician name-entry grid system-font consumer",
@@ -28798,12 +28814,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2068,
+          "system": 2070,
           "talk": 1172
         },
-        "expansion_key_count": 143,
+        "expansion_key_count": 145,
         "game_target_count": 3414,
-        "record_count": 3559,
+        "record_count": 3561,
         "unclassified_count": 0
       }
     },
@@ -57585,6 +57601,22 @@
           ]
         },
         {
+          "id": "expansion:danger_overlay.label",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:danger_overlay.help",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "static:sTacticianGridZhHansFrequent",
           "mapping_source_kind": "static_ui",
           "reason": "tactician name-entry grid system-font consumer",
@@ -57604,12 +57636,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2068,
+          "system": 2070,
           "talk": 1172
         },
-        "expansion_key_count": 143,
+        "expansion_key_count": 145,
         "game_target_count": 3414,
-        "record_count": 3559,
+        "record_count": 3561,
         "unclassified_count": 0
       }
     }

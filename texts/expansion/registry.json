@@ -1212,6 +1212,26 @@
       "surface": "debug_overlay",
       "max_width": 20,
       "max_decoded_bytes": 32
+    },
+    {
+      "id": 144,
+      "key": "danger_overlay.label",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 8,
+      "max_decoded_bytes": 24,
+      "pseudo_policy": "compact",
+      "notes": "Issue #168 localized short map-menu label for issue #6 danger overlay."
+    },
+    {
+      "id": 145,
+      "key": "danger_overlay.help",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 64,
+      "max_decoded_bytes": 96,
+      "pseudo_policy": "compact",
+      "notes": "Issue #168 localized map-menu help for issue #6 danger overlay."
     }
   ]
 }

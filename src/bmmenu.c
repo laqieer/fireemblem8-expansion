@@ -8,10 +8,11 @@
 #include "debug_save_fixture_internal.h"
 #endif
 
+#if FE8_EXPANSION_DANGER_OVERLAY_MENU || FE8_EXPANSION_BLUE_PHASE_DELEGATE
+#include "expansion_locale.h"
+#endif
 #if FE8_EXPANSION_BLUE_PHASE_DELEGATE
 #include "expansion_blue_phase_delegate.h"
-#include "expansion_locale.h"
-#include "expansion_msg_ids.h"
 #endif
 
 #include "hardware.h"
@@ -68,6 +69,10 @@ extern u16 gBattleForecast_2[];
 extern u8 gSummonConfig[4][2];
 
 EWRAM_OVERLAY(0) struct Font gItemSelectMenuFont = {};
+
+#if defined(FE8_MAP_MENU_GEOMETRY_RUNTIME_TEST)
+EWRAM_DATA struct ExpansionMapMenuGeometryProbe gExpansionMapMenuGeometryProbe = {0};
+#endif
 
 struct ProcCmd CONST_DATA gProcScr_BackToUnitMenu[] = {
     PROC_CALL(LockGame),
@@ -212,6 +217,93 @@ u8 MapMenu_DangerZone_UnusedEffect(void) {
 #define EXPANSION_RECORD_DANGER_OVERLAY_PREF() ((void)0)
 #endif
 
+#if FE8_EXPANSION_DANGER_OVERLAY_MENU || FE8_EXPANSION_BLUE_PHASE_DELEGATE
+#if defined(FE8_MAP_MENU_GEOMETRY_RUNTIME_TEST)
+void ExpansionMapMenu_PrepareGeometryRuntimeTest(void)
+{
+    BmGuideTextSetAllGreen();
+}
+#endif
+
+void ExpansionMapMenu_EnsureVerticalBounds(struct MenuProc* menu)
+{
+    int i;
+    int overflow = menu->rect.y + menu->rect.h - DISPLAY_HEIGHT / 8;
+
+    if (overflow > menu->rect.y)
+        overflow = menu->rect.y;
+
+    if (overflow > 0)
+    {
+        menu->rect.y -= overflow;
+
+        for (i = 0; i < menu->itemCount; ++i)
+            menu->menuItems[i]->yTile -= overflow;
+    }
+
+#if defined(FE8_MAP_MENU_GEOMETRY_RUNTIME_TEST)
+    gExpansionMapMenuGeometryProbe.visibleRowCount = menu->itemCount;
+    gExpansionMapMenuGeometryProbe.frameTopTile = menu->rect.y;
+    gExpansionMapMenuGeometryProbe.frameBottomTile =
+        menu->rect.y + menu->rect.h - 1;
+    gExpansionMapMenuGeometryProbe.endTextBottomTile =
+        menu->menuItems[menu->itemCount - 1]->yTile + 1;
+    gExpansionMapMenuGeometryProbe.firstMessageId =
+        menu->menuItems[0]->def->nameMsgId;
+    gExpansionMapMenuGeometryProbe.secondMessageId =
+        menu->menuItems[1]->def->nameMsgId;
+    gExpansionMapMenuGeometryProbe.lastMessageId =
+        menu->menuItems[menu->itemCount - 1]->def->nameMsgId;
+#endif
+}
+
+int ExpansionMapMenuItem_Draw(
+    struct MenuProc* menu,
+    struct MenuItemProc* menuItem)
+{
+    if (menuItem->availability == MENU_DISABLED)
+        Text_SetColor(&menuItem->text, TEXT_COLOR_SYSTEM_GRAY);
+
+    Text_SetCursor(&menuItem->text, 8);
+    Text_DrawString(
+        &menuItem->text,
+        ExpansionLocale_ResolveCurrent(menuItem->def->nameMsgId));
+    PutText(
+        &menuItem->text,
+        TILEMAP_LOCATED(
+            BG_GetMapBuffer(menu->frontBg),
+            menuItem->xTile,
+            menuItem->yTile));
+
+    return 0;
+}
+
+u8 ExpansionMapMenuItem_RPress(struct MenuProc* menu)
+{
+    MenuAutoHelpBoxSelect(menu);
+    return 0;
+}
+
+u8 ExpansionMapMenuItem_HelpBox(
+    struct MenuProc* menu,
+    struct MenuItemProc* menuItem)
+{
+    if (menuItem->def->onDraw == ExpansionMapMenuItem_Draw)
+    {
+        const char *resolved =
+            ExpansionLocale_ResolveCurrentPersistent(menuItem->def->helpMsgId);
+
+        StartHelpBoxString(
+            menuItem->xTile * 8,
+            menuItem->yTile * 8,
+            resolved);
+        return 0;
+    }
+
+    return MenuStdHelpBox(menu, menuItem);
+}
+#endif
+
 #if FE8_EXPANSION_DANGER_OVERLAY_MENU
 /*
  * Issue #6 player QoL: config-gated map-menu command that promotes the
@@ -259,26 +351,6 @@ u8 ExpansionBluePhaseDelegate_MenuAvailability(
         : MENU_NOTSHOWN;
 }
 
-int ExpansionBluePhaseDelegate_MenuDraw(
-    struct MenuProc* menu,
-    struct MenuItemProc* menuItem)
-{
-    if (menuItem->availability == MENU_DISABLED)
-        Text_SetColor(&menuItem->text, TEXT_COLOR_SYSTEM_GRAY);
-
-    Text_DrawString(
-        &menuItem->text,
-        ExpansionLocale_ResolveCurrent(EXP_MSG_AUTOPLAY_CHARGE_LABEL));
-    PutText(
-        &menuItem->text,
-        TILEMAP_LOCATED(
-            BG_GetMapBuffer(menu->frontBg),
-            menuItem->xTile,
-            menuItem->yTile));
-
-    return 0;
-}
-
 u8 ExpansionBluePhaseDelegate_MenuSelect(
     struct MenuProc* menu,
     struct MenuItemProc* menuItem)
@@ -293,31 +365,6 @@ u8 ExpansionBluePhaseDelegate_MenuSelect(
         return MENU_ACT_SND6B;
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
-}
-
-u8 ExpansionBluePhaseDelegate_MenuRPress(struct MenuProc* menu)
-{
-    MenuAutoHelpBoxSelect(menu);
-    return 0;
-}
-
-u8 ExpansionBluePhaseDelegate_MenuHelpBox(
-    struct MenuProc* menu,
-    struct MenuItemProc* menuItem)
-{
-    if (menuItem->def->onSelected == ExpansionBluePhaseDelegate_MenuSelect)
-    {
-        const char *resolved =
-            ExpansionLocale_ResolveCurrentPersistent(EXP_MSG_AUTOPLAY_CHARGE_HELP);
-
-        StartHelpBoxString(
-            menuItem->xTile * 8,
-            menuItem->yTile * 8,
-            resolved);
-        return 0;
-    }
-
-    return MenuStdHelpBox(menu, menuItem);
 }
 #endif
 

@@ -2058,7 +2058,14 @@ static void StartHelpBoxExtInternal(
         proc->info->populate(proc);
 
     SetTextFontGlyphs(1);
+#ifdef MODERN
+    if (string)
+        GetStringTextBoxFromString(string, &wContent, &hContent);
+    else
+        GetStringTextBox(GetStringFromIndex(proc->mid), &wContent, &hContent);
+#else
     GetStringTextBox(string ? string : GetStringFromIndex(proc->mid), &wContent, &hContent);
+#endif
     SetTextFontGlyphs(0);
 
     ApplyHelpBoxContentSize(proc, wContent, hContent);

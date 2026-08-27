@@ -442,10 +442,10 @@ project-specific screen or asset package.
 - **Feature / originating issue:** `unified-utility-preferences` /
   [issue #44](https://github.com/laqieer/fireemblem8-expansion/issues/44).
 - **Supported configuration or artifact:** default modern source checkout
-  and the optional `EXPANSION_DANGER_OVERLAY_MENU=1` profile for Threat
-  Range; Python 3 and a host C compiler.
+  and the optional `EXPANSION_DANGER_OVERLAY_MENU=1` profile for Danger;
+  Python 3 and a host C compiler.
 - **Prerequisites and clean starting state:** use synthetic preference records
-  only. Start default profile with Threat Range unavailable, then test the
+  only. Start default profile with Danger unavailable, then test the
   opt-in profile separately.
 
 ### Actions
@@ -457,7 +457,7 @@ project-specific screen or asset package.
 
 ### Expected result
 
-Battle presentation is always available; Threat Range is unavailable by
+Battle presentation is always available; Danger is unavailable by
 default and becomes selectable only in its existing opt-in profile. Valid
 selections persist through `ExpansionUserPrefs` without changing other
 records.
@@ -465,7 +465,7 @@ records.
 ### Negative control
 
 Unknown policy IDs, utility bits outside the mask, newer selection schemas,
-and unavailable Threat Range are rejected or safely defaulted.
+and unavailable Danger are rejected or safely defaulted.
 
 ### Interactions and save compatibility
 

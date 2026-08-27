@@ -133,6 +133,28 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 f"build.yml step {step_name!r} command {workflow_argv!r}",
             )
 
+    def test_all_locales_gate_mirrors_required_presentation_target(self):
+        gate = next(
+            gate
+            for gate in verify_mod.gates(jobs=2)
+            if gate.name == "modern-all-locales-all-features-profile"
+        )
+        self.assertEqual(
+            gate.command,
+            ["make", "expansion-modern-map-menu-presentation-check", "-j1"],
+        )
+        workflow_commands = dict(_parse_workflow_gate_commands())
+        self.assertEqual(
+            workflow_commands[
+                "Build and verify all-locales/all-features map menu (issues #49/#168)"
+            ],
+            gate.command,
+        )
+        self.assertNotIn(
+            ["make", "expansion-modern-all-locales-all-features-check", "-j1"],
+            [command for _, command in _parse_workflow_gate_commands()],
+        )
+
     def test_checkout_verification_is_not_counted_as_a_mirrored_gate(self):
         parsed = _parse_workflow_gate_commands()
         self.assertNotIn(

@@ -57,11 +57,12 @@ def locale_to_symbol(locale: str) -> str:
 
 
 def _c_string_literal(text: str) -> str:
-    """Encodes exact UTF-8 bytes as a C89 string literal.
+    """Encodes text as a C89 string literal.
 
-    Printable ASCII stays readable. Non-ASCII UTF-8 bytes use fixed
-    three-digit octal escapes so C's greedy ``\\x`` parsing can never absorb
-    a following hexadecimal digit and alter the byte stream."""
+    Authored LF maps to the engine's 0x01 line-break control. All other UTF-8
+    bytes are preserved: printable ASCII stays readable, while non-ASCII bytes
+    use fixed three-digit octal escapes so C's greedy ``\\x`` parsing can never
+    absorb a following hexadecimal digit and alter the byte stream."""
     out = ['"']
     for ch in text:
         if ch == "\\":
@@ -69,7 +70,7 @@ def _c_string_literal(text: str) -> str:
         elif ch == '"':
             out.append('\\"')
         elif ch == "\n":
-            out.append("\\n")
+            out.append("\\001")
         elif 0x20 <= ord(ch) <= 0x7E:
             out.append(ch)
         else:

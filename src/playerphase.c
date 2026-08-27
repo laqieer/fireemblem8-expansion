@@ -34,6 +34,7 @@
 #include "expansion_autoplay_internal.h"
 #include "expansion_autoplay_planner.h"
 #endif
+#include "bmmenu.h"
 
 #include "playerphase.h"
 
@@ -369,7 +370,23 @@ void PlayerPhase_MainIdle(ProcPtr proc)
                         ShowUnitSprite(unit);
                     }
 
-                    StartOrphanMenuAdjusted(&gMapMenuDef, gBmSt.cursorTarget.x - gBmSt.camera.x, 1, 0x17);
+#if FE8_EXPANSION_DANGER_OVERLAY_MENU || FE8_EXPANSION_BLUE_PHASE_DELEGATE
+#if defined(FE8_MAP_MENU_GEOMETRY_RUNTIME_TEST)
+                    ExpansionMapMenu_PrepareGeometryRuntimeTest();
+#endif
+                    ExpansionMapMenu_EnsureVerticalBounds(
+                        StartOrphanMenuAdjusted(
+                            &gMapMenuDef,
+                            gBmSt.cursorTarget.x - gBmSt.camera.x,
+                            1,
+                            0x17));
+#else
+                    StartOrphanMenuAdjusted(
+                        &gMapMenuDef,
+                        gBmSt.cursorTarget.x - gBmSt.camera.x,
+                        1,
+                        0x17);
+#endif
                     Eventinfo_CondFalse_2();
 
                     Proc_Goto(proc, 9);
