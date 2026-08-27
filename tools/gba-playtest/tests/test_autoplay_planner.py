@@ -120,6 +120,45 @@ class PlannerBridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(planner.PlannerError, "unconsumed"):
             mailbox.submit(planner.Command(planner.CommandKind.START, 1, 0))
 
+    def test_action_page_decodes_actor_and_target_slots(self):
+        words = [0] * 249
+        words[:15] = [
+            0x41504C4E,
+            planner.PROTOCOL_VERSION,
+            249 * 4,
+            1,
+            2,
+            2,
+            3,
+            4,
+            4,
+            0,
+            1,
+            1,
+            1,
+            0,
+            7,
+        ]
+        words[25:33] = [
+            3,
+            1,
+            2 | (3 << 16),
+            2 | (4 << 8) | (5 << 16),
+            1 | (3 << 8),
+            0x12345678,
+            0x9ABCDEF0,
+            2,
+        ]
+        observation = planner.parse_transport_observation(words)
+        action = observation.actions[0].action
+        self.assertEqual(action.item_slot, 1)
+        self.assertEqual(action.target_item_slot, 3)
+        self.assertEqual(action.target_position, (4, 5))
+
+        words[29] = 1 | (0xFF << 8)
+        observation = planner.parse_transport_observation(words)
+        self.assertIsNone(observation.actions[0].action.target_item_slot)
+
     def test_host_begin_and_commit_limits_are_atomic(self):
         boundary = planner.PlannerBridge(PROVENANCE)
         boundary.begin(PROVENANCE)
@@ -249,7 +288,10 @@ class PlannerBridgeTests(unittest.TestCase):
         transport = (PLAYTEST_DIR / "planner_transport_backend.c").read_text(
             encoding="utf-8"
         )
-        self.assertNotIn("gActionData", target)
+        self.assertEqual(
+            set(re.findall(r"gActionData\.([A-Za-z0-9_]+)\s*=", target)),
+            {"xOther", "yOther", "itemSlotIndex", "trapType"},
+        )
         self.assertNotIn("busWrite", target)
         self.assertNotIn("socket", host)
         self.assertNotIn("subprocess", host)
@@ -460,6 +502,8 @@ class PlannerBridgeTests(unittest.TestCase):
                     "-Werror=implicit-function-declaration",
                     "-Werror=implicit-int",
                     "-O2",
+                    "-ffunction-sections",
+                    "-fdata-sections",
                     "-I",
                     str(root / "include"),
                     "-I",
@@ -468,8 +512,10 @@ class PlannerBridgeTests(unittest.TestCase):
                     "-DFE8_EXPANSION_DEBUG=1",
                     "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
                     "-DFE8_AUTOPLAY_PLANNER_RUNTIME_TEST=1",
+                    str(root / "src" / "action_semantics.c"),
                     str(root / "src" / "expansion_autoplay_planner.c"),
                     str(TESTS_DIR / "c" / "expansion_autoplay_planner_driver.c"),
+                    "-Wl,--gc-sections",
                     "-o",
                     str(executable),
                 ],
@@ -483,6 +529,57 @@ class PlannerBridgeTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             self.assertIn("AUTOPLAY_PLANNER_HOST_TEST: PASS", completed.stdout)
+
+    def test_native_action_semantics_execute_selected_fields(self):
+        compiler = shutil.which("gcc") or shutil.which("cc")
+        if compiler is None:
+            self.skipTest("no host C compiler")
+        root = TESTS_DIR.parents[2]
+        build_root = root / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            executable = Path(temporary) / "action-semantics-driver"
+            completed = subprocess.run(
+                [
+                    compiler,
+                    "-std=gnu89",
+                    "-Werror=declaration-after-statement",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    "-O2",
+                    "-I",
+                    str(root / "include"),
+                    "-I",
+                    str(root / "include" / "generated"),
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-DFE8_EXPANSION_DEBUG=1",
+                    "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
+                    str(root / "src" / "action_semantics.c"),
+                    str(TESTS_DIR / "c" / "action_semantics_driver.c"),
+                    "-o",
+                    str(executable),
+                ],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = subprocess.run(
+                [str(executable)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn("ACTION_SEMANTICS_HOST_TEST: PASS", completed.stdout)
 
     def test_arm_adapter_compiles_at_the_existing_computer_decision_boundary(self):
         compiler = shutil.which("arm-none-eabi-gcc")
@@ -498,6 +595,7 @@ class PlannerBridgeTests(unittest.TestCase):
             objects = []
             for source in (
                 root / "src" / "expansion_autoplay_planner.c",
+                root / "src" / "action_semantics.c",
                 root / "src" / "cp_decide.c",
             ):
                 output = temporary_path / f"{source.stem}.o"
@@ -550,24 +648,41 @@ class PlannerBridgeTests(unittest.TestCase):
             self.assertIsNotNone(observation, "planner observation symbol missing")
             self.assertEqual(int(observation.group(1), 16), 996)
             self.assertLessEqual(int(observation.group(1), 16), planner.PAGE_MAX_BYTES)
+            command = re.search(
+                r"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+[bBdD]\s+"
+                r"gExpansionAutoplayPlannerCommand$",
+                symbols.stdout,
+                re.MULTILINE,
+            )
+            checkpoint = re.search(
+                r"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+[bBdD]\s+"
+                r"gExpansionAutoplayPlannerCampaignCheckpoint$",
+                symbols.stdout,
+                re.MULTILINE,
+            )
+            self.assertIsNotNone(command, "planner command symbol missing")
+            self.assertIsNotNone(checkpoint, "planner checkpoint symbol missing")
+            self.assertEqual(int(command.group(1), 16), 64)
+            self.assertEqual(int(checkpoint.group(1), 16), 52)
             self.assertNotIn("sPlannerCandidates", symbols.stdout)
             self.assertNotIn("sPlannerSelectedDecision", symbols.stdout)
 
             sections = subprocess.run(
-                [size, "-A", str(objects[0])],
+                [size, "-A", str(objects[0]), str(objects[1])],
                 cwd=root,
                 capture_output=True,
                 text=True,
             )
             self.assertEqual(sections.returncode, 0, sections.stdout + sections.stderr)
-            section_sizes = {
-                match.group(1): int(match.group(2))
-                for match in re.finditer(
-                    r"^(\S+)\s+(\d+)\s+\d+$",
-                    sections.stdout,
-                    re.MULTILINE,
+            section_sizes: dict[str, int] = {}
+            for section, value in re.findall(
+                r"^(\S+)\s+(\d+)\s+\d+$",
+                sections.stdout,
+                re.MULTILINE,
+            ):
+                section_sizes[section] = (
+                    section_sizes.get(section, 0) + int(value)
                 )
-            }
             self.assertLessEqual(
                 section_sizes.get("ewram_data", 0)
                 + section_sizes.get(".bss", 0),
@@ -678,11 +793,50 @@ class PlannerBridgeTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            disabled_action_semantics = (
+                temporary_path / "action-semantics-release-disabled.o"
+            )
+            completed = subprocess.run(
+                [
+                    compiler,
+                    "-mcpu=arm7tdmi",
+                    "-mthumb",
+                    "-mthumb-interwork",
+                    "-mabi=aapcs",
+                    "-std=gnu89",
+                    "-ffreestanding",
+                    "-fno-builtin",
+                    "-O2",
+                    "-DNDEBUG",
+                    "-I",
+                    str(root / "include"),
+                    "-I",
+                    str(root / "include" / "generated"),
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-DFE8_EXPANSION_AUTOPLAY_PLANNER=0",
+                    "-c",
+                    str(root / "src" / "action_semantics.c"),
+                    "-o",
+                    str(disabled_action_semantics),
+                ],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
             symbols = subprocess.run(
-                [nm, str(disabled)], cwd=root, capture_output=True, text=True
+                [nm, str(disabled), str(disabled_action_semantics)],
+                cwd=root,
+                capture_output=True,
+                text=True,
             )
             self.assertEqual(symbols.returncode, 0, symbols.stdout + symbols.stderr)
             self.assertNotIn("gExpansionAutoplayPlanner", symbols.stdout)
+            self.assertNotIn("ActionSemantics_", symbols.stdout)
 
 
 class PlannerProcessTransport:
@@ -833,13 +987,13 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             self.assertEqual(waiting.state, 2)
             first = planner.collect_observation_pages(transport, waiting)
             self.assertEqual(len(first.fields), planner.SEMANTIC_FIELD_COUNT)
-            self.assertEqual(len(first.map_cells), 32 * 17)
+            self.assertEqual(len(first.map_cells), 8 * 8)
             self.assertEqual(len(first.units), 1)
-            self.assertEqual(len(first.actions), 512)
+            self.assertEqual(len(first.actions), 63)
             fields = {field.name: field for field in first.fields}
             self.assertEqual(
                 fields["map_dimensions"].value,
-                32 | (17 << 16),
+                8 | (8 << 16),
             )
             self.assertEqual(
                 fields["active_unit"].availability,
@@ -867,6 +1021,8 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             )
             self.assertEqual(waiting.state, 2)
             self.assertEqual(waiting.chapter, 2)
+            self.assertEqual(len(transport.checkpoint), 13)
+            self.assertEqual(transport.checkpoint[2], 52)
             self.assertEqual(transport.checkpoint[4], 1)
 
             second = planner.collect_observation_pages(transport, waiting)

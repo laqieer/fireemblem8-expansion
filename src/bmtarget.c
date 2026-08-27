@@ -1,5 +1,8 @@
 #include "global.h"
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#include "action_semantics.h"
+#endif
 #include "bmmap.h"
 #include "bmunit.h"
 #include "uiselecttarget.h"
@@ -506,6 +509,16 @@ void FillBallistaRangeMaybe(struct Unit* unit) {
 
 void TryAddClosedDoorToTargetList(int x, int y) {
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_IsUnlockStaffTarget(
+            gSubjectUnit,
+            gSubjectUnit->xPos,
+            gSubjectUnit->yPos,
+            x,
+            y)) {
+        return;
+    }
+#else
     if (gBmMapTerrain[y][x] != TERRAIN_DOOR) {
         return;
     }
@@ -513,6 +526,7 @@ void TryAddClosedDoorToTargetList(int x, int y) {
     if (!IsThereClosedDoorAt(x, y)) {
         return;
     }
+#endif
 
     AddTarget(x, y, TERRAIN_DOOR, 0);
 
@@ -555,6 +569,15 @@ void MakeTargetListForDoorAndBridges(struct Unit* unit, int terrainId) {
 }
 
 void TryAddDoorOrBridgeToTargetList(int x, int y) {
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_IsPickTarget(
+            gSubjectUnit->xPos,
+            gSubjectUnit->yPos,
+            x,
+            y)) {
+        return;
+    }
+#endif
     switch (gBmMapTerrain[y][x]) {
         case TERRAIN_DOOR:
             AddTarget(x, y, TERRAIN_DOOR, 0);
@@ -577,7 +600,11 @@ void MakeTargetListForPick(struct Unit* unit) {
 
     ForEachAdjacentPosition(x, y, TryAddDoorOrBridgeToTargetList);
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (ActionSemantics_IsPickTarget(x, y, x, y)) {
+#else
     if (gBmMapTerrain[unit->yPos][unit->xPos] == TERRAIN_CHEST_FULL) {
+#endif
         AddTarget(x, y, TERRAIN_CHEST_FULL, 0);
     }
 

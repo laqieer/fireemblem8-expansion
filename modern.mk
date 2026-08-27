@@ -1061,6 +1061,7 @@ CLEAN_DIRS += $(MODERN_AUTOPLAY_PLANNER_ROOT)
 .PHONY: expansion-modern-autoplay-planner-objects \
 	expansion-modern-autoplay-planner-profile-rom
 expansion-modern-autoplay-planner-objects: \
+	$(MODERN_OUTPUT_DIR)/src/action_semantics.o \
 	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_planner.o \
 	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay.o \
 	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies.o \
@@ -1085,6 +1086,7 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		PLANNER_PRODUCTION_ELF="$(MODERN_AUTOPLAY_PLANNER_ELF)" \
 		"$(PYTHON)" -m unittest \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_c_mailbox_adapter_accepts_only_typed_token_commit \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_action_semantics_execute_selected_fields \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_arm_adapter_compiles_at_the_existing_computer_decision_boundary \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_production_mailbox_replays_two_chapters \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_transport_rejects_and_times_out \

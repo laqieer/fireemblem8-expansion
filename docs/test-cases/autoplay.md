@@ -586,12 +586,19 @@ visible unit identity/position/HP/state/inventory, objective state/progress,
 event flags, gold, convoy, and RNG data with explicit availability on every
 semantic field or record. Both host planners echo the ROM's token words
 unchanged, commit through the #85 computer-action route, and preserve a
-checkpoint through `MNCH`/`MNC2` into chapter two. The checkpoint digest
-changes for a convoy-only mutation. The enabled full expansion ROM follows the
-established clean-boot Prologue route, accepts a host-selected nontrivial
-action, reaches the next planner observation with the actor at the committed
-destination, then cancels safely. Explicit exit, restart, load, new-game,
-full-reset, and cancel paths clear the run/checkpoint.
+52-byte checkpoint through `MNCH`/`MNC2` into chapter two. The checkpoint
+records chapter route/mode and its digest changes for route-only and
+convoy-only mutations. Torch, Warp, and Unlock enumerate multiple bounded
+coordinate targets and execute the selected coordinate rather than stale
+defaults. Hammerne enumerates and token-binds each repairable target inventory
+slot and repairs only the selected slot. Rogue Pick opens chest/door targets
+without an item; a non-Rogue key path binds and consumes the applicable
+Lockpick, Chest Key, or Door Key; a thief without one publishes no such
+candidate. The enabled full expansion ROM follows the established clean-boot
+Prologue route, accepts a host-selected nontrivial action, reaches the next
+planner observation with the actor at the committed destination, then cancels
+safely. Explicit exit, restart, load, new-game, full-reset, and cancel paths
+clear the run/checkpoint.
 
 ### Negative control
 
@@ -605,6 +612,10 @@ Prospective host observations exceeding 2 MiB fail without changing the trace,
 observation, or next ID. The transport accepts no address-bearing command and
 has no arbitrary-memory API. Release configuration rejects
 `EXPANSION_AUTOPLAY_PLANNER=1`; no bridge state is present when disabled.
+Out-of-range/occupied Warp destinations, opened or wrong Unlock tiles, stale
+Torch coordinates, consumed keys, non-repairable or wrong Hammerne slots, and
+a token copied from another Hammerne slot all reject without applying the
+selected action.
 
 ### Interactions and save compatibility
 
@@ -619,10 +630,11 @@ localization change.
 The focused host selector validates schema bounds, semantic availability,
 opaque token rejection, mailbox exclusivity, scenario/build/RNG provenance,
 typed paging, atomic trace limits, complete non-mutating enumeration,
-deadline accounting, C/ARM linkage, configure routing, and lifecycle
-teardown. The libmGBA selectors run both planner implementations and all
-negative commands against the fixed-symbol host-driven transport from a fresh
-boot with blank in-memory SRAM. No manual-only criterion remains.
+deadline accounting, coordinate/slot lowering and execution, key consumption,
+C/ARM linkage, configure routing, and lifecycle teardown. The libmGBA
+selectors run both planner implementations and all negative commands against
+the fixed-symbol host-driven transport from a fresh boot with blank in-memory
+SRAM. No manual-only criterion remains.
 
 ### Cleanup and limitations
 

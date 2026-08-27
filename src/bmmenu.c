@@ -1741,6 +1741,9 @@ u8 PickSelection_OnSelect(ProcPtr proc, struct SelectTarget* target) {
     gActionData.yOther = target->y;
 
     gActionData.unitActionType = UNIT_ACTION_PICK;
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    gActionData.itemSlotIndex = 0xFF;
+#endif
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }

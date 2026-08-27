@@ -1,16 +1,19 @@
 #include "global.h"
 
+#include "action_semantics.h"
 #include "bm.h"
 #include "bmcontainer.h"
 #include "bmitem.h"
 #include "bmitemuse.h"
 #include "bmmap.h"
+#include "bmmind.h"
 #include "bmphase.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "eventinfo.h"
 #include "rng.h"
 
+#include "constants/classes.h"
 #include "constants/items.h"
 #include "constants/terrains.h"
 
@@ -21,10 +24,11 @@
 #include "expansion_config.h"
 
 typedef char ExpansionAutoplayPlannerObservationSizeCheck[
-    sizeof(struct ExpansionAutoplayPlannerObservationV2)
-        <= EXPANSION_AUTOPLAY_PLANNER_PAGE_MAX_BYTES ? 1 : -1];
+    sizeof(struct ExpansionAutoplayPlannerObservationV2) == 996 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerCommandSizeCheck[
     sizeof(struct ExpansionAutoplayPlannerCommandV2) == 64 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerCheckpointSizeCheck[
+    sizeof(struct ExpansionAutoplayPlannerCampaignCheckpointV2) == 52 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerPointerFreeActionCheck[
     sizeof(struct ExpansionAutoplayPlannerActionV2) == 32 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerPointerFreeSemanticCheck[
@@ -177,6 +181,7 @@ static u32 MakeTokenLo(
     digest = MixDigest(digest, decision->actionId);
     digest = MixDigest(digest, decision->targetId | ((u32)decision->itemSlot << 8));
     digest = MixDigest(digest, decision->xTarget | ((u32)decision->yTarget << 8));
+    digest = MixDigest(digest, decision->unk04);
     return digest;
 }
 
@@ -328,7 +333,7 @@ static void MakeDecision(
     decision->unitId = gActiveUnitId;
     decision->xMove = xMove;
     decision->yMove = yMove;
-    decision->unk04 = 0;
+    decision->unk04 = 0xFF;
     decision->unk05 = 0;
     decision->targetId = targetId;
     decision->itemSlot = itemSlot;
@@ -415,16 +420,7 @@ static bool IsStaffTargetLegal(
         return allied;
 
     case ITEM_STAFF_REPAIR:
-    {
-        int slot;
-
-        if (!allied)
-            return false;
-        for (slot = 0; slot < UNIT_ITEM_COUNT; slot++)
-            if (IsItemHammernable(target->items[slot]))
-                return true;
-        return false;
-    }
+        return allied;
 
     case ITEM_STAFF_BARRIER:
         return allied && target->barrierDuration < 7;
@@ -453,9 +449,6 @@ static bool HasGlobalStaffTarget(int item)
 {
     int itemId = GetItemIndex(item);
     int unitId;
-
-    if (itemId == ITEM_STAFF_TORCH)
-        return gPlaySt.chapterVisionRange != 0;
 
     if (itemId != ITEM_STAFF_FORTIFY && itemId != ITEM_STAFF_LATONA)
         return false;
@@ -604,7 +597,6 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateWarpDestinations(
     int itemSlot,
     struct Unit* target)
 {
-    int range = GetUnitMagBy2Range(gActiveUnit);
     int yTarget;
     int xTarget;
 
@@ -615,10 +607,13 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateWarpDestinations(
             struct AiDecision decision;
             enum ExpansionAutoplayPlannerEnumerationResult result;
 
-            if (RectDistance(target->xPos, target->yPos, xTarget, yTarget) > range
-                || gBmMapUnit[yTarget][xTarget] != 0
-                || !CanUnitCrossTerrain(target, gBmMapTerrain[yTarget][xTarget])
-                || !IsPositionVisible(xTarget, yTarget))
+            if (!ActionSemantics_IsWarpDestination(
+                    gActiveUnit,
+                    target,
+                    xMove,
+                    yMove,
+                    xTarget,
+                    yTarget))
                 continue;
             MakeDecision(
                 &decision,
@@ -642,8 +637,7 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateUnlockTargets(
     struct PlannerEnumeration* enumeration,
     int xMove,
     int yMove,
-    int itemSlot,
-    int item)
+    int itemSlot)
 {
     int yTarget;
     int xTarget;
@@ -654,12 +648,12 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateUnlockTargets(
         {
             struct AiDecision decision;
             enum ExpansionAutoplayPlannerEnumerationResult result;
-            int distance = RectDistance(xMove, yMove, xTarget, yTarget);
-
-            if (distance < GetItemMinRange(item)
-                || distance > StaffRange(item)
-                || gBmMapTerrain[yTarget][xTarget] != TERRAIN_DOOR
-                || !IsThereClosedDoorAt(xTarget, yTarget))
+            if (!ActionSemantics_IsUnlockStaffTarget(
+                    gActiveUnit,
+                    xMove,
+                    yMove,
+                    xTarget,
+                    yTarget))
                 continue;
             MakeDecision(
                 &decision,
@@ -675,6 +669,85 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateUnlockTargets(
                 || enumeration->stopped)
                 return result;
         }
+    }
+    return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+}
+
+static enum ExpansionAutoplayPlannerEnumerationResult EnumerateTorchTargets(
+    struct PlannerEnumeration* enumeration,
+    int xMove,
+    int yMove,
+    int itemSlot)
+{
+    int reach = GetUnitItemUseReachBits(gActiveUnit, itemSlot);
+    int yTarget;
+    int xTarget;
+
+    if (gPlaySt.chapterVisionRange == 0)
+        return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+    for (yTarget = 0; yTarget < gBmMapSize.y; yTarget++)
+    {
+        for (xTarget = 0; xTarget < gBmMapSize.x; xTarget++)
+        {
+            struct AiDecision decision;
+            enum ExpansionAutoplayPlannerEnumerationResult result;
+
+            if (!ActionSemantics_IsStandingReachPosition(
+                    gActiveUnit,
+                    xMove,
+                    yMove,
+                    reach,
+                    xTarget,
+                    yTarget))
+                continue;
+            MakeDecision(
+                &decision,
+                xMove,
+                yMove,
+                AI_ACTION_STAFF,
+                0,
+                itemSlot,
+                xTarget,
+                yTarget);
+            result = EmitDecision(enumeration, &decision);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration->stopped)
+                return result;
+        }
+    }
+    return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+}
+
+static enum ExpansionAutoplayPlannerEnumerationResult EnumerateHammerneSlots(
+    struct PlannerEnumeration* enumeration,
+    int xMove,
+    int yMove,
+    int itemSlot,
+    struct Unit* target)
+{
+    int targetSlot;
+
+    for (targetSlot = 0; targetSlot < UNIT_ITEM_COUNT; targetSlot++)
+    {
+        struct AiDecision decision;
+        enum ExpansionAutoplayPlannerEnumerationResult result;
+
+        if (!IsItemHammernable(target->items[targetSlot]))
+            continue;
+        MakeDecision(
+            &decision,
+            xMove,
+            yMove,
+            AI_ACTION_STAFF,
+            target->index,
+            itemSlot,
+            0,
+            0);
+        decision.unk04 = targetSlot;
+        result = EmitDecision(enumeration, &decision);
+        if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+            || enumeration->stopped)
+            return result;
     }
     return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
 }
@@ -698,9 +771,22 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateStaff(
             || IsPositionMagicSealed(xMove, yMove))
             continue;
         itemId = GetItemIndex(item);
+        if (itemId == ITEM_STAFF_TORCH)
+        {
+            enum ExpansionAutoplayPlannerEnumerationResult result =
+                EnumerateTorchTargets(
+                    enumeration,
+                    xMove,
+                    yMove,
+                    itemSlot);
+
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration->stopped)
+                return result;
+            continue;
+        }
         if (itemId == ITEM_STAFF_FORTIFY
-            || itemId == ITEM_STAFF_LATONA
-            || itemId == ITEM_STAFF_TORCH)
+            || itemId == ITEM_STAFF_LATONA)
         {
             struct AiDecision decision;
             enum ExpansionAutoplayPlannerEnumerationResult result;
@@ -729,8 +815,7 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateStaff(
                     enumeration,
                     xMove,
                     yMove,
-                    itemSlot,
-                    item);
+                    itemSlot);
 
             if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
                 || enumeration->stopped)
@@ -747,7 +832,16 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateStaff(
             if (!IsCanonicalUnitSlot(targetId)
                 || !IsStaffTargetLegal(item, target, xMove, yMove))
                 continue;
-            if (itemId == ITEM_STAFF_WARP)
+            if (itemId == ITEM_STAFF_REPAIR)
+            {
+                result = EnumerateHammerneSlots(
+                    enumeration,
+                    xMove,
+                    yMove,
+                    itemSlot,
+                    target);
+            }
+            else if (itemId == ITEM_STAFF_WARP)
             {
                 result = EnumerateWarpDestinations(
                     enumeration,
@@ -813,6 +907,45 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateItems(
     return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
 }
 
+static int PickItemSlotForTarget(
+    int xMove,
+    int yMove,
+    int xTarget,
+    int yTarget)
+{
+    int terrain;
+    int keySlot;
+
+    if (gActiveUnit->pClassData == NULL
+        || xTarget < 0
+        || xTarget >= gBmMapSize.x
+        || yTarget < 0
+        || yTarget >= gBmMapSize.y)
+        return -2;
+    terrain = gBmMapTerrain[yTarget][xTarget];
+    if (gActiveUnit->pClassData->number == CLASS_ROGUE)
+        return ActionSemantics_IsPickTarget(
+            xMove,
+            yMove,
+            xTarget,
+            yTarget) ? -1 : -2;
+    if (!ActionSemantics_IsKeyTarget(
+            xMove,
+            yMove,
+            xTarget,
+            yTarget))
+        return -2;
+    if (terrain == TERRAIN_BRIDGE_14)
+        terrain = TERRAIN_DOOR;
+    keySlot = GetUnitKeyItemSlotForTerrain(gActiveUnit, terrain);
+    if (keySlot < 0)
+        return -2;
+    if (gBmMapTerrain[yTarget][xTarget] == TERRAIN_BRIDGE_14
+        && GetItemIndex(gActiveUnit->items[keySlot]) != ITEM_LOCKPICK)
+        return -2;
+    return keySlot;
+}
+
 static enum ExpansionAutoplayPlannerEnumerationResult EnumeratePick(
     struct PlannerEnumeration* enumeration,
     int xMove,
@@ -821,27 +954,19 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumeratePick(
     int yTarget;
     int xTarget;
 
-    if (!(UNIT_CATTRIBUTES(gActiveUnit) & CA_STEAL))
-        return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
-
     for (yTarget = 0; yTarget < gBmMapSize.y; yTarget++)
     {
         for (xTarget = 0; xTarget < gBmMapSize.x; xTarget++)
         {
             struct AiDecision decision;
             enum ExpansionAutoplayPlannerEnumerationResult result;
-            int terrain = gBmMapTerrain[yTarget][xTarget];
-            bool legal = false;
+            int keySlot = PickItemSlotForTarget(
+                xMove,
+                yMove,
+                xTarget,
+                yTarget);
 
-            if (xTarget == xMove && yTarget == yMove
-                && terrain == TERRAIN_CHEST_FULL)
-                legal = IsThereClosedChestAt(xTarget, yTarget);
-            else if (RectDistance(xMove, yMove, xTarget, yTarget) == 1
-                && (terrain == TERRAIN_DOOR
-                    || terrain == TERRAIN_BRIDGE_14))
-                legal = terrain != TERRAIN_DOOR
-                    || IsThereClosedDoorAt(xTarget, yTarget);
-            if (!legal)
+            if (keySlot < -1)
                 continue;
             MakeDecision(
                 &decision,
@@ -849,7 +974,7 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumeratePick(
                 yMove,
                 AI_ACTION_PICK,
                 0,
-                0,
+                keySlot < 0 ? 0xFF : keySlot,
                 xTarget,
                 yTarget);
             result = EmitDecision(enumeration, &decision);
@@ -1001,6 +1126,7 @@ static bool DigestCandidate(
     *digest = MixDigest(
         *digest,
         decision->xTarget | ((u32)decision->yTarget << 8));
+    *digest = MixDigest(*digest, decision->unk04);
     return true;
 }
 
@@ -1386,7 +1512,7 @@ static bool CollectPageAction(
     action->target = decision->targetId
         | ((u32)decision->xTarget << 8)
         | ((u32)decision->yTarget << 16);
-    action->itemSlot = decision->itemSlot;
+    action->itemSlot = decision->itemSlot | ((u32)decision->unk04 << 8);
     action->tokenLo = tokenLo;
     action->tokenHi = MakeTokenHi(tokenLo);
     action->actionId = decision->actionId;
@@ -1505,6 +1631,7 @@ static u32 SemanticStateDigest(void)
     int index;
 
     digest = MixDigest(digest, (u8)gPlaySt.chapterIndex);
+    digest = MixDigest(digest, gPlaySt.chapterModeIndex);
     digest = MixDigest(digest, gPlaySt.chapterTurnNumber);
     digest = MixDigest(digest, gPlaySt.partyGoldAmount);
 #if FE8_CHAPTER_OBJECTIVES_ENABLED
@@ -1680,6 +1807,110 @@ bool ExpansionAutoplayPlanner_PollStart(void)
 bool ExpansionAutoplayPlanner_IsActive(void)
 {
     return sPlannerActive;
+}
+
+bool ExpansionAutoplayPlanner_PrepareActionData(
+    const struct AiDecision* decision)
+{
+    struct Unit* target;
+    int item;
+    int itemId;
+    int expectedKeySlot;
+
+    if (decision == NULL
+        || gActiveUnit == NULL
+        || decision->unitId != gActiveUnitId)
+        return false;
+
+    if (decision->actionId == AI_ACTION_PICK)
+    {
+        expectedKeySlot = PickItemSlotForTarget(
+            decision->xMove,
+            decision->yMove,
+            decision->xTarget,
+            decision->yTarget);
+        if (expectedKeySlot < -1
+            || decision->itemSlot
+                != (expectedKeySlot < 0 ? 0xFF : expectedKeySlot))
+            return false;
+        gActionData.xOther = decision->xTarget;
+        gActionData.yOther = decision->yTarget;
+        gActionData.itemSlotIndex = decision->itemSlot;
+        return true;
+    }
+
+    if (decision->actionId != AI_ACTION_STAFF
+        || decision->itemSlot >= UNIT_ITEM_COUNT)
+        return decision->actionId != AI_ACTION_STAFF;
+    item = gActiveUnit->items[decision->itemSlot];
+    if (!CanUnitUseStaff(gActiveUnit, item))
+        return false;
+    itemId = GetItemIndex(item);
+    switch (itemId)
+    {
+    case ITEM_STAFF_TORCH:
+        if (gPlaySt.chapterVisionRange == 0
+            || !ActionSemantics_IsStandingReachPosition(
+                gActiveUnit,
+                decision->xMove,
+                decision->yMove,
+                GetUnitItemUseReachBits(gActiveUnit, decision->itemSlot),
+                decision->xTarget,
+                decision->yTarget))
+            return false;
+        gActionData.xOther = decision->xTarget;
+        gActionData.yOther = decision->yTarget;
+        return true;
+
+    case ITEM_STAFF_WARP:
+        target = GetUnit(decision->targetId);
+        if (!IsCanonicalUnitSlot(decision->targetId)
+            || !IsStaffTargetLegal(
+                item,
+                target,
+                decision->xMove,
+                decision->yMove)
+            || !ActionSemantics_IsWarpDestination(
+                gActiveUnit,
+                target,
+                decision->xMove,
+                decision->yMove,
+                decision->xTarget,
+                decision->yTarget))
+            return false;
+        gActionData.xOther = decision->xTarget;
+        gActionData.yOther = decision->yTarget;
+        return true;
+
+    case ITEM_STAFF_UNLOCK:
+        if (!ActionSemantics_IsUnlockStaffTarget(
+                gActiveUnit,
+                decision->xMove,
+                decision->yMove,
+                decision->xTarget,
+                decision->yTarget))
+            return false;
+        gActionData.xOther = decision->xTarget;
+        gActionData.yOther = decision->yTarget;
+        return true;
+
+    case ITEM_STAFF_REPAIR:
+        target = GetUnit(decision->targetId);
+        if (!IsCanonicalUnitSlot(decision->targetId)
+            || !IsStaffTargetLegal(
+                item,
+                target,
+                decision->xMove,
+                decision->yMove)
+            || decision->unk04 >= UNIT_ITEM_COUNT
+            || !IsItemHammernable(target->items[decision->unk04]))
+            return false;
+        gActionData.trapType = decision->unk04;
+        return true;
+
+    default:
+        return decision->unk04 == 0xFF;
+    }
 }
 
 enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecision(
@@ -1906,6 +2137,8 @@ void ExpansionAutoplayPlanner_RecordCampaignCheckpoint(void)
     gExpansionAutoplayPlannerCampaignCheckpoint.runId = sPlannerRunId;
     gExpansionAutoplayPlannerCampaignCheckpoint.chapterIndex =
         (u8)gPlaySt.chapterIndex;
+    gExpansionAutoplayPlannerCampaignCheckpoint.chapterMode =
+        gPlaySt.chapterModeIndex;
     gExpansionAutoplayPlannerCampaignCheckpoint.chapterTurn =
         gPlaySt.chapterTurnNumber;
     gExpansionAutoplayPlannerCampaignCheckpoint.rngState0 = seeds[0];

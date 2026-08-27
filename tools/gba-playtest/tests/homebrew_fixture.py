@@ -152,6 +152,7 @@ def build_production_planner_rom(path: Path, elf: Path) -> None:
     if compiler is None or objcopy is None:
         raise RuntimeError("planner runtime toolchain unavailable")
     sources = (
+        root / "src" / "action_semantics.c",
         root / "src" / "expansion_autoplay_planner.c",
         root / "tools" / "gba-playtest" / "tests" / "c"
         / "expansion_autoplay_planner_runtime.c",
@@ -177,6 +178,8 @@ def build_production_planner_rom(path: Path, elf: Path) -> None:
         "-fno-builtin",
         "-nostdlib",
         "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
         "-I",
         str(root / "include"),
         "-I",

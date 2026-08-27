@@ -4,6 +4,7 @@
 #include "bmcontainer.h"
 #include "bmitem.h"
 #include "bmmap.h"
+#include "bmmind.h"
 #include "bmphase.h"
 #include "bmunit.h"
 #include "cp_common.h"
@@ -12,6 +13,7 @@
 #include "rng.h"
 
 struct PlaySt gPlaySt;
+struct ActionData gActionData;
 struct Unit* gActiveUnit;
 u8 gActiveUnitId;
 struct Vec2 gBmMapSize;
@@ -122,6 +124,20 @@ s8 CanUnitUseStaff(struct Unit* unit, int item)
     (void)unit;
     (void)item;
     return false;
+}
+
+int GetUnitItemUseReachBits(struct Unit* unit, int itemSlot)
+{
+    (void)unit;
+    (void)itemSlot;
+    return REACH_RANGE1;
+}
+
+int GetUnitKeyItemSlotForTerrain(struct Unit* unit, int terrain)
+{
+    (void)unit;
+    (void)terrain;
+    return -1;
 }
 
 int GetItemAttributes(int item)
@@ -279,15 +295,15 @@ static void InitializeRuntime(void)
     sUnit.yPos = 0;
     gActiveUnit = &sUnit;
     gActiveUnitId = 1;
-    gBmMapSize.x = 32;
-    gBmMapSize.y = 17;
-    for (y = 0; y < 17; y++)
+    gBmMapSize.x = 8;
+    gBmMapSize.y = 8;
+    for (y = 0; y < 8; y++)
     {
         sMovementRows[y] = sMovementData[y];
         sUnitRows[y] = sUnitData[y];
         sTerrainRows[y] = sTerrainData[y];
         sFogRows[y] = sFogData[y];
-        for (x = 0; x < 32; x++)
+        for (x = 0; x < 8; x++)
         {
             sMovementData[y][x] = 1;
             sUnitData[y][x] = 0;
@@ -295,8 +311,6 @@ static void InitializeRuntime(void)
             sFogData[y][x] = 1;
         }
     }
-    for (x = 1; x < 32; x++)
-        sMovementData[16][x] = MAP_MOVEMENT_MAX + 1;
     sFogData[0][1] = 0;
     sUnitData[0][0] = 1;
     gBmMapMovement = sMovementRows;

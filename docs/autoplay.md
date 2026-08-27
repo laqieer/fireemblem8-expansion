@@ -917,6 +917,19 @@ state. If the complete set exceeds 512 entries, the observation fails with
 reconstructs the chosen ordinal and returns that `AiDecision` to the unchanged
 `CpPerform` / `ApplyUnitAction` path.
 
+Coordinate-sensitive choices remain distinct candidates. Torch publishes
+every in-bounds tile in the acting unit's staff range; Warp publishes every
+empty, visible, traversable destination in range of the selected allied unit;
+and Unlock publishes every closed door in staff range. The committed
+coordinates are revalidated against live state and lowered to
+`ActionData.xOther/yOther` before their existing executors run. Hammerne
+publishes one candidate per repairable target inventory slot, revalidates that
+slot, and lowers it to `ActionData.trapType`. Rogue Pick candidates use the
+direct no-item path. Other units must have the target-appropriate Lockpick,
+Chest Key, or Door Key selected by the normal item helper; the committed slot
+is revalidated and consumed through `UnitUpdateUsedItem`. A missing, consumed,
+wrong-purpose, or stale item therefore rejects before the tile event.
+
 `EXPANSION_AUTOPLAY_PLANNER=1` is valid only with `MODERN_CONFIG=debug`.
 It participates in configuration identity but adds no save field, migration,
 epoch, localization, generated chapter data, or archival behavior. Release
@@ -938,6 +951,15 @@ the active unit, objective ID/state/progress, event-flag digest, and
 gold/100-slot-convoy resource digest. Every semantic value or record has an
 explicit `AVAILABLE`, `NOT_APPLICABLE`, `NOT_VISIBLE`, `UNSUPPORTED_RULE`,
 `OUT_OF_RANGE`, or `UNINITIALIZED` state.
+
+Each 32-byte action record keeps its existing eight `u32` fields. `destination`
+packs the acting unit's X/Y coordinates. `target` packs the target unit in its
+low byte and a coordinate target in the next two bytes. `itemSlot` packs the
+acting inventory slot in its low byte and the Hammerne target inventory slot
+in the next byte; `0xFF` is the no-slot sentinel. Both token words bind all of
+those values. This extends semantics without pointers, changing the page size,
+or changing the host command: the host still chooses only an ordinal and
+echoes the corresponding opaque token.
 
 The host obtains all pages only by sending typed `PAGE` commands with a fixed
 `page_index`; there is no in-process action-list shortcut. Up to 512 actions
@@ -978,15 +1000,17 @@ rejoin the normal perform state.
 
 Replay begins from a fresh emulator and a blank in-memory SRAM image. It
 replays the complete chapter-one action prefix through normal game control,
-records a semantic chapter-two checkpoint (chapter/turn/RN/trace digest), and
-continues the same live emulator. Branching replays a clean prefix; it never
-loads a save fixture or savestate. `rng.c` remains the authority: the bridge
-only snapshots its public RN state and read-only consumption counter.
-The checkpoint digest includes the complete bounded 100-slot convoy in
-addition to roster, held items, gold, flags, RNG, and accepted-token state.
-Only the `MNCH` and `MNC2` event paths use transition teardown, preserving and
-re-arming an active run and checkpoint. Other map exits, restart, suspend
-load, new game, full reset, and CANCEL remain destructive boundaries.
+records a 52-byte semantic chapter-two checkpoint
+(chapter/route-mode/turn/RN/trace digest), and continues the same live
+emulator. Branching replays a clean prefix; it never loads a save fixture or
+savestate. `rng.c` remains the authority: the bridge only snapshots its public
+RN state and read-only consumption counter. The checkpoint digest includes
+`gPlaySt.chapterModeIndex` and the complete bounded 100-slot convoy in addition
+to roster, held items, gold, flags, RNG, and accepted-token state. Route-only
+and convoy-only changes therefore produce distinct checkpoints. Only the
+`MNCH` and `MNC2` event paths use transition teardown, preserving and re-arming
+an active run and checkpoint. Other map exits, restart, suspend load, new
+game, full reset, and CANCEL remain destructive boundaries.
 
 `TC-AUTOPLAY-PLANNER-001` proves both a scripted chooser and a bounded search
 chooser consume the same page/token contract, reject negative commands, and
@@ -1001,8 +1025,10 @@ pages, opaque-token acceptance and rejection, same-ROM/config/seed scenario
 mismatch, malformed traffic timeout, cancellation, and same-run chapter-two
 checkpoint continuation.
 
-The enabled ARM planner object uses 996-byte pages, 1,136 bytes of
-EWRAM/BSS, zero IWRAM, and 8,421 bytes of text/rodata. The planner-specific RNG
-counter and cancellation latch add five EWRAM bytes and no IWRAM, keeping total
-planner state at 1,141 bytes (2,955 bytes below 4 KiB) and planner code 3,867
-bytes below 12 KiB. Disabled release and archival builds omit planner state.
+The enabled ARM planner and shared action-semantics objects use 996-byte pages,
+64-byte commands, 52-byte checkpoints, 1,140 bytes of EWRAM/BSS, zero IWRAM,
+and 10,397 bytes of text/rodata. The planner-specific RNG counter and
+cancellation latch add five EWRAM bytes and no IWRAM, keeping total planner
+state at 1,145 bytes (2,951 bytes below 4 KiB) and planner/action-seam code
+1,891 bytes below 12 KiB. Disabled release and archival builds omit planner
+state and retain their original player/executor paths.

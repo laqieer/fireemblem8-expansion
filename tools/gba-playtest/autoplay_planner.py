@@ -86,6 +86,7 @@ class Action:
     item_slot: int | None = None
     target_position: tuple[int, int] | None = None
     action_id: int | None = None
+    target_item_slot: int | None = None
 
 
 @dataclass(frozen=True)
@@ -177,6 +178,9 @@ def _fixture_action_token(
         action_id = action_ids[action.kind]
     target_id = action.target or 0
     item_slot = action.item_slot or 0
+    target_item_slot = (
+        0xFF if action.target_item_slot is None else action.target_item_slot
+    )
     x_target, y_target = action.target_position or (0, 0)
     x_move, y_move = action.destination
     digest = 2166136261
@@ -189,6 +193,7 @@ def _fixture_action_token(
         action_id,
         target_id | (item_slot << 8),
         x_target | (y_target << 8),
+        target_item_slot,
     ):
         digest = _mix_digest(digest, value)
     return OpaqueToken(digest, _mix_digest(digest, 0x92A11A9F))
@@ -544,9 +549,12 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
                         actor,
                         (destination & 0xFFFF, destination >> 16),
                         target & 0xFF,
-                        item_slot,
+                        item_slot & 0xFF,
                         ((target >> 8) & 0xFF, (target >> 16) & 0xFF),
                         action_id,
+                        None
+                        if ((item_slot >> 8) & 0xFF) == 0xFF
+                        else (item_slot >> 8) & 0xFF,
                     ),
                     OpaqueToken(token_lo, token_hi),
                 )

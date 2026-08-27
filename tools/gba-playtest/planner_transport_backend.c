@@ -30,7 +30,7 @@
 #define EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE UINT32_C(4)
 #define COMMAND_WORD_COUNT 16u
 #define OBSERVATION_WORD_COUNT 249u
-#define CHECKPOINT_WORD_COUNT 12u
+#define CHECKPOINT_WORD_COUNT 13u
 
 static void discard_log(
     struct mLogger* logger,

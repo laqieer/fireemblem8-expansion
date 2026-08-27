@@ -1,5 +1,9 @@
 #include "global.h"
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#include "action_semantics.h"
+#include "expansion_autoplay_planner.h"
+#endif
 #if FE8_EXPANSION_MODERN_BUILD
 #include "expansion_aoe.h"
 #endif
@@ -261,8 +265,16 @@ void ExecWarpStaff(ProcPtr proc) {
 
     BattleInitItemEffectTarget(GetUnit(gActionData.targetIndex));
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_ApplyWarpTarget(
+            GetUnit(gActionData.targetIndex),
+            gActionData.xOther,
+            gActionData.yOther))
+        return;
+#else
     GetUnit(gActionData.targetIndex)->xPos = gActionData.xOther;
     GetUnit(gActionData.targetIndex)->yPos = gActionData.yOther;
+#endif
 
     gBattleTarget.changeHP = gActionData.xOther;
     gBattleTarget.changePow = gActionData.yOther;
@@ -411,11 +423,18 @@ void ExecUnlockStaff(ProcPtr proc) {
     BattleInitItemEffect(GetUnit(gActionData.subjectIndex),
         gActionData.itemSlotIndex);
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_ApplyUnlockTarget(
+            gActionData.xOther,
+            gActionData.yOther))
+        return;
+#else
     gBattleTarget.unit.xPos = gActionData.xOther;
     gBattleTarget.unit.yPos = gActionData.yOther;
 
     gBattleTarget.changeHP = gActionData.xOther;
     gBattleTarget.changePow = gActionData.yOther;
+#endif
 
     BattleApplyItemEffect(proc);
     BeginBattleAnimations();
@@ -429,10 +448,17 @@ void ExecHammerne(ProcPtr proc) {
 
     BattleInitItemEffectTarget(GetUnit(gActionData.targetIndex));
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_ApplyHammerneTarget(
+            GetUnit(gActionData.targetIndex),
+            gActionData.trapType))
+        return;
+#else
     GetUnit(gActionData.targetIndex)->items[gActionData.trapType]
-        =  MakeNewItem(
+        = MakeNewItem(
             GetUnit(gActionData.targetIndex)->items[gActionData.trapType]
         );
+#endif
 
     BattleApplyItemEffect(proc);
     BeginBattleAnimations();
@@ -899,7 +925,14 @@ void ExecTorchStaff(ProcPtr proc) {
     BattleInitItemEffect(GetUnit(gActionData.subjectIndex),
         gActionData.itemSlotIndex);
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_ApplyTorchTarget(
+            gActionData.xOther,
+            gActionData.yOther))
+        return;
+#else
     AddTrap(gActionData.xOther, gActionData.yOther, TRAP_TORCHLIGHT, 8);
+#endif
 
     BattleApplyItemEffect(proc);
     BeginBattleAnimations();
@@ -1094,6 +1127,14 @@ void ActionPick(ProcPtr proc) {
 
     xPos = gActionData.xOther;
     yPos = gActionData.yOther;
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (ExpansionAutoplayPlanner_IsActive()
+        && !ActionSemantics_ConsumePickKey(
+            GetUnit(gActionData.subjectIndex),
+            gActionData.itemSlotIndex))
+        return;
+#endif
 
     StartAvailableDoorTileEvent(xPos, yPos);
 

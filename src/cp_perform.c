@@ -23,6 +23,7 @@
 #include "eventinfo.h"
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_autoplay_internal.h"
+#include "expansion_autoplay_planner.h"
 #endif
 
 #include "cp_perform.h"
@@ -291,6 +292,14 @@ s8 AiPillageAction(struct CpPerformProc* proc) {
 }
 
 s8 AiStaffAction(struct CpPerformProc* proc) {
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (ExpansionAutoplayPlanner_IsActive()
+        && !ExpansionAutoplayPlanner_PrepareActionData(&gAiDecision))
+    {
+        gAiDecision.actionPerformed = false;
+        return 1;
+    }
+#endif
     gActiveUnit->xPos = gAiDecision.xMove;
     gActiveUnit->yPos = gAiDecision.yMove;
 
@@ -386,6 +395,14 @@ void AiDKSummonAction(struct CpPerformProc* proc) {
 
 s8 AiPickAction(struct CpPerformProc* proc) {
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (ExpansionAutoplayPlanner_IsActive()
+        && !ExpansionAutoplayPlanner_PrepareActionData(&gAiDecision))
+    {
+        gAiDecision.actionPerformed = false;
+        return 1;
+    }
+#endif
     gActiveUnit->xPos = gAiDecision.xMove;
     gActiveUnit->yPos = gAiDecision.yMove;
 

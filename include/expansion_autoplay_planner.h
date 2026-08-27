@@ -221,6 +221,7 @@ struct ExpansionAutoplayPlannerCampaignCheckpointV2
     u32 byteSize;
     u32 runId;
     u32 chapterIndex;
+    u32 chapterMode;
     u32 chapterTurn;
     u32 rngState0;
     u32 rngState1;
@@ -250,6 +251,8 @@ ExpansionAutoplayPlanner_EnumerateLegalActions(
     ExpansionAutoplayPlannerActionVisitor visitor,
     void* context,
     u32* countOut);
+bool ExpansionAutoplayPlanner_PrepareActionData(
+    const struct AiDecision* decision);
 /* The decision parameter remains for source compatibility; enumeration is authoritative. */
 enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecision(
     const struct AiDecision* decision);

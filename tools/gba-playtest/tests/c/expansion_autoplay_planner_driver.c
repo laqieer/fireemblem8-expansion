@@ -3,12 +3,15 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "action_semantics.h"
 #include "bm.h"
 #include "bmcontainer.h"
 #include "bmitem.h"
 #include "bmmap.h"
+#include "bmmind.h"
 #include "bmunit.h"
 #include "cp_common.h"
+#include "constants/classes.h"
 #include "constants/items.h"
 #include "constants/terrains.h"
 #include "expansion_autoplay.h"
@@ -26,6 +29,7 @@
     } while (0)
 
 struct PlaySt gPlaySt;
+struct ActionData gActionData;
 struct Unit* gActiveUnit;
 u8 gActiveUnitId;
 struct AiDecision gAiDecision;
@@ -127,14 +131,54 @@ s8 CanUnitUseWeapon(struct Unit* unit, int item)
 s8 CanUnitUseStaff(struct Unit* unit, int item)
 {
     (void)unit;
-    return GetItemIndex(item) == ITEM_STAFF_HEAL;
+    switch (GetItemIndex(item))
+    {
+    case ITEM_STAFF_HEAL:
+    case ITEM_STAFF_WARP:
+    case ITEM_STAFF_TORCH:
+    case ITEM_STAFF_REPAIR:
+    case ITEM_STAFF_UNLOCK:
+        return true;
+
+    default:
+        return false;
+    }
+}
+
+int GetUnitItemUseReachBits(struct Unit* unit, int itemSlot)
+{
+    int item = unit->items[itemSlot];
+
+    return GetItemIndex(item) == ITEM_STAFF_TORCH
+        ? REACH_MAGBY2 : REACH_RANGE1;
+}
+
+int GetUnitKeyItemSlotForTerrain(struct Unit* unit, int terrain)
+{
+    int slot;
+
+    for (slot = 0; slot < UNIT_ITEM_COUNT; slot++)
+    {
+        int item = GetItemIndex(unit->items[slot]);
+
+        if ((UNIT_CATTRIBUTES(unit) & CA_THIEF)
+            && item == ITEM_LOCKPICK)
+            return slot;
+        if (terrain == TERRAIN_CHEST_FULL
+            && (item == ITEM_CHESTKEY
+                || item == ITEM_CHESTKEY_BUNDLE))
+            return slot;
+        if (terrain == TERRAIN_DOOR && item == ITEM_DOORKEY)
+            return slot;
+    }
+    return -1;
 }
 
 int GetItemAttributes(int item)
 {
     if (GetItemIndex(item) == ITEM_SWORD_IRON)
         return IA_WEAPON;
-    if (GetItemIndex(item) == ITEM_STAFF_HEAL)
+    if (CanUnitUseStaff(gActiveUnit, item))
         return IA_STAFF;
     return 0;
 }
@@ -152,7 +196,11 @@ int GetItemMinRange(int item)
 
 int GetItemMaxRange(int item)
 {
-    (void)item;
+    if (GetItemIndex(item) == ITEM_STAFF_WARP
+        || GetItemIndex(item) == ITEM_STAFF_TORCH)
+        return 0;
+    if (GetItemIndex(item) == ITEM_STAFF_UNLOCK)
+        return 2;
     return 1;
 }
 
@@ -182,13 +230,13 @@ bool IsThereClosedChestAt(s8 x, s8 y)
 
 bool IsThereClosedDoorAt(s8 x, s8 y)
 {
-    return gBmMapTerrain[y][x] == TERRAIN_DOOR;
+    return gBmMapTerrain[y][x] == TERRAIN_DOOR
+        || gBmMapTerrain[y][x] == TERRAIN_BRIDGE_14;
 }
 
 s8 IsItemHammernable(int item)
 {
-    (void)item;
-    return false;
+    return item != 0 && (item & 0xFF00) != 0xFF00;
 }
 
 s8 CanUnitUseHealItem(struct Unit* unit)
@@ -316,6 +364,429 @@ static u32 RuntimeStateDigest(void)
     return digest;
 }
 
+static void ResetActionFixture(int width, int height)
+{
+    int y;
+    int x;
+
+    for (y = 0; y < 17; y++)
+    {
+        for (x = 0; x < 32; x++)
+        {
+            sMovementData[y][x] = MAP_MOVEMENT_MAX + 1;
+            sUnitData[y][x] = 0;
+            sTerrainData[y][x] = 1;
+            sFogData[y][x] = 1;
+        }
+    }
+    memset(&sUnit, 0, sizeof(sUnit));
+    memset(&sAlly, 0, sizeof(sAlly));
+    memset(&sEnemy, 0, sizeof(sEnemy));
+    memset(&gActionData, 0, sizeof(gActionData));
+    sCharacter.number = 1;
+    sClass.number = 1;
+    sClass.attributes = 0;
+    sUnit.pCharacterData = &sCharacter;
+    sUnit.pClassData = &sClass;
+    sUnit.index = 1;
+    sUnit.xPos = 2;
+    sUnit.yPos = 2;
+    sUnit.maxHP = 20;
+    sUnit.curHP = 20;
+    gActiveUnit = &sUnit;
+    gActiveUnitId = 1;
+    gBmMapSize.x = width;
+    gBmMapSize.y = height;
+    sMovementData[2][2] = 0;
+    sUnitData[2][2] = 1;
+    gPlaySt.chapterVisionRange = 3;
+}
+
+static int TestCoordinateActionFamilies(void)
+{
+    u32 count;
+    struct AiDecision first;
+    struct AiDecision second;
+    int index;
+
+    ResetActionFixture(6, 6);
+    sUnit.items[0] = ITEM_STAFF_TORCH;
+    count = 0;
+    CHECK(
+        ExpansionAutoplayPlanner_EnumerateLegalActions(
+            CollectAction,
+            &count,
+            NULL)
+            == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK,
+        "Torch enumeration must succeed"
+    );
+    first.actionPerformed = false;
+    second.actionPerformed = false;
+    for (index = 0; index < (int)count; index++)
+    {
+        struct AiDecision* candidate = &sEnumeratedActions[index];
+
+        if (candidate->actionId != AI_ACTION_STAFF
+            || candidate->itemSlot != 0)
+            continue;
+        CHECK(
+            ActionSemantics_IsStandingReachPosition(
+                gActiveUnit,
+                candidate->xMove,
+                candidate->yMove,
+                REACH_MAGBY2,
+                candidate->xTarget,
+                candidate->yTarget),
+            "every Torch candidate must target a legal bounded tile"
+        );
+        if (!first.actionPerformed)
+            first = *candidate;
+        else if (candidate->xTarget != first.xTarget
+            || candidate->yTarget != first.yTarget)
+        {
+            second = *candidate;
+            break;
+        }
+    }
+    CHECK(first.actionPerformed && second.actionPerformed,
+          "Torch must enumerate multiple distinct target tiles");
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&first)
+              && gActionData.xOther == first.xTarget
+              && gActionData.yOther == first.yTarget,
+          "Torch lowering must use the first selected coordinate");
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&second)
+              && gActionData.xOther == second.xTarget
+              && gActionData.yOther == second.yTarget,
+          "Torch lowering must use the second selected coordinate");
+    first.xTarget = 5;
+    first.yTarget = 5;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&first),
+          "stale default Torch coordinate must reject");
+    gPlaySt.chapterVisionRange = 0;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&second),
+          "Torch must revalidate live fog capability");
+
+    ResetActionFixture(7, 7);
+    sUnit.items[0] = ITEM_STAFF_WARP;
+    sAllyCharacter.number = 2;
+    sAllyClass.number = 2;
+    sAlly.pCharacterData = &sAllyCharacter;
+    sAlly.pClassData = &sAllyClass;
+    sAlly.index = 2;
+    sAlly.xPos = 3;
+    sAlly.yPos = 2;
+    sAlly.maxHP = 20;
+    sAlly.curHP = 20;
+    sUnitData[2][3] = 2;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    first.actionPerformed = false;
+    second.actionPerformed = false;
+    for (index = 0; index < (int)count; index++)
+    {
+        struct AiDecision* candidate = &sEnumeratedActions[index];
+
+        if (candidate->actionId != AI_ACTION_STAFF
+            || candidate->targetId != 2)
+            continue;
+        if (!first.actionPerformed)
+            first = *candidate;
+        else if (candidate->xTarget != first.xTarget
+            || candidate->yTarget != first.yTarget)
+        {
+            second = *candidate;
+            break;
+        }
+    }
+    CHECK(first.actionPerformed && second.actionPerformed,
+          "Warp must enumerate multiple legal destinations");
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&first)
+              && gActionData.xOther == first.xTarget
+              && gActionData.yOther == first.yTarget,
+          "Warp lowering must preserve the first selected destination");
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&second)
+              && gActionData.xOther == second.xTarget
+              && gActionData.yOther == second.yTarget,
+          "Warp lowering must preserve the second selected destination");
+    first.xTarget = 6;
+    first.yTarget = 6;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&first),
+          "stale Warp coordinate must reject");
+    sUnitData[second.yTarget][second.xTarget] = 0x81;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&second),
+          "occupied Warp destination must fail revalidation");
+
+    ResetActionFixture(6, 6);
+    sUnit.items[0] = ITEM_STAFF_UNLOCK;
+    sTerrainData[1][2] = TERRAIN_DOOR;
+    sTerrainData[2][4] = TERRAIN_DOOR;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    first.actionPerformed = false;
+    second.actionPerformed = false;
+    for (index = 0; index < (int)count; index++)
+    {
+        struct AiDecision* candidate = &sEnumeratedActions[index];
+
+        if (candidate->actionId != AI_ACTION_STAFF)
+            continue;
+        if (!first.actionPerformed)
+            first = *candidate;
+        else
+        {
+            second = *candidate;
+            break;
+        }
+    }
+    CHECK(first.actionPerformed && second.actionPerformed,
+          "Unlock must enumerate multiple closed doors");
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&first)
+              && gActionData.xOther == first.xTarget
+              && gActionData.yOther == first.yTarget,
+          "Unlock lowering must preserve the first selected door");
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&second)
+              && gActionData.xOther == second.xTarget
+              && gActionData.yOther == second.yTarget,
+          "Unlock lowering must preserve the second selected door");
+    sTerrainData[first.yTarget][first.xTarget] = 1;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&first),
+          "opened or wrong Unlock coordinate must reject");
+
+    ResetActionFixture(6, 6);
+    sUnit.items[0] = ITEM_STAFF_REPAIR;
+    sAllyCharacter.number = 2;
+    sAllyClass.number = 2;
+    sAlly.pCharacterData = &sAllyCharacter;
+    sAlly.pClassData = &sAllyClass;
+    sAlly.index = 2;
+    sAlly.xPos = 3;
+    sAlly.yPos = 2;
+    sAlly.maxHP = 20;
+    sAlly.curHP = 20;
+    sAlly.items[0] = 0x0101;
+    sAlly.items[1] = 0x0202;
+    sUnitData[2][3] = 2;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    first.actionPerformed = false;
+    second.actionPerformed = false;
+    for (index = 0; index < (int)count; index++)
+    {
+        struct AiDecision* candidate = &sEnumeratedActions[index];
+
+        if (candidate->actionId != AI_ACTION_STAFF
+            || candidate->targetId != 2)
+            continue;
+        if (candidate->unk04 == 0)
+            first = *candidate;
+        else if (candidate->unk04 == 1)
+            second = *candidate;
+    }
+    CHECK(first.actionPerformed && second.actionPerformed,
+          "Hammerne must enumerate each repairable target slot");
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&first)
+              && gActionData.trapType == 0,
+          "Hammerne lowering must preserve target slot zero");
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&second)
+              && gActionData.trapType == 1,
+          "Hammerne lowering must preserve target slot one");
+    sAlly.items[1] = 0xFF02;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&second),
+          "stale Hammerne target slot must reject");
+
+    ResetActionFixture(6, 6);
+    sTerrainData[2][2] = TERRAIN_CHEST_FULL;
+    sTerrainData[2][3] = TERRAIN_DOOR;
+    sClass.number = CLASS_ROGUE;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(count == 2
+              && sEnumeratedActions[0].itemSlot == 0xFF
+              && sEnumeratedActions[1].itemSlot == 0xFF,
+          "Rogue Pick must enumerate chest and door without a key");
+
+    sClass.number = 1;
+    sClass.attributes = CA_THIEF;
+    sUnit.items[0] = ITEM_LOCKPICK;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(count == 2
+              && sEnumeratedActions[0].itemSlot == 0
+              && sEnumeratedActions[1].itemSlot == 0,
+          "non-Rogue thief Pick must bind the Lockpick slot");
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&sEnumeratedActions[0])
+              && gActionData.itemSlotIndex == 0,
+          "Pick lowering must preserve consumable key identity");
+    sUnit.items[0] = 0;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&sEnumeratedActions[0]),
+          "consumed Pick key must fail revalidation");
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(count == 0,
+          "thief without Lockpick or key must publish no Pick action");
+
+    sUnit.items[0] = ITEM_CHESTKEY;
+    sUnit.items[1] = ITEM_DOORKEY;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(count == 2
+             && sEnumeratedActions[0].xTarget == 2
+             && sEnumeratedActions[0].yTarget == 2
+             && sEnumeratedActions[0].itemSlot == 0
+             && sEnumeratedActions[1].xTarget == 3
+             && sEnumeratedActions[1].yTarget == 2
+             && sEnumeratedActions[1].itemSlot == 1,
+          "chest and door actions must bind their applicable key slots");
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&sEnumeratedActions[1])
+             && gActionData.itemSlotIndex == 1,
+          "door-key lowering must preserve the selected consumable slot");
+
+    sTerrainData[2][2] = 1;
+    sTerrainData[2][3] = TERRAIN_BRIDGE_14;
+    sUnit.items[0] = ITEM_DOORKEY;
+    sUnit.items[1] = 0;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(count == 0,
+          "Door Key must not substitute for a bridge Lockpick");
+    sUnit.items[0] = ITEM_LOCKPICK;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(count == 1
+             && sEnumeratedActions[0].xTarget == 3
+             && sEnumeratedActions[0].yTarget == 2
+             && sEnumeratedActions[0].itemSlot == 0,
+          "thief Lockpick must retain the normal bridge path");
+    return 0;
+}
+
+static int TestHammerneWireIdentity(void)
+{
+    struct AiDecision decision = { 0 };
+    struct ExpansionAutoplayPlannerActionV2 first;
+    struct ExpansionAutoplayPlannerActionV2 second;
+    u32 actionPage;
+
+    ResetActionFixture(6, 6);
+    sUnit.items[0] = ITEM_STAFF_REPAIR;
+    sAllyCharacter.number = 2;
+    sAllyClass.number = 2;
+    sAlly.pCharacterData = &sAllyCharacter;
+    sAlly.pClassData = &sAllyClass;
+    sAlly.index = 2;
+    sAlly.xPos = 3;
+    sAlly.yPos = 2;
+    sAlly.maxHP = 20;
+    sAlly.curHP = 20;
+    sAlly.items[0] = 0x0101;
+    sAlly.items[1] = 0x0202;
+    sUnitData[2][3] = 2;
+
+    ExpansionAutoplayPlanner_Reset();
+    ExpansionAutoplayPlanner_OnMapReady();
+    ExpansionAutoplayPlanner_PollStart();
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_START,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0);
+    CHECK(ExpansionAutoplayPlanner_PollStart(),
+          "Hammerne wire run must start");
+    CHECK(
+        ExpansionAutoplayPlanner_OfferDecision(&decision)
+            == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
+        "Hammerne wire run must publish candidates"
+    );
+    actionPage = gExpansionAutoplayPlannerObservation.pageCount - 1;
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        actionPage,
+        0,
+        0,
+        0);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.pageKind
+                == EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS
+            && gExpansionAutoplayPlannerObservation.actionCount == 2,
+        "Hammerne candidates must traverse the fixed action page"
+    );
+    first = gExpansionAutoplayPlannerObservation.actions[0];
+    second = gExpansionAutoplayPlannerObservation.actions[1];
+    CHECK(
+        first.itemSlot == 0x0000
+            && second.itemSlot == 0x0100
+            && (first.tokenLo != second.tokenLo
+                || first.tokenHi != second.tokenHi),
+        "Hammerne target slot must be packed and token-bound"
+    );
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        0,
+        gExpansionAutoplayPlannerObservation.actionStartOrdinal + 1,
+        first.tokenLo,
+        first.tokenHi);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+            && gExpansionAutoplayPlannerObservation.rejection
+                == EXPANSION_AUTOPLAY_PLANNER_REJECTION_TOKEN_MISMATCH,
+        "Hammerne token for another inventory slot must reject"
+    );
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        0,
+        gExpansionAutoplayPlannerObservation.actionStartOrdinal + 1,
+        second.tokenLo,
+        second.tokenHi);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED
+            && decision.unk04 == 1
+            && ExpansionAutoplayPlanner_PrepareActionData(&decision)
+            && gActionData.trapType == 1,
+        "matching Hammerne slot token must lower the selected slot"
+    );
+    return 0;
+}
+
 static int TestCompleteEnumerator(void)
 {
     u32 firstCount = 0;
@@ -330,6 +801,7 @@ static int TestCompleteEnumerator(void)
     gBmMapSize.x = 3;
     gBmMapSize.y = 3;
     sClass.attributes = CA_STEAL | CA_SUMMON;
+    sClass.number = CLASS_ROGUE;
     sUnit.xPos = 1;
     sUnit.yPos = 1;
     sUnit.maxHP = 20;
@@ -417,6 +889,7 @@ static int TestCompleteEnumerator(void)
           "legal-action ordering must be deterministic");
 
     sClass.attributes = 0;
+    sClass.number = 1;
     sUnit.items[0] = 0;
     sUnit.items[1] = 0;
     sUnit.items[2] = 0;
@@ -471,6 +944,8 @@ int main(void)
     gBmMapTerrain = sTerrainRows;
     gBmMapFog = sFogRows;
     CHECK(TestCompleteEnumerator() == 0, "complete action enumerator test");
+    CHECK(TestCoordinateActionFamilies() == 0,
+          "coordinate-sensitive action family test");
 
     gBmMapSize.x = 32;
     gBmMapSize.y = 17;
@@ -764,6 +1239,21 @@ int main(void)
     );
 
     {
+        u32 digest =
+            gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest;
+        gPlaySt.chapterModeIndex++;
+        ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+        CHECK(
+            gExpansionAutoplayPlannerCampaignCheckpoint.chapterMode
+                    == gPlaySt.chapterModeIndex
+                && digest
+                    != gExpansionAutoplayPlannerCampaignCheckpoint
+                        .semanticStateDigest,
+            "route-only changes must alter the semantic checkpoint digest"
+        );
+    }
+
+    {
         u32 digest = gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest;
         sConvoy[99] = 2;
         ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
@@ -896,6 +1386,10 @@ int main(void)
         "accepted wait token must enter the semantic action trace digest"
     );
 
+    CHECK(TestHammerneWireIdentity() == 0,
+          "Hammerne fixed-width wire identity test");
+
+    ResetActionFixture(32, 17);
     ExpansionAutoplayPlanner_Reset();
     ExpansionAutoplayPlanner_OnMapReady();
     ExpansionAutoplayPlanner_PollStart();

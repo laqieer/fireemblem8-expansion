@@ -4433,6 +4433,10 @@
       "category": "reviewed-exclusion",
       "reason": "Planner action item_slot is an inventory-slot ordinal, not a game item ID."
     },
+    "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|target_item_slot": {
+      "category": "reviewed-exclusion",
+      "reason": "Planner action target_item_slot is a unit-inventory-slot ordinal, not a game item ID."
+    },
     "include/expansion_debugtools.h|struct-field|chapter|DebugToolsDiagnosticsSnapshot.chapterIndex": {
       "category": "external-interface",
       "reason": "typed read-only debugtools diagnostics snapshot field; it reports the active engine chapter index and does not own or generate chapter IDs"
