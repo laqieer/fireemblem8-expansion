@@ -249,6 +249,55 @@ exact profile or artifact, environment, positive and negative actual results,
 interactions/save expectations, and the automation result or precise
 manual-only reason.
 
+### Actionable manual-testing handoff
+
+The canonical machine-readable protocol is
+[`.github/manual-testing-handoff.json`](.github/manual-testing-handoff.json).
+Follow its eligibility, artifact-preview, activation, hold, completion, and
+queue fields exactly. It is not a human review gate, and deterministic criteria
+must remain automated. Both identified non-instrumented artifact roles require
+deterministic emulator screenshots or synchronized emulator A/V evidence.
+GitHub-linked open PR discovery determines activation targets; completion
+cleans every labeled item, including closed or superseded PRs, while preserving
+an assignee only when independent ownership remains. Every handoff comment
+includes the exact `@laqieer` mention, a nonempty numbered step list, and true
+merge/closure holds. Each actionable issue and linked open PR has its own
+typed comment payload with stable case ID, full Git SHA, artifact paths and
+SHA-256 values, and nonempty environment, state, expectation, and judgment.
+Cleanup and automatic resumption require a per-item completion comment whose
+actual result and GitHub evidence link match the original case ID and commit.
+Only an accepted outcome permits cleanup; a rejected outcome retains both holds
+and remains actionable.
+Evidence must link to a same-repository issue/PR comment, review comment,
+workflow run or artifact, commit-pinned blob, or GitHub attachment—not a bare
+issue or PR page. Positive and control path-plus-SHA-256 identities must differ.
+Accepted cleanup also requires every open PR's current GitHub head to match its
+activation commit; a changed head needs fresh evidence. Retained assignment
+requires a nonblank ownership reason. Rejected evidence retains the label,
+assignee, holds, and actionable state.
+
+- **Eligibility:** Require a material visual, audio, or UX criterion. Require
+  automation to be unreliable for that criterion.
+- **Activation:** Apply `waiting-for-manual-testing` to the originating issue
+  and each open implementation PR. Assign `laqieer` to those targets. Ping
+  `@laqieer` in each comment.
+- **Hold:** Block merge for the manual criterion. Block issue closure for the
+  manual criterion.
+- **Completion:** After accepted evidence, remove
+  `waiting-for-manual-testing` from the originating issue and every labeled
+  implementation PR. Remove the temporary `laqieer` assignment unless
+  independently owned. Resume exact-candidate gates and merge automatically.
+
+The actionable queue is
+  [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).
+An originating issue may appear alone only when independent GitHub relationship
+discovery finds no open implementation PR; otherwise every discovered open PR
+follows the same contract.
+An empty queue produces no scheduled notification or comment.
+
+The complete source-only lifecycle is
+[`TC-WORKFLOW-MANUAL-HANDOFF-001`](docs/test-cases/workflow-governance.md#tc-workflow-manual-handoff-001-surface-actionable-manual-testing-and-resume-automatically).
+
 ## 8. Debug before filing a regression
 
 Use [`docs/debugtools.md`](docs/debugtools.md) for the release-safe debug

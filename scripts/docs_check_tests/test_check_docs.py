@@ -33,6 +33,43 @@ def write(root, rel_path, content):
     return full
 
 
+def markdown_section(text, heading):
+    lines = text.splitlines()
+    matches = [
+        (index, parsed[0])
+        for index, line in enumerate(lines)
+        if (parsed := check_docs.parse_atx_heading(line)) is not None
+        and parsed[1] == heading
+    ]
+    if len(matches) != 1:
+        raise AssertionError(
+            f"expected one heading {heading!r}, found {len(matches)}"
+        )
+    start, level = matches[0]
+    end = next(
+        (
+            index
+            for index in range(start + 1, len(lines))
+            if (
+                (parsed := check_docs.parse_atx_heading(lines[index]))
+                is not None
+                and parsed[0] <= level
+            )
+        ),
+        len(lines),
+    )
+    return "\n".join(lines[start + 1:end])
+
+
+def membership_violations(actual, expected):
+    violations = []
+    if len(actual) != len(set(actual)):
+        violations.append("duplicate")
+    if set(actual) != set(expected):
+        violations.append("membership")
+    return violations
+
+
 class TempRepo:
     """A throwaway Git repo so discover_markdown_files()/parse_make_targets()
     (both Git- and filesystem-rooted) behave exactly as in the real repo."""
@@ -952,14 +989,26 @@ class TesterCaseRegistryTests(unittest.TestCase):
                     "TC-WORKFLOW-CI-WAIT-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
-                            "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+                            "python3 -m unittest "
+                            "scripts.docs_check_tests."
+                            "test_development_workflow_skill -v",
+                        },
+                    },
+                    "TC-WORKFLOW-MANUAL-HANDOFF-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.docs_check_tests."
+                            "test_development_workflow_skill -v",
                         },
                     },
                     "TC-WORKFLOW-STACKED-CI-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
                             'python3 -m unittest discover -s tests/workflows -p "test_*.py" -v',
-                            "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+                            "python3 -m unittest "
+                            "scripts.docs_check_tests."
+                            "test_development_workflow_skill -v",
                         },
                     },
                 },
@@ -971,42 +1020,86 @@ class TesterCaseRegistryTests(unittest.TestCase):
                 self.assertIn(feature_id, expected_feature_ids)
                 feature = features[feature_id]
                 self.assertEqual(feature["reference"], contract["reference"])
-                self.assertCountEqual(feature["required_cases"], contract["cases"])
+                expected_cases = list(contract["cases"])
+                self.assertEqual(
+                    [],
+                    membership_violations(
+                        feature["required_cases"],
+                        expected_cases,
+                    ),
+                )
+                self.assertEqual(
+                    [],
+                    membership_violations(
+                        list(reversed(feature["required_cases"])),
+                        expected_cases,
+                    ),
+                )
+                required_case_mutations = (
+                    feature["required_cases"][:-1],
+                    feature["required_cases"] + ["TC-WORKFLOW-OTHER-001"],
+                    feature["required_cases"] + [feature["required_cases"][0]],
+                )
+                for mutated_cases in required_case_mutations:
+                    self.assertTrue(
+                        membership_violations(
+                            mutated_cases,
+                            expected_cases,
+                        )
+                    )
                 for case_id, case_contract in contract["cases"].items():
-                    with self.subTest(feature_id=feature_id, case_id=case_id):
-                        case = cases[case_id]
-                        self.assertEqual(case["feature_id"], feature_id)
-                        self.assertEqual(case["document"], case_contract["document"])
-                        self.assertTrue(
-                            case_contract["commands"].issubset({
-                                record["command"] for record in case["automation"]
-                            })
-                        )
-                        procedure = check_docs.read_text(
-                            os.path.join(REAL_REPO_ROOT, case["document"])
-                        )
-                        case_heading = "## " + case_id + ":"
-                        start = procedure.index(case_heading)
-                        next_heading = re.search(
-                            r"^## ",
-                            procedure[start + len(case_heading):],
-                            re.MULTILINE,
-                        )
-                        end = (
-                            start + len(case_heading) + next_heading.start()
-                            if next_heading is not None
-                            else len(procedure)
-                        )
-                        case_procedure = procedure[start:end]
-                        for heading in (
+                    case = cases[case_id]
+                    self.assertEqual(case["feature_id"], feature_id)
+                    self.assertEqual(
+                        case["document"],
+                        case_contract["document"],
+                    )
+                    self.assertTrue(
+                        case_contract["commands"].issubset({
+                            record["command"] for record in case["automation"]
+                        })
+                    )
+                    procedure = check_docs.read_text(
+                        os.path.join(REAL_REPO_ROOT, case["document"])
+                    )
+                    case_heading = next(
+                        line[3:]
+                        for line in procedure.splitlines()
+                        if line.startswith("## " + case_id + ":")
+                    )
+                    case_section = markdown_section(
+                        procedure,
+                        case_heading,
+                    )
+                    for heading in (
+                        "### Actions",
+                        "### Expected result",
+                        "### Negative control",
+                        "### Interactions and save compatibility",
+                        "### Automation",
+                        "### Cleanup and limitations",
+                    ):
+                        self.assertIn(heading, case_section)
+
+                    if case_id == "TC-WORKFLOW-MANUAL-HANDOFF-001":
+                        leaked_section = case_section.replace(
                             "### Actions",
-                            "### Expected result",
-                            "### Negative control",
-                            "### Interactions and save compatibility",
-                            "### Automation",
-                            "### Cleanup and limitations",
-                        ):
-                            self.assertIn(heading, case_procedure)
+                            "### Missing actions",
+                            1,
+                        )
+                        leaked_document = procedure.replace(
+                            case_section,
+                            leaked_section,
+                            1,
+                        )
+                        self.assertIn("### Actions", leaked_document)
+                        self.assertNotIn(
+                            "### Actions",
+                            markdown_section(
+                                leaked_document,
+                                case_heading,
+                            ),
+                        )
 
     def test_patch_release_cases_are_indexed_with_complete_procedures(self):
         registry_path = os.path.join(REAL_REPO_ROOT, check_docs.TEST_CASE_REGISTRY_PATH)
