@@ -1,0 +1,72 @@
+{
+  "schema": "fe8.manual-testing-handoff.v1",
+  "eligibility": {
+    "kinds": [
+      "visual",
+      "audio",
+      "ux"
+    ],
+    "automation_unreliable": true,
+    "deterministic_criteria": false
+  },
+  "pre_handoff": {
+    "artifact": "non-instrumented",
+    "static_ui": "screenshot",
+    "time_dependent_or_av": "synchronized_av",
+    "semantic_assertions_primary": true
+  },
+  "activation": {
+    "required": true,
+    "label": "waiting-for-manual-testing",
+    "label_description": "Blocked until @laqieer records a specific manual tester result",
+    "assignee": "laqieer",
+    "mention": "@laqieer",
+    "targets": [
+      "originating_issue",
+      "each_open_implementation_pr"
+    ],
+    "comment": {
+      "required": true,
+      "fields": [
+        "case_id",
+        "commit",
+        "artifact_path",
+        "sha256",
+        "environment",
+        "clean_state",
+        "steps",
+        "expected",
+        "control",
+        "requested_judgment",
+        "merge_hold",
+        "closure_hold"
+      ]
+    }
+  },
+  "hold": {
+    "merge": true,
+    "issue_closure": true
+  },
+  "completion": {
+    "post_result": true,
+    "post_evidence_link": true,
+    "remove_label": "waiting-for-manual-testing",
+    "remove_label_from": [
+      "originating_issue",
+      "each_open_implementation_pr"
+    ],
+    "remove_temporary_assignee": "laqieer",
+    "unless_other_ownership": true,
+    "resume_exact_candidate_gates": true,
+    "resume_merge": true
+  },
+  "queue": {
+    "query": "repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:\"waiting-for-manual-testing\"",
+    "url": "https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22",
+    "notify_when_empty": false,
+    "live_cardinality": "dynamic",
+    "issue_only_when_no_open_implementation_pr": true,
+    "require_every_declared_open_implementation_pr": true,
+    "exclude_closed_implementation_prs": true
+  }
+}

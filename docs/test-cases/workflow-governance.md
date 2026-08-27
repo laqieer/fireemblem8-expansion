@@ -72,81 +72,51 @@ and does not grant push credentials.
   3; no GitHub token, active manual hold, ROM, or emulator is required to
   validate the protocol.
 - **Prerequisites and clean starting state:** start at the repository root with
-  the development-workflow skill, contributor guide, this case, and registry
-  unchanged. The repository label `waiting-for-manual-testing` has description
-  `Blocked until @laqieer records a specific manual tester result`.
+  [the canonical JSON contract](../../.github/manual-testing-handoff.json),
+  development-workflow skill, contributor guide, this case, and registry
+  unchanged.
 
 ### Actions
 
-1. Confirm the proposed criterion is one precise, material visual, audio, or UX
-   judgment that semantic automation cannot reliably decide. Reject vague
-   review requests and deterministic behavior the agent can verify.
-2. Before any handoff, render real non-instrumented positive and
-   negative/control artifacts from the exact candidate commit, drive the same
-   deterministic input route, and inspect deterministic screenshots for static
-   UI or a short synchronized emulator A/V clip for time-dependent or
-   audiovisual behavior. Keep semantic assertions as the primary evidence.
-3. For an actionable criterion, verify the documented lifecycle requires the
-   agent to apply the label to the originating issue and each open
-   implementation PR, assign both items to `laqieer`, comment on each item, and
-   explicitly ping `@laqieer`.
-4. Verify each handoff comment includes the tester-case ID, exact commit,
-   exact artifact path or link, artifact hash, environment, clean starting
-   state, numbered steps, expected result, negative/control artifact, one
-   precise judgment, and an explicit statement that merge and issue closure
-   are blocked.
-5. Verify an accepted result requires the lifecycle to post the actual result
-   and evidence link, remove the label from the issue and PR, remove the
-   temporary assignment unless another ownership reason remains, and
-   automatically resume exact-candidate gates and merge.
-6. Run
+1. Parse `.github/manual-testing-handoff.json` and validate every required key,
+   value, enum, boolean, target, and comment field.
+2. Exercise the positive issue-only, one-PR, and multiple-open-PR queue shapes,
+   plus malformed label, assignee, relationship, stale-state, and closed-PR
+   controls.
+3. Run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
-7. Open the documented queue:
+4. Open the documented queue:
    [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).
    When it is empty, do not schedule notifications or comments.
 
 ### Expected result
 
-The focused suite parses the mirrored handoff sections and registry entry.
-Only an actionable non-agent-verifiable visual, audio, or UX judgment enters
-the queue. The issue and open PR become discoverable and assigned with a
-complete artifact-specific request; merge and closure remain blocked until the
-one judgment is accepted; cleanup removes temporary tracking; and delivery
-resumes automatically.
+The focused suite accepts the canonical JSON and its supported queue shapes.
+Human guidance links to that file without duplicating machine behavior.
 
 ### Negative control
 
-Mutations that remove or change the exact label, explicit `@laqieer` ping,
-issue-and-PR assignment, clickable query URL, pre-handoff screenshot/A/V
-inspection, merge-and-closure hold, or accepted-result cleanup lifecycle must
-fail the focused suite. Phrase-preserving polarity reversals such as `do not
-apply` or `do not remove` must also fail. This narrowly scoped exact-source
-coverage is required because label names, mentions, assignees, and query URLs
-are an externally consumed GitHub workflow protocol; the remaining assertions
-are parsed as labeled document-contract fields with affirmative activation,
-hold, completion, cleanup, and resume semantics.
+Every leaf mutation in the structured contract fails, including permissive
+activation, wrong identifiers or targets, disabled holds, incomplete cleanup,
+empty-queue notifications, and invalid issue/PR relationships. Removing this
+case's own required subsection also fails even when another case in this file
+retains a same-named heading.
 
 ### Interactions and save compatibility
 
 The protocol depends on GitHub issues, pull requests, labels, assignments, and
-comments when a real hold is active. It conflicts with blanket human review,
-manual gates for deterministic behavior, unlabeled requests, and leaving stale
-labels or assignments after acceptance. The live queue may be empty or
-nonempty; its contents are release-time PR/issue evidence and are not frozen in
-this source contract. An empty query schedules no notifications or comments.
-The protocol changes no save, generated data, localization, ROM/RAM,
-debug/release, or archival behavior.
+comments when a real hold is active. Live queue contents remain release-time
+evidence rather than tracked state. It changes no save, generated data,
+localization, ROM/RAM, debug/release, or archival behavior.
 
 ### Automation
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
-parses the mirrored labeled policy, validates the indexed case, and exercises
-fail-closed mutations of every externally consumed lifecycle boundary.
+parses the JSON contract and exercises its schema, every semantic leaf,
+supported queue shapes, and fail-closed controls.
 
 ### Cleanup and limitations
 
-This source-only case changes no remote item. A real accepted handoff must
-remove the label from the issue and PR and remove the temporary `laqieer`
-assignment unless another ownership reason remains. The test cannot make the
-subjective judgment itself; it proves that only such a judgment can enter the
-manual queue and that its state cannot remain stale afterward.
+This source-only case changes no remote item and cannot make the subjective
+judgment itself. Live queue state and evidence remain in the relevant PR and
+issue rather than this repository.

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from itertools import product
+import copy
 import json
 from pathlib import Path
 import re
@@ -24,7 +24,7 @@ CLAUDE_PATH = ROOT / "CLAUDE.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
 WORKFLOW_GOVERNANCE_PATH = ROOT / "docs" / "test-cases" / "workflow-governance.md"
 TEST_CASE_REGISTRY_PATH = ROOT / "docs" / "test-cases" / "registry.json"
-MANUAL_HANDOFF_POLICY_HEADING = "Actionable manual-testing handoff"
+MANUAL_HANDOFF_CONTRACT_PATH = ROOT / ".github" / "manual-testing-handoff.json"
 MANUAL_HANDOFF_CASE_HEADING = (
     "TC-WORKFLOW-MANUAL-HANDOFF-001: "
     "Surface actionable manual testing and resume automatically"
@@ -522,863 +522,190 @@ def watcher_example_violations(text):
     return violations
 
 
-def parse_labeled_policy(text, heading):
-    section = "\n".join(read_markdown_section(text, heading))
-    fields = {}
-    pattern = re.compile(
-        r"(?ms)^- \*\*(?P<name>[^*:]+):\*\* "
-        r"(?P<value>.*?)(?=^- \*\*|\Z)"
-    )
-    for match in pattern.finditer(section):
-        name = match.group("name")
-        if name in fields:
-            raise AssertionError(f"duplicate {heading!r} field {name!r}")
-        fields[name] = " ".join(match.group("value").split())
-    return fields
-
-
-def parse_policy_clauses(text):
-    return tuple(
-        clause.strip()
-        for clause in re.split(r"(?:[.!?;]+|\n+)", " ".join(text.split()))
-        if clause.strip()
-    )
-
-
-ACTION_LEMMAS = {
-    "added": "add",
-    "adds": "add",
-    "applied": "apply",
-    "applies": "apply",
-    "assigned": "assign",
-    "assigns": "assign",
-    "blocked": "block",
-    "blocks": "block",
-    "built": "build",
-    "builds": "build",
-    "cleared": "clear",
-    "clears": "clear",
-    "closed": "close",
-    "closes": "close",
-    "commented": "comment",
-    "comments": "comment",
-    "created": "create",
-    "creates": "create",
-    "entered": "enter",
-    "enters": "enter",
-    "explicitly": "explicit",
-    "included": "include",
-    "includes": "include",
-    "inspected": "inspect",
-    "inspects": "inspect",
-    "judged": "judge",
-    "judging": "judge",
-    "merged": "merge",
-    "merges": "merge",
-    "merging": "merge",
-    "notified": "notify",
-    "notifies": "notify",
-    "pinged": "ping",
-    "pings": "ping",
-    "posted": "post",
-    "posts": "post",
-    "posting": "post",
-    "prevented": "prevent",
-    "prevents": "prevent",
-    "prohibited": "prohibit",
-    "prohibits": "prohibit",
-    "recorded": "record",
-    "records": "record",
-    "removed": "remove",
-    "removes": "remove",
-    "removing": "remove",
-    "rendered": "render",
-    "renders": "render",
-    "resumed": "resume",
-    "resumes": "resume",
-    "resuming": "resume",
-    "reviewed": "review",
-    "reviews": "review",
-    "scheduled": "schedule",
-    "schedules": "schedule",
-    "stated": "state",
-    "states": "state",
-    "unassigned": "unassign",
-    "unassigns": "unassign",
-    "used": "use",
-    "uses": "use",
+EXPECTED_MANUAL_HANDOFF_CONTRACT = {
+    "schema": "fe8.manual-testing-handoff.v1",
+    "eligibility": {
+        "kinds": ["visual", "audio", "ux"],
+        "automation_unreliable": True,
+        "deterministic_criteria": False,
+    },
+    "pre_handoff": {
+        "artifact": "non-instrumented",
+        "static_ui": "screenshot",
+        "time_dependent_or_av": "synchronized_av",
+        "semantic_assertions_primary": True,
+    },
+    "activation": {
+        "required": True,
+        "label": "waiting-for-manual-testing",
+        "label_description": (
+            "Blocked until @laqieer records a specific manual tester result"
+        ),
+        "assignee": "laqieer",
+        "mention": "@laqieer",
+        "targets": [
+            "originating_issue",
+            "each_open_implementation_pr",
+        ],
+        "comment": {
+            "required": True,
+            "fields": [
+                "case_id",
+                "commit",
+                "artifact_path",
+                "sha256",
+                "environment",
+                "clean_state",
+                "steps",
+                "expected",
+                "control",
+                "requested_judgment",
+                "merge_hold",
+                "closure_hold",
+            ],
+        },
+    },
+    "hold": {
+        "merge": True,
+        "issue_closure": True,
+    },
+    "completion": {
+        "post_result": True,
+        "post_evidence_link": True,
+        "remove_label": "waiting-for-manual-testing",
+        "remove_label_from": [
+            "originating_issue",
+            "each_open_implementation_pr",
+        ],
+        "remove_temporary_assignee": "laqieer",
+        "unless_other_ownership": True,
+        "resume_exact_candidate_gates": True,
+        "resume_merge": True,
+    },
+    "queue": {
+        "query": MANUAL_HANDOFF_QUERY,
+        "url": MANUAL_HANDOFF_QUERY_URL,
+        "notify_when_empty": False,
+        "live_cardinality": "dynamic",
+        "issue_only_when_no_open_implementation_pr": True,
+        "require_every_declared_open_implementation_pr": True,
+        "exclude_closed_implementation_prs": True,
+    },
 }
-NEGATION_PATTERNS = (
-    ("cannot",),
-    ("can", "not"),
-    ("do", "not"),
-    ("does", "not"),
-    ("forbidden",),
-    ("must", "not"),
-    ("never",),
-    ("not",),
-    ("prohibit",),
-    ("shall", "not"),
-    ("should", "not"),
-)
 
 
-@dataclass(frozen=True)
-class ActionAtom:
-    field: str
-    verb: str
-    object: str
-    target: str
-    scope: str
-    polarity: str
-
-
-@dataclass(frozen=True)
-class ActionRule:
-    atom: ActionAtom
-    verbs: Tuple[Tuple[str, ...], ...]
-    objects: Tuple[Tuple[str, ...], ...]
-    targets: Tuple[Tuple[str, ...], ...] = ((),)
-    scopes: Tuple[Tuple[str, ...], ...] = ((),)
-    allow_object_before: bool = False
-
-
-def action_words(text):
-    return tuple(
-        ACTION_LEMMAS.get(word, word)
-        for word in normalize_policy(text).split()
-    )
-
-
-def action_aliases(*phrases):
-    return tuple(action_words(phrase) for phrase in phrases)
-
-
-def action_rule(
-    field,
-    verb,
-    object_name,
-    target,
-    scope,
-    polarity,
-    *,
-    verbs,
-    objects,
-    targets=("",),
-    scopes=("",),
-    allow_object_before=False,
-):
-    return ActionRule(
-        atom=ActionAtom(
-            field=field,
-            verb=verb,
-            object=object_name,
-            target=target,
-            scope=scope,
-            polarity=polarity,
-        ),
-        verbs=action_aliases(*verbs),
-        objects=action_aliases(*objects),
-        targets=action_aliases(*targets),
-        scopes=action_aliases(*scopes),
-        allow_object_before=allow_object_before,
-    )
-
-
-def ordered_alias_spans(words, aliases):
-    spans = []
-    for alias in aliases:
-        if not alias:
-            spans.append(())
-            continue
-        for start, word in enumerate(words):
-            if word != alias[0]:
-                continue
-            positions = [start]
-            cursor = start + 1
-            for token in alias[1:]:
-                candidates = [
-                    index
-                    for index in range(cursor, min(len(words), cursor + 13))
-                    if words[index] == token
-                ]
-                if not candidates:
-                    break
-                positions.append(candidates[0])
-                cursor = candidates[0] + 1
-            else:
-                spans.append(tuple(positions))
-    return tuple(spans)
-
-
-PASSIVE_MARKERS = {
-    "are",
-    "be",
-    "became",
-    "become",
-    "becomes",
-    "been",
-    "being",
-    "can",
-    "cannot",
-    "get",
-    "gets",
-    "is",
-    "may",
-    "must",
-    "shall",
-    "should",
-    "was",
-    "were",
-    "will",
-}
-MAX_ACTION_SPAN = 36
-
-
-def object_is_bound(words, verb_span, object_span, rule, action_verbs):
-    if not object_span or set(verb_span) & set(object_span):
-        return True
-    verb_start, verb_end = min(verb_span), max(verb_span)
-    object_start, object_end = min(object_span), max(object_span)
-    if verb_end < object_start:
-        between = words[verb_end + 1:object_start]
-        return not any(word in action_verbs for word in between)
-    if object_end < verb_start:
-        between = words[object_end + 1:verb_start]
-        return (
-            rule.allow_object_before
-            or any(word in PASSIVE_MARKERS for word in between)
-        )
-    return True
-
-
-def clause_has_negation(words, positions, atom):
-    start = max(0, min(positions) - 4)
-    end = min(len(words), max(positions) + 4)
-    bounded = words[start:end]
-    for pattern in NEGATION_PATTERNS:
-        width = len(pattern)
-        if any(
-            bounded[index:index + width] == pattern
-            for index in range(len(bounded) - width + 1)
-        ):
-            return True
-    if atom.verb in {"close", "merge"} and (
-        "block" in words or "prevent" in words
-    ):
-        return True
-    return False
-
-
-def parse_action_atoms(fields, rules):
-    parsed = []
-    action_verbs = {
-        alias[0]
-        for rule in rules
-        for alias in rule.verbs
-        if alias
-    }
-    for rule in rules:
-        for clause in parse_policy_clauses(fields.get(rule.atom.field, "")):
-            words = action_words(clause)
-            component_spans = tuple(
-                ordered_alias_spans(words, aliases)
-                for aliases in (
-                    rule.verbs,
-                    rule.objects,
-                    rule.targets,
-                    rule.scopes,
-                )
+def compare_contract(actual, expected, path=()):
+    location = ".".join(path) or "<root>"
+    if type(actual) is not type(expected):
+        return [
+            f"{location}: expected {type(expected).__name__}, "
+            f"got {type(actual).__name__}"
+        ]
+    if isinstance(expected, dict):
+        violations = []
+        actual_keys = set(actual)
+        expected_keys = set(expected)
+        for missing in sorted(expected_keys - actual_keys):
+            violations.append(f"{location}: missing {missing}")
+        for extra in sorted(actual_keys - expected_keys):
+            violations.append(f"{location}: unexpected {extra}")
+        for key in sorted(actual_keys & expected_keys):
+            violations.extend(
+                compare_contract(actual[key], expected[key], path + (key,))
             )
-            if any(not spans for spans in component_spans):
-                continue
-            for verb_span, object_span, target_span, scope_span in product(
-                *component_spans
-            ):
-                positions = tuple(
-                    position
-                    for span in (
-                        verb_span,
-                        object_span,
-                        target_span,
-                        scope_span,
-                    )
-                    for position in span
-                )
-                if max(positions) - min(positions) > MAX_ACTION_SPAN:
-                    continue
-                if not object_is_bound(
-                    words,
-                    verb_span,
-                    object_span,
-                    rule,
-                    action_verbs,
-                ):
-                    continue
-                parsed.append(
-                    ActionAtom(
-                        field=rule.atom.field,
-                        verb=rule.atom.verb,
-                        object=rule.atom.object,
-                        target=rule.atom.target,
-                        scope=rule.atom.scope,
-                        polarity=(
-                            "prohibited"
-                            if clause_has_negation(
-                                words,
-                                positions,
-                                rule.atom,
-                            )
-                            else "required"
-                        ),
-                    )
-                )
-    return tuple(parsed)
+        return violations
+    if actual != expected:
+        return [f"{location}: expected {expected!r}, got {actual!r}"]
+    return []
 
 
-def validate_action_atoms(fields, rules):
-    parsed = parse_action_atoms(fields, rules)
+def contract_paths(value, path=()):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = path + (key,)
+            yield child_path
+            yield from contract_paths(child, child_path)
+
+
+def contract_parent(value, path):
+    parent = value
+    for key in path[:-1]:
+        parent = parent[key]
+    return parent, path[-1]
+
+
+def wrong_contract_value(value):
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, str):
+        return value + "-wrong"
+    if isinstance(value, list):
+        return value[:-1]
+    raise TypeError(f"unsupported contract leaf: {type(value).__name__}")
+
+
+def read_manual_handoff_contract():
+    return json.loads(MANUAL_HANDOFF_CONTRACT_PATH.read_text(encoding="utf-8"))
+
+
+def validate_live_manual_queue(contract, live_items):
     violations = []
-    for rule in rules:
-        matching = tuple(
-            atom for atom in parsed
-            if atom.field == rule.atom.field
-            and atom.verb == rule.atom.verb
-            and atom.object == rule.atom.object
-            and atom.target == rule.atom.target
-            and atom.scope == rule.atom.scope
-        )
-        if not matching:
-            violations.append(f"{rule.atom.field}: missing {rule.atom}")
-            continue
-        polarities = {atom.polarity for atom in matching}
-        if rule.atom.polarity not in polarities:
-            violations.append(
-                f"{rule.atom.field}: wrong polarity for {rule.atom}"
-            )
-        if len(polarities) != 1:
-            violations.append(
-                f"{rule.atom.field}: contradictory polarities for {rule.atom}"
-            )
-    return violations
-
-
-def manual_handoff_policy_rules():
-    rules = [
-        action_rule(
-            "Eligibility", "use", "handoff", "eligible criterion",
-            "visual/audio/UX", "required",
-            verbs=("use", "reserve"),
-            objects=("handoff",),
-            targets=("criterion", "judgment", "result"),
-            scopes=("visual audio ux",),
-        ),
-        action_rule(
-            "Eligibility", "decide", "criterion", "automation", "reliability",
-            "prohibited",
-            verbs=("decide", "judge", "score"),
-            objects=("criterion", "judgment", "result"),
-            targets=("automation", "agent"),
-            scopes=("reliably",),
-        ),
-        action_rule(
-            "Eligibility", "use", "handoff", "ineligible criterion",
-            "vague/deterministic", "prohibited",
-            verbs=("use", "apply"),
-            objects=("handoff", "it"),
-            targets=("vague deterministic", "vague review deterministic"),
-        ),
-        action_rule(
-            "Pre-handoff evidence", "render", "artifacts",
-            "positive and control", "exact candidate non-instrumented",
-            "required",
-            verbs=("render", "build", "create"),
-            objects=("artifacts",),
-            targets=("positive negative control", "positive control"),
-            scopes=(
-                "exact candidate non instrumented",
-                "non instrumented exact candidate",
-            ),
-        ),
-        action_rule(
-            "Pre-handoff evidence", "inspect", "screenshots", "static UI",
-            "deterministic", "required",
-            verbs=("inspect", "review"),
-            objects=("screenshots", "images"),
-            targets=("static ui",),
-            scopes=("deterministic",),
-        ),
-        action_rule(
-            "Pre-handoff evidence", "inspect", "A/V clip",
-            "time-dependent audiovisual", "short synchronized emulator",
-            "required",
-            verbs=("inspect", "review"),
-            objects=("a v clip", "a v recording", "audio video clip"),
-            targets=("time dependent audiovisual", "time dependent audio"),
-            scopes=("short synchronized emulator",),
-        ),
-        action_rule(
-            "Pre-handoff evidence", "retain", "semantic assertions",
-            "primary evidence", "", "required",
-            verbs=("remain", "retain", "keep", "continue"),
-            objects=("semantic assertions",),
-            targets=("primary evidence",),
-            allow_object_before=True,
-        ),
-        action_rule(
-            "Activation", "apply", "label", "issue and PR", "actionable",
-            "required",
-            verbs=("apply", "add"),
-            objects=("waiting for manual testing",),
-            targets=(
-                "originating issue open implementation pr",
-                "open implementation pr originating issue",
-            ),
-            scopes=("actionable",),
-        ),
-        action_rule(
-            "Activation", "assign", "items", "laqieer", "issue and PR",
-            "required",
-            verbs=("assign", "set assignee"),
-            objects=("both items", "issue pr"),
-            targets=("laqieer",),
-        ),
-        action_rule(
-            "Handoff comment", "comment", "request", "issue and PR",
-            "actionable", "required",
-            verbs=("comment", "post"),
-            objects=("comment", "request"),
-            targets=("issue pr",),
-            scopes=("actionable",),
-        ),
-        action_rule(
-            "Handoff comment", "ping", "tester", "issue and PR", "explicit",
-            "required",
-            verbs=("ping", "notify", "mention"),
-            objects=("laqieer",),
-            targets=("issue pr", "comment"),
-            scopes=("explicit",),
-        ),
-    ]
-    detail_aliases = {
-        "case ID": ("tester case id", "case id"),
-        "commit": ("exact commit", "candidate commit"),
-        "artifact": ("exact artifact path link", "artifact path link"),
-        "hash": ("artifact hash", "sha 256", "hash"),
-        "environment": ("environment",),
-        "clean state": ("clean starting state", "clean state"),
-        "steps": ("numbered steps", "numbered actions"),
-        "expected result": ("expected result",),
-        "control": ("negative control artifact", "control artifact"),
-        "judgment": ("one precise judgment", "single judgment"),
-    }
-    for object_name, aliases in detail_aliases.items():
-        rules.append(
-            action_rule(
-                "Handoff comment", "include", object_name, "request", "",
-                "required",
-                verbs=("include", "record", "provide", "name"),
-                objects=aliases,
-                targets=("",),
-            )
-        )
-    rules.extend((
-        action_rule(
-            "Hold", "merge", "implementation PR", "manual judgment", "",
-            "prohibited",
-            verbs=("merge",),
-            objects=("implementation pr", "pr"),
-            targets=("",),
-        ),
-        action_rule(
-            "Hold", "close", "issue", "manual judgment", "", "prohibited",
-            verbs=("close", "closure"),
-            objects=("issue",),
-            targets=("",),
-        ),
-        action_rule(
-            "Completion", "post", "result and evidence", "issue and PR",
-            "accepted result", "required",
-            verbs=("post", "record"),
-            objects=("actual result evidence link", "result evidence"),
-            targets=("issue pr", "pr issue"),
-            scopes=("",),
-        ),
-        action_rule(
-            "Completion", "remove", "label", "issue and PR",
-            "accepted result", "required",
-            verbs=("remove", "clear"),
-            objects=("waiting for manual testing",),
-            targets=("issue pr", "pr issue", "both items"),
-            scopes=("",),
-        ),
-        action_rule(
-            "Completion", "remove", "assignment", "laqieer",
-            "unless other owner", "required",
-            verbs=("remove", "clear", "unassign"),
-            objects=("assignment", "assignee", ""),
-            targets=("laqieer",),
-            scopes=("ownership reason", "another owner"),
-        ),
-        action_rule(
-            "Completion", "resume", "gates and merge", "exact candidate",
-            "automatic", "required",
-            verbs=("resume", "continue"),
-            objects=("gates merge", "delivery merge"),
-            targets=("exact candidate",),
-            scopes=("automatically", "automatic"),
-        ),
-        action_rule(
-            "Queue", "schedule", "notifications and comments", "empty query",
-            "", "prohibited",
-            verbs=("schedule", "send"),
-            objects=("notifications comments", "comments notifications", "reminders"),
-            targets=("empty query", "query empty", "no results"),
-        ),
-    ))
-    return tuple(rules)
-
-
-def manual_handoff_case_rules():
-    rules = []
-    for rule in manual_handoff_policy_rules():
-        if rule.atom.field in {
-            "Pre-handoff evidence",
-            "Activation",
-            "Handoff comment",
-            "Completion",
-        } and not (
-            (
-                rule.atom.field == "Completion"
-                and rule.atom.object in {"assignment", "label"}
-            )
-            or (
-                rule.atom.field == "Activation"
-                and rule.atom.object == "label"
-            )
-        ):
-            rules.append(
-                ActionRule(
-                    atom=ActionAtom(
-                        "Actions",
-                        rule.atom.verb,
-                        rule.atom.object,
-                        rule.atom.target,
-                        rule.atom.scope,
-                        rule.atom.polarity,
-                    ),
-                    verbs=rule.verbs,
-                    objects=rule.objects,
-                    targets=rule.targets,
-                    scopes=rule.scopes,
-                )
-            )
-    rules.append(
-        action_rule(
-            "Actions", "apply", "label", "issue and PR", "actionable",
-            "required",
-            verbs=("apply", "add"),
-            objects=("label",),
-            targets=(
-                "originating issue open implementation pr",
-                "open implementation pr originating issue",
-            ),
-            scopes=("actionable",),
-        )
-    )
-    rules.append(
-        action_rule(
-            "Actions", "remove", "label", "issue and PR",
-            "accepted result", "required",
-            verbs=("remove", "clear"),
-            objects=("label",),
-            targets=("issue pr", "pr issue", "both items"),
-            scopes=("",),
-        )
-    )
-    rules.append(
-        action_rule(
-            "Actions", "remove", "assignment", "laqieer",
-            "unless other owner", "required",
-            verbs=("remove", "clear", "unassign"),
-            objects=("assignment", "assignee"),
-            targets=("",),
-            scopes=("ownership reason", "another owner"),
-        )
-    )
-    rules.extend((
-        action_rule(
-            "Actions", "merge", "implementation PR", "manual judgment", "",
-            "prohibited",
-            verbs=("merge",),
-            objects=("",),
-            targets=("judgment",),
-        ),
-        action_rule(
-            "Actions", "close", "issue", "manual judgment", "", "prohibited",
-            verbs=("close", "closure"),
-            objects=("",),
-            targets=("judgment",),
-        ),
-        action_rule(
-            "Expected result", "enter", "queue", "eligible criterion", "",
-            "required",
-            verbs=("enter",),
-            objects=("queue",),
-            targets=("judgment", "criterion"),
-        ),
-        action_rule(
-            "Expected result", "assign", "issue and PR", "tester",
-            "discoverable", "required",
-            verbs=("assign",),
-            objects=("issue pr",),
-            targets=("",),
-            scopes=("discoverable",),
-        ),
-        action_rule(
-            "Expected result", "merge", "implementation PR",
-            "manual judgment", "", "prohibited",
-            verbs=("merge",),
-            objects=("",),
-            targets=("judgment",),
-        ),
-        action_rule(
-            "Expected result", "close", "issue", "manual judgment", "",
-            "prohibited",
-            verbs=("close", "closure"),
-            objects=("",),
-            targets=("judgment",),
-        ),
-        action_rule(
-            "Expected result", "remove", "temporary tracking",
-            "accepted result", "", "required",
-            verbs=("remove", "clear"),
-            objects=("temporary tracking", "temporary state"),
-            targets=("",),
-        ),
-        action_rule(
-            "Expected result", "resume", "delivery", "accepted result",
-            "automatic", "required",
-            verbs=("resume", "continue"),
-            objects=("delivery",),
-            targets=("",),
-            scopes=("automatically", "automatic"),
-            allow_object_before=True,
-        ),
-    ))
-    return tuple(rules)
-
-
-def manual_handoff_contract_violations(text):
-    fields = parse_labeled_policy(text, MANUAL_HANDOFF_POLICY_HEADING)
-    required_fields = {
-        "Eligibility",
-        "Pre-handoff evidence",
-        "Activation",
-        "Handoff comment",
-        "Hold",
-        "Completion",
-        "Queue",
-    }
-    violations = [
-        f"missing field: {name}"
-        for name in sorted(required_fields - fields.keys())
-    ]
-
-    # Exact spelling is irreplaceable here because these values are consumed
-    # directly by GitHub labels, mentions, assignments, search, and case links.
-    exact_requirements = {
-        "Activation": (
-            "`waiting-for-manual-testing`",
-            "`laqieer`",
-        ),
-        "Handoff comment": ("`@laqieer`",),
-        "Completion": ("`waiting-for-manual-testing`", "`laqieer`"),
-        "Queue": (
-            f"[`{MANUAL_HANDOFF_QUERY}`]({MANUAL_HANDOFF_QUERY_URL})",
-        ),
-    }
-    for field, terms in exact_requirements.items():
-        value = fields.get(field, "")
-        for term in terms:
-            if term not in value:
-                violations.append(f"{field} exact: {term}")
-    if "TC-WORKFLOW-MANUAL-HANDOFF-001" not in text:
-        violations.append("missing exact case ID")
-    violations.extend(validate_action_atoms(fields, manual_handoff_policy_rules()))
-    return violations
-
-
-def manual_handoff_case_violations(text):
-    case = "\n".join(
-        read_markdown_section(text, MANUAL_HANDOFF_CASE_HEADING)
-    )
-    fields = {
-        "Actions": "\n".join(read_markdown_section(case, "Actions")),
-        "Expected result": "\n".join(
-            read_markdown_section(case, "Expected result")
-        ),
-    }
-    violations = validate_action_atoms(fields, manual_handoff_case_rules())
-    for exact in (
-        "`waiting-for-manual-testing`",
-        "`laqieer`",
-        "`@laqieer`",
-        f"[`{MANUAL_HANDOFF_QUERY}`]({MANUAL_HANDOFF_QUERY_URL})",
-    ):
-        if exact not in case:
-            violations.append(f"case exact: {exact}")
-    if "TC-WORKFLOW-MANUAL-HANDOFF-001" not in text:
-        violations.append("case exact: TC-WORKFLOW-MANUAL-HANDOFF-001")
-    return violations
-
-
-def manual_handoff_queue_state_violations(governance, registry_case, live_queue):
-    source = "\n".join((
-        governance,
-        " ".join(registry_case["profiles"]),
-        registry_case["limitations"],
-    ))
-    normalized = normalize_policy(source)
-    violations = []
-    stale_invariants = (
-        ("dated queue-audit heading", r"\bcurrent queue audit\b"),
-        ("expected-empty live queue", r"\bexpected current queue\b.*\bempty\b"),
-        ("no-current-label claim", r"\brequires no current label application\b"),
-        ("no-active-hold profile", r"\bno active manual hold\b"),
-    )
-    for name, pattern in stale_invariants:
-        if re.search(pattern, normalized):
-            violations.append(f"permanent remote-state invariant: {name}")
-
-    words = set(action_words(source))
-    supports_empty = "empty" in words or {"zero", "results"} <= words
-    supports_nonempty = (
-        "nonempty" in words
-        or "populated" in words
-        or {"one", "more"} <= words
-    )
-    if not (supports_empty and supports_nonempty):
-        violations.append("missing cardinality-neutral live queue contract")
-    if not (
-        {"release", "time", "pr", "issue", "evidence"} <= words
-        and {"source", "invariant"} <= words
-    ):
-        violations.append("missing release-time evidence boundary")
-
+    activation = contract["activation"]
+    queue = contract["queue"]
     seen_urls = set()
     open_items = []
-    for item in live_queue:
+    for item in live_items:
         url = item.get("url")
         if not url:
-            violations.append("live item missing URL")
+            violations.append("item missing URL")
             continue
         if url in seen_urls:
-            violations.append(f"duplicate live item: {url}")
+            violations.append(f"duplicate item: {url}")
         seen_urls.add(url)
         if item.get("state", "open") != "open":
             continue
         open_items.append(item)
         if not item.get("manual_pending", True):
-            if item.get("label") == "waiting-for-manual-testing":
-                violations.append(f"stale manual label: {url}")
-            if item.get("assignee") == "laqieer":
-                violations.append(f"stale manual assignee: {url}")
+            if item.get("label") == activation["label"]:
+                violations.append(f"stale label: {url}")
+            if item.get("assignee") == activation["assignee"]:
+                violations.append(f"stale assignee: {url}")
             continue
-        if item.get("label") != "waiting-for-manual-testing":
-            violations.append("live item missing exact label")
-        if item.get("assignee") != "laqieer":
-            violations.append("live item missing exact assignee")
+        if item.get("label") != activation["label"]:
+            violations.append(f"wrong label: {url}")
+        if item.get("assignee") != activation["assignee"]:
+            violations.append(f"wrong assignee: {url}")
 
-    issues_by_origin = {
+    issues = {
         item["origin"]: item
         for item in open_items
         if item.get("kind") == "issue" and item.get("origin")
     }
-    prs_by_origin = {}
+    prs = {}
     for item in open_items:
         if item.get("kind") != "pr" or not item.get("origin"):
             continue
-        prs_by_origin.setdefault(item["origin"], set()).add(item["url"])
-        if item["origin"] not in issues_by_origin:
-            violations.append(f"orphan implementation PR: {item['url']}")
+        prs.setdefault(item["origin"], set()).add(item["url"])
+        if item["origin"] not in issues:
+            violations.append(f"orphan PR: {item['url']}")
 
-    for origin, issue in issues_by_origin.items():
-        if "open_pr_urls" not in issue:
+    for origin, issue in issues.items():
+        declared = issue.get("open_pr_urls")
+        if declared is None:
             continue
-        declared = set(issue["open_pr_urls"])
-        actual = prs_by_origin.get(origin, set())
-        for missing in sorted(declared - actual):
-            violations.append(f"missing open implementation PR: {missing}")
-        for unrelated in sorted(actual - declared):
-            violations.append(f"undeclared open implementation PR: {unrelated}")
+        actual = prs.get(origin, set())
+        if (
+            not declared
+            and actual
+            and queue["issue_only_when_no_open_implementation_pr"]
+        ):
+            violations.append(f"unexpected open PR for {origin}")
+        if queue["require_every_declared_open_implementation_pr"]:
+            for missing in sorted(set(declared) - actual):
+                violations.append(f"missing open PR: {missing}")
+            for extra in sorted(actual - set(declared)):
+                violations.append(f"undeclared open PR: {extra}")
     return violations
-
-
-def mutate_policy_phrase(text, phrase, replacement):
-    pattern = re.compile(
-        r"\s+".join(re.escape(part) for part in phrase.split())
-    )
-    mutated, count = pattern.subn(replacement, text)
-    if count == 0:
-        raise AssertionError(f"mutation phrase not found: {phrase}")
-    return mutated
-
-
-def replace_labeled_policy_fields(text, replacements):
-    for field, replacement in replacements.items():
-        pattern = re.compile(
-            rf"(?m)^- \*\*{re.escape(field)}:\*\* .*(?:\n  .*)*"
-        )
-        text, count = pattern.subn(
-            f"- **{field}:** {replacement}",
-            text,
-        )
-        if count != 1:
-            raise AssertionError(
-                f"expected one labeled policy field {field!r}, found {count}"
-            )
-    return text
-
-
-def append_labeled_policy_clause(text, field, clause):
-    fields = parse_labeled_policy(text, MANUAL_HANDOFF_POLICY_HEADING)
-    return replace_labeled_policy_fields(
-        text,
-        {field: fields[field] + " " + clause},
-    )
-
-
-def replace_case_subsection(text, heading, replacement):
-    case = "\n".join(
-        read_markdown_section(text, MANUAL_HANDOFF_CASE_HEADING)
-    )
-    pattern = re.compile(
-        rf"(?ms)(^### {re.escape(heading)}\s*$\n).*?(?=^### |\Z)"
-    )
-    mutated_case, count = pattern.subn(
-        lambda match: match.group(1) + "\n" + replacement.rstrip() + "\n\n",
-        case,
-    )
-    if count != 1:
-        raise AssertionError(
-            f"expected one case subsection {heading!r}, found {count}"
-        )
-    return text.replace(case, mutated_case, 1)
-
-
-def representative_action_phrase(rule):
-    components = (
-        rule.verbs[0],
-        rule.objects[0],
-        rule.targets[0],
-        rule.scopes[0],
-    )
-    return " ".join(
-        token
-        for component in components
-        for token in component
-    )
 
 
 def read_skill():
@@ -2582,21 +1909,38 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             with self.subTest(surface="template", requirement=requirement):
                 self.assertIn(requirement, template)
 
-    def test_actionable_manual_handoff_contract_is_parsed_and_indexed(self):
-        for path in (SKILL_PATH, CONTRIBUTING_PATH):
-            with self.subTest(surface=str(path)):
-                self.assertEqual(
-                    [],
-                    manual_handoff_contract_violations(
-                        path.read_text(encoding="utf-8")
-                    ),
-                )
+    def test_manual_handoff_json_contract_and_human_links(self):
+        contract = read_manual_handoff_contract()
+        self.assertEqual([], compare_contract(
+            contract,
+            EXPECTED_MANUAL_HANDOFF_CONTRACT,
+        ))
+
+        links = {
+            SKILL_PATH: "../../manual-testing-handoff.json",
+            CONTRIBUTING_PATH: ".github/manual-testing-handoff.json",
+            WORKFLOW_GOVERNANCE_PATH: (
+                "../../.github/manual-testing-handoff.json"
+            ),
+        }
+        for path, link in links.items():
+            with self.subTest(path=str(path)):
+                self.assertIn(link, path.read_text(encoding="utf-8"))
 
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
-        self.assertEqual([], manual_handoff_case_violations(governance))
         case = "\n".join(
             read_markdown_section(governance, MANUAL_HANDOFF_CASE_HEADING)
         )
+        for heading in (
+            "Actions",
+            "Expected result",
+            "Negative control",
+            "Interactions and save compatibility",
+            "Automation",
+            "Cleanup and limitations",
+        ):
+            with self.subTest(heading=heading):
+                self.assertTrue(read_markdown_section(case, heading))
         self.assertIn(
             f"[`{MANUAL_HANDOFF_QUERY}`]({MANUAL_HANDOFF_QUERY_URL})",
             case,
@@ -2610,13 +1954,12 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             for item in registry["features"]
             if item["id"] == "workflow-governance"
         )
-        self.assertIn(
-            "https://github.com/laqieer/fireemblem8-expansion/issues/169",
-            feature["issue_urls"],
-        )
-        self.assertIn(
-            "TC-WORKFLOW-MANUAL-HANDOFF-001",
+        self.assertEqual(
             feature["required_cases"],
+            [
+                "TC-WORKFLOW-CI-WAIT-001",
+                "TC-WORKFLOW-MANUAL-HANDOFF-001",
+            ],
         )
         indexed_case = next(
             item
@@ -2627,77 +1970,95 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             indexed_case["document"],
             "docs/test-cases/workflow-governance.md",
         )
-        self.assertEqual(
-            indexed_case["anchor"],
-            "tc-workflow-manual-handoff-001-surface-actionable-manual-testing-"
-            "and-resume-automatically",
-        )
         self.assertEqual(indexed_case["feature_id"], "workflow-governance")
-        self.assertEqual(
-            [],
-            manual_handoff_queue_state_violations(
-                governance,
-                indexed_case,
-                (),
-            ),
-        )
 
-        synthetic_live_queue = (
-            {
-                "url": "https://example.invalid/issues/171",
-                "kind": "issue",
-                "label": "waiting-for-manual-testing",
-                "assignee": "laqieer",
-            },
-        )
-        self.assertEqual(
-            [],
-            manual_handoff_queue_state_violations(
-                governance,
-                indexed_case,
-                synthetic_live_queue,
-            ),
-        )
-        paraphrased_queue_case = dict(indexed_case)
-        paraphrased_queue_case["profiles"] = [
-            "Clean checkout; the live queue supports zero results or one or "
-            "more actionable items"
-        ]
-        paraphrased_queue_case["limitations"] = (
-            "PR and issue entries are release-time evidence, not a frozen "
-            "source invariant."
-        )
-        self.assertEqual(
-            [],
-            manual_handoff_queue_state_violations(
-                governance,
-                paraphrased_queue_case,
-                synthetic_live_queue,
-            ),
-        )
-        stale_queue_case = dict(indexed_case)
-        stale_queue_case["limitations"] = (
-            indexed_case["limitations"]
-            + " The expected current queue is empty."
-        )
-        self.assertTrue(
-            manual_handoff_queue_state_violations(
-                governance,
-                stale_queue_case,
-                synthetic_live_queue,
+    def test_manual_handoff_contract_mutations_fail_closed(self):
+        contract = read_manual_handoff_contract()
+        for path in contract_paths(EXPECTED_MANUAL_HANDOFF_CONTRACT):
+            with self.subTest(path=".".join(path), mutation="missing"):
+                mutated = copy.deepcopy(contract)
+                parent, key = contract_parent(mutated, path)
+                del parent[key]
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+        for path in contract_paths(EXPECTED_MANUAL_HANDOFF_CONTRACT):
+            parent, key = contract_parent(
+                EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                path,
             )
-        )
+            if isinstance(parent[key], dict):
+                continue
+            with self.subTest(path=".".join(path), mutation="wrong"):
+                mutated = copy.deepcopy(contract)
+                mutated_parent, mutated_key = contract_parent(mutated, path)
+                mutated_parent[mutated_key] = wrong_contract_value(
+                    mutated_parent[mutated_key]
+                )
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
 
-    def test_manual_handoff_live_queue_relationships_are_conditional(self):
-        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
-        registry = json.loads(
-            TEST_CASE_REGISTRY_PATH.read_text(encoding="utf-8")
-        )
-        indexed_case = next(
-            item
-            for item in registry["cases"]
-            if item["id"] == "TC-WORKFLOW-MANUAL-HANDOFF-001"
-        )
+        blocker_mutations = {
+            "permissive activation": ("activation", "required", False),
+            "activation label": (
+                "activation",
+                "label",
+                "other-label",
+            ),
+            "activation assignee": (
+                "activation",
+                "assignee",
+                "other-tester",
+            ),
+            "activation mention": (
+                "activation",
+                "mention",
+                "@other-tester",
+            ),
+            "merge hold": ("hold", "merge", False),
+            "closure hold": ("hold", "issue_closure", False),
+            "cleanup label": (
+                "completion",
+                "remove_label",
+                "other-label",
+            ),
+            "cleanup target": (
+                "completion",
+                "remove_label_from",
+                ["originating_issue"],
+            ),
+            "cleanup assignee": (
+                "completion",
+                "remove_temporary_assignee",
+                "other-tester",
+            ),
+            "resume gates": (
+                "completion",
+                "resume_exact_candidate_gates",
+                False,
+            ),
+            "resume merge": ("completion", "resume_merge", False),
+            "empty queue notification": (
+                "queue",
+                "notify_when_empty",
+                True,
+            ),
+            "static queue": ("queue", "live_cardinality", "empty"),
+        }
+        for name, (section, key, value) in blocker_mutations.items():
+            with self.subTest(blocker=name):
+                mutated = copy.deepcopy(contract)
+                mutated[section][key] = value
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+
+    def test_manual_handoff_live_queue_relationships(self):
+        contract = read_manual_handoff_contract()
 
         def issue(url, *, origin=None, open_pr_urls=None, **overrides):
             item = {
@@ -2705,8 +2066,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "kind": "issue",
                 "state": "open",
                 "manual_pending": True,
-                "label": "waiting-for-manual-testing",
-                "assignee": "laqieer",
+                "label": contract["activation"]["label"],
+                "assignee": contract["activation"]["assignee"],
             }
             if origin is not None:
                 item["origin"] = origin
@@ -2721,8 +2082,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "kind": "pr",
                 "state": "open",
                 "manual_pending": True,
-                "label": "waiting-for-manual-testing",
-                "assignee": "laqieer",
+                "label": contract["activation"]["label"],
+                "assignee": contract["activation"]["assignee"],
                 "origin": origin,
             }
             item.update(overrides)
@@ -2732,14 +2093,12 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         pr_one = "https://example.invalid/pulls/172"
         pr_two = "https://example.invalid/pulls/173"
         closed_pr = "https://example.invalid/pulls/174"
-        positive_queues = {
-            "issue only without relationship metadata": (
-                issue(issue_url),
-            ),
-            "issue with no open implementation PR": (
+        positive = {
+            "issue only": (issue(issue_url),),
+            "declared no open PR": (
                 issue(issue_url, origin="issue-171", open_pr_urls=[]),
             ),
-            "issue and one open PR": (
+            "one open PR": (
                 issue(
                     issue_url,
                     origin="issue-171",
@@ -2747,7 +2106,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 ),
                 pull(pr_one, "issue-171"),
             ),
-            "issue and multiple open PRs, closed PR excluded": (
+            "multiple open PRs and closed PR excluded": (
                 issue(
                     issue_url,
                     origin="issue-171",
@@ -2765,22 +2124,16 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 ),
             ),
         }
-        for scenario, live_queue in positive_queues.items():
+        for scenario, items in positive.items():
             with self.subTest(scenario=scenario):
                 self.assertEqual(
                     [],
-                    manual_handoff_queue_state_violations(
-                        governance,
-                        indexed_case,
-                        live_queue,
-                    ),
+                    validate_live_manual_queue(contract, items),
                 )
 
-        negative_queues = {
-            "orphan PR": (
-                pull(pr_one, "issue-171"),
-            ),
-            "missing declared open PR": (
+        negative = {
+            "orphan PR": (pull(pr_one, "issue-171"),),
+            "missing open PR": (
                 issue(
                     issue_url,
                     origin="issue-171",
@@ -2788,20 +2141,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 ),
             ),
             "undeclared open PR": (
-                issue(
-                    issue_url,
-                    origin="issue-171",
-                    open_pr_urls=[],
-                ),
+                issue(issue_url, origin="issue-171", open_pr_urls=[]),
                 pull(pr_one, "issue-171"),
             ),
-            "duplicate item": (
-                issue(issue_url),
-                issue(issue_url),
-            ),
-            "wrong label": (
-                issue(issue_url, label="other-label"),
-            ),
+            "duplicate": (issue(issue_url), issue(issue_url)),
+            "wrong label": (issue(issue_url, label="other-label"),),
             "wrong assignee": (
                 issue(issue_url, assignee="other-tester"),
             ),
@@ -2820,286 +2164,26 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 ),
             ),
         }
-        for scenario, live_queue in negative_queues.items():
+        for scenario, items in negative.items():
             with self.subTest(scenario=scenario):
-                self.assertTrue(
-                    manual_handoff_queue_state_violations(
-                        governance,
-                        indexed_case,
-                        live_queue,
-                    )
-                )
+                self.assertTrue(validate_live_manual_queue(contract, items))
 
-    def test_actionable_manual_handoff_protocol_mutations_fail_closed(self):
-        # Exact-source mutations are justified because this named protocol is
-        # externally consumed by GitHub labels, mentions, assignees, URLs, and
-        # the stable case index.
-        for path in (SKILL_PATH, CONTRIBUTING_PATH):
-            canonical = path.read_text(encoding="utf-8")
-            mutations = {
-                "label": ("`waiting-for-manual-testing`", "`other-label`"),
-                "mention": ("`@laqieer`", "`@other-tester`"),
-                "assignee": ("`laqieer`", "`other-tester`"),
-                "query URL": (
-                    MANUAL_HANDOFF_QUERY_URL,
-                    "https://github.com/laqieer/fireemblem8-expansion/issues",
-                ),
-                "case ID": (
-                    "TC-WORKFLOW-MANUAL-HANDOFF-001",
-                    "TC-WORKFLOW-OTHER-001",
-                ),
-            }
-            for mutation, (required, replacement) in mutations.items():
-                with self.subTest(surface=str(path), mutation=mutation):
-                    mutated = mutate_policy_phrase(
-                        canonical,
-                        required,
-                        replacement,
-                    )
-                    self.assertTrue(
-                        manual_handoff_contract_violations(mutated)
-                    )
-            reviewer_example = append_labeled_policy_clause(
-                canonical,
-                "Completion",
-                "Automatically resume exact-candidate gates and merge must "
-                "not happen.",
-            )
-            with self.subTest(
-                surface=str(path),
-                mutation="reviewer postfix example",
-            ):
-                self.assertTrue(
-                    manual_handoff_contract_violations(reviewer_example)
-                )
-
-    def test_actionable_manual_handoff_polarity_mutations_fail_closed(self):
-        for path in (SKILL_PATH, CONTRIBUTING_PATH):
-            canonical = path.read_text(encoding="utf-8")
-            for rule in manual_handoff_policy_rules():
-                phrase = representative_action_phrase(rule)
-                if rule.atom.polarity == "required":
-                    first, remainder = phrase.split(" ", 1)
-                    mutations = {
-                        "prefix must-not": "must not " + phrase,
-                        "prefix never": "never " + phrase,
-                        "intervening must-not": (
-                            first + " must not " + remainder
-                        ),
-                        "intervening cannot": (
-                            first + " cannot " + remainder
-                        ),
-                        "postfix": phrase + " must not happen",
-                        "postfix should-not": (
-                            phrase + " should not occur"
-                        ),
-                        "postfix prohibited": phrase + " is prohibited",
-                    }
-                else:
-                    mutations = {"contradictory affirmative": phrase}
-                for mutation, clause in mutations.items():
-                    with self.subTest(
-                        surface=str(path),
-                        atom=rule.atom,
-                        mutation=mutation,
-                    ):
-                        mutated = append_labeled_policy_clause(
-                            canonical,
-                            rule.atom.field,
-                            clause + ".",
-                        )
-                        self.assertTrue(
-                            manual_handoff_contract_violations(mutated)
-                        )
-
-    def test_actionable_manual_handoff_semantic_paraphrases_stay_green(self):
-        paraphrases = {
-            "Eligibility": (
-                "Reserve this handoff for a precise visual, audio, or UX "
-                "criterion. Automation cannot reliably judge that criterion. "
-                "Never use this handoff for vague review requests or "
-                "deterministic checks."
-            ),
-            "Pre-handoff evidence": (
-                "From the exact candidate commit, build positive and "
-                "negative/control artifacts that are real and "
-                "non-instrumented. Review deterministic static-UI screenshots "
-                "and a short synchronized emulator A/V recording for "
-                "time-dependent or audiovisual behavior. Keep semantic "
-                "assertions as primary evidence."
-            ),
-            "Activation": (
-                "For an actionable criterion, add the "
-                "`waiting-for-manual-testing` label on every open "
-                "implementation PR and the originating issue. Set `laqieer` "
-                "as assignee for both items."
-            ),
-            "Handoff comment": (
-                "On every actionable issue and PR, post a comment and "
-                "explicitly notify `@laqieer`. The request records "
-                "tester-case ID, candidate commit, artifact path or link, "
-                "SHA-256, environment, clean state, numbered actions, "
-                "expected result, control artifact, and a single judgment."
-            ),
-            "Hold": (
-                "Every handoff comment records that the implementation PR is "
-                "prohibited from merging and the issue cannot close until "
-                "that criterion is accepted."
-            ),
-            "Completion": (
-                "After acceptance, record the result and evidence on the PR "
-                "and issue; clear the `waiting-for-manual-testing` label from "
-                "both items; unassign `laqieer` unless another owner remains; "
-                "resume the exact candidate gates automatically and merge."
-            ),
-            "Queue": (
-                "Use "
-                f"[`{MANUAL_HANDOFF_QUERY}`]({MANUAL_HANDOFF_QUERY_URL}). "
-                "When this query has no results, never schedule comments or "
-                "notifications."
-            ),
-        }
-        for path in (SKILL_PATH, CONTRIBUTING_PATH):
-            with self.subTest(surface=str(path)):
-                paraphrased = replace_labeled_policy_fields(
-                    path.read_text(encoding="utf-8"),
-                    paraphrases,
-                )
-                self.assertEqual(
-                    [],
-                    manual_handoff_contract_violations(paraphrased),
-                )
-
-    def test_actionable_manual_handoff_binds_each_verb_to_its_object(self):
-        activation_adversaries = {
-            "review example": (
-                "For an actionable criterion, remove "
-                "`waiting-for-manual-testing` from the originating issue and "
-                "open implementation PR, then apply `other-label` to both "
-                "items and assign both items to `laqieer`."
-            ),
-            "swapped objects": (
-                "For an actionable criterion, apply the `laqieer` assignment "
-                "to the originating issue and open implementation PR, then "
-                "assign the `waiting-for-manual-testing` label to both items."
-            ),
-            "unrelated label verb": (
-                "For an actionable criterion, inspect "
-                "`waiting-for-manual-testing`, apply `other-label` to the "
-                "originating issue and open implementation PR, and assign "
-                "both items to `laqieer`."
-            ),
-        }
-        completion_inverse = (
-            "After an accepted result, post the actual result and evidence "
-            "link on the issue and PR; apply `waiting-for-manual-testing` to "
-            "both items, then remove `other-label`; remove the temporary "
-            "`laqieer` assignment unless another owner remains; resume the "
-            "exact candidate gates automatically and merge."
-        )
-        for path in (SKILL_PATH, CONTRIBUTING_PATH):
-            canonical = path.read_text(encoding="utf-8")
-            for mutation, activation in activation_adversaries.items():
-                with self.subTest(surface=str(path), mutation=mutation):
-                    mutated = replace_labeled_policy_fields(
-                        canonical,
-                        {"Activation": activation},
-                    )
-                    self.assertTrue(
-                        manual_handoff_contract_violations(mutated)
-                    )
-            with self.subTest(surface=str(path), mutation="inverse cleanup"):
-                mutated = replace_labeled_policy_fields(
-                    canonical,
-                    {"Completion": completion_inverse},
-                )
-                self.assertTrue(
-                    manual_handoff_contract_violations(mutated)
-                )
-
-    def test_actionable_manual_handoff_scopes_do_not_leak(self):
-        for path in (SKILL_PATH, CONTRIBUTING_PATH):
-            canonical = path.read_text(encoding="utf-8")
-            fields = parse_labeled_policy(
-                canonical,
-                MANUAL_HANDOFF_POLICY_HEADING,
-            )
-            swapped = replace_labeled_policy_fields(
-                canonical,
-                {
-                    "Pre-handoff evidence": fields["Hold"],
-                    "Hold": fields["Pre-handoff evidence"],
-                },
-            )
-            with self.subTest(surface=str(path), scope="field"):
-                self.assertTrue(manual_handoff_contract_violations(swapped))
-            for field in parse_labeled_policy(
-                canonical,
-                MANUAL_HANDOFF_POLICY_HEADING,
-            ):
-                omitted = replace_labeled_policy_fields(
-                    canonical,
-                    {field: "This field intentionally omits its actions."},
-                )
-                with self.subTest(
-                    surface=str(path),
-                    scope="omission",
-                    field=field,
-                ):
-                    self.assertTrue(
-                        manual_handoff_contract_violations(omitted)
-                    )
-
+    def test_manual_handoff_case_subsections_do_not_leak(self):
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
         case = "\n".join(
             read_markdown_section(governance, MANUAL_HANDOFF_CASE_HEADING)
         )
-        expected = "\n".join(
-            read_markdown_section(case, "Expected result")
+        self.assertIn("### Actions", governance)
+        mutated_case = case.replace(
+            "### Actions",
+            "### Missing actions",
+            1,
         )
-        leaked = replace_case_subsection(
-            governance,
-            "Actions",
-            expected,
-        )
-        self.assertTrue(manual_handoff_case_violations(leaked))
-
-    def test_actionable_manual_handoff_case_polarity_mutations_fail_closed(self):
-        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
-        case = "\n".join(
-            read_markdown_section(governance, MANUAL_HANDOFF_CASE_HEADING)
-        )
-        fields = {
-            "Actions": "\n".join(read_markdown_section(case, "Actions")),
-            "Expected result": "\n".join(
-                read_markdown_section(case, "Expected result")
-            ),
-        }
-        for rule in manual_handoff_case_rules():
-            phrase = representative_action_phrase(rule)
-            if rule.atom.polarity == "required":
-                first, remainder = phrase.split(" ", 1)
-                mutations = {
-                    "prefix must-not": "must not " + phrase,
-                    "prefix never": "never " + phrase,
-                    "intervening must-not": first + " must not " + remainder,
-                    "intervening cannot": first + " cannot " + remainder,
-                    "postfix must-not": phrase + " must not happen",
-                    "postfix should-not": phrase + " should not occur",
-                    "postfix prohibited": phrase + " is prohibited",
-                }
-            else:
-                mutations = {"contradictory affirmative": phrase}
-            for mutation, clause in mutations.items():
-                with self.subTest(atom=rule.atom, mutation=mutation):
-                    mutated = replace_case_subsection(
-                        governance,
-                        rule.atom.field,
-                        fields[rule.atom.field] + "\n" + clause + ".",
-                    )
-                    self.assertTrue(
-                        manual_handoff_case_violations(mutated)
-                    )
+        with self.assertRaisesRegex(
+            AssertionError,
+            "expected exactly one Markdown section",
+        ):
+            read_markdown_section(mutated_case, "Actions")
 
 
 if __name__ == "__main__":

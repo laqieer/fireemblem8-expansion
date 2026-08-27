@@ -61,11 +61,6 @@ def markdown_section(text, heading):
     return "\n".join(lines[start + 1:end])
 
 
-def contains_concept(text, aliases):
-    words = set(re.findall(r"[a-z0-9]+", text.casefold()))
-    return any(set(alias) <= words for alias in aliases)
-
-
 class TempRepo:
     """A throwaway Git repo so discover_markdown_files()/parse_make_targets()
     (both Git- and filesystem-rooted) behave exactly as in the real repo."""
@@ -976,7 +971,6 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest scripts.assets.tests.test_manifest -v",
                             "make expansion-modern-banim-package-runtime-check",
                         },
-                        "negative_control_concepts": {},
                     },
                 },
             },
@@ -990,7 +984,6 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "scripts.docs_check_tests."
                             "test_development_workflow_skill -v",
                         },
-                        "negative_control_concepts": {},
                     },
                     "TC-WORKFLOW-MANUAL-HANDOFF-001": {
                         "document": "docs/test-cases/workflow-governance.md",
@@ -998,22 +991,6 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest "
                             "scripts.docs_check_tests."
                             "test_development_workflow_skill -v",
-                        },
-                        "negative_control_concepts": {
-                            "label": (("label",),),
-                            "ping": (("ping",), ("mention",)),
-                            "assignment": (("issue", "pr", "assignment"),),
-                            "query": (("query", "url"), ("search", "link")),
-                            "preview": (
-                                ("pre", "handoff", "media"),
-                                ("screenshot", "clip"),
-                            ),
-                            "hold": (("merge", "hold"), ("merge", "blocked")),
-                            "cleanup": (
-                                ("cleanup", "lifecycle"),
-                                ("remove", "temporary", "state"),
-                            ),
-                            "polarity": (("polarity", "reversals"),),
                         },
                     },
                 },
@@ -1041,16 +1018,6 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             record["command"] for record in case["automation"]
                         })
                     )
-                    for concept, aliases in case_contract[
-                        "negative_control_concepts"
-                    ].items():
-                        with self.subTest(case_id=case_id, concept=concept):
-                            self.assertTrue(
-                                contains_concept(
-                                    case["negative_control"],
-                                    aliases,
-                                )
-                            )
                     procedure = check_docs.read_text(
                         os.path.join(REAL_REPO_ROOT, case["document"])
                     )
