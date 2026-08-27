@@ -1,5 +1,6 @@
 """Issue #87 host, menu, localization, and resource contract checks."""
 
+import copy
 import json
 import re
 import runpy
@@ -29,6 +30,7 @@ NM = shutil.which("nm")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_SIZE = shutil.which("arm-none-eabi-size")
 RUNNER = ROOT / "tools" / "gba-playtest" / "run_blue_phase_delegate_checks.py"
+TEST_CASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
 FINGERPRINT = (
     ROOT
     / "tools"
@@ -169,7 +171,7 @@ class BluePhaseDelegateMenuTests(unittest.TestCase):
         )
         return path
 
-    def test_disabled_table_unchanged_and_compositions_fit_capacity(self):
+    def test_disabled_table_and_composed_definitions_fit_capacity(self):
         if CC is None or NM is None:
             self.skipTest("host compiler/binutils unavailable")
         build = ROOT / "build"
@@ -365,7 +367,69 @@ class BluePhaseDelegateRuntimeContractTests(unittest.TestCase):
         key_sets = [tuple(frame["keys"]) for frame in scenario["frames"]]
         self.assertIn(("A",), key_sets)
         self.assertIn(("R",), key_sets)
-        self.assertNotIn(17400, [frame["start"] for frame in scenario["frames"]])
+        self.assertFalse(
+            any("UP" in frame["keys"] for frame in scenario["frames"])
+        )
+        checkpoints = {
+            checkpoint["name"]: checkpoint["frame"]
+            for checkpoint in scenario["checkpoints"]
+        }
+        selection_frames = sorted(
+            (
+                frame
+                for frame in scenario["frames"]
+                if checkpoints["interactive-player-before-charge"]
+                < frame["start"]
+                < checkpoints["charge-command-dispatched"]
+            ),
+            key=lambda frame: (frame["start"], frame["end"]),
+        )
+        selection_keys = [
+            tuple(frame["keys"])
+            for frame in selection_frames
+        ]
+        self.assertEqual(
+            selection_keys,
+            [("A",), ("R",), ("B",), ("A",)],
+        )
+        self.assertEqual(
+            module["_direct_first_row_input_failures"](scenario),
+            [],
+        )
+
+        moved_up = copy.deepcopy(scenario)
+        moved_up["frames"].append(
+            {
+                "start": checkpoints["interactive-player-before-charge"] + 1,
+                "end": checkpoints["interactive-player-before-charge"] + 2,
+                "keys": ["UP"],
+            }
+        )
+        self.assertTrue(
+            any(
+                "UP must never precede" in failure
+                for failure in module["_direct_first_row_input_failures"](
+                    moved_up
+                )
+            )
+        )
+
+        indirect = copy.deepcopy(scenario)
+        indirect["frames"].append(
+            {
+                "start": checkpoints["interactive-player-before-charge"] + 2,
+                "end": checkpoints["interactive-player-before-charge"] + 3,
+                "keys": ["DOWN"],
+            }
+        )
+        self.assertTrue(
+            any(
+                "direct first-row sequence" in failure
+                for failure in module["_direct_first_row_input_failures"](
+                    indirect
+                )
+            )
+        )
         self.assertNotIn(("SELECT", "START", "R"), key_sets)
         self.assertIn(
             "charge-r-help-domain-guard",
@@ -378,6 +442,23 @@ class BluePhaseDelegateRuntimeContractTests(unittest.TestCase):
         self.assertEqual(
             scenario["checkpoints"][-1]["name"],
             "next-blue-player-interactive",
+        )
+
+    def test_case_registry_distinguishes_static_and_live_menu_capacity(self):
+        registry = json.loads(TEST_CASE_REGISTRY.read_text(encoding="utf-8"))
+        case = next(
+            entry
+            for entry in registry["cases"]
+            if entry["id"] == "TC-AUTOPLAY-CHARGE-001"
+        )
+        self.assertIn("10 static definitions", case["interactions"])
+        self.assertIn(
+            "at most nine simultaneously visible rows",
+            case["interactions"],
+        )
+        self.assertIn(
+            "Guide, Records, and Retreat availability is mutually constrained",
+            case["interactions"],
         )
 
 

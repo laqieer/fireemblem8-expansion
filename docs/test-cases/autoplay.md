@@ -129,10 +129,12 @@ vanilla message ID.
 
 With `EXPANSION_BLUE_PHASE_DELEGATE=0`, the compiled map-menu table adds no
 Charge row, the module exports no delegate symbol, and combining neither/one/both
-Charge and Danger gives exactly 8/9/10 visible rows within the 11-row
-capacity. Optional rows precede the vanilla rows in stable Danger-then-Charge
-order and End remains final. Clean debug and release Prologue runs remain idle in
-`PLAYER`, with zero blue computer starts, completions, or actions.
+Charge and Danger gives exactly 8/9/10 static definitions within the 11-row
+capacity. Guide, Records, and Retreat availability is mutually constrained, so
+those configurations expose at most 7/8/9 live rows. Optional rows precede the
+vanilla rows in stable Danger-then-Charge order and End remains final. Clean
+debug and release Prologue runs remain idle in `PLAYER`, with zero blue
+computer starts, completions, or actions.
 Invalid `-1`, `2`, or textual config values and an enabled non-modern C
 profile fail before producing a ROM.
 

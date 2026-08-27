@@ -115,6 +115,40 @@ def _positive_data() -> dict:
     }
 
 
+def _direct_first_row_input_failures(data: dict) -> list[str]:
+    failures = []
+    if any("UP" in frame["keys"] for frame in data["frames"]):
+        failures.append(
+            "positive input contract: UP must never precede direct Charge selection"
+        )
+
+    checkpoints = {
+        checkpoint["name"]: checkpoint["frame"]
+        for checkpoint in data["checkpoints"]
+    }
+    selection_frames = sorted(
+        (
+            frame
+            for frame in data["frames"]
+            if checkpoints["interactive-player-before-charge"]
+            < frame["start"]
+            < checkpoints["charge-command-dispatched"]
+        ),
+        key=lambda frame: (frame["start"], frame["end"]),
+    )
+    selection_keys = [
+        tuple(frame["keys"])
+        for frame in selection_frames
+    ]
+    expected = [("A",), ("R",), ("B",), ("A",)]
+    if selection_keys != expected:
+        failures.append(
+            "positive input contract: direct first-row sequence is "
+            f"{selection_keys}, expected {expected}"
+        )
+    return failures
+
+
 def _capture(rom: Path, elf: Path, data: dict) -> dict:
     scenario = gba_playtest.parse_scenario_data(
         data,
@@ -246,18 +280,20 @@ def main(argv: list[str] | None = None) -> int:
                 lambda capture: autoplay._check_default(capture, args.config),
             )
         ]
+        failures = []
         if args.config == "debug":
+            positive_data = _positive_data()
+            failures.extend(_direct_first_row_input_failures(positive_data))
             cases.insert(
                 0,
                 (
                     args.enabled_rom,
                     args.enabled_elf,
-                    _positive_data(),
+                    positive_data,
                     _check_positive,
                 ),
             )
 
-        failures = []
         summaries = []
         for rom, elf, data, semantic_check in cases:
             captured = _capture(rom, elf, data)
