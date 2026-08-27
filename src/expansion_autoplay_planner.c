@@ -34,11 +34,36 @@ static bool sPlannerActive;
 static u32 sPlannerRunId;
 static u32 sPlannerNextObservationId;
 static u32 sPlannerTraceDigest;
-static u32 sPlannerCandidateCount;
-static bool sPlannerHasSelectedDecision;
-static u32 sPlannerWaitFrames;
-static u32 sPlannerLastTokenLo;
-static u32 sPlannerLastTokenHi;
+static u32 sPlannerCandidateState;
+
+enum
+{
+    PLANNER_CANDIDATE_COUNT_MASK = 0x3FF,
+    PLANNER_CANDIDATE_SELECTED = 1 << 10,
+    PLANNER_WAIT_FRAMES_SHIFT = 16,
+};
+
+static u32 CandidateCount(void)
+{
+    return sPlannerCandidateState & PLANNER_CANDIDATE_COUNT_MASK;
+}
+
+static bool HasSelectedDecision(void)
+{
+    return (sPlannerCandidateState & PLANNER_CANDIDATE_SELECTED) != 0;
+}
+
+static u32 WaitFrames(void)
+{
+    return sPlannerCandidateState >> PLANNER_WAIT_FRAMES_SHIFT;
+}
+
+static void SetCandidateState(u32 count, bool hasSelected, u32 waitFrames)
+{
+    sPlannerCandidateState = count
+        | (hasSelected ? PLANNER_CANDIDATE_SELECTED : 0)
+        | (waitFrames << PLANNER_WAIT_FRAMES_SHIFT);
+}
 
 static void ClearCommand(void)
 {
@@ -223,11 +248,11 @@ static void MakeWaitCandidate(int x, int y, struct AiDecision* candidate)
 
 static bool GetCandidate(u32 ordinal, struct AiDecision* candidate)
 {
-    u32 current = sPlannerHasSelectedDecision ? 1 : 0;
+    u32 current = HasSelectedDecision() ? 1 : 0;
     int x;
     int y;
 
-    if (sPlannerHasSelectedDecision && ordinal == 0)
+    if (HasSelectedDecision() && ordinal == 0)
     {
         *candidate = sPlannerSelectedDecision;
         return true;
@@ -260,11 +285,13 @@ static bool BuildCandidates(const struct AiDecision* decision)
     int y;
 
     sPlannerSelectedDecision = *decision;
-    sPlannerHasSelectedDecision = !(gActiveUnit != NULL
+    {
+        bool hasSelected = !(gActiveUnit != NULL
         && decision->actionId == AI_ACTION_NONE
         && decision->xMove == gActiveUnit->xPos
         && decision->yMove == gActiveUnit->yPos);
-    sPlannerCandidateCount = sPlannerHasSelectedDecision ? 1 : 0;
+        SetCandidateState(hasSelected ? 1 : 0, hasSelected, 0);
+    }
 
     if (gBmMapMovement == NULL || gBmMapUnit == NULL)
         return true;
@@ -280,10 +307,13 @@ static bool BuildCandidates(const struct AiDecision* decision)
             MakeWaitCandidate(x, y, &candidate);
             if (DecisionsEqual(&candidate, &sPlannerSelectedDecision))
                 continue;
-            if (sPlannerCandidateCount
+            if (CandidateCount()
                 >= EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY)
                 return false;
-            sPlannerCandidateCount++;
+            SetCandidateState(
+                CandidateCount() + 1,
+                HasSelectedDecision(),
+                0);
         }
     }
     return true;
@@ -293,7 +323,7 @@ static void PublishPage(u32 pageIndex)
 {
     u32 index;
     u32 start = pageIndex * EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
-    u32 remaining = sPlannerCandidateCount - start;
+    u32 remaining = CandidateCount() - start;
     u32 count = remaining < EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY
         ? remaining : EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
     u16 seeds[3];
@@ -308,11 +338,11 @@ static void PublishPage(u32 pageIndex)
     gExpansionAutoplayPlannerObservation.state = EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING;
     gExpansionAutoplayPlannerObservation.pageIndex = pageIndex;
     gExpansionAutoplayPlannerObservation.pageCount =
-        (sPlannerCandidateCount + EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY - 1)
+        (CandidateCount() + EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY - 1)
         / EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
     gExpansionAutoplayPlannerObservation.actionStartOrdinal = start;
     gExpansionAutoplayPlannerObservation.actionCount = count;
-    gExpansionAutoplayPlannerObservation.totalActionCount = sPlannerCandidateCount;
+    gExpansionAutoplayPlannerObservation.totalActionCount = CandidateCount();
     gExpansionAutoplayPlannerObservation.rejection = EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
     gExpansionAutoplayPlannerObservation.chapterIndex = (u8)gPlaySt.chapterIndex;
     gExpansionAutoplayPlannerObservation.chapterTurn = gPlaySt.chapterTurnNumber;
@@ -392,8 +422,7 @@ static u32 SemanticStateDigest(void)
     size = GetChapterFlagBitsSize();
     for (index = 0; index < size; index++)
         digest = MixDigest(digest, flags[index]);
-    digest = MixDigest(digest, sPlannerLastTokenLo);
-    return MixDigest(digest, sPlannerLastTokenHi);
+    return MixDigest(digest, sPlannerTraceDigest);
 }
 
 void ExpansionAutoplayPlanner_Reset(void)
@@ -414,11 +443,7 @@ void ExpansionAutoplayPlanner_Reset(void)
     sPlannerActive = false;
     sPlannerRunId = 0;
     sPlannerNextObservationId = 1;
-    sPlannerCandidateCount = 0;
-    sPlannerHasSelectedDecision = false;
-    sPlannerWaitFrames = 0;
-    sPlannerLastTokenLo = 0;
-    sPlannerLastTokenHi = 0;
+    SetCandidateState(0, false, 0);
     sPlannerTraceDigest = 2166136261u;
     PublishReadyState();
 }
@@ -440,9 +465,7 @@ void ExpansionAutoplayPlanner_OnMapReset(void)
     bytes = (u8*)&gExpansionAutoplayPlannerCommand;
     for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerCommand); index++)
         bytes[index] = 0;
-    sPlannerCandidateCount = 0;
-    sPlannerHasSelectedDecision = false;
-    sPlannerWaitFrames = 0;
+    SetCandidateState(0, false, 0);
     PublishReadyState();
     ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER);
 }
@@ -489,8 +512,6 @@ bool ExpansionAutoplayPlanner_PollStart(void)
     sPlannerRunId++;
     sPlannerNextObservationId = 1;
     sPlannerTraceDigest = MixDigest(2166136261u, sPlannerRunId);
-    sPlannerLastTokenLo = 0;
-    sPlannerLastTokenHi = 0;
     gExpansionAutoplayPlannerCommand.result = 1;
     gExpansionAutoplayPlannerCommand.rejection = EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
     ClearCommand();
@@ -537,7 +558,7 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecisi
     }
 
     gExpansionAutoplayPlannerObservation.observationId = sPlannerNextObservationId++;
-    sPlannerWaitFrames = 0;
+    SetCandidateState(CandidateCount(), HasSelectedDecision(), 0);
     PublishPage(0);
     return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
 }
@@ -555,8 +576,11 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
 
     if (gExpansionAutoplayPlannerCommand.kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_NONE)
     {
-        sPlannerWaitFrames++;
-        if (sPlannerWaitFrames < EXPANSION_AUTOPLAY_PLANNER_DECISION_TIMEOUT_FRAMES)
+        SetCandidateState(
+            CandidateCount(),
+            HasSelectedDecision(),
+            WaitFrames() + 1);
+        if (WaitFrames() < EXPANSION_AUTOPLAY_PLANNER_DECISION_TIMEOUT_FRAMES)
             return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
         gExpansionAutoplayPlannerObservation.state =
             EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED;
@@ -632,7 +656,7 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
 
-    if (gExpansionAutoplayPlannerCommand.actionOrdinal >= sPlannerCandidateCount)
+    if (gExpansionAutoplayPlannerCommand.actionOrdinal >= CandidateCount())
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_UNKNOWN_ACTION);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
@@ -660,8 +684,6 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
     gExpansionAutoplayPlannerCommand.rejection = EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
     ClearCommand();
     sPlannerTraceDigest = MixDigest(sPlannerTraceDigest, tokenLo);
-    sPlannerLastTokenLo = tokenLo;
-    sPlannerLastTokenHi = MakeTokenHi(tokenLo);
     *decision = candidate;
     return EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED;
 }
@@ -687,11 +709,8 @@ void ExpansionAutoplayPlanner_RecordCampaignCheckpoint(void)
     gExpansionAutoplayPlannerCampaignCheckpoint.rngState2 = seeds[2];
     gExpansionAutoplayPlannerCampaignCheckpoint.rngLcg = GetLCGRNValue();
     gExpansionAutoplayPlannerCampaignCheckpoint.rngConsumption = GetRNConsumptionCount();
-    gExpansionAutoplayPlannerCampaignCheckpoint.traceDigest = sPlannerTraceDigest;
     gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest =
         SemanticStateDigest();
-    gExpansionAutoplayPlannerCampaignCheckpoint.acceptedTokenLo = sPlannerLastTokenLo;
-    gExpansionAutoplayPlannerCampaignCheckpoint.acceptedTokenHi = sPlannerLastTokenHi;
 }
 
 #endif

@@ -953,10 +953,10 @@ memory write and has no committed artifact. This is interface/replay evidence on
 not evidence of human-like play, optimality, balance, or universal campaign
 viability.
 
-The enabled ARM object uses 4,011 bytes of text/rodata and 1,192 bytes of total
-static planner RAM: 1,156 bytes in `ewram_data` (1,020-byte observation,
-64-byte command, 60-byte semantic checkpoint, and 11-byte selected decision
-plus alignment) and 36 bytes of private BSS counters/tokens. This is 5,592
-bytes below the rejected full-candidate-array design and 984 bytes above the original
+The enabled ARM object uses 3,971 bytes of text/rodata and 1,164 bytes of total
+static planner RAM: 1,144 bytes in `ewram_data` (1,020-byte observation,
+64-byte command, 48-byte semantic checkpoint, and 11-byte selected decision
+plus alignment) and 20 bytes of packed private BSS state. This is 5,620 bytes
+below the rejected full-candidate-array design and 956 bytes above the original
 single-candidate contract, while remaining well below the frozen 4 KiB
 ceiling. Disabled release and archival builds omit all planner state.

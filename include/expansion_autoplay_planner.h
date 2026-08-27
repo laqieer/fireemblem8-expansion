@@ -147,10 +147,7 @@ struct ExpansionAutoplayPlannerCampaignCheckpointV2
     u32 rngState2;
     u32 rngLcg;
     u32 rngConsumption;
-    u32 traceDigest;
     u32 semanticStateDigest;
-    u32 acceptedTokenLo;
-    u32 acceptedTokenHi;
 };
 
 extern struct ExpansionAutoplayPlannerObservationV2 gExpansionAutoplayPlannerObservation;

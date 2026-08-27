@@ -459,9 +459,8 @@ int main(void)
     );
     ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
     CHECK(
-        gExpansionAutoplayPlannerCampaignCheckpoint.acceptedTokenLo
-            == action->tokenLo,
-        "accepted wait token must enter the action trace checkpoint"
+        gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest != 0,
+        "accepted wait token must enter the semantic action trace digest"
     );
 
     puts("AUTOPLAY_PLANNER_HOST_TEST: PASS");

@@ -490,13 +490,13 @@ class PlannerBridgeTests(unittest.TestCase):
                     re.MULTILINE,
                 )
             }
-            self.assertEqual(section_sizes["ewram_data"], 1156)
-            self.assertEqual(section_sizes[".bss"], 36)
+            self.assertEqual(section_sizes["ewram_data"], 1144)
+            self.assertEqual(section_sizes[".bss"], 20)
             self.assertEqual(
                 section_sizes[".text"]
                 + section_sizes[".rodata"]
                 + section_sizes[".rodata.str1.4"],
-                4011,
+                3971,
             )
 
             disabled = temporary_path / "planner-release-disabled.o"
