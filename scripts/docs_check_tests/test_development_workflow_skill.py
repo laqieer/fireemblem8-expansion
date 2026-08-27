@@ -606,7 +606,7 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
         "live_cardinality": "dynamic",
         "relationship_source": "github_linked_open_implementation_prs",
         "issue_only_when_no_open_implementation_pr": True,
-        "require_every_declared_open_implementation_pr": True,
+        "require_every_linked_open_implementation_pr": True,
         "exclude_closed_implementation_prs": True,
     },
 }
@@ -723,7 +723,10 @@ def validate_live_manual_queue(contract, live_items, relationships):
     }
     prs = {}
     for item in pending_open_items:
-        if item.get("kind") != "pr" or not item.get("origin_url"):
+        if item.get("kind") != "pr":
+            continue
+        if not item.get("origin_url"):
+            violations.append(f"pending PR missing origin: {item['url']}")
             continue
         prs.setdefault(item["origin_url"], set()).add(item["url"])
         if item["origin_url"] not in issues:
@@ -747,7 +750,7 @@ def validate_live_manual_queue(contract, live_items, relationships):
             and queue["issue_only_when_no_open_implementation_pr"]
         ):
             violations.append(f"unexpected open PR for {issue_url}")
-        if queue["require_every_declared_open_implementation_pr"]:
+        if queue["require_every_linked_open_implementation_pr"]:
             for missing in sorted(expected - actual):
                 violations.append(f"missing open PR: {missing}")
             for extra in sorted(actual - expected):
@@ -2273,6 +2276,26 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     mutated,
                     EXPECTED_MANUAL_HANDOFF_CONTRACT,
                 ))
+        old_relationship_key = copy.deepcopy(contract)
+        old_relationship_key["queue"].pop(
+            "require_every_linked_open_implementation_pr"
+        )
+        old_relationship_key["queue"][
+            "require_every_declared_open_implementation_pr"
+        ] = True
+        old_key_failures = compare_contract(
+            old_relationship_key,
+            EXPECTED_MANUAL_HANDOFF_CONTRACT,
+        )
+        self.assertTrue(any(
+            "missing require_every_linked_open_implementation_pr" in failure
+            for failure in old_key_failures
+        ))
+        self.assertTrue(any(
+            "unexpected require_every_declared_open_implementation_pr"
+            in failure
+            for failure in old_key_failures
+        ))
 
         list_paths = [
             path
@@ -2355,6 +2378,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         pr_one = "https://example.invalid/pulls/172"
         pr_two = "https://example.invalid/pulls/173"
         closed_pr = "https://example.invalid/pulls/174"
+        missing_origin_pr = pull(pr_one, issue_url)
+        del missing_origin_pr["origin_url"]
         positive = {
             "issue only": (
                 (issue(issue_url),),
@@ -2435,6 +2460,41 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         negative = {
             "orphan PR": (
                 (pull(pr_one, issue_url),),
+                (),
+            ),
+            "wrong-origin orphan": (
+                (
+                    issue(issue_url),
+                    pull(
+                        pr_one,
+                        "https://example.invalid/issues/999",
+                    ),
+                ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
+            ),
+            "missing PR origin": (
+                (
+                    issue(issue_url),
+                    missing_origin_pr,
+                ),
+                (),
+            ),
+            "null PR origin": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, None),
+                ),
+                (),
+            ),
+            "empty PR origin": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, ""),
+                ),
                 (),
             ),
             "missing independently discovered open PR": (

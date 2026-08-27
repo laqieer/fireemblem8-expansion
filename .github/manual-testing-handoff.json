@@ -90,7 +90,7 @@
     "live_cardinality": "dynamic",
     "relationship_source": "github_linked_open_implementation_prs",
     "issue_only_when_no_open_implementation_pr": true,
-    "require_every_declared_open_implementation_pr": true,
+    "require_every_linked_open_implementation_pr": true,
     "exclude_closed_implementation_prs": true
   }
 }
