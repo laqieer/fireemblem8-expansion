@@ -103,6 +103,7 @@ MAX_PROBES_PER_CHECKPOINT = 1536
 MAX_RUN_UNTIL_COMPARISONS = 64
 MAX_RUN_UNTIL_PROBES = 128
 MAX_PROFILE_TRACE_PROBES = 512
+MAX_BASELINE_PROBES = 1536
 # Matches backend.c's MAX_TRACE_RECORDS. A trace emits each probe whenever
 # any trace value changes, so max_frames * trace probe count bounds both the
 # backend's stdout and the host's captured semantic trace.
@@ -388,6 +389,7 @@ class ScheduledWrite:
     frame: int
     probe: Probe
     value: int
+    baseline_probes: tuple[Probe, ...] = ()
 
 
 def _parse_fixed_scenario_data(
@@ -1628,6 +1630,38 @@ def _write_plan(
                 f"the {scheduled_write.probe.size}-byte binding "
                 f"{scheduled_write.probe.binding!r}"
             )
+        if len(scheduled_write.baseline_probes) > MAX_BASELINE_PROBES:
+            raise PlaytestError(
+                f"scheduled write has {len(scheduled_write.baseline_probes)} "
+                f"baseline probes, exceeding {MAX_BASELINE_PROBES}"
+            )
+        baseline_identities: set[tuple[str, int]] = set()
+        lines.append(
+            f"BASELINE_PROBES {len(scheduled_write.baseline_probes)}"
+        )
+        for probe in scheduled_write.baseline_probes:
+            if probe.size not in (1, 2, 4):
+                raise PlaytestError(
+                    f"baseline probe {probe.binding!r} size must be 1, 2, or 4"
+                )
+            if probe.address is None:
+                raise PlaytestError(
+                    f"baseline probe {probe.binding!r} has no resolved execution "
+                    "address; supply the exact linked ELF with --elf"
+                )
+            _validate_resolved_address(
+                probe.address,
+                probe.size,
+                f"baseline probe {probe.binding!r}",
+            )
+            identity = (probe.binding, probe.size)
+            if identity in baseline_identities:
+                raise PlaytestError(
+                    f"scheduled write has duplicate baseline probe "
+                    f"{probe.binding!r}/{probe.size}"
+                )
+            baseline_identities.add(identity)
+            lines.append(f"{probe.address} {probe.size}")
         lines.append(
             f"SEED_WRITE {scheduled_write.frame} {scheduled_write.probe.address} "
             f"{scheduled_write.probe.size} {scheduled_write.value}"
@@ -1659,7 +1693,11 @@ def _write_plan(
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
-def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
+def _parse_backend_output(
+    stdout: str,
+    scenario: Scenario,
+    baseline_probes: tuple[Probe, ...] = (),
+) -> dict[str, Any]:
     hashes: dict[int, str] = {}
     checkpoint_frames: dict[int, int] = {}
     sram_hashes: dict[int, str] = {}
@@ -1670,6 +1708,7 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
     profile_record: tuple[int, int, int] | None = None
     trace_snapshots: list[tuple[int, dict[int, int]]] = []
     trace_record_count = 0
+    baseline_values: dict[int, int] = {}
     for line_number, line in enumerate(stdout.splitlines(), 1):
         fields = line.split("\t")
         try:
@@ -1826,6 +1865,17 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
                 if probe_index in values_at_frame:
                     raise ValueError("duplicate trace probe")
                 values_at_frame[probe_index] = value
+            elif len(fields) == 3 and fields[0] == "BASELINE":
+                probe_index = int(fields[1])
+                value = int(fields[2])
+                if probe_index in baseline_values:
+                    raise ValueError("duplicate baseline probe")
+                if not (0 <= probe_index < len(baseline_probes)):
+                    raise ValueError("baseline probe index out of range")
+                probe = baseline_probes[probe_index]
+                if not (0 <= value < 1 << (probe.size * 8)):
+                    raise ValueError("baseline value exceeds declared width")
+                baseline_values[probe_index] = value
             elif len(fields) == 3 and fields[0] == "SRAMHASH":
                 checkpoint_index = int(fields[1])
                 if checkpoint_index in sram_hashes:
@@ -1968,7 +2018,13 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
     )
     if len(pixel_values) != expected_pixel_probe_count:
         raise PlaytestError(
-            f"backend returned {len(pixel_values)} of {expected_pixel_probe_count} pixel probes"
+            f"backend returned {len(pixel_values)} of "
+            f"{expected_pixel_probe_count} pixel probes"
+        )
+    if len(baseline_values) != len(baseline_probes):
+        raise PlaytestError(
+            f"backend returned {len(baseline_values)} of "
+            f"{len(baseline_probes)} baseline probes"
         )
     checkpoints: list[dict[str, Any]] = []
     for checkpoint_index, checkpoint in enumerate(scenario.checkpoints):
@@ -2022,6 +2078,17 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
         ),
         "scenario": scenario.name,
     }
+    if baseline_probes:
+        fingerprint["baseline_probes"] = [
+            {
+                "address": probe.binding,
+                "size": probe.size,
+                "value": (
+                    f"0x{baseline_values[index]:0{probe.size * 2}x}"
+                ),
+            }
+            for index, probe in enumerate(baseline_probes)
+        ]
     if scenario.run_until is not None:
         assert terminal is not None
         reason, frame, turn_present, turn_value, action_present, action_value = terminal
@@ -2188,7 +2255,11 @@ def capture(
             raise PlaytestError(
                 f"libmGBA backend failed with exit {result.returncode}: {diagnostic}"
             )
-        fingerprint = _parse_backend_output(result.stdout, scenario)
+        fingerprint = _parse_backend_output(
+            result.stdout,
+            scenario,
+            () if scheduled_write is None else scheduled_write.baseline_probes,
+        )
         fingerprint["rom"] = provenance
         if sram_output is not None:
             output_path = Path(sram_output)

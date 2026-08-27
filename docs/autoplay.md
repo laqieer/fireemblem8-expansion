@@ -825,6 +825,14 @@ Faction/group, event-outcome, and each delta list contain 1 through 64 sorted
 unique definitions. Imported survivor/casualty and delta values must fit their
 declared probe widths before aggregate validation.
 
+EXP, item, and resource metrics are signed changes. The format-6 backend reads
+their deduplicated probes once at the declared seed frame immediately before
+that frame's input and seed write (immediately after reset for the canonical
+frame-0 fixture), then reads the terminal checkpoint in that same execution.
+Reports retain both unsigned width-bounded observations and compute `delta =
+terminal - baseline`, permitting gain, consumption, and zero change without a
+second divergent emulator run.
+
 The version-2 report contains sorted ROM/configuration/scenario/profile/bound
 provenance, canonical normalized scenario and specification definitions with
 validated SHA-256 identities, and one sorted run record per seed. A terminal
@@ -843,6 +851,10 @@ plus metric values must remain within them. Output is exclusively staged
 beside the requested ignored `build/` path, fsynced, and hard-linked to an
 absent destination without clobbering; a competing creator is preserved and
 failure removes only this invocation's staging/link.
+The requested output must be a strict child of `build/`; the build root itself
+is rejected whether missing, present, or reached through a symlink. Per-seed
+execution errors preserve stable scenario/ROM/error-class context but
+canonicalize only random emulator/backend workspace paths.
 
 This host-only layer adds no ROM code, RAM allocation, feature gate,
 configuration-identity field, generated game data, localization, save byte,

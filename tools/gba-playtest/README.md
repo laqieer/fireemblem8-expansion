@@ -145,6 +145,14 @@ execution. Every faction, event, and delta definition contains 1 through 64
 sorted unique records. Imported survivor/casualty and delta values must fit
 their declared 1/2/4-byte probes.
 
+EXP/item/resource metrics are signed differences, not terminal snapshots.
+Plan format 6 reads every deduplicated delta probe once at the declared seed
+frame immediately before that frame's input and seed write (therefore
+immediately after reset for the canonical frame-0 fixture), then reads the same
+probe at the terminal checkpoint. Each report entry retains the unsigned
+width-bounded `baseline` and `terminal` observations and their signed `delta =
+terminal - baseline`, bounded to `[-max, +max]` for that probe width.
+
 Reports use `format_version: 2`, sorted object keys, sorted numeric seed
 records, complete ROM/configuration/scenario/profile/seed-binding/bound
 provenance, and SHA-256 identities over canonical normalized scenario
@@ -156,6 +164,10 @@ metric, aggregate, and run value before comparison. Each report has one
 terminal and metric record per seed and explicit
 `terminal_failure` or `execution_failure` records. Non-success terminals such
 as a stall or exhausted bound remain in the report and make `run` return 1.
+Execution-failure text retains its stable `PlaytestError`, requested ROM
+basename, and scenario context while replacing only random
+`gba-playtest-*`/backend workspace paths with a stable placeholder, preserving
+serial/parallel byte identity without hiding actionable input context.
 Imported reports contain 1 through 256 unique ascending seeds. Provenance
 bounds must exactly equal the canonical scenario's required frame/turn/action
 limits; terminal counters must use those declared probes, and terminal plus
@@ -165,8 +177,10 @@ same inputs produce byte-identical reports. The summary adds deterministic
 terminal-reason counts and per-metric value distributions without omitting the
 individual records.
 
-Outputs are required to be new files beneath ignored `build/`; an existing
-path or concurrent sibling reservation is an error, not an overwrite. The
+Outputs are required to be new files strictly beneath ignored `build/`;
+`build/` itself, including a missing root or a symlink resolving to it, is
+rejected before directory creation. An existing path or concurrent sibling
+reservation is an error, not an overwrite. The
 runner compiles one shared backend before launching workers; compiler,
 libmGBA, backend-build, and other global setup failures return 2 without any
 seed records, while an individual seed execution failure is retained in a

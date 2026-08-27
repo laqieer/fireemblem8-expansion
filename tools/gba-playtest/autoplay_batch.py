@@ -52,6 +52,11 @@ REQUIRED_METRIC_KINDS = frozenset(
 ROOT = Path(__file__).resolve().parents[2]
 BUILD_ROOT = ROOT / "build"
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+EPHEMERAL_WORKSPACE_RE = re.compile(
+    r"(?:[A-Za-z]:)?(?:[/\\][^/\\\s:'\"]+)*[/\\]"
+    r"(?:gba-playtest|autoplay-batch-backend)-[^/\\\s:'\"]+"
+    r"(?:[/\\][^/\\\s:'\"]+)*"
+)
 
 
 @dataclass(frozen=True)
@@ -618,12 +623,22 @@ def _terminal_probe_values(fingerprint: dict[str, Any]) -> dict[tuple[str, int],
     }
 
 
+def _baseline_probe_values(
+    fingerprint: dict[str, Any],
+) -> dict[tuple[str, int], int]:
+    return {
+        (probe["address"], probe["size"]): int(probe["value"], 16)
+        for probe in fingerprint.get("baseline_probes", [])
+    }
+
+
 def _metric_value(
     metric: BatchMetric,
     fingerprint: dict[str, Any],
 ) -> Any:
     terminal = fingerprint["terminal"]
     values = _terminal_probe_values(fingerprint)
+    baseline_values = _baseline_probe_values(fingerprint)
 
     def probe_value(probe: dict[str, Any]) -> int:
         identity = (probe["address"], probe["size"])
@@ -662,14 +677,40 @@ def _metric_value(
             }
             for event in metric.definition["events"]
         ]
-    return [
-        {
-            "delta": probe_value(group["probe"]),
-            "group": group["id"],
-            "kind": metric.definition["delta_kind"],
-        }
-        for group in metric.definition["groups"]
-    ]
+    deltas = []
+    for group in metric.definition["groups"]:
+        probe = group["probe"]
+        identity = (probe["address"], probe["size"])
+        try:
+            baseline = baseline_values[identity]
+        except KeyError as exc:
+            raise gba_playtest.PlaytestError(
+                f"metric {metric.identifier!r} needs clean-run baseline probe "
+                f"{probe['address']!r}/{probe['size']}, which was not captured"
+            ) from exc
+        terminal_value = probe_value(probe)
+        deltas.append(
+            {
+                "baseline": baseline,
+                "delta": terminal_value - baseline,
+                "group": group["id"],
+                "kind": metric.definition["delta_kind"],
+                "terminal": terminal_value,
+            }
+        )
+    return deltas
+
+
+def _stable_execution_error(
+    error: gba_playtest.PlaytestError,
+    rom: Path,
+    scenario: gba_playtest.Scenario,
+) -> str:
+    message = EPHEMERAL_WORKSPACE_RE.sub("<gba-playtest-workspace>", str(error))
+    return (
+        f"PlaytestError [scenario={scenario.name!r} rom={rom.name!r}]: "
+        f"{message}"
+    )
 
 
 def _validate_request(
@@ -814,6 +855,16 @@ def run_batch(
         max_turns=max_turns,
         max_actions=max_actions,
     )
+    baseline_probe_map: dict[tuple[str, int], MetricProbe] = {}
+    for metric in specification.metrics:
+        if metric.kind != "group_deltas":
+            continue
+        for probe in metric.probes:
+            baseline_probe_map[(probe.binding, probe.size)] = probe
+    baseline_probes = tuple(
+        gba_playtest.Probe(probe.binding, probe.address, probe.size, None)
+        for _, probe in sorted(baseline_probe_map.items())
+    )
 
     def run_seed(seed: int, backend: Path) -> dict[str, Any]:
         scheduled_write = gba_playtest.ScheduledWrite(
@@ -825,6 +876,7 @@ def run_batch(
                 None,
             ),
             seed,
+            baseline_probes,
         )
         try:
             captured = gba_playtest.capture(
@@ -855,7 +907,7 @@ def run_batch(
             }
         except gba_playtest.PlaytestError as exc:
             return {
-                "error": str(exc),
+                "error": _stable_execution_error(exc, rom, scenario),
                 "rom": requested_rom,
                 "seed": seed,
                 "status": "execution_failure",
@@ -1476,7 +1528,11 @@ def _validate_metric_value(value: Any, definition: dict[str, Any], path: str) ->
         )
     for index, (raw_entry, expected_entry) in enumerate(zip(value, expected)):
         entry_path = f"{path}[{index}]"
-        entry = _object(raw_entry, entry_path, {"delta", "group", "kind"})
+        entry = _object(
+            raw_entry,
+            entry_path,
+            {"baseline", "delta", "group", "kind", "terminal"},
+        )
         if (entry["group"], entry["kind"]) != (
             expected_entry["id"],
             definition["delta_kind"],
@@ -1485,10 +1541,29 @@ def _validate_metric_value(value: Any, definition: dict[str, Any], path: str) ->
                 f"{entry_path} does not match its declared group delta"
             )
         _validate_probe_width_value(
-            entry["delta"],
+            entry["baseline"],
             expected_entry["probe"],
-            f"{entry_path}.delta",
+            f"{entry_path}.baseline",
         )
+        _validate_probe_width_value(
+            entry["terminal"],
+            expected_entry["probe"],
+            f"{entry_path}.terminal",
+        )
+        maximum = (1 << (expected_entry["probe"]["size"] * 8)) - 1
+        if (
+            not _is_int(entry["delta"])
+            or not -maximum <= entry["delta"] <= maximum
+        ):
+            raise gba_playtest.PlaytestError(
+                f"{entry_path}.delta must be an integer from {-maximum} through "
+                f"{maximum} for the declared {expected_entry['probe']['size']}-byte "
+                "probe difference"
+            )
+        if entry["delta"] != entry["terminal"] - entry["baseline"]:
+            raise gba_playtest.PlaytestError(
+                f"{entry_path}.delta must equal terminal minus baseline"
+            )
 
 
 def _metric_distributions(
@@ -1808,8 +1883,14 @@ def compare_reports(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict
 
 def _output_path(path: Path) -> Path:
     resolved = path.resolve()
+    build_root = BUILD_ROOT.resolve()
+    if resolved == build_root:
+        raise gba_playtest.PlaytestError(
+            f"output {path} must be a child of the ignored build/ directory, "
+            "not the build root itself"
+        )
     try:
-        resolved.relative_to(BUILD_ROOT.resolve())
+        resolved.relative_to(build_root)
     except ValueError as exc:
         raise gba_playtest.PlaytestError(
             f"output {path} must be under the ignored build/ directory"

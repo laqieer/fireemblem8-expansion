@@ -34,6 +34,7 @@
 #define MAX_TRACE_PROBES 512u
 #define MAX_TRACE_RECORDS 450000u
 #define MAX_CHECKPOINT_PROBES 1536u
+#define MAX_BASELINE_PROBES 1536u
 
 #define PLAYST_CONFIG_GAME_SPEED_MASK (1u << 7)
 #define PLAYST_CONFIG_ANIMATION_TYPE_MASK (3u << 17)
@@ -154,6 +155,8 @@ struct Plan {
 	struct CounterLimit turn_limit;
 	struct CounterLimit action_limit;
 	bool has_seed_write;
+	size_t baseline_probe_count;
+	struct Probe* baseline_probes;
 	uint32_t seed_frame;
 	struct Probe seed_write;
 	uint32_t seed_value;
@@ -216,6 +219,7 @@ static void free_plan(struct Plan* plan)
 	free(plan->run_probes);
 	free(plan->terminals);
 	free(plan->trace_probes);
+	free(plan->baseline_probes);
 	memset(plan, 0, sizeof(*plan));
 }
 
@@ -585,6 +589,36 @@ static bool read_plan(const char* path, struct Plan* plan)
 		}
 	}
 	if (version == 6) {
+		if (fscanf(file, "%31s %zu", word, &plan->baseline_probe_count) != 2 ||
+		    strcmp(word, "BASELINE_PROBES") != 0 ||
+		    plan->baseline_probe_count > MAX_BASELINE_PROBES) {
+			fprintf(stderr, "malformed BASELINE_PROBES record\n");
+			goto fail;
+		}
+		plan->baseline_probes = calloc(
+		    plan->baseline_probe_count, sizeof(*plan->baseline_probes));
+		if (plan->baseline_probe_count && !plan->baseline_probes) {
+			fprintf(stderr, "out of memory reading baseline probes\n");
+			goto fail;
+		}
+		for (size_t i = 0; i < plan->baseline_probe_count; ++i) {
+			struct Probe* probe = &plan->baseline_probes[i];
+			if (fscanf(file, "%" SCNu32 " %u", &probe->address,
+			           &probe->size) != 2 ||
+			    (probe->size != 1 && probe->size != 2 &&
+			     probe->size != 4)) {
+				fprintf(stderr, "malformed baseline probe %zu\n", i);
+				goto fail;
+			}
+			for (size_t prior = 0; prior < i; ++prior) {
+				const struct Probe* previous = &plan->baseline_probes[prior];
+				if (previous->address == probe->address &&
+				    previous->size == probe->size) {
+					fprintf(stderr, "duplicate baseline probe %zu\n", i);
+					goto fail;
+				}
+			}
+		}
 		if (fscanf(file, "%31s %" SCNu32 " %" SCNu32 " %u %" SCNu32,
 		           word, &plan->seed_frame, &plan->seed_write.address,
 		           &plan->seed_write.size, &plan->seed_value) != 5 ||
@@ -940,6 +974,11 @@ static int run_until(struct mCore* core, const struct Plan* plan,
 
 		if (!apply_accelerated_fidelity_config(core, plan, frame))
 			return 2;
+		if (plan->has_seed_write && frame == plan->seed_frame) {
+			for (size_t i = 0; i < plan->baseline_probe_count; ++i)
+				printf("BASELINE\t%zu\t%" PRIu32 "\n", i,
+				       read_probe(core, &plan->baseline_probes[i]));
+		}
 		apply_frame_input(core, plan, &range_index, frame);
 		if (plan->trace_probe_count != 0)
 			emit_trace(core, plan, frame, trace_values, &have_trace_values);

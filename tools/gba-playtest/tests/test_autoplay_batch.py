@@ -187,7 +187,19 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         self.assertTrue(backend_path.is_file())
         self.capture_backends.append(backend_path)
         seed = scheduled_write.value
+        baseline_values = {
+            PROBE_TURN: 0,
+            PROBE_ACTION: 2,
+        }
         return {
+            "baseline_probes": [
+                {
+                    "address": probe.binding,
+                    "size": probe.size,
+                    "value": f"0x{baseline_values.get(probe.binding, 0):0{probe.size * 2}x}",
+                }
+                for probe in scheduled_write.baseline_probes
+            ],
             "rom": gba_playtest.rom_provenance(rom),
             "terminal": {
                 "reason": "success" if seed != 2 else "max_actions",
@@ -329,6 +341,20 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
             ],
         )
         self.assertEqual(report["provenance"]["profile"]["fidelity"], "normal")
+        self.assertEqual(
+            [run["metrics"]["items"][0]["delta"] for run in report["runs"]],
+            [-1, 0, 1],
+        )
+        self.assertEqual(
+            report["runs"][0]["metrics"]["items"][0],
+            {
+                "baseline": 2,
+                "delta": -1,
+                "group": "blue",
+                "kind": "item",
+                "terminal": 1,
+            },
+        )
         self.assertRegex(
             report["provenance"]["scenario"]["definition_sha256"],
             r"^[0-9a-f]{64}$",
@@ -682,9 +708,11 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                         if metric["id"] == metric_id
                     )
                     definition["groups"][0][probe_field]["size"] = size
-                    boundary["runs"][0]["metrics"][metric_id][0][
-                        value_field
-                    ] = maximum
+                    value = boundary["runs"][0]["metrics"][metric_id][0]
+                    value[value_field] = maximum
+                    if metric_id == "exp":
+                        value["baseline"] = 0
+                        value["terminal"] = maximum
                     self._refresh_specification_digest(boundary)
                     self._refresh_report_summary(boundary)
                     autoplay_batch.validate_report(
@@ -957,8 +985,76 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
             reports.append(output.read_bytes())
             report = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(report["runs"][1]["status"], "execution_failure")
-            self.assertEqual(report["runs"][1]["error"], "seed execution failed")
+            self.assertEqual(
+                report["runs"][1]["error"],
+                "PlaytestError [scenario='batch-seed-fixture' rom='fixture.gba']: "
+                "seed execution failed",
+            )
         self.assertEqual(reports[0], reports[1])
+
+    def test_execution_errors_normalize_ephemeral_workspace_paths(self):
+        reports = []
+        for jobs, label in ((1, "serial-a1b2"), (3, "parallel-c3d4")):
+            output = self.output(f"normalized-error-{jobs}.json")
+
+            def fail_with_workspace(*args, **kwargs):
+                seed = kwargs["scheduled_write"].value
+                raise gba_playtest.PlaytestError(
+                    f"libmGBA backend failed while loading "
+                    f"{self.root}/gba-playtest-{label}-{seed}/input.gba"
+                )
+
+            with mock.patch.object(
+                gba_playtest,
+                "build_backend",
+                side_effect=self._fake_build_backend,
+            ), mock.patch.object(
+                gba_playtest,
+                "capture",
+                side_effect=fail_with_workspace,
+            ):
+                self.assertEqual(
+                    autoplay_batch.main(self.arguments(output, jobs=jobs)),
+                    1,
+                )
+            reports.append(output.read_bytes())
+            report = json.loads(output.read_text(encoding="utf-8"))
+            for run in report["runs"]:
+                self.assertEqual(
+                    run["error"],
+                    "PlaytestError [scenario='batch-seed-fixture' "
+                    "rom='fixture.gba']: libmGBA backend failed while loading "
+                    "<gba-playtest-workspace>",
+                )
+        self.assertEqual(reports[0], reports[1])
+
+    def test_output_must_be_strict_child_of_build_root(self):
+        absent_build_root = self.root / "absent-build-root"
+        with mock.patch.object(autoplay_batch, "BUILD_ROOT", absent_build_root):
+            with self.assertRaisesRegex(
+                gba_playtest.PlaytestError,
+                "not the build root itself",
+            ):
+                autoplay_batch._output_path(absent_build_root)
+        self.assertFalse(absent_build_root.exists())
+
+        with self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            "not the build root itself",
+        ):
+            autoplay_batch._output_path(autoplay_batch.BUILD_ROOT)
+
+        alias = self.root / "build-root-alias"
+        alias.symlink_to(autoplay_batch.BUILD_ROOT, target_is_directory=True)
+        with self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            "not the build root itself",
+        ):
+            autoplay_batch._output_path(alias)
+
+        child = self.output("strict-child.json")
+        self.assertEqual(autoplay_batch._output_path(child), child.resolve())
+        self.assertFalse(child.exists())
 
     def test_atomic_output_collision_cleanup_and_corrected_retry(self):
         output = self.output("atomic.json")
@@ -1119,6 +1215,23 @@ class AutoplayBatchLibmGBAIntegrationTests(BatchFixtureTestCase):
             self.assertEqual(run["terminal"]["reason"], "success")
             self.assertEqual(run["metrics"]["turns"], seed)
             self.assertEqual(run["metrics"]["actions"], seed)
+            for metric_id in ("exp", "items", "resources"):
+                self.assertEqual(
+                    run["metrics"][metric_id][0],
+                    {
+                        "baseline": 0,
+                        "delta": seed,
+                        "group": "blue",
+                        "kind": (
+                            "item"
+                            if metric_id == "items"
+                            else "resource"
+                            if metric_id == "resources"
+                            else "exp"
+                        ),
+                        "terminal": seed,
+                    },
+                )
 
 
 if __name__ == "__main__":

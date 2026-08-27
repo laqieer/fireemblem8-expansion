@@ -463,6 +463,11 @@ faction/group, event, EXP, item, and resource metric records. A comparison
 distinguishes changed scenario/specification semantics even when their
 names/versions match, and reports a deliberately changed metric without
 claiming either result is balanced or statistically significant.
+EXP/item/resource records contain unsigned baseline and terminal observations
+from one clean execution plus their signed difference. The baseline is read at
+the declared seed frame immediately before its input and seed write
+(immediately after reset for this frame-0 fixture), covering gain, consumption,
+and zero change without a second run.
 
 ### Negative controls
 
@@ -479,10 +484,15 @@ metrics beyond their 1/2/4-byte probes, and empty/duplicate/unsorted/over-64
 faction, event, or delta lists.
 Shared-backend/global setup failure returns 2 with no output or seed records;
 an individual seed failure is retained as `execution_failure` and returns 1.
+Random emulator/backend workspace paths in those errors normalize to a stable
+placeholder while stable scenario, requested ROM basename, and error class
+remain, so serial and parallel reports stay byte-identical.
 A non-success terminal is retained as `terminal_failure`, contributes to the
 failure count, and returns 1. A destination created during publication is
 never overwritten; failed staging is removed for retry, while comparison
 leaves both input report bytes untouched.
+The `build/` root itself is rejected before creation/reservation when absent,
+present, or reached through a symlink; a strict child remains valid.
 
 The underlying plan negative also passes a scheduled write to a fixed-frame
 scenario and requires an actionable rejection before plan serialization or
