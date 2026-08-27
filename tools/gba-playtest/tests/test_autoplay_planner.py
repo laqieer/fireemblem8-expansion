@@ -1801,6 +1801,45 @@ raise SystemExit(child.returncode)
             )
             self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
 
+    def test_host_only_ready_gate_capability_skips(self):
+        root = TESTS_DIR.parents[2]
+        build_root = root / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as empty_path:
+            environment = os.environ.copy()
+            environment["GBA_PLAYTEST_HOST_ONLY"] = "1"
+            environment["PATH"] = empty_path
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "unittest",
+                    (
+                        "tools.gba-playtest.tests.test_autoplay_planner."
+                        "PlannerLibmGBAIntegrationTests."
+                        "test_backend_requires_exact_ready_before_stdin"
+                    ),
+                    "-v",
+                ],
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn(
+                "production READY test belongs to the toolchain lane",
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn(
+                "skipped=1",
+                completed.stdout + completed.stderr,
+            )
+
     def test_public_protocol_layout_is_fixed_width_and_offset_stable(self):
         compiler = shutil.which("gcc") or shutil.which("cc")
         if compiler is None:
@@ -3698,6 +3737,10 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 transport.close()
 
     def test_backend_requires_exact_ready_before_stdin(self):
+        if host_mode.host_only_enabled():
+            self.skipTest(
+                "production READY test belongs to the toolchain lane"
+            )
         root = (
             TESTS_DIR.parents[2]
             / "build"

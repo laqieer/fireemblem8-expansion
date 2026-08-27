@@ -1096,6 +1096,7 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_completion_timing_is_typed_and_kind_bounded \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_maximum_semantic_transcript_fits_two_mib \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_configured_bare_make_selects_release_and_fails_closed \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_host_only_ready_gate_capability_skips \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_configured_explicit_debug_goal_builds_in_toolchain_lane \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_action_semantics_execute_selected_fields \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_snag_combat_executes_selected_obstacle \
