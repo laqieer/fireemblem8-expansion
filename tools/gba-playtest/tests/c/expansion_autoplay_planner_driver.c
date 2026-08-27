@@ -29,10 +29,10 @@ u8** gBmMapUnit;
 static u16 sSeeds[3] = { 1, 2, 3 };
 static u32 sConsumption;
 static int sControlRequests;
-static u8 sMovementData[8][8];
-static u8* sMovementRows[8];
-static u8 sUnitData[8][8];
-static u8* sUnitRows[8];
+static u8 sMovementData[16][32];
+static u8* sMovementRows[16];
+static u8 sUnitData[16][32];
+static u8* sUnitRows[16];
 
 void StoreRNState(u16* seeds)
 {
@@ -102,18 +102,19 @@ int main(void)
     gPlaySt.chapterIndex = 1;
     gPlaySt.chapterTurnNumber = 1;
     gActiveUnitId = 1;
-    gBmMapSize.x = 8;
-    gBmMapSize.y = 8;
-    for (index = 0; index < 8; index++)
+    gBmMapSize.x = 32;
+    gBmMapSize.y = 16;
+    for (index = 0; index < 16; index++)
     {
         int x;
         sMovementRows[index] = sMovementData[index];
         sUnitRows[index] = sUnitData[index];
-        for (x = 0; x < 8; x++)
+        for (x = 0; x < 32; x++)
         {
             sMovementData[index][x] = 1;
             sUnitData[index][x] = 0;
         }
+        sMovementData[15][31] = 0xFF;
     }
     gBmMapMovement = sMovementRows;
     gBmMapUnit = sUnitRows;
@@ -159,11 +160,11 @@ int main(void)
         "first production decision must publish one legal token"
     );
     CHECK(
-        gExpansionAutoplayPlannerObservation.totalActionCount == 65,
-        "selected action plus 64 reachable waits expected"
+        gExpansionAutoplayPlannerObservation.totalActionCount == 512,
+        "selected action plus 511 reachable waits expected"
     );
     CHECK(
-        gExpansionAutoplayPlannerObservation.pageCount == 3
+        gExpansionAutoplayPlannerObservation.pageCount == 18
             && gExpansionAutoplayPlannerObservation.actionCount == 29,
         "candidate set must be paged at the 1024-byte boundary"
     );
@@ -193,7 +194,7 @@ int main(void)
         EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
         gExpansionAutoplayPlannerObservation.runId,
         gExpansionAutoplayPlannerObservation.observationId,
-        1,
+        17,
         0,
         0,
         0);
@@ -203,10 +204,10 @@ int main(void)
         "valid PAGE command must publish another page"
     );
     CHECK(
-        gExpansionAutoplayPlannerObservation.pageIndex == 1
-            && gExpansionAutoplayPlannerObservation.actionStartOrdinal == 29
-            && gExpansionAutoplayPlannerObservation.actionCount == 29,
-        "second page must retain stable global ordinals"
+        gExpansionAutoplayPlannerObservation.pageIndex == 17
+            && gExpansionAutoplayPlannerObservation.actionStartOrdinal == 493
+            && gExpansionAutoplayPlannerObservation.actionCount == 19,
+        "last page must retain stable global ordinals"
     );
 
     WriteCommand(
@@ -228,7 +229,7 @@ int main(void)
         EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
         gExpansionAutoplayPlannerObservation.runId,
         gExpansionAutoplayPlannerObservation.observationId,
-        1,
+        17,
         0,
         0,
         0);
@@ -238,8 +239,8 @@ int main(void)
         "page must republish after malformed command"
     );
 
-    action = &gExpansionAutoplayPlannerObservation.actions[0];
-    selectedOrdinal = gExpansionAutoplayPlannerObservation.actionStartOrdinal;
+    action = &gExpansionAutoplayPlannerObservation.actions[18];
+    selectedOrdinal = gExpansionAutoplayPlannerObservation.actionStartOrdinal + 18;
     selectedTokenLo = action->tokenLo;
     selectedTokenHi = action->tokenHi;
     WriteCommand(
@@ -273,6 +274,12 @@ int main(void)
         ExpansionAutoplayPlanner_PollDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED,
         "matching token must commit the existing production decision"
+    );
+    CHECK(
+        selectedOrdinal == 511
+            && decision.xMove == 30
+            && decision.yMove == 15,
+        "last-page selection must map to its stable row-major candidate"
     );
 
     sConsumption = 4;

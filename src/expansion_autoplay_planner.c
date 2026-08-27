@@ -26,8 +26,7 @@ volatile struct ExpansionAutoplayPlannerCommandV2 EWRAM_DATA
     gExpansionAutoplayPlannerCommand = { 0 };
 struct ExpansionAutoplayPlannerCampaignCheckpointV2 EWRAM_DATA
     gExpansionAutoplayPlannerCampaignCheckpoint = { 0 };
-EWRAM_DATA static struct AiDecision
-    sPlannerCandidates[EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY];
+EWRAM_DATA static struct AiDecision sPlannerSelectedDecision;
 
 static bool sPlannerActive;
 static u32 sPlannerRunId;
@@ -170,29 +169,73 @@ static void ClearPublishedActions(void)
         bytes[index] = 0;
 }
 
-static bool AddCandidate(const struct AiDecision* decision)
+static bool DecisionsEqual(
+    const struct AiDecision* left,
+    const struct AiDecision* right)
 {
-    u32 index;
+    return left->unitId == right->unitId
+        && left->xMove == right->xMove
+        && left->yMove == right->yMove
+        && left->actionId == right->actionId
+        && left->targetId == right->targetId
+        && left->itemSlot == right->itemSlot
+        && left->xTarget == right->xTarget
+        && left->yTarget == right->yTarget;
+}
 
-    for (index = 0; index < sPlannerCandidateCount; index++)
+static bool IsLegalWaitDestination(int x, int y)
+{
+    return gBmMapMovement != NULL
+        && gBmMapUnit != NULL
+        && gBmMapMovement[y][x] <= MAP_MOVEMENT_MAX
+        && (gBmMapUnit[y][x] == 0 || gBmMapUnit[y][x] == gActiveUnitId);
+}
+
+static void MakeWaitCandidate(int x, int y, struct AiDecision* candidate)
+{
+    *candidate = sPlannerSelectedDecision;
+    candidate->actionPerformed = true;
+    candidate->unitId = gActiveUnitId;
+    candidate->xMove = x;
+    candidate->yMove = y;
+    candidate->actionId = AI_ACTION_NONE;
+    candidate->targetId = 0;
+    candidate->itemSlot = 0;
+    candidate->xTarget = 0;
+    candidate->yTarget = 0;
+}
+
+static bool GetCandidate(u32 ordinal, struct AiDecision* candidate)
+{
+    u32 current = 1;
+    int x;
+    int y;
+
+    if (ordinal == 0)
     {
-        const struct AiDecision* existing = &sPlannerCandidates[index];
-        if (existing->unitId == decision->unitId
-            && existing->xMove == decision->xMove
-            && existing->yMove == decision->yMove
-            && existing->actionId == decision->actionId
-            && existing->targetId == decision->targetId
-            && existing->itemSlot == decision->itemSlot
-            && existing->xTarget == decision->xTarget
-            && existing->yTarget == decision->yTarget)
-            return true;
+        *candidate = sPlannerSelectedDecision;
+        return true;
     }
 
-    if (sPlannerCandidateCount >= EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY)
-        return false;
+    for (y = 0; y < gBmMapSize.y; y++)
+    {
+        for (x = 0; x < gBmMapSize.x; x++)
+        {
+            struct AiDecision wait;
 
-    sPlannerCandidates[sPlannerCandidateCount++] = *decision;
-    return true;
+            if (!IsLegalWaitDestination(x, y))
+                continue;
+            MakeWaitCandidate(x, y, &wait);
+            if (DecisionsEqual(&wait, &sPlannerSelectedDecision))
+                continue;
+            if (current++ == ordinal)
+            {
+                *candidate = wait;
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 static bool BuildCandidates(const struct AiDecision* decision)
@@ -200,9 +243,8 @@ static bool BuildCandidates(const struct AiDecision* decision)
     int x;
     int y;
 
-    sPlannerCandidateCount = 0;
-    if (!AddCandidate(decision))
-        return false;
+    sPlannerSelectedDecision = *decision;
+    sPlannerCandidateCount = 1;
 
     if (gBmMapMovement == NULL || gBmMapUnit == NULL)
         return true;
@@ -211,24 +253,17 @@ static bool BuildCandidates(const struct AiDecision* decision)
     {
         for (x = 0; x < gBmMapSize.x; x++)
         {
-            struct AiDecision candidate = *decision;
+            struct AiDecision candidate;
 
-            if (gBmMapMovement[y][x] > MAP_MOVEMENT_MAX)
+            if (!IsLegalWaitDestination(x, y))
                 continue;
-            if (gBmMapUnit[y][x] != 0 && gBmMapUnit[y][x] != gActiveUnitId)
+            MakeWaitCandidate(x, y, &candidate);
+            if (DecisionsEqual(&candidate, &sPlannerSelectedDecision))
                 continue;
-
-            candidate.actionPerformed = true;
-            candidate.unitId = gActiveUnitId;
-            candidate.xMove = x;
-            candidate.yMove = y;
-            candidate.actionId = AI_ACTION_NONE;
-            candidate.targetId = 0;
-            candidate.itemSlot = 0;
-            candidate.xTarget = 0;
-            candidate.yTarget = 0;
-            if (!AddCandidate(&candidate))
+            if (sPlannerCandidateCount
+                >= EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY)
                 return false;
+            sPlannerCandidateCount++;
         }
     }
     return true;
@@ -274,23 +309,27 @@ static void PublishPage(u32 pageIndex)
 
     for (index = 0; index < count; index++)
     {
-        const struct AiDecision* decision = &sPlannerCandidates[start + index];
+        struct AiDecision decision;
         struct ExpansionAutoplayPlannerActionV2* action =
             &gExpansionAutoplayPlannerObservation.actions[index];
-        u32 tokenLo = MakeTokenLo(
-            decision,
+        bool found = GetCandidate(start + index, &decision);
+        u32 tokenLo;
+
+        if (!found)
+            break;
+        tokenLo = MakeTokenLo(
+            &decision,
             gExpansionAutoplayPlannerObservation.observationId,
             start + index);
-
-        action->kind = ActionKindFromAiAction(decision->actionId);
-        action->actor = decision->unitId;
-        action->destination = (u16)decision->xMove | ((u32)(u16)decision->yMove << 16);
-        action->target = decision->targetId | ((u32)decision->xTarget << 8)
-            | ((u32)decision->yTarget << 16);
-        action->itemSlot = decision->itemSlot;
+        action->kind = ActionKindFromAiAction(decision.actionId);
+        action->actor = decision.unitId;
+        action->destination = (u16)decision.xMove | ((u32)(u16)decision.yMove << 16);
+        action->target = decision.targetId | ((u32)decision.xTarget << 8)
+            | ((u32)decision.yTarget << 16);
+        action->itemSlot = decision.itemSlot;
         action->tokenLo = tokenLo;
         action->tokenHi = MakeTokenHi(tokenLo);
-        action->actionId = decision->actionId;
+        action->actionId = decision.actionId;
     }
 }
 
@@ -434,7 +473,7 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecisi
 enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecision(
     struct AiDecision* decision)
 {
-    const struct AiDecision* candidate;
+    struct AiDecision candidate;
     u32 tokenLo;
 
     if (!sPlannerActive
@@ -516,9 +555,13 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
 
-    candidate = &sPlannerCandidates[gExpansionAutoplayPlannerCommand.actionOrdinal];
+    if (!GetCandidate(gExpansionAutoplayPlannerCommand.actionOrdinal, &candidate))
+    {
+        Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_ACTION_BECAME_ILLEGAL);
+        return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+    }
     tokenLo = MakeTokenLo(
-        candidate,
+        &candidate,
         gExpansionAutoplayPlannerObservation.observationId,
         gExpansionAutoplayPlannerCommand.actionOrdinal);
     if (gExpansionAutoplayPlannerCommand.tokenLo != tokenLo
@@ -534,7 +577,7 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
     gExpansionAutoplayPlannerCommand.rejection = EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
     ClearCommand();
     sPlannerTraceDigest = MixDigest(sPlannerTraceDigest, tokenLo);
-    *decision = *candidate;
+    *decision = candidate;
     return EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED;
 }
 

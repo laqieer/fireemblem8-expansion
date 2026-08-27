@@ -335,14 +335,39 @@ class PlannerBridgeTests(unittest.TestCase):
             )
             self.assertIsNotNone(observation, "planner observation symbol missing")
             self.assertEqual(int(observation.group(1), 16), 1020)
-            candidates = re.search(
+            selected = re.search(
                 r"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+[bBdD]\s+"
-                r"sPlannerCandidates(?:\.\d+)?$",
+                r"sPlannerSelectedDecision(?:\.\d+)?$",
                 symbols.stdout,
                 re.MULTILINE,
             )
-            self.assertIsNotNone(candidates, "planner candidate store missing")
-            self.assertEqual(int(candidates.group(1), 16), 5632)
+            self.assertIsNotNone(selected, "retained selected decision missing")
+            self.assertEqual(int(selected.group(1), 16), 11)
+            self.assertNotIn("sPlannerCandidates", symbols.stdout)
+
+            sections = subprocess.run(
+                [size, "-A", str(objects[0])],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(sections.returncode, 0, sections.stdout + sections.stderr)
+            section_sizes = {
+                match.group(1): int(match.group(2))
+                for match in re.finditer(
+                    r"^(\S+)\s+(\d+)\s+\d+$",
+                    sections.stdout,
+                    re.MULTILINE,
+                )
+            }
+            self.assertEqual(section_sizes["ewram_data"], 1144)
+            self.assertEqual(section_sizes[".bss"], 20)
+            self.assertEqual(
+                section_sizes[".text"]
+                + section_sizes[".rodata"]
+                + section_sizes[".rodata.str1.4"],
+                2811,
+            )
 
             disabled = temporary_path / "planner-release-disabled.o"
             completed = subprocess.run(
@@ -400,7 +425,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     "name": "autoplay-planner-two-chapter",
                     "frames": [],
                     "run_until": {
-                        "max_frames": 4,
+                        "max_frames": 16,
                         "terminal_conditions": [
                             {
                                 "reason": "success",

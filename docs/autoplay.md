@@ -913,6 +913,10 @@ ordinals and tokens. The host never sends coordinates, targets, item IDs,
 `{run_id, observation_id, ordinal, token}`. Stale pages, unknown commands,
 duplicate START, forged tokens, unsupported actions, cancellation, and
 resource overflow produce typed rejection and do not execute an action.
+The ROM does not retain 512 `AiDecision` structs. It stores only the selected
+engine decision and candidate count, freezes normal AI while waiting, and
+reconstructs legal row-major waits deterministically for each page and commit.
+Thus ordinals and tokens stay stable without exceeding the 4 KiB state ceiling.
 
 START carries expected fixed-width ROM, configuration, scenario, and seed
 identities. READY/WAITING observations publish the actual runtime identities
@@ -949,9 +953,10 @@ memory write and has no committed artifact. This is interface/replay evidence on
 not evidence of human-like play, optimality, balance, or universal campaign
 viability.
 
-The enabled ARM object uses 2,523 bytes of text/rodata and 6,784 bytes of
-planner state: 5,632 bytes for 512 retained `AiDecision` candidates, 1,020 for
-the observation page, 64 for the command, 48 for the checkpoint, and 20 for
-private counters. Protocol v2 adds 6,576 bytes over the prior single-candidate
-RAM contract. Disabled release and archival builds still omit all planner
-state.
+The enabled ARM object uses 2,811 bytes of text/rodata and 1,164 bytes of total
+static planner RAM: 1,144 bytes in `ewram_data` (1,020-byte observation,
+64-byte command, 48-byte checkpoint, and 11-byte selected decision plus
+alignment) and 20 bytes of private BSS counters. This is 5,620 bytes below the
+rejected full-candidate-array design and 956 bytes above the original
+single-candidate contract, while remaining well below the frozen 4 KiB
+ceiling. Disabled release and archival builds omit all planner state.

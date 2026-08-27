@@ -564,10 +564,12 @@ do not establish statistical power, difficulty, campaign quality, or balance.
 
 The scripted reference chooser and bounded search chooser consume the same
 pointer-free observation/action records and produce a deterministic
-two-chapter trace. The C adapter retains one selected engine decision plus
-canonical row-major legal waits, pages 29 at a time across the 512-action
-bound, and holds them without rerunning AI or consuming RN state until a
-matching global ordinal/token commits through the #85 computer action route.
+two-chapter trace. The C adapter retains only the selected engine decision and
+reconstructs canonical row-major legal waits from frozen maps for each page
+and commit. It pages 29 at a time across the 512-action bound without rerunning
+AI or consuming RN state, then commits ordinal 511 through the #85 computer
+action route. Exact ARM evidence pins 1,164 static RAM bytes and 2,811
+text/rodata bytes.
 The production-linked libmGBA fixture exercises START/PAGE/COMMIT/CANCEL and
 malformed commands, preserves the campaign checkpoint across chapter reset,
 reaches chapter two, and replays byte-for-byte without save or snapshot.
