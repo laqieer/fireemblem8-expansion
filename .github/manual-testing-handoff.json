@@ -1,0 +1,249 @@
+{
+  "schema": "fe8.manual-testing-handoff.v1",
+  "eligibility": {
+    "kinds": [
+      "visual",
+      "audio",
+      "ux"
+    ],
+    "material": true,
+    "automation_unreliable": true,
+    "deterministic_criteria": false
+  },
+  "pre_handoff": {
+    "artifact": "non-instrumented",
+    "required_roles": [
+      "positive",
+      "control"
+    ],
+    "required_identity_fields": [
+      "path",
+      "sha256"
+    ],
+    "render_each": true,
+    "inspect_each": true,
+    "static_ui": {
+      "evidence": "screenshot",
+      "source": "emulator",
+      "deterministic": true
+    },
+    "time_dependent_or_av": {
+      "evidence": "av_clip",
+      "source": "emulator",
+      "synchronized": true
+    },
+    "semantic_assertions_primary": true
+  },
+  "activation": {
+    "required": true,
+    "label": "waiting-for-manual-testing",
+    "label_description": "Blocked until @laqieer records a specific manual tester result",
+    "assignee": "laqieer",
+    "targets": [
+      "originating_issue",
+      "each_open_implementation_pr"
+    ],
+    "comment": {
+      "required": true,
+      "required_per_target": true,
+      "mention": "@laqieer",
+      "fields": {
+        "case_id": {
+          "type": "string",
+          "pattern": "^TC-[A-Z0-9]+(?:-[A-Z0-9]+)*-[0-9]{3}$"
+        },
+        "commit": {
+          "type": "string",
+          "format": "git_sha40_lowercase"
+        },
+        "positive_artifact_path": {
+          "type": "string",
+          "format": "nonempty_path"
+        },
+        "positive_artifact_sha256": {
+          "type": "string",
+          "format": "sha256_lowercase"
+        },
+        "control_artifact_path": {
+          "type": "string",
+          "format": "nonempty_path"
+        },
+        "control_artifact_sha256": {
+          "type": "string",
+          "format": "sha256_lowercase"
+        },
+        "environment": {
+          "type": "string",
+          "min_length": 1
+        },
+        "clean_state": {
+          "type": "string",
+          "min_length": 1
+        },
+        "steps": {
+          "type": "array",
+          "format": "numbered_list",
+          "min_items": 1,
+          "items": "nonempty_string"
+        },
+        "expected": {
+          "type": "string",
+          "min_length": 1
+        },
+        "requested_judgment": {
+          "type": "string",
+          "min_length": 1
+        },
+        "merge_hold": {
+          "type": "boolean",
+          "const": true
+        },
+        "closure_hold": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    }
+  },
+  "hold": {
+    "merge": true,
+    "issue_closure": true
+  },
+  "completion": {
+    "post_result": true,
+    "post_evidence_link": true,
+    "comment": {
+      "required": true,
+      "required_per_cleanup_target": true,
+      "bind_to_activation_fields": [
+        "case_id",
+        "commit"
+      ],
+      "fields": {
+        "case_id": {
+          "type": "string",
+          "pattern": "^TC-[A-Z0-9]+(?:-[A-Z0-9]+)*-[0-9]{3}$"
+        },
+        "commit": {
+          "type": "string",
+          "format": "git_sha40_lowercase"
+        },
+        "actual_result": {
+          "type": "string",
+          "min_length": 1
+        },
+        "evidence_url": {
+          "type": "string",
+          "format": "github_evidence_url",
+          "accepted_shapes": [
+            "repository_issue_comment",
+            "repository_pull_comment",
+            "repository_pull_review",
+            "repository_actions_run",
+            "repository_actions_artifact",
+            "repository_blob_at_commit",
+            "github_user_attachment"
+          ]
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "rejected"
+          ]
+        }
+      },
+      "cleanup_allowed_outcome": "accepted",
+      "resume_allowed_outcome": "accepted",
+      "rejected_outcome": {
+        "value": "rejected",
+        "retain_waiting_label": true,
+        "retain_temporary_assignee": true,
+        "retain_merge_hold": true,
+        "retain_closure_hold": true,
+        "remain_actionable": true
+      }
+    },
+    "open_pr_head_validation": {
+      "source": "github_current_head_sha",
+      "field": "current_head_sha",
+      "type": "git_sha40_lowercase",
+      "must_equal_activation_commit": true,
+      "changed_head_requires_fresh_handoff": true
+    },
+    "remove_label": "waiting-for-manual-testing",
+    "remove_label_from": [
+      "originating_issue",
+      "each_labeled_implementation_pr"
+    ],
+    "remove_temporary_assignee": "laqieer",
+    "remove_temporary_assignee_from": [
+      "originating_issue",
+      "each_labeled_implementation_pr"
+    ],
+    "unless_other_ownership": true,
+    "ownership_exception": {
+      "flag": "other_ownership",
+      "reason_field": "ownership_reason",
+      "reason_type": "nonempty_string",
+      "required_when_true": true,
+      "forbidden_when_false": true
+    },
+    "resume_exact_candidate_gates": true,
+    "resume_merge": true
+  },
+  "queue": {
+    "query": "repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:\"waiting-for-manual-testing\"",
+    "url": "https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22",
+    "notify_when_empty": false,
+    "live_cardinality": "dynamic",
+    "relationship_source": "github_linked_open_implementation_prs",
+    "item_schema": {
+      "required_fields": [
+        "kind",
+        "url",
+        "state",
+        "manual_pending"
+      ],
+      "kind_enum": [
+        "issue",
+        "pr"
+      ],
+      "state_enum": [
+        "open",
+        "closed",
+        "superseded",
+        "completed"
+      ],
+      "optional_boolean_fields": [
+        "received_label",
+        "other_ownership",
+        "label_removed",
+        "temporary_assignee_removed"
+      ],
+      "optional_string_fields": [
+        "current_head_sha",
+        "ownership_reason"
+      ],
+      "issue_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/issues/[1-9][0-9]*$",
+      "pr_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/pull/[1-9][0-9]*$",
+      "pr_origin_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/issues/[1-9][0-9]*$"
+    },
+    "relationship_schema": {
+      "required_fields": [
+        "state",
+        "issue_url",
+        "pr_url"
+      ],
+      "state_enum": [
+        "open",
+        "closed"
+      ],
+      "issue_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/issues/[1-9][0-9]*$",
+      "pr_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/pull/[1-9][0-9]*$"
+    },
+    "issue_only_when_no_open_implementation_pr": true,
+    "require_every_linked_open_implementation_pr": true,
+    "exclude_closed_implementation_prs": true
+  }
+}

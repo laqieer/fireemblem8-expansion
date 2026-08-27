@@ -1,4 +1,7 @@
 from dataclasses import dataclass
+import copy
+import json
+import posixpath
 from pathlib import Path
 import re
 from typing import FrozenSet, Tuple
@@ -20,6 +23,25 @@ CONTRIBUTING_PATH = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 CLAUDE_PATH = ROOT / "CLAUDE.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
+WORKFLOW_GOVERNANCE_PATH = ROOT / "docs" / "test-cases" / "workflow-governance.md"
+TEST_CASE_REGISTRY_PATH = ROOT / "docs" / "test-cases" / "registry.json"
+MANUAL_HANDOFF_CONTRACT_PATH = ROOT / ".github" / "manual-testing-handoff.json"
+MANUAL_HANDOFF_CASE_HEADING = (
+    "TC-WORKFLOW-MANUAL-HANDOFF-001: "
+    "Surface actionable manual testing and resume automatically"
+)
+MANUAL_HANDOFF_POLICY_HEADING = "Actionable manual-testing handoff"
+MANUAL_HANDOFF_SUMMARY_HEADING = "Lifecycle summary"
+MANUAL_HANDOFF_QUERY = (
+    'repo:laqieer/fireemblem8-expansion is:open assignee:laqieer '
+    'label:"waiting-for-manual-testing"'
+)
+MANUAL_HANDOFF_QUERY_URL = (
+    "https://github.com/laqieer/fireemblem8-expansion/issues?"
+    "q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+"
+    "assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22"
+)
+_MISSING = object()
 MEANINGFUL_TEST_POLICY_HEADING = "Meaningful test evidence"
 POLICY_ATOM = re.compile(r"^[A-Za-z]+(?:[ /-][A-Za-z]+)*$")
 MEANINGFUL_TEST_POLICY_CLAUSE = re.compile(
@@ -501,6 +523,1143 @@ def watcher_example_violations(text):
             normalized = " ".join(command.split())
             if re.search(r"\bgh run watch\b", normalized) and normalized != CANONICAL_WATCHER_COMMAND:
                 violations.append(normalized)
+    return violations
+
+
+HUMAN_LIFECYCLE_ACTIONS = {
+    "Eligibility": (
+        ("require material criterion", ("require",), {
+            "material", "visual", "audio", "ux", "criterion",
+        }),
+        ("require unreliable automation", ("require",), {
+            "automation", "unreliable", "criterion",
+        }),
+    ),
+    "Activation": (
+        ("apply label", ("apply", "add"), {
+            "waiting", "for", "manual", "testing", "originating", "issue",
+            "open", "implementation", "pr",
+        }),
+        ("assign tester", ("assign",), {"laqieer", "targets"}),
+        ("ping tester", ("ping", "mention", "notify"), {
+            "laqieer", "comment",
+        }),
+    ),
+    "Hold": (
+        ("block merge", ("block", "prevent"), {
+            "merge", "manual", "criterion",
+        }),
+        ("block closure", ("block", "prevent"), {
+            "issue", "closure", "manual", "criterion",
+        }),
+    ),
+    "Completion": (
+        ("remove label", ("remove", "clear"), {
+            "waiting", "for", "manual", "testing", "originating", "issue",
+            "labeled", "implementation", "pr",
+        }),
+        ("remove assignment", ("remove", "clear"), {
+            "temporary", "laqieer", "assignment",
+        }),
+        ("resume delivery", ("resume", "continue"), {
+            "exact", "candidate", "gates", "merge", "automatically",
+        }),
+    ),
+}
+HUMAN_POLICY_SOFTENERS = {
+    "can",
+    "cannot",
+    "could",
+    "may",
+    "might",
+    "never",
+    "not",
+    "optional",
+    "optionally",
+    "prohibited",
+}
+NEGATIVE_CONTRACTIONS = {
+    "aren't": "are not",
+    "can't": "can not",
+    "couldn't": "could not",
+    "didn't": "did not",
+    "doesn't": "does not",
+    "don't": "do not",
+    "hadn't": "had not",
+    "hasn't": "has not",
+    "haven't": "have not",
+    "isn't": "is not",
+    "mustn't": "must not",
+    "needn't": "need not",
+    "shan't": "shall not",
+    "shouldn't": "should not",
+    "wasn't": "was not",
+    "weren't": "were not",
+    "won't": "will not",
+    "wouldn't": "would not",
+}
+
+
+def normalize_negative_contractions(text):
+    normalized = text.translate(str.maketrans({
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u02bc": "'",
+        "\uff07": "'",
+    }))
+    for contraction, expansion in NEGATIVE_CONTRACTIONS.items():
+        normalized = re.sub(
+            rf"\b{re.escape(contraction)}\b",
+            expansion,
+            normalized,
+            flags=re.IGNORECASE,
+        )
+    return re.sub(r"\bcannot\b", "can not", normalized, flags=re.IGNORECASE)
+
+
+def parse_labeled_summary(text, heading):
+    section = "\n".join(read_markdown_section(text, heading))
+    fields = {}
+    pattern = re.compile(
+        r"(?ms)^- \*\*(?P<name>[^*:]+):\*\* "
+        r"(?P<value>.*?)(?=^- \*\*|\Z)"
+    )
+    for match in pattern.finditer(section):
+        name = match.group("name")
+        if name in fields:
+            raise AssertionError(f"duplicate lifecycle field {name!r}")
+        fields[name] = " ".join(match.group("value").split())
+    return fields
+
+
+def human_handoff_summary(text, governance=False):
+    if governance:
+        case = "\n".join(
+            read_markdown_section(text, MANUAL_HANDOFF_CASE_HEADING)
+        )
+        return parse_labeled_summary(case, MANUAL_HANDOFF_SUMMARY_HEADING)
+    return parse_labeled_summary(text, MANUAL_HANDOFF_POLICY_HEADING)
+
+
+def human_handoff_violations(text, governance=False):
+    fields = human_handoff_summary(text, governance)
+    violations = []
+    if set(fields) != set(HUMAN_LIFECYCLE_ACTIONS):
+        violations.append("lifecycle fields are incomplete")
+    for field, actions in HUMAN_LIFECYCLE_ACTIONS.items():
+        clauses = [
+            set(normalize_policy(
+                normalize_negative_contractions(clause)
+            ).split())
+            for clause in re.split(r"[.;]+", fields.get(field, ""))
+            if clause.strip()
+        ]
+        for name, verbs, required_words in actions:
+            matches = [
+                clause
+                for clause in clauses
+                if required_words <= clause
+                and any(verb in clause for verb in verbs)
+            ]
+            if not matches:
+                violations.append(f"{field}: missing {name}")
+                continue
+            if any(clause & HUMAN_POLICY_SOFTENERS for clause in matches):
+                violations.append(f"{field}: reversed or softened {name}")
+
+    activation = fields.get("Activation", "")
+    completion = fields.get("Completion", "")
+    for exact in (
+        "`waiting-for-manual-testing`",
+        "`laqieer`",
+        "`@laqieer`",
+    ):
+        if exact not in activation:
+            violations.append(f"Activation: missing {exact}")
+    for exact in ("`waiting-for-manual-testing`", "`laqieer`"):
+        if exact not in completion:
+            violations.append(f"Completion: missing {exact}")
+
+    completion_words = normalize_policy(
+        normalize_negative_contractions(completion)
+    ).split()
+    try:
+        after = completion_words.index("after")
+        accepted = completion_words.index("accepted")
+        evidence = completion_words.index("evidence")
+        resume = completion_words.index("resume")
+    except ValueError:
+        violations.append("Completion: missing accepted-evidence gate")
+    else:
+        if not (after < accepted < resume and after < evidence < resume):
+            violations.append("Completion: resume precedes accepted evidence")
+    return violations
+
+
+def replace_whitespace_phrase(text, phrase, replacement):
+    pattern = re.compile(
+        r"\s+".join(re.escape(part) for part in phrase.split())
+    )
+    mutated, count = pattern.subn(replacement, text, count=1)
+    if count != 1:
+        raise AssertionError(f"mutation phrase not found: {phrase}")
+    return mutated
+
+
+EXPECTED_MANUAL_HANDOFF_CONTRACT = {
+    "schema": "fe8.manual-testing-handoff.v1",
+    "eligibility": {
+        "kinds": ["visual", "audio", "ux"],
+        "material": True,
+        "automation_unreliable": True,
+        "deterministic_criteria": False,
+    },
+    "pre_handoff": {
+        "artifact": "non-instrumented",
+        "required_roles": ["positive", "control"],
+        "required_identity_fields": ["path", "sha256"],
+        "render_each": True,
+        "inspect_each": True,
+        "static_ui": {
+            "evidence": "screenshot",
+            "source": "emulator",
+            "deterministic": True,
+        },
+        "time_dependent_or_av": {
+            "evidence": "av_clip",
+            "source": "emulator",
+            "synchronized": True,
+        },
+        "semantic_assertions_primary": True,
+    },
+    "activation": {
+        "required": True,
+        "label": "waiting-for-manual-testing",
+        "label_description": (
+            "Blocked until @laqieer records a specific manual tester result"
+        ),
+        "assignee": "laqieer",
+        "targets": [
+            "originating_issue",
+            "each_open_implementation_pr",
+        ],
+        "comment": {
+            "required": True,
+            "required_per_target": True,
+            "mention": "@laqieer",
+            "fields": {
+                "case_id": {
+                    "type": "string",
+                    "pattern": "^TC-[A-Z0-9]+(?:-[A-Z0-9]+)*-[0-9]{3}$",
+                },
+                "commit": {
+                    "type": "string",
+                    "format": "git_sha40_lowercase",
+                },
+                "positive_artifact_path": {
+                    "type": "string",
+                    "format": "nonempty_path",
+                },
+                "positive_artifact_sha256": {
+                    "type": "string",
+                    "format": "sha256_lowercase",
+                },
+                "control_artifact_path": {
+                    "type": "string",
+                    "format": "nonempty_path",
+                },
+                "control_artifact_sha256": {
+                    "type": "string",
+                    "format": "sha256_lowercase",
+                },
+                "environment": {
+                    "type": "string",
+                    "min_length": 1,
+                },
+                "clean_state": {
+                    "type": "string",
+                    "min_length": 1,
+                },
+                "steps": {
+                    "type": "array",
+                    "format": "numbered_list",
+                    "min_items": 1,
+                    "items": "nonempty_string",
+                },
+                "expected": {
+                    "type": "string",
+                    "min_length": 1,
+                },
+                "requested_judgment": {
+                    "type": "string",
+                    "min_length": 1,
+                },
+                "merge_hold": {
+                    "type": "boolean",
+                    "const": True,
+                },
+                "closure_hold": {
+                    "type": "boolean",
+                    "const": True,
+                },
+            },
+        },
+    },
+    "hold": {
+        "merge": True,
+        "issue_closure": True,
+    },
+    "completion": {
+        "post_result": True,
+        "post_evidence_link": True,
+        "comment": {
+            "required": True,
+            "required_per_cleanup_target": True,
+            "bind_to_activation_fields": ["case_id", "commit"],
+            "fields": {
+                "case_id": {
+                    "type": "string",
+                    "pattern": "^TC-[A-Z0-9]+(?:-[A-Z0-9]+)*-[0-9]{3}$",
+                },
+                "commit": {
+                    "type": "string",
+                    "format": "git_sha40_lowercase",
+                },
+                "actual_result": {
+                    "type": "string",
+                    "min_length": 1,
+                },
+                "evidence_url": {
+                    "type": "string",
+                    "format": "github_evidence_url",
+                    "accepted_shapes": [
+                        "repository_issue_comment",
+                        "repository_pull_comment",
+                        "repository_pull_review",
+                        "repository_actions_run",
+                        "repository_actions_artifact",
+                        "repository_blob_at_commit",
+                        "github_user_attachment",
+                    ],
+                },
+                "outcome": {
+                    "type": "string",
+                    "enum": ["accepted", "rejected"],
+                },
+            },
+            "cleanup_allowed_outcome": "accepted",
+            "resume_allowed_outcome": "accepted",
+            "rejected_outcome": {
+                "value": "rejected",
+                "retain_waiting_label": True,
+                "retain_temporary_assignee": True,
+                "retain_merge_hold": True,
+                "retain_closure_hold": True,
+                "remain_actionable": True,
+            },
+        },
+        "open_pr_head_validation": {
+            "source": "github_current_head_sha",
+            "field": "current_head_sha",
+            "type": "git_sha40_lowercase",
+            "must_equal_activation_commit": True,
+            "changed_head_requires_fresh_handoff": True,
+        },
+        "remove_label": "waiting-for-manual-testing",
+        "remove_label_from": [
+            "originating_issue",
+            "each_labeled_implementation_pr",
+        ],
+        "remove_temporary_assignee": "laqieer",
+        "remove_temporary_assignee_from": [
+            "originating_issue",
+            "each_labeled_implementation_pr",
+        ],
+        "unless_other_ownership": True,
+        "ownership_exception": {
+            "flag": "other_ownership",
+            "reason_field": "ownership_reason",
+            "reason_type": "nonempty_string",
+            "required_when_true": True,
+            "forbidden_when_false": True,
+        },
+        "resume_exact_candidate_gates": True,
+        "resume_merge": True,
+    },
+    "queue": {
+        "query": MANUAL_HANDOFF_QUERY,
+        "url": MANUAL_HANDOFF_QUERY_URL,
+        "notify_when_empty": False,
+        "live_cardinality": "dynamic",
+        "relationship_source": "github_linked_open_implementation_prs",
+        "item_schema": {
+            "required_fields": [
+                "kind",
+                "url",
+                "state",
+                "manual_pending",
+            ],
+            "kind_enum": ["issue", "pr"],
+            "state_enum": [
+                "open",
+                "closed",
+                "superseded",
+                "completed",
+            ],
+            "optional_boolean_fields": [
+                "received_label",
+                "other_ownership",
+                "label_removed",
+                "temporary_assignee_removed",
+            ],
+            "optional_string_fields": [
+                "current_head_sha",
+                "ownership_reason",
+            ],
+            "issue_url_pattern": (
+                "^https://github\\.com/laqieer/fireemblem8-expansion/"
+                "issues/[1-9][0-9]*$"
+            ),
+            "pr_url_pattern": (
+                "^https://github\\.com/laqieer/fireemblem8-expansion/"
+                "pull/[1-9][0-9]*$"
+            ),
+            "pr_origin_url_pattern": (
+                "^https://github\\.com/laqieer/fireemblem8-expansion/"
+                "issues/[1-9][0-9]*$"
+            ),
+        },
+        "relationship_schema": {
+            "required_fields": ["state", "issue_url", "pr_url"],
+            "state_enum": ["open", "closed"],
+            "issue_url_pattern": (
+                "^https://github\\.com/laqieer/fireemblem8-expansion/"
+                "issues/[1-9][0-9]*$"
+            ),
+            "pr_url_pattern": (
+                "^https://github\\.com/laqieer/fireemblem8-expansion/"
+                "pull/[1-9][0-9]*$"
+            ),
+        },
+        "issue_only_when_no_open_implementation_pr": True,
+        "require_every_linked_open_implementation_pr": True,
+        "exclude_closed_implementation_prs": True,
+    },
+}
+
+
+def compare_contract(actual, expected, path=()):
+    location = ".".join(path) or "<root>"
+    if type(actual) is not type(expected):
+        return [
+            f"{location}: expected {type(expected).__name__}, "
+            f"got {type(actual).__name__}"
+        ]
+    if isinstance(expected, dict):
+        violations = []
+        actual_keys = set(actual)
+        expected_keys = set(expected)
+        for missing in sorted(expected_keys - actual_keys):
+            violations.append(f"{location}: missing {missing}")
+        for extra in sorted(actual_keys - expected_keys):
+            violations.append(f"{location}: unexpected {extra}")
+        for key in sorted(actual_keys & expected_keys):
+            violations.extend(
+                compare_contract(actual[key], expected[key], path + (key,))
+            )
+        return violations
+    if isinstance(expected, list):
+        return compare_string_membership(actual, expected, location)
+    if actual != expected:
+        return [f"{location}: expected {expected!r}, got {actual!r}"]
+    return []
+
+
+def compare_string_membership(actual, expected, location):
+    violations = []
+    if any(not isinstance(item, str) for item in actual):
+        violations.append(f"{location}: entries must be strings")
+        return violations
+    if len(actual) != len(set(actual)):
+        violations.append(f"{location}: duplicate entries")
+    actual_set = set(actual)
+    expected_set = set(expected)
+    for missing in sorted(expected_set - actual_set):
+        violations.append(f"{location}: missing {missing}")
+    for extra in sorted(actual_set - expected_set):
+        violations.append(f"{location}: unexpected {extra}")
+    return violations
+
+
+def contract_paths(value, path=()):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = path + (key,)
+            yield child_path
+            yield from contract_paths(child, child_path)
+
+
+def contract_parent(value, path):
+    parent = value
+    for key in path[:-1]:
+        parent = parent[key]
+    return parent, path[-1]
+
+
+def wrong_contract_value(value):
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, str):
+        return value + "-wrong"
+    if isinstance(value, int):
+        return value + 1
+    if isinstance(value, list):
+        return value[:-1]
+    raise TypeError(f"unsupported contract leaf: {type(value).__name__}")
+
+
+def read_manual_handoff_contract():
+    return json.loads(MANUAL_HANDOFF_CONTRACT_PATH.read_text(encoding="utf-8"))
+
+
+GITHUB_EVIDENCE_PATTERNS = {
+    "repository_issue_comment": (
+        r"https://github\.com/laqieer/fireemblem8-expansion/issues/"
+        r"[1-9][0-9]*#issuecomment-[1-9][0-9]*"
+    ),
+    "repository_pull_comment": (
+        r"https://github\.com/laqieer/fireemblem8-expansion/pull/"
+        r"[1-9][0-9]*#issuecomment-[1-9][0-9]*"
+    ),
+    "repository_pull_review": (
+        r"https://github\.com/laqieer/fireemblem8-expansion/pull/"
+        r"[1-9][0-9]*#discussion_r[1-9][0-9]*"
+    ),
+    "repository_actions_run": (
+        r"https://github\.com/laqieer/fireemblem8-expansion/actions/runs/"
+        r"[1-9][0-9]*"
+    ),
+    "repository_actions_artifact": (
+        r"https://github\.com/laqieer/fireemblem8-expansion/actions/runs/"
+        r"[1-9][0-9]*/artifacts/[1-9][0-9]*"
+    ),
+    "repository_blob_at_commit": (
+        r"https://github\.com/laqieer/fireemblem8-expansion/blob/"
+        r"[0-9a-f]{40}/[^?#\s]+"
+    ),
+    "github_user_attachment": (
+        r"https://github\.com/user-attachments/assets/[0-9A-Za-z-]+"
+    ),
+}
+
+
+def github_evidence_shape(value, accepted_shapes):
+    if not isinstance(value, str):
+        return None
+    for shape in accepted_shapes:
+        pattern = GITHUB_EVIDENCE_PATTERNS.get(shape)
+        if pattern and re.fullmatch(pattern, value):
+            return shape
+    return None
+
+
+def validate_comment_field(name, value, specification):
+    violations = []
+    expected_type = specification["type"]
+    if expected_type == "string":
+        if not isinstance(value, str):
+            return [f"{name}: expected string"]
+        if specification.get("min_length") and not value.strip():
+            violations.append(f"{name}: expected nonempty text")
+        pattern = specification.get("pattern")
+        if pattern and re.fullmatch(pattern, value) is None:
+            violations.append(f"{name}: invalid pattern")
+        if "enum" in specification and value not in specification["enum"]:
+            violations.append(f"{name}: invalid enum value")
+        format_name = specification.get("format")
+        if format_name == "git_sha40_lowercase" and re.fullmatch(
+            r"[0-9a-f]{40}",
+            value,
+        ) is None:
+            violations.append(f"{name}: invalid Git SHA")
+        if format_name == "sha256_lowercase" and re.fullmatch(
+            r"[0-9a-f]{64}",
+            value,
+        ) is None:
+            violations.append(f"{name}: invalid SHA-256")
+        if format_name == "nonempty_path" and not value.strip():
+            violations.append(f"{name}: expected nonempty path")
+        if (
+            format_name == "github_evidence_url"
+            and github_evidence_shape(
+                value,
+                specification["accepted_shapes"],
+            )
+            is None
+        ):
+            violations.append(f"{name}: invalid GitHub evidence URL")
+    elif expected_type == "array":
+        if not isinstance(value, list):
+            return [f"{name}: expected array"]
+        if len(value) < specification.get("min_items", 0):
+            violations.append(f"{name}: too few items")
+        if specification.get("items") == "nonempty_string" and any(
+            not isinstance(item, str) or not item.strip()
+            for item in value
+        ):
+            violations.append(f"{name}: invalid item")
+    elif expected_type == "boolean":
+        if type(value) is not bool:
+            return [f"{name}: expected boolean"]
+        if "const" in specification and value is not specification["const"]:
+            violations.append(f"{name}: wrong constant")
+    else:
+        violations.append(f"{name}: unsupported field type")
+    return violations
+
+
+def validate_handoff_comment(contract, comment):
+    specification = contract["activation"]["comment"]
+    if not isinstance(comment, dict):
+        return ["comment must be an object"]
+    violations = []
+    field_specs = specification["fields"]
+    expected_keys = set(field_specs) | {"mention"}
+    for extra in sorted(set(comment) - expected_keys):
+        violations.append(f"unexpected comment field: {extra}")
+    if comment.get("mention") != specification["mention"]:
+        violations.append("comment missing exact mention")
+    for field, field_spec in field_specs.items():
+        if field not in comment:
+            violations.append(f"comment missing {field}")
+            continue
+        violations.extend(
+            validate_comment_field(field, comment[field], field_spec)
+        )
+    positive_path = comment.get("positive_artifact_path")
+    control_path = comment.get("control_artifact_path")
+    positive_hash = comment.get("positive_artifact_sha256")
+    control_hash = comment.get("control_artifact_sha256")
+    if all(
+        isinstance(value, str)
+        for value in (
+            positive_path,
+            control_path,
+            positive_hash,
+            control_hash,
+        )
+    ):
+        normalized_positive = posixpath.normpath(
+            positive_path.strip().replace("\\", "/")
+        )
+        normalized_control = posixpath.normpath(
+            control_path.strip().replace("\\", "/")
+        )
+        if (
+            normalized_positive,
+            positive_hash,
+        ) == (
+            normalized_control,
+            control_hash,
+        ):
+            violations.append("positive and control artifact identities match")
+    return violations
+
+
+def valid_handoff_comment(contract, steps=None):
+    comment = {
+        "case_id": "TC-WORKFLOW-MANUAL-HANDOFF-001",
+        "commit": "a" * 40,
+        "positive_artifact_path": "build/enabled/fireemblem8.gba",
+        "positive_artifact_sha256": "b" * 64,
+        "control_artifact_path": "build\\control\\fireemblem8.gba",
+        "control_artifact_sha256": "c" * 64,
+        "environment": "mGBA 0.10.2",
+        "clean_state": "Clean boot with default emulator settings",
+        "steps": steps or ["Open the artifact."],
+        "expected": "The documented presentation is correct.",
+        "requested_judgment": "Compare the one named visual criterion.",
+        "merge_hold": True,
+        "closure_hold": True,
+        "mention": contract["activation"]["comment"]["mention"],
+    }
+    return comment
+
+
+def validate_completion_comment(contract, comment, activation_comment):
+    specification = contract["completion"]["comment"]
+    if not isinstance(comment, dict):
+        return ["completion comment must be an object"]
+    violations = []
+    field_specs = specification["fields"]
+    for extra in sorted(set(comment) - set(field_specs)):
+        violations.append(f"unexpected completion comment field: {extra}")
+    for field, field_spec in field_specs.items():
+        if field not in comment:
+            violations.append(f"completion comment missing {field}")
+            continue
+        violations.extend(
+            validate_comment_field(field, comment[field], field_spec)
+        )
+    if not isinstance(activation_comment, dict):
+        violations.append("missing activation comment for completion binding")
+        return violations
+    for field in specification["bind_to_activation_fields"]:
+        if comment.get(field) != activation_comment.get(field):
+            violations.append(f"completion comment mismatches {field}")
+    if (
+        github_evidence_shape(
+            comment.get("evidence_url"),
+            field_specs["evidence_url"]["accepted_shapes"],
+        )
+        == "repository_blob_at_commit"
+        and f"/blob/{comment.get('commit')}/" not in comment["evidence_url"]
+    ):
+        violations.append("completion blob evidence mismatches commit")
+    return violations
+
+
+def valid_completion_comment(contract, activation_comment):
+    return {
+        "case_id": activation_comment["case_id"],
+        "commit": activation_comment["commit"],
+        "actual_result": "The requested manual judgment passed.",
+        "evidence_url": (
+            "https://github.com/user-attachments/assets/"
+            "11111111-2222-3333-4444-555555555555"
+        ),
+        "outcome": "accepted",
+    }
+
+
+def validate_manual_item_shape(contract, item, *, require_pr_origin=False):
+    if not isinstance(item, dict):
+        return ["item must be an object"]
+    schema = contract["queue"]["item_schema"]
+    violations = []
+    for field in schema["required_fields"]:
+        if field not in item:
+            violations.append(f"item missing {field}")
+    kind = item.get("kind")
+    state = item.get("state")
+    url = item.get("url")
+    if not isinstance(kind, str) or kind not in schema["kind_enum"]:
+        violations.append("item has invalid kind")
+    if not isinstance(state, str) or state not in schema["state_enum"]:
+        violations.append("item has invalid state")
+    if type(item.get("manual_pending")) is not bool:
+        violations.append("item has invalid manual_pending")
+    for field in schema["optional_boolean_fields"]:
+        if field in item and type(item[field]) is not bool:
+            violations.append(f"item has invalid {field}")
+    for field in schema["optional_string_fields"]:
+        if field in item and not isinstance(item[field], str):
+            violations.append(f"item has invalid {field}")
+    ownership = item.get("other_ownership")
+    ownership_reason = item.get("ownership_reason")
+    if ownership is True:
+        if not isinstance(ownership_reason, str) or not ownership_reason.strip():
+            violations.append("item is missing ownership_reason")
+    elif type(ownership) is bool or ownership is None:
+        if "ownership_reason" in item:
+            violations.append("item has unexpected ownership_reason")
+    if not isinstance(url, str):
+        violations.append("item has invalid URL type")
+    elif kind in schema["kind_enum"]:
+        pattern_key = "issue_url_pattern" if kind == "issue" else "pr_url_pattern"
+        if re.fullmatch(schema[pattern_key], url) is None:
+            violations.append(f"item has invalid {kind} URL")
+    if kind == "pr" and (require_pr_origin or "origin_url" in item):
+        if "origin_url" not in item:
+            violations.append("PR item missing origin_url")
+        elif not isinstance(item["origin_url"], str):
+            violations.append("PR item has invalid origin_url type")
+        elif re.fullmatch(
+            schema["pr_origin_url_pattern"],
+            item["origin_url"],
+        ) is None:
+            violations.append("PR item has malformed origin_url")
+    return violations
+
+
+def validate_relationship_records(contract, relationships):
+    schema = contract["queue"]["relationship_schema"]
+    required_fields = set(schema["required_fields"])
+    violations = []
+    valid = []
+    seen = set()
+    pr_relationships = {}
+    for index, relationship in enumerate(relationships):
+        label = f"relationship[{index}]"
+        if not isinstance(relationship, dict):
+            violations.append(f"{label}: expected object")
+            continue
+        actual_fields = set(relationship)
+        for missing in sorted(required_fields - actual_fields):
+            violations.append(f"{label}: missing {missing}")
+        for extra in sorted(actual_fields - required_fields):
+            violations.append(f"{label}: unexpected {extra}")
+        if actual_fields != required_fields:
+            continue
+        state = relationship["state"]
+        issue_url = relationship["issue_url"]
+        pr_url = relationship["pr_url"]
+        if not isinstance(state, str) or state not in schema["state_enum"]:
+            violations.append(f"{label}: invalid state")
+            continue
+        if (
+            not isinstance(issue_url, str)
+            or re.fullmatch(schema["issue_url_pattern"], issue_url) is None
+        ):
+            violations.append(f"{label}: invalid issue URL")
+            continue
+        if (
+            not isinstance(pr_url, str)
+            or re.fullmatch(schema["pr_url_pattern"], pr_url) is None
+        ):
+            violations.append(f"{label}: invalid PR URL")
+            continue
+        identity = (issue_url, pr_url, state)
+        if identity in seen:
+            violations.append(f"{label}: duplicate relationship")
+            continue
+        seen.add(identity)
+        previous = pr_relationships.get(pr_url)
+        if previous is not None and previous != (issue_url, state):
+            violations.append(f"{label}: conflicting relationship")
+            continue
+        pr_relationships[pr_url] = (issue_url, state)
+        valid.append(relationship)
+    return violations, tuple(valid)
+
+
+def completed_item_cleanup_violations(contract, item):
+    activation = contract["activation"]
+    violations = []
+    received_label = item.get("received_label")
+    other_ownership = item.get("other_ownership", False)
+    if (
+        "other_ownership" in item
+        and type(item["other_ownership"]) is not bool
+    ):
+        violations.append(f"invalid other_ownership history: {item['url']}")
+        other_ownership = False
+    if item.get("label") == activation["label"]:
+        violations.append(f"stale label: {item['url']}")
+    if (
+        item.get("assignee") == activation["assignee"]
+        and not other_ownership
+    ):
+        violations.append(f"stale assignee: {item['url']}")
+    if type(received_label) is not bool:
+        violations.append(f"invalid received_label history: {item['url']}")
+        return violations
+    if not received_label:
+        if item.get("label_removed") is True:
+            violations.append(f"impossible label removal: {item['url']}")
+        if item.get("temporary_assignee_removed") is True:
+            violations.append(
+                f"impossible temporary assignee removal: {item['url']}"
+            )
+        return violations
+    if item.get("label_removed") is not True:
+        violations.append(f"label removal not recorded: {item['url']}")
+    if not other_ownership:
+        if item.get("temporary_assignee_removed") is not True:
+            violations.append(
+                f"temporary assignee removal not recorded: {item['url']}"
+            )
+    return violations
+
+
+def validate_open_pr_head(contract, item):
+    if item.get("kind") != "pr" or item.get("state") != "open":
+        return []
+    specification = contract["completion"]["open_pr_head_validation"]
+    field = specification["field"]
+    current_head = item.get(field)
+    if not isinstance(current_head, str):
+        return [f"open PR missing typed {field}: {item['url']}"]
+    if re.fullmatch(r"[0-9a-f]{40}", current_head) is None:
+        return [f"open PR has malformed {field}: {item['url']}"]
+    activation_comment = item.get("comment")
+    if not isinstance(activation_comment, dict):
+        return [f"open PR lacks activation commit: {item['url']}"]
+    if (
+        specification["must_equal_activation_commit"]
+        and current_head != activation_comment.get("commit")
+    ):
+        return [f"open PR head changed after handoff: {item['url']}"]
+    return []
+
+
+def validate_live_manual_queue(contract, live_items, relationships):
+    violations = []
+    activation = contract["activation"]
+    queue = contract["queue"]
+    relationship_violations, valid_relationships = (
+        validate_relationship_records(contract, relationships)
+    )
+    violations.extend(relationship_violations)
+    seen_urls = set()
+    pending_open_items = []
+    for index, item in enumerate(live_items):
+        shape_violations = validate_manual_item_shape(
+            contract,
+            item,
+            require_pr_origin=True,
+        )
+        violations.extend(
+            f"item[{index}]: {finding}"
+            for finding in shape_violations
+        )
+        if shape_violations:
+            continue
+        url = item.get("url")
+        if url in seen_urls:
+            violations.append(f"duplicate item: {url}")
+        seen_urls.add(url)
+        state = item["state"]
+        pending = item["manual_pending"]
+        if state != "open" and pending:
+            violations.append(f"non-open item remains pending: {url}")
+        if not pending:
+            if item.get("label") == activation["label"]:
+                violations.append(f"stale label: {url}")
+            if (
+                item.get("assignee") == activation["assignee"]
+                and not item.get("other_ownership", False)
+            ):
+                violations.append(f"stale assignee: {url}")
+            violations.extend(completed_item_cleanup_violations(contract, item))
+        if state != "open":
+            continue
+        if not pending:
+            continue
+        pending_open_items.append(item)
+        if item.get("label") != activation["label"]:
+            violations.append(f"wrong label: {url}")
+        if item.get("assignee") != activation["assignee"]:
+            violations.append(f"wrong assignee: {url}")
+        if activation["comment"]["required_per_target"]:
+            violations.extend(
+                f"{url}: {finding}"
+                for finding in validate_handoff_comment(
+                    contract,
+                    item.get("comment"),
+                )
+            )
+
+    issues = {
+        item["url"]: item
+        for item in pending_open_items
+        if item.get("kind") == "issue"
+    }
+    prs = {}
+    for item in pending_open_items:
+        if item.get("kind") != "pr":
+            continue
+        origin_url = item["origin_url"]
+        prs.setdefault(origin_url, set()).add(item["url"])
+        if origin_url not in issues:
+            violations.append(f"orphan PR: {item['url']}")
+
+    discovered = {}
+    for relationship in valid_relationships:
+        if relationship.get("state") != "open":
+            continue
+        issue_url = relationship.get("issue_url")
+        pr_url = relationship.get("pr_url")
+        if issue_url in issues and pr_url:
+            discovered.setdefault(issue_url, set()).add(pr_url)
+
+    for issue_url in issues:
+        expected = discovered.get(issue_url, set())
+        actual = prs.get(issue_url, set())
+        if (
+            not expected
+            and actual
+            and queue["issue_only_when_no_open_implementation_pr"]
+        ):
+            violations.append(f"unexpected open PR for {issue_url}")
+        if queue["require_every_linked_open_implementation_pr"]:
+            for missing in sorted(expected - actual):
+                violations.append(f"missing open PR: {missing}")
+            for extra in sorted(actual - expected):
+                violations.append(f"unlinked open PR: {extra}")
+    return violations
+
+
+def validate_completion_cleanup(
+    contract,
+    item_history,
+    cleanup,
+    completion_comments,
+):
+    completion = contract["completion"]
+    violations = []
+    if not isinstance(completion_comments, dict):
+        return ["completion comments must be an object"]
+    valid_history = []
+    history_by_url = {}
+    for index, item in enumerate(item_history):
+        shape_violations = validate_manual_item_shape(contract, item)
+        violations.extend(
+            f"history[{index}]: {finding}"
+            for finding in shape_violations
+        )
+        if shape_violations:
+            continue
+        url = item["url"]
+        if url in history_by_url:
+            duplicate_kind = (
+                "duplicate"
+                if item == history_by_url[url]
+                else "contradictory duplicate"
+            )
+            violations.append(f"{duplicate_kind} history item: {url}")
+            continue
+        history_by_url[url] = item
+        valid_history.append(item)
+    labeled_urls = {
+        item["url"]
+        for item in valid_history
+        if item.get("received_label")
+        and item.get("kind") in {"issue", "pr"}
+    }
+    assignee_urls = {
+        item["url"]
+        for item in valid_history
+        if item.get("received_label")
+        and item.get("kind") in {"issue", "pr"}
+        and not item.get("other_ownership", False)
+    }
+    for item in valid_history:
+        violations.extend(completed_item_cleanup_violations(contract, item))
+        if item.get("received_label") and item.get("manual_pending") is not False:
+            violations.append(f"cleanup item remains pending: {item['url']}")
+        if item.get("received_label"):
+            violations.extend(validate_open_pr_head(contract, item))
+            violations.extend(
+                f"{item['url']}: activation {finding}"
+                for finding in validate_handoff_comment(
+                    contract,
+                    item.get("comment"),
+                )
+            )
+    expected_comment_urls = labeled_urls
+    actual_comment_urls = set(completion_comments)
+    for missing in sorted(expected_comment_urls - actual_comment_urls):
+        violations.append(f"missing completion comment: {missing}")
+    for extra in sorted(actual_comment_urls - expected_comment_urls):
+        violations.append(f"unrelated completion comment: {extra}")
+    if completion["comment"]["required_per_cleanup_target"]:
+        for url in sorted(expected_comment_urls & actual_comment_urls):
+            item = history_by_url[url]
+            completion_comment = completion_comments[url]
+            violations.extend(
+                f"{url}: {finding}"
+                for finding in validate_completion_comment(
+                    contract,
+                    completion_comment,
+                    item.get("comment"),
+                )
+            )
+            if (
+                completion_comment.get("outcome")
+                != completion["comment"]["cleanup_allowed_outcome"]
+            ):
+                violations.append(
+                    f"{url}: completion outcome does not permit cleanup"
+                )
+    if cleanup.get("label") != completion["remove_label"]:
+        violations.append("wrong cleanup label")
+    if cleanup.get("assignee") != completion["remove_temporary_assignee"]:
+        violations.append("wrong cleanup assignee")
+    expected_by_field = {
+        "remove_label_from": labeled_urls,
+        "remove_temporary_assignee_from": assignee_urls,
+    }
+    for field, expected_urls in expected_by_field.items():
+        values = cleanup.get(field)
+        if not isinstance(values, list):
+            violations.append(f"{field}: expected list")
+            continue
+        violations.extend(
+            compare_string_membership(
+                values,
+                sorted(expected_urls),
+                field,
+            )
+        )
+    return violations
+
+
+def validate_rejected_manual_state(
+    contract,
+    item_history,
+    rejection_comments,
+):
+    rejected = contract["completion"]["comment"]["rejected_outcome"]
+    activation = contract["activation"]
+    violations = []
+    seen_urls = set()
+    targets = []
+    for index, item in enumerate(item_history):
+        shape_violations = validate_manual_item_shape(contract, item)
+        violations.extend(
+            f"rejected history[{index}]: {finding}"
+            for finding in shape_violations
+        )
+        if shape_violations:
+            continue
+        url = item["url"]
+        if url in seen_urls:
+            violations.append(f"duplicate rejected history item: {url}")
+            continue
+        seen_urls.add(url)
+        if not item.get("received_label"):
+            continue
+        targets.append(item)
+        if item["state"] != "open":
+            violations.append(f"rejected item is not open: {url}")
+        if item["manual_pending"] is not True:
+            violations.append(f"rejected item is not actionable: {url}")
+        if item.get("label") != activation["label"]:
+            violations.append(f"rejected item lost waiting label: {url}")
+        if item.get("assignee") != activation["assignee"]:
+            violations.append(f"rejected item lost tester assignee: {url}")
+        if item.get("merge_hold") is not rejected["retain_merge_hold"]:
+            violations.append(f"rejected item lost merge hold: {url}")
+        if item.get("closure_hold") is not rejected["retain_closure_hold"]:
+            violations.append(f"rejected item lost closure hold: {url}")
+        if item.get("actionable") is not rejected["remain_actionable"]:
+            violations.append(f"rejected item is not actionable: {url}")
+        if item.get("label_removed") is True:
+            violations.append(f"rejected item removed label early: {url}")
+        if item.get("temporary_assignee_removed") is True:
+            violations.append(f"rejected item removed assignee early: {url}")
+
+    target_urls = {item["url"] for item in targets}
+    comment_urls = set(rejection_comments)
+    for missing in sorted(target_urls - comment_urls):
+        violations.append(f"missing rejected result: {missing}")
+    for extra in sorted(comment_urls - target_urls):
+        violations.append(f"unrelated rejected result: {extra}")
+    targets_by_url = {item["url"]: item for item in targets}
+    for url in sorted(target_urls & comment_urls):
+        item = targets_by_url[url]
+        comment = rejection_comments[url]
+        violations.extend(
+            f"{url}: {finding}"
+            for finding in validate_completion_comment(
+                contract,
+                comment,
+                item.get("comment"),
+            )
+        )
+        if comment.get("outcome") != rejected["value"]:
+            violations.append(f"{url}: result is not rejected")
     return violations
 
 
@@ -1743,6 +2902,1836 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         for requirement in template_contract:
             with self.subTest(surface="template", requirement=requirement):
                 self.assertIn(requirement, template)
+
+    def test_manual_handoff_json_contract_and_human_links(self):
+        contract = read_manual_handoff_contract()
+        self.assertEqual([], compare_contract(
+            contract,
+            EXPECTED_MANUAL_HANDOFF_CONTRACT,
+        ))
+
+        links = {
+            SKILL_PATH: "../../manual-testing-handoff.json",
+            CONTRIBUTING_PATH: ".github/manual-testing-handoff.json",
+            WORKFLOW_GOVERNANCE_PATH: (
+                "../../.github/manual-testing-handoff.json"
+            ),
+        }
+        for path, link in links.items():
+            with self.subTest(path=str(path)):
+                self.assertIn(link, path.read_text(encoding="utf-8"))
+
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        for path in (SKILL_PATH, CONTRIBUTING_PATH):
+            with self.subTest(surface=str(path), contract="human lifecycle"):
+                self.assertEqual(
+                    [],
+                    human_handoff_violations(
+                        path.read_text(encoding="utf-8")
+                    ),
+                )
+        self.assertEqual(
+            [],
+            human_handoff_violations(governance, governance=True),
+        )
+        case = "\n".join(
+            read_markdown_section(governance, MANUAL_HANDOFF_CASE_HEADING)
+        )
+        for heading in (
+            "Actions",
+            "Expected result",
+            "Negative control",
+            "Interactions and save compatibility",
+            "Automation",
+            "Cleanup and limitations",
+        ):
+            with self.subTest(heading=heading):
+                self.assertTrue(read_markdown_section(case, heading))
+        self.assertIn(
+            f"[`{MANUAL_HANDOFF_QUERY}`]({MANUAL_HANDOFF_QUERY_URL})",
+            case,
+        )
+
+        registry = json.loads(
+            TEST_CASE_REGISTRY_PATH.read_text(encoding="utf-8")
+        )
+        feature = next(
+            item
+            for item in registry["features"]
+            if item["id"] == "workflow-governance"
+        )
+        expected_cases = [
+            "TC-WORKFLOW-CI-WAIT-001",
+            "TC-WORKFLOW-MANUAL-HANDOFF-001",
+            "TC-WORKFLOW-STACKED-CI-001",
+        ]
+        self.assertEqual(
+            [],
+            compare_string_membership(
+                feature["required_cases"],
+                expected_cases,
+                "workflow-governance.required_cases",
+            ),
+        )
+        self.assertEqual(
+            [],
+            compare_string_membership(
+                list(reversed(feature["required_cases"])),
+                expected_cases,
+                "workflow-governance.required_cases",
+            ),
+        )
+        required_case_mutations = {
+            "missing": feature["required_cases"][:-1],
+            "extra": feature["required_cases"] + ["TC-WORKFLOW-OTHER-001"],
+            "duplicate": feature["required_cases"] + [
+                feature["required_cases"][0]
+            ],
+        }
+        for mutation, required_cases in required_case_mutations.items():
+            with self.subTest(required_cases=mutation):
+                self.assertTrue(
+                    compare_string_membership(
+                        required_cases,
+                        expected_cases,
+                        "workflow-governance.required_cases",
+                    )
+                )
+        indexed_case = next(
+            item
+            for item in registry["cases"]
+            if item["id"] == "TC-WORKFLOW-MANUAL-HANDOFF-001"
+        )
+        self.assertEqual(
+            indexed_case["document"],
+            "docs/test-cases/workflow-governance.md",
+        )
+        self.assertEqual(indexed_case["feature_id"], "workflow-governance")
+
+    def test_manual_handoff_human_lifecycle_mutations_fail_closed(self):
+        surfaces = (
+            (SKILL_PATH.read_text(encoding="utf-8"), False),
+            (CONTRIBUTING_PATH.read_text(encoding="utf-8"), False),
+            (
+                WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8"),
+                True,
+            ),
+        )
+        actions = (
+            "Require a material visual, audio, or UX criterion",
+            "Require automation to be unreliable for that criterion",
+            "Apply `waiting-for-manual-testing` to the originating issue and "
+            "each open implementation PR",
+            "Assign `laqieer` to those targets",
+            "Ping `@laqieer` in each comment",
+            "Block merge for the manual criterion",
+            "Block issue closure for the manual criterion",
+            "remove `waiting-for-manual-testing` from the originating issue "
+            "and every labeled implementation PR",
+            "Remove the temporary `laqieer` assignment",
+            "Resume exact-candidate gates and merge automatically",
+        )
+        contracted_reversals = {
+            actions[2]: (
+                "Don't apply `waiting-for-manual-testing` to the originating "
+                "issue and each open implementation PR"
+            ),
+            actions[3]: "Won't assign `laqieer` to those targets",
+            actions[4]: "Won't ping `@laqieer` in each comment",
+            actions[5]: "Can't block merge for the manual criterion",
+            actions[6]: "Can't block issue closure for the manual criterion",
+            actions[7]: (
+                "Can't remove `waiting-for-manual-testing` from the "
+                "originating issue and every labeled implementation PR"
+            ),
+            actions[8]: (
+                "Can't remove the temporary `laqieer` assignment"
+            ),
+            actions[9]: (
+                "Can't resume exact-candidate gates and merge automatically"
+            ),
+        }
+        for text, governance in surfaces:
+            for action in actions:
+                first, remainder = action.split(" ", 1)
+                mutations = {
+                    "removed": "",
+                    "negated": f"Do not {first.lower()} {remainder}",
+                    "softened": f"May {first.lower()} {remainder}",
+                }
+                for mutation, replacement in mutations.items():
+                    with self.subTest(
+                        governance=governance,
+                        action=action,
+                        mutation=mutation,
+                    ):
+                        mutated = replace_whitespace_phrase(
+                            text,
+                            action,
+                            replacement,
+                        )
+                        self.assertTrue(
+                            human_handoff_violations(
+                                mutated,
+                                governance=governance,
+                            )
+                        )
+            for action, contracted in contracted_reversals.items():
+                for apostrophe in ("'", "\u2019"):
+                    with self.subTest(
+                        governance=governance,
+                        action=action,
+                        contraction=contracted,
+                        apostrophe=apostrophe,
+                    ):
+                        mutated = replace_whitespace_phrase(
+                            text,
+                            action,
+                            contracted.replace("'", apostrophe),
+                        )
+                        self.assertTrue(
+                            human_handoff_violations(
+                                mutated,
+                                governance=governance,
+                            )
+                        )
+            for replacement in ("Before accepted evidence", "After rejected evidence"):
+                with self.subTest(
+                    governance=governance,
+                    completion_gate=replacement,
+                ):
+                    mutated = replace_whitespace_phrase(
+                        text,
+                        "After accepted evidence",
+                        replacement,
+                    )
+                    self.assertTrue(
+                        human_handoff_violations(
+                            mutated,
+                            governance=governance,
+                        )
+                    )
+            eligibility_reversals = (
+                "Allow an immaterial visual, audio, or UX criterion to trigger "
+                "the handoff.",
+                "Materiality may be optional for handoff activation.",
+            )
+            for replacement in eligibility_reversals:
+                with self.subTest(
+                    governance=governance,
+                    eligibility=replacement,
+                ):
+                    mutated = replace_whitespace_phrase(
+                        text,
+                        "Require a material visual, audio, or UX criterion",
+                        replacement,
+                    )
+                    self.assertTrue(
+                        human_handoff_violations(
+                            mutated,
+                            governance=governance,
+                        )
+                    )
+
+        for contraction in (
+            "don't",
+            "doesn't",
+            "isn't",
+            "aren't",
+            "won't",
+            "can't",
+            "cannot",
+            "couldn't",
+            "shouldn't",
+            "wouldn't",
+            "mustn't",
+            "hasn't",
+            "haven't",
+            "hadn't",
+        ):
+            spellings = (contraction,)
+            if "'" in contraction:
+                spellings = tuple(
+                    contraction.replace("'", apostrophe)
+                    for apostrophe in ("'", "\u2018", "\u2019", "\u02bc", "\uff07")
+                )
+            for spelling in spellings:
+                with self.subTest(normalized_contraction=spelling):
+                    normalized = normalize_policy(
+                        normalize_negative_contractions(spelling)
+                    ).split()
+                    self.assertIn("not", normalized)
+        affirmative = "It's required, we're ready, and they'll proceed."
+        self.assertEqual(
+            affirmative,
+            normalize_negative_contractions(affirmative),
+        )
+
+    def test_manual_handoff_contract_mutations_fail_closed(self):
+        contract = read_manual_handoff_contract()
+        for path in contract_paths(EXPECTED_MANUAL_HANDOFF_CONTRACT):
+            with self.subTest(path=".".join(path), mutation="missing"):
+                mutated = copy.deepcopy(contract)
+                parent, key = contract_parent(mutated, path)
+                del parent[key]
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+        for path in contract_paths(EXPECTED_MANUAL_HANDOFF_CONTRACT):
+            parent, key = contract_parent(
+                EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                path,
+            )
+            if isinstance(parent[key], dict):
+                continue
+            with self.subTest(path=".".join(path), mutation="wrong"):
+                mutated = copy.deepcopy(contract)
+                mutated_parent, mutated_key = contract_parent(mutated, path)
+                mutated_parent[mutated_key] = wrong_contract_value(
+                    mutated_parent[mutated_key]
+                )
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+
+        blocker_mutations = {
+            "instrumented artifact": (
+                "pre_handoff",
+                "artifact",
+                "instrumented",
+            ),
+            "missing positive role": (
+                "pre_handoff",
+                "required_roles",
+                ["control"],
+            ),
+            "missing control role": (
+                "pre_handoff",
+                "required_roles",
+                ["positive"],
+            ),
+            "missing path identity": (
+                "pre_handoff",
+                "required_identity_fields",
+                ["sha256"],
+            ),
+            "missing hash identity": (
+                "pre_handoff",
+                "required_identity_fields",
+                ["path"],
+            ),
+            "skip rendering": ("pre_handoff", "render_each", False),
+            "skip inspection": ("pre_handoff", "inspect_each", False),
+            "static UI evidence": (
+                "pre_handoff",
+                "static_ui",
+                {
+                    "evidence": "arbitrary_image",
+                    "source": "emulator",
+                    "deterministic": True,
+                },
+            ),
+            "static UI source": (
+                "pre_handoff",
+                "static_ui",
+                {
+                    "evidence": "screenshot",
+                    "source": "desktop",
+                    "deterministic": True,
+                },
+            ),
+            "static UI determinism": (
+                "pre_handoff",
+                "static_ui",
+                {
+                    "evidence": "screenshot",
+                    "source": "emulator",
+                    "deterministic": False,
+                },
+            ),
+            "A/V evidence": (
+                "pre_handoff",
+                "time_dependent_or_av",
+                {
+                    "evidence": "audio_only",
+                    "source": "emulator",
+                    "synchronized": True,
+                },
+            ),
+            "A/V source": (
+                "pre_handoff",
+                "time_dependent_or_av",
+                {
+                    "evidence": "av_clip",
+                    "source": "desktop",
+                    "synchronized": True,
+                },
+            ),
+            "A/V synchronization": (
+                "pre_handoff",
+                "time_dependent_or_av",
+                {
+                    "evidence": "av_clip",
+                    "source": "emulator",
+                    "synchronized": False,
+                },
+            ),
+            "permissive activation": ("activation", "required", False),
+            "activation label": (
+                "activation",
+                "label",
+                "other-label",
+            ),
+            "activation assignee": (
+                "activation",
+                "assignee",
+                "other-tester",
+            ),
+            "merge hold": ("hold", "merge", False),
+            "closure hold": ("hold", "issue_closure", False),
+            "cleanup label": (
+                "completion",
+                "remove_label",
+                "other-label",
+            ),
+            "cleanup target": (
+                "completion",
+                "remove_label_from",
+                ["originating_issue"],
+            ),
+            "cleanup assignee": (
+                "completion",
+                "remove_temporary_assignee",
+                "other-tester",
+            ),
+            "cleanup assignee target": (
+                "completion",
+                "remove_temporary_assignee_from",
+                ["originating_issue"],
+            ),
+            "resume gates": (
+                "completion",
+                "resume_exact_candidate_gates",
+                False,
+            ),
+            "resume merge": ("completion", "resume_merge", False),
+            "empty queue notification": (
+                "queue",
+                "notify_when_empty",
+                True,
+            ),
+            "static queue": ("queue", "live_cardinality", "empty"),
+            "relationship source": (
+                "queue",
+                "relationship_source",
+                "issue_declared_prs",
+            ),
+        }
+        for name, (section, key, value) in blocker_mutations.items():
+            with self.subTest(blocker=name):
+                mutated = copy.deepcopy(contract)
+                mutated[section][key] = value
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+        for value in ("true", 1, [], {}):
+            with self.subTest(materiality_type=type(value).__name__):
+                mutated = copy.deepcopy(contract)
+                mutated["eligibility"]["material"] = value
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+        comment_mutations = {
+            "wrong comment mention": ("mention", "@other-tester"),
+            "paragraph steps format": ("steps_format", "paragraph"),
+            "zero minimum steps": ("minimum_steps", 0),
+        }
+        for name, (key, value) in comment_mutations.items():
+            with self.subTest(blocker=name):
+                mutated = copy.deepcopy(contract)
+                mutated["activation"]["comment"][key] = value
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+        misplaced_mention = copy.deepcopy(contract)
+        misplaced_mention["activation"]["mention"] = (
+            misplaced_mention["activation"]["comment"].pop("mention")
+        )
+        self.assertTrue(compare_contract(
+            misplaced_mention,
+            EXPECTED_MANUAL_HANDOFF_CONTRACT,
+        ))
+        completion_outcome_mutations = {
+            "cleanup accepts rejected": ("cleanup_allowed_outcome", "rejected"),
+            "resume accepts rejected": ("resume_allowed_outcome", "rejected"),
+        }
+        for name, (key, value) in completion_outcome_mutations.items():
+            with self.subTest(blocker=name):
+                mutated = copy.deepcopy(contract)
+                mutated["completion"]["comment"][key] = value
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+        for field in (
+            "retain_merge_hold",
+            "retain_closure_hold",
+            "remain_actionable",
+        ):
+            with self.subTest(rejected_outcome=field):
+                mutated = copy.deepcopy(contract)
+                mutated["completion"]["comment"]["rejected_outcome"][
+                    field
+                ] = False
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+        old_relationship_key = copy.deepcopy(contract)
+        old_relationship_key["queue"].pop(
+            "require_every_linked_open_implementation_pr"
+        )
+        old_relationship_key["queue"][
+            "require_every_declared_open_implementation_pr"
+        ] = True
+        old_key_failures = compare_contract(
+            old_relationship_key,
+            EXPECTED_MANUAL_HANDOFF_CONTRACT,
+        )
+        self.assertTrue(any(
+            "missing require_every_linked_open_implementation_pr" in failure
+            for failure in old_key_failures
+        ))
+        self.assertTrue(any(
+            "unexpected require_every_declared_open_implementation_pr"
+            in failure
+            for failure in old_key_failures
+        ))
+
+        list_paths = [
+            path
+            for path in contract_paths(EXPECTED_MANUAL_HANDOFF_CONTRACT)
+            if isinstance(contract_parent(contract, path)[0][path[-1]], list)
+        ]
+        for path in list_paths:
+            expected_parent, expected_key = contract_parent(contract, path)
+            expected_values = expected_parent[expected_key]
+            with self.subTest(path=".".join(path), mutation="permutation"):
+                permuted = copy.deepcopy(contract)
+                parent, key = contract_parent(permuted, path)
+                parent[key] = list(reversed(parent[key]))
+                self.assertEqual([], compare_contract(
+                    permuted,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+            list_mutations = {
+                "missing member": expected_values[:-1],
+                "extra member": expected_values + ["unexpected_member"],
+                "duplicate member": expected_values + [expected_values[0]],
+            }
+            for mutation, values in list_mutations.items():
+                with self.subTest(path=".".join(path), mutation=mutation):
+                    mutated = copy.deepcopy(contract)
+                    parent, key = contract_parent(mutated, path)
+                    parent[key] = values
+                    failures = compare_contract(
+                        mutated,
+                        EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                    )
+                    self.assertTrue(failures)
+                    self.assertTrue(
+                        all(".".join(path) in failure for failure in failures)
+                    )
+        required_artifact_fields = {
+            "positive_artifact_path",
+            "positive_artifact_sha256",
+            "control_artifact_path",
+            "control_artifact_sha256",
+        }
+        for field in required_artifact_fields:
+            with self.subTest(comment_field=field):
+                mutated = copy.deepcopy(contract)
+                del mutated["activation"]["comment"]["fields"][field]
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
+
+    def test_manual_handoff_comment_payload_is_structured(self):
+        contract = read_manual_handoff_contract()
+        comment = valid_handoff_comment(contract)
+        self.assertEqual([], validate_handoff_comment(contract, comment))
+
+        multiple_steps = copy.deepcopy(comment)
+        multiple_steps["steps"] = [
+            "Open the artifact.",
+            "Perform the documented comparison.",
+        ]
+        self.assertEqual(
+            [],
+            validate_handoff_comment(contract, multiple_steps),
+        )
+        same_hash_distinct_paths = copy.deepcopy(comment)
+        same_hash_distinct_paths["control_artifact_sha256"] = (
+            same_hash_distinct_paths["positive_artifact_sha256"]
+        )
+        self.assertEqual(
+            [],
+            validate_handoff_comment(contract, same_hash_distinct_paths),
+        )
+        same_path_distinct_hashes = copy.deepcopy(comment)
+        same_path_distinct_hashes["control_artifact_path"] = (
+            "build\\enabled\\fireemblem8.gba"
+        )
+        self.assertEqual(
+            [],
+            validate_handoff_comment(contract, same_path_distinct_hashes),
+        )
+        same_identity = copy.deepcopy(comment)
+        same_identity["control_artifact_path"] = (
+            "build\\enabled\\.\\fireemblem8.gba"
+        )
+        same_identity["control_artifact_sha256"] = (
+            same_identity["positive_artifact_sha256"]
+        )
+        self.assertTrue(validate_handoff_comment(contract, same_identity))
+
+        invalid_comments = {
+            "missing mention": {
+                key: value for key, value in comment.items()
+                if key != "mention"
+            },
+            "wrong mention": dict(comment, mention="@other-tester"),
+            "mention only elsewhere": {
+                **{
+                    key: value for key, value in comment.items()
+                    if key != "mention"
+                },
+                "activation_mention": "@laqieer",
+            },
+            "paragraph steps": dict(
+                comment,
+                steps="Open the artifact and perform the comparison.",
+            ),
+            "empty steps": dict(comment, steps=[]),
+            "blank step": dict(comment, steps=["  "]),
+            "non-string step": dict(comment, steps=[1]),
+        }
+        for hold in ("merge_hold", "closure_hold"):
+            for value in (False, None, "true", 0):
+                invalid_comments[f"{hold}={value!r}"] = dict(
+                    comment,
+                    **{hold: value},
+                )
+        for scenario, invalid in invalid_comments.items():
+            with self.subTest(scenario=scenario):
+                self.assertTrue(
+                    validate_handoff_comment(contract, invalid)
+                )
+
+        for field in contract["activation"]["comment"]["fields"]:
+            with self.subTest(field=field, mutation="missing"):
+                missing = copy.deepcopy(comment)
+                del missing[field]
+                self.assertTrue(
+                    validate_handoff_comment(contract, missing)
+                )
+
+        wrong_types = (False, [], {}, 7)
+        for field, specification in contract["activation"]["comment"][
+            "fields"
+        ].items():
+            for value in wrong_types:
+                expected_type = specification["type"]
+                if (
+                    (expected_type == "boolean" and type(value) is bool)
+                    or (expected_type == "array" and isinstance(value, list))
+                ):
+                    continue
+                with self.subTest(
+                    field=field,
+                    mutation="wrong type",
+                    value=repr(value),
+                ):
+                    invalid = copy.deepcopy(comment)
+                    invalid[field] = value
+                    self.assertTrue(
+                        validate_handoff_comment(contract, invalid)
+                    )
+
+        formatted_mutations = {
+            "case ID missing TC prefix": ("case_id", "WORKFLOW-001"),
+            "case ID unstable suffix": ("case_id", "TC-WORKFLOW-MANUAL"),
+            "commit short": ("commit", "a" * 39),
+            "commit nonhex": ("commit", "g" * 40),
+            "commit uppercase": ("commit", "A" * 40),
+            "positive hash short": (
+                "positive_artifact_sha256",
+                "b" * 63,
+            ),
+            "positive hash nonhex": (
+                "positive_artifact_sha256",
+                "g" * 64,
+            ),
+            "positive hash uppercase": (
+                "positive_artifact_sha256",
+                "B" * 64,
+            ),
+            "control hash short": (
+                "control_artifact_sha256",
+                "c" * 63,
+            ),
+            "control hash nonhex": (
+                "control_artifact_sha256",
+                "z" * 64,
+            ),
+            "control hash uppercase": (
+                "control_artifact_sha256",
+                "C" * 64,
+            ),
+        }
+        for scenario, (field, value) in formatted_mutations.items():
+            with self.subTest(scenario=scenario):
+                invalid = copy.deepcopy(comment)
+                invalid[field] = value
+                self.assertTrue(
+                    validate_handoff_comment(contract, invalid)
+                )
+
+        for field in (
+            "positive_artifact_path",
+            "control_artifact_path",
+            "environment",
+            "clean_state",
+            "expected",
+            "requested_judgment",
+        ):
+            with self.subTest(field=field, mutation="whitespace"):
+                invalid = copy.deepcopy(comment)
+                invalid[field] = " \t "
+                self.assertTrue(
+                    validate_handoff_comment(contract, invalid)
+                )
+
+    def test_manual_handoff_live_queue_relationships(self):
+        contract = read_manual_handoff_contract()
+
+        def issue(url, **overrides):
+            item = {
+                "url": url,
+                "kind": "issue",
+                "state": "open",
+                "manual_pending": True,
+                "label": contract["activation"]["label"],
+                "assignee": contract["activation"]["assignee"],
+                "comment": valid_handoff_comment(contract),
+            }
+            item.update(overrides)
+            return item
+
+        def pull(url, origin_url, **overrides):
+            item = {
+                "url": url,
+                "kind": "pr",
+                "state": "open",
+                "manual_pending": True,
+                "label": contract["activation"]["label"],
+                "assignee": contract["activation"]["assignee"],
+                "comment": valid_handoff_comment(contract),
+                "origin_url": origin_url,
+            }
+            item.update(overrides)
+            return item
+
+        issue_url = (
+            "https://github.com/laqieer/fireemblem8-expansion/issues/171"
+        )
+        pr_one = "https://github.com/laqieer/fireemblem8-expansion/pull/172"
+        pr_two = "https://github.com/laqieer/fireemblem8-expansion/pull/173"
+        closed_pr = (
+            "https://github.com/laqieer/fireemblem8-expansion/pull/174"
+        )
+        for kind, url in (("issue", issue_url), ("pr", pr_one)):
+            for state in contract["queue"]["item_schema"]["state_enum"]:
+                with self.subTest(kind=kind, supported_state=state):
+                    self.assertEqual(
+                        [],
+                        validate_manual_item_shape(
+                            contract,
+                            {
+                                "kind": kind,
+                                "url": url,
+                                "state": state,
+                                "manual_pending": state == "open",
+                            },
+                        ),
+                    )
+        missing_origin_pr = pull(pr_one, issue_url)
+        del missing_origin_pr["origin_url"]
+        positive = {
+            "issue only": (
+                (issue(issue_url),),
+                (),
+            ),
+            "one open PR": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, issue_url),
+                ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
+            ),
+            "multiple open PRs and closed PR excluded": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, issue_url),
+                    pull(pr_two, issue_url),
+                    pull(
+                        closed_pr,
+                        issue_url,
+                        state="closed",
+                        manual_pending=False,
+                        received_label=True,
+                        label=None,
+                        assignee=None,
+                        label_removed=True,
+                        temporary_assignee_removed=True,
+                    ),
+                ),
+                (
+                    {
+                        "issue_url": issue_url,
+                        "pr_url": pr_one,
+                        "state": "open",
+                    },
+                    {
+                        "issue_url": issue_url,
+                        "pr_url": pr_two,
+                        "state": "open",
+                    },
+                    {
+                        "issue_url": issue_url,
+                        "pr_url": closed_pr,
+                        "state": "closed",
+                    },
+                ),
+            ),
+            "unrelated linked PR ignored": (
+                (issue(issue_url),),
+                ({
+                    "issue_url": (
+                        "https://github.com/laqieer/"
+                        "fireemblem8-expansion/issues/999"
+                    ),
+                    "pr_url": (
+                        "https://github.com/laqieer/"
+                        "fireemblem8-expansion/pull/999"
+                    ),
+                    "state": "open",
+                },),
+            ),
+            "only closed linked PR": (
+                (issue(issue_url),),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": closed_pr,
+                    "state": "closed",
+                },),
+            ),
+        }
+        for scenario, (items, relationships) in positive.items():
+            with self.subTest(scenario=scenario):
+                self.assertEqual(
+                    [],
+                    validate_live_manual_queue(
+                        contract,
+                        items,
+                        relationships,
+                    ),
+                )
+
+        negative = {
+            "orphan PR": (
+                (pull(pr_one, issue_url),),
+                (),
+            ),
+            "wrong-origin orphan": (
+                (
+                    issue(issue_url),
+                    pull(
+                        pr_one,
+                        "https://github.com/laqieer/"
+                        "fireemblem8-expansion/issues/999",
+                    ),
+                ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
+            ),
+            "missing PR origin": (
+                (
+                    issue(issue_url),
+                    missing_origin_pr,
+                ),
+                (),
+            ),
+            "null PR origin": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, None),
+                ),
+                (),
+            ),
+            "empty PR origin": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, ""),
+                ),
+                (),
+            ),
+            "list PR origin": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, []),
+                ),
+                (),
+            ),
+            "object PR origin": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, {}),
+                ),
+                (),
+            ),
+            "arbitrary PR origin": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, "not-a-url"),
+                ),
+                (),
+            ),
+            "PR URL used as origin": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, pr_two),
+                ),
+                (),
+            ),
+            "cross-repository PR origin": (
+                (
+                    issue(issue_url),
+                    pull(
+                        pr_one,
+                        "https://github.com/other/repository/issues/171",
+                    ),
+                ),
+                (),
+            ),
+            "missing independently discovered open PR": (
+                (issue(issue_url),),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
+            ),
+            "unlabeled independently discovered open PR": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, issue_url, label="other-label"),
+                ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
+            ),
+            "linked PR missing its own comment": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, issue_url, comment=None),
+                    pull(pr_two, issue_url),
+                ),
+                (
+                    {
+                        "issue_url": issue_url,
+                        "pr_url": pr_one,
+                        "state": "open",
+                    },
+                    {
+                        "issue_url": issue_url,
+                        "pr_url": pr_two,
+                        "state": "open",
+                    },
+                ),
+            ),
+            "linked PR has false hold": (
+                (
+                    issue(issue_url),
+                    pull(
+                        pr_one,
+                        issue_url,
+                        comment=dict(
+                            valid_handoff_comment(contract),
+                            merge_hold=False,
+                        ),
+                    ),
+                ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
+            ),
+            "self-declared list cannot hide linked PR": (
+                (issue(issue_url, open_pr_urls=[]),),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
+            ),
+            "unlinked open PR": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, issue_url),
+                ),
+                (),
+            ),
+            "duplicate": (
+                (issue(issue_url), issue(issue_url)),
+                (),
+            ),
+            "wrong label": (
+                (issue(issue_url, label="other-label"),),
+                (),
+            ),
+            "wrong assignee": (
+                (issue(issue_url, assignee="other-tester"),),
+                (),
+            ),
+            "stale label": (
+                (issue(
+                    issue_url,
+                    manual_pending=False,
+                    assignee=None,
+                ),),
+                (),
+            ),
+            "stale assignee": (
+                (issue(
+                    issue_url,
+                    manual_pending=False,
+                    label=None,
+                ),),
+                (),
+            ),
+            "string other ownership": (
+                (issue(issue_url, other_ownership="false"),),
+                (),
+            ),
+            "integer other ownership": (
+                (issue(issue_url, other_ownership=1),),
+                (),
+            ),
+            "integer received label": (
+                (issue(issue_url, received_label=0),),
+                (),
+            ),
+            "string received label": (
+                (issue(issue_url, received_label="false"),),
+                (),
+            ),
+            "completed issue cannot legitimize pending PR": (
+                (
+                    issue(
+                        issue_url,
+                        manual_pending=False,
+                        label=None,
+                        assignee=None,
+                    ),
+                    pull(pr_one, issue_url),
+                ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
+            ),
+            "completed PR cannot satisfy pending issue": (
+                (
+                    issue(issue_url),
+                    pull(
+                        pr_one,
+                        issue_url,
+                        manual_pending=False,
+                        label=None,
+                        assignee=None,
+                    ),
+                ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
+            ),
+            "closed labeled PR has stale cleanup state": (
+                (
+                    issue(issue_url),
+                    pull(
+                        closed_pr,
+                        issue_url,
+                        state="closed",
+                        manual_pending=False,
+                        received_label=True,
+                    ),
+                ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": closed_pr,
+                    "state": "closed",
+                },),
+            ),
+            "closed PR remains pending": (
+                (
+                    issue(issue_url),
+                    pull(
+                        closed_pr,
+                        issue_url,
+                        state="closed",
+                        manual_pending=True,
+                        label_removed=True,
+                        temporary_assignee_removed=True,
+                    ),
+                ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": closed_pr,
+                    "state": "closed",
+                },),
+            ),
+            "superseded PR has stale temporary assignee": (
+                (
+                    issue(issue_url),
+                    pull(
+                        pr_two,
+                        issue_url,
+                        state="superseded",
+                        manual_pending=False,
+                        received_label=True,
+                        label=None,
+                    ),
+                ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_two,
+                    "state": "closed",
+                },),
+            ),
+        }
+        for scenario, (items, relationships) in negative.items():
+            with self.subTest(scenario=scenario):
+                failures = validate_live_manual_queue(
+                    contract,
+                    items,
+                    relationships,
+                )
+                self.assertTrue(failures)
+                if "PR origin" in scenario:
+                    self.assertTrue(any(
+                        "PR item" in failure for failure in failures
+                    ))
+                if scenario == "wrong-origin orphan":
+                    self.assertTrue(any(
+                        "orphan PR" in failure for failure in failures
+                    ))
+
+        def mutate_item(item, field, value):
+            mutated = copy.deepcopy(item)
+            if value is _MISSING:
+                mutated.pop(field)
+            else:
+                mutated[field] = value
+            return mutated
+
+        base_issue = issue(issue_url)
+        item_shape_mutations = {
+            "missing kind": mutate_item(base_issue, "kind", _MISSING),
+            "null kind": mutate_item(base_issue, "kind", None),
+            "misspelled kind": mutate_item(base_issue, "kind", "pull_request"),
+            "non-string kind": mutate_item(base_issue, "kind", 1),
+            "missing URL": mutate_item(base_issue, "url", _MISSING),
+            "null URL": mutate_item(base_issue, "url", None),
+            "malformed URL": mutate_item(
+                base_issue,
+                "url",
+                "https://example.invalid/issues/171",
+            ),
+            "issue with PR URL": mutate_item(base_issue, "url", pr_one),
+            "missing state": mutate_item(base_issue, "state", _MISSING),
+            "null state": mutate_item(base_issue, "state", None),
+            "misspelled state": mutate_item(base_issue, "state", "pending"),
+            "non-string state": mutate_item(base_issue, "state", 1),
+            "missing pending flag": mutate_item(
+                base_issue,
+                "manual_pending",
+                _MISSING,
+            ),
+            "non-boolean pending flag": mutate_item(
+                base_issue,
+                "manual_pending",
+                "true",
+            ),
+            "PR with issue URL": {
+                **pull(pr_one, issue_url),
+                "url": issue_url,
+            },
+        }
+        for scenario, invalid_item in item_shape_mutations.items():
+            with self.subTest(item_shape=scenario):
+                failures = validate_live_manual_queue(
+                    contract,
+                    (invalid_item,),
+                    (),
+                )
+                self.assertTrue(
+                    any("item[0]" in failure for failure in failures)
+                )
+
+        relationship = {
+            "issue_url": issue_url,
+            "pr_url": pr_one,
+            "state": "open",
+        }
+        relationship_mutations = {}
+        for field in ("issue_url", "pr_url", "state"):
+            missing = dict(relationship)
+            missing.pop(field)
+            relationship_mutations[f"missing {field}"] = (missing,)
+            relationship_mutations[f"null {field}"] = ({
+                **relationship,
+                field: None,
+            },)
+        relationship_mutations.update({
+            "extra field": ({
+                **relationship,
+                "kind": "pr",
+            },),
+            "malformed issue URL": ({
+                **relationship,
+                "issue_url": "https://example.invalid/issues/171",
+            },),
+            "malformed PR URL": ({
+                **relationship,
+                "pr_url": "https://example.invalid/pull/172",
+            },),
+            "swapped URL kinds": ({
+                "issue_url": pr_one,
+                "pr_url": issue_url,
+                "state": "open",
+            },),
+            "misspelled state": ({
+                **relationship,
+                "state": "superseded",
+            },),
+            "non-string state": ({
+                **relationship,
+                "state": 1,
+            },),
+            "malformed closed relationship": ({
+                **relationship,
+                "state": "closed",
+                "pr_url": "not-a-url",
+            },),
+            "duplicate relationship": (
+                relationship,
+                dict(relationship),
+            ),
+            "conflicting issue relationship": (
+                relationship,
+                {
+                    **relationship,
+                    "issue_url": (
+                        "https://github.com/laqieer/"
+                        "fireemblem8-expansion/issues/999"
+                    ),
+                },
+            ),
+            "conflicting state relationship": (
+                relationship,
+                {
+                    **relationship,
+                    "state": "closed",
+                },
+            ),
+        })
+        for scenario, invalid_relationships in relationship_mutations.items():
+            with self.subTest(relationship_shape=scenario):
+                failures = validate_live_manual_queue(
+                    contract,
+                    (issue(issue_url), pull(pr_one, issue_url)),
+                    invalid_relationships,
+                )
+                self.assertTrue(
+                    any(
+                        "relationship[" in failure
+                        for failure in failures
+                    )
+                )
+
+    def test_manual_handoff_completion_cleans_labeled_history(self):
+        contract = read_manual_handoff_contract()
+        issue_url = (
+            "https://github.com/laqieer/fireemblem8-expansion/issues/171"
+        )
+        open_pr = "https://github.com/laqieer/fireemblem8-expansion/pull/172"
+        closed_pr = "https://github.com/laqieer/fireemblem8-expansion/pull/173"
+        superseded_pr = (
+            "https://github.com/laqieer/fireemblem8-expansion/pull/174"
+        )
+        never_labeled_pr = (
+            "https://github.com/laqieer/fireemblem8-expansion/pull/175"
+        )
+        activation_comment = valid_handoff_comment(contract)
+        history = (
+            {
+                "url": issue_url,
+                "kind": "issue",
+                "state": "open",
+                "manual_pending": False,
+                "received_label": True,
+                "label": None,
+                "assignee": None,
+                "label_removed": True,
+                "temporary_assignee_removed": True,
+                "comment": activation_comment,
+            },
+            {
+                "url": open_pr,
+                "kind": "pr",
+                "state": "open",
+                "manual_pending": False,
+                "received_label": True,
+                "label": None,
+                "assignee": None,
+                "label_removed": True,
+                "temporary_assignee_removed": True,
+                "comment": activation_comment,
+                "current_head_sha": "a" * 40,
+            },
+            {
+                "url": closed_pr,
+                "kind": "pr",
+                "state": "closed",
+                "manual_pending": False,
+                "received_label": True,
+                "label": None,
+                "assignee": None,
+                "label_removed": True,
+                "temporary_assignee_removed": True,
+                "comment": activation_comment,
+            },
+            {
+                "url": superseded_pr,
+                "kind": "pr",
+                "state": "superseded",
+                "manual_pending": False,
+                "received_label": True,
+                "label": None,
+                "assignee": "laqieer",
+                "other_ownership": True,
+                "ownership_reason": "Maintainer owns the superseded PR.",
+                "label_removed": True,
+                "temporary_assignee_removed": False,
+                "comment": activation_comment,
+            },
+            {
+                "url": never_labeled_pr,
+                "kind": "pr",
+                "state": "closed",
+                "manual_pending": False,
+                "received_label": False,
+                "label": None,
+                "assignee": "laqieer",
+                "other_ownership": True,
+                "ownership_reason": "Maintainer owns this historical PR.",
+                "label_removed": False,
+                "temporary_assignee_removed": False,
+            },
+        )
+        label_cleanup_urls = [
+            issue_url,
+            open_pr,
+            closed_pr,
+            superseded_pr,
+        ]
+        assignee_cleanup_urls = [
+            issue_url,
+            open_pr,
+            closed_pr,
+        ]
+        cleanup = {
+            "label": "waiting-for-manual-testing",
+            "assignee": "laqieer",
+            "remove_label_from": label_cleanup_urls,
+            "remove_temporary_assignee_from": assignee_cleanup_urls,
+        }
+        completion_comments = {
+            url: valid_completion_comment(contract, activation_comment)
+            for url in label_cleanup_urls
+        }
+
+        def cleanup_violations(
+            history_value=history,
+            cleanup_value=cleanup,
+            comments=completion_comments,
+        ):
+            return validate_completion_cleanup(
+                contract,
+                history_value,
+                cleanup_value,
+                comments,
+            )
+
+        self.assertEqual(
+            [],
+            cleanup_violations(),
+        )
+        issue_only_cleanup = {
+            "label": "waiting-for-manual-testing",
+            "assignee": "laqieer",
+            "remove_label_from": [issue_url],
+            "remove_temporary_assignee_from": [issue_url],
+        }
+        self.assertEqual(
+            [],
+            validate_completion_cleanup(
+                contract,
+                (history[0],),
+                issue_only_cleanup,
+                {issue_url: completion_comments[issue_url]},
+            ),
+        )
+
+        fresh_head_history = list(copy.deepcopy(history))
+        fresh_head_comment = valid_handoff_comment(contract)
+        fresh_head_comment["commit"] = "d" * 40
+        fresh_head_history[1]["comment"] = fresh_head_comment
+        fresh_head_history[1]["current_head_sha"] = "d" * 40
+        fresh_head_comments = copy.deepcopy(completion_comments)
+        fresh_head_comments[open_pr] = valid_completion_comment(
+            contract,
+            fresh_head_comment,
+        )
+        self.assertEqual(
+            [],
+            cleanup_violations(
+                history_value=fresh_head_history,
+                comments=fresh_head_comments,
+            ),
+        )
+
+        for scenario, current_head in {
+            "missing": _MISSING,
+            "null": None,
+            "short": "a" * 39,
+            "nonhex": "g" * 40,
+            "uppercase": "A" * 40,
+            "changed": "d" * 40,
+        }.items():
+            with self.subTest(open_pr_head=scenario):
+                invalid_history = list(copy.deepcopy(history))
+                if current_head is _MISSING:
+                    invalid_history[1].pop("current_head_sha")
+                else:
+                    invalid_history[1]["current_head_sha"] = current_head
+                self.assertTrue(
+                    cleanup_violations(history_value=invalid_history)
+                )
+        identical_history = history + (copy.deepcopy(history[1]),)
+        identical_failures = cleanup_violations(
+            history_value=identical_history,
+        )
+        self.assertTrue(any(
+            "duplicate history item" in failure
+            for failure in identical_failures
+        ))
+        contradictory_record = copy.deepcopy(history[1])
+        contradictory_record["received_label"] = False
+        contradictory_history = history + (contradictory_record,)
+        contradictory_failures = cleanup_violations(
+            history_value=contradictory_history,
+        )
+        self.assertTrue(any(
+            "contradictory duplicate history item" in failure
+            for failure in contradictory_failures
+        ))
+        accepted_evidence_urls = {
+            "issue comment": issue_url + "#issuecomment-123456",
+            "pull comment": open_pr + "#issuecomment-123456",
+            "pull review": open_pr + "#discussion_r123456",
+            "Actions run": (
+                "https://github.com/laqieer/fireemblem8-expansion/"
+                "actions/runs/123456"
+            ),
+            "Actions artifact": (
+                "https://github.com/laqieer/fireemblem8-expansion/"
+                "actions/runs/123456/artifacts/789"
+            ),
+            "commit-pinned blob": (
+                "https://github.com/laqieer/fireemblem8-expansion/blob/"
+                + "a" * 40
+                + "/reports/manual-result.json"
+            ),
+            "user attachment": (
+                "https://github.com/user-attachments/assets/"
+                "11111111-2222-3333-4444-555555555555"
+            ),
+        }
+        for shape, evidence_url in accepted_evidence_urls.items():
+            with self.subTest(evidence_shape=shape):
+                valid_evidence = copy.deepcopy(completion_comments)
+                valid_evidence[issue_url]["evidence_url"] = evidence_url
+                self.assertEqual(
+                    [],
+                    cleanup_violations(comments=valid_evidence),
+                )
+
+        missing_completion_comment = copy.deepcopy(completion_comments)
+        del missing_completion_comment[closed_pr]
+        self.assertTrue(cleanup_violations(
+            comments=missing_completion_comment,
+        ))
+        unrelated_completion_comment = copy.deepcopy(completion_comments)
+        unrelated_completion_comment[never_labeled_pr] = (
+            valid_completion_comment(contract, activation_comment)
+        )
+        self.assertTrue(cleanup_violations(
+            comments=unrelated_completion_comment,
+        ))
+
+        completion_payload_mutations = {
+            "blank result": ("actual_result", " "),
+            "result boolean": ("actual_result", False),
+            "result list": ("actual_result", []),
+            "result object": ("actual_result", {}),
+            "result integer": ("actual_result", 1),
+            "evidence null": ("evidence_url", None),
+            "evidence list": ("evidence_url", []),
+            "evidence object": ("evidence_url", {}),
+            "evidence integer": ("evidence_url", 1),
+            "evidence malformed": ("evidence_url", "not-a-url"),
+            "bare issue page": ("evidence_url", issue_url),
+            "bare PR page": ("evidence_url", open_pr),
+            "evidence unrelated": (
+                "evidence_url",
+                "https://github.com/other/repository/issues/1",
+            ),
+            "unsupported issue anchor": (
+                "evidence_url",
+                issue_url + "#discussion_r123456",
+            ),
+            "unsupported PR anchor": (
+                "evidence_url",
+                open_pr + "#files",
+            ),
+            "blob commit mismatch": (
+                "evidence_url",
+                "https://github.com/laqieer/fireemblem8-expansion/blob/"
+                + "d" * 40
+                + "/reports/manual-result.json",
+            ),
+            "case mismatch": ("case_id", "TC-WORKFLOW-OTHER-001"),
+            "commit mismatch": ("commit", "d" * 40),
+            "rejected outcome": ("outcome", "rejected"),
+            "unsupported outcome": ("outcome", "failed"),
+            "outcome null": ("outcome", None),
+            "outcome boolean": ("outcome", False),
+            "outcome list": ("outcome", []),
+            "outcome object": ("outcome", {}),
+            "outcome integer": ("outcome", 1),
+        }
+        for scenario, (field, value) in completion_payload_mutations.items():
+            with self.subTest(completion_payload=scenario):
+                mutated_comments = copy.deepcopy(completion_comments)
+                mutated_comments[closed_pr][field] = value
+                self.assertTrue(cleanup_violations(
+                    comments=mutated_comments,
+                ))
+        for field in contract["completion"]["comment"]["fields"]:
+            with self.subTest(completion_payload=f"missing {field}"):
+                mutated_comments = copy.deepcopy(completion_comments)
+                del mutated_comments[closed_pr][field]
+                self.assertTrue(cleanup_violations(
+                    comments=mutated_comments,
+                ))
+        missing_activation_binding = copy.deepcopy(history)
+        del missing_activation_binding[2]["comment"]
+        self.assertTrue(cleanup_violations(
+            history_value=missing_activation_binding,
+        ))
+        for omitted_url in (closed_pr, superseded_pr):
+            with self.subTest(omitted=omitted_url):
+                mutated = copy.deepcopy(cleanup)
+                mutated["remove_label_from"].remove(omitted_url)
+                self.assertTrue(cleanup_violations(cleanup_value=mutated))
+        missing_closed_assignee = copy.deepcopy(cleanup)
+        missing_closed_assignee["remove_temporary_assignee_from"].remove(
+            closed_pr
+        )
+        self.assertTrue(cleanup_violations(
+            cleanup_value=missing_closed_assignee,
+        ))
+        independent_owner_cleanup = copy.deepcopy(cleanup)
+        independent_owner_cleanup["remove_temporary_assignee_from"].append(
+            superseded_pr
+        )
+        self.assertTrue(cleanup_violations(
+            cleanup_value=independent_owner_cleanup,
+        ))
+        extra = copy.deepcopy(cleanup)
+        extra["remove_label_from"].append(never_labeled_pr)
+        self.assertTrue(cleanup_violations(cleanup_value=extra))
+        duplicate = copy.deepcopy(cleanup)
+        duplicate["remove_label_from"].append(issue_url)
+        self.assertTrue(cleanup_violations(cleanup_value=duplicate))
+
+        stale_closed = copy.deepcopy(history)
+        stale_closed[2]["label"] = "waiting-for-manual-testing"
+        self.assertTrue(cleanup_violations(history_value=stale_closed))
+        stale_superseded = copy.deepcopy(history)
+        stale_superseded[3]["label"] = "waiting-for-manual-testing"
+        self.assertTrue(cleanup_violations(history_value=stale_superseded))
+        missing_label_marker = copy.deepcopy(history)
+        del missing_label_marker[2]["label_removed"]
+        self.assertTrue(cleanup_violations(history_value=missing_label_marker))
+        missing_assignee_marker = copy.deepcopy(history)
+        del missing_assignee_marker[2]["temporary_assignee_removed"]
+        self.assertTrue(cleanup_violations(
+            history_value=missing_assignee_marker,
+        ))
+        missing_completed_state = copy.deepcopy(history)
+        del missing_completed_state[2]["manual_pending"]
+        self.assertTrue(cleanup_violations(
+            history_value=missing_completed_state,
+        ))
+        unowned_assignee = copy.deepcopy(history)
+        unowned_assignee[3]["other_ownership"] = False
+        unowned_assignee[3].pop("ownership_reason")
+        self.assertTrue(cleanup_violations(history_value=unowned_assignee))
+        for scenario, ownership_reason in {
+            "missing": _MISSING,
+            "blank": " ",
+            "boolean": False,
+            "list": [],
+            "object": {},
+            "integer": 1,
+        }.items():
+            with self.subTest(ownership_reason=scenario):
+                invalid_history = list(copy.deepcopy(history))
+                if ownership_reason is _MISSING:
+                    invalid_history[3].pop("ownership_reason")
+                else:
+                    invalid_history[3]["ownership_reason"] = ownership_reason
+                self.assertTrue(
+                    cleanup_violations(history_value=invalid_history)
+                )
+        unexpected_reason = list(copy.deepcopy(history))
+        unexpected_reason[1]["ownership_reason"] = "Unexpected owner"
+        self.assertTrue(cleanup_violations(
+            history_value=unexpected_reason,
+        ))
+        false_history_with_current_label = copy.deepcopy(history)
+        false_history_with_current_label[4]["label"] = (
+            "waiting-for-manual-testing"
+        )
+        self.assertTrue(cleanup_violations(
+            history_value=false_history_with_current_label,
+        ))
+        false_history_with_label_removal = copy.deepcopy(history)
+        false_history_with_label_removal[4]["label_removed"] = True
+        self.assertTrue(cleanup_violations(
+            history_value=false_history_with_label_removal,
+        ))
+        false_history_with_assignee_removal = copy.deepcopy(history)
+        false_history_with_assignee_removal[4][
+            "temporary_assignee_removed"
+        ] = True
+        self.assertTrue(cleanup_violations(
+            history_value=false_history_with_assignee_removal,
+        ))
+        false_history_with_stale_assignee = copy.deepcopy(history)
+        false_history_with_stale_assignee[4]["other_ownership"] = False
+        self.assertTrue(cleanup_violations(
+            history_value=false_history_with_stale_assignee,
+        ))
+        missing_received_history = copy.deepcopy(history)
+        del missing_received_history[4]["received_label"]
+        self.assertTrue(cleanup_violations(
+            history_value=missing_received_history,
+        ))
+
+        history_shape_mutations = {}
+        for field, values in {
+            "kind": (_MISSING, None, "pull_request", 1),
+            "url": (
+                _MISSING,
+                None,
+                "https://example.invalid/issues/171",
+                open_pr,
+            ),
+            "state": (_MISSING, None, "pending", 1),
+            "manual_pending": (_MISSING, None, "false", 0),
+            "received_label": ("false", 0),
+            "other_ownership": ("false", 1),
+            "label_removed": ("true", 1),
+            "temporary_assignee_removed": ("true", 1),
+        }.items():
+            for value in values:
+                mutated = copy.deepcopy(history[0])
+                if value is _MISSING:
+                    mutated.pop(field)
+                    label = f"missing {field}"
+                else:
+                    mutated[field] = value
+                    label = f"{field}={value!r}"
+                history_shape_mutations[label] = mutated
+
+        for scenario, invalid_item in history_shape_mutations.items():
+            with self.subTest(history_shape=scenario):
+                invalid_history = list(copy.deepcopy(history))
+                invalid_history[0] = invalid_item
+                failures = cleanup_violations(
+                    history_value=invalid_history,
+                )
+                self.assertTrue(
+                    any("history[0]" in failure for failure in failures)
+                )
+
+    def test_manual_handoff_rejected_state_remains_actionable(self):
+        contract = read_manual_handoff_contract()
+        issue_url = (
+            "https://github.com/laqieer/fireemblem8-expansion/issues/171"
+        )
+        pr_url = "https://github.com/laqieer/fireemblem8-expansion/pull/172"
+        activation_comment = valid_handoff_comment(contract)
+
+        def rejected_item(url, kind, **overrides):
+            item = {
+                "url": url,
+                "kind": kind,
+                "state": "open",
+                "manual_pending": True,
+                "received_label": True,
+                "label": "waiting-for-manual-testing",
+                "assignee": "laqieer",
+                "merge_hold": True,
+                "closure_hold": True,
+                "actionable": True,
+                "label_removed": False,
+                "temporary_assignee_removed": False,
+                "comment": activation_comment,
+            }
+            if kind == "pr":
+                item["origin_url"] = issue_url
+                item["current_head_sha"] = activation_comment["commit"]
+            item.update(overrides)
+            return item
+
+        history = (
+            rejected_item(issue_url, "issue"),
+            rejected_item(pr_url, "pr"),
+        )
+        rejection_comments = {
+            item["url"]: {
+                **valid_completion_comment(contract, activation_comment),
+                "actual_result": "The requested judgment failed.",
+                "outcome": "rejected",
+            }
+            for item in history
+        }
+        self.assertEqual(
+            [],
+            validate_rejected_manual_state(
+                contract,
+                history,
+                rejection_comments,
+            ),
+        )
+
+        state_mutations = {
+            "label removed": ("label", None),
+            "label cleanup recorded": ("label_removed", True),
+            "assignee removed": ("assignee", None),
+            "assignee cleanup recorded": (
+                "temporary_assignee_removed",
+                True,
+            ),
+            "merge hold missing": ("merge_hold", False),
+            "closure hold missing": ("closure_hold", False),
+            "not actionable": ("actionable", False),
+            "not pending": ("manual_pending", False),
+        }
+        for scenario, (field, value) in state_mutations.items():
+            with self.subTest(rejected_state=scenario):
+                invalid_history = list(copy.deepcopy(history))
+                invalid_history[1][field] = value
+                self.assertTrue(
+                    validate_rejected_manual_state(
+                        contract,
+                        invalid_history,
+                        rejection_comments,
+                    )
+                )
+
+        missing_result = dict(rejection_comments)
+        del missing_result[pr_url]
+        self.assertTrue(validate_rejected_manual_state(
+            contract,
+            history,
+            missing_result,
+        ))
+        accepted_result = copy.deepcopy(rejection_comments)
+        accepted_result[pr_url]["outcome"] = "accepted"
+        self.assertTrue(validate_rejected_manual_state(
+            contract,
+            history,
+            accepted_result,
+        ))
+        malformed_result = copy.deepcopy(rejection_comments)
+        malformed_result[pr_url]["actual_result"] = " "
+        self.assertTrue(validate_rejected_manual_state(
+            contract,
+            history,
+            malformed_result,
+        ))
+
+    def test_manual_handoff_case_subsections_do_not_leak(self):
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        case = "\n".join(
+            read_markdown_section(governance, MANUAL_HANDOFF_CASE_HEADING)
+        )
+        self.assertIn("### Actions", governance)
+        mutated_case = case.replace(
+            "### Actions",
+            "### Missing actions",
+            1,
+        )
+        with self.assertRaisesRegex(
+            AssertionError,
+            "expected exactly one Markdown section",
+        ):
+            read_markdown_section(mutated_case, "Actions")
 
 
 if __name__ == "__main__":

@@ -64,6 +64,99 @@ No cleanup is required. The test validates repository policy text and its
 fail-closed fixtures; it does not dispatch or wait for a live GitHub workflow
 and does not grant push credentials.
 
+## TC-WORKFLOW-MANUAL-HANDOFF-001: Surface actionable manual testing and resume automatically
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #169](https://github.com/laqieer/fireemblem8-expansion/issues/169).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3; no GitHub token, active manual hold, ROM, or emulator is required to
+  validate the protocol.
+- **Prerequisites and clean starting state:** start at the repository root with
+  [the canonical JSON contract](../../.github/manual-testing-handoff.json),
+  development-workflow skill, contributor guide, this case, and registry
+  unchanged.
+
+### Actions
+
+1. Parse `.github/manual-testing-handoff.json` and validate every required key,
+   value, enum, boolean, target, comment field, and the separately identified
+   positive/control artifact roles with deterministic emulator screenshot or
+   synchronized emulator A/V evidence. Validate the comment's exact
+   `@laqieer` mention, stable case ID, full Git SHA, artifact paths and SHA-256
+   values, nonempty text, numbered steps, and true merge/closure holds.
+2. Exercise the positive issue-only, one-PR, and multiple-open-PR queue shapes,
+   using an independent GitHub-linked PR relationship map. Exercise malformed
+   item kind/URL/state, label, assignee, per-item comment, relationship, and
+   stale-state controls before filtering closed relationships.
+3. Exercise completion cleanup with closed and superseded labeled PR history,
+   separate label/assignee cleanup sets, retained independent ownership, and a
+   typed result/evidence comment bound to the original case ID and commit.
+   Accept only concrete same-repository comment, review, run, artifact, or
+   commit-pinned blob links, plus GitHub user attachments. Verify each open PR's
+   current head still matches the tested activation commit.
+4. Exercise rejected evidence while the label, temporary assignee, merge and
+   closure holds, and actionable state all remain active.
+5. Run
+   `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
+6. Open the documented queue:
+   [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).
+   When it is empty, do not schedule notifications or comments.
+
+### Expected result
+
+The focused suite accepts the canonical JSON and its supported queue shapes.
+Human guidance links to that file without duplicating machine behavior.
+
+### Lifecycle summary
+
+- **Eligibility:** Require a material visual, audio, or UX criterion. Require
+  automation to be unreliable for that criterion.
+- **Activation:** Apply `waiting-for-manual-testing` to the originating issue
+  and each open implementation PR. Assign `laqieer` to those targets. Ping
+  `@laqieer` in each comment.
+- **Hold:** Block merge for the manual criterion. Block issue closure for the
+  manual criterion.
+- **Completion:** After accepted evidence, remove
+  `waiting-for-manual-testing` from the originating issue and every labeled
+  implementation PR. Remove the temporary `laqieer` assignment unless
+  independently owned. Resume exact-candidate gates and merge automatically.
+  A rejected result retains both holds and remains actionable.
+
+### Negative control
+
+Every leaf mutation in the structured contract fails, including a missing
+artifact role/path/hash/emulator/determinism/synchronization/inspection field,
+instrumented artifacts, missing or optional materiality, missing or misplaced
+mention, invalid or empty numbered steps, false or mistyped comment holds,
+missing per-item comments, permissive activation, wrong identifiers or targets,
+disabled holds, incomplete historical cleanup, missing or mismatched completion
+evidence, malformed optional booleans, duplicate artifact identities, bare or
+unrelated evidence pages, malformed PR origins, stale open-PR heads, ownership
+exceptions without a reason, rejected cleanup/resumption, premature
+rejected-state cleanup, empty-queue notifications, and invalid independently
+discovered issue/PR relationships. Reversing any lifecycle summary action or
+removing this case's own subsection also fails locally.
+
+### Interactions and save compatibility
+
+The protocol depends on GitHub issues, pull requests, relationships, labels,
+assignments, and comments when a real hold is active. Live queue contents
+remain release-time evidence rather than tracked state. Cleanup history includes
+every labeled PR after closure or supersession; independent ownership may retain
+an assignee but never the handoff label. It changes no save, generated data,
+localization, ROM/RAM, debug/release, or archival behavior.
+
+### Automation
+
+`python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
+parses the JSON contract and exercises its schema, every semantic leaf,
+supported queue shapes, and fail-closed controls.
+
+### Cleanup and limitations
+
+This source-only case changes no remote item and cannot make the subjective
+judgment itself. Live queue state and evidence remain in the relevant PR and
+issue rather than this repository.
 ## TC-WORKFLOW-STACKED-CI-001: Run exact Build CI on a genuine stacked PR base
 
 - **Feature / originating issue:** `workflow-governance` /
