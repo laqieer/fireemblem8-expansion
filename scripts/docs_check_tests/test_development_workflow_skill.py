@@ -570,6 +570,43 @@ HUMAN_POLICY_SOFTENERS = {
     "optionally",
     "prohibited",
 }
+NEGATIVE_CONTRACTIONS = {
+    "aren't": "are not",
+    "can't": "can not",
+    "couldn't": "could not",
+    "didn't": "did not",
+    "doesn't": "does not",
+    "don't": "do not",
+    "hadn't": "had not",
+    "hasn't": "has not",
+    "haven't": "have not",
+    "isn't": "is not",
+    "mustn't": "must not",
+    "needn't": "need not",
+    "shan't": "shall not",
+    "shouldn't": "should not",
+    "wasn't": "was not",
+    "weren't": "were not",
+    "won't": "will not",
+    "wouldn't": "would not",
+}
+
+
+def normalize_negative_contractions(text):
+    normalized = text.translate(str.maketrans({
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u02bc": "'",
+        "\uff07": "'",
+    }))
+    for contraction, expansion in NEGATIVE_CONTRACTIONS.items():
+        normalized = re.sub(
+            rf"\b{re.escape(contraction)}\b",
+            expansion,
+            normalized,
+            flags=re.IGNORECASE,
+        )
+    return re.sub(r"\bcannot\b", "can not", normalized, flags=re.IGNORECASE)
 
 
 def parse_labeled_summary(text, heading):
@@ -603,7 +640,9 @@ def human_handoff_violations(text, governance=False):
         violations.append("lifecycle fields are incomplete")
     for field, actions in HUMAN_LIFECYCLE_ACTIONS.items():
         clauses = [
-            set(normalize_policy(clause).split())
+            set(normalize_policy(
+                normalize_negative_contractions(clause)
+            ).split())
             for clause in re.split(r"[.;]+", fields.get(field, ""))
             if clause.strip()
         ]
@@ -633,7 +672,9 @@ def human_handoff_violations(text, governance=False):
         if exact not in completion:
             violations.append(f"Completion: missing {exact}")
 
-    completion_words = normalize_policy(completion).split()
+    completion_words = normalize_policy(
+        normalize_negative_contractions(completion)
+    ).split()
     try:
         after = completion_words.index("after")
         accepted = completion_words.index("accepted")
@@ -2818,6 +2859,26 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Remove the temporary `laqieer` assignment",
             "Resume exact-candidate gates and merge automatically",
         )
+        contracted_reversals = {
+            actions[0]: (
+                "Don't apply `waiting-for-manual-testing` to the originating "
+                "issue and each open implementation PR"
+            ),
+            actions[1]: "Won't assign `laqieer` to those targets",
+            actions[2]: "Won't ping `@laqieer` in each comment",
+            actions[3]: "Can't block merge for the manual criterion",
+            actions[4]: "Can't block issue closure for the manual criterion",
+            actions[5]: (
+                "Can't remove `waiting-for-manual-testing` from the "
+                "originating issue and every labeled implementation PR"
+            ),
+            actions[6]: (
+                "Can't remove the temporary `laqieer` assignment"
+            ),
+            actions[7]: (
+                "Can't resume exact-candidate gates and merge automatically"
+            ),
+        }
         for text, governance in surfaces:
             for action in actions:
                 first, remainder = action.split(" ", 1)
@@ -2843,6 +2904,25 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                                 governance=governance,
                             )
                         )
+            for action, contracted in contracted_reversals.items():
+                for apostrophe in ("'", "\u2019"):
+                    with self.subTest(
+                        governance=governance,
+                        action=action,
+                        contraction=contracted,
+                        apostrophe=apostrophe,
+                    ):
+                        mutated = replace_whitespace_phrase(
+                            text,
+                            action,
+                            contracted.replace("'", apostrophe),
+                        )
+                        self.assertTrue(
+                            human_handoff_violations(
+                                mutated,
+                                governance=governance,
+                            )
+                        )
             for replacement in ("Before accepted evidence", "After rejected evidence"):
                 with self.subTest(
                     governance=governance,
@@ -2859,6 +2939,40 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                             governance=governance,
                         )
                     )
+
+        for contraction in (
+            "don't",
+            "doesn't",
+            "isn't",
+            "aren't",
+            "won't",
+            "can't",
+            "cannot",
+            "couldn't",
+            "shouldn't",
+            "wouldn't",
+            "mustn't",
+            "hasn't",
+            "haven't",
+            "hadn't",
+        ):
+            spellings = (contraction,)
+            if "'" in contraction:
+                spellings = tuple(
+                    contraction.replace("'", apostrophe)
+                    for apostrophe in ("'", "\u2018", "\u2019", "\u02bc", "\uff07")
+                )
+            for spelling in spellings:
+                with self.subTest(normalized_contraction=spelling):
+                    normalized = normalize_policy(
+                        normalize_negative_contractions(spelling)
+                    ).split()
+                    self.assertIn("not", normalized)
+        affirmative = "It's required, we're ready, and they'll proceed."
+        self.assertEqual(
+            affirmative,
+            normalize_negative_contractions(affirmative),
+        )
 
     def test_manual_handoff_contract_mutations_fail_closed(self):
         contract = read_manual_handoff_contract()
