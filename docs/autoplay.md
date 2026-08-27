@@ -475,6 +475,271 @@ This is production runtime infrastructure with host/runtime test coverage:
   resulting profile totals. The archival lane excludes objective runtime
   behavior and remains a compile-compatibility check only.
 
+## Typed autoplay strategy profiles
+
+Issue [#90](https://github.com/laqieer/fireemblem8-expansion/issues/90)
+adds one bounded generated registry and dispatch seam for reusable autoplay
+policy. It is an optional reusable module: the registry/assignment types are
+generic, while **Aggressive** and **Objective-first** are the two permanent
+default-off references selected by `EXPANSION_AUTOPLAY_STRATEGIES=1`.
+The canonical `src/data/autoplay_strategies.json` records their typed
+descriptors once. Disabled builds omit only those reference descriptors and
+their assignments while retaining the generic strategy router for downstream
+custom records; enabled builds emit the references from that same source.
+
+The generated `autoplaystrategies` table is owned by `chapterbundle` alongside
+typed objectives. It has at most eight descriptors and eight group plus eight
+unit assignments per chapter. A descriptor carries a stable FNV-1a symbolic
+ID, callback, objective/action capabilities, and reference-profile marker.
+The dispatcher chooses the first active assignment in this fixed order:
+**unit, group, chapter, existing low-level `Unit.ai[]` fallback**. Source
+order is never a tie-breaker between assignment scopes; duplicate targets are
+rejected during generation. Within the group scope, every strategy-assigned
+group must be disjoint by both character and owned unit-group identity.
+Overlaps fail even when both groups select the same strategy or the character
+also has a unit override, so JSON assignment order can never route a unit.
+Objective-only groups with no strategy assignment retain #89's existing
+overlap contract. Active objective selection retains the existing
+failure/pending/success priority and authored-record-order tie rule, never a
+pointer or link address.
+
+Aggressive calls the existing legal combat selector first, then leaves the
+unchanged low-level AI to pursue or fall back. Objective-first handles only
+the active `reach_area` or `hold_until_turn` group member: it projects the
+unit onto the inclusive rectangle, generates one extended movement map for the
+current unit, and scans every unoccupied path-reachable rectangle tile. Target
+ranking is deterministic: lowest path cost, then shortest Manhattan distance
+from the projection, then lowest Y, then lowest X. Thus the projection wins an
+equal-cost tie only when legal; blocked, occupied, or unreachable projection
+tiles cannot hide another legal target. The chosen target is always inside the
+rectangle, and the existing movement helper must still produce a strict range
+reduction before its intermediate move is consumed. If no legal target or
+strictly progressive move exists, the callback returns one fully cleared
+intentional wait.
+
+A pending reach or hold accepts combat only when its resulting decision stays
+in that rectangle; otherwise it waits, never falling through to unconstrained
+Aggressive. The rectangle scan uses constant stack state, one current-unit
+extended map, and one final selected-target path map; it allocates no candidate
+array and consumes no RNG. Neither profile derives a decision from JSON order,
+pointer/link addresses, or stale prior-unit maps, so a fixed seed/configuration
+repeats its trace exactly. Every consumed wait calls `AiClearDecision()`, so
+rejected movement/combat coordinates, action IDs, targets, and item slots
+remain zero in runtime probes and telemetry. Existing low-level fallback
+behavior retains its own established RNG contract.
+
+`ExpansionAutoplayStrategies_ValidateRegistry()` rejects capacity overflow,
+zero/duplicate IDs, missing callbacks, and undeclared capability bits.
+`ExpansionAutoplayStrategies_ValidateObjectiveSupport()` makes an
+unknown/unsupported profile-objective pair explicit. Before a selected
+strategy can commit a computer-phase action, dispatch checks those contracts.
+It records a typed autoplay failure and terminates the strategy path rather
+than selecting a success-shaped fallback. The typed event helpers
+`strategy.activate` and `strategy.deactivate` lower a symbolic,
+schema-validated assignment to `AUTOPLAY_STRATEGY_ACTIVATE` /
+`AUTOPLAY_STRATEGY_DEACTIVATE` and the matching typed C bridge. They validate
+the same generated strategy-ID/activation-flag pair, set or clear only that
+existing event flag, and return `ERR_PHASE_ACTIVE` without queueing when
+called directly from C during an active blue computer phase. Only the
+`EventActivate` / `EventDeactivate` wrappers convert that validated result
+into one pending pair plus operation without changing the current units.
+Computer-phase completion is the next safe boundary and applies that operation
+exactly once.
+One later valid request replaces the pending operation, duplicates coalesce,
+and invalid pairs cannot replace it. Raw `flag.set` and `flag.clear` cannot
+target a declared strategy activation flag. The pending operation is cleared
+by every map/chapter lifecycle reset, including Suspend resume, and is never
+serialized; there is no save byte, epoch, migration, localization string,
+player UI, or second event language.
+
+Event-list helper validation consumes the same profile-selected descriptor and
+assignment view that generates `data_autoplay_strategies.c`. A disabled
+reference profile therefore cannot authorize `strategy.activate` /
+`strategy.deactivate` or reserve its flag, while emitted downstream custom
+records continue to validate. Profile flips participate in the event-list
+freshness stamp for both file and directory strategy sources.
+Authorization also requires the event-list owner's exact
+`autoplayStrategies.source` member set and declared chapter symbol; sharing a
+chapter ID alone cannot authorize a custom source. Missing, stale, or
+cross-source ownership fails before event C generation.
+
+### Downstream strategy example
+
+A callback returns `false` to request the clean existing `Unit.ai[]` fallback.
+It must leave no tentative decision behind (the router also clears before the
+fallback). Returning `true` consumes the strategy decision. That includes an
+intentional wait: clear `gAiDecision`, return `true`, and no low-level fallback
+runs.
+
+This movement-only strategy handles a reach objective, consumes a legal move,
+and intentionally waits when the movement helper finds no action:
+
+```c
+#include "global.h"
+
+#include "cp_common.h"
+#include "cp_utility.h"
+#include "expansion_autoplay_strategies.h"
+
+bool ExpansionAutoplayStrategy_AdvanceOnly(
+    const struct ExpansionAutoplayStrategyContext* context)
+{
+    const struct ExpansionChapterObjective* objective = context->objective;
+
+    if (objective == NULL
+        || objective->kind != EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA)
+        return false;
+
+    AiTryMoveTowards(objective->xMin, objective->yMin, 0, 0, 1);
+    if (!gAiDecision.actionPerformed)
+    {
+        AiClearDecision();
+        return true;
+    }
+
+    if (gAiDecision.actionId != AI_ACTION_NONE)
+    {
+        AiClearDecision();
+        return false;
+    }
+
+    return true;
+}
+```
+
+The matching descriptor and assignment use a group and event flag that the
+downstream project defines and owns in the same chapter bundle:
+
+```json
+{
+  "$schema": "fe8.autoplaystrategies.v1",
+  "strategies": [
+    {
+      "id": "AUTOPLAY_STRATEGY_ADVANCE_ONLY",
+      "callback": "ExpansionAutoplayStrategy_AdvanceOnly",
+      "objectiveKinds": ["reach_area"],
+      "actionKinds": ["objective_move"]
+    }
+  ],
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "AutoplayStrategies_ProjectL2",
+      "groupAssignments": [
+        {
+          "group": "AI_GROUP_PROJECT_ESCORT",
+          "strategy": "AUTOPLAY_STRATEGY_ADVANCE_ONLY",
+          "activationFlag": "EVFLAG_PROJECT_ESCORT"
+        }
+      ],
+      "unitAssignments": []
+    }
+  ]
+}
+```
+
+Declare `AutoplayStrategies_ProjectL2` in the owning bundle's
+`autoplayStrategies.symbols`. At runtime, `AI_ACTION_COMBAT` requires the
+descriptor's `combat` action capability and `AI_ACTION_NONE` (a movement
+decision) requires `objective_move`. A consumed intentional wait has
+`actionPerformed == false` and no action ID to classify. Staff, item, talk, or
+other action IDs are outside the current strategy action taxonomy and fail
+runtime capability validation; extend the typed schema/router contract before
+returning one. The default references are not a taxonomy: Balanced, EXP,
+Treasure, Support, campaign, and project-specific character/chapter policies
+remain out of scope.
+
+The runtime uses one bounded eight-byte EWRAM pending operation (strategy ID,
+activation flag, owning chapter ID, and set/clear operation) and no IWRAM. The
+empty generated registry and bundle sentinels occupy 40 ROM bytes (20 bytes
+each). Strategy selection reconstructs from generated data and existing event
+flags; only an in-flight active-phase request uses the transient record. The
+strategy host/ARM selector enforces exactly eight strategy EWRAM bytes and a
+4 KiB aggregate object-text ceiling for both profile states. The archival
+lane excludes the runtime and generated table.
+
+The parsed full-link evidence is
+`reports/autoplay_strategy_budget.json`. The owner builds three matched
+variants from the current tree: an internal router-absent technical baseline,
+the normal router-present build with references disabled, and the
+references-enabled build. It derives both deltas from their `__floating_end`
+assignments and verifies with parsed ELF symbols that the absent variant omits
+the router hook and both generated tables while both present variants contain
+them. No source/object/ROM/commit snapshot, hash, branch, or Git identity is an
+input. The absent seam is private to this measurement target: it is not an
+Autoconf/Make project option, configuration identity, save behavior, shipped
+runtime, or alternate fallback. The measured shared-router and reference
+increments are reported separately so later unrelated ROM changes cancel out.
+Every recursive router-absent and profiles-disabled build explicitly forces
+`EXPANSION_AUTOPLAY_STRATEGIES=0`; references-enabled builds force `=1`.
+Therefore a persisted `./configure` choice, environment value, or caller
+override cannot contaminate the matched variants.
+The current matched result is +1,560 debug / +1,896 release ROM bytes for the
+profiles-disabled shared router, then another +856 debug / +680 release bytes
+for the enabled reference descriptors/callbacks.
+
+### Strategy compatibility and budgets
+
+- **Dependencies:** typed chapter objectives/groups, `CpDecide_Main`, the
+  existing AI action helpers, generated-data ownership validation, and the
+  tester-case catalog.
+- **Configuration:** `EXPANSION_AUTOPLAY_STRATEGIES` selects only the two
+  reference descriptors/callbacks. It participates in ROM identity and has no
+  save migration or compatibility-epoch impact. Capacity, capability,
+  assignment-overlap, active-manifest counts, and event-helper validation all
+  consume the exact selected view emitted for that profile; disabled
+  references do not consume those contracts, while selected custom records do.
+- **Data/UI:** downstream custom strategy records remain available with the
+  reference profiles disabled; no player UI, localization string, or second
+  event language is introduced.
+- **ROM/RAM:** reference profiles add only generated ROM descriptors and
+  callback text. The shared router uses one eight-byte EWRAM pending pair and
+  no IWRAM; the focused object gate enforces that exact bound and a 4 KiB text
+  cap. Parsed full-link evidence records the profiles-disabled shared router
+  separately from the incremental enabled references using matched
+  current-tree technical variants (+1,560/+1,896 debug/release router bytes,
+  then +856/+680 reference bytes).
+- **Runtime evidence:** the debug strategy profile and default-disabled ROMs
+  execute bounded fixed-seed `CpDecide_Main` scenarios twice; their action and
+  telemetry captures must repeat exactly.
+
+## Autoplay controller and Charge compatibility and budgets
+
+- **Dependencies:** `BmMain_StartPhase`, `gProcScr_CpPhase`,
+  `BuildAiUnitList`, `Unit.ai[]`, `AreUnitsAllied`, `gba-playtest`, and the
+  tester-case catalog.
+- **Dependents:** issues #86, #87, #88, #89, and #90; #91 consumes the settled
+  telemetry through its own prerequisites. Issue #92 must not introduce a
+  competing observation/action seam.
+- **Conflicts:** none known. The default `PLAYER` path is the required
+  conflict-free negative.
+- **Configuration:** the #85 foundation has no build flag. The optional #87
+  command adds the strict default-off Autoconf/Make/C surface documented
+  above and folds it into configuration identity.
+- **Data/UI:** no generated-data, localization, menu, objective, or strategy
+  record in the #85 foundation. The optional #87 module adds only two
+  expansion-catalog messages and one gated map-menu row.
+- **Save:** no field, migration, preference, or compatibility-epoch change.
+- **Archival:** `src/expansion_autoplay.c` and all hooks are excluded from
+  `FE8_ARCHIVAL_BUILD`; the agbcc lane is unchanged.
+- **Modern budget:** 68 bytes persistent IWRAM total (64-byte telemetry plus
+  4-byte controller), moved together so they survive every map, battle, and UI
+  overlay. The tight all-locale debug profile retains 272 bytes of IWRAM static
+  growth headroom above the required 4 KiB user-stack margin and recovers 68
+  EWRAM bytes, turning the previous 24-byte overflow into 44 bytes of headroom.
+  Default debug/release EWRAM remains unchanged from the immediate base. The
+  module contributes 768 bytes of debug Thumb text and 692 bytes of release
+  Thumb text.
+- **Issue #87 budget:** the two stable catalog messages add 528 debug / 544
+  release linked ROM bytes to the disabled build. Enabling Charge adds another
+  840 debug / 808 release linked ROM bytes, including the dedicated module's
+  400/420 bytes of Thumb text and 24 bytes of ROM-resident Proc script data.
+  It adds zero static EWRAM/IWRAM: enabled/default builds retain 1,704/3,128
+  EWRAM bytes free (debug/release) and 1,552 IWRAM static-growth bytes above
+  the 4 KiB stack margin. The named all-locales/all-features release profile
+  enables Charge and Threat Range together and retains 732 EWRAM bytes plus
+  272 IWRAM static-growth bytes.
+
 ## Validation
 
 ```bash
@@ -486,6 +751,7 @@ make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=a
 make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=release MODERN_ABI=aapcs
 make expansion-modern-autoplay-bounds-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-autoplay-bounds-check MODERN_CONFIG=release MODERN_ABI=aapcs
+make expansion-modern-autoplay-strategy-runtime-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-localization-profile-headroom-check MODERN_CONFIG=release MODERN_ABI=aapcs
 ```

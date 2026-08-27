@@ -148,6 +148,102 @@ class ChapterBundleValidFixtureTests(unittest.TestCase):
             ["eventlists", "eventscripts", "shops", "traps", "units"],
         )
 
+    def test_autoplay_strategy_owner_source_is_validated(self):
+        def validate_owner(records):
+            diagnostics = DiagnosticCollector()
+            chapterbundle_schema.validate(
+                records,
+                diagnostics,
+                _load_dependency_records(),
+                use_supplied_dependencies=True,
+                chapters_header=cb_fixture("chapters.h"),
+                chapter_settings_path=cb_fixture("chapter_settings.json"),
+                asset_table_path=cb_fixture("data_8B363C.c"),
+            )
+            return diagnostics
+
+        records = chapterbundle_schema.load_records(cb_fixture("valid.json"))
+        loc = records[0].loc
+        records[0].autoplay_strategies = chapterbundle_schema.TableRef(
+            "autoplaystrategies",
+            cb_fixture("deps_autoplaystrategies.json"),
+            loc,
+            ["AutoplayStrategies_EL"],
+            [loc],
+            loc,
+        )
+        diagnostics = validate_owner(records)
+        self.assertTrue(diagnostics.ok, _messages(diagnostics))
+
+        stale = copy.deepcopy(records)
+        stale[0].autoplay_strategies.symbols = ["AutoplayStrategies_Stale"]
+        diagnostics = validate_owner(stale)
+        self.assertTrue(
+            any(
+                error.reference_path
+                == "bundles[chapter=CHAPTER_EL].autoplayStrategies.symbols[AutoplayStrategies_Stale]"
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
+        )
+
+        undeclared = copy.deepcopy(records)
+        undeclared[0].autoplay_strategies.symbols = []
+        diagnostics = validate_owner(undeclared)
+        self.assertTrue(
+            any(
+                "contains chapter 'CHAPTER_EL' symbol 'AutoplayStrategies_EL'"
+                in error.message
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
+        )
+
+        wrong_source = copy.deepcopy(records)
+        wrong_source[0].autoplay_strategies.source = cb_fixture("deps_units.json")
+        wrong_source[0].autoplay_strategies.symbols = []
+        wrong_source[0].autoplay_strategies.symbol_locs = []
+        diagnostics = validate_owner(wrong_source)
+        self.assertTrue(
+            any(
+                error.reference_path
+                == "bundles[chapter=CHAPTER_EL].autoplayStrategies.source"
+                and "unexpected $schema" in error.message
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
+        )
+
+        missing_source = copy.deepcopy(records)
+        missing_source[0].autoplay_strategies.source = cb_fixture(
+            "missing_autoplay_strategies.json"
+        )
+        missing_source[0].autoplay_strategies.symbols = []
+        missing_source[0].autoplay_strategies.symbol_locs = []
+        diagnostics = validate_owner(missing_source)
+        self.assertTrue(
+            any(
+                error.reference_path
+                == "bundles[chapter=CHAPTER_EL].autoplayStrategies.source"
+                and "could not load autoplayStrategies source" in error.message
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
+        )
+
+        wrong_chapter = copy.deepcopy(records)
+        wrong_chapter[0].autoplay_strategies.source = fixture_path(
+            "autoplaystrategies", "valid.json"
+        )
+        diagnostics = validate_owner(wrong_chapter)
+        self.assertTrue(
+            any(
+                "is not a record for chapter 'CHAPTER_EL'" in error.message
+                for error in diagnostics.errors
+            ),
+            _messages(diagnostics),
+        )
+
     def test_multi_bundle_dependencies_follow_each_table_ref_source(self):
         first = chapterbundle_schema.load_records(cb_fixture("valid.json"))[0]
         second = copy.deepcopy(first)
@@ -266,6 +362,8 @@ class ChapterBundleValidFixtureTests(unittest.TestCase):
             paths.append(bundle["supportOwners"]["source"])
             if "chapterObjectives" in bundle:
                 paths.append(bundle["chapterObjectives"]["source"])
+            if "autoplayStrategies" in bundle:
+                paths.append(bundle["autoplayStrategies"]["source"])
             for path in paths:
                 destination = os.path.join(checkout_root, path)
                 os.makedirs(os.path.dirname(destination), exist_ok=True)
@@ -328,6 +426,17 @@ class ChapterBundleValidFixtureTests(unittest.TestCase):
             self.assertNotEqual(
                 directory_inventory,
                 schema.build_inventory(chapterbundle_schema.ChapterBundleRecords([directory_owner])),
+            )
+
+            strategy_source = Path(first_root) / "src" / "data" / "autoplay_strategies.json"
+            strategy_inventory = schema.build_inventory(multi_first_records)
+            strategy_source.write_text(
+                strategy_source.read_text(encoding="utf-8") + "\n",
+                encoding="utf-8",
+            )
+            self.assertNotEqual(
+                strategy_inventory,
+                schema.build_inventory(multi_first_records),
             )
 
             outside = copy.deepcopy(multi_first_records[1])

@@ -1,0 +1,52 @@
+{
+  "$schema": "fe8.autoplaystrategies.v1",
+  "strategies": [
+    {
+      "id": "AUTOPLAY_STRATEGY_AGGRESSIVE",
+      "callback": "ExpansionAutoplayStrategy_Aggressive",
+      "objectiveKinds": [
+        "protect",
+        "reach_area",
+        "defeat_group",
+        "event_flag",
+        "hold_until_turn"
+      ],
+      "actionKinds": ["combat"]
+    },
+    {
+      "id": "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST",
+      "callback": "ExpansionAutoplayStrategy_ObjectiveFirst",
+      "objectiveKinds": ["reach_area", "hold_until_turn"],
+      "actionKinds": ["combat", "objective_move"]
+    },
+    {
+      "id": "AUTOPLAY_STRATEGY_TENTATIVE_FALLBACK",
+      "callback": "ExpansionAutoplayStrategy_TentativeFallback",
+      "objectiveKinds": ["reach_area", "hold_until_turn"],
+      "actionKinds": ["combat"]
+    }
+  ],
+  "chapters": [
+    {
+      "chapter": "CHAPTER_L_2",
+      "symbol": "AutoplayStrategies_Fixture",
+      "chapterAssignment": {
+        "strategy": "AUTOPLAY_STRATEGY_AGGRESSIVE"
+      },
+      "groupAssignments": [
+        {
+          "group": "AI_GROUP_FIXTURE_EIRIKA",
+          "strategy": "AUTOPLAY_STRATEGY_OBJECTIVE_FIRST",
+          "activationFlag": "EVFLAG_HIDE_BLINKING_ICON"
+        }
+      ],
+      "unitAssignments": [
+        {
+          "character": "CHARACTER_EIRIKA",
+          "strategy": "AUTOPLAY_STRATEGY_TENTATIVE_FALLBACK",
+          "activationFlag": "EVFLAG_BATTLE_QUOTES"
+        }
+      ]
+    }
+  ]
+}

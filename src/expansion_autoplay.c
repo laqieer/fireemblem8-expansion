@@ -10,6 +10,7 @@
 #include "constants/event-flags.h"
 
 #include "expansion_autoplay_internal.h"
+#include "expansion_autoplay_strategies.h"
 
 typedef char ExpansionAutoplayTelemetrySizeCheck[
     sizeof(struct ExpansionAutoplayTelemetry) == EXPANSION_AUTOPLAY_TELEMETRY_SIZE ? 1 : -1];
@@ -73,6 +74,9 @@ void ExpansionAutoplay_Reset(void)
 
     sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
     gExpansionAutoplayTelemetry.controller = EXPANSION_BLUE_CONTROL_PLAYER;
+#if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
+    ExpansionAutoplayStrategies_ResetPendingActivation();
+#endif
 }
 
 enum ExpansionAutoplayResult ExpansionAutoplay_SetBlueControl(enum ExpansionBlueControl control)
@@ -214,10 +218,18 @@ void ExpansionAutoplay_OnBlueComputerPhaseStart(void)
 void ExpansionAutoplay_OnBlueComputerPhaseComplete(void)
 {
     if (gExpansionAutoplayTelemetry.state == EXPANSION_AUTOPLAY_STATE_FAILURE)
+    {
+#if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
+        ExpansionAutoplayStrategies_ResetPendingActivation();
+#endif
         return;
+    }
 
     if (!ExpansionAutoplay_IsBlueComputerPhase())
     {
+#if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
+        ExpansionAutoplayStrategies_ResetPendingActivation();
+#endif
         if (gExpansionAutoplayTelemetry.state != EXPANSION_AUTOPLAY_STATE_FAILURE)
             SetFailure(EXPANSION_AUTOPLAY_FAILURE_INVALID_PHASE);
         return;
@@ -225,6 +237,9 @@ void ExpansionAutoplay_OnBlueComputerPhaseComplete(void)
 
     IncrementBounded(&gExpansionAutoplayTelemetry.bluePhaseCompleteCount);
     gExpansionAutoplayTelemetry.state = EXPANSION_AUTOPLAY_STATE_COMPUTER_PHASE_COMPLETE;
+#if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
+    ExpansionAutoplayStrategies_ApplyPendingActivation();
+#endif
 }
 
 void ExpansionAutoplay_RecordEligibleActors(int side, int count)
@@ -317,6 +332,20 @@ void ExpansionAutoplay_RecordSuspendSuppressed(void)
 {
     if (ExpansionAutoplay_IsBlueComputerPhase())
         IncrementBounded(&gExpansionAutoplayTelemetry.suspendWriteSuppressedCount);
+}
+
+void ExpansionAutoplay_RecordStrategyFailure(int result)
+{
+    if (!ExpansionAutoplay_IsBlueComputerPhase())
+        return;
+
+    IncrementBounded(&gExpansionAutoplayTelemetry.invalidRecordCount);
+    if (result == EXPANSION_AUTOPLAY_STRATEGY_ERR_UNSUPPORTED_OBJECTIVE)
+        SetFailure(EXPANSION_AUTOPLAY_FAILURE_STRATEGY_OBJECTIVE);
+    else if (result == EXPANSION_AUTOPLAY_STRATEGY_ERR_PROFILE_DISABLED)
+        SetFailure(EXPANSION_AUTOPLAY_FAILURE_STRATEGY_PROFILE_DISABLED);
+    else
+        SetFailure(EXPANSION_AUTOPLAY_FAILURE_STRATEGY_REGISTRY);
 }
 
 #if FE8_AUTOPLAY_EVENT_TRACE_TEST

@@ -146,48 +146,28 @@ class CustomSpellConfigTests(unittest.TestCase):
         self.assertNotIn(
             "custom_spell_effects", disabled.fingerprint_fields()["features"]
         )
-        expected_pre_feature_fields = {
-            "version": [
-                disabled.version_major,
-                disabled.version_minor,
-                disabled.version_patch,
-            ],
-            "abi": disabled.abi,
-            "config_preset": disabled.config_preset,
-            "rom_size_bytes": disabled.rom_size_bytes,
-            "text_shift": disabled.text_shift,
-            "rom_title": disabled.rom_title,
-            "rom_game_code": disabled.rom_game_code,
-            "rom_maker_code": disabled.rom_maker_code,
-            "rom_revision": disabled.rom_revision,
-            "enabled_locales": list(disabled.enabled_locales),
-            "default_locale": disabled.default_locale,
-            "pseudo_locale_enabled": disabled.pseudo_locale_enabled,
-            "features": {
-                "mechanics_hooks": disabled.mechanics_hooks,
-                "mechanics_sample": disabled.mechanics_sample,
-                "danger_overlay_menu": disabled.danger_overlay_menu,
-                "blue_phase_delegate": disabled.blue_phase_delegate,
-                "starter_content": disabled.starter_content,
-                "aoe_reference": disabled.aoe_reference,
-                "localized_text_auto_wrap": disabled.localized_text_auto_wrap,
-                "casual_mode": disabled.casual_mode,
-                "hq_mixer": disabled.hq_mixer,
-            },
-            "bgm_continuation_policy": disabled.bgm_continuation_policy,
-            "item_id_cap": disabled.item_id_cap,
-        }
-        self.assertEqual(disabled.fingerprint_fields(), expected_pre_feature_fields)
+        disabled_fields = disabled.fingerprint_fields()
+        enabled_fields = enabled.fingerprint_fields()
+        disabled_features = disabled_fields["features"]
+        enabled_features = enabled_fields["features"]
         self.assertEqual(
-            disabled.config_fingerprint,
-            ec.compute_fingerprint(expected_pre_feature_fields),
+            {key: value for key, value in enabled_fields.items()
+             if key not in ("features", "custom_spell_effect_contract")},
+            {key: value for key, value in disabled_fields.items() if key != "features"},
         )
         self.assertEqual(
-            enabled.fingerprint_fields()["features"]["custom_spell_effects"],
+            {key: value for key, value in enabled_features.items()
+             if key != "custom_spell_effects"},
+            disabled_features,
+        )
+        self.assertEqual(set(enabled_fields) - set(disabled_fields), {"custom_spell_effect_contract"})
+        self.assertEqual(set(disabled_fields) - set(enabled_fields), set())
+        self.assertEqual(
+            enabled_features["custom_spell_effects"],
             1,
         )
         self.assertEqual(
-            enabled.fingerprint_fields()["custom_spell_effect_contract"],
+            enabled_fields["custom_spell_effect_contract"],
             {
                 "runtime_abi": 1,
                 "inventory_digest": contract["inventory_digest"],

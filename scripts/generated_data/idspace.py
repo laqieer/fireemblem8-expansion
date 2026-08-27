@@ -79,6 +79,7 @@ ITEM_TECHNICAL_MAX = 0xFF
 ITEM_DEFAULT_CAP = 0xCD
 ITEM_EXPANSION_FIRST = 0xCE
 ITEM_CAP_ENV = "FE8_ITEM_ID_CAP"
+AUTOPLAY_STRATEGIES_ENV = "EXPANSION_AUTOPLAY_STRATEGIES"
 
 
 class CapError(Exception):
@@ -430,10 +431,15 @@ def active_manifest_rows(env=None):
             records = items_schema.load_records(
                 schema.default_source, item_cap=resolve_item_id_cap(env),
                 overlay_source=items_schema.ITEMS_EXPANSION_SOURCE)
+        elif name == "autoplaystrategies":
+            records = schema.configure_records(
+                schema.load_records(schema.default_source),
+                reference_profiles=resolve_autoplay_strategies(env),
+            )
         else:
             records = schema.load_records(schema.default_source)
         committed = schema.manifest_record_count(records)
-        active = len(records)
+        active = schema.active_manifest_record_count(records)
         rows.append({
             "table": name,
             "committed_record_count": committed,
@@ -537,6 +543,22 @@ def resolve_item_id_cap(env=None):
         )
     validate_domain_cap(domain_by_key("item"), cap)
     return cap
+
+
+def resolve_autoplay_strategies(env=None):
+    """Resolve the active autoplay reference profile as a strict 0/1 string."""
+    env = os.environ if env is None else env
+    raw = env.get(AUTOPLAY_STRATEGIES_ENV, "0")
+    if raw in (None, ""):
+        raw = "0"
+    if str(raw) not in ("0", "1"):
+        raise CapError(
+            "{} must be 0 or 1, got {!r}".format(
+                AUTOPLAY_STRATEGIES_ENV,
+                raw,
+            )
+        )
+    return str(raw)
 
 
 def validate_domain_cap(domain, cap):

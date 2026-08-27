@@ -594,3 +594,48 @@ enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetStatus(u32 obj
 
     return EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
 }
+
+const struct ExpansionChapterObjective* ExpansionChapterObjectives_GetActiveObjective(void)
+{
+    const struct ExpansionChapterObjectiveBundle* bundle = GetCurrentBundle();
+    int index;
+
+    if (bundle == NULL || gExpansionChapterObjectiveTelemetry.objectiveId == 0)
+        return NULL;
+
+    for (index = 0; index < bundle->objectiveCount; index++)
+        if (bundle->objectives[index].id == gExpansionChapterObjectiveTelemetry.objectiveId)
+            return &bundle->objectives[index];
+
+    return NULL;
+}
+
+const struct ExpansionChapterAiGroup* ExpansionChapterObjectives_FindGroup(u32 groupId)
+{
+    const struct ExpansionChapterObjectiveBundle* bundle = GetCurrentBundle();
+    int index;
+
+    if (bundle == NULL)
+        return NULL;
+
+    for (index = 0; index < bundle->groupCount; index++)
+        if (bundle->groups[index].id == groupId)
+            return &bundle->groups[index];
+
+    return NULL;
+}
+
+bool ExpansionChapterObjectives_GroupContains(u32 groupId, u8 character)
+{
+    const struct ExpansionChapterAiGroup* group = ExpansionChapterObjectives_FindGroup(groupId);
+    int index;
+
+    if (group == NULL)
+        return false;
+
+    for (index = 0; index < group->memberCount; index++)
+        if (group->members[index] == character)
+            return true;
+
+    return false;
+}

@@ -146,6 +146,19 @@ class TableSchema:
         """
         return len(records)
 
+    def active_manifest_record_count(self, records):
+        """Record count exposed by the configured active manifest.
+
+        Most tables share their committed and active count policy. Tables
+        with an opt-in overlay can override this without making every active
+        consumer special-case their source shape.
+        """
+        return self.manifest_record_count(records)
+
+    def configure_records(self, records, **options):
+        """Apply optional generation-profile inputs without changing validation."""
+        return records
+
     def round_trip_errors(self, records, hand_source):
         """Compare ``records`` against a hand-written C file at
         ``hand_source``. Returns a list of :class:`GeneratedDataError`

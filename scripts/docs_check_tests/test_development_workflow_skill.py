@@ -2120,8 +2120,17 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Base every independent issue branch directly on `master`.",
             "when one issue genuinely depends",
             "`Depends on #...` links",
+            "run exact-head Build CI and Copilot review against that genuine base",
+            "Never temporarily retarget a child to `master`",
+            "otherwise misrepresent the stack solely to trigger CI",
             "Review and merge the stack bottom-up",
             "gh pr edit <child-pr> --base master",
+            "retarget the child once",
+            "`pull_request` `edited` event",
+            "fresh exact-head",
+            "base/tree evidence changed",
+            "The `edited` event alone is not delivery evidence",
+            "pull_request.head.sha",
             "Apply candidate-commit Build CI plus Copilot review",
             "consolidated Build verification",
             "Complete the umbrella",
@@ -2131,6 +2140,16 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         for requirement in required_contract:
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
+
+        for requirement in (
+            "Whenever the parent head changes while both PRs remain open",
+            "merge the updated parent branch into the child with a normal merge commit",
+            "A parent-only push does not emit a child `pull_request` event",
+            "the required `synchronize` event",
+            "Never accept the child's earlier green run against an older parent head",
+        ):
+            with self.subTest(normalized_requirement=requirement):
+                self.assertIn(normalize_policy(requirement), normalize_policy(text))
 
         self.assertIn(
             normalize_policy("Complete the umbrella initiative only after every accepted"),
@@ -2643,9 +2662,18 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Worked umbrella and stack example",
             "`feat/101-doc-search`, base `master`",
             "`feat/103-selector`, base `feat/102-registry`",
+            "run exact-head Build CI and Copilot review there",
+            "Never temporarily",
+            "misrepresent",
+            "the stack solely to trigger CI",
             "gh pr edit <child-pr-number> --base master",
-            "rerun candidate Build CI and",
-            "Copilot review if the candidate commit or tree changed",
+            "retarget once",
+            "`pull_request`",
+            "`edited` event to start fresh exact-head Build CI",
+            "candidate base/tree evidence changed",
+            "bound to the unchanged child `pull_request.head.sha`",
+            "does not",
+            "replace diff verification or successful gates",
             "automatic master Build rerun",
             "same consolidated evidence",
             "make remote-completion-check",
@@ -2657,6 +2685,17 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         for requirement in required_contract:
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
+
+        for requirement in (
+            "Whenever the parent head changes",
+            "merge the updated parent into the child with a normal merge commit",
+            "A parent-only push does not emit a child `pull_request` event",
+            "the required `synchronize` event",
+            "merge that updated parent into `feat/103-selector`",
+            "the resulting child `synchronize`",
+        ):
+            with self.subTest(normalized_requirement=requirement):
+                self.assertIn(normalize_policy(requirement), normalize_policy(text))
 
     def test_pull_request_template_records_boundary_stack_and_size(self):
         text = PR_TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -2794,6 +2833,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         expected_cases = [
             "TC-WORKFLOW-CI-WAIT-001",
             "TC-WORKFLOW-MANUAL-HANDOFF-001",
+            "TC-WORKFLOW-STACKED-CI-001",
         ]
         self.assertEqual(
             [],

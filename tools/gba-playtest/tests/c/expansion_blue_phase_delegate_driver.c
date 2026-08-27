@@ -23,6 +23,14 @@
     } while (0)
 
 struct PlaySt gPlaySt;
+
+void ExpansionAutoplayStrategies_ResetPendingActivation(void)
+{
+}
+
+void ExpansionAutoplayStrategies_ApplyPendingActivation(void)
+{
+}
 u8 gGenericBuffer[0x2000];
 
 struct ProcCmd CONST_DATA gProc_BMapMain[] = { { 0 } };

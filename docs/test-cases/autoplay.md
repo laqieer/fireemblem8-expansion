@@ -328,6 +328,109 @@ The host test removes its repository-local temporary fixture. Use
 `make clean_fast` only to remove ignored build artifacts. This case does not
 prove strategy quality, balance, a project route, recruitment/village/chest
 policy, player-facing text, or a general expression language.
+
+## TC-AUTOPLAY-STRATEGY-001: Deterministic strategy assignment and precedence
+
+- **Feature / originating issue:** `typed-autoplay-strategy-profiles` /
+  [#90](https://github.com/laqieer/fireemblem8-expansion/issues/90).
+- **Supported configuration or artifact:** modern AAPCS debug and release
+  artifacts with `EXPANSION_AUTOPLAY_STRATEGIES=0` and `=1`; the generated
+  host fixture supplies the two reference profiles and one reach-area group.
+- **Prerequisites and clean state:** Python 3, host C compiler, modern ARM
+  toolchain, no save or savestate. The fixture starts one unit outside an
+  inclusive objective rectangle with a fixed zero-RNG test double.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.generated_data.tests.test_autoplaystrategies_schema scripts.generated_data.tests.test_chapterbundle_schema -v`.
+2. Run
+   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_strategies -v`.
+3. Run
+   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_strategies.AutoplayStrategiesRuntimeTests.test_arm_profiles_bound_pending_ewram_and_gate_reference_callbacks -v`
+   to parse the ARM symbol set for both enabled and disabled profiles.
+4. Run
+   `make expansion-modern-autoplay-strategy-runtime-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+5. Run `make expansion-modern-autoplay-strategy-budget` to rebuild the
+   current-tree router-absent/current-disabled/current-enabled full-link
+   comparison and regenerate `reports/autoplay_strategy_budget.json` using
+   only matched current-tree artifacts and no Git input. Repeat with caller
+   `EXPANSION_AUTOPLAY_STRATEGIES=1`; absent/disabled sub-builds remain forced
+   to `0`, enabled sub-builds remain `1`, and the report is identical.
+
+### Expected result
+
+Aggressive chooses the immediate legal combat decision. Objective-first accepts
+a deterministic reachable movement decision only when its generated range
+strictly decreases. It scans the whole authored rectangle, skips blocked,
+occupied, and unreachable targets, then ranks candidates by path cost,
+projection distance, Y, and X. A blocked projection advances through an
+alternate legal tile; equal candidates are stable; all blocked/no-progress
+cases produce a fully clean wait; consecutive units rebuild their maps; reach
+and hold share the selector; and a completed objective returns to
+Aggressive/current AI. A unit assignment overrides the group and chapter
+assignments, a group overrides chapter, and the profiles repeat the same action
+trace without an RNG draw. The typed event helpers accept only their declared
+activation flag for both activation and deactivation. An active-blue-phase
+request leaves current units unchanged, then sets or clears once at
+computer-phase completion; duplicates coalesce, the last distinct valid
+operation replaces the pending operation, invalid pairs cannot replace it,
+and lifecycle/Suspend-resume reset discards it. Unknown IDs,
+duplicate/missing callbacks, invalid capability bits, capacity overflow, and
+Objective-first with an unsupported objective kind fail explicitly before an
+action commits. Enabled reference helpers lower to generated event C; the same
+helpers fail validation when references are disabled because their assignments
+are absent from emitted strategy C. Strategy-assigned groups must be disjoint
+by character and owned unit group; overlap fails identically under reversed
+assignment order, equal strategies, and unit overrides, while unassigned
+objective-only group overlap remains valid.
+Event helpers additionally require the owning bundle's exact strategy source
+members and symbol declarations; a same-chapter custom source with canonical
+ownership fails. Disabled built-ins consume neither registry capacity nor
+capability/overlap checks, while selected custom records retain diagnostics
+and match the generated/ACTIVE counts.
+
+The structured budget result reports the profiles-disabled shared router
+separately from the enabled references and carries parsed symbol evidence that
+the internal absent ELF omits the router hook/tables while both present ELFs
+contain them. The matched current-tree deltas are +1,560 debug / +1,896
+release bytes for the shared router and +856 debug / +680 release bytes for
+the references.
+
+### Negative control
+
+With profiles disabled and the reference descriptors/assignments omitted,
+`ExpansionAutoplayStrategies_TryDecide()` returns fallback and creates no
+action; the original `Unit.ai[]` decision path remains authoritative. The
+ARM selector confirms reference callback symbols are absent from the disabled
+object set and both profile states allocate exactly the same bounded
+eight-byte pending pair. Disabled reference flags are not reserved against raw
+flag helpers, while emitted downstream custom assignments remain typed and
+reserved.
+
+### Interactions and save compatibility
+
+The case depends on the #85 blue computer executor and #89 typed
+objective/group records. It has no known feature conflicts, no player UI,
+locale text, save field, migration, compatibility-epoch change, or archival
+behavior. Generated activation flags are existing event state. The pending
+operation is transient only: Suspend/load invokes the ordinary autoplay
+lifecycle reset, discards any in-flight set/clear request, and reconstructs
+assignment selection from generated data and event flags.
+
+### Automation
+
+- `test_autoplaystrategies_schema` validates the typed generated registry,
+  assignments, frozen reference capability contracts, and malformed
+  negatives.
+- `test_chapterbundle_schema` proves the authored bundle surface remains
+  coherent with its declared dependencies.
+- `test_autoplay_strategies` executes the real callback/dispatch API for
+  chapter/group/unit precedence, event-boundary, unsupported-profile, disabled
+  fallback, and ARM ROM/RAM assertions.
+- `expansion-modern-autoplay-strategy-runtime-check` executes repeated enabled
+  and disabled bounded `CpDecide_Main` profiles, asserting strategy/objective
+  selection, action telemetry, and the disabled fallback.
 ## TC-AUTOPLAY-ACCEL-001: Accelerated-fidelity equivalence
 
 - **Feature / originating issue:** `accelerated-fidelity-harness` /

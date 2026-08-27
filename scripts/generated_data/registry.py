@@ -22,6 +22,7 @@ from .movecost.schema import MovecostTableSchema
 from .weapontriangle.schema import WeaponTriangleTableSchema
 from .ui_presentation.schema import UiPresentationTableSchema
 from .chapterobjectives.schema import ChapterObjectivesTableSchema
+from .autoplaystrategies.schema import AutoplayStrategiesTableSchema
 
 REGISTRY.register(SupportsTableSchema())
 REGISTRY.register(UnitsTableSchema())
@@ -56,3 +57,4 @@ REGISTRY.register(MovecostTableSchema())
 REGISTRY.register(WeaponTriangleTableSchema())
 REGISTRY.register(UiPresentationTableSchema())
 REGISTRY.register(ChapterObjectivesTableSchema())
+REGISTRY.register(AutoplayStrategiesTableSchema())
