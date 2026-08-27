@@ -133,7 +133,16 @@
         },
         "evidence_url": {
           "type": "string",
-          "format": "github_evidence_url"
+          "format": "github_evidence_url",
+          "accepted_shapes": [
+            "repository_issue_comment",
+            "repository_pull_comment",
+            "repository_pull_review",
+            "repository_actions_run",
+            "repository_actions_artifact",
+            "repository_blob_at_commit",
+            "github_user_attachment"
+          ]
         },
         "outcome": {
           "type": "string",
@@ -196,7 +205,8 @@
         "temporary_assignee_removed"
       ],
       "issue_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/issues/[1-9][0-9]*$",
-      "pr_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/pull/[1-9][0-9]*$"
+      "pr_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/pull/[1-9][0-9]*$",
+      "pr_origin_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/issues/[1-9][0-9]*$"
     },
     "relationship_schema": {
       "required_fields": [

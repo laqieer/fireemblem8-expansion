@@ -91,6 +91,8 @@ and does not grant push credentials.
 3. Exercise completion cleanup with closed and superseded labeled PR history,
    separate label/assignee cleanup sets, retained independent ownership, and a
    typed result/evidence comment bound to the original case ID and commit.
+   Accept only concrete same-repository comment, review, run, artifact, or
+   commit-pinned blob links, plus GitHub user attachments.
 4. Run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 5. Open the documented queue:
@@ -123,9 +125,11 @@ instrumented artifacts, missing or misplaced mention, invalid or empty numbered
 steps, false or mistyped comment holds, missing per-item comments, permissive
 activation, wrong identifiers or targets, disabled holds, incomplete historical
 cleanup, missing or mismatched completion evidence, malformed optional
-booleans, rejected cleanup/resumption, empty-queue notifications, and invalid
-independently discovered issue/PR relationships. Reversing any lifecycle
-summary action or removing this case's own subsection also fails locally.
+booleans, duplicate artifact identities, bare or unrelated evidence pages,
+malformed PR origins, rejected cleanup/resumption, empty-queue notifications,
+and invalid independently discovered issue/PR relationships. Reversing any
+lifecycle summary action or removing this case's own subsection also fails
+locally.
 
 ### Interactions and save compatibility
 

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import copy
 import json
+import posixpath
 from pathlib import Path
 import re
 from typing import FrozenSet, Tuple
@@ -781,6 +782,15 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
                 "evidence_url": {
                     "type": "string",
                     "format": "github_evidence_url",
+                    "accepted_shapes": [
+                        "repository_issue_comment",
+                        "repository_pull_comment",
+                        "repository_pull_review",
+                        "repository_actions_run",
+                        "repository_actions_artifact",
+                        "repository_blob_at_commit",
+                        "github_user_attachment",
+                    ],
                 },
                 "outcome": {
                     "type": "string",
@@ -843,6 +853,10 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
             "pr_url_pattern": (
                 "^https://github\\.com/laqieer/fireemblem8-expansion/"
                 "pull/[1-9][0-9]*$"
+            ),
+            "pr_origin_url_pattern": (
+                "^https://github\\.com/laqieer/fireemblem8-expansion/"
+                "issues/[1-9][0-9]*$"
             ),
         },
         "relationship_schema": {
@@ -938,6 +952,47 @@ def read_manual_handoff_contract():
     return json.loads(MANUAL_HANDOFF_CONTRACT_PATH.read_text(encoding="utf-8"))
 
 
+GITHUB_EVIDENCE_PATTERNS = {
+    "repository_issue_comment": (
+        r"https://github\.com/laqieer/fireemblem8-expansion/issues/"
+        r"[1-9][0-9]*#issuecomment-[1-9][0-9]*"
+    ),
+    "repository_pull_comment": (
+        r"https://github\.com/laqieer/fireemblem8-expansion/pull/"
+        r"[1-9][0-9]*#issuecomment-[1-9][0-9]*"
+    ),
+    "repository_pull_review": (
+        r"https://github\.com/laqieer/fireemblem8-expansion/pull/"
+        r"[1-9][0-9]*#discussion_r[1-9][0-9]*"
+    ),
+    "repository_actions_run": (
+        r"https://github\.com/laqieer/fireemblem8-expansion/actions/runs/"
+        r"[1-9][0-9]*"
+    ),
+    "repository_actions_artifact": (
+        r"https://github\.com/laqieer/fireemblem8-expansion/actions/runs/"
+        r"[1-9][0-9]*/artifacts/[1-9][0-9]*"
+    ),
+    "repository_blob_at_commit": (
+        r"https://github\.com/laqieer/fireemblem8-expansion/blob/"
+        r"[0-9a-f]{40}/[^?#\s]+"
+    ),
+    "github_user_attachment": (
+        r"https://github\.com/user-attachments/assets/[0-9A-Za-z-]+"
+    ),
+}
+
+
+def github_evidence_shape(value, accepted_shapes):
+    if not isinstance(value, str):
+        return None
+    for shape in accepted_shapes:
+        pattern = GITHUB_EVIDENCE_PATTERNS.get(shape)
+        if pattern and re.fullmatch(pattern, value):
+            return shape
+    return None
+
+
 def validate_comment_field(name, value, specification):
     violations = []
     expected_type = specification["type"]
@@ -964,13 +1019,14 @@ def validate_comment_field(name, value, specification):
             violations.append(f"{name}: invalid SHA-256")
         if format_name == "nonempty_path" and not value.strip():
             violations.append(f"{name}: expected nonempty path")
-        if format_name == "github_evidence_url" and re.fullmatch(
-            r"https://github\.com/(?:"
-            r"laqieer/fireemblem8-expansion/(?:issues|pull)/[1-9][0-9]*"
-            r"(?:#(?:issuecomment-[0-9]+|discussion_r[0-9]+))?"
-            r"|user-attachments/assets/[0-9A-Za-z-]+)",
-            value,
-        ) is None:
+        if (
+            format_name == "github_evidence_url"
+            and github_evidence_shape(
+                value,
+                specification["accepted_shapes"],
+            )
+            is None
+        ):
             violations.append(f"{name}: invalid GitHub evidence URL")
     elif expected_type == "array":
         if not isinstance(value, list):
@@ -1010,6 +1066,33 @@ def validate_handoff_comment(contract, comment):
         violations.extend(
             validate_comment_field(field, comment[field], field_spec)
         )
+    positive_path = comment.get("positive_artifact_path")
+    control_path = comment.get("control_artifact_path")
+    positive_hash = comment.get("positive_artifact_sha256")
+    control_hash = comment.get("control_artifact_sha256")
+    if all(
+        isinstance(value, str)
+        for value in (
+            positive_path,
+            control_path,
+            positive_hash,
+            control_hash,
+        )
+    ):
+        normalized_positive = posixpath.normpath(
+            positive_path.strip().replace("\\", "/")
+        )
+        normalized_control = posixpath.normpath(
+            control_path.strip().replace("\\", "/")
+        )
+        if (
+            normalized_positive,
+            positive_hash,
+        ) == (
+            normalized_control,
+            control_hash,
+        ):
+            violations.append("positive and control artifact identities match")
     return violations
 
 
@@ -1054,6 +1137,15 @@ def validate_completion_comment(contract, comment, activation_comment):
     for field in specification["bind_to_activation_fields"]:
         if comment.get(field) != activation_comment.get(field):
             violations.append(f"completion comment mismatches {field}")
+    if (
+        github_evidence_shape(
+            comment.get("evidence_url"),
+            field_specs["evidence_url"]["accepted_shapes"],
+        )
+        == "repository_blob_at_commit"
+        and f"/blob/{comment.get('commit')}/" not in comment["evidence_url"]
+    ):
+        violations.append("completion blob evidence mismatches commit")
     return violations
 
 
@@ -1070,7 +1162,7 @@ def valid_completion_comment(contract, activation_comment):
     }
 
 
-def validate_manual_item_shape(contract, item):
+def validate_manual_item_shape(contract, item, *, require_pr_origin=False):
     if not isinstance(item, dict):
         return ["item must be an object"]
     schema = contract["queue"]["item_schema"]
@@ -1096,6 +1188,16 @@ def validate_manual_item_shape(contract, item):
         pattern_key = "issue_url_pattern" if kind == "issue" else "pr_url_pattern"
         if re.fullmatch(schema[pattern_key], url) is None:
             violations.append(f"item has invalid {kind} URL")
+    if kind == "pr" and (require_pr_origin or "origin_url" in item):
+        if "origin_url" not in item:
+            violations.append("PR item missing origin_url")
+        elif not isinstance(item["origin_url"], str):
+            violations.append("PR item has invalid origin_url type")
+        elif re.fullmatch(
+            schema["pr_origin_url_pattern"],
+            item["origin_url"],
+        ) is None:
+            violations.append("PR item has malformed origin_url")
     return violations
 
 
@@ -1200,7 +1302,11 @@ def validate_live_manual_queue(contract, live_items, relationships):
     seen_urls = set()
     pending_open_items = []
     for index, item in enumerate(live_items):
-        shape_violations = validate_manual_item_shape(contract, item)
+        shape_violations = validate_manual_item_shape(
+            contract,
+            item,
+            require_pr_origin=True,
+        )
         violations.extend(
             f"item[{index}]: {finding}"
             for finding in shape_violations
@@ -1251,11 +1357,9 @@ def validate_live_manual_queue(contract, live_items, relationships):
     for item in pending_open_items:
         if item.get("kind") != "pr":
             continue
-        if not item.get("origin_url"):
-            violations.append(f"pending PR missing origin: {item['url']}")
-            continue
-        prs.setdefault(item["origin_url"], set()).add(item["url"])
-        if item["origin_url"] not in issues:
+        origin_url = item["origin_url"]
+        prs.setdefault(origin_url, set()).add(item["url"])
+        if origin_url not in issues:
             violations.append(f"orphan PR: {item['url']}")
 
     discovered = {}
@@ -3057,6 +3161,30 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             [],
             validate_handoff_comment(contract, multiple_steps),
         )
+        same_hash_distinct_paths = copy.deepcopy(comment)
+        same_hash_distinct_paths["control_artifact_sha256"] = (
+            same_hash_distinct_paths["positive_artifact_sha256"]
+        )
+        self.assertEqual(
+            [],
+            validate_handoff_comment(contract, same_hash_distinct_paths),
+        )
+        same_path_distinct_hashes = copy.deepcopy(comment)
+        same_path_distinct_hashes["control_artifact_path"] = (
+            "build\\enabled\\fireemblem8.gba"
+        )
+        self.assertEqual(
+            [],
+            validate_handoff_comment(contract, same_path_distinct_hashes),
+        )
+        same_identity = copy.deepcopy(comment)
+        same_identity["control_artifact_path"] = (
+            "build\\enabled\\.\\fireemblem8.gba"
+        )
+        same_identity["control_artifact_sha256"] = (
+            same_identity["positive_artifact_sha256"]
+        )
+        self.assertTrue(validate_handoff_comment(contract, same_identity))
 
         invalid_comments = {
             "missing mention": {
@@ -3356,6 +3484,44 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 ),
                 (),
             ),
+            "list PR origin": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, []),
+                ),
+                (),
+            ),
+            "object PR origin": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, {}),
+                ),
+                (),
+            ),
+            "arbitrary PR origin": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, "not-a-url"),
+                ),
+                (),
+            ),
+            "PR URL used as origin": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, pr_two),
+                ),
+                (),
+            ),
+            "cross-repository PR origin": (
+                (
+                    issue(issue_url),
+                    pull(
+                        pr_one,
+                        "https://github.com/other/repository/issues/171",
+                    ),
+                ),
+                (),
+            ),
             "missing independently discovered open PR": (
                 (issue(issue_url),),
                 ({
@@ -3560,13 +3726,20 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         }
         for scenario, (items, relationships) in negative.items():
             with self.subTest(scenario=scenario):
-                self.assertTrue(
-                    validate_live_manual_queue(
-                        contract,
-                        items,
-                        relationships,
-                    )
+                failures = validate_live_manual_queue(
+                    contract,
+                    items,
+                    relationships,
                 )
+                self.assertTrue(failures)
+                if "PR origin" in scenario:
+                    self.assertTrue(any(
+                        "PR item" in failure for failure in failures
+                    ))
+                if scenario == "wrong-origin orphan":
+                    self.assertTrue(any(
+                        "orphan PR" in failure for failure in failures
+                    ))
 
         def mutate_item(item, field, value):
             mutated = copy.deepcopy(item)
@@ -3834,14 +4007,36 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "contradictory duplicate history item" in failure
             for failure in contradictory_failures
         ))
-        valid_issue_evidence = copy.deepcopy(completion_comments)
-        valid_issue_evidence[issue_url]["evidence_url"] = (
-            issue_url + "#issuecomment-123456"
-        )
-        self.assertEqual(
-            [],
-            cleanup_violations(comments=valid_issue_evidence),
-        )
+        accepted_evidence_urls = {
+            "issue comment": issue_url + "#issuecomment-123456",
+            "pull comment": open_pr + "#issuecomment-123456",
+            "pull review": open_pr + "#discussion_r123456",
+            "Actions run": (
+                "https://github.com/laqieer/fireemblem8-expansion/"
+                "actions/runs/123456"
+            ),
+            "Actions artifact": (
+                "https://github.com/laqieer/fireemblem8-expansion/"
+                "actions/runs/123456/artifacts/789"
+            ),
+            "commit-pinned blob": (
+                "https://github.com/laqieer/fireemblem8-expansion/blob/"
+                + "a" * 40
+                + "/reports/manual-result.json"
+            ),
+            "user attachment": (
+                "https://github.com/user-attachments/assets/"
+                "11111111-2222-3333-4444-555555555555"
+            ),
+        }
+        for shape, evidence_url in accepted_evidence_urls.items():
+            with self.subTest(evidence_shape=shape):
+                valid_evidence = copy.deepcopy(completion_comments)
+                valid_evidence[issue_url]["evidence_url"] = evidence_url
+                self.assertEqual(
+                    [],
+                    cleanup_violations(comments=valid_evidence),
+                )
 
         missing_completion_comment = copy.deepcopy(completion_comments)
         del missing_completion_comment[closed_pr]
@@ -3867,9 +4062,25 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "evidence object": ("evidence_url", {}),
             "evidence integer": ("evidence_url", 1),
             "evidence malformed": ("evidence_url", "not-a-url"),
+            "bare issue page": ("evidence_url", issue_url),
+            "bare PR page": ("evidence_url", open_pr),
             "evidence unrelated": (
                 "evidence_url",
                 "https://github.com/other/repository/issues/1",
+            ),
+            "unsupported issue anchor": (
+                "evidence_url",
+                issue_url + "#discussion_r123456",
+            ),
+            "unsupported PR anchor": (
+                "evidence_url",
+                open_pr + "#files",
+            ),
+            "blob commit mismatch": (
+                "evidence_url",
+                "https://github.com/laqieer/fireemblem8-expansion/blob/"
+                + "d" * 40
+                + "/reports/manual-result.json",
             ),
             "case mismatch": ("case_id", "TC-WORKFLOW-OTHER-001"),
             "commit mismatch": ("commit", "d" * 40),

@@ -247,6 +247,10 @@ typed completion comment whose nonblank actual result and GitHub evidence link
 match the original handoff case ID and commit. Only an accepted outcome permits
 cleanup and resumption; a rejected outcome retains both holds and remains
 actionable.
+Evidence links identify a same-repository issue/PR comment, review comment,
+workflow run or artifact, commit-pinned blob, or GitHub user attachment; bare
+issue and PR pages are not completion evidence. Positive and control artifact
+path-plus-SHA-256 identities must differ.
 
 - **Activation:** Apply `waiting-for-manual-testing` to the originating issue
   and each open implementation PR. Assign `laqieer` to those targets. Ping

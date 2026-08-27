@@ -251,6 +251,9 @@ Cleanup and automatic resumption require a per-item completion comment whose
 actual result and GitHub evidence link match the original case ID and commit.
 Only an accepted outcome permits cleanup; a rejected outcome retains both holds
 and remains actionable.
+Evidence must link to a same-repository issue/PR comment, review comment,
+workflow run or artifact, commit-pinned blob, or GitHub attachment—not a bare
+issue or PR page. Positive and control path-plus-SHA-256 identities must differ.
 
 - **Activation:** Apply `waiting-for-manual-testing` to the originating issue
   and each open implementation PR. Assign `laqieer` to those targets. Ping
