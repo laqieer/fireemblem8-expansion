@@ -72,6 +72,27 @@ class BuildCiCheckoutContractTests(unittest.TestCase):
         )
         self.assertTrue(any("pull-request head" in error for error in _contract_errors(text)))
 
+    def test_checkout_ref_must_use_event_head(self):
+        text = WORKFLOW.read_text(encoding="utf-8").replace(
+            f"        ref: {EXPECTED_SHA}\n",
+            "        ref: ${{ github.sha }}\n",
+            1,
+        )
+        self.assertTrue(any("checkout must pin" in error for error in _contract_errors(text)))
+
+    def test_missing_checkout_verification_is_rejected(self):
+        verification = (
+            '    - name: Verify checked-out revision\n'
+            '      run: |\n'
+            '        ACTUAL_SHA="$(git rev-parse HEAD)"\n'
+            "        printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"\n"
+            '        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"\n\n'
+        )
+        text = WORKFLOW.read_text(encoding="utf-8").replace(verification, "", 1)
+        self.assertTrue(
+            any("must immediately verify" in error for error in _contract_errors(text))
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

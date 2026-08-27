@@ -265,12 +265,25 @@ Every non-root PR must record:
 
 Keep those links and the umbrella checklist current as the stack changes.
 Every issue-specific layer must remain buildable and testable against its
-immediate base. Review and merge the stack bottom-up; never merge a child while
-its required parent is open. After a parent merges, run
+immediate base. Keep a child based on its immediate parent while that parent is
+open, and run exact-head Build CI and Copilot review against that genuine base.
+Whenever the parent head changes while both PRs remain open, merge the updated
+parent branch into the child with a normal merge commit, verify the child-only
+diff again, and rerun the child's exact-head gates. A parent-only push does not
+emit a child `pull_request` event; the child merge changes its head and emits
+the required `synchronize` event instead. Never accept the child's earlier
+green run against an older parent head.
+Never temporarily retarget a child to `master`, close and reopen it, or
+otherwise misrepresent the stack solely to trigger CI.
+Review and merge the stack bottom-up; never merge a child while its required
+parent is open. After a parent merges, retarget the child once by running
 `gh pr edit <child-pr> --base master`, confirm that
 `git diff master...<child-branch>` contains only the child issue's scope, and
-rerun candidate Build CI and Copilot review whenever the candidate commit or
-tree changes.
+require the resulting `pull_request` `edited` event to start fresh exact-head
+Build CI against `master`; rerun Copilot review because the candidate
+base/tree evidence changed. The `edited` event alone is not delivery evidence:
+the Build must still bind to `pull_request.head.sha`, the child-only diff must
+be verified, and every fresh gate must succeed.
 
 Apply candidate-commit Build CI plus Copilot review, then post-merge
 consolidated Build verification, issue evidence and closure, and the remote
@@ -595,8 +608,10 @@ review or approval. Respect branch protection and never bypass a required
 GitHub control.
 
 For a stacked PR, satisfy those candidate Build/review conditions against its
-immediate base, merge only after its parent, then retarget and revalidate it as
-described above.
+immediate parent base without temporary base retargeting, synchronize every
+parent-head update into the child, merge only after its parent, then retarget
+once to `master`, verify the child-only diff, require the fresh `edited`-event
+Build, and rerun review as described above.
 
 Leave the PR open only when:
 

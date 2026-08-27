@@ -459,14 +459,16 @@
     },
     {
       "id": "workflow-governance",
-      "title": "Centralized CI waiting and trusted-push orchestration",
+      "title": "Exact stacked CI, centralized waiting, and trusted-push orchestration",
       "issue_urls": [
-        "https://github.com/laqieer/fireemblem8-expansion/issues/93"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/93",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/171"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
       "required_cases": [
-        "TC-WORKFLOW-CI-WAIT-001"
+        "TC-WORKFLOW-CI-WAIT-001",
+        "TC-WORKFLOW-STACKED-CI-001"
       ]
     },
     {
@@ -2085,6 +2087,38 @@
       "cleanup": "No cleanup is required because the case dispatches no workflow and changes no repository state.",
       "limitations": "The test validates policy text and fixtures; it does not grant credentials or exercise the live GitHub service.",
       "automation": [
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-STACKED-CI-001",
+      "title": "Run exact Build CI on a genuine stacked PR base",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/171"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-stacked-ci-001-run-exact-build-ci-on-a-genuine-stacked-pr-base",
+      "profiles": [
+        "Clean source checkout with Python 3 and no live GitHub workflow"
+      ],
+      "purpose": "Prove any pull-request base receives the existing exact-head combined Build while pushes and publication remain master-only.",
+      "prerequisites": "Start at the repository root with the Build workflow and stacked-PR guidance unchanged; no credentials or active run are required.",
+      "actions": "Run the workflow contract and development-workflow skill suites, then inspect synthetic opened/child-head-synchronize/reopened/base-edited PR events, a parent-only push, and inline/block branches and branches-ignore mutations.",
+      "expected_result": "A PR targeting its genuine parent runs all candidate workers at pull_request.head.sha without the publisher; each parent update is normally merged into the child so its changed head emits synchronize, and the later base-change edited event reruns the unchanged child head; only master pushes run Build publication.",
+      "negative_control": "Any PR branch filter, missing required or enabled unrelated activity type, stale child evidence after a parent-head change, non-master push execution, PR publication, weakened exact-head checkout, or temporary base-flip guidance fails the focused suites.",
+      "interactions": "Depends on the existing combined Build, exact checkout binding, parent-update merges into stacked children, trusted owner pushes, and one watcher per run; conflicts with base flips, unsynchronized children, stale evidence, duplicate workflows or matrices, weakened permissions, and PR publication.",
+      "save_compatibility": "Source-only workflow governance; no save, generated-data, localization, ROM/RAM, debug/release, or archival impact.",
+      "cleanup": "No cleanup is required because the case dispatches no workflow and changes no repository state.",
+      "limitations": "The tests evaluate workflow and policy contracts locally; they do not exercise GitHub service availability or grant credentials.",
+      "automation": [
+        {
+          "command": "python3 -m unittest discover -s tests/workflows -p \"test_*.py\" -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
+        },
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
           "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
