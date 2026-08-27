@@ -79,7 +79,7 @@ void ExpansionAutoplay_Reset(void)
     ExpansionAutoplayStrategies_ResetPendingActivation();
 #endif
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
-    ExpansionAutoplayPlanner_Reset();
+    ExpansionAutoplayPlanner_OnMapReset();
 #endif
 }
 

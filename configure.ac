@@ -305,6 +305,10 @@ AS_IF(
     [FE8_CFG_AUTOPLAY_PLANNER="EXPANSION_AUTOPLAY_PLANNER := $fe8_autoplay_planner"],
     [FE8_CFG_AUTOPLAY_PLANNER=])
 AS_IF(
+    [test "$fe8_autoplay_planner" = 1],
+    [FE8_CFG_MODERN_CONFIG="MODERN_CONFIG := debug"],
+    [FE8_CFG_MODERN_CONFIG=])
+AS_IF(
     [test -n "$fe8_bgm_continuation_policy"],
     [FE8_CFG_BGM_CONTINUATION_POLICY="EXPANSION_BGM_CONTINUATION_POLICY := $fe8_bgm_continuation_policy"],
     [FE8_CFG_BGM_CONTINUATION_POLICY=])
@@ -346,6 +350,7 @@ AC_SUBST([FE8_CFG_CASUAL_MODE])
 AC_SUBST([FE8_CFG_HQ_MIXER])
 AC_SUBST([FE8_CFG_AUTOPLAY_STRATEGIES])
 AC_SUBST([FE8_CFG_AUTOPLAY_PLANNER])
+AC_SUBST([FE8_CFG_MODERN_CONFIG])
 AC_SUBST([FE8_CFG_BGM_CONTINUATION_POLICY])
 AC_SUBST([FE8_CFG_PSEUDO_LOCALE])
 AC_SUBST([FE8_CFG_ENABLED_LOCALES])
@@ -403,5 +408,8 @@ AC_CONFIG_FILES([
     config.autotools.mk:config.autotools.mk.in
 ])
 AC_MSG_NOTICE([configuration saved in config.autotools.mk])
-AC_MSG_NOTICE([run 'make' to build the configured modern release ROM])
+AS_IF(
+    [test "$fe8_autoplay_planner" = 1],
+    [AC_MSG_NOTICE([run 'make' to build the configured modern debug planner ROM])],
+    [AC_MSG_NOTICE([run 'make' to build the configured modern release ROM])])
 AC_OUTPUT

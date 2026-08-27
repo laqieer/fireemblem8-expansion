@@ -626,6 +626,7 @@ FE8_CFG_DEFAULT_LOCALE
 FE8_CFG_ENABLED_LOCALES
 FE8_CFG_PSEUDO_LOCALE
 FE8_CFG_BGM_CONTINUATION_POLICY
+FE8_CFG_MODERN_CONFIG
 FE8_CFG_AUTOPLAY_PLANNER
 FE8_CFG_AUTOPLAY_STRATEGIES
 FE8_CFG_HQ_MIXER
@@ -2279,6 +2280,12 @@ then :
 else $as_nop
   FE8_CFG_AUTOPLAY_PLANNER=
 fi
+if test "$fe8_autoplay_planner" = 1
+then :
+  FE8_CFG_MODERN_CONFIG="MODERN_CONFIG := debug"
+else $as_nop
+  FE8_CFG_MODERN_CONFIG=
+fi
 if test -n "$fe8_bgm_continuation_policy"
 then :
   FE8_CFG_BGM_CONTINUATION_POLICY="EXPANSION_BGM_CONTINUATION_POLICY := $fe8_bgm_continuation_policy"
@@ -2321,6 +2328,9 @@ then :
 else $as_nop
   FE8_CFG_TEXT_SHIFT=
 fi
+
+
+
 
 
 
@@ -2394,8 +2404,14 @@ ac_config_files="$ac_config_files GNUmakefile:GNUmakefile.in config.autotools.mk
 
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: configuration saved in config.autotools.mk" >&5
 printf "%s\n" "$as_me: configuration saved in config.autotools.mk" >&6;}
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: run 'make' to build the configured modern release ROM" >&5
+if test "$fe8_autoplay_planner" = 1
+then :
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: run 'make' to build the configured modern debug planner ROM" >&5
+printf "%s\n" "$as_me: run 'make' to build the configured modern debug planner ROM" >&6;}
+else $as_nop
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: run 'make' to build the configured modern release ROM" >&5
 printf "%s\n" "$as_me: run 'make' to build the configured modern release ROM" >&6;}
+fi
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
 # tests run on this system so they can be shared between configure
@@ -3546,4 +3562,5 @@ if test -n "$ac_unrecognized_opts" && test "$enable_option_checking" != no; then
   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: WARNING: unrecognized options: $ac_unrecognized_opts" >&5
 printf "%s\n" "$as_me: WARNING: unrecognized options: $ac_unrecognized_opts" >&2;}
 fi
+
 

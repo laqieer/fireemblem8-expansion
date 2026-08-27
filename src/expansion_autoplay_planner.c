@@ -1,34 +1,39 @@
 #include "global.h"
 
 #include "bm.h"
+#include "bmmap.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "rng.h"
 
+#include "expansion_config.h"
 #include "expansion_autoplay.h"
 #include "expansion_autoplay_planner.h"
 
 typedef char ExpansionAutoplayPlannerObservationSizeCheck[
-    sizeof(struct ExpansionAutoplayPlannerObservationV1)
+    sizeof(struct ExpansionAutoplayPlannerObservationV2)
         <= EXPANSION_AUTOPLAY_PLANNER_PAGE_MAX_BYTES ? 1 : -1];
 typedef char ExpansionAutoplayPlannerCommandSizeCheck[
-    sizeof(struct ExpansionAutoplayPlannerCommandV1) == 44 ? 1 : -1];
+    sizeof(struct ExpansionAutoplayPlannerCommandV2) == 64 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerPointerFreeActionCheck[
-    sizeof(struct ExpansionAutoplayPlannerActionV1) == 32 ? 1 : -1];
+    sizeof(struct ExpansionAutoplayPlannerActionV2) == 32 ? 1 : -1];
 
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
 
-struct ExpansionAutoplayPlannerObservationV1 EWRAM_DATA
+struct ExpansionAutoplayPlannerObservationV2 EWRAM_DATA
     gExpansionAutoplayPlannerObservation = { 0 };
-volatile struct ExpansionAutoplayPlannerCommandV1 EWRAM_DATA
+volatile struct ExpansionAutoplayPlannerCommandV2 EWRAM_DATA
     gExpansionAutoplayPlannerCommand = { 0 };
-struct ExpansionAutoplayPlannerCampaignCheckpointV1 EWRAM_DATA
+struct ExpansionAutoplayPlannerCampaignCheckpointV2 EWRAM_DATA
     gExpansionAutoplayPlannerCampaignCheckpoint = { 0 };
+EWRAM_DATA static struct AiDecision
+    sPlannerCandidates[EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY];
 
 static bool sPlannerActive;
 static u32 sPlannerRunId;
 static u32 sPlannerNextObservationId;
 static u32 sPlannerTraceDigest;
+static u32 sPlannerCandidateCount;
 
 static void ClearCommand(void)
 {
@@ -40,12 +45,50 @@ static u32 MixDigest(u32 digest, u32 value)
     return (digest ^ value) * 16777619u;
 }
 
-static u32 MakeTokenLo(const struct AiDecision* decision, u32 observationId)
+static u32 HashText(const char* text)
+{
+    u32 digest = 2166136261u;
+
+    while (*text != '\0')
+        digest = MixDigest(digest, (u8)*text++);
+    return digest;
+}
+
+static u32 ActualRomIdentity(void)
+{
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_TEST
+    return HashText(FE8_EXPANSION_BUILD_COMMIT);
+#else
+    const volatile u8* header = (const volatile u8*)0x080000A0;
+    u32 digest = 2166136261u;
+    int index;
+
+    for (index = 0; index < 16; index++)
+        digest = MixDigest(digest, header[index]);
+    return digest;
+#endif
+}
+
+static u32 ActualConfigIdentity(void)
+{
+    return HashText(FE8_EXPANSION_CONFIG_FINGERPRINT);
+}
+
+static u32 ActualSeedIdentity(void)
+{
+    return GetLCGRNValue();
+}
+
+static u32 MakeTokenLo(
+    const struct AiDecision* decision,
+    u32 observationId,
+    u32 ordinal)
 {
     u32 digest = 2166136261u;
 
     digest = MixDigest(digest, sPlannerRunId);
     digest = MixDigest(digest, observationId);
+    digest = MixDigest(digest, ordinal);
     digest = MixDigest(digest, decision->unitId);
     digest = MixDigest(digest, (u32)(u16)decision->xMove | ((u32)(u16)decision->yMove << 16));
     digest = MixDigest(digest, decision->actionId);
@@ -92,7 +135,7 @@ static bool IsCommandHeaderValid(void)
         && gExpansionAutoplayPlannerCommand.version
             == EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION
         && gExpansionAutoplayPlannerCommand.byteSize
-            == sizeof(struct ExpansionAutoplayPlannerCommandV1);
+            == sizeof(struct ExpansionAutoplayPlannerCommandV2);
 }
 
 static void Reject(enum ExpansionAutoplayPlannerRejection rejection)
@@ -103,26 +146,118 @@ static void Reject(enum ExpansionAutoplayPlannerRejection rejection)
     ClearCommand();
 }
 
-static void PublishObservation(const struct AiDecision* decision)
+static void PublishReadyState(void)
 {
-    struct ExpansionAutoplayPlannerActionV1* action =
-        &gExpansionAutoplayPlannerObservation.actions[0];
-    u16 seeds[3];
-    u32 tokenLo;
-
-    StoreRNState(seeds);
-    tokenLo = MakeTokenLo(decision, sPlannerNextObservationId);
-
     gExpansionAutoplayPlannerObservation.magic = EXPANSION_AUTOPLAY_PLANNER_MAGIC;
     gExpansionAutoplayPlannerObservation.version = EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION;
     gExpansionAutoplayPlannerObservation.byteSize =
-        sizeof(struct ExpansionAutoplayPlannerObservationV1);
+        sizeof(struct ExpansionAutoplayPlannerObservationV2);
     gExpansionAutoplayPlannerObservation.runId = sPlannerRunId;
-    gExpansionAutoplayPlannerObservation.observationId = sPlannerNextObservationId++;
+    gExpansionAutoplayPlannerObservation.state = EXPANSION_AUTOPLAY_PLANNER_STATE_READY;
+    gExpansionAutoplayPlannerObservation.actualRomIdentity = ActualRomIdentity();
+    gExpansionAutoplayPlannerObservation.actualConfigIdentity = ActualConfigIdentity();
+    gExpansionAutoplayPlannerObservation.actualScenarioIdentity =
+        EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID;
+    gExpansionAutoplayPlannerObservation.actualSeedIdentity = ActualSeedIdentity();
+}
+
+static void ClearPublishedActions(void)
+{
+    u8* bytes = (u8*)gExpansionAutoplayPlannerObservation.actions;
+    int index;
+
+    for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerObservation.actions); index++)
+        bytes[index] = 0;
+}
+
+static bool AddCandidate(const struct AiDecision* decision)
+{
+    u32 index;
+
+    for (index = 0; index < sPlannerCandidateCount; index++)
+    {
+        const struct AiDecision* existing = &sPlannerCandidates[index];
+        if (existing->unitId == decision->unitId
+            && existing->xMove == decision->xMove
+            && existing->yMove == decision->yMove
+            && existing->actionId == decision->actionId
+            && existing->targetId == decision->targetId
+            && existing->itemSlot == decision->itemSlot
+            && existing->xTarget == decision->xTarget
+            && existing->yTarget == decision->yTarget)
+            return true;
+    }
+
+    if (sPlannerCandidateCount >= EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY)
+        return false;
+
+    sPlannerCandidates[sPlannerCandidateCount++] = *decision;
+    return true;
+}
+
+static bool BuildCandidates(const struct AiDecision* decision)
+{
+    int x;
+    int y;
+
+    sPlannerCandidateCount = 0;
+    if (!AddCandidate(decision))
+        return false;
+
+    if (gBmMapMovement == NULL || gBmMapUnit == NULL)
+        return true;
+
+    for (y = 0; y < gBmMapSize.y; y++)
+    {
+        for (x = 0; x < gBmMapSize.x; x++)
+        {
+            struct AiDecision candidate = *decision;
+
+            if (gBmMapMovement[y][x] > MAP_MOVEMENT_MAX)
+                continue;
+            if (gBmMapUnit[y][x] != 0 && gBmMapUnit[y][x] != gActiveUnitId)
+                continue;
+
+            candidate.actionPerformed = true;
+            candidate.unitId = gActiveUnitId;
+            candidate.xMove = x;
+            candidate.yMove = y;
+            candidate.actionId = AI_ACTION_NONE;
+            candidate.targetId = 0;
+            candidate.itemSlot = 0;
+            candidate.xTarget = 0;
+            candidate.yTarget = 0;
+            if (!AddCandidate(&candidate))
+                return false;
+        }
+    }
+    return true;
+}
+
+static void PublishPage(u32 pageIndex)
+{
+    u32 index;
+    u32 start = pageIndex * EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
+    u32 remaining = sPlannerCandidateCount - start;
+    u32 count = remaining < EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY
+        ? remaining : EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
+    u16 seeds[3];
+
+    StoreRNState(seeds);
+    ClearPublishedActions();
+    gExpansionAutoplayPlannerObservation.magic = EXPANSION_AUTOPLAY_PLANNER_MAGIC;
+    gExpansionAutoplayPlannerObservation.version = EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION;
+    gExpansionAutoplayPlannerObservation.byteSize =
+        sizeof(struct ExpansionAutoplayPlannerObservationV2);
+    gExpansionAutoplayPlannerObservation.runId = sPlannerRunId;
     gExpansionAutoplayPlannerObservation.state = EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING;
-    gExpansionAutoplayPlannerObservation.pageIndex = 0;
-    gExpansionAutoplayPlannerObservation.pageCount = 1;
-    gExpansionAutoplayPlannerObservation.actionCount = 1;
+    gExpansionAutoplayPlannerObservation.pageIndex = pageIndex;
+    gExpansionAutoplayPlannerObservation.pageCount =
+        (sPlannerCandidateCount + EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY - 1)
+        / EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
+    gExpansionAutoplayPlannerObservation.actionStartOrdinal = start;
+    gExpansionAutoplayPlannerObservation.actionCount = count;
+    gExpansionAutoplayPlannerObservation.totalActionCount = sPlannerCandidateCount;
     gExpansionAutoplayPlannerObservation.rejection = EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
     gExpansionAutoplayPlannerObservation.chapterIndex = (u8)gPlaySt.chapterIndex;
     gExpansionAutoplayPlannerObservation.chapterTurn = gPlaySt.chapterTurnNumber;
@@ -131,16 +266,32 @@ static void PublishObservation(const struct AiDecision* decision)
     gExpansionAutoplayPlannerObservation.rngState2 = seeds[2];
     gExpansionAutoplayPlannerObservation.rngLcg = GetLCGRNValue();
     gExpansionAutoplayPlannerObservation.rngConsumption = GetRNConsumptionCount();
+    gExpansionAutoplayPlannerObservation.actualRomIdentity = ActualRomIdentity();
+    gExpansionAutoplayPlannerObservation.actualConfigIdentity = ActualConfigIdentity();
+    gExpansionAutoplayPlannerObservation.actualScenarioIdentity =
+        EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID;
+    gExpansionAutoplayPlannerObservation.actualSeedIdentity = ActualSeedIdentity();
 
-    action->kind = ActionKindFromAiAction(decision->actionId);
-    action->actor = decision->unitId;
-    action->destination = (u16)decision->xMove | ((u32)(u16)decision->yMove << 16);
-    action->target = decision->targetId | ((u32)decision->xTarget << 8)
-        | ((u32)decision->yTarget << 16);
-    action->itemSlot = decision->itemSlot;
-    action->tokenLo = tokenLo;
-    action->tokenHi = MakeTokenHi(tokenLo);
-    action->actionId = decision->actionId;
+    for (index = 0; index < count; index++)
+    {
+        const struct AiDecision* decision = &sPlannerCandidates[start + index];
+        struct ExpansionAutoplayPlannerActionV2* action =
+            &gExpansionAutoplayPlannerObservation.actions[index];
+        u32 tokenLo = MakeTokenLo(
+            decision,
+            gExpansionAutoplayPlannerObservation.observationId,
+            start + index);
+
+        action->kind = ActionKindFromAiAction(decision->actionId);
+        action->actor = decision->unitId;
+        action->destination = (u16)decision->xMove | ((u32)(u16)decision->yMove << 16);
+        action->target = decision->targetId | ((u32)decision->xTarget << 8)
+            | ((u32)decision->yTarget << 16);
+        action->itemSlot = decision->itemSlot;
+        action->tokenLo = tokenLo;
+        action->tokenHi = MakeTokenHi(tokenLo);
+        action->actionId = decision->actionId;
+    }
 }
 
 void ExpansionAutoplayPlanner_Reset(void)
@@ -159,16 +310,61 @@ void ExpansionAutoplayPlanner_Reset(void)
         bytes[index] = 0;
 
     sPlannerActive = false;
+    sPlannerRunId = 0;
+    sPlannerNextObservationId = 1;
+    sPlannerCandidateCount = 0;
     sPlannerTraceDigest = 2166136261u;
+    PublishReadyState();
+}
+
+void ExpansionAutoplayPlanner_OnMapReset(void)
+{
+    u8* bytes;
+    int index;
+
+    if (!sPlannerActive)
+    {
+        ExpansionAutoplayPlanner_Reset();
+        return;
+    }
+
+    bytes = (u8*)&gExpansionAutoplayPlannerObservation;
+    for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerObservation); index++)
+        bytes[index] = 0;
+    bytes = (u8*)&gExpansionAutoplayPlannerCommand;
+    for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerCommand); index++)
+        bytes[index] = 0;
+    sPlannerCandidateCount = 0;
+    PublishReadyState();
+    ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER);
 }
 
 bool ExpansionAutoplayPlanner_PollStart(void)
 {
-    if (sPlannerActive || gExpansionAutoplayPlannerCommand.kind
-        != EXPANSION_AUTOPLAY_PLANNER_COMMAND_START)
+    if (gExpansionAutoplayPlannerCommand.kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_NONE)
         return false;
 
+    if (sPlannerActive
+        || gExpansionAutoplayPlannerCommand.kind
+            != EXPANSION_AUTOPLAY_PLANNER_COMMAND_START)
+    {
+        Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
+        return false;
+    }
+
     if (!IsCommandHeaderValid())
+    {
+        Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
+        return false;
+    }
+
+    if (gExpansionAutoplayPlannerCommand.expectedRomIdentity != ActualRomIdentity()
+        || gExpansionAutoplayPlannerCommand.expectedConfigIdentity
+            != ActualConfigIdentity()
+        || gExpansionAutoplayPlannerCommand.expectedScenarioIdentity
+            != EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID
+        || gExpansionAutoplayPlannerCommand.expectedSeedIdentity
+            != ActualSeedIdentity())
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
         return false;
@@ -188,6 +384,7 @@ bool ExpansionAutoplayPlanner_PollStart(void)
     gExpansionAutoplayPlannerCommand.result = 1;
     gExpansionAutoplayPlannerCommand.rejection = EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
     ClearCommand();
+    PublishReadyState();
     return true;
 }
 
@@ -199,11 +396,12 @@ bool ExpansionAutoplayPlanner_IsActive(void)
 enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecision(
     const struct AiDecision* decision)
 {
-    const struct ExpansionAutoplayPlannerActionV1* action;
-    u32 tokenLo;
-
     if (!sPlannerActive)
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_FALLBACK;
+
+    if (gExpansionAutoplayPlannerObservation.state
+        == EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING)
+        return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
 
     if (decision == NULL || !decision->actionPerformed)
     {
@@ -221,10 +419,35 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecisi
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_EXHAUSTED;
     }
 
-    if (gExpansionAutoplayPlannerObservation.state
-        != EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING)
+    if (!BuildCandidates(decision))
     {
-        PublishObservation(decision);
+        gExpansionAutoplayPlannerObservation.state = EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
+        Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_RESOURCE_LIMIT);
+        return EXPANSION_AUTOPLAY_PLANNER_DECISION_EXHAUSTED;
+    }
+
+    gExpansionAutoplayPlannerObservation.observationId = sPlannerNextObservationId++;
+    PublishPage(0);
+    return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+}
+
+enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecision(
+    struct AiDecision* decision)
+{
+    const struct AiDecision* candidate;
+    u32 tokenLo;
+
+    if (!sPlannerActive
+        || gExpansionAutoplayPlannerObservation.state
+            != EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING)
+        return EXPANSION_AUTOPLAY_PLANNER_DECISION_FALLBACK;
+
+    if (gExpansionAutoplayPlannerCommand.kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_NONE)
+        return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+
+    if (gExpansionAutoplayPlannerCommand.kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_START)
+    {
+        Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
 
@@ -245,8 +468,33 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecisi
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED;
     }
 
-    if (gExpansionAutoplayPlannerCommand.kind != EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT)
+    if (gExpansionAutoplayPlannerCommand.kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE)
+    {
+        if (!IsCommandHeaderValid()
+            || gExpansionAutoplayPlannerCommand.runId != sPlannerRunId
+            || gExpansionAutoplayPlannerCommand.observationId
+                != gExpansionAutoplayPlannerObservation.observationId)
+        {
+            Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_STALE_OBSERVATION);
+            return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+        }
+        if (gExpansionAutoplayPlannerCommand.pageIndex
+            >= gExpansionAutoplayPlannerObservation.pageCount)
+        {
+            Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_UNKNOWN_ACTION);
+            return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+        }
+        PublishPage(gExpansionAutoplayPlannerCommand.pageIndex);
+        gExpansionAutoplayPlannerCommand.result = 1;
+        ClearCommand();
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+    }
+
+    if (gExpansionAutoplayPlannerCommand.kind != EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT)
+    {
+        Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
+        return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+    }
 
     if (!IsCommandHeaderValid())
     {
@@ -262,17 +510,19 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecisi
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
 
-    if (gExpansionAutoplayPlannerCommand.actionOrdinal != 0)
+    if (gExpansionAutoplayPlannerCommand.actionOrdinal >= sPlannerCandidateCount)
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_UNKNOWN_ACTION);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
 
-    action = &gExpansionAutoplayPlannerObservation.actions[0];
-    tokenLo = MakeTokenLo(decision, gExpansionAutoplayPlannerObservation.observationId);
+    candidate = &sPlannerCandidates[gExpansionAutoplayPlannerCommand.actionOrdinal];
+    tokenLo = MakeTokenLo(
+        candidate,
+        gExpansionAutoplayPlannerObservation.observationId,
+        gExpansionAutoplayPlannerCommand.actionOrdinal);
     if (gExpansionAutoplayPlannerCommand.tokenLo != tokenLo
-        || gExpansionAutoplayPlannerCommand.tokenHi != MakeTokenHi(tokenLo)
-        || action->tokenLo != tokenLo)
+        || gExpansionAutoplayPlannerCommand.tokenHi != MakeTokenHi(tokenLo))
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_TOKEN_MISMATCH);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
@@ -284,6 +534,7 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecisi
     gExpansionAutoplayPlannerCommand.rejection = EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
     ClearCommand();
     sPlannerTraceDigest = MixDigest(sPlannerTraceDigest, tokenLo);
+    *decision = *candidate;
     return EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED;
 }
 
@@ -299,7 +550,7 @@ void ExpansionAutoplayPlanner_RecordCampaignCheckpoint(void)
     gExpansionAutoplayPlannerCampaignCheckpoint.version =
         EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION;
     gExpansionAutoplayPlannerCampaignCheckpoint.byteSize =
-        sizeof(struct ExpansionAutoplayPlannerCampaignCheckpointV1);
+        sizeof(struct ExpansionAutoplayPlannerCampaignCheckpointV2);
     gExpansionAutoplayPlannerCampaignCheckpoint.runId = sPlannerRunId;
     gExpansionAutoplayPlannerCampaignCheckpoint.chapterIndex = (u8)gPlaySt.chapterIndex;
     gExpansionAutoplayPlannerCampaignCheckpoint.chapterTurn = gPlaySt.chapterTurnNumber;

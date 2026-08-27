@@ -64,7 +64,7 @@ regenerate the committed `configure` script with `autoreconf -fi`.
 | `EXPANSION_CASUAL_MODE` | `0` or `1` | `0` | issue #34 optional ordinary player-defeat restoration (fingerprint); combat/arena defeats are restored at the next chapter boundary, while scripted deaths and explicit removals remain permanent |
 | `EXPANSION_HQ_MIXER` | `0` or `1`; only `en` or `en,qps-ploc` locale profiles | `0` | issue #83 optional modern-only high-resolution MP2K PCM mixer (fingerprint); archival and real-localized-game requests fail before compilation and save compatibility is unchanged |
 | `EXPANSION_AUTOPLAY_STRATEGIES` | `0` or `1` | `0` | issue #90 permanent default-off Aggressive and Objective-first reference profiles (fingerprint); the generic registry remains available, no save state or migration is added |
-| `EXPANSION_AUTOPLAY_PLANNER` | `0` or `1`; `1` requires `MODERN_CONFIG=debug` | `0` | issue #92 default-off local external planner bridge (fingerprint); exports only typed mailbox/observation records, is absent from release/archival builds, and has no save impact |
+| `EXPANSION_AUTOPLAY_PLANNER` | `0` or `1`; `1` persistently selects `MODERN_CONFIG=debug` under `./configure` | `0` | issue #92 default-off local external planner bridge (fingerprint); generated bare `make` uses the supported debug lane, explicit release overrides fail closed, release/archival builds omit the bridge, and save data is unchanged |
 | `EXPANSION_BGM_CONTINUATION_POLICY` | `preserve`, `resume`, or `restart` | `preserve` | issues #37/#39 typed BGM continuation policy (fingerprint); never save-compatible |
 
 Every value has a `?=` default, so an explicit `./configure` option, `make`

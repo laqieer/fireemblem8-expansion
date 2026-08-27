@@ -888,33 +888,46 @@ provides a default-off, **modern-debug-only** local planner bridge. It builds
 on the one blue `COMPUTER` controller from #85, #86's bounded terminal
 contract, #89's objective telemetry, #90's decision callback seam, and #91's
 provenance/report vocabulary. The bridge is not a new phase router: #90 first
-produces the normal `gAiDecision`, then the bridge publishes exactly that
-candidate and returns it unchanged to the existing `CpPerform` /
-`ApplyUnitAction` path after a valid commit.
+produces the normal `gAiDecision`, then the bridge retains that decision plus canonical legal reachable
+`MOVE_WAIT` alternatives, bounded at 512 total candidates. The selected
+engine decision is ordinal 0; additional waits are ordered row-major. A valid
+typed commit copies the selected retained decision back to the unchanged
+`CpPerform` / `ApplyUnitAction` path.
 
 `EXPANSION_AUTOPLAY_PLANNER=1` is valid only with `MODERN_CONFIG=debug`.
 It participates in configuration identity but adds no save field, migration,
 epoch, localization, generated chapter data, or archival behavior. Release
 and archival builds omit its state and hooks. The only exported records are
-the fixed-width, pointer-free `PlannerObservationV1`, `PlannerCommandV1`, and
-`PlannerCampaignCheckpointV1`; the host may read those symbols and may submit
+the fixed-width, pointer-free `PlannerObservationV2`, `PlannerCommandV2`, and
+`PlannerCampaignCheckpointV2`; the host may read those symbols and may submit
 only one typed mailbox command. There is no raw-address, arbitrary-memory,
 save, savestate, socket, HTTP, model, or upload API.
 
-The observation is versioned and paged (256 bytes in the initial ROM page,
-within the 1024-byte v1 maximum). It records run/observation IDs, semantic
+The v2 observation is 1,020 bytes and pages 29 pointer-free 32-byte actions,
+within the 1,024-byte page maximum; up to 512 candidates produce at most 18
+pages. It records total/start/page counts, run/observation IDs, semantic
 candidate fields, chapter/turn, RN snapshot and consumption counter, and an
-explicit availability/rejection state. The host never sends coordinates,
-targets, item IDs, `ActionData`, unit pointers, or RNG state: a commit carries
-only `{run_id, observation_id, ordinal, token}`. Stale, unknown, forged,
-unsupported, cancelled, resource-limited, and malformed commands produce a
-typed rejection and do not execute an action.
+explicit availability/rejection state. `PAGE` requests retain stable global
+ordinals and tokens. The host never sends coordinates, targets, item IDs,
+`ActionData`, unit pointers, or RNG state: a commit carries only
+`{run_id, observation_id, ordinal, token}`. Stale pages, unknown commands,
+duplicate START, forged tokens, unsupported actions, cancellation, and
+resource overflow produce typed rejection and do not execute an action.
+
+START carries expected fixed-width ROM, configuration, scenario, and seed
+identities. READY/WAITING observations publish the actual runtime identities
+derived from the loaded ROM title/game-code header bytes, immutable config
+fingerprint, protocol scenario ID, and RN state. Mismatch rejects before
+computer control activation.
 
 The initial action subset is the existing normal-path `MOVE_WAIT`, `COMBAT`,
 `STAFF`, `USE_ITEM`, `PICK`, and `SUMMON` family where the #85 support audit
 allows it. Other action families are unavailable, never silently lowered to a
-raw engine call. Cancellation is observed only at a decision safe point; it
-never interrupts a battle, event, movement, or Proc halfway through.
+raw engine call. Cancellation is observed only at a decision safe point; it never interrupts a
+battle, event, movement, or Proc halfway through. Once an observation is
+published, `CpDecide` moves to a dedicated mailbox-poll state. Waiting frames
+never rerun AI, clear `gAiDecision`, consume RN state, or replace the published
+action; accepted commits alone rejoin the normal perform state.
 
 Replay begins from a fresh emulator and a blank in-memory SRAM image. It
 replays the complete chapter-one action prefix through normal game control,
@@ -922,11 +935,23 @@ records a semantic chapter-two checkpoint (chapter/turn/RN/trace digest), and
 continues the same live emulator. Branching replays a clean prefix; it never
 loads a save fixture or savestate. `rng.c` remains the authority: the bridge
 only snapshots its public RN state and read-only consumption counter.
+Ordinary `StartBattleMap` transitions clear transient pages/commands but
+preserve and re-arm an active run plus its campaign checkpoint. Explicit
+full-run reset and CANCEL remain the destructive boundaries.
 
 `TC-AUTOPLAY-PLANNER-001` proves both a scripted chooser and a bounded search
 chooser consume the same page/token contract, reject negative commands, and
 produce deterministic two-chapter semantic traces. The exact libmGBA fixture
-is a clean-boot, two-step transport proof; it exercises no arbitrary memory
-write and has no committed artifact. This is interface/replay evidence only,
+links the production planner implementation, submits START/PAGE/COMMIT/CANCEL
+and malformed commands through its typed mailbox, and observes production
+records plus a same-run chapter-two checkpoint. It exercises no arbitrary
+memory write and has no committed artifact. This is interface/replay evidence only,
 not evidence of human-like play, optimality, balance, or universal campaign
 viability.
+
+The enabled ARM object uses 2,523 bytes of text/rodata and 6,784 bytes of
+planner state: 5,632 bytes for 512 retained `AiDecision` candidates, 1,020 for
+the observation page, 64 for the command, 48 for the checkpoint, and 20 for
+private counters. Protocol v2 adds 6,576 bytes over the prior single-candidate
+RAM contract. Disabled release and archival builds still omit all planner
+state.

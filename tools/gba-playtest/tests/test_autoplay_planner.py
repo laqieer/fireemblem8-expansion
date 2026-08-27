@@ -20,7 +20,8 @@ for path in (str(PLAYTEST_DIR), str(TESTS_DIR)):
 
 import autoplay_planner as planner
 import gba_playtest
-from homebrew_fixture import build_two_chapter_planner_rom
+from homebrew_fixture import build_production_planner_rom
+from probe_bindings import ElfSymbolResolver
 
 
 PROVENANCE = {
@@ -72,11 +73,26 @@ class PlannerBridgeTests(unittest.TestCase):
         )
         actions = tuple(planner.Action("MOVE_WAIT", 1, (index, 0)) for index in range(41))
         observation = bridge.observe(1, (unavailable,), actions)
-        self.assertEqual(len(planner.PlannerBridge.action_pages(observation)), 3)
+        pages = planner.PlannerBridge.action_pages(observation)
+        self.assertEqual(len(pages), 2)
+        self.assertEqual([len(page) for page in pages], [29, 12])
         bounded = planner.PlannerBridge(PROVENANCE)
         bounded.begin(PROVENANCE)
+        maximum = bounded.observe(
+            1,
+            (),
+            tuple(
+                planner.Action("MOVE_WAIT", 1, (index, 0))
+                for index in range(512)
+            ),
+        )
+        maximum_pages = planner.PlannerBridge.action_pages(maximum)
+        self.assertEqual(len(maximum_pages), 18)
+        self.assertEqual(maximum_pages[-1][-1].ordinal, 511)
         with self.assertRaisesRegex(planner.PlannerError, "resource limit"):
-            bounded.observe(
+            overflow = planner.PlannerBridge(PROVENANCE)
+            overflow.begin(PROVENANCE)
+            overflow.observe(
                 1,
                 (),
                 tuple(planner.Action("MOVE_WAIT", 1, (0, 0)) for _ in range(513)),
@@ -99,6 +115,25 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertNotIn("socket", host)
         self.assertNotIn("subprocess", host)
         self.assertNotIn("savestate", host)
+
+    def test_cp_decide_wait_uses_dedicated_mailbox_poll_state(self):
+        root = TESTS_DIR.parents[2]
+        source = (root / "src" / "cp_decide.c").read_text(encoding="utf-8")
+        wait_case = source.split(
+            "case EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT:", 1
+        )[1].split("case EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED:", 1)[0]
+        self.assertIn("Proc_Goto(proc, 1)", wait_case)
+        self.assertNotIn("Proc_Goto(proc, 0)", wait_case)
+        poll_state = source.split("PROC_LABEL(1)", 1)[1].split(
+            "PROC_LABEL(2)", 1
+        )[0]
+        self.assertIn("PROC_REPEAT(CpDecide_PollPlanner)", poll_state)
+        poll_function = source.split(
+            "static void CpDecide_PollPlanner(ProcPtr proc)", 2
+        )[-1].split("static void CpDecide_CompleteDecision", 1)[0]
+        self.assertIn("ExpansionAutoplayPlanner_PollDecision", poll_function)
+        self.assertNotIn("AiDecideMainFunc", poll_function)
+        self.assertNotIn("AiClearDecision", poll_function)
 
     def test_debug_only_configuration_rejects_release_mailbox(self):
         root = TESTS_DIR.parents[2]
@@ -129,6 +164,71 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertNotEqual(release.returncode, 0)
         self.assertIn("modern-debug-only", release.stderr)
 
+    def test_configure_planner_selects_debug_for_bare_make(self):
+        root = TESTS_DIR.parents[2]
+        build_root = root / "build" / "test-artifacts" / "planner-configure"
+        build_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            configured = subprocess.run(
+                [str(root / "configure"), "--enable-autoplay-planner"],
+                cwd=temporary,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                configured.returncode,
+                0,
+                configured.stdout + configured.stderr,
+            )
+            fragment = (Path(temporary) / "config.autotools.mk").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("MODERN_CONFIG := debug", fragment)
+            self.assertIn("EXPANSION_AUTOPLAY_PLANNER := 1", fragment)
+
+            variables = subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "print-MODERN_CONFIG",
+                    "print-EXPANSION_AUTOPLAY_PLANNER",
+                ],
+                cwd=temporary,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(variables.returncode, 0, variables.stdout + variables.stderr)
+            self.assertIn(
+                "MODERN_CONFIG is a simple variable set to [debug]",
+                variables.stdout,
+            )
+            self.assertIn(
+                "EXPANSION_AUTOPLAY_PLANNER is a simple variable set to [1]",
+                variables.stdout,
+            )
+
+            dry_run = subprocess.run(
+                ["make", "--no-print-directory", "-n"],
+                cwd=temporary,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(dry_run.returncode, 0, dry_run.stdout + dry_run.stderr)
+            release = subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-n",
+                    "expansion-modern-rom",
+                    "MODERN_CONFIG=release",
+                ],
+                cwd=temporary,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(release.returncode, 0)
+            self.assertIn("modern-debug-only", release.stdout + release.stderr)
+
     def test_c_mailbox_adapter_accepts_only_typed_token_commit(self):
         compiler = shutil.which("gcc") or shutil.which("cc")
         if compiler is None:
@@ -153,6 +253,7 @@ class PlannerBridgeTests(unittest.TestCase):
                     "-DFE8_EXPANSION_MODERN_BUILD=1",
                     "-DFE8_EXPANSION_DEBUG=1",
                     "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
+                    "-DFE8_AUTOPLAY_PLANNER_RUNTIME_TEST=1",
                     str(root / "src" / "expansion_autoplay_planner.c"),
                     str(TESTS_DIR / "c" / "expansion_autoplay_planner_driver.c"),
                     "-o",
@@ -233,7 +334,15 @@ class PlannerBridgeTests(unittest.TestCase):
                 re.MULTILINE,
             )
             self.assertIsNotNone(observation, "planner observation symbol missing")
-            self.assertLessEqual(int(observation.group(1), 16), 256)
+            self.assertEqual(int(observation.group(1), 16), 1020)
+            candidates = re.search(
+                r"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+[bBdD]\s+"
+                r"sPlannerCandidates(?:\.\d+)?$",
+                symbols.stdout,
+                re.MULTILINE,
+            )
+            self.assertIsNotNone(candidates, "planner candidate store missing")
+            self.assertEqual(int(candidates.group(1), 16), 5632)
 
             disabled = temporary_path / "planner-release-disabled.o"
             completed = subprocess.run(
@@ -272,28 +381,32 @@ class PlannerBridgeTests(unittest.TestCase):
 
 
 class PlannerLibmGBAIntegrationTests(unittest.TestCase):
-    def test_two_chapter_fixture_replays_from_clean_boot_without_save_or_snapshot(self):
+    def test_production_mailbox_replays_two_chapters_without_save_or_snapshot(self):
         root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
         root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=root) as temporary:
             rom = Path(temporary) / "planner-two-chapter.gba"
-            build_two_chapter_planner_rom(rom)
+            elf = Path(temporary) / "planner-two-chapter.elf"
+            try:
+                build_production_planner_rom(rom, elf)
+            except RuntimeError as error:
+                if "planner runtime toolchain unavailable" in str(error):
+                    self.skipTest(str(error))
+                raise
+            resolver = ElfSymbolResolver(elf)
             scenario = gba_playtest.parse_scenario_data(
                 {
                     "schema_version": 2,
                     "name": "autoplay-planner-two-chapter",
-                    "frames": [
-                        {"start": 1, "end": 1, "keys": ["A"]},
-                        {"start": 3, "end": 3, "keys": ["A"]},
-                    ],
+                    "frames": [],
                     "run_until": {
-                        "max_frames": 8,
+                        "max_frames": 4,
                         "terminal_conditions": [
                             {
                                 "reason": "success",
                                 "all": [
                                     {
-                                        "address": "0x02000008",
+                                        "address": "gPlannerRuntimeProbe",
                                         "size": 4,
                                         "operator": "eq",
                                         "value": "0x00000001",
@@ -303,26 +416,29 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         ],
                         "turn_limit": {
                             "maximum": 3,
-                            "address": "0x02000004",
+                            "address": "gPlannerRuntimeProbe+0x24",
                             "size": 4,
                         },
                         "action_limit": {
-                            "maximum": 3,
-                            "address": "0x02000000",
+                            "maximum": 512,
+                            "address": "gPlannerRuntimeProbe+0x1c",
                             "size": 4,
                         },
                         "checkpoint": {
                             "name": "terminal",
                             "framebuffer": False,
                             "probes": [
-                                {"address": "0x02000000", "size": 4},
-                                {"address": "0x02000004", "size": 4},
-                                {"address": "0x02000008", "size": 4},
+                                {
+                                    "address": f"gPlannerRuntimeProbe+0x{offset:02x}",
+                                    "size": 4,
+                                }
+                                for offset in range(0, 0x2C, 4)
                             ],
                         },
                     },
                 },
                 "autoplay-planner-two-chapter",
+                resolver,
             )
             try:
                 first = gba_playtest.capture(rom, scenario, work_dir=Path(temporary))
@@ -333,8 +449,15 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 raise
             self.assertEqual(first, second)
             self.assertEqual(first["terminal"]["reason"], "success")
-            self.assertEqual(first["checkpoints"][0]["probes"][0]["value"], "0x00000002")
-            self.assertEqual(first["checkpoints"][0]["probes"][1]["value"], "0x00000002")
+            values = [
+                int(probe["value"], 16)
+                for probe in first["checkpoints"][0]["probes"]
+            ]
+            self.assertEqual(values[0], 1)
+            self.assertEqual(values[1:5], [9, 9, 9, 4])
+            self.assertEqual(values[5], 29)
+            self.assertEqual(values[6:8], [3, 65])
+            self.assertEqual(values[8:], [1, 2, 1])
 
 
 if __name__ == "__main__":

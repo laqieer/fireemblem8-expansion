@@ -8,7 +8,10 @@ required or committed.
 
 from __future__ import annotations
 
+import os
 import struct
+import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -137,5 +140,79 @@ def build_two_chapter_planner_rom(path: Path) -> None:
     _word(rom, ENTRY + len(instructions) * 4, 0x02000000)
     _word(rom, ENTRY + len(instructions) * 4 + 4, 0x04000130)
 
+    rom[0xBD] = (-sum(rom[0xA0:0xBD]) - 0x19) & 0xFF
+    path.write_bytes(rom)
+
+
+def build_production_planner_rom(path: Path, elf: Path) -> None:
+    """Link the production planner implementation into a tiny freestanding ROM."""
+    root = Path(__file__).resolve().parents[3]
+    compiler = shutil.which("arm-none-eabi-gcc")
+    objcopy = shutil.which("arm-none-eabi-objcopy")
+    if compiler is None or objcopy is None:
+        raise RuntimeError("planner runtime toolchain unavailable")
+    sources = (
+        root / "src" / "expansion_autoplay_planner.c",
+        root / "tools" / "gba-playtest" / "tests" / "c"
+        / "expansion_autoplay_planner_runtime.c",
+        root / "tools" / "gba-playtest" / "tests" / "c"
+        / "expansion_autoplay_planner_runtime_start.s",
+    )
+    linker = (
+        root
+        / "tools"
+        / "gba-playtest"
+        / "tests"
+        / "c"
+        / "expansion_autoplay_planner_runtime.ld"
+    )
+    command = [
+        compiler,
+        "-mcpu=arm7tdmi",
+        "-marm",
+        "-mthumb-interwork",
+        "-mabi=aapcs",
+        "-std=gnu89",
+        "-ffreestanding",
+        "-fno-builtin",
+        "-nostdlib",
+        "-O2",
+        "-I",
+        str(root / "include"),
+        "-I",
+        str(root / "include" / "generated"),
+        "-DFE8_EXPANSION_MODERN_BUILD=1",
+        "-DFE8_EXPANSION_DEBUG=1",
+        "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
+        *map(str, sources),
+        "-Wl,-T,{}".format(linker),
+        "-Wl,--gc-sections",
+        "-lgcc",
+        "-o",
+        str(elf),
+    ]
+    environment = dict(os.environ)
+    environment["TMPDIR"] = str(path.parent)
+    completed = subprocess.run(
+        command,
+        cwd=root,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode:
+        raise RuntimeError(completed.stdout + completed.stderr)
+    completed = subprocess.run(
+        [objcopy, "-O", "binary", str(elf), str(path)],
+        cwd=root,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode:
+        raise RuntimeError(completed.stdout + completed.stderr)
+    rom = bytearray(path.read_bytes())
+    if len(rom) < ROM_SIZE:
+        rom.extend(b"\0" * (ROM_SIZE - len(rom)))
     rom[0xBD] = (-sum(rom[0xA0:0xBD]) - 0x19) & 0xFF
     path.write_bytes(rom)

@@ -67,7 +67,7 @@
       }
     ]
   },
-  "census_digest": "6a1ac714e6cfc5ec0f607865471d4d0e8f07d2b5af819b1809da3743b79799fd",
+  "census_digest": "25af33f58b827c6467e8cd8e294fe15fe8e214f0ff437e62c0da07618eae6db1",
   "consumers": [
     {
       "category": "event-operand",
@@ -378,9 +378,9 @@
       "configured_cap": 127,
       "declaration": "u32 chapterIndex;",
       "domain": "chapter",
-      "key": "include/expansion_autoplay_planner.h|struct-field|chapter|ExpansionAutoplayPlannerCampaignCheckpointV1.chapterIndex",
+      "key": "include/expansion_autoplay_planner.h|struct-field|chapter|ExpansionAutoplayPlannerCampaignCheckpointV2.chapterIndex",
       "kind": "struct-field",
-      "line": 127,
+      "line": 141,
       "path": "include/expansion_autoplay_planner.h",
       "reason": null,
       "record_count": null,
@@ -389,7 +389,7 @@
       "status": "frozen",
       "storage_bits": 7,
       "surface": "public-header",
-      "symbol": "ExpansionAutoplayPlannerCampaignCheckpointV1.chapterIndex",
+      "symbol": "ExpansionAutoplayPlannerCampaignCheckpointV2.chapterIndex",
       "technical_max": 127
     },
     {
@@ -397,9 +397,9 @@
       "configured_cap": 127,
       "declaration": "u32 chapterIndex;",
       "domain": "chapter",
-      "key": "include/expansion_autoplay_planner.h|struct-field|chapter|ExpansionAutoplayPlannerObservationV1.chapterIndex",
+      "key": "include/expansion_autoplay_planner.h|struct-field|chapter|ExpansionAutoplayPlannerObservationV2.chapterIndex",
       "kind": "struct-field",
-      "line": 96,
+      "line": 101,
       "path": "include/expansion_autoplay_planner.h",
       "reason": null,
       "record_count": null,
@@ -408,7 +408,7 @@
       "status": "frozen",
       "storage_bits": 7,
       "surface": "public-header",
-      "symbol": "ExpansionAutoplayPlannerObservationV1.chapterIndex",
+      "symbol": "ExpansionAutoplayPlannerObservationV2.chapterIndex",
       "technical_max": 127
     },
     {
@@ -17554,9 +17554,9 @@
       "configured_cap": 205,
       "declaration": "u32 itemSlot;",
       "domain": "item",
-      "key": "include/expansion_autoplay_planner.h|struct-field|item|ExpansionAutoplayPlannerActionV1.itemSlot",
+      "key": "include/expansion_autoplay_planner.h|struct-field|item|ExpansionAutoplayPlannerActionV2.itemSlot",
       "kind": "struct-field",
-      "line": 78,
+      "line": 81,
       "path": "include/expansion_autoplay_planner.h",
       "reason": "Planner action itemSlot is an inventory-slot ordinal, not a game item ID.",
       "record_count": 206,
@@ -17565,7 +17565,7 @@
       "status": "expandable",
       "storage_bits": 8,
       "surface": "public-header",
-      "symbol": "ExpansionAutoplayPlannerActionV1.itemSlot",
+      "symbol": "ExpansionAutoplayPlannerActionV2.itemSlot",
       "technical_max": 255
     },
     {
@@ -17784,7 +17784,7 @@
       "domain": "item",
       "key": "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|item_slot",
       "kind": "tool-symbol",
-      "line": 74,
+      "line": 76,
       "path": "tools/gba-playtest/autoplay_planner.py",
       "reason": "Planner action item_slot is an inventory-slot ordinal, not a game item ID.",
       "record_count": 206,
@@ -21430,7 +21430,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "20b6ce67f386a75be95f3d42a97da3ca07dc88e2ff9e57108039b404a8f95f6b",
+  "digest": "761132201d9955c47e4043e98996cba0acf071ee11444e65c7706334b5488d3c",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,

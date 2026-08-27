@@ -6,11 +6,12 @@
 #include "cp_common.h"
 
 /*
- * Version 1 is deliberately a small, pointer-free page. The host may read
- * only these three exported records and may write only PlannerCommandV1.
+ * Version 2 is a bounded, pointer-free paged protocol. The host may read only
+ * these three exported records and may write only PlannerCommandV2.
  */
 #define EXPANSION_AUTOPLAY_PLANNER_MAGIC 0x41504C4Eu
-#define EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION 1
+#define EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION 2
+#define EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID 0x00009201u
 
 enum ExpansionAutoplayPlannerCommandKind
 {
@@ -18,6 +19,7 @@ enum ExpansionAutoplayPlannerCommandKind
     EXPANSION_AUTOPLAY_PLANNER_COMMAND_START = 1,
     EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT = 2,
     EXPANSION_AUTOPLAY_PLANNER_COMMAND_CANCEL = 3,
+    EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE = 4,
 };
 
 enum ExpansionAutoplayPlannerState
@@ -65,11 +67,12 @@ enum ExpansionAutoplayPlannerDecisionResult
 
 enum
 {
-    EXPANSION_AUTOPLAY_PLANNER_PAGE_MAX_BYTES = 256,
-    EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY = 1,
+    EXPANSION_AUTOPLAY_PLANNER_PAGE_MAX_BYTES = 1024,
+    EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY = 29,
+    EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY = 512,
 };
 
-struct ExpansionAutoplayPlannerActionV1
+struct ExpansionAutoplayPlannerActionV2
 {
     u32 kind;
     u32 actor;
@@ -81,7 +84,7 @@ struct ExpansionAutoplayPlannerActionV1
     u32 actionId;
 };
 
-struct ExpansionAutoplayPlannerObservationV1
+struct ExpansionAutoplayPlannerObservationV2
 {
     u32 magic;
     u32 version;
@@ -91,7 +94,9 @@ struct ExpansionAutoplayPlannerObservationV1
     u32 state;
     u32 pageIndex;
     u32 pageCount;
+    u32 actionStartOrdinal;
     u32 actionCount;
+    u32 totalActionCount;
     u32 rejection;
     u32 chapterIndex;
     u32 chapterTurn;
@@ -100,10 +105,14 @@ struct ExpansionAutoplayPlannerObservationV1
     u32 rngState2;
     u32 rngLcg;
     u32 rngConsumption;
-    struct ExpansionAutoplayPlannerActionV1 actions[EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY];
+    u32 actualRomIdentity;
+    u32 actualConfigIdentity;
+    u32 actualScenarioIdentity;
+    u32 actualSeedIdentity;
+    struct ExpansionAutoplayPlannerActionV2 actions[EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY];
 };
 
-struct ExpansionAutoplayPlannerCommandV1
+struct ExpansionAutoplayPlannerCommandV2
 {
     u32 magic;
     u32 version;
@@ -111,14 +120,19 @@ struct ExpansionAutoplayPlannerCommandV1
     u32 kind;
     u32 runId;
     u32 observationId;
+    u32 pageIndex;
     u32 actionOrdinal;
     u32 tokenLo;
     u32 tokenHi;
+    u32 expectedRomIdentity;
+    u32 expectedConfigIdentity;
+    u32 expectedScenarioIdentity;
+    u32 expectedSeedIdentity;
     u32 result;
     u32 rejection;
 };
 
-struct ExpansionAutoplayPlannerCampaignCheckpointV1
+struct ExpansionAutoplayPlannerCampaignCheckpointV2
 {
     u32 magic;
     u32 version;
@@ -134,16 +148,19 @@ struct ExpansionAutoplayPlannerCampaignCheckpointV1
     u32 traceDigest;
 };
 
-extern struct ExpansionAutoplayPlannerObservationV1 gExpansionAutoplayPlannerObservation;
-extern volatile struct ExpansionAutoplayPlannerCommandV1 gExpansionAutoplayPlannerCommand;
-extern struct ExpansionAutoplayPlannerCampaignCheckpointV1
+extern struct ExpansionAutoplayPlannerObservationV2 gExpansionAutoplayPlannerObservation;
+extern volatile struct ExpansionAutoplayPlannerCommandV2 gExpansionAutoplayPlannerCommand;
+extern struct ExpansionAutoplayPlannerCampaignCheckpointV2
     gExpansionAutoplayPlannerCampaignCheckpoint;
 
 void ExpansionAutoplayPlanner_Reset(void);
+void ExpansionAutoplayPlanner_OnMapReset(void);
 bool ExpansionAutoplayPlanner_PollStart(void);
 bool ExpansionAutoplayPlanner_IsActive(void);
 enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecision(
     const struct AiDecision* decision);
+enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecision(
+    struct AiDecision* decision);
 void ExpansionAutoplayPlanner_RecordCampaignCheckpoint(void);
 
 #endif /* GUARD_EXPANSION_AUTOPLAY_PLANNER_H */

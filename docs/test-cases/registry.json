@@ -2432,13 +2432,13 @@
       "anchor": "tc-autoplay-planner-001-local-external-planner-step-and-replay-contract",
       "profiles": [
         "Modern AAPCS debug with EXPANSION_AUTOPLAY_PLANNER=1",
-        "Clean-boot generated two-chapter libmGBA transport fixture"
+        "Clean-boot production-linked two-chapter libmGBA mailbox fixture"
       ],
-      "purpose": "Prove the typed local mailbox, paged pointer-free observations, legal token commit/rejection, two-chapter semantic replay, and replaceable scripted/search planners.",
+      "purpose": "Prove fixed-width START provenance, the typed local mailbox, 512-candidate paged pointer-free observations, latency-invariant legal token commit/rejection, two-chapter semantic replay, and replaceable scripted/search planners.",
       "prerequisites": "Repository root with Python 3, host C compiler, ARM toolchain, libmGBA development files, exact debug provenance, and blank in-memory SRAM; no save fixture, savestate, or network.",
-      "actions": "Run the focused PlannerBridgeTests selector and the exact two-chapter PlannerLibmGBAIntegrationTests selector.",
-      "expected_result": "Scripted and bounded-search planners use the same token protocol, the production decision adapter accepts only a matching token, and a clean two-chapter fixture replays deterministically.",
-      "negative_control": "Stale, unknown, forged, unavailable, malformed, cancelled, mismatched-provenance, and over-budget requests fail explicitly; mailbox exposes no arbitrary-memory write surface; release rejects the gate.",
+      "actions": "Run PlannerBridgeTests, make expansion-modern-autoplay-planner-check, the production-mailbox PlannerLibmGBAIntegrationTests selector, and configure/bare-make debug-lane checks.",
+      "expected_result": "Scripted and bounded-search planners use the same v2 token/page protocol; production C enumerates stable legal candidates without rerunning AI while waiting, accepts a selected later-page token through the existing executor seam, preserves the active checkpoint through chapter two, and the production-linked ROM replays deterministically.",
+      "negative_control": "Stale pages/observations, unknown ordinals/kinds, duplicate START, forged tokens, unavailable actions, cancellation, mismatched fixed-width provenance, and over-budget requests fail explicitly; mailbox exposes no arbitrary-memory write surface; release rejects the gate.",
       "interactions": "Hard stack parents are #85, #86, #89, #90, and #91; #87 is unrelated and #88 is optional. The bridge adds no second router or policy model.",
       "save_compatibility": "Fresh in-memory SRAM only; no save field, loaded save fixture, savestate, migration, preference, or compatibility-epoch change.",
       "cleanup": "The generated fixture is removed under ignored build/test-artifacts.",
@@ -2449,8 +2449,12 @@
           "evidence": "tools/gba-playtest/tests/test_autoplay_planner.py"
         },
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_two_chapter_fixture_replays_from_clean_boot_without_save_or_snapshot -v",
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_production_mailbox_replays_two_chapters_without_save_or_snapshot -v",
           "evidence": "tools/gba-playtest/tests/test_autoplay_planner.py"
+        },
+        {
+          "command": "make expansion-modern-autoplay-planner-check",
+          "evidence": "modern.mk"
         }
       ]
     },

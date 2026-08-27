@@ -2185,15 +2185,15 @@
       "category": "lookup-table",
       "reason": null
     },
-    "include/expansion_autoplay_planner.h|struct-field|chapter|ExpansionAutoplayPlannerCampaignCheckpointV1.chapterIndex": {
+    "include/expansion_autoplay_planner.h|struct-field|chapter|ExpansionAutoplayPlannerCampaignCheckpointV2.chapterIndex": {
       "category": "external-interface",
       "reason": null
     },
-    "include/expansion_autoplay_planner.h|struct-field|chapter|ExpansionAutoplayPlannerObservationV1.chapterIndex": {
+    "include/expansion_autoplay_planner.h|struct-field|chapter|ExpansionAutoplayPlannerObservationV2.chapterIndex": {
       "category": "external-interface",
       "reason": null
     },
-    "include/expansion_autoplay_planner.h|struct-field|item|ExpansionAutoplayPlannerActionV1.itemSlot": {
+    "include/expansion_autoplay_planner.h|struct-field|item|ExpansionAutoplayPlannerActionV2.itemSlot": {
       "category": "reviewed-exclusion",
       "reason": "Planner action itemSlot is an inventory-slot ordinal, not a game item ID."
     },

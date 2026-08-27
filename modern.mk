@@ -71,6 +71,7 @@ MODERN_GOALS := \
 	expansion-modern-autoplay-strategy-enabled-budget \
 	expansion-modern-autoplay-strategy-budget \
 	expansion-modern-autoplay-strategies-objects \
+	expansion-modern-autoplay-planner-check \
 	expansion-modern-autoplay-planner-objects \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
@@ -1060,6 +1061,15 @@ expansion-modern-autoplay-planner-objects: \
 	$(MODERN_OUTPUT_DIR)/src/rng.o
 	@printf 'Modern local autoplay planner objects built (config=%s abi=%s planner=%s)\n' \
 		'$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(EXPANSION_AUTOPLAY_PLANNER)'
+
+.PHONY: expansion-modern-autoplay-planner-check
+expansion-modern-autoplay-planner-check:
+	+$(MAKE) expansion-modern-autoplay-planner-objects \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_AUTOPLAY_PLANNER=1
+	"$(PYTHON)" -m unittest \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_c_mailbox_adapter_accepts_only_typed_token_commit \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_arm_adapter_compiles_at_the_existing_computer_decision_boundary \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_production_mailbox_replays_two_chapters_without_save_or_snapshot
 
 # Issue #5 Batch 1 (mechanics): same reasoning as the units/traps/shops/
 # eventlists synthetic-slot rules above, for the terrainstats table's

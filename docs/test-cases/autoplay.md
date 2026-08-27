@@ -552,8 +552,11 @@ do not establish statistical power, difficulty, campaign quality, or balance.
 1. Run
    `python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests -v`.
 2. Run
-   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_two_chapter_fixture_replays_from_clean_boot_without_save_or_snapshot -v`.
-3. Start a typed mailbox run, read its observation page, and commit only the
+   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_production_mailbox_replays_two_chapters_without_save_or_snapshot -v`.
+3. Run `make expansion-modern-autoplay-planner-check`.
+4. Run `./configure --enable-autoplay-planner`, then verify bare `make -n`
+   selects `MODERN_CONFIG=debug` and an explicit release override fails.
+5. Start a typed mailbox run, read every requested observation page, and commit only the
    returned action token. Replay from a fresh boot through chapter one and the
    semantic chapter-two checkpoint.
 
@@ -561,16 +564,20 @@ do not establish statistical power, difficulty, campaign quality, or balance.
 
 The scripted reference chooser and bounded search chooser consume the same
 pointer-free observation/action records and produce a deterministic
-two-chapter trace. The C adapter holds a #90-produced legal decision until its
-matching token commits it through the #85 computer action route. The clean
-libmGBA transport fixture reaches its second chapter and replays byte-for-byte
-without loading a save or snapshot.
+two-chapter trace. The C adapter retains one selected engine decision plus
+canonical row-major legal waits, pages 29 at a time across the 512-action
+bound, and holds them without rerunning AI or consuming RN state until a
+matching global ordinal/token commits through the #85 computer action route.
+The production-linked libmGBA fixture exercises START/PAGE/COMMIT/CANCEL and
+malformed commands, preserves the campaign checkpoint across chapter reset,
+reaches chapter two, and replays byte-for-byte without save or snapshot.
 
 ### Negative control
 
 Stale observation IDs, unknown ordinals, forged tokens, unavailable
 capabilities, malformed mailbox headers, cancellation, provenance mismatch,
-and resource overflow fail with explicit typed outcomes and no action commit.
+duplicate START, unexpected command kinds, page overflow, and resource
+overflow fail with explicit typed outcomes and no action commit.
 The mailbox has no raw address/write method. Release configuration rejects
 `EXPANSION_AUTOPLAY_PLANNER=1`; no bridge state is present when disabled.
 
@@ -585,10 +592,11 @@ localization change.
 ### Automation
 
 The focused host selector validates schema bounds, unavailable states, token
-rejections, mailbox exclusivity, C/ARM adapter linkage, scripted/search
-interoperability, cancellation, and read-only RNG/campaign checkpoints. The
-single libmGBA selector validates fresh two-chapter clean boot/replay. No
-manual-only criterion remains.
+rejections, mailbox exclusivity, provenance, paging, latency-invariant
+decision/RN state, C/ARM adapter linkage, scripted/search interoperability,
+cancellation, configure persistence, and campaign checkpoints. The single
+libmGBA selector validates production records and fresh two-chapter
+clean-boot replay. No manual-only criterion remains.
 
 ### Cleanup and limitations
 
