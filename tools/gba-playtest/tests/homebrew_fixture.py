@@ -338,6 +338,7 @@ def build_planner_transport_backend(
     acknowledgement_frame_limit: int = 120,
     response_frame_limit: int = 600,
     commit_completion_frame_limit: int = 18000,
+    test_bootstrap: bool = False,
 ) -> None:
     """Build the fixed-symbol stdin/stdout libmGBA planner adapter."""
     if min(
@@ -376,7 +377,22 @@ def build_planner_transport_backend(
         "-DPLANNER_COMMIT_COMPLETION_FRAME_LIMIT={}u".format(
             commit_completion_frame_limit
         ),
+        f"-DPLANNER_TRANSPORT_TEST_BOOTSTRAP={int(test_bootstrap)}",
         str(root / "tools" / "gba-playtest" / "planner_transport_backend.c"),
+        *(
+            [
+                str(
+                    root
+                    / "tools"
+                    / "gba-playtest"
+                    / "tests"
+                    / "c"
+                    / "planner_transport_bootstrap.c"
+                )
+            ]
+            if test_bootstrap
+            else []
+        ),
         "-o",
         str(path),
     ]

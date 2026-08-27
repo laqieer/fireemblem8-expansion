@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from unittest import mock
 
 
 TESTS_DIR = Path(__file__).resolve().parent
@@ -21,7 +22,6 @@ for path in (str(PLAYTEST_DIR), str(TESTS_DIR)):
         sys.path.insert(0, path)
 
 import autoplay_planner as planner
-import gba_playtest
 import host_mode
 from homebrew_fixture import (
     build_planner_transport_backend,
@@ -686,6 +686,115 @@ class PlannerBridgeTests(unittest.TestCase):
             )
         )
 
+    def test_transcript_json_depth_and_recursion_fail_closed(self):
+        def nested_array(depth):
+            value = 0
+            for _ in range(depth):
+                value = [value]
+            return value
+
+        def nested_object(depth):
+            value = 0
+            for _ in range(depth):
+                value = {"value": value}
+            return value
+
+        for factory in (nested_array, nested_object):
+            for depth in (
+                planner.MAX_JSON_DEPTH - 1,
+                planner.MAX_JSON_DEPTH,
+            ):
+                with self.subTest(
+                    shape=factory.__name__,
+                    depth=depth,
+                ):
+                    encoded = planner._canonical(factory(depth))
+                    self.assertIsNotNone(json.loads(encoded))
+            with self.assertRaisesRegex(
+                planner.PlannerError,
+                "invalid planner transcript JSON depth",
+            ):
+                planner._canonical(
+                    factory(planner.MAX_JSON_DEPTH + 1)
+                )
+
+        at_limit = (
+            b"[" * planner.MAX_JSON_DEPTH
+            + b"0"
+            + b"]" * planner.MAX_JSON_DEPTH
+        )
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "invalid planner transcript envelope",
+        ):
+            planner.PlannerTranscript.import_bytes(at_limit)
+        above_limit = (
+            b"[" * (planner.MAX_JSON_DEPTH + 1)
+            + b"0"
+            + b"]" * (planner.MAX_JSON_DEPTH + 1)
+        )
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "invalid planner transcript JSON depth",
+        ):
+            planner.PlannerTranscript.import_bytes(above_limit)
+        object_above_limit = (
+            b'{"value":' * (planner.MAX_JSON_DEPTH + 1)
+            + b"0"
+            + b"}" * (planner.MAX_JSON_DEPTH + 1)
+        )
+        factory_calls = 0
+
+        def transport_factory():
+            nonlocal factory_calls
+            factory_calls += 1
+            raise AssertionError("invalid transcript started transport")
+
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "invalid planner transcript JSON depth",
+        ):
+            planner.replay_transcript_on_clean_transport(
+                object_above_limit,
+                transport_factory,
+            )
+        self.assertEqual(factory_calls, 0)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "invalid planner transcript JSON",
+        ):
+            planner.PlannerTranscript.import_bytes(b'{"value":"\xff"}')
+
+        bridge = planner.PlannerBridge(PROVENANCE)
+        bridge.begin(PROVENANCE)
+        observation = bridge.observe(
+            1,
+            (),
+            (planner.Action("MOVE_WAIT", 1, (1, 0)),),
+        )
+        planner.collect_observation_pages(bridge, observation)
+        valid = bridge.transcript.export()
+        with mock.patch.object(
+            planner.json,
+            "loads",
+            side_effect=RecursionError("parser recursion"),
+        ):
+            with self.assertRaisesRegex(
+                planner.PlannerError,
+                "invalid planner transcript JSON",
+            ):
+                planner.PlannerTranscript.import_bytes(valid)
+        with mock.patch.object(
+            planner.json,
+            "dumps",
+            side_effect=RecursionError("canonicalizer recursion"),
+        ):
+            with self.assertRaisesRegex(
+                planner.PlannerError,
+                "invalid planner transcript JSON recursion",
+            ):
+                planner.PlannerTranscript.import_bytes(valid)
+
     def test_mailbox_has_no_arbitrary_memory_write_api(self):
         mailbox = planner.Mailbox()
         self.assertFalse(hasattr(mailbox, "write"))
@@ -1267,6 +1376,9 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertNotIn("savestate", host)
         self.assertNotIn("ADDRESS", transport)
         self.assertNotIn("POKE", transport)
+        self.assertNotIn('"STEP"', transport)
+        self.assertNotIn('"RUN"', transport)
+        self.assertNotIn("setKeys", transport)
         self.assertIn("PLANNER_COMMAND_ADDR", transport)
 
     def test_cp_decide_wait_uses_dedicated_mailbox_poll_state(self):
@@ -2459,7 +2571,6 @@ class PlannerProcessTransport:
         self.last_acknowledgement: TransportAcknowledgement | None = None
         self.last_completion: TransportCompletion | None = None
         self._next_acknowledgement_id = 1
-        self.frame_count = 4
         self.transcript = planner.PlannerTranscript()
         self._transcript_started = False
         self.observation = self._read_state()
@@ -2702,20 +2813,6 @@ class PlannerProcessTransport:
             )
         raise AssertionError(f"unsupported transport command {command.kind}")
 
-    def malformed(self, kind: int = 0xFFFFFFFF) -> planner.Observation:
-        return self._send(
-            "MALFORMED {:08x} {:08x} {:08x}".format(
-                kind,
-                self.observation.run_id,
-                self.observation.observation_id,
-            ),
-            transcript_command={
-                "kind": kind,
-                "run_id": self.observation.run_id,
-                "observation_id": self.observation.observation_id,
-            },
-        )
-
     def record_complete_observation(
         self,
         observation: planner.Observation,
@@ -2725,19 +2822,6 @@ class PlannerProcessTransport:
             self.checkpoint,
             self.command,
         )
-
-    def step(self) -> planner.Observation:
-        observation = self._send("STEP", expect_acknowledgement=False)
-        self.frame_count += 1
-        return observation
-
-    def run_frames(self, count: int, keys: int = 0) -> planner.Observation:
-        observation = self._send(
-            f"RUN {count:x} {keys:x}",
-            expect_acknowledgement=False,
-        )
-        self.frame_count += count
-        return observation
 
     def close(self) -> None:
         if self.process.poll() is None and self.process.stdin is not None:
@@ -3421,6 +3505,92 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             finally:
                 transport.close()
 
+    def test_restricted_backend_rejects_frame_and_key_controls(self):
+        root = (
+            TESTS_DIR.parents[2]
+            / "build"
+            / "test-artifacts"
+            / "autoplay-planner"
+        )
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            try:
+                rom, backend = self._build_transport(temporary)
+            except RuntimeError as error:
+                if (
+                    "planner runtime toolchain unavailable" in str(error)
+                    or "planner transport host compiler unavailable"
+                        in str(error)
+                ):
+                    self.skipTest(str(error))
+                raise
+            transport = PlannerProcessTransport(backend, rom)
+            try:
+                observation_before = transport.observation
+                checkpoint_before = transport.checkpoint
+                command_before = transport.command
+                transcript_before = transport.transcript.export()
+                assert transport.process.stdin is not None
+                assert transport.process.stdout is not None
+                for raw_command in (
+                    "STEP",
+                    "RUN 100 1",
+                    "KEYS 3ff",
+                ):
+                    transport.process.stdin.write(raw_command + "\n")
+                    transport.process.stdin.flush()
+                    self.assertEqual(
+                        transport.process.stdout.readline(),
+                        "ERROR unknown typed command\n",
+                    )
+                    transport.process.stdin.write("READ\n")
+                    transport.process.stdin.flush()
+                    observed = transport._read_state()
+                    self.assertEqual(observed, observation_before)
+                    self.assertEqual(
+                        transport.checkpoint,
+                        checkpoint_before,
+                    )
+                    self.assertEqual(transport.command, command_before)
+                    self.assertEqual(
+                        transport.transcript.export(),
+                        transcript_before,
+                    )
+
+                waiting = transport.start()
+                cancelled = transport.exchange(
+                    planner.Command(
+                        planner.CommandKind.CANCEL,
+                        waiting.run_id,
+                        waiting.observation_id,
+                    )
+                )
+                self.assertEqual(cancelled.state, 4)
+                encoded = json.loads(transport.transcript.export())
+            finally:
+                transport.close()
+
+            command_event = next(
+                event
+                for event in encoded["events"]
+                if event["event"] == "command"
+            )
+            command_event["command"]["kind"] = "RUN"
+            previous = "0" * 64
+            for sequence, event in enumerate(encoded["events"]):
+                event.pop("event_digest", None)
+                event["sequence"] = sequence
+                event["previous_digest"] = previous
+                event["event_digest"] = planner._digest(event)
+                previous = event["event_digest"]
+            with self.assertRaisesRegex(
+                planner.PlannerError,
+                "acknowledgement kind mismatch",
+            ):
+                planner.PlannerTranscript.import_bytes(
+                    planner._canonical(encoded)
+                )
+
     def test_production_transcript_capacity_rejects_before_mailbox_write(self):
         root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
         root.mkdir(parents=True, exist_ok=True)
@@ -3477,17 +3647,23 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
 
             transport = PlannerProcessTransport(backend, rom)
             try:
-                rejected = transport.start(
-                    scenario_identity=transport.observation.actual_scenario_identity ^ 1
+                wrong_scenario = (
+                    transport.observation.actual_scenario_identity ^ 1
                 )
-                self.assertEqual(rejected.rejection, 9)
-                first_rejection_ack = transport.last_acknowledgement
-                malformed = transport.malformed()
-                self.assertEqual(malformed.rejection, 9)
-                second_rejection_ack = transport.last_acknowledgement
-                malformed = transport.malformed()
-                self.assertEqual(malformed.rejection, 9)
-                third_rejection_ack = transport.last_acknowledgement
+                acknowledgements = []
+                for _ in range(3):
+                    rejected = transport.start(
+                        scenario_identity=wrong_scenario
+                    )
+                    self.assertEqual(rejected.rejection, 9)
+                    acknowledgements.append(
+                        transport.last_acknowledgement
+                    )
+                (
+                    first_rejection_ack,
+                    second_rejection_ack,
+                    third_rejection_ack,
+                ) = acknowledgements
                 self.assertIsNotNone(first_rejection_ack)
                 self.assertIsNotNone(second_rejection_ack)
                 self.assertIsNotNone(third_rejection_ack)
@@ -3570,10 +3746,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         choice.token,
                     )
                 )
-                for _ in range(10):
-                    if continued.state == 2:
-                        break
-                    continued = transport.step()
                 self.assertEqual(continued.state, 2)
                 self.assertEqual(transport.checkpoint[0], 0x41504C4E)
                 self.assertEqual(transport.checkpoint[4], 1)
@@ -3604,15 +3776,18 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         choice.token,
                     )
                 )
-                for _ in range(10):
-                    if waiting.state == 2:
-                        break
-                    waiting = transport.step()
                 self.assertEqual(waiting.state, 2)
                 self.assertEqual(transport.checkpoint[0], 0x41504C4E)
                 self.assertEqual(transport.checkpoint[4], 1)
                 for _ in range(300):
-                    waiting = transport.malformed()
+                    waiting = transport.exchange(
+                        planner.Command(
+                            planner.CommandKind.PAGE,
+                            waiting.run_id,
+                            waiting.observation_id,
+                            page_index=0,
+                        )
+                    )
                     if waiting.state == 4:
                         break
                 self.assertEqual(waiting.state, 4)
@@ -3633,41 +3808,13 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
         root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=root) as temporary:
             backend = Path(temporary) / "planner-transport"
-            build_planner_transport_backend(backend, elf)
-            route = json.loads(
-                (
-                    TESTS_DIR.parent
-                    / "scenarios"
-                    / "starter-danger-overlay-negative-modern-debug.json"
-                ).read_text(encoding="utf-8")
+            build_planner_transport_backend(
+                backend,
+                elf,
+                test_bootstrap=True,
             )
             transport = PlannerProcessTransport(backend, rom)
             try:
-                target_frame = 3950
-                for frame_range in route["frames"]:
-                    start = frame_range["start"]
-                    end = min(frame_range["end"], target_frame)
-                    if start > target_frame:
-                        break
-                    if transport.frame_count < start:
-                        transport.run_frames(start - transport.frame_count)
-                    keys = 0
-                    for name in frame_range["keys"]:
-                        keys |= gba_playtest.KEY_BITS[name]
-                    transport.run_frames(end - start + 1, keys)
-                if transport.frame_count <= target_frame:
-                    transport.run_frames(target_frame + 1 - transport.frame_count)
-
-                for index in range(8):
-                    if transport.observation.state == 1:
-                        break
-                    key = (
-                        gba_playtest.KEY_BITS["START"]
-                        if index % 2 == 0
-                        else gba_playtest.KEY_BITS["A"]
-                    )
-                    transport.run_frames(6, key)
-                    transport.run_frames(59)
                 self.assertEqual(transport.observation.state, 1)
                 waiting = transport.start()
                 self.assertEqual(waiting.state, 2)
@@ -3705,23 +3852,13 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         choice.token,
                     )
                 )
-                self.assertIn(accepted.state, (2, 3))
-
-                for _ in range(20):
-                    if (
-                        transport.observation.state == 2
-                        and transport.observation.observation_id
-                        != complete.observation_id
-                    ):
-                        break
-                    transport.run_frames(60)
-                self.assertEqual(transport.observation.state, 2)
+                self.assertEqual(accepted.state, 2)
                 self.assertNotEqual(
-                    transport.observation.observation_id,
+                    accepted.observation_id,
                     complete.observation_id,
                 )
                 followup = planner.collect_observation_pages(
-                    transport, transport.observation
+                    transport, accepted
                 )
                 actor_after = next(
                     unit for unit in followup.units if unit.slot == choice.action.actor

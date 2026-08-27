@@ -1046,6 +1046,12 @@ chapter-local identities may advance. Deep replay requires equivalent
 observations, commands, settlements, and terminal state; truncation,
 reordering, or field tampering fails. The bounded-search reference accepts at
 most 512 nodes and enforces the 64 MiB host-search ceiling.
+Transcript JSON has an explicit maximum structural depth of 64 containers.
+An iterative byte preflight runs before decoding and an iterative object
+validator runs before canonicalization. Excess depth plus specifically
+JSON-decode, Unicode-decode, parser-recursion, and canonicalizer-recursion
+failures become stable invalid-transcript errors before state mutation or
+transport creation.
 The importer is an explicit command state machine: each command must be
 followed by its matching ACK, matching COMPLETE, one response page, and that
 response's settlement. It rejects responses before completion, duplicate or
@@ -1083,7 +1089,8 @@ observations remain active. Cancellation is observed only at a decision safe
 point; it never interrupts a battle, event, movement, or Proc halfway through.
 Once an observation is published,
 `CpDecide` moves to a dedicated mailbox-poll state. Every poll advances the
-single 300-frame deadline, including valid `PAGE` and malformed traffic, while
+single 300-frame deadline, including valid `PAGE` and native malformed-mailbox
+traffic, while
 never rerunning AI, consuming RN, or advancing a unit. Accepted commits alone
 rejoin the normal perform state.
 
@@ -1113,13 +1120,12 @@ checkpoint can become readable again.
 chooser consume the same page/token contract, reject negative commands, and
 produce deterministic two-chapter semantic transcripts. A separately compiled
 libmGBA adapter is bound to the exact linked observation, command, and
-checkpoint symbols and accepts only `READ`, `START`, `PAGE`, `COMMIT`,
-`CANCEL`, malformed-kind, single-frame `STEP`, and bounded key-input `RUN`
-records over stdin/stdout. Both
+checkpoint symbols and accepts only the restricted typed/status operations
+above over stdin/stdout. Both
 Python planners drive the production-linked ROM through that adapter; the ROM
 does not self-write commands. The integration covers all semantic/action
 pages, opaque-token acceptance and rejection, same-ROM/config/seed scenario
-mismatch, malformed traffic timeout, cancellation, and same-run chapter-two
+mismatch, non-idle PAGE timeout, cancellation, and same-run chapter-two
 checkpoint continuation.
 Canonical replay is transport-driven rather than a hard-coded observation
 fixture. It imports a recorded transcript, starts a new clean-boot ROM and
@@ -1129,6 +1135,13 @@ newly returned pages, and requires the new transcript bytes to match. This
 compares every semantic page, ACK/result, completion, telemetry, RNG,
 checkpoint, and terminal state without a save, savestate, emulator snapshot,
 or raw-memory operation.
+The post-startup backend accepts only `READ`, `START`, `PAGE`, `COMMIT`,
+`CANCEL`, and `QUIT`. It exposes no frame-step, arbitrary-frame, keypad, or
+arbitrary-kind command. The enabled full-ROM test reaches its fixed mailbox
+READY boundary through a separately linked test-only bootstrap routine before
+stdin is exposed. Sending `STEP`, `RUN`, raw keys, or equivalent unknown input
+returns an error without advancing the emulator or changing observation, RNG,
+mailbox, checkpoint, or transcript state.
 
 Every typed mailbox command now produces three distinct line-protocol stages:
 `ACK command_id kind result rejection` after the ROM consumes the exact

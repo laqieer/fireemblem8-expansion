@@ -59,6 +59,10 @@ struct command_acknowledgement
     uint32_t rejection;
 };
 
+#if PLANNER_TRANSPORT_TEST_BOOTSTRAP
+void PlannerTransport_TestBootstrap(struct mCore* core);
+#endif
+
 static void discard_log(
     struct mLogger* logger,
     int category,
@@ -384,6 +388,9 @@ static int run_transport(const char* rom_path)
     core->reset(core);
     for (startup_frames = 0; startup_frames < 4; startup_frames++)
         core->runFrame(core);
+#if PLANNER_TRANSPORT_TEST_BOOTSTRAP
+    PlannerTransport_TestBootstrap(core);
+#endif
     emit_state(core);
 
     while (fgets(line, sizeof(line), stdin) != NULL)
@@ -410,42 +417,6 @@ static int run_transport(const char* rom_path)
                 fflush(stdout);
                 continue;
             }
-            emit_state(core);
-            continue;
-        }
-        if (strcmp(command, "STEP") == 0)
-        {
-            if (strtok(NULL, " \t\r\n") != NULL)
-            {
-                fputs("ERROR malformed STEP\n", stdout);
-                fflush(stdout);
-                continue;
-            }
-            core->runFrame(core);
-            emit_state(core);
-            continue;
-        }
-        if (strcmp(command, "RUN") == 0)
-        {
-            uint32_t frame_count;
-            uint32_t keys;
-            uint32_t frame;
-
-            if (!read_values(tokens, 2, values)
-                || values[0] == 0
-                || values[0] > 100000
-                || values[1] > 0x3FF)
-            {
-                fputs("ERROR malformed RUN\n", stdout);
-                fflush(stdout);
-                continue;
-            }
-            frame_count = values[0];
-            keys = values[1];
-            core->setKeys(core, keys);
-            for (frame = 0; frame < frame_count; frame++)
-                core->runFrame(core);
-            core->setKeys(core, 0);
             emit_state(core);
             continue;
         }
@@ -525,25 +496,6 @@ static int run_transport(const char* rom_path)
                 NULL,
                 NULL);
             kind = EXPANSION_AUTOPLAY_PLANNER_COMMAND_CANCEL;
-        }
-        else if (strcmp(command, "MALFORMED") == 0)
-        {
-            if (!read_values(tokens, 3, values))
-            {
-                fputs("ERROR malformed MALFORMED\n", stdout);
-                fflush(stdout);
-                continue;
-            }
-            write_command(
-                core,
-                values[0],
-                values[1],
-                values[2],
-                0,
-                0,
-                NULL,
-                NULL);
-            kind = values[0];
         }
         else
         {

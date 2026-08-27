@@ -23,6 +23,7 @@ MAX_TRACE_ACTIONS = 4096
 MAX_TRACE_BYTES = 2 * 1024 * 1024
 MAX_TRANSCRIPT_EXCHANGE_BYTES = 64 * 1024
 MAX_SEARCH_BYTES = 64 * 1024 * 1024
+MAX_JSON_DEPTH = 64
 PAGE_MAX_BYTES = 1024
 OBSERVATION_HEADER_BYTES = 100
 OBSERVATION_PAYLOAD_BYTES = 896
@@ -240,8 +241,73 @@ class Command:
     page_index: int | None = None
 
 
+def _validate_json_structure(value: object) -> None:
+    stack = [(value, 1, False)]
+    active: set[int] = set()
+
+    while stack:
+        current, depth, leaving = stack.pop()
+        if leaving:
+            active.remove(id(current))
+            continue
+        if not isinstance(current, (dict, list, tuple)):
+            continue
+        if depth > MAX_JSON_DEPTH:
+            raise PlannerError("invalid planner transcript JSON depth")
+        identity = id(current)
+        if identity in active:
+            raise PlannerError("invalid planner transcript JSON structure")
+        active.add(identity)
+        stack.append((current, depth, True))
+        values = (
+            current.values()
+            if isinstance(current, dict)
+            else current
+        )
+        for child in values:
+            stack.append((child, depth + 1, False))
+
+
+def _validate_json_text_depth(data: bytes) -> None:
+    depth = 0
+    in_string = False
+    escaped = False
+
+    for value in data:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif value == ord("\\"):
+                escaped = True
+            elif value == ord('"'):
+                in_string = False
+            continue
+        if value == ord('"'):
+            in_string = True
+        elif value in (ord("{"), ord("[")):
+            depth += 1
+            if depth > MAX_JSON_DEPTH:
+                raise PlannerError(
+                    "invalid planner transcript JSON depth"
+                )
+        elif value in (ord("}"), ord("]")):
+            depth -= 1
+
+
 def _canonical(value: object) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+    _validate_json_structure(value)
+    try:
+        encoded = json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+    except RecursionError as error:
+        raise PlannerError(
+            "invalid planner transcript JSON recursion"
+        ) from error
+    return encoded.encode("ascii")
 
 
 def _mix_digest(digest: int, value: int) -> int:
@@ -564,9 +630,14 @@ class PlannerTranscript:
     def import_bytes(cls, data: bytes) -> "PlannerTranscript":
         if len(data) > MAX_TRACE_BYTES:
             raise PlannerError(Rejection.RESOURCE_LIMIT.value)
+        _validate_json_text_depth(data)
         try:
             document = json.loads(data)
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            RecursionError,
+        ) as error:
             raise PlannerError("invalid planner transcript JSON") from error
         if _canonical(document) != data:
             raise PlannerError("planner transcript is not canonical")
@@ -736,7 +807,7 @@ class PlannerTranscript:
                 if accepted and command_kind_code == 4 and (
                     type(command.get("page_index")) is not int
                     or latest_observation is None
-                    or not 1 <= command["page_index"]
+                    or not 0 <= command["page_index"]
                         < latest_observation.get("page_count", 0)
                 ):
                     raise PlannerError("PAGE command identity mismatch")
@@ -1990,8 +2061,6 @@ def replay_transcript_on_clean_transport(
                             command["observation_id"],
                         )
                     )
-                elif type(kind) is int:
-                    response = transport.malformed(kind)
                 else:
                     raise PlannerError(
                         "transcript contains an unsupported command"

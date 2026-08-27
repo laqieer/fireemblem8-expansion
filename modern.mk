@@ -1092,6 +1092,7 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_page_identity_and_sequence_are_bounded_before_traversal \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_bounds_availability_pages_and_provenance_fail_closed \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_transcript_round_trip_tamper_order_and_atomic_limits \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_transcript_json_depth_and_recursion_fail_closed \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_maximum_semantic_transcript_fits_two_mib \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_configured_bare_make_selects_release_and_fails_closed \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_configured_explicit_debug_goal_builds_in_toolchain_lane \
@@ -1112,6 +1113,7 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_acknowledged_commit_timeout_never_emits_stale_observation \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_unacknowledged_command_returns_typed_timeout \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_invalid_ack_is_rejected_before_ack_or_observation \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_restricted_backend_rejects_frame_and_key_controls \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_production_transcript_capacity_rejects_before_mailbox_write \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_transport_rejects_and_times_out \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_enabled_production_rom_executes_host_selected_action

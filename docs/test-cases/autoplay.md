@@ -658,6 +658,12 @@ resolve their action/token only from the named current observation.
 The recorded accepted two-chapter run and rejection/cancel run are each
 reissued through a newly booted production ROM/backend, and their complete
 transcripts must match byte-for-byte.
+Transcript JSON is iteratively bounded to 64 structural containers before
+decode and canonicalization. Below-limit and exact-limit arrays/objects are
+accepted by that boundary; excess depth and explicit parser/canonicalizer
+recursion become typed invalid-transcript errors before transport creation.
+After its fixed test-only pre-stdin boot routine, the enabled production
+backend accepts only READ/status, START, PAGE, COMMIT, CANCEL, and QUIT.
 
 ### Negative control
 
@@ -666,7 +672,8 @@ capabilities, malformed mailbox headers, cancellation, provenance mismatch,
 same-ROM/config/seed requests for another scenario, duplicate START,
 unexpected command kinds, empty enumerations, page overflow, and resource
 overflow fail with explicit typed outcomes and no action commit. Repeated
-valid PAGE or malformed traffic cannot postpone the 300-frame deadline.
+valid PAGE or native malformed-mailbox traffic cannot postpone the 300-frame
+deadline.
 Zero-candidate and over-512 enumerations publish typed EXHAUSTED, clear the
 checkpoint, deactivate, queue safe player restoration, execute no fallback,
 and reject stale re-entry; a nonterminal legal set remains active.
@@ -695,6 +702,11 @@ responses before completion, COMPLETE before ACK, duplicate ACK/COMPLETE,
 interleaved commands, missing responses/settlements, and terminal disagreement
 also fail before replay. A tampered transcript never starts the clean replay
 factory.
+Over-depth arrays/objects, parser or canonicalizer recursion, and re-chained
+deep inputs fail without state mutation. Client `STEP`, `RUN`, raw-key, and
+arbitrary-kind commands return an error and leave observation, RNG, mailbox,
+checkpoint, and transcript byte-identical; such commands cannot be encoded in
+a valid transcript.
 Out-of-range/occupied Warp destinations, opened or wrong Unlock tiles, stale
 Torch coordinates, consumed keys, non-repairable or wrong Hammerne slots, and
 a token copied from another Hammerne slot all reject without applying the
