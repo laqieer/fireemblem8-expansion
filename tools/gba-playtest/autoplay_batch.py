@@ -272,6 +272,7 @@ def _specification_definition(specification: BatchSpec) -> dict[str, Any]:
         "seeding": {
             **_normalized_probe(specification.seed_probe),
             "frame": specification.seed_frame,
+            "resolved_address": specification.seed_probe.address,
         },
     }
 
@@ -764,6 +765,7 @@ def _provenance(
         "seed_injection": {
             "address": specification.seed_probe.binding,
             "frame": specification.seed_frame,
+            "resolved_address": specification.seed_probe.address,
             "size": specification.seed_probe.size,
         },
         "specification": {
@@ -950,6 +952,50 @@ def _validate_probe_definition(value: Any, path: str) -> dict[str, Any]:
     return probe
 
 
+def _validate_seed_binding(value: Any, path: str) -> dict[str, Any]:
+    seed = _object(
+        value,
+        path,
+        {"address", "frame", "resolved_address", "size"},
+    )
+    probe = _validate_probe_definition(
+        {"address": seed["address"], "size": seed["size"]},
+        path,
+    )
+    resolved_address = seed["resolved_address"]
+    if not _is_int(resolved_address):
+        raise gba_playtest.PlaytestError(
+            f"{path}.resolved_address must be an integer"
+        )
+    if resolved_address % probe["size"]:
+        raise gba_playtest.PlaytestError(
+            f"{path}.resolved_address must be aligned to size {probe['size']}"
+        )
+    if not any(
+        start <= resolved_address
+        and resolved_address + probe["size"] <= end
+        for start, end in gba_playtest.WRITABLE_WORK_RAM_RANGES
+    ):
+        raise gba_playtest.PlaytestError(
+            f"{path}.resolved_address write range must fit entirely within "
+            "writable EWRAM or IWRAM"
+        )
+    _, literal_address = gba_playtest._parse_address(
+        probe["address"],
+        probe["size"],
+        f"{path}.address",
+    )
+    if literal_address is not None and literal_address != resolved_address:
+        raise gba_playtest.PlaytestError(
+            f"{path}.resolved_address does not match literal address"
+        )
+    if not _is_int(seed["frame"]) or seed["frame"] < 0:
+        raise gba_playtest.PlaytestError(
+            f"{path}.frame must be a non-negative integer"
+        )
+    return seed
+
+
 def _validate_metric_definition(value: Any, path: str) -> dict[str, Any]:
     metric = _object(value, path, {"id", "kind"}, {"delta_kind", "events", "groups"})
     _name(metric["id"], f"{path}.id")
@@ -969,6 +1015,11 @@ def _validate_metric_definition(value: Any, path: str) -> dict[str, Any]:
         groups = metric["groups"]
         if not isinstance(groups, list) or not groups:
             raise gba_playtest.PlaytestError(f"{path}.groups must be a non-empty array")
+        if len(groups) > MAX_GROUPS_PER_METRIC:
+            raise gba_playtest.PlaytestError(
+                f"{path}.groups has {len(groups)} entries, exceeding "
+                f"{MAX_GROUPS_PER_METRIC}"
+            )
         previous: tuple[str, str] | None = None
         for index, value_group in enumerate(groups):
             group_path = f"{path}.groups[{index}]"
@@ -995,6 +1046,11 @@ def _validate_metric_definition(value: Any, path: str) -> dict[str, Any]:
         events = metric["events"]
         if not isinstance(events, list) or not events:
             raise gba_playtest.PlaytestError(f"{path}.events must be a non-empty array")
+        if len(events) > MAX_GROUPS_PER_METRIC:
+            raise gba_playtest.PlaytestError(
+                f"{path}.events has {len(events)} entries, exceeding "
+                f"{MAX_GROUPS_PER_METRIC}"
+            )
         previous_id: str | None = None
         for index, value_event in enumerate(events):
             event_path = f"{path}.events[{index}]"
@@ -1031,6 +1087,11 @@ def _validate_metric_definition(value: Any, path: str) -> dict[str, Any]:
     groups = metric["groups"]
     if not isinstance(groups, list) or not groups:
         raise gba_playtest.PlaytestError(f"{path}.groups must be a non-empty array")
+    if len(groups) > MAX_GROUPS_PER_METRIC:
+        raise gba_playtest.PlaytestError(
+            f"{path}.groups has {len(groups)} entries, exceeding "
+            f"{MAX_GROUPS_PER_METRIC}"
+        )
     previous_id = None
     for index, value_group in enumerate(groups):
         group_path = f"{path}.groups[{index}]"
@@ -1142,18 +1203,14 @@ def _validate_provenance(
             f"{path}.bounds must exactly match canonical scenario run_until "
             "frame/turn/action limits"
         )
-    seed = _object(
+    seed = _validate_seed_binding(
         provenance["seed_injection"],
         f"{path}.seed_injection",
-        {"address", "frame", "size"},
     )
-    _validate_probe_definition(
-        {"address": seed["address"], "size": seed["size"]},
-        f"{path}.seed_injection",
-    )
-    if not _is_int(seed["frame"]) or seed["frame"] < 0:
+    if seed["frame"] >= run_until.max_frames:
         raise gba_playtest.PlaytestError(
-            f"{path}.seed_injection.frame must be a non-negative integer"
+            f"{path}.seed_injection.frame must be below canonical "
+            f"scenario max_frames {run_until.max_frames}"
         )
     specification = _object(
         provenance["specification"],
@@ -1200,23 +1257,10 @@ def _validate_provenance(
         raise gba_playtest.PlaytestError(
             f"{path}.specification.definition.profile.fidelity must be 'normal'"
         )
-    definition_seed = _object(
+    definition_seed = _validate_seed_binding(
         definition["seeding"],
         f"{path}.specification.definition.seeding",
-        {"address", "frame", "size"},
     )
-    _validate_probe_definition(
-        {
-            "address": definition_seed["address"],
-            "size": definition_seed["size"],
-        },
-        f"{path}.specification.definition.seeding",
-    )
-    if not _is_int(definition_seed["frame"]) or definition_seed["frame"] < 0:
-        raise gba_playtest.PlaytestError(
-            f"{path}.specification.definition.seeding.frame must be a "
-            "non-negative integer"
-        )
     if definition["name"] != specification["name"]:
         raise gba_playtest.PlaytestError(
             f"{path}.specification.name does not match its definition"
@@ -1351,6 +1395,19 @@ def _validate_nonnegative_int(value: Any, path: str) -> None:
         raise gba_playtest.PlaytestError(f"{path} must be a non-negative integer")
 
 
+def _validate_probe_width_value(
+    value: Any,
+    probe: dict[str, Any],
+    path: str,
+) -> None:
+    maximum = (1 << (probe["size"] * 8)) - 1
+    if not _is_int(value) or not 0 <= value <= maximum:
+        raise gba_playtest.PlaytestError(
+            f"{path} must be an integer from 0 through {maximum} for the "
+            f"declared {probe['size']}-byte probe"
+        )
+
+
 def _validate_metric_value(value: Any, definition: dict[str, Any], path: str) -> None:
     kind = definition["kind"]
     if kind == "terminal_reason":
@@ -1382,8 +1439,16 @@ def _validate_metric_value(value: Any, definition: dict[str, Any], path: str) ->
                 raise gba_playtest.PlaytestError(
                     f"{entry_path} does not match its declared faction/group"
                 )
-            _validate_nonnegative_int(entry["survivors"], f"{entry_path}.survivors")
-            _validate_nonnegative_int(entry["casualties"], f"{entry_path}.casualties")
+            _validate_probe_width_value(
+                entry["survivors"],
+                expected_entry["survivors"],
+                f"{entry_path}.survivors",
+            )
+            _validate_probe_width_value(
+                entry["casualties"],
+                expected_entry["casualties"],
+                f"{entry_path}.casualties",
+            )
         return
     if kind == "event_flag_outcomes":
         expected = definition["events"]
@@ -1419,7 +1484,11 @@ def _validate_metric_value(value: Any, definition: dict[str, Any], path: str) ->
             raise gba_playtest.PlaytestError(
                 f"{entry_path} does not match its declared group delta"
             )
-        _validate_nonnegative_int(entry["delta"], f"{entry_path}.delta")
+        _validate_probe_width_value(
+            entry["delta"],
+            expected_entry["probe"],
+            f"{entry_path}.delta",
+        )
 
 
 def _metric_distributions(

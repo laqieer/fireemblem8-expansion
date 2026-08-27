@@ -126,10 +126,14 @@ or looser CLI value is rejected before backend compilation or emulator start.
 
 The required specification is versioned JSON. It names the configuration and
 strategy profile, requires `"fidelity": "normal"`, and declares a writable
-EWRAM/IWRAM seed injection address and frame. The runner writes each seed only
-at that declared frame after a fresh libmGBA boot; it never treats a seed as a
-label or silently mutates an unknown RNG state. Every seed must fit the
-declared 1/2/4-byte probe before backend setup. The terminal checkpoint must
+EWRAM/IWRAM seed injection binding, canonical resolved numeric address, and
+frame. The complete 1/2/4-byte write range must fit writable work RAM, and the
+frame must be below the canonical scenario limit. The runner writes each seed
+only there after a fresh libmGBA boot; it never treats a seed as a label or
+silently mutates an unknown RNG state. Every seed must fit the declared probe
+before backend setup. Generic `gba_playtest.capture` also rejects a
+`ScheduledWrite` for fixed-frame scenarios before plan serialization or
+backend startup; format 6 is bounded-run-until-only. The terminal checkpoint must
 declare every semantic probe used by the selected metrics. A specification or
 imported report must contain exactly one terminal/frame/turn/action,
 faction-count, and event-outcome metric plus exactly one EXP/item/resource
@@ -137,7 +141,9 @@ delta metric. Supported metric kinds cover those typed values,
 survivor/casualty counts by faction/group, selected recruitment/village/chest
 event outcomes, and configured EXP/item/resource group deltas. Unknown metric
 kinds, missing/duplicate required kinds, or unrecorded probes fail before
-execution.
+execution. Every faction, event, and delta definition contains 1 through 64
+sorted unique records. Imported survivor/casualty and delta values must fit
+their declared 1/2/4-byte probes.
 
 Reports use `format_version: 2`, sorted object keys, sorted numeric seed
 records, complete ROM/configuration/scenario/profile/seed-binding/bound

@@ -473,13 +473,21 @@ or capture startup. Malformed nested report values fail comparison with status
 2 and an exact path instead of a traceback. This includes missing/duplicate
 required metric kinds, seeds outside their declared probe width, zero or more
 than 256 imported runs, provenance bounds that differ from the canonical
-scenario, and self-consistent terminal/metric values beyond those bounds.
+scenario, unresolved/non-writable seed ranges or late seed frames,
+self-consistent terminal/metric values beyond those bounds, width-backed
+metrics beyond their 1/2/4-byte probes, and empty/duplicate/unsorted/over-64
+faction, event, or delta lists.
 Shared-backend/global setup failure returns 2 with no output or seed records;
 an individual seed failure is retained as `execution_failure` and returns 1.
 A non-success terminal is retained as `terminal_failure`, contributes to the
 failure count, and returns 1. A destination created during publication is
 never overwritten; failed staging is removed for retry, while comparison
 leaves both input report bytes untouched.
+
+The underlying plan negative also passes a scheduled write to a fixed-frame
+scenario and requires an actionable rejection before plan serialization or
+backend startup; the matching bounded scenario emits format 6 with both
+`RUN_UNTIL` and `SEED_WRITE`.
 
 ### Interactions and save compatibility
 

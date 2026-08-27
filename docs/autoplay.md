@@ -804,10 +804,14 @@ explicit frame/turn/action bounds. The values must match the scenario's hard
 limits exactly. Each seed starts a new libmGBA core from clean boot, using one
 shared backend compiled and validated before any worker starts. A
 specification supplies the only permitted seed mechanism: an exact linked
-EWRAM/IWRAM binding and a frame at which that value is written. The report
-therefore identifies a real seed injection rather than claiming that an
-arbitrary label changed the ROM's RNG. Every seed must fit that declared
-1/2/4-byte field before backend setup.
+EWRAM/IWRAM binding, its canonical resolved numeric address, and a frame at
+which that value is written. The full write range must remain in writable work
+RAM and the frame must precede canonical `max_frames`. The report therefore
+identifies a real seed injection rather than claiming that an arbitrary label
+changed the ROM's RNG. Every seed must fit that declared 1/2/4-byte field
+before backend setup. The underlying capture API rejects scheduled writes for
+fixed-frame scenarios before plan or backend work; plan format 6 always
+contains bounded `RUN_UNTIL`.
 
 The version-1 specification declares normal-fidelity profile/configuration
 identity and semantic metric descriptors. Metric probes must be part of the
@@ -817,6 +821,9 @@ grounded in ROM-supplied semantic telemetry. Unsupported metrics, duplicate or
 implicit seeds, omitted bounds, unresolved metric probes, missing or duplicate
 required metric/delta kinds, version 3/profile scenarios, reuse of a writable
 SRAM image, and output collisions fail before execution.
+Faction/group, event-outcome, and each delta list contain 1 through 64 sorted
+unique definitions. Imported survivor/casualty and delta values must fit their
+declared probe widths before aggregate validation.
 
 The version-2 report contains sorted ROM/configuration/scenario/profile/bound
 provenance, canonical normalized scenario and specification definitions with

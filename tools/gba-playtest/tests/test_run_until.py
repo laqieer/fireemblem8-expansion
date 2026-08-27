@@ -346,9 +346,12 @@ class RunUntilSchemaTests(unittest.TestCase):
             }
         )
         bounded = gba_playtest.parse_scenario_data(run_until_data())
-        with tempfile.TemporaryDirectory() as temporary:
+        plan_root = ROOT / "build" / "test-artifacts" / "run-until-plans"
+        plan_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=plan_root) as temporary:
             fixed_plan = Path(temporary) / "fixed.plan"
             bounded_plan = Path(temporary) / "bounded.plan"
+            scheduled_plan = Path(temporary) / "scheduled.plan"
             gba_playtest._write_plan(fixed_plan, fixed)
             gba_playtest._write_plan(bounded_plan, bounded)
             self.assertTrue(
@@ -359,6 +362,78 @@ class RunUntilSchemaTests(unittest.TestCase):
             bounded_text = bounded_plan.read_text(encoding="ascii")
             self.assertTrue(bounded_text.startswith("GBA_PLAYTEST_PLAN 4\n"))
             self.assertIn("\nRUN_UNTIL 5\n", bounded_text)
+            scheduled_write = gba_playtest.ScheduledWrite(
+                0,
+                gba_playtest.Probe(
+                    PROBE_ADDRESS,
+                    int(PROBE_ADDRESS, 16),
+                    4,
+                    None,
+                ),
+                1,
+            )
+            gba_playtest._write_plan(
+                scheduled_plan,
+                bounded,
+                scheduled_write,
+            )
+            scheduled_text = scheduled_plan.read_text(encoding="ascii")
+            self.assertTrue(scheduled_text.startswith("GBA_PLAYTEST_PLAN 6\n"))
+            self.assertIn("\nRUN_UNTIL 5\n", scheduled_text)
+            self.assertIn(
+                f"\nSEED_WRITE 0 {int(PROBE_ADDRESS, 16)} 4 1\n",
+                scheduled_text,
+            )
+            with self.assertRaisesRegex(
+                gba_playtest.PlaytestError,
+                "scheduled writes require a bounded run-until scenario",
+            ):
+                gba_playtest._write_plan(
+                    Path(temporary) / "invalid-fixed.plan",
+                    fixed,
+                    scheduled_write,
+                )
+            self.assertFalse((Path(temporary) / "invalid-fixed.plan").exists())
+
+    def test_capture_rejects_fixed_scheduled_write_before_backend_start(self):
+        fixed = gba_playtest.parse_scenario_data(
+            {
+                "schema_version": 1,
+                "name": "fixed",
+                "frames": [],
+                "checkpoints": [
+                    {
+                        "name": "fixed",
+                        "frame": 1,
+                        "framebuffer": False,
+                        "probes": [{"address": PROBE_ADDRESS, "size": 4}],
+                    }
+                ],
+            }
+        )
+        scheduled_write = gba_playtest.ScheduledWrite(
+            0,
+            gba_playtest.Probe(
+                PROBE_ADDRESS,
+                int(PROBE_ADDRESS, 16),
+                4,
+                None,
+            ),
+            1,
+        )
+        with mock.patch.object(
+            gba_playtest,
+            "build_backend",
+            side_effect=AssertionError("fixed scheduled write reached backend"),
+        ), self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            "scheduled writes require a bounded run-until scenario",
+        ):
+            gba_playtest.capture(
+                ROOT / "build" / "not-opened.gba",
+                fixed,
+                scheduled_write=scheduled_write,
+            )
 
 
 class RunUntilFingerprintTests(unittest.TestCase):

@@ -608,6 +608,175 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
             "address/size must match the canonical scenario counter",
         )
 
+    def test_imported_seed_binding_is_resolved_writable_and_in_frame(self):
+        baseline = self.output("seed-binding-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        cases = (
+            ("rom-seed", 0x08000000, 0, "writable EWRAM or IWRAM"),
+            ("past-ewram", 0x02040000, 0, "writable EWRAM or IWRAM"),
+            ("late-seed-frame", int(PROBE_SEED, 16), 3, "must be below canonical"),
+        )
+        for name, resolved_address, frame, expected in cases:
+            with self.subTest(name=name):
+                candidate = copy.deepcopy(valid)
+                provenance_seed = candidate["provenance"]["seed_injection"]
+                definition_seed = candidate["provenance"]["specification"][
+                    "definition"
+                ]["seeding"]
+                provenance_seed["resolved_address"] = resolved_address
+                definition_seed["resolved_address"] = resolved_address
+                provenance_seed["frame"] = frame
+                definition_seed["frame"] = frame
+                self._refresh_specification_digest(candidate)
+                self._assert_compare_rejects(
+                    baseline,
+                    candidate,
+                    name,
+                    expected,
+                )
+
+        unresolved = copy.deepcopy(valid)
+        unresolved["provenance"]["seed_injection"]["resolved_address"] = (
+            "gUnresolvedSeed"
+        )
+        unresolved["provenance"]["specification"]["definition"]["seeding"][
+            "resolved_address"
+        ] = "gUnresolvedSeed"
+        self._refresh_specification_digest(unresolved)
+        self._assert_compare_rejects(
+            baseline,
+            unresolved,
+            "unresolved-seed",
+            "resolved_address must be an integer",
+        )
+
+        mismatched = copy.deepcopy(valid)
+        mismatched["provenance"]["seed_injection"]["resolved_address"] += 4
+        self._assert_compare_rejects(
+            baseline,
+            mismatched,
+            "mismatched-seed-provenance",
+            "does not match literal address",
+        )
+
+    def test_imported_width_backed_metrics_fit_declared_probe_sizes(self):
+        baseline = self.output("metric-width-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        for size in (1, 2, 4):
+            maximum = (1 << (size * 8)) - 1
+            for metric_id, value_field, probe_field in (
+                ("factions", "survivors", "survivors"),
+                ("exp", "delta", "probe"),
+            ):
+                with self.subTest(size=size, metric=metric_id):
+                    boundary = copy.deepcopy(valid)
+                    definition = next(
+                        metric
+                        for metric in boundary["provenance"]["specification"][
+                            "definition"
+                        ]["metrics"]
+                        if metric["id"] == metric_id
+                    )
+                    definition["groups"][0][probe_field]["size"] = size
+                    boundary["runs"][0]["metrics"][metric_id][0][
+                        value_field
+                    ] = maximum
+                    self._refresh_specification_digest(boundary)
+                    self._refresh_report_summary(boundary)
+                    autoplay_batch.validate_report(
+                        boundary,
+                        f"{metric_id}-{size}-byte-boundary",
+                    )
+
+                    overflow = copy.deepcopy(boundary)
+                    overflow["runs"][0]["metrics"][metric_id][0][
+                        value_field
+                    ] = maximum + 1
+                    self._refresh_report_summary(overflow)
+                    self._assert_compare_rejects(
+                        baseline,
+                        overflow,
+                        f"{metric_id}-{size}-byte-overflow",
+                        f"declared {size}-byte probe",
+                    )
+
+    def test_imported_metric_lists_enforce_cardinality_and_identity(self):
+        baseline = self.output("metric-list-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        cases = (
+            ("factions", "groups", "group", "faction/group"),
+            ("events", "events", "id", ".id must be sorted and unique"),
+            ("exp", "groups", "id", ".id must be sorted and unique"),
+        )
+        for metric_id, list_field, identity_field, duplicate_error in cases:
+            with self.subTest(metric=metric_id):
+                excessive = copy.deepcopy(valid)
+                definition = next(
+                    metric
+                    for metric in excessive["provenance"]["specification"][
+                        "definition"
+                    ]["metrics"]
+                    if metric["id"] == metric_id
+                )
+                template_definition = definition[list_field][0]
+                definition[list_field] = []
+                for run in excessive["runs"]:
+                    run["metrics"][metric_id] = []
+                for index in range(65):
+                    definition_entry = copy.deepcopy(template_definition)
+                    identifier = f"entry-{index:02d}"
+                    definition_entry[identity_field] = identifier
+                    definition[list_field].append(definition_entry)
+                    for run in excessive["runs"]:
+                        value_entry = copy.deepcopy(
+                            valid["runs"][run["seed"] - 1]["metrics"][metric_id][0]
+                        )
+                        if metric_id == "factions":
+                            value_entry["group"] = identifier
+                        elif metric_id == "events":
+                            value_entry["id"] = identifier
+                        else:
+                            value_entry["group"] = identifier
+                        run["metrics"][metric_id].append(value_entry)
+                self._refresh_specification_digest(excessive)
+                self._refresh_report_summary(excessive)
+                self._assert_compare_rejects(
+                    baseline,
+                    excessive,
+                    f"{metric_id}-over-cap",
+                    "65 entries, exceeding 64",
+                )
+
+                duplicate = copy.deepcopy(valid)
+                definition = next(
+                    metric
+                    for metric in duplicate["provenance"]["specification"][
+                        "definition"
+                    ]["metrics"]
+                    if metric["id"] == metric_id
+                )
+                definition[list_field].append(
+                    copy.deepcopy(definition[list_field][0])
+                )
+                for run in duplicate["runs"]:
+                    run["metrics"][metric_id].append(
+                        copy.deepcopy(run["metrics"][metric_id][0])
+                    )
+                self._refresh_specification_digest(duplicate)
+                self._refresh_report_summary(duplicate)
+                self._assert_compare_rejects(
+                    baseline,
+                    duplicate,
+                    f"{metric_id}-duplicate",
+                    duplicate_error,
+                )
+
     def test_seed_values_fit_declared_probe_width_before_backend_setup(self):
         for size in (1, 2, 4):
             maximum = (1 << (size * 8)) - 1

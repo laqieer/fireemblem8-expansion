@@ -1489,6 +1489,11 @@ def _write_plan(
     # format 6 carries one declared batch seed write.
     # Plans are generated and consumed within one capture/verify invocation;
     # scenario and fingerprint compatibility lives in their JSON versions.
+    if scheduled_write is not None and scenario.run_until is None:
+        raise PlaytestError(
+            "scheduled writes require a bounded run-until scenario; fixed-frame "
+            "scenarios cannot emit plan format 6"
+        )
     if scheduled_write is not None and scenario.execution_profile is not None:
         raise PlaytestError(
             "scheduled writes are supported only by normal-fidelity batch captures"
@@ -2086,6 +2091,11 @@ def capture(
 ) -> dict[str, Any]:
     if scenario.disabled:
         raise PlaytestError(f"scenario {scenario.name!r} is disabled: {scenario.blocker}")
+    if scheduled_write is not None and scenario.run_until is None:
+        raise PlaytestError(
+            "scheduled writes require a bounded run-until scenario; fixed-frame "
+            "capture is unchanged and does not accept seed writes"
+        )
     if not rom.is_file():
         raise PlaytestError(f"ROM does not exist or is not a regular file: {rom}")
     if sram_image is not None:
