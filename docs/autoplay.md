@@ -383,7 +383,7 @@ and proves objective failure is selected before stall classification.
   It adds zero static EWRAM/IWRAM: enabled/default builds retain 1,704/3,128
   EWRAM bytes free (debug/release) and 1,552 IWRAM static-growth bytes above
   the 4 KiB stack margin. The named all-locales/all-features release profile
-  enables Charge and Danger together and retains 732 EWRAM bytes plus
+  enables Charge and Danger together and retains 672 EWRAM bytes plus
   272 IWRAM static-growth bytes.
 
 ## Typed chapter objectives and AI groups

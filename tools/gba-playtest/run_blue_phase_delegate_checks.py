@@ -53,7 +53,7 @@ def _positive_data() -> dict:
         "description": (
             "TC-AUTOPLAY-CHARGE-001 positive: clean-boot Chapter 2 reaches "
             "an ordinary interactive blue phase, opens the real map menu on "
-            "an empty tile, wraps to the localized Charge row, and delegates "
+            "an empty tile, selects the localized Charge row directly, and delegates "
             "the current phase through issue #85 without its debug chord."
         ),
         "frames": [

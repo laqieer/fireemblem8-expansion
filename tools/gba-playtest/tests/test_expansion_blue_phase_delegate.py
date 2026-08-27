@@ -19,6 +19,9 @@ BMMENU_SOURCE = ROOT / "src" / "bmmenu.c"
 HELPBOX_SOURCE = ROOT / "src" / "helpbox.c"
 STATSCREEN_SOURCE = ROOT / "src" / "statscreen.c"
 DRIVER = Path(__file__).resolve().parent / "c" / "expansion_blue_phase_delegate_driver.c"
+HELP_CALLBACK_DRIVER = (
+    Path(__file__).resolve().parent / "c" / "map_menu_help_callback_driver.c"
+)
 FLAG = "FE8_EXPANSION_BLUE_PHASE_DELEGATE=1"
 MODERN = "FE8_EXPANSION_MODERN_BUILD=1"
 CC = shutil.which("gcc") or shutil.which("cc")
@@ -234,36 +237,44 @@ class BluePhaseDelegateMenuTests(unittest.TestCase):
                         completed.stdout + completed.stderr,
                     )
 
-        statscreen = STATSCREEN_SOURCE.read_text(encoding="utf-8")
-        function = re.search(
-            r"void StartHelpBoxString\(.*?\n\}",
-            statscreen,
-            flags=re.DOTALL,
-        )
-        self.assertIsNotNone(function)
-        self.assertIn("if (string == NULL)", function.group(0))
-        self.assertIn('string = "";', function.group(0))
-
-    def test_expansion_help_id_never_enters_the_vanilla_catalog(self):
-        bmmenu = BMMENU_SOURCE.read_text(encoding="utf-8")
-        menu_def = MENU_DEF_SOURCE.read_text(encoding="utf-8")
-        function = re.search(
-            r"u8 ExpansionMapMenuItem_RPress\(.*?\n\}",
-            bmmenu,
-            flags=re.DOTALL,
-        )
-        self.assertIsNotNone(function)
-        self.assertIn("MenuAutoHelpBoxSelect(menu);", function.group(0))
-        self.assertNotIn("MenuStdHelpBox", function.group(0))
-        self.assertIn("ExpansionMapMenuItem_HelpBox", bmmenu)
-        self.assertIn("StartHelpBoxString(", bmmenu)
-        self.assertIn(
-            "ExpansionLocale_ResolveCurrentPersistent(menuItem->def->helpMsgId)",
-            bmmenu,
-        )
-        self.assertIn("EXP_MSG_AUTOPLAY_CHARGE_HELP", menu_def)
-        self.assertIn("ExpansionMapMenuItem_RPress", menu_def)
-        self.assertIn("ExpansionMapMenuItem_HelpBox", menu_def)
+    def test_compiled_help_callback_routes_expansion_and_vanilla_ids(self):
+        if CC is None:
+            self.skipTest("no host compiler")
+        build = ROOT / "build"
+        build.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build) as temporary:
+            binary = Path(temporary) / "map-menu-help-callback"
+            completed = run(
+                [
+                    CC,
+                    "-std=gnu89",
+                    "-O2",
+                    "-w",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                    *INCLUDES,
+                    "-DMODERN=1",
+                    "-D" + MODERN,
+                    "-D" + FLAG,
+                    str(BMMENU_SOURCE),
+                    str(HELP_CALLBACK_DRIVER),
+                    "-Wl,--gc-sections",
+                    "-o",
+                    str(binary),
+                ]
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = run([str(binary)])
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn("MAP_MENU_HELP_CALLBACK: PASS", completed.stdout)
 
 
 class BluePhaseDelegateLocalizationTests(unittest.TestCase):

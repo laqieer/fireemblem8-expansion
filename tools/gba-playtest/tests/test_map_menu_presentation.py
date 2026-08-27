@@ -44,6 +44,14 @@ HELP_SIZING_DRIVER = (
     / "c"
     / "map_menu_help_sizing_driver.c"
 )
+MAP_MENU_DRAW_DRIVER = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "tests"
+    / "c"
+    / "map_menu_draw_driver.c"
+)
 
 
 def _run(command):
@@ -127,43 +135,62 @@ class MapMenuCompositionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=BUILD) as temporary:
             for danger, charge, expected_prefix in (
                 (False, False, ()),
-                (True, False, ("ExpansionDangerOverlay_MenuSelect",)),
-                (False, True, ("ExpansionBluePhaseDelegate_MenuSelect",)),
-                (
-                    True,
-                    True,
-                    (
-                        "ExpansionDangerOverlay_MenuSelect",
-                        "ExpansionBluePhaseDelegate_MenuSelect",
-                    ),
-                ),
+                (True, False, ("144u",)),
+                (False, True, ("80u",)),
+                (True, True, ("144u", "80u")),
             ):
                 with self.subTest(danger=danger, charge=charge):
                     entries = _menu_entries(temporary, danger, charge)
-                    commands = [entry[7] for entry in entries[:-1]]
-                    self.assertEqual(tuple(commands[: len(expected_prefix)]), expected_prefix)
-                    self.assertEqual(commands[-1], "CommandEffectEndPlayerPhase")
-                    self.assertEqual(len(commands), 8 + int(danger) + int(charge))
+                    visible = entries[:-1]
+                    message_ids = [entry[1] for entry in visible]
+                    self.assertEqual(
+                        tuple(message_ids[: len(expected_prefix)]),
+                        expected_prefix,
+                    )
+                    self.assertEqual(message_ids[-1], "0x6A0")
+                    self.assertEqual(len(visible), 8 + int(danger) + int(charge))
 
-    def test_optional_rows_use_stable_ids_and_shared_geometry_drawer(self):
+    def test_optional_rows_use_stable_ids_and_native_geometry(self):
         with tempfile.TemporaryDirectory(dir=BUILD) as temporary:
             entries = _menu_entries(temporary, True, True)
-        danger, charge = entries[:2]
-        self.assertEqual(danger[1:3], ["144u", "145u"])
-        self.assertEqual(charge[1:3], ["80u", "81u"])
-        self.assertEqual(danger[6], "ExpansionMapMenuItem_Draw")
-        self.assertEqual(charge[6], "ExpansionMapMenuItem_Draw")
+            danger, charge = entries[:2]
+            self.assertEqual(danger[1:3], ["144u", "145u"])
+            self.assertEqual(charge[1:3], ["80u", "81u"])
 
-        bmmenu = (ROOT / "src" / "bmmenu.c").read_text(encoding="utf-8")
-        draw = re.search(
-            r"int ExpansionMapMenuItem_Draw\(.*?\n\}",
-            bmmenu,
-            flags=re.DOTALL,
-        )
-        self.assertIsNotNone(draw)
-        self.assertIn("Text_SetCursor(&menuItem->text, 8);", draw.group(0))
-        self.assertIn("menuItem->xTile", draw.group(0))
-        self.assertIn("menuItem->yTile", draw.group(0))
+            binary = Path(temporary) / "map-menu-draw"
+            completed = _run(
+                [
+                    CC,
+                    "-std=gnu89",
+                    "-O2",
+                    "-w",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                    "-I",
+                    str(ROOT / "include"),
+                    "-DMODERN=1",
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-DFE8_EXPANSION_DANGER_OVERLAY_MENU=1",
+                    "-DFE8_EXPANSION_BLUE_PHASE_DELEGATE=0",
+                    str(ROOT / "src" / "bmmenu.c"),
+                    str(MAP_MENU_DRAW_DRIVER),
+                    "-Wl,--gc-sections",
+                    "-o",
+                    str(binary),
+                ]
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = _run([str(binary)])
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn("MAP_MENU_DRAW_CALLBACK: PASS", completed.stdout)
 
 
 class MapMenuLocalizationTests(unittest.TestCase):

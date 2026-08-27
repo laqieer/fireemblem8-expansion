@@ -182,7 +182,8 @@ additional threat UI, persisted preference, or AI behavior is shipped.
   and [#87](https://github.com/laqieer/fireemblem8-expansion/issues/87).
 - **Classification:** confirmed medium-severity UI regression. The commands
   remain selectable and the table remains within capacity, but the reported
-  all-locales/all-features release visibly truncates Danger, clips Charge
+  all-locales/all-features release visibly truncates the literal Threat Range,
+  clips Charge
   help, omits Danger help/localization, misaligns both optional rows, and puts
   End before optional commands.
 - **Supported configuration or artifact:** modern release AAPCS
