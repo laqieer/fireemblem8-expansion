@@ -927,21 +927,35 @@ def validate_relationship_records(contract, relationships):
 
 
 def completed_item_cleanup_violations(contract, item):
-    if not item.get("received_label"):
-        return []
     activation = contract["activation"]
     violations = []
-    if item.get("label_removed") is not True:
-        violations.append(f"label removal not recorded: {item['url']}")
+    received_label = item.get("received_label")
+    other_ownership = item.get("other_ownership", False)
     if item.get("label") == activation["label"]:
         violations.append(f"stale label: {item['url']}")
-    if not item.get("other_ownership", False):
+    if (
+        item.get("assignee") == activation["assignee"]
+        and not other_ownership
+    ):
+        violations.append(f"stale assignee: {item['url']}")
+    if type(received_label) is not bool:
+        violations.append(f"invalid received_label history: {item['url']}")
+        return violations
+    if not received_label:
+        if item.get("label_removed") is True:
+            violations.append(f"impossible label removal: {item['url']}")
+        if item.get("temporary_assignee_removed") is True:
+            violations.append(
+                f"impossible temporary assignee removal: {item['url']}"
+            )
+        return violations
+    if item.get("label_removed") is not True:
+        violations.append(f"label removal not recorded: {item['url']}")
+    if not other_ownership:
         if item.get("temporary_assignee_removed") is not True:
             violations.append(
                 f"temporary assignee removal not recorded: {item['url']}"
             )
-        if item.get("assignee") == activation["assignee"]:
-            violations.append(f"stale assignee: {item['url']}")
     return violations
 
 
@@ -1066,11 +1080,9 @@ def validate_completion_cleanup(contract, item_history, cleanup):
         and not item.get("other_ownership", False)
     }
     for item in valid_history:
-        if not item.get("received_label"):
-            continue
-        if item.get("manual_pending") is not False:
-            violations.append(f"cleanup item remains pending: {item['url']}")
         violations.extend(completed_item_cleanup_violations(contract, item))
+        if item.get("received_label") and item.get("manual_pending") is not False:
+            violations.append(f"cleanup item remains pending: {item['url']}")
     if cleanup.get("label") != completion["remove_label"]:
         violations.append("wrong cleanup label")
     if cleanup.get("assignee") != completion["remove_temporary_assignee"]:
@@ -3355,6 +3367,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "state": "closed",
                 "manual_pending": False,
                 "received_label": False,
+                "label": None,
+                "assignee": "laqieer",
+                "other_ownership": True,
+                "label_removed": False,
+                "temporary_assignee_removed": False,
             },
         )
         label_cleanup_urls = [
@@ -3454,6 +3471,45 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         self.assertTrue(validate_completion_cleanup(
             contract,
             unowned_assignee,
+            cleanup,
+        ))
+        false_history_with_current_label = copy.deepcopy(history)
+        false_history_with_current_label[4]["label"] = (
+            "waiting-for-manual-testing"
+        )
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            false_history_with_current_label,
+            cleanup,
+        ))
+        false_history_with_label_removal = copy.deepcopy(history)
+        false_history_with_label_removal[4]["label_removed"] = True
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            false_history_with_label_removal,
+            cleanup,
+        ))
+        false_history_with_assignee_removal = copy.deepcopy(history)
+        false_history_with_assignee_removal[4][
+            "temporary_assignee_removed"
+        ] = True
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            false_history_with_assignee_removal,
+            cleanup,
+        ))
+        false_history_with_stale_assignee = copy.deepcopy(history)
+        false_history_with_stale_assignee[4]["other_ownership"] = False
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            false_history_with_stale_assignee,
+            cleanup,
+        ))
+        missing_received_history = copy.deepcopy(history)
+        del missing_received_history[4]["received_label"]
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            missing_received_history,
             cleanup,
         ))
 
