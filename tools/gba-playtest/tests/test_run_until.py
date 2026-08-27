@@ -866,6 +866,37 @@ class RunUntilFingerprintTests(unittest.TestCase):
                 with self.assertRaisesRegex(gba_playtest.PlaytestError, error):
                     gba_playtest._parse_backend_output(backend_output, scenario)
 
+    def test_backend_output_preserves_symbolic_counter_bindings(self):
+        data = run_until_data(turn_limit=3, action_limit=4)
+        data["run_until"]["turn_limit"]["address"] = "gTurnCounter"
+        data["run_until"]["action_limit"]["address"] = "gActionCounter"
+        addresses = {
+            "gTurnCounter": 0x02000004,
+            "gActionCounter": 0x02000008,
+        }
+
+        def resolve(symbol):
+            return addresses[symbol], 4
+
+        scenario = gba_playtest.parse_scenario_data(
+            data,
+            symbol_resolver=resolve,
+        )
+        captured = gba_playtest._parse_backend_output(
+            "TERMINAL\tmax_frames\t4\t1\t1\t1\t2\n"
+            "CHECKPOINT\t0\t4\t0000000000000000\n"
+            "PROBE\t0\t0\t1023\n",
+            scenario,
+        )
+        self.assertEqual(
+            captured["terminal"]["turn"]["address"],
+            "gTurnCounter",
+        )
+        self.assertEqual(
+            captured["terminal"]["actions"]["address"],
+            "gActionCounter",
+        )
+
 
 class AutoplayBoundsEvidenceTests(unittest.TestCase):
     def test_checked_real_rom_evidence_satisfies_semantic_contract(self):

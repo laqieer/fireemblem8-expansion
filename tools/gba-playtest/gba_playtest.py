@@ -2194,10 +2194,8 @@ def _parse_backend_output(
                 return None
             if not present:
                 raise AssertionError("backend counter presence was already validated")
-            if limit.probe.address is None:
-                raise AssertionError("run-until counter has no resolved address")
             return {
-                "address": f"0x{limit.probe.address:08x}",
+                "address": limit.probe.binding,
                 "size": limit.probe.size,
                 "value": f"0x{value:0{limit.probe.size * 2}x}",
             }

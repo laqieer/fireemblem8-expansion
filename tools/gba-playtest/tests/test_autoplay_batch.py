@@ -1388,6 +1388,12 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
             self.specification,
             autoplay_batch.ElfSymbolResolver(self.elf),
         )
+
+        def capture_with_symbolic_counter(*args, **kwargs):
+            captured = self._fake_capture(*args, **kwargs)
+            captured["terminal"]["turn"]["address"] = alias
+            return captured
+
         with mock.patch.object(
             gba_playtest,
             "build_backend",
@@ -1395,7 +1401,7 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         ), mock.patch.object(
             gba_playtest,
             "capture",
-            side_effect=self._fake_capture,
+            side_effect=capture_with_symbolic_counter,
         ):
             report = autoplay_batch.run_batch(
                 self.rom,
