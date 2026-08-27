@@ -539,43 +539,521 @@ def parse_labeled_policy(text, heading):
 def parse_policy_clauses(text):
     return tuple(
         clause.strip()
-        for clause in re.split(r"(?<=[.!?])\s+", " ".join(text.split()))
+        for clause in re.split(r"(?:[.!?;]+|\n+)", " ".join(text.split()))
         if clause.strip()
     )
 
 
-def policy_action_polarities(text, action):
-    action_words = normalize_policy(action).split()
-    polarities = []
-    negation_markers = {
-        "cannot",
-        "forbid",
-        "forbidden",
-        "never",
-        "not",
-        "prohibit",
-        "prohibited",
-        "without",
-    }
-    for clause in parse_policy_clauses(text):
-        words = normalize_policy(clause).split()
-        width = len(action_words)
-        for index in range(len(words) - width + 1):
-            if words[index:index + width] != action_words:
+ACTION_LEMMAS = {
+    "added": "add",
+    "adds": "add",
+    "applied": "apply",
+    "applies": "apply",
+    "assigned": "assign",
+    "assigns": "assign",
+    "blocked": "block",
+    "blocks": "block",
+    "built": "build",
+    "builds": "build",
+    "cleared": "clear",
+    "clears": "clear",
+    "closed": "close",
+    "closes": "close",
+    "commented": "comment",
+    "comments": "comment",
+    "created": "create",
+    "creates": "create",
+    "entered": "enter",
+    "enters": "enter",
+    "explicitly": "explicit",
+    "included": "include",
+    "includes": "include",
+    "inspected": "inspect",
+    "inspects": "inspect",
+    "judged": "judge",
+    "judging": "judge",
+    "merged": "merge",
+    "merges": "merge",
+    "merging": "merge",
+    "notified": "notify",
+    "notifies": "notify",
+    "pinged": "ping",
+    "pings": "ping",
+    "posted": "post",
+    "posts": "post",
+    "posting": "post",
+    "prevented": "prevent",
+    "prevents": "prevent",
+    "prohibited": "prohibit",
+    "prohibits": "prohibit",
+    "recorded": "record",
+    "records": "record",
+    "removed": "remove",
+    "removes": "remove",
+    "removing": "remove",
+    "rendered": "render",
+    "renders": "render",
+    "resumed": "resume",
+    "resumes": "resume",
+    "resuming": "resume",
+    "reviewed": "review",
+    "reviews": "review",
+    "scheduled": "schedule",
+    "schedules": "schedule",
+    "stated": "state",
+    "states": "state",
+    "unassigned": "unassign",
+    "unassigns": "unassign",
+    "used": "use",
+    "uses": "use",
+}
+NEGATION_PATTERNS = (
+    ("cannot",),
+    ("can", "not"),
+    ("do", "not"),
+    ("does", "not"),
+    ("forbidden",),
+    ("must", "not"),
+    ("never",),
+    ("not",),
+    ("prohibit",),
+    ("shall", "not"),
+    ("should", "not"),
+)
+
+
+@dataclass(frozen=True)
+class ActionAtom:
+    field: str
+    verb: str
+    object: str
+    target: str
+    scope: str
+    polarity: str
+
+
+@dataclass(frozen=True)
+class ActionRule:
+    atom: ActionAtom
+    verbs: Tuple[Tuple[str, ...], ...]
+    objects: Tuple[Tuple[str, ...], ...]
+    targets: Tuple[Tuple[str, ...], ...] = ((),)
+    scopes: Tuple[Tuple[str, ...], ...] = ((),)
+
+
+def action_words(text):
+    return tuple(
+        ACTION_LEMMAS.get(word, word)
+        for word in normalize_policy(text).split()
+    )
+
+
+def action_aliases(*phrases):
+    return tuple(action_words(phrase) for phrase in phrases)
+
+
+def action_rule(
+    field,
+    verb,
+    object_name,
+    target,
+    scope,
+    polarity,
+    *,
+    verbs,
+    objects,
+    targets=("",),
+    scopes=("",),
+):
+    return ActionRule(
+        atom=ActionAtom(
+            field=field,
+            verb=verb,
+            object=object_name,
+            target=target,
+            scope=scope,
+            polarity=polarity,
+        ),
+        verbs=action_aliases(*verbs),
+        objects=action_aliases(*objects),
+        targets=action_aliases(*targets),
+        scopes=action_aliases(*scopes),
+    )
+
+
+def nearest_alias_positions(words, aliases, anchor):
+    for alias in aliases:
+        if not alias:
+            return ()
+        if not all(token in words for token in alias):
+            continue
+        positions = []
+        for token in alias:
+            candidates = [
+                index for index, word in enumerate(words)
+                if word == token and index not in positions
+            ]
+            if not candidates:
+                break
+            if anchor is None:
+                position = candidates[0]
+            else:
+                position = min(candidates, key=lambda item: abs(item - anchor))
+            positions.append(position)
+        else:
+            return tuple(positions)
+    return None
+
+
+def clause_has_negation(words, positions, atom):
+    start = max(0, min(positions) - 4)
+    end = min(len(words), max(positions) + 4)
+    bounded = words[start:end]
+    for pattern in NEGATION_PATTERNS:
+        width = len(pattern)
+        if any(
+            bounded[index:index + width] == pattern
+            for index in range(len(bounded) - width + 1)
+        ):
+            return True
+    if atom.verb in {"close", "merge"} and (
+        "block" in words or "prevent" in words
+    ):
+        return True
+    return False
+
+
+def parse_action_atoms(fields, rules):
+    parsed = []
+    for rule in rules:
+        for clause in parse_policy_clauses(fields.get(rule.atom.field, "")):
+            words = action_words(clause)
+            verb_positions = nearest_alias_positions(words, rule.verbs, None)
+            if verb_positions is None:
                 continue
-            context = words[max(0, index - 8):index]
-            polarities.append(any(word in negation_markers for word in context))
-    return tuple(polarities)
+            component_positions = list(verb_positions)
+            anchor = sum(verb_positions) // len(verb_positions)
+            for aliases in (rule.objects, rule.targets, rule.scopes):
+                positions = nearest_alias_positions(words, aliases, anchor)
+                if positions is None:
+                    break
+                component_positions.extend(positions)
+            else:
+                parsed.append(
+                    ActionAtom(
+                        field=rule.atom.field,
+                        verb=rule.atom.verb,
+                        object=rule.atom.object,
+                        target=rule.atom.target,
+                        scope=rule.atom.scope,
+                        polarity=(
+                            "prohibited"
+                            if clause_has_negation(
+                                words,
+                                component_positions,
+                                rule.atom,
+                            )
+                            else "required"
+                        ),
+                    )
+                )
+    return tuple(parsed)
 
 
-def require_policy_action(violations, surface, text, action, *, prohibited=False):
-    polarities = policy_action_polarities(text, action)
-    if not polarities:
-        violations.append(f"{surface}: missing action {action}")
-        return
-    if any(polarity != prohibited for polarity in polarities):
-        expected = "prohibited" if prohibited else "affirmative"
-        violations.append(f"{surface}: {action} must be only {expected}")
+def validate_action_atoms(fields, rules):
+    parsed = parse_action_atoms(fields, rules)
+    violations = []
+    for rule in rules:
+        matching = tuple(
+            atom for atom in parsed
+            if atom.field == rule.atom.field
+            and atom.verb == rule.atom.verb
+            and atom.object == rule.atom.object
+            and atom.target == rule.atom.target
+            and atom.scope == rule.atom.scope
+        )
+        if not matching:
+            violations.append(f"{rule.atom.field}: missing {rule.atom}")
+            continue
+        polarities = {atom.polarity for atom in matching}
+        if rule.atom.polarity not in polarities:
+            violations.append(
+                f"{rule.atom.field}: wrong polarity for {rule.atom}"
+            )
+        if len(polarities) != 1:
+            violations.append(
+                f"{rule.atom.field}: contradictory polarities for {rule.atom}"
+            )
+    return violations
+
+
+def manual_handoff_policy_rules():
+    rules = [
+        action_rule(
+            "Eligibility", "use", "handoff", "eligible criterion",
+            "visual/audio/UX", "required",
+            verbs=("use", "reserve"),
+            objects=("handoff",),
+            targets=("criterion", "judgment", "result"),
+            scopes=("visual audio ux",),
+        ),
+        action_rule(
+            "Eligibility", "decide", "criterion", "automation", "reliability",
+            "prohibited",
+            verbs=("decide", "judge", "score"),
+            objects=("criterion", "judgment", "result"),
+            targets=("automation", "agent"),
+            scopes=("reliably",),
+        ),
+        action_rule(
+            "Eligibility", "use", "handoff", "ineligible criterion",
+            "vague/deterministic", "prohibited",
+            verbs=("use", "apply"),
+            objects=("handoff", "it"),
+            targets=("vague deterministic", "vague review deterministic"),
+        ),
+        action_rule(
+            "Pre-handoff evidence", "render", "artifacts",
+            "positive and control", "exact candidate non-instrumented",
+            "required",
+            verbs=("render", "build", "create"),
+            objects=("artifacts",),
+            targets=("positive negative control", "positive control"),
+            scopes=("exact candidate non instrumented",),
+        ),
+        action_rule(
+            "Pre-handoff evidence", "inspect", "screenshots", "static UI",
+            "deterministic", "required",
+            verbs=("inspect", "review"),
+            objects=("screenshots", "images"),
+            targets=("static ui",),
+            scopes=("deterministic",),
+        ),
+        action_rule(
+            "Pre-handoff evidence", "inspect", "A/V clip",
+            "time-dependent audiovisual", "short synchronized emulator",
+            "required",
+            verbs=("inspect", "review"),
+            objects=("a v clip", "a v recording", "audio video clip"),
+            targets=("time dependent audiovisual", "time dependent audio"),
+            scopes=("short synchronized emulator",),
+        ),
+        action_rule(
+            "Pre-handoff evidence", "retain", "semantic assertions",
+            "primary evidence", "", "required",
+            verbs=("remain", "retain", "keep", "continue"),
+            objects=("semantic assertions",),
+            targets=("primary evidence",),
+        ),
+        action_rule(
+            "Activation", "apply", "label", "issue and PR", "actionable",
+            "required",
+            verbs=("apply", "add"),
+            objects=("label", "waiting for manual testing"),
+            targets=("originating issue open implementation pr",),
+            scopes=("actionable",),
+        ),
+        action_rule(
+            "Activation", "assign", "items", "laqieer", "issue and PR",
+            "required",
+            verbs=("assign", "set assignee"),
+            objects=("both items", "issue pr"),
+            targets=("laqieer",),
+        ),
+        action_rule(
+            "Handoff comment", "comment", "request", "issue and PR",
+            "actionable", "required",
+            verbs=("comment", "post"),
+            objects=("comment", "request"),
+            targets=("issue pr",),
+            scopes=("actionable",),
+        ),
+        action_rule(
+            "Handoff comment", "ping", "tester", "issue and PR", "explicit",
+            "required",
+            verbs=("ping", "notify", "mention"),
+            objects=("laqieer",),
+            targets=("issue pr", "comment"),
+            scopes=("explicit",),
+        ),
+    ]
+    detail_aliases = {
+        "case ID": ("tester case id", "case id"),
+        "commit": ("exact commit", "candidate commit"),
+        "artifact": ("exact artifact path link", "artifact path link"),
+        "hash": ("artifact hash", "sha 256", "hash"),
+        "environment": ("environment",),
+        "clean state": ("clean starting state", "clean state"),
+        "steps": ("numbered steps", "numbered actions"),
+        "expected result": ("expected result",),
+        "control": ("negative control artifact", "control artifact"),
+        "judgment": ("one precise judgment", "single judgment"),
+    }
+    for object_name, aliases in detail_aliases.items():
+        rules.append(
+            action_rule(
+                "Handoff comment", "include", object_name, "request", "",
+                "required",
+                verbs=("include", "record", "provide", "name"),
+                objects=aliases,
+                targets=("",),
+            )
+        )
+    rules.extend((
+        action_rule(
+            "Hold", "merge", "implementation PR", "manual judgment", "",
+            "prohibited",
+            verbs=("merge",),
+            objects=("implementation pr", "pr"),
+            targets=("",),
+        ),
+        action_rule(
+            "Hold", "close", "issue", "manual judgment", "", "prohibited",
+            verbs=("close", "closure"),
+            objects=("issue",),
+            targets=("",),
+        ),
+        action_rule(
+            "Completion", "post", "result and evidence", "issue and PR",
+            "accepted result", "required",
+            verbs=("post", "record"),
+            objects=("actual result evidence link", "result evidence"),
+            targets=("issue pr",),
+            scopes=("",),
+        ),
+        action_rule(
+            "Completion", "remove", "label", "issue and PR",
+            "accepted result", "required",
+            verbs=("remove", "clear"),
+            objects=("label",),
+            targets=("issue pr", "both items"),
+            scopes=("",),
+        ),
+        action_rule(
+            "Completion", "remove", "assignment", "laqieer",
+            "unless other owner", "required",
+            verbs=("remove", "clear", "unassign"),
+            objects=("assignment", "assignee", ""),
+            targets=("laqieer",),
+            scopes=("unless another ownership reason", "unless another owner"),
+        ),
+        action_rule(
+            "Completion", "resume", "gates and merge", "exact candidate",
+            "automatic", "required",
+            verbs=("resume", "continue"),
+            objects=("gates merge", "delivery merge"),
+            targets=("exact candidate",),
+            scopes=("automatically", "automatic"),
+        ),
+        action_rule(
+            "Queue", "schedule", "notifications and comments", "empty query",
+            "", "prohibited",
+            verbs=("schedule", "send"),
+            objects=("notifications comments", "reminders"),
+            targets=("empty query", "no results"),
+        ),
+    ))
+    return tuple(rules)
+
+
+def manual_handoff_case_rules():
+    rules = []
+    for rule in manual_handoff_policy_rules():
+        if rule.atom.field in {
+            "Pre-handoff evidence",
+            "Activation",
+            "Handoff comment",
+            "Completion",
+        } and not (
+            rule.atom.field == "Completion"
+            and rule.atom.object == "assignment"
+        ):
+            rules.append(
+                ActionRule(
+                    atom=ActionAtom(
+                        "Actions",
+                        rule.atom.verb,
+                        rule.atom.object,
+                        rule.atom.target,
+                        rule.atom.scope,
+                        rule.atom.polarity,
+                    ),
+                    verbs=rule.verbs,
+                    objects=rule.objects,
+                    targets=rule.targets,
+                    scopes=rule.scopes,
+                )
+            )
+    rules.append(
+        action_rule(
+            "Actions", "remove", "assignment", "laqieer",
+            "unless other owner", "required",
+            verbs=("remove", "clear", "unassign"),
+            objects=("assignment", "assignee"),
+            targets=("",),
+            scopes=("unless another ownership reason", "unless another owner"),
+        )
+    )
+    rules.extend((
+        action_rule(
+            "Actions", "merge", "implementation PR", "manual judgment", "",
+            "prohibited",
+            verbs=("merge",),
+            objects=("",),
+            targets=("judgment",),
+        ),
+        action_rule(
+            "Actions", "close", "issue", "manual judgment", "", "prohibited",
+            verbs=("close", "closure"),
+            objects=("",),
+            targets=("judgment",),
+        ),
+        action_rule(
+            "Expected result", "enter", "queue", "eligible criterion", "",
+            "required",
+            verbs=("enter",),
+            objects=("queue",),
+            targets=("judgment", "criterion"),
+        ),
+        action_rule(
+            "Expected result", "assign", "issue and PR", "tester",
+            "discoverable", "required",
+            verbs=("assign",),
+            objects=("issue pr",),
+            targets=("",),
+            scopes=("discoverable",),
+        ),
+        action_rule(
+            "Expected result", "merge", "implementation PR",
+            "manual judgment", "", "prohibited",
+            verbs=("merge",),
+            objects=("",),
+            targets=("judgment",),
+        ),
+        action_rule(
+            "Expected result", "close", "issue", "manual judgment", "",
+            "prohibited",
+            verbs=("close", "closure"),
+            objects=("",),
+            targets=("judgment",),
+        ),
+        action_rule(
+            "Expected result", "remove", "temporary tracking",
+            "accepted result", "", "required",
+            verbs=("remove", "clear"),
+            objects=("temporary tracking", "temporary state"),
+            targets=("",),
+        ),
+        action_rule(
+            "Expected result", "resume", "delivery", "accepted result",
+            "automatic", "required",
+            verbs=("resume", "continue"),
+            objects=("delivery",),
+            targets=("",),
+            scopes=("automatically", "automatic"),
+        ),
+    ))
+    return tuple(rules)
 
 
 def manual_handoff_contract_violations(text):
@@ -594,66 +1072,8 @@ def manual_handoff_contract_violations(text):
         for name in sorted(required_fields - fields.keys())
     ]
 
-    requirements = {
-        "Eligibility": (
-            "visual, audio, or UX judgment",
-            "semantic automation cannot reliably decide",
-            "deterministic behavior the agent can verify",
-        ),
-        "Pre-handoff evidence": (
-            "real non-instrumented",
-            "negative/control artifacts",
-            "exact candidate commit",
-            "deterministic screenshots for static UI",
-            "short synchronized emulator A/V clip",
-            "time-dependent or audiovisual behavior",
-            "Semantic assertions remain the primary evidence",
-        ),
-        "Activation": (
-            "waiting-for-manual-testing",
-            "originating issue and each open implementation PR",
-            "assign both the originating issue and each open implementation "
-            "PR to `laqieer`",
-        ),
-        "Handoff comment": (
-            "each actionable issue and PR",
-            "explicitly ping `@laqieer`",
-            "tester-case ID",
-            "exact commit",
-            "exact artifact path or link",
-            "artifact hash",
-            "environment",
-            "clean starting state",
-            "numbered steps",
-            "expected result",
-            "negative/control artifact",
-            "one precise judgment",
-        ),
-        "Hold": (
-            "merge and issue closure are blocked",
-            "PR must not merge",
-            "issue must not close",
-        ),
-        "Completion": (
-            "post the actual result and evidence link on the issue and PR",
-            "remove the `waiting-for-manual-testing` label from the issue and PR",
-            "remove the temporary `laqieer` assignment",
-            "unless the item remains assigned for another ownership reason",
-            "automatically resume exact-candidate gates and merge",
-        ),
-        "Queue": (
-            f"[`{MANUAL_HANDOFF_QUERY}`]({MANUAL_HANDOFF_QUERY_URL})",
-            "Do not schedule notifications or comments when this query is empty",
-        ),
-    }
-    for field, terms in requirements.items():
-        value = fields.get(field, "")
-        for term in terms:
-            if normalize_policy(term) not in normalize_policy(value):
-                violations.append(f"{field}: {term}")
-
     # Exact spelling is irreplaceable here because these values are consumed
-    # directly by GitHub labels, mentions, assignments, and search.
+    # directly by GitHub labels, mentions, assignments, search, and case links.
     exact_requirements = {
         "Activation": (
             "`waiting-for-manual-testing`",
@@ -670,57 +1090,9 @@ def manual_handoff_contract_violations(text):
         for term in terms:
             if term not in value:
                 violations.append(f"{field} exact: {term}")
-
-    affirmative_actions = {
-        "Eligibility": ("use this handoff",),
-        "Pre-handoff evidence": (
-            "render the real non-instrumented positive and negative/control artifacts",
-            "inspect deterministic screenshots",
-            "semantic assertions remain the primary evidence",
-        ),
-        "Activation": (
-            "apply waiting-for-manual-testing",
-            "assign both the originating issue and each open implementation PR",
-        ),
-        "Handoff comment": (
-            "comment on each actionable issue and PR",
-            "ping laqieer",
-        ),
-        "Hold": (
-            "state in every handoff comment",
-            "merge and issue closure are blocked",
-        ),
-        "Completion": (
-            "post the actual result and evidence link",
-            "remove the waiting-for-manual-testing label",
-            "remove the temporary laqieer assignment",
-            "automatically resume exact-candidate gates and merge",
-        ),
-    }
-    for field, actions in affirmative_actions.items():
-        for action in actions:
-            require_policy_action(
-                violations,
-                field,
-                fields.get(field, ""),
-                action,
-            )
-
-    prohibited_actions = {
-        "Eligibility": (
-            "use it for vague review requests or deterministic behavior",
-        ),
-        "Queue": ("schedule notifications or comments",),
-    }
-    for field, actions in prohibited_actions.items():
-        for action in actions:
-            require_policy_action(
-                violations,
-                field,
-                fields.get(field, ""),
-                action,
-                prohibited=True,
-            )
+    if "TC-WORKFLOW-MANUAL-HANDOFF-001" not in text:
+        violations.append("missing exact case ID")
+    violations.extend(validate_action_atoms(fields, manual_handoff_policy_rules()))
     return violations
 
 
@@ -728,38 +1100,23 @@ def manual_handoff_case_violations(text):
     case = "\n".join(
         read_markdown_section(text, MANUAL_HANDOFF_CASE_HEADING)
     )
-    actions = "\n".join(read_markdown_section(case, "Actions"))
-    expected = "\n".join(read_markdown_section(case, "Expected result"))
-    violations = []
-
-    for action in (
-        "render real non-instrumented positive and negative/control artifacts",
-        "inspect deterministic screenshots",
-        "apply the label to the originating issue and each open implementation PR",
-        "assign both items to laqieer",
-        "comment on each item",
-        "explicitly ping laqieer",
-        "verify each handoff comment includes",
-        "post the actual result and evidence link",
-        "remove the label from the issue and PR",
-        "remove the temporary assignment",
-        "automatically resume exact-candidate gates and merge",
+    fields = {
+        "Actions": "\n".join(read_markdown_section(case, "Actions")),
+        "Expected result": "\n".join(
+            read_markdown_section(case, "Expected result")
+        ),
+    }
+    violations = validate_action_atoms(fields, manual_handoff_case_rules())
+    for exact in (
+        "`waiting-for-manual-testing`",
+        "`laqieer`",
+        "`@laqieer`",
+        f"[`{MANUAL_HANDOFF_QUERY}`]({MANUAL_HANDOFF_QUERY_URL})",
     ):
-        require_policy_action(violations, "Actions", actions, action)
-
-    for action in (
-        "enters the queue",
-        "become discoverable and assigned",
-        "remain blocked",
-        "cleanup removes temporary tracking",
-        "delivery resumes automatically",
-    ):
-        require_policy_action(
-            violations,
-            "Expected result",
-            expected,
-            action,
-        )
+        if exact not in case:
+            violations.append(f"case exact: {exact}")
+    if "TC-WORKFLOW-MANUAL-HANDOFF-001" not in text:
+        violations.append("case exact: TC-WORKFLOW-MANUAL-HANDOFF-001")
     return violations
 
 
@@ -781,9 +1138,19 @@ def manual_handoff_queue_state_violations(governance, registry_case, live_queue)
         if re.search(pattern, normalized):
             violations.append(f"permanent remote-state invariant: {name}")
 
-    if "live queue may be empty or nonempty" not in normalized:
+    words = set(action_words(source))
+    supports_empty = "empty" in words or {"zero", "results"} <= words
+    supports_nonempty = (
+        "nonempty" in words
+        or "populated" in words
+        or {"one", "more"} <= words
+    )
+    if not (supports_empty and supports_nonempty):
         violations.append("missing cardinality-neutral live queue contract")
-    if "release time pr issue evidence" not in normalized:
+    if not (
+        {"release", "time", "pr", "issue", "evidence"} <= words
+        and {"source", "invariant"} <= words
+    ):
         violations.append("missing release-time evidence boundary")
 
     for item in live_queue:
@@ -804,6 +1171,62 @@ def mutate_policy_phrase(text, phrase, replacement):
     if count == 0:
         raise AssertionError(f"mutation phrase not found: {phrase}")
     return mutated
+
+
+def replace_labeled_policy_fields(text, replacements):
+    for field, replacement in replacements.items():
+        pattern = re.compile(
+            rf"(?m)^- \*\*{re.escape(field)}:\*\* .*(?:\n  .*)*"
+        )
+        text, count = pattern.subn(
+            f"- **{field}:** {replacement}",
+            text,
+        )
+        if count != 1:
+            raise AssertionError(
+                f"expected one labeled policy field {field!r}, found {count}"
+            )
+    return text
+
+
+def append_labeled_policy_clause(text, field, clause):
+    fields = parse_labeled_policy(text, MANUAL_HANDOFF_POLICY_HEADING)
+    return replace_labeled_policy_fields(
+        text,
+        {field: fields[field] + " " + clause},
+    )
+
+
+def replace_case_subsection(text, heading, replacement):
+    case = "\n".join(
+        read_markdown_section(text, MANUAL_HANDOFF_CASE_HEADING)
+    )
+    pattern = re.compile(
+        rf"(?ms)(^### {re.escape(heading)}\s*$\n).*?(?=^### |\Z)"
+    )
+    mutated_case, count = pattern.subn(
+        lambda match: match.group(1) + "\n" + replacement.rstrip() + "\n\n",
+        case,
+    )
+    if count != 1:
+        raise AssertionError(
+            f"expected one case subsection {heading!r}, found {count}"
+        )
+    return text.replace(case, mutated_case, 1)
+
+
+def representative_action_phrase(rule):
+    components = (
+        rule.verbs[0],
+        rule.objects[0],
+        rule.targets[0],
+        rule.scopes[0],
+    )
+    return " ".join(
+        token
+        for component in components
+        for token in component
+    )
 
 
 def read_skill():
@@ -2022,21 +2445,6 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         case = "\n".join(
             read_markdown_section(governance, MANUAL_HANDOFF_CASE_HEADING)
         )
-        for requirement in (
-            "real non-instrumented positive and negative/control artifacts",
-            "deterministic screenshots for static UI",
-            "short synchronized emulator A/V clip",
-            "merge and issue closure are blocked",
-            "remove the label from the issue and PR",
-            "automatically resume exact-candidate gates and merge",
-            "live queue may be empty or nonempty",
-            "release-time PR/issue evidence",
-        ):
-            with self.subTest(surface="governance case", requirement=requirement):
-                self.assertIn(
-                    normalize_policy(requirement),
-                    normalize_policy(case),
-                )
         self.assertIn(
             f"[`{MANUAL_HANDOFF_QUERY}`]({MANUAL_HANDOFF_QUERY_URL})",
             case,
@@ -2098,95 +2506,56 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 synthetic_live_queue,
             ),
         )
+        paraphrased_queue_case = dict(indexed_case)
+        paraphrased_queue_case["profiles"] = [
+            "Clean checkout; the live queue supports zero results or one or "
+            "more actionable items"
+        ]
+        paraphrased_queue_case["limitations"] = (
+            "PR and issue entries are release-time evidence, not a frozen "
+            "source invariant."
+        )
+        self.assertEqual(
+            [],
+            manual_handoff_queue_state_violations(
+                governance,
+                paraphrased_queue_case,
+                synthetic_live_queue,
+            ),
+        )
+        stale_queue_case = dict(indexed_case)
+        stale_queue_case["limitations"] = (
+            indexed_case["limitations"]
+            + " The expected current queue is empty."
+        )
+        self.assertTrue(
+            manual_handoff_queue_state_violations(
+                governance,
+                stale_queue_case,
+                synthetic_live_queue,
+            )
+        )
 
     def test_actionable_manual_handoff_protocol_mutations_fail_closed(self):
         # Exact-source mutations are justified because this named protocol is
-        # externally consumed by GitHub labels, mentions, assignees, and URLs.
-        _, canonical = read_skill()
-        mutations = {
-            "label name": (
-                "waiting-for-manual-testing",
-                "waiting-for-testing",
-            ),
-            "explicit ping": ("`@laqieer`", "`manual tester`"),
-            "issue and PR assignment": (
-                "assign both the originating issue and each open "
-                "implementation PR to `laqieer`",
-                "record the tester name",
-            ),
-            "query URL": (
-                MANUAL_HANDOFF_QUERY_URL,
-                "https://github.com/laqieer/fireemblem8-expansion/issues",
-            ),
-            "pre-handoff screenshot and A/V rule": (
-                "inspect deterministic screenshots for static UI or a short "
-                "synchronized emulator A/V clip for time-dependent or "
-                "audiovisual behavior",
-                "inspect the artifact",
-            ),
-            "merge hold": (
-                "merge and issue closure are blocked",
-                "review is requested",
-            ),
-            "cleanup lifecycle": (
-                "remove the `waiting-for-manual-testing` label from the issue "
-                "and PR, remove the temporary `laqieer` assignment unless the "
-                "item remains assigned for another ownership reason, and "
-                "automatically resume exact-candidate gates and merge",
-                "archive the result",
-            ),
-        }
-        for mutation, (required, replacement) in mutations.items():
-            with self.subTest(mutation=mutation):
-                mutated = mutate_policy_phrase(
-                    canonical,
-                    required,
-                    replacement,
-                )
-                self.assertTrue(manual_handoff_contract_violations(mutated))
-
-    def test_actionable_manual_handoff_polarity_mutations_fail_closed(self):
-        policy_mutations = {
-            "ineligible prohibition": (
-                "Do not use it for vague review requests or deterministic behavior",
-                "Use it for vague review requests or deterministic behavior",
-            ),
-            "activation": (
-                "apply `waiting-for-manual-testing`",
-                "do not apply `waiting-for-manual-testing`",
-            ),
-            "assignment": (
-                "assign both the originating issue and each open implementation PR",
-                "do not assign both the originating issue and each open implementation PR",
-            ),
-            "ping": (
-                "explicitly ping `@laqieer`",
-                "do not explicitly ping `@laqieer`",
-            ),
-            "hold": (
-                "State in every handoff comment",
-                "Do not state in every handoff comment",
-            ),
-            "post result": (
-                "post the actual result and evidence link",
-                "do not post the actual result and evidence link",
-            ),
-            "remove label": (
-                "remove the `waiting-for-manual-testing` label",
-                "do not remove the `waiting-for-manual-testing` label",
-            ),
-            "remove assignment": (
-                "remove the temporary `laqieer` assignment",
-                "do not remove the temporary `laqieer` assignment",
-            ),
-            "resume": (
-                "automatically resume exact-candidate gates and merge",
-                "do not automatically resume exact-candidate gates and merge",
-            ),
-        }
+        # externally consumed by GitHub labels, mentions, assignees, URLs, and
+        # the stable case index.
         for path in (SKILL_PATH, CONTRIBUTING_PATH):
             canonical = path.read_text(encoding="utf-8")
-            for mutation, (required, replacement) in policy_mutations.items():
+            mutations = {
+                "label": ("`waiting-for-manual-testing`", "`other-label`"),
+                "mention": ("`@laqieer`", "`@other-tester`"),
+                "assignee": ("`laqieer`", "`other-tester`"),
+                "query URL": (
+                    MANUAL_HANDOFF_QUERY_URL,
+                    "https://github.com/laqieer/fireemblem8-expansion/issues",
+                ),
+                "case ID": (
+                    "TC-WORKFLOW-MANUAL-HANDOFF-001",
+                    "TC-WORKFLOW-OTHER-001",
+                ),
+            }
+            for mutation, (required, replacement) in mutations.items():
                 with self.subTest(surface=str(path), mutation=mutation):
                     mutated = mutate_policy_phrase(
                         canonical,
@@ -2196,72 +2565,200 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     self.assertTrue(
                         manual_handoff_contract_violations(mutated)
                     )
+            reviewer_example = append_labeled_policy_clause(
+                canonical,
+                "Completion",
+                "Automatically resume exact-candidate gates and merge must "
+                "not happen.",
+            )
+            with self.subTest(
+                surface=str(path),
+                mutation="reviewer postfix example",
+            ):
+                self.assertTrue(
+                    manual_handoff_contract_violations(reviewer_example)
+                )
 
-        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
-        case_mutations = {
-            "render": (
-                "render real non-instrumented positive and negative/control artifacts",
-                "do not render real non-instrumented positive and negative/control artifacts",
+    def test_actionable_manual_handoff_polarity_mutations_fail_closed(self):
+        for path in (SKILL_PATH, CONTRIBUTING_PATH):
+            canonical = path.read_text(encoding="utf-8")
+            for rule in manual_handoff_policy_rules():
+                phrase = representative_action_phrase(rule)
+                if rule.atom.polarity == "required":
+                    first, remainder = phrase.split(" ", 1)
+                    mutations = {
+                        "prefix must-not": "must not " + phrase,
+                        "prefix never": "never " + phrase,
+                        "intervening must-not": (
+                            first + " must not " + remainder
+                        ),
+                        "intervening cannot": (
+                            first + " cannot " + remainder
+                        ),
+                        "postfix": phrase + " must not happen",
+                        "postfix should-not": (
+                            phrase + " should not occur"
+                        ),
+                        "postfix prohibited": phrase + " is prohibited",
+                    }
+                else:
+                    mutations = {"contradictory affirmative": phrase}
+                for mutation, clause in mutations.items():
+                    with self.subTest(
+                        surface=str(path),
+                        atom=rule.atom,
+                        mutation=mutation,
+                    ):
+                        mutated = append_labeled_policy_clause(
+                            canonical,
+                            rule.atom.field,
+                            clause + ".",
+                        )
+                        self.assertTrue(
+                            manual_handoff_contract_violations(mutated)
+                        )
+
+    def test_actionable_manual_handoff_semantic_paraphrases_stay_green(self):
+        paraphrases = {
+            "Eligibility": (
+                "Reserve this handoff for a precise visual, audio, or UX "
+                "criterion. Automation cannot reliably judge that criterion. "
+                "Never use this handoff for vague review requests or "
+                "deterministic checks."
             ),
-            "activation": (
-                "apply the label to the originating issue and each open "
-                "implementation PR",
-                "do not apply the label to the originating issue and each "
-                "open implementation PR",
+            "Pre-handoff evidence": (
+                "From the exact candidate commit, build positive and "
+                "negative/control artifacts that are real and "
+                "non-instrumented. Review deterministic static-UI screenshots "
+                "and a short synchronized emulator A/V recording for "
+                "time-dependent or audiovisual behavior. Keep semantic "
+                "assertions as primary evidence."
             ),
-            "assignment": (
-                "assign both items to `laqieer`",
-                "do not assign both items to `laqieer`",
+            "Activation": (
+                "For an actionable criterion, add the "
+                "`waiting-for-manual-testing` label on every open "
+                "implementation PR and the originating issue. Set `laqieer` "
+                "as assignee for both items."
             ),
-            "ping": (
-                "explicitly ping `@laqieer`",
-                "do not explicitly ping `@laqieer`",
+            "Handoff comment": (
+                "On every actionable issue and PR, post a comment and "
+                "explicitly notify `@laqieer`. The request records "
+                "tester-case ID, candidate commit, artifact path or link, "
+                "SHA-256, environment, clean state, numbered actions, "
+                "expected result, control artifact, and a single judgment."
             ),
-            "handoff contents and hold": (
-                "Verify each handoff comment includes",
-                "Do not verify each handoff comment includes",
+            "Hold": (
+                "Every handoff comment records that the implementation PR is "
+                "prohibited from merging and the issue cannot close until "
+                "that criterion is accepted."
             ),
-            "post result": (
-                "post the actual result and evidence link",
-                "do not post the actual result and evidence link",
+            "Completion": (
+                "After acceptance, record the result and evidence on the PR "
+                "and issue; clear the `waiting-for-manual-testing` label from "
+                "both items; unassign `laqieer` unless another owner remains; "
+                "resume the exact candidate gates automatically and merge."
             ),
-            "remove label": (
-                "remove the label from the issue and PR",
-                "do not remove the label from the issue and PR",
-            ),
-            "remove assignment": (
-                "remove the temporary assignment",
-                "do not remove the temporary assignment",
-            ),
-            "resume": (
-                "automatically resume exact-candidate gates and merge",
-                "do not automatically resume exact-candidate gates and merge",
-            ),
-            "discoverability": (
-                "become discoverable and assigned",
-                "do not become discoverable and assigned",
-            ),
-            "merge hold": (
-                "merge and closure remain blocked",
-                "merge and closure do not remain blocked",
-            ),
-            "cleanup removal": (
-                "cleanup removes temporary tracking",
-                "do not assert that cleanup removes temporary tracking",
-            ),
-            "automatic resume": (
-                "delivery resumes automatically",
-                "do not assert that delivery resumes automatically",
+            "Queue": (
+                "Use "
+                f"[`{MANUAL_HANDOFF_QUERY}`]({MANUAL_HANDOFF_QUERY_URL}). "
+                "When this query has no results, never schedule comments or "
+                "notifications."
             ),
         }
-        for mutation, (required, replacement) in case_mutations.items():
-            with self.subTest(surface="governance case", mutation=mutation):
-                mutated = mutate_policy_phrase(
-                    governance,
-                    required,
-                    replacement,
+        for path in (SKILL_PATH, CONTRIBUTING_PATH):
+            with self.subTest(surface=str(path)):
+                paraphrased = replace_labeled_policy_fields(
+                    path.read_text(encoding="utf-8"),
+                    paraphrases,
                 )
-                self.assertTrue(manual_handoff_case_violations(mutated))
+                self.assertEqual(
+                    [],
+                    manual_handoff_contract_violations(paraphrased),
+                )
+
+    def test_actionable_manual_handoff_scopes_do_not_leak(self):
+        for path in (SKILL_PATH, CONTRIBUTING_PATH):
+            canonical = path.read_text(encoding="utf-8")
+            fields = parse_labeled_policy(
+                canonical,
+                MANUAL_HANDOFF_POLICY_HEADING,
+            )
+            swapped = replace_labeled_policy_fields(
+                canonical,
+                {
+                    "Pre-handoff evidence": fields["Hold"],
+                    "Hold": fields["Pre-handoff evidence"],
+                },
+            )
+            with self.subTest(surface=str(path), scope="field"):
+                self.assertTrue(manual_handoff_contract_violations(swapped))
+            for field in parse_labeled_policy(
+                canonical,
+                MANUAL_HANDOFF_POLICY_HEADING,
+            ):
+                omitted = replace_labeled_policy_fields(
+                    canonical,
+                    {field: "This field intentionally omits its actions."},
+                )
+                with self.subTest(
+                    surface=str(path),
+                    scope="omission",
+                    field=field,
+                ):
+                    self.assertTrue(
+                        manual_handoff_contract_violations(omitted)
+                    )
+
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        case = "\n".join(
+            read_markdown_section(governance, MANUAL_HANDOFF_CASE_HEADING)
+        )
+        expected = "\n".join(
+            read_markdown_section(case, "Expected result")
+        )
+        leaked = replace_case_subsection(
+            governance,
+            "Actions",
+            expected,
+        )
+        self.assertTrue(manual_handoff_case_violations(leaked))
+
+    def test_actionable_manual_handoff_case_polarity_mutations_fail_closed(self):
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        case = "\n".join(
+            read_markdown_section(governance, MANUAL_HANDOFF_CASE_HEADING)
+        )
+        fields = {
+            "Actions": "\n".join(read_markdown_section(case, "Actions")),
+            "Expected result": "\n".join(
+                read_markdown_section(case, "Expected result")
+            ),
+        }
+        for rule in manual_handoff_case_rules():
+            phrase = representative_action_phrase(rule)
+            if rule.atom.polarity == "required":
+                first, remainder = phrase.split(" ", 1)
+                mutations = {
+                    "prefix must-not": "must not " + phrase,
+                    "prefix never": "never " + phrase,
+                    "intervening must-not": first + " must not " + remainder,
+                    "intervening cannot": first + " cannot " + remainder,
+                    "postfix must-not": phrase + " must not happen",
+                    "postfix should-not": phrase + " should not occur",
+                    "postfix prohibited": phrase + " is prohibited",
+                }
+            else:
+                mutations = {"contradictory affirmative": phrase}
+            for mutation, clause in mutations.items():
+                with self.subTest(atom=rule.atom, mutation=mutation):
+                    mutated = replace_case_subsection(
+                        governance,
+                        rule.atom.field,
+                        fields[rule.atom.field] + "\n" + clause + ".",
+                    )
+                    self.assertTrue(
+                        manual_handoff_case_violations(mutated)
+                    )
 
 
 if __name__ == "__main__":

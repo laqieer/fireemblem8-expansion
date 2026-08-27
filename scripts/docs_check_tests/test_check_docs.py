@@ -33,6 +33,39 @@ def write(root, rel_path, content):
     return full
 
 
+def markdown_section(text, heading):
+    lines = text.splitlines()
+    matches = [
+        (index, parsed[0])
+        for index, line in enumerate(lines)
+        if (parsed := check_docs.parse_atx_heading(line)) is not None
+        and parsed[1] == heading
+    ]
+    if len(matches) != 1:
+        raise AssertionError(
+            f"expected one heading {heading!r}, found {len(matches)}"
+        )
+    start, level = matches[0]
+    end = next(
+        (
+            index
+            for index in range(start + 1, len(lines))
+            if (
+                (parsed := check_docs.parse_atx_heading(lines[index]))
+                is not None
+                and parsed[0] <= level
+            )
+        ),
+        len(lines),
+    )
+    return "\n".join(lines[start + 1:end])
+
+
+def contains_concept(text, aliases):
+    words = set(re.findall(r"[a-z0-9]+", text.casefold()))
+    return any(set(alias) <= words for alias in aliases)
+
+
 class TempRepo:
     """A throwaway Git repo so discover_markdown_files()/parse_make_targets()
     (both Git- and filesystem-rooted) behave exactly as in the real repo."""
@@ -943,7 +976,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest scripts.assets.tests.test_manifest -v",
                             "make expansion-modern-banim-package-runtime-check",
                         },
-                        "negative_control_terms": set(),
+                        "negative_control_concepts": {},
                     },
                 },
             },
@@ -957,27 +990,30 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "scripts.docs_check_tests."
                             "test_development_workflow_skill -v",
                         },
-                        "negative_control_terms": set(),
+                        "negative_control_concepts": {},
                     },
                     "TC-WORKFLOW-MANUAL-HANDOFF-001": {
                         "document": "docs/test-cases/workflow-governance.md",
-                        "profile_terms": {
-                            "live queue may be empty or nonempty",
-                        },
                         "commands": {
                             "python3 -m unittest "
                             "scripts.docs_check_tests."
                             "test_development_workflow_skill -v",
                         },
-                        "negative_control_terms": {
-                            "label",
-                            "ping",
-                            "issue-and-PR assignment",
-                            "query URL",
-                            "pre-handoff media rule",
-                            "merge hold",
-                            "cleanup lifecycle",
-                            "phrase-preserving polarity reversals",
+                        "negative_control_concepts": {
+                            "label": (("label",),),
+                            "ping": (("ping",), ("mention",)),
+                            "assignment": (("issue", "pr", "assignment"),),
+                            "query": (("query", "url"), ("search", "link")),
+                            "preview": (
+                                ("pre", "handoff", "media"),
+                                ("screenshot", "clip"),
+                            ),
+                            "hold": (("merge", "hold"), ("merge", "blocked")),
+                            "cleanup": (
+                                ("cleanup", "lifecycle"),
+                                ("remove", "temporary", "state"),
+                            ),
+                            "polarity": (("polarity", "reversals"),),
                         },
                     },
                 },
@@ -1005,16 +1041,28 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             record["command"] for record in case["automation"]
                         })
                     )
-                    for term in case_contract.get("profile_terms", set()):
-                        self.assertTrue(
-                            any(term in profile for profile in case["profiles"])
-                        )
-                    for term in case_contract["negative_control_terms"]:
-                        self.assertIn(term, case["negative_control"])
+                    for concept, aliases in case_contract[
+                        "negative_control_concepts"
+                    ].items():
+                        with self.subTest(case_id=case_id, concept=concept):
+                            self.assertTrue(
+                                contains_concept(
+                                    case["negative_control"],
+                                    aliases,
+                                )
+                            )
                     procedure = check_docs.read_text(
                         os.path.join(REAL_REPO_ROOT, case["document"])
                     )
-                    self.assertIn("## " + case_id + ":", procedure)
+                    case_heading = next(
+                        line[3:]
+                        for line in procedure.splitlines()
+                        if line.startswith("## " + case_id + ":")
+                    )
+                    case_section = markdown_section(
+                        procedure,
+                        case_heading,
+                    )
                     for heading in (
                         "### Actions",
                         "### Expected result",
@@ -1023,7 +1071,27 @@ class TesterCaseRegistryTests(unittest.TestCase):
                         "### Automation",
                         "### Cleanup and limitations",
                     ):
-                        self.assertIn(heading, procedure)
+                        self.assertIn(heading, case_section)
+
+                    if case_id == "TC-WORKFLOW-MANUAL-HANDOFF-001":
+                        leaked_section = case_section.replace(
+                            "### Actions",
+                            "### Missing actions",
+                            1,
+                        )
+                        leaked_document = procedure.replace(
+                            case_section,
+                            leaked_section,
+                            1,
+                        )
+                        self.assertIn("### Actions", leaked_document)
+                        self.assertNotIn(
+                            "### Actions",
+                            markdown_section(
+                                leaked_document,
+                                case_heading,
+                            ),
+                        )
 
     def test_patch_release_cases_are_indexed_with_complete_procedures(self):
         registry_path = os.path.join(REAL_REPO_ROOT, check_docs.TEST_CASE_REGISTRY_PATH)
