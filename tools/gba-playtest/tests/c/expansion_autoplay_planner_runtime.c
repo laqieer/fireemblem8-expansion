@@ -3,13 +3,19 @@
 #include "bm.h"
 #include "bmcontainer.h"
 #include "bmitem.h"
+#include "bmio.h"
 #include "bmmap.h"
 #include "bmmind.h"
 #include "bmphase.h"
 #include "bmunit.h"
 #include "cp_common.h"
+#include "event.h"
+#include "eventscript.h"
 #include "expansion_autoplay.h"
+#include "expansion_autoplay_internal.h"
 #include "expansion_autoplay_planner.h"
+#include "gamecontrol.h"
+#include "proc.h"
 #include "rng.h"
 
 #ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_COMMIT_DELAY_FRAMES
@@ -24,6 +30,10 @@
 #define FE8_AUTOPLAY_PLANNER_RUNTIME_IGNORE_COMMANDS 0
 #endif
 
+#ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_TRANSITION_SUBCODE
+#define FE8_AUTOPLAY_PLANNER_RUNTIME_TRANSITION_SUBCODE EVSUBCMD_MNC2
+#endif
+
 struct PlaySt gPlaySt;
 struct ActionData gActionData;
 struct ExpansionAutoplayTelemetry gExpansionAutoplayTelemetry;
@@ -35,6 +45,8 @@ u8** gBmMapUnit;
 u8** gBmMapTerrain;
 u8** gBmMapFog;
 u8 gSummonConfig[4][2];
+u32 gEventSlots[EVENT_SLOT_COUNT];
+struct EnqueuedEventCall gEventCallQueue[16];
 
 static u16 sSeeds[3];
 static u32 sConsumption;
@@ -67,6 +79,11 @@ enum PlannerRuntimeStage
 
 static enum PlannerRuntimeStage sStage;
 static u32 sCommitDelayFrames;
+static struct GameCtrlProc sGameControl;
+static struct BMapMainProc sMapMain;
+struct ProcCmd gProc_BMapMain[] = {
+    PROC_END,
+};
 
 void* memcpy(void* destination, const void* source, size_t size)
 {
@@ -76,6 +93,136 @@ void* memcpy(void* destination, const void* source, size_t size)
     while (size-- != 0)
         *output++ = *input++;
     return destination;
+}
+
+void* memset(void* destination, int value, size_t size)
+{
+    u8* output = destination;
+
+    while (size-- != 0)
+        *output++ = value;
+    return destination;
+}
+
+void SetTextFont(struct Font* font)
+{
+    (void)font;
+}
+
+void InitSystemTextFont(void)
+{
+}
+
+void LoadUiFrameGraphics(void)
+{
+}
+
+void ReadGameSaveCoreGfx(void)
+{
+}
+
+void UnpackChapterMapPalette(void)
+{
+}
+
+void ChangeUnitSpritePalette(u16 palette)
+{
+    (void)palette;
+}
+
+void EndAllMus(void)
+{
+}
+
+void UnlockGame(void)
+{
+}
+
+void ResumeMenu(void)
+{
+}
+
+void ResetBkselPalette(void)
+{
+}
+
+void ClearCutsceneUnits(void)
+{
+}
+
+void EndTalk(void)
+{
+}
+
+void EndCgText(void)
+{
+}
+
+void EndAllBoxDialogue(void)
+{
+}
+
+void __wrap_EndEventFaces(struct EventEngineProc* proc)
+{
+    (void)proc;
+}
+
+void SetNextGameActionId(int id)
+{
+    (void)id;
+}
+
+void SetNextChapterId(int id)
+{
+    (void)id;
+}
+
+void GotoChapterWithoutSave(u16 chapter)
+{
+    (void)chapter;
+}
+
+void DeleteAll6CWaitMusicRelated(void)
+{
+}
+
+void Sound_FadeOutBGM(int speed)
+{
+    (void)speed;
+}
+
+void Proc_EndEachMarked(int mark)
+{
+    (void)mark;
+}
+
+ProcPtr Proc_Find(const struct ProcCmd* script)
+{
+    (void)script;
+    return (ProcPtr)&sMapMain;
+}
+
+void Proc_End(ProcPtr proc)
+{
+    (void)proc;
+}
+
+void ExpansionAutoplay_ResetForChapterTransition(void)
+{
+    ExpansionAutoplayPlanner_OnMapReset();
+}
+
+void ExpansionAutoplay_Reset(void)
+{
+    ExpansionAutoplayPlanner_Reset();
+}
+
+void DebugToolsPhaseControl_Reset(void)
+{
+}
+
+void DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition(void)
+{
 }
 
 void StoreRNState(u16* seeds)
@@ -340,6 +487,7 @@ static void InitializeRuntime(void)
     gPlaySt.chapterVisionRange = 3;
     gPlaySt.partyGoldAmount = 1000;
     sConvoy[0] = 1;
+    sMapMain.gameCtrl = &sGameControl;
     ExpansionAutoplayPlanner_Reset();
     ExpansionAutoplayPlanner_OnMapReady();
     sStage = PLANNER_RUNTIME_WAIT_START;
@@ -347,8 +495,19 @@ static void InitializeRuntime(void)
 
 static void PublishChapterTwo(struct AiDecision* decision)
 {
-    ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
-    ExpansionAutoplayPlanner_OnMapReset();
+    u32 command = _EvtArg0(
+        EV_CMD_CHANGECHAPTER,
+        2,
+        FE8_AUTOPLAY_PLANNER_RUNTIME_TRANSITION_SUBCODE,
+        2);
+    struct EventEngineProc event;
+
+    memset(&event, 0, sizeof(event));
+    event.pEventCurrent = (const u16*)&command;
+    event.execType = EV_EXEC_UNK5;
+    event.evStateBits = EV_STATE_ABORT;
+    Event2A_MoveToChapter(&event);
+    EventEngine_OnEnd(&event);
     gPlaySt.chapterIndex = 2;
     gPlaySt.chapterTurnNumber = 1;
     sConvoy[1] = 2;
@@ -360,7 +519,6 @@ static void PublishChapterTwo(struct AiDecision* decision)
 
 static void PublishFinalObservation(struct AiDecision* decision)
 {
-    ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
     PrepareDecision(decision);
     ExpansionAutoplayPlanner_OfferDecision(decision);
     sStage = PLANNER_RUNTIME_WAIT_FINAL;

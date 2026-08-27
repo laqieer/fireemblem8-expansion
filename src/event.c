@@ -23,6 +23,10 @@
 #if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
 #include "expansion_chapter_objectives.h"
 #endif
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#include "expansion_autoplay_planner.h"
+#endif
 #include "expansion_debugtools.h"
 #if FE8_AUTOPLAY_EVENT_TRACE_TEST
 #include "expansion_autoplay_internal.h"
@@ -158,7 +162,12 @@ void EventEngine_OnEnd(struct EventEngineProc* proc) {
     && (FE8_EXPANSION_DEBUGTOOLS_ENABLED \
         || (FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG))
             if (proc->evStateBits & EV_STATE_PLANNER_CHAPTER_TRANSITION)
+            {
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+                ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+#endif
                 EndBMapMainForChapterTransition();
+            }
             else
                 EndBMapMain();
 #else
@@ -191,7 +200,9 @@ void EventEngine_OnEnd(struct EventEngineProc* proc) {
 #if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
         ExpansionChapterObjectives_OnMapChangeEventsComplete();
 #endif
+#if !FE8_AUTOPLAY_PLANNER_RUNTIME_TEST
         CallNextQueuedEvent();
+#endif
     }
 }
 

@@ -34,6 +34,15 @@ PROVENANCE = {
     "rom": {"sha1": "fixture", "size": 1024},
     "scenario": {"name": "two-chapter", "schema_version": 1},
 }
+TRANSCRIPT_SESSION = {
+    "transport": "fixture",
+    "rom_identity": 0,
+    "config_identity": 0,
+    "scenario_identity": 0,
+    "seed_identity": 0,
+    "ready_run_id": 0,
+    "run_id": 1,
+}
 
 
 class PlannerBridgeTests(unittest.TestCase):
@@ -183,6 +192,102 @@ class PlannerBridgeTests(unittest.TestCase):
                 event["event_digest"] = planner._digest(event)
                 previous = event["event_digest"]
 
+        empty = {
+            "schema": planner.PlannerTranscript.SCHEMA,
+            "events": [],
+        }
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "exactly one leading session",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(empty)
+            )
+
+        sessionless = json.loads(exported)
+        sessionless["events"].pop(0)
+        rechain(sessionless)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "exactly one leading session",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(sessionless)
+            )
+
+        missing_provenance = json.loads(exported)
+        missing_provenance["events"][0].pop("provenance")
+        rechain(missing_provenance)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "invalid planner transcript session provenance",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(missing_provenance)
+            )
+
+        late_session = json.loads(exported)
+        late_session["events"][0], late_session["events"][1] = (
+            late_session["events"][1],
+            late_session["events"][0],
+        )
+        rechain(late_session)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "exactly one leading session",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(late_session)
+            )
+
+        duplicate_session = json.loads(exported)
+        duplicate_session["events"].insert(
+            1,
+            dict(duplicate_session["events"][0]),
+        )
+        rechain(duplicate_session)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "exactly one leading session",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(duplicate_session)
+            )
+
+        for field in (
+            "rom_identity",
+            "config_identity",
+            "scenario_identity",
+            "seed_identity",
+        ):
+            with self.subTest(session_identity=field):
+                provenance_tampered = json.loads(exported)
+                provenance_tampered["events"][0]["provenance"][
+                    field
+                ] ^= 1
+                rechain(provenance_tampered)
+                with self.assertRaisesRegex(
+                    planner.PlannerError,
+                    "observation session "
+                    "(identity|scenario/seed) mismatch",
+                ):
+                    planner.PlannerTranscript.import_bytes(
+                        planner._canonical(provenance_tampered)
+                    )
+
+        run_tampered = json.loads(exported)
+        provenance = run_tampered["events"][0]["provenance"]
+        provenance["ready_run_id"] += 1
+        provenance["run_id"] += 1
+        rechain(run_tampered)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "(observation session|accepted command run) identity mismatch",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(run_tampered)
+            )
+
         tampered = json.loads(exported)
         complete_event = next(
             event
@@ -249,6 +354,119 @@ class PlannerBridgeTests(unittest.TestCase):
                 planner._canonical(runtime_tampered)
             )
 
+        acknowledgement = next(
+            event
+            for event in json.loads(exported)["events"]
+            if event["event"] == "acknowledgement"
+        )
+        for result, rejection in (
+            (0, 0),
+            (1, 4),
+            (2, 0),
+            (0, 99),
+        ):
+            with self.subTest(
+                acknowledgement_result=result,
+                acknowledgement_rejection=rejection,
+            ):
+                invalid_ack = json.loads(exported)
+                event = next(
+                    item
+                    for item in invalid_ack["events"]
+                    if item["event"] == "acknowledgement"
+                )
+                event["result"] = result
+                event["rejection"] = rejection
+                rechain(invalid_ack)
+                with self.assertRaisesRegex(
+                    planner.PlannerError,
+                    "invalid acknowledgement result/rejection pair",
+                ):
+                    planner.PlannerTranscript.import_bytes(
+                        planner._canonical(invalid_ack)
+                    )
+
+        for field, value, message in (
+            ("command_id", acknowledgement["command_id"] + 1,
+             "acknowledgement order"),
+            ("kind", acknowledgement["kind"] + 1,
+             "acknowledgement kind mismatch"),
+        ):
+            with self.subTest(acknowledgement_field=field):
+                invalid_ack = json.loads(exported)
+                event = next(
+                    item
+                    for item in invalid_ack["events"]
+                    if item["event"] == "acknowledgement"
+                )
+                event[field] = value
+                rechain(invalid_ack)
+                with self.assertRaisesRegex(
+                    planner.PlannerError,
+                    message,
+                ):
+                    planner.PlannerTranscript.import_bytes(
+                        planner._canonical(invalid_ack)
+                    )
+
+        rejected_commit = json.loads(exported)
+        acknowledgement = next(
+            event
+            for event in rejected_commit["events"]
+            if event["event"] == "acknowledgement"
+                and event["kind"] == 2
+        )
+        acknowledgement["result"] = 0
+        acknowledgement["rejection"] = 4
+        rechain(rejected_commit)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "settled rejection does not match acknowledgement",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(rejected_commit)
+            )
+
+        committed_rejection = json.loads(exported)
+        acknowledgement_index = next(
+            index
+            for index, event in enumerate(committed_rejection["events"])
+            if event["event"] == "acknowledgement"
+                and event["kind"] == 2
+        )
+        acknowledgement = committed_rejection["events"][
+            acknowledgement_index
+        ]
+        acknowledgement["result"] = 0
+        acknowledgement["rejection"] = 4
+        observation_event = next(
+            event
+            for event in committed_rejection["events"][
+                acknowledgement_index + 1 :
+            ]
+            if event["event"] == "observation_page"
+        )
+        observation_event["observation"]["rejection"] = 4
+        settled_event = next(
+            event
+            for event in committed_rejection["events"][
+                acknowledgement_index + 1 :
+            ]
+            if event["event"] == "settled"
+        )
+        settled_event["terminal"]["rejection"] = 4
+        settled_event["observation_digest"] = planner._digest(
+            observation_event["observation"]
+        )
+        rechain(committed_rejection)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            "rejected COMMIT cannot settle as COMMITTED",
+        ):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(committed_rejection)
+            )
+
         reordered = json.loads(exported)
         reordered["events"][0], reordered["events"][1] = (
             reordered["events"][1],
@@ -256,7 +474,7 @@ class PlannerBridgeTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             planner.PlannerError,
-            "order is invalid|digest mismatch",
+            "exactly one leading session|order is invalid|digest mismatch",
         ):
             planner.PlannerTranscript.import_bytes(
                 planner._canonical(reordered)
@@ -268,7 +486,7 @@ class PlannerBridgeTests(unittest.TestCase):
             planner.PlannerTranscript.import_bytes(exported[:-1])
 
         bounded = planner.PlannerTranscript(max_bytes=512)
-        bounded.record_session({"run_id": 1})
+        bounded.record_session(TRANSCRIPT_SESSION)
         before = bounded.export()
         with self.assertRaisesRegex(
             planner.PlannerError,
@@ -278,10 +496,10 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertEqual(bounded.export(), before)
 
         probe = planner.PlannerTranscript()
-        probe.record_session({"run_id": 1})
+        probe.record_session(TRANSCRIPT_SESSION)
         probe.record_complete_observation(complete)
         atomic = planner.PlannerTranscript(max_bytes=len(probe.export()))
-        atomic.record_session({"run_id": 1})
+        atomic.record_session(TRANSCRIPT_SESSION)
         atomic_before = atomic.export()
         with self.assertRaisesRegex(
             planner.PlannerError,
@@ -484,7 +702,7 @@ class PlannerBridgeTests(unittest.TestCase):
             flags=flags,
         )
         transcript = planner.PlannerTranscript()
-        transcript.record_session({"run_id": 1})
+        transcript.record_session(TRANSCRIPT_SESSION)
         largest_page_exchange = 0
         for page in pages:
             size_before = len(transcript.export())
@@ -762,6 +980,17 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertIn(
             "EV_STATE_PLANNER_CHAPTER_TRANSITION",
             event,
+        )
+        preserving_end = event.split(
+            "if (proc->evStateBits & "
+            "EV_STATE_PLANNER_CHAPTER_TRANSITION)",
+            1,
+        )[1].split("else", 1)[0]
+        self.assertLess(
+            preserving_end.index(
+                "ExpansionAutoplayPlanner_RecordCampaignCheckpoint()"
+            ),
+            preserving_end.index("EndBMapMainForChapterTransition()"),
         )
         mnch = event_commands.split("case EVSUBCMD_MNCH:", 1)[1].split(
             "case EVSUBCMD_MNC2:", 1
@@ -1501,6 +1730,75 @@ raise SystemExit(child.returncode)
                 planner_code_size + hook_code_delta,
                 12 * 1024,
             )
+            transition_code_sizes: dict[bool, int] = {}
+            for enabled in (False, True):
+                output = temporary_path / (
+                    f"event-planner-{int(enabled)}.o"
+                )
+                completed = subprocess.run(
+                    [
+                        compiler,
+                        "-mcpu=arm7tdmi",
+                        "-mthumb",
+                        "-mthumb-interwork",
+                        "-mabi=aapcs",
+                        "-std=gnu89",
+                        "-ffreestanding",
+                        "-fno-builtin",
+                        "-O2",
+                        "-I",
+                        str(root / "include"),
+                        "-I",
+                        str(root / "include" / "generated"),
+                        "-DFE8_EXPANSION_MODERN_BUILD=1",
+                        "-DFE8_EXPANSION_DEBUG=1",
+                        f"-DFE8_EXPANSION_AUTOPLAY_PLANNER={int(enabled)}",
+                        "-c",
+                        str(root / "src" / "event.c"),
+                        "-o",
+                        str(output),
+                    ],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    completed.stdout + completed.stderr,
+                )
+                sizes = subprocess.run(
+                    [size, "-A", str(output)],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    sizes.returncode,
+                    0,
+                    sizes.stdout + sizes.stderr,
+                )
+                transition_code_sizes[enabled] = sum(
+                    int(value)
+                    for section, value in re.findall(
+                        r"^(\S+)\s+(\d+)\s+\d+$",
+                        sizes.stdout,
+                        re.MULTILINE,
+                    )
+                    if section
+                        in {".text", ".rodata", ".rodata.str1.4"}
+                )
+            transition_code_delta = (
+                transition_code_sizes[True]
+                - transition_code_sizes[False]
+            )
+            self.assertGreaterEqual(transition_code_delta, 0)
+            self.assertLessEqual(
+                planner_code_size
+                + hook_code_delta
+                + transition_code_delta,
+                12 * 1024,
+            )
             disabled_hook_symbols = subprocess.run(
                 [nm, str(hook_objects[False])],
                 cwd=root,
@@ -1711,22 +2009,38 @@ class PlannerProcessTransport:
         self._next_acknowledgement_id = 1
         self.frame_count = 4
         self.transcript = planner.PlannerTranscript()
+        self._transcript_started = False
         self.observation = self._read_state()
-        self.transcript.record_session(
+        self._begin_transcript(self.observation)
+
+    def _begin_transcript(
+        self,
+        observation: planner.Observation,
+        *,
+        allow_uninitialized: bool = False,
+    ) -> None:
+        if self._transcript_started:
+            return
+        if not allow_uninitialized and observation.state != 1:
+            return
+        provenance = (
             {
                 "transport": "restricted-libmgba",
-                "rom_identity": self.observation.actual_rom_identity,
-                "config_identity": self.observation.actual_config_identity,
-                "scenario_identity": self.observation.actual_scenario_identity,
-                "seed_identity": self.observation.actual_seed_identity,
+                "rom_identity": observation.actual_rom_identity,
+                "config_identity": observation.actual_config_identity,
+                "scenario_identity": observation.actual_scenario_identity,
+                "seed_identity": observation.actual_seed_identity,
+                "ready_run_id": observation.run_id,
+                "run_id": observation.run_id + 1,
             }
         )
-        self.transcript.record_observation_page(self.observation)
-        self.transcript.record_settled(
-            self.observation,
+        self.transcript.record_session_observation(
+            provenance,
+            observation,
             self.checkpoint,
             self.command,
         )
+        self._transcript_started = True
 
     def _read_protocol_line(self) -> tuple[list[str], str]:
         assert self.process.stdout is not None
@@ -1833,6 +2147,10 @@ class PlannerProcessTransport:
         self.last_acknowledgement = None
         self.last_completion = None
         if transcript_command is not None:
+            self._begin_transcript(
+                self.observation,
+                allow_uninitialized=True,
+            )
             self.transcript.reserve_exchange()
             self.transcript.record_command(transcript_command)
         self.process.stdin.write(line + "\n")
@@ -1841,12 +2159,15 @@ class PlannerProcessTransport:
             acknowledgement = self._read_acknowledgement()
             self._read_completion(acknowledgement)
         observation = self._read_state()
-        self.transcript.record_observation_page(observation)
-        self.transcript.record_settled(
-            observation,
-            self.checkpoint,
-            self.command,
-        )
+        if self._transcript_started:
+            self.transcript.record_observation_page(observation)
+            self.transcript.record_settled(
+                observation,
+                self.checkpoint,
+                self.command,
+            )
+        else:
+            self._begin_transcript(observation)
         return observation
 
     def start(
@@ -1986,6 +2307,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
         ignore_commands: bool = False,
         acknowledgement_frame_limit: int = 120,
         commit_completion_frame_limit: int = 18000,
+        transition_subcode: int = 2,
     ) -> tuple[Path, Path]:
         rom = Path(temporary) / "planner-two-chapter.gba"
         elf = Path(temporary) / "planner-two-chapter.elf"
@@ -1996,6 +2318,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             commit_delay_frames=commit_delay_frames,
             stall_after_commit=stall_after_commit,
             ignore_commands=ignore_commands,
+            transition_subcode=transition_subcode,
         )
         build_planner_transport_backend(
             backend,
@@ -2078,8 +2401,24 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             self.assertEqual(waiting.state, 2)
             self.assertEqual(waiting.chapter, 2)
             self.assertEqual(len(transport.checkpoint), 13)
-            self.assertEqual(transport.checkpoint[2], 52)
-            self.assertEqual(transport.checkpoint[4], 1)
+            transition_checkpoint = transport.checkpoint
+            self.assertEqual(
+                transition_checkpoint[:12],
+                (
+                    0x41504C4E,
+                    planner.PROTOCOL_VERSION,
+                    52,
+                    first.run_id,
+                    first.chapter,
+                    0,
+                    first.chapter_turn,
+                    *first.rng_state,
+                    first.rng_lcg,
+                    first.rng_consumption,
+                ),
+            )
+            self.assertNotEqual(transition_checkpoint[12], 0)
+            self.assertEqual(waiting.run_id, first.run_id)
 
             second = planner.collect_observation_pages(transport, waiting)
             choice = implementation.choose(second)
@@ -2093,11 +2432,20 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 )
             )
             self.assertEqual(committed.state, 2)
-            self.assertEqual(transport.checkpoint[4], 2)
+            self.assertEqual(transport.checkpoint, transition_checkpoint)
             settled = planner.collect_observation_pages(transport, committed)
+            cancelled = transport.exchange(
+                planner.Command(
+                    planner.CommandKind.CANCEL,
+                    settled.run_id,
+                    settled.observation_id,
+                )
+            )
+            self.assertEqual(cancelled.state, 4)
+            self.assertTrue(all(value == 0 for value in transport.checkpoint))
             return (
                 settled,
-                transport.checkpoint,
+                transition_checkpoint,
                 transport.transcript.export(),
             )
         finally:
@@ -2116,6 +2464,23 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 ):
                     self.skipTest(str(error))
                 raise
+            symbols = subprocess.run(
+                ["arm-none-eabi-nm", str(rom.with_suffix(".elf"))],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                symbols.returncode,
+                0,
+                symbols.stdout + symbols.stderr,
+            )
+            for symbol in (
+                "Event2A_MoveToChapter",
+                "EventEngine_OnEnd",
+                "EndBMapMainForChapterTransition",
+                "ExpansionAutoplayPlanner_RecordCampaignCheckpoint",
+            ):
+                self.assertRegex(symbols.stdout, rf"\b{symbol}(?:\n|$)")
             scripted = self._run_planner(
                 backend, rom, planner.ScriptedPlanner()
             )
@@ -2125,6 +2490,31 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             self.assertEqual(scripted, searched)
             imported = planner.PlannerTranscript.import_bytes(scripted[2])
             self.assertEqual(imported.export(), scripted[2])
+            identity_tampered = json.loads(scripted[2])
+            start_command = next(
+                event["command"]
+                for event in identity_tampered["events"]
+                if event["event"] == "command"
+                    and event["command"]["kind"]
+                        == planner.CommandKind.START.value
+            )
+            start_command["expected_identities"][2] ^= 1
+            previous = "0" * 64
+            for sequence, event in enumerate(
+                identity_tampered["events"]
+            ):
+                event.pop("event_digest", None)
+                event["sequence"] = sequence
+                event["previous_digest"] = previous
+                event["event_digest"] = planner._digest(event)
+                previous = event["event_digest"]
+            with self.assertRaisesRegex(
+                planner.PlannerError,
+                "START command session identity mismatch",
+            ):
+                planner.PlannerTranscript.import_bytes(
+                    planner._canonical(identity_tampered)
+                )
             complete_events = [
                 event
                 for event in imported.events
@@ -2142,6 +2532,40 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             ]
             self.assertTrue(settled_events)
             self.assertEqual(len(settled_events[-1]["telemetry"]), 16)
+
+    def test_world_map_transition_records_settled_checkpoint(self):
+        root = (
+            TESTS_DIR.parents[2]
+            / "build"
+            / "test-artifacts"
+            / "autoplay-planner"
+        )
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            try:
+                rom, backend = self._build_transport(
+                    temporary,
+                    transition_subcode=1,
+                )
+            except RuntimeError as error:
+                if (
+                    "planner runtime toolchain unavailable" in str(error)
+                    or "planner transport host compiler unavailable"
+                        in str(error)
+                ):
+                    self.skipTest(str(error))
+                raise
+            _, checkpoint, transcript = self._run_planner(
+                backend,
+                rom,
+                planner.ScriptedPlanner(),
+            )
+            self.assertEqual(checkpoint[4], 1)
+            self.assertNotEqual(checkpoint[12], 0)
+            self.assertEqual(
+                planner.PlannerTranscript.import_bytes(transcript).export(),
+                transcript,
+            )
 
     def test_commit_waits_beyond_legacy_120_frame_window(self):
         root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
@@ -2299,6 +2723,11 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             try:
                 transport.transcript = planner.PlannerTranscript(
                     max_bytes=planner.MAX_TRANSCRIPT_EXCHANGE_BYTES
+                )
+                transport._transcript_started = False
+                transport._begin_transcript(
+                    transport.observation,
+                    allow_uninitialized=True,
                 )
                 transcript_before = transport.transcript.export()
                 command_before = transport.command
@@ -2590,6 +3019,13 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     )
                 )
                 self.assertEqual(cancelled.state, 4)
+                transcript = transport.transcript.export()
+                imported = planner.PlannerTranscript.import_bytes(transcript)
+                self.assertEqual(imported.export(), transcript)
+                self.assertEqual(
+                    imported.events[0]["event"],
+                    "session",
+                )
             finally:
                 transport.close()
 

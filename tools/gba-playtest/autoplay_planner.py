@@ -93,6 +93,7 @@ _COMMAND_KIND_CODES = {
     CommandKind.CANCEL.value: 3,
     CommandKind.PAGE.value: 4,
 }
+_VALID_WIRE_REJECTION_CODES = frozenset(range(1, 11))
 
 
 @dataclass(frozen=True)
@@ -361,20 +362,47 @@ class PlannerTranscript:
         ):
             raise PlannerError(Rejection.RESOURCE_LIMIT.value)
 
+    @staticmethod
+    def _session_event(
+        provenance: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            "event": "session",
+            "provenance": json.loads(_canonical(provenance)),
+        }
+
+    @staticmethod
+    def _observation_page_event(
+        observation: Observation,
+    ) -> dict[str, object]:
+        return {
+            "event": "observation_page",
+            "observation": asdict(observation),
+        }
+
     def record_session(self, provenance: dict[str, object]) -> None:
-        self._append(
-            {
-                "event": "session",
-                "provenance": json.loads(_canonical(provenance)),
-            }
-        )
+        self._append(self._session_event(provenance))
 
     def record_observation_page(self, observation: Observation) -> None:
-        self._append(
-            {
-                "event": "observation_page",
-                "observation": asdict(observation),
-            }
+        self._append(self._observation_page_event(observation))
+
+    def record_session_observation(
+        self,
+        provenance: dict[str, object],
+        observation: Observation,
+        checkpoint: Iterable[int],
+        command_words: Iterable[int],
+    ) -> None:
+        self._append_many(
+            (
+                self._session_event(provenance),
+                self._observation_page_event(observation),
+                self._settled_event(
+                    observation,
+                    checkpoint,
+                    command_words,
+                ),
+            )
         )
 
     @staticmethod
@@ -543,6 +571,44 @@ class PlannerTranscript:
             or not isinstance(document.get("events"), list)
         ):
             raise PlannerError("invalid planner transcript envelope")
+        events = document["events"]
+        if (
+            not events
+            or not isinstance(events[0], dict)
+            or events[0].get("event") != "session"
+            or sum(
+                isinstance(event, dict)
+                    and event.get("event") == "session"
+                for event in events
+            ) != 1
+        ):
+            raise PlannerError(
+                "planner transcript requires exactly one leading session"
+            )
+        session_provenance = events[0].get("provenance")
+        required_session_fields = {
+            "transport",
+            "rom_identity",
+            "config_identity",
+            "scenario_identity",
+            "seed_identity",
+            "ready_run_id",
+            "run_id",
+        }
+        if (
+            not isinstance(session_provenance, dict)
+            or not required_session_fields.issubset(session_provenance)
+            or not isinstance(session_provenance["transport"], str)
+            or not session_provenance["transport"]
+            or any(
+                type(session_provenance[field]) is not int
+                or not 0 <= session_provenance[field] <= 0xFFFFFFFF
+                for field in required_session_fields - {"transport"}
+            )
+            or session_provenance["run_id"]
+                != session_provenance["ready_run_id"] + 1
+        ):
+            raise PlannerError("invalid planner transcript session provenance")
         transcript = cls()
         previous_digest = "0" * 64
         pending_command: dict[str, object] | None = None
@@ -552,7 +618,8 @@ class PlannerTranscript:
         latest_actions: list[object] = []
         latest_observation: dict[str, object] | None = None
         observation_pages: dict[tuple[int, int], list[dict[str, object]]] = {}
-        for sequence, event in enumerate(document["events"]):
+        active_identity_bound = False
+        for sequence, event in enumerate(events):
             if not isinstance(event, dict):
                 raise PlannerError("invalid planner transcript event")
             if (
@@ -566,9 +633,25 @@ class PlannerTranscript:
                 raise PlannerError("planner transcript digest mismatch")
             previous_digest = event_digest
             kind = event.get("event")
-            if kind == "command":
+            if kind == "session":
+                if sequence != 0:
+                    raise PlannerError(
+                        "planner transcript session must be first"
+                    )
+            elif kind == "command":
                 if pending_command is not None:
                     raise PlannerError("planner transcript command overlap")
+                command = event.get("command")
+                if (
+                    not isinstance(command, dict)
+                    or type(command.get("run_id")) is not int
+                    or not 0 <= command["run_id"] <= 0xFFFFFFFF
+                    or not (
+                        isinstance(command.get("kind"), str)
+                        or type(command.get("kind")) is int
+                    )
+                ):
+                    raise PlannerError("invalid transcript command")
                 pending_command = event
                 pending_ack = None
                 pending_completion = False
@@ -585,22 +668,71 @@ class PlannerTranscript:
                 command_kind = command.get("kind")
                 command_kind_code = _COMMAND_KIND_CODES.get(
                     command_kind,
-                    command_kind if isinstance(command_kind, int) else None,
+                    command_kind if type(command_kind) is int else None,
                 )
-                if event.get("kind") != command_kind_code:
+                if (
+                    type(event.get("command_id")) is not int
+                    or type(event.get("kind")) is not int
+                    or type(command_kind_code) is not int
+                    or event.get("kind") != command_kind_code
+                ):
                     raise PlannerError("acknowledgement kind mismatch")
+                result = event.get("result")
+                rejection = event.get("rejection")
+                if type(result) is not int or type(rejection) is not int:
+                    raise PlannerError(
+                        "invalid acknowledgement result/rejection pair"
+                    )
+                accepted = result == 1 and rejection == 0
+                rejected = (
+                    result == 0
+                    and rejection in _VALID_WIRE_REJECTION_CODES
+                )
+                if not (accepted or rejected) or (
+                    accepted
+                    and command_kind_code not in _COMMAND_KIND_CODES.values()
+                ):
+                    raise PlannerError(
+                        "invalid acknowledgement result/rejection pair"
+                    )
+                if accepted and (
+                    latest_observation is None
+                    or command.get("run_id")
+                        != latest_observation.get("run_id")
+                    or command.get("run_id")
+                        != (
+                            session_provenance["ready_run_id"]
+                            if command_kind_code == 1
+                            else session_provenance["run_id"]
+                        )
+                ):
+                    raise PlannerError(
+                        "accepted command run identity mismatch"
+                    )
+                if accepted and command_kind_code == 1 and (
+                    command.get("expected_identities")
+                    != [
+                        session_provenance["rom_identity"],
+                        session_provenance["config_identity"],
+                        session_provenance["scenario_identity"],
+                        session_provenance["seed_identity"],
+                    ]
+                ):
+                    raise PlannerError(
+                        "START command session identity mismatch"
+                    )
                 pending_ack = event
                 expected_command_id += 1
-                if event.get("result") == 1 and command_kind_code == 2:
+                if accepted and command_kind_code == 2:
                     ordinal = command.get("action_ordinal")
                     action = (
                         latest_actions[ordinal]
-                        if isinstance(ordinal, int)
+                        if type(ordinal) is int
                         and 0 <= ordinal < len(latest_actions)
                         else None
                     )
                     if (
-                        not isinstance(ordinal, int)
+                        type(ordinal) is not int
                         or not 0 <= ordinal < len(latest_actions)
                         or not isinstance(action, dict)
                         or command.get("token")
@@ -618,6 +750,8 @@ class PlannerTranscript:
                     raise PlannerError("planner transcript completion order")
                 pending_completion = True
             elif kind == "settled":
+                settled_command = pending_command
+                settled_ack = pending_ack
                 if pending_command is not None:
                     if not pending_completion:
                         raise PlannerError("settled event precedes completion")
@@ -679,6 +813,31 @@ class PlannerTranscript:
                     or event["telemetry"] != expected_telemetry
                 ):
                     raise PlannerError("settled runtime state mismatch")
+                if settled_ack is not None:
+                    acknowledgement_accepted = (
+                        settled_ack.get("result") == 1
+                        and settled_ack.get("rejection") == 0
+                    )
+                    expected_rejection = (
+                        0
+                        if acknowledgement_accepted
+                        else settled_ack.get("rejection")
+                    )
+                    if terminal["rejection"] != expected_rejection:
+                        raise PlannerError(
+                            "settled rejection does not match acknowledgement"
+                        )
+                    command = settled_command.get("command")
+                    if (
+                        not acknowledgement_accepted
+                        and isinstance(command, dict)
+                        and command.get("kind")
+                            == CommandKind.COMMIT.value
+                        and terminal["state"] == 3
+                    ):
+                        raise PlannerError(
+                            "rejected COMMIT cannot settle as COMMITTED"
+                        )
             elif kind == "transport_error":
                 if sequence != len(document["events"]) - 1:
                     raise PlannerError("transport error must terminate transcript")
@@ -688,6 +847,11 @@ class PlannerTranscript:
                 observation = event.get("observation")
                 if not isinstance(observation, dict):
                     raise PlannerError("invalid complete observation")
+                active_identity_bound = cls._validate_session_observation(
+                    observation,
+                    session_provenance,
+                    active_identity_bound,
+                )
                 expected_page_identity = [
                     observation.get("run_id"),
                     observation.get("observation_id"),
@@ -825,6 +989,11 @@ class PlannerTranscript:
                 observation = event.get("observation")
                 if not isinstance(observation, dict):
                     raise PlannerError("invalid observation page")
+                active_identity_bound = cls._validate_session_observation(
+                    observation,
+                    session_provenance,
+                    active_identity_bound,
+                )
                 page_key = (
                     observation.get("run_id"),
                     observation.get("observation_id"),
@@ -836,12 +1005,51 @@ class PlannerTranscript:
                 elif pages is not None and page_index == len(pages):
                     pages.append(observation)
                 latest_observation = observation
-            elif kind != "session":
+            else:
                 raise PlannerError("unknown planner transcript event")
         if pending_command is not None:
             raise PlannerError("planner transcript is truncated")
         transcript._events = document["events"]
         return transcript
+
+    @staticmethod
+    def _validate_session_observation(
+        observation: dict[str, object],
+        session: dict[str, object],
+        active_identity_bound: bool,
+    ) -> bool:
+        run_id = observation.get("run_id")
+        identity_fields = (
+            "run_id",
+            "actual_rom_identity",
+            "actual_config_identity",
+            "actual_scenario_identity",
+            "actual_seed_identity",
+        )
+        if (
+            any(
+                type(observation.get(field)) is not int
+                or not 0 <= observation[field] <= 0xFFFFFFFF
+                for field in identity_fields
+            )
+            or run_id not in {session["ready_run_id"], session["run_id"]}
+            or observation.get("actual_rom_identity")
+                != session["rom_identity"]
+            or observation.get("actual_config_identity")
+                != session["config_identity"]
+        ):
+            raise PlannerError("observation session identity mismatch")
+        if run_id == session["ready_run_id"] or not active_identity_bound:
+            if (
+                observation.get("actual_scenario_identity")
+                    != session["scenario_identity"]
+                or observation.get("actual_seed_identity")
+                    != session["seed_identity"]
+            ):
+                raise PlannerError(
+                    "observation session scenario/seed mismatch"
+                )
+        return active_identity_bound or run_id == session["run_id"]
 
 
 class Mailbox:
@@ -893,8 +1101,14 @@ class PlannerBridge:
         self.transcript = PlannerTranscript()
         self.transcript.record_session(
             {
-                "provenance": self._provenance,
+                "transport": "mirror",
+                "rom_identity": 0,
+                "config_identity": 0,
+                "scenario_identity": 0,
+                "seed_identity": 0,
+                "ready_run_id": self._run_id - 1,
                 "run_id": self._run_id,
+                "source": self._provenance,
             }
         )
         self._committed_count = 0

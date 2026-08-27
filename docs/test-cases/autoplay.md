@@ -597,8 +597,11 @@ ROM's four independently mixed token words unchanged, validate and retain a
 digest of the complete typed semantic values before choosing, commit through
 the #85 computer-action route, and preserve a
 52-byte checkpoint through `MNCH`/`MNC2` into chapter two. The checkpoint
-records chapter route/mode and its digest changes for route-only and
-convoy-only mutations. Torch, Warp, and Unlock enumerate multiple bounded
+is recorded by the production event engine immediately before preserving map
+teardown, exactly matches the settled prior chapter/run/turn/RNG state, records
+chapter route/mode, and changes digest for route-only and convoy-only
+mutations. It survives next-map re-arming and is not rewritten by an ordinary
+chapter-two action. Torch, Warp, and Unlock enumerate multiple bounded
 coordinate targets and execute the selected coordinate rather than stale
 defaults. Hammerne enumerates and token-binds each repairable target inventory
 slot and repairs only the selected slot. Rogue Pick opens chest/door targets
@@ -629,6 +632,11 @@ matching `COMPLETE`, then its observation. Both planners execute a synthetic
 180-frame movement/camera/battle/event-style COMMIT and receive only the new
 chapter-two WAITING observation, never the prior COMMITTED page. Ordinary
 START/PAGE/CANCEL and rejected commands retain bounded fast completions.
+The transcript begins with exactly one provenance session and binds its
+ROM/configuration/scenario/seed plus ready/active run identities to subsequent
+observations and accepted START. Every imported ACK must be exactly success
+with no rejection or failure with one known nonzero rejection before an
+accepted COMMIT token is interpreted.
 
 ### Negative control
 
@@ -649,6 +657,12 @@ mailbox or mutate transcript state. No-item actions encode both optional
 inventory slots as `0xFF`; slot zero round-trips distinctly, while every other
 invalid sentinel rejects. Forging any one of the four opaque token words
 rejects without execution.
+Empty/sessionless, late-session, duplicate-session, moved-provenance, invalid
+ACK result/rejection pairs, unknown results or rejections, mismatched command
+IDs/kinds, and a rejected-pair rewrite that retains a COMMITTED observation
+all fail after recomputing the hash chain. Destructive exit/load/new-game,
+timeout, and cancel paths never record a transition checkpoint; cancellation
+after a real MNCH/MNC2 checkpoint zeros the entire record.
 Out-of-range/occupied Warp destinations, opened or wrong Unlock tiles, stale
 Torch coordinates, consumed keys, non-repairable or wrong Hammerne slots, and
 a token copied from another Hammerne slot all reject without applying the

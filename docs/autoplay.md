@@ -1015,10 +1015,15 @@ command, acknowledgement, completion or rejection, settled telemetry and RNG,
 checkpoint, and terminal state. A production command reserves and
 prospectively sizes one bounded 64 KiB exchange before any mailbox write,
 sequence increment, or transcript mutation. Canonical export/import validates
-the chain and event order, and deep replay requires equivalent observations,
-commands, settlements, and terminal state; truncation, reordering, or field
-tampering fails. The bounded-search reference accepts at most 512 nodes and
-enforces the 64 MiB host-search ceiling.
+the chain and event order. Exactly one provenance session must be event zero;
+empty, sessionless, late-session, and duplicate-session transcripts fail even
+after an attacker recomputes the chain. Its ROM/configuration identities bind
+every observation, and its initial scenario, seed, ready-run, and active-run
+identities bind READY, accepted START, and the first active observation before
+chapter-local identities may advance. Deep replay requires equivalent
+observations, commands, settlements, and terminal state; truncation,
+reordering, or field tampering fails. The bounded-search reference accepts at
+most 512 nodes and enforces the 64 MiB host-search ceiling.
 Before selecting an action, both reference planners validate the complete
 typed inventory/resource/flag set, reject any candidate that names an
 unavailable actor or target, and retain the semantic digest they consumed.
@@ -1056,13 +1061,17 @@ RN state and read-only consumption counter. The checkpoint digest includes
 `gPlaySt.chapterModeIndex` and the complete bounded 100-slot convoy in addition
 to roster, held items, gold, flags, RNG, and accepted-token state. Route-only
 and convoy-only changes therefore produce distinct checkpoints. Only the
-`MNCH` and `MNC2` event paths use transition teardown, preserving and re-arming
-an active run and checkpoint. Other map exits, restart, suspend load, new
-game, full reset, timeout, resource termination, and CANCEL remain destructive
-boundaries. Timeout and explicit CANCEL first publish an invalid checkpoint
-magic value, then zero the entire 52-byte record before deactivating the
-planner or restoring player control. A later START also clears the record
-before activation, so no cancelled-run checkpoint can become readable again.
+`MNCH` and `MNC2` event paths set the typed transition flag. When the production
+event engine ends, it records the settled campaign checkpoint immediately
+before `EndBMapMainForChapterTransition` changes any map state, then preserves
+and re-arms that active run for the next initialized map. Ordinary actions do
+not rewrite that transition checkpoint. Other map exits, restart, suspend
+load, new game, full reset, timeout, resource termination, and CANCEL remain
+destructive boundaries and never use the recording path. Timeout and explicit
+CANCEL first publish an invalid checkpoint magic value, then zero the entire
+52-byte record before deactivating the planner or restoring player control. A
+later START also clears the record before activation, so no cancelled-run
+checkpoint can become readable again.
 
 `TC-AUTOPLAY-PLANNER-001` proves both a scripted chooser and a bounded search
 chooser consume the same page/token contract, reject negative commands, and
@@ -1085,6 +1094,13 @@ the command kind last, assigns monotonically increasing fixed-width host ACK
 IDs, and accepts the acknowledgement only after the ROM clears that kind and
 publishes its command result. Repeated commands with the same rejection code
 therefore remain distinct without comparing rejection values.
+Transcript import applies the same invariant before interpreting an ACK:
+success is exactly `result=1/rejection=NONE`, while rejection is exactly
+`result=0` with one known nonzero rejection. Zero/zero, success plus rejection,
+unknown results or rejections, and command-ID/kind mismatches fail. Every
+accepted COMMIT then validates its ordinal and all four token words; changing a
+pair to look rejected cannot bypass token validation while retaining a
+COMMITTED settlement.
 
 START, PAGE, CANCEL, and rejected commands retain bounded fast-response
 handling. An accepted COMMIT instead waits up to 18,000 execution frames for a
@@ -1111,8 +1127,9 @@ rejects during configuration validation before compilation.
 The enabled ARM planner and shared action-semantics objects use 996-byte pages,
 64-byte commands, 52-byte checkpoints, 1,140 bytes of EWRAM/BSS, zero IWRAM,
 and 12,104 bytes of text/rodata. The planner-only normal-summon and existing
-action-lowering hooks add a 152-byte `cp_perform` text/rodata delta, for 12,256
-bytes across the complete planner/action seam (32 bytes below 12 KiB). The
+action-lowering hooks add a 152-byte `cp_perform` text/rodata delta, and the
+settled event-transition checkpoint adds four bytes, for 12,260 bytes across
+the complete planner/action/lifecycle seam (28 bytes below 12 KiB). The
 planner-specific RNG counter and cancellation latch add five EWRAM bytes and
 no IWRAM, keeping total planner state at 1,145 bytes (2,951 bytes below 4 KiB).
 Disabled release and archival builds omit planner state and the normal-summon

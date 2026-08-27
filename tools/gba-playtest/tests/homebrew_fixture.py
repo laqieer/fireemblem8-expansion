@@ -151,10 +151,13 @@ def build_production_planner_rom(
     commit_delay_frames: int = 0,
     stall_after_commit: bool = False,
     ignore_commands: bool = False,
+    transition_subcode: int = 2,
 ) -> None:
     """Link the production planner implementation into a tiny freestanding ROM."""
     if commit_delay_frames < 0:
         raise ValueError("commit_delay_frames must be non-negative")
+    if transition_subcode not in {1, 2}:
+        raise ValueError("planner transition subcode must be MNCH or MNC2")
     root = Path(__file__).resolve().parents[3]
     compiler = shutil.which("arm-none-eabi-gcc")
     objcopy = shutil.which("arm-none-eabi-objcopy")
@@ -176,8 +179,7 @@ def build_production_planner_rom(
         / "c"
         / "expansion_autoplay_planner_runtime.ld"
     )
-    command = [
-        compiler,
+    compile_flags = [
         "-mcpu=arm7tdmi",
         "-marm",
         "-mthumb-interwork",
@@ -185,6 +187,8 @@ def build_production_planner_rom(
         "-std=gnu89",
         "-ffreestanding",
         "-fno-builtin",
+        "-fno-unwind-tables",
+        "-fno-asynchronous-unwind-tables",
         "-nostdlib",
         "-O2",
         "-ffunction-sections",
@@ -204,15 +208,44 @@ def build_production_planner_rom(
         "-DFE8_AUTOPLAY_PLANNER_RUNTIME_IGNORE_COMMANDS={}".format(
             int(ignore_commands)
         ),
+        "-DFE8_AUTOPLAY_PLANNER_RUNTIME_TRANSITION_SUBCODE={}".format(
+            transition_subcode
+        ),
+    ]
+    environment = dict(os.environ)
+    environment["TMPDIR"] = str(path.parent)
+    production_objects = []
+    for source_name in ("event", "eventscr", "bmio"):
+        output = path.parent / f"planner-production-{source_name}.o"
+        completed = subprocess.run(
+            [
+                compiler,
+                *compile_flags,
+                "-c",
+                str(root / "src" / f"{source_name}.c"),
+                "-o",
+                str(output),
+            ],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode:
+            raise RuntimeError(completed.stdout + completed.stderr)
+        production_objects.append(output)
+    command = [
+        compiler,
+        *compile_flags,
         *map(str, sources),
+        *map(str, production_objects),
         "-Wl,-T,{}".format(linker),
         "-Wl,--gc-sections",
+        "-Wl,--wrap=EndEventFaces",
         "-lgcc",
         "-o",
         str(elf),
     ]
-    environment = dict(os.environ)
-    environment["TMPDIR"] = str(path.parent)
     completed = subprocess.run(
         command,
         cwd=root,

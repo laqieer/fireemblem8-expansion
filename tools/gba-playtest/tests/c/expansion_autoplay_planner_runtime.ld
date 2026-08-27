@@ -20,4 +20,13 @@ SECTIONS
         . = ALIGN(4);
         __ewram_end = .;
     }
+
+    /DISCARD/ :
+    {
+        /* The fixture links three production functions, not their unrelated
+         * event-dispatch and map-effect data tables. */
+        *planner-production-event.o(.data* .rodata* .bss*)
+        *planner-production-eventscr.o(.data* .rodata* .bss*)
+        *planner-production-bmio.o(.data* .rodata* .bss*)
+    }
 }
