@@ -184,6 +184,7 @@ def build_production_planner_rom(path: Path, elf: Path) -> None:
         "-DFE8_EXPANSION_MODERN_BUILD=1",
         "-DFE8_EXPANSION_DEBUG=1",
         "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
+        "-DFE8_AUTOPLAY_PLANNER_RUNTIME_TEST=1",
         *map(str, sources),
         "-Wl,-T,{}".format(linker),
         "-Wl,--gc-sections",
@@ -216,3 +217,90 @@ def build_production_planner_rom(path: Path, elf: Path) -> None:
         rom.extend(b"\0" * (ROM_SIZE - len(rom)))
     rom[0xBD] = (-sum(rom[0xA0:0xBD]) - 0x19) & 0xFF
     path.write_bytes(rom)
+
+
+def _planner_symbol_addresses(elf: Path) -> dict[str, int]:
+    nm = shutil.which("arm-none-eabi-nm")
+    if nm is None:
+        raise RuntimeError("planner runtime toolchain unavailable")
+    completed = subprocess.run(
+        [nm, "-g", str(elf)],
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode:
+        raise RuntimeError(completed.stdout + completed.stderr)
+    required = {
+        "gExpansionAutoplayPlannerObservation",
+        "gExpansionAutoplayPlannerCommand",
+        "gExpansionAutoplayPlannerCampaignCheckpoint",
+    }
+    addresses: dict[str, int] = {}
+    for line in completed.stdout.splitlines():
+        fields = line.split()
+        if len(fields) == 3 and fields[2] in required:
+            addresses[fields[2]] = int(fields[0], 16)
+    missing = required - addresses.keys()
+    if missing:
+        raise RuntimeError(
+            "planner transport symbols missing: {}".format(
+                ", ".join(sorted(missing))
+            )
+        )
+    return addresses
+
+
+def build_planner_transport_backend(path: Path, elf: Path) -> None:
+    """Build the fixed-symbol stdin/stdout libmGBA planner adapter."""
+    root = Path(__file__).resolve().parents[3]
+    compiler = shutil.which(os.environ.get("CC", "cc"))
+    if compiler is None:
+        raise RuntimeError("planner transport host compiler unavailable")
+    addresses = _planner_symbol_addresses(elf)
+    command = [
+        compiler,
+        "-std=gnu11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I",
+        str(root / "include"),
+        "-I",
+        str(root / "include" / "generated"),
+        "-DPLANNER_OBSERVATION_ADDR=0x{:08x}u".format(
+            addresses["gExpansionAutoplayPlannerObservation"]
+        ),
+        "-DPLANNER_COMMAND_ADDR=0x{:08x}u".format(
+            addresses["gExpansionAutoplayPlannerCommand"]
+        ),
+        "-DPLANNER_CHECKPOINT_ADDR=0x{:08x}u".format(
+            addresses["gExpansionAutoplayPlannerCampaignCheckpoint"]
+        ),
+        str(root / "tools" / "gba-playtest" / "planner_transport_backend.c"),
+        "-o",
+        str(path),
+    ]
+    pkg_config = shutil.which("pkg-config")
+    if pkg_config is not None:
+        flags = subprocess.run(
+            [pkg_config, "--cflags", "--libs", "mgba"],
+            capture_output=True,
+            text=True,
+        )
+        if flags.returncode == 0:
+            import shlex
+
+            command.extend(shlex.split(flags.stdout))
+        else:
+            command.append("-lmgba")
+    else:
+        command.append("-lmgba")
+    completed = subprocess.run(
+        command,
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode:
+        raise RuntimeError(completed.stdout + completed.stderr)

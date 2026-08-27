@@ -95,6 +95,11 @@ build output. The specialized ROM/asset recipes remain in the committed
 Makefile, so existing direct `make VAR=value` commands and bare-`make`
 defaults continue to work.
 
+`--enable-autoplay-planner` is the one no-goal profile exception: the generated
+GNUmakefile forwards bare `make` to the modern debug boot target. An explicit
+`make all` still names the release-only target, and an explicit planner-enabled
+release request fails closed.
+
 
 ## After installation: configure, author, test, debug
 

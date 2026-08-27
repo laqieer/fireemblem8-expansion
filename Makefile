@@ -232,11 +232,14 @@ src/menu_def.o: CC1FLAGS += -Wno-error
 #### Main Targets ####
 
 # Issue #15: this expansion ships ONE supported release lane -- modern GCC
-# with the AAPCS ABI. A bare `make`/`make all` therefore unconditionally
-# builds and real-emulator boot-verifies the modern release ROM end-to-end
+# with the AAPCS ABI. A direct bare `make -f Makefile`/`make all` therefore
+# unconditionally builds and real-emulator boot-verifies the modern release ROM end-to-end
 # (`expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs`),
 # and never requires, builds, or resolves to a tools/agbcc executable or
-# library. This is a structural guarantee, not a configurable convention:
+# library. The generated GNUmakefile deliberately forwards its no-goal
+# `--enable-autoplay-planner` configuration to the explicit debug boot target
+# instead of this release-only `all` target. This is a structural guarantee,
+# not a configurable convention:
 # `all:` takes no lane-selection variable of any kind, so no environment
 # variable and no `make VAR=value` command-line override (regardless of
 # name) can redirect it to the archival lane -- see

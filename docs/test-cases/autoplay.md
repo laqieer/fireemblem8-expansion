@@ -540,7 +540,8 @@ do not establish statistical power, difficulty, campaign quality, or balance.
 - **Feature / originating issue:** `local-external-autoplay-planner` /
   [#92](https://github.com/laqieer/fireemblem8-expansion/issues/92).
 - **Supported configuration or artifact:** modern AAPCS debug with
-  `EXPANSION_AUTOPLAY_PLANNER=1`; local generated libmGBA transport fixture.
+  `EXPANSION_AUTOPLAY_PLANNER=1`; local production-linked ROM plus a
+  fixed-symbol stdin/stdout libmGBA transport adapter.
   Release and archival builds are unsupported and omit the bridge.
 - **Prerequisites and clean state:** Python 3, host C compiler, ARM toolchain,
   libmGBA development files, exact debug ROM/config provenance, and a fresh
@@ -552,35 +553,52 @@ do not establish statistical power, difficulty, campaign quality, or balance.
 1. Run
    `python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests -v`.
 2. Run
-   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_production_mailbox_replays_two_chapters_without_save_or_snapshot -v`.
+   `python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests -v`.
 3. Run `make expansion-modern-autoplay-planner-check`.
-4. Run `./configure --enable-autoplay-planner`, then verify bare `make -n`
-   selects `MODERN_CONFIG=debug` and an explicit release override fails.
-5. Start a typed mailbox run, read every requested observation page, and commit only the
-   returned action token. Replay from a fresh boot through chapter one and the
-   semantic chapter-two checkpoint.
+4. In an isolated build directory, run `./configure
+   --enable-autoplay-planner` and then bare `make`; verify it builds the modern
+   debug target. Explicitly request the release target with the planner
+   enabled and verify it fails before compilation.
+5. Start each Python planner through the typed adapter, read the summary plus
+   every map, unit, and action page using `PAGE`, and commit only the opaque
+   token words returned by the chosen action. Continue in the same emulator
+   through the chapter-one transition and inspect the chapter-two checkpoint.
 
 ### Expected result
 
 The scripted reference chooser and bounded search chooser consume the same
 pointer-free observation/action records and produce a deterministic
-two-chapter trace. The C adapter retains only the selected engine decision and
-reconstructs canonical row-major legal waits from frozen maps for each page
-and commit. It pages 29 at a time across the 512-action bound without rerunning
-AI or consuming RN state, then commits ordinal 511 through the #85 computer
-action route. Exact ARM evidence pins 1,164 static RAM bytes and 3,971
-text/rodata bytes.
-The production-linked libmGBA fixture exercises START/PAGE/COMMIT/CANCEL and
-malformed commands, preserves the campaign checkpoint across chapter reset,
-reaches chapter two, and replays byte-for-byte without save or snapshot.
+two-chapter trace. The ROM's pure visitor enumerates every legal choice in the
+declared six action families from current movement, terrain, visibility, unit,
+item, objective, and resource state without mutating decision, unit, map, or
+RNG state. Candidate records are unique and repeat in canonical row-major then
+action/item/target order. The 996-byte page carries either eight typed summary
+fields, 224 map cells, 56 units, or 28 actions; typed `PAGE` traversal reaches
+all 512 candidate ordinals without an in-process list shortcut.
+
+The summary and data pages expose actual map dimensions/terrain/occupancy,
+visible unit identity/position/HP/state/inventory, objective state/progress,
+event flags, gold, convoy, and RNG data with explicit availability on every
+semantic field or record. Both host planners echo the ROM's token words
+unchanged, commit through the #85 computer-action route, and preserve a
+checkpoint through `MNCH`/`MNC2` into chapter two. The checkpoint digest
+changes for a convoy-only mutation. The enabled full expansion ROM follows the
+established clean-boot Prologue route, accepts a host-selected nontrivial
+action, reaches the next planner observation with the actor at the committed
+destination, then cancels safely. Explicit exit, restart, load, new-game,
+full-reset, and cancel paths clear the run/checkpoint.
 
 ### Negative control
 
 Stale observation IDs, unknown ordinals, forged tokens, unavailable
 capabilities, malformed mailbox headers, cancellation, provenance mismatch,
-duplicate START, unexpected command kinds, page overflow, and resource
-overflow fail with explicit typed outcomes and no action commit.
-The mailbox has no raw address/write method. Release configuration rejects
+same-ROM/config/seed requests for another scenario, duplicate START,
+unexpected command kinds, empty enumerations, page overflow, and resource
+overflow fail with explicit typed outcomes and no action commit. Repeated
+valid PAGE or malformed traffic cannot postpone the 300-frame deadline.
+Prospective host observations exceeding 2 MiB fail without changing the trace,
+observation, or next ID. The transport accepts no address-bearing command and
+has no arbitrary-memory API. Release configuration rejects
 `EXPANSION_AUTOPLAY_PLANNER=1`; no bridge state is present when disabled.
 
 ### Interactions and save compatibility
@@ -593,16 +611,18 @@ localization change.
 
 ### Automation
 
-The focused host selector validates schema bounds, unavailable states, token
-rejections, mailbox exclusivity, provenance, paging, latency-invariant
-decision/RN state, C/ARM adapter linkage, scripted/search interoperability,
-cancellation, configure persistence, and campaign checkpoints. The single
-libmGBA selector validates production records and fresh two-chapter
-clean-boot replay. No manual-only criterion remains.
+The focused host selector validates schema bounds, semantic availability,
+opaque token rejection, mailbox exclusivity, scenario/build/RNG provenance,
+typed paging, atomic trace limits, complete non-mutating enumeration,
+deadline accounting, C/ARM linkage, configure routing, and lifecycle
+teardown. The libmGBA selectors run both planner implementations and all
+negative commands against the fixed-symbol host-driven transport from a fresh
+boot with blank in-memory SRAM. No manual-only criterion remains.
 
 ### Cleanup and limitations
 
-The generated fixture is removed from ignored `build/test-artifacts`. This
+The generated ROM, ELF, and adapter are removed with their random directory
+under ignored `build/test-artifacts`; no save or savestate is created. This
 case proves only the bounded local contract; it does not ship a policy model,
 claim human-like play, or establish campaign balance or solvability.
 ## TC-AUTOPLAY-ACCEL-001: Accelerated-fidelity equivalence

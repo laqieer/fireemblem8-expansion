@@ -133,34 +133,12 @@ next_unit:
             AiInitDangerMap();
 
             AiClearDecision();
-#ifndef FE8_ARCHIVAL_BUILD
-#if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
-            if (ExpansionAutoplay_IsBlueComputerPhase())
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_EXPANSION_AUTOPLAY_PLANNER \
+    && FE8_EXPANSION_DEBUG
+            if (ExpansionAutoplayPlanner_IsActive())
             {
-                enum ExpansionAutoplayStrategyResult strategyResult =
-                    ExpansionAutoplayStrategies_TryDecide();
-
-                if (strategyResult != EXPANSION_AUTOPLAY_STRATEGY_OK
-                    && strategyResult != EXPANSION_AUTOPLAY_STRATEGY_FALLBACK)
-                {
-                    ExpansionAutoplay_RecordStrategyFailure(strategyResult);
-                    Proc_End(proc);
-                    return;
-                }
-
-                if (strategyResult == EXPANSION_AUTOPLAY_STRATEGY_FALLBACK)
-                    AiDecideMainFunc();
-            }
-            else
-#endif
-#endif
-            AiDecideMainFunc();
-
-#ifndef FE8_ARCHIVAL_BUILD
-#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
-            if (ExpansionAutoplay_IsBlueComputerPhase())
-            {
-                switch (ExpansionAutoplayPlanner_OfferDecision(&gAiDecision))
+                AiGenerateUnitMovementMapRespectStay(gActiveUnit);
+                switch (ExpansionAutoplayPlanner_OfferDecision(NULL))
                 {
                 case EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT:
                     Proc_Goto(proc, 1);
@@ -175,8 +153,32 @@ next_unit:
                     break;
                 }
             }
+            else
+#endif
+            {
+#ifndef FE8_ARCHIVAL_BUILD
+#if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
+                if (ExpansionAutoplay_IsBlueComputerPhase())
+                {
+                    enum ExpansionAutoplayStrategyResult strategyResult =
+                        ExpansionAutoplayStrategies_TryDecide();
+
+                    if (strategyResult != EXPANSION_AUTOPLAY_STRATEGY_OK
+                        && strategyResult != EXPANSION_AUTOPLAY_STRATEGY_FALLBACK)
+                    {
+                        ExpansionAutoplay_RecordStrategyFailure(strategyResult);
+                        Proc_End(proc);
+                        return;
+                    }
+
+                    if (strategyResult == EXPANSION_AUTOPLAY_STRATEGY_FALLBACK)
+                        AiDecideMainFunc();
+                }
+                else
 #endif
 #endif
+                AiDecideMainFunc();
+            }
             CpDecide_CompleteDecision(proc);
         } while (0);
     }

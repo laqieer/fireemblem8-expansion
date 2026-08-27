@@ -7,6 +7,7 @@
 AUTOTOOLS_SOURCE_DIR := @abs_top_srcdir@
 AUTOTOOLS_BUILD_DIR := @abs_top_builddir@
 AUTOTOOLS_CONFIG_MK := @abs_top_builddir@/config.autotools.mk
+AUTOTOOLS_DEFAULT_GOAL := @FE8_AUTOTOOLS_DEFAULT_GOAL@
 
 .DEFAULT_GOAL := _autotools_forward
 
@@ -15,7 +16,7 @@ _autotools_forward:
 	+$(MAKE) --no-print-directory -C "$(AUTOTOOLS_SOURCE_DIR)" -f Makefile $(MAKEOVERRIDES) \
 		AUTOTOOLS_BUILD_DIR="$(AUTOTOOLS_BUILD_DIR)" \
 		AUTOTOOLS_CONFIG_MK="$(AUTOTOOLS_CONFIG_MK)" \
-		$(if $(MAKECMDGOALS),$(MAKECMDGOALS),all)
+		$(if $(MAKECMDGOALS),$(MAKECMDGOALS),$(AUTOTOOLS_DEFAULT_GOAL))
 
 ifneq ($(strip $(MAKECMDGOALS)),)
 .PHONY: $(MAKECMDGOALS)

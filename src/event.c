@@ -154,8 +154,13 @@ void EventEngine_OnEnd(struct EventEngineProc* proc) {
 
         if (proc->evStateBits & EV_STATE_CHANGEGM) {
             EndAllMus();
-#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
-            EndBMapMainForChapterTransition();
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && (FE8_EXPANSION_DEBUGTOOLS_ENABLED \
+        || (FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG))
+            if (proc->evStateBits & EV_STATE_PLANNER_CHAPTER_TRANSITION)
+                EndBMapMainForChapterTransition();
+            else
+                EndBMapMain();
 #else
             EndBMapMain();
 #endif

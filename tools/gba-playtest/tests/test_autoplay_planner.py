@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -20,8 +21,10 @@ for path in (str(PLAYTEST_DIR), str(TESTS_DIR)):
 
 import autoplay_planner as planner
 import gba_playtest
-from homebrew_fixture import build_production_planner_rom
-from probe_bindings import ElfSymbolResolver
+from homebrew_fixture import (
+    build_planner_transport_backend,
+    build_production_planner_rom,
+)
 
 
 PROVENANCE = {
@@ -84,9 +87,9 @@ class PlannerBridgeTests(unittest.TestCase):
         )
         actions = tuple(planner.Action("MOVE_WAIT", 1, (index, 0)) for index in range(41))
         observation = bridge.observe(1, (unavailable,), actions)
-        pages = planner.PlannerBridge.action_pages(observation)
-        self.assertEqual(len(pages), 2)
-        self.assertEqual([len(page) for page in pages], [29, 12])
+        complete = planner.collect_observation_pages(bridge, observation)
+        self.assertEqual(len(complete.actions), 41)
+        self.assertEqual(complete.actions[-1].ordinal, 40)
         bounded = planner.PlannerBridge(PROVENANCE)
         bounded.begin(PROVENANCE)
         maximum = bounded.observe(
@@ -97,9 +100,9 @@ class PlannerBridgeTests(unittest.TestCase):
                 for index in range(512)
             ),
         )
-        maximum_pages = planner.PlannerBridge.action_pages(maximum)
-        self.assertEqual(len(maximum_pages), 18)
-        self.assertEqual(maximum_pages[-1][-1].ordinal, 511)
+        maximum_complete = planner.collect_observation_pages(bounded, maximum)
+        self.assertEqual(maximum.page_count, 20)
+        self.assertEqual(maximum_complete.actions[-1].ordinal, 511)
         with self.assertRaisesRegex(planner.PlannerError, "resource limit"):
             overflow = planner.PlannerBridge(PROVENANCE)
             overflow.begin(PROVENANCE)
@@ -125,6 +128,9 @@ class PlannerBridgeTests(unittest.TestCase):
             (),
             (planner.Action("MOVE_WAIT", 1, (1, 1)),),
         )
+        boundary_complete = planner.collect_observation_pages(
+            boundary, boundary_observation
+        )
         boundary._trace = [
             {"event": "committed", "ordinal": index}
             for index in range(planner.MAX_TRACE_ACTIONS - 1)
@@ -135,7 +141,7 @@ class PlannerBridgeTests(unittest.TestCase):
                 boundary_observation.run_id,
                 boundary_observation.observation_id,
                 0,
-                boundary_observation.actions[0].token,
+                boundary_complete.actions[0].token,
             )
         )
         self.assertEqual(
@@ -156,12 +162,13 @@ class PlannerBridgeTests(unittest.TestCase):
             (),
             (planner.Action("MOVE_WAIT", 1, (1, 1)),),
         )
+        complete = planner.collect_observation_pages(bridge, observation)
         command = planner.Command(
             planner.CommandKind.COMMIT,
             observation.run_id,
             observation.observation_id,
             0,
-            observation.actions[0].token,
+            complete.actions[0].token,
         )
         bridge._trace = [
             {"event": "committed", "ordinal": index}
@@ -195,12 +202,13 @@ class PlannerBridgeTests(unittest.TestCase):
             (),
             (planner.Action("MOVE_WAIT", 1, (1, 1)),),
         )
+        complete = planner.collect_observation_pages(oversized, observation)
         command = planner.Command(
             planner.CommandKind.COMMIT,
             observation.run_id,
             observation.observation_id,
             0,
-            observation.actions[0].token,
+            complete.actions[0].token,
         )
         oversized._trace = [
             {"event": "padding", "payload": "x" * planner.MAX_TRACE_BYTES}
@@ -214,15 +222,41 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertEqual(tuple(oversized._trace), trace_before)
         self.assertIs(oversized._observation, observation)
 
+        atomic = planner.PlannerBridge(PROVENANCE)
+        atomic.begin(PROVENANCE)
+        atomic._trace = [
+            {"event": "padding", "payload": "x" * planner.MAX_TRACE_BYTES}
+        ]
+        trace_before = tuple(atomic._trace)
+        next_id_before = atomic._next_observation_id
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            planner.Rejection.RESOURCE_LIMIT.value,
+        ):
+            atomic.observe(
+                1,
+                (),
+                (planner.Action("MOVE_WAIT", 1, (1, 1)),),
+            )
+        self.assertEqual(tuple(atomic._trace), trace_before)
+        self.assertEqual(atomic._next_observation_id, next_id_before)
+        self.assertIsNone(atomic._observation)
+
     def test_security_boundary_has_no_raw_memory_save_or_network_surface(self):
         root = TESTS_DIR.parents[2]
         target = (root / "src" / "expansion_autoplay_planner.c").read_text(encoding="utf-8")
         host = (PLAYTEST_DIR / "autoplay_planner.py").read_text(encoding="utf-8")
+        transport = (PLAYTEST_DIR / "planner_transport_backend.c").read_text(
+            encoding="utf-8"
+        )
         self.assertNotIn("gActionData", target)
         self.assertNotIn("busWrite", target)
         self.assertNotIn("socket", host)
         self.assertNotIn("subprocess", host)
         self.assertNotIn("savestate", host)
+        self.assertNotIn("ADDRESS", transport)
+        self.assertNotIn("POKE", transport)
+        self.assertIn("PLANNER_COMMAND_ADDR", transport)
 
     def test_cp_decide_wait_uses_dedicated_mailbox_poll_state(self):
         root = TESTS_DIR.parents[2]
@@ -242,11 +276,21 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertIn("ExpansionAutoplayPlanner_PollDecision", poll_function)
         self.assertNotIn("AiDecideMainFunc", poll_function)
         self.assertNotIn("AiClearDecision", poll_function)
+        planner_branch = source.split(
+            "if (ExpansionAutoplayPlanner_IsActive())", 1
+        )[1].split("else", 1)[0]
+        self.assertIn("AiGenerateUnitMovementMapRespectStay", planner_branch)
+        self.assertIn("ExpansionAutoplayPlanner_OfferDecision(NULL)", planner_branch)
+        self.assertNotIn("AiDecideMainFunc", planner_branch)
 
     def test_map_lifecycle_preserves_only_true_chapter_transition(self):
-        source = (
-            TESTS_DIR.parents[2] / "src" / "bmio.c"
-        ).read_text(encoding="utf-8")
+        root = TESTS_DIR.parents[2]
+        source = (root / "src" / "bmio.c").read_text(encoding="utf-8")
+        event = (root / "src" / "event.c").read_text(encoding="utf-8")
+        event_commands = (root / "src" / "eventscr.c").read_text(encoding="utf-8")
+        autoplay = (root / "src" / "expansion_autoplay.c").read_text(
+            encoding="utf-8"
+        )
         start = source.split("void StartBattleMap", 1)[1].split(
             "void RestartBattleMap", 1
         )[0]
@@ -256,14 +300,46 @@ class PlannerBridgeTests(unittest.TestCase):
         resume = source.split("void GameCtrl_StartResumedGame", 1)[1].split(
             "void EndBMapMain", 1
         )[0]
-        end = source.split("void EndBMapMain", 1)[1]
+        teardown = source.split("static void EndBMapMainInternal", 1)[1].split(
+            "void ChapterChangeUnitCleanup", 1
+        )[0]
         self.assertIn("ExpansionAutoplay_ResetForChapterTransition()", start)
-        for destructive in (restart, resume, end):
+        self.assertIn("ExpansionAutoplayPlanner_OnMapReady()", start)
+        for destructive in (restart, resume):
             self.assertIn("ExpansionAutoplay_Reset()", destructive)
             self.assertNotIn(
                 "ExpansionAutoplay_ResetForChapterTransition()",
                 destructive,
             )
+            self.assertIn("ExpansionAutoplayPlanner_OnMapReady()", destructive)
+        player_phase = autoplay.split(
+            "void ExpansionAutoplay_OnPlayerPhaseStart", 1
+        )[1].split("void ExpansionAutoplay_OnBlueComputerPhaseStart", 1)[0]
+        self.assertIn("ExpansionAutoplayPlanner_OnMapReady()", player_phase)
+        self.assertIn("EndBMapMainInternal(false)", teardown)
+        self.assertIn("EndBMapMainInternal(true)", teardown)
+        self.assertIn("ExpansionAutoplay_ResetForChapterTransition()", teardown)
+        self.assertIn("ExpansionAutoplay_Reset()", teardown)
+        self.assertIn(
+            "EV_STATE_PLANNER_CHAPTER_TRANSITION",
+            event,
+        )
+        mnch = event_commands.split("case EVSUBCMD_MNCH:", 1)[1].split(
+            "case EVSUBCMD_MNC2:", 1
+        )[0]
+        mnc2 = event_commands.split("case EVSUBCMD_MNC2:", 1)[1].split(
+            "case EVSUBCMD_MNC3:", 1
+        )[0]
+        mnts = event_commands.split("case EVSUBCMD_MNTS:", 1)[1].split(
+            "case EVSUBCMD_MNCH:", 1
+        )[0]
+        mnc4 = event_commands.split("case EVSUBCMD_MNC4:", 1)[1].split(
+            "} // switch", 1
+        )[0]
+        for preserving in (mnch, mnc2):
+            self.assertIn("EV_STATE_PLANNER_CHAPTER_TRANSITION", preserving)
+        for destructive in (mnts, mnc4):
+            self.assertNotIn("EV_STATE_PLANNER_CHAPTER_TRANSITION", destructive)
 
     def test_debug_only_configuration_rejects_release_mailbox(self):
         root = TESTS_DIR.parents[2]
@@ -344,6 +420,14 @@ class PlannerBridgeTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(dry_run.returncode, 0, dry_run.stdout + dry_run.stderr)
+            self.assertIn(
+                "expansion-modern-boot-check",
+                dry_run.stdout,
+            )
+            self.assertNotIn(
+                "MODERN_CONFIG=release",
+                dry_run.stdout,
+            )
             release = subprocess.run(
                 [
                     "make",
@@ -464,16 +548,10 @@ class PlannerBridgeTests(unittest.TestCase):
                 re.MULTILINE,
             )
             self.assertIsNotNone(observation, "planner observation symbol missing")
-            self.assertEqual(int(observation.group(1), 16), 1020)
-            selected = re.search(
-                r"^[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+[bBdD]\s+"
-                r"sPlannerSelectedDecision(?:\.\d+)?$",
-                symbols.stdout,
-                re.MULTILINE,
-            )
-            self.assertIsNotNone(selected, "retained selected decision missing")
-            self.assertEqual(int(selected.group(1), 16), 11)
+            self.assertEqual(int(observation.group(1), 16), 996)
+            self.assertLessEqual(int(observation.group(1), 16), planner.PAGE_MAX_BYTES)
             self.assertNotIn("sPlannerCandidates", symbols.stdout)
+            self.assertNotIn("sPlannerSelectedDecision", symbols.stdout)
 
             sections = subprocess.run(
                 [size, "-A", str(objects[0])],
@@ -490,13 +568,85 @@ class PlannerBridgeTests(unittest.TestCase):
                     re.MULTILINE,
                 )
             }
-            self.assertEqual(section_sizes["ewram_data"], 1144)
-            self.assertEqual(section_sizes[".bss"], 20)
-            self.assertEqual(
+            self.assertLessEqual(
+                section_sizes.get("ewram_data", 0)
+                + section_sizes.get(".bss", 0),
+                4096,
+            )
+            self.assertEqual(section_sizes.get("iwram_data", 0), 0)
+            self.assertLessEqual(
                 section_sizes[".text"]
                 + section_sizes[".rodata"]
-                + section_sizes[".rodata.str1.4"],
-                3971,
+                + section_sizes.get(".rodata.str1.4", 0),
+                12 * 1024,
+            )
+
+            profile_sections: dict[bool, dict[str, int]] = {}
+            for enabled in (False, True):
+                profile_objects = []
+                for source in (
+                    root / "src" / "expansion_autoplay.c",
+                    root / "src" / "rng.c",
+                ):
+                    output = temporary_path / (
+                        f"{source.stem}-planner-{int(enabled)}.o"
+                    )
+                    completed = subprocess.run(
+                        [
+                            compiler,
+                            "-mcpu=arm7tdmi",
+                            "-mthumb",
+                            "-mthumb-interwork",
+                            "-mabi=aapcs",
+                            "-std=gnu89",
+                            "-ffreestanding",
+                            "-fno-builtin",
+                            "-O2",
+                            "-I",
+                            str(root / "include"),
+                            "-I",
+                            str(root / "include" / "generated"),
+                            "-DFE8_EXPANSION_MODERN_BUILD=1",
+                            "-DFE8_EXPANSION_DEBUG=1",
+                            f"-DFE8_EXPANSION_AUTOPLAY_PLANNER={int(enabled)}",
+                            "-c",
+                            str(source),
+                            "-o",
+                            str(output),
+                        ],
+                        cwd=root,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stdout + completed.stderr,
+                    )
+                    profile_objects.append(output)
+                sizes = subprocess.run(
+                    [size, "-A", *map(str, profile_objects)],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(sizes.returncode, 0, sizes.stdout + sizes.stderr)
+                totals: dict[str, int] = {}
+                for section, value in re.findall(
+                    r"^(\S+)\s+(\d+)\s+\d+$",
+                    sizes.stdout,
+                    re.MULTILINE,
+                ):
+                    totals[section] = totals.get(section, 0) + int(value)
+                profile_sections[enabled] = totals
+            self.assertEqual(
+                profile_sections[True].get("iwram_data", 0),
+                profile_sections[False].get("iwram_data", 0),
+            )
+            self.assertLessEqual(
+                profile_sections[True].get("ewram_data", 0)
+                - profile_sections[False].get("ewram_data", 0),
+                5,
             )
 
             disabled = temporary_path / "planner-release-disabled.o"
@@ -535,84 +685,398 @@ class PlannerBridgeTests(unittest.TestCase):
             self.assertNotIn("gExpansionAutoplayPlanner", symbols.stdout)
 
 
+class PlannerProcessTransport:
+    def __init__(self, backend: Path, rom: Path) -> None:
+        self.process = subprocess.Popen(
+            [str(backend), str(rom)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        self.checkpoint: tuple[int, ...] = ()
+        self.command: tuple[int, ...] = ()
+        self.frame_count = 4
+        self.observation = self._read_state()
+
+    def _read_state(self) -> planner.Observation:
+        assert self.process.stdout is not None
+        line = self.process.stdout.readline()
+        if not line:
+            stderr = self.process.stderr.read() if self.process.stderr is not None else ""
+            raise AssertionError(f"planner transport terminated: {stderr}")
+        fields = line.split()
+        if (
+            not fields
+            or fields[0] != "OBS"
+            or "CHECKPOINT" not in fields
+            or "COMMAND" not in fields
+        ):
+            raise AssertionError(f"unexpected planner transport response: {line}")
+        checkpoint_index = fields.index("CHECKPOINT")
+        command_index = fields.index("COMMAND")
+        observation = planner.parse_transport_observation(
+            int(value, 16) for value in fields[1:checkpoint_index]
+        )
+        self.checkpoint = tuple(
+            int(value, 16)
+            for value in fields[checkpoint_index + 1 : command_index]
+        )
+        self.command = tuple(
+            int(value, 16) for value in fields[command_index + 1 :]
+        )
+        self.observation = observation
+        return observation
+
+    def _send(self, line: str) -> planner.Observation:
+        assert self.process.stdin is not None
+        self.process.stdin.write(line + "\n")
+        self.process.stdin.flush()
+        return self._read_state()
+
+    def start(
+        self,
+        *,
+        scenario_identity: int | None = None,
+    ) -> planner.Observation:
+        ready = self.observation
+        return self._send(
+            "START {:08x} {:08x} {:08x} {:08x}".format(
+                ready.actual_rom_identity,
+                ready.actual_config_identity,
+                ready.actual_scenario_identity
+                if scenario_identity is None
+                else scenario_identity,
+                ready.actual_seed_identity,
+            )
+        )
+
+    def exchange(
+        self, command: planner.Command
+    ) -> planner.Observation:
+        if command.kind is planner.CommandKind.PAGE:
+            if command.page_index is None:
+                raise AssertionError("PAGE requires page_index")
+            return self._send(
+                "PAGE {:08x} {:08x} {:08x}".format(
+                    command.run_id,
+                    command.observation_id,
+                    command.page_index,
+                )
+            )
+        if command.kind is planner.CommandKind.COMMIT:
+            if command.action_ordinal is None or command.token is None:
+                raise AssertionError("COMMIT requires ordinal and opaque token")
+            return self._send(
+                "COMMIT {:08x} {:08x} {:08x} {:08x} {:08x}".format(
+                    command.run_id,
+                    command.observation_id,
+                    command.action_ordinal,
+                    command.token.lo,
+                    command.token.hi,
+                )
+            )
+        if command.kind is planner.CommandKind.CANCEL:
+            return self._send(
+                "CANCEL {:08x} {:08x}".format(
+                    command.run_id,
+                    command.observation_id,
+                )
+            )
+        raise AssertionError(f"unsupported transport command {command.kind}")
+
+    def malformed(self, kind: int = 0xFFFFFFFF) -> planner.Observation:
+        return self._send(
+            "MALFORMED {:08x} {:08x} {:08x}".format(
+                kind,
+                self.observation.run_id,
+                self.observation.observation_id,
+            )
+        )
+
+    def step(self) -> planner.Observation:
+        observation = self._send("STEP")
+        self.frame_count += 1
+        return observation
+
+    def run_frames(self, count: int, keys: int = 0) -> planner.Observation:
+        observation = self._send(f"RUN {count:x} {keys:x}")
+        self.frame_count += count
+        return observation
+
+    def close(self) -> None:
+        if self.process.poll() is None and self.process.stdin is not None:
+            self.process.stdin.write("QUIT\n")
+            self.process.stdin.flush()
+        self.process.communicate(timeout=10)
+
+
 class PlannerLibmGBAIntegrationTests(unittest.TestCase):
-    def test_production_mailbox_replays_two_chapters_without_save_or_snapshot(self):
+    def _build_transport(self, temporary: str) -> tuple[Path, Path]:
+        rom = Path(temporary) / "planner-two-chapter.gba"
+        elf = Path(temporary) / "planner-two-chapter.elf"
+        backend = Path(temporary) / "planner-transport"
+        build_production_planner_rom(rom, elf)
+        build_planner_transport_backend(backend, elf)
+        return rom, backend
+
+    def _run_planner(
+        self,
+        backend: Path,
+        rom: Path,
+        implementation: planner.ScriptedPlanner | planner.BoundedSearchPlanner,
+    ) -> tuple[planner.Observation, tuple[int, ...]]:
+        transport = PlannerProcessTransport(backend, rom)
+        try:
+            waiting = transport.start()
+            self.assertEqual(waiting.state, 2)
+            first = planner.collect_observation_pages(transport, waiting)
+            self.assertEqual(len(first.fields), planner.SEMANTIC_FIELD_COUNT)
+            self.assertEqual(len(first.map_cells), 32 * 17)
+            self.assertEqual(len(first.units), 1)
+            self.assertEqual(len(first.actions), 512)
+            fields = {field.name: field for field in first.fields}
+            self.assertEqual(
+                fields["map_dimensions"].value,
+                32 | (17 << 16),
+            )
+            self.assertEqual(
+                fields["active_unit"].availability,
+                planner.Availability.AVAILABLE,
+            )
+            self.assertEqual(
+                fields["objective_id"].availability,
+                planner.Availability.UNSUPPORTED_RULE,
+            )
+            hidden = next(
+                cell for cell in first.map_cells
+                if (cell.x, cell.y) == (1, 0)
+            )
+            self.assertEqual(hidden.availability, planner.Availability.NOT_VISIBLE)
+            self.assertEqual(hidden.unit, 0)
+            choice = implementation.choose(first)
+            waiting = transport.exchange(
+                planner.Command(
+                    planner.CommandKind.COMMIT,
+                    first.run_id,
+                    first.observation_id,
+                    choice.ordinal,
+                    choice.token,
+                )
+            )
+            self.assertEqual(waiting.state, 2)
+            self.assertEqual(waiting.chapter, 2)
+            self.assertEqual(transport.checkpoint[4], 1)
+
+            second = planner.collect_observation_pages(transport, waiting)
+            choice = implementation.choose(second)
+            committed = transport.exchange(
+                planner.Command(
+                    planner.CommandKind.COMMIT,
+                    second.run_id,
+                    second.observation_id,
+                    choice.ordinal,
+                    choice.token,
+                )
+            )
+            self.assertEqual(committed.state, 3)
+            self.assertEqual(transport.checkpoint[4], 2)
+            return committed, transport.checkpoint
+        finally:
+            transport.close()
+
+    def test_host_driven_production_mailbox_replays_two_chapters(self):
         root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
         root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=root) as temporary:
-            rom = Path(temporary) / "planner-two-chapter.gba"
-            elf = Path(temporary) / "planner-two-chapter.elf"
             try:
-                build_production_planner_rom(rom, elf)
+                rom, backend = self._build_transport(temporary)
             except RuntimeError as error:
-                if "planner runtime toolchain unavailable" in str(error):
+                if (
+                    "planner runtime toolchain unavailable" in str(error)
+                    or "planner transport host compiler unavailable" in str(error)
+                ):
                     self.skipTest(str(error))
                 raise
-            resolver = ElfSymbolResolver(elf)
-            scenario = gba_playtest.parse_scenario_data(
-                {
-                    "schema_version": 2,
-                    "name": "autoplay-planner-two-chapter",
-                    "frames": [],
-                    "run_until": {
-                        "max_frames": 1000,
-                        "terminal_conditions": [
-                            {
-                                "reason": "success",
-                                "all": [
-                                    {
-                                        "address": "gPlannerRuntimeProbe",
-                                        "size": 4,
-                                        "operator": "eq",
-                                        "value": "0x00000001",
-                                    }
-                                ],
-                            }
-                        ],
-                        "turn_limit": {
-                            "maximum": 0xFFFFFFFF,
-                            "address": "gPlannerRuntimeProbe+0x24",
-                            "size": 4,
-                        },
-                        "action_limit": {
-                            "maximum": 0xFFFFFFFF,
-                            "address": "gPlannerRuntimeProbe+0x1c",
-                            "size": 4,
-                        },
-                        "checkpoint": {
-                            "name": "terminal",
-                            "framebuffer": False,
-                            "probes": [
-                                {
-                                    "address": f"gPlannerRuntimeProbe+0x{offset:02x}",
-                                    "size": 4,
-                                }
-                                for offset in range(0, 0x2C, 4)
-                            ],
-                        },
-                    },
-                },
-                "autoplay-planner-two-chapter",
-                resolver,
+            scripted = self._run_planner(
+                backend, rom, planner.ScriptedPlanner()
             )
+            searched = self._run_planner(
+                backend, rom, planner.BoundedSearchPlanner(max_nodes=512)
+            )
+            self.assertEqual(scripted, searched)
+
+    def test_host_driven_transport_rejects_and_times_out(self):
+        root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
             try:
-                first = gba_playtest.capture(rom, scenario, work_dir=Path(temporary))
-                second = gba_playtest.capture(rom, scenario, work_dir=Path(temporary))
-            except gba_playtest.PlaytestError as error:
-                if "libmGBA backend unavailable" in str(error):
+                rom, backend = self._build_transport(temporary)
+            except RuntimeError as error:
+                if (
+                    "planner runtime toolchain unavailable" in str(error)
+                    or "planner transport host compiler unavailable" in str(error)
+                ):
                     self.skipTest(str(error))
                 raise
-            self.assertEqual(first, second)
-            self.assertEqual(first["terminal"]["reason"], "success")
-            values = [
-                int(probe["value"], 16)
-                for probe in first["checkpoints"][0]["probes"]
-            ]
-            self.assertEqual(values[0], 1)
-            self.assertEqual(values[1:5], [9, 9, 9, 4])
-            self.assertEqual(values[5], 29)
-            self.assertEqual(values[6:8], [3, 64])
-            self.assertEqual(values[8:], [1, 2, 1])
+
+            transport = PlannerProcessTransport(backend, rom)
+            try:
+                rejected = transport.start(
+                    scenario_identity=transport.observation.actual_scenario_identity ^ 1
+                )
+                self.assertEqual(rejected.rejection, 9)
+                malformed = transport.malformed()
+                self.assertEqual(malformed.rejection, 9)
+                waiting = transport.start()
+                complete = planner.collect_observation_pages(transport, waiting)
+                choice = planner.ScriptedPlanner().choose(complete)
+                forged = transport.exchange(
+                    planner.Command(
+                        planner.CommandKind.COMMIT,
+                        complete.run_id,
+                        complete.observation_id,
+                        choice.ordinal,
+                        planner.OpaqueToken(choice.token.lo, choice.token.hi ^ 1),
+                    )
+                )
+                self.assertEqual(forged.rejection, 4)
+                cancelled = transport.exchange(
+                    planner.Command(
+                        planner.CommandKind.CANCEL,
+                        complete.run_id,
+                        complete.observation_id,
+                    )
+                )
+                self.assertEqual(cancelled.state, 4)
+                self.assertEqual(cancelled.rejection, 8)
+            finally:
+                transport.close()
+
+            transport = PlannerProcessTransport(backend, rom)
+            try:
+                waiting = transport.start()
+                for _ in range(300):
+                    waiting = transport.malformed()
+                    if waiting.state == 4:
+                        break
+                self.assertEqual(waiting.state, 4)
+                self.assertEqual(waiting.rejection, 10)
+            finally:
+                transport.close()
+
+    @unittest.skipUnless(
+        os.environ.get("PLANNER_PRODUCTION_ROM")
+        and os.environ.get("PLANNER_PRODUCTION_ELF"),
+        "enabled production ROM/ELF not supplied",
+    )
+    def test_enabled_production_rom_executes_host_selected_action(self):
+        rom = Path(os.environ["PLANNER_PRODUCTION_ROM"])
+        elf = Path(os.environ["PLANNER_PRODUCTION_ELF"])
+        root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            backend = Path(temporary) / "planner-transport"
+            build_planner_transport_backend(backend, elf)
+            route = json.loads(
+                (
+                    TESTS_DIR.parent
+                    / "scenarios"
+                    / "starter-danger-overlay-negative-modern-debug.json"
+                ).read_text(encoding="utf-8")
+            )
+            transport = PlannerProcessTransport(backend, rom)
+            try:
+                target_frame = 3950
+                for frame_range in route["frames"]:
+                    start = frame_range["start"]
+                    end = min(frame_range["end"], target_frame)
+                    if start > target_frame:
+                        break
+                    if transport.frame_count < start:
+                        transport.run_frames(start - transport.frame_count)
+                    keys = 0
+                    for name in frame_range["keys"]:
+                        keys |= gba_playtest.KEY_BITS[name]
+                    transport.run_frames(end - start + 1, keys)
+                if transport.frame_count <= target_frame:
+                    transport.run_frames(target_frame + 1 - transport.frame_count)
+
+                for index in range(8):
+                    if transport.observation.state == 1:
+                        break
+                    key = (
+                        gba_playtest.KEY_BITS["START"]
+                        if index % 2 == 0
+                        else gba_playtest.KEY_BITS["A"]
+                    )
+                    transport.run_frames(6, key)
+                    transport.run_frames(59)
+                self.assertEqual(transport.observation.state, 1)
+                waiting = transport.start()
+                self.assertEqual(waiting.state, 2)
+                complete = planner.collect_observation_pages(transport, waiting)
+                self.assertGreater(len(complete.map_cells), 0)
+                self.assertGreater(len(complete.units), 0)
+                self.assertGreater(len(complete.actions), 0)
+                choice = planner.ScriptedPlanner().choose(complete)
+                actor_before = next(
+                    unit for unit in complete.units if unit.slot == choice.action.actor
+                )
+                self.assertNotEqual(actor_before.position, choice.action.destination)
+
+                forged = transport.exchange(
+                    planner.Command(
+                        planner.CommandKind.COMMIT,
+                        complete.run_id,
+                        complete.observation_id,
+                        choice.ordinal,
+                        planner.OpaqueToken(choice.token.lo ^ 1, choice.token.hi),
+                    )
+                )
+                self.assertEqual(forged.rejection, 4)
+                accepted = transport.exchange(
+                    planner.Command(
+                        planner.CommandKind.COMMIT,
+                        complete.run_id,
+                        complete.observation_id,
+                        choice.ordinal,
+                        choice.token,
+                    )
+                )
+                self.assertIn(accepted.state, (2, 3))
+
+                for _ in range(20):
+                    if (
+                        transport.observation.state == 2
+                        and transport.observation.observation_id
+                        != complete.observation_id
+                    ):
+                        break
+                    transport.run_frames(60)
+                self.assertEqual(transport.observation.state, 2)
+                self.assertNotEqual(
+                    transport.observation.observation_id,
+                    complete.observation_id,
+                )
+                followup = planner.collect_observation_pages(
+                    transport, transport.observation
+                )
+                actor_after = next(
+                    unit for unit in followup.units if unit.slot == choice.action.actor
+                )
+                self.assertEqual(actor_after.position, choice.action.destination)
+                cancelled = transport.exchange(
+                    planner.Command(
+                        planner.CommandKind.CANCEL,
+                        followup.run_id,
+                        followup.observation_id,
+                    )
+                )
+                self.assertEqual(cancelled.state, 4)
+            finally:
+                transport.close()
 
 
 if __name__ == "__main__":

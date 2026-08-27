@@ -2139,7 +2139,8 @@ u8 Event2A_MoveToChapter(struct EventEngineProc * proc)
         gPlaySt.save_menu_type = 1;
 
         SetNextGameActionId(GAME_ACTION_CLASS_REEL);
-        proc->evStateBits |= EV_STATE_CHANGEGM;
+        proc->evStateBits |=
+            EV_STATE_CHANGEGM | EV_STATE_PLANNER_CHAPTER_TRANSITION;
 
         break;
 
@@ -2149,7 +2150,8 @@ u8 Event2A_MoveToChapter(struct EventEngineProc * proc)
         gPlaySt.save_menu_type = 2;
 
         SetNextGameActionId(GAME_ACTION_USR_SKIPPED);
-        proc->evStateBits |= EV_STATE_CHANGEGM;
+        proc->evStateBits |=
+            EV_STATE_CHANGEGM | EV_STATE_PLANNER_CHAPTER_TRANSITION;
 
         break;
 

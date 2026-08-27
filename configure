@@ -626,6 +626,7 @@ FE8_CFG_DEFAULT_LOCALE
 FE8_CFG_ENABLED_LOCALES
 FE8_CFG_PSEUDO_LOCALE
 FE8_CFG_BGM_CONTINUATION_POLICY
+FE8_AUTOTOOLS_DEFAULT_GOAL
 FE8_CFG_MODERN_CONFIG
 FE8_CFG_AUTOPLAY_PLANNER
 FE8_CFG_AUTOPLAY_STRATEGIES
@@ -2283,8 +2284,10 @@ fi
 if test "$fe8_autoplay_planner" = 1
 then :
   FE8_CFG_MODERN_CONFIG="MODERN_CONFIG := debug"
+     FE8_AUTOTOOLS_DEFAULT_GOAL=expansion-modern-boot-check
 else $as_nop
   FE8_CFG_MODERN_CONFIG=
+     FE8_AUTOTOOLS_DEFAULT_GOAL=all
 fi
 if test -n "$fe8_bgm_continuation_policy"
 then :
@@ -2328,6 +2331,7 @@ then :
 else $as_nop
   FE8_CFG_TEXT_SHIFT=
 fi
+
 
 
 

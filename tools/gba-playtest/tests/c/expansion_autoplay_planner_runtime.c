@@ -1,7 +1,10 @@
 #include "global.h"
 
 #include "bm.h"
+#include "bmcontainer.h"
+#include "bmitem.h"
 #include "bmmap.h"
+#include "bmphase.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "expansion_autoplay.h"
@@ -14,35 +17,36 @@ u8 gActiveUnitId;
 struct Vec2 gBmMapSize;
 u8** gBmMapMovement;
 u8** gBmMapUnit;
-
-struct PlannerRuntimeProbe
-{
-    u32 terminal;
-    u32 malformedRejection;
-    u32 provenanceRejection;
-    u32 duplicateStartRejection;
-    u32 tokenRejection;
-    u32 acceptedOrdinal;
-    u32 pageCount;
-    u32 candidateCount;
-    u32 cancelled;
-    u32 checkpointChapter;
-    u32 checkpointRunId;
-};
-
-struct PlannerRuntimeProbe EWRAM_DATA gPlannerRuntimeProbe;
+u8** gBmMapTerrain;
+u8** gBmMapFog;
 
 static u16 sSeeds[3];
 static u32 sConsumption;
+static u32 sRestoreRequests;
 static struct CharacterData sCharacter;
 static struct ClassData sClass;
 static struct Unit sUnit;
 static u8 sPermanentFlags[8];
 static u8 sChapterFlags[8];
-static u8 sMovementData[8][8];
-static u8* sMovementRows[8];
-static u8 sUnitData[8][8];
-static u8* sUnitRows[8];
+static u16 sConvoy[CONVOY_ITEM_COUNT];
+static u8 sMovementData[17][32];
+static u8* sMovementRows[17];
+static u8 sUnitData[17][32];
+static u8* sUnitRows[17];
+static u8 sTerrainData[17][32];
+static u8* sTerrainRows[17];
+static u8 sFogData[17][32];
+static u8* sFogRows[17];
+
+enum PlannerRuntimeStage
+{
+    PLANNER_RUNTIME_WAIT_START,
+    PLANNER_RUNTIME_WAIT_CHAPTER_ONE,
+    PLANNER_RUNTIME_WAIT_CHAPTER_TWO,
+    PLANNER_RUNTIME_DONE,
+};
+
+static enum PlannerRuntimeStage sStage;
 
 void* memcpy(void* destination, const void* source, size_t size)
 {
@@ -96,53 +100,169 @@ int GetChapterFlagBitsSize(void)
     return sizeof(sChapterFlags);
 }
 
-void ExpansionAutoplay_RequestPlayerControlRestore(void)
+u16* GetConvoyItemArray(void)
 {
+    return sConvoy;
 }
 
-enum ExpansionAutoplayResult ExpansionAutoplay_SetBlueControl(enum ExpansionBlueControl control)
+s8 AreUnitsAllied(int left, int right)
+{
+    return (left & 0xC0) == (right & 0xC0);
+}
+
+s8 CanUnitUseWeapon(struct Unit* unit, int item)
+{
+    (void)unit;
+    (void)item;
+    return false;
+}
+
+s8 CanUnitUseStaff(struct Unit* unit, int item)
+{
+    (void)unit;
+    (void)item;
+    return false;
+}
+
+int GetItemAttributes(int item)
+{
+    (void)item;
+    return 0;
+}
+
+int GetItemIndex(int item)
+{
+    return item & 0xFF;
+}
+
+int GetItemMinRange(int item)
+{
+    (void)item;
+    return 1;
+}
+
+int GetItemMaxRange(int item)
+{
+    (void)item;
+    return 1;
+}
+
+int GetUnitMagBy2Range(struct Unit* unit)
+{
+    (void)unit;
+    return 1;
+}
+
+bool IsPositionMagicSealed(int x, int y)
+{
+    (void)x;
+    (void)y;
+    return false;
+}
+
+s8 CanUnitCrossTerrain(struct Unit* unit, int terrain)
+{
+    (void)unit;
+    (void)terrain;
+    return true;
+}
+
+bool IsThereClosedChestAt(s8 x, s8 y)
+{
+    (void)x;
+    (void)y;
+    return false;
+}
+
+bool IsThereClosedDoorAt(s8 x, s8 y)
+{
+    (void)x;
+    (void)y;
+    return false;
+}
+
+s8 IsItemHammernable(int item)
+{
+    (void)item;
+    return false;
+}
+
+s8 CanUnitUseHealItem(struct Unit* unit)
+{
+    (void)unit;
+    return false;
+}
+
+s8 CanUnitUsePureWaterItem(struct Unit* unit)
+{
+    (void)unit;
+    return false;
+}
+
+s8 CanUnitUseTorchItem(struct Unit* unit)
+{
+    (void)unit;
+    return false;
+}
+
+s8 CanUnitUseAntitoxinItem(struct Unit* unit)
+{
+    (void)unit;
+    return false;
+}
+
+s8 CanUnitUsePromotionItem(struct Unit* unit, int item)
+{
+    (void)unit;
+    (void)item;
+    return false;
+}
+
+s8 CanUnitUseStatGainItem(struct Unit* unit, int item)
+{
+    (void)unit;
+    (void)item;
+    return false;
+}
+
+s8 CanUnitUseFruitItem(struct Unit* unit)
+{
+    (void)unit;
+    return false;
+}
+
+void ExpansionAutoplay_RequestPlayerControlRestore(void)
+{
+    sRestoreRequests++;
+}
+
+enum ExpansionAutoplayResult ExpansionAutoplay_SetBlueControl(
+    enum ExpansionBlueControl control)
 {
     return control == EXPANSION_BLUE_CONTROL_COMPUTER
         ? EXPANSION_AUTOPLAY_OK
         : EXPANSION_AUTOPLAY_ERR_INVALID_CONTROL;
 }
 
-static void WriteCommand(
-    u32 kind,
-    u32 runId,
-    u32 observationId,
-    u32 pageIndex,
-    u32 ordinal,
-    u32 tokenLo,
-    u32 tokenHi)
+static void PrepareDecision(struct AiDecision* decision)
 {
-    gExpansionAutoplayPlannerCommand.magic = EXPANSION_AUTOPLAY_PLANNER_MAGIC;
-    gExpansionAutoplayPlannerCommand.version = EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION;
-    gExpansionAutoplayPlannerCommand.byteSize =
-        sizeof(struct ExpansionAutoplayPlannerCommandV2);
-    gExpansionAutoplayPlannerCommand.kind = kind;
-    gExpansionAutoplayPlannerCommand.runId = runId;
-    gExpansionAutoplayPlannerCommand.observationId = observationId;
-    gExpansionAutoplayPlannerCommand.pageIndex = pageIndex;
-    gExpansionAutoplayPlannerCommand.actionOrdinal = ordinal;
-    gExpansionAutoplayPlannerCommand.tokenLo = tokenLo;
-    gExpansionAutoplayPlannerCommand.tokenHi = tokenHi;
-    gExpansionAutoplayPlannerCommand.expectedRomIdentity =
-        gExpansionAutoplayPlannerObservation.actualRomIdentity;
-    gExpansionAutoplayPlannerCommand.expectedConfigIdentity =
-        gExpansionAutoplayPlannerObservation.actualConfigIdentity;
-    gExpansionAutoplayPlannerCommand.expectedScenarioIdentity =
-        gExpansionAutoplayPlannerObservation.actualScenarioIdentity;
-    gExpansionAutoplayPlannerCommand.expectedSeedIdentity =
-        gExpansionAutoplayPlannerObservation.actualSeedIdentity;
+    decision->actionId = AI_ACTION_NONE;
+    decision->unitId = 1;
+    decision->xMove = 1;
+    decision->yMove = 0;
+    decision->unk04 = 0;
+    decision->unk05 = 0;
+    decision->targetId = 0;
+    decision->itemSlot = 0;
+    decision->xTarget = 0;
+    decision->yTarget = 0;
+    decision->actionPerformed = true;
 }
 
-void PlannerRuntime_Main(void)
+static void InitializeRuntime(void)
 {
-    struct AiDecision decision;
-    const struct ExpansionAutoplayPlannerActionV2* action;
-    int x;
     int y;
+    int x;
 
     sSeeds[0] = 1;
     sSeeds[1] = 2;
@@ -151,120 +271,117 @@ void PlannerRuntime_Main(void)
     sClass.number = 1;
     sUnit.pCharacterData = &sCharacter;
     sUnit.pClassData = &sClass;
+    sUnit.index = 1;
     sUnit.level = 1;
+    sUnit.maxHP = 20;
     sUnit.curHP = 20;
-    sUnit.items[0] = 1;
+    sUnit.xPos = 0;
+    sUnit.yPos = 0;
     gActiveUnit = &sUnit;
     gActiveUnitId = 1;
-    gBmMapSize.x = 8;
-    gBmMapSize.y = 8;
-    for (y = 0; y < 8; y++)
+    gBmMapSize.x = 32;
+    gBmMapSize.y = 17;
+    for (y = 0; y < 17; y++)
     {
         sMovementRows[y] = sMovementData[y];
         sUnitRows[y] = sUnitData[y];
-        for (x = 0; x < 8; x++)
+        sTerrainRows[y] = sTerrainData[y];
+        sFogRows[y] = sFogData[y];
+        for (x = 0; x < 32; x++)
         {
             sMovementData[y][x] = 1;
             sUnitData[y][x] = 0;
+            sTerrainData[y][x] = 1;
+            sFogData[y][x] = 1;
         }
     }
+    for (x = 1; x < 32; x++)
+        sMovementData[16][x] = MAP_MOVEMENT_MAX + 1;
+    sFogData[0][1] = 0;
+    sUnitData[0][0] = 1;
     gBmMapMovement = sMovementRows;
     gBmMapUnit = sUnitRows;
+    gBmMapTerrain = sTerrainRows;
+    gBmMapFog = sFogRows;
     gPlaySt.chapterIndex = 1;
     gPlaySt.chapterTurnNumber = 1;
-
+    gPlaySt.chapterVisionRange = 3;
+    gPlaySt.partyGoldAmount = 1000;
+    sConvoy[0] = 1;
     ExpansionAutoplayPlanner_Reset();
-    WriteCommand(99, 0, 0, 0, 0, 0, 0);
-    ExpansionAutoplayPlanner_PollStart();
-    gPlannerRuntimeProbe.malformedRejection =
-        gExpansionAutoplayPlannerObservation.rejection;
+    ExpansionAutoplayPlanner_OnMapReady();
+    sStage = PLANNER_RUNTIME_WAIT_START;
+}
 
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
-    gExpansionAutoplayPlannerCommand.expectedConfigIdentity ^= 1;
-    ExpansionAutoplayPlanner_PollStart();
-    gPlannerRuntimeProbe.provenanceRejection =
-        gExpansionAutoplayPlannerObservation.rejection;
+static void TickRuntime(void)
+{
+    static struct AiDecision decision;
+    enum ExpansionAutoplayPlannerDecisionResult result;
 
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
-    ExpansionAutoplayPlanner_PollStart();
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
-    ExpansionAutoplayPlanner_PollStart();
-    gPlannerRuntimeProbe.duplicateStartRejection =
-        gExpansionAutoplayPlannerObservation.rejection;
+    switch (sStage)
+    {
+    case PLANNER_RUNTIME_WAIT_START:
+        if (!ExpansionAutoplayPlanner_PollStart())
+            return;
+        PrepareDecision(&decision);
+        if (ExpansionAutoplayPlanner_OfferDecision(&decision)
+            == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT)
+            sStage = PLANNER_RUNTIME_WAIT_CHAPTER_ONE;
+        return;
 
-    decision.actionPerformed = true;
-    decision.unitId = 1;
-    decision.xMove = 2;
-    decision.yMove = 3;
-    decision.actionId = AI_ACTION_COMBAT;
-    decision.targetId = 0x81;
-    decision.itemSlot = 0;
-    decision.xTarget = 2;
-    decision.yTarget = 3;
-    ExpansionAutoplayPlanner_OfferDecision(&decision);
-    gPlannerRuntimeProbe.pageCount = gExpansionAutoplayPlannerObservation.pageCount;
-    gPlannerRuntimeProbe.candidateCount =
-        gExpansionAutoplayPlannerObservation.totalActionCount;
+    case PLANNER_RUNTIME_WAIT_CHAPTER_ONE:
+        result = ExpansionAutoplayPlanner_PollDecision(&decision);
+        if (result == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED)
+        {
+            sUnit.xPos = decision.xMove;
+            sUnit.yPos = decision.yMove;
+            ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+            ExpansionAutoplayPlanner_OnMapReset();
+            gPlaySt.chapterIndex = 2;
+            gPlaySt.chapterTurnNumber = 1;
+            sConvoy[1] = 2;
+            ExpansionAutoplayPlanner_OnMapReady();
+            PrepareDecision(&decision);
+            ExpansionAutoplayPlanner_OfferDecision(&decision);
+            sStage = PLANNER_RUNTIME_WAIT_CHAPTER_TWO;
+        }
+        else if (result == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED)
+        {
+            sStage = PLANNER_RUNTIME_DONE;
+        }
+        return;
 
-    action = &gExpansionAutoplayPlannerObservation.actions[0];
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        0,
-        0,
-        action->tokenLo,
-        action->tokenHi ^ 1);
-    ExpansionAutoplayPlanner_PollDecision(&decision);
-    gPlannerRuntimeProbe.tokenRejection =
-        gExpansionAutoplayPlannerObservation.rejection;
+    case PLANNER_RUNTIME_WAIT_CHAPTER_TWO:
+        result = ExpansionAutoplayPlanner_PollDecision(&decision);
+        if (result == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED)
+        {
+            sUnit.xPos = decision.xMove;
+            sUnit.yPos = decision.yMove;
+            ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+            sStage = PLANNER_RUNTIME_DONE;
+        }
+        else if (result == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED)
+        {
+            sStage = PLANNER_RUNTIME_DONE;
+        }
+        return;
 
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        1,
-        0,
-        0,
-        0);
-    ExpansionAutoplayPlanner_PollDecision(&decision);
-    action = &gExpansionAutoplayPlannerObservation.actions[0];
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        0,
-        gExpansionAutoplayPlannerObservation.actionStartOrdinal,
-        action->tokenLo,
-        action->tokenHi);
-    ExpansionAutoplayPlanner_PollDecision(&decision);
-    gPlannerRuntimeProbe.acceptedOrdinal =
-        gExpansionAutoplayPlannerObservation.actionStartOrdinal;
+    default:
+        return;
+    }
+}
 
-    ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
-    ExpansionAutoplayPlanner_OnMapReset();
-    gPlaySt.chapterIndex = 2;
-    ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
-    gPlannerRuntimeProbe.checkpointChapter =
-        gExpansionAutoplayPlannerCampaignCheckpoint.chapterIndex;
-    gPlannerRuntimeProbe.checkpointRunId =
-        gExpansionAutoplayPlannerCampaignCheckpoint.runId;
+void PlannerRuntime_Main(void)
+{
+    volatile u16* vcount = (volatile u16*)0x04000006;
 
-    ExpansionAutoplayPlanner_OfferDecision(&decision);
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_CANCEL,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        0,
-        0,
-        0,
-        0);
-    ExpansionAutoplayPlanner_PollDecision(&decision);
-    gPlannerRuntimeProbe.cancelled =
-        gExpansionAutoplayPlannerObservation.state
-        == EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED;
-    gPlannerRuntimeProbe.terminal = 1;
-
+    InitializeRuntime();
     for (;;)
-        ;
+    {
+        while (*vcount >= 160)
+            ;
+        while (*vcount < 160)
+            ;
+        TickRuntime();
+    }
 }

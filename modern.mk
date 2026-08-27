@@ -1050,7 +1050,15 @@ expansion-modern-autoplay-strategies-objects: \
 	@printf 'Modern autoplay strategy objects built (config=%s abi=%s profiles=%s)\n' \
 		'$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(EXPANSION_AUTOPLAY_STRATEGIES)'
 
-.PHONY: expansion-modern-autoplay-planner-objects
+MODERN_AUTOPLAY_PLANNER_ROOT := build/expansion-modern-autoplay-planner
+MODERN_AUTOPLAY_PLANNER_ROM := \
+	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/fireemblem8.gba
+MODERN_AUTOPLAY_PLANNER_ELF := \
+	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/fireemblem8.elf
+CLEAN_DIRS += $(MODERN_AUTOPLAY_PLANNER_ROOT)
+
+.PHONY: expansion-modern-autoplay-planner-objects \
+	expansion-modern-autoplay-planner-profile-rom
 expansion-modern-autoplay-planner-objects: \
 	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_planner.o \
 	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay.o \
@@ -1062,14 +1070,24 @@ expansion-modern-autoplay-planner-objects: \
 	@printf 'Modern local autoplay planner objects built (config=%s abi=%s planner=%s)\n' \
 		'$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(EXPANSION_AUTOPLAY_PLANNER)'
 
+expansion-modern-autoplay-planner-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_PLANNER_ROOT) \
+		EXPANSION_AUTOPLAY_PLANNER=1
+
 .PHONY: expansion-modern-autoplay-planner-check
-expansion-modern-autoplay-planner-check:
+expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profile-rom
 	+$(MAKE) expansion-modern-autoplay-planner-objects \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_AUTOPLAY_PLANNER=1
-	"$(PYTHON)" -m unittest \
+	PLANNER_PRODUCTION_ROM="$(MODERN_AUTOPLAY_PLANNER_ROM)" \
+		PLANNER_PRODUCTION_ELF="$(MODERN_AUTOPLAY_PLANNER_ELF)" \
+		"$(PYTHON)" -m unittest \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_c_mailbox_adapter_accepts_only_typed_token_commit \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_arm_adapter_compiles_at_the_existing_computer_decision_boundary \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_production_mailbox_replays_two_chapters_without_save_or_snapshot
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_production_mailbox_replays_two_chapters \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_transport_rejects_and_times_out \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_enabled_production_rom_executes_host_selected_action
 
 # Issue #5 Batch 1 (mechanics): same reasoning as the units/traps/shops/
 # eventlists synthetic-slot rules above, for the terrainstats table's
@@ -1860,6 +1878,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	-DFE8_EXPANSION_HQ_MIXER=$(EXPANSION_HQ_MIXER) \
 	-DFE8_EXPANSION_AUTOPLAY_STRATEGIES=$(EXPANSION_AUTOPLAY_STRATEGIES) \
 	-DFE8_EXPANSION_AUTOPLAY_PLANNER=$(EXPANSION_AUTOPLAY_PLANNER) \
+	-DFE8_EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID=$(EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID) \
 	-DFE8_EXPANSION_BGM_CONTINUATION_POLICY=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID)
 
   # Internal modern-build provenance discriminator (NOT a user feature flag,

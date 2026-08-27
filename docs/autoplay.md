@@ -887,51 +887,75 @@ Issue [#92](https://github.com/laqieer/fireemblem8-expansion/issues/92)
 provides a default-off, **modern-debug-only** local planner bridge. It builds
 on the one blue `COMPUTER` controller from #85, #86's bounded terminal
 contract, #89's objective telemetry, #90's decision callback seam, and #91's
-provenance/report vocabulary. The bridge is not a new phase router: #90 first
-produces the normal `gAiDecision`, then the bridge retains that decision plus canonical legal reachable
-`MOVE_WAIT` alternatives, bounded at 512 total candidates. The selected
-engine decision is ordinal 0; additional waits are ordered row-major. A valid
-typed commit copies the selected retained decision back to the unchanged
+provenance/report vocabulary. The bridge is not a new phase router. At the
+existing `CpDecide` boundary, a narrow visitor API enumerates every legal
+choice in the declared `MOVE_WAIT`, `COMBAT`, `STAFF`, `USE_ITEM`, `PICK`, and
+`SUMMON` families from the live movement, terrain, fog, unit, item, and
+objective state. Enumeration is row-major, then action-kind/item/target order;
+it neither calls perform nor writes decision, unit, map, target-list, or RNG
+state. If the complete set exceeds 512 entries, the observation fails with
+`RESOURCE_LIMIT` rather than silently truncating. A valid typed commit
+reconstructs the chosen ordinal and returns that `AiDecision` to the unchanged
 `CpPerform` / `ApplyUnitAction` path.
 
 `EXPANSION_AUTOPLAY_PLANNER=1` is valid only with `MODERN_CONFIG=debug`.
 It participates in configuration identity but adds no save field, migration,
 epoch, localization, generated chapter data, or archival behavior. Release
-and archival builds omit its state and hooks. The only exported records are
+and archival builds omit its state and hooks. The separate
+`EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID` build value namespaces the runtime
+scenario contract; the published identity also binds the initialized chapter
+and map dimensions. The only exported records are
 the fixed-width, pointer-free `PlannerObservationV2`, `PlannerCommandV2`, and
 `PlannerCampaignCheckpointV2`; the host may read those symbols and may submit
 only one typed mailbox command. There is no raw-address, arbitrary-memory,
 save, savestate, socket, HTTP, model, or upload API.
 
-The v2 observation is 1,020 bytes and pages 29 pointer-free 32-byte actions,
-within the 1,024-byte page maximum; up to 512 candidates produce at most 18
-pages. It records total/start/page counts, run/observation IDs, semantic
-candidate fields, chapter/turn, RN snapshot and consumption counter, and an
-explicit availability/rejection state. `PAGE` requests retain stable global
-ordinals and tokens. The host never sends coordinates, targets, item IDs,
-`ActionData`, unit pointers, or RNG state: a commit carries only
+The 996-byte v2 observation is a tagged fixed-width page. Page zero contains
+eight semantic fields. Further pages carry up to 224 row-major map cells, 56
+unit records, or 28 pointer-free action records. Map and unit pages expose
+actual bounded runtime terrain, occupancy, visibility, identity, position,
+HP/state, and inventory digests; summary fields expose map dimensions/digest,
+the active unit, objective ID/state/progress, event-flag digest, and
+gold/100-slot-convoy resource digest. Every semantic value or record has an
+explicit `AVAILABLE`, `NOT_APPLICABLE`, `NOT_VISIBLE`, `UNSUPPORTED_RULE`,
+`OUT_OF_RANGE`, or `UNINITIALIZED` state.
+
+The host obtains all pages only by sending typed `PAGE` commands with a fixed
+`page_index`; there is no in-process action-list shortcut. Up to 512 actions
+use at most 19 action pages. Global ordinals and the two token words returned
+by ROM are opaque to host planners and are echoed unchanged. The host never
+sends coordinates, targets, item IDs, `ActionData`, unit pointers, or RNG
+state: a commit carries only
 `{run_id, observation_id, ordinal, token}`. Stale pages, unknown commands,
 duplicate START, forged tokens, unsupported actions, cancellation, and
 resource overflow produce typed rejection and do not execute an action.
-The ROM does not retain 512 `AiDecision` structs. It stores only the selected
-engine decision and candidate count, freezes normal AI while waiting, and
-reconstructs legal row-major waits deterministically for each page and commit.
-Thus ordinals and tokens stay stable without exceeding the 4 KiB state ceiling.
+The ROM does not retain a candidate array. It retains only compact count,
+deadline, run, and trace state, freezes normal AI while waiting, and invokes
+the pure enumerator for each action page and commit. Native adversarial tests
+digest decision, unit, map, and RNG state before/after enumeration and also
+prove candidate uniqueness and repeatable ordering.
+Each run is capped at 4,096 accepted commits. Host traces are capped at 2 MiB,
+and a prospective observation or commit is sized before any trace, ID, or
+mailbox state changes. The bounded-search reference accepts at most 512 nodes
+and enforces the 64 MiB host-search ceiling.
 
 START carries expected fixed-width ROM, configuration, scenario, and seed
 identities. READY/WAITING observations publish the actual runtime identities
-derived from the loaded ROM title/game-code header bytes, immutable config
-fingerprint, protocol scenario ID, and RN state. Mismatch rejects before
-computer control activation.
+derived from immutable build provenance plus ROM header, configuration
+fingerprint, scenario namespace plus initialized chapter/map, and all three RN
+words plus LCG state. READY is published only after map, fog/weather RNG, and
+map-display initialization; a command prepared from an earlier identity
+rejects before computer control activation.
 
-The initial action subset is the existing normal-path `MOVE_WAIT`, `COMBAT`,
-`STAFF`, `USE_ITEM`, `PICK`, and `SUMMON` family where the #85 support audit
-allows it. Other action families are unavailable, never silently lowered to a
-raw engine call. Cancellation is observed only at a decision safe point; it never interrupts a
-battle, event, movement, or Proc halfway through. Once an observation is
-published, `CpDecide` moves to a dedicated mailbox-poll state. Waiting frames
-never rerun AI, clear `gAiDecision`, consume RN state, or replace the published
-action; accepted commits alone rejoin the normal perform state.
+Other action families remain unavailable and are never silently lowered to a
+raw engine call. A zero-candidate enumeration reports
+`EXHAUSTED/CAPABILITY_UNAVAILABLE` before entering `WAITING`. Cancellation is
+observed only at a decision safe point; it never interrupts a battle, event,
+movement, or Proc halfway through. Once an observation is published,
+`CpDecide` moves to a dedicated mailbox-poll state. Every poll advances the
+single 300-frame deadline, including valid `PAGE` and malformed traffic, while
+never rerunning AI, consuming RN, or advancing a unit. Accepted commits alone
+rejoin the normal perform state.
 
 Replay begins from a fresh emulator and a blank in-memory SRAM image. It
 replays the complete chapter-one action prefix through normal game control,
@@ -939,24 +963,27 @@ records a semantic chapter-two checkpoint (chapter/turn/RN/trace digest), and
 continues the same live emulator. Branching replays a clean prefix; it never
 loads a save fixture or savestate. `rng.c` remains the authority: the bridge
 only snapshots its public RN state and read-only consumption counter.
-Ordinary `StartBattleMap` transitions clear transient pages/commands but
-preserve and re-arm an active run plus its campaign checkpoint. Explicit
-full-run reset and CANCEL remain the destructive boundaries.
+The checkpoint digest includes the complete bounded 100-slot convoy in
+addition to roster, held items, gold, flags, RNG, and accepted-token state.
+Only the `MNCH` and `MNC2` event paths use transition teardown, preserving and
+re-arming an active run and checkpoint. Other map exits, restart, suspend
+load, new game, full reset, and CANCEL remain destructive boundaries.
 
 `TC-AUTOPLAY-PLANNER-001` proves both a scripted chooser and a bounded search
 chooser consume the same page/token contract, reject negative commands, and
-produce deterministic two-chapter semantic traces. The exact libmGBA fixture
-links the production planner implementation, submits START/PAGE/COMMIT/CANCEL
-and malformed commands through its typed mailbox, and observes production
-records plus a same-run chapter-two checkpoint. It exercises no arbitrary
-memory write and has no committed artifact. This is interface/replay evidence only,
-not evidence of human-like play, optimality, balance, or universal campaign
-viability.
+produce deterministic two-chapter semantic traces. A separately compiled
+libmGBA adapter is bound to the exact linked observation, command, and
+checkpoint symbols and accepts only `READ`, `START`, `PAGE`, `COMMIT`,
+`CANCEL`, malformed-kind, single-frame `STEP`, and bounded key-input `RUN`
+records over stdin/stdout. Both
+Python planners drive the production-linked ROM through that adapter; the ROM
+does not self-write commands. The integration covers all semantic/action
+pages, opaque-token acceptance and rejection, same-ROM/config/seed scenario
+mismatch, malformed traffic timeout, cancellation, and same-run chapter-two
+checkpoint continuation.
 
-The enabled ARM object uses 3,971 bytes of text/rodata and 1,164 bytes of total
-static planner RAM: 1,144 bytes in `ewram_data` (1,020-byte observation,
-64-byte command, 48-byte semantic checkpoint, and 11-byte selected decision
-plus alignment) and 20 bytes of packed private BSS state. This is 5,620 bytes
-below the rejected full-candidate-array design and 956 bytes above the original
-single-candidate contract, while remaining well below the frozen 4 KiB
-ceiling. Disabled release and archival builds omit all planner state.
+The enabled ARM planner object uses 996-byte pages, 1,136 bytes of
+EWRAM/BSS, zero IWRAM, and 8,421 bytes of text/rodata. The planner-specific RNG
+counter and cancellation latch add five EWRAM bytes and no IWRAM, keeping total
+planner state at 1,141 bytes (2,955 bytes below 4 KiB) and planner code 3,867
+bytes below 12 KiB. Disabled release and archival builds omit planner state.

@@ -2462,13 +2462,14 @@
       "anchor": "tc-autoplay-planner-001-local-external-planner-step-and-replay-contract",
       "profiles": [
         "Modern AAPCS debug with EXPANSION_AUTOPLAY_PLANNER=1",
-        "Clean-boot production-linked two-chapter libmGBA mailbox fixture"
+        "Clean-boot production-linked two-chapter ROM with fixed-symbol stdin/stdout libmGBA transport",
+        "Enabled full expansion debug ROM driven through the same restricted transport"
       ],
-      "purpose": "Prove fixed-width START provenance, the typed local mailbox, 512-candidate paged pointer-free observations, latency-invariant legal token commit/rejection, two-chapter semantic replay, and replaceable scripted/search planners.",
+      "purpose": "Prove fixed-width START provenance, typed summary/map/unit/action pages, complete non-mutating 512-candidate legal-action enumeration, opaque token commit/rejection, bounded polling, two-chapter semantic replay, and replaceable scripted/search planners.",
       "prerequisites": "Repository root with Python 3, host C compiler, ARM toolchain, libmGBA development files, exact debug provenance, and blank in-memory SRAM; no save fixture, savestate, or network.",
-      "actions": "Run PlannerBridgeTests, make expansion-modern-autoplay-planner-check, the production-mailbox PlannerLibmGBAIntegrationTests selector, and configure/bare-make debug-lane checks.",
-      "expected_result": "Scripted and bounded-search planners use the same v2 token/page protocol; production C reconstructs up to 512 stable legal candidates on demand without a full candidate array or rerunning AI, remains within 1,164 static RAM bytes, accepts ordinal 511 through the existing executor seam, preserves a semantic checkpoint through chapter two, and the production-linked ROM replays deterministically.",
-      "negative_control": "Stale pages/observations, unknown ordinals/kinds, duplicate START, forged tokens, unavailable actions, cancellation, mismatched fixed-width provenance, and over-budget requests fail explicitly; mailbox exposes no arbitrary-memory write surface; release rejects the gate.",
+      "actions": "Run PlannerBridgeTests, both host-driven PlannerLibmGBAIntegrationTests, make expansion-modern-autoplay-planner-check, then configure --enable-autoplay-planner and run bare make plus the explicit release-negative command.",
+      "expected_result": "Both planners traverse the same v2 PAGE protocol and echo ROM token words unchanged; production C enumerates up to 512 unique legal actions without retaining an array or mutating decision/unit/map/RNG state, publishes actual bounded semantic records, remains below 4 KiB EWRAM with zero IWRAM and below 12 KiB ROM, accepts through the existing executor seam in the full expansion ROM, and preserves a convoy-sensitive checkpoint through chapter two.",
+      "negative_control": "Stale pages/observations, unknown ordinals/kinds, zero candidates, duplicate START, forged tokens, same-ROM/config/seed scenario mismatch, non-idle timeout traffic, cancellation, malformed commands, and over-budget requests fail explicitly and atomically; only MNCH/MNC2 preserve the campaign; the adapter exposes no arbitrary-memory command; explicit release rejects the gate.",
       "interactions": "Hard stack parents are #85, #86, #89, #90, and #91; #87 is unrelated and #88 is optional. The bridge adds no second router or policy model.",
       "save_compatibility": "Fresh in-memory SRAM only; no save field, loaded save fixture, savestate, migration, preference, or compatibility-epoch change.",
       "cleanup": "The generated fixture is removed under ignored build/test-artifacts.",
@@ -2479,7 +2480,7 @@
           "evidence": "tools/gba-playtest/tests/test_autoplay_planner.py"
         },
         {
-          "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_production_mailbox_replays_two_chapters_without_save_or_snapshot -v",
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests -v",
           "evidence": "tools/gba-playtest/tests/test_autoplay_planner.py"
         },
         {

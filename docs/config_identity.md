@@ -71,6 +71,12 @@ Every value has a `?=` default, so an explicit `./configure` option, `make`
 command-line override (e.g.
 `make expansion-modern-rom EXPANSION_ROM_TITLE=MYHACK`), or environment value
 changes the built ROM's identity without editing the file.
+`EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID` is a separate 32-bit planner
+scenario/build-contract namespace (default `0x00009201`), combined at runtime
+with the initialized chapter and map dimensions. It is reported and validated
+independently of the configuration fingerprint so a host cannot replay a
+command prepared for another scenario that happens to use the same
+ROM/configuration/seed.
 `config.mk` deliberately does **not** duplicate `MODERN_CONFIG`,
 `MODERN_ABI`, `MODERN_ROM_SIZE`, or `MODERN_TEXT_SHIFT` -- those remain
 owned by `modern.mk`, which already had working presets for them before

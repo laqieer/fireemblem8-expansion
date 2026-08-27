@@ -27,7 +27,7 @@ static u32 EXPANSION_AUTOPLAY_IWRAM_DATA sExpansionBlueControl =
     EXPANSION_BLUE_CONTROL_PLAYER;
 #if (FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG) \
     || FE8_AUTOPLAY_PLANNER_RESTORE_TEST
-static bool EXPANSION_AUTOPLAY_IWRAM_DATA sPlannerRestorePlayerControl;
+EWRAM_DATA static bool sPlannerRestorePlayerControl;
 #endif
 struct ExpansionAutoplayTelemetry EXPANSION_AUTOPLAY_IWRAM_DATA
     gExpansionAutoplayTelemetry = { 0 };
@@ -86,7 +86,8 @@ static void ResetAutoplayState(bool preservePlannerCampaign)
 #if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
     ExpansionAutoplayStrategies_ResetPendingActivation();
 #endif
-#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#if (FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG) \
+    || FE8_AUTOPLAY_PLANNER_RESTORE_TEST
     if (preservePlannerCampaign)
         ExpansionAutoplayPlanner_OnMapReset();
     else
@@ -226,6 +227,7 @@ void ExpansionAutoplay_OnPlayerPhaseStart(void)
         gExpansionAutoplayTelemetry.state = EXPANSION_AUTOPLAY_STATE_PLAYER_PHASE;
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
     ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+    ExpansionAutoplayPlanner_OnMapReady();
 #endif
 }
 

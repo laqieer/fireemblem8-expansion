@@ -198,3 +198,8 @@ EXPANSION_AUTOPLAY_STRATEGIES ?= 0
 # release and archival builds reject or compile out the bridge. This changes
 # configuration identity but has no save data, migration, or network surface.
 EXPANSION_AUTOPLAY_PLANNER ?= 0
+
+# Scenario/build contract namespace used by the planner START provenance.
+# Downstream planner scenarios may override this stable 32-bit value; the
+# runtime also binds the current chapter and map dimensions.
+EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID ?= 0x00009201

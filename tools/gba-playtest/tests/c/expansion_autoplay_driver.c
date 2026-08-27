@@ -26,6 +26,20 @@
 struct PlaySt gPlaySt;
 static int sPendingActivationResetCount;
 static int sPendingActivationApplyCount;
+#if FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+static int sPlannerDestructiveResetCount;
+static int sPlannerTransitionResetCount;
+
+void ExpansionAutoplayPlanner_Reset(void)
+{
+    sPlannerDestructiveResetCount++;
+}
+
+void ExpansionAutoplayPlanner_OnMapReset(void)
+{
+    sPlannerTransitionResetCount++;
+}
+#endif
 
 void ExpansionAutoplayStrategies_ResetPendingActivation(void)
 {
@@ -73,6 +87,10 @@ static int TestControllerAndLifecycle(void)
         byte[i] = 0xA5;
     sPendingActivationResetCount = 0;
     sPendingActivationApplyCount = 0;
+#if FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+    sPlannerDestructiveResetCount = 0;
+    sPlannerTransitionResetCount = 0;
+#endif
     ExpansionAutoplay_Reset();
     telemetry = ExpansionAutoplay_GetTelemetry();
 
@@ -88,6 +106,15 @@ static int TestControllerAndLifecycle(void)
           "reset must clear committed actions");
     CHECK(sPendingActivationResetCount == 1,
           "autoplay reset must clear pending strategy activation");
+#if FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+    CHECK(sPlannerDestructiveResetCount == 1
+              && sPlannerTransitionResetCount == 0,
+          "ordinary reset must destructively clear the planner campaign");
+    ExpansionAutoplay_ResetForChapterTransition();
+    CHECK(sPlannerDestructiveResetCount == 1
+              && sPlannerTransitionResetCount == 1,
+          "chapter transition reset must preserve the planner campaign");
+#endif
 
     CHECK(ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER)
               == EXPANSION_AUTOPLAY_OK,

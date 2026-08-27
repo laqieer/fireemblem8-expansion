@@ -1,16 +1,24 @@
 #include "global.h"
 
 #include "bm.h"
+#include "bmcontainer.h"
+#include "bmitem.h"
+#include "bmitemuse.h"
 #include "bmmap.h"
+#include "bmphase.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "eventinfo.h"
 #include "rng.h"
 
-#include "expansion_config.h"
+#include "constants/items.h"
+#include "constants/terrains.h"
+
 #include "expansion_autoplay.h"
 #include "expansion_autoplay_internal.h"
 #include "expansion_autoplay_planner.h"
+#include "expansion_chapter_objectives.h"
+#include "expansion_config.h"
 
 typedef char ExpansionAutoplayPlannerObservationSizeCheck[
     sizeof(struct ExpansionAutoplayPlannerObservationV2)
@@ -19,6 +27,10 @@ typedef char ExpansionAutoplayPlannerCommandSizeCheck[
     sizeof(struct ExpansionAutoplayPlannerCommandV2) == 64 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerPointerFreeActionCheck[
     sizeof(struct ExpansionAutoplayPlannerActionV2) == 32 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerPointerFreeSemanticCheck[
+    sizeof(struct ExpansionAutoplayPlannerSemanticFieldV2) == 8 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerPointerFreeUnitCheck[
+    sizeof(struct ExpansionAutoplayPlannerUnitV2) == 16 ? 1 : -1];
 
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
 
@@ -28,47 +40,46 @@ volatile struct ExpansionAutoplayPlannerCommandV2 EWRAM_DATA
     gExpansionAutoplayPlannerCommand = { 0 };
 struct ExpansionAutoplayPlannerCampaignCheckpointV2 EWRAM_DATA
     gExpansionAutoplayPlannerCampaignCheckpoint = { 0 };
-EWRAM_DATA static struct AiDecision sPlannerSelectedDecision;
 
 static bool sPlannerActive;
 static u32 sPlannerRunId;
 static u32 sPlannerNextObservationId;
 static u32 sPlannerTraceDigest;
+static u32 sPlannerCommitCount;
 static u32 sPlannerCandidateState;
+static u32 sPlannerCandidateDigest;
 
 enum
 {
     PLANNER_CANDIDATE_COUNT_MASK = 0x3FF,
-    PLANNER_CANDIDATE_SELECTED = 1 << 10,
     PLANNER_WAIT_FRAMES_SHIFT = 16,
+    PLANNER_FLAG_BYTE_CAPACITY = 0x100,
 };
 
-static u32 CandidateCount(void)
-{
-    return sPlannerCandidateState & PLANNER_CANDIDATE_COUNT_MASK;
-}
+#define PLANNER_PUBLISH_BARRIER() __asm__ volatile("" ::: "memory")
 
-static bool HasSelectedDecision(void)
+struct PlannerEnumeration
 {
-    return (sPlannerCandidateState & PLANNER_CANDIDATE_SELECTED) != 0;
-}
+    ExpansionAutoplayPlannerActionVisitor visitor;
+    void* context;
+    u32 count;
+    bool stopped;
+};
 
-static u32 WaitFrames(void)
+struct PlannerCandidateLookup
 {
-    return sPlannerCandidateState >> PLANNER_WAIT_FRAMES_SHIFT;
-}
+    u32 requested;
+    struct AiDecision* output;
+    bool found;
+};
 
-static void SetCandidateState(u32 count, bool hasSelected, u32 waitFrames)
+struct PlannerPageCollector
 {
-    sPlannerCandidateState = count
-        | (hasSelected ? PLANNER_CANDIDATE_SELECTED : 0)
-        | (waitFrames << PLANNER_WAIT_FRAMES_SHIFT);
-}
+    u32 start;
+    u32 count;
+};
 
-static void ClearCommand(void)
-{
-    gExpansionAutoplayPlannerCommand.kind = EXPANSION_AUTOPLAY_PLANNER_COMMAND_NONE;
-}
+s8 CanUnitCrossTerrain(struct Unit* unit, int terrain);
 
 static u32 MixDigest(u32 digest, u32 value)
 {
@@ -82,6 +93,26 @@ static u32 HashText(const char* text)
     while (*text != '\0')
         digest = MixDigest(digest, (u8)*text++);
     return digest;
+}
+
+static u32 CandidateCount(void)
+{
+    return sPlannerCandidateState & PLANNER_CANDIDATE_COUNT_MASK;
+}
+
+static u32 WaitFrames(void)
+{
+    return sPlannerCandidateState >> PLANNER_WAIT_FRAMES_SHIFT;
+}
+
+static void SetCandidateState(u32 count, u32 waitFrames)
+{
+    sPlannerCandidateState = count | (waitFrames << PLANNER_WAIT_FRAMES_SHIFT);
+}
+
+static void ClearCommand(void)
+{
+    gExpansionAutoplayPlannerCommand.kind = EXPANSION_AUTOPLAY_PLANNER_COMMAND_NONE;
 }
 
 static u32 ActualRomIdentity(void)
@@ -102,6 +133,19 @@ static u32 ActualRomIdentity(void)
 static u32 ActualConfigIdentity(void)
 {
     return HashText(FE8_EXPANSION_CONFIG_FINGERPRINT);
+}
+
+static u32 ActualScenarioIdentity(void)
+{
+    u32 digest = MixDigest(
+        2166136261u,
+        FE8_EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID);
+
+    digest = MixDigest(digest, (u8)gPlaySt.chapterIndex);
+    digest = MixDigest(
+        digest,
+        (u16)gBmMapSize.x | ((u32)(u16)gBmMapSize.y << 16));
+    return digest;
 }
 
 static u32 ActualSeedIdentity(void)
@@ -127,7 +171,9 @@ static u32 MakeTokenLo(
     digest = MixDigest(digest, observationId);
     digest = MixDigest(digest, ordinal);
     digest = MixDigest(digest, decision->unitId);
-    digest = MixDigest(digest, (u32)(u16)decision->xMove | ((u32)(u16)decision->yMove << 16));
+    digest = MixDigest(
+        digest,
+        (u32)(u16)decision->xMove | ((u32)(u16)decision->yMove << 16));
     digest = MixDigest(digest, decision->actionId);
     digest = MixDigest(digest, decision->targetId | ((u32)decision->itemSlot << 8));
     digest = MixDigest(digest, decision->xTarget | ((u32)decision->yTarget << 8));
@@ -183,209 +229,1277 @@ static void Reject(enum ExpansionAutoplayPlannerRejection rejection)
     ClearCommand();
 }
 
-static void PublishReadyState(void)
+static void ClearObservation(void)
 {
-    gExpansionAutoplayPlannerObservation.magic = EXPANSION_AUTOPLAY_PLANNER_MAGIC;
-    gExpansionAutoplayPlannerObservation.version = EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION;
-    gExpansionAutoplayPlannerObservation.byteSize =
-        sizeof(struct ExpansionAutoplayPlannerObservationV2);
-    gExpansionAutoplayPlannerObservation.runId = sPlannerRunId;
-    gExpansionAutoplayPlannerObservation.state = EXPANSION_AUTOPLAY_PLANNER_STATE_READY;
-    gExpansionAutoplayPlannerObservation.actualRomIdentity = ActualRomIdentity();
-    gExpansionAutoplayPlannerObservation.actualConfigIdentity = ActualConfigIdentity();
-    gExpansionAutoplayPlannerObservation.actualScenarioIdentity =
-        EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID;
-    gExpansionAutoplayPlannerObservation.actualSeedIdentity = ActualSeedIdentity();
-}
-
-static void ClearPublishedActions(void)
-{
-    u8* bytes = (u8*)gExpansionAutoplayPlannerObservation.actions;
+    u8* bytes = (u8*)&gExpansionAutoplayPlannerObservation;
     int index;
 
-    for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerObservation.actions); index++)
+    for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerObservation); index++)
         bytes[index] = 0;
 }
 
-static bool DecisionsEqual(
-    const struct AiDecision* left,
-    const struct AiDecision* right)
+static void ClearCheckpoint(void)
 {
-    return left->unitId == right->unitId
-        && left->xMove == right->xMove
-        && left->yMove == right->yMove
-        && left->actionId == right->actionId
-        && left->targetId == right->targetId
-        && left->itemSlot == right->itemSlot
-        && left->xTarget == right->xTarget
-        && left->yTarget == right->yTarget;
+    u8* bytes = (u8*)&gExpansionAutoplayPlannerCampaignCheckpoint;
+    int index;
+
+    for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerCampaignCheckpoint); index++)
+        bytes[index] = 0;
 }
 
-static bool IsLegalWaitDestination(int x, int y)
+static void ClearFullCommand(void)
 {
-    return gBmMapMovement != NULL
+    u8* bytes = (u8*)&gExpansionAutoplayPlannerCommand;
+    int index;
+
+    for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerCommand); index++)
+        bytes[index] = 0;
+}
+
+static bool IsMapReady(void)
+{
+    return gBmMapSize.x > 0
+        && gBmMapSize.y > 0
+        && gBmMapSize.x <= 64
+        && gBmMapSize.y <= 64
+        && gBmMapSize.x * gBmMapSize.y
+            <= EXPANSION_AUTOPLAY_PLANNER_MAP_CELL_CAPACITY
+        && gBmMapMovement != NULL
         && gBmMapUnit != NULL
-        && gBmMapMovement[y][x] <= MAP_MOVEMENT_MAX
-        && (gBmMapUnit[y][x] == 0 || gBmMapUnit[y][x] == gActiveUnitId)
-        && (gActiveUnit == NULL
-            || x != gActiveUnit->xPos
-            || y != gActiveUnit->yPos);
+        && gBmMapTerrain != NULL;
 }
 
-static void MakeWaitCandidate(int x, int y, struct AiDecision* candidate)
+static bool IsPositionVisible(int x, int y)
 {
-    *candidate = sPlannerSelectedDecision;
-    candidate->actionPerformed = true;
-    candidate->unitId = gActiveUnitId;
-    candidate->xMove = x;
-    candidate->yMove = y;
-    candidate->actionId = AI_ACTION_NONE;
-    candidate->targetId = 0;
-    candidate->itemSlot = 0;
-    candidate->xTarget = 0;
-    candidate->yTarget = 0;
+    return gPlaySt.chapterVisionRange == 0
+        || gBmMapFog == NULL
+        || gBmMapFog[y][x] != 0;
 }
 
-static bool GetCandidate(u32 ordinal, struct AiDecision* candidate)
+static bool IsReachableDestination(int x, int y)
 {
-    u32 current = HasSelectedDecision() ? 1 : 0;
-    int x;
-    int y;
+    if (!IsMapReady())
+        return false;
+    if (gBmMapMovement[y][x] > MAP_MOVEMENT_MAX)
+        return false;
+    if (gBmMapUnit[y][x] != 0 && gBmMapUnit[y][x] != gActiveUnitId)
+        return false;
+    return true;
+}
 
-    if (HasSelectedDecision() && ordinal == 0)
+static bool IsVisibleValidUnit(const struct Unit* unit)
+{
+    if (!UNIT_IS_VALID(unit))
+        return false;
+    if (unit->state & (US_HIDDEN | US_DEAD | US_RESCUED | US_BIT16))
+        return false;
+    if (unit->xPos < 0 || unit->xPos >= gBmMapSize.x
+        || unit->yPos < 0 || unit->yPos >= gBmMapSize.y)
+        return false;
+    if (!AreUnitsAllied(gActiveUnitId, unit->index)
+        && !IsPositionVisible(unit->xPos, unit->yPos))
+        return false;
+    return true;
+}
+
+static bool IsCanonicalUnitSlot(int unitId)
+{
+    return (unitId >= 1 && unitId <= 0x3E)
+        || (unitId >= 0x41 && unitId <= 0x54)
+        || (unitId >= 0x81 && unitId <= 0xB2);
+}
+
+static int RectDistance(int xA, int yA, int xB, int yB)
+{
+    return ABS(xA - xB) + ABS(yA - yB);
+}
+
+static void MakeDecision(
+    struct AiDecision* decision,
+    int xMove,
+    int yMove,
+    u8 actionId,
+    u8 targetId,
+    u8 itemSlot,
+    u8 xTarget,
+    u8 yTarget)
+{
+    decision->actionId = actionId;
+    decision->unitId = gActiveUnitId;
+    decision->xMove = xMove;
+    decision->yMove = yMove;
+    decision->unk04 = 0;
+    decision->unk05 = 0;
+    decision->targetId = targetId;
+    decision->itemSlot = itemSlot;
+    decision->xTarget = xTarget;
+    decision->yTarget = yTarget;
+    decision->actionPerformed = true;
+}
+
+static enum ExpansionAutoplayPlannerEnumerationResult EmitDecision(
+    struct PlannerEnumeration* enumeration,
+    const struct AiDecision* decision)
+{
+    if (enumeration->count >= EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY)
+        return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_CAPACITY;
+
+    if (enumeration->visitor != NULL
+        && !enumeration->visitor(
+            enumeration->count,
+            decision,
+            enumeration->context))
     {
-        *candidate = sPlannerSelectedDecision;
-        return true;
+        enumeration->stopped = true;
+    }
+    enumeration->count++;
+    return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+}
+
+static bool IsCombatTargetLegal(
+    const struct Unit* target,
+    int xMove,
+    int yMove,
+    int item)
+{
+    int distance;
+
+    if (!IsVisibleValidUnit(target)
+        || AreUnitsAllied(gActiveUnitId, target->index))
+        return false;
+
+    distance = RectDistance(xMove, yMove, target->xPos, target->yPos);
+    return distance >= GetItemMinRange(item)
+        && distance <= GetItemMaxRange(item);
+}
+
+static int StaffRange(int item)
+{
+    int range = GetItemMaxRange(item);
+
+    if (range == 0)
+        return GetUnitMagBy2Range(gActiveUnit);
+    return range;
+}
+
+static bool IsStaffTargetLegal(
+    int item,
+    const struct Unit* target,
+    int xMove,
+    int yMove)
+{
+    int itemId = GetItemIndex(item);
+    int distance;
+    bool allied;
+
+    if (!IsVisibleValidUnit(target) || target == gActiveUnit)
+        return false;
+    distance = RectDistance(xMove, yMove, target->xPos, target->yPos);
+    if (distance < GetItemMinRange(item) || distance > StaffRange(item))
+        return false;
+    allied = AreUnitsAllied(gActiveUnitId, target->index);
+
+    switch (itemId)
+    {
+    case ITEM_STAFF_HEAL:
+    case ITEM_STAFF_MEND:
+    case ITEM_STAFF_RECOVER:
+    case ITEM_STAFF_PHYSIC:
+        return allied && target->curHP < target->maxHP;
+
+    case ITEM_STAFF_RESTORE:
+        return allied && target->statusIndex != UNIT_STATUS_NONE;
+
+    case ITEM_STAFF_RESCUE:
+    case ITEM_STAFF_WARP:
+        return allied;
+
+    case ITEM_STAFF_REPAIR:
+    {
+        int slot;
+
+        if (!allied)
+            return false;
+        for (slot = 0; slot < UNIT_ITEM_COUNT; slot++)
+            if (IsItemHammernable(target->items[slot]))
+                return true;
+        return false;
     }
 
-    for (y = 0; y < gBmMapSize.y; y++)
-    {
-        for (x = 0; x < gBmMapSize.x; x++)
-        {
-            struct AiDecision wait;
+    case ITEM_STAFF_BARRIER:
+        return allied && target->barrierDuration < 7;
 
-            if (!IsLegalWaitDestination(x, y))
+    case ITEM_STAFF_SILENCE:
+        return !allied
+            && (target->statusIndex == UNIT_STATUS_NONE
+                || target->statusIndex == UNIT_STATUS_SILENCED);
+
+    case ITEM_STAFF_SLEEP:
+        return !allied
+            && (target->statusIndex == UNIT_STATUS_NONE
+                || target->statusIndex == UNIT_STATUS_SLEEP);
+
+    case ITEM_STAFF_BERSERK:
+        return !allied
+            && (target->statusIndex == UNIT_STATUS_NONE
+                || target->statusIndex == UNIT_STATUS_BERSERK);
+
+    default:
+        return false;
+    }
+}
+
+static bool HasGlobalStaffTarget(int item)
+{
+    int itemId = GetItemIndex(item);
+    int unitId;
+
+    if (itemId == ITEM_STAFF_TORCH)
+        return gPlaySt.chapterVisionRange != 0;
+
+    if (itemId != ITEM_STAFF_FORTIFY && itemId != ITEM_STAFF_LATONA)
+        return false;
+
+    for (unitId = 1; unitId < 0xC0; unitId++)
+    {
+        struct Unit* target = GetUnit(unitId);
+
+        if (!IsCanonicalUnitSlot(unitId)
+            || !IsVisibleValidUnit(target)
+            || !AreUnitsAllied(gActiveUnitId, target->index))
+            continue;
+        if (target->curHP < target->maxHP
+            || (itemId == ITEM_STAFF_LATONA
+                && target->statusIndex != UNIT_STATUS_NONE))
+            return true;
+    }
+    return false;
+}
+
+static bool IsSelfUseItemLegal(int item)
+{
+    switch (GetItemIndex(item))
+    {
+    case ITEM_VULNERARY:
+    case ITEM_ELIXIR:
+    case ITEM_VULNERARY_2:
+        return CanUnitUseHealItem(gActiveUnit);
+
+    case ITEM_PUREWATER:
+        return CanUnitUsePureWaterItem(gActiveUnit);
+
+    case ITEM_TORCH:
+        return CanUnitUseTorchItem(gActiveUnit);
+
+    case ITEM_ANTITOXIN:
+        return CanUnitUseAntitoxinItem(gActiveUnit);
+
+    case ITEM_BOOSTER_HP:
+    case ITEM_BOOSTER_POW:
+    case ITEM_BOOSTER_SKL:
+    case ITEM_BOOSTER_SPD:
+    case ITEM_BOOSTER_LCK:
+    case ITEM_BOOSTER_DEF:
+    case ITEM_BOOSTER_RES:
+    case ITEM_BOOSTER_MOV:
+    case ITEM_BOOSTER_CON:
+        return CanUnitUseStatGainItem(gActiveUnit, item);
+
+    case ITEM_HEROCREST:
+    case ITEM_KNIGHTCREST:
+    case ITEM_ORIONSBOLT:
+    case ITEM_ELYSIANWHIP:
+    case ITEM_GUIDINGRING:
+    case ITEM_MASTERSEAL:
+    case ITEM_HEAVENSEAL:
+    case ITEM_OCEANSEAL:
+    case ITEM_LUNARBRACE:
+    case ITEM_SOLARBRACE:
+    case ITEM_UNK_C1:
+        return CanUnitUsePromotionItem(gActiveUnit, item);
+
+    case ITEM_METISSTOME:
+        return !(gActiveUnit->state & US_GROWTH_BOOST);
+
+    case ITEM_JUNAFRUIT:
+        return CanUnitUseFruitItem(gActiveUnit);
+
+    default:
+        return false;
+    }
+}
+
+static enum ExpansionAutoplayPlannerEnumerationResult EnumerateWait(
+    struct PlannerEnumeration* enumeration,
+    int xMove,
+    int yMove)
+{
+    struct AiDecision decision;
+
+    if (xMove == gActiveUnit->xPos && yMove == gActiveUnit->yPos)
+        return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+    MakeDecision(
+        &decision,
+        xMove,
+        yMove,
+        AI_ACTION_NONE,
+        0,
+        0,
+        0,
+        0);
+    return EmitDecision(enumeration, &decision);
+}
+
+static enum ExpansionAutoplayPlannerEnumerationResult EnumerateCombat(
+    struct PlannerEnumeration* enumeration,
+    int xMove,
+    int yMove)
+{
+    int itemSlot;
+    int targetId;
+
+    for (itemSlot = 0; itemSlot < UNIT_ITEM_COUNT; itemSlot++)
+    {
+        int item = gActiveUnit->items[itemSlot];
+
+        if (item == 0)
+            break;
+        if (!CanUnitUseWeapon(gActiveUnit, item))
+            continue;
+        if ((GetItemAttributes(item) & IA_MAGIC)
+            && IsPositionMagicSealed(xMove, yMove))
+            continue;
+
+        for (targetId = 1; targetId < 0xC0; targetId++)
+        {
+            struct Unit* target = GetUnit(targetId);
+            struct AiDecision decision;
+            enum ExpansionAutoplayPlannerEnumerationResult result;
+
+            if (!IsCanonicalUnitSlot(targetId)
+                || !IsCombatTargetLegal(target, xMove, yMove, item))
                 continue;
-            MakeWaitCandidate(x, y, &wait);
-            if (DecisionsEqual(&wait, &sPlannerSelectedDecision))
+            MakeDecision(
+                &decision,
+                xMove,
+                yMove,
+                AI_ACTION_COMBAT,
+                target->index,
+                itemSlot,
+                0,
+                0);
+            result = EmitDecision(enumeration, &decision);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration->stopped)
+                return result;
+        }
+    }
+    return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+}
+
+static enum ExpansionAutoplayPlannerEnumerationResult EnumerateWarpDestinations(
+    struct PlannerEnumeration* enumeration,
+    int xMove,
+    int yMove,
+    int itemSlot,
+    struct Unit* target)
+{
+    int range = GetUnitMagBy2Range(gActiveUnit);
+    int yTarget;
+    int xTarget;
+
+    for (yTarget = 0; yTarget < gBmMapSize.y; yTarget++)
+    {
+        for (xTarget = 0; xTarget < gBmMapSize.x; xTarget++)
+        {
+            struct AiDecision decision;
+            enum ExpansionAutoplayPlannerEnumerationResult result;
+
+            if (RectDistance(target->xPos, target->yPos, xTarget, yTarget) > range
+                || gBmMapUnit[yTarget][xTarget] != 0
+                || !CanUnitCrossTerrain(target, gBmMapTerrain[yTarget][xTarget])
+                || !IsPositionVisible(xTarget, yTarget))
                 continue;
-            if (current++ == ordinal)
+            MakeDecision(
+                &decision,
+                xMove,
+                yMove,
+                AI_ACTION_STAFF,
+                target->index,
+                itemSlot,
+                xTarget,
+                yTarget);
+            result = EmitDecision(enumeration, &decision);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration->stopped)
+                return result;
+        }
+    }
+    return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+}
+
+static enum ExpansionAutoplayPlannerEnumerationResult EnumerateUnlockTargets(
+    struct PlannerEnumeration* enumeration,
+    int xMove,
+    int yMove,
+    int itemSlot,
+    int item)
+{
+    int yTarget;
+    int xTarget;
+
+    for (yTarget = 0; yTarget < gBmMapSize.y; yTarget++)
+    {
+        for (xTarget = 0; xTarget < gBmMapSize.x; xTarget++)
+        {
+            struct AiDecision decision;
+            enum ExpansionAutoplayPlannerEnumerationResult result;
+            int distance = RectDistance(xMove, yMove, xTarget, yTarget);
+
+            if (distance < GetItemMinRange(item)
+                || distance > StaffRange(item)
+                || gBmMapTerrain[yTarget][xTarget] != TERRAIN_DOOR
+                || !IsThereClosedDoorAt(xTarget, yTarget))
+                continue;
+            MakeDecision(
+                &decision,
+                xMove,
+                yMove,
+                AI_ACTION_STAFF,
+                0,
+                itemSlot,
+                xTarget,
+                yTarget);
+            result = EmitDecision(enumeration, &decision);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration->stopped)
+                return result;
+        }
+    }
+    return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+}
+
+static enum ExpansionAutoplayPlannerEnumerationResult EnumerateStaff(
+    struct PlannerEnumeration* enumeration,
+    int xMove,
+    int yMove)
+{
+    int itemSlot;
+
+    for (itemSlot = 0; itemSlot < UNIT_ITEM_COUNT; itemSlot++)
+    {
+        int item = gActiveUnit->items[itemSlot];
+        int itemId;
+        int targetId;
+
+        if (item == 0)
+            break;
+        if (!CanUnitUseStaff(gActiveUnit, item)
+            || IsPositionMagicSealed(xMove, yMove))
+            continue;
+        itemId = GetItemIndex(item);
+        if (itemId == ITEM_STAFF_FORTIFY
+            || itemId == ITEM_STAFF_LATONA
+            || itemId == ITEM_STAFF_TORCH)
+        {
+            struct AiDecision decision;
+            enum ExpansionAutoplayPlannerEnumerationResult result;
+
+            if (!HasGlobalStaffTarget(item))
+                continue;
+            MakeDecision(
+                &decision,
+                xMove,
+                yMove,
+                AI_ACTION_STAFF,
+                0,
+                itemSlot,
+                0,
+                0);
+            result = EmitDecision(enumeration, &decision);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration->stopped)
+                return result;
+            continue;
+        }
+        if (itemId == ITEM_STAFF_UNLOCK)
+        {
+            enum ExpansionAutoplayPlannerEnumerationResult result =
+                EnumerateUnlockTargets(
+                    enumeration,
+                    xMove,
+                    yMove,
+                    itemSlot,
+                    item);
+
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration->stopped)
+                return result;
+            continue;
+        }
+
+        for (targetId = 1; targetId < 0xC0; targetId++)
+        {
+            struct Unit* target = GetUnit(targetId);
+            struct AiDecision decision;
+            enum ExpansionAutoplayPlannerEnumerationResult result;
+
+            if (!IsCanonicalUnitSlot(targetId)
+                || !IsStaffTargetLegal(item, target, xMove, yMove))
+                continue;
+            if (itemId == ITEM_STAFF_WARP)
             {
-                *candidate = wait;
-                return true;
+                result = EnumerateWarpDestinations(
+                    enumeration,
+                    xMove,
+                    yMove,
+                    itemSlot,
+                    target);
             }
+            else
+            {
+                MakeDecision(
+                    &decision,
+                    xMove,
+                    yMove,
+                    AI_ACTION_STAFF,
+                    target->index,
+                    itemSlot,
+                    0,
+                    0);
+                result = EmitDecision(enumeration, &decision);
+            }
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration->stopped)
+                return result;
+        }
+    }
+    return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+}
+
+static enum ExpansionAutoplayPlannerEnumerationResult EnumerateItems(
+    struct PlannerEnumeration* enumeration,
+    int xMove,
+    int yMove)
+{
+    int itemSlot;
+
+    for (itemSlot = 0; itemSlot < UNIT_ITEM_COUNT; itemSlot++)
+    {
+        struct AiDecision decision;
+        enum ExpansionAutoplayPlannerEnumerationResult result;
+        int item = gActiveUnit->items[itemSlot];
+
+        if (item == 0)
+            break;
+        if (GetItemAttributes(item) & (IA_WEAPON | IA_STAFF))
+            continue;
+        if (!IsSelfUseItemLegal(item))
+            continue;
+        MakeDecision(
+            &decision,
+            xMove,
+            yMove,
+            AI_ACTION_USEITEM,
+            0,
+            itemSlot,
+            0,
+            0);
+        result = EmitDecision(enumeration, &decision);
+        if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+            || enumeration->stopped)
+            return result;
+    }
+    return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+}
+
+static enum ExpansionAutoplayPlannerEnumerationResult EnumeratePick(
+    struct PlannerEnumeration* enumeration,
+    int xMove,
+    int yMove)
+{
+    int yTarget;
+    int xTarget;
+
+    if (!(UNIT_CATTRIBUTES(gActiveUnit) & CA_STEAL))
+        return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+
+    for (yTarget = 0; yTarget < gBmMapSize.y; yTarget++)
+    {
+        for (xTarget = 0; xTarget < gBmMapSize.x; xTarget++)
+        {
+            struct AiDecision decision;
+            enum ExpansionAutoplayPlannerEnumerationResult result;
+            int terrain = gBmMapTerrain[yTarget][xTarget];
+            bool legal = false;
+
+            if (xTarget == xMove && yTarget == yMove
+                && terrain == TERRAIN_CHEST_FULL)
+                legal = IsThereClosedChestAt(xTarget, yTarget);
+            else if (RectDistance(xMove, yMove, xTarget, yTarget) == 1
+                && (terrain == TERRAIN_DOOR
+                    || terrain == TERRAIN_BRIDGE_14))
+                legal = terrain != TERRAIN_DOOR
+                    || IsThereClosedDoorAt(xTarget, yTarget);
+            if (!legal)
+                continue;
+            MakeDecision(
+                &decision,
+                xMove,
+                yMove,
+                AI_ACTION_PICK,
+                0,
+                0,
+                xTarget,
+                yTarget);
+            result = EmitDecision(enumeration, &decision);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration->stopped)
+                return result;
+        }
+    }
+    return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+}
+
+static bool HasSummonDestination(int xMove, int yMove)
+{
+    int yTarget;
+    int xTarget;
+
+    for (yTarget = 0; yTarget < gBmMapSize.y; yTarget++)
+    {
+        for (xTarget = 0; xTarget < gBmMapSize.x; xTarget++)
+        {
+            if (RectDistance(xMove, yMove, xTarget, yTarget) != 1
+                || gBmMapUnit[yTarget][xTarget] != 0
+                || !IsPositionVisible(xTarget, yTarget)
+                || !CanUnitCrossTerrain(
+                    gActiveUnit,
+                    gBmMapTerrain[yTarget][xTarget]))
+                continue;
+            return true;
         }
     }
     return false;
 }
 
-static bool BuildCandidates(const struct AiDecision* decision)
+static enum ExpansionAutoplayPlannerEnumerationResult EnumerateSummon(
+    struct PlannerEnumeration* enumeration,
+    int xMove,
+    int yMove)
 {
-    int x;
-    int y;
+    struct AiDecision decision;
 
-    sPlannerSelectedDecision = *decision;
+    if (!(UNIT_CATTRIBUTES(gActiveUnit) & CA_SUMMON)
+        || !HasSummonDestination(xMove, yMove))
+        return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+    MakeDecision(
+        &decision,
+        xMove,
+        yMove,
+        AI_ACTION_DKSUMMON,
+        0,
+        0,
+        0,
+        0);
+    return EmitDecision(enumeration, &decision);
+}
+
+enum ExpansionAutoplayPlannerEnumerationResult
+ExpansionAutoplayPlanner_EnumerateLegalActions(
+    ExpansionAutoplayPlannerActionVisitor visitor,
+    void* context,
+    u32* countOut)
+{
+    struct PlannerEnumeration enumeration;
+    enum ExpansionAutoplayPlannerEnumerationResult result =
+        EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+    int yMove;
+    int xMove;
+
+    if (countOut != NULL)
+        *countOut = 0;
+    if (gActiveUnit == NULL
+        || gActiveUnit->pCharacterData == NULL
+        || gActiveUnit->pClassData == NULL
+        || !IsMapReady())
+        return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_UNAVAILABLE;
+
+    enumeration.visitor = visitor;
+    enumeration.context = context;
+    enumeration.count = 0;
+    enumeration.stopped = false;
+    for (yMove = 0; yMove < gBmMapSize.y; yMove++)
     {
-        bool hasSelected = !(gActiveUnit != NULL
-        && decision->actionId == AI_ACTION_NONE
-        && decision->xMove == gActiveUnit->xPos
-        && decision->yMove == gActiveUnit->yPos);
-        SetCandidateState(hasSelected ? 1 : 0, hasSelected, 0);
+        for (xMove = 0; xMove < gBmMapSize.x; xMove++)
+        {
+            if (!IsReachableDestination(xMove, yMove))
+                continue;
+            result = EnumerateWait(&enumeration, xMove, yMove);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration.stopped)
+                goto done;
+            result = EnumerateCombat(&enumeration, xMove, yMove);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration.stopped)
+                goto done;
+            result = EnumerateStaff(&enumeration, xMove, yMove);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration.stopped)
+                goto done;
+            result = EnumerateItems(&enumeration, xMove, yMove);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration.stopped)
+                goto done;
+            result = EnumeratePick(&enumeration, xMove, yMove);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration.stopped)
+                goto done;
+            result = EnumerateSummon(&enumeration, xMove, yMove);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration.stopped)
+                goto done;
+        }
     }
 
-    if (gBmMapMovement == NULL || gBmMapUnit == NULL)
-        return true;
+done:
+    if (countOut != NULL)
+        *countOut = enumeration.count;
+    return result;
+}
 
+static bool FindCandidate(
+    u32 ordinal,
+    const struct AiDecision* decision,
+    void* context)
+{
+    struct PlannerCandidateLookup* lookup = context;
+
+    if (ordinal != lookup->requested)
+        return true;
+    *lookup->output = *decision;
+    lookup->found = true;
+    return false;
+}
+
+static bool DigestCandidate(
+    u32 ordinal,
+    const struct AiDecision* decision,
+    void* context)
+{
+    u32* digest = context;
+
+    *digest = MixDigest(*digest, ordinal);
+    *digest = MixDigest(*digest, decision->unitId);
+    *digest = MixDigest(
+        *digest,
+        decision->xMove | ((u32)decision->yMove << 8));
+    *digest = MixDigest(*digest, decision->actionId);
+    *digest = MixDigest(
+        *digest,
+        decision->targetId | ((u32)decision->itemSlot << 8));
+    *digest = MixDigest(
+        *digest,
+        decision->xTarget | ((u32)decision->yTarget << 8));
+    return true;
+}
+
+static bool CandidateSetUnchanged(void)
+{
+    enum ExpansionAutoplayPlannerEnumerationResult result;
+    u32 digest = 2166136261u;
+    u32 count;
+
+    result = ExpansionAutoplayPlanner_EnumerateLegalActions(
+        DigestCandidate,
+        &digest,
+        &count);
+    return result == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+        && count == CandidateCount()
+        && digest == sPlannerCandidateDigest;
+}
+
+static bool GetCandidate(u32 ordinal, struct AiDecision* candidate)
+{
+    struct PlannerCandidateLookup lookup;
+    enum ExpansionAutoplayPlannerEnumerationResult result;
+
+    lookup.requested = ordinal;
+    lookup.output = candidate;
+    lookup.found = false;
+    result = ExpansionAutoplayPlanner_EnumerateLegalActions(
+        FindCandidate,
+        &lookup,
+        NULL);
+    return result == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+        && lookup.found;
+}
+
+static u32 MapRecordCount(void)
+{
+    if (!IsMapReady())
+        return 0;
+    return gBmMapSize.x * gBmMapSize.y;
+}
+
+static u32 UnitRecordCount(void)
+{
+    u32 count = 0;
+    int unitId;
+
+    for (unitId = 1; unitId < 0xC0; unitId++)
+        if (IsCanonicalUnitSlot(unitId)
+            && UNIT_IS_VALID(GetUnit(unitId)))
+            count++;
+    return count;
+}
+
+static u32 PageCountFor(u32 recordCount, u32 capacity)
+{
+    return (recordCount + capacity - 1) / capacity;
+}
+
+static u32 MapPageCount(void)
+{
+    return PageCountFor(
+        MapRecordCount(),
+        EXPANSION_AUTOPLAY_PLANNER_MAP_RECORD_CAPACITY);
+}
+
+static u32 UnitPageCount(void)
+{
+    return PageCountFor(
+        UnitRecordCount(),
+        EXPANSION_AUTOPLAY_PLANNER_UNIT_RECORD_CAPACITY);
+}
+
+static u32 ActionPageCount(void)
+{
+    return PageCountFor(
+        CandidateCount(),
+        EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY);
+}
+
+static u32 TotalPageCount(void)
+{
+    return 1 + MapPageCount() + UnitPageCount() + ActionPageCount();
+}
+
+static u32 MapStateDigest(void)
+{
+    u32 digest = 2166136261u;
+    int y;
+    int x;
+
+    if (!IsMapReady())
+        return 0;
     for (y = 0; y < gBmMapSize.y; y++)
     {
         for (x = 0; x < gBmMapSize.x; x++)
         {
-            struct AiDecision candidate;
+            u32 unit = IsPositionVisible(x, y) ? gBmMapUnit[y][x] : 0;
 
-            if (!IsLegalWaitDestination(x, y))
-                continue;
-            MakeWaitCandidate(x, y, &candidate);
-            if (DecisionsEqual(&candidate, &sPlannerSelectedDecision))
-                continue;
-            if (CandidateCount()
-                >= EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY)
-                return false;
-            SetCandidateState(
-                CandidateCount() + 1,
-                HasSelectedDecision(),
-                0);
+            digest = MixDigest(digest, gBmMapTerrain[y][x]);
+            digest = MixDigest(digest, unit);
+            digest = MixDigest(digest, IsPositionVisible(x, y));
         }
     }
+    return digest;
+}
+
+static u32 FlagsDigest(void)
+{
+    u32 digest = 2166136261u;
+    u8* flags;
+    int size;
+    int index;
+
+    flags = GetPermanentFlagBits();
+    size = GetPermanentFlagBitsSize();
+    if (flags == NULL || size < 0 || size > PLANNER_FLAG_BYTE_CAPACITY)
+        return 0;
+    for (index = 0; index < size; index++)
+        digest = MixDigest(digest, flags[index]);
+    flags = GetChapterFlagBits();
+    size = GetChapterFlagBitsSize();
+    if (flags == NULL || size < 0 || size > PLANNER_FLAG_BYTE_CAPACITY)
+        return 0;
+    for (index = 0; index < size; index++)
+        digest = MixDigest(digest, flags[index]);
+    return digest;
+}
+
+static u32 InventoryDigest(const struct Unit* unit)
+{
+    u32 digest = 2166136261u;
+    int item;
+
+    for (item = 0; item < UNIT_ITEM_COUNT; item++)
+        digest = MixDigest(digest, unit->items[item]);
+    return digest;
+}
+
+static u32 ConvoyDigest(void)
+{
+    u16* convoy = GetConvoyItemArray();
+    u32 digest = 2166136261u;
+    int index;
+
+    if (convoy == NULL)
+        return 0;
+    for (index = 0; index < CONVOY_ITEM_COUNT; index++)
+        digest = MixDigest(digest, convoy[index]);
+    return digest;
+}
+
+static void SetSemanticField(
+    int index,
+    enum ExpansionAutoplayPlannerSemanticFieldId id,
+    enum ExpansionAutoplayPlannerAvailability availability,
+    u32 value)
+{
+    struct ExpansionAutoplayPlannerSemanticFieldV2* field =
+        &gExpansionAutoplayPlannerObservation.fields[index];
+
+    field->id = id;
+    field->availability = availability;
+    field->valueSize = sizeof(value);
+    field->value = availability == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
+        ? value : 0;
+}
+
+static void PublishSummaryPage(void)
+{
+    enum ExpansionAutoplayPlannerAvailability mapAvailability =
+        EXPANSION_AUTOPLAY_PLANNER_AVAILABLE;
+    enum ExpansionAutoplayPlannerAvailability unitAvailability =
+        EXPANSION_AUTOPLAY_PLANNER_AVAILABLE;
+    enum ExpansionAutoplayPlannerAvailability objectiveAvailability =
+        EXPANSION_AUTOPLAY_PLANNER_AVAILABLE;
+    enum ExpansionAutoplayPlannerAvailability flagAvailability =
+        EXPANSION_AUTOPLAY_PLANNER_AVAILABLE;
+    enum ExpansionAutoplayPlannerAvailability resourceAvailability =
+        EXPANSION_AUTOPLAY_PLANNER_AVAILABLE;
+    u32 objectiveState = 0;
+    u32 flagDigest;
+    u32 convoyDigest;
+
+    if (!IsMapReady())
+        mapAvailability = EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED;
+    if (gActiveUnit == NULL
+        || gActiveUnit->pCharacterData == NULL
+        || gActiveUnit->pClassData == NULL)
+        unitAvailability = EXPANSION_AUTOPLAY_PLANNER_NOT_APPLICABLE;
+#if FE8_CHAPTER_OBJECTIVES_ENABLED
+    if (gExpansionChapterObjectiveTelemetry.objectiveId == 0)
+        objectiveAvailability = EXPANSION_AUTOPLAY_PLANNER_NOT_APPLICABLE;
+    else
+        objectiveState = gExpansionChapterObjectiveTelemetry.state
+            | (gExpansionChapterObjectiveTelemetry.progress << 8);
+#else
+    objectiveAvailability = EXPANSION_AUTOPLAY_PLANNER_UNSUPPORTED_RULE;
+#endif
+    flagDigest = FlagsDigest();
+    if (flagDigest == 0)
+        flagAvailability = EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED;
+    convoyDigest = ConvoyDigest();
+    if (convoyDigest == 0)
+        resourceAvailability = EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED;
+
+    SetSemanticField(
+        0,
+        EXPANSION_AUTOPLAY_PLANNER_FIELD_MAP_DIMENSIONS,
+        mapAvailability,
+        (u16)gBmMapSize.x | ((u32)(u16)gBmMapSize.y << 16));
+    SetSemanticField(
+        1,
+        EXPANSION_AUTOPLAY_PLANNER_FIELD_MAP_STATE_DIGEST,
+        mapAvailability,
+        MapStateDigest());
+    SetSemanticField(
+        2,
+        EXPANSION_AUTOPLAY_PLANNER_FIELD_ACTIVE_UNIT,
+        unitAvailability,
+        unitAvailability == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
+            ? (u8)gActiveUnit->index
+                | ((u32)gActiveUnit->pCharacterData->number << 8)
+                | ((u32)gActiveUnit->pClassData->number << 16)
+            : 0);
+    SetSemanticField(
+        3,
+        EXPANSION_AUTOPLAY_PLANNER_FIELD_ACTIVE_UNIT_STATE,
+        unitAvailability,
+        unitAvailability == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
+            ? (u8)gActiveUnit->xPos
+                | ((u32)(u8)gActiveUnit->yPos << 8)
+                | ((u32)(u8)gActiveUnit->curHP << 16)
+                | ((u32)(u8)gActiveUnit->maxHP << 24)
+            : 0);
+    SetSemanticField(
+        4,
+        EXPANSION_AUTOPLAY_PLANNER_FIELD_OBJECTIVE_ID,
+        objectiveAvailability,
+#if FE8_CHAPTER_OBJECTIVES_ENABLED
+        gExpansionChapterObjectiveTelemetry.objectiveId
+#else
+        0
+#endif
+    );
+    SetSemanticField(
+        5,
+        EXPANSION_AUTOPLAY_PLANNER_FIELD_OBJECTIVE_STATE,
+        objectiveAvailability,
+        objectiveState);
+    SetSemanticField(
+        6,
+        EXPANSION_AUTOPLAY_PLANNER_FIELD_FLAGS_DIGEST,
+        flagAvailability,
+        flagDigest);
+    SetSemanticField(
+        7,
+        EXPANSION_AUTOPLAY_PLANNER_FIELD_RESOURCE_DIGEST,
+        resourceAvailability,
+        MixDigest(
+            MixDigest(2166136261u, gPlaySt.partyGoldAmount),
+            convoyDigest));
+    gExpansionAutoplayPlannerObservation.recordStart = 0;
+    gExpansionAutoplayPlannerObservation.recordCount =
+        EXPANSION_AUTOPLAY_PLANNER_SEMANTIC_FIELD_CAPACITY;
+    gExpansionAutoplayPlannerObservation.totalRecordCount =
+        EXPANSION_AUTOPLAY_PLANNER_SEMANTIC_FIELD_CAPACITY;
+}
+
+static void PublishMapPage(u32 pageIndex)
+{
+    u32 mapPage = pageIndex - 1;
+    u32 start =
+        mapPage * EXPANSION_AUTOPLAY_PLANNER_MAP_RECORD_CAPACITY;
+    u32 total = MapRecordCount();
+    u32 remaining = total - start;
+    u32 count = remaining < EXPANSION_AUTOPLAY_PLANNER_MAP_RECORD_CAPACITY
+        ? remaining : EXPANSION_AUTOPLAY_PLANNER_MAP_RECORD_CAPACITY;
+    u32 index;
+
+    for (index = 0; index < count; index++)
+    {
+        u32 ordinal = start + index;
+        int x = ordinal % gBmMapSize.x;
+        int y = ordinal / gBmMapSize.x;
+        enum ExpansionAutoplayPlannerAvailability availability =
+            IsPositionVisible(x, y)
+                ? EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
+                : EXPANSION_AUTOPLAY_PLANNER_NOT_VISIBLE;
+        u32 unit = availability == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
+            ? gBmMapUnit[y][x] : 0;
+
+        gExpansionAutoplayPlannerObservation.mapCells[index] =
+            (x & 0x3F)
+            | ((u32)(y & 0x3F) << 6)
+            | ((u32)gBmMapTerrain[y][x] << 12)
+            | (unit << 20)
+            | ((u32)availability << 28);
+    }
+    gExpansionAutoplayPlannerObservation.recordStart = start;
+    gExpansionAutoplayPlannerObservation.recordCount = count;
+    gExpansionAutoplayPlannerObservation.totalRecordCount = total;
+}
+
+static struct Unit* GetUnitRecord(u32 ordinal)
+{
+    u32 current = 0;
+    int unitId;
+
+    for (unitId = 1; unitId < 0xC0; unitId++)
+    {
+        struct Unit* unit = GetUnit(unitId);
+
+        if (!IsCanonicalUnitSlot(unitId) || !UNIT_IS_VALID(unit))
+            continue;
+        if (current++ == ordinal)
+            return unit;
+    }
+    return NULL;
+}
+
+static void PublishUnitPage(u32 pageIndex)
+{
+    u32 unitPage = pageIndex - 1 - MapPageCount();
+    u32 start =
+        unitPage * EXPANSION_AUTOPLAY_PLANNER_UNIT_RECORD_CAPACITY;
+    u32 total = UnitRecordCount();
+    u32 remaining = total - start;
+    u32 count = remaining < EXPANSION_AUTOPLAY_PLANNER_UNIT_RECORD_CAPACITY
+        ? remaining : EXPANSION_AUTOPLAY_PLANNER_UNIT_RECORD_CAPACITY;
+    u32 index;
+
+    for (index = 0; index < count; index++)
+    {
+        struct Unit* unit = GetUnitRecord(start + index);
+        struct ExpansionAutoplayPlannerUnitV2* record =
+            &gExpansionAutoplayPlannerObservation.units[index];
+        enum ExpansionAutoplayPlannerAvailability availability =
+            IsVisibleValidUnit(unit)
+                ? EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
+                : EXPANSION_AUTOPLAY_PLANNER_NOT_VISIBLE;
+
+        record->identity = (u8)unit->index | ((u32)availability << 24);
+        if (availability == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE)
+        {
+            record->identity |= ((u32)unit->pCharacterData->number << 8)
+                | ((u32)unit->pClassData->number << 16);
+            record->position = (u8)unit->xPos
+                | ((u32)(u8)unit->yPos << 8)
+                | ((u32)(u8)unit->curHP << 16)
+                | ((u32)(u8)unit->maxHP << 24);
+            record->state = unit->state;
+            record->inventoryDigest = InventoryDigest(unit);
+        }
+    }
+    gExpansionAutoplayPlannerObservation.recordStart = start;
+    gExpansionAutoplayPlannerObservation.recordCount = count;
+    gExpansionAutoplayPlannerObservation.totalRecordCount = total;
+}
+
+static bool CollectPageAction(
+    u32 ordinal,
+    const struct AiDecision* decision,
+    void* context)
+{
+    struct PlannerPageCollector* collector = context;
+    struct ExpansionAutoplayPlannerActionV2* action;
+    u32 tokenLo;
+
+    if (ordinal < collector->start)
+        return true;
+    if (ordinal >= collector->start + collector->count)
+        return false;
+    action = &gExpansionAutoplayPlannerObservation.actions[
+        ordinal - collector->start];
+    tokenLo = MakeTokenLo(
+        decision,
+        gExpansionAutoplayPlannerObservation.observationId,
+        ordinal);
+    action->kind = ActionKindFromAiAction(decision->actionId);
+    action->actor = decision->unitId;
+    action->destination = (u16)decision->xMove
+        | ((u32)(u16)decision->yMove << 16);
+    action->target = decision->targetId
+        | ((u32)decision->xTarget << 8)
+        | ((u32)decision->yTarget << 16);
+    action->itemSlot = decision->itemSlot;
+    action->tokenLo = tokenLo;
+    action->tokenHi = MakeTokenHi(tokenLo);
+    action->actionId = decision->actionId;
     return true;
 }
 
-static void PublishPage(u32 pageIndex)
+static void PublishActionPage(u32 pageIndex)
 {
-    u32 index;
-    u32 start = pageIndex * EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
+    u32 actionPage =
+        pageIndex - 1 - MapPageCount() - UnitPageCount();
+    u32 start =
+        actionPage * EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
     u32 remaining = CandidateCount() - start;
-    u32 count = remaining < EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY
-        ? remaining : EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
+    struct PlannerPageCollector collector;
+
+    collector.start = start;
+    collector.count =
+        remaining < EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY
+            ? remaining
+            : EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectPageAction,
+        &collector,
+        NULL);
+    gExpansionAutoplayPlannerObservation.recordStart = start;
+    gExpansionAutoplayPlannerObservation.recordCount = collector.count;
+    gExpansionAutoplayPlannerObservation.totalRecordCount = CandidateCount();
+}
+
+static bool PublishPage(u32 pageIndex)
+{
+    u32 mapPages = MapPageCount();
+    u32 unitPages = UnitPageCount();
+    u32 pageCount = TotalPageCount();
+    u8* payload = (u8*)gExpansionAutoplayPlannerObservation.actions;
+    int index;
     u16 seeds[3];
 
+    if (pageIndex >= pageCount)
+        return false;
+
+    gExpansionAutoplayPlannerObservation.state =
+        EXPANSION_AUTOPLAY_PLANNER_STATE_DISABLED;
+    for (index = 0;
+         index < (int)sizeof(gExpansionAutoplayPlannerObservation.actions);
+         index++)
+        payload[index] = 0;
     StoreRNState(seeds);
-    ClearPublishedActions();
-    gExpansionAutoplayPlannerObservation.magic = EXPANSION_AUTOPLAY_PLANNER_MAGIC;
-    gExpansionAutoplayPlannerObservation.version = EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION;
+    gExpansionAutoplayPlannerObservation.magic =
+        EXPANSION_AUTOPLAY_PLANNER_MAGIC;
+    gExpansionAutoplayPlannerObservation.version =
+        EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION;
     gExpansionAutoplayPlannerObservation.byteSize =
         sizeof(struct ExpansionAutoplayPlannerObservationV2);
     gExpansionAutoplayPlannerObservation.runId = sPlannerRunId;
-    gExpansionAutoplayPlannerObservation.state = EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING;
-    gExpansionAutoplayPlannerObservation.pageIndex = pageIndex;
-    gExpansionAutoplayPlannerObservation.pageCount =
-        (CandidateCount() + EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY - 1)
-        / EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
-    gExpansionAutoplayPlannerObservation.actionStartOrdinal = start;
-    gExpansionAutoplayPlannerObservation.actionCount = count;
+    gExpansionAutoplayPlannerObservation.pageCount = pageCount;
     gExpansionAutoplayPlannerObservation.totalActionCount = CandidateCount();
-    gExpansionAutoplayPlannerObservation.rejection = EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
-    gExpansionAutoplayPlannerObservation.chapterIndex = (u8)gPlaySt.chapterIndex;
-    gExpansionAutoplayPlannerObservation.chapterTurn = gPlaySt.chapterTurnNumber;
+    gExpansionAutoplayPlannerObservation.rejection =
+        EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
+    gExpansionAutoplayPlannerObservation.chapterIndex =
+        (u8)gPlaySt.chapterIndex;
+    gExpansionAutoplayPlannerObservation.chapterTurn =
+        gPlaySt.chapterTurnNumber;
     gExpansionAutoplayPlannerObservation.rngState0 = seeds[0];
     gExpansionAutoplayPlannerObservation.rngState1 = seeds[1];
     gExpansionAutoplayPlannerObservation.rngState2 = seeds[2];
     gExpansionAutoplayPlannerObservation.rngLcg = GetLCGRNValue();
-    gExpansionAutoplayPlannerObservation.rngConsumption = GetRNConsumptionCount();
-    gExpansionAutoplayPlannerObservation.actualRomIdentity = ActualRomIdentity();
-    gExpansionAutoplayPlannerObservation.actualConfigIdentity = ActualConfigIdentity();
+    gExpansionAutoplayPlannerObservation.rngConsumption =
+        GetRNConsumptionCount();
+    gExpansionAutoplayPlannerObservation.actualRomIdentity =
+        ActualRomIdentity();
+    gExpansionAutoplayPlannerObservation.actualConfigIdentity =
+        ActualConfigIdentity();
     gExpansionAutoplayPlannerObservation.actualScenarioIdentity =
-        EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID;
-    gExpansionAutoplayPlannerObservation.actualSeedIdentity = ActualSeedIdentity();
+        ActualScenarioIdentity();
+    gExpansionAutoplayPlannerObservation.actualSeedIdentity =
+        ActualSeedIdentity();
 
-    for (index = 0; index < count; index++)
+    if (pageIndex == 0)
     {
-        struct AiDecision decision;
-        struct ExpansionAutoplayPlannerActionV2* action =
-            &gExpansionAutoplayPlannerObservation.actions[index];
-        bool found = GetCandidate(start + index, &decision);
-        u32 tokenLo;
-
-        if (!found)
-            break;
-        tokenLo = MakeTokenLo(
-            &decision,
-            gExpansionAutoplayPlannerObservation.observationId,
-            start + index);
-        action->kind = ActionKindFromAiAction(decision.actionId);
-        action->actor = decision.unitId;
-        action->destination = (u16)decision.xMove | ((u32)(u16)decision.yMove << 16);
-        action->target = decision.targetId | ((u32)decision.xTarget << 8)
-            | ((u32)decision.yTarget << 16);
-        action->itemSlot = decision.itemSlot;
-        action->tokenLo = tokenLo;
-        action->tokenHi = MakeTokenHi(tokenLo);
-        action->actionId = decision.actionId;
+        gExpansionAutoplayPlannerObservation.pageKind =
+            EXPANSION_AUTOPLAY_PLANNER_PAGE_SUMMARY;
+        PublishSummaryPage();
     }
+    else if (pageIndex <= mapPages)
+    {
+        gExpansionAutoplayPlannerObservation.pageKind =
+            EXPANSION_AUTOPLAY_PLANNER_PAGE_MAP;
+        PublishMapPage(pageIndex);
+    }
+    else if (pageIndex <= mapPages + unitPages)
+    {
+        gExpansionAutoplayPlannerObservation.pageKind =
+            EXPANSION_AUTOPLAY_PLANNER_PAGE_UNITS;
+        PublishUnitPage(pageIndex);
+    }
+    else
+    {
+        gExpansionAutoplayPlannerObservation.pageKind =
+            EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS;
+        PublishActionPage(pageIndex);
+    }
+    gExpansionAutoplayPlannerObservation.pageIndex = pageIndex;
+    PLANNER_PUBLISH_BARRIER();
+    gExpansionAutoplayPlannerObservation.state =
+        EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING;
+    return true;
 }
 
 static u32 SemanticStateDigest(void)
 {
     u32 digest = 2166136261u;
+    u16* convoy;
     u8* flags;
     int size;
     int index;
@@ -393,6 +1507,20 @@ static u32 SemanticStateDigest(void)
     digest = MixDigest(digest, (u8)gPlaySt.chapterIndex);
     digest = MixDigest(digest, gPlaySt.chapterTurnNumber);
     digest = MixDigest(digest, gPlaySt.partyGoldAmount);
+#if FE8_CHAPTER_OBJECTIVES_ENABLED
+    digest = MixDigest(
+        digest,
+        gExpansionChapterObjectiveTelemetry.objectiveId);
+    digest = MixDigest(
+        digest,
+        gExpansionChapterObjectiveTelemetry.state);
+    digest = MixDigest(
+        digest,
+        gExpansionChapterObjectiveTelemetry.progress);
+    digest = MixDigest(
+        digest,
+        gExpansionChapterObjectiveTelemetry.activeCount);
+#endif
     for (index = 1; index < 0x40; index++)
     {
         struct Unit* unit = GetUnit(index);
@@ -414,68 +1542,95 @@ static u32 SemanticStateDigest(void)
         for (item = 0; item < UNIT_ITEM_COUNT; item++)
             digest = MixDigest(digest, unit->items[item]);
     }
+    convoy = GetConvoyItemArray();
+    if (convoy != NULL)
+        for (index = 0; index < CONVOY_ITEM_COUNT; index++)
+            digest = MixDigest(digest, convoy[index]);
     flags = GetPermanentFlagBits();
     size = GetPermanentFlagBitsSize();
-    for (index = 0; index < size; index++)
+    for (index = 0; flags != NULL && index < size; index++)
         digest = MixDigest(digest, flags[index]);
     flags = GetChapterFlagBits();
     size = GetChapterFlagBitsSize();
-    for (index = 0; index < size; index++)
+    for (index = 0; flags != NULL && index < size; index++)
         digest = MixDigest(digest, flags[index]);
     return MixDigest(digest, sPlannerTraceDigest);
 }
 
+static void PublishReadyState(void)
+{
+    u32 rejection = gExpansionAutoplayPlannerObservation.rejection;
+
+    ClearObservation();
+    gExpansionAutoplayPlannerObservation.magic =
+        EXPANSION_AUTOPLAY_PLANNER_MAGIC;
+    gExpansionAutoplayPlannerObservation.version =
+        EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION;
+    gExpansionAutoplayPlannerObservation.byteSize =
+        sizeof(struct ExpansionAutoplayPlannerObservationV2);
+    gExpansionAutoplayPlannerObservation.runId = sPlannerRunId;
+    gExpansionAutoplayPlannerObservation.actualRomIdentity =
+        ActualRomIdentity();
+    gExpansionAutoplayPlannerObservation.actualConfigIdentity =
+        ActualConfigIdentity();
+    gExpansionAutoplayPlannerObservation.actualScenarioIdentity =
+        ActualScenarioIdentity();
+    gExpansionAutoplayPlannerObservation.actualSeedIdentity =
+        ActualSeedIdentity();
+    gExpansionAutoplayPlannerObservation.rejection = rejection;
+    PLANNER_PUBLISH_BARRIER();
+    gExpansionAutoplayPlannerObservation.state =
+        EXPANSION_AUTOPLAY_PLANNER_STATE_READY;
+}
+
 void ExpansionAutoplayPlanner_Reset(void)
 {
-    u8* bytes;
-    int index;
-
-    bytes = (u8*)&gExpansionAutoplayPlannerObservation;
-    for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerObservation); index++)
-        bytes[index] = 0;
-    bytes = (u8*)&gExpansionAutoplayPlannerCampaignCheckpoint;
-    for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerCampaignCheckpoint); index++)
-        bytes[index] = 0;
-    bytes = (u8*)&gExpansionAutoplayPlannerCommand;
-    for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerCommand); index++)
-        bytes[index] = 0;
-
+    ClearObservation();
+    ClearCheckpoint();
+    ClearFullCommand();
     sPlannerActive = false;
     sPlannerRunId = 0;
     sPlannerNextObservationId = 1;
-    SetCandidateState(0, false, 0);
+    SetCandidateState(0, 0);
     sPlannerTraceDigest = 2166136261u;
-    PublishReadyState();
+    sPlannerCommitCount = 0;
+    sPlannerCandidateDigest = 0;
 }
 
 void ExpansionAutoplayPlanner_OnMapReset(void)
 {
-    u8* bytes;
-    int index;
-
     if (!sPlannerActive)
     {
         ExpansionAutoplayPlanner_Reset();
         return;
     }
 
-    bytes = (u8*)&gExpansionAutoplayPlannerObservation;
-    for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerObservation); index++)
-        bytes[index] = 0;
-    bytes = (u8*)&gExpansionAutoplayPlannerCommand;
-    for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerCommand); index++)
-        bytes[index] = 0;
-    SetCandidateState(0, false, 0);
-    PublishReadyState();
+    ClearObservation();
+    ClearFullCommand();
+    SetCandidateState(0, 0);
+    sPlannerCandidateDigest = 0;
     ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER);
+}
+
+void ExpansionAutoplayPlanner_OnMapReady(void)
+{
+    if (sPlannerActive)
+        PublishReadyState();
 }
 
 bool ExpansionAutoplayPlanner_PollStart(void)
 {
-    if (gExpansionAutoplayPlannerCommand.kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_NONE)
+    if (gExpansionAutoplayPlannerCommand.kind
+        == EXPANSION_AUTOPLAY_PLANNER_COMMAND_NONE)
+    {
+        if (!sPlannerActive)
+            PublishReadyState();
         return false;
+    }
 
     if (sPlannerActive
+        || gExpansionAutoplayPlannerObservation.state
+            != EXPANSION_AUTOPLAY_PLANNER_STATE_READY
         || gExpansionAutoplayPlannerCommand.kind
             != EXPANSION_AUTOPLAY_PLANNER_COMMAND_START)
     {
@@ -489,13 +1644,14 @@ bool ExpansionAutoplayPlanner_PollStart(void)
         return false;
     }
 
-    if (gExpansionAutoplayPlannerCommand.expectedRomIdentity != ActualRomIdentity()
+    if (gExpansionAutoplayPlannerCommand.expectedRomIdentity
+            != gExpansionAutoplayPlannerObservation.actualRomIdentity
         || gExpansionAutoplayPlannerCommand.expectedConfigIdentity
-            != ActualConfigIdentity()
+            != gExpansionAutoplayPlannerObservation.actualConfigIdentity
         || gExpansionAutoplayPlannerCommand.expectedScenarioIdentity
-            != EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID
+            != gExpansionAutoplayPlannerObservation.actualScenarioIdentity
         || gExpansionAutoplayPlannerCommand.expectedSeedIdentity
-            != ActualSeedIdentity())
+            != gExpansionAutoplayPlannerObservation.actualSeedIdentity)
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
         return false;
@@ -512,8 +1668,10 @@ bool ExpansionAutoplayPlanner_PollStart(void)
     sPlannerRunId++;
     sPlannerNextObservationId = 1;
     sPlannerTraceDigest = MixDigest(2166136261u, sPlannerRunId);
+    sPlannerCommitCount = 0;
     gExpansionAutoplayPlannerCommand.result = 1;
-    gExpansionAutoplayPlannerCommand.rejection = EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
+    gExpansionAutoplayPlannerCommand.rejection =
+        EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
     ClearCommand();
     PublishReadyState();
     return true;
@@ -527,6 +1685,11 @@ bool ExpansionAutoplayPlanner_IsActive(void)
 enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecision(
     const struct AiDecision* decision)
 {
+    enum ExpansionAutoplayPlannerEnumerationResult enumerationResult;
+    u32 digest = 2166136261u;
+    u32 count;
+
+    (void)decision;
     if (!sPlannerActive)
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_FALLBACK;
 
@@ -534,33 +1697,50 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecisi
         == EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING)
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
 
-    if (decision == NULL || !decision->actionPerformed)
+    enumerationResult = ExpansionAutoplayPlanner_EnumerateLegalActions(
+        DigestCandidate,
+        &digest,
+        &count);
+    if (enumerationResult
+        == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_CAPACITY)
     {
-        gExpansionAutoplayPlannerObservation.state = EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
-        gExpansionAutoplayPlannerObservation.rejection =
-            EXPANSION_AUTOPLAY_PLANNER_REJECTION_CAPABILITY_UNAVAILABLE;
-        return EXPANSION_AUTOPLAY_PLANNER_DECISION_EXHAUSTED;
-    }
-
-    if (ActionKindFromAiAction(decision->actionId) == 0)
-    {
-        gExpansionAutoplayPlannerObservation.state = EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
-        gExpansionAutoplayPlannerObservation.rejection =
-            EXPANSION_AUTOPLAY_PLANNER_REJECTION_CAPABILITY_UNAVAILABLE;
-        return EXPANSION_AUTOPLAY_PLANNER_DECISION_EXHAUSTED;
-    }
-
-    if (!BuildCandidates(decision))
-    {
-        gExpansionAutoplayPlannerObservation.state = EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
+        gExpansionAutoplayPlannerObservation.state =
+            EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_RESOURCE_LIMIT);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_EXHAUSTED;
     }
+    if (enumerationResult
+            == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_UNAVAILABLE
+        || count == 0)
+    {
+        gExpansionAutoplayPlannerObservation.state =
+            EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
+        Reject(
+            EXPANSION_AUTOPLAY_PLANNER_REJECTION_CAPABILITY_UNAVAILABLE);
+        return EXPANSION_AUTOPLAY_PLANNER_DECISION_EXHAUSTED;
+    }
 
-    gExpansionAutoplayPlannerObservation.observationId = sPlannerNextObservationId++;
-    SetCandidateState(CandidateCount(), HasSelectedDecision(), 0);
+    SetCandidateState(count, 0);
+    sPlannerCandidateDigest = digest;
+    gExpansionAutoplayPlannerObservation.observationId =
+        sPlannerNextObservationId++;
     PublishPage(0);
     return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+}
+
+static bool AdvanceDecisionDeadline(void)
+{
+    u32 waitFrames = WaitFrames() + 1;
+
+    SetCandidateState(CandidateCount(), waitFrames);
+    if (waitFrames < EXPANSION_AUTOPLAY_PLANNER_DECISION_TIMEOUT_FRAMES)
+        return true;
+    Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_TIMEOUT);
+    gExpansionAutoplayPlannerObservation.state =
+        EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED;
+    sPlannerActive = false;
+    ExpansionAutoplay_RequestPlayerControlRestore();
+    return false;
 }
 
 enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecision(
@@ -573,30 +1753,22 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         || gExpansionAutoplayPlannerObservation.state
             != EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING)
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_FALLBACK;
-
-    if (gExpansionAutoplayPlannerCommand.kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_NONE)
-    {
-        SetCandidateState(
-            CandidateCount(),
-            HasSelectedDecision(),
-            WaitFrames() + 1);
-        if (WaitFrames() < EXPANSION_AUTOPLAY_PLANNER_DECISION_TIMEOUT_FRAMES)
-            return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
-        gExpansionAutoplayPlannerObservation.state =
-            EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED;
-        Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_TIMEOUT);
-        sPlannerActive = false;
-        ExpansionAutoplay_RequestPlayerControlRestore();
+    if (!AdvanceDecisionDeadline())
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED;
-    }
 
-    if (gExpansionAutoplayPlannerCommand.kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_START)
+    if (gExpansionAutoplayPlannerCommand.kind
+        == EXPANSION_AUTOPLAY_PLANNER_COMMAND_NONE)
+        return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+
+    if (gExpansionAutoplayPlannerCommand.kind
+        == EXPANSION_AUTOPLAY_PLANNER_COMMAND_START)
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
 
-    if (gExpansionAutoplayPlannerCommand.kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_CANCEL)
+    if (gExpansionAutoplayPlannerCommand.kind
+        == EXPANSION_AUTOPLAY_PLANNER_COMMAND_CANCEL)
     {
         if (!IsCommandHeaderValid()
             || gExpansionAutoplayPlannerCommand.runId != sPlannerRunId
@@ -607,14 +1779,16 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
             return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
         }
 
-        gExpansionAutoplayPlannerObservation.state = EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED;
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_CANCELLED);
+        gExpansionAutoplayPlannerObservation.state =
+            EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED;
         sPlannerActive = false;
         ExpansionAutoplay_RequestPlayerControlRestore();
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED;
     }
 
-    if (gExpansionAutoplayPlannerCommand.kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE)
+    if (gExpansionAutoplayPlannerCommand.kind
+        == EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE)
     {
         if (!IsCommandHeaderValid()
             || gExpansionAutoplayPlannerCommand.runId != sPlannerRunId
@@ -624,19 +1798,24 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
             Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_STALE_OBSERVATION);
             return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
         }
-        if (gExpansionAutoplayPlannerCommand.pageIndex
-            >= gExpansionAutoplayPlannerObservation.pageCount)
+        if (!CandidateSetUnchanged())
+        {
+            Reject(
+                EXPANSION_AUTOPLAY_PLANNER_REJECTION_ACTION_BECAME_ILLEGAL);
+            return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+        }
+        if (!PublishPage(gExpansionAutoplayPlannerCommand.pageIndex))
         {
             Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_UNKNOWN_ACTION);
             return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
         }
-        PublishPage(gExpansionAutoplayPlannerCommand.pageIndex);
         gExpansionAutoplayPlannerCommand.result = 1;
         ClearCommand();
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
 
-    if (gExpansionAutoplayPlannerCommand.kind != EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT)
+    if (gExpansionAutoplayPlannerCommand.kind
+        != EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT)
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
@@ -662,10 +1841,29 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
 
-    if (!GetCandidate(gExpansionAutoplayPlannerCommand.actionOrdinal, &candidate))
+    if (!CandidateSetUnchanged())
     {
-        Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_ACTION_BECAME_ILLEGAL);
+        Reject(
+            EXPANSION_AUTOPLAY_PLANNER_REJECTION_ACTION_BECAME_ILLEGAL);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+    }
+    if (!GetCandidate(
+            gExpansionAutoplayPlannerCommand.actionOrdinal,
+            &candidate))
+    {
+        Reject(
+            EXPANSION_AUTOPLAY_PLANNER_REJECTION_ACTION_BECAME_ILLEGAL);
+        return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+    }
+    if (sPlannerCommitCount
+        >= EXPANSION_AUTOPLAY_PLANNER_TRACE_ACTION_CAPACITY)
+    {
+        Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_RESOURCE_LIMIT);
+        gExpansionAutoplayPlannerObservation.state =
+            EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
+        sPlannerActive = false;
+        ExpansionAutoplay_RequestPlayerControlRestore();
+        return EXPANSION_AUTOPLAY_PLANNER_DECISION_EXHAUSTED;
     }
     tokenLo = MakeTokenLo(
         &candidate,
@@ -678,12 +1876,16 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
 
-    gExpansionAutoplayPlannerObservation.state = EXPANSION_AUTOPLAY_PLANNER_STATE_COMMITTED;
-    gExpansionAutoplayPlannerObservation.rejection = EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
+    gExpansionAutoplayPlannerObservation.state =
+        EXPANSION_AUTOPLAY_PLANNER_STATE_COMMITTED;
+    gExpansionAutoplayPlannerObservation.rejection =
+        EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
     gExpansionAutoplayPlannerCommand.result = 1;
-    gExpansionAutoplayPlannerCommand.rejection = EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
+    gExpansionAutoplayPlannerCommand.rejection =
+        EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
     ClearCommand();
     sPlannerTraceDigest = MixDigest(sPlannerTraceDigest, tokenLo);
+    sPlannerCommitCount++;
     *decision = candidate;
     return EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED;
 }
@@ -696,21 +1898,27 @@ void ExpansionAutoplayPlanner_RecordCampaignCheckpoint(void)
         return;
 
     StoreRNState(seeds);
-    gExpansionAutoplayPlannerCampaignCheckpoint.magic = EXPANSION_AUTOPLAY_PLANNER_MAGIC;
+    gExpansionAutoplayPlannerCampaignCheckpoint.magic = 0;
     gExpansionAutoplayPlannerCampaignCheckpoint.version =
         EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION;
     gExpansionAutoplayPlannerCampaignCheckpoint.byteSize =
         sizeof(struct ExpansionAutoplayPlannerCampaignCheckpointV2);
     gExpansionAutoplayPlannerCampaignCheckpoint.runId = sPlannerRunId;
-    gExpansionAutoplayPlannerCampaignCheckpoint.chapterIndex = (u8)gPlaySt.chapterIndex;
-    gExpansionAutoplayPlannerCampaignCheckpoint.chapterTurn = gPlaySt.chapterTurnNumber;
+    gExpansionAutoplayPlannerCampaignCheckpoint.chapterIndex =
+        (u8)gPlaySt.chapterIndex;
+    gExpansionAutoplayPlannerCampaignCheckpoint.chapterTurn =
+        gPlaySt.chapterTurnNumber;
     gExpansionAutoplayPlannerCampaignCheckpoint.rngState0 = seeds[0];
     gExpansionAutoplayPlannerCampaignCheckpoint.rngState1 = seeds[1];
     gExpansionAutoplayPlannerCampaignCheckpoint.rngState2 = seeds[2];
     gExpansionAutoplayPlannerCampaignCheckpoint.rngLcg = GetLCGRNValue();
-    gExpansionAutoplayPlannerCampaignCheckpoint.rngConsumption = GetRNConsumptionCount();
+    gExpansionAutoplayPlannerCampaignCheckpoint.rngConsumption =
+        GetRNConsumptionCount();
     gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest =
         SemanticStateDigest();
+    PLANNER_PUBLISH_BARRIER();
+    gExpansionAutoplayPlannerCampaignCheckpoint.magic =
+        EXPANSION_AUTOPLAY_PLANNER_MAGIC;
 }
 
 #endif

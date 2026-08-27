@@ -4,7 +4,7 @@
 static u16 gRNSeeds[3];
 static int gLCGRNValue;
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
-static u32 sRNConsumptionCount;
+EWRAM_DATA static u32 sRNConsumptionCount;
 #endif
 
 int NextRN(void) {
