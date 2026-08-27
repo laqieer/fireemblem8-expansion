@@ -1560,22 +1560,20 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         candidate = self.output("candidate.json")
         self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
         candidate_data = json.loads(baseline.read_text(encoding="utf-8"))
-        candidate_data["runs"][0]["metrics"]["turns"] = 9
-        candidate_data["runs"][0]["terminal"]["turn"]["value"] = "0x00000009"
-        metric_definitions = {
-            metric["id"]: metric
-            for metric in candidate_data["provenance"]["specification"]["definition"][
-                "metrics"
-            ]
-        }
-        candidate_data["summary"]["metric_distributions"] = (
-            autoplay_batch._metric_distributions(
-                candidate_data["runs"],
-                metric_definitions,
-            )
+        added_run = copy.deepcopy(candidate_data["runs"][2])
+        candidate_data["runs"] = candidate_data["runs"][1:]
+        changed_run = next(
+            run for run in candidate_data["runs"] if run["seed"] == 3
         )
+        changed_run["metrics"]["turns"] = 9
+        changed_run["terminal"]["turn"]["value"] = "0x00000009"
+        added_run["seed"] = 4
+        added_run["seed_write"]["value"] = 4
+        candidate_data["runs"].append(added_run)
+        self._refresh_report_summary(candidate_data)
         candidate.write_text(autoplay_batch.serialize_report(candidate_data), encoding="utf-8")
-        before = baseline.read_bytes()
+        baseline_before = baseline.read_bytes()
+        candidate_before = candidate.read_bytes()
         comparison = self.output("comparison.json")
         stdout = io.StringIO()
         with redirect_stdout(stdout):
@@ -1591,11 +1589,14 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                 ]
             )
         self.assertEqual(code, 0)
-        self.assertEqual(before, baseline.read_bytes())
+        self.assertEqual(baseline_before, baseline.read_bytes())
+        self.assertEqual(candidate_before, candidate.read_bytes())
         data = json.loads(comparison.read_text(encoding="utf-8"))
         self.assertIn("does not infer statistical significance", data["notice"])
+        self.assertEqual(data["comparison"]["added_seeds"], [4])
+        self.assertEqual(data["comparison"]["removed_seeds"], [1])
         change = data["comparison"]["changed_runs"][0]
-        self.assertEqual(change["seed"], 1)
+        self.assertEqual(change["seed"], 3)
         self.assertEqual(change["changes"]["metrics"][0]["id"], "turns")
 
 
