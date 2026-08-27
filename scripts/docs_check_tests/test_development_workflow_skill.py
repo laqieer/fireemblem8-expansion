@@ -29,6 +29,8 @@ MANUAL_HANDOFF_CASE_HEADING = (
     "TC-WORKFLOW-MANUAL-HANDOFF-001: "
     "Surface actionable manual testing and resume automatically"
 )
+MANUAL_HANDOFF_POLICY_HEADING = "Actionable manual-testing handoff"
+MANUAL_HANDOFF_SUMMARY_HEADING = "Lifecycle summary"
 MANUAL_HANDOFF_QUERY = (
     'repo:laqieer/fireemblem8-expansion is:open assignee:laqieer '
     'label:"waiting-for-manual-testing"'
@@ -521,6 +523,137 @@ def watcher_example_violations(text):
             if re.search(r"\bgh run watch\b", normalized) and normalized != CANONICAL_WATCHER_COMMAND:
                 violations.append(normalized)
     return violations
+
+
+HUMAN_LIFECYCLE_ACTIONS = {
+    "Activation": (
+        ("apply label", ("apply", "add"), {
+            "waiting", "for", "manual", "testing", "originating", "issue",
+            "open", "implementation", "pr",
+        }),
+        ("assign tester", ("assign",), {"laqieer", "targets"}),
+        ("ping tester", ("ping", "mention", "notify"), {
+            "laqieer", "comment",
+        }),
+    ),
+    "Hold": (
+        ("block merge", ("block", "prevent"), {
+            "merge", "manual", "criterion",
+        }),
+        ("block closure", ("block", "prevent"), {
+            "issue", "closure", "manual", "criterion",
+        }),
+    ),
+    "Completion": (
+        ("remove label", ("remove", "clear"), {
+            "waiting", "for", "manual", "testing", "originating", "issue",
+            "labeled", "implementation", "pr",
+        }),
+        ("remove assignment", ("remove", "clear"), {
+            "temporary", "laqieer", "assignment",
+        }),
+        ("resume delivery", ("resume", "continue"), {
+            "exact", "candidate", "gates", "merge", "automatically",
+        }),
+    ),
+}
+HUMAN_POLICY_SOFTENERS = {
+    "can",
+    "cannot",
+    "could",
+    "may",
+    "might",
+    "never",
+    "not",
+    "optional",
+    "optionally",
+    "prohibited",
+}
+
+
+def parse_labeled_summary(text, heading):
+    section = "\n".join(read_markdown_section(text, heading))
+    fields = {}
+    pattern = re.compile(
+        r"(?ms)^- \*\*(?P<name>[^*:]+):\*\* "
+        r"(?P<value>.*?)(?=^- \*\*|\Z)"
+    )
+    for match in pattern.finditer(section):
+        name = match.group("name")
+        if name in fields:
+            raise AssertionError(f"duplicate lifecycle field {name!r}")
+        fields[name] = " ".join(match.group("value").split())
+    return fields
+
+
+def human_handoff_summary(text, governance=False):
+    if governance:
+        case = "\n".join(
+            read_markdown_section(text, MANUAL_HANDOFF_CASE_HEADING)
+        )
+        return parse_labeled_summary(case, MANUAL_HANDOFF_SUMMARY_HEADING)
+    return parse_labeled_summary(text, MANUAL_HANDOFF_POLICY_HEADING)
+
+
+def human_handoff_violations(text, governance=False):
+    fields = human_handoff_summary(text, governance)
+    violations = []
+    if set(fields) != set(HUMAN_LIFECYCLE_ACTIONS):
+        violations.append("lifecycle fields are incomplete")
+    for field, actions in HUMAN_LIFECYCLE_ACTIONS.items():
+        clauses = [
+            set(normalize_policy(clause).split())
+            for clause in re.split(r"[.;]+", fields.get(field, ""))
+            if clause.strip()
+        ]
+        for name, verbs, required_words in actions:
+            matches = [
+                clause
+                for clause in clauses
+                if required_words <= clause
+                and any(verb in clause for verb in verbs)
+            ]
+            if not matches:
+                violations.append(f"{field}: missing {name}")
+                continue
+            if any(clause & HUMAN_POLICY_SOFTENERS for clause in matches):
+                violations.append(f"{field}: reversed or softened {name}")
+
+    activation = fields.get("Activation", "")
+    completion = fields.get("Completion", "")
+    for exact in (
+        "`waiting-for-manual-testing`",
+        "`laqieer`",
+        "`@laqieer`",
+    ):
+        if exact not in activation:
+            violations.append(f"Activation: missing {exact}")
+    for exact in ("`waiting-for-manual-testing`", "`laqieer`"):
+        if exact not in completion:
+            violations.append(f"Completion: missing {exact}")
+
+    completion_words = normalize_policy(completion).split()
+    try:
+        after = completion_words.index("after")
+        accepted = completion_words.index("accepted")
+        evidence = completion_words.index("evidence")
+        resume = completion_words.index("resume")
+    except ValueError:
+        violations.append("Completion: missing accepted-evidence gate")
+    else:
+        if not (after < accepted < resume and after < evidence < resume):
+            violations.append("Completion: resume precedes accepted evidence")
+    return violations
+
+
+def replace_whitespace_phrase(text, phrase, replacement):
+    pattern = re.compile(
+        r"\s+".join(re.escape(part) for part in phrase.split())
+    )
+    mutated, count = pattern.subn(replacement, text, count=1)
+    if count != 1:
+        raise AssertionError(f"mutation phrase not found: {phrase}")
+    return mutated
 
 
 EXPECTED_MANUAL_HANDOFF_CONTRACT = {
@@ -1162,14 +1295,26 @@ def validate_completion_cleanup(
     if not isinstance(completion_comments, dict):
         return ["completion comments must be an object"]
     valid_history = []
+    history_by_url = {}
     for index, item in enumerate(item_history):
         shape_violations = validate_manual_item_shape(contract, item)
         violations.extend(
             f"history[{index}]: {finding}"
             for finding in shape_violations
         )
-        if not shape_violations:
-            valid_history.append(item)
+        if shape_violations:
+            continue
+        url = item["url"]
+        if url in history_by_url:
+            duplicate_kind = (
+                "duplicate"
+                if item == history_by_url[url]
+                else "contradictory duplicate"
+            )
+            violations.append(f"{duplicate_kind} history item: {url}")
+            continue
+        history_by_url[url] = item
+        valid_history.append(item)
     labeled_urls = {
         item["url"]
         for item in valid_history
@@ -1202,7 +1347,6 @@ def validate_completion_cleanup(
     for extra in sorted(actual_comment_urls - expected_comment_urls):
         violations.append(f"unrelated completion comment: {extra}")
     if completion["comment"]["required_per_cleanup_target"]:
-        history_by_url = {item["url"]: item for item in valid_history}
         for url in sorted(expected_comment_urls & actual_comment_urls):
             item = history_by_url[url]
             completion_comment = completion_comments[url]
@@ -2464,6 +2608,18 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 self.assertIn(link, path.read_text(encoding="utf-8"))
 
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        for path in (SKILL_PATH, CONTRIBUTING_PATH):
+            with self.subTest(surface=str(path), contract="human lifecycle"):
+                self.assertEqual(
+                    [],
+                    human_handoff_violations(
+                        path.read_text(encoding="utf-8")
+                    ),
+                )
+        self.assertEqual(
+            [],
+            human_handoff_violations(governance, governance=True),
+        )
         case = "\n".join(
             read_markdown_section(governance, MANUAL_HANDOFF_CASE_HEADING)
         )
@@ -2536,6 +2692,69 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "docs/test-cases/workflow-governance.md",
         )
         self.assertEqual(indexed_case["feature_id"], "workflow-governance")
+
+    def test_manual_handoff_human_lifecycle_mutations_fail_closed(self):
+        surfaces = (
+            (SKILL_PATH.read_text(encoding="utf-8"), False),
+            (CONTRIBUTING_PATH.read_text(encoding="utf-8"), False),
+            (
+                WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8"),
+                True,
+            ),
+        )
+        actions = (
+            "Apply `waiting-for-manual-testing` to the originating issue and "
+            "each open implementation PR",
+            "Assign `laqieer` to those targets",
+            "Ping `@laqieer` in each comment",
+            "Block merge for the manual criterion",
+            "Block issue closure for the manual criterion",
+            "remove `waiting-for-manual-testing` from the originating issue "
+            "and every labeled implementation PR",
+            "Remove the temporary `laqieer` assignment",
+            "Resume exact-candidate gates and merge automatically",
+        )
+        for text, governance in surfaces:
+            for action in actions:
+                first, remainder = action.split(" ", 1)
+                mutations = {
+                    "removed": "",
+                    "negated": f"Do not {first.lower()} {remainder}",
+                    "softened": f"May {first.lower()} {remainder}",
+                }
+                for mutation, replacement in mutations.items():
+                    with self.subTest(
+                        governance=governance,
+                        action=action,
+                        mutation=mutation,
+                    ):
+                        mutated = replace_whitespace_phrase(
+                            text,
+                            action,
+                            replacement,
+                        )
+                        self.assertTrue(
+                            human_handoff_violations(
+                                mutated,
+                                governance=governance,
+                            )
+                        )
+            for replacement in ("Before accepted evidence", "After rejected evidence"):
+                with self.subTest(
+                    governance=governance,
+                    completion_gate=replacement,
+                ):
+                    mutated = replace_whitespace_phrase(
+                        text,
+                        "After accepted evidence",
+                        replacement,
+                    )
+                    self.assertTrue(
+                        human_handoff_violations(
+                            mutated,
+                            governance=governance,
+                        )
+                    )
 
     def test_manual_handoff_contract_mutations_fail_closed(self):
         contract = read_manual_handoff_contract()
@@ -3597,6 +3816,24 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             [],
             cleanup_violations(),
         )
+        identical_history = history + (copy.deepcopy(history[1]),)
+        identical_failures = cleanup_violations(
+            history_value=identical_history,
+        )
+        self.assertTrue(any(
+            "duplicate history item" in failure
+            for failure in identical_failures
+        ))
+        contradictory_record = copy.deepcopy(history[1])
+        contradictory_record["received_label"] = False
+        contradictory_history = history + (contradictory_record,)
+        contradictory_failures = cleanup_violations(
+            history_value=contradictory_history,
+        )
+        self.assertTrue(any(
+            "contradictory duplicate history item" in failure
+            for failure in contradictory_failures
+        ))
         valid_issue_evidence = copy.deepcopy(completion_comments)
         valid_issue_evidence[issue_url]["evidence_url"] = (
             issue_url + "#issuecomment-123456"

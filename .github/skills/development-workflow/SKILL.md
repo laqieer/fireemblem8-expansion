@@ -248,11 +248,14 @@ match the original handoff case ID and commit. Only an accepted outcome permits
 cleanup and resumption; a rejected outcome retains both holds and remains
 actionable.
 
-- **Activation:** Apply `waiting-for-manual-testing`. Assign `laqieer`. Ping
-  `@laqieer`.
-- **Hold:** Block merge. Block issue closure.
-- **Completion:** After an accepted result, remove
-  `waiting-for-manual-testing`. Remove the temporary `laqieer` assignment unless
+- **Activation:** Apply `waiting-for-manual-testing` to the originating issue
+  and each open implementation PR. Assign `laqieer` to those targets. Ping
+  `@laqieer` in each comment.
+- **Hold:** Block merge for the manual criterion. Block issue closure for the
+  manual criterion.
+- **Completion:** After accepted evidence, remove
+  `waiting-for-manual-testing` from the originating issue and every labeled
+  implementation PR. Remove the temporary `laqieer` assignment unless
   independently owned. Resume exact-candidate gates and merge automatically.
 
 Use the documented queue:
