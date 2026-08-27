@@ -628,6 +628,29 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
     "completion": {
         "post_result": True,
         "post_evidence_link": True,
+        "comment": {
+            "required": True,
+            "required_per_cleanup_target": True,
+            "bind_to_activation_fields": ["case_id", "commit"],
+            "fields": {
+                "case_id": {
+                    "type": "string",
+                    "pattern": "^TC-[A-Z0-9]+(?:-[A-Z0-9]+)*-[0-9]{3}$",
+                },
+                "commit": {
+                    "type": "string",
+                    "format": "git_sha40_lowercase",
+                },
+                "actual_result": {
+                    "type": "string",
+                    "min_length": 1,
+                },
+                "evidence_url": {
+                    "type": "string",
+                    "format": "github_evidence_url",
+                },
+            },
+        },
         "remove_label": "waiting-for-manual-testing",
         "remove_label_from": [
             "originating_issue",
@@ -661,6 +684,12 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
                 "closed",
                 "superseded",
                 "completed",
+            ],
+            "optional_boolean_fields": [
+                "received_label",
+                "other_ownership",
+                "label_removed",
+                "temporary_assignee_removed",
             ],
             "issue_url_pattern": (
                 "^https://github\\.com/laqieer/fireemblem8-expansion/"
@@ -788,6 +817,14 @@ def validate_comment_field(name, value, specification):
             violations.append(f"{name}: invalid SHA-256")
         if format_name == "nonempty_path" and not value.strip():
             violations.append(f"{name}: expected nonempty path")
+        if format_name == "github_evidence_url" and re.fullmatch(
+            r"https://github\.com/(?:"
+            r"laqieer/fireemblem8-expansion/(?:issues|pull)/[1-9][0-9]*"
+            r"(?:#(?:issuecomment-[0-9]+|discussion_r[0-9]+))?"
+            r"|user-attachments/assets/[0-9A-Za-z-]+)",
+            value,
+        ) is None:
+            violations.append(f"{name}: invalid GitHub evidence URL")
     elif expected_type == "array":
         if not isinstance(value, list):
             return [f"{name}: expected array"]
@@ -849,6 +886,42 @@ def valid_handoff_comment(contract, steps=None):
     return comment
 
 
+def validate_completion_comment(contract, comment, activation_comment):
+    specification = contract["completion"]["comment"]
+    if not isinstance(comment, dict):
+        return ["completion comment must be an object"]
+    violations = []
+    field_specs = specification["fields"]
+    for extra in sorted(set(comment) - set(field_specs)):
+        violations.append(f"unexpected completion comment field: {extra}")
+    for field, field_spec in field_specs.items():
+        if field not in comment:
+            violations.append(f"completion comment missing {field}")
+            continue
+        violations.extend(
+            validate_comment_field(field, comment[field], field_spec)
+        )
+    if not isinstance(activation_comment, dict):
+        violations.append("missing activation comment for completion binding")
+        return violations
+    for field in specification["bind_to_activation_fields"]:
+        if comment.get(field) != activation_comment.get(field):
+            violations.append(f"completion comment mismatches {field}")
+    return violations
+
+
+def valid_completion_comment(contract, activation_comment):
+    return {
+        "case_id": activation_comment["case_id"],
+        "commit": activation_comment["commit"],
+        "actual_result": "The requested manual judgment passed.",
+        "evidence_url": (
+            "https://github.com/user-attachments/assets/"
+            "11111111-2222-3333-4444-555555555555"
+        ),
+    }
+
+
 def validate_manual_item_shape(contract, item):
     if not isinstance(item, dict):
         return ["item must be an object"]
@@ -866,6 +939,9 @@ def validate_manual_item_shape(contract, item):
         violations.append("item has invalid state")
     if type(item.get("manual_pending")) is not bool:
         violations.append("item has invalid manual_pending")
+    for field in schema["optional_boolean_fields"]:
+        if field in item and type(item[field]) is not bool:
+            violations.append(f"item has invalid {field}")
     if not isinstance(url, str):
         violations.append("item has invalid URL type")
     elif kind in schema["kind_enum"]:
@@ -931,6 +1007,12 @@ def completed_item_cleanup_violations(contract, item):
     violations = []
     received_label = item.get("received_label")
     other_ownership = item.get("other_ownership", False)
+    if (
+        "other_ownership" in item
+        and type(item["other_ownership"]) is not bool
+    ):
+        violations.append(f"invalid other_ownership history: {item['url']}")
+        other_ownership = False
     if item.get("label") == activation["label"]:
         violations.append(f"stale label: {item['url']}")
     if (
@@ -1054,9 +1136,16 @@ def validate_live_manual_queue(contract, live_items, relationships):
     return violations
 
 
-def validate_completion_cleanup(contract, item_history, cleanup):
+def validate_completion_cleanup(
+    contract,
+    item_history,
+    cleanup,
+    completion_comments,
+):
     completion = contract["completion"]
     violations = []
+    if not isinstance(completion_comments, dict):
+        return ["completion comments must be an object"]
     valid_history = []
     for index, item in enumerate(item_history):
         shape_violations = validate_manual_item_shape(contract, item)
@@ -1083,6 +1172,32 @@ def validate_completion_cleanup(contract, item_history, cleanup):
         violations.extend(completed_item_cleanup_violations(contract, item))
         if item.get("received_label") and item.get("manual_pending") is not False:
             violations.append(f"cleanup item remains pending: {item['url']}")
+        if item.get("received_label"):
+            violations.extend(
+                f"{item['url']}: activation {finding}"
+                for finding in validate_handoff_comment(
+                    contract,
+                    item.get("comment"),
+                )
+            )
+    expected_comment_urls = labeled_urls
+    actual_comment_urls = set(completion_comments)
+    for missing in sorted(expected_comment_urls - actual_comment_urls):
+        violations.append(f"missing completion comment: {missing}")
+    for extra in sorted(actual_comment_urls - expected_comment_urls):
+        violations.append(f"unrelated completion comment: {extra}")
+    if completion["comment"]["required_per_cleanup_target"]:
+        history_by_url = {item["url"]: item for item in valid_history}
+        for url in sorted(expected_comment_urls & actual_comment_urls):
+            item = history_by_url[url]
+            violations.extend(
+                f"{url}: {finding}"
+                for finding in validate_completion_comment(
+                    contract,
+                    completion_comments[url],
+                    item.get("comment"),
+                )
+            )
     if cleanup.get("label") != completion["remove_label"]:
         violations.append("wrong cleanup label")
     if cleanup.get("assignee") != completion["remove_temporary_assignee"]:
@@ -3072,6 +3187,22 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 ),),
                 (),
             ),
+            "string other ownership": (
+                (issue(issue_url, other_ownership="false"),),
+                (),
+            ),
+            "integer other ownership": (
+                (issue(issue_url, other_ownership=1),),
+                (),
+            ),
+            "integer received label": (
+                (issue(issue_url, received_label=0),),
+                (),
+            ),
+            "string received label": (
+                (issue(issue_url, received_label="false"),),
+                (),
+            ),
             "completed issue cannot legitimize pending PR": (
                 (
                     issue(
@@ -3315,6 +3446,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         never_labeled_pr = (
             "https://github.com/laqieer/fireemblem8-expansion/pull/175"
         )
+        activation_comment = valid_handoff_comment(contract)
         history = (
             {
                 "url": issue_url,
@@ -3326,6 +3458,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "assignee": None,
                 "label_removed": True,
                 "temporary_assignee_removed": True,
+                "comment": activation_comment,
             },
             {
                 "url": open_pr,
@@ -3337,6 +3470,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "assignee": None,
                 "label_removed": True,
                 "temporary_assignee_removed": True,
+                "comment": activation_comment,
             },
             {
                 "url": closed_pr,
@@ -3348,6 +3482,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "assignee": None,
                 "label_removed": True,
                 "temporary_assignee_removed": True,
+                "comment": activation_comment,
             },
             {
                 "url": superseded_pr,
@@ -3360,6 +3495,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "other_ownership": True,
                 "label_removed": True,
                 "temporary_assignee_removed": False,
+                "comment": activation_comment,
             },
             {
                 "url": never_labeled_pr,
@@ -3391,126 +3527,162 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "remove_label_from": label_cleanup_urls,
             "remove_temporary_assignee_from": assignee_cleanup_urls,
         }
+        completion_comments = {
+            url: valid_completion_comment(contract, activation_comment)
+            for url in label_cleanup_urls
+        }
+
+        def cleanup_violations(
+            history_value=history,
+            cleanup_value=cleanup,
+            comments=completion_comments,
+        ):
+            return validate_completion_cleanup(
+                contract,
+                history_value,
+                cleanup_value,
+                comments,
+            )
+
         self.assertEqual(
             [],
-            validate_completion_cleanup(contract, history, cleanup),
+            cleanup_violations(),
         )
+        valid_issue_evidence = copy.deepcopy(completion_comments)
+        valid_issue_evidence[issue_url]["evidence_url"] = (
+            issue_url + "#issuecomment-123456"
+        )
+        self.assertEqual(
+            [],
+            cleanup_violations(comments=valid_issue_evidence),
+        )
+
+        missing_completion_comment = copy.deepcopy(completion_comments)
+        del missing_completion_comment[closed_pr]
+        self.assertTrue(cleanup_violations(
+            comments=missing_completion_comment,
+        ))
+        unrelated_completion_comment = copy.deepcopy(completion_comments)
+        unrelated_completion_comment[never_labeled_pr] = (
+            valid_completion_comment(contract, activation_comment)
+        )
+        self.assertTrue(cleanup_violations(
+            comments=unrelated_completion_comment,
+        ))
+
+        completion_payload_mutations = {
+            "blank result": ("actual_result", " "),
+            "result boolean": ("actual_result", False),
+            "result list": ("actual_result", []),
+            "result object": ("actual_result", {}),
+            "result integer": ("actual_result", 1),
+            "evidence null": ("evidence_url", None),
+            "evidence list": ("evidence_url", []),
+            "evidence object": ("evidence_url", {}),
+            "evidence integer": ("evidence_url", 1),
+            "evidence malformed": ("evidence_url", "not-a-url"),
+            "evidence unrelated": (
+                "evidence_url",
+                "https://github.com/other/repository/issues/1",
+            ),
+            "case mismatch": ("case_id", "TC-WORKFLOW-OTHER-001"),
+            "commit mismatch": ("commit", "d" * 40),
+        }
+        for scenario, (field, value) in completion_payload_mutations.items():
+            with self.subTest(completion_payload=scenario):
+                mutated_comments = copy.deepcopy(completion_comments)
+                mutated_comments[closed_pr][field] = value
+                self.assertTrue(cleanup_violations(
+                    comments=mutated_comments,
+                ))
+        for field in contract["completion"]["comment"]["fields"]:
+            with self.subTest(completion_payload=f"missing {field}"):
+                mutated_comments = copy.deepcopy(completion_comments)
+                del mutated_comments[closed_pr][field]
+                self.assertTrue(cleanup_violations(
+                    comments=mutated_comments,
+                ))
+        missing_activation_binding = copy.deepcopy(history)
+        del missing_activation_binding[2]["comment"]
+        self.assertTrue(cleanup_violations(
+            history_value=missing_activation_binding,
+        ))
         for omitted_url in (closed_pr, superseded_pr):
             with self.subTest(omitted=omitted_url):
                 mutated = copy.deepcopy(cleanup)
                 mutated["remove_label_from"].remove(omitted_url)
-                self.assertTrue(
-                    validate_completion_cleanup(contract, history, mutated)
-                )
+                self.assertTrue(cleanup_violations(cleanup_value=mutated))
         missing_closed_assignee = copy.deepcopy(cleanup)
         missing_closed_assignee["remove_temporary_assignee_from"].remove(
             closed_pr
         )
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            history,
-            missing_closed_assignee,
+        self.assertTrue(cleanup_violations(
+            cleanup_value=missing_closed_assignee,
         ))
         independent_owner_cleanup = copy.deepcopy(cleanup)
         independent_owner_cleanup["remove_temporary_assignee_from"].append(
             superseded_pr
         )
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            history,
-            independent_owner_cleanup,
+        self.assertTrue(cleanup_violations(
+            cleanup_value=independent_owner_cleanup,
         ))
         extra = copy.deepcopy(cleanup)
         extra["remove_label_from"].append(never_labeled_pr)
-        self.assertTrue(validate_completion_cleanup(contract, history, extra))
+        self.assertTrue(cleanup_violations(cleanup_value=extra))
         duplicate = copy.deepcopy(cleanup)
         duplicate["remove_label_from"].append(issue_url)
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            history,
-            duplicate,
-        ))
+        self.assertTrue(cleanup_violations(cleanup_value=duplicate))
 
         stale_closed = copy.deepcopy(history)
         stale_closed[2]["label"] = "waiting-for-manual-testing"
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            stale_closed,
-            cleanup,
-        ))
+        self.assertTrue(cleanup_violations(history_value=stale_closed))
         stale_superseded = copy.deepcopy(history)
         stale_superseded[3]["label"] = "waiting-for-manual-testing"
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            stale_superseded,
-            cleanup,
-        ))
+        self.assertTrue(cleanup_violations(history_value=stale_superseded))
         missing_label_marker = copy.deepcopy(history)
         del missing_label_marker[2]["label_removed"]
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            missing_label_marker,
-            cleanup,
-        ))
+        self.assertTrue(cleanup_violations(history_value=missing_label_marker))
         missing_assignee_marker = copy.deepcopy(history)
         del missing_assignee_marker[2]["temporary_assignee_removed"]
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            missing_assignee_marker,
-            cleanup,
+        self.assertTrue(cleanup_violations(
+            history_value=missing_assignee_marker,
         ))
         missing_completed_state = copy.deepcopy(history)
         del missing_completed_state[2]["manual_pending"]
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            missing_completed_state,
-            cleanup,
+        self.assertTrue(cleanup_violations(
+            history_value=missing_completed_state,
         ))
         unowned_assignee = copy.deepcopy(history)
         unowned_assignee[3]["other_ownership"] = False
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            unowned_assignee,
-            cleanup,
-        ))
+        self.assertTrue(cleanup_violations(history_value=unowned_assignee))
         false_history_with_current_label = copy.deepcopy(history)
         false_history_with_current_label[4]["label"] = (
             "waiting-for-manual-testing"
         )
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            false_history_with_current_label,
-            cleanup,
+        self.assertTrue(cleanup_violations(
+            history_value=false_history_with_current_label,
         ))
         false_history_with_label_removal = copy.deepcopy(history)
         false_history_with_label_removal[4]["label_removed"] = True
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            false_history_with_label_removal,
-            cleanup,
+        self.assertTrue(cleanup_violations(
+            history_value=false_history_with_label_removal,
         ))
         false_history_with_assignee_removal = copy.deepcopy(history)
         false_history_with_assignee_removal[4][
             "temporary_assignee_removed"
         ] = True
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            false_history_with_assignee_removal,
-            cleanup,
+        self.assertTrue(cleanup_violations(
+            history_value=false_history_with_assignee_removal,
         ))
         false_history_with_stale_assignee = copy.deepcopy(history)
         false_history_with_stale_assignee[4]["other_ownership"] = False
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            false_history_with_stale_assignee,
-            cleanup,
+        self.assertTrue(cleanup_violations(
+            history_value=false_history_with_stale_assignee,
         ))
         missing_received_history = copy.deepcopy(history)
         del missing_received_history[4]["received_label"]
-        self.assertTrue(validate_completion_cleanup(
-            contract,
-            missing_received_history,
-            cleanup,
+        self.assertTrue(cleanup_violations(
+            history_value=missing_received_history,
         ))
 
         history_shape_mutations = {}
@@ -3524,6 +3696,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             ),
             "state": (_MISSING, None, "pending", 1),
             "manual_pending": (_MISSING, None, "false", 0),
+            "received_label": ("false", 0),
+            "other_ownership": ("false", 1),
+            "label_removed": ("true", 1),
+            "temporary_assignee_removed": ("true", 1),
         }.items():
             for value in values:
                 mutated = copy.deepcopy(history[0])
@@ -3539,10 +3715,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             with self.subTest(history_shape=scenario):
                 invalid_history = list(copy.deepcopy(history))
                 invalid_history[0] = invalid_item
-                failures = validate_completion_cleanup(
-                    contract,
-                    invalid_history,
-                    cleanup,
+                failures = cleanup_violations(
+                    history_value=invalid_history,
                 )
                 self.assertTrue(
                     any("history[0]" in failure for failure in failures)

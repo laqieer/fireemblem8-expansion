@@ -247,6 +247,8 @@ includes the exact `@laqieer` mention, a nonempty numbered step list, and true
 merge/closure holds. Each actionable issue and linked open PR has its own
 typed comment payload with stable case ID, full Git SHA, artifact paths and
 SHA-256 values, and nonempty environment, state, expectation, and judgment.
+Cleanup and automatic resumption require a per-item completion comment whose
+actual result and GitHub evidence link match the original case ID and commit.
 
 The actionable queue is
   [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).

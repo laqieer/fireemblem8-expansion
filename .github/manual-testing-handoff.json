@@ -111,6 +111,32 @@
   "completion": {
     "post_result": true,
     "post_evidence_link": true,
+    "comment": {
+      "required": true,
+      "required_per_cleanup_target": true,
+      "bind_to_activation_fields": [
+        "case_id",
+        "commit"
+      ],
+      "fields": {
+        "case_id": {
+          "type": "string",
+          "pattern": "^TC-[A-Z0-9]+(?:-[A-Z0-9]+)*-[0-9]{3}$"
+        },
+        "commit": {
+          "type": "string",
+          "format": "git_sha40_lowercase"
+        },
+        "actual_result": {
+          "type": "string",
+          "min_length": 1
+        },
+        "evidence_url": {
+          "type": "string",
+          "format": "github_evidence_url"
+        }
+      }
+    },
     "remove_label": "waiting-for-manual-testing",
     "remove_label_from": [
       "originating_issue",
@@ -147,6 +173,12 @@
         "closed",
         "superseded",
         "completed"
+      ],
+      "optional_boolean_fields": [
+        "received_label",
+        "other_ownership",
+        "label_removed",
+        "temporary_assignee_removed"
       ],
       "issue_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/issues/[1-9][0-9]*$",
       "pr_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/pull/[1-9][0-9]*$"

@@ -242,6 +242,9 @@ PR later closed or superseded. Each handoff comment uses the contract's exact
 every actionable issue and linked open PR carries its own typed comment with
 stable case ID, full Git SHA, artifact paths and SHA-256 values, and nonempty
 environment, state, expectation, and judgment fields.
+Before cleanup and automatic resumption, every labeled item also receives a
+typed completion comment whose nonblank actual result and GitHub evidence link
+match the original handoff case ID and commit.
 
 Use the documented queue:
   [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).

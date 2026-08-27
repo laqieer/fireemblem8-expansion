@@ -89,7 +89,8 @@ and does not grant push credentials.
    item kind/URL/state, label, assignee, per-item comment, relationship, and
    stale-state controls before filtering closed relationships.
 3. Exercise completion cleanup with closed and superseded labeled PR history,
-   separate label/assignee cleanup sets, and retained independent ownership.
+   separate label/assignee cleanup sets, retained independent ownership, and a
+   typed result/evidence comment bound to the original case ID and commit.
 4. Run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 5. Open the documented queue:
@@ -108,9 +109,10 @@ artifact role/path/hash/emulator/determinism/synchronization/inspection field,
 instrumented artifacts, missing or misplaced mention, invalid or empty numbered
 steps, false or mistyped comment holds, missing per-item comments, permissive
 activation, wrong identifiers or targets, disabled holds, incomplete historical
-cleanup, empty-queue notifications, and invalid independently discovered
-issue/PR relationships. Removing this case's own required subsection also fails
-even when another case retains that heading.
+cleanup, missing or mismatched completion evidence, malformed optional
+booleans, empty-queue notifications, and invalid independently discovered
+issue/PR relationships. Removing this case's own required subsection also
+fails even when another case retains that heading.
 
 ### Interactions and save compatibility
 
