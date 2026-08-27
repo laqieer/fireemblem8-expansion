@@ -44,9 +44,14 @@
     ],
     "comment": {
       "required": true,
+      "required_per_target": true,
       "mention": "@laqieer",
       "steps_format": "numbered_list",
       "minimum_steps": 1,
+      "true_fields": [
+        "merge_hold",
+        "closure_hold"
+      ],
       "fields": [
         "case_id",
         "commit",

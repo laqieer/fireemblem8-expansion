@@ -560,9 +560,11 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
         ],
         "comment": {
             "required": True,
+            "required_per_target": True,
             "mention": "@laqieer",
             "steps_format": "numbered_list",
             "minimum_steps": 1,
+            "true_fields": ["merge_hold", "closure_hold"],
             "fields": [
                 "case_id",
                 "commit",
@@ -691,6 +693,8 @@ def read_manual_handoff_contract():
 def validate_handoff_comment(contract, comment):
     specification = contract["activation"]["comment"]
     violations = []
+    if not isinstance(comment, dict):
+        return ["comment must be an object"]
     if comment.get("mention") != specification["mention"]:
         violations.append("comment missing exact mention")
     for field in specification["fields"]:
@@ -706,6 +710,39 @@ def validate_handoff_comment(contract, comment):
             or any(not isinstance(step, str) or not step.strip() for step in steps)
         ):
             violations.append("steps list is empty or invalid")
+    for field in specification["true_fields"]:
+        if comment.get(field) is not True:
+            violations.append(f"{field} must be boolean true")
+    return violations
+
+
+def valid_handoff_comment(contract, steps=None):
+    fields = contract["activation"]["comment"]["fields"]
+    comment = {
+        field: True if field.endswith("_hold") else f"value-{field}"
+        for field in fields
+    }
+    comment["mention"] = contract["activation"]["comment"]["mention"]
+    comment["steps"] = steps or ["Open the artifact."]
+    return comment
+
+
+def completed_item_cleanup_violations(contract, item):
+    if not item.get("received_label"):
+        return []
+    activation = contract["activation"]
+    violations = []
+    if item.get("label_removed") is not True:
+        violations.append(f"label removal not recorded: {item['url']}")
+    if item.get("label") == activation["label"]:
+        violations.append(f"stale label: {item['url']}")
+    if not item.get("other_ownership", False):
+        if item.get("temporary_assignee_removed") is not True:
+            violations.append(
+                f"temporary assignee removal not recorded: {item['url']}"
+            )
+        if item.get("assignee") == activation["assignee"]:
+            violations.append(f"stale assignee: {item['url']}")
     return violations
 
 
@@ -723,7 +760,11 @@ def validate_live_manual_queue(contract, live_items, relationships):
         if url in seen_urls:
             violations.append(f"duplicate item: {url}")
         seen_urls.add(url)
-        if not item.get("manual_pending", True):
+        state = item.get("state", "open")
+        pending = item.get("manual_pending", True)
+        if state != "open" and pending:
+            violations.append(f"non-open item remains pending: {url}")
+        if not pending:
             if item.get("label") == activation["label"]:
                 violations.append(f"stale label: {url}")
             if (
@@ -731,15 +772,24 @@ def validate_live_manual_queue(contract, live_items, relationships):
                 and not item.get("other_ownership", False)
             ):
                 violations.append(f"stale assignee: {url}")
-        if item.get("state", "open") != "open":
+            violations.extend(completed_item_cleanup_violations(contract, item))
+        if state != "open":
             continue
-        if not item.get("manual_pending", True):
+        if not pending:
             continue
         pending_open_items.append(item)
         if item.get("label") != activation["label"]:
             violations.append(f"wrong label: {url}")
         if item.get("assignee") != activation["assignee"]:
             violations.append(f"wrong assignee: {url}")
+        if activation["comment"]["required_per_target"]:
+            violations.extend(
+                f"{url}: {finding}"
+                for finding in validate_handoff_comment(
+                    contract,
+                    item.get("comment"),
+                )
+            )
 
     issues = {
         item["url"]: item
@@ -784,7 +834,6 @@ def validate_live_manual_queue(contract, live_items, relationships):
 
 
 def validate_completion_cleanup(contract, item_history, cleanup):
-    activation = contract["activation"]
     completion = contract["completion"]
     labeled_urls = {
         item["url"]
@@ -803,13 +852,9 @@ def validate_completion_cleanup(contract, item_history, cleanup):
     for item in item_history:
         if not item.get("received_label"):
             continue
-        if item.get("label") == activation["label"]:
-            violations.append(f"stale label: {item['url']}")
-        if (
-            not item.get("other_ownership", False)
-            and item.get("assignee") == activation["assignee"]
-        ):
-            violations.append(f"stale assignee: {item['url']}")
+        if item.get("manual_pending") is not False:
+            violations.append(f"cleanup item remains pending: {item['url']}")
+        violations.extend(completed_item_cleanup_violations(contract, item))
     if cleanup.get("label") != completion["remove_label"]:
         violations.append("wrong cleanup label")
     if cleanup.get("assignee") != completion["remove_temporary_assignee"]:
@@ -2389,13 +2434,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
 
     def test_manual_handoff_comment_payload_is_structured(self):
         contract = read_manual_handoff_contract()
-        fields = contract["activation"]["comment"]["fields"]
-        comment = {
-            field: True if field.endswith("_hold") else f"value-{field}"
-            for field in fields
-        }
-        comment["mention"] = "@laqieer"
-        comment["steps"] = ["Open the artifact."]
+        comment = valid_handoff_comment(contract)
         self.assertEqual([], validate_handoff_comment(contract, comment))
 
         multiple_steps = copy.deepcopy(comment)
@@ -2427,6 +2466,12 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             ),
             "empty steps": dict(comment, steps=[]),
         }
+        for hold in ("merge_hold", "closure_hold"):
+            for value in (False, None, "true", 0):
+                invalid_comments[f"{hold}={value!r}"] = dict(
+                    comment,
+                    **{hold: value},
+                )
         for scenario, invalid in invalid_comments.items():
             with self.subTest(scenario=scenario):
                 self.assertTrue(
@@ -2444,6 +2489,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "manual_pending": True,
                 "label": contract["activation"]["label"],
                 "assignee": contract["activation"]["assignee"],
+                "comment": valid_handoff_comment(contract),
             }
             item.update(overrides)
             return item
@@ -2456,6 +2502,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "manual_pending": True,
                 "label": contract["activation"]["label"],
                 "assignee": contract["activation"]["assignee"],
+                "comment": valid_handoff_comment(contract),
                 "origin_url": origin_url,
             }
             item.update(overrides)
@@ -2496,6 +2543,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                         received_label=True,
                         label=None,
                         assignee=None,
+                        label_removed=True,
+                        temporary_assignee_removed=True,
                     ),
                 ),
                 (
@@ -2603,6 +2652,43 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     "state": "open",
                 },),
             ),
+            "linked PR missing its own comment": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, issue_url, comment=None),
+                    pull(pr_two, issue_url),
+                ),
+                (
+                    {
+                        "issue_url": issue_url,
+                        "pr_url": pr_one,
+                        "state": "open",
+                    },
+                    {
+                        "issue_url": issue_url,
+                        "pr_url": pr_two,
+                        "state": "open",
+                    },
+                ),
+            ),
+            "linked PR has false hold": (
+                (
+                    issue(issue_url),
+                    pull(
+                        pr_one,
+                        issue_url,
+                        comment=dict(
+                            valid_handoff_comment(contract),
+                            merge_hold=False,
+                        ),
+                    ),
+                ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
+            ),
             "self-declared list cannot hide linked PR": (
                 (issue(issue_url, open_pr_urls=[]),),
                 ({
@@ -2696,6 +2782,24 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     "state": "closed",
                 },),
             ),
+            "closed PR remains pending": (
+                (
+                    issue(issue_url),
+                    pull(
+                        closed_pr,
+                        issue_url,
+                        state="closed",
+                        manual_pending=True,
+                        label_removed=True,
+                        temporary_assignee_removed=True,
+                    ),
+                ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": closed_pr,
+                    "state": "closed",
+                },),
+            ),
             "superseded PR has stale temporary assignee": (
                 (
                     issue(issue_url),
@@ -2737,34 +2841,46 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "url": issue_url,
                 "kind": "issue",
                 "state": "open",
+                "manual_pending": False,
                 "received_label": True,
                 "label": None,
                 "assignee": None,
+                "label_removed": True,
+                "temporary_assignee_removed": True,
             },
             {
                 "url": open_pr,
                 "kind": "pr",
                 "state": "open",
+                "manual_pending": False,
                 "received_label": True,
                 "label": None,
                 "assignee": None,
+                "label_removed": True,
+                "temporary_assignee_removed": True,
             },
             {
                 "url": closed_pr,
                 "kind": "pr",
                 "state": "closed",
+                "manual_pending": False,
                 "received_label": True,
                 "label": None,
                 "assignee": None,
+                "label_removed": True,
+                "temporary_assignee_removed": True,
             },
             {
                 "url": superseded_pr,
                 "kind": "pr",
                 "state": "superseded",
+                "manual_pending": False,
                 "received_label": True,
                 "label": None,
                 "assignee": "laqieer",
                 "other_ownership": True,
+                "label_removed": True,
+                "temporary_assignee_removed": False,
             },
             {
                 "url": never_labeled_pr,
@@ -2842,6 +2958,27 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         self.assertTrue(validate_completion_cleanup(
             contract,
             stale_superseded,
+            cleanup,
+        ))
+        missing_label_marker = copy.deepcopy(history)
+        del missing_label_marker[2]["label_removed"]
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            missing_label_marker,
+            cleanup,
+        ))
+        missing_assignee_marker = copy.deepcopy(history)
+        del missing_assignee_marker[2]["temporary_assignee_removed"]
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            missing_assignee_marker,
+            cleanup,
+        ))
+        missing_completed_state = copy.deepcopy(history)
+        del missing_completed_state[2]["manual_pending"]
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            missing_completed_state,
             cleanup,
         ))
         unowned_assignee = copy.deepcopy(history)

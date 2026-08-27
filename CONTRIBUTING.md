@@ -243,7 +243,9 @@ deterministic emulator screenshots or synchronized emulator A/V evidence.
 GitHub-linked open PR discovery determines activation targets; completion
 cleans every labeled item, including closed or superseded PRs, while preserving
 an assignee only when independent ownership remains. Every handoff comment
-includes the exact `@laqieer` mention and a nonempty numbered step list.
+includes the exact `@laqieer` mention, a nonempty numbered step list, and true
+merge/closure holds. Each actionable issue and linked open PR has its own
+comment payload.
 
 The actionable queue is
   [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).
