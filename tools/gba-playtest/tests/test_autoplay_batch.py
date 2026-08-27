@@ -1432,13 +1432,40 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         alias.symlink_to(autoplay_batch.BUILD_ROOT, target_is_directory=True)
         with self.assertRaisesRegex(
             gba_playtest.PlaytestError,
-            "not the build root itself",
+            "output collision",
         ):
             autoplay_batch._output_path(alias)
 
         child = self.output("strict-child.json")
         self.assertEqual(autoplay_batch._output_path(child), child.resolve())
         self.assertFalse(child.exists())
+
+    def test_dangling_output_symlink_is_collision_and_distinct_retry_succeeds(self):
+        missing_target = self.output("missing-symlink-target.json")
+        requested = self.output("dangling-output.json")
+        requested.symlink_to(missing_target)
+        temporary = autoplay_batch._temporary_output_path(requested)
+        stderr = io.StringIO()
+        with mock.patch.object(
+            gba_playtest,
+            "build_backend",
+            side_effect=AssertionError("dangling collision reached backend setup"),
+        ), mock.patch.object(
+            gba_playtest,
+            "capture",
+            side_effect=AssertionError("dangling collision reached capture"),
+        ), redirect_stderr(stderr):
+            code = autoplay_batch.main(self.arguments(requested))
+        self.assertEqual(code, 2)
+        self.assertIn("output collision", stderr.getvalue())
+        self.assertTrue(requested.is_symlink())
+        self.assertEqual(requested.readlink(), missing_target)
+        self.assertFalse(missing_target.exists())
+        self.assertFalse(temporary.exists())
+
+        corrected = self.output("dangling-output-corrected.json")
+        self.assertEqual(self._run_fake(self.arguments(corrected))[0], 1)
+        self.assertTrue(corrected.is_file())
 
     def test_atomic_output_collision_cleanup_and_corrected_retry(self):
         output = self.output("atomic.json")

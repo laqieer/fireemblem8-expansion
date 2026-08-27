@@ -503,7 +503,9 @@ failure count, and returns 1. A destination created during publication is
 never overwritten; failed staging is removed for retry, while comparison
 leaves both input report bytes untouched.
 The `build/` root itself is rejected before creation/reservation when absent,
-present, or reached through a symlink; a strict child remains valid.
+present, or reached through a symlink. A dangling requested-output symlink is
+also an existing collision: its absent target remains absent, the symlink is
+unchanged, no staging file remains, and a distinct corrected child succeeds.
 
 The underlying plan negative also passes a scheduled write to a fixed-frame
 scenario and requires an actionable rejection before plan serialization or

@@ -198,7 +198,8 @@ individual records.
 Outputs are required to be new files strictly beneath ignored `build/`;
 `build/` itself, including a missing root or a symlink resolving to it, is
 rejected before directory creation. An existing path or concurrent sibling
-reservation is an error, not an overwrite. The
+reservation is an error, not an overwrite; lexical existence is checked before
+resolution, so a dangling output symlink is also preserved and rejected. The
 runner compiles one shared backend before launching workers; compiler,
 libmGBA, backend-build, and other global setup failures return 2 without any
 seed records, while an individual seed execution failure is retained in a

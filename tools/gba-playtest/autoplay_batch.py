@@ -2026,6 +2026,17 @@ def compare_reports(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict
 
 
 def _output_path(path: Path) -> Path:
+    lexical = Path(os.path.abspath(path))
+    lexical_build_root = Path(os.path.abspath(BUILD_ROOT))
+    if lexical == lexical_build_root:
+        raise gba_playtest.PlaytestError(
+            f"output {path} must be a child of the ignored build/ directory, "
+            "not the build root itself"
+        )
+    if os.path.lexists(path):
+        raise gba_playtest.PlaytestError(
+            f"output collision: {path} already exists and will not be overwritten"
+        )
     resolved = path.resolve()
     build_root = BUILD_ROOT.resolve()
     if resolved == build_root:
