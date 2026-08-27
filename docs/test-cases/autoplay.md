@@ -613,6 +613,11 @@ remain 64 and 52 bytes. The host-only configure test actually executes bare
 generated Make through a recursive-Make recorder and observes the debug goal
 and enabled profile without an ARM compiler. The toolchain gate separately
 executes the real configured compile/link/boot path.
+Each typed transport command first returns a matching monotonic `ACK`, then a
+matching `COMPLETE`, then its observation. Both planners execute a synthetic
+180-frame movement/camera/battle/event-style COMMIT and receive only the new
+chapter-two WAITING observation, never the prior COMMITTED page. Ordinary
+START/PAGE/CANCEL and rejected commands retain bounded fast completions.
 
 ### Negative control
 
@@ -639,6 +644,12 @@ Missing summon configuration, an already available summon, a moved or
 non-summoner unit, occupied/hidden/non-adjacent tiles, stale coordinates, and
 normal-vs-DK action substitution all reject. Public host validation errors
 name protocol v2 for both chapter range and candidate-cap failures.
+Two consecutive identical protocol rejections receive distinct ACK IDs and
+complete independently. A ROM that never consumes START returns typed
+`COMMAND_ACK_TIMEOUT` with no acknowledgement or observation. A ROM that
+acknowledges COMMIT but never publishes a new WAITING/terminal observation
+returns typed `ACTION_COMPLETION_TIMEOUT`, retains the successful ACK, omits
+COMPLETE, emits no stale observation, and terminates the adapter.
 
 ### Interactions and save compatibility
 
@@ -656,6 +667,8 @@ typed paging, atomic trace limits, complete non-mutating enumeration,
 deadline accounting, coordinate/slot lowering and execution, key consumption,
 C/Python v2 diagnostics, normal/DK summon availability, coordinate lowering,
 real summon creation, destructive checkpoint invalidation,
+C/host command acknowledgement, long-action completion, repeated rejection,
+and explicit transport timeout behavior,
 C89/agbcc and native/ARM layout, executable host-only recursive-Make routing,
 real configured toolchain build, and lifecycle teardown. The libmGBA selectors
 run both planner implementations and all negative commands against the

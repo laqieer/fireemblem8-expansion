@@ -28,9 +28,33 @@
 #define EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT UINT32_C(2)
 #define EXPANSION_AUTOPLAY_PLANNER_COMMAND_CANCEL UINT32_C(3)
 #define EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE UINT32_C(4)
+#define EXPANSION_AUTOPLAY_PLANNER_REJECTION_CANCELLED UINT32_C(8)
+#define EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING UINT32_C(2)
+#define EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED UINT32_C(4)
+#define EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED UINT32_C(5)
 #define COMMAND_WORD_COUNT 16u
 #define OBSERVATION_WORD_COUNT 249u
 #define CHECKPOINT_WORD_COUNT 13u
+
+#ifndef PLANNER_COMMAND_ACK_FRAME_LIMIT
+#define PLANNER_COMMAND_ACK_FRAME_LIMIT 120u
+#endif
+
+#ifndef PLANNER_COMMAND_RESPONSE_FRAME_LIMIT
+#define PLANNER_COMMAND_RESPONSE_FRAME_LIMIT 600u
+#endif
+
+#ifndef PLANNER_COMMIT_COMPLETION_FRAME_LIMIT
+#define PLANNER_COMMIT_COMPLETION_FRAME_LIMIT 18000u
+#endif
+
+struct command_acknowledgement
+{
+    uint32_t id;
+    uint32_t kind;
+    uint32_t result;
+    uint32_t rejection;
+};
 
 static void discard_log(
     struct mLogger* logger,
@@ -97,7 +121,6 @@ static void write_command(
         PLANNER_COMMAND_ADDR,
         2,
         COMMAND_WORD_COUNT * sizeof(uint32_t));
-    write_word(core, PLANNER_COMMAND_ADDR, 3, kind);
     write_word(core, PLANNER_COMMAND_ADDR, 4, run_id);
     write_word(core, PLANNER_COMMAND_ADDR, 5, observation_id);
     write_word(core, PLANNER_COMMAND_ADDR, 6, page_index);
@@ -108,6 +131,7 @@ static void write_command(
     write_word(core, PLANNER_COMMAND_ADDR, 11, expected_config);
     write_word(core, PLANNER_COMMAND_ADDR, 12, expected_scenario);
     write_word(core, PLANNER_COMMAND_ADDR, 13, expected_seed);
+    write_word(core, PLANNER_COMMAND_ADDR, 3, kind);
 }
 
 static void emit_state(struct mCore* core)
@@ -127,60 +151,162 @@ static void emit_state(struct mCore* core)
     fflush(stdout);
 }
 
-static void run_until_command_settled(
-    struct mCore* core,
-    uint32_t kind,
-    uint32_t previous_state,
-    uint32_t previous_observation,
-    uint32_t previous_page,
-    uint32_t previous_rejection,
-    uint32_t requested_page,
-    bool expect_start_success)
+static void emit_acknowledgement(
+    const struct command_acknowledgement* acknowledgement)
 {
-    int frames;
+    printf(
+        "ACK %08" PRIx32 " %08" PRIx32 " %08" PRIx32 " %08" PRIx32 "\n",
+        acknowledgement->id,
+        acknowledgement->kind,
+        acknowledgement->result,
+        acknowledgement->rejection);
+    fflush(stdout);
+}
 
-    for (frames = 0; frames < 120; frames++)
+static void emit_completion(
+    const struct command_acknowledgement* acknowledgement,
+    uint32_t response_frames)
+{
+    printf(
+        "COMPLETE %08" PRIx32 " %08" PRIx32 " %08" PRIx32 "\n",
+        acknowledgement->id,
+        acknowledgement->kind,
+        response_frames);
+    fflush(stdout);
+}
+
+static void emit_transport_error(
+    const char* code,
+    uint32_t command_id,
+    uint32_t kind)
+{
+    printf(
+        "TRANSPORT_ERROR %s %08" PRIx32 " %08" PRIx32 "\n",
+        code,
+        command_id,
+        kind);
+    fflush(stdout);
+}
+
+static bool wait_for_command_acknowledgement(
+    struct mCore* core,
+    uint32_t command_id,
+    uint32_t kind,
+    struct command_acknowledgement* acknowledgement)
+{
+    uint32_t frames;
+
+    for (frames = 0; frames < PLANNER_COMMAND_ACK_FRAME_LIMIT; frames++)
     {
-        uint32_t state;
-        uint32_t observation;
-        uint32_t page;
-        uint32_t rejection;
-
         core->runFrame(core);
         if (read_word(core, PLANNER_COMMAND_ADDR, 3) != 0)
             continue;
-        state = read_word(core, PLANNER_OBSERVATION_ADDR, 5);
-        observation = read_word(core, PLANNER_OBSERVATION_ADDR, 4);
-        page = read_word(core, PLANNER_OBSERVATION_ADDR, 6);
-        rejection = read_word(core, PLANNER_OBSERVATION_ADDR, 13);
-        if (kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_START)
-        {
-            if ((expect_start_success
-                    && (state == 2 || state == 4 || state == 5))
-                || (!expect_start_success
-                    && rejection != previous_rejection))
-                return;
-        }
-        else if (kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE)
-        {
-            if (page == requested_page || rejection != previous_rejection)
-                return;
-        }
-        else if (kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT)
-        {
-            if ((observation != previous_observation && state == 2)
-                || rejection != previous_rejection
-                || state == 4)
-                return;
-        }
-        else if (state != previous_state
-            || observation != previous_observation
-            || page != previous_page
-            || rejection != previous_rejection)
-        {
-            return;
-        }
+        acknowledgement->id = command_id;
+        acknowledgement->kind = kind;
+        acknowledgement->result =
+            read_word(core, PLANNER_COMMAND_ADDR, 14);
+        acknowledgement->rejection =
+            read_word(core, PLANNER_COMMAND_ADDR, 15);
+        return true;
     }
+    return false;
+}
+
+static bool is_terminal_state(uint32_t state)
+{
+    return state == EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED
+        || state == EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
+}
+
+static bool is_acknowledgement_valid(
+    const struct command_acknowledgement* acknowledgement)
+{
+    return (acknowledgement->result == 0
+            && acknowledgement->rejection != 0)
+        || (acknowledgement->result == 1
+            && acknowledgement->rejection == 0);
+}
+
+static bool is_command_response_complete(
+    struct mCore* core,
+    const struct command_acknowledgement* acknowledgement,
+    uint32_t previous_observation,
+    uint32_t requested_page)
+{
+    uint32_t state =
+        read_word(core, PLANNER_OBSERVATION_ADDR, 5);
+    uint32_t observation =
+        read_word(core, PLANNER_OBSERVATION_ADDR, 4);
+    uint32_t page =
+        read_word(core, PLANNER_OBSERVATION_ADDR, 6);
+
+    if (acknowledgement->result == 0)
+    {
+        if (acknowledgement->rejection == 0)
+            return false;
+        if (acknowledgement->kind
+                == EXPANSION_AUTOPLAY_PLANNER_COMMAND_CANCEL
+            && acknowledgement->rejection
+                == EXPANSION_AUTOPLAY_PLANNER_REJECTION_CANCELLED)
+            return is_terminal_state(state);
+        return true;
+    }
+    if (acknowledgement->result != 1
+        || acknowledgement->rejection != 0)
+        return false;
+    switch (acknowledgement->kind)
+    {
+    case EXPANSION_AUTOPLAY_PLANNER_COMMAND_START:
+        return state == EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING
+            || is_terminal_state(state);
+
+    case EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE:
+        return state == EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING
+            && page == requested_page;
+
+    case EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT:
+        return (state == EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING
+                && observation != previous_observation)
+            || is_terminal_state(state);
+
+    default:
+        return false;
+    }
+}
+
+static bool wait_for_command_response(
+    struct mCore* core,
+    const struct command_acknowledgement* acknowledgement,
+    uint32_t previous_observation,
+    uint32_t requested_page,
+    uint32_t* response_frames)
+{
+    uint32_t frame_limit =
+        acknowledgement->kind
+            == EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT
+        ? PLANNER_COMMIT_COMPLETION_FRAME_LIMIT
+        : PLANNER_COMMAND_RESPONSE_FRAME_LIMIT;
+    uint32_t frames;
+
+    *response_frames = 0;
+    if (is_command_response_complete(
+            core,
+            acknowledgement,
+            previous_observation,
+            requested_page))
+        return true;
+    for (frames = 0; frames < frame_limit; frames++)
+    {
+        core->runFrame(core);
+        *response_frames = frames + 1;
+        if (is_command_response_complete(
+                core,
+                acknowledgement,
+                previous_observation,
+                requested_page))
+            return true;
+    }
+    return false;
 }
 
 static bool parse_hex(const char* text, uint32_t* value)
@@ -219,6 +345,8 @@ static int run_transport(const char* rom_path)
     unsigned height;
     char line[512];
     int startup_frames;
+    int transport_result = 0;
+    uint32_t next_command_id = 1;
 
     core = mCoreFind(rom_path);
     if (core == NULL || !core->init(core))
@@ -256,15 +384,10 @@ static int run_transport(const char* rom_path)
         uint32_t values[11];
         uint32_t kind = 0;
         uint32_t requested_page = 0;
-        uint32_t previous_state =
-            read_word(core, PLANNER_OBSERVATION_ADDR, 5);
         uint32_t previous_observation =
             read_word(core, PLANNER_OBSERVATION_ADDR, 4);
-        uint32_t previous_page =
-            read_word(core, PLANNER_OBSERVATION_ADDR, 6);
-        uint32_t previous_rejection =
-            read_word(core, PLANNER_OBSERVATION_ADDR, 13);
-        bool expect_start_success = false;
+        uint32_t response_frames;
+        struct command_acknowledgement acknowledgement;
 
         if (command == NULL)
             continue;
@@ -339,11 +462,6 @@ static int run_transport(const char* rom_path)
                 values[2],
                 values[3]);
             kind = EXPANSION_AUTOPLAY_PLANNER_COMMAND_START;
-            expect_start_success =
-                values[0] == read_word(core, PLANNER_OBSERVATION_ADDR, 21)
-                && values[1] == read_word(core, PLANNER_OBSERVATION_ADDR, 22)
-                && values[2] == read_word(core, PLANNER_OBSERVATION_ADDR, 23)
-                && values[3] == read_word(core, PLANNER_OBSERVATION_ADDR, 24);
         }
         else if (strcmp(command, "PAGE") == 0)
         {
@@ -444,22 +562,56 @@ static int run_transport(const char* rom_path)
             fflush(stdout);
             continue;
         }
-        run_until_command_settled(
-            core,
-            kind,
-            previous_state,
-            previous_observation,
-            previous_page,
-            previous_rejection,
-            requested_page,
-            expect_start_success);
+        if (!wait_for_command_acknowledgement(
+                core,
+                next_command_id,
+                kind,
+                &acknowledgement))
+        {
+            emit_transport_error(
+                "COMMAND_ACK_TIMEOUT",
+                next_command_id,
+                kind);
+            transport_result = 3;
+            break;
+        }
+        emit_acknowledgement(&acknowledgement);
+        if (!is_acknowledgement_valid(&acknowledgement))
+        {
+            emit_transport_error(
+                "INVALID_COMMAND_ACK",
+                next_command_id,
+                kind);
+            transport_result = 3;
+            break;
+        }
+        if (!wait_for_command_response(
+                core,
+                &acknowledgement,
+                previous_observation,
+                requested_page,
+                &response_frames))
+        {
+            emit_transport_error(
+                kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT
+                    ? "ACTION_COMPLETION_TIMEOUT"
+                    : "COMMAND_RESPONSE_TIMEOUT",
+                next_command_id,
+                kind);
+            transport_result = 3;
+            break;
+        }
+        emit_completion(&acknowledgement, response_frames);
         emit_state(core);
+        next_command_id++;
+        if (next_command_id == 0)
+            next_command_id = 1;
     }
 
     free(buffer);
     mCoreConfigDeinit(&core->config);
     core->deinit(core);
-    return 0;
+    return transport_result;
 }
 
 int main(int argc, char** argv)

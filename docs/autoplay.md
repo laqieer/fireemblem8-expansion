@@ -1050,6 +1050,26 @@ pages, opaque-token acceptance and rejection, same-ROM/config/seed scenario
 mismatch, malformed traffic timeout, cancellation, and same-run chapter-two
 checkpoint continuation.
 
+Every typed mailbox command now produces three distinct line-protocol stages:
+`ACK command_id kind result rejection` after the ROM consumes the exact
+nonzero command kind, `COMPLETE command_id kind response_frames` only after
+the requested response condition is true, and then `OBS`. The backend writes
+the command kind last, assigns monotonically increasing fixed-width host ACK
+IDs, and accepts the acknowledgement only after the ROM clears that kind and
+publishes its command result. Repeated commands with the same rejection code
+therefore remain distinct without comparing rejection values.
+
+START, PAGE, CANCEL, and rejected commands retain bounded fast-response
+handling. An accepted COMMIT instead waits up to 18,000 execution frames for a
+genuinely new WAITING observation or a terminal planner state, allowing
+movement, camera, battle, trap, and event Procs to finish. The 120-frame
+mailbox-acknowledgement bound and 600-frame fast-response bound are separate
+from both that execution bound and the ROM's existing 300-frame/five-second
+decision deadline. An unacknowledged command emits
+`TRANSPORT_ERROR COMMAND_ACK_TIMEOUT`; an acknowledged COMMIT that never
+completes emits `TRANSPORT_ERROR ACTION_COMPLETION_TIMEOUT`. Either error
+terminates the adapter without emitting or serializing the old COMMITTED page.
+
 Host-only configuration coverage runs the generated GNUmakefile normally but
 replaces its recursive `$(MAKE)` boundary with a hermetic recorder. The
 recorder executes the child Makefile's variable probes with the same arguments

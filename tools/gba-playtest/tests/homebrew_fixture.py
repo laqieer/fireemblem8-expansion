@@ -144,8 +144,17 @@ def build_two_chapter_planner_rom(path: Path) -> None:
     path.write_bytes(rom)
 
 
-def build_production_planner_rom(path: Path, elf: Path) -> None:
+def build_production_planner_rom(
+    path: Path,
+    elf: Path,
+    *,
+    commit_delay_frames: int = 0,
+    stall_after_commit: bool = False,
+    ignore_commands: bool = False,
+) -> None:
     """Link the production planner implementation into a tiny freestanding ROM."""
+    if commit_delay_frames < 0:
+        raise ValueError("commit_delay_frames must be non-negative")
     root = Path(__file__).resolve().parents[3]
     compiler = shutil.which("arm-none-eabi-gcc")
     objcopy = shutil.which("arm-none-eabi-objcopy")
@@ -188,6 +197,13 @@ def build_production_planner_rom(path: Path, elf: Path) -> None:
         "-DFE8_EXPANSION_DEBUG=1",
         "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
         "-DFE8_AUTOPLAY_PLANNER_RUNTIME_TEST=1",
+        f"-DFE8_AUTOPLAY_PLANNER_RUNTIME_COMMIT_DELAY_FRAMES={commit_delay_frames}",
+        "-DFE8_AUTOPLAY_PLANNER_RUNTIME_STALL_AFTER_COMMIT={}".format(
+            int(stall_after_commit)
+        ),
+        "-DFE8_AUTOPLAY_PLANNER_RUNTIME_IGNORE_COMMANDS={}".format(
+            int(ignore_commands)
+        ),
         *map(str, sources),
         "-Wl,-T,{}".format(linker),
         "-Wl,--gc-sections",
@@ -253,8 +269,21 @@ def _planner_symbol_addresses(elf: Path) -> dict[str, int]:
     return addresses
 
 
-def build_planner_transport_backend(path: Path, elf: Path) -> None:
+def build_planner_transport_backend(
+    path: Path,
+    elf: Path,
+    *,
+    acknowledgement_frame_limit: int = 120,
+    response_frame_limit: int = 600,
+    commit_completion_frame_limit: int = 18000,
+) -> None:
     """Build the fixed-symbol stdin/stdout libmGBA planner adapter."""
+    if min(
+        acknowledgement_frame_limit,
+        response_frame_limit,
+        commit_completion_frame_limit,
+    ) <= 0:
+        raise ValueError("planner transport frame limits must be positive")
     root = Path(__file__).resolve().parents[3]
     compiler = shutil.which(os.environ.get("CC", "cc"))
     if compiler is None:
@@ -279,6 +308,11 @@ def build_planner_transport_backend(path: Path, elf: Path) -> None:
         ),
         "-DPLANNER_CHECKPOINT_ADDR=0x{:08x}u".format(
             addresses["gExpansionAutoplayPlannerCampaignCheckpoint"]
+        ),
+        f"-DPLANNER_COMMAND_ACK_FRAME_LIMIT={acknowledgement_frame_limit}u",
+        f"-DPLANNER_COMMAND_RESPONSE_FRAME_LIMIT={response_frame_limit}u",
+        "-DPLANNER_COMMIT_COMPLETION_FRAME_LIMIT={}u".format(
+            commit_completion_frame_limit
         ),
         str(root / "tools" / "gba-playtest" / "planner_transport_backend.c"),
         "-o",

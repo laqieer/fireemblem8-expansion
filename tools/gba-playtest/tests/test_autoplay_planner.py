@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -1246,6 +1247,31 @@ raise SystemExit(probe.returncode)
             self.assertNotIn("ActionSemantics_", symbols.stdout)
 
 
+@dataclass(frozen=True)
+class TransportAcknowledgement:
+    command_id: int
+    kind: int
+    result: int
+    rejection: int
+
+
+@dataclass(frozen=True)
+class TransportCompletion:
+    command_id: int
+    kind: int
+    response_frames: int
+
+
+class PlannerTransportError(RuntimeError):
+    def __init__(self, code: str, command_id: int, kind: int) -> None:
+        super().__init__(
+            f"{code}: command_id={command_id:#x} kind={kind:#x}"
+        )
+        self.code = code
+        self.command_id = command_id
+        self.kind = kind
+
+
 class PlannerProcessTransport:
     def __init__(self, backend: Path, rom: Path) -> None:
         self.process = subprocess.Popen(
@@ -1258,16 +1284,68 @@ class PlannerProcessTransport:
         )
         self.checkpoint: tuple[int, ...] = ()
         self.command: tuple[int, ...] = ()
+        self.last_acknowledgement: TransportAcknowledgement | None = None
+        self.last_completion: TransportCompletion | None = None
+        self._next_acknowledgement_id = 1
         self.frame_count = 4
         self.observation = self._read_state()
 
-    def _read_state(self) -> planner.Observation:
+    def _read_protocol_line(self) -> tuple[list[str], str]:
         assert self.process.stdout is not None
         line = self.process.stdout.readline()
         if not line:
             stderr = self.process.stderr.read() if self.process.stderr is not None else ""
             raise AssertionError(f"planner transport terminated: {stderr}")
         fields = line.split()
+        if fields and fields[0] == "TRANSPORT_ERROR":
+            if len(fields) != 4:
+                raise AssertionError(f"malformed transport error: {line}")
+            raise PlannerTransportError(
+                fields[1],
+                int(fields[2], 16),
+                int(fields[3], 16),
+            )
+        return fields, line
+
+    def _read_acknowledgement(self) -> TransportAcknowledgement:
+        fields, line = self._read_protocol_line()
+        if not fields or fields[0] != "ACK" or len(fields) != 5:
+            raise AssertionError(f"unexpected planner acknowledgement: {line}")
+        acknowledgement = TransportAcknowledgement(
+            *(int(value, 16) for value in fields[1:])
+        )
+        if acknowledgement.command_id != self._next_acknowledgement_id:
+            raise AssertionError(
+                "planner acknowledgement generation mismatch: "
+                f"expected {self._next_acknowledgement_id:#x}, "
+                f"received {acknowledgement.command_id:#x}"
+            )
+        self._next_acknowledgement_id += 1
+        self.last_acknowledgement = acknowledgement
+        return acknowledgement
+
+    def _read_completion(
+        self,
+        acknowledgement: TransportAcknowledgement,
+    ) -> TransportCompletion:
+        fields, line = self._read_protocol_line()
+        if not fields or fields[0] != "COMPLETE" or len(fields) != 4:
+            raise AssertionError(f"unexpected planner completion: {line}")
+        completion = TransportCompletion(
+            *(int(value, 16) for value in fields[1:])
+        )
+        if (
+            completion.command_id != acknowledgement.command_id
+            or completion.kind != acknowledgement.kind
+        ):
+            raise AssertionError(
+                "planner completion does not match acknowledgement"
+            )
+        self.last_completion = completion
+        return completion
+
+    def _read_state(self) -> planner.Observation:
+        fields, line = self._read_protocol_line()
         if (
             not fields
             or fields[0] != "OBS"
@@ -1290,10 +1368,20 @@ class PlannerProcessTransport:
         self.observation = observation
         return observation
 
-    def _send(self, line: str) -> planner.Observation:
+    def _send(
+        self,
+        line: str,
+        *,
+        expect_acknowledgement: bool = True,
+    ) -> planner.Observation:
         assert self.process.stdin is not None
+        self.last_acknowledgement = None
+        self.last_completion = None
         self.process.stdin.write(line + "\n")
         self.process.stdin.flush()
+        if expect_acknowledgement:
+            acknowledgement = self._read_acknowledgement()
+            self._read_completion(acknowledgement)
         return self._read_state()
 
     def start(
@@ -1357,29 +1445,55 @@ class PlannerProcessTransport:
         )
 
     def step(self) -> planner.Observation:
-        observation = self._send("STEP")
+        observation = self._send("STEP", expect_acknowledgement=False)
         self.frame_count += 1
         return observation
 
     def run_frames(self, count: int, keys: int = 0) -> planner.Observation:
-        observation = self._send(f"RUN {count:x} {keys:x}")
+        observation = self._send(
+            f"RUN {count:x} {keys:x}",
+            expect_acknowledgement=False,
+        )
         self.frame_count += count
         return observation
 
     def close(self) -> None:
         if self.process.poll() is None and self.process.stdin is not None:
-            self.process.stdin.write("QUIT\n")
-            self.process.stdin.flush()
+            try:
+                self.process.stdin.write("QUIT\n")
+                self.process.stdin.flush()
+            except BrokenPipeError:
+                pass
         self.process.communicate(timeout=10)
 
 
 class PlannerLibmGBAIntegrationTests(unittest.TestCase):
-    def _build_transport(self, temporary: str) -> tuple[Path, Path]:
+    def _build_transport(
+        self,
+        temporary: str,
+        *,
+        commit_delay_frames: int = 0,
+        stall_after_commit: bool = False,
+        ignore_commands: bool = False,
+        acknowledgement_frame_limit: int = 120,
+        commit_completion_frame_limit: int = 18000,
+    ) -> tuple[Path, Path]:
         rom = Path(temporary) / "planner-two-chapter.gba"
         elf = Path(temporary) / "planner-two-chapter.elf"
         backend = Path(temporary) / "planner-transport"
-        build_production_planner_rom(rom, elf)
-        build_planner_transport_backend(backend, elf)
+        build_production_planner_rom(
+            rom,
+            elf,
+            commit_delay_frames=commit_delay_frames,
+            stall_after_commit=stall_after_commit,
+            ignore_commands=ignore_commands,
+        )
+        build_planner_transport_backend(
+            backend,
+            elf,
+            acknowledgement_frame_limit=acknowledgement_frame_limit,
+            commit_completion_frame_limit=commit_completion_frame_limit,
+        )
         return rom, backend
 
     def _run_planner(
@@ -1443,7 +1557,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     choice.token,
                 )
             )
-            self.assertEqual(committed.state, 3)
+            self.assertEqual(committed.state, 2)
             self.assertEqual(transport.checkpoint[4], 2)
             return committed, transport.checkpoint
         finally:
@@ -1470,6 +1584,144 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             )
             self.assertEqual(scripted, searched)
 
+    def test_commit_waits_beyond_legacy_120_frame_window(self):
+        root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            try:
+                rom, backend = self._build_transport(
+                    temporary,
+                    commit_delay_frames=180,
+                    commit_completion_frame_limit=600,
+                )
+            except RuntimeError as error:
+                if (
+                    "planner runtime toolchain unavailable" in str(error)
+                    or "planner transport host compiler unavailable" in str(error)
+                ):
+                    self.skipTest(str(error))
+                raise
+
+            for implementation in (
+                planner.ScriptedPlanner(),
+                planner.BoundedSearchPlanner(max_nodes=512),
+            ):
+                transport = PlannerProcessTransport(backend, rom)
+                try:
+                    waiting = transport.start()
+                    complete = planner.collect_observation_pages(
+                        transport,
+                        waiting,
+                    )
+                    choice = implementation.choose(complete)
+                    followup = transport.exchange(
+                        planner.Command(
+                            planner.CommandKind.COMMIT,
+                            complete.run_id,
+                            complete.observation_id,
+                            choice.ordinal,
+                            choice.token,
+                        )
+                    )
+                    self.assertEqual(followup.state, 2)
+                    self.assertEqual(followup.chapter, 2)
+                    acknowledgement = transport.last_acknowledgement
+                    completion = transport.last_completion
+                    self.assertIsNotNone(acknowledgement)
+                    self.assertIsNotNone(completion)
+                    self.assertEqual(acknowledgement.kind, 2)
+                    self.assertEqual(acknowledgement.result, 1)
+                    self.assertEqual(acknowledgement.rejection, 0)
+                    self.assertGreater(completion.response_frames, 120)
+                    self.assertEqual(
+                        completion.command_id,
+                        acknowledgement.command_id,
+                    )
+                finally:
+                    transport.close()
+
+    def test_acknowledged_commit_timeout_never_emits_stale_observation(self):
+        root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            try:
+                rom, backend = self._build_transport(
+                    temporary,
+                    stall_after_commit=True,
+                    commit_completion_frame_limit=60,
+                )
+            except RuntimeError as error:
+                if (
+                    "planner runtime toolchain unavailable" in str(error)
+                    or "planner transport host compiler unavailable" in str(error)
+                ):
+                    self.skipTest(str(error))
+                raise
+
+            transport = PlannerProcessTransport(backend, rom)
+            try:
+                waiting = transport.start()
+                complete = planner.collect_observation_pages(transport, waiting)
+                choice = planner.ScriptedPlanner().choose(complete)
+                with self.assertRaises(PlannerTransportError) as raised:
+                    transport.exchange(
+                        planner.Command(
+                            planner.CommandKind.COMMIT,
+                            complete.run_id,
+                            complete.observation_id,
+                            choice.ordinal,
+                            choice.token,
+                        )
+                    )
+                self.assertEqual(
+                    raised.exception.code,
+                    "ACTION_COMPLETION_TIMEOUT",
+                )
+                self.assertIsNotNone(transport.last_acknowledgement)
+                self.assertEqual(transport.last_acknowledgement.kind, 2)
+                self.assertEqual(transport.last_acknowledgement.result, 1)
+                self.assertEqual(transport.last_acknowledgement.rejection, 0)
+                self.assertIsNone(transport.last_completion)
+                remaining_stdout, _ = transport.process.communicate(timeout=10)
+                self.assertEqual(remaining_stdout, "")
+                self.assertEqual(transport.process.returncode, 3)
+            finally:
+                transport.close()
+
+    def test_unacknowledged_command_returns_typed_timeout(self):
+        root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            try:
+                rom, backend = self._build_transport(
+                    temporary,
+                    ignore_commands=True,
+                    acknowledgement_frame_limit=20,
+                )
+            except RuntimeError as error:
+                if (
+                    "planner runtime toolchain unavailable" in str(error)
+                    or "planner transport host compiler unavailable" in str(error)
+                ):
+                    self.skipTest(str(error))
+                raise
+
+            transport = PlannerProcessTransport(backend, rom)
+            try:
+                with self.assertRaises(PlannerTransportError) as raised:
+                    transport.start()
+                self.assertEqual(
+                    raised.exception.code,
+                    "COMMAND_ACK_TIMEOUT",
+                )
+                self.assertIsNone(transport.last_acknowledgement)
+                self.assertIsNone(transport.last_completion)
+                remaining_stdout, _ = transport.process.communicate(timeout=10)
+                self.assertEqual(remaining_stdout, "")
+                self.assertEqual(transport.process.returncode, 3)
+            finally:
+                transport.close()
+
     def test_host_driven_transport_rejects_and_times_out(self):
         root = TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner"
         root.mkdir(parents=True, exist_ok=True)
@@ -1490,10 +1742,45 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     scenario_identity=transport.observation.actual_scenario_identity ^ 1
                 )
                 self.assertEqual(rejected.rejection, 9)
+                first_rejection_ack = transport.last_acknowledgement
                 malformed = transport.malformed()
                 self.assertEqual(malformed.rejection, 9)
+                second_rejection_ack = transport.last_acknowledgement
+                malformed = transport.malformed()
+                self.assertEqual(malformed.rejection, 9)
+                third_rejection_ack = transport.last_acknowledgement
+                self.assertIsNotNone(first_rejection_ack)
+                self.assertIsNotNone(second_rejection_ack)
+                self.assertIsNotNone(third_rejection_ack)
+                self.assertEqual(first_rejection_ack.rejection, 9)
+                self.assertEqual(second_rejection_ack.rejection, 9)
+                self.assertEqual(third_rejection_ack.rejection, 9)
+                self.assertEqual(
+                    (
+                        first_rejection_ack.command_id + 1,
+                        second_rejection_ack.command_id + 1,
+                    ),
+                    (
+                        second_rejection_ack.command_id,
+                        third_rejection_ack.command_id,
+                    ),
+                )
                 waiting = transport.start()
+                start_acknowledgement = transport.last_acknowledgement
+                start_completion = transport.last_completion
+                self.assertIsNotNone(start_acknowledgement)
+                self.assertIsNotNone(start_completion)
+                self.assertEqual(start_acknowledgement.kind, 1)
+                self.assertEqual(start_acknowledgement.result, 1)
+                self.assertLess(start_completion.response_frames, 120)
                 complete = planner.collect_observation_pages(transport, waiting)
+                page_acknowledgement = transport.last_acknowledgement
+                page_completion = transport.last_completion
+                self.assertIsNotNone(page_acknowledgement)
+                self.assertIsNotNone(page_completion)
+                self.assertEqual(page_acknowledgement.kind, 4)
+                self.assertEqual(page_acknowledgement.result, 1)
+                self.assertLess(page_completion.response_frames, 120)
                 choice = planner.ScriptedPlanner().choose(complete)
                 forged = transport.exchange(
                     planner.Command(
@@ -1514,6 +1801,13 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 )
                 self.assertEqual(cancelled.state, 4)
                 self.assertEqual(cancelled.rejection, 8)
+                cancel_acknowledgement = transport.last_acknowledgement
+                cancel_completion = transport.last_completion
+                self.assertIsNotNone(cancel_acknowledgement)
+                self.assertIsNotNone(cancel_completion)
+                self.assertEqual(cancel_acknowledgement.kind, 3)
+                self.assertEqual(cancel_acknowledgement.rejection, 8)
+                self.assertLess(cancel_completion.response_frames, 120)
                 self.assertTrue(all(value == 0 for value in transport.checkpoint))
             finally:
                 transport.close()

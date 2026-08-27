@@ -12,6 +12,18 @@
 #include "expansion_autoplay_planner.h"
 #include "rng.h"
 
+#ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_COMMIT_DELAY_FRAMES
+#define FE8_AUTOPLAY_PLANNER_RUNTIME_COMMIT_DELAY_FRAMES 0
+#endif
+
+#ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_STALL_AFTER_COMMIT
+#define FE8_AUTOPLAY_PLANNER_RUNTIME_STALL_AFTER_COMMIT 0
+#endif
+
+#ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_IGNORE_COMMANDS
+#define FE8_AUTOPLAY_PLANNER_RUNTIME_IGNORE_COMMANDS 0
+#endif
+
 struct PlaySt gPlaySt;
 struct ActionData gActionData;
 struct Unit* gActiveUnit;
@@ -45,11 +57,14 @@ enum PlannerRuntimeStage
 {
     PLANNER_RUNTIME_WAIT_START,
     PLANNER_RUNTIME_WAIT_CHAPTER_ONE,
+    PLANNER_RUNTIME_DELAY_CHAPTER_ONE,
     PLANNER_RUNTIME_WAIT_CHAPTER_TWO,
+    PLANNER_RUNTIME_DELAY_CHAPTER_TWO,
     PLANNER_RUNTIME_DONE,
 };
 
 static enum PlannerRuntimeStage sStage;
+static u32 sCommitDelayFrames;
 
 void* memcpy(void* destination, const void* source, size_t size)
 {
@@ -328,11 +343,35 @@ static void InitializeRuntime(void)
     sStage = PLANNER_RUNTIME_WAIT_START;
 }
 
+static void PublishChapterTwo(struct AiDecision* decision)
+{
+    ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+    ExpansionAutoplayPlanner_OnMapReset();
+    gPlaySt.chapterIndex = 2;
+    gPlaySt.chapterTurnNumber = 1;
+    sConvoy[1] = 2;
+    ExpansionAutoplayPlanner_OnMapReady();
+    PrepareDecision(decision);
+    ExpansionAutoplayPlanner_OfferDecision(decision);
+    sStage = PLANNER_RUNTIME_WAIT_CHAPTER_TWO;
+}
+
+static void PublishFinalObservation(struct AiDecision* decision)
+{
+    ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+    PrepareDecision(decision);
+    ExpansionAutoplayPlanner_OfferDecision(decision);
+    sStage = PLANNER_RUNTIME_DONE;
+}
+
 static void TickRuntime(void)
 {
     static struct AiDecision decision;
     enum ExpansionAutoplayPlannerDecisionResult result;
 
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_IGNORE_COMMANDS
+    return;
+#endif
     switch (sStage)
     {
     case PLANNER_RUNTIME_WAIT_START:
@@ -350,20 +389,25 @@ static void TickRuntime(void)
         {
             sUnit.xPos = decision.xMove;
             sUnit.yPos = decision.yMove;
-            ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
-            ExpansionAutoplayPlanner_OnMapReset();
-            gPlaySt.chapterIndex = 2;
-            gPlaySt.chapterTurnNumber = 1;
-            sConvoy[1] = 2;
-            ExpansionAutoplayPlanner_OnMapReady();
-            PrepareDecision(&decision);
-            ExpansionAutoplayPlanner_OfferDecision(&decision);
-            sStage = PLANNER_RUNTIME_WAIT_CHAPTER_TWO;
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_STALL_AFTER_COMMIT
+            sStage = PLANNER_RUNTIME_DONE;
+#else
+            sCommitDelayFrames =
+                FE8_AUTOPLAY_PLANNER_RUNTIME_COMMIT_DELAY_FRAMES;
+            if (sCommitDelayFrames == 0)
+                sCommitDelayFrames = 1;
+            sStage = PLANNER_RUNTIME_DELAY_CHAPTER_ONE;
+#endif
         }
         else if (result == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED)
         {
             sStage = PLANNER_RUNTIME_DONE;
         }
+        return;
+
+    case PLANNER_RUNTIME_DELAY_CHAPTER_ONE:
+        if (--sCommitDelayFrames == 0)
+            PublishChapterTwo(&decision);
         return;
 
     case PLANNER_RUNTIME_WAIT_CHAPTER_TWO:
@@ -372,13 +416,25 @@ static void TickRuntime(void)
         {
             sUnit.xPos = decision.xMove;
             sUnit.yPos = decision.yMove;
-            ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_STALL_AFTER_COMMIT
             sStage = PLANNER_RUNTIME_DONE;
+#else
+            sCommitDelayFrames =
+                FE8_AUTOPLAY_PLANNER_RUNTIME_COMMIT_DELAY_FRAMES;
+            if (sCommitDelayFrames == 0)
+                sCommitDelayFrames = 1;
+            sStage = PLANNER_RUNTIME_DELAY_CHAPTER_TWO;
+#endif
         }
         else if (result == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED)
         {
             sStage = PLANNER_RUNTIME_DONE;
         }
+        return;
+
+    case PLANNER_RUNTIME_DELAY_CHAPTER_TWO:
+        if (--sCommitDelayFrames == 0)
+            PublishFinalObservation(&decision);
         return;
 
     default:
