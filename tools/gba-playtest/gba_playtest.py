@@ -103,6 +103,7 @@ MAX_PROBES_PER_CHECKPOINT = 1536
 MAX_RUN_UNTIL_COMPARISONS = 64
 MAX_RUN_UNTIL_PROBES = 128
 MAX_PROFILE_TRACE_PROBES = 512
+MAX_BASELINE_PROBES = 1536
 # Matches backend.c's MAX_TRACE_RECORDS. A trace emits each probe whenever
 # any trace value changes, so max_frames * trace probe count bounds both the
 # backend's stdout and the host's captured semantic trace.
@@ -388,6 +389,85 @@ class ScheduledWrite:
     frame: int
     probe: Probe
     value: int
+    baseline_probes: tuple[Probe, ...] = ()
+
+
+def validate_scheduled_write(
+    scenario: Scenario,
+    scheduled_write: ScheduledWrite,
+) -> None:
+    if scenario.run_until is None:
+        raise PlaytestError(
+            "scheduled writes require a bounded run-until scenario; fixed-frame "
+            "scenarios cannot emit scheduled-write plan format 7"
+        )
+    if scenario.execution_profile is not None:
+        raise PlaytestError(
+            "scheduled writes are supported only by normal-fidelity batch captures"
+        )
+    probe = scheduled_write.probe
+    if not _is_int(probe.size) or probe.size not in (1, 2, 4):
+        raise PlaytestError("scheduled write probe size must be integer 1, 2, or 4")
+    if not _is_int(probe.address):
+        raise PlaytestError("scheduled write probe address must be a resolved integer")
+    if probe.address % probe.size:
+        raise PlaytestError(
+            f"scheduled write probe address must be aligned to size {probe.size}"
+        )
+    if not any(
+        start <= probe.address and probe.address + probe.size <= end
+        for start, end in WRITABLE_WORK_RAM_RANGES
+    ):
+        raise PlaytestError(
+            "scheduled write probe range must fit entirely within writable "
+            "EWRAM or IWRAM"
+        )
+    if (
+        not _is_int(scheduled_write.frame)
+        or scheduled_write.frame < 0
+        or scheduled_write.frame >= scenario.run_until.max_frames
+    ):
+        raise PlaytestError(
+            f"scheduled write frame must be an integer from 0 through "
+            f"{scenario.run_until.max_frames - 1}"
+        )
+    maximum_value = (1 << (probe.size * 8)) - 1
+    if (
+        not _is_int(scheduled_write.value)
+        or not 0 <= scheduled_write.value <= maximum_value
+    ):
+        raise PlaytestError(
+            f"scheduled write value must be an integer from 0 through "
+            f"{maximum_value} for the {probe.size}-byte binding "
+            f"{probe.binding!r}"
+        )
+    if len(scheduled_write.baseline_probes) > MAX_BASELINE_PROBES:
+        raise PlaytestError(
+            f"scheduled write has {len(scheduled_write.baseline_probes)} "
+            f"baseline probes, exceeding {MAX_BASELINE_PROBES}"
+        )
+    baseline_identities: set[tuple[int, int]] = set()
+    for baseline in scheduled_write.baseline_probes:
+        if not _is_int(baseline.size) or baseline.size not in (1, 2, 4):
+            raise PlaytestError(
+                f"baseline probe {baseline.binding!r} size must be integer 1, 2, or 4"
+            )
+        if not _is_int(baseline.address):
+            raise PlaytestError(
+                f"baseline probe {baseline.binding!r} address must be a resolved integer"
+            )
+        _validate_resolved_address(
+            baseline.address,
+            baseline.size,
+            f"baseline probe {baseline.binding!r}",
+        )
+        identity = (baseline.address, baseline.size)
+        if identity in baseline_identities:
+            raise PlaytestError(
+                f"scheduled write has duplicate baseline probe "
+                f"{baseline.binding!r}/{baseline.size}"
+            )
+        baseline_identities.add(identity)
 
 
 def _parse_fixed_scenario_data(
@@ -1485,16 +1565,15 @@ def _write_plan(
     scheduled_write: ScheduledWrite | None = None,
 ) -> None:
     # Fixed scenarios retain plan format 3 exactly. Format 4 appends bounded
-    # semantic run-until records; format 5 carries accelerated traces, and
-    # format 6 carries one declared batch seed write.
+    # semantic run-until records; format 5 carries accelerated traces, format
+    # 6 introduced one declared batch seed write, and format 7 requires the
+    # backend to acknowledge that write before a terminal result is accepted.
     # Plans are generated and consumed within one capture/verify invocation;
     # scenario and fingerprint compatibility lives in their JSON versions.
-    if scheduled_write is not None and scenario.execution_profile is not None:
-        raise PlaytestError(
-            "scheduled writes are supported only by normal-fidelity batch captures"
-        )
     if scheduled_write is not None:
-        plan_version = 6
+        validate_scheduled_write(scenario, scheduled_write)
+    if scheduled_write is not None:
+        plan_version = 7
     elif scenario.execution_profile is not None:
         plan_version = 5
     elif scenario.run_until is not None:
@@ -1602,27 +1681,11 @@ def _write_plan(
                     )
                 )
     if scheduled_write is not None:
-        if scheduled_write.probe.address is None:
-            raise PlaytestError(
-                f"scheduled write {scheduled_write.probe.binding!r} has no "
-                "resolved execution address; supply the exact linked ELF with --elf"
-            )
-        if scheduled_write.frame > (
-            scenario.run_until.max_frames - 1
-            if scenario.run_until is not None
-            else scenario.checkpoints[-1].frame
-        ):
-            raise PlaytestError(
-                f"scheduled write frame {scheduled_write.frame} is outside "
-                f"scenario {scenario.name!r}'s execution bounds"
-            )
-        maximum_value = (1 << (scheduled_write.probe.size * 8)) - 1
-        if not 0 <= scheduled_write.value <= maximum_value:
-            raise PlaytestError(
-                f"scheduled write value {scheduled_write.value} does not fit "
-                f"the {scheduled_write.probe.size}-byte binding "
-                f"{scheduled_write.probe.binding!r}"
-            )
+        lines.append(
+            f"BASELINE_PROBES {len(scheduled_write.baseline_probes)}"
+        )
+        for probe in scheduled_write.baseline_probes:
+            lines.append(f"{probe.address} {probe.size}")
         lines.append(
             f"SEED_WRITE {scheduled_write.frame} {scheduled_write.probe.address} "
             f"{scheduled_write.probe.size} {scheduled_write.value}"
@@ -1654,7 +1717,72 @@ def _write_plan(
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
-def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
+def validate_run_until_terminal_outcome(
+    scenario: Scenario,
+    reason: str,
+    frame: int,
+    turn_present: bool,
+    turn_value: int,
+    action_present: bool,
+    action_value: int,
+) -> None:
+    run_until = scenario.run_until
+    if run_until is None:
+        raise PlaytestError("terminal outcomes require a run-until scenario")
+    if not isinstance(reason, str) or reason not in TERMINAL_REASONS:
+        raise PlaytestError("unknown terminal reason")
+    if not _is_int(frame) or frame < 0 or frame >= run_until.max_frames:
+        raise PlaytestError("terminal frame is outside run-until bounds")
+    if not isinstance(turn_present, bool) or not isinstance(action_present, bool):
+        raise PlaytestError("terminal counter presence flags must be boolean")
+    if turn_present != (run_until.turn_limit is not None):
+        raise PlaytestError("terminal turn presence does not match the plan")
+    if action_present != (run_until.action_limit is not None):
+        raise PlaytestError("terminal action presence does not match the plan")
+    for present, value, limit, label in (
+        (turn_present, turn_value, run_until.turn_limit, "turn"),
+        (action_present, action_value, run_until.action_limit, "action"),
+    ):
+        if not _is_int(value):
+            raise PlaytestError(f"terminal {label} value must be an integer")
+        if not present and value != 0:
+            raise PlaytestError(f"absent terminal {label} value must be zero")
+        if limit is not None and not 0 <= value < 1 << (limit.probe.size * 8):
+            raise PlaytestError(f"terminal {label} value exceeds probe width")
+    declared_reasons = {
+        condition.reason for condition in run_until.terminal_conditions
+    }
+    if reason in TERMINAL_CONDITION_REASONS and reason not in declared_reasons:
+        raise PlaytestError("terminal reason is not declared by the scenario")
+    if reason == "engine_stall":
+        if run_until.stall is None:
+            raise PlaytestError("engine_stall is not configured by the scenario")
+        if frame < run_until.stall.max_unchanged_frames:
+            raise PlaytestError(
+                "engine_stall occurred before the configured unchanged-frame limit"
+            )
+    if reason == "max_frames" and frame != run_until.max_frames - 1:
+        raise PlaytestError("max_frames did not occur at the final bounded frame")
+    if reason == "max_turns":
+        if run_until.turn_limit is None:
+            raise PlaytestError("max_turns is not configured by the scenario")
+        if turn_value < run_until.turn_limit.maximum:
+            raise PlaytestError("max_turns did not reach the configured limit")
+    if reason == "max_actions":
+        if run_until.action_limit is None:
+            raise PlaytestError("max_actions is not configured by the scenario")
+        if action_value < run_until.action_limit.maximum:
+            raise PlaytestError("max_actions did not reach the configured limit")
+
+
+def _parse_backend_output(
+    stdout: str,
+    scenario: Scenario,
+    scheduled_write: ScheduledWrite | None = None,
+) -> dict[str, Any]:
+    baseline_probes = (
+        () if scheduled_write is None else scheduled_write.baseline_probes
+    )
     hashes: dict[int, str] = {}
     checkpoint_frames: dict[int, int] = {}
     sram_hashes: dict[int, str] = {}
@@ -1665,6 +1793,8 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
     profile_record: tuple[int, int, int] | None = None
     trace_snapshots: list[tuple[int, dict[int, int]]] = []
     trace_record_count = 0
+    baseline_values: dict[int, int] = {}
+    write_applied: tuple[int, int, int, int] | None = None
     for line_number, line in enumerate(stdout.splitlines(), 1):
         fields = line.split("\t")
         try:
@@ -1711,58 +1841,24 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
                 turn_value = int(fields[4])
                 action_present = int(fields[5])
                 action_value = int(fields[6])
-                if reason not in TERMINAL_REASONS:
-                    raise ValueError("unknown terminal reason")
-                if frame < 0 or frame >= scenario.run_until.max_frames:
-                    raise ValueError("terminal frame is outside run-until bounds")
+                if scheduled_write is not None and write_applied is None:
+                    raise ValueError(
+                        "terminal record preceded scheduled write acknowledgement"
+                    )
                 if turn_present not in (0, 1) or action_present not in (0, 1):
                     raise ValueError("terminal counter presence flag is not 0 or 1")
-                if bool(turn_present) != (scenario.run_until.turn_limit is not None):
-                    raise ValueError("terminal turn presence does not match the plan")
-                if bool(action_present) != (
-                    scenario.run_until.action_limit is not None
-                ):
-                    raise ValueError("terminal action presence does not match the plan")
-                for present, value, limit, label in (
-                    (
-                        turn_present,
+                try:
+                    validate_run_until_terminal_outcome(
+                        scenario,
+                        reason,
+                        frame,
+                        bool(turn_present),
                         turn_value,
-                        scenario.run_until.turn_limit,
-                        "turn",
-                    ),
-                    (
-                        action_present,
+                        bool(action_present),
                         action_value,
-                        scenario.run_until.action_limit,
-                        "action",
-                    ),
-                ):
-                    if not present and value != 0:
-                        raise ValueError(f"absent terminal {label} value must be zero")
-                    if limit is not None and not (
-                        0 <= value < 1 << (limit.probe.size * 8)
-                    ):
-                        raise ValueError(f"terminal {label} value exceeds probe width")
-                declared_reasons = {
-                    condition.reason
-                    for condition in scenario.run_until.terminal_conditions
-                }
-                if reason in TERMINAL_CONDITION_REASONS and reason not in declared_reasons:
-                    raise ValueError("terminal reason is not declared by the scenario")
-                if reason == "engine_stall" and scenario.run_until.stall is None:
-                    raise ValueError("engine_stall is not configured by the scenario")
-                if reason == "max_frames" and frame != scenario.run_until.max_frames - 1:
-                    raise ValueError("max_frames did not occur at the final bounded frame")
-                if reason == "max_turns":
-                    if scenario.run_until.turn_limit is None:
-                        raise ValueError("max_turns is not configured by the scenario")
-                    if turn_value < scenario.run_until.turn_limit.maximum:
-                        raise ValueError("max_turns did not reach the configured limit")
-                if reason == "max_actions":
-                    if scenario.run_until.action_limit is None:
-                        raise ValueError("max_actions is not configured by the scenario")
-                    if action_value < scenario.run_until.action_limit.maximum:
-                        raise ValueError("max_actions did not reach the configured limit")
+                    )
+                except PlaytestError as exc:
+                    raise ValueError(str(exc)) from exc
                 terminal = (
                     reason,
                     frame,
@@ -1821,6 +1917,47 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
                 if probe_index in values_at_frame:
                     raise ValueError("duplicate trace probe")
                 values_at_frame[probe_index] = value
+            elif len(fields) == 3 and fields[0] == "BASELINE":
+                if write_applied is not None:
+                    raise ValueError(
+                        "baseline probe followed scheduled write acknowledgement"
+                    )
+                if terminal is not None:
+                    raise ValueError("baseline probe followed terminal record")
+                probe_index = int(fields[1])
+                value = int(fields[2])
+                if probe_index in baseline_values:
+                    raise ValueError("duplicate baseline probe")
+                if not (0 <= probe_index < len(baseline_probes)):
+                    raise ValueError("baseline probe index out of range")
+                probe = baseline_probes[probe_index]
+                if not (0 <= value < 1 << (probe.size * 8)):
+                    raise ValueError("baseline value exceeds declared width")
+                baseline_values[probe_index] = value
+            elif len(fields) == 5 and fields[0] == "SEED_WRITE_APPLIED":
+                if scheduled_write is None:
+                    raise ValueError("unexpected scheduled write acknowledgement")
+                if write_applied is not None:
+                    raise ValueError("duplicate scheduled write acknowledgement")
+                if terminal is not None:
+                    raise ValueError(
+                        "scheduled write acknowledgement followed terminal record"
+                    )
+                if len(baseline_values) != len(baseline_probes):
+                    raise ValueError(
+                        "scheduled write acknowledgement preceded baseline probes"
+                    )
+                write_applied = tuple(int(field) for field in fields[1:])
+                expected_write = (
+                    scheduled_write.frame,
+                    scheduled_write.probe.address,
+                    scheduled_write.probe.size,
+                    scheduled_write.value,
+                )
+                if write_applied != expected_write:
+                    raise ValueError(
+                        "scheduled write acknowledgement does not match the request"
+                    )
             elif len(fields) == 3 and fields[0] == "SRAMHASH":
                 checkpoint_index = int(fields[1])
                 if checkpoint_index in sram_hashes:
@@ -1963,8 +2100,16 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
     )
     if len(pixel_values) != expected_pixel_probe_count:
         raise PlaytestError(
-            f"backend returned {len(pixel_values)} of {expected_pixel_probe_count} pixel probes"
+            f"backend returned {len(pixel_values)} of "
+            f"{expected_pixel_probe_count} pixel probes"
         )
+    if len(baseline_values) != len(baseline_probes):
+        raise PlaytestError(
+            f"backend returned {len(baseline_values)} of "
+            f"{len(baseline_probes)} baseline probes"
+        )
+    if scheduled_write is not None and write_applied is None:
+        raise PlaytestError("backend returned no scheduled write acknowledgement")
     checkpoints: list[dict[str, Any]] = []
     for checkpoint_index, checkpoint in enumerate(scenario.checkpoints):
         captured: dict[str, Any] = {
@@ -2017,6 +2162,25 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
         ),
         "scenario": scenario.name,
     }
+    if baseline_probes:
+        fingerprint["baseline_probes"] = [
+            {
+                "address": probe.binding,
+                "size": probe.size,
+                "value": (
+                    f"0x{baseline_values[index]:0{probe.size * 2}x}"
+                ),
+            }
+            for index, probe in enumerate(baseline_probes)
+        ]
+    if scheduled_write is not None:
+        assert scheduled_write.probe.address is not None
+        fingerprint["scheduled_write"] = {
+            "address": f"0x{scheduled_write.probe.address:08x}",
+            "frame": scheduled_write.frame,
+            "size": scheduled_write.probe.size,
+            "value": scheduled_write.value,
+        }
     if scenario.run_until is not None:
         assert terminal is not None
         reason, frame, turn_present, turn_value, action_present, action_value = terminal
@@ -2030,8 +2194,10 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
                 return None
             if not present:
                 raise AssertionError("backend counter presence was already validated")
+            if limit.probe.address is None:
+                raise AssertionError("run-until counter has no resolved address")
             return {
-                "address": limit.probe.binding,
+                "address": f"0x{limit.probe.address:08x}",
                 "size": limit.probe.size,
                 "value": f"0x{value:0{limit.probe.size * 2}x}",
             }
@@ -2079,13 +2245,15 @@ def capture(
     scenario: Scenario,
     sram_image: Path | None = None,
     retries: int = 0,
-    scheduled_write: ScheduledWrite | None = None,
-    work_dir: Path | None = None,
     backend_path: Path | None = None,
     sram_output: Path | None = None,
+    scheduled_write: ScheduledWrite | None = None,
+    work_dir: Path | None = None,
 ) -> dict[str, Any]:
     if scenario.disabled:
         raise PlaytestError(f"scenario {scenario.name!r} is disabled: {scenario.blocker}")
+    if scheduled_write is not None:
+        validate_scheduled_write(scenario, scheduled_write)
     if not rom.is_file():
         raise PlaytestError(f"ROM does not exist or is not a regular file: {rom}")
     if sram_image is not None:
@@ -2178,7 +2346,11 @@ def capture(
             raise PlaytestError(
                 f"libmGBA backend failed with exit {result.returncode}: {diagnostic}"
             )
-        fingerprint = _parse_backend_output(result.stdout, scenario)
+        fingerprint = _parse_backend_output(
+            result.stdout,
+            scenario,
+            scheduled_write,
+        )
         fingerprint["rom"] = provenance
         if sram_output is not None:
             output_path = Path(sram_output)

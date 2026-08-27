@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -187,8 +188,27 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         self.assertTrue(backend_path.is_file())
         self.capture_backends.append(backend_path)
         seed = scheduled_write.value
+        action_value = 32 if seed == 2 else seed
+        baseline_values = {
+            PROBE_TURN: 0,
+            PROBE_ACTION: 32 if seed == 2 else 2,
+        }
         return {
+            "baseline_probes": [
+                {
+                    "address": probe.binding,
+                    "size": probe.size,
+                    "value": f"0x{baseline_values.get(probe.binding, 0):0{probe.size * 2}x}",
+                }
+                for probe in scheduled_write.baseline_probes
+            ],
             "rom": gba_playtest.rom_provenance(rom),
+            "scheduled_write": {
+                "address": f"0x{scheduled_write.probe.address:08x}",
+                "frame": scheduled_write.frame,
+                "size": scheduled_write.probe.size,
+                "value": scheduled_write.value,
+            },
             "terminal": {
                 "reason": "success" if seed != 2 else "max_actions",
                 "frame": 1,
@@ -196,7 +216,7 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                 "actions": {
                     "address": PROBE_ACTION,
                     "size": 4,
-                    "value": f"0x{seed:08x}",
+                    "value": f"0x{action_value:08x}",
                 },
             },
             "checkpoints": [
@@ -208,7 +228,7 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                         {
                             "address": PROBE_ACTION,
                             "size": 4,
-                            "value": f"0x{seed:08x}",
+                            "value": f"0x{action_value:08x}",
                         },
                     ],
                 }
@@ -231,6 +251,74 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
             with redirect_stdout(stdout), redirect_stderr(stderr):
                 code = autoplay_batch.main(arguments)
         return code, stdout.getvalue(), stderr.getvalue()
+
+    def _refresh_report_summary(self, report: dict) -> None:
+        metric_definitions = {
+            metric["id"]: metric
+            for metric in report["provenance"]["specification"]["definition"][
+                "metrics"
+            ]
+        }
+        success_count = sum(run["status"] == "success" for run in report["runs"])
+        terminal_reasons: dict[str, int] = {}
+        for run in report["runs"]:
+            if "terminal" in run:
+                reason = run["terminal"]["reason"]
+                terminal_reasons[reason] = terminal_reasons.get(reason, 0) + 1
+        report["summary"] = {
+            "failure_count": len(report["runs"]) - success_count,
+            "metric_distributions": autoplay_batch._metric_distributions(
+                report["runs"],
+                metric_definitions,
+            ),
+            "run_count": len(report["runs"]),
+            "success_count": success_count,
+            "terminal_reasons": dict(sorted(terminal_reasons.items())),
+        }
+
+    def _refresh_specification_digest(self, report: dict) -> None:
+        specification = report["provenance"]["specification"]
+        specification["definition_sha256"] = autoplay_batch._canonical_sha256(
+            specification["definition"]
+        )
+
+    def _refresh_scenario_digest(self, report: dict) -> None:
+        scenario = report["provenance"]["scenario"]
+        scenario["definition_sha256"] = autoplay_batch._canonical_sha256(
+            scenario["definition"]
+        )
+
+    def _assert_compare_rejects(
+        self,
+        baseline: Path,
+        candidate_data: dict,
+        name: str,
+        expected: str,
+    ) -> None:
+        candidate = self.output(f"{name}.json")
+        candidate.write_text(
+            autoplay_batch.serialize_report(candidate_data),
+            encoding="utf-8",
+        )
+        comparison = self.output(f"{name}-comparison.json")
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            code = autoplay_batch.main(
+                [
+                    "compare",
+                    "--baseline",
+                    str(baseline),
+                    "--candidate",
+                    str(candidate),
+                    "--output",
+                    str(comparison),
+                ]
+            )
+        self.assertEqual(code, 2)
+        self.assertIn(expected, stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+        self.assertFalse(comparison.exists())
+        self.assertFalse(autoplay_batch._temporary_output_path(comparison).exists())
 
     def test_serial_parallel_reports_are_byte_identical_and_failures_remain_visible(self):
         serial = self.output("host-serial.json")
@@ -255,7 +343,7 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         self.assertEqual(failed["metrics"]["turns"], 2)
         self.assertEqual(
             failed["metrics"]["factions"],
-            [{"casualties": 2, "faction": "blue", "group": "main", "survivors": 2}],
+            [{"casualties": 32, "faction": "blue", "group": "main", "survivors": 2}],
         )
         self.assertEqual(report["summary"]["failure_count"], 1)
         self.assertEqual(
@@ -267,6 +355,20 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
             ],
         )
         self.assertEqual(report["provenance"]["profile"]["fidelity"], "normal")
+        self.assertEqual(
+            [run["metrics"]["items"][0]["delta"] for run in report["runs"]],
+            [-1, 0, 1],
+        )
+        self.assertEqual(
+            report["runs"][0]["metrics"]["items"][0],
+            {
+                "baseline": 2,
+                "delta": -1,
+                "group": "blue",
+                "kind": "item",
+                "terminal": 1,
+            },
+        )
         self.assertRegex(
             report["provenance"]["scenario"]["definition_sha256"],
             r"^[0-9a-f]{64}$",
@@ -430,6 +532,627 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         self.assertIn("scenario.definition_sha256", changed_fields)
         self.assertIn("specification.definition_sha256", changed_fields)
 
+    def test_checkpoint_expectations_roundtrip_and_change_scenario_digest(self):
+        without_expected = gba_playtest.parse_scenario_data(scenario_data())
+        without_definition = autoplay_batch._scenario_definition(without_expected)
+        self.assertNotIn(
+            "expected",
+            without_definition["run_until"]["checkpoint"]["probes"][0],
+        )
+
+        digests = []
+        for expected in ("0x00000001", "0x00000002"):
+            data = scenario_data()
+            data["run_until"]["checkpoint"]["probes"][0][
+                "expected"
+            ] = expected
+            parsed = gba_playtest.parse_scenario_data(data)
+            definition = autoplay_batch._scenario_definition(parsed)
+            self.assertEqual(
+                definition["run_until"]["checkpoint"]["probes"][0]["expected"],
+                expected,
+            )
+            reparsed = gba_playtest.parse_scenario_data(definition)
+            self.assertEqual(
+                autoplay_batch._scenario_definition(reparsed),
+                definition,
+            )
+            digests.append(autoplay_batch._canonical_sha256(definition))
+        self.assertNotEqual(digests[0], digests[1])
+
+    def test_imported_spec_reapplies_complete_required_metric_contract(self):
+        baseline = self.output("metric-contract-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        cases = (
+            ("missing-terminal", "terminal_reason", None, "required metric kind 'terminal_reason'"),
+            ("missing-item-delta", "group_deltas", "item", "required group delta kind 'item'"),
+        )
+        for name, kind, delta_kind, expected in cases:
+            with self.subTest(name=name):
+                candidate = copy.deepcopy(valid)
+                definitions = candidate["provenance"]["specification"]["definition"][
+                    "metrics"
+                ]
+                removed = next(
+                    metric
+                    for metric in definitions
+                    if metric["kind"] == kind
+                    and (
+                        delta_kind is None
+                        or metric.get("delta_kind") == delta_kind
+                    )
+                )
+                definitions.remove(removed)
+                for run in candidate["runs"]:
+                    if "metrics" in run:
+                        run["metrics"].pop(removed["id"])
+                self._refresh_specification_digest(candidate)
+                self._refresh_report_summary(candidate)
+                self._assert_compare_rejects(
+                    baseline,
+                    candidate,
+                    name,
+                    expected,
+                )
+
+        duplicate_kind = copy.deepcopy(valid)
+        definitions = duplicate_kind["provenance"]["specification"]["definition"][
+            "metrics"
+        ]
+        next(metric for metric in definitions if metric["id"] == "frames")[
+            "kind"
+        ] = "terminal_reason"
+        self._refresh_specification_digest(duplicate_kind)
+        self._assert_compare_rejects(
+            baseline,
+            duplicate_kind,
+            "duplicate-required-kind",
+            "required metric kind 'terminal_reason'; found 2",
+        )
+
+        duplicate_delta = copy.deepcopy(valid)
+        definitions = duplicate_delta["provenance"]["specification"]["definition"][
+            "metrics"
+        ]
+        next(metric for metric in definitions if metric["id"] == "resources")[
+            "delta_kind"
+        ] = "item"
+        self._refresh_specification_digest(duplicate_delta)
+        self._assert_compare_rejects(
+            baseline,
+            duplicate_delta,
+            "duplicate-required-delta",
+            "required group delta kind 'item'; found 2",
+        )
+
+    def test_imported_bounds_counters_and_metrics_cannot_exceed_scenario(self):
+        baseline = self.output("bounds-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        for field in ("max_frames", "max_turns", "max_actions"):
+            with self.subTest(bound=field):
+                candidate = copy.deepcopy(valid)
+                candidate["provenance"]["bounds"][field] += 1
+                self._assert_compare_rejects(
+                    baseline,
+                    candidate,
+                    f"mismatched-{field}",
+                    "bounds must exactly match canonical scenario",
+                )
+
+        frame = copy.deepcopy(valid)
+        frame["runs"][0]["terminal"]["frame"] = 3
+        frame["runs"][0]["metrics"]["frames"] = 4
+        self._refresh_report_summary(frame)
+        self._assert_compare_rejects(
+            baseline,
+            frame,
+            "overbound-frame",
+            ".terminal.frame must be an integer from 0 through 2",
+        )
+
+        for counter_name, metric_id in (("turn", "turns"), ("actions", "actions")):
+            with self.subTest(counter=counter_name):
+                candidate = copy.deepcopy(valid)
+                candidate["runs"][0]["terminal"][counter_name]["value"] = "0x00000021"
+                candidate["runs"][0]["metrics"][metric_id] = 33
+                self._refresh_report_summary(candidate)
+                self._assert_compare_rejects(
+                    baseline,
+                    candidate,
+                    f"overbound-{counter_name}",
+                    "exceeds declared bound 32",
+                )
+
+        wrong_probe = copy.deepcopy(valid)
+        wrong_probe["runs"][0]["terminal"]["turn"]["address"] = PROBE_ACTION
+        self._assert_compare_rejects(
+            baseline,
+            wrong_probe,
+            "wrong-turn-probe",
+            "address/size must match the canonical scenario counter",
+        )
+
+    def test_imported_terminal_reasons_match_declared_backend_invariants(self):
+        baseline = self.output("terminal-reason-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        cases = (
+            (
+                "undeclared-objective",
+                "objective_failure",
+                1,
+                None,
+                None,
+                "not declared by the scenario",
+            ),
+            (
+                "unconfigured-stall",
+                "engine_stall",
+                1,
+                None,
+                None,
+                "engine_stall is not configured",
+            ),
+            (
+                "early-max-frames",
+                "max_frames",
+                1,
+                None,
+                None,
+                "final bounded frame",
+            ),
+            (
+                "early-max-turns",
+                "max_turns",
+                1,
+                1,
+                None,
+                "max_turns did not reach",
+            ),
+            (
+                "early-max-actions",
+                "max_actions",
+                1,
+                None,
+                1,
+                "max_actions did not reach",
+            ),
+        )
+        for name, reason, frame, turn, actions, expected in cases:
+            with self.subTest(name=name):
+                candidate = copy.deepcopy(valid)
+                run = candidate["runs"][0]
+                run["status"] = "terminal_failure"
+                run["terminal"]["reason"] = reason
+                run["terminal"]["frame"] = frame
+                run["metrics"]["terminal"] = reason
+                run["metrics"]["frames"] = frame + 1
+                if turn is not None:
+                    run["terminal"]["turn"]["value"] = f"0x{turn:08x}"
+                    run["metrics"]["turns"] = turn
+                if actions is not None:
+                    run["terminal"]["actions"]["value"] = f"0x{actions:08x}"
+                    run["metrics"]["actions"] = actions
+                self._refresh_report_summary(candidate)
+                self._assert_compare_rejects(
+                    baseline,
+                    candidate,
+                    name,
+                    expected,
+                )
+
+        scenario = gba_playtest.parse_scenario_data(
+            valid["provenance"]["scenario"]["definition"]
+        )
+        for reason, frame, turn, actions in (
+            ("success", 1, 1, 1),
+            ("max_frames", 2, 1, 1),
+            ("max_turns", 1, 32, 1),
+            ("max_actions", 1, 1, 32),
+        ):
+            with self.subTest(valid_reason=reason):
+                gba_playtest.validate_run_until_terminal_outcome(
+                    scenario,
+                    reason,
+                    frame,
+                    True,
+                    turn,
+                    True,
+                    actions,
+                )
+
+        stall = copy.deepcopy(valid)
+        stall_definition = stall["provenance"]["scenario"]["definition"]
+        stall_definition["run_until"]["stall"] = {
+            "max_unchanged_frames": 2,
+            "progress": {"address": PROBE_TURN, "size": 4},
+            "work_expected": {
+                "address": PROBE_ACTION,
+                "operator": "gt",
+                "size": 4,
+                "value": "0x00000000",
+            },
+        }
+        self._refresh_scenario_digest(stall)
+        stall_run = stall["runs"][0]
+        stall_run["status"] = "terminal_failure"
+        stall_run["terminal"]["reason"] = "engine_stall"
+        stall_run["terminal"]["frame"] = 1
+        stall_run["metrics"]["terminal"] = "engine_stall"
+        stall_run["metrics"]["frames"] = 2
+        self._refresh_report_summary(stall)
+        self._assert_compare_rejects(
+            baseline,
+            stall,
+            "early-configured-stall",
+            "before the configured unchanged-frame limit",
+        )
+
+        boundary = copy.deepcopy(stall)
+        boundary_run = boundary["runs"][0]
+        boundary_run["terminal"]["frame"] = 2
+        boundary_run["metrics"]["frames"] = 3
+        self._refresh_report_summary(boundary)
+        autoplay_batch.validate_report(boundary, "stall-boundary")
+
+    def test_imported_seed_binding_is_resolved_writable_and_in_frame(self):
+        baseline = self.output("seed-binding-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        cases = (
+            ("rom-seed", 0x08000000, 0, "writable EWRAM or IWRAM"),
+            ("past-ewram", 0x02040000, 0, "writable EWRAM or IWRAM"),
+            ("late-seed-frame", int(PROBE_SEED, 16), 3, "must be below canonical"),
+        )
+        for name, resolved_address, frame, expected in cases:
+            with self.subTest(name=name):
+                candidate = copy.deepcopy(valid)
+                provenance_seed = candidate["provenance"]["seed_injection"]
+                definition_seed = candidate["provenance"]["specification"][
+                    "definition"
+                ]["seeding"]
+                provenance_seed["resolved_address"] = resolved_address
+                definition_seed["resolved_address"] = resolved_address
+                provenance_seed["frame"] = frame
+                definition_seed["frame"] = frame
+                self._refresh_specification_digest(candidate)
+                self._assert_compare_rejects(
+                    baseline,
+                    candidate,
+                    name,
+                    expected,
+                )
+
+        unresolved = copy.deepcopy(valid)
+        unresolved["provenance"]["seed_injection"]["resolved_address"] = (
+            "gUnresolvedSeed"
+        )
+        unresolved["provenance"]["specification"]["definition"]["seeding"][
+            "resolved_address"
+        ] = "gUnresolvedSeed"
+        self._refresh_specification_digest(unresolved)
+        self._assert_compare_rejects(
+            baseline,
+            unresolved,
+            "unresolved-seed",
+            "resolved_address must be an integer",
+        )
+
+        mismatched = copy.deepcopy(valid)
+        mismatched["provenance"]["seed_injection"]["resolved_address"] += 4
+        self._assert_compare_rejects(
+            baseline,
+            mismatched,
+            "mismatched-seed-provenance",
+            "does not match literal address",
+        )
+
+    def test_imported_metric_probes_must_exist_in_terminal_checkpoint(self):
+        baseline = self.output("probe-membership-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+        autoplay_batch.validate_report(valid, "shared-probe-positive")
+        definitions = valid["provenance"]["specification"]["definition"]["metrics"]
+        items_probe = next(
+            metric for metric in definitions if metric["id"] == "items"
+        )["groups"][0]["probe"]
+        resources_probe = next(
+            metric for metric in definitions if metric["id"] == "resources"
+        )["groups"][0]["probe"]
+        self.assertEqual(items_probe, resources_probe)
+
+        unrelated = copy.deepcopy(valid)
+        definition = next(
+            metric
+            for metric in unrelated["provenance"]["specification"]["definition"][
+                "metrics"
+            ]
+            if metric["id"] == "exp"
+        )
+        definition["groups"][0]["probe"]["address"] = "0x0200000c"
+        definition["groups"][0]["probe"]["resolved_address"] = 0x0200000C
+        self._refresh_specification_digest(unrelated)
+        self._assert_compare_rejects(
+            baseline,
+            unrelated,
+            "unrelated-metric-probe",
+            "not present in scenario",
+        )
+
+        wrong_size = copy.deepcopy(valid)
+        definition = next(
+            metric
+            for metric in wrong_size["provenance"]["specification"]["definition"][
+                "metrics"
+            ]
+            if metric["id"] == "exp"
+        )
+        definition["groups"][0]["probe"]["size"] = 2
+        self._refresh_specification_digest(wrong_size)
+        self._assert_compare_rejects(
+            baseline,
+            wrong_size,
+            "wrong-size-metric-probe",
+            "not present in scenario",
+        )
+
+        missing = copy.deepcopy(valid)
+        checkpoint = missing["provenance"]["scenario"]["definition"]["run_until"][
+            "checkpoint"
+        ]
+        checkpoint["probes"] = [
+            probe
+            for probe in checkpoint["probes"]
+            if probe["address"] != PROBE_ACTION
+        ]
+        self._refresh_scenario_digest(missing)
+        self._assert_compare_rejects(
+            baseline,
+            missing,
+            "missing-terminal-probe",
+            "not present in scenario",
+        )
+
+    def test_imported_width_backed_metrics_fit_declared_probe_sizes(self):
+        baseline = self.output("metric-width-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        for size in (1, 2, 4):
+            maximum = (1 << (size * 8)) - 1
+            for metric_id, value_field, probe_field in (
+                ("factions", "survivors", "survivors"),
+                ("exp", "delta", "probe"),
+            ):
+                with self.subTest(size=size, metric=metric_id):
+                    boundary = copy.deepcopy(valid)
+                    definition = next(
+                        metric
+                        for metric in boundary["provenance"]["specification"][
+                            "definition"
+                        ]["metrics"]
+                        if metric["id"] == metric_id
+                    )
+                    definition["groups"][0][probe_field]["size"] = size
+                    checkpoint_probes = boundary["provenance"]["scenario"][
+                        "definition"
+                    ]["run_until"]["checkpoint"]["probes"]
+                    if not any(
+                        probe["address"]
+                        == definition["groups"][0][probe_field]["address"]
+                        and probe["size"] == size
+                        for probe in checkpoint_probes
+                    ):
+                        checkpoint_probes.append(
+                            {
+                                "address": definition["groups"][0][probe_field][
+                                    "address"
+                                ],
+                                "size": size,
+                            }
+                        )
+                        checkpoint_probes.sort(
+                            key=lambda probe: (
+                                int(probe["address"], 16),
+                                probe["size"],
+                            )
+                        )
+                    self._refresh_scenario_digest(boundary)
+                    value = boundary["runs"][0]["metrics"][metric_id][0]
+                    value[value_field] = maximum
+                    if metric_id == "exp":
+                        value["baseline"] = 0
+                        value["terminal"] = maximum
+                    self._refresh_specification_digest(boundary)
+                    self._refresh_report_summary(boundary)
+                    autoplay_batch.validate_report(
+                        boundary,
+                        f"{metric_id}-{size}-byte-boundary",
+                    )
+
+                    overflow = copy.deepcopy(boundary)
+                    overflow["runs"][0]["metrics"][metric_id][0][
+                        value_field
+                    ] = maximum + 1
+                    self._refresh_report_summary(overflow)
+                    self._assert_compare_rejects(
+                        baseline,
+                        overflow,
+                        f"{metric_id}-{size}-byte-overflow",
+                        f"declared {size}-byte probe",
+                    )
+
+    def test_imported_metric_lists_enforce_cardinality_and_identity(self):
+        baseline = self.output("metric-list-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        cases = (
+            ("factions", "groups", "group", "faction/group"),
+            ("events", "events", "id", ".id must be sorted and unique"),
+            ("exp", "groups", "id", ".id must be sorted and unique"),
+        )
+        for metric_id, list_field, identity_field, duplicate_error in cases:
+            with self.subTest(metric=metric_id):
+                excessive = copy.deepcopy(valid)
+                definition = next(
+                    metric
+                    for metric in excessive["provenance"]["specification"][
+                        "definition"
+                    ]["metrics"]
+                    if metric["id"] == metric_id
+                )
+                template_definition = definition[list_field][0]
+                definition[list_field] = []
+                for run in excessive["runs"]:
+                    run["metrics"][metric_id] = []
+                for index in range(65):
+                    definition_entry = copy.deepcopy(template_definition)
+                    identifier = f"entry-{index:02d}"
+                    definition_entry[identity_field] = identifier
+                    definition[list_field].append(definition_entry)
+                    for run in excessive["runs"]:
+                        value_entry = copy.deepcopy(
+                            valid["runs"][run["seed"] - 1]["metrics"][metric_id][0]
+                        )
+                        if metric_id == "factions":
+                            value_entry["group"] = identifier
+                        elif metric_id == "events":
+                            value_entry["id"] = identifier
+                        else:
+                            value_entry["group"] = identifier
+                        run["metrics"][metric_id].append(value_entry)
+                self._refresh_specification_digest(excessive)
+                self._refresh_report_summary(excessive)
+                self._assert_compare_rejects(
+                    baseline,
+                    excessive,
+                    f"{metric_id}-over-cap",
+                    "65 entries, exceeding 64",
+                )
+
+                duplicate = copy.deepcopy(valid)
+                definition = next(
+                    metric
+                    for metric in duplicate["provenance"]["specification"][
+                        "definition"
+                    ]["metrics"]
+                    if metric["id"] == metric_id
+                )
+                definition[list_field].append(
+                    copy.deepcopy(definition[list_field][0])
+                )
+                for run in duplicate["runs"]:
+                    run["metrics"][metric_id].append(
+                        copy.deepcopy(run["metrics"][metric_id][0])
+                    )
+                self._refresh_specification_digest(duplicate)
+                self._refresh_report_summary(duplicate)
+                self._assert_compare_rejects(
+                    baseline,
+                    duplicate,
+                    f"{metric_id}-duplicate",
+                    duplicate_error,
+                )
+
+    def test_seed_values_fit_declared_probe_width_before_backend_setup(self):
+        scenario = gba_playtest.parse_scenario_data(scenario_data())
+        for size in (1, 2, 4):
+            maximum = (1 << (size * 8)) - 1
+            probe = gba_playtest.Probe(
+                PROBE_SEED,
+                int(PROBE_SEED, 16),
+                size,
+                None,
+            )
+            for boundary in (0, maximum):
+                gba_playtest.validate_scheduled_write(
+                    scenario,
+                    gba_playtest.ScheduledWrite(0, probe, boundary),
+                )
+            for invalid in (True, -1, maximum + 1):
+                with self.subTest(size=size, invalid=invalid):
+                    with self.assertRaisesRegex(
+                        gba_playtest.PlaytestError,
+                        f"{size}-byte binding",
+                    ):
+                        gba_playtest.validate_scheduled_write(
+                            scenario,
+                            gba_playtest.ScheduledWrite(0, probe, invalid),
+                        )
+
+        for size, seed in ((1, "256"), (2, "65536"), (4, "4294967296"), (4, "-1")):
+            with self.subTest(preflight_size=size, seed=seed):
+                specification = specification_data()
+                specification["seeding"]["size"] = size
+                self.specification.write_text(
+                    json.dumps(specification, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                output = self.output(f"seed-{size}-{seed.replace('-', 'negative')}.json")
+                stderr = io.StringIO()
+                with mock.patch.object(
+                    gba_playtest,
+                    "build_backend",
+                    side_effect=AssertionError("invalid seed reached backend setup"),
+                ), mock.patch.object(
+                    gba_playtest,
+                    "capture",
+                    side_effect=AssertionError("invalid seed reached capture"),
+                ), redirect_stderr(stderr):
+                    code = autoplay_batch.main(
+                        self.arguments(output, seeds=seed)
+                    )
+                self.assertEqual(code, 2)
+                self.assertFalse(output.exists())
+                self.assertFalse(autoplay_batch._temporary_output_path(output).exists())
+
+    def test_imported_run_count_is_bounded_unique_and_ascending(self):
+        baseline = self.output("run-count-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        maximum = copy.deepcopy(valid)
+        template = maximum["runs"][0]
+        maximum["runs"] = []
+        for seed in range(256):
+            run = copy.deepcopy(template)
+            run["seed"] = seed
+            run["seed_write"]["value"] = seed
+            maximum["runs"].append(run)
+        self._refresh_report_summary(maximum)
+        autoplay_batch.validate_report(maximum, "maximum-report")
+
+        cases = []
+        empty = copy.deepcopy(valid)
+        empty["runs"] = []
+        cases.append(("empty-runs", empty, "non-empty array"))
+        excessive = copy.deepcopy(maximum)
+        extra = copy.deepcopy(template)
+        extra["seed"] = 256
+        extra["seed_write"]["value"] = 256
+        excessive["runs"].append(extra)
+        cases.append(("excessive-runs", excessive, "exceeding the 256-run limit"))
+        duplicate = copy.deepcopy(valid)
+        duplicate["runs"][1]["seed"] = duplicate["runs"][0]["seed"]
+        cases.append(("duplicate-runs", duplicate, "unique ascending"))
+        descending = copy.deepcopy(valid)
+        descending["runs"].reverse()
+        cases.append(("descending-runs", descending, "unique ascending"))
+        for name, report, expected in cases:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(
+                    gba_playtest.PlaytestError,
+                    expected,
+                ):
+                    autoplay_batch.validate_report(report, name)
+
     def test_compare_rejects_malformed_nested_reports_without_tracebacks(self):
         baseline = self.output("deep-baseline.json")
         self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
@@ -530,8 +1253,227 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
             reports.append(output.read_bytes())
             report = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(report["runs"][1]["status"], "execution_failure")
-            self.assertEqual(report["runs"][1]["error"], "seed execution failed")
+            self.assertEqual(
+                report["runs"][1]["error"],
+                "PlaytestError [scenario='batch-seed-fixture' rom='fixture.gba']: "
+                "seed execution failed",
+            )
         self.assertEqual(reports[0], reports[1])
+
+    def test_execution_errors_normalize_ephemeral_workspace_paths(self):
+        reports = []
+        for jobs, label in ((1, "serial-a1b2"), (3, "parallel-c3d4")):
+            output = self.output(f"normalized-error-{jobs}.json")
+
+            def fail_with_workspace(*args, **kwargs):
+                seed = kwargs["scheduled_write"].value
+                raise gba_playtest.PlaytestError(
+                    f"libmGBA backend failed while loading "
+                    f"{self.root}/gba-playtest-{label}-{seed}/input.gba"
+                )
+
+            with mock.patch.object(
+                gba_playtest,
+                "build_backend",
+                side_effect=self._fake_build_backend,
+            ), mock.patch.object(
+                gba_playtest,
+                "capture",
+                side_effect=fail_with_workspace,
+            ):
+                self.assertEqual(
+                    autoplay_batch.main(self.arguments(output, jobs=jobs)),
+                    1,
+                )
+            reports.append(output.read_bytes())
+            report = json.loads(output.read_text(encoding="utf-8"))
+            for run in report["runs"]:
+                self.assertEqual(
+                    run["error"],
+                    "PlaytestError [scenario='batch-seed-fixture' "
+                    "rom='fixture.gba']: libmGBA backend failed while loading "
+                    "<gba-playtest-workspace>",
+                )
+        self.assertEqual(reports[0], reports[1])
+
+    def test_delta_aliases_share_one_numeric_baseline_observation(self):
+        resolver = autoplay_batch.ElfSymbolResolver(self.elf)
+        scenario = gba_playtest.load_scenario(self.scenario, resolver)
+        specification = autoplay_batch.load_specification(
+            self.specification,
+            resolver,
+        )
+        metrics = []
+        for metric in specification.metrics:
+            if metric.identifier != "items":
+                metrics.append(metric)
+                continue
+            definition = copy.deepcopy(metric.definition)
+            definition["groups"][0]["probe"]["address"] = "gSharedDeltaAlias"
+            probe = metric.probes[0]
+            metrics.append(
+                replace(
+                    metric,
+                    definition=definition,
+                    probes=(
+                        autoplay_batch.MetricProbe(
+                            "gSharedDeltaAlias",
+                            probe.address,
+                            probe.size,
+                        ),
+                    ),
+                )
+            )
+        specification = replace(specification, metrics=tuple(metrics))
+        baseline_counts = []
+
+        def capture_aliases(*args, **kwargs):
+            baseline_counts.append(
+                len(kwargs["scheduled_write"].baseline_probes)
+            )
+            return self._fake_capture(*args, **kwargs)
+
+        with mock.patch.object(
+            gba_playtest,
+            "build_backend",
+            side_effect=self._fake_build_backend,
+        ), mock.patch.object(
+            gba_playtest,
+            "capture",
+            side_effect=capture_aliases,
+        ):
+            report = autoplay_batch.run_batch(
+                self.rom,
+                scenario,
+                specification,
+                (1,),
+                max_jobs=1,
+                max_frames=3,
+                max_turns=32,
+                max_actions=32,
+                work_dir=self.root,
+            )
+        autoplay_batch.validate_report(report, "alias-report")
+        self.assertEqual(baseline_counts, [2])
+        left_entry = report["runs"][0]["metrics"]["items"][0]
+        right_entry = report["runs"][0]["metrics"]["resources"][0]
+        self.assertEqual(
+            (
+                left_entry["baseline"],
+                left_entry["terminal"],
+                left_entry["delta"],
+            ),
+            (
+                right_entry["baseline"],
+                right_entry["terminal"],
+                right_entry["delta"],
+            ),
+        )
+
+    def test_symbolic_run_until_counter_emits_numeric_report_identity(self):
+        data = scenario_data()
+        alias = "gPlaySt+0x10"
+        data["run_until"]["terminal_conditions"][0]["all"][0][
+            "address"
+        ] = alias
+        data["run_until"]["turn_limit"]["address"] = alias
+        data["run_until"]["checkpoint"]["probes"][0]["address"] = alias
+
+        def resolve(symbol):
+            self.assertEqual(symbol, "gPlaySt")
+            return int(PROBE_TURN, 16) - 0x10, 0x100
+
+        scenario = gba_playtest.parse_scenario_data(data, symbol_resolver=resolve)
+        specification = autoplay_batch.load_specification(
+            self.specification,
+            autoplay_batch.ElfSymbolResolver(self.elf),
+        )
+        with mock.patch.object(
+            gba_playtest,
+            "build_backend",
+            side_effect=self._fake_build_backend,
+        ), mock.patch.object(
+            gba_playtest,
+            "capture",
+            side_effect=self._fake_capture,
+        ):
+            report = autoplay_batch.run_batch(
+                self.rom,
+                scenario,
+                specification,
+                (1,),
+                max_jobs=1,
+                max_frames=3,
+                max_turns=32,
+                max_actions=32,
+                work_dir=self.root,
+            )
+        autoplay_batch.validate_report(report, "symbolic-counter-report")
+        self.assertEqual(
+            report["runs"][0]["terminal"]["turn"]["address"],
+            PROBE_TURN,
+        )
+        self.assertEqual(
+            report["provenance"]["scenario"]["definition"]["run_until"][
+                "turn_limit"
+            ]["address"],
+            PROBE_TURN,
+        )
+
+    def test_output_must_be_strict_child_of_build_root(self):
+        absent_build_root = self.root / "absent-build-root"
+        with mock.patch.object(autoplay_batch, "BUILD_ROOT", absent_build_root):
+            with self.assertRaisesRegex(
+                gba_playtest.PlaytestError,
+                "not the build root itself",
+            ):
+                autoplay_batch._output_path(absent_build_root)
+        self.assertFalse(absent_build_root.exists())
+
+        with self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            "not the build root itself",
+        ):
+            autoplay_batch._output_path(autoplay_batch.BUILD_ROOT)
+
+        alias = self.root / "build-root-alias"
+        alias.symlink_to(autoplay_batch.BUILD_ROOT, target_is_directory=True)
+        with self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            "output collision",
+        ):
+            autoplay_batch._output_path(alias)
+
+        child = self.output("strict-child.json")
+        self.assertEqual(autoplay_batch._output_path(child), child.resolve())
+        self.assertFalse(child.exists())
+
+    def test_dangling_output_symlink_is_collision_and_distinct_retry_succeeds(self):
+        missing_target = self.output("missing-symlink-target.json")
+        requested = self.output("dangling-output.json")
+        requested.symlink_to(missing_target)
+        temporary = autoplay_batch._temporary_output_path(requested)
+        stderr = io.StringIO()
+        with mock.patch.object(
+            gba_playtest,
+            "build_backend",
+            side_effect=AssertionError("dangling collision reached backend setup"),
+        ), mock.patch.object(
+            gba_playtest,
+            "capture",
+            side_effect=AssertionError("dangling collision reached capture"),
+        ), redirect_stderr(stderr):
+            code = autoplay_batch.main(self.arguments(requested))
+        self.assertEqual(code, 2)
+        self.assertIn("output collision", stderr.getvalue())
+        self.assertTrue(requested.is_symlink())
+        self.assertEqual(requested.readlink(), missing_target)
+        self.assertFalse(missing_target.exists())
+        self.assertFalse(temporary.exists())
+
+        corrected = self.output("dangling-output-corrected.json")
+        self.assertEqual(self._run_fake(self.arguments(corrected))[0], 1)
+        self.assertTrue(corrected.is_file())
 
     def test_atomic_output_collision_cleanup_and_corrected_retry(self):
         output = self.output("atomic.json")
@@ -586,27 +1528,52 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         self.assertFalse(serialization_output.exists())
         self.assertFalse(serialization_temporary.exists())
 
+        race_output = self.output("destination-race.json")
+        race_temporary = autoplay_batch._temporary_output_path(race_output)
+        serialize_report = autoplay_batch.serialize_report
+
+        def create_competing_destination(report):
+            race_output.write_bytes(b"competing creator")
+            return serialize_report(report)
+
+        stderr = io.StringIO()
+        with mock.patch.object(
+            gba_playtest,
+            "build_backend",
+            side_effect=self._fake_build_backend,
+        ), mock.patch.object(
+            gba_playtest,
+            "capture",
+            side_effect=self._fake_capture,
+        ), mock.patch.object(
+            autoplay_batch,
+            "serialize_report",
+            side_effect=create_competing_destination,
+        ), redirect_stderr(stderr):
+            self.assertEqual(autoplay_batch.main(self.arguments(race_output)), 2)
+        self.assertIn("will not be overwritten", stderr.getvalue())
+        self.assertEqual(race_output.read_bytes(), b"competing creator")
+        self.assertFalse(race_temporary.exists())
+
     def test_comparison_reports_metric_changes_and_never_rewrites_inputs(self):
         baseline = self.output("baseline.json")
         candidate = self.output("candidate.json")
         self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
         candidate_data = json.loads(baseline.read_text(encoding="utf-8"))
-        candidate_data["runs"][0]["metrics"]["turns"] = 99
-        candidate_data["runs"][0]["terminal"]["turn"]["value"] = "0x00000063"
-        metric_definitions = {
-            metric["id"]: metric
-            for metric in candidate_data["provenance"]["specification"]["definition"][
-                "metrics"
-            ]
-        }
-        candidate_data["summary"]["metric_distributions"] = (
-            autoplay_batch._metric_distributions(
-                candidate_data["runs"],
-                metric_definitions,
-            )
+        added_run = copy.deepcopy(candidate_data["runs"][2])
+        candidate_data["runs"] = candidate_data["runs"][1:]
+        changed_run = next(
+            run for run in candidate_data["runs"] if run["seed"] == 3
         )
+        changed_run["metrics"]["turns"] = 9
+        changed_run["terminal"]["turn"]["value"] = "0x00000009"
+        added_run["seed"] = 4
+        added_run["seed_write"]["value"] = 4
+        candidate_data["runs"].append(added_run)
+        self._refresh_report_summary(candidate_data)
         candidate.write_text(autoplay_batch.serialize_report(candidate_data), encoding="utf-8")
-        before = baseline.read_bytes()
+        baseline_before = baseline.read_bytes()
+        candidate_before = candidate.read_bytes()
         comparison = self.output("comparison.json")
         stdout = io.StringIO()
         with redirect_stdout(stdout):
@@ -622,11 +1589,14 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                 ]
             )
         self.assertEqual(code, 0)
-        self.assertEqual(before, baseline.read_bytes())
+        self.assertEqual(baseline_before, baseline.read_bytes())
+        self.assertEqual(candidate_before, candidate.read_bytes())
         data = json.loads(comparison.read_text(encoding="utf-8"))
         self.assertIn("does not infer statistical significance", data["notice"])
+        self.assertEqual(data["comparison"]["added_seeds"], [4])
+        self.assertEqual(data["comparison"]["removed_seeds"], [1])
         change = data["comparison"]["changed_runs"][0]
-        self.assertEqual(change["seed"], 1)
+        self.assertEqual(change["seed"], 3)
         self.assertEqual(change["changes"]["metrics"][0]["id"], "turns")
 
 
@@ -665,6 +1635,23 @@ class AutoplayBatchLibmGBAIntegrationTests(BatchFixtureTestCase):
             self.assertEqual(run["terminal"]["reason"], "success")
             self.assertEqual(run["metrics"]["turns"], seed)
             self.assertEqual(run["metrics"]["actions"], seed)
+            for metric_id in ("exp", "items", "resources"):
+                self.assertEqual(
+                    run["metrics"][metric_id][0],
+                    {
+                        "baseline": 0,
+                        "delta": seed,
+                        "group": "blue",
+                        "kind": (
+                            "item"
+                            if metric_id == "items"
+                            else "resource"
+                            if metric_id == "resources"
+                            else "exp"
+                        ),
+                        "terminal": seed,
+                    },
+                )
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -346,9 +347,12 @@ class RunUntilSchemaTests(unittest.TestCase):
             }
         )
         bounded = gba_playtest.parse_scenario_data(run_until_data())
-        with tempfile.TemporaryDirectory() as temporary:
+        plan_root = ROOT / "build" / "test-artifacts" / "run-until-plans"
+        plan_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=plan_root) as temporary:
             fixed_plan = Path(temporary) / "fixed.plan"
             bounded_plan = Path(temporary) / "bounded.plan"
+            scheduled_plan = Path(temporary) / "scheduled.plan"
             gba_playtest._write_plan(fixed_plan, fixed)
             gba_playtest._write_plan(bounded_plan, bounded)
             self.assertTrue(
@@ -359,6 +363,398 @@ class RunUntilSchemaTests(unittest.TestCase):
             bounded_text = bounded_plan.read_text(encoding="ascii")
             self.assertTrue(bounded_text.startswith("GBA_PLAYTEST_PLAN 4\n"))
             self.assertIn("\nRUN_UNTIL 5\n", bounded_text)
+            scheduled_write = gba_playtest.ScheduledWrite(
+                0,
+                gba_playtest.Probe(
+                    PROBE_ADDRESS,
+                    int(PROBE_ADDRESS, 16),
+                    4,
+                    None,
+                ),
+                1,
+            )
+            gba_playtest._write_plan(
+                scheduled_plan,
+                bounded,
+                scheduled_write,
+            )
+            scheduled_text = scheduled_plan.read_text(encoding="ascii")
+            self.assertTrue(scheduled_text.startswith("GBA_PLAYTEST_PLAN 7\n"))
+            self.assertIn("\nRUN_UNTIL 5\n", scheduled_text)
+            self.assertIn("\nBASELINE_PROBES 0\n", scheduled_text)
+            self.assertIn(
+                f"\nSEED_WRITE 0 {int(PROBE_ADDRESS, 16)} 4 1\n",
+                scheduled_text,
+            )
+            with self.assertRaisesRegex(
+                gba_playtest.PlaytestError,
+                "scheduled writes require a bounded run-until scenario",
+            ):
+                gba_playtest._write_plan(
+                    Path(temporary) / "invalid-fixed.plan",
+                    fixed,
+                    scheduled_write,
+                )
+            self.assertFalse((Path(temporary) / "invalid-fixed.plan").exists())
+
+    def test_scheduled_write_acknowledgement_is_exact_and_precedes_terminal(self):
+        scenario = gba_playtest.parse_scenario_data(run_until_data())
+        scheduled_write = gba_playtest.ScheduledWrite(
+            0,
+            gba_playtest.Probe(
+                PROBE_ADDRESS,
+                int(PROBE_ADDRESS, 16),
+                4,
+                None,
+            ),
+            1,
+        )
+        checkpoint = (
+            "TERMINAL\tsuccess\t2\t0\t0\t0\t0\n"
+            "CHECKPOINT\t0\t2\t0000000000000000\n"
+            "PROBE\t0\t0\t1022\n"
+        )
+        acknowledgement = (
+            f"SEED_WRITE_APPLIED\t0\t{int(PROBE_ADDRESS, 16)}\t4\t1\n"
+        )
+        captured = gba_playtest._parse_backend_output(
+            acknowledgement + checkpoint,
+            scenario,
+            scheduled_write,
+        )
+        self.assertEqual(
+            captured["scheduled_write"],
+            {
+                "address": PROBE_ADDRESS,
+                "frame": 0,
+                "size": 4,
+                "value": 1,
+            },
+        )
+
+        cases = (
+            (
+                "early-terminal",
+                checkpoint,
+                "terminal record preceded scheduled write acknowledgement",
+            ),
+            (
+                "duplicate",
+                acknowledgement + acknowledgement + checkpoint,
+                "duplicate scheduled write acknowledgement",
+            ),
+            (
+                "mismatched",
+                (
+                    f"SEED_WRITE_APPLIED\t0\t{int(PROBE_ADDRESS, 16)}\t4\t2\n"
+                    + checkpoint
+                ),
+                "does not match the request",
+            ),
+        )
+        for name, output, expected in cases:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(gba_playtest.PlaytestError, expected):
+                    gba_playtest._parse_backend_output(
+                        output,
+                        scenario,
+                        scheduled_write,
+                    )
+
+        baseline_write = gba_playtest.ScheduledWrite(
+            scheduled_write.frame,
+            scheduled_write.probe,
+            scheduled_write.value,
+            (scheduled_write.probe,),
+        )
+        with self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            "preceded baseline probes",
+        ):
+            gba_playtest._parse_backend_output(
+                acknowledgement
+                + "BASELINE\t0\t0\n"
+                + checkpoint,
+                scenario,
+                baseline_write,
+            )
+
+        late_write = gba_playtest.ScheduledWrite(
+            2,
+            scheduled_write.probe,
+            scheduled_write.value,
+        )
+        with self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            "terminal record preceded scheduled write acknowledgement",
+        ):
+            gba_playtest._parse_backend_output(
+                (
+                    "TERMINAL\tsuccess\t0\t0\t0\t0\t0\n"
+                    "CHECKPOINT\t0\t0\t0000000000000000\n"
+                    "PROBE\t0\t0\t1022\n"
+                ),
+                scenario,
+                late_write,
+            )
+
+    def test_capture_rejects_fixed_scheduled_write_before_backend_start(self):
+        fixed = gba_playtest.parse_scenario_data(
+            {
+                "schema_version": 1,
+                "name": "fixed",
+                "frames": [],
+                "checkpoints": [
+                    {
+                        "name": "fixed",
+                        "frame": 1,
+                        "framebuffer": False,
+                        "probes": [{"address": PROBE_ADDRESS, "size": 4}],
+                    }
+                ],
+            }
+        )
+        scheduled_write = gba_playtest.ScheduledWrite(
+            0,
+            gba_playtest.Probe(
+                PROBE_ADDRESS,
+                int(PROBE_ADDRESS, 16),
+                4,
+                None,
+            ),
+            1,
+        )
+        with mock.patch.object(
+            gba_playtest,
+            "build_backend",
+            side_effect=AssertionError("fixed scheduled write reached backend"),
+        ), self.assertRaisesRegex(
+            gba_playtest.PlaytestError,
+            "scheduled writes require a bounded run-until scenario",
+        ):
+            gba_playtest.capture(
+                ROOT / "build" / "not-opened.gba",
+                fixed,
+                scheduled_write=scheduled_write,
+            )
+
+    def test_scheduled_write_dataclass_is_validated_before_backend_start(self):
+        bounded = gba_playtest.parse_scenario_data(run_until_data())
+        for size in (1, 2, 4):
+            maximum = (1 << (size * 8)) - 1
+            for value in (0, maximum):
+                gba_playtest.validate_scheduled_write(
+                    bounded,
+                    gba_playtest.ScheduledWrite(
+                        0,
+                        gba_playtest.Probe(
+                            PROBE_ADDRESS,
+                            int(PROBE_ADDRESS, 16),
+                            size,
+                            None,
+                        ),
+                        value,
+                    ),
+                )
+
+        cases = (
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), True, None),
+                    0,
+                ),
+                "size must be integer 1, 2, or 4",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 3, None),
+                    0,
+                ),
+                "size must be integer 1, 2, or 4",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, None, 4, None),
+                    0,
+                ),
+                "address must be a resolved integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, True, 1, None),
+                    0,
+                ),
+                "address must be a resolved integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, 0x02000001, 2, None),
+                    0,
+                ),
+                "aligned to size 2",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, 0x0203FFFF, 2, None),
+                    0,
+                ),
+                "aligned to size 2",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, 0x08000000, 4, None),
+                    0,
+                ),
+                "writable EWRAM or IWRAM",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    False,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 4, None),
+                    0,
+                ),
+                "frame must be an integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    -1,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 4, None),
+                    0,
+                ),
+                "frame must be an integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    5,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 4, None),
+                    0,
+                ),
+                "frame must be an integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 1, None),
+                    True,
+                ),
+                "value must be an integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 1, None),
+                    -1,
+                ),
+                "value must be an integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 1, None),
+                    0x100,
+                ),
+                "value must be an integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(
+                        PROBE_ADDRESS,
+                        int(PROBE_ADDRESS, 16),
+                        4,
+                        None,
+                    ),
+                    1,
+                    (
+                        gba_playtest.Probe(
+                            "gAlias",
+                            int(PROBE_ADDRESS, 16),
+                            4,
+                            None,
+                        ),
+                        gba_playtest.Probe(
+                            PROBE_ADDRESS,
+                            int(PROBE_ADDRESS, 16),
+                            4,
+                            None,
+                        ),
+                    ),
+                ),
+                "duplicate baseline probe",
+            ),
+        )
+        for scheduled_write, expected in cases:
+            with self.subTest(expected=expected, scheduled_write=scheduled_write):
+                with mock.patch.object(
+                    gba_playtest,
+                    "build_backend",
+                    side_effect=AssertionError(
+                        "invalid scheduled write reached backend"
+                    ),
+                ), self.assertRaisesRegex(gba_playtest.PlaytestError, expected):
+                    gba_playtest.capture(
+                        ROOT / "build" / "not-opened.gba",
+                        bounded,
+                        scheduled_write=scheduled_write,
+                    )
+
+    def test_capture_preserves_preexisting_positional_parameter_order(self):
+        fixed = gba_playtest.parse_scenario_data(
+            {
+                "schema_version": 1,
+                "name": "fixed-positional",
+                "frames": [],
+                "checkpoints": [
+                    {
+                        "name": "fixed",
+                        "frame": 1,
+                        "framebuffer": False,
+                        "probes": [{"address": PROBE_ADDRESS, "size": 4}],
+                    }
+                ],
+            }
+        )
+        work_root = ROOT / "build" / "test-artifacts" / "capture-positional"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as temporary:
+            temporary_path = Path(temporary)
+            rom = temporary_path / "fixture.gba"
+            backend = temporary_path / "prebuilt-backend"
+            build_homebrew_rom(rom)
+            backend.write_bytes(b"prebuilt")
+            completed = mock.Mock(
+                returncode=0,
+                stderr="",
+                stdout=(
+                    "CHECKPOINT\t0\t1\t0000000000000000\n"
+                    "PROBE\t0\t0\t0\n"
+                ),
+            )
+            with mock.patch.object(
+                gba_playtest,
+                "_run_transient_retryable",
+                return_value=completed,
+            ), mock.patch.object(
+                gba_playtest.tempfile,
+                "tempdir",
+                str(temporary_path),
+            ):
+                fingerprint = gba_playtest.capture(
+                    rom,
+                    fixed,
+                    None,
+                    0,
+                    backend,
+                    None,
+                )
+        self.assertEqual(fingerprint["scenario"], "fixed-positional")
 
 
 class RunUntilFingerprintTests(unittest.TestCase):
@@ -526,6 +922,23 @@ class AutoplayBoundsEvidenceTests(unittest.TestCase):
 
 
 class RunUntilBackendIntegrationTests(unittest.TestCase):
+    def _build_backend_or_skip(self, backend: Path) -> None:
+        try:
+            gba_playtest.build_backend(backend)
+        except gba_playtest.PlaytestError as exc:
+            unavailable_markers = (
+                "C compiler ",
+                "mgba/core/core.h: No such file",
+                "'mgba/core/core.h' file not found",
+                "cannot find -lmgba",
+                "library not found for -lmgba",
+            )
+            if any(marker in str(exc) for marker in unavailable_markers):
+                raise unittest.SkipTest(
+                    f"libmGBA integration skipped explicitly: {exc}"
+                ) from exc
+            raise
+
     def _capture_or_skip(self, rom: Path, scenario: gba_playtest.Scenario, **kwargs):
         try:
             return gba_playtest.capture(rom, scenario, **kwargs)
@@ -542,6 +955,69 @@ class RunUntilBackendIntegrationTests(unittest.TestCase):
                     f"libmGBA integration skipped explicitly: {exc}"
                 ) from exc
             raise
+
+    def test_backend_rejects_unaligned_format_6_and_7_seed_writes(self):
+        scenario = gba_playtest.parse_scenario_data(run_until_data())
+        with tempfile.TemporaryDirectory(prefix="gba-run-until-plan-") as temporary:
+            root = Path(temporary)
+            backend = root / "gba-playtest-backend"
+            valid_plan = root / "valid.plan"
+            missing_rom = root / "missing.gba"
+            self._build_backend_or_skip(backend)
+            gba_playtest._write_plan(
+                valid_plan,
+                scenario,
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(
+                        PROBE_ADDRESS,
+                        int(PROBE_ADDRESS, 16),
+                        4,
+                        None,
+                    ),
+                    1,
+                ),
+            )
+            valid_text = valid_plan.read_text(encoding="ascii")
+
+            for version in (6, 7):
+                for size, address in ((2, 0x02000001), (4, 0x02000002)):
+                    with self.subTest(version=version, size=size, address=address):
+                        plan = root / f"invalid-{version}-{size}.plan"
+                        text = valid_text.replace(
+                            "GBA_PLAYTEST_PLAN 7",
+                            f"GBA_PLAYTEST_PLAN {version}",
+                            1,
+                        ).replace(
+                            f"SEED_WRITE 0 {int(PROBE_ADDRESS, 16)} 4 1",
+                            f"SEED_WRITE 0 {address} {size} 1",
+                            1,
+                        )
+                        plan.write_text(text, encoding="ascii")
+                        result = subprocess.run(
+                            [str(backend), str(missing_rom), str(plan)],
+                            capture_output=True,
+                            text=True,
+                        )
+                        self.assertEqual(result.returncode, 2)
+                        self.assertIn("malformed SEED_WRITE record", result.stderr)
+
+                aligned_plan = root / f"aligned-{version}.plan"
+                aligned_plan.write_text(
+                    valid_text.replace(
+                        "GBA_PLAYTEST_PLAN 7",
+                        f"GBA_PLAYTEST_PLAN {version}",
+                        1,
+                    ),
+                    encoding="ascii",
+                )
+                result = subprocess.run(
+                    [str(backend), str(missing_rom), str(aligned_plan)],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertNotIn("malformed SEED_WRITE record", result.stderr)
 
     def test_generated_homebrew_covers_every_terminal_reason_once(self):
         cases = (

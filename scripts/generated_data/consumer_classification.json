@@ -4426,8 +4426,8 @@
       "reason": null
     },
     "tools/gba-playtest/autoplay_batch.py|tool-symbol|unit|faction": {
-      "category": "external-interface",
-      "reason": null
+      "category": "reviewed-exclusion",
+      "reason": "free-form report label for grouping survivor/casualty metrics by faction name; it stores descriptive JSON text, not a deployment-slot unit ID"
     },
     "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|item_slot": {
       "category": "reviewed-exclusion",

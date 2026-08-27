@@ -109,9 +109,11 @@ python3 tools/gba-playtest/autoplay_batch.py compare \
   --output build/autoplay-batches/comparison.json
 ```
 
-Exit statuses are 0 for success, 1 for a valid-but-different fingerprint, and 2
-for malformed input, missing dependencies, or backend/setup failure. Verify
-diagnostics identify the exact JSON path, expected value, and captured value.
+For `gba_playtest.py`, exit status 0 means capture, verification, or
+`backend-check` succeeded; 1 is reserved for a valid verification whose
+fingerprint differs; and 2 means malformed input, missing dependencies, or
+backend/setup failure. Verify diagnostics identify the exact JSON path,
+expected value, and captured value.
 
 ### Bounded autoplay batch reports
 
@@ -126,14 +128,52 @@ or looser CLI value is rejected before backend compilation or emulator start.
 
 The required specification is versioned JSON. It names the configuration and
 strategy profile, requires `"fidelity": "normal"`, and declares a writable
-EWRAM/IWRAM seed injection address and frame. The runner writes each seed only
-at that declared frame after a fresh libmGBA boot; it never treats a seed as a
-label or silently mutates an unknown RNG state. The terminal checkpoint must
-declare every semantic probe used by the selected metrics. Supported metric
-kinds cover the typed terminal reason/frame/turn/action values,
+EWRAM/IWRAM seed injection binding, canonical resolved numeric address, and
+frame. The complete 1/2/4-byte write range must fit writable work RAM, and the
+frame must be below the canonical scenario limit. The runner writes each seed
+only there after a fresh libmGBA boot; it never treats a seed as a label or
+silently mutates an unknown RNG state. Every seed must fit the declared probe
+before backend setup. Generic `gba_playtest.capture` also rejects a
+`ScheduledWrite` for fixed-frame scenarios before plan serialization or
+backend startup; scheduled-write plan formats are bounded-run-until-only. Its preexisting positional
+order through `backend_path` and `sram_output` remains stable; batch-only
+`scheduled_write` and `work_dir` options are appended. The terminal checkpoint must
+declare every semantic probe used by the selected metrics. Imported metric
+definitions retain their canonical resolved address and size, which must match
+one terminal-checkpoint probe even when several metrics intentionally share
+it. A specification or imported report must contain exactly one terminal/frame/turn/action,
+faction-count, and event-outcome metric plus exactly one EXP/item/resource
+delta metric. Supported metric kinds cover those typed values,
 survivor/casualty counts by faction/group, selected recruitment/village/chest
 event outcomes, and configured EXP/item/resource group deltas. Unknown metric
-kinds or unrecorded probes fail before execution.
+kinds, missing/duplicate required kinds, or unrecorded probes fail before
+execution. Every faction, event, and delta definition contains 1 through 64
+sorted unique records. Imported survivor/casualty and delta values must fit
+their declared 1/2/4-byte probes.
+
+`autoplay_batch.py run` returns 0 only when every seed succeeds, 1 when it
+successfully publishes a valid report containing at least one terminal or
+execution failure, and 2 for setup, input, validation, serialization, or
+output-publication failure. `autoplay_batch.py compare` returns 0 after any
+valid comparison, including one with semantic differences, and 2 for invalid
+reports, collisions, or write/publication failures.
+
+EXP/item/resource metrics are signed differences, not terminal snapshots.
+Before emitting the current format-7 plan, `run_batch` resolves and
+deduplicates intentional symbolic/literal delta aliases by numeric
+`(address, size)`. The backend rejects duplicate serialized baseline records
+and reads each declared pair once at the seed frame immediately before that
+frame's input and seed write (therefore immediately after reset for the
+canonical frame-0 fixture), then reads the same pair at the terminal
+checkpoint. Duplicate baseline entries supplied directly through
+`ScheduledWrite` are rejected before backend startup. Each report entry retains the unsigned
+width-bounded `baseline` and `terminal` observations and their signed `delta =
+terminal - baseline`, bounded to `[-max, +max]` for that probe width.
+Format 7 retains format 6's input records and adds one mandatory
+`SEED_WRITE_APPLIED` acknowledgement containing frame, resolved address, size,
+and observed value. The parser requires exactly one matching acknowledgement
+after all baseline probes and before any terminal record; the backend continues
+to accept format 6 plans for input compatibility only.
 
 Reports use `format_version: 2`, sorted object keys, sorted numeric seed
 records, complete ROM/configuration/scenario/profile/seed-binding/bound
@@ -141,30 +181,58 @@ provenance, and SHA-256 identities over canonical normalized scenario
 semantics and the complete specification/metric definitions. Comparison
 reports list provenance-field changes, so two inputs with the same display
 name/version but different behavior definitions cannot be treated as the same
-experiment. Report loading validates every nested provenance, ROM, terminal,
-metric, aggregate, and run value before comparison. Each report has one
-terminal and metric record per seed and explicit
-`terminal_failure` or `execution_failure` records. Non-success terminals such
-as a stall or exhausted bound remain in the report and make `run` return 1.
+experiment. Inline checkpoint probe expectations are part of normalized
+scenario semantics, including their presence or absence. Report loading validates every nested provenance, ROM, terminal,
+metric, aggregate, and run value before comparison. `success` and
+`terminal_failure` records contain exactly seed, status, ROM provenance,
+terminal, and metrics. The explicit `execution_failure` exception contains
+only seed, status, stable error text, and ROM provenance because execution
+never produced trustworthy terminal/metric observations. Non-success
+terminals such as a stall or exhausted bound remain in the report and make
+`run` return 1.
+Execution-failure text retains its stable `PlaytestError`, requested ROM
+basename, and scenario context while replacing only random
+`gba-playtest-*`/backend workspace paths with a stable placeholder, preserving
+serial/parallel byte identity without hiding actionable input context.
+Imported reports contain 1 through 256 unique ascending seeds. Provenance
+bounds must exactly equal the canonical scenario's required frame/turn/action
+limits; terminal counters must use those declared probes, and terminal plus
+metric values cannot exceed those limits. Captured turn/action addresses are
+stored as resolved numeric literals, so a symbolic scenario such as
+`gPlaySt+0x10` validates against the same executable identity. Imported
+objective failures must be declared, stalls require configured stall
+detection, `max_frames` must occur on the final bounded frame, and
+`max_turns`/`max_actions` must reach their corresponding limits.
+An `engine_stall` frame must also be at least its configured
+`max_unchanged_frames`, matching the earliest frame the backend can emit.
 Serial and parallel runs omit scheduling/timing details from the JSON, so the
 same inputs produce byte-identical reports. The summary adds deterministic
 terminal-reason counts and per-metric value distributions without omitting the
 individual records.
 
-Outputs are required to be new files beneath ignored `build/`; an existing
-path or concurrent sibling reservation is an error, not an overwrite. The
+Outputs are required to be new files strictly beneath ignored `build/`;
+`build/` itself, including a missing root or a symlink resolving to it, is
+rejected before directory creation. An existing path or concurrent sibling
+reservation is an error, not an overwrite; lexical existence is checked before
+resolution, so a dangling output symlink is also preserved and rejected. The
 runner compiles one shared backend before launching workers; compiler,
 libmGBA, backend-build, and other global setup failures return 2 without any
 seed records, while an individual seed execution failure is retained in a
 published report and returns 1. Output is staged in an exclusively created
-sibling, flushed and atomically replaced only after successful
-run/validation/serialization; every failure removes the staging file and
-leaves the requested path absent for a corrected retry. Batch mode rejects
+sibling, flushed, hard-linked to the absent destination without clobbering,
+and directory-fsynced only after successful run/validation/serialization.
+Every failure removes only this invocation's staging/link and leaves an
+unrelated competing destination untouched. Batch mode rejects
 `--sram-image`, so no writable save fixture can be reused. `compare` reads two
 deeply validated reports and writes a third new file containing provenance,
 added/removed seed, terminal, and metric changes. It has no update/refresh mode
 and never rewrites either report; comparisons describe observed differences
 only and make no statistical, difficulty, or balance conclusion.
+
+The latest accepted issue #91 architecture-handoff correction supersedes the
+initial issue body: accelerated fidelity (#88) is optional integration, not a
+dependency or supported mode of this initial collector. This batch contract is
+intentionally frozen to normal-fidelity schema version 2.
 
 ### Baseline refresh policy
 
