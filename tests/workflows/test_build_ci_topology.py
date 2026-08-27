@@ -73,12 +73,12 @@ def _trigger_block(header: str, event_name: str) -> str:
 def _flow_sequence(block: str, field: str) -> tuple[str, ...] | None:
     key = rf"(?:{re.escape(field)}|\"{re.escape(field)}\"|'{re.escape(field)}')"
     sequence = re.search(
-        rf"^    {key}:[ \t]*\[(?P<values>[^\]]*)\][ \t]*$",
+        rf"^    {key}[ \t]*:[ \t]*\[(?P<values>[^\]]*)\][ \t]*$",
         block,
         re.MULTILINE,
     )
     if sequence is None:
-        if re.search(rf"^    {key}:", block, re.MULTILINE):
+        if re.search(rf"^    {key}[ \t]*:", block, re.MULTILINE):
             raise ValueError(f"{field} must use the reviewed flow sequence")
         return None
 
@@ -96,13 +96,17 @@ def _pull_request_actions(header: str) -> tuple[str, ...]:
     block = _trigger_block(header, "pull_request")
     for field in ("branches", "branches-ignore"):
         key = rf"(?:{re.escape(field)}|\"{re.escape(field)}\"|'{re.escape(field)}')"
-        if re.search(rf"^    {key}:", block, re.MULTILINE):
+        if re.search(rf"^    {key}[ \t]*:", block, re.MULTILINE):
             raise ValueError(
                 "pull_request must not define branches or branches-ignore filters"
             )
 
     actions = _flow_sequence(block, "types")
-    if actions != PULL_REQUEST_ACTIONS:
+    if (
+        actions is None
+        or len(actions) != len(PULL_REQUEST_ACTIONS)
+        or set(actions) != set(PULL_REQUEST_ACTIONS)
+    ):
         raise ValueError(
             "pull_request types must be opened, synchronize, reopened, and edited"
         )
@@ -435,6 +439,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "    'branches':\n      - \"master\"\n",
             '    "branches-ignore": [ "agent/**" ]\n',
             "    'branches-ignore':\n      - \"agent/**\"\n",
+            '    branches : [ "master" ]\n',
+            '    "branches-ignore" : [ "agent/**" ]\n',
         )
         for mutation in mutations:
             with self.subTest(mutation=mutation):
@@ -568,6 +574,14 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 self.assertTrue(
                     any("types must be opened" in error for error in _errors(changed, False))
                 )
+
+    def test_pull_request_activity_type_order_is_not_semantic(self):
+        changed = self.text.replace(
+            "types: [opened, synchronize, reopened, edited]",
+            "types: [edited, reopened, opened, synchronize]",
+            1,
+        )
+        self.assertEqual(_errors(changed, False), [])
 
     def test_missing_push_trigger_fails(self):
         changed = self.text.replace(PUSH_TRIGGER, 'push:\n    branches: [ "other" ]', 1)
