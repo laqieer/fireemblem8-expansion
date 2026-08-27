@@ -4,6 +4,7 @@
 
 #include "bm.h"
 #include "bmmap.h"
+#include "bmunit.h"
 #include "cp_common.h"
 #include "expansion_autoplay.h"
 #include "expansion_autoplay_planner.h"
@@ -29,6 +30,12 @@ u8** gBmMapUnit;
 static u16 sSeeds[3] = { 1, 2, 3 };
 static u32 sConsumption;
 static int sControlRequests;
+static int sRestoreRequests;
+static struct CharacterData sCharacter;
+static struct ClassData sClass;
+static struct Unit sUnit;
+static u8 sPermanentFlags[8];
+static u8 sChapterFlags[8];
 static u8 sMovementData[16][32];
 static u8* sMovementRows[16];
 static u8 sUnitData[16][32];
@@ -49,6 +56,36 @@ unsigned GetLCGRNValue(void)
 u32 GetRNConsumptionCount(void)
 {
     return sConsumption;
+}
+
+struct Unit* GetUnit(int id)
+{
+    return id == 1 ? &sUnit : NULL;
+}
+
+u8* GetPermanentFlagBits(void)
+{
+    return sPermanentFlags;
+}
+
+int GetPermanentFlagBitsSize(void)
+{
+    return sizeof(sPermanentFlags);
+}
+
+u8* GetChapterFlagBits(void)
+{
+    return sChapterFlags;
+}
+
+int GetChapterFlagBitsSize(void)
+{
+    return sizeof(sChapterFlags);
+}
+
+void ExpansionAutoplay_RequestPlayerControlRestore(void)
+{
+    sRestoreRequests++;
 }
 
 enum ExpansionAutoplayResult ExpansionAutoplay_SetBlueControl(enum ExpansionBlueControl control)
@@ -102,6 +139,14 @@ int main(void)
     gPlaySt.chapterIndex = 1;
     gPlaySt.chapterTurnNumber = 1;
     gActiveUnitId = 1;
+    sCharacter.number = 1;
+    sClass.number = 1;
+    sUnit.pCharacterData = &sCharacter;
+    sUnit.pClassData = &sClass;
+    sUnit.level = 1;
+    sUnit.curHP = 20;
+    sUnit.items[0] = 1;
+    gActiveUnit = &sUnit;
     gBmMapSize.x = 32;
     gBmMapSize.y = 16;
     for (index = 0; index < 16; index++)
@@ -114,7 +159,6 @@ int main(void)
             sMovementData[index][x] = 1;
             sUnitData[index][x] = 0;
         }
-        sMovementData[15][31] = 0xFF;
     }
     gBmMapMovement = sMovementRows;
     gBmMapUnit = sUnitRows;
@@ -127,6 +171,27 @@ int main(void)
             == EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR,
         "unknown idle command must report protocol error"
     );
+
+    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
+    sSeeds[0] = 9;
+    CHECK(
+        !ExpansionAutoplayPlanner_PollStart()
+            && gExpansionAutoplayPlannerObservation.rejection
+                == EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR,
+        "different RN words with the same LCG must reject provenance"
+    );
+    sSeeds[0] = 1;
+    ExpansionAutoplayPlanner_Reset();
+
+    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
+    gExpansionAutoplayPlannerCommand.expectedRomIdentity ^= 1;
+    CHECK(
+        !ExpansionAutoplayPlanner_PollStart()
+            && gExpansionAutoplayPlannerObservation.rejection
+                == EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR,
+        "same header with different build identity must reject provenance"
+    );
+    ExpansionAutoplayPlanner_Reset();
 
     WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
     gExpansionAutoplayPlannerCommand.expectedScenarioIdentity ^= 1;
@@ -277,7 +342,7 @@ int main(void)
     );
     CHECK(
         selectedOrdinal == 511
-            && decision.xMove == 30
+            && decision.xMove == 31
             && decision.yMove == 15,
         "last-page selection must map to its stable row-major candidate"
     );
@@ -295,8 +360,108 @@ int main(void)
     ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
     CHECK(
         gExpansionAutoplayPlannerCampaignCheckpoint.chapterIndex == 2
-            && gExpansionAutoplayPlannerCampaignCheckpoint.rngConsumption == 4,
+            && gExpansionAutoplayPlannerCampaignCheckpoint.rngConsumption == 4
+            && gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest != 0,
         "campaign checkpoint must be semantic and RNG-owned"
+    );
+
+    {
+        u32 digest = gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest;
+        sUnit.items[0] = 2;
+        ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+        CHECK(
+            digest != gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest,
+            "inventory changes must alter the semantic checkpoint digest"
+        );
+    }
+
+    ExpansionAutoplayPlanner_OfferDecision(&decision);
+    for (index = 1;
+         index < EXPANSION_AUTOPLAY_PLANNER_DECISION_TIMEOUT_FRAMES;
+         index++)
+    {
+        CHECK(
+            ExpansionAutoplayPlanner_PollDecision(&decision)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
+            "planner must wait through the frame before the deadline"
+        );
+    }
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+            == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED
+            && gExpansionAutoplayPlannerObservation.rejection
+                == EXPANSION_AUTOPLAY_PLANNER_REJECTION_TIMEOUT
+            && sRestoreRequests == 1,
+        "deadline must cancel and queue player control restoration"
+    );
+
+    ExpansionAutoplayPlanner_Reset();
+    CHECK(
+        !ExpansionAutoplayPlanner_IsActive()
+            && gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0,
+        "destructive full-run reset must clear active/checkpoint state"
+    );
+    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
+    CHECK(ExpansionAutoplayPlanner_PollStart(), "second run must start after reset");
+    CHECK(
+        ExpansionAutoplayPlanner_OfferDecision(&decision)
+            == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
+        "second run must publish before cancellation"
+    );
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_CANCEL,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        0,
+        0,
+        0,
+        0);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+            == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED
+            && sRestoreRequests == 2,
+        "explicit cancellation must queue player control restoration"
+    );
+
+    ExpansionAutoplayPlanner_Reset();
+    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
+    CHECK(ExpansionAutoplayPlanner_PollStart(), "wait-candidate run must start");
+    decision.actionPerformed = true;
+    decision.unitId = 1;
+    decision.xMove = sUnit.xPos;
+    decision.yMove = sUnit.yPos;
+    decision.actionId = AI_ACTION_NONE;
+    decision.targetId = 0;
+    CHECK(
+        ExpansionAutoplayPlanner_OfferDecision(&decision)
+            == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
+        "same-tile wait input must still publish legal alternatives"
+    );
+    action = &gExpansionAutoplayPlannerObservation.actions[0];
+    CHECK(
+        (action->destination & 0xFFFF) != sUnit.xPos
+            || (action->destination >> 16) != sUnit.yPos,
+        "active unit current tile must not be a committed wait candidate"
+    );
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        0,
+        gExpansionAutoplayPlannerObservation.actionStartOrdinal,
+        action->tokenLo,
+        action->tokenHi);
+    CHECK(
+        ExpansionAutoplayPlanner_PollDecision(&decision)
+            == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED
+            && (decision.xMove != sUnit.xPos || decision.yMove != sUnit.yPos),
+        "accepted wait must traverse the normal nontrivial perform path"
+    );
+    ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+    CHECK(
+        gExpansionAutoplayPlannerCampaignCheckpoint.acceptedTokenLo
+            == action->tokenLo,
+        "accepted wait token must enter the action trace checkpoint"
     );
 
     puts("AUTOPLAY_PLANNER_HOST_TEST: PASS");

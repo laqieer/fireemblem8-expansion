@@ -34,6 +34,11 @@ struct PlannerRuntimeProbe EWRAM_DATA gPlannerRuntimeProbe;
 
 static u16 sSeeds[3];
 static u32 sConsumption;
+static struct CharacterData sCharacter;
+static struct ClassData sClass;
+static struct Unit sUnit;
+static u8 sPermanentFlags[8];
+static u8 sChapterFlags[8];
 static u8 sMovementData[8][8];
 static u8* sMovementRows[8];
 static u8 sUnitData[8][8];
@@ -64,6 +69,35 @@ unsigned GetLCGRNValue(void)
 u32 GetRNConsumptionCount(void)
 {
     return sConsumption;
+}
+
+struct Unit* GetUnit(int id)
+{
+    return id == 1 ? &sUnit : NULL;
+}
+
+u8* GetPermanentFlagBits(void)
+{
+    return sPermanentFlags;
+}
+
+int GetPermanentFlagBitsSize(void)
+{
+    return sizeof(sPermanentFlags);
+}
+
+u8* GetChapterFlagBits(void)
+{
+    return sChapterFlags;
+}
+
+int GetChapterFlagBitsSize(void)
+{
+    return sizeof(sChapterFlags);
+}
+
+void ExpansionAutoplay_RequestPlayerControlRestore(void)
+{
 }
 
 enum ExpansionAutoplayResult ExpansionAutoplay_SetBlueControl(enum ExpansionBlueControl control)
@@ -113,6 +147,14 @@ void PlannerRuntime_Main(void)
     sSeeds[0] = 1;
     sSeeds[1] = 2;
     sSeeds[2] = 3;
+    sCharacter.number = 1;
+    sClass.number = 1;
+    sUnit.pCharacterData = &sCharacter;
+    sUnit.pClassData = &sClass;
+    sUnit.level = 1;
+    sUnit.curHP = 20;
+    sUnit.items[0] = 1;
+    gActiveUnit = &sUnit;
     gActiveUnitId = 1;
     gBmMapSize.x = 8;
     gBmMapSize.y = 8;

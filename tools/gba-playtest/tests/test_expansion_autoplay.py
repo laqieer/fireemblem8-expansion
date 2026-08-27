@@ -95,6 +95,7 @@ class AutoplayHostTests(unittest.TestCase):
                             "-Wstrict-aliasing=2",
                             *INCLUDES,
                             "-DFE8_EXPANSION_MODERN_BUILD=1",
+                            "-DFE8_AUTOPLAY_PLANNER_RESTORE_TEST=1",
                             *extra_define,
                             str(SOURCE),
                             str(BMPHASE_SOURCE),

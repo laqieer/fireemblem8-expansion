@@ -17,6 +17,13 @@ _start:
     .global PlannerRuntime_Entry
 PlannerRuntime_Entry:
     ldr sp, =0x03007F00
+    ldr r0, =__ewram_start
+    ldr r1, =__ewram_end
+    mov r2, #0
+0:
+    cmp r0, r1
+    strlo r2, [r0], #4
+    blo 0b
     bl PlannerRuntime_Main
 1:
     b 1b

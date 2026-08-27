@@ -132,6 +132,18 @@ static int TestControllerAndLifecycle(void)
     CHECK(sPendingActivationApplyCount == 1,
           "computer phase completion must apply pending strategy activation");
 
+#if FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+    ExpansionAutoplay_Reset();
+    ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER);
+    ExpansionAutoplay_OnBlueComputerPhaseStart();
+    ExpansionAutoplay_RequestPlayerControlRestore();
+    CHECK(ExpansionAutoplay_GetBlueControl() == EXPANSION_BLUE_CONTROL_COMPUTER,
+          "planner cancellation must queue rather than interrupt active AI");
+    ExpansionAutoplay_OnBlueComputerPhaseComplete();
+    CHECK(ExpansionAutoplay_GetBlueControl() == EXPANSION_BLUE_CONTROL_PLAYER,
+          "safe phase completion must restore queued PLAYER control");
+#endif
+
     return 0;
 }
 

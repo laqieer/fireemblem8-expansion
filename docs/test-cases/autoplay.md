@@ -568,7 +568,7 @@ two-chapter trace. The C adapter retains only the selected engine decision and
 reconstructs canonical row-major legal waits from frozen maps for each page
 and commit. It pages 29 at a time across the 512-action bound without rerunning
 AI or consuming RN state, then commits ordinal 511 through the #85 computer
-action route. Exact ARM evidence pins 1,164 static RAM bytes and 2,811
+action route. Exact ARM evidence pins 1,192 static RAM bytes and 4,011
 text/rodata bytes.
 The production-linked libmGBA fixture exercises START/PAGE/COMMIT/CANCEL and
 malformed commands, preserves the campaign checkpoint across chapter reset,

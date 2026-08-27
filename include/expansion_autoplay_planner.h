@@ -44,6 +44,7 @@ enum ExpansionAutoplayPlannerRejection
     EXPANSION_AUTOPLAY_PLANNER_REJECTION_RESOURCE_LIMIT = 7,
     EXPANSION_AUTOPLAY_PLANNER_REJECTION_CANCELLED = 8,
     EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR = 9,
+    EXPANSION_AUTOPLAY_PLANNER_REJECTION_TIMEOUT = 10,
 };
 
 enum ExpansionAutoplayPlannerActionKind
@@ -70,6 +71,7 @@ enum
     EXPANSION_AUTOPLAY_PLANNER_PAGE_MAX_BYTES = 1024,
     EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY = 29,
     EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY = 512,
+    EXPANSION_AUTOPLAY_PLANNER_DECISION_TIMEOUT_FRAMES = 300,
 };
 
 struct ExpansionAutoplayPlannerActionV2
@@ -146,6 +148,9 @@ struct ExpansionAutoplayPlannerCampaignCheckpointV2
     u32 rngLcg;
     u32 rngConsumption;
     u32 traceDigest;
+    u32 semanticStateDigest;
+    u32 acceptedTokenLo;
+    u32 acceptedTokenHi;
 };
 
 extern struct ExpansionAutoplayPlannerObservationV2 gExpansionAutoplayPlannerObservation;

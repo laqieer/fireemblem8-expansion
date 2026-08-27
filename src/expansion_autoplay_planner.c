@@ -4,10 +4,12 @@
 #include "bmmap.h"
 #include "bmunit.h"
 #include "cp_common.h"
+#include "eventinfo.h"
 #include "rng.h"
 
 #include "expansion_config.h"
 #include "expansion_autoplay.h"
+#include "expansion_autoplay_internal.h"
 #include "expansion_autoplay_planner.h"
 
 typedef char ExpansionAutoplayPlannerObservationSizeCheck[
@@ -33,6 +35,10 @@ static u32 sPlannerRunId;
 static u32 sPlannerNextObservationId;
 static u32 sPlannerTraceDigest;
 static u32 sPlannerCandidateCount;
+static bool sPlannerHasSelectedDecision;
+static u32 sPlannerWaitFrames;
+static u32 sPlannerLastTokenLo;
+static u32 sPlannerLastTokenHi;
 
 static void ClearCommand(void)
 {
@@ -55,11 +61,11 @@ static u32 HashText(const char* text)
 
 static u32 ActualRomIdentity(void)
 {
+    u32 digest = HashText(FE8_EXPANSION_BUILD_COMMIT);
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_TEST
-    return HashText(FE8_EXPANSION_BUILD_COMMIT);
+    return MixDigest(digest, 0x54455354u);
 #else
     const volatile u8* header = (const volatile u8*)0x080000A0;
-    u32 digest = 2166136261u;
     int index;
 
     for (index = 0; index < 16; index++)
@@ -75,7 +81,14 @@ static u32 ActualConfigIdentity(void)
 
 static u32 ActualSeedIdentity(void)
 {
-    return GetLCGRNValue();
+    u16 seeds[3];
+    u32 digest = 2166136261u;
+
+    StoreRNState(seeds);
+    digest = MixDigest(digest, seeds[0]);
+    digest = MixDigest(digest, seeds[1]);
+    digest = MixDigest(digest, seeds[2]);
+    return MixDigest(digest, GetLCGRNValue());
 }
 
 static u32 MakeTokenLo(
@@ -188,7 +201,10 @@ static bool IsLegalWaitDestination(int x, int y)
     return gBmMapMovement != NULL
         && gBmMapUnit != NULL
         && gBmMapMovement[y][x] <= MAP_MOVEMENT_MAX
-        && (gBmMapUnit[y][x] == 0 || gBmMapUnit[y][x] == gActiveUnitId);
+        && (gBmMapUnit[y][x] == 0 || gBmMapUnit[y][x] == gActiveUnitId)
+        && (gActiveUnit == NULL
+            || x != gActiveUnit->xPos
+            || y != gActiveUnit->yPos);
 }
 
 static void MakeWaitCandidate(int x, int y, struct AiDecision* candidate)
@@ -207,11 +223,11 @@ static void MakeWaitCandidate(int x, int y, struct AiDecision* candidate)
 
 static bool GetCandidate(u32 ordinal, struct AiDecision* candidate)
 {
-    u32 current = 1;
+    u32 current = sPlannerHasSelectedDecision ? 1 : 0;
     int x;
     int y;
 
-    if (ordinal == 0)
+    if (sPlannerHasSelectedDecision && ordinal == 0)
     {
         *candidate = sPlannerSelectedDecision;
         return true;
@@ -244,7 +260,11 @@ static bool BuildCandidates(const struct AiDecision* decision)
     int y;
 
     sPlannerSelectedDecision = *decision;
-    sPlannerCandidateCount = 1;
+    sPlannerHasSelectedDecision = !(gActiveUnit != NULL
+        && decision->actionId == AI_ACTION_NONE
+        && decision->xMove == gActiveUnit->xPos
+        && decision->yMove == gActiveUnit->yPos);
+    sPlannerCandidateCount = sPlannerHasSelectedDecision ? 1 : 0;
 
     if (gBmMapMovement == NULL || gBmMapUnit == NULL)
         return true;
@@ -333,6 +353,49 @@ static void PublishPage(u32 pageIndex)
     }
 }
 
+static u32 SemanticStateDigest(void)
+{
+    u32 digest = 2166136261u;
+    u8* flags;
+    int size;
+    int index;
+
+    digest = MixDigest(digest, (u8)gPlaySt.chapterIndex);
+    digest = MixDigest(digest, gPlaySt.chapterTurnNumber);
+    digest = MixDigest(digest, gPlaySt.partyGoldAmount);
+    for (index = 1; index < 0x40; index++)
+    {
+        struct Unit* unit = GetUnit(index);
+        int item;
+
+        if (unit == NULL || unit->pCharacterData == NULL)
+        {
+            digest = MixDigest(digest, 0);
+            continue;
+        }
+        digest = MixDigest(digest, unit->pCharacterData->number);
+        digest = MixDigest(
+            digest,
+            unit->pClassData == NULL ? 0 : unit->pClassData->number);
+        digest = MixDigest(digest, unit->level);
+        digest = MixDigest(digest, unit->exp);
+        digest = MixDigest(digest, unit->curHP);
+        digest = MixDigest(digest, unit->state);
+        for (item = 0; item < UNIT_ITEM_COUNT; item++)
+            digest = MixDigest(digest, unit->items[item]);
+    }
+    flags = GetPermanentFlagBits();
+    size = GetPermanentFlagBitsSize();
+    for (index = 0; index < size; index++)
+        digest = MixDigest(digest, flags[index]);
+    flags = GetChapterFlagBits();
+    size = GetChapterFlagBitsSize();
+    for (index = 0; index < size; index++)
+        digest = MixDigest(digest, flags[index]);
+    digest = MixDigest(digest, sPlannerLastTokenLo);
+    return MixDigest(digest, sPlannerLastTokenHi);
+}
+
 void ExpansionAutoplayPlanner_Reset(void)
 {
     u8* bytes;
@@ -352,6 +415,10 @@ void ExpansionAutoplayPlanner_Reset(void)
     sPlannerRunId = 0;
     sPlannerNextObservationId = 1;
     sPlannerCandidateCount = 0;
+    sPlannerHasSelectedDecision = false;
+    sPlannerWaitFrames = 0;
+    sPlannerLastTokenLo = 0;
+    sPlannerLastTokenHi = 0;
     sPlannerTraceDigest = 2166136261u;
     PublishReadyState();
 }
@@ -374,6 +441,8 @@ void ExpansionAutoplayPlanner_OnMapReset(void)
     for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerCommand); index++)
         bytes[index] = 0;
     sPlannerCandidateCount = 0;
+    sPlannerHasSelectedDecision = false;
+    sPlannerWaitFrames = 0;
     PublishReadyState();
     ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER);
 }
@@ -420,6 +489,8 @@ bool ExpansionAutoplayPlanner_PollStart(void)
     sPlannerRunId++;
     sPlannerNextObservationId = 1;
     sPlannerTraceDigest = MixDigest(2166136261u, sPlannerRunId);
+    sPlannerLastTokenLo = 0;
+    sPlannerLastTokenHi = 0;
     gExpansionAutoplayPlannerCommand.result = 1;
     gExpansionAutoplayPlannerCommand.rejection = EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
     ClearCommand();
@@ -466,6 +537,7 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecisi
     }
 
     gExpansionAutoplayPlannerObservation.observationId = sPlannerNextObservationId++;
+    sPlannerWaitFrames = 0;
     PublishPage(0);
     return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
 }
@@ -482,7 +554,17 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_FALLBACK;
 
     if (gExpansionAutoplayPlannerCommand.kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_NONE)
-        return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+    {
+        sPlannerWaitFrames++;
+        if (sPlannerWaitFrames < EXPANSION_AUTOPLAY_PLANNER_DECISION_TIMEOUT_FRAMES)
+            return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
+        gExpansionAutoplayPlannerObservation.state =
+            EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED;
+        Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_TIMEOUT);
+        sPlannerActive = false;
+        ExpansionAutoplay_RequestPlayerControlRestore();
+        return EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED;
+    }
 
     if (gExpansionAutoplayPlannerCommand.kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_START)
     {
@@ -504,6 +586,7 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         gExpansionAutoplayPlannerObservation.state = EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED;
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_CANCELLED);
         sPlannerActive = false;
+        ExpansionAutoplay_RequestPlayerControlRestore();
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED;
     }
 
@@ -577,6 +660,8 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
     gExpansionAutoplayPlannerCommand.rejection = EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
     ClearCommand();
     sPlannerTraceDigest = MixDigest(sPlannerTraceDigest, tokenLo);
+    sPlannerLastTokenLo = tokenLo;
+    sPlannerLastTokenHi = MakeTokenHi(tokenLo);
     *decision = candidate;
     return EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED;
 }
@@ -603,6 +688,10 @@ void ExpansionAutoplayPlanner_RecordCampaignCheckpoint(void)
     gExpansionAutoplayPlannerCampaignCheckpoint.rngLcg = GetLCGRNValue();
     gExpansionAutoplayPlannerCampaignCheckpoint.rngConsumption = GetRNConsumptionCount();
     gExpansionAutoplayPlannerCampaignCheckpoint.traceDigest = sPlannerTraceDigest;
+    gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest =
+        SemanticStateDigest();
+    gExpansionAutoplayPlannerCampaignCheckpoint.acceptedTokenLo = sPlannerLastTokenLo;
+    gExpansionAutoplayPlannerCampaignCheckpoint.acceptedTokenHi = sPlannerLastTokenHi;
 }
 
 #endif

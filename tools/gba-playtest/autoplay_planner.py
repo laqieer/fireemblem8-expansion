@@ -119,6 +119,10 @@ def _action_token(run_id: int, observation_id: int, ordinal: int, action: Action
     ).hexdigest()[:32]
 
 
+def semantic_state_digest(state: object) -> str:
+    return hashlib.sha256(_canonical(state)).hexdigest()
+
+
 class Mailbox:
     """The sole host-to-ROM command surface; it intentionally has no address API."""
 
@@ -146,6 +150,7 @@ class PlannerBridge:
         self._next_observation_id = 1
         self._observation: Observation | None = None
         self._trace: list[dict[str, object]] = []
+        self._active = False
         self.cancelled = False
 
     @property
@@ -153,17 +158,20 @@ class PlannerBridge:
         return tuple(self._trace)
 
     def begin(self, provenance: dict[str, object]) -> int:
+        if self._active:
+            raise PlannerError(Rejection.PROTOCOL_ERROR.value)
         if json.loads(_canonical(provenance)) != self._provenance:
             raise PlannerError("provenance mismatch")
         self._run_id += 1
         self._next_observation_id = 1
         self._observation = None
         self._trace = [{"event": "run_start", "provenance": self._provenance, "run_id": self._run_id}]
+        self._active = True
         self.cancelled = False
         return self._run_id
 
     def observe(self, chapter: int, fields: Iterable[Field], actions: Iterable[Action]) -> Observation:
-        if self._run_id == 0 or self.cancelled:
+        if not self._active or self.cancelled:
             raise PlannerError("bridge is not ready")
         if self._observation is not None:
             raise PlannerError("previous observation has not been committed or cancelled")
@@ -216,6 +224,7 @@ class PlannerBridge:
                 raise PlannerError(Rejection.STALE_OBSERVATION.value)
             self._trace.append({"event": "cancelled", "observation_id": observation.observation_id})
             self._observation = None
+            self._active = False
             self.cancelled = True
             raise PlannerError(Rejection.CANCELLED.value)
         if command.kind is not CommandKind.COMMIT:
@@ -227,20 +236,23 @@ class PlannerBridge:
         record = observation.actions[command.action_ordinal]
         if command.token != record.token:
             raise PlannerError(Rejection.TOKEN_MISMATCH.value)
-        self._trace.append(
-            {
-                "action": asdict(record.action),
-                "event": "committed",
-                "observation_id": observation.observation_id,
-                "ordinal": record.ordinal,
-                "token": record.token,
-            }
+        committed = sum(
+            entry.get("event") == "committed" for entry in self._trace
         )
+        if committed >= MAX_TRACE_ACTIONS:
+            raise PlannerError(Rejection.RESOURCE_LIMIT.value)
+        entry = {
+            "action": asdict(record.action),
+            "event": "committed",
+            "observation_id": observation.observation_id,
+            "ordinal": record.ordinal,
+            "token": record.token,
+        }
+        prospective = [*self._trace, entry]
+        if len(_canonical(prospective)) > MAX_TRACE_BYTES:
+            raise PlannerError(Rejection.RESOURCE_LIMIT.value)
+        self._trace = prospective
         self._observation = None
-        if len([entry for entry in self._trace if entry["event"] == "committed"]) > MAX_TRACE_ACTIONS:
-            raise PlannerError(Rejection.RESOURCE_LIMIT.value)
-        if len(_canonical(self._trace)) > MAX_TRACE_BYTES:
-            raise PlannerError(Rejection.RESOURCE_LIMIT.value)
         return record
 
     def trace_digest(self) -> str:
@@ -294,11 +306,24 @@ def run_two_chapter_replay(
     )
     first_choice = planner.choose(first)
     bridge.commit(Command(CommandKind.COMMIT, run_id, first.observation_id, first_choice.ordinal, first_choice.token))
-    checkpoint = {
+    semantic_state = {
+        "accepted_token": first_choice.token,
+        "casualties": {"blue": 0, "green": 0, "red": 0},
         "chapter": 2,
+        "chapter_turn": 1,
+        "flags": {"objective_complete": False, "village_saved": True},
         "inventory": ("fixture-key",),
+        "objectives": {"kind": "seize", "progress": 1},
+        "promotions": (),
+        "recruitment": ("unit-1",),
+        "resources": {"gold": 1000},
+        "roster": ("unit-1", "unit-2"),
         "rng": (1, 2, 3),
         "trace_digest": bridge.trace_digest(),
+    }
+    checkpoint = {
+        **semantic_state,
+        "semantic_state_digest": semantic_state_digest(semantic_state),
     }
     second = bridge.observe(
         2,

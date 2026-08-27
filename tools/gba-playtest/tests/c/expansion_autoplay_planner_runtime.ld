@@ -11,10 +11,13 @@ SECTIONS
         *(.rodata*)
     }
 
-    .ewram 0x02000000 (NOLOAD) :
+    .ewram 0x02020000 (NOLOAD) :
     {
+        __ewram_start = .;
         *(ewram_data*)
         *(.bss*)
         *(COMMON)
+        . = ALIGN(4);
+        __ewram_end = .;
     }
 }

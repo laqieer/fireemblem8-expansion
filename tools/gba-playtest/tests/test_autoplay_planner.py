@@ -39,6 +39,17 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertEqual(searched["terminal"], "success")
         self.assertEqual(scripted["campaign_checkpoint"]["chapter"], 2)
         self.assertEqual(searched["campaign_checkpoint"]["inventory"], ("fixture-key",))
+        self.assertEqual(
+            scripted["campaign_checkpoint"]["semantic_state_digest"],
+            searched["campaign_checkpoint"]["semantic_state_digest"],
+        )
+        changed = dict(scripted["campaign_checkpoint"])
+        changed.pop("semantic_state_digest")
+        changed["resources"] = {"gold": 999}
+        self.assertNotEqual(
+            scripted["campaign_checkpoint"]["semantic_state_digest"],
+            planner.semantic_state_digest(changed),
+        )
         self.assertEqual(scripted["trace_digest"], planner.run_two_chapter_replay(
             planner.ScriptedPlanner(), PROVENANCE
         )["trace_digest"])
@@ -106,6 +117,103 @@ class PlannerBridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(planner.PlannerError, "unconsumed"):
             mailbox.submit(planner.Command(planner.CommandKind.START, 1, 0))
 
+    def test_host_begin_and_commit_limits_are_atomic(self):
+        boundary = planner.PlannerBridge(PROVENANCE)
+        boundary.begin(PROVENANCE)
+        boundary_observation = boundary.observe(
+            1,
+            (),
+            (planner.Action("MOVE_WAIT", 1, (1, 1)),),
+        )
+        boundary._trace = [
+            {"event": "committed", "ordinal": index}
+            for index in range(planner.MAX_TRACE_ACTIONS - 1)
+        ]
+        boundary.commit(
+            planner.Command(
+                planner.CommandKind.COMMIT,
+                boundary_observation.run_id,
+                boundary_observation.observation_id,
+                0,
+                boundary_observation.actions[0].token,
+            )
+        )
+        self.assertEqual(
+            sum(entry.get("event") == "committed" for entry in boundary.trace),
+            planner.MAX_TRACE_ACTIONS,
+        )
+
+        bridge = planner.PlannerBridge(PROVENANCE)
+        bridge.begin(PROVENANCE)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            planner.Rejection.PROTOCOL_ERROR.value,
+        ):
+            bridge.begin(PROVENANCE)
+
+        observation = bridge.observe(
+            1,
+            (),
+            (planner.Action("MOVE_WAIT", 1, (1, 1)),),
+        )
+        command = planner.Command(
+            planner.CommandKind.COMMIT,
+            observation.run_id,
+            observation.observation_id,
+            0,
+            observation.actions[0].token,
+        )
+        bridge._trace = [
+            {"event": "committed", "ordinal": index}
+            for index in range(planner.MAX_TRACE_ACTIONS)
+        ]
+        trace_before = tuple(bridge._trace)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            planner.Rejection.RESOURCE_LIMIT.value,
+        ):
+            bridge.commit(command)
+        self.assertEqual(tuple(bridge._trace), trace_before)
+        self.assertIs(bridge._observation, observation)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            planner.Rejection.CANCELLED.value,
+        ):
+            bridge.commit(
+                planner.Command(
+                    planner.CommandKind.CANCEL,
+                    observation.run_id,
+                    observation.observation_id,
+                )
+            )
+        bridge.begin(PROVENANCE)
+
+        oversized = planner.PlannerBridge(PROVENANCE)
+        oversized.begin(PROVENANCE)
+        observation = oversized.observe(
+            1,
+            (),
+            (planner.Action("MOVE_WAIT", 1, (1, 1)),),
+        )
+        command = planner.Command(
+            planner.CommandKind.COMMIT,
+            observation.run_id,
+            observation.observation_id,
+            0,
+            observation.actions[0].token,
+        )
+        oversized._trace = [
+            {"event": "padding", "payload": "x" * planner.MAX_TRACE_BYTES}
+        ]
+        trace_before = tuple(oversized._trace)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            planner.Rejection.RESOURCE_LIMIT.value,
+        ):
+            oversized.commit(command)
+        self.assertEqual(tuple(oversized._trace), trace_before)
+        self.assertIs(oversized._observation, observation)
+
     def test_security_boundary_has_no_raw_memory_save_or_network_surface(self):
         root = TESTS_DIR.parents[2]
         target = (root / "src" / "expansion_autoplay_planner.c").read_text(encoding="utf-8")
@@ -134,6 +242,28 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertIn("ExpansionAutoplayPlanner_PollDecision", poll_function)
         self.assertNotIn("AiDecideMainFunc", poll_function)
         self.assertNotIn("AiClearDecision", poll_function)
+
+    def test_map_lifecycle_preserves_only_true_chapter_transition(self):
+        source = (
+            TESTS_DIR.parents[2] / "src" / "bmio.c"
+        ).read_text(encoding="utf-8")
+        start = source.split("void StartBattleMap", 1)[1].split(
+            "void RestartBattleMap", 1
+        )[0]
+        restart = source.split("void RestartBattleMap", 1)[1].split(
+            "void GameCtrl_StartResumedGame", 1
+        )[0]
+        resume = source.split("void GameCtrl_StartResumedGame", 1)[1].split(
+            "void EndBMapMain", 1
+        )[0]
+        end = source.split("void EndBMapMain", 1)[1]
+        self.assertIn("ExpansionAutoplay_ResetForChapterTransition()", start)
+        for destructive in (restart, resume, end):
+            self.assertIn("ExpansionAutoplay_Reset()", destructive)
+            self.assertNotIn(
+                "ExpansionAutoplay_ResetForChapterTransition()",
+                destructive,
+            )
 
     def test_debug_only_configuration_rejects_release_mailbox(self):
         root = TESTS_DIR.parents[2]
@@ -360,13 +490,13 @@ class PlannerBridgeTests(unittest.TestCase):
                     re.MULTILINE,
                 )
             }
-            self.assertEqual(section_sizes["ewram_data"], 1144)
-            self.assertEqual(section_sizes[".bss"], 20)
+            self.assertEqual(section_sizes["ewram_data"], 1156)
+            self.assertEqual(section_sizes[".bss"], 36)
             self.assertEqual(
                 section_sizes[".text"]
                 + section_sizes[".rodata"]
                 + section_sizes[".rodata.str1.4"],
-                2811,
+                4011,
             )
 
             disabled = temporary_path / "planner-release-disabled.o"
@@ -425,7 +555,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     "name": "autoplay-planner-two-chapter",
                     "frames": [],
                     "run_until": {
-                        "max_frames": 16,
+                        "max_frames": 1000,
                         "terminal_conditions": [
                             {
                                 "reason": "success",
@@ -440,12 +570,12 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                             }
                         ],
                         "turn_limit": {
-                            "maximum": 3,
+                            "maximum": 0xFFFFFFFF,
                             "address": "gPlannerRuntimeProbe+0x24",
                             "size": 4,
                         },
                         "action_limit": {
-                            "maximum": 512,
+                            "maximum": 0xFFFFFFFF,
                             "address": "gPlannerRuntimeProbe+0x1c",
                             "size": 4,
                         },
@@ -481,7 +611,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             self.assertEqual(values[0], 1)
             self.assertEqual(values[1:5], [9, 9, 9, 4])
             self.assertEqual(values[5], 29)
-            self.assertEqual(values[6:8], [3, 65])
+            self.assertEqual(values[6:8], [3, 64])
             self.assertEqual(values[8:], [1, 2, 1])
 
 

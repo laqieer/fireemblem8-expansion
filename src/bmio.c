@@ -985,7 +985,7 @@ void StartBattleMap(struct GameCtrlProc* gameCtrl) {
     int i;
 
 #ifndef FE8_ARCHIVAL_BUILD
-    ExpansionAutoplay_Reset();
+    ExpansionAutoplay_ResetForChapterTransition();
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
     DebugToolsPhaseControl_Reset();
 #endif
