@@ -274,6 +274,12 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
             specification["definition"]
         )
 
+    def _refresh_scenario_digest(self, report: dict) -> None:
+        scenario = report["provenance"]["scenario"]
+        scenario["definition_sha256"] = autoplay_batch._canonical_sha256(
+            scenario["definition"]
+        )
+
     def _assert_compare_rejects(
         self,
         baseline: Path,
@@ -687,6 +693,72 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
             "does not match literal address",
         )
 
+    def test_imported_metric_probes_must_exist_in_terminal_checkpoint(self):
+        baseline = self.output("probe-membership-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+        autoplay_batch.validate_report(valid, "shared-probe-positive")
+        definitions = valid["provenance"]["specification"]["definition"]["metrics"]
+        items_probe = next(
+            metric for metric in definitions if metric["id"] == "items"
+        )["groups"][0]["probe"]
+        resources_probe = next(
+            metric for metric in definitions if metric["id"] == "resources"
+        )["groups"][0]["probe"]
+        self.assertEqual(items_probe, resources_probe)
+
+        unrelated = copy.deepcopy(valid)
+        definition = next(
+            metric
+            for metric in unrelated["provenance"]["specification"]["definition"][
+                "metrics"
+            ]
+            if metric["id"] == "exp"
+        )
+        definition["groups"][0]["probe"]["address"] = "0x0200000c"
+        definition["groups"][0]["probe"]["resolved_address"] = 0x0200000C
+        self._refresh_specification_digest(unrelated)
+        self._assert_compare_rejects(
+            baseline,
+            unrelated,
+            "unrelated-metric-probe",
+            "not present in scenario",
+        )
+
+        wrong_size = copy.deepcopy(valid)
+        definition = next(
+            metric
+            for metric in wrong_size["provenance"]["specification"]["definition"][
+                "metrics"
+            ]
+            if metric["id"] == "exp"
+        )
+        definition["groups"][0]["probe"]["size"] = 2
+        self._refresh_specification_digest(wrong_size)
+        self._assert_compare_rejects(
+            baseline,
+            wrong_size,
+            "wrong-size-metric-probe",
+            "not present in scenario",
+        )
+
+        missing = copy.deepcopy(valid)
+        checkpoint = missing["provenance"]["scenario"]["definition"]["run_until"][
+            "checkpoint"
+        ]
+        checkpoint["probes"] = [
+            probe
+            for probe in checkpoint["probes"]
+            if probe["address"] != PROBE_ACTION
+        ]
+        self._refresh_scenario_digest(missing)
+        self._assert_compare_rejects(
+            baseline,
+            missing,
+            "missing-terminal-probe",
+            "not present in scenario",
+        )
+
     def test_imported_width_backed_metrics_fit_declared_probe_sizes(self):
         baseline = self.output("metric-width-baseline.json")
         self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
@@ -708,6 +780,30 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                         if metric["id"] == metric_id
                     )
                     definition["groups"][0][probe_field]["size"] = size
+                    checkpoint_probes = boundary["provenance"]["scenario"][
+                        "definition"
+                    ]["run_until"]["checkpoint"]["probes"]
+                    if not any(
+                        probe["address"]
+                        == definition["groups"][0][probe_field]["address"]
+                        and probe["size"] == size
+                        for probe in checkpoint_probes
+                    ):
+                        checkpoint_probes.append(
+                            {
+                                "address": definition["groups"][0][probe_field][
+                                    "address"
+                                ],
+                                "size": size,
+                            }
+                        )
+                        checkpoint_probes.sort(
+                            key=lambda probe: (
+                                int(probe["address"], 16),
+                                probe["size"],
+                            )
+                        )
+                    self._refresh_scenario_digest(boundary)
                     value = boundary["runs"][0]["metrics"][metric_id][0]
                     value[value_field] = maximum
                     if metric_id == "exp":
@@ -806,20 +902,30 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                 )
 
     def test_seed_values_fit_declared_probe_width_before_backend_setup(self):
+        scenario = gba_playtest.parse_scenario_data(scenario_data())
         for size in (1, 2, 4):
             maximum = (1 << (size * 8)) - 1
-            probe = autoplay_batch.MetricProbe(PROBE_SEED, int(PROBE_SEED, 16), size)
-            self.assertEqual(
-                autoplay_batch._validate_seed_values((0, maximum), probe),
-                (0, maximum),
+            probe = gba_playtest.Probe(
+                PROBE_SEED,
+                int(PROBE_SEED, 16),
+                size,
+                None,
             )
+            for boundary in (0, maximum):
+                gba_playtest.validate_scheduled_write(
+                    scenario,
+                    gba_playtest.ScheduledWrite(0, probe, boundary),
+                )
             for invalid in (True, -1, maximum + 1):
                 with self.subTest(size=size, invalid=invalid):
                     with self.assertRaisesRegex(
                         gba_playtest.PlaytestError,
-                        f"{size}-byte seed probe",
+                        f"{size}-byte binding",
                     ):
-                        autoplay_batch._validate_seed_values((invalid,), probe)
+                        gba_playtest.validate_scheduled_write(
+                            scenario,
+                            gba_playtest.ScheduledWrite(0, probe, invalid),
+                        )
 
         for size, seed in ((1, "256"), (2, "65536"), (4, "4294967296"), (4, "-1")):
             with self.subTest(preflight_size=size, seed=seed):

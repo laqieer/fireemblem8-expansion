@@ -435,6 +435,146 @@ class RunUntilSchemaTests(unittest.TestCase):
                 scheduled_write=scheduled_write,
             )
 
+    def test_scheduled_write_dataclass_is_validated_before_backend_start(self):
+        bounded = gba_playtest.parse_scenario_data(run_until_data())
+        for size in (1, 2, 4):
+            maximum = (1 << (size * 8)) - 1
+            for value in (0, maximum):
+                gba_playtest.validate_scheduled_write(
+                    bounded,
+                    gba_playtest.ScheduledWrite(
+                        0,
+                        gba_playtest.Probe(
+                            PROBE_ADDRESS,
+                            int(PROBE_ADDRESS, 16),
+                            size,
+                            None,
+                        ),
+                        value,
+                    ),
+                )
+
+        cases = (
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), True, None),
+                    0,
+                ),
+                "size must be integer 1, 2, or 4",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 3, None),
+                    0,
+                ),
+                "size must be integer 1, 2, or 4",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, None, 4, None),
+                    0,
+                ),
+                "address must be a resolved integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, True, 1, None),
+                    0,
+                ),
+                "address must be a resolved integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, 0x02000001, 2, None),
+                    0,
+                ),
+                "aligned to size 2",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, 0x0203FFFF, 2, None),
+                    0,
+                ),
+                "aligned to size 2",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, 0x08000000, 4, None),
+                    0,
+                ),
+                "writable EWRAM or IWRAM",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    False,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 4, None),
+                    0,
+                ),
+                "frame must be an integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    -1,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 4, None),
+                    0,
+                ),
+                "frame must be an integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    5,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 4, None),
+                    0,
+                ),
+                "frame must be an integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 1, None),
+                    True,
+                ),
+                "value must be an integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 1, None),
+                    -1,
+                ),
+                "value must be an integer",
+            ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(PROBE_ADDRESS, int(PROBE_ADDRESS, 16), 1, None),
+                    0x100,
+                ),
+                "value must be an integer",
+            ),
+        )
+        for scheduled_write, expected in cases:
+            with self.subTest(expected=expected, scheduled_write=scheduled_write):
+                with mock.patch.object(
+                    gba_playtest,
+                    "build_backend",
+                    side_effect=AssertionError(
+                        "invalid scheduled write reached backend"
+                    ),
+                ), self.assertRaisesRegex(gba_playtest.PlaytestError, expected):
+                    gba_playtest.capture(
+                        ROOT / "build" / "not-opened.gba",
+                        bounded,
+                        scheduled_write=scheduled_write,
+                    )
+
 
 class RunUntilFingerprintTests(unittest.TestCase):
     def test_format_three_validates_terminal_and_checkpoint(self):

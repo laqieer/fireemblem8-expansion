@@ -823,7 +823,10 @@ required metric/delta kinds, version 3/profile scenarios, reuse of a writable
 SRAM image, and output collisions fail before execution.
 Faction/group, event-outcome, and each delta list contain 1 through 64 sorted
 unique definitions. Imported survivor/casualty and delta values must fit their
-declared probe widths before aggregate validation.
+declared probe widths before aggregate validation. Every imported
+faction/event/delta probe retains its canonical resolved address and size and
+must match a terminal-checkpoint probe; intentional sharing is deduplicated,
+but a missing or textually renamed-to-unrelated RAM probe is rejected.
 
 EXP, item, and resource metrics are signed changes. The format-6 backend reads
 their deduplicated probes once at the declared seed frame immediately before
@@ -838,7 +841,9 @@ provenance, canonical normalized scenario and specification definitions with
 validated SHA-256 identities, and one sorted run record per seed. A terminal
 success, objective failure, stall, or exhausted frame/turn/action budget is
 retained with its terminal counters and declared metrics; an individual seed
-execution failure remains a status-1 report record. Compiler, libmGBA,
+execution failure remains a status-1 record containing only seed, status,
+stable error text, and ROM provenance because it has no trustworthy
+terminal/metric observation. Compiler, libmGBA,
 backend-build, or global setup failure returns 2 before seed records exist.
 Parallel scheduling cannot affect report order or bytes. The companion
 `compare` command deeply validates nested provenance, ROM, terminal, metric,

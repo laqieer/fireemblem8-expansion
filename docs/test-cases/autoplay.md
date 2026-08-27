@@ -458,8 +458,10 @@ The normal-fidelity fixture runs three declared seed writes from independent
 clean boots. Serial and three-job parallel reports are byte-identical,
 versioned, sorted JSON. Every seed has exact ROM/configuration/scenario/profile
 provenance, including validated canonical scenario/specification SHA-256
-identities, a terminal record, and configured terminal/frame/turn/action,
-faction/group, event, EXP, item, and resource metric records. A comparison
+identities. Successful and terminal-failure runs contain terminal and
+configured terminal/frame/turn/action, faction/group, event, EXP, item, and
+resource metric records. An execution-failure record instead contains only
+seed, status, stable error text, and ROM provenance. A comparison
 distinguishes changed scenario/specification semantics even when their
 names/versions match, and reports a deliberately changed metric without
 claiming either result is balanced or statistically significant.
@@ -481,7 +483,9 @@ than 256 imported runs, provenance bounds that differ from the canonical
 scenario, unresolved/non-writable seed ranges or late seed frames,
 self-consistent terminal/metric values beyond those bounds, width-backed
 metrics beyond their 1/2/4-byte probes, and empty/duplicate/unsorted/over-64
-faction, event, or delta lists.
+faction, event, or delta lists. Imported metric definitions whose canonical
+address/size is absent from the terminal checkpoint also fail even when their
+digest and aggregates were updated consistently.
 Shared-backend/global setup failure returns 2 with no output or seed records;
 an individual seed failure is retained as `execution_failure` and returns 1.
 Random emulator/backend workspace paths in those errors normalize to a stable

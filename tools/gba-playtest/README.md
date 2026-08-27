@@ -134,8 +134,10 @@ silently mutates an unknown RNG state. Every seed must fit the declared probe
 before backend setup. Generic `gba_playtest.capture` also rejects a
 `ScheduledWrite` for fixed-frame scenarios before plan serialization or
 backend startup; format 6 is bounded-run-until-only. The terminal checkpoint must
-declare every semantic probe used by the selected metrics. A specification or
-imported report must contain exactly one terminal/frame/turn/action,
+declare every semantic probe used by the selected metrics. Imported metric
+definitions retain their canonical resolved address and size, which must match
+one terminal-checkpoint probe even when several metrics intentionally share
+it. A specification or imported report must contain exactly one terminal/frame/turn/action,
 faction-count, and event-outcome metric plus exactly one EXP/item/resource
 delta metric. Supported metric kinds cover those typed values,
 survivor/casualty counts by faction/group, selected recruitment/village/chest
@@ -160,10 +162,13 @@ semantics and the complete specification/metric definitions. Comparison
 reports list provenance-field changes, so two inputs with the same display
 name/version but different behavior definitions cannot be treated as the same
 experiment. Report loading validates every nested provenance, ROM, terminal,
-metric, aggregate, and run value before comparison. Each report has one
-terminal and metric record per seed and explicit
-`terminal_failure` or `execution_failure` records. Non-success terminals such
-as a stall or exhausted bound remain in the report and make `run` return 1.
+metric, aggregate, and run value before comparison. `success` and
+`terminal_failure` records contain exactly seed, status, ROM provenance,
+terminal, and metrics. The explicit `execution_failure` exception contains
+only seed, status, stable error text, and ROM provenance because execution
+never produced trustworthy terminal/metric observations. Non-success
+terminals such as a stall or exhausted bound remain in the report and make
+`run` return 1.
 Execution-failure text retains its stable `PlaytestError`, requested ROM
 basename, and scenario context while replacing only random
 `gba-playtest-*`/backend workspace paths with a stable placeholder, preserving

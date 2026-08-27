@@ -392,6 +392,84 @@ class ScheduledWrite:
     baseline_probes: tuple[Probe, ...] = ()
 
 
+def validate_scheduled_write(
+    scenario: Scenario,
+    scheduled_write: ScheduledWrite,
+) -> None:
+    if scenario.run_until is None:
+        raise PlaytestError(
+            "scheduled writes require a bounded run-until scenario; fixed-frame "
+            "scenarios cannot emit plan format 6"
+        )
+    if scenario.execution_profile is not None:
+        raise PlaytestError(
+            "scheduled writes are supported only by normal-fidelity batch captures"
+        )
+    probe = scheduled_write.probe
+    if not _is_int(probe.size) or probe.size not in (1, 2, 4):
+        raise PlaytestError("scheduled write probe size must be integer 1, 2, or 4")
+    if not _is_int(probe.address):
+        raise PlaytestError("scheduled write probe address must be a resolved integer")
+    if probe.address % probe.size:
+        raise PlaytestError(
+            f"scheduled write probe address must be aligned to size {probe.size}"
+        )
+    if not any(
+        start <= probe.address and probe.address + probe.size <= end
+        for start, end in WRITABLE_WORK_RAM_RANGES
+    ):
+        raise PlaytestError(
+            "scheduled write probe range must fit entirely within writable "
+            "EWRAM or IWRAM"
+        )
+    if (
+        not _is_int(scheduled_write.frame)
+        or scheduled_write.frame < 0
+        or scheduled_write.frame >= scenario.run_until.max_frames
+    ):
+        raise PlaytestError(
+            f"scheduled write frame must be an integer from 0 through "
+            f"{scenario.run_until.max_frames - 1}"
+        )
+    maximum_value = (1 << (probe.size * 8)) - 1
+    if (
+        not _is_int(scheduled_write.value)
+        or not 0 <= scheduled_write.value <= maximum_value
+    ):
+        raise PlaytestError(
+            f"scheduled write value must be an integer from 0 through "
+            f"{maximum_value} for the {probe.size}-byte binding "
+            f"{probe.binding!r}"
+        )
+    if len(scheduled_write.baseline_probes) > MAX_BASELINE_PROBES:
+        raise PlaytestError(
+            f"scheduled write has {len(scheduled_write.baseline_probes)} "
+            f"baseline probes, exceeding {MAX_BASELINE_PROBES}"
+        )
+    baseline_identities: set[tuple[str, int]] = set()
+    for baseline in scheduled_write.baseline_probes:
+        if not _is_int(baseline.size) or baseline.size not in (1, 2, 4):
+            raise PlaytestError(
+                f"baseline probe {baseline.binding!r} size must be integer 1, 2, or 4"
+            )
+        if not _is_int(baseline.address):
+            raise PlaytestError(
+                f"baseline probe {baseline.binding!r} address must be a resolved integer"
+            )
+        _validate_resolved_address(
+            baseline.address,
+            baseline.size,
+            f"baseline probe {baseline.binding!r}",
+        )
+        identity = (baseline.binding, baseline.size)
+        if identity in baseline_identities:
+            raise PlaytestError(
+                f"scheduled write has duplicate baseline probe "
+                f"{baseline.binding!r}/{baseline.size}"
+            )
+        baseline_identities.add(identity)
+
+
 def _parse_fixed_scenario_data(
     data: Any,
     source: str = "<scenario>",
@@ -1491,15 +1569,8 @@ def _write_plan(
     # format 6 carries one declared batch seed write.
     # Plans are generated and consumed within one capture/verify invocation;
     # scenario and fingerprint compatibility lives in their JSON versions.
-    if scheduled_write is not None and scenario.run_until is None:
-        raise PlaytestError(
-            "scheduled writes require a bounded run-until scenario; fixed-frame "
-            "scenarios cannot emit plan format 6"
-        )
-    if scheduled_write is not None and scenario.execution_profile is not None:
-        raise PlaytestError(
-            "scheduled writes are supported only by normal-fidelity batch captures"
-        )
+    if scheduled_write is not None:
+        validate_scheduled_write(scenario, scheduled_write)
     if scheduled_write is not None:
         plan_version = 6
     elif scenario.execution_profile is not None:
@@ -1609,58 +1680,10 @@ def _write_plan(
                     )
                 )
     if scheduled_write is not None:
-        if scheduled_write.probe.address is None:
-            raise PlaytestError(
-                f"scheduled write {scheduled_write.probe.binding!r} has no "
-                "resolved execution address; supply the exact linked ELF with --elf"
-            )
-        if scheduled_write.frame > (
-            scenario.run_until.max_frames - 1
-            if scenario.run_until is not None
-            else scenario.checkpoints[-1].frame
-        ):
-            raise PlaytestError(
-                f"scheduled write frame {scheduled_write.frame} is outside "
-                f"scenario {scenario.name!r}'s execution bounds"
-            )
-        maximum_value = (1 << (scheduled_write.probe.size * 8)) - 1
-        if not 0 <= scheduled_write.value <= maximum_value:
-            raise PlaytestError(
-                f"scheduled write value {scheduled_write.value} does not fit "
-                f"the {scheduled_write.probe.size}-byte binding "
-                f"{scheduled_write.probe.binding!r}"
-            )
-        if len(scheduled_write.baseline_probes) > MAX_BASELINE_PROBES:
-            raise PlaytestError(
-                f"scheduled write has {len(scheduled_write.baseline_probes)} "
-                f"baseline probes, exceeding {MAX_BASELINE_PROBES}"
-            )
-        baseline_identities: set[tuple[str, int]] = set()
         lines.append(
             f"BASELINE_PROBES {len(scheduled_write.baseline_probes)}"
         )
         for probe in scheduled_write.baseline_probes:
-            if probe.size not in (1, 2, 4):
-                raise PlaytestError(
-                    f"baseline probe {probe.binding!r} size must be 1, 2, or 4"
-                )
-            if probe.address is None:
-                raise PlaytestError(
-                    f"baseline probe {probe.binding!r} has no resolved execution "
-                    "address; supply the exact linked ELF with --elf"
-                )
-            _validate_resolved_address(
-                probe.address,
-                probe.size,
-                f"baseline probe {probe.binding!r}",
-            )
-            identity = (probe.binding, probe.size)
-            if identity in baseline_identities:
-                raise PlaytestError(
-                    f"scheduled write has duplicate baseline probe "
-                    f"{probe.binding!r}/{probe.size}"
-                )
-            baseline_identities.add(identity)
             lines.append(f"{probe.address} {probe.size}")
         lines.append(
             f"SEED_WRITE {scheduled_write.frame} {scheduled_write.probe.address} "
@@ -2158,11 +2181,8 @@ def capture(
 ) -> dict[str, Any]:
     if scenario.disabled:
         raise PlaytestError(f"scenario {scenario.name!r} is disabled: {scenario.blocker}")
-    if scheduled_write is not None and scenario.run_until is None:
-        raise PlaytestError(
-            "scheduled writes require a bounded run-until scenario; fixed-frame "
-            "capture is unchanged and does not accept seed writes"
-        )
+    if scheduled_write is not None:
+        validate_scheduled_write(scenario, scheduled_write)
     if not rom.is_file():
         raise PlaytestError(f"ROM does not exist or is not a regular file: {rom}")
     if sram_image is not None:

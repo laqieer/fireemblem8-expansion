@@ -135,7 +135,11 @@ def _metric_probe(
 
 
 def _normalized_probe(probe: MetricProbe) -> dict[str, Any]:
-    return {"address": probe.binding, "size": probe.size}
+    return {
+        "address": probe.binding,
+        "resolved_address": probe.address,
+        "size": probe.size,
+    }
 
 
 def _canonical_sha256(value: Any) -> str:
@@ -149,7 +153,11 @@ def _canonical_sha256(value: Any) -> str:
 
 
 def _scenario_probe(probe: gba_playtest.Probe) -> dict[str, Any]:
-    return {"address": probe.binding, "size": probe.size}
+    if probe.address is None:
+        raise gba_playtest.PlaytestError(
+            f"scenario probe {probe.binding!r} has no resolved execution address"
+        )
+    return {"address": f"0x{probe.address:08x}", "size": probe.size}
 
 
 def _scenario_definition(scenario: gba_playtest.Scenario) -> dict[str, Any]:
@@ -277,7 +285,6 @@ def _specification_definition(specification: BatchSpec) -> dict[str, Any]:
         "seeding": {
             **_normalized_probe(specification.seed_probe),
             "frame": specification.seed_frame,
-            "resolved_address": specification.seed_probe.address,
         },
     }
 
@@ -596,20 +603,33 @@ def parse_seeds(value: str) -> tuple[int, ...]:
 
 def _validate_seed_values(
     seeds: Iterable[Any],
-    seed_probe: MetricProbe,
+    scenario: gba_playtest.Scenario,
+    specification: BatchSpec,
 ) -> tuple[int, ...]:
     values = tuple(seeds)
     if not values or len(values) > MAX_SEEDS:
         raise gba_playtest.PlaytestError(
             f"batch seed count must be from 1 through {MAX_SEEDS}"
         )
-    maximum = (1 << (seed_probe.size * 8)) - 1
     for index, seed in enumerate(values):
-        if not _is_int(seed) or not 0 <= seed <= maximum:
-            raise gba_playtest.PlaytestError(
-                f"batch seed {index + 1} must be an integer from 0 through "
-                f"{maximum} for the {seed_probe.size}-byte seed probe"
+        try:
+            gba_playtest.validate_scheduled_write(
+                scenario,
+                gba_playtest.ScheduledWrite(
+                    specification.seed_frame,
+                    gba_playtest.Probe(
+                        specification.seed_probe.binding,
+                        specification.seed_probe.address,
+                        specification.seed_probe.size,
+                        None,
+                    ),
+                    seed,
+                ),
             )
+        except gba_playtest.PlaytestError as exc:
+            raise gba_playtest.PlaytestError(
+                f"batch seed {index + 1}: {exc}"
+            ) from exc
     if len(values) != len(set(values)):
         raise gba_playtest.PlaytestError("batch seeds must be unique")
     return tuple(sorted(values))
@@ -701,6 +721,43 @@ def _metric_value(
     return deltas
 
 
+def _definition_probe_identities(
+    definition: dict[str, Any],
+) -> tuple[tuple[int, int], ...]:
+    kind = definition["kind"]
+    raw_probes = []
+    if kind == "faction_group_counts":
+        raw_probes = [
+            probe
+            for group in definition["groups"]
+            for probe in (group["survivors"], group["casualties"])
+        ]
+    elif kind == "event_flag_outcomes":
+        raw_probes = [event["probe"] for event in definition["events"]]
+    elif kind == "group_deltas":
+        raw_probes = [group["probe"] for group in definition["groups"]]
+    return tuple(
+        (probe["resolved_address"], probe["size"]) for probe in raw_probes
+    )
+
+
+def _validate_metric_probe_membership(
+    scenario: gba_playtest.Scenario,
+    metric_probes: Iterable[tuple[str, Iterable[tuple[int, int]]]],
+) -> None:
+    checkpoint_probes = {
+        (probe.address, probe.size) for probe in scenario.checkpoints[0].probes
+    }
+    for identifier, probes in metric_probes:
+        for address, size in probes:
+            if (address, size) not in checkpoint_probes:
+                raise gba_playtest.PlaytestError(
+                    f"metric {identifier!r} references terminal probe "
+                    f"0x{address:08x}/{size} not present in scenario "
+                    f"{scenario.name!r}'s terminal checkpoint"
+                )
+
+
 def _stable_execution_error(
     error: gba_playtest.PlaytestError,
     rom: Path,
@@ -764,17 +821,16 @@ def _validate_request(
             f"seed injection frame {specification.seed_frame} is outside the "
             f"{run_until.max_frames}-frame scenario bound"
         )
-    checkpoint_probes = {
-        (probe.binding, probe.size) for probe in scenario.checkpoints[0].probes
-    }
-    for metric in specification.metrics:
-        for probe in metric.probes:
-            if (probe.binding, probe.size) not in checkpoint_probes:
-                raise gba_playtest.PlaytestError(
-                    f"metric {metric.identifier!r} references terminal probe "
-                    f"{probe.binding!r}/{probe.size} not present in scenario "
-                    f"{scenario.name!r}'s terminal checkpoint"
-                )
+    _validate_metric_probe_membership(
+        scenario,
+        (
+            (
+                metric.identifier,
+                ((probe.address, probe.size) for probe in metric.probes),
+            )
+            for metric in specification.metrics
+        ),
+    )
 
 
 def _provenance(
@@ -834,7 +890,7 @@ def run_batch(
     max_actions: int,
     work_dir: Path,
 ) -> dict[str, Any]:
-    ordered_seeds = _validate_seed_values(seeds, specification.seed_probe)
+    ordered_seeds = _validate_seed_values(seeds, scenario, specification)
     if not 1 <= max_jobs <= MAX_JOBS:
         raise gba_playtest.PlaytestError(
             f"max_jobs must be from 1 through {MAX_JOBS}"
@@ -1004,6 +1060,29 @@ def _validate_probe_definition(value: Any, path: str) -> dict[str, Any]:
     return probe
 
 
+def _validate_resolved_probe_definition(value: Any, path: str) -> dict[str, Any]:
+    probe = _object(value, path, {"address", "resolved_address", "size"})
+    size = probe["size"]
+    if not _is_int(size) or size not in (1, 2, 4):
+        raise gba_playtest.PlaytestError(f"{path}.size must be integer 1, 2, or 4")
+    binding, literal_address = gba_playtest._parse_address(
+        probe["address"],
+        size,
+        f"{path}.address",
+    )
+    resolved_address = probe["resolved_address"]
+    if not _is_int(resolved_address):
+        raise gba_playtest.PlaytestError(
+            f"{path}.resolved_address must be an integer"
+        )
+    gba_playtest._validate_resolved_address(resolved_address, size, path)
+    if literal_address is not None and literal_address != resolved_address:
+        raise gba_playtest.PlaytestError(
+            f"{path}.resolved_address does not match literal address {binding!r}"
+        )
+    return probe
+
+
 def _validate_seed_binding(value: Any, path: str) -> dict[str, Any]:
     seed = _object(
         value,
@@ -1089,8 +1168,14 @@ def _validate_metric_definition(value: Any, path: str) -> dict[str, Any]:
                     f"{group_path} must be sorted and unique by faction/group"
                 )
             previous = identity
-            _validate_probe_definition(group["survivors"], f"{group_path}.survivors")
-            _validate_probe_definition(group["casualties"], f"{group_path}.casualties")
+            _validate_resolved_probe_definition(
+                group["survivors"],
+                f"{group_path}.survivors",
+            )
+            _validate_resolved_probe_definition(
+                group["casualties"],
+                f"{group_path}.casualties",
+            )
         return metric
     if kind == "event_flag_outcomes":
         if payload_fields != {"events"}:
@@ -1121,7 +1206,10 @@ def _validate_metric_definition(value: Any, path: str) -> dict[str, Any]:
                 raise gba_playtest.PlaytestError(
                     f"{event_path}.kind must be one of {', '.join(sorted(EVENT_KINDS))}"
                 )
-            probe = _validate_probe_definition(event["probe"], f"{event_path}.probe")
+            probe = _validate_resolved_probe_definition(
+                event["probe"],
+                f"{event_path}.probe",
+            )
             maximum = (1 << (probe["size"] * 8)) - 1
             if not _is_int(event["success_value"]) or not 0 <= event["success_value"] <= maximum:
                 raise gba_playtest.PlaytestError(
@@ -1154,7 +1242,7 @@ def _validate_metric_definition(value: Any, path: str) -> dict[str, Any]:
                 f"{group_path}.id must be sorted and unique"
             )
         previous_id = identifier
-        _validate_probe_definition(group["probe"], f"{group_path}.probe")
+        _validate_resolved_probe_definition(group["probe"], f"{group_path}.probe")
     return metric
 
 
@@ -1362,6 +1450,13 @@ def _validate_provenance(
     _validate_required_metric_contract(
         metric_definitions.values(),
         f"{path}.specification.definition.metrics",
+    )
+    _validate_metric_probe_membership(
+        parsed_scenario,
+        (
+            (identifier, _definition_probe_identities(definition))
+            for identifier, definition in metric_definitions.items()
+        ),
     )
     return provenance, metric_definitions, parsed_scenario
 
@@ -2046,7 +2141,7 @@ def main(argv: list[str] | None = None) -> int:
             max_turns=args.max_turns,
             max_actions=args.max_actions,
         )
-        seeds = _validate_seed_values(seeds, specification.seed_probe)
+        seeds = _validate_seed_values(seeds, scenario, specification)
         with _atomic_output(output) as reserved:
             report = run_batch(
                 args.rom,
