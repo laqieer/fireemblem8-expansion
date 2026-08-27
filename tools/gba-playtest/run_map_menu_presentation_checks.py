@@ -177,6 +177,27 @@ def _semantic_failures(capture: dict, scenario: dict) -> list[str]:
     return failures
 
 
+def _fingerprint_failures(
+    capture: dict,
+    path: Path | None = None,
+) -> list[str]:
+    if path is None:
+        path = FINGERPRINT
+    if not path.is_file():
+        return [f"missing checked fingerprint: {path}"]
+
+    expected = gba_playtest.validate_fingerprint(
+        json.loads(path.read_text(encoding="utf-8")),
+        str(path),
+        policy="behavior",
+    )
+    return gba_playtest.compare_fingerprints(
+        expected,
+        capture,
+        policy="behavior",
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rom", required=True, type=Path)
@@ -214,21 +235,11 @@ def main(argv: list[str] | None = None) -> int:
                 gba_playtest.serialize_fingerprint(baseline),
                 encoding="utf-8",
             )
-        elif not FINGERPRINT.is_file():
-            failures.append(f"missing checked fingerprint: {FINGERPRINT}")
         else:
-            expected = gba_playtest.validate_fingerprint(
-                json.loads(FINGERPRINT.read_text(encoding="utf-8")),
-                str(FINGERPRINT),
-                policy="behavior",
-            )
-            failures.extend(
-                gba_playtest.compare_fingerprints(
-                    expected,
-                    capture,
-                    policy="behavior",
-                )
-            )
+            failures.extend(_fingerprint_failures(capture))
+
+        if failures:
+            raise CheckError("\n".join(failures))
 
         print(
             "Map-menu presentation runtime checks passed: "

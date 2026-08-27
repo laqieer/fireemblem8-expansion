@@ -750,7 +750,10 @@ void GetStringTextBoxFromString(const char* str, int *out_width, int *out_height
     *out_width = 0;
     *out_height = 0;
 
-    while (*str != 0 && *str != CHAR_NEWLINE) {
+    if (*str == 0)
+        return;
+
+    while (*str != 0) {
         int width = GetStringTextLen(str);
 
         if (*out_width < width)
@@ -761,6 +764,11 @@ void GetStringTextBoxFromString(const char* str, int *out_width, int *out_height
         if (*str == 0)
             break;
         str++;
+        if (*str == 0)
+        {
+            *out_height += 16;
+            break;
+        }
     }
 }
 #endif

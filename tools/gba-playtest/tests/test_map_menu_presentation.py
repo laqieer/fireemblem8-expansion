@@ -1,5 +1,8 @@
 """Issue #168 optional map-menu presentation regression checks."""
 
+import contextlib
+import copy
+import io
 import json
 import re
 import runpy
@@ -32,6 +35,14 @@ RUNTIME_FINGERPRINT = (
     / "gba-playtest"
     / "fingerprints"
     / "map-menu-presentation-all-locales-all-features-release.json"
+)
+HELP_SIZING_DRIVER = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "tests"
+    / "c"
+    / "map_menu_help_sizing_driver.c"
 )
 
 
@@ -270,7 +281,34 @@ static const struct Expected sExpected[] = {
 void LocalizedGameText_InvalidateCache(void) {}
 int main(void)
 {
+    static const ExpansionLocaleId productionLocales[] = {
+        EXPANSION_LOCALE_EN,
+        EXPANSION_LOCALE_JA,
+        EXPANSION_LOCALE_ZH_HANS,
+        EXPANSION_LOCALE_FR,
+        EXPANSION_LOCALE_DE,
+        EXPANSION_LOCALE_ES,
+        EXPANSION_LOCALE_IT,
+    };
     unsigned i;
+    for (i = 0; i < sizeof(productionLocales) / sizeof(productionLocales[0]); i++)
+    {
+        if (ExpansionLocale_IsEnabled(productionLocales[i]) != TRUE)
+            return 3;
+    }
+    if (ExpansionLocale_IsEnabled(EXPANSION_LOCALE_QPS_PLOC) != FALSE)
+        return 4;
+    if (ExpansionLocale_SetCurrent(EXPANSION_LOCALE_FR) != TRUE)
+        return 5;
+    if (strcmp(
+            ExpansionLocale_ResolveCurrent(EXP_MSG_DANGER_OVERLAY_LABEL),
+            "Danger") != 0)
+        return 6;
+    if (ExpansionLocale_SetCurrent(EXPANSION_LOCALE_QPS_PLOC) != FALSE)
+        return 7;
+    if (ExpansionLocale_GetCurrent() != EXPANSION_LOCALE_FR)
+        return 8;
+
     for (i = 0; i < sizeof(sExpected) / sizeof(sExpected[0]); i++)
     {
         if (strcmp(
@@ -305,7 +343,7 @@ int main(void)
                     str(ROOT / "include"),
                     "-I",
                     str(generated),
-                    "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=0xF7u",
+                    "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=0x7Fu",
                     "-DFE8_EXPANSION_DEFAULT_LOCALE_ID=0u",
                     "-DFE8_EXPANSION_PSEUDO_LOCALE_ENABLED=0",
                     "-DMODERN=1",
@@ -332,58 +370,162 @@ int main(void)
 
 
 class MapMenuHelpSizingTests(unittest.TestCase):
-    def test_arbitrary_string_help_sizes_the_supplied_text(self):
-        fontgrp = (ROOT / "src" / "fontgrp.c").read_text(encoding="utf-8")
-        statscreen = (ROOT / "src" / "statscreen.c").read_text(encoding="utf-8")
-        helper = re.search(
-            r"void GetStringTextBoxFromString\(.*?\n\}",
-            fontgrp,
-            flags=re.DOTALL,
-        )
-        self.assertIsNotNone(helper)
-        self.assertNotIn("StringInsertSpecialPrefixByCtrl", helper.group(0))
-        self.assertIn("GetStringTextLen(str)", helper.group(0))
-        self.assertIn(
-            "GetStringTextBoxFromString(string, &wContent, &hContent);",
-            statscreen,
-        )
-
-    def test_archival_preprocessed_help_sizing_path_is_unchanged(self):
+    def _compile_and_run(self, modern):
         if CC is None:
-            self.skipTest("no host C preprocessor")
+            self.skipTest("no host C compiler")
         with tempfile.TemporaryDirectory(dir=BUILD) as temporary:
-            graphics = Path(temporary) / "graphics"
+            work = Path(temporary)
+            graphics = work / "graphics"
             graphics.mkdir()
-            (graphics / "debug_font.4bpp.h").write_text("", encoding="utf-8")
-            completed = _run(
+            (graphics / "debug_font.4bpp.h").write_text(
+                "static const unsigned char debug_font_4bpp[1] = {0};\n",
+                encoding="utf-8",
+            )
+            binary = work / ("help-sizing-modern" if modern else "help-sizing-archival")
+            command = [
+                CC,
+                "-std=gnu89",
+                "-O2",
+                "-w",
+                "-ffunction-sections",
+                "-fdata-sections",
+                "-DNONMATCHING=1",
+                "-I",
+                str(work),
+                "-I",
+                str(ROOT / "include"),
+            ]
+            if modern:
+                command.extend(
+                    [
+                        "-DMODERN=1",
+                        "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    ]
+                )
+            command.extend(
                 [
-                    CC,
-                    "-E",
-                    "-P",
-                    "-I",
-                    temporary,
-                    "-I",
-                    str(ROOT / "include"),
                     str(ROOT / "src" / "fontgrp.c"),
+                    str(HELP_SIZING_DRIVER),
+                    "-Wl,--gc-sections",
+                    "-o",
+                    str(binary),
                 ]
             )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertNotIn("GetStringTextBoxFromString", completed.stdout)
-        function = re.search(
-            r"void GetStringTextBox\([^;]*\)\s*\{.*?\n\}",
-            completed.stdout,
-            flags=re.DOTALL,
-        )
-        self.assertIsNotNone(function)
-        self.assertIn("str = StringInsertSpecialPrefixByCtrl();", function.group(0))
+            completed = _run(command)
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = _run([str(binary)])
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            return completed.stdout
+
+    def test_modern_public_help_sizing_handles_blank_lines_and_stale_buffer(self):
+        output = self._compile_and_run(modern=True)
+        self.assertIn("MAP_MENU_HELP_SIZING_MODERN: PASS", output)
+
+    def test_archival_public_help_sizing_compiles_links_and_preserves_behavior(self):
+        output = self._compile_and_run(modern=False)
+        self.assertIn("MAP_MENU_HELP_SIZING_ARCHIVAL: PASS", output)
 
 
 class MapMenuRuntimeContractTests(unittest.TestCase):
-    def test_checked_named_release_scenario_is_semantic_and_framebuffer_pinned(self):
-        self.assertTrue(RUNTIME_FINGERPRINT.is_file())
+    def _runtime_module_and_capture(self):
         module = runpy.run_path(str(RUNTIME_RUNNER))
-        scenario = module["_scenario_data"]()
         capture = json.loads(RUNTIME_FINGERPRINT.read_text(encoding="utf-8"))
+        return module, capture
+
+    def _run_main_with_capture(self, module, capture, fingerprint, output):
+        globals_ = module["main"].__globals__
+        playtest = globals_["gba_playtest"]
+        original_parse = playtest.parse_scenario_data
+        original_capture = playtest.capture
+        original_resolver = globals_["ElfSymbolResolver"]
+        original_fingerprint = globals_["FINGERPRINT"]
+        try:
+            playtest.parse_scenario_data = lambda *args, **kwargs: object()
+            playtest.capture = lambda *args, **kwargs: copy.deepcopy(capture)
+            globals_["ElfSymbolResolver"] = lambda path: object()
+            globals_["FINGERPRINT"] = fingerprint
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                return module["main"](
+                    [
+                        "--rom",
+                        str(output / "input.gba"),
+                        "--elf",
+                        str(output / "input.elf"),
+                        "--out-dir",
+                        str(output),
+                    ]
+                )
+        finally:
+            playtest.parse_scenario_data = original_parse
+            playtest.capture = original_capture
+            globals_["ElfSymbolResolver"] = original_resolver
+            globals_["FINGERPRINT"] = original_fingerprint
+
+    def test_missing_stale_and_mutated_fingerprints_fail_closed(self):
+        module, capture = self._runtime_module_and_capture()
+        with tempfile.TemporaryDirectory(dir=BUILD) as temporary:
+            work = Path(temporary)
+            missing = work / "missing.json"
+            self.assertEqual(
+                self._run_main_with_capture(
+                    module,
+                    capture,
+                    missing,
+                    work / "missing-output",
+                ),
+                1,
+            )
+
+            stale_data = copy.deepcopy(capture)
+            stale_data["checkpoints"][2]["framebuffer_hash"] = (
+                "fnv1a64-rgb24:0000000000000000"
+            )
+            stale = work / "stale.json"
+            stale.write_text(
+                module["gba_playtest"].serialize_fingerprint(stale_data),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                self._run_main_with_capture(
+                    module,
+                    capture,
+                    stale,
+                    work / "stale-output",
+                ),
+                1,
+            )
+
+            valid = work / "valid.json"
+            valid.write_text(
+                RUNTIME_FINGERPRINT.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            mutated_capture = copy.deepcopy(capture)
+            mutated_capture["checkpoints"][3]["framebuffer_hash"] = (
+                "fnv1a64-rgb24:ffffffffffffffff"
+            )
+            self.assertEqual(
+                self._run_main_with_capture(
+                    module,
+                    mutated_capture,
+                    valid,
+                    work / "mutated-output",
+                ),
+                1,
+            )
+
+    def test_checked_named_release_scenario_is_semantic_and_framebuffer_pinned(self):
+        module, capture = self._runtime_module_and_capture()
+        scenario = module["_scenario_data"]()
         self.assertEqual(module["_semantic_failures"](capture, scenario), [])
         self.assertEqual(
             [checkpoint["name"] for checkpoint in scenario["checkpoints"]],

@@ -442,8 +442,8 @@ project-specific screen or asset package.
 - **Feature / originating issue:** `unified-utility-preferences` /
   [issue #44](https://github.com/laqieer/fireemblem8-expansion/issues/44).
 - **Supported configuration or artifact:** default modern source checkout
-  and the optional `EXPANSION_DANGER_OVERLAY_MENU=1` profile for Threat
-  Range; Python 3 and a host C compiler.
+  and the optional `EXPANSION_DANGER_OVERLAY_MENU=1` profile for Danger;
+  Python 3 and a host C compiler.
 - **Prerequisites and clean starting state:** use synthetic preference records
   only. Start default profile with Danger unavailable, then test the
   opt-in profile separately.
