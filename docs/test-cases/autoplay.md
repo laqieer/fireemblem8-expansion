@@ -362,7 +362,12 @@ policy, player-facing text, or a general expression language.
 
 Aggressive chooses the immediate legal combat decision. Objective-first accepts
 a deterministic reachable movement decision only when its generated range
-strictly decreases; no progress waits, and a completed objective returns to
+strictly decreases. It scans the whole authored rectangle, skips blocked,
+occupied, and unreachable targets, then ranks candidates by path cost,
+projection distance, Y, and X. A blocked projection advances through an
+alternate legal tile; equal candidates are stable; all blocked/no-progress
+cases produce a fully clean wait; consecutive units rebuild their maps; reach
+and hold share the selector; and a completed objective returns to
 Aggressive/current AI. A unit assignment overrides the group and chapter
 assignments, a group overrides chapter, and the profiles repeat the same action
 trace without an RNG draw. The typed event helpers accept only their declared
@@ -389,7 +394,7 @@ The structured budget result reports the profiles-disabled shared router
 separately from the enabled references and carries parsed symbol evidence that
 the internal absent ELF omits the router hook/tables while both present ELFs
 contain them. The matched current-tree deltas are +1,560 debug / +1,896
-release bytes for the shared router and +456 debug / +408 release bytes for
+release bytes for the shared router and +856 debug / +680 release bytes for
 the references.
 
 ### Negative control

@@ -142,6 +142,8 @@ struct ExpansionAutoplayStrategyRuntimeProbe
 };
 
 extern struct ExpansionAutoplayStrategyRuntimeProbe gExpansionAutoplayStrategyRuntimeProbe;
+bool ExpansionAutoplayStrategies_TestTryMoveToObjectiveArea(
+    const struct ExpansionChapterObjective* objective);
 #endif
 
 #endif /* GUARD_EXPANSION_AUTOPLAY_STRATEGIES_H */

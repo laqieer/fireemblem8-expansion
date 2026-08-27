@@ -200,6 +200,111 @@ static void PrepareCombatMovementMap(void)
         GenerateMagicSealMap(-1);
 }
 
+static bool SelectObjectiveAreaTarget(
+    const struct ExpansionChapterObjective* objective,
+    int* xOut,
+    int* yOut)
+{
+    int projectionX = gActiveUnit->xPos;
+    int projectionY = gActiveUnit->yPos;
+    int bestCost = MAP_MOVEMENT_MAX;
+    int bestProjectionDistance = MAP_MOVEMENT_MAX * 2;
+    int bestX = -1;
+    int bestY = -1;
+    int x;
+    int y;
+
+    if (projectionX < objective->xMin)
+        projectionX = objective->xMin;
+    else if (projectionX > objective->xMax)
+        projectionX = objective->xMax;
+    if (projectionY < objective->yMin)
+        projectionY = objective->yMin;
+    else if (projectionY > objective->yMax)
+        projectionY = objective->yMax;
+
+    GenerateUnitExtendedMovementMap(gActiveUnit);
+    for (y = objective->yMin; y <= objective->yMax; y++)
+    {
+        for (x = objective->xMin; x <= objective->xMax; x++)
+        {
+            int cost;
+            int projectionDistance;
+            int unit;
+
+            unit = gBmMapUnit[y][x];
+            if (unit != 0 && unit != gActiveUnitId)
+                continue;
+            cost = gBmMapMovement[y][x];
+            if (cost >= MAP_MOVEMENT_MAX)
+                continue;
+            projectionDistance =
+                ABS(x - projectionX) + ABS(y - projectionY);
+            if (cost > bestCost)
+                continue;
+            if (cost == bestCost
+                && projectionDistance > bestProjectionDistance)
+                continue;
+            if (cost == bestCost
+                && projectionDistance == bestProjectionDistance
+                && (y > bestY || (y == bestY && x >= bestX)))
+                continue;
+
+            bestCost = cost;
+            bestProjectionDistance = projectionDistance;
+            bestX = x;
+            bestY = y;
+        }
+    }
+
+    if (bestX < 0)
+    {
+        AiGenerateUnitMovementMapRespectStay(gActiveUnit);
+        return false;
+    }
+
+    *xOut = bestX;
+    *yOut = bestY;
+    return true;
+}
+
+static bool TryMoveToObjectiveArea(
+    const struct ExpansionChapterObjective* objective)
+{
+    u8 currentRange;
+    u8 decisionRange;
+    int xTarget;
+    int yTarget;
+
+    if (!SelectObjectiveAreaTarget(objective, &xTarget, &yTarget))
+    {
+        AiClearDecision();
+        return false;
+    }
+
+    AiClearDecision();
+    AiTryMoveTowards(xTarget, yTarget, 0, 0, 1);
+    if (!gAiDecision.actionPerformed)
+    {
+        AiClearDecision();
+        return false;
+    }
+    if (gAiDecision.xMove < 0 || gAiDecision.xMove >= gBmMapSize.x
+        || gAiDecision.yMove < 0 || gAiDecision.yMove >= gBmMapSize.y)
+    {
+        AiClearDecision();
+        return false;
+    }
+
+    currentRange = gBmMapRange[gActiveUnit->yPos][gActiveUnit->xPos];
+    decisionRange = gBmMapRange[gAiDecision.yMove][gAiDecision.xMove];
+    if (currentRange < MAP_MOVEMENT_MAX && decisionRange < currentRange)
+        return true;
+
+    AiClearDecision();
+    return false;
+}
+
 enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ValidateObjectiveSupport(
     u32 strategyId,
     enum ExpansionChapterObjectiveKind kind)
@@ -513,8 +618,6 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
     const struct ExpansionChapterObjective* objective = context->objective;
     enum ExpansionChapterObjectiveState state;
     u32 progress;
-    int xTarget;
-    int yTarget;
 
     if (objective == NULL)
         return ExpansionAutoplayStrategy_Aggressive(context);
@@ -528,46 +631,12 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
         && ExpansionChapterObjectives_GroupContains(
             objective->group->id, gActiveUnit->pCharacterData->number))
     {
-        xTarget = gActiveUnit->xPos;
-        yTarget = gActiveUnit->yPos;
-
-        if (xTarget < objective->xMin)
-            xTarget = objective->xMin;
-        else if (xTarget > objective->xMax)
-            xTarget = objective->xMax;
-
-        if (yTarget < objective->yMin)
-            yTarget = objective->yMin;
-        else if (yTarget > objective->yMax)
-            yTarget = objective->yMax;
-
-        if (xTarget != gActiveUnit->xPos || yTarget != gActiveUnit->yPos)
+        if (gActiveUnit->xPos < objective->xMin
+            || gActiveUnit->xPos > objective->xMax
+            || gActiveUnit->yPos < objective->yMin
+            || gActiveUnit->yPos > objective->yMax)
         {
-            u8 currentRange;
-            u8 decisionRange;
-
-            AiTryMoveTowards(xTarget, yTarget, 0, 0, 1);
-            if (!gAiDecision.actionPerformed)
-            {
-                AiClearDecision();
-                return true;
-            }
-
-            if (gAiDecision.xMove < 0 || gAiDecision.xMove >= gBmMapSize.x
-                || gAiDecision.yMove < 0 || gAiDecision.yMove >= gBmMapSize.y)
-            {
-                AiClearDecision();
-                return true;
-            }
-
-            currentRange = gBmMapRange[gActiveUnit->yPos][gActiveUnit->xPos];
-            decisionRange = gBmMapRange[gAiDecision.yMove][gAiDecision.xMove];
-            if (gAiDecision.actionPerformed
-                && currentRange < MAP_MOVEMENT_MAX
-                && decisionRange < currentRange)
-                return true;
-
-            AiClearDecision();
+            TryMoveToObjectiveArea(objective);
             return true;
         }
 
@@ -591,6 +660,12 @@ bool ExpansionAutoplayStrategy_ObjectiveFirst(
 #endif
 
 #if FE8_AUTOPLAY_STRATEGY_RUNTIME_TEST
+bool ExpansionAutoplayStrategies_TestTryMoveToObjectiveArea(
+    const struct ExpansionChapterObjective* objective)
+{
+    return TryMoveToObjectiveArea(objective);
+}
+
 struct ExpansionAutoplayStrategyRuntimeProbe EWRAM_DATA
     gExpansionAutoplayStrategyRuntimeProbe = { 0 };
 #endif
