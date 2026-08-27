@@ -469,7 +469,9 @@ EXP/item/resource records contain unsigned baseline and terminal observations
 from one clean execution plus their signed difference. The baseline is read at
 the declared seed frame immediately before its input and seed write
 (immediately after reset for this frame-0 fixture), covering gain, consumption,
-and zero change without a second run.
+and zero change without a second run. Symbolic/literal aliases with one
+resolved numeric `(address, size)` share one baseline observation; duplicate
+baseline entries passed directly to the capture API fail before backend work.
 
 ### Negative controls
 

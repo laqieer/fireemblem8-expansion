@@ -635,33 +635,45 @@ def _validate_seed_values(
     return tuple(sorted(values))
 
 
-def _terminal_probe_values(fingerprint: dict[str, Any]) -> dict[tuple[str, int], int]:
+def _terminal_probe_values(
+    fingerprint: dict[str, Any],
+    scenario: gba_playtest.Scenario,
+) -> dict[tuple[int, int], int]:
     checkpoint = fingerprint["checkpoints"][0]
     return {
-        (probe["address"], probe["size"]): int(probe["value"], 16)
-        for probe in checkpoint["probes"]
+        (scenario_probe.address, scenario_probe.size): int(captured["value"], 16)
+        for scenario_probe, captured in zip(
+            scenario.checkpoints[0].probes,
+            checkpoint["probes"],
+        )
     }
 
 
 def _baseline_probe_values(
     fingerprint: dict[str, Any],
-) -> dict[tuple[str, int], int]:
+    baseline_probes: tuple[gba_playtest.Probe, ...],
+) -> dict[tuple[int, int], int]:
     return {
-        (probe["address"], probe["size"]): int(probe["value"], 16)
-        for probe in fingerprint.get("baseline_probes", [])
+        (declared.address, declared.size): int(captured["value"], 16)
+        for declared, captured in zip(
+            baseline_probes,
+            fingerprint.get("baseline_probes", []),
+        )
     }
 
 
 def _metric_value(
     metric: BatchMetric,
     fingerprint: dict[str, Any],
+    scenario: gba_playtest.Scenario,
+    baseline_probes: tuple[gba_playtest.Probe, ...],
 ) -> Any:
     terminal = fingerprint["terminal"]
-    values = _terminal_probe_values(fingerprint)
-    baseline_values = _baseline_probe_values(fingerprint)
+    values = _terminal_probe_values(fingerprint, scenario)
+    baseline_values = _baseline_probe_values(fingerprint, baseline_probes)
 
     def probe_value(probe: dict[str, Any]) -> int:
-        identity = (probe["address"], probe["size"])
+        identity = (probe["resolved_address"], probe["size"])
         try:
             return values[identity]
         except KeyError as exc:
@@ -700,7 +712,7 @@ def _metric_value(
     deltas = []
     for group in metric.definition["groups"]:
         probe = group["probe"]
-        identity = (probe["address"], probe["size"])
+        identity = (probe["resolved_address"], probe["size"])
         try:
             baseline = baseline_values[identity]
         except KeyError as exc:
@@ -911,12 +923,15 @@ def run_batch(
         max_turns=max_turns,
         max_actions=max_actions,
     )
-    baseline_probe_map: dict[tuple[str, int], MetricProbe] = {}
+    baseline_probe_map: dict[tuple[int, int], MetricProbe] = {}
     for metric in specification.metrics:
         if metric.kind != "group_deltas":
             continue
         for probe in metric.probes:
-            baseline_probe_map[(probe.binding, probe.size)] = probe
+            identity = (probe.address, probe.size)
+            current = baseline_probe_map.get(identity)
+            if current is None or probe.binding < current.binding:
+                baseline_probe_map[identity] = probe
     baseline_probes = tuple(
         gba_playtest.Probe(probe.binding, probe.address, probe.size, None)
         for _, probe in sorted(baseline_probe_map.items())
@@ -949,7 +964,12 @@ def run_batch(
                 )
             terminal = captured["terminal"]
             metrics = {
-                metric.identifier: _metric_value(metric, captured)
+                metric.identifier: _metric_value(
+                    metric,
+                    captured,
+                    scenario,
+                    baseline_probes,
+                )
                 for metric in specification.metrics
             }
             return {

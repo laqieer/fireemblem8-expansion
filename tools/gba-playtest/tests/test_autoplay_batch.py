@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -1133,6 +1134,80 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                     "<gba-playtest-workspace>",
                 )
         self.assertEqual(reports[0], reports[1])
+
+    def test_delta_aliases_share_one_numeric_baseline_observation(self):
+        resolver = autoplay_batch.ElfSymbolResolver(self.elf)
+        scenario = gba_playtest.load_scenario(self.scenario, resolver)
+        specification = autoplay_batch.load_specification(
+            self.specification,
+            resolver,
+        )
+        metrics = []
+        for metric in specification.metrics:
+            if metric.identifier != "items":
+                metrics.append(metric)
+                continue
+            definition = copy.deepcopy(metric.definition)
+            definition["groups"][0]["probe"]["address"] = "gSharedDeltaAlias"
+            probe = metric.probes[0]
+            metrics.append(
+                replace(
+                    metric,
+                    definition=definition,
+                    probes=(
+                        autoplay_batch.MetricProbe(
+                            "gSharedDeltaAlias",
+                            probe.address,
+                            probe.size,
+                        ),
+                    ),
+                )
+            )
+        specification = replace(specification, metrics=tuple(metrics))
+        baseline_counts = []
+
+        def capture_aliases(*args, **kwargs):
+            baseline_counts.append(
+                len(kwargs["scheduled_write"].baseline_probes)
+            )
+            return self._fake_capture(*args, **kwargs)
+
+        with mock.patch.object(
+            gba_playtest,
+            "build_backend",
+            side_effect=self._fake_build_backend,
+        ), mock.patch.object(
+            gba_playtest,
+            "capture",
+            side_effect=capture_aliases,
+        ):
+            report = autoplay_batch.run_batch(
+                self.rom,
+                scenario,
+                specification,
+                (1,),
+                max_jobs=1,
+                max_frames=3,
+                max_turns=32,
+                max_actions=32,
+                work_dir=self.root,
+            )
+        autoplay_batch.validate_report(report, "alias-report")
+        self.assertEqual(baseline_counts, [2])
+        left_entry = report["runs"][0]["metrics"]["items"][0]
+        right_entry = report["runs"][0]["metrics"]["resources"][0]
+        self.assertEqual(
+            (
+                left_entry["baseline"],
+                left_entry["terminal"],
+                left_entry["delta"],
+            ),
+            (
+                right_entry["baseline"],
+                right_entry["terminal"],
+                right_entry["delta"],
+            ),
+        )
 
     def test_output_must_be_strict_child_of_build_root(self):
         absent_build_root = self.root / "absent-build-root"

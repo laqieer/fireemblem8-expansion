@@ -446,7 +446,7 @@ def validate_scheduled_write(
             f"scheduled write has {len(scheduled_write.baseline_probes)} "
             f"baseline probes, exceeding {MAX_BASELINE_PROBES}"
         )
-    baseline_identities: set[tuple[str, int]] = set()
+    baseline_identities: set[tuple[int, int]] = set()
     for baseline in scheduled_write.baseline_probes:
         if not _is_int(baseline.size) or baseline.size not in (1, 2, 4):
             raise PlaytestError(
@@ -461,7 +461,7 @@ def validate_scheduled_write(
             baseline.size,
             f"baseline probe {baseline.binding!r}",
         )
-        identity = (baseline.binding, baseline.size)
+        identity = (baseline.address, baseline.size)
         if identity in baseline_identities:
             raise PlaytestError(
                 f"scheduled write has duplicate baseline probe "

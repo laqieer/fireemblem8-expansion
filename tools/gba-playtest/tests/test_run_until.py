@@ -559,6 +559,33 @@ class RunUntilSchemaTests(unittest.TestCase):
                 ),
                 "value must be an integer",
             ),
+            (
+                gba_playtest.ScheduledWrite(
+                    0,
+                    gba_playtest.Probe(
+                        PROBE_ADDRESS,
+                        int(PROBE_ADDRESS, 16),
+                        4,
+                        None,
+                    ),
+                    1,
+                    (
+                        gba_playtest.Probe(
+                            "gAlias",
+                            int(PROBE_ADDRESS, 16),
+                            4,
+                            None,
+                        ),
+                        gba_playtest.Probe(
+                            PROBE_ADDRESS,
+                            int(PROBE_ADDRESS, 16),
+                            4,
+                            None,
+                        ),
+                    ),
+                ),
+                "duplicate baseline probe",
+            ),
         )
         for scheduled_write, expected in cases:
             with self.subTest(expected=expected, scheduled_write=scheduled_write):

@@ -148,10 +148,13 @@ sorted unique records. Imported survivor/casualty and delta values must fit
 their declared 1/2/4-byte probes.
 
 EXP/item/resource metrics are signed differences, not terminal snapshots.
-Plan format 6 reads every deduplicated delta probe once at the declared seed
-frame immediately before that frame's input and seed write (therefore
-immediately after reset for the canonical frame-0 fixture), then reads the same
-probe at the terminal checkpoint. Each report entry retains the unsigned
+Plan format 6 deduplicates delta probes by the resolved numeric
+`(address, size)` pair and reads each pair once at the declared seed frame
+immediately before that frame's input and seed write (therefore immediately
+after reset for the canonical frame-0 fixture), then reads the same pair at the
+terminal checkpoint. Symbolic and literal aliases may intentionally share that
+one observation; duplicate baseline entries supplied directly through
+`ScheduledWrite` are rejected before backend startup. Each report entry retains the unsigned
 width-bounded `baseline` and `terminal` observations and their signed `delta =
 terminal - baseline`, bounded to `[-max, +max]` for that probe width.
 
