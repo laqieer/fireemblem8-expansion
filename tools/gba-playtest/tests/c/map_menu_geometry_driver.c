@@ -104,6 +104,10 @@ int main(void)
 
     sMapKind = BATTLEMAP_KIND_SKIRMISH;
     sGuideLocked = FALSE;
+    CHECK(MapMenu_IsStatusCommandAvailable() == MENU_ENABLED);
+    CHECK(MapMenu_IsGuideCommandAvailable(NULL, 0) == MENU_ENABLED);
+    CHECK(MapMenu_IsRecordsCommandAvailable(NULL, 0) == MENU_NOTSHOWN);
+    CHECK(MapMenu_IsRetreatCommandAvailable(NULL, 0) == MENU_ENABLED);
     CHECK(GetVisibleCount(2) == 9);
     menu = ConfigureMenu(9);
     ExpansionMapMenu_EnsureVerticalBounds(menu);
@@ -114,6 +118,10 @@ int main(void)
 
     sMapKind = BATTLEMAP_KIND_DUNGEON;
     gPlaySt.chapterIndex = 0x2E;
+    CHECK(MapMenu_IsStatusCommandAvailable() == MENU_NOTSHOWN);
+    CHECK(MapMenu_IsGuideCommandAvailable(NULL, 0) == MENU_ENABLED);
+    CHECK(MapMenu_IsRecordsCommandAvailable(NULL, 0) == MENU_ENABLED);
+    CHECK(MapMenu_IsRetreatCommandAvailable(NULL, 0) == MENU_ENABLED);
     CHECK(GetVisibleCount(2) == 9);
     menu = ConfigureMenu(9);
     ExpansionMapMenu_EnsureVerticalBounds(menu);

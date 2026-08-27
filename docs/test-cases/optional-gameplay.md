@@ -196,11 +196,12 @@ additional threat UI, persisted preference, or AI behavior is shipped.
   neither feature, Danger only, Charge only, and the nine-row
   skirmish/dungeon availability combinations.
 - **Prerequisites and clean starting state:** repository root with the modern
-  toolchain and libmGBA; no save or savestate. The named release starts from
-  blank SRAM and selects English; the Charge debug fixture reaches an
-  interactive blue phase with at least one eligible unmoved blue unit. The
-  nine-row runtime uses the deterministic current-save fixture and debug
-  chapter/skirmish selector to reach an unlocked-Guide skirmish.
+  toolchain and libmGBA; no pre-existing or manually supplied save or savestate
+  is required. The named release starts from blank SRAM and selects English;
+  the Charge debug fixture reaches an interactive blue phase with at least one
+  eligible unmoved blue unit. The nine-row target generates its disposable,
+  ignored `debugtools-current.sav` fixture and uses the debug chapter/skirmish
+  selector to reach an unlocked-Guide skirmish.
 
 ### Actions
 

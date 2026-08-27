@@ -30,7 +30,14 @@ NM = shutil.which("nm")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_SIZE = shutil.which("arm-none-eabi-size")
 RUNNER = ROOT / "tools" / "gba-playtest" / "run_blue_phase_delegate_checks.py"
-TEST_CASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
+MAP_MENU_GEOMETRY_DRIVER = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "tests"
+    / "c"
+    / "map_menu_geometry_driver.c"
+)
 FINGERPRINT = (
     ROOT
     / "tools"
@@ -444,22 +451,45 @@ class BluePhaseDelegateRuntimeContractTests(unittest.TestCase):
             "next-blue-player-interactive",
         )
 
-    def test_case_registry_distinguishes_static_and_live_menu_capacity(self):
-        registry = json.loads(TEST_CASE_REGISTRY.read_text(encoding="utf-8"))
-        case = next(
-            entry
-            for entry in registry["cases"]
-            if entry["id"] == "TC-AUTOPLAY-CHARGE-001"
-        )
-        self.assertIn("10 static definitions", case["interactions"])
-        self.assertIn(
-            "at most nine simultaneously visible rows",
-            case["interactions"],
-        )
-        self.assertIn(
-            "Guide, Records, and Retreat availability is mutually constrained",
-            case["interactions"],
-        )
+    def test_status_and_records_exclusion_bounds_live_menu_capacity(self):
+        if CC is None:
+            self.skipTest("no host compiler")
+        build = ROOT / "build"
+        build.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build) as temporary:
+            binary = Path(temporary) / "map-menu-availability"
+            completed = run(
+                [
+                    CC,
+                    "-std=gnu89",
+                    "-O2",
+                    "-w",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                    *INCLUDES,
+                    "-DMODERN=1",
+                    "-D" + MODERN,
+                    "-D" + FLAG,
+                    "-DFE8_EXPANSION_DANGER_OVERLAY_MENU=1",
+                    str(BMMENU_SOURCE),
+                    str(MAP_MENU_GEOMETRY_DRIVER),
+                    "-Wl,--gc-sections",
+                    "-o",
+                    str(binary),
+                ]
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = run([str(binary)])
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn("MAP_MENU_GEOMETRY: PASS", completed.stdout)
 
 
 if __name__ == "__main__":
