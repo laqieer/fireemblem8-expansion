@@ -238,14 +238,17 @@ The canonical machine-readable protocol is
 [`.github/manual-testing-handoff.json`](.github/manual-testing-handoff.json).
 Follow its eligibility, artifact-preview, activation, hold, completion, and
 queue fields exactly. It is not a human review gate, and deterministic criteria
-must remain automated. Both identified non-instrumented artifact roles must be
-rendered and inspected before handoff. Completion cleans the issue and every PR
-that received the handoff, even if a PR is later closed or superseded.
+must remain automated. Both identified non-instrumented artifact roles require
+deterministic emulator screenshots or synchronized emulator A/V evidence.
+GitHub-linked open PR discovery determines activation targets; completion
+cleans every labeled item, including closed or superseded PRs, while preserving
+an assignee only when independent ownership remains.
 
 The actionable queue is
   [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).
-An originating issue may appear alone when it has no open implementation PR;
-otherwise every declared open implementation PR follows the same contract.
+An originating issue may appear alone only when independent GitHub relationship
+discovery finds no open implementation PR; otherwise every discovered open PR
+follows the same contract.
 An empty queue produces no scheduled notification or comment.
 
 The complete source-only lifecycle is

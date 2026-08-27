@@ -21,8 +21,16 @@
     ],
     "render_each": true,
     "inspect_each": true,
-    "static_ui": "screenshot",
-    "time_dependent_or_av": "synchronized_av",
+    "static_ui": {
+      "evidence": "screenshot",
+      "source": "emulator",
+      "deterministic": true
+    },
+    "time_dependent_or_av": {
+      "evidence": "av_clip",
+      "source": "emulator",
+      "synchronized": true
+    },
     "semantic_assertions_primary": true
   },
   "activation": {
@@ -80,6 +88,7 @@
     "url": "https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22",
     "notify_when_empty": false,
     "live_cardinality": "dynamic",
+    "relationship_source": "github_linked_open_implementation_prs",
     "issue_only_when_no_open_implementation_pr": true,
     "require_every_declared_open_implementation_pr": true,
     "exclude_closed_implementation_prs": true

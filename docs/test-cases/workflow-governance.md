@@ -80,13 +80,16 @@ and does not grant push credentials.
 
 1. Parse `.github/manual-testing-handoff.json` and validate every required key,
    value, enum, boolean, target, comment field, and the separately identified
-   positive/control artifact roles.
+   positive/control artifact roles with deterministic emulator screenshot or
+   synchronized emulator A/V evidence.
 2. Exercise the positive issue-only, one-PR, and multiple-open-PR queue shapes,
-   plus malformed label, assignee, relationship, and stale-state controls.
-   Exercise completion cleanup with closed and superseded labeled PR history.
-3. Run
+   using an independent GitHub-linked PR relationship map. Exercise malformed
+   label, assignee, relationship, and stale-state controls.
+3. Exercise completion cleanup with closed and superseded labeled PR history,
+   separate label/assignee cleanup sets, and retained independent ownership.
+4. Run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
-4. Open the documented queue:
+5. Open the documented queue:
    [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).
    When it is empty, do not schedule notifications or comments.
 
@@ -98,19 +101,20 @@ Human guidance links to that file without duplicating machine behavior.
 ### Negative control
 
 Every leaf mutation in the structured contract fails, including a missing
-artifact role/path/hash/inspection step, instrumented artifacts, permissive
-activation, wrong identifiers or targets, disabled holds, incomplete
-historical cleanup, empty-queue notifications, and invalid issue/PR
-relationships. Removing this case's own required subsection also fails even
-when another case in this file retains a same-named heading.
+artifact role/path/hash/emulator/determinism/synchronization/inspection field,
+instrumented artifacts, permissive activation, wrong identifiers or targets,
+disabled holds, incomplete historical cleanup, empty-queue notifications, and
+invalid independently discovered issue/PR relationships. Removing this case's
+own required subsection also fails even when another case retains that heading.
 
 ### Interactions and save compatibility
 
-The protocol depends on GitHub issues, pull requests, labels, assignments, and
-comments when a real hold is active. Live queue contents remain release-time
-evidence rather than tracked state; cleanup history includes every PR that
-received the handoff even after closure or supersession. It changes no save,
-generated data, localization, ROM/RAM, debug/release, or archival behavior.
+The protocol depends on GitHub issues, pull requests, relationships, labels,
+assignments, and comments when a real hold is active. Live queue contents
+remain release-time evidence rather than tracked state. Cleanup history includes
+every labeled PR after closure or supersession; independent ownership may retain
+an assignee but never the handoff label. It changes no save, generated data,
+localization, ROM/RAM, debug/release, or archival behavior.
 
 ### Automation
 

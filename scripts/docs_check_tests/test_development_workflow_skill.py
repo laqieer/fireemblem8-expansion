@@ -535,8 +535,16 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
         "required_identity_fields": ["path", "sha256"],
         "render_each": True,
         "inspect_each": True,
-        "static_ui": "screenshot",
-        "time_dependent_or_av": "synchronized_av",
+        "static_ui": {
+            "evidence": "screenshot",
+            "source": "emulator",
+            "deterministic": True,
+        },
+        "time_dependent_or_av": {
+            "evidence": "av_clip",
+            "source": "emulator",
+            "synchronized": True,
+        },
         "semantic_assertions_primary": True,
     },
     "activation": {
@@ -596,6 +604,7 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
         "url": MANUAL_HANDOFF_QUERY_URL,
         "notify_when_empty": False,
         "live_cardinality": "dynamic",
+        "relationship_source": "github_linked_open_implementation_prs",
         "issue_only_when_no_open_implementation_pr": True,
         "require_every_declared_open_implementation_pr": True,
         "exclude_closed_implementation_prs": True,
@@ -675,12 +684,12 @@ def read_manual_handoff_contract():
     return json.loads(MANUAL_HANDOFF_CONTRACT_PATH.read_text(encoding="utf-8"))
 
 
-def validate_live_manual_queue(contract, live_items):
+def validate_live_manual_queue(contract, live_items, relationships):
     violations = []
     activation = contract["activation"]
     queue = contract["queue"]
     seen_urls = set()
-    open_items = []
+    pending_open_items = []
     for item in live_items:
         url = item.get("url")
         if not url:
@@ -689,66 +698,99 @@ def validate_live_manual_queue(contract, live_items):
         if url in seen_urls:
             violations.append(f"duplicate item: {url}")
         seen_urls.add(url)
-        if item.get("state", "open") != "open":
-            continue
         if not item.get("manual_pending", True):
             if item.get("label") == activation["label"]:
                 violations.append(f"stale label: {url}")
-            if item.get("assignee") == activation["assignee"]:
+            if (
+                item.get("assignee") == activation["assignee"]
+                and not item.get("other_ownership", False)
+            ):
                 violations.append(f"stale assignee: {url}")
+        if item.get("state", "open") != "open":
             continue
-        open_items.append(item)
+        if not item.get("manual_pending", True):
+            continue
+        pending_open_items.append(item)
         if item.get("label") != activation["label"]:
             violations.append(f"wrong label: {url}")
         if item.get("assignee") != activation["assignee"]:
             violations.append(f"wrong assignee: {url}")
 
     issues = {
-        item["origin"]: item
-        for item in open_items
-        if item.get("kind") == "issue" and item.get("origin")
+        item["url"]: item
+        for item in pending_open_items
+        if item.get("kind") == "issue"
     }
     prs = {}
-    for item in open_items:
-        if item.get("kind") != "pr" or not item.get("origin"):
+    for item in pending_open_items:
+        if item.get("kind") != "pr" or not item.get("origin_url"):
             continue
-        prs.setdefault(item["origin"], set()).add(item["url"])
-        if item["origin"] not in issues:
+        prs.setdefault(item["origin_url"], set()).add(item["url"])
+        if item["origin_url"] not in issues:
             violations.append(f"orphan PR: {item['url']}")
 
-    for origin, issue in issues.items():
-        declared = issue.get("open_pr_urls")
-        if declared is None:
+    discovered = {}
+    for relationship in relationships:
+        if relationship.get("state") != "open":
             continue
-        actual = prs.get(origin, set())
+        issue_url = relationship.get("issue_url")
+        pr_url = relationship.get("pr_url")
+        if issue_url in issues and pr_url:
+            discovered.setdefault(issue_url, set()).add(pr_url)
+
+    for issue_url in issues:
+        expected = discovered.get(issue_url, set())
+        actual = prs.get(issue_url, set())
         if (
-            not declared
+            not expected
             and actual
             and queue["issue_only_when_no_open_implementation_pr"]
         ):
-            violations.append(f"unexpected open PR for {origin}")
+            violations.append(f"unexpected open PR for {issue_url}")
         if queue["require_every_declared_open_implementation_pr"]:
-            for missing in sorted(set(declared) - actual):
+            for missing in sorted(expected - actual):
                 violations.append(f"missing open PR: {missing}")
-            for extra in sorted(actual - set(declared)):
-                violations.append(f"undeclared open PR: {extra}")
+            for extra in sorted(actual - expected):
+                violations.append(f"unlinked open PR: {extra}")
     return violations
 
 
 def validate_completion_cleanup(contract, item_history, cleanup):
+    activation = contract["activation"]
     completion = contract["completion"]
-    expected_urls = {
+    labeled_urls = {
         item["url"]
         for item in item_history
-        if item.get("received_handoff")
+        if item.get("received_label")
         and item.get("kind") in {"issue", "pr"}
     }
+    assignee_urls = {
+        item["url"]
+        for item in item_history
+        if item.get("received_label")
+        and item.get("kind") in {"issue", "pr"}
+        and not item.get("other_ownership", False)
+    }
     violations = []
+    for item in item_history:
+        if not item.get("received_label"):
+            continue
+        if item.get("label") == activation["label"]:
+            violations.append(f"stale label: {item['url']}")
+        if (
+            not item.get("other_ownership", False)
+            and item.get("assignee") == activation["assignee"]
+        ):
+            violations.append(f"stale assignee: {item['url']}")
     if cleanup.get("label") != completion["remove_label"]:
         violations.append("wrong cleanup label")
     if cleanup.get("assignee") != completion["remove_temporary_assignee"]:
         violations.append("wrong cleanup assignee")
-    for field in ("remove_label_from", "remove_temporary_assignee_from"):
+    expected_by_field = {
+        "remove_label_from": labeled_urls,
+        "remove_temporary_assignee_from": assignee_urls,
+    }
+    for field, expected_urls in expected_by_field.items():
         values = cleanup.get(field)
         if not isinstance(values, list):
             violations.append(f"{field}: expected list")
@@ -2113,6 +2155,60 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             ),
             "skip rendering": ("pre_handoff", "render_each", False),
             "skip inspection": ("pre_handoff", "inspect_each", False),
+            "static UI evidence": (
+                "pre_handoff",
+                "static_ui",
+                {
+                    "evidence": "arbitrary_image",
+                    "source": "emulator",
+                    "deterministic": True,
+                },
+            ),
+            "static UI source": (
+                "pre_handoff",
+                "static_ui",
+                {
+                    "evidence": "screenshot",
+                    "source": "desktop",
+                    "deterministic": True,
+                },
+            ),
+            "static UI determinism": (
+                "pre_handoff",
+                "static_ui",
+                {
+                    "evidence": "screenshot",
+                    "source": "emulator",
+                    "deterministic": False,
+                },
+            ),
+            "A/V evidence": (
+                "pre_handoff",
+                "time_dependent_or_av",
+                {
+                    "evidence": "audio_only",
+                    "source": "emulator",
+                    "synchronized": True,
+                },
+            ),
+            "A/V source": (
+                "pre_handoff",
+                "time_dependent_or_av",
+                {
+                    "evidence": "av_clip",
+                    "source": "desktop",
+                    "synchronized": True,
+                },
+            ),
+            "A/V synchronization": (
+                "pre_handoff",
+                "time_dependent_or_av",
+                {
+                    "evidence": "av_clip",
+                    "source": "emulator",
+                    "synchronized": False,
+                },
+            ),
             "permissive activation": ("activation", "required", False),
             "activation label": (
                 "activation",
@@ -2163,6 +2259,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 True,
             ),
             "static queue": ("queue", "live_cardinality", "empty"),
+            "relationship source": (
+                "queue",
+                "relationship_source",
+                "issue_declared_prs",
+            ),
         }
         for name, (section, key, value) in blocker_mutations.items():
             with self.subTest(blocker=name):
@@ -2207,11 +2308,25 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     self.assertTrue(
                         all(".".join(path) in failure for failure in failures)
                     )
+        required_artifact_fields = {
+            "positive_artifact_path",
+            "positive_artifact_sha256",
+            "control_artifact_path",
+            "control_artifact_sha256",
+        }
+        for field in required_artifact_fields:
+            with self.subTest(comment_field=field):
+                mutated = copy.deepcopy(contract)
+                mutated["activation"]["comment"]["fields"].remove(field)
+                self.assertTrue(compare_contract(
+                    mutated,
+                    EXPECTED_MANUAL_HANDOFF_CONTRACT,
+                ))
 
     def test_manual_handoff_live_queue_relationships(self):
         contract = read_manual_handoff_contract()
 
-        def issue(url, *, origin=None, open_pr_urls=None, **overrides):
+        def issue(url, **overrides):
             item = {
                 "url": url,
                 "kind": "issue",
@@ -2220,14 +2335,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "label": contract["activation"]["label"],
                 "assignee": contract["activation"]["assignee"],
             }
-            if origin is not None:
-                item["origin"] = origin
-            if open_pr_urls is not None:
-                item["open_pr_urls"] = open_pr_urls
             item.update(overrides)
             return item
 
-        def pull(url, origin, **overrides):
+        def pull(url, origin_url, **overrides):
             item = {
                 "url": url,
                 "kind": "pr",
@@ -2235,7 +2346,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "manual_pending": True,
                 "label": contract["activation"]["label"],
                 "assignee": contract["activation"]["assignee"],
-                "origin": origin,
+                "origin_url": origin_url,
             }
             item.update(overrides)
             return item
@@ -2245,103 +2356,227 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         pr_two = "https://example.invalid/pulls/173"
         closed_pr = "https://example.invalid/pulls/174"
         positive = {
-            "issue only": (issue(issue_url),),
-            "declared no open PR": (
-                issue(issue_url, origin="issue-171", open_pr_urls=[]),
+            "issue only": (
+                (issue(issue_url),),
+                (),
             ),
             "one open PR": (
-                issue(
-                    issue_url,
-                    origin="issue-171",
-                    open_pr_urls=[pr_one],
+                (
+                    issue(issue_url),
+                    pull(pr_one, issue_url),
                 ),
-                pull(pr_one, "issue-171"),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
             ),
             "multiple open PRs and closed PR excluded": (
-                issue(
-                    issue_url,
-                    origin="issue-171",
-                    open_pr_urls=[pr_one, pr_two],
+                (
+                    issue(issue_url),
+                    pull(pr_one, issue_url),
+                    pull(pr_two, issue_url),
+                    pull(
+                        closed_pr,
+                        issue_url,
+                        state="closed",
+                        manual_pending=False,
+                        received_label=True,
+                        label=None,
+                        assignee=None,
+                    ),
                 ),
-                pull(pr_one, "issue-171"),
-                pull(pr_two, "issue-171"),
-                pull(
-                    closed_pr,
-                    "issue-171",
-                    state="closed",
-                    manual_pending=False,
-                    received_handoff=True,
+                (
+                    {
+                        "issue_url": issue_url,
+                        "pr_url": pr_one,
+                        "state": "open",
+                    },
+                    {
+                        "issue_url": issue_url,
+                        "pr_url": pr_two,
+                        "state": "open",
+                    },
+                    {
+                        "issue_url": issue_url,
+                        "pr_url": closed_pr,
+                        "state": "closed",
+                    },
                 ),
             ),
+            "unrelated linked PR ignored": (
+                (issue(issue_url),),
+                ({
+                    "issue_url": "https://example.invalid/issues/999",
+                    "pr_url": "https://example.invalid/pulls/999",
+                    "state": "open",
+                },),
+            ),
+            "only closed linked PR": (
+                (issue(issue_url),),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": closed_pr,
+                    "state": "closed",
+                },),
+            ),
         }
-        for scenario, items in positive.items():
+        for scenario, (items, relationships) in positive.items():
             with self.subTest(scenario=scenario):
                 self.assertEqual(
                     [],
-                    validate_live_manual_queue(contract, items),
+                    validate_live_manual_queue(
+                        contract,
+                        items,
+                        relationships,
+                    ),
                 )
 
         negative = {
-            "orphan PR": (pull(pr_one, "issue-171"),),
-            "missing open PR": (
-                issue(
-                    issue_url,
-                    origin="issue-171",
-                    open_pr_urls=[pr_one],
+            "orphan PR": (
+                (pull(pr_one, issue_url),),
+                (),
+            ),
+            "missing independently discovered open PR": (
+                (issue(issue_url),),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
+            ),
+            "unlabeled independently discovered open PR": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, issue_url, label="other-label"),
                 ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
             ),
-            "undeclared open PR": (
-                issue(issue_url, origin="issue-171", open_pr_urls=[]),
-                pull(pr_one, "issue-171"),
+            "self-declared list cannot hide linked PR": (
+                (issue(issue_url, open_pr_urls=[]),),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
             ),
-            "duplicate": (issue(issue_url), issue(issue_url)),
-            "wrong label": (issue(issue_url, label="other-label"),),
+            "unlinked open PR": (
+                (
+                    issue(issue_url),
+                    pull(pr_one, issue_url),
+                ),
+                (),
+            ),
+            "duplicate": (
+                (issue(issue_url), issue(issue_url)),
+                (),
+            ),
+            "wrong label": (
+                (issue(issue_url, label="other-label"),),
+                (),
+            ),
             "wrong assignee": (
-                issue(issue_url, assignee="other-tester"),
+                (issue(issue_url, assignee="other-tester"),),
+                (),
             ),
             "stale label": (
-                issue(
+                (issue(
                     issue_url,
                     manual_pending=False,
                     assignee=None,
-                ),
+                ),),
+                (),
             ),
             "stale assignee": (
-                issue(
+                (issue(
                     issue_url,
                     manual_pending=False,
                     label=None,
-                ),
+                ),),
+                (),
             ),
             "completed issue cannot legitimize pending PR": (
-                issue(
-                    issue_url,
-                    origin="issue-171",
-                    open_pr_urls=[pr_one],
-                    manual_pending=False,
-                    label=None,
-                    assignee=None,
+                (
+                    issue(
+                        issue_url,
+                        manual_pending=False,
+                        label=None,
+                        assignee=None,
+                    ),
+                    pull(pr_one, issue_url),
                 ),
-                pull(pr_one, "issue-171"),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
             ),
             "completed PR cannot satisfy pending issue": (
-                issue(
-                    issue_url,
-                    origin="issue-171",
-                    open_pr_urls=[pr_one],
+                (
+                    issue(issue_url),
+                    pull(
+                        pr_one,
+                        issue_url,
+                        manual_pending=False,
+                        label=None,
+                        assignee=None,
+                    ),
                 ),
-                pull(
-                    pr_one,
-                    "issue-171",
-                    manual_pending=False,
-                    label=None,
-                    assignee=None,
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_one,
+                    "state": "open",
+                },),
+            ),
+            "closed labeled PR has stale cleanup state": (
+                (
+                    issue(issue_url),
+                    pull(
+                        closed_pr,
+                        issue_url,
+                        state="closed",
+                        manual_pending=False,
+                        received_label=True,
+                    ),
                 ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": closed_pr,
+                    "state": "closed",
+                },),
+            ),
+            "superseded PR has stale temporary assignee": (
+                (
+                    issue(issue_url),
+                    pull(
+                        pr_two,
+                        issue_url,
+                        state="superseded",
+                        manual_pending=False,
+                        received_label=True,
+                        label=None,
+                    ),
+                ),
+                ({
+                    "issue_url": issue_url,
+                    "pr_url": pr_two,
+                    "state": "closed",
+                },),
             ),
         }
-        for scenario, items in negative.items():
+        for scenario, (items, relationships) in negative.items():
             with self.subTest(scenario=scenario):
-                self.assertTrue(validate_live_manual_queue(contract, items))
+                self.assertTrue(
+                    validate_live_manual_queue(
+                        contract,
+                        items,
+                        relationships,
+                    )
+                )
 
     def test_manual_handoff_completion_cleans_labeled_history(self):
         contract = read_manual_handoff_contract()
@@ -2355,44 +2590,58 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "url": issue_url,
                 "kind": "issue",
                 "state": "open",
-                "received_handoff": True,
+                "received_label": True,
+                "label": None,
+                "assignee": None,
             },
             {
                 "url": open_pr,
                 "kind": "pr",
                 "state": "open",
-                "received_handoff": True,
+                "received_label": True,
+                "label": None,
+                "assignee": None,
             },
             {
                 "url": closed_pr,
                 "kind": "pr",
                 "state": "closed",
-                "received_handoff": True,
+                "received_label": True,
+                "label": None,
+                "assignee": None,
             },
             {
                 "url": superseded_pr,
                 "kind": "pr",
                 "state": "superseded",
-                "received_handoff": True,
+                "received_label": True,
+                "label": None,
+                "assignee": "laqieer",
+                "other_ownership": True,
             },
             {
                 "url": never_labeled_pr,
                 "kind": "pr",
                 "state": "closed",
-                "received_handoff": False,
+                "received_label": False,
             },
         )
-        cleanup_urls = [
+        label_cleanup_urls = [
             issue_url,
             open_pr,
             closed_pr,
             superseded_pr,
         ]
+        assignee_cleanup_urls = [
+            issue_url,
+            open_pr,
+            closed_pr,
+        ]
         cleanup = {
             "label": "waiting-for-manual-testing",
             "assignee": "laqieer",
-            "remove_label_from": cleanup_urls,
-            "remove_temporary_assignee_from": list(reversed(cleanup_urls)),
+            "remove_label_from": label_cleanup_urls,
+            "remove_temporary_assignee_from": assignee_cleanup_urls,
         }
         self.assertEqual(
             [],
@@ -2405,14 +2654,56 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 self.assertTrue(
                     validate_completion_cleanup(contract, history, mutated)
                 )
-                mutated = copy.deepcopy(cleanup)
-                mutated["remove_temporary_assignee_from"].remove(omitted_url)
-                self.assertTrue(
-                    validate_completion_cleanup(contract, history, mutated)
-                )
+        missing_closed_assignee = copy.deepcopy(cleanup)
+        missing_closed_assignee["remove_temporary_assignee_from"].remove(
+            closed_pr
+        )
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            history,
+            missing_closed_assignee,
+        ))
+        independent_owner_cleanup = copy.deepcopy(cleanup)
+        independent_owner_cleanup["remove_temporary_assignee_from"].append(
+            superseded_pr
+        )
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            history,
+            independent_owner_cleanup,
+        ))
         extra = copy.deepcopy(cleanup)
         extra["remove_label_from"].append(never_labeled_pr)
         self.assertTrue(validate_completion_cleanup(contract, history, extra))
+        duplicate = copy.deepcopy(cleanup)
+        duplicate["remove_label_from"].append(issue_url)
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            history,
+            duplicate,
+        ))
+
+        stale_closed = copy.deepcopy(history)
+        stale_closed[2]["label"] = "waiting-for-manual-testing"
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            stale_closed,
+            cleanup,
+        ))
+        stale_superseded = copy.deepcopy(history)
+        stale_superseded[3]["label"] = "waiting-for-manual-testing"
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            stale_superseded,
+            cleanup,
+        ))
+        unowned_assignee = copy.deepcopy(history)
+        unowned_assignee[3]["other_ownership"] = False
+        self.assertTrue(validate_completion_cleanup(
+            contract,
+            unowned_assignee,
+            cleanup,
+        ))
 
     def test_manual_handoff_case_subsections_do_not_leak(self):
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
