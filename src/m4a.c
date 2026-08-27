@@ -55,6 +55,18 @@ EWRAM_DATA struct MusicPlayerInfo gMPlayInfo_SE2_SYS2;
 void *gMPlayJumpTable[36];
 struct CgbChannel gCgbChans[4];
 u8 gMPlayMemAccArea[0x10];
+
+#if FE8_EXPANSION_MODERN_BUILD
+struct MusicPlayerInfo gMPlayInfo_SE4_BMP2;
+struct MusicPlayerInfo gMPlayInfo_SE5_BMP3;
+struct MusicPlayerInfo gMPlayInfo_BGM1;
+struct MusicPlayerInfo gMPlayInfo_SE6_BMP4;
+struct MusicPlayerInfo gMPlayInfo_BGM2;
+struct MusicPlayerInfo gMPlayInfo_SE1_SYS1;
+struct MusicPlayerInfo gMPlayInfo_SE3_BMP1;
+struct MusicPlayerInfo gMPlayInfo_SE7_EVT;
+struct MusicPlayerInfo gMPlayInfo_SE2_SYS2;
+#endif
 #endif
 struct MusicPlayerInfo gMPlay_BGM;
 struct MusicPlayerInfo gMPlay_SE1;
