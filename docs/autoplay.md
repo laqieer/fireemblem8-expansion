@@ -794,33 +794,40 @@ capability built directly on #85's telemetry, #86's bounded terminal contract,
 immediate stack parent is #90; #88 accelerated fidelity is explicitly not a
 stack parent or requirement. `TC-AUTOPLAY-BATCH-001` uses only normal fidelity.
 
-The batch CLI requires one exact ROM/ELF, one schema-version-2 bounded
-scenario, one versioned specification, an explicit finite unique seed list,
-bounded `--max-jobs`, and explicit frame/turn/action bounds. The values must
-match the scenario's hard limits exactly. Each seed starts a new libmGBA core
-from clean boot. A specification supplies the only permitted seed mechanism:
-an exact linked EWRAM/IWRAM binding and a frame at which that value is written.
-The report therefore identifies a real seed injection rather than claiming
-that an arbitrary label changed the ROM's RNG.
+The batch CLI requires one exact ROM/ELF, one bounded scenario with
+`schema_version` exactly 2 and no `execution_profile`, one versioned
+specification, an explicit finite unique seed list, bounded `--max-jobs`, and
+explicit frame/turn/action bounds. The values must match the scenario's hard
+limits exactly. Each seed starts a new libmGBA core from clean boot, using one
+shared backend compiled and validated before any worker starts. A
+specification supplies the only permitted seed mechanism: an exact linked
+EWRAM/IWRAM binding and a frame at which that value is written. The report
+therefore identifies a real seed injection rather than claiming that an
+arbitrary label changed the ROM's RNG.
 
 The version-1 specification declares normal-fidelity profile/configuration
 identity and semantic metric descriptors. Metric probes must be part of the
 terminal checkpoint, keeping faction/group survivor and casualty counts,
 recruitment/village/chest outcomes, and configured EXP/item/resource deltas
 grounded in ROM-supplied semantic telemetry. Unsupported metrics, duplicate or
-implicit seeds, omitted bounds, unresolved metric probes, reuse of a writable
-SRAM image, and output collisions fail before execution.
+implicit seeds, omitted bounds, unresolved metric probes, version 3/profile
+scenarios, reuse of a writable SRAM image, and output collisions fail before
+execution.
 
-The version-1 report contains sorted ROM/configuration/scenario/profile/bound
-provenance and one sorted run record per seed. A terminal success, objective
-failure, stall, or exhausted frame/turn/action budget is all retained with its
-terminal counters and declared metrics; non-success records make the command
-fail visibly rather than disappearing from deterministic terminal and
-per-metric distributions. Parallel scheduling cannot affect report order or
-bytes. The companion `compare` command reports
-added/removed seeds and terminal/metric deltas without inferring statistical
-significance, difficulty, or balance. It only creates a new ignored
-`build/` output and cannot refresh either input report.
+The version-2 report contains sorted ROM/configuration/scenario/profile/bound
+provenance, canonical normalized scenario and specification definitions with
+validated SHA-256 identities, and one sorted run record per seed. A terminal
+success, objective failure, stall, or exhausted frame/turn/action budget is
+retained with its terminal counters and declared metrics; an individual seed
+execution failure remains a status-1 report record. Compiler, libmGBA,
+backend-build, or global setup failure returns 2 before seed records exist.
+Parallel scheduling cannot affect report order or bytes. The companion
+`compare` command deeply validates nested provenance, ROM, terminal, metric,
+aggregate, and run shapes, then reports provenance-definition,
+added/removed-seed, terminal, and metric deltas without inferring statistical
+significance, difficulty, or balance. Output is exclusively staged beside the
+requested ignored `build/` path, fsynced, and atomically published only on
+success; failure removes the staging file and cannot refresh either input.
 
 This host-only layer adds no ROM code, RAM allocation, feature gate,
 configuration-identity field, generated game data, localization, save byte,
