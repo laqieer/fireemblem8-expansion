@@ -1089,6 +1089,9 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_public_protocol_layout_is_fixed_width_and_offset_stable \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_configured_bare_make_builds_debug_in_toolchain_lane \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_action_semantics_execute_selected_fields \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_summon_executor_preserves_action_and_coordinates \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_summon_effect_uses_selected_coordinates \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_public_validation_errors_name_protocol_v2 \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_arm_adapter_compiles_at_the_existing_computer_decision_boundary \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_production_mailbox_replays_two_chapters \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_transport_rejects_and_times_out \

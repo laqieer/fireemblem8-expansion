@@ -113,6 +113,30 @@ class PlannerBridgeTests(unittest.TestCase):
                 tuple(planner.Action("MOVE_WAIT", 1, (0, 0)) for _ in range(513)),
             )
 
+    def test_public_validation_errors_name_protocol_v2(self):
+        bridge = planner.PlannerBridge(PROVENANCE)
+        bridge.begin(PROVENANCE)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            r"chapter is outside the v2 range",
+        ):
+            bridge.observe(0, (), (planner.Action("MOVE_WAIT", 1, (0, 0)),))
+
+        bridge = planner.PlannerBridge(PROVENANCE)
+        bridge.begin(PROVENANCE)
+        with self.assertRaisesRegex(
+            planner.PlannerError,
+            r"legal action count exceeds v2 resource limit",
+        ):
+            bridge.observe(
+                1,
+                (),
+                tuple(
+                    planner.Action("MOVE_WAIT", 1, (0, 0))
+                    for _ in range(planner.MAX_ACTIONS + 1)
+                ),
+            )
+
     def test_mailbox_has_no_arbitrary_memory_write_api(self):
         mailbox = planner.Mailbox()
         self.assertFalse(hasattr(mailbox, "write"))
@@ -761,6 +785,112 @@ raise SystemExit(probe.returncode)
             )
             self.assertIn("ACTION_SEMANTICS_HOST_TEST: PASS", completed.stdout)
 
+    def test_native_summon_executor_preserves_action_and_coordinates(self):
+        compiler = shutil.which("gcc") or shutil.which("cc")
+        if compiler is None:
+            self.skipTest("no host C compiler")
+        root = TESTS_DIR.parents[2]
+        build_root = root / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            executable = Path(temporary) / "summon-executor-driver"
+            completed = subprocess.run(
+                [
+                    compiler,
+                    "-std=gnu89",
+                    "-Werror=declaration-after-statement",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    "-O2",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                    "-I",
+                    str(root / "include"),
+                    "-I",
+                    str(root / "include" / "generated"),
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-DFE8_EXPANSION_DEBUG=1",
+                    "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
+                    str(root / "src" / "cp_perform.c"),
+                    str(TESTS_DIR / "c" / "summon_executor_driver.c"),
+                    "-Wl,--gc-sections",
+                    "-o",
+                    str(executable),
+                ],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = subprocess.run(
+                [str(executable)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn("SUMMON_EXECUTOR_HOST_TEST: PASS", completed.stdout)
+
+    def test_native_summon_effect_uses_selected_coordinates(self):
+        compiler = shutil.which("gcc") or shutil.which("cc")
+        if compiler is None:
+            self.skipTest("no host C compiler")
+        root = TESTS_DIR.parents[2]
+        build_root = root / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            executable = Path(temporary) / "summon-effect-driver"
+            completed = subprocess.run(
+                [
+                    compiler,
+                    "-std=gnu89",
+                    "-Werror=declaration-after-statement",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    "-O2",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                    "-I",
+                    str(root / "include"),
+                    "-I",
+                    str(root / "include" / "generated"),
+                    "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    str(root / "src" / "mapanim_summon.c"),
+                    str(TESTS_DIR / "c" / "summon_effect_driver.c"),
+                    "-Wl,--gc-sections",
+                    "-o",
+                    str(executable),
+                ],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = subprocess.run(
+                [str(executable)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn("SUMMON_EFFECT_HOST_TEST: PASS", completed.stdout)
+
     def test_arm_adapter_compiles_at_the_existing_computer_decision_boundary(self):
         compiler = shutil.which("arm-none-eabi-gcc")
         nm = shutil.which("arm-none-eabi-nm")
@@ -869,12 +999,109 @@ raise SystemExit(probe.returncode)
                 4096,
             )
             self.assertEqual(section_sizes.get("iwram_data", 0), 0)
-            self.assertLessEqual(
+            planner_code_size = (
                 section_sizes[".text"]
                 + section_sizes[".rodata"]
-                + section_sizes.get(".rodata.str1.4", 0),
+                + section_sizes.get(".rodata.str1.4", 0)
+            )
+            self.assertLessEqual(
+                planner_code_size,
                 12 * 1024,
             )
+
+            hook_code_sizes: dict[bool, int] = {}
+            hook_objects: dict[bool, Path] = {}
+            for enabled in (False, True):
+                output = temporary_path / f"cp-perform-planner-{int(enabled)}.o"
+                completed = subprocess.run(
+                    [
+                        compiler,
+                        "-mcpu=arm7tdmi",
+                        "-mthumb",
+                        "-mthumb-interwork",
+                        "-mabi=aapcs",
+                        "-std=gnu89",
+                        "-ffreestanding",
+                        "-fno-builtin",
+                        "-O2",
+                        "-I",
+                        str(root / "include"),
+                        "-I",
+                        str(root / "include" / "generated"),
+                        "-DFE8_EXPANSION_MODERN_BUILD=1",
+                        "-DFE8_EXPANSION_DEBUG=1",
+                        f"-DFE8_EXPANSION_AUTOPLAY_PLANNER={int(enabled)}",
+                        "-c",
+                        str(root / "src" / "cp_perform.c"),
+                        "-o",
+                        str(output),
+                    ],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    completed.stdout + completed.stderr,
+                )
+                hook_objects[enabled] = output
+                sizes = subprocess.run(
+                    [size, "-A", str(output)],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    sizes.returncode,
+                    0,
+                    sizes.stdout + sizes.stderr,
+                )
+                hook_sections = {
+                    section: int(value)
+                    for section, value in re.findall(
+                        r"^(\S+)\s+(\d+)\s+\d+$",
+                        sizes.stdout,
+                        re.MULTILINE,
+                    )
+                }
+                hook_code_sizes[enabled] = (
+                    hook_sections.get(".text", 0)
+                    + hook_sections.get(".rodata", 0)
+                    + hook_sections.get(".rodata.str1.4", 0)
+                )
+            hook_code_delta = (
+                hook_code_sizes[True] - hook_code_sizes[False]
+            )
+            self.assertGreaterEqual(hook_code_delta, 0)
+            self.assertLessEqual(
+                planner_code_size + hook_code_delta,
+                12 * 1024,
+            )
+            disabled_hook_symbols = subprocess.run(
+                [nm, str(hook_objects[False])],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            enabled_hook_symbols = subprocess.run(
+                [nm, str(hook_objects[True])],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                disabled_hook_symbols.returncode,
+                0,
+                disabled_hook_symbols.stdout + disabled_hook_symbols.stderr,
+            )
+            self.assertEqual(
+                enabled_hook_symbols.returncode,
+                0,
+                enabled_hook_symbols.stdout + enabled_hook_symbols.stderr,
+            )
+            self.assertNotIn("AiSummonAction", disabled_hook_symbols.stdout)
+            self.assertIn("AiSummonAction", enabled_hook_symbols.stdout)
 
             profile_sections: dict[bool, dict[str, int]] = {}
             for enabled in (False, True):
@@ -1287,18 +1514,72 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 )
                 self.assertEqual(cancelled.state, 4)
                 self.assertEqual(cancelled.rejection, 8)
+                self.assertTrue(all(value == 0 for value in transport.checkpoint))
             finally:
                 transport.close()
 
             transport = PlannerProcessTransport(backend, rom)
             try:
                 waiting = transport.start()
+                complete = planner.collect_observation_pages(transport, waiting)
+                choice = planner.ScriptedPlanner().choose(complete)
+                continued = transport.exchange(
+                    planner.Command(
+                        planner.CommandKind.COMMIT,
+                        complete.run_id,
+                        complete.observation_id,
+                        choice.ordinal,
+                        choice.token,
+                    )
+                )
+                for _ in range(10):
+                    if continued.state == 2:
+                        break
+                    continued = transport.step()
+                self.assertEqual(continued.state, 2)
+                self.assertEqual(transport.checkpoint[0], 0x41504C4E)
+                self.assertEqual(transport.checkpoint[4], 1)
+                cancelled = transport.exchange(
+                    planner.Command(
+                        planner.CommandKind.CANCEL,
+                        continued.run_id,
+                        continued.observation_id,
+                    )
+                )
+                self.assertEqual(cancelled.state, 4)
+                self.assertEqual(cancelled.rejection, 8)
+                self.assertTrue(all(value == 0 for value in transport.checkpoint))
+            finally:
+                transport.close()
+
+            transport = PlannerProcessTransport(backend, rom)
+            try:
+                waiting = transport.start()
+                complete = planner.collect_observation_pages(transport, waiting)
+                choice = planner.ScriptedPlanner().choose(complete)
+                waiting = transport.exchange(
+                    planner.Command(
+                        planner.CommandKind.COMMIT,
+                        complete.run_id,
+                        complete.observation_id,
+                        choice.ordinal,
+                        choice.token,
+                    )
+                )
+                for _ in range(10):
+                    if waiting.state == 2:
+                        break
+                    waiting = transport.step()
+                self.assertEqual(waiting.state, 2)
+                self.assertEqual(transport.checkpoint[0], 0x41504C4E)
+                self.assertEqual(transport.checkpoint[4], 1)
                 for _ in range(300):
                     waiting = transport.malformed()
                     if waiting.state == 4:
                         break
                 self.assertEqual(waiting.state, 4)
                 self.assertEqual(waiting.rejection, 10)
+                self.assertTrue(all(value == 0 for value in transport.checkpoint))
             finally:
                 transport.close()
 

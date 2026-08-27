@@ -35,6 +35,16 @@ bool ActionSemantics_IsKeyTarget(
     int originY,
     int targetX,
     int targetY);
+bool ActionSemantics_IsNormalSummonAvailable(
+    struct Unit* unit,
+    bool restoreUnavailable);
+bool ActionSemantics_IsNormalSummonTarget(
+    struct Unit* unit,
+    int originX,
+    int originY,
+    int targetX,
+    int targetY);
+bool ActionSemantics_IsDarkSummonAvailable(struct Unit* unit);
 bool ActionSemantics_ApplyTorchTarget(int targetX, int targetY);
 bool ActionSemantics_ApplyWarpTarget(
     struct Unit* target,

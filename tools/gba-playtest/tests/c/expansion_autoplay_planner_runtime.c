@@ -21,6 +21,7 @@ u8** gBmMapMovement;
 u8** gBmMapUnit;
 u8** gBmMapTerrain;
 u8** gBmMapFog;
+u8 gSummonConfig[4][2];
 
 static u16 sSeeds[3];
 static u32 sConsumption;

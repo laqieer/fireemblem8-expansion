@@ -382,6 +382,14 @@ s8 AiDKNightmareAction(struct CpPerformProc* proc) {
 
 void AiDKSummonAction(struct CpPerformProc* proc) {
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (ExpansionAutoplayPlanner_IsActive()
+        && !ExpansionAutoplayPlanner_PrepareActionData(&gAiDecision))
+    {
+        gAiDecision.actionPerformed = false;
+        return;
+    }
+#endif
     gActionData.subjectIndex = gActiveUnitId;
     gActionData.unitActionType = UNIT_ACTION_SUMMON_DK;
 
@@ -392,6 +400,28 @@ void AiDKSummonAction(struct CpPerformProc* proc) {
 
     return;
 }
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+s8 AiSummonAction(struct CpPerformProc* proc) {
+    if (ExpansionAutoplayPlanner_IsActive()
+        && !ExpansionAutoplayPlanner_PrepareActionData(&gAiDecision))
+    {
+        gAiDecision.actionPerformed = false;
+        return 1;
+    }
+    gActionData.subjectIndex = gActiveUnitId;
+    gActionData.unitActionType = UNIT_ACTION_SUMMON;
+    gActionData.xOther = gAiDecision.xTarget;
+    gActionData.yOther = gAiDecision.yTarget;
+
+    gActiveUnit->xPos = gAiDecision.xMove;
+    gActiveUnit->yPos = gAiDecision.yMove;
+
+    ApplyUnitAction(proc);
+
+    return 1;
+}
+#endif
 
 s8 AiPickAction(struct CpPerformProc* proc) {
 
@@ -438,6 +468,14 @@ void CpPerform_MoveCameraOntoTarget(struct CpPerformProc* proc) {
         case AI_ACTION_PICK:
 
             return;
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+        case AI_ACTION_SUMMON:
+            x = gAiDecision.xTarget;
+            y = gAiDecision.yTarget;
+
+            break;
+#endif
 
         case AI_ACTION_COMBAT:
             if (gAiDecision.targetId == 0) {
@@ -590,6 +628,13 @@ void CpPerform_PerformAction(struct CpPerformProc* proc) {
             proc->func = AiPickAction;
 
             break;
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+        case AI_ACTION_SUMMON:
+            proc->func = AiSummonAction;
+
+            break;
+#endif
     }
 
     return;

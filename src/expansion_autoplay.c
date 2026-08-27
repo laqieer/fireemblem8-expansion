@@ -207,6 +207,9 @@ bool ExpansionAutoplay_IsActionSupported(u8 actionId)
     case AI_ACTION_DKNIGHTMARE:
     case AI_ACTION_DKSUMMON:
     case AI_ACTION_PICK:
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    case AI_ACTION_SUMMON:
+#endif
         return true;
 
     case AI_ACTION_ESCAPE:

@@ -929,6 +929,16 @@ direct no-item path. Other units must have the target-appropriate Lockpick,
 Chest Key, or Door Key selected by the normal item helper; the committed slot
 is revalidated and consumed through `UnitUpdateUsedItem`. A missing, consumed,
 wrong-purpose, or stale item therefore rejects before the tile event.
+Normal Summon is a separate `AI_ACTION_SUMMON` / `UNIT_ACTION_SUMMON` route:
+the active blue unit must have `CA_SUMMON`, an exact `gSummonConfig` entry, no
+available existing configured summon, and at least one legal adjacent tile.
+Every empty, visible, traversable tile is a distinct deterministic candidate;
+the selected coordinates are revalidated, lowered to
+`ActionData.xOther/yOther`, and consumed by the existing map-animation summon
+effect. An unavailable prior summon remains reusable without mutating it
+during enumeration. Demon King summon remains the distinct, coordinate-free
+`AI_ACTION_DKSUMMON` / `UNIT_ACTION_SUMMON_DK` route and retains its existing
+red-unit capacity rule; neither action can be lowered through the other.
 
 `EXPANSION_AUTOPLAY_PLANNER=1` is valid only with `MODERN_CONFIG=debug`.
 It participates in configuration identity but adds no save field, migration,
@@ -987,6 +997,9 @@ Each run is capped at 4,096 accepted commits. Host traces are capped at 2 MiB,
 and a prospective observation or commit is sized before any trace, ID, or
 mailbox state changes. The bounded-search reference accepts at most 512 nodes
 and enforces the 64 MiB host-search ceiling.
+The Python bridge and every public validation diagnostic consistently identify
+this as protocol v2; invalid chapter and action-cap inputs report the v2 range
+or resource boundary rather than the obsolete v1 label.
 
 START carries expected fixed-width ROM, configuration, scenario, and seed
 identities. READY/WAITING observations publish the actual runtime identities
@@ -1018,7 +1031,11 @@ to roster, held items, gold, flags, RNG, and accepted-token state. Route-only
 and convoy-only changes therefore produce distinct checkpoints. Only the
 `MNCH` and `MNC2` event paths use transition teardown, preserving and re-arming
 an active run and checkpoint. Other map exits, restart, suspend load, new
-game, full reset, and CANCEL remain destructive boundaries.
+game, full reset, timeout, resource termination, and CANCEL remain destructive
+boundaries. Timeout and explicit CANCEL first publish an invalid checkpoint
+magic value, then zero the entire 52-byte record before deactivating the
+planner or restoring player control. A later START also clears the record
+before activation, so no cancelled-run checkpoint can become readable again.
 
 `TC-AUTOPLAY-PLANNER-001` proves both a scripted chooser and a bounded search
 chooser consume the same page/token contract, reject negative commands, and
@@ -1045,8 +1062,10 @@ validation before compilation.
 
 The enabled ARM planner and shared action-semantics objects use 996-byte pages,
 64-byte commands, 52-byte checkpoints, 1,140 bytes of EWRAM/BSS, zero IWRAM,
-and 10,397 bytes of text/rodata. The planner-specific RNG counter and
-cancellation latch add five EWRAM bytes and no IWRAM, keeping total planner
-state at 1,145 bytes (2,951 bytes below 4 KiB) and planner/action-seam code
-1,891 bytes below 12 KiB. Disabled release and archival builds omit planner
-state and retain their original player/executor paths.
+and 11,021 bytes of text/rodata. The planner-only normal-summon and existing
+action-lowering hooks add a 152-byte `cp_perform` text/rodata delta, for 11,173
+bytes across the complete planner/action seam (1,115 bytes below 12 KiB). The
+planner-specific RNG counter and cancellation latch add five EWRAM bytes and
+no IWRAM, keeping total planner state at 1,145 bytes (2,951 bytes below 4 KiB).
+Disabled release and archival builds omit planner state and the normal-summon
+executor hook while retaining their original player/executor paths.

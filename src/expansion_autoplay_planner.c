@@ -227,6 +227,7 @@ static enum ExpansionAutoplayPlannerActionKind ActionKindFromAiAction(u8 actionI
     case AI_ACTION_PICK:
         return EXPANSION_AUTOPLAY_PLANNER_ACTION_PICK;
 
+    case AI_ACTION_SUMMON:
     case AI_ACTION_DKSUMMON:
         return EXPANSION_AUTOPLAY_PLANNER_ACTION_SUMMON;
 
@@ -266,8 +267,13 @@ static void ClearCheckpoint(void)
     u8* bytes = (u8*)&gExpansionAutoplayPlannerCampaignCheckpoint;
     int index;
 
-    for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerCampaignCheckpoint); index++)
+    gExpansionAutoplayPlannerCampaignCheckpoint.magic = 0;
+    PLANNER_PUBLISH_BARRIER();
+    for (index = sizeof(gExpansionAutoplayPlannerCampaignCheckpoint.magic);
+         index < (int)sizeof(gExpansionAutoplayPlannerCampaignCheckpoint);
+         index++)
         bytes[index] = 0;
+    PLANNER_PUBLISH_BARRIER();
 }
 
 static void ClearFullCommand(void)
@@ -1004,48 +1010,64 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumeratePick(
     return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
 }
 
-static bool HasSummonDestination(int xMove, int yMove)
+static enum ExpansionAutoplayPlannerEnumerationResult EnumerateSummon(
+    struct PlannerEnumeration* enumeration,
+    int xMove,
+    int yMove,
+    bool normalSummonAvailable,
+    bool darkSummonAvailable)
 {
     int yTarget;
     int xTarget;
 
-    for (yTarget = 0; yTarget < gBmMapSize.y; yTarget++)
+    if (normalSummonAvailable)
     {
-        for (xTarget = 0; xTarget < gBmMapSize.x; xTarget++)
+        for (yTarget = 0; yTarget < gBmMapSize.y; yTarget++)
         {
-            if (RectDistance(xMove, yMove, xTarget, yTarget) != 1
-                || gBmMapUnit[yTarget][xTarget] != 0
-                || !IsPositionVisible(xTarget, yTarget)
-                || !CanUnitCrossTerrain(
-                    gActiveUnit,
-                    gBmMapTerrain[yTarget][xTarget]))
-                continue;
-            return true;
+            for (xTarget = 0; xTarget < gBmMapSize.x; xTarget++)
+            {
+                struct AiDecision decision;
+                enum ExpansionAutoplayPlannerEnumerationResult result;
+
+                if (!ActionSemantics_IsNormalSummonTarget(
+                        gActiveUnit,
+                        xMove,
+                        yMove,
+                        xTarget,
+                        yTarget))
+                    continue;
+                MakeDecision(
+                    &decision,
+                    xMove,
+                    yMove,
+                    AI_ACTION_SUMMON,
+                    0,
+                    0,
+                    xTarget,
+                    yTarget);
+                result = EmitDecision(enumeration, &decision);
+                if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                    || enumeration->stopped)
+                    return result;
+            }
         }
     }
-    return false;
-}
+    if (darkSummonAvailable)
+    {
+        struct AiDecision decision;
 
-static enum ExpansionAutoplayPlannerEnumerationResult EnumerateSummon(
-    struct PlannerEnumeration* enumeration,
-    int xMove,
-    int yMove)
-{
-    struct AiDecision decision;
-
-    if (!(UNIT_CATTRIBUTES(gActiveUnit) & CA_SUMMON)
-        || !HasSummonDestination(xMove, yMove))
-        return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
-    MakeDecision(
-        &decision,
-        xMove,
-        yMove,
-        AI_ACTION_DKSUMMON,
-        0,
-        0,
-        0,
-        0);
-    return EmitDecision(enumeration, &decision);
+        MakeDecision(
+            &decision,
+            xMove,
+            yMove,
+            AI_ACTION_DKSUMMON,
+            0,
+            0,
+            0,
+            0);
+        return EmitDecision(enumeration, &decision);
+    }
+    return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
 }
 
 enum ExpansionAutoplayPlannerEnumerationResult
@@ -1059,6 +1081,8 @@ ExpansionAutoplayPlanner_EnumerateLegalActions(
         EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
     int yMove;
     int xMove;
+    bool normalSummonAvailable;
+    bool darkSummonAvailable;
 
     if (countOut != NULL)
         *countOut = 0;
@@ -1068,6 +1092,10 @@ ExpansionAutoplayPlanner_EnumerateLegalActions(
         || !IsMapReady())
         return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_UNAVAILABLE;
 
+    normalSummonAvailable =
+        ActionSemantics_IsNormalSummonAvailable(gActiveUnit, false);
+    darkSummonAvailable =
+        ActionSemantics_IsDarkSummonAvailable(gActiveUnit);
     enumeration.visitor = visitor;
     enumeration.context = context;
     enumeration.count = 0;
@@ -1098,7 +1126,12 @@ ExpansionAutoplayPlanner_EnumerateLegalActions(
             if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
                 || enumeration.stopped)
                 goto done;
-            result = EnumerateSummon(&enumeration, xMove, yMove);
+            result = EnumerateSummon(
+                &enumeration,
+                xMove,
+                yMove,
+                normalSummonAvailable,
+                darkSummonAvailable);
             if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
                 || enumeration.stopped)
                 goto done;
@@ -1810,6 +1843,7 @@ bool ExpansionAutoplayPlanner_PollStart(void)
         return false;
     }
 
+    ClearCheckpoint();
     sPlannerActive = true;
     sPlannerRunId++;
     sPlannerNextObservationId = 1;
@@ -1841,6 +1875,34 @@ bool ExpansionAutoplayPlanner_PrepareActionData(
         || decision->unitId != gActiveUnitId)
         return false;
 
+    if (decision->actionId == AI_ACTION_SUMMON)
+    {
+        if (decision->targetId != 0
+            || decision->itemSlot != 0
+            || decision->unk04 != 0xFF
+            || !ActionSemantics_IsNormalSummonAvailable(
+                gActiveUnit,
+                false)
+            || !ActionSemantics_IsNormalSummonTarget(
+                gActiveUnit,
+                decision->xMove,
+                decision->yMove,
+                decision->xTarget,
+                decision->yTarget))
+            return false;
+        gActionData.xOther = decision->xTarget;
+        gActionData.yOther = decision->yTarget;
+        return true;
+    }
+    if (decision->actionId == AI_ACTION_DKSUMMON)
+    {
+        return decision->targetId == 0
+            && decision->itemSlot == 0
+            && decision->unk04 == 0xFF
+            && decision->xTarget == 0
+            && decision->yTarget == 0
+            && ActionSemantics_IsDarkSummonAvailable(gActiveUnit);
+    }
     if (decision->actionId == AI_ACTION_PICK)
     {
         expectedKeySlot = PickItemSlotForTarget(
@@ -1986,6 +2048,7 @@ static bool AdvanceDecisionDeadline(void)
     if (waitFrames < EXPANSION_AUTOPLAY_PLANNER_DECISION_TIMEOUT_FRAMES)
         return true;
     Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_TIMEOUT);
+    ClearCheckpoint();
     gExpansionAutoplayPlannerObservation.state =
         EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED;
     sPlannerActive = false;
@@ -2030,6 +2093,7 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         }
 
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_CANCELLED);
+        ClearCheckpoint();
         gExpansionAutoplayPlannerObservation.state =
             EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED;
         sPlannerActive = false;
@@ -2109,6 +2173,7 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         >= EXPANSION_AUTOPLAY_PLANNER_TRACE_ACTION_CAPACITY)
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_RESOURCE_LIMIT);
+        ClearCheckpoint();
         gExpansionAutoplayPlannerObservation.state =
             EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
         sPlannerActive = false;

@@ -11,6 +11,7 @@
 #include "bmunit.h"
 #include "eventinfo.h"
 
+#include "constants/classes.h"
 #include "constants/terrains.h"
 
 s8 CanUnitCrossTerrain(struct Unit* unit, int terrain);
@@ -163,6 +164,85 @@ bool ActionSemantics_IsKeyTarget(
     if (terrain == TERRAIN_CHEST_FULL)
         return IsThereClosedChestAt(targetX, targetY);
     return IsThereClosedDoorAt(targetX, targetY);
+}
+
+bool ActionSemantics_IsNormalSummonAvailable(
+    struct Unit* unit,
+    bool restoreUnavailable)
+{
+    struct Unit* summon;
+    int summonCharacter = 0;
+    int index;
+
+    if (unit == NULL
+        || unit->pCharacterData == NULL
+        || unit->pClassData == NULL
+        || UNIT_FACTION(unit) != FACTION_BLUE
+        || !(UNIT_CATTRIBUTES(unit) & CA_SUMMON)
+        || (unit->state & US_HAS_MOVED))
+        return false;
+    for (index = 0; index < 3; index++)
+    {
+        if (unit->pCharacterData->number != gSummonConfig[index][0])
+            continue;
+        summonCharacter = gSummonConfig[index][1];
+        break;
+    }
+    if (summonCharacter == 0)
+        return false;
+    for (index = FACTION_BLUE + 1; index < FACTION_GREEN; index++)
+    {
+        summon = GetUnit(index);
+        if (!UNIT_IS_VALID(summon)
+            || summon->pCharacterData->number != summonCharacter)
+            continue;
+        if (!(summon->state & US_UNAVAILABLE))
+            return false;
+        if (restoreUnavailable)
+            summon->state &= ~US_UNAVAILABLE;
+        return true;
+    }
+    return true;
+}
+
+bool ActionSemantics_IsNormalSummonTarget(
+    struct Unit* unit,
+    int originX,
+    int originY,
+    int targetX,
+    int targetY)
+{
+    if (unit == NULL
+        || !IsMapPosition(targetX, targetY)
+        || Distance(originX, originY, targetX, targetY) != 1
+        || (gBmMapUnit[targetY][targetX] != 0
+            && (targetX != unit->xPos || targetY != unit->yPos))
+        || !CanUnitCrossTerrain(unit, gBmMapTerrain[targetY][targetX]))
+        return false;
+    return gPlaySt.chapterVisionRange == 0
+        || gBmMapFog == NULL
+        || gBmMapFog[targetY][targetX] != 0;
+}
+
+bool ActionSemantics_IsDarkSummonAvailable(struct Unit* unit)
+{
+    int count = 0;
+    int index;
+
+    if (unit == NULL
+        || unit->pClassData == NULL
+        || unit->pClassData->number != CLASS_DEMON_KING
+        || (unit->state & US_HAS_MOVED))
+        return false;
+    for (index = FACTION_RED + 1; index < FACTION_PURPLE; index++)
+    {
+        if (!UNIT_IS_VALID(GetUnit(index)))
+            continue;
+        if (count >= 40)
+            return false;
+        count++;
+    }
+    return true;
 }
 
 bool ActionSemantics_ApplyTorchTarget(int targetX, int targetY)

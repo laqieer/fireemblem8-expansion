@@ -151,6 +151,7 @@ enum
     AI_ACTION_DKNIGHTMARE = 11,
     AI_ACTION_DKSUMMON = 12,
     AI_ACTION_PICK = 13,
+    AI_ACTION_SUMMON = 14,
 };
 
 enum

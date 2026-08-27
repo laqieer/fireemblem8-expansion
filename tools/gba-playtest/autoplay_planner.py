@@ -1,4 +1,4 @@
-"""Bounded local planner bridge v1.
+"""Bounded local planner bridge v2.
 
 This module is intentionally transport-agnostic: an emulator adapter may read
 the three planner symbols, but it can submit only typed mailbox commands. It
@@ -171,7 +171,7 @@ def _fixture_action_token(
         "STAFF": 5,
         "USE_ITEM": 6,
         "PICK": 13,
-        "SUMMON": 12,
+        "SUMMON": 14,
     }
     action_id = action.action_id
     if action_id is None:
@@ -260,9 +260,9 @@ class PlannerBridge:
         field_tuple = tuple(fields)
         action_tuple = tuple(actions)
         if not 1 <= chapter <= 0xFF:
-            raise PlannerError("chapter is outside the v1 range")
+            raise PlannerError("chapter is outside the v2 range")
         if len(action_tuple) > MAX_ACTIONS:
-            raise PlannerError("legal action count exceeds v1 resource limit")
+            raise PlannerError("legal action count exceeds v2 resource limit")
         for field in field_tuple:
             if field.bound < 0 or field.availability is Availability.AVAILABLE and field.value is None:
                 raise PlannerError(f"invalid availability state for {field.name!r}")

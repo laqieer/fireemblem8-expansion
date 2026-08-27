@@ -8,6 +8,8 @@
 #include "bmtrap.h"
 #include "bmtrick.h"
 #include "bmunit.h"
+#include "constants/characters.h"
+#include "constants/classes.h"
 #include "constants/items.h"
 
 #define CHECK(condition, message) \
@@ -26,6 +28,12 @@ u8** gBmMapUnit;
 u8** gBmMapTerrain;
 u8** gBmMapFog;
 struct BattleUnit gBattleTarget;
+u8 gSummonConfig[4][2] = {
+    { CHARACTER_EWAN, CHARACTER_SUMMON_EWAN },
+    { 0, 0 },
+    { 0, 0 },
+    { 0, 0 },
+};
 
 static u8 sUnitData[8][8];
 static u8* sUnitRows[8];
@@ -38,6 +46,23 @@ static int sTrapY;
 static int sTrapCount;
 static bool sTrapContractFailed;
 static int sConsumedSlot;
+static struct Unit* sCaster;
+static struct Unit* sExistingSummon;
+static struct Unit sRedUnit;
+static int sRedUnitCount;
+
+struct Unit* GetUnit(int id)
+{
+    if (id == 1)
+        return sCaster;
+    if (id == 2)
+        return sExistingSummon;
+    if (id > FACTION_RED
+        && id < FACTION_PURPLE
+        && id - FACTION_RED <= sRedUnitCount)
+        return &sRedUnit;
+    return NULL;
+}
 
 int GetUnitMagBy2Range(struct Unit* unit)
 {
@@ -95,6 +120,7 @@ void UnitUpdateUsedItem(struct Unit* unit, int itemSlot)
 int main(void)
 {
     struct CharacterData character = { 0 };
+    struct CharacterData existingCharacter = { 0 };
     struct ClassData unitClass = { 0 };
     struct Unit caster = { 0 };
     struct Unit target = { 0 };
@@ -122,10 +148,14 @@ int main(void)
     caster.pClassData = &unitClass;
     caster.xPos = 2;
     caster.yPos = 2;
-    target.pCharacterData = &character;
+    target.pCharacterData = &existingCharacter;
     target.pClassData = &unitClass;
     target.xPos = 4;
     target.yPos = 4;
+    caster.index = 1;
+    character.number = CHARACTER_EWAN;
+    unitClass.attributes = CA_SUMMON;
+    sCaster = &caster;
 
     CHECK(ActionSemantics_ApplyTorchTarget(1, 6),
           "first Torch coordinate must apply");
@@ -189,6 +219,82 @@ int main(void)
           "Rogue Pick must not consume a stale key slot");
     CHECK(!ActionSemantics_ConsumePickKey(&caster, UNIT_ITEM_COUNT),
           "invalid Pick key slot must reject");
+
+    CHECK(ActionSemantics_IsNormalSummonAvailable(&caster, false),
+          "configured unmoved summoner must be available");
+    CHECK(ActionSemantics_IsNormalSummonTarget(&caster, 2, 2, 2, 1)
+              && ActionSemantics_IsNormalSummonTarget(
+                  &caster,
+                  2,
+                  2,
+                  3,
+                  2),
+          "normal Summon must accept multiple adjacent legal tiles");
+    sUnitData[2][2] = 1;
+    CHECK(ActionSemantics_IsNormalSummonTarget(&caster, 2, 3, 2, 2),
+          "normal Summon must allow the summoner's vacated origin tile");
+    sUnitData[2][2] = 0;
+    CHECK(!ActionSemantics_IsNormalSummonTarget(&caster, 2, 2, 4, 2),
+          "normal Summon must reject non-adjacent tiles");
+    sUnitData[1][2] = 2;
+    CHECK(!ActionSemantics_IsNormalSummonTarget(&caster, 2, 2, 2, 1),
+          "normal Summon must reject an occupied tile");
+    sUnitData[1][2] = 0;
+    sFogData[1][2] = 0;
+    gPlaySt.chapterVisionRange = 3;
+    CHECK(!ActionSemantics_IsNormalSummonTarget(&caster, 2, 2, 2, 1),
+          "normal Summon must reject a hidden tile");
+    sFogData[1][2] = 1;
+
+    gSummonConfig[0][0] = 0;
+    gSummonConfig[0][1] = 0;
+    CHECK(!ActionSemantics_IsNormalSummonAvailable(&caster, false),
+          "missing gSummonConfig entry must reject");
+    gSummonConfig[0][0] = CHARACTER_EWAN;
+    gSummonConfig[0][1] = CHARACTER_SUMMON_EWAN;
+    target.pCharacterData = &existingCharacter;
+    target.pClassData = &unitClass;
+    existingCharacter.number = CHARACTER_SUMMON_EWAN;
+    target.state = 0;
+    sExistingSummon = &target;
+    CHECK(!ActionSemantics_IsNormalSummonAvailable(&caster, false),
+          "available existing summon must reject");
+    target.state = US_NOT_DEPLOYED;
+    CHECK(ActionSemantics_IsNormalSummonAvailable(&caster, false)
+              && target.state == US_NOT_DEPLOYED,
+          "planner availability must not reactivate an unavailable summon");
+    CHECK(ActionSemantics_IsNormalSummonAvailable(&caster, true)
+              && !(target.state & US_UNAVAILABLE),
+          "player usability must preserve existing summon reactivation");
+    sExistingSummon = NULL;
+    caster.state = US_HAS_MOVED;
+    CHECK(!ActionSemantics_IsNormalSummonAvailable(&caster, false),
+          "moved summoner must reject");
+    caster.state = 0;
+    unitClass.attributes = 0;
+    CHECK(!ActionSemantics_IsNormalSummonAvailable(&caster, false),
+          "unit without CA_SUMMON must reject");
+    unitClass.attributes = CA_SUMMON;
+    caster.index = FACTION_RED + 1;
+    CHECK(!ActionSemantics_IsNormalSummonAvailable(&caster, false),
+          "non-player summoner must not receive the player command");
+    caster.index = 1;
+
+    unitClass.number = CLASS_DEMON_KING;
+    CHECK(ActionSemantics_IsDarkSummonAvailable(&caster),
+          "Demon King with capacity must retain dark summon");
+    sRedUnit.pCharacterData = &character;
+    sRedUnit.pClassData = &unitClass;
+    sRedUnitCount = 40;
+    CHECK(ActionSemantics_IsDarkSummonAvailable(&caster),
+          "dark summon must allow the exact forty-unit boundary");
+    sRedUnitCount = 41;
+    CHECK(!ActionSemantics_IsDarkSummonAvailable(&caster),
+          "dark summon must reject a forty-first red unit");
+    sRedUnitCount = 0;
+    unitClass.number = 1;
+    CHECK(!ActionSemantics_IsDarkSummonAvailable(&caster),
+          "non-Demon-King unit must reject dark summon");
 
     puts("ACTION_SEMANTICS_HOST_TEST: PASS");
     return 0;

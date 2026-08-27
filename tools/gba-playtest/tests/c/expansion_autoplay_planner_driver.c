@@ -11,6 +11,7 @@
 #include "bmmind.h"
 #include "bmunit.h"
 #include "cp_common.h"
+#include "constants/characters.h"
 #include "constants/classes.h"
 #include "constants/items.h"
 #include "constants/terrains.h"
@@ -38,6 +39,12 @@ u8** gBmMapMovement;
 u8** gBmMapUnit;
 u8** gBmMapTerrain;
 u8** gBmMapFog;
+u8 gSummonConfig[4][2] = {
+    { CHARACTER_EWAN, CHARACTER_SUMMON_EWAN },
+    { 0, 0 },
+    { 0, 0 },
+    { 0, 0 },
+};
 
 static u16 sSeeds[3] = { 1, 2, 3 };
 static u32 sConsumption;
@@ -46,12 +53,15 @@ static int sRestoreRequests;
 static struct CharacterData sCharacter;
 static struct CharacterData sAllyCharacter;
 static struct CharacterData sEnemyCharacter;
+static struct CharacterData sSummonCharacter;
 static struct ClassData sClass;
 static struct ClassData sAllyClass;
 static struct ClassData sEnemyClass;
+static struct ClassData sSummonClass;
 static struct Unit sUnit;
 static struct Unit sAlly;
 static struct Unit sEnemy;
+static struct Unit sSummon;
 static u8 sPermanentFlags[8];
 static u8 sChapterFlags[8];
 static u16 sConvoy[CONVOY_ITEM_COUNT];
@@ -87,6 +97,8 @@ struct Unit* GetUnit(int id)
         return &sUnit;
     if (id == 2 && sAlly.pCharacterData != NULL)
         return &sAlly;
+    if (id == 3 && sSummon.pCharacterData != NULL)
+        return &sSummon;
     if (id == 0x81 && sEnemy.pCharacterData != NULL)
         return &sEnemy;
     return NULL;
@@ -355,6 +367,7 @@ static u32 RuntimeStateDigest(void)
     digest = DigestBytes(digest, &gAiDecision, sizeof(gAiDecision));
     digest = DigestBytes(digest, &sAlly, sizeof(sAlly));
     digest = DigestBytes(digest, &sEnemy, sizeof(sEnemy));
+    digest = DigestBytes(digest, &sSummon, sizeof(sSummon));
     digest = DigestBytes(digest, sSeeds, sizeof(sSeeds));
     digest = DigestBytes(digest, &sConsumption, sizeof(sConsumption));
     digest = DigestBytes(digest, sMovementData, sizeof(sMovementData));
@@ -382,6 +395,7 @@ static void ResetActionFixture(int width, int height)
     memset(&sUnit, 0, sizeof(sUnit));
     memset(&sAlly, 0, sizeof(sAlly));
     memset(&sEnemy, 0, sizeof(sEnemy));
+    memset(&sSummon, 0, sizeof(sSummon));
     memset(&gActionData, 0, sizeof(gActionData));
     sCharacter.number = 1;
     sClass.number = 1;
@@ -400,6 +414,21 @@ static void ResetActionFixture(int width, int height)
     sMovementData[2][2] = 0;
     sUnitData[2][2] = 1;
     gPlaySt.chapterVisionRange = 3;
+    gSummonConfig[0][0] = CHARACTER_EWAN;
+    gSummonConfig[0][1] = CHARACTER_SUMMON_EWAN;
+    gSummonConfig[1][0] = 0;
+    gSummonConfig[1][1] = 0;
+}
+
+static int CountActionId(u32 count, int actionId)
+{
+    int result = 0;
+    int index;
+
+    for (index = 0; index < (int)count; index++)
+        if (sEnumeratedActions[index].actionId == actionId)
+            result++;
+    return result;
 }
 
 static int TestCoordinateActionFamilies(void)
@@ -687,6 +716,169 @@ static int TestCoordinateActionFamilies(void)
     return 0;
 }
 
+static int TestSummonActionFamily(void)
+{
+    struct AiDecision first;
+    struct AiDecision second;
+    struct AiDecision adversary;
+    u32 count;
+    u32 stateBefore;
+    int summonCount;
+    int index;
+
+    ResetActionFixture(6, 6);
+    sCharacter.number = CHARACTER_EWAN;
+    sClass.attributes = CA_SUMMON;
+    stateBefore = RuntimeStateDigest();
+    count = 0;
+    CHECK(
+        ExpansionAutoplayPlanner_EnumerateLegalActions(
+            CollectAction,
+            &count,
+            NULL)
+            == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK,
+        "normal Summon enumeration must succeed"
+    );
+    CHECK(stateBefore == RuntimeStateDigest(),
+          "normal Summon enumeration must not mutate runtime state");
+    first.actionPerformed = false;
+    second.actionPerformed = false;
+    summonCount = 0;
+    for (index = 0; index < (int)count; index++)
+    {
+        struct AiDecision* candidate = &sEnumeratedActions[index];
+
+        if (candidate->actionId != AI_ACTION_SUMMON)
+            continue;
+        summonCount++;
+        CHECK(
+            ActionSemantics_IsNormalSummonTarget(
+                gActiveUnit,
+                candidate->xMove,
+                candidate->yMove,
+                candidate->xTarget,
+                candidate->yTarget),
+            "every normal Summon candidate must use a canonical target tile"
+        );
+        if (!first.actionPerformed)
+            first = *candidate;
+        else if (!second.actionPerformed)
+            second = *candidate;
+    }
+    CHECK(summonCount == 4
+              && first.actionPerformed
+              && second.actionPerformed,
+          "normal Summon must enumerate all four distinct adjacent tiles");
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&first)
+              && gActionData.xOther == first.xTarget
+              && gActionData.yOther == first.yTarget,
+          "normal Summon must lower its first selected tile");
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&second)
+              && gActionData.xOther == second.xTarget
+              && gActionData.yOther == second.yTarget,
+          "normal Summon must lower its second selected tile");
+
+    sUnitData[first.yTarget][first.xTarget] = 2;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&first),
+          "occupied normal Summon tile must fail live revalidation");
+    sUnitData[first.yTarget][first.xTarget] = 0;
+    adversary = first;
+    adversary.xTarget = 5;
+    adversary.yTarget = 5;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&adversary),
+          "non-adjacent normal Summon tile must reject");
+    adversary = first;
+    adversary.actionId = AI_ACTION_DKSUMMON;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&adversary),
+          "normal Summon candidate must not lower as dark summon");
+
+    gSummonConfig[0][0] = 0;
+    gSummonConfig[0][1] = 0;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(CountActionId(count, AI_ACTION_SUMMON) == 0,
+          "missing gSummonConfig entry must publish no normal Summon");
+
+    gSummonConfig[0][0] = CHARACTER_EWAN;
+    gSummonConfig[0][1] = CHARACTER_SUMMON_EWAN;
+    sSummonCharacter.number = CHARACTER_SUMMON_EWAN;
+    sSummonClass.number = CLASS_PHANTOM;
+    sSummon.pCharacterData = &sSummonCharacter;
+    sSummon.pClassData = &sSummonClass;
+    sSummon.index = 3;
+    sSummon.state = 0;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(CountActionId(count, AI_ACTION_SUMMON) == 0,
+          "available existing summon must block another normal Summon");
+
+    sSummon.state = US_NOT_DEPLOYED;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(CountActionId(count, AI_ACTION_SUMMON) == 4
+              && sSummon.state == US_NOT_DEPLOYED,
+          "unavailable existing summon must be reusable without enumeration mutation");
+
+    sUnit.state = US_HAS_MOVED;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(CountActionId(count, AI_ACTION_SUMMON) == 0,
+          "moved summoner must publish no normal Summon");
+    sUnit.state = 0;
+    sClass.attributes = 0;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(CountActionId(count, AI_ACTION_SUMMON) == 0,
+          "unit without CA_SUMMON must publish no normal Summon");
+
+    ResetActionFixture(6, 6);
+    sClass.number = CLASS_DEMON_KING;
+    count = 0;
+    ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        &count,
+        NULL);
+    CHECK(CountActionId(count, AI_ACTION_DKSUMMON) == 1
+              && CountActionId(count, AI_ACTION_SUMMON) == 0,
+          "Demon King must retain one distinct dark-summon action");
+    first.actionPerformed = false;
+    for (index = 0; index < (int)count; index++)
+    {
+        if (sEnumeratedActions[index].actionId != AI_ACTION_DKSUMMON)
+            continue;
+        first = sEnumeratedActions[index];
+        break;
+    }
+    CHECK(first.actionPerformed
+              && first.xTarget == 0
+              && first.yTarget == 0
+              && ExpansionAutoplayPlanner_PrepareActionData(&first),
+          "dark summon must retain its coordinate-free executor contract");
+    first.xTarget = 1;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&first),
+          "dark summon must reject normal Summon coordinates");
+    first.xTarget = 0;
+    first.actionId = AI_ACTION_SUMMON;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&first),
+          "dark summon candidate must not lower as normal Summon");
+    return 0;
+}
+
 static int TestHammerneWireIdentity(void)
 {
     struct AiDecision decision = { 0 };
@@ -800,6 +992,7 @@ static int TestCompleteEnumerator(void)
 
     gBmMapSize.x = 3;
     gBmMapSize.y = 3;
+    sCharacter.number = CHARACTER_EWAN;
     sClass.attributes = CA_STEAL | CA_SUMMON;
     sClass.number = CLASS_ROGUE;
     sUnit.xPos = 1;
@@ -869,7 +1062,7 @@ static int TestCompleteEnumerator(void)
             && (kinds & (1u << AI_ACTION_STAFF))
             && (kinds & (1u << AI_ACTION_USEITEM))
             && (kinds & (1u << AI_ACTION_PICK))
-            && (kinds & (1u << AI_ACTION_DKSUMMON)),
+            && (kinds & (1u << AI_ACTION_SUMMON)),
         "complete enumeration must cover every declared action family"
     );
     CHECK(
@@ -946,6 +1139,8 @@ int main(void)
     CHECK(TestCompleteEnumerator() == 0, "complete action enumerator test");
     CHECK(TestCoordinateActionFamilies() == 0,
           "coordinate-sensitive action family test");
+    CHECK(TestSummonActionFamily() == 0,
+          "normal and dark summon action family test");
 
     gBmMapSize.x = 32;
     gBmMapSize.y = 17;
@@ -953,6 +1148,8 @@ int main(void)
     sUnit.yPos = 0;
     sUnit.maxHP = 20;
     sUnit.curHP = 20;
+    sCharacter.number = 1;
+    sClass.number = 1;
     sClass.attributes = 0;
     for (index = 0; index < 17; index++)
     {
@@ -1298,8 +1495,13 @@ int main(void)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED
             && gExpansionAutoplayPlannerObservation.rejection
                 == EXPANSION_AUTOPLAY_PLANNER_REJECTION_TIMEOUT
+            && gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
+            && gExpansionAutoplayPlannerCampaignCheckpoint.version == 0
+            && gExpansionAutoplayPlannerCampaignCheckpoint.byteSize == 0
+            && gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest
+                == 0
             && sRestoreRequests == 1,
-        "deadline must cancel and queue player control restoration"
+        "deadline must clear checkpoint before restoring player control"
     );
 
     ExpansionAutoplayPlanner_Reset();
@@ -1313,9 +1515,22 @@ int main(void)
     WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
     CHECK(ExpansionAutoplayPlanner_PollStart(), "second run must start after reset");
     CHECK(
+        gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
+            && gExpansionAutoplayPlannerCampaignCheckpoint.chapterIndex == 0
+            && gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest
+                == 0,
+        "new START must not expose a checkpoint from the timed-out run"
+    );
+    CHECK(
         ExpansionAutoplayPlanner_OfferDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
         "second run must publish before cancellation"
+    );
+    ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+    CHECK(
+        gExpansionAutoplayPlannerCampaignCheckpoint.magic
+            == EXPANSION_AUTOPLAY_PLANNER_MAGIC,
+        "explicit-cancel negative must begin with a valid checkpoint"
     );
     WriteCommand(
         EXPANSION_AUTOPLAY_PLANNER_COMMAND_CANCEL,
@@ -1328,8 +1543,13 @@ int main(void)
     CHECK(
         ExpansionAutoplayPlanner_PollDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED
+            && gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
+            && gExpansionAutoplayPlannerCampaignCheckpoint.version == 0
+            && gExpansionAutoplayPlannerCampaignCheckpoint.byteSize == 0
+            && gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest
+                == 0
             && sRestoreRequests == 2,
-        "explicit cancellation must queue player control restoration"
+        "explicit cancellation must clear checkpoint before restoration"
     );
 
     ExpansionAutoplayPlanner_Reset();
@@ -1337,6 +1557,12 @@ int main(void)
     ExpansionAutoplayPlanner_PollStart();
     WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, 0, 0);
     CHECK(ExpansionAutoplayPlanner_PollStart(), "wait-candidate run must start");
+    CHECK(
+        gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
+            && gExpansionAutoplayPlannerCampaignCheckpoint.runId == 0
+            && gExpansionAutoplayPlannerCampaignCheckpoint.chapterIndex == 0,
+        "START after explicit cancel must retain no prior checkpoint"
+    );
     decision.actionPerformed = true;
     decision.unitId = 1;
     decision.xMove = sUnit.xPos;

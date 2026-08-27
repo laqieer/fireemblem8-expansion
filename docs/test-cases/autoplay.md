@@ -599,6 +599,14 @@ Prologue route, accepts a host-selected nontrivial action, reaches the next
 planner observation with the actor at the committed destination, then cancels
 safely. Explicit exit, restart, load, new-game, full-reset, and cancel paths
 clear the run/checkpoint.
+Normal Summon enumerates each legal adjacent tile only when the real
+`gSummonConfig`, existing-summon, movement-state, terrain, occupancy, and fog
+contracts allow it. The executor preserves the chosen coordinates through
+`UNIT_ACTION_SUMMON`, and the real summon effect creates/replaces the summon at
+two tested destinations. Demon King summon remains a distinct coordinate-free
+action with its existing population cap. Timeout and explicit cancel
+invalidate and zero the complete checkpoint before control restoration; a
+later START exposes no prior chapter, run, or digest.
 The named-union C89 layout preserves the 996-byte observation, with start,
 count, and payload at byte offsets 36, 40, and 100; command and checkpoint
 remain 64 and 52 bytes. The host-only configure test actually executes bare
@@ -627,6 +635,10 @@ header with warnings promoted to errors; unnamed no-instance unions or any
 size/offset drift therefore fail the legacy job. Host-only configuration
 coverage performs no target compilation, while the real configured build
 remains mandatory in the toolchain-equipped gate.
+Missing summon configuration, an already available summon, a moved or
+non-summoner unit, occupied/hidden/non-adjacent tiles, stale coordinates, and
+normal-vs-DK action substitution all reject. Public host validation errors
+name protocol v2 for both chapter range and candidate-cap failures.
 
 ### Interactions and save compatibility
 
@@ -642,6 +654,8 @@ The focused host selector validates schema bounds, semantic availability,
 opaque token rejection, mailbox exclusivity, scenario/build/RNG provenance,
 typed paging, atomic trace limits, complete non-mutating enumeration,
 deadline accounting, coordinate/slot lowering and execution, key consumption,
+C/Python v2 diagnostics, normal/DK summon availability, coordinate lowering,
+real summon creation, destructive checkpoint invalidation,
 C89/agbcc and native/ARM layout, executable host-only recursive-Make routing,
 real configured toolchain build, and lifecycle teardown. The libmGBA selectors
 run both planner implementations and all negative commands against the

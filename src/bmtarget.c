@@ -828,6 +828,16 @@ void MakeTargetListForSteal(struct Unit* unit) {
 
 void AddAsTarget_IfPositionCleanForSummon(int x, int y) {
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_IsNormalSummonTarget(
+            gSubjectUnit,
+            gSubjectUnit->xPos,
+            gSubjectUnit->yPos,
+            x,
+            y)) {
+        return;
+    }
+#else
     if (gBmMapUnit[y][x] != 0) {
         return;
     }
@@ -839,6 +849,7 @@ void AddAsTarget_IfPositionCleanForSummon(int x, int y) {
     if (!CanUnitCrossTerrain(gSubjectUnit, gBmMapTerrain[y][x])) {
         return;
     }
+#endif
 
     AddTarget(x, y, 0, 0);
 

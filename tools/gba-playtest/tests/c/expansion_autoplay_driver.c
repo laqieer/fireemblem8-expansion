@@ -290,6 +290,13 @@ static int TestActionCapabilities(void)
         CHECK(ExpansionAutoplay_IsActionSupported(action) == expected,
               "known action capability mismatch");
     }
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    CHECK(ExpansionAutoplay_IsActionSupported(AI_ACTION_SUMMON),
+          "planner-enabled normal Summon must have an executor path");
+#else
+    CHECK(!ExpansionAutoplay_IsActionSupported(AI_ACTION_SUMMON),
+          "planner-disabled normal Summon must remain absent");
+#endif
     CHECK(!ExpansionAutoplay_IsActionSupported(0xFF),
           "unknown action must not be supported");
 
