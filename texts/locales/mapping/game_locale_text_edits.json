@@ -408,16 +408,6 @@
         "zh-Hans": "本回合让剩余单位\n交给电脑控制"
       },
       {
-        "ja": "危険",
-        "key": "danger_overlay.label",
-        "zh-Hans": "危险"
-      },
-      {
-        "ja": "敵の攻撃範囲を\n表示する",
-        "key": "danger_overlay.help",
-        "zh-Hans": "显示所有敌人的\n攻击范围"
-      },
-      {
         "ja": "章/魔物戦",
         "key": "debug.action.chapter_skirmish",
         "zh-Hans": "章节/魔物战"
@@ -726,6 +716,16 @@
         "ja": "保存禁止",
         "key": "debug.save_fixture.blocked",
         "zh-Hans": "禁止保存"
+      },
+      {
+        "ja": "危険",
+        "key": "danger_overlay.label",
+        "zh-Hans": "危险"
+      },
+      {
+        "ja": "敵の攻撃範囲を\n表示する",
+        "key": "danger_overlay.help",
+        "zh-Hans": "显示所有敌人的\n攻击范围"
       }
     ],
     "reason": "Expansion registry keys have no original FE8J/FE8CN indexed source."
