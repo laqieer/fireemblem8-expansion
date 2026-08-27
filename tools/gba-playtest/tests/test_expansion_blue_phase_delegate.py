@@ -1,5 +1,6 @@
 """Issue #87 host, menu, localization, and resource contract checks."""
 
+import copy
 import json
 import re
 import runpy
@@ -19,6 +20,9 @@ BMMENU_SOURCE = ROOT / "src" / "bmmenu.c"
 HELPBOX_SOURCE = ROOT / "src" / "helpbox.c"
 STATSCREEN_SOURCE = ROOT / "src" / "statscreen.c"
 DRIVER = Path(__file__).resolve().parent / "c" / "expansion_blue_phase_delegate_driver.c"
+HELP_CALLBACK_DRIVER = (
+    Path(__file__).resolve().parent / "c" / "map_menu_help_callback_driver.c"
+)
 FLAG = "FE8_EXPANSION_BLUE_PHASE_DELEGATE=1"
 MODERN = "FE8_EXPANSION_MODERN_BUILD=1"
 CC = shutil.which("gcc") or shutil.which("cc")
@@ -26,6 +30,14 @@ NM = shutil.which("nm")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
 ARM_SIZE = shutil.which("arm-none-eabi-size")
 RUNNER = ROOT / "tools" / "gba-playtest" / "run_blue_phase_delegate_checks.py"
+MAP_MENU_GEOMETRY_DRIVER = (
+    ROOT
+    / "tools"
+    / "gba-playtest"
+    / "tests"
+    / "c"
+    / "map_menu_geometry_driver.c"
+)
 FINGERPRINT = (
     ROOT
     / "tools"
@@ -159,12 +171,14 @@ class BluePhaseDelegateMenuTests(unittest.TestCase):
             "#define EXP_MSG_RAW_SURFACE_UNIT_ACTION_SUMMON 33u\n"
             "#define EXP_MSG_RAW_SURFACE_UNIT_ACTION_CALL_MONSTER 34u\n"
             "#define EXP_MSG_AUTOPLAY_CHARGE_LABEL 80u\n"
-            "#define EXP_MSG_AUTOPLAY_CHARGE_HELP 81u\n",
+            "#define EXP_MSG_AUTOPLAY_CHARGE_HELP 81u\n"
+            "#define EXP_MSG_DANGER_OVERLAY_LABEL 144u\n"
+            "#define EXP_MSG_DANGER_OVERLAY_HELP 145u\n",
             encoding="utf-8",
         )
         return path
 
-    def test_disabled_table_unchanged_and_compositions_fit_capacity(self):
+    def test_disabled_table_and_composed_definitions_fit_capacity(self):
         if CC is None or NM is None:
             self.skipTest("host compiler/binutils unavailable")
         build = ROOT / "build"
@@ -232,37 +246,44 @@ class BluePhaseDelegateMenuTests(unittest.TestCase):
                         completed.stdout + completed.stderr,
                     )
 
-        statscreen = STATSCREEN_SOURCE.read_text(encoding="utf-8")
-        function = re.search(
-            r"void StartHelpBoxString\(.*?\n\}",
-            statscreen,
-            flags=re.DOTALL,
-        )
-        self.assertIsNotNone(function)
-        self.assertIn("if (string == NULL)", function.group(0))
-        self.assertIn('string = "";', function.group(0))
-
-    def test_expansion_help_id_never_enters_the_vanilla_catalog(self):
-        bmmenu = BMMENU_SOURCE.read_text(encoding="utf-8")
-        menu_def = MENU_DEF_SOURCE.read_text(encoding="utf-8")
-        function = re.search(
-            r"u8 ExpansionBluePhaseDelegate_MenuRPress\(.*?\n\}",
-            bmmenu,
-            flags=re.DOTALL,
-        )
-        self.assertIsNotNone(function)
-        self.assertIn("MenuAutoHelpBoxSelect(menu);", function.group(0))
-        self.assertNotIn("MenuStdHelpBox", function.group(0))
-        self.assertIn("ExpansionBluePhaseDelegate_MenuHelpBox", bmmenu)
-        self.assertIn("StartHelpBoxString(", bmmenu)
-        self.assertIn(
-            "ExpansionLocale_ResolveCurrentPersistent(EXP_MSG_AUTOPLAY_CHARGE_HELP)",
-            bmmenu,
-        )
-        self.assertNotIn("sBluePhaseDelegateHelpText", bmmenu)
-        self.assertIn("EXP_MSG_AUTOPLAY_CHARGE_HELP", menu_def)
-        self.assertIn("ExpansionBluePhaseDelegate_MenuRPress", menu_def)
-        self.assertIn("ExpansionBluePhaseDelegate_MenuHelpBox", menu_def)
+    def test_compiled_help_callback_routes_expansion_and_vanilla_ids(self):
+        if CC is None:
+            self.skipTest("no host compiler")
+        build = ROOT / "build"
+        build.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build) as temporary:
+            binary = Path(temporary) / "map-menu-help-callback"
+            completed = run(
+                [
+                    CC,
+                    "-std=gnu89",
+                    "-O2",
+                    "-w",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                    *INCLUDES,
+                    "-DMODERN=1",
+                    "-D" + MODERN,
+                    "-D" + FLAG,
+                    str(BMMENU_SOURCE),
+                    str(HELP_CALLBACK_DRIVER),
+                    "-Wl,--gc-sections",
+                    "-o",
+                    str(binary),
+                ]
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = run([str(binary)])
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn("MAP_MENU_HELP_CALLBACK: PASS", completed.stdout)
 
 
 class BluePhaseDelegateLocalizationTests(unittest.TestCase):
@@ -352,8 +373,70 @@ class BluePhaseDelegateRuntimeContractTests(unittest.TestCase):
         scenario = module["_positive_data"]()
         key_sets = [tuple(frame["keys"]) for frame in scenario["frames"]]
         self.assertIn(("A",), key_sets)
-        self.assertIn(("UP",), key_sets)
         self.assertIn(("R",), key_sets)
+        self.assertFalse(
+            any("UP" in frame["keys"] for frame in scenario["frames"])
+        )
+        checkpoints = {
+            checkpoint["name"]: checkpoint["frame"]
+            for checkpoint in scenario["checkpoints"]
+        }
+        selection_frames = sorted(
+            (
+                frame
+                for frame in scenario["frames"]
+                if checkpoints["interactive-player-before-charge"]
+                < frame["start"]
+                < checkpoints["charge-command-dispatched"]
+            ),
+            key=lambda frame: (frame["start"], frame["end"]),
+        )
+        selection_keys = [
+            tuple(frame["keys"])
+            for frame in selection_frames
+        ]
+        self.assertEqual(
+            selection_keys,
+            [("A",), ("R",), ("B",), ("A",)],
+        )
+        self.assertEqual(
+            module["_direct_first_row_input_failures"](scenario),
+            [],
+        )
+
+        moved_up = copy.deepcopy(scenario)
+        moved_up["frames"].append(
+            {
+                "start": checkpoints["interactive-player-before-charge"] + 1,
+                "end": checkpoints["interactive-player-before-charge"] + 2,
+                "keys": ["UP"],
+            }
+        )
+        self.assertTrue(
+            any(
+                "UP must never precede" in failure
+                for failure in module["_direct_first_row_input_failures"](
+                    moved_up
+                )
+            )
+        )
+
+        indirect = copy.deepcopy(scenario)
+        indirect["frames"].append(
+            {
+                "start": checkpoints["interactive-player-before-charge"] + 2,
+                "end": checkpoints["interactive-player-before-charge"] + 3,
+                "keys": ["DOWN"],
+            }
+        )
+        self.assertTrue(
+            any(
+                "direct first-row sequence" in failure
+                for failure in module["_direct_first_row_input_failures"](
+                    indirect
+                )
+            )
+        )
         self.assertNotIn(("SELECT", "START", "R"), key_sets)
         self.assertIn(
             "charge-r-help-domain-guard",
@@ -367,6 +450,46 @@ class BluePhaseDelegateRuntimeContractTests(unittest.TestCase):
             scenario["checkpoints"][-1]["name"],
             "next-blue-player-interactive",
         )
+
+    def test_status_and_records_exclusion_bounds_live_menu_capacity(self):
+        if CC is None:
+            self.skipTest("no host compiler")
+        build = ROOT / "build"
+        build.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build) as temporary:
+            binary = Path(temporary) / "map-menu-availability"
+            completed = run(
+                [
+                    CC,
+                    "-std=gnu89",
+                    "-O2",
+                    "-w",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                    *INCLUDES,
+                    "-DMODERN=1",
+                    "-D" + MODERN,
+                    "-D" + FLAG,
+                    "-DFE8_EXPANSION_DANGER_OVERLAY_MENU=1",
+                    str(BMMENU_SOURCE),
+                    str(MAP_MENU_GEOMETRY_DRIVER),
+                    "-Wl,--gc-sections",
+                    "-o",
+                    str(binary),
+                ]
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = run([str(binary)])
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn("MAP_MENU_GEOMETRY: PASS", completed.stdout)
 
 
 if __name__ == "__main__":

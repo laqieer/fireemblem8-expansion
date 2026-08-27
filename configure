@@ -1329,7 +1329,7 @@ Optional Features:
                           register the bundled sample mechanic (requires
                           mechanics hooks)
   --enable-danger-overlay-menu
-                          expose the player Threat Range map-menu entry
+                          expose the player Danger map-menu entry
   --enable-blue-phase-delegate
                           add one-phase Charge delegation to the map menu
   --enable-starter-content

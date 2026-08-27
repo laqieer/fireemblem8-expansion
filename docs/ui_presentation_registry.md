@@ -56,7 +56,7 @@ because it cannot be represented by a C string.
 
 `gExpansionUiPreferenceRegistry` is the single descriptor/dispatch surface
 for reusable field and utility preferences. It currently registers battle
-presentation and the existing Threat Range behavior. Threat Range remains
+presentation and the existing Danger behavior. Danger remains
 compile-time optional (`FE8_EXPANSION_DANGER_OVERLAY_MENU`) and is unavailable
 when that profile is disabled. It reuses the existing map-menu command and
 does not add a second settings screen or a new preference-row localization
@@ -87,4 +87,4 @@ python3 -m unittest discover -s scripts/modernize/tests -v
 [`TC-BANIM-001`, `TC-BANIM-002`, `TC-MANIFEST-001`, and
 `TC-UTILITY-001`](test-cases/presentation-audio-utility.md#tc-banim-001-apply-standard-reduced-and-off-battle-presentation)
 cover policy behavior/bounds, generated manifest fallback and rejection,
-saved preference normalization, and the default-off Threat Range profile.
+saved preference normalization, and the default-off Danger profile.

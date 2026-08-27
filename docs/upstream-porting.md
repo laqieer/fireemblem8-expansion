@@ -224,7 +224,9 @@ local prerequisites.
 16. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs`
 17. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
 18. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
-19. `make expansion-modern-all-locales-all-features-check -j1`
+19. `make expansion-modern-map-menu-presentation-check -j1`
+    (builds the all-locales/all-features profile once, then verifies the
+    localized Danger map-menu/help framebuffer and semantic overlay lifecycle)
 20. `make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test`
 21. `python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v`
 22. `python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v`

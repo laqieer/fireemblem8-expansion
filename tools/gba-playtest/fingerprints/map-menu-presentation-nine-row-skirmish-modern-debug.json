@@ -1,0 +1,124 @@
+{
+  "checkpoints": [
+    {
+      "frame": 17200,
+      "name": "skirmish-before-nine-row-menu",
+      "probes": [
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x00",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x01",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x02",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x03",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x04",
+          "size": 2,
+          "value": "0x0000"
+        },
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x06",
+          "size": 2,
+          "value": "0x0000"
+        },
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x08",
+          "size": 2,
+          "value": "0x0000"
+        },
+        {
+          "address": "gPlaySt+0x0e",
+          "size": 1,
+          "value": "0x04"
+        },
+        {
+          "address": "gPlaySt+0x0f",
+          "size": 1,
+          "value": "0x00"
+        }
+      ]
+    },
+    {
+      "frame": 17500,
+      "framebuffer_hash": "fnv1a64-rgb24:35086ca72a99f5df",
+      "name": "skirmish-nine-row-menu-visible",
+      "probes": [
+        {
+          "address": "gBmSt+0x01",
+          "size": 1,
+          "value": "0x01"
+        },
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x00",
+          "size": 1,
+          "value": "0x09"
+        },
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x01",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x02",
+          "size": 1,
+          "value": "0x13"
+        },
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x03",
+          "size": 1,
+          "value": "0x12"
+        },
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x04",
+          "size": 2,
+          "value": "0x0090"
+        },
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x06",
+          "size": 2,
+          "value": "0x0050"
+        },
+        {
+          "address": "gExpansionMapMenuGeometryProbe+0x08",
+          "size": 2,
+          "value": "0x06a0"
+        },
+        {
+          "address": "gPlaySt+0x0e",
+          "size": 1,
+          "value": "0x04"
+        },
+        {
+          "address": "gPlaySt+0x0f",
+          "size": 1,
+          "value": "0x00"
+        }
+      ],
+      "regions": [
+        {
+          "hash": "fnv1a64-region:573b6eef26250521",
+          "height": 24,
+          "name": "bottom-visible-tile-rows",
+          "width": 240,
+          "x": 0,
+          "y": 136
+        }
+      ]
+    }
+  ],
+  "format_version": 2,
+  "scenario": "map-menu-presentation-nine-row-skirmish-modern-debug"
+}

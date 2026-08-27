@@ -225,6 +225,17 @@ CONST_DATA struct MenuItemDef gUnitActionMenuItems[] = {
 };
 
 CONST_DATA struct MenuItemDef gMapMenuItems[] = {
+#if FE8_EXPANSION_DANGER_OVERLAY_MENU
+    {"", EXP_MSG_DANGER_OVERLAY_LABEL, EXP_MSG_DANGER_OVERLAY_HELP, 0, 0,
+     MenuAlwaysEnabled, ExpansionMapMenuItem_Draw,
+     ExpansionDangerOverlay_MenuSelect, 0, 0, 0},
+#endif
+#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
+    {"", EXP_MSG_AUTOPLAY_CHARGE_LABEL, EXP_MSG_AUTOPLAY_CHARGE_HELP, 0, 0,
+     ExpansionBluePhaseDelegate_MenuAvailability,
+     ExpansionMapMenuItem_Draw,
+     ExpansionBluePhaseDelegate_MenuSelect, 0, 0, 0},
+#endif
     {"　部隊", 0x69A, 0x6DF, 0, 0x6e, MenuAlwaysEnabled, 0, MapMenu_UnitCommand, 0, 0, 0}, // Unit >
     {"　状況", 0x690, 0x6E0, 0, 0x6f, MenuAlwaysEnabled, 0, MapMenu_StatusCommand, 0, 0, 0}, // Status >
     {"　辞書", 0x69C, 0x6E5, 4, 0x74, MapMenu_IsGuideCommandAvailable, MapMenu_GuideCommandDraw, MapMenu_GuideCommand}, // Guide
@@ -233,18 +244,6 @@ CONST_DATA struct MenuItemDef gMapMenuItems[] = {
     {"　退却", 0x69D, 0x6E2, 0, 0x72, MapMenu_IsRetreatCommandAvailable, 0, MapMenu_RetreatCommand, 0, 0, 0}, // Retreat
     {"　中断", 0x69F, 0x6E4, 0, 0x73, MapMenu_IsSuspendCommandAvailable, 0, MapMenu_SuspendCommand, 0, 0, 0}, // Suspend
     {"　終了", 0x6A0, 0x6E6, 0, 0x78, MenuAlwaysEnabled, 0, CommandEffectEndPlayerPhase, 0, 0, 0}, // End Phase
-#if FE8_EXPANSION_DANGER_OVERLAY_MENU
-    /* Issue #6 player QoL danger/range overlay (config-gated, default off):
-     * an original, copyright-free label drawn via def->name (nameMsgId 0,
-     * helpMsgId 0), reusing the promoted danger-zone command. */
-    {"Threat Range", 0, 0, 0, 0, MenuAlwaysEnabled, 0, ExpansionDangerOverlay_MenuSelect, 0, 0, 0},
-#endif
-#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
-    {"Charge", 0, EXP_MSG_AUTOPLAY_CHARGE_HELP, 0, 0,
-     ExpansionBluePhaseDelegate_MenuAvailability,
-     ExpansionBluePhaseDelegate_MenuDraw,
-     ExpansionBluePhaseDelegate_MenuSelect, 0, 0, 0},
-#endif
     MenuItemsEnd
 };
 
@@ -421,13 +420,13 @@ CONST_DATA struct MenuDef gMapMenuDef = {
     gMapMenuItems,
     0, 0, 0,
     MenuCancelSelect,
-#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
-    ExpansionBluePhaseDelegate_MenuRPress,
+#if FE8_EXPANSION_DANGER_OVERLAY_MENU || FE8_EXPANSION_BLUE_PHASE_DELEGATE
+    ExpansionMapMenuItem_RPress,
 #else
     MenuAutoHelpBoxSelect,
 #endif
-#if FE8_EXPANSION_BLUE_PHASE_DELEGATE
-    ExpansionBluePhaseDelegate_MenuHelpBox
+#if FE8_EXPANSION_DANGER_OVERLAY_MENU || FE8_EXPANSION_BLUE_PHASE_DELEGATE
+    ExpansionMapMenuItem_HelpBox
 #else
     MenuStdHelpBox
 #endif

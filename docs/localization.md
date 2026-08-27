@@ -47,6 +47,9 @@ The framework is layered, each layer independently testable:
    policies. Active registry entries default to `pseudo_policy: "transform"`;
    width-critical fixed-row labels may opt into `"compact"`, while
    locale-neutral identifiers may opt into `"preserve"`.
+   The generator emits an authored JSON `\n` as the engine's `0x01`
+   line-break control, so the same two-line text works in English-only and
+   localized-font profiles.
    `scripts/localization/generate.py` compiles this into
    `expansion_locale_catalog.c` (ROM data) and `expansion_msg_ids.h`
    (generated header), write-if-unchanged. Its descriptor table is indexed

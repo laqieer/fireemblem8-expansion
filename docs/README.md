@@ -17,7 +17,7 @@ the authoritative technical documentation and are checked by CI.
 | Understand what's actually supported (hosts, toolchains, targets) | [`framework-support.md`](framework-support.md) |
 | Get the architecture map before diving into source | [`architecture.md`](architecture.md) |
 | Author game content (characters/classes/items/etc.) | [`generated_data_tutorial.md`](generated_data_tutorial.md) |
-| Enable/extend starter content, mechanics, or Threat Range QoL | [`starter_features.md`](starter_features.md) |
+| Enable/extend starter content, mechanics, or Danger QoL | [`starter_features.md`](starter_features.md) |
 | Add a bounded area-of-effect target/effect or item route | [`aoe.md`](aoe.md) |
 | Drive or optionally delegate blue units through the existing AI, including bounded semantic runtime scenarios | [`autoplay.md`](autoplay.md) |
 | Author typed chapter objectives and AI-group membership for bounded autoplay | [`generated_data_tutorial.md`](generated_data_tutorial.md), [`autoplay.md`](autoplay.md) |

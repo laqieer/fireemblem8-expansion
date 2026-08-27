@@ -6,7 +6,7 @@
       "router_absent": {
         "source": "build/expansion-modern-autoplay-strategy-budget/absent-debug.json",
         "elf": "build/expansion-modern-autoplay-strategy-budget/absent-debug-build/debug/aapcs/fireemblem8.elf",
-        "floating_end": 145968852,
+        "floating_end": 145969300,
         "symbols": {
           "ExpansionAutoplayStrategies_TryDecide": false,
           "gExpansionAutoplayStrategies": false,
@@ -16,7 +16,7 @@
       "profiles_disabled": {
         "source": "reports/linker-budget/modern-debug.json",
         "elf": "build/expansion-modern/debug/aapcs/fireemblem8.elf",
-        "floating_end": 145970412,
+        "floating_end": 145970860,
         "shared_router_delta_bytes": 1560,
         "symbols": {
           "ExpansionAutoplayStrategies_TryDecide": true,
@@ -27,7 +27,7 @@
       "references_enabled": {
         "source": "build/expansion-modern-autoplay-strategy-budget/enabled-debug.json",
         "elf": "build/expansion-modern-autoplay-strategy-budget/enabled-debug-build/debug/aapcs/fireemblem8.elf",
-        "floating_end": 145971268,
+        "floating_end": 145971716,
         "reference_incremental_delta_bytes": 856,
         "symbols": {
           "ExpansionAutoplayStrategies_TryDecide": true,
@@ -40,7 +40,7 @@
       "router_absent": {
         "source": "build/expansion-modern-autoplay-strategy-budget/absent-release.json",
         "elf": "build/expansion-modern-autoplay-strategy-budget/absent-release-build/release/aapcs/fireemblem8.elf",
-        "floating_end": 145966036,
+        "floating_end": 145966468,
         "symbols": {
           "ExpansionAutoplayStrategies_TryDecide": false,
           "gExpansionAutoplayStrategies": false,
@@ -50,7 +50,7 @@
       "profiles_disabled": {
         "source": "reports/linker-budget/modern-release.json",
         "elf": "build/expansion-modern/release/aapcs/fireemblem8.elf",
-        "floating_end": 145967932,
+        "floating_end": 145968364,
         "shared_router_delta_bytes": 1896,
         "symbols": {
           "ExpansionAutoplayStrategies_TryDecide": true,
@@ -61,7 +61,7 @@
       "references_enabled": {
         "source": "build/expansion-modern-autoplay-strategy-budget/enabled-release.json",
         "elf": "build/expansion-modern-autoplay-strategy-budget/enabled-release-build/release/aapcs/fireemblem8.elf",
-        "floating_end": 145968612,
+        "floating_end": 145969044,
         "reference_incremental_delta_bytes": 680,
         "symbols": {
           "ExpansionAutoplayStrategies_TryDecide": true,

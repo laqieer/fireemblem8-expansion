@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.localization import schema
 from scripts.localization.catalog import LoadedCatalog, RegistryEntry, load_catalog
 from scripts.localization.generate import (
+    _c_string_literal,
     build_budget,
     build_catalog_c,
     build_msg_ids_header,
@@ -56,6 +57,12 @@ class BuildOutputsTests(unittest.TestCase):
         self.assertEqual(source.count("u,\n"), active_count)  # gExpansionLocaleMsgIds entries
         self.assertIn(
             "gExpansionLocaleCatalogs[EXPANSION_LOCALE_COUNT]", source
+        )
+
+    def test_authored_newline_emits_engine_line_break_control(self):
+        self.assertEqual(
+            _c_string_literal("Line one\nLine two"),
+            '"Line one\\001Line two"',
         )
 
     def test_catalog_c_ids_ascending(self):

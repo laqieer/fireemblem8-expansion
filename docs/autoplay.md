@@ -161,7 +161,9 @@ shared-AI count. Rejections distinguish wrong faction, lock/event state,
 another blocking action, no eligible unit, and a controller failure. No
 rejected call changes the controller or phase.
 
-When enabled, the map menu appends one localized **Charge** row. Its label and
+When enabled, the map menu prepends one localized **Charge** row before the
+vanilla commands and keeps End final. If Danger is also enabled, Danger is
+first and Charge is second. Its label and
 help metadata use stable expansion message IDs `autoplay.charge.label` (80)
 and `autoplay.charge.help` (81). The vanilla map-menu help renderer accepts
 vanilla message IDs rather than independent `ExpansionMsgId` values, so `R`
@@ -177,8 +179,10 @@ used by `BuildAiUnitList`. Sleeping, berserk, hidden, unselectable/already
 moved, dead, rescued, and empty slots are excluded.
 
 Charge help passes the resolver's persistent ROM-catalog pointer directly to
-the asynchronous helpbox. It therefore remains valid through later menu-label
-resolves without allocating a second EWRAM scratch buffer.
+the asynchronous helpbox. The helpbox measures that exact pointer rather than
+the vanilla message scratch buffer, and every production locale authors two
+bounded lines. It therefore remains valid through later menu-label resolves
+without allocating a second EWRAM scratch buffer.
 
 Selection revalidates that state, sets `COMPUTER` through
 `ExpansionAutoplay_SetBlueControl`, and redirects the already-blocked
@@ -204,11 +208,26 @@ computer phase rejects the request. `BmMain_StartPhase` remains the sole
 router for both layers, and either layer's normal map lifecycle reset clears
 pending debugtools state without touching a save.
 
-The optional Threat Range row composes with Charge: the base map menu has
-eight visible rows, either option adds one, and both together use ten of
-`MENU_ITEM_MAX == 11`. A downstream project adding or replacing another row
-must make its capacity/order choice explicitly rather than silently displacing
-either command.
+The optional Danger row composes with Charge: the base map menu defines eight
+rows, conditionally shows at most seven at once, and both options produce at
+most nine visible rows within `MENU_ITEM_MAX == 11`. Optional rows always
+precede the vanilla rows in stable Danger-then-Charge order, while End remains
+the final visible command. The nine-row non-story combination shifts upward
+only by the amount needed to keep the frame and both tiles of End on-screen;
+all shorter configurations retain vanilla vertical geometry. A downstream
+project adding or replacing another row must make its capacity/order and
+scrolling choice explicitly rather than silently displacing either command.
+
+Charge disappearing while Danger remains is intentional, not a capacity
+failure. `ExpansionBluePhaseDelegate_GetAvailability()` returns a typed reason
+and the menu hides Charge unless all of these facts hold simultaneously: blue
+faction; `PLAYER` controller and player-phase telemetry with no failure; the
+ordinary map menu owns exactly one game lock; no event, fade, camera move,
+blocking player action, computer/berserk phase, or pending delegation exists;
+and at least one blue unit passes the shared AI eligibility predicate.
+Sleeping, berserk, hidden, unselectable/already-moved, dead, rescued, and empty
+slots do not count. Restoring the exact predicate makes Charge reappear
+without rebuilding or changing locale.
 
 ## Bounded semantic run-until scenarios
 
@@ -367,7 +386,7 @@ and proves objective failure is selected before stall classification.
   It adds zero static EWRAM/IWRAM: enabled/default builds retain 1,704/3,128
   EWRAM bytes free (debug/release) and 1,552 IWRAM static-growth bytes above
   the 4 KiB stack margin. The named all-locales/all-features release profile
-  enables Charge and Threat Range together and retains 732 EWRAM bytes plus
+  enables Charge and Danger together and retains 672 EWRAM bytes plus
   272 IWRAM static-growth bytes.
 
 ## Typed chapter objectives and AI groups
@@ -737,7 +756,7 @@ for the enabled reference descriptors/callbacks.
   It adds zero static EWRAM/IWRAM: enabled/default builds retain 1,704/3,128
   EWRAM bytes free (debug/release) and 1,552 IWRAM static-growth bytes above
   the 4 KiB stack margin. The named all-locales/all-features release profile
-  enables Charge and Threat Range together and retains 732 EWRAM bytes plus
+  enables Charge and Danger together and retains 672 EWRAM bytes plus
   272 IWRAM static-growth bytes.
 
 ## Validation

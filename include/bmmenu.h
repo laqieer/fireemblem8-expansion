@@ -15,15 +15,34 @@ u8 MapMenu_IsGuideCommandAvailable(const struct MenuItemDef * def, int number);
 int MapMenu_GuideCommandDraw(struct MenuProc * menu, struct MenuItemProc * menuItem);
 u8 MapMenu_GuideCommand(struct MenuProc * menu, struct MenuItemProc * menuItem);
 u8 MapMenu_DangerZone_UnusedEffect(void);
+#if FE8_EXPANSION_DANGER_OVERLAY_MENU || FE8_EXPANSION_BLUE_PHASE_DELEGATE
+#if defined(FE8_MAP_MENU_GEOMETRY_RUNTIME_TEST)
+struct ExpansionMapMenuGeometryProbe
+{
+    /* 00 */ u8 visibleRowCount;
+    /* 01 */ u8 frameTopTile;
+    /* 02 */ u8 frameBottomTile;
+    /* 03 */ u8 endTextBottomTile;
+    /* 04 */ u16 firstMessageId;
+    /* 06 */ u16 secondMessageId;
+    /* 08 */ u16 lastMessageId;
+};
+
+extern struct ExpansionMapMenuGeometryProbe gExpansionMapMenuGeometryProbe;
+void ExpansionMapMenu_PrepareGeometryRuntimeTest(void);
+#endif
+
+void ExpansionMapMenu_EnsureVerticalBounds(struct MenuProc * menu);
+int ExpansionMapMenuItem_Draw(struct MenuProc * menu, struct MenuItemProc * menuItem);
+u8 ExpansionMapMenuItem_RPress(struct MenuProc * menu);
+u8 ExpansionMapMenuItem_HelpBox(struct MenuProc * menu, struct MenuItemProc * menuItem);
+#endif
 #if FE8_EXPANSION_DANGER_OVERLAY_MENU
 u8 ExpansionDangerOverlay_MenuSelect(struct MenuProc * menu, struct MenuItemProc * menuItem);
 #endif
 #if FE8_EXPANSION_BLUE_PHASE_DELEGATE
 u8 ExpansionBluePhaseDelegate_MenuAvailability(const struct MenuItemDef * def, int number);
-int ExpansionBluePhaseDelegate_MenuDraw(struct MenuProc * menu, struct MenuItemProc * menuItem);
 u8 ExpansionBluePhaseDelegate_MenuSelect(struct MenuProc * menu, struct MenuItemProc * menuItem);
-u8 ExpansionBluePhaseDelegate_MenuRPress(struct MenuProc * menu);
-u8 ExpansionBluePhaseDelegate_MenuHelpBox(struct MenuProc * menu, struct MenuItemProc * menuItem);
 #endif
 u8 MapMenu_SuspendCommandEffect(void);
 u8 MenuEffect_CloseMenuVoid(void);

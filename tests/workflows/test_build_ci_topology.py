@@ -52,6 +52,9 @@ SUMMARY_RESULTS = (
     '"$EXTENDED_HOST_TESTS_RESULT"',
     '"$LEGACY_RESULT"',
 )
+MAP_MENU_PRESENTATION_GATE = (
+    "make expansion-modern-map-menu-presentation-check -j1"
+)
 
 
 def _trigger_block(header: str, event_name: str) -> str:
@@ -379,6 +382,10 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     ):
         if not _contains_command(build, command):
             errors.append(f"build lost canonical modern evidence: {command}")
+    if not _contains_command(build, MAP_MENU_PRESENTATION_GATE):
+        errors.append(
+            "build must gate the all-locales profile through map-menu presentation"
+        )
     return errors
 
 
@@ -760,6 +767,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "must require analyzer support" in error
+                for error in _errors(changed, False)
+            )
+        )
+
+    def test_all_locales_gate_cannot_regress_to_profile_prerequisite_only(self):
+        changed = self.text.replace(
+            MAP_MENU_PRESENTATION_GATE,
+            "make expansion-modern-all-locales-all-features-check -j1",
+            1,
+        )
+        self.assertNotEqual(changed, self.text)
+        self.assertTrue(
+            any(
+                "must gate the all-locales profile through map-menu presentation"
+                in error
                 for error in _errors(changed, False)
             )
         )
