@@ -179,7 +179,12 @@ serial/parallel byte identity without hiding actionable input context.
 Imported reports contain 1 through 256 unique ascending seeds. Provenance
 bounds must exactly equal the canonical scenario's required frame/turn/action
 limits; terminal counters must use those declared probes, and terminal plus
-metric values cannot exceed those limits.
+metric values cannot exceed those limits. Captured turn/action addresses are
+stored as resolved numeric literals, so a symbolic scenario such as
+`gPlaySt+0x10` validates against the same executable identity. Imported
+objective failures must be declared, stalls require configured stall
+detection, `max_frames` must occur on the final bounded frame, and
+`max_turns`/`max_actions` must reach their corresponding limits.
 Serial and parallel runs omit scheduling/timing details from the JSON, so the
 same inputs produce byte-identical reports. The summary adds deterministic
 terminal-reason counts and per-metric value distributions without omitting the

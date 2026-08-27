@@ -193,7 +193,15 @@ def _scenario_definition(scenario: gba_playtest.Scenario) -> dict[str, Any]:
                                 f"0x{comparison.value:0{comparison.probe.size * 2}x}"
                             ),
                         }
-                        for comparison in condition.comparisons
+                        for comparison in sorted(
+                            condition.comparisons,
+                            key=lambda item: (
+                                item.probe.address,
+                                item.probe.size,
+                                item.operator,
+                                item.value,
+                            ),
+                        )
                     ],
                     "reason": condition.reason,
                 }
@@ -206,7 +214,13 @@ def _scenario_definition(scenario: gba_playtest.Scenario) -> dict[str, Any]:
     checkpoint_definition: dict[str, Any] = {
         "framebuffer": checkpoint.framebuffer,
         "name": checkpoint.name,
-        "probes": [_scenario_probe(probe) for probe in checkpoint.probes],
+        "probes": [
+            _scenario_probe(probe)
+            for probe in sorted(
+                checkpoint.probes,
+                key=lambda item: (item.address, item.size),
+            )
+        ],
     }
     if checkpoint.expected_framebuffer_hash is not None:
         checkpoint_definition["expected_framebuffer_hash"] = (
@@ -1554,6 +1568,18 @@ def _validate_terminal(
         run_until.action_limit.probe,
         run_until.action_limit.maximum,
     )
+    try:
+        gba_playtest.validate_run_until_terminal_outcome(
+            scenario,
+            terminal["reason"],
+            terminal["frame"],
+            True,
+            turn,
+            True,
+            actions,
+        )
+    except gba_playtest.PlaytestError as exc:
+        raise gba_playtest.PlaytestError(f"{path}: {exc}") from exc
     return terminal, turn, actions
 
 

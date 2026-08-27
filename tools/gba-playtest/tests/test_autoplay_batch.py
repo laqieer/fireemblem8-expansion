@@ -188,9 +188,10 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         self.assertTrue(backend_path.is_file())
         self.capture_backends.append(backend_path)
         seed = scheduled_write.value
+        action_value = 32 if seed == 2 else seed
         baseline_values = {
             PROBE_TURN: 0,
-            PROBE_ACTION: 2,
+            PROBE_ACTION: 32 if seed == 2 else 2,
         }
         return {
             "baseline_probes": [
@@ -209,7 +210,7 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                 "actions": {
                     "address": PROBE_ACTION,
                     "size": 4,
-                    "value": f"0x{seed:08x}",
+                    "value": f"0x{action_value:08x}",
                 },
             },
             "checkpoints": [
@@ -221,7 +222,7 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                         {
                             "address": PROBE_ACTION,
                             "size": 4,
-                            "value": f"0x{seed:08x}",
+                            "value": f"0x{action_value:08x}",
                         },
                     ],
                 }
@@ -336,7 +337,7 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         self.assertEqual(failed["metrics"]["turns"], 2)
         self.assertEqual(
             failed["metrics"]["factions"],
-            [{"casualties": 2, "faction": "blue", "group": "main", "survivors": 2}],
+            [{"casualties": 32, "faction": "blue", "group": "main", "survivors": 2}],
         )
         self.assertEqual(report["summary"]["failure_count"], 1)
         self.assertEqual(
@@ -640,6 +641,96 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
             "wrong-turn-probe",
             "address/size must match the canonical scenario counter",
         )
+
+    def test_imported_terminal_reasons_match_declared_backend_invariants(self):
+        baseline = self.output("terminal-reason-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        cases = (
+            (
+                "undeclared-objective",
+                "objective_failure",
+                1,
+                None,
+                None,
+                "not declared by the scenario",
+            ),
+            (
+                "unconfigured-stall",
+                "engine_stall",
+                1,
+                None,
+                None,
+                "engine_stall is not configured",
+            ),
+            (
+                "early-max-frames",
+                "max_frames",
+                1,
+                None,
+                None,
+                "final bounded frame",
+            ),
+            (
+                "early-max-turns",
+                "max_turns",
+                1,
+                1,
+                None,
+                "max_turns did not reach",
+            ),
+            (
+                "early-max-actions",
+                "max_actions",
+                1,
+                None,
+                1,
+                "max_actions did not reach",
+            ),
+        )
+        for name, reason, frame, turn, actions, expected in cases:
+            with self.subTest(name=name):
+                candidate = copy.deepcopy(valid)
+                run = candidate["runs"][0]
+                run["status"] = "terminal_failure"
+                run["terminal"]["reason"] = reason
+                run["terminal"]["frame"] = frame
+                run["metrics"]["terminal"] = reason
+                run["metrics"]["frames"] = frame + 1
+                if turn is not None:
+                    run["terminal"]["turn"]["value"] = f"0x{turn:08x}"
+                    run["metrics"]["turns"] = turn
+                if actions is not None:
+                    run["terminal"]["actions"]["value"] = f"0x{actions:08x}"
+                    run["metrics"]["actions"] = actions
+                self._refresh_report_summary(candidate)
+                self._assert_compare_rejects(
+                    baseline,
+                    candidate,
+                    name,
+                    expected,
+                )
+
+        scenario = gba_playtest.parse_scenario_data(
+            valid["provenance"]["scenario"]["definition"]
+        )
+        for reason, frame, turn, actions in (
+            ("success", 1, 1, 1),
+            ("max_frames", 2, 1, 1),
+            ("max_turns", 1, 32, 1),
+            ("max_actions", 1, 1, 32),
+        ):
+            with self.subTest(valid_reason=reason):
+                gba_playtest.validate_run_until_terminal_outcome(
+                    scenario,
+                    reason,
+                    frame,
+                    True,
+                    turn,
+                    True,
+                    actions,
+                )
 
     def test_imported_seed_binding_is_resolved_writable_and_in_frame(self):
         baseline = self.output("seed-binding-baseline.json")
@@ -1207,6 +1298,56 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                 right_entry["terminal"],
                 right_entry["delta"],
             ),
+        )
+
+    def test_symbolic_run_until_counter_emits_numeric_report_identity(self):
+        data = scenario_data()
+        alias = "gPlaySt+0x10"
+        data["run_until"]["terminal_conditions"][0]["all"][0][
+            "address"
+        ] = alias
+        data["run_until"]["turn_limit"]["address"] = alias
+        data["run_until"]["checkpoint"]["probes"][0]["address"] = alias
+
+        def resolve(symbol):
+            self.assertEqual(symbol, "gPlaySt")
+            return int(PROBE_TURN, 16) - 0x10, 0x100
+
+        scenario = gba_playtest.parse_scenario_data(data, symbol_resolver=resolve)
+        specification = autoplay_batch.load_specification(
+            self.specification,
+            autoplay_batch.ElfSymbolResolver(self.elf),
+        )
+        with mock.patch.object(
+            gba_playtest,
+            "build_backend",
+            side_effect=self._fake_build_backend,
+        ), mock.patch.object(
+            gba_playtest,
+            "capture",
+            side_effect=self._fake_capture,
+        ):
+            report = autoplay_batch.run_batch(
+                self.rom,
+                scenario,
+                specification,
+                (1,),
+                max_jobs=1,
+                max_frames=3,
+                max_turns=32,
+                max_actions=32,
+                work_dir=self.root,
+            )
+        autoplay_batch.validate_report(report, "symbolic-counter-report")
+        self.assertEqual(
+            report["runs"][0]["terminal"]["turn"]["address"],
+            PROBE_TURN,
+        )
+        self.assertEqual(
+            report["provenance"]["scenario"]["definition"]["run_until"][
+                "turn_limit"
+            ]["address"],
+            PROBE_TURN,
         )
 
     def test_output_must_be_strict_child_of_build_root(self):

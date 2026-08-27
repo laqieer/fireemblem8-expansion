@@ -487,7 +487,10 @@ self-consistent terminal/metric values beyond those bounds, width-backed
 metrics beyond their 1/2/4-byte probes, and empty/duplicate/unsorted/over-64
 faction, event, or delta lists. Imported metric definitions whose canonical
 address/size is absent from the terminal checkpoint also fail even when their
-digest and aggregates were updated consistently.
+digest and aggregates were updated consistently. Symbol-backed counters
+normalize to resolved numeric literals; undeclared objective failure,
+unconfigured stall, early `max_frames`, and below-threshold
+`max_turns`/`max_actions` are rejected.
 Shared-backend/global setup failure returns 2 with no output or seed records;
 an individual seed failure is retained as `execution_failure` and returns 1.
 Random emulator/backend workspace paths in those errors normalize to a stable

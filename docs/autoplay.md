@@ -853,7 +853,11 @@ added/removed-seed, terminal, and metric deltas without inferring statistical
 significance, difficulty, or balance. Imported reports require 1 through 256
 unique ascending seeds; provenance limits must exactly match the canonical
 scenario's required frame/turn/action bounds and counter probes, and terminal
-plus metric values must remain within them. Output is exclusively staged
+plus metric values must remain within them. Counter addresses are serialized
+as resolved numeric literals, so symbolic aliases validate against executable
+identity. Objective failure must be scenario-declared, engine stall requires a
+stall detector, `max_frames` occurs only on the final bounded frame, and
+turn/action exhaustion must reach its declared threshold. Output is exclusively staged
 beside the requested ignored `build/` path, fsynced, and hard-linked to an
 absent destination without clobbering; a competing creator is preserved and
 failure removes only this invocation's staging/link.

@@ -1716,6 +1716,59 @@ def _write_plan(
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
+def validate_run_until_terminal_outcome(
+    scenario: Scenario,
+    reason: str,
+    frame: int,
+    turn_present: bool,
+    turn_value: int,
+    action_present: bool,
+    action_value: int,
+) -> None:
+    run_until = scenario.run_until
+    if run_until is None:
+        raise PlaytestError("terminal outcomes require a run-until scenario")
+    if not isinstance(reason, str) or reason not in TERMINAL_REASONS:
+        raise PlaytestError("unknown terminal reason")
+    if not _is_int(frame) or frame < 0 or frame >= run_until.max_frames:
+        raise PlaytestError("terminal frame is outside run-until bounds")
+    if not isinstance(turn_present, bool) or not isinstance(action_present, bool):
+        raise PlaytestError("terminal counter presence flags must be boolean")
+    if turn_present != (run_until.turn_limit is not None):
+        raise PlaytestError("terminal turn presence does not match the plan")
+    if action_present != (run_until.action_limit is not None):
+        raise PlaytestError("terminal action presence does not match the plan")
+    for present, value, limit, label in (
+        (turn_present, turn_value, run_until.turn_limit, "turn"),
+        (action_present, action_value, run_until.action_limit, "action"),
+    ):
+        if not _is_int(value):
+            raise PlaytestError(f"terminal {label} value must be an integer")
+        if not present and value != 0:
+            raise PlaytestError(f"absent terminal {label} value must be zero")
+        if limit is not None and not 0 <= value < 1 << (limit.probe.size * 8):
+            raise PlaytestError(f"terminal {label} value exceeds probe width")
+    declared_reasons = {
+        condition.reason for condition in run_until.terminal_conditions
+    }
+    if reason in TERMINAL_CONDITION_REASONS and reason not in declared_reasons:
+        raise PlaytestError("terminal reason is not declared by the scenario")
+    if reason == "engine_stall" and run_until.stall is None:
+        raise PlaytestError("engine_stall is not configured by the scenario")
+    if reason == "max_frames" and frame != run_until.max_frames - 1:
+        raise PlaytestError("max_frames did not occur at the final bounded frame")
+    if reason == "max_turns":
+        if run_until.turn_limit is None:
+            raise PlaytestError("max_turns is not configured by the scenario")
+        if turn_value < run_until.turn_limit.maximum:
+            raise PlaytestError("max_turns did not reach the configured limit")
+    if reason == "max_actions":
+        if run_until.action_limit is None:
+            raise PlaytestError("max_actions is not configured by the scenario")
+        if action_value < run_until.action_limit.maximum:
+            raise PlaytestError("max_actions did not reach the configured limit")
+
+
 def _parse_backend_output(
     stdout: str,
     scenario: Scenario,
@@ -1778,58 +1831,20 @@ def _parse_backend_output(
                 turn_value = int(fields[4])
                 action_present = int(fields[5])
                 action_value = int(fields[6])
-                if reason not in TERMINAL_REASONS:
-                    raise ValueError("unknown terminal reason")
-                if frame < 0 or frame >= scenario.run_until.max_frames:
-                    raise ValueError("terminal frame is outside run-until bounds")
                 if turn_present not in (0, 1) or action_present not in (0, 1):
                     raise ValueError("terminal counter presence flag is not 0 or 1")
-                if bool(turn_present) != (scenario.run_until.turn_limit is not None):
-                    raise ValueError("terminal turn presence does not match the plan")
-                if bool(action_present) != (
-                    scenario.run_until.action_limit is not None
-                ):
-                    raise ValueError("terminal action presence does not match the plan")
-                for present, value, limit, label in (
-                    (
-                        turn_present,
+                try:
+                    validate_run_until_terminal_outcome(
+                        scenario,
+                        reason,
+                        frame,
+                        bool(turn_present),
                         turn_value,
-                        scenario.run_until.turn_limit,
-                        "turn",
-                    ),
-                    (
-                        action_present,
+                        bool(action_present),
                         action_value,
-                        scenario.run_until.action_limit,
-                        "action",
-                    ),
-                ):
-                    if not present and value != 0:
-                        raise ValueError(f"absent terminal {label} value must be zero")
-                    if limit is not None and not (
-                        0 <= value < 1 << (limit.probe.size * 8)
-                    ):
-                        raise ValueError(f"terminal {label} value exceeds probe width")
-                declared_reasons = {
-                    condition.reason
-                    for condition in scenario.run_until.terminal_conditions
-                }
-                if reason in TERMINAL_CONDITION_REASONS and reason not in declared_reasons:
-                    raise ValueError("terminal reason is not declared by the scenario")
-                if reason == "engine_stall" and scenario.run_until.stall is None:
-                    raise ValueError("engine_stall is not configured by the scenario")
-                if reason == "max_frames" and frame != scenario.run_until.max_frames - 1:
-                    raise ValueError("max_frames did not occur at the final bounded frame")
-                if reason == "max_turns":
-                    if scenario.run_until.turn_limit is None:
-                        raise ValueError("max_turns is not configured by the scenario")
-                    if turn_value < scenario.run_until.turn_limit.maximum:
-                        raise ValueError("max_turns did not reach the configured limit")
-                if reason == "max_actions":
-                    if scenario.run_until.action_limit is None:
-                        raise ValueError("max_actions is not configured by the scenario")
-                    if action_value < scenario.run_until.action_limit.maximum:
-                        raise ValueError("max_actions did not reach the configured limit")
+                    )
+                except PlaytestError as exc:
+                    raise ValueError(str(exc)) from exc
                 terminal = (
                     reason,
                     frame,
@@ -2125,8 +2140,10 @@ def _parse_backend_output(
                 return None
             if not present:
                 raise AssertionError("backend counter presence was already validated")
+            if limit.probe.address is None:
+                raise AssertionError("run-until counter has no resolved address")
             return {
-                "address": limit.probe.binding,
+                "address": f"0x{limit.probe.address:08x}",
                 "size": limit.probe.size,
                 "value": f"0x{value:0{limit.probe.size * 2}x}",
             }
