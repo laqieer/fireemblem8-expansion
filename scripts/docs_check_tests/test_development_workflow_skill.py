@@ -842,10 +842,19 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
             "resume_allowed_outcome": "accepted",
             "rejected_outcome": {
                 "value": "rejected",
+                "retain_waiting_label": True,
+                "retain_temporary_assignee": True,
                 "retain_merge_hold": True,
                 "retain_closure_hold": True,
                 "remain_actionable": True,
             },
+        },
+        "open_pr_head_validation": {
+            "source": "github_current_head_sha",
+            "field": "current_head_sha",
+            "type": "git_sha40_lowercase",
+            "must_equal_activation_commit": True,
+            "changed_head_requires_fresh_handoff": True,
         },
         "remove_label": "waiting-for-manual-testing",
         "remove_label_from": [
@@ -858,6 +867,13 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
             "each_labeled_implementation_pr",
         ],
         "unless_other_ownership": True,
+        "ownership_exception": {
+            "flag": "other_ownership",
+            "reason_field": "ownership_reason",
+            "reason_type": "nonempty_string",
+            "required_when_true": True,
+            "forbidden_when_false": True,
+        },
         "resume_exact_candidate_gates": True,
         "resume_merge": True,
     },
@@ -886,6 +902,10 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
                 "other_ownership",
                 "label_removed",
                 "temporary_assignee_removed",
+            ],
+            "optional_string_fields": [
+                "current_head_sha",
+                "ownership_reason",
             ],
             "issue_url_pattern": (
                 "^https://github\\.com/laqieer/fireemblem8-expansion/"
@@ -1223,6 +1243,17 @@ def validate_manual_item_shape(contract, item, *, require_pr_origin=False):
     for field in schema["optional_boolean_fields"]:
         if field in item and type(item[field]) is not bool:
             violations.append(f"item has invalid {field}")
+    for field in schema["optional_string_fields"]:
+        if field in item and not isinstance(item[field], str):
+            violations.append(f"item has invalid {field}")
+    ownership = item.get("other_ownership")
+    ownership_reason = item.get("ownership_reason")
+    if ownership is True:
+        if not isinstance(ownership_reason, str) or not ownership_reason.strip():
+            violations.append("item is missing ownership_reason")
+    elif type(ownership) is bool or ownership is None:
+        if "ownership_reason" in item:
+            violations.append("item has unexpected ownership_reason")
     if not isinstance(url, str):
         violations.append("item has invalid URL type")
     elif kind in schema["kind_enum"]:
@@ -1330,6 +1361,27 @@ def completed_item_cleanup_violations(contract, item):
                 f"temporary assignee removal not recorded: {item['url']}"
             )
     return violations
+
+
+def validate_open_pr_head(contract, item):
+    if item.get("kind") != "pr" or item.get("state") != "open":
+        return []
+    specification = contract["completion"]["open_pr_head_validation"]
+    field = specification["field"]
+    current_head = item.get(field)
+    if not isinstance(current_head, str):
+        return [f"open PR missing typed {field}: {item['url']}"]
+    if re.fullmatch(r"[0-9a-f]{40}", current_head) is None:
+        return [f"open PR has malformed {field}: {item['url']}"]
+    activation_comment = item.get("comment")
+    if not isinstance(activation_comment, dict):
+        return [f"open PR lacks activation commit: {item['url']}"]
+    if (
+        specification["must_equal_activation_commit"]
+        and current_head != activation_comment.get("commit")
+    ):
+        return [f"open PR head changed after handoff: {item['url']}"]
+    return []
 
 
 def validate_live_manual_queue(contract, live_items, relationships):
@@ -1478,6 +1530,7 @@ def validate_completion_cleanup(
         if item.get("received_label") and item.get("manual_pending") is not False:
             violations.append(f"cleanup item remains pending: {item['url']}")
         if item.get("received_label"):
+            violations.extend(validate_open_pr_head(contract, item))
             violations.extend(
                 f"{item['url']}: activation {finding}"
                 for finding in validate_handoff_comment(
@@ -1530,6 +1583,74 @@ def validate_completion_cleanup(
                 field,
             )
         )
+    return violations
+
+
+def validate_rejected_manual_state(
+    contract,
+    item_history,
+    rejection_comments,
+):
+    rejected = contract["completion"]["comment"]["rejected_outcome"]
+    activation = contract["activation"]
+    violations = []
+    seen_urls = set()
+    targets = []
+    for index, item in enumerate(item_history):
+        shape_violations = validate_manual_item_shape(contract, item)
+        violations.extend(
+            f"rejected history[{index}]: {finding}"
+            for finding in shape_violations
+        )
+        if shape_violations:
+            continue
+        url = item["url"]
+        if url in seen_urls:
+            violations.append(f"duplicate rejected history item: {url}")
+            continue
+        seen_urls.add(url)
+        if not item.get("received_label"):
+            continue
+        targets.append(item)
+        if item["state"] != "open":
+            violations.append(f"rejected item is not open: {url}")
+        if item["manual_pending"] is not True:
+            violations.append(f"rejected item is not actionable: {url}")
+        if item.get("label") != activation["label"]:
+            violations.append(f"rejected item lost waiting label: {url}")
+        if item.get("assignee") != activation["assignee"]:
+            violations.append(f"rejected item lost tester assignee: {url}")
+        if item.get("merge_hold") is not rejected["retain_merge_hold"]:
+            violations.append(f"rejected item lost merge hold: {url}")
+        if item.get("closure_hold") is not rejected["retain_closure_hold"]:
+            violations.append(f"rejected item lost closure hold: {url}")
+        if item.get("actionable") is not rejected["remain_actionable"]:
+            violations.append(f"rejected item is not actionable: {url}")
+        if item.get("label_removed") is True:
+            violations.append(f"rejected item removed label early: {url}")
+        if item.get("temporary_assignee_removed") is True:
+            violations.append(f"rejected item removed assignee early: {url}")
+
+    target_urls = {item["url"] for item in targets}
+    comment_urls = set(rejection_comments)
+    for missing in sorted(target_urls - comment_urls):
+        violations.append(f"missing rejected result: {missing}")
+    for extra in sorted(comment_urls - target_urls):
+        violations.append(f"unrelated rejected result: {extra}")
+    targets_by_url = {item["url"]: item for item in targets}
+    for url in sorted(target_urls & comment_urls):
+        item = targets_by_url[url]
+        comment = rejection_comments[url]
+        violations.extend(
+            f"{url}: {finding}"
+            for finding in validate_completion_comment(
+                contract,
+                comment,
+                item.get("comment"),
+            )
+        )
+        if comment.get("outcome") != rejected["value"]:
+            violations.append(f"{url}: result is not rejected")
     return violations
 
 
@@ -4066,6 +4187,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "label_removed": True,
                 "temporary_assignee_removed": True,
                 "comment": activation_comment,
+                "current_head_sha": "a" * 40,
             },
             {
                 "url": closed_pr,
@@ -4088,6 +4210,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "label": None,
                 "assignee": "laqieer",
                 "other_ownership": True,
+                "ownership_reason": "Maintainer owns the superseded PR.",
                 "label_removed": True,
                 "temporary_assignee_removed": False,
                 "comment": activation_comment,
@@ -4101,6 +4224,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "label": None,
                 "assignee": "laqieer",
                 "other_ownership": True,
+                "ownership_reason": "Maintainer owns this historical PR.",
                 "label_removed": False,
                 "temporary_assignee_removed": False,
             },
@@ -4143,6 +4267,57 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             [],
             cleanup_violations(),
         )
+        issue_only_cleanup = {
+            "label": "waiting-for-manual-testing",
+            "assignee": "laqieer",
+            "remove_label_from": [issue_url],
+            "remove_temporary_assignee_from": [issue_url],
+        }
+        self.assertEqual(
+            [],
+            validate_completion_cleanup(
+                contract,
+                (history[0],),
+                issue_only_cleanup,
+                {issue_url: completion_comments[issue_url]},
+            ),
+        )
+
+        fresh_head_history = list(copy.deepcopy(history))
+        fresh_head_comment = valid_handoff_comment(contract)
+        fresh_head_comment["commit"] = "d" * 40
+        fresh_head_history[1]["comment"] = fresh_head_comment
+        fresh_head_history[1]["current_head_sha"] = "d" * 40
+        fresh_head_comments = copy.deepcopy(completion_comments)
+        fresh_head_comments[open_pr] = valid_completion_comment(
+            contract,
+            fresh_head_comment,
+        )
+        self.assertEqual(
+            [],
+            cleanup_violations(
+                history_value=fresh_head_history,
+                comments=fresh_head_comments,
+            ),
+        )
+
+        for scenario, current_head in {
+            "missing": _MISSING,
+            "null": None,
+            "short": "a" * 39,
+            "nonhex": "g" * 40,
+            "uppercase": "A" * 40,
+            "changed": "d" * 40,
+        }.items():
+            with self.subTest(open_pr_head=scenario):
+                invalid_history = list(copy.deepcopy(history))
+                if current_head is _MISSING:
+                    invalid_history[1].pop("current_head_sha")
+                else:
+                    invalid_history[1]["current_head_sha"] = current_head
+                self.assertTrue(
+                    cleanup_violations(history_value=invalid_history)
+                )
         identical_history = history + (copy.deepcopy(history[1]),)
         identical_failures = cleanup_violations(
             history_value=identical_history,
@@ -4312,7 +4487,30 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         ))
         unowned_assignee = copy.deepcopy(history)
         unowned_assignee[3]["other_ownership"] = False
+        unowned_assignee[3].pop("ownership_reason")
         self.assertTrue(cleanup_violations(history_value=unowned_assignee))
+        for scenario, ownership_reason in {
+            "missing": _MISSING,
+            "blank": " ",
+            "boolean": False,
+            "list": [],
+            "object": {},
+            "integer": 1,
+        }.items():
+            with self.subTest(ownership_reason=scenario):
+                invalid_history = list(copy.deepcopy(history))
+                if ownership_reason is _MISSING:
+                    invalid_history[3].pop("ownership_reason")
+                else:
+                    invalid_history[3]["ownership_reason"] = ownership_reason
+                self.assertTrue(
+                    cleanup_violations(history_value=invalid_history)
+                )
+        unexpected_reason = list(copy.deepcopy(history))
+        unexpected_reason[1]["ownership_reason"] = "Unexpected owner"
+        self.assertTrue(cleanup_violations(
+            history_value=unexpected_reason,
+        ))
         false_history_with_current_label = copy.deepcopy(history)
         false_history_with_current_label[4]["label"] = (
             "waiting-for-manual-testing"
@@ -4379,6 +4577,104 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 self.assertTrue(
                     any("history[0]" in failure for failure in failures)
                 )
+
+    def test_manual_handoff_rejected_state_remains_actionable(self):
+        contract = read_manual_handoff_contract()
+        issue_url = (
+            "https://github.com/laqieer/fireemblem8-expansion/issues/171"
+        )
+        pr_url = "https://github.com/laqieer/fireemblem8-expansion/pull/172"
+        activation_comment = valid_handoff_comment(contract)
+
+        def rejected_item(url, kind, **overrides):
+            item = {
+                "url": url,
+                "kind": kind,
+                "state": "open",
+                "manual_pending": True,
+                "received_label": True,
+                "label": "waiting-for-manual-testing",
+                "assignee": "laqieer",
+                "merge_hold": True,
+                "closure_hold": True,
+                "actionable": True,
+                "label_removed": False,
+                "temporary_assignee_removed": False,
+                "comment": activation_comment,
+            }
+            if kind == "pr":
+                item["origin_url"] = issue_url
+                item["current_head_sha"] = activation_comment["commit"]
+            item.update(overrides)
+            return item
+
+        history = (
+            rejected_item(issue_url, "issue"),
+            rejected_item(pr_url, "pr"),
+        )
+        rejection_comments = {
+            item["url"]: {
+                **valid_completion_comment(contract, activation_comment),
+                "actual_result": "The requested judgment failed.",
+                "outcome": "rejected",
+            }
+            for item in history
+        }
+        self.assertEqual(
+            [],
+            validate_rejected_manual_state(
+                contract,
+                history,
+                rejection_comments,
+            ),
+        )
+
+        state_mutations = {
+            "label removed": ("label", None),
+            "label cleanup recorded": ("label_removed", True),
+            "assignee removed": ("assignee", None),
+            "assignee cleanup recorded": (
+                "temporary_assignee_removed",
+                True,
+            ),
+            "merge hold missing": ("merge_hold", False),
+            "closure hold missing": ("closure_hold", False),
+            "not actionable": ("actionable", False),
+            "not pending": ("manual_pending", False),
+        }
+        for scenario, (field, value) in state_mutations.items():
+            with self.subTest(rejected_state=scenario):
+                invalid_history = list(copy.deepcopy(history))
+                invalid_history[1][field] = value
+                self.assertTrue(
+                    validate_rejected_manual_state(
+                        contract,
+                        invalid_history,
+                        rejection_comments,
+                    )
+                )
+
+        missing_result = dict(rejection_comments)
+        del missing_result[pr_url]
+        self.assertTrue(validate_rejected_manual_state(
+            contract,
+            history,
+            missing_result,
+        ))
+        accepted_result = copy.deepcopy(rejection_comments)
+        accepted_result[pr_url]["outcome"] = "accepted"
+        self.assertTrue(validate_rejected_manual_state(
+            contract,
+            history,
+            accepted_result,
+        ))
+        malformed_result = copy.deepcopy(rejection_comments)
+        malformed_result[pr_url]["actual_result"] = " "
+        self.assertTrue(validate_rejected_manual_state(
+            contract,
+            history,
+            malformed_result,
+        ))
 
     def test_manual_handoff_case_subsections_do_not_leak(self):
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")

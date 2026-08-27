@@ -156,10 +156,19 @@
       "resume_allowed_outcome": "accepted",
       "rejected_outcome": {
         "value": "rejected",
+        "retain_waiting_label": true,
+        "retain_temporary_assignee": true,
         "retain_merge_hold": true,
         "retain_closure_hold": true,
         "remain_actionable": true
       }
+    },
+    "open_pr_head_validation": {
+      "source": "github_current_head_sha",
+      "field": "current_head_sha",
+      "type": "git_sha40_lowercase",
+      "must_equal_activation_commit": true,
+      "changed_head_requires_fresh_handoff": true
     },
     "remove_label": "waiting-for-manual-testing",
     "remove_label_from": [
@@ -172,6 +181,13 @@
       "each_labeled_implementation_pr"
     ],
     "unless_other_ownership": true,
+    "ownership_exception": {
+      "flag": "other_ownership",
+      "reason_field": "ownership_reason",
+      "reason_type": "nonempty_string",
+      "required_when_true": true,
+      "forbidden_when_false": true
+    },
     "resume_exact_candidate_gates": true,
     "resume_merge": true
   },
@@ -203,6 +219,10 @@
         "other_ownership",
         "label_removed",
         "temporary_assignee_removed"
+      ],
+      "optional_string_fields": [
+        "current_head_sha",
+        "ownership_reason"
       ],
       "issue_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/issues/[1-9][0-9]*$",
       "pr_url_pattern": "^https://github\\.com/laqieer/fireemblem8-expansion/pull/[1-9][0-9]*$",

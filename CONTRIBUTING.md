@@ -271,6 +271,10 @@ and remains actionable.
 Evidence must link to a same-repository issue/PR comment, review comment,
 workflow run or artifact, commit-pinned blob, or GitHub attachment—not a bare
 issue or PR page. Positive and control path-plus-SHA-256 identities must differ.
+Accepted cleanup also requires every open PR's current GitHub head to match its
+activation commit; a changed head needs fresh evidence. Retained assignment
+requires a nonblank ownership reason. Rejected evidence retains the label,
+assignee, holds, and actionable state.
 
 - **Activation:** Apply `waiting-for-manual-testing` to the originating issue
   and each open implementation PR. Assign `laqieer` to those targets. Ping

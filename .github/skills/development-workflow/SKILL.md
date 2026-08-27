@@ -251,6 +251,11 @@ Evidence links identify a same-repository issue/PR comment, review comment,
 workflow run or artifact, commit-pinned blob, or GitHub user attachment; bare
 issue and PR pages are not completion evidence. Positive and control artifact
 path-plus-SHA-256 identities must differ.
+Before accepted cleanup or resumption, every open implementation PR's current
+GitHub head SHA must equal its activation-comment commit; a changed head needs
+a fresh handoff and evidence. Retaining `laqieer` requires a nonblank independent
+ownership reason. Rejected evidence keeps the label, assignee, both holds, and
+actionable state.
 
 - **Activation:** Apply `waiting-for-manual-testing` to the originating issue
   and each open implementation PR. Assign `laqieer` to those targets. Ping

@@ -92,10 +92,13 @@ and does not grant push credentials.
    separate label/assignee cleanup sets, retained independent ownership, and a
    typed result/evidence comment bound to the original case ID and commit.
    Accept only concrete same-repository comment, review, run, artifact, or
-   commit-pinned blob links, plus GitHub user attachments.
-4. Run
+   commit-pinned blob links, plus GitHub user attachments. Verify each open PR's
+   current head still matches the tested activation commit.
+4. Exercise rejected evidence while the label, temporary assignee, merge and
+   closure holds, and actionable state all remain active.
+5. Run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
-5. Open the documented queue:
+6. Open the documented queue:
    [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).
    When it is empty, do not schedule notifications or comments.
 
@@ -126,10 +129,11 @@ steps, false or mistyped comment holds, missing per-item comments, permissive
 activation, wrong identifiers or targets, disabled holds, incomplete historical
 cleanup, missing or mismatched completion evidence, malformed optional
 booleans, duplicate artifact identities, bare or unrelated evidence pages,
-malformed PR origins, rejected cleanup/resumption, empty-queue notifications,
-and invalid independently discovered issue/PR relationships. Reversing any
-lifecycle summary action or removing this case's own subsection also fails
-locally.
+malformed PR origins, stale open-PR heads, ownership exceptions without a
+reason, rejected cleanup/resumption, premature rejected-state cleanup,
+empty-queue notifications, and invalid independently discovered issue/PR
+relationships. Reversing any lifecycle summary action or removing this case's
+own subsection also fails locally.
 
 ### Interactions and save compatibility
 
