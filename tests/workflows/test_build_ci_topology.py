@@ -502,6 +502,28 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         self.assertNotIn("patch-release", _triggered_jobs(self.text, event))
 
+    def test_parent_update_requires_a_child_head_synchronize_event(self):
+        parent_push = {
+            "event_name": "push",
+            "ref": "refs/heads/agent/issue-170",
+            "sha": "4" * 40,
+        }
+        self.assertEqual(_triggered_jobs(self.text, parent_push), set())
+
+        child_synchronize = {
+            "event_name": "pull_request",
+            "action": "synchronize",
+            "pull_request": {
+                "base": {"ref": "agent/issue-170"},
+                "head": {"sha": "5" * 40},
+            },
+        }
+        self.assertEqual(
+            _triggered_jobs(self.text, child_synchronize),
+            set(COMBINED_WORKERS) | {"summary"},
+        )
+        self.assertNotIn("patch-release", _triggered_jobs(self.text, child_synchronize))
+
     def test_push_remains_master_only_and_prs_exclude_patch_release(self):
         master_push = {
             "event_name": "push",

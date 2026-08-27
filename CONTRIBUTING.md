@@ -116,16 +116,19 @@ when it requires a parent's unmerged code or contract. A non-root PR must say
 `Depends on #...`, identify its immediate base branch and stack position, and
 list known dependents. Keep each layer buildable and testable against that
 base. While the parent is open, keep the child based on that immediate parent
-and run exact-head Build CI and Copilot review there. Never temporarily
-retarget a child to `master`, close and reopen it, or otherwise misrepresent
-the stack solely to trigger CI. Merge bottom-up and never merge a child before
-its required parent. After the parent merges, retarget the child once to
-`master`, confirm its diff contains only the child issue, and require the
-resulting `pull_request` `edited` event to start fresh exact-head Build CI;
-rerun Copilot review because the candidate base/tree evidence changed. An
-`edited` event by itself is not sufficient evidence: Build must still bind to
-`pull_request.head.sha`, the child-only diff must be verified, and all fresh
-gates must pass.
+and run exact-head Build CI and Copilot review there. Whenever the parent head
+changes, merge the updated parent into the child with a normal merge commit,
+verify the child-only diff again, and rerun the child gates. A parent-only push
+does not emit a child `pull_request` event; changing the child head emits the
+required `synchronize` event. Never temporarily retarget a child to `master`,
+close and reopen it, or otherwise misrepresent the stack solely to trigger CI.
+Merge bottom-up and never merge a child before its required parent. After the
+parent merges, retarget the child once to `master`, confirm its diff contains
+only the child issue, and require the resulting `pull_request` `edited` event
+to start fresh exact-head Build CI; rerun Copilot review because the candidate
+base/tree evidence changed. An `edited` event by itself is not sufficient
+evidence: Build must still bind to `pull_request.head.sha`, the child-only diff
+must be verified, and all fresh gates must pass.
 
 Keep an issue's implementation, tests, documentation, generated outputs,
 migrations, and provenance evidence in the same PR. Do not split by file type
@@ -151,8 +154,10 @@ they touch a shared guide. PR `#103` is a genuine child because it cannot
 build against `master` until `#102` lands. Keep PR `#103` based on
 `feat/102-registry` while its parent is open and run its exact-head Build CI
 and Copilot review on that genuine base; do not flip it to `master` merely to
-trigger CI. After merging `#102` with the repository's merge-commit policy,
-retarget once by running
+trigger CI. If `feat/102-registry` receives another commit first, merge that
+updated parent into `feat/103-selector`; the resulting child `synchronize`
+event reruns exact-head Build CI and review against the new parent tree. After
+merging `#102` with the repository's merge-commit policy, retarget once by running
 `gh pr edit <child-pr-number> --base master`, inspect
 `git diff master...feat/103-selector`, require the resulting `pull_request`
 `edited` event to start fresh exact-head Build CI, and rerun Copilot review

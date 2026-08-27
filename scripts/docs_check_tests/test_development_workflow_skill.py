@@ -1112,6 +1112,16 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
 
+        for requirement in (
+            "Whenever the parent head changes while both PRs remain open",
+            "merge the updated parent branch into the child with a normal merge commit",
+            "A parent-only push does not emit a child `pull_request` event",
+            "the required `synchronize` event",
+            "Never accept the child's earlier green run against an older parent head",
+        ):
+            with self.subTest(normalized_requirement=requirement):
+                self.assertIn(normalize_policy(requirement), normalize_policy(text))
+
         self.assertIn(
             normalize_policy("Complete the umbrella initiative only after every accepted"),
             normalize_policy(text),
@@ -1646,6 +1656,17 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         for requirement in required_contract:
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
+
+        for requirement in (
+            "Whenever the parent head changes",
+            "merge the updated parent into the child with a normal merge commit",
+            "A parent-only push does not emit a child `pull_request` event",
+            "the required `synchronize` event",
+            "merge that updated parent into `feat/103-selector`",
+            "the resulting child `synchronize`",
+        ):
+            with self.subTest(normalized_requirement=requirement):
+                self.assertIn(normalize_policy(requirement), normalize_policy(text))
 
     def test_pull_request_template_records_boundary_stack_and_size(self):
         text = PR_TEMPLATE_PATH.read_text(encoding="utf-8")

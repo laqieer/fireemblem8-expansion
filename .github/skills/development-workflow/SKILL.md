@@ -267,6 +267,12 @@ Keep those links and the umbrella checklist current as the stack changes.
 Every issue-specific layer must remain buildable and testable against its
 immediate base. Keep a child based on its immediate parent while that parent is
 open, and run exact-head Build CI and Copilot review against that genuine base.
+Whenever the parent head changes while both PRs remain open, merge the updated
+parent branch into the child with a normal merge commit, verify the child-only
+diff again, and rerun the child's exact-head gates. A parent-only push does not
+emit a child `pull_request` event; the child merge changes its head and emits
+the required `synchronize` event instead. Never accept the child's earlier
+green run against an older parent head.
 Never temporarily retarget a child to `master`, close and reopen it, or
 otherwise misrepresent the stack solely to trigger CI.
 Review and merge the stack bottom-up; never merge a child while its required
@@ -602,9 +608,10 @@ review or approval. Respect branch protection and never bypass a required
 GitHub control.
 
 For a stacked PR, satisfy those candidate Build/review conditions against its
-immediate parent base without temporary base retargeting, merge only after its
-parent, then retarget once to `master`, verify the child-only diff, require the
-fresh `edited`-event Build, and rerun review as described above.
+immediate parent base without temporary base retargeting, synchronize every
+parent-head update into the child, merge only after its parent, then retarget
+once to `master`, verify the child-only diff, require the fresh `edited`-event
+Build, and rerun review as described above.
 
 Leave the PR open only when:
 
