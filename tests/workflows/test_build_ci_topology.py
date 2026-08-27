@@ -44,7 +44,11 @@ PIP_INVOCATION_RE = re.compile(
     r"(?=\s|$)"
 )
 PULL_REQUEST_TRIGGER = "  pull_request:\n"
+PULL_REQUEST_ACTIONS = ("opened", "synchronize", "reopened", "edited")
 PUSH_TRIGGER = 'push:\n    branches: [ "master" ]'
+EXPECTED_SHA = (
+    "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+)
 SUMMARY_RESULTS = (
     '"$HOST_TESTS_RESULT"',
     '"$BUILD_RESULT"',
@@ -53,7 +57,7 @@ SUMMARY_RESULTS = (
 )
 
 
-def _trigger_branches(header: str, event_name: str) -> tuple[str, ...] | None:
+def _trigger_block(header: str, event_name: str) -> str:
     event = re.search(
         rf"^  {re.escape(event_name)}:[ \t]*(?P<inline>.*)$",
         header,
@@ -66,25 +70,48 @@ def _trigger_branches(header: str, event_name: str) -> tuple[str, ...] | None:
 
     next_event = re.search(r"^  [A-Za-z_][A-Za-z0-9_-]*:", header[event.end():], re.MULTILINE)
     end = event.end() + next_event.start() if next_event is not None else len(header)
-    block = header[event.end():end]
-    branch_filter = re.search(
-        r'^    branches:[ \t]*\[(?P<branches>[^\]]*)\][ \t]*$',
+    return header[event.end():end]
+
+
+def _flow_sequence(block: str, field: str) -> tuple[str, ...] | None:
+    sequence = re.search(
+        rf"^    {re.escape(field)}:[ \t]*\[(?P<values>[^\]]*)\][ \t]*$",
         block,
         re.MULTILINE,
     )
-    if branch_filter is None:
-        if re.search(r"^    branches:", block, re.MULTILINE):
-            raise ValueError(f"{event_name} branches filter must use the reviewed flow sequence")
+    if sequence is None:
+        if re.search(rf"^    {re.escape(field)}:", block, re.MULTILINE):
+            raise ValueError(f"{field} must use the reviewed flow sequence")
         return None
 
-    branches = tuple(
-        branch.strip().strip("\"'")
-        for branch in branch_filter.group("branches").split(",")
-        if branch.strip()
+    values = tuple(
+        value.strip().strip("\"'")
+        for value in sequence.group("values").split(",")
+        if value.strip()
     )
-    if not branches or any(not branch for branch in branches):
-        raise ValueError(f"{event_name} branches filter is empty")
-    return branches
+    if not values or any(not value for value in values):
+        raise ValueError(f"{field} is empty")
+    return values
+
+
+def _pull_request_actions(header: str) -> tuple[str, ...]:
+    block = _trigger_block(header, "pull_request")
+    for field in ("branches", "branches-ignore"):
+        if re.search(rf"^    {re.escape(field)}:", block, re.MULTILINE):
+            raise ValueError(
+                "pull_request must not define branches or branches-ignore filters"
+            )
+
+    actions = _flow_sequence(block, "types")
+    if actions != PULL_REQUEST_ACTIONS:
+        raise ValueError(
+            "pull_request types must be opened, synchronize, reopened, and edited"
+        )
+    return actions
+
+
+def _push_branches(header: str) -> tuple[str, ...] | None:
+    return _flow_sequence(_trigger_block(header, "push"), "branches")
 
 
 def _event_branch(event: dict) -> str:
@@ -98,7 +125,15 @@ def _event_branch(event: dict) -> str:
 def _triggered_jobs(text: str, event: dict) -> set[str]:
     header = text[: text.index("\njobs:\n")]
     try:
-        branches = _trigger_branches(header, event["event_name"])
+        if event["event_name"] == "pull_request":
+            actions = _pull_request_actions(header)
+            if event["action"] not in actions:
+                return set()
+            branches = None
+        elif event["event_name"] == "push":
+            branches = _push_branches(header)
+        else:
+            return set()
     except ValueError:
         return set()
     if branches is not None and not any(
@@ -228,14 +263,11 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     errors = []
     header = text[: text.index("\njobs:\n")]
     try:
-        pull_request_branches = _trigger_branches(header, "pull_request")
+        _pull_request_actions(header)
     except ValueError as exc:
         errors.append(f"Build pull-request trigger is invalid: {exc}")
-    else:
-        if pull_request_branches is not None:
-            errors.append("Build pull requests must target every branch")
     try:
-        push_branches = _trigger_branches(header, "push")
+        push_branches = _push_branches(header)
     except ValueError as exc:
         errors.append(f"Build push trigger is invalid: {exc}")
     else:
@@ -374,6 +406,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
     def test_synthetic_stacked_pull_request_runs_candidate_jobs_on_its_real_base(self):
         event = {
             "event_name": "pull_request",
+            "action": "opened",
             "pull_request": {
                 "base": {"ref": "agent/issue-170"},
                 "head": {"sha": "1" * 40},
@@ -385,23 +418,91 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         self.assertNotIn("patch-release", _triggered_jobs(self.text, event))
 
-    def test_master_only_pull_request_filter_fails_closed(self):
-        changed = self.text.replace(
-            PULL_REQUEST_TRIGGER,
-            PULL_REQUEST_TRIGGER + '    branches: [ "master" ]\n',
-            1,
-        )
-        self.assertTrue(
-            any("must target every branch" in error for error in _errors(changed, False))
-        )
+    def test_pull_request_branch_filters_fail_closed_in_inline_and_block_forms(self):
         event = {
             "event_name": "pull_request",
+            "action": "opened",
             "pull_request": {
                 "base": {"ref": "agent/issue-170"},
                 "head": {"sha": "1" * 40},
             },
         }
-        self.assertEqual(_triggered_jobs(changed, event), set())
+        mutations = (
+            '    branches: [ "master" ]\n',
+            '    branches:\n      - "master"\n',
+            '    branches-ignore: [ "agent/**" ]\n',
+            '    branches-ignore:\n      - "agent/**"\n',
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                changed = self.text.replace(
+                    PULL_REQUEST_TRIGGER,
+                    PULL_REQUEST_TRIGGER + mutation,
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "must not define branches or branches-ignore filters" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+                self.assertEqual(_triggered_jobs(changed, event), set())
+
+    def test_candidate_pull_request_activity_types_are_explicit_and_fail_closed(self):
+        for action in ("opened", "synchronize", "reopened"):
+            with self.subTest(action=action):
+                event = {
+                    "event_name": "pull_request",
+                    "action": action,
+                    "pull_request": {
+                        "base": {"ref": "agent/issue-170"},
+                        "head": {"sha": "1" * 40},
+                    },
+                }
+                self.assertEqual(
+                    _triggered_jobs(self.text, event),
+                    set(COMBINED_WORKERS) | {"summary"},
+                )
+
+        for action in ("closed", "labeled", "unlabeled", "assigned"):
+            with self.subTest(action=action):
+                event = {
+                    "event_name": "pull_request",
+                    "action": action,
+                    "pull_request": {
+                        "base": {"ref": "agent/issue-170"},
+                        "head": {"sha": "1" * 40},
+                    },
+                }
+                self.assertEqual(_triggered_jobs(self.text, event), set())
+
+    def test_edited_base_change_reruns_exact_head_candidate_without_publisher(self):
+        unchanged_head = "4" * 40
+        event = {
+            "event_name": "pull_request",
+            "action": "edited",
+            "changes": {
+                "base": {
+                    "ref": {
+                        "from": "agent/issue-170",
+                    },
+                },
+            },
+            "pull_request": {
+                "base": {"ref": "master"},
+                "head": {"sha": unchanged_head},
+            },
+        }
+        self.assertEqual(
+            _triggered_jobs(self.text, event),
+            set(COMBINED_WORKERS) | {"summary"},
+        )
+        self.assertNotIn("patch-release", _triggered_jobs(self.text, event))
+        for job_name in COMBINED_WORKERS:
+            self.assertIn(
+                f"EXPECTED_BUILD_SHA: {EXPECTED_SHA}",
+                _job_blocks(self.text)[job_name],
+            )
 
     def test_push_remains_master_only_and_prs_exclude_patch_release(self):
         master_push = {
@@ -431,6 +532,22 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
     def test_missing_pull_request_trigger_fails(self):
         changed = self.text.replace(PULL_REQUEST_TRIGGER, "", 1)
         self.assertTrue(any("missing pull_request" in error for error in _errors(changed, False)))
+
+    def test_pull_request_activity_type_mutations_fail(self):
+        for actions in (
+            "opened, synchronize, reopened",
+            "opened, synchronize, reopened, edited, closed",
+            "opened, synchronize, reopened, edited, labeled",
+        ):
+            with self.subTest(actions=actions):
+                changed = self.text.replace(
+                    "types: [opened, synchronize, reopened, edited]",
+                    f"types: [{actions}]",
+                    1,
+                )
+                self.assertTrue(
+                    any("types must be opened" in error for error in _errors(changed, False))
+                )
 
     def test_missing_push_trigger_fails(self):
         changed = self.text.replace(PUSH_TRIGGER, 'push:\n    branches: [ "other" ]', 1)

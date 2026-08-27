@@ -80,8 +80,9 @@ and does not grant push credentials.
    `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`.
 2. Run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
-3. Inspect the synthetic pull-request fixture targeting `agent/issue-170` and
-   its fail-closed master-filter mutation.
+3. Inspect the synthetic `opened`, `synchronize`, `reopened`, and base-change
+   `edited` pull-request fixtures, plus inline and block `branches` and
+   `branches-ignore` mutations.
 
 ### Expected result
 
@@ -94,15 +95,22 @@ selects it and a push to any other branch selects no workflow jobs.
 The child remains based on its immediate parent while that parent is open, and
 exact-head Build CI and Copilot review run against that genuine base. After the
 parent merges, the child is retargeted once to `master`, its child-only diff is
-verified, and the exact-head gates rerun because the candidate tree and base
-changed.
+verified, and the resulting `pull_request` `edited` event starts fresh
+exact-head Build CI even when the child head SHA is unchanged. The workflow
+also runs for `opened`, `synchronize`, and `reopened`, but not `closed`,
+`labeled`, or other unrelated activity types. An `edited` event alone is not
+sufficient evidence: Build remains bound to `pull_request.head.sha`, and the
+base/tree evidence, child-only diff, and fresh gate results must all be
+verified.
 
 ### Negative control
 
-Restoring `pull_request.branches: [master]`, removing either trigger, allowing
-non-master pushes, exposing the patch publisher to pull requests, weakening
-exact-head checkout verification, or documenting a temporary base flip solely
-to trigger CI makes the focused suites fail.
+Adding inline or block `branches` or `branches-ignore` filters under
+`pull_request`, removing `edited` or another required activity type, enabling
+`closed`/`labeled` activity, removing either trigger, allowing non-master
+pushes, exposing the patch publisher to pull requests, weakening exact-head
+checkout verification, or documenting a temporary base flip solely to trigger
+CI makes the focused suites fail.
 
 ### Interactions and save compatibility
 
@@ -116,8 +124,9 @@ debug/release, or archival behavior and needs no feature gate.
 ### Automation
 
 `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
-workflow, evaluates synthetic PR/push metadata, applies the master-only PR
-filter mutation, checks exact-head checkout binding, and preserves the
+workflow, evaluates synthetic PR actions and push metadata, rejects inline and
+block PR branch filters, checks the base-change `edited` event with an
+unchanged head SHA, verifies exact-head checkout binding, and preserves the
 fail-closed summary and publisher boundary.
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`

@@ -120,8 +120,12 @@ and run exact-head Build CI and Copilot review there. Never temporarily
 retarget a child to `master`, close and reopen it, or otherwise misrepresent
 the stack solely to trigger CI. Merge bottom-up and never merge a child before
 its required parent. After the parent merges, retarget the child once to
-`master`, confirm its diff contains only the child issue, and rerun exact-head
-Build CI and Copilot review because the candidate tree and base changed.
+`master`, confirm its diff contains only the child issue, and require the
+resulting `pull_request` `edited` event to start fresh exact-head Build CI;
+rerun Copilot review because the candidate base/tree evidence changed. An
+`edited` event by itself is not sufficient evidence: Build must still bind to
+`pull_request.head.sha`, the child-only diff must be verified, and all fresh
+gates must pass.
 
 Keep an issue's implementation, tests, documentation, generated outputs,
 migrations, and provenance evidence in the same PR. Do not split by file type
@@ -150,11 +154,13 @@ and Copilot review on that genuine base; do not flip it to `master` merely to
 trigger CI. After merging `#102` with the repository's merge-commit policy,
 retarget once by running
 `gh pr edit <child-pr-number> --base master`, inspect
-`git diff master...feat/103-selector`, and rerun exact-head Build CI and
-Copilot review because the candidate tree and base changed. After merge, let the
-automatic master Build rerun the same consolidated evidence. Complete discussion
-`#100` only after all three issues are independently merged, verified on
-`master`, and closed.
+`git diff master...feat/103-selector`, require the resulting `pull_request`
+`edited` event to start fresh exact-head Build CI, and rerun Copilot review
+because the candidate base/tree evidence changed. The workflow run remains
+bound to the unchanged child `pull_request.head.sha`; the edited event does not
+replace diff verification or successful gates. After merge, let the automatic master Build rerun
+the same consolidated evidence. Complete discussion `#100` only after all
+three issues are independently merged, verified on `master`, and closed.
 
 ### Review-size preflight
 
