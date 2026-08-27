@@ -861,8 +861,8 @@ added/removed-seed, terminal, and metric deltas without inferring statistical
 significance, difficulty, or balance. Imported reports require 1 through 256
 unique ascending seeds; provenance limits must exactly match the canonical
 scenario's required frame/turn/action bounds and counter probes, and terminal
-plus metric values must remain within them. Counter addresses are serialized
-as resolved numeric literals, so symbolic aliases validate against executable
+plus metric values must remain within them. Batch-report counter addresses are
+serialized as resolved numeric literals, so symbolic aliases validate against executable
 identity. Objective failure must be scenario-declared, engine stall requires a
 stall detector and cannot occur before its configured unchanged-frame limit,
 `max_frames` occurs only on the final bounded frame, and

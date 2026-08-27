@@ -679,6 +679,33 @@ def _baseline_probe_values(
     }
 
 
+def _canonical_terminal(
+    fingerprint: dict[str, Any],
+    scenario: gba_playtest.Scenario,
+) -> dict[str, Any]:
+    terminal = dict(fingerprint["terminal"])
+    run_until = scenario.run_until
+    if run_until is None:
+        raise gba_playtest.PlaytestError(
+            "batch terminal normalization requires a bounded run-until scenario"
+        )
+    for name, limit in (
+        ("turn", run_until.turn_limit),
+        ("actions", run_until.action_limit),
+    ):
+        captured = terminal[name]
+        if captured is None:
+            continue
+        if limit is None or limit.probe.address is None:
+            raise gba_playtest.PlaytestError(
+                f"batch terminal {name} counter has no resolved scenario identity"
+            )
+        normalized = dict(captured)
+        normalized["address"] = f"0x{limit.probe.address:08x}"
+        terminal[name] = normalized
+    return terminal
+
+
 def _metric_value(
     metric: BatchMetric,
     fingerprint: dict[str, Any],
@@ -979,7 +1006,7 @@ def run_batch(
                     "ROM provenance changed during the batch; no mixed-ROM report "
                     "is accepted"
                 )
-            terminal = captured["terminal"]
+            terminal = _canonical_terminal(captured, scenario)
             metrics = {
                 metric.identifier: _metric_value(
                     metric,

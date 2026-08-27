@@ -197,8 +197,8 @@ serial/parallel byte identity without hiding actionable input context.
 Imported reports contain 1 through 256 unique ascending seeds. Provenance
 bounds must exactly equal the canonical scenario's required frame/turn/action
 limits; terminal counters must use those declared probes, and terminal plus
-metric values cannot exceed those limits. Captured turn/action addresses are
-stored as resolved numeric literals, so a symbolic scenario such as
+metric values cannot exceed those limits. Batch-report turn/action addresses
+are stored as resolved numeric literals, so a symbolic scenario such as
 `gPlaySt+0x10` validates against the same executable identity. Imported
 objective failures must be declared, stalls require configured stall
 detection, `max_frames` must occur on the final bounded frame, and
