@@ -238,7 +238,9 @@ The canonical machine-readable protocol is
 [`.github/manual-testing-handoff.json`](.github/manual-testing-handoff.json).
 Follow its eligibility, artifact-preview, activation, hold, completion, and
 queue fields exactly. It is not a human review gate, and deterministic criteria
-must remain automated.
+must remain automated. Both identified non-instrumented artifact roles must be
+rendered and inspected before handoff. Completion cleans the issue and every PR
+that received the handoff, even if a PR is later closed or superseded.
 
 The actionable queue is
   [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).

@@ -79,10 +79,11 @@ and does not grant push credentials.
 ### Actions
 
 1. Parse `.github/manual-testing-handoff.json` and validate every required key,
-   value, enum, boolean, target, and comment field.
+   value, enum, boolean, target, comment field, and the separately identified
+   positive/control artifact roles.
 2. Exercise the positive issue-only, one-PR, and multiple-open-PR queue shapes,
-   plus malformed label, assignee, relationship, stale-state, and closed-PR
-   controls.
+   plus malformed label, assignee, relationship, and stale-state controls.
+   Exercise completion cleanup with closed and superseded labeled PR history.
 3. Run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 4. Open the documented queue:
@@ -96,18 +97,20 @@ Human guidance links to that file without duplicating machine behavior.
 
 ### Negative control
 
-Every leaf mutation in the structured contract fails, including permissive
-activation, wrong identifiers or targets, disabled holds, incomplete cleanup,
-empty-queue notifications, and invalid issue/PR relationships. Removing this
-case's own required subsection also fails even when another case in this file
-retains a same-named heading.
+Every leaf mutation in the structured contract fails, including a missing
+artifact role/path/hash/inspection step, instrumented artifacts, permissive
+activation, wrong identifiers or targets, disabled holds, incomplete
+historical cleanup, empty-queue notifications, and invalid issue/PR
+relationships. Removing this case's own required subsection also fails even
+when another case in this file retains a same-named heading.
 
 ### Interactions and save compatibility
 
 The protocol depends on GitHub issues, pull requests, labels, assignments, and
 comments when a real hold is active. Live queue contents remain release-time
-evidence rather than tracked state. It changes no save, generated data,
-localization, ROM/RAM, debug/release, or archival behavior.
+evidence rather than tracked state; cleanup history includes every PR that
+received the handoff even after closure or supersession. It changes no save,
+generated data, localization, ROM/RAM, debug/release, or archival behavior.
 
 ### Automation
 

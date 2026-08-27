@@ -11,6 +11,16 @@
   },
   "pre_handoff": {
     "artifact": "non-instrumented",
+    "required_roles": [
+      "positive",
+      "control"
+    ],
+    "required_identity_fields": [
+      "path",
+      "sha256"
+    ],
+    "render_each": true,
+    "inspect_each": true,
     "static_ui": "screenshot",
     "time_dependent_or_av": "synchronized_av",
     "semantic_assertions_primary": true
@@ -30,13 +40,14 @@
       "fields": [
         "case_id",
         "commit",
-        "artifact_path",
-        "sha256",
+        "positive_artifact_path",
+        "positive_artifact_sha256",
+        "control_artifact_path",
+        "control_artifact_sha256",
         "environment",
         "clean_state",
         "steps",
         "expected",
-        "control",
         "requested_judgment",
         "merge_hold",
         "closure_hold"
@@ -53,9 +64,13 @@
     "remove_label": "waiting-for-manual-testing",
     "remove_label_from": [
       "originating_issue",
-      "each_open_implementation_pr"
+      "each_labeled_implementation_pr"
     ],
     "remove_temporary_assignee": "laqieer",
+    "remove_temporary_assignee_from": [
+      "originating_issue",
+      "each_labeled_implementation_pr"
+    ],
     "unless_other_ownership": true,
     "resume_exact_candidate_gates": true,
     "resume_merge": true

@@ -531,6 +531,10 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
     },
     "pre_handoff": {
         "artifact": "non-instrumented",
+        "required_roles": ["positive", "control"],
+        "required_identity_fields": ["path", "sha256"],
+        "render_each": True,
+        "inspect_each": True,
         "static_ui": "screenshot",
         "time_dependent_or_av": "synchronized_av",
         "semantic_assertions_primary": True,
@@ -552,13 +556,14 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
             "fields": [
                 "case_id",
                 "commit",
-                "artifact_path",
-                "sha256",
+                "positive_artifact_path",
+                "positive_artifact_sha256",
+                "control_artifact_path",
+                "control_artifact_sha256",
                 "environment",
                 "clean_state",
                 "steps",
                 "expected",
-                "control",
                 "requested_judgment",
                 "merge_hold",
                 "closure_hold",
@@ -575,9 +580,13 @@ EXPECTED_MANUAL_HANDOFF_CONTRACT = {
         "remove_label": "waiting-for-manual-testing",
         "remove_label_from": [
             "originating_issue",
-            "each_open_implementation_pr",
+            "each_labeled_implementation_pr",
         ],
         "remove_temporary_assignee": "laqieer",
+        "remove_temporary_assignee_from": [
+            "originating_issue",
+            "each_labeled_implementation_pr",
+        ],
         "unless_other_ownership": True,
         "resume_exact_candidate_gates": True,
         "resume_merge": True,
@@ -723,6 +732,34 @@ def validate_live_manual_queue(contract, live_items):
                 violations.append(f"missing open PR: {missing}")
             for extra in sorted(actual - set(declared)):
                 violations.append(f"undeclared open PR: {extra}")
+    return violations
+
+
+def validate_completion_cleanup(contract, item_history, cleanup):
+    completion = contract["completion"]
+    expected_urls = {
+        item["url"]
+        for item in item_history
+        if item.get("received_handoff")
+        and item.get("kind") in {"issue", "pr"}
+    }
+    violations = []
+    if cleanup.get("label") != completion["remove_label"]:
+        violations.append("wrong cleanup label")
+    if cleanup.get("assignee") != completion["remove_temporary_assignee"]:
+        violations.append("wrong cleanup assignee")
+    for field in ("remove_label_from", "remove_temporary_assignee_from"):
+        values = cleanup.get(field)
+        if not isinstance(values, list):
+            violations.append(f"{field}: expected list")
+            continue
+        violations.extend(
+            compare_string_membership(
+                values,
+                sorted(expected_urls),
+                field,
+            )
+        )
     return violations
 
 
@@ -2049,6 +2086,33 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 ))
 
         blocker_mutations = {
+            "instrumented artifact": (
+                "pre_handoff",
+                "artifact",
+                "instrumented",
+            ),
+            "missing positive role": (
+                "pre_handoff",
+                "required_roles",
+                ["control"],
+            ),
+            "missing control role": (
+                "pre_handoff",
+                "required_roles",
+                ["positive"],
+            ),
+            "missing path identity": (
+                "pre_handoff",
+                "required_identity_fields",
+                ["sha256"],
+            ),
+            "missing hash identity": (
+                "pre_handoff",
+                "required_identity_fields",
+                ["path"],
+            ),
+            "skip rendering": ("pre_handoff", "render_each", False),
+            "skip inspection": ("pre_handoff", "inspect_each", False),
             "permissive activation": ("activation", "required", False),
             "activation label": (
                 "activation",
@@ -2081,6 +2145,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "completion",
                 "remove_temporary_assignee",
                 "other-tester",
+            ),
+            "cleanup assignee target": (
+                "completion",
+                "remove_temporary_assignee_from",
+                ["originating_issue"],
             ),
             "resume gates": (
                 "completion",
@@ -2201,8 +2270,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     "issue-171",
                     state="closed",
                     manual_pending=False,
-                    label=None,
-                    assignee=None,
+                    received_handoff=True,
                 ),
             ),
         }
@@ -2274,6 +2342,77 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         for scenario, items in negative.items():
             with self.subTest(scenario=scenario):
                 self.assertTrue(validate_live_manual_queue(contract, items))
+
+    def test_manual_handoff_completion_cleans_labeled_history(self):
+        contract = read_manual_handoff_contract()
+        issue_url = "https://example.invalid/issues/171"
+        open_pr = "https://example.invalid/pulls/172"
+        closed_pr = "https://example.invalid/pulls/173"
+        superseded_pr = "https://example.invalid/pulls/174"
+        never_labeled_pr = "https://example.invalid/pulls/175"
+        history = (
+            {
+                "url": issue_url,
+                "kind": "issue",
+                "state": "open",
+                "received_handoff": True,
+            },
+            {
+                "url": open_pr,
+                "kind": "pr",
+                "state": "open",
+                "received_handoff": True,
+            },
+            {
+                "url": closed_pr,
+                "kind": "pr",
+                "state": "closed",
+                "received_handoff": True,
+            },
+            {
+                "url": superseded_pr,
+                "kind": "pr",
+                "state": "superseded",
+                "received_handoff": True,
+            },
+            {
+                "url": never_labeled_pr,
+                "kind": "pr",
+                "state": "closed",
+                "received_handoff": False,
+            },
+        )
+        cleanup_urls = [
+            issue_url,
+            open_pr,
+            closed_pr,
+            superseded_pr,
+        ]
+        cleanup = {
+            "label": "waiting-for-manual-testing",
+            "assignee": "laqieer",
+            "remove_label_from": cleanup_urls,
+            "remove_temporary_assignee_from": list(reversed(cleanup_urls)),
+        }
+        self.assertEqual(
+            [],
+            validate_completion_cleanup(contract, history, cleanup),
+        )
+        for omitted_url in (closed_pr, superseded_pr):
+            with self.subTest(omitted=omitted_url):
+                mutated = copy.deepcopy(cleanup)
+                mutated["remove_label_from"].remove(omitted_url)
+                self.assertTrue(
+                    validate_completion_cleanup(contract, history, mutated)
+                )
+                mutated = copy.deepcopy(cleanup)
+                mutated["remove_temporary_assignee_from"].remove(omitted_url)
+                self.assertTrue(
+                    validate_completion_cleanup(contract, history, mutated)
+                )
+        extra = copy.deepcopy(cleanup)
+        extra["remove_label_from"].append(never_labeled_pr)
+        self.assertTrue(validate_completion_cleanup(contract, history, extra))
 
     def test_manual_handoff_case_subsections_do_not_leak(self):
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")

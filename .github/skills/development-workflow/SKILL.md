@@ -232,6 +232,10 @@ eligibility, preview, activation, hold, completion, and queue fields exactly;
 it is authoritative over prose summaries. This is not a human review gate:
 deterministic criteria remain the agent's responsibility, and manual handoff
 is limited to the visual, audio, or UX judgments admitted by the contract.
+The contract requires identified non-instrumented positive and control
+artifacts to be rendered and inspected before activation. Completion cleans
+the label and temporary assignment from the issue and every PR that received
+the handoff, including a PR later closed or superseded.
 
 Use the documented queue:
   [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).
