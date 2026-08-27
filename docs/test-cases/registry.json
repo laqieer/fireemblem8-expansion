@@ -2358,10 +2358,10 @@
       "prerequisites": "Repository root with Python 3, a host C compiler, libmGBA development files, and a new ignored build/ output path; no save or savestate.",
       "actions": "Run the focused synthetic batch selector and the exact three-seed libmGBA fixture selector.",
       "expected_result": "Serial and parallel reports are byte-identical and retain terminal/metric records for every seed; validated canonical scenario/specification SHA-256 identities distinguish semantic changes even when names and versions match; comparison reports provenance and metric changes without a balance conclusion.",
-      "negative_control": "Implicit/duplicate seeds, missing bounds, schema version 3 or an execution profile, unsupported metrics, malformed nested reports, output/reservation collisions, save reuse, and shared-backend setup failures return 2 before seed capture and leave no output; individual seed or terminal failures remain visible in status-1 reports.",
-      "interactions": "Depends on #86 bounded terminals and #90 profile identity; #88 accelerated fidelity is optional and not a stack parent.",
+      "negative_control": "Implicit/duplicate/out-of-width seeds, missing or duplicate required metrics, missing/mismatched/overrun bounds, schema version 3 or an execution profile, malformed or over-256-run reports, output/reservation/publication races, save reuse, and shared-backend setup failures return 2 before seed capture and never overwrite a competing destination; individual seed or terminal failures remain visible in status-1 reports.",
+      "interactions": "Depends on #86 bounded terminals and #90 profile identity. The latest accepted issue #91 architecture-handoff correction supersedes the initial issue body: #88 accelerated fidelity is optional and not a stack parent, and this initial collector remains normal-fidelity schema version 2.",
       "save_compatibility": "Host-only, clean-boot collection with no loaded or mutated save, target allocation, migration, compatibility epoch, localization, generated data, or archival impact.",
-      "cleanup": "The generated fixture removes its build/test-artifacts directory; use make clean_fast for other ignored build output.",
+      "cleanup": "The fixture removes its random per-test child under build/test-artifacts/autoplay-batch; that ignored parent may remain. Use make clean_fast for other ignored build output.",
       "limitations": "Three seeds prove deterministic collection and reporting, not statistical power, difficulty, campaign quality, or balance.",
       "automation": [
         {

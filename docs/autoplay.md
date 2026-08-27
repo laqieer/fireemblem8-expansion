@@ -793,6 +793,9 @@ capability built directly on #85's telemetry, #86's bounded terminal contract,
 #89's semantic group/objective telemetry, and #90's profile identity. Its
 immediate stack parent is #90; #88 accelerated fidelity is explicitly not a
 stack parent or requirement. `TC-AUTOPLAY-BATCH-001` uses only normal fidelity.
+This follows the latest accepted issue #91 architecture-handoff correction,
+which supersedes the initial issue body: #88 remains optional integration and
+the initial batch collector is frozen to normal-fidelity schema version 2.
 
 The batch CLI requires one exact ROM/ELF, one bounded scenario with
 `schema_version` exactly 2 and no `execution_profile`, one versioned
@@ -803,16 +806,17 @@ shared backend compiled and validated before any worker starts. A
 specification supplies the only permitted seed mechanism: an exact linked
 EWRAM/IWRAM binding and a frame at which that value is written. The report
 therefore identifies a real seed injection rather than claiming that an
-arbitrary label changed the ROM's RNG.
+arbitrary label changed the ROM's RNG. Every seed must fit that declared
+1/2/4-byte field before backend setup.
 
 The version-1 specification declares normal-fidelity profile/configuration
 identity and semantic metric descriptors. Metric probes must be part of the
 terminal checkpoint, keeping faction/group survivor and casualty counts,
 recruitment/village/chest outcomes, and configured EXP/item/resource deltas
 grounded in ROM-supplied semantic telemetry. Unsupported metrics, duplicate or
-implicit seeds, omitted bounds, unresolved metric probes, version 3/profile
-scenarios, reuse of a writable SRAM image, and output collisions fail before
-execution.
+implicit seeds, omitted bounds, unresolved metric probes, missing or duplicate
+required metric/delta kinds, version 3/profile scenarios, reuse of a writable
+SRAM image, and output collisions fail before execution.
 
 The version-2 report contains sorted ROM/configuration/scenario/profile/bound
 provenance, canonical normalized scenario and specification definitions with
@@ -825,9 +829,13 @@ Parallel scheduling cannot affect report order or bytes. The companion
 `compare` command deeply validates nested provenance, ROM, terminal, metric,
 aggregate, and run shapes, then reports provenance-definition,
 added/removed-seed, terminal, and metric deltas without inferring statistical
-significance, difficulty, or balance. Output is exclusively staged beside the
-requested ignored `build/` path, fsynced, and atomically published only on
-success; failure removes the staging file and cannot refresh either input.
+significance, difficulty, or balance. Imported reports require 1 through 256
+unique ascending seeds; provenance limits must exactly match the canonical
+scenario's required frame/turn/action bounds and counter probes, and terminal
+plus metric values must remain within them. Output is exclusively staged
+beside the requested ignored `build/` path, fsynced, and hard-linked to an
+absent destination without clobbering; a competing creator is preserved and
+failure removes only this invocation's staging/link.
 
 This host-only layer adds no ROM code, RAM allocation, feature gate,
 configuration-identity field, generated game data, localization, save byte,

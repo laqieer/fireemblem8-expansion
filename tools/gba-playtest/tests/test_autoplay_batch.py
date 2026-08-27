@@ -232,6 +232,68 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
                 code = autoplay_batch.main(arguments)
         return code, stdout.getvalue(), stderr.getvalue()
 
+    def _refresh_report_summary(self, report: dict) -> None:
+        metric_definitions = {
+            metric["id"]: metric
+            for metric in report["provenance"]["specification"]["definition"][
+                "metrics"
+            ]
+        }
+        success_count = sum(run["status"] == "success" for run in report["runs"])
+        terminal_reasons: dict[str, int] = {}
+        for run in report["runs"]:
+            if "terminal" in run:
+                reason = run["terminal"]["reason"]
+                terminal_reasons[reason] = terminal_reasons.get(reason, 0) + 1
+        report["summary"] = {
+            "failure_count": len(report["runs"]) - success_count,
+            "metric_distributions": autoplay_batch._metric_distributions(
+                report["runs"],
+                metric_definitions,
+            ),
+            "run_count": len(report["runs"]),
+            "success_count": success_count,
+            "terminal_reasons": dict(sorted(terminal_reasons.items())),
+        }
+
+    def _refresh_specification_digest(self, report: dict) -> None:
+        specification = report["provenance"]["specification"]
+        specification["definition_sha256"] = autoplay_batch._canonical_sha256(
+            specification["definition"]
+        )
+
+    def _assert_compare_rejects(
+        self,
+        baseline: Path,
+        candidate_data: dict,
+        name: str,
+        expected: str,
+    ) -> None:
+        candidate = self.output(f"{name}.json")
+        candidate.write_text(
+            autoplay_batch.serialize_report(candidate_data),
+            encoding="utf-8",
+        )
+        comparison = self.output(f"{name}-comparison.json")
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            code = autoplay_batch.main(
+                [
+                    "compare",
+                    "--baseline",
+                    str(baseline),
+                    "--candidate",
+                    str(candidate),
+                    "--output",
+                    str(comparison),
+                ]
+            )
+        self.assertEqual(code, 2)
+        self.assertIn(expected, stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+        self.assertFalse(comparison.exists())
+        self.assertFalse(autoplay_batch._temporary_output_path(comparison).exists())
+
     def test_serial_parallel_reports_are_byte_identical_and_failures_remain_visible(self):
         serial = self.output("host-serial.json")
         parallel = self.output("host-parallel.json")
@@ -430,6 +492,202 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         self.assertIn("scenario.definition_sha256", changed_fields)
         self.assertIn("specification.definition_sha256", changed_fields)
 
+    def test_imported_spec_reapplies_complete_required_metric_contract(self):
+        baseline = self.output("metric-contract-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        cases = (
+            ("missing-terminal", "terminal_reason", None, "required metric kind 'terminal_reason'"),
+            ("missing-item-delta", "group_deltas", "item", "required group delta kind 'item'"),
+        )
+        for name, kind, delta_kind, expected in cases:
+            with self.subTest(name=name):
+                candidate = copy.deepcopy(valid)
+                definitions = candidate["provenance"]["specification"]["definition"][
+                    "metrics"
+                ]
+                removed = next(
+                    metric
+                    for metric in definitions
+                    if metric["kind"] == kind
+                    and (
+                        delta_kind is None
+                        or metric.get("delta_kind") == delta_kind
+                    )
+                )
+                definitions.remove(removed)
+                for run in candidate["runs"]:
+                    if "metrics" in run:
+                        run["metrics"].pop(removed["id"])
+                self._refresh_specification_digest(candidate)
+                self._refresh_report_summary(candidate)
+                self._assert_compare_rejects(
+                    baseline,
+                    candidate,
+                    name,
+                    expected,
+                )
+
+        duplicate_kind = copy.deepcopy(valid)
+        definitions = duplicate_kind["provenance"]["specification"]["definition"][
+            "metrics"
+        ]
+        next(metric for metric in definitions if metric["id"] == "frames")[
+            "kind"
+        ] = "terminal_reason"
+        self._refresh_specification_digest(duplicate_kind)
+        self._assert_compare_rejects(
+            baseline,
+            duplicate_kind,
+            "duplicate-required-kind",
+            "required metric kind 'terminal_reason'; found 2",
+        )
+
+        duplicate_delta = copy.deepcopy(valid)
+        definitions = duplicate_delta["provenance"]["specification"]["definition"][
+            "metrics"
+        ]
+        next(metric for metric in definitions if metric["id"] == "resources")[
+            "delta_kind"
+        ] = "item"
+        self._refresh_specification_digest(duplicate_delta)
+        self._assert_compare_rejects(
+            baseline,
+            duplicate_delta,
+            "duplicate-required-delta",
+            "required group delta kind 'item'; found 2",
+        )
+
+    def test_imported_bounds_counters_and_metrics_cannot_exceed_scenario(self):
+        baseline = self.output("bounds-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        for field in ("max_frames", "max_turns", "max_actions"):
+            with self.subTest(bound=field):
+                candidate = copy.deepcopy(valid)
+                candidate["provenance"]["bounds"][field] += 1
+                self._assert_compare_rejects(
+                    baseline,
+                    candidate,
+                    f"mismatched-{field}",
+                    "bounds must exactly match canonical scenario",
+                )
+
+        frame = copy.deepcopy(valid)
+        frame["runs"][0]["terminal"]["frame"] = 3
+        frame["runs"][0]["metrics"]["frames"] = 4
+        self._refresh_report_summary(frame)
+        self._assert_compare_rejects(
+            baseline,
+            frame,
+            "overbound-frame",
+            ".terminal.frame must be an integer from 0 through 2",
+        )
+
+        for counter_name, metric_id in (("turn", "turns"), ("actions", "actions")):
+            with self.subTest(counter=counter_name):
+                candidate = copy.deepcopy(valid)
+                candidate["runs"][0]["terminal"][counter_name]["value"] = "0x00000021"
+                candidate["runs"][0]["metrics"][metric_id] = 33
+                self._refresh_report_summary(candidate)
+                self._assert_compare_rejects(
+                    baseline,
+                    candidate,
+                    f"overbound-{counter_name}",
+                    "exceeds declared bound 32",
+                )
+
+        wrong_probe = copy.deepcopy(valid)
+        wrong_probe["runs"][0]["terminal"]["turn"]["address"] = PROBE_ACTION
+        self._assert_compare_rejects(
+            baseline,
+            wrong_probe,
+            "wrong-turn-probe",
+            "address/size must match the canonical scenario counter",
+        )
+
+    def test_seed_values_fit_declared_probe_width_before_backend_setup(self):
+        for size in (1, 2, 4):
+            maximum = (1 << (size * 8)) - 1
+            probe = autoplay_batch.MetricProbe(PROBE_SEED, int(PROBE_SEED, 16), size)
+            self.assertEqual(
+                autoplay_batch._validate_seed_values((0, maximum), probe),
+                (0, maximum),
+            )
+            for invalid in (True, -1, maximum + 1):
+                with self.subTest(size=size, invalid=invalid):
+                    with self.assertRaisesRegex(
+                        gba_playtest.PlaytestError,
+                        f"{size}-byte seed probe",
+                    ):
+                        autoplay_batch._validate_seed_values((invalid,), probe)
+
+        for size, seed in ((1, "256"), (2, "65536"), (4, "4294967296"), (4, "-1")):
+            with self.subTest(preflight_size=size, seed=seed):
+                specification = specification_data()
+                specification["seeding"]["size"] = size
+                self.specification.write_text(
+                    json.dumps(specification, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                output = self.output(f"seed-{size}-{seed.replace('-', 'negative')}.json")
+                stderr = io.StringIO()
+                with mock.patch.object(
+                    gba_playtest,
+                    "build_backend",
+                    side_effect=AssertionError("invalid seed reached backend setup"),
+                ), mock.patch.object(
+                    gba_playtest,
+                    "capture",
+                    side_effect=AssertionError("invalid seed reached capture"),
+                ), redirect_stderr(stderr):
+                    code = autoplay_batch.main(
+                        self.arguments(output, seeds=seed)
+                    )
+                self.assertEqual(code, 2)
+                self.assertFalse(output.exists())
+                self.assertFalse(autoplay_batch._temporary_output_path(output).exists())
+
+    def test_imported_run_count_is_bounded_unique_and_ascending(self):
+        baseline = self.output("run-count-baseline.json")
+        self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
+        valid = json.loads(baseline.read_text(encoding="utf-8"))
+
+        maximum = copy.deepcopy(valid)
+        template = maximum["runs"][0]
+        maximum["runs"] = []
+        for seed in range(256):
+            run = copy.deepcopy(template)
+            run["seed"] = seed
+            maximum["runs"].append(run)
+        self._refresh_report_summary(maximum)
+        autoplay_batch.validate_report(maximum, "maximum-report")
+
+        cases = []
+        empty = copy.deepcopy(valid)
+        empty["runs"] = []
+        cases.append(("empty-runs", empty, "non-empty array"))
+        excessive = copy.deepcopy(maximum)
+        extra = copy.deepcopy(template)
+        extra["seed"] = 256
+        excessive["runs"].append(extra)
+        cases.append(("excessive-runs", excessive, "exceeding the 256-run limit"))
+        duplicate = copy.deepcopy(valid)
+        duplicate["runs"][1]["seed"] = duplicate["runs"][0]["seed"]
+        cases.append(("duplicate-runs", duplicate, "unique ascending"))
+        descending = copy.deepcopy(valid)
+        descending["runs"].reverse()
+        cases.append(("descending-runs", descending, "unique ascending"))
+        for name, report, expected in cases:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(
+                    gba_playtest.PlaytestError,
+                    expected,
+                ):
+                    autoplay_batch.validate_report(report, name)
+
     def test_compare_rejects_malformed_nested_reports_without_tracebacks(self):
         baseline = self.output("deep-baseline.json")
         self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
@@ -586,13 +844,40 @@ class AutoplayBatchHostTests(BatchFixtureTestCase):
         self.assertFalse(serialization_output.exists())
         self.assertFalse(serialization_temporary.exists())
 
+        race_output = self.output("destination-race.json")
+        race_temporary = autoplay_batch._temporary_output_path(race_output)
+        serialize_report = autoplay_batch.serialize_report
+
+        def create_competing_destination(report):
+            race_output.write_bytes(b"competing creator")
+            return serialize_report(report)
+
+        stderr = io.StringIO()
+        with mock.patch.object(
+            gba_playtest,
+            "build_backend",
+            side_effect=self._fake_build_backend,
+        ), mock.patch.object(
+            gba_playtest,
+            "capture",
+            side_effect=self._fake_capture,
+        ), mock.patch.object(
+            autoplay_batch,
+            "serialize_report",
+            side_effect=create_competing_destination,
+        ), redirect_stderr(stderr):
+            self.assertEqual(autoplay_batch.main(self.arguments(race_output)), 2)
+        self.assertIn("will not be overwritten", stderr.getvalue())
+        self.assertEqual(race_output.read_bytes(), b"competing creator")
+        self.assertFalse(race_temporary.exists())
+
     def test_comparison_reports_metric_changes_and_never_rewrites_inputs(self):
         baseline = self.output("baseline.json")
         candidate = self.output("candidate.json")
         self.assertEqual(self._run_fake(self.arguments(baseline))[0], 1)
         candidate_data = json.loads(baseline.read_text(encoding="utf-8"))
-        candidate_data["runs"][0]["metrics"]["turns"] = 99
-        candidate_data["runs"][0]["terminal"]["turn"]["value"] = "0x00000063"
+        candidate_data["runs"][0]["metrics"]["turns"] = 9
+        candidate_data["runs"][0]["terminal"]["turn"]["value"] = "0x00000009"
         metric_definitions = {
             metric["id"]: metric
             for metric in candidate_data["provenance"]["specification"]["definition"][

@@ -128,12 +128,16 @@ The required specification is versioned JSON. It names the configuration and
 strategy profile, requires `"fidelity": "normal"`, and declares a writable
 EWRAM/IWRAM seed injection address and frame. The runner writes each seed only
 at that declared frame after a fresh libmGBA boot; it never treats a seed as a
-label or silently mutates an unknown RNG state. The terminal checkpoint must
-declare every semantic probe used by the selected metrics. Supported metric
-kinds cover the typed terminal reason/frame/turn/action values,
+label or silently mutates an unknown RNG state. Every seed must fit the
+declared 1/2/4-byte probe before backend setup. The terminal checkpoint must
+declare every semantic probe used by the selected metrics. A specification or
+imported report must contain exactly one terminal/frame/turn/action,
+faction-count, and event-outcome metric plus exactly one EXP/item/resource
+delta metric. Supported metric kinds cover those typed values,
 survivor/casualty counts by faction/group, selected recruitment/village/chest
 event outcomes, and configured EXP/item/resource group deltas. Unknown metric
-kinds or unrecorded probes fail before execution.
+kinds, missing/duplicate required kinds, or unrecorded probes fail before
+execution.
 
 Reports use `format_version: 2`, sorted object keys, sorted numeric seed
 records, complete ROM/configuration/scenario/profile/seed-binding/bound
@@ -146,6 +150,10 @@ metric, aggregate, and run value before comparison. Each report has one
 terminal and metric record per seed and explicit
 `terminal_failure` or `execution_failure` records. Non-success terminals such
 as a stall or exhausted bound remain in the report and make `run` return 1.
+Imported reports contain 1 through 256 unique ascending seeds. Provenance
+bounds must exactly equal the canonical scenario's required frame/turn/action
+limits; terminal counters must use those declared probes, and terminal plus
+metric values cannot exceed those limits.
 Serial and parallel runs omit scheduling/timing details from the JSON, so the
 same inputs produce byte-identical reports. The summary adds deterministic
 terminal-reason counts and per-metric value distributions without omitting the
@@ -157,14 +165,20 @@ runner compiles one shared backend before launching workers; compiler,
 libmGBA, backend-build, and other global setup failures return 2 without any
 seed records, while an individual seed execution failure is retained in a
 published report and returns 1. Output is staged in an exclusively created
-sibling, flushed and atomically replaced only after successful
-run/validation/serialization; every failure removes the staging file and
-leaves the requested path absent for a corrected retry. Batch mode rejects
+sibling, flushed, hard-linked to the absent destination without clobbering,
+and directory-fsynced only after successful run/validation/serialization.
+Every failure removes only this invocation's staging/link and leaves an
+unrelated competing destination untouched. Batch mode rejects
 `--sram-image`, so no writable save fixture can be reused. `compare` reads two
 deeply validated reports and writes a third new file containing provenance,
 added/removed seed, terminal, and metric changes. It has no update/refresh mode
 and never rewrites either report; comparisons describe observed differences
 only and make no statistical, difficulty, or balance conclusion.
+
+The latest accepted issue #91 architecture-handoff correction supersedes the
+initial issue body: accelerated fidelity (#88) is optional integration, not a
+dependency or supported mode of this initial collector. This batch contract is
+intentionally frozen to normal-fidelity schema version 2.
 
 ### Baseline refresh policy
 

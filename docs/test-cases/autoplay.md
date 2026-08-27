@@ -438,7 +438,9 @@ assignment selection from generated data and event flags.
   [#91](https://github.com/laqieer/fireemblem8-expansion/issues/91).
 - **Supported configuration or artifact:** normal-fidelity generated homebrew
   libmGBA fixture with three explicit seeds. Accelerated fidelity (#88) is not
-  required and is rejected by this initial collector.
+  required and is rejected by this initial collector. The latest accepted
+  issue #91 architecture-handoff correction supersedes the initial issue body
+  and freezes this contract to normal-fidelity schema version 2.
 - **Prerequisites and clean state:** Python 3, a host C compiler, libmGBA
   development files, one exact ROM/ELF/scenario/specification, and a new
   output path below ignored `build/`. Do not provide a save or savestate.
@@ -468,27 +470,32 @@ Duplicate or implicit seed lists, a missing/non-positive hard bound,
 unsupported metric, schema version 3 or any execution profile, existing or
 concurrently reserved output path, and `--sram-image` all fail before backend
 or capture startup. Malformed nested report values fail comparison with status
-2 and an exact path instead of a traceback. Shared-backend/global setup failure
-returns 2 with no output or seed records; an individual seed failure is
-retained as `execution_failure` and returns 1. A non-success terminal is
-retained as `terminal_failure`, contributes to the failure count, and returns
-1. Failed staging is removed for retry, while comparison leaves both input
-report bytes untouched.
+2 and an exact path instead of a traceback. This includes missing/duplicate
+required metric kinds, seeds outside their declared probe width, zero or more
+than 256 imported runs, provenance bounds that differ from the canonical
+scenario, and self-consistent terminal/metric values beyond those bounds.
+Shared-backend/global setup failure returns 2 with no output or seed records;
+an individual seed failure is retained as `execution_failure` and returns 1.
+A non-success terminal is retained as `terminal_failure`, contributes to the
+failure count, and returns 1. A destination created during publication is
+never overwritten; failed staging is removed for retry, while comparison
+leaves both input report bytes untouched.
 
 ### Interactions and save compatibility
 
 The collector depends on #86's bounded terminal/checkpoint semantics and #90's
-profile identity. #88 accelerated fidelity is optional integration only, not a
-parent. The seed write is restricted to explicitly declared writable
+profile identity. Per the latest accepted issue #91 architecture-handoff
+correction, which supersedes the initial issue body, #88 accelerated fidelity
+is optional integration only, not a parent. The seed write is restricted to explicitly declared writable
 EWRAM/IWRAM at one declared frame; no save is loaded or retained. There are no
 ROM feature flags, target allocation, generated data, localization, save
 layout, migration, compatibility epoch, or archival impact.
 
 ### Cleanup and limitations
 
-The test fixture removes its temporary directory beneath `build/test-artifacts`.
-Use
-`make clean_fast` for other build outputs. Three seeds prove report
+The fixture removes its random per-test child beneath
+`build/test-artifacts/autoplay-batch`; that ignored parent directory may
+remain. Use `make clean_fast` for other build outputs. Three seeds prove report
 determinism, complete per-run visibility, and comparison structure only; they
 do not establish statistical power, difficulty, campaign quality, or balance.
 
