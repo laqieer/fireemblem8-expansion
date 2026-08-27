@@ -961,6 +961,14 @@ those values. This extends semantics without pointers, changing the page size,
 or changing the host command: the host still chooses only an ordinal and
 echoes the corresponding opaque token.
 
+The observation's overlapping start/count aliases and tagged payload are
+declared as named C89 unions (`start`, `count`, and `payload`), not anonymous
+members. This keeps the public wire offsets at 36, 40, and 100 respectively,
+the observation at 996 bytes, and the modern/host transport ABI unchanged
+while allowing the inactive header contract to compile under archival agbcc.
+The archival planner translation unit retains compile-time size and offset
+checks even though release and archival builds emit no planner runtime state.
+
 The host obtains all pages only by sending typed `PAGE` commands with a fixed
 `page_index`; there is no in-process action-list shortcut. Up to 512 actions
 use at most 19 action pages. Global ordinals and the two token words returned
@@ -1024,6 +1032,16 @@ does not self-write commands. The integration covers all semantic/action
 pages, opaque-token acceptance and rejection, same-ROM/config/seed scenario
 mismatch, malformed traffic timeout, cancellation, and same-run chapter-two
 checkpoint continuation.
+
+Host-only configuration coverage runs the generated GNUmakefile normally but
+replaces its recursive `$(MAKE)` boundary with a hermetic recorder. The
+recorder executes the child Makefile's variable probes with the same arguments
+and proves that bare Make selected `expansion-modern-boot-check`, debug, and
+the enabled planner without invoking an ARM compiler. The toolchain-equipped
+planner gate separately runs the real out-of-tree
+`configure --enable-autoplay-planner && make` compile/link/boot path. An
+explicit release request executes normally and rejects during configuration
+validation before compilation.
 
 The enabled ARM planner and shared action-semantics objects use 996-byte pages,
 64-byte commands, 52-byte checkpoints, 1,140 bytes of EWRAM/BSS, zero IWRAM,

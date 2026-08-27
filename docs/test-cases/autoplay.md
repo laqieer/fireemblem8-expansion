@@ -599,6 +599,12 @@ Prologue route, accepts a host-selected nontrivial action, reaches the next
 planner observation with the actor at the committed destination, then cancels
 safely. Explicit exit, restart, load, new-game, full-reset, and cancel paths
 clear the run/checkpoint.
+The named-union C89 layout preserves the 996-byte observation, with start,
+count, and payload at byte offsets 36, 40, and 100; command and checkpoint
+remain 64 and 52 bytes. The host-only configure test actually executes bare
+generated Make through a recursive-Make recorder and observes the debug goal
+and enabled profile without an ARM compiler. The toolchain gate separately
+executes the real configured compile/link/boot path.
 
 ### Negative control
 
@@ -616,6 +622,11 @@ Out-of-range/occupied Warp destinations, opened or wrong Unlock tiles, stale
 Torch coordinates, consumed keys, non-repairable or wrong Hammerne slots, and
 a token copied from another Hammerne slot all reject without applying the
 selected action.
+Archival agbcc compiles the inactive planner translation unit and its public
+header with warnings promoted to errors; unnamed no-instance unions or any
+size/offset drift therefore fail the legacy job. Host-only configuration
+coverage performs no target compilation, while the real configured build
+remains mandatory in the toolchain-equipped gate.
 
 ### Interactions and save compatibility
 
@@ -631,9 +642,10 @@ The focused host selector validates schema bounds, semantic availability,
 opaque token rejection, mailbox exclusivity, scenario/build/RNG provenance,
 typed paging, atomic trace limits, complete non-mutating enumeration,
 deadline accounting, coordinate/slot lowering and execution, key consumption,
-C/ARM linkage, configure routing, and lifecycle teardown. The libmGBA
-selectors run both planner implementations and all negative commands against
-the fixed-symbol host-driven transport from a fresh boot with blank in-memory
+C89/agbcc and native/ARM layout, executable host-only recursive-Make routing,
+real configured toolchain build, and lifecycle teardown. The libmGBA selectors
+run both planner implementations and all negative commands against the
+fixed-symbol host-driven transport from a fresh boot with blank in-memory
 SRAM. No manual-only criterion remains.
 
 ### Cleanup and limitations

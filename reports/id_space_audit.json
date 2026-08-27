@@ -380,7 +380,7 @@
       "domain": "chapter",
       "key": "include/expansion_autoplay_planner.h|struct-field|chapter|ExpansionAutoplayPlannerCampaignCheckpointV2.chapterIndex",
       "kind": "struct-field",
-      "line": 223,
+      "line": 229,
       "path": "include/expansion_autoplay_planner.h",
       "reason": null,
       "record_count": null,
@@ -399,7 +399,7 @@
       "domain": "chapter",
       "key": "include/expansion_autoplay_planner.h|struct-field|chapter|ExpansionAutoplayPlannerObservationV2.chapterIndex",
       "kind": "struct-field",
-      "line": 174,
+      "line": 189,
       "path": "include/expansion_autoplay_planner.h",
       "reason": null,
       "record_count": null,
@@ -21449,7 +21449,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "3ca1d83a046a8eeba0425479072145e9d414191924fae4e262f9a25f1552318e",
+  "digest": "1b078db291c84b2b2dc94d70bb4599edb30eb1a7dfe56fca1e5bdf6610bfc21c",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,

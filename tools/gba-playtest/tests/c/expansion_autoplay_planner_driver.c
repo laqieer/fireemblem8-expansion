@@ -741,11 +741,11 @@ static int TestHammerneWireIdentity(void)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS
-            && gExpansionAutoplayPlannerObservation.actionCount == 2,
+            && gExpansionAutoplayPlannerObservation.count.actionCount == 2,
         "Hammerne candidates must traverse the fixed action page"
     );
-    first = gExpansionAutoplayPlannerObservation.actions[0];
-    second = gExpansionAutoplayPlannerObservation.actions[1];
+    first = gExpansionAutoplayPlannerObservation.payload.actions[0];
+    second = gExpansionAutoplayPlannerObservation.payload.actions[1];
     CHECK(
         first.itemSlot == 0x0000
             && second.itemSlot == 0x0100
@@ -758,7 +758,7 @@ static int TestHammerneWireIdentity(void)
         gExpansionAutoplayPlannerObservation.runId,
         gExpansionAutoplayPlannerObservation.observationId,
         0,
-        gExpansionAutoplayPlannerObservation.actionStartOrdinal + 1,
+        gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 1,
         first.tokenLo,
         first.tokenHi);
     CHECK(
@@ -773,7 +773,7 @@ static int TestHammerneWireIdentity(void)
         gExpansionAutoplayPlannerObservation.runId,
         gExpansionAutoplayPlannerObservation.observationId,
         0,
-        gExpansionAutoplayPlannerObservation.actionStartOrdinal + 1,
+        gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 1,
         second.tokenLo,
         second.tokenHi);
     CHECK(
@@ -1063,15 +1063,16 @@ int main(void)
             && gExpansionAutoplayPlannerObservation.pageCount == 24
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_SUMMARY
-            && gExpansionAutoplayPlannerObservation.recordCount
+            && gExpansionAutoplayPlannerObservation.count.recordCount
                 == EXPANSION_AUTOPLAY_PLANNER_SEMANTIC_FIELD_CAPACITY,
         "summary/map/unit/action pages must share the fixed-width boundary"
     );
     CHECK(
-        gExpansionAutoplayPlannerObservation.fields[0].availability
+        gExpansionAutoplayPlannerObservation.payload.fields[0].availability
                 == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
-            && gExpansionAutoplayPlannerObservation.fields[1].value != 0
-            && gExpansionAutoplayPlannerObservation.fields[2].value == 0x010101,
+            && gExpansionAutoplayPlannerObservation.payload.fields[1].value != 0
+            && gExpansionAutoplayPlannerObservation.payload.fields[2].value
+                == 0x010101,
         "summary page must expose actual map and active-unit semantics"
     );
 
@@ -1108,8 +1109,9 @@ int main(void)
         gExpansionAutoplayPlannerObservation.pageIndex == 23
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS
-            && gExpansionAutoplayPlannerObservation.actionStartOrdinal == 504
-            && gExpansionAutoplayPlannerObservation.actionCount == 8,
+            && gExpansionAutoplayPlannerObservation.start.actionStartOrdinal
+                == 504
+            && gExpansionAutoplayPlannerObservation.count.actionCount == 8,
         "last page must retain stable global ordinals"
     );
 
@@ -1142,8 +1144,9 @@ int main(void)
         "page must republish after malformed command"
     );
 
-    action = &gExpansionAutoplayPlannerObservation.actions[7];
-    selectedOrdinal = gExpansionAutoplayPlannerObservation.actionStartOrdinal + 7;
+    action = &gExpansionAutoplayPlannerObservation.payload.actions[7];
+    selectedOrdinal =
+        gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 7;
     selectedTokenLo = action->tokenLo;
     selectedTokenHi = action->tokenHi;
     WriteCommand(
@@ -1360,7 +1363,7 @@ int main(void)
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS,
         "wait candidate must be read through a typed action page"
     );
-    action = &gExpansionAutoplayPlannerObservation.actions[0];
+    action = &gExpansionAutoplayPlannerObservation.payload.actions[0];
     CHECK(
         (action->destination & 0xFFFF) != sUnit.xPos
             || (action->destination >> 16) != sUnit.yPos,
@@ -1371,7 +1374,7 @@ int main(void)
         gExpansionAutoplayPlannerObservation.runId,
         gExpansionAutoplayPlannerObservation.observationId,
         0,
-        gExpansionAutoplayPlannerObservation.actionStartOrdinal,
+        gExpansionAutoplayPlannerObservation.start.actionStartOrdinal,
         action->tokenLo,
         action->tokenHi);
     CHECK(

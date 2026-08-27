@@ -147,6 +147,29 @@ struct ExpansionAutoplayPlannerUnitV2
     u32 inventoryDigest;
 };
 
+union ExpansionAutoplayPlannerRecordStartV2
+{
+    u32 recordStart;
+    u32 actionStartOrdinal;
+};
+
+union ExpansionAutoplayPlannerRecordCountV2
+{
+    u32 recordCount;
+    u32 actionCount;
+};
+
+union ExpansionAutoplayPlannerPayloadV2
+{
+    struct ExpansionAutoplayPlannerSemanticFieldV2
+        fields[EXPANSION_AUTOPLAY_PLANNER_SEMANTIC_FIELD_CAPACITY];
+    u32 mapCells[EXPANSION_AUTOPLAY_PLANNER_MAP_RECORD_CAPACITY];
+    struct ExpansionAutoplayPlannerUnitV2
+        units[EXPANSION_AUTOPLAY_PLANNER_UNIT_RECORD_CAPACITY];
+    struct ExpansionAutoplayPlannerActionV2
+        actions[EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY];
+};
+
 struct ExpansionAutoplayPlannerObservationV2
 {
     u32 magic;
@@ -158,16 +181,8 @@ struct ExpansionAutoplayPlannerObservationV2
     u32 pageIndex;
     u32 pageCount;
     u32 pageKind;
-    union
-    {
-        u32 recordStart;
-        u32 actionStartOrdinal;
-    };
-    union
-    {
-        u32 recordCount;
-        u32 actionCount;
-    };
+    union ExpansionAutoplayPlannerRecordStartV2 start;
+    union ExpansionAutoplayPlannerRecordCountV2 count;
     u32 totalRecordCount;
     u32 totalActionCount;
     u32 rejection;
@@ -182,16 +197,7 @@ struct ExpansionAutoplayPlannerObservationV2
     u32 actualConfigIdentity;
     u32 actualScenarioIdentity;
     u32 actualSeedIdentity;
-    union
-    {
-        struct ExpansionAutoplayPlannerSemanticFieldV2
-            fields[EXPANSION_AUTOPLAY_PLANNER_SEMANTIC_FIELD_CAPACITY];
-        u32 mapCells[EXPANSION_AUTOPLAY_PLANNER_MAP_RECORD_CAPACITY];
-        struct ExpansionAutoplayPlannerUnitV2
-            units[EXPANSION_AUTOPLAY_PLANNER_UNIT_RECORD_CAPACITY];
-        struct ExpansionAutoplayPlannerActionV2
-            actions[EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY];
-    };
+    union ExpansionAutoplayPlannerPayloadV2 payload;
 };
 
 struct ExpansionAutoplayPlannerCommandV2

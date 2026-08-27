@@ -21,6 +21,7 @@ for path in (str(PLAYTEST_DIR), str(TESTS_DIR)):
 
 import autoplay_planner as planner
 import gba_playtest
+import host_mode
 from homebrew_fixture import (
     build_planner_transport_backend,
     build_production_planner_rom,
@@ -417,11 +418,34 @@ class PlannerBridgeTests(unittest.TestCase):
         build_root = root / "build" / "test-artifacts" / "planner-configure"
         build_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            real_make = shutil.which("make")
+            self.assertIsNotNone(real_make, "GNU Make is required")
+            forbidden_compiler = Path(temporary) / "arm-none-eabi-gcc"
+            forbidden_compiler_record = (
+                Path(temporary) / "arm-compiler-was-invoked"
+            )
+            forbidden_compiler.write_text(
+                """#!/bin/sh
+: > "$PLANNER_FORBIDDEN_COMPILER_RECORD"
+exit 97
+""",
+                encoding="utf-8",
+            )
+            forbidden_compiler.chmod(0o755)
+            environment = os.environ.copy()
+            environment.pop("MAKEFLAGS", None)
+            environment["PATH"] = (
+                f"{temporary}{os.pathsep}{environment['PATH']}"
+            )
+            environment["PLANNER_FORBIDDEN_COMPILER_RECORD"] = str(
+                forbidden_compiler_record
+            )
             configured = subprocess.run(
                 [str(root / "configure"), "--enable-autoplay-planner"],
                 cwd=temporary,
                 capture_output=True,
                 text=True,
+                env=environment,
             )
             self.assertEqual(
                 configured.returncode,
@@ -434,56 +458,212 @@ class PlannerBridgeTests(unittest.TestCase):
             self.assertIn("MODERN_CONFIG := debug", fragment)
             self.assertIn("EXPANSION_AUTOPLAY_PLANNER := 1", fragment)
 
-            variables = subprocess.run(
+            recorder = Path(temporary) / "recursive-make-recorder"
+            record_path = Path(temporary) / "recursive-make.json"
+            recorder.write_text(
+                """#!/usr/bin/env python3
+import json
+import os
+import subprocess
+import sys
+
+arguments = sys.argv[1:]
+goal = arguments[-1]
+probe = subprocess.run(
+    [
+        os.environ["PLANNER_REAL_MAKE"],
+        *arguments[:-1],
+        "print-MODERN_CONFIG",
+        "print-EXPANSION_AUTOPLAY_PLANNER",
+    ],
+    capture_output=True,
+    text=True,
+)
+with open(os.environ["PLANNER_MAKE_RECORD"], "w", encoding="utf-8") as output:
+    json.dump(
+        {
+            "arguments": arguments,
+            "goal": goal,
+            "probe_returncode": probe.returncode,
+            "probe_stdout": probe.stdout,
+            "probe_stderr": probe.stderr,
+        },
+        output,
+        sort_keys=True,
+    )
+sys.stdout.write(probe.stdout)
+sys.stderr.write(probe.stderr)
+raise SystemExit(probe.returncode)
+""",
+                encoding="utf-8",
+            )
+            recorder.chmod(0o755)
+            environment["PLANNER_REAL_MAKE"] = real_make
+            environment["PLANNER_MAKE_RECORD"] = str(record_path)
+            bare_make = subprocess.run(
                 [
-                    "make",
+                    real_make,
                     "--no-print-directory",
-                    "print-MODERN_CONFIG",
-                    "print-EXPANSION_AUTOPLAY_PLANNER",
+                    f"MAKE={recorder}",
                 ],
                 cwd=temporary,
                 capture_output=True,
                 text=True,
+                env=environment,
             )
-            self.assertEqual(variables.returncode, 0, variables.stdout + variables.stderr)
+            self.assertEqual(
+                bare_make.returncode,
+                0,
+                bare_make.stdout + bare_make.stderr,
+            )
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            self.assertEqual(record["goal"], "expansion-modern-boot-check")
+            self.assertEqual(record["probe_returncode"], 0)
             self.assertIn(
                 "MODERN_CONFIG is a simple variable set to [debug]",
-                variables.stdout,
+                record["probe_stdout"],
             )
             self.assertIn(
                 "EXPANSION_AUTOPLAY_PLANNER is a simple variable set to [1]",
-                variables.stdout,
+                record["probe_stdout"],
             )
-
-            dry_run = subprocess.run(
-                ["make", "--no-print-directory", "-n"],
-                cwd=temporary,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(dry_run.returncode, 0, dry_run.stdout + dry_run.stderr)
-            self.assertIn(
-                "expansion-modern-boot-check",
-                dry_run.stdout,
-            )
-            self.assertNotIn(
-                "MODERN_CONFIG=release",
-                dry_run.stdout,
+            self.assertTrue(
+                all(
+                    "MODERN_CONFIG=release" not in argument
+                    for argument in record["arguments"]
+                )
             )
             release = subprocess.run(
                 [
-                    "make",
+                    real_make,
                     "--no-print-directory",
-                    "-n",
                     "expansion-modern-rom",
                     "MODERN_CONFIG=release",
                 ],
                 cwd=temporary,
                 capture_output=True,
                 text=True,
+                env=environment,
             )
             self.assertNotEqual(release.returncode, 0)
             self.assertIn("modern-debug-only", release.stdout + release.stderr)
+            self.assertFalse(
+                forbidden_compiler_record.exists(),
+                "host-only configure coverage invoked the ARM compiler",
+            )
+
+    def test_configured_bare_make_builds_debug_in_toolchain_lane(self):
+        if host_mode.host_only_enabled():
+            self.skipTest("configured ROM build belongs to the toolchain lane")
+        if shutil.which("arm-none-eabi-gcc") is None:
+            self.skipTest("ARM compiler unavailable")
+        root = TESTS_DIR.parents[2]
+        build_root = (
+            root / "build" / "test-artifacts" / "planner-configure-toolchain"
+        )
+        build_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            environment = os.environ.copy()
+            environment.pop("MAKEFLAGS", None)
+            configured = subprocess.run(
+                [str(root / "configure"), "--enable-autoplay-planner"],
+                cwd=temporary,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+            self.assertEqual(
+                configured.returncode,
+                0,
+                configured.stdout + configured.stderr,
+            )
+            fragment = (Path(temporary) / "config.autotools.mk").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("MODERN_CONFIG := debug", fragment)
+            self.assertIn("EXPANSION_AUTOPLAY_PLANNER := 1", fragment)
+            built = subprocess.run(
+                ["make", "--no-print-directory"],
+                cwd=temporary,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+            self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+
+    def test_public_protocol_layout_is_fixed_width_and_offset_stable(self):
+        compiler = shutil.which("gcc") or shutil.which("cc")
+        if compiler is None:
+            self.skipTest("no host C compiler")
+        root = TESTS_DIR.parents[2]
+        build_root = root / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            executable = Path(temporary) / "planner-layout-driver"
+            completed = subprocess.run(
+                [
+                    compiler,
+                    "-std=gnu89",
+                    "-Werror=declaration-after-statement",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=implicit-int",
+                    "-I",
+                    str(root / "include"),
+                    "-I",
+                    str(root / "include" / "generated"),
+                    str(
+                        TESTS_DIR
+                        / "c"
+                        / "expansion_autoplay_planner_layout_driver.c"
+                    ),
+                    "-o",
+                    str(executable),
+                ],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            completed = subprocess.run(
+                [str(executable)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            layout = {
+                key: int(value)
+                for key, value in (
+                    line.split("=", 1)
+                    for line in completed.stdout.splitlines()
+                )
+            }
+            self.assertEqual(
+                layout,
+                {
+                    "semantic_size": 8,
+                    "action_size": 32,
+                    "unit_size": 16,
+                    "start_union_size": 4,
+                    "count_union_size": 4,
+                    "payload_union_size": 896,
+                    "observation_size": 996,
+                    "observation_start_offset": 36,
+                    "observation_count_offset": 40,
+                    "observation_payload_offset": 100,
+                    "command_size": 64,
+                    "checkpoint_size": 52,
+                    "checkpoint_mode_offset": 20,
+                },
+            )
 
     def test_c_mailbox_adapter_accepts_only_typed_token_commit(self):
         compiler = shutil.which("gcc") or shutil.which("cc")

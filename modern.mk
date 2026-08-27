@@ -1086,6 +1086,8 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		PLANNER_PRODUCTION_ELF="$(MODERN_AUTOPLAY_PLANNER_ELF)" \
 		"$(PYTHON)" -m unittest \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_c_mailbox_adapter_accepts_only_typed_token_commit \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_public_protocol_layout_is_fixed_width_and_offset_stable \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_configured_bare_make_builds_debug_in_toolchain_lane \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_action_semantics_execute_selected_fields \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_arm_adapter_compiles_at_the_existing_computer_decision_boundary \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_production_mailbox_replays_two_chapters \

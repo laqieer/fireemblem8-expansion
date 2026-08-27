@@ -1,5 +1,7 @@
 #include "global.h"
 
+#include <stddef.h>
+
 #include "action_semantics.h"
 #include "bm.h"
 #include "bmcontainer.h"
@@ -35,6 +37,22 @@ typedef char ExpansionAutoplayPlannerPointerFreeSemanticCheck[
     sizeof(struct ExpansionAutoplayPlannerSemanticFieldV2) == 8 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerPointerFreeUnitCheck[
     sizeof(struct ExpansionAutoplayPlannerUnitV2) == 16 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerRecordStartSizeCheck[
+    sizeof(union ExpansionAutoplayPlannerRecordStartV2) == 4 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerRecordCountSizeCheck[
+    sizeof(union ExpansionAutoplayPlannerRecordCountV2) == 4 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerPayloadSizeCheck[
+    sizeof(union ExpansionAutoplayPlannerPayloadV2) == 896 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerRecordStartOffsetCheck[
+    offsetof(struct ExpansionAutoplayPlannerObservationV2, start) == 36 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerRecordCountOffsetCheck[
+    offsetof(struct ExpansionAutoplayPlannerObservationV2, count) == 40 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerPayloadOffsetCheck[
+    offsetof(struct ExpansionAutoplayPlannerObservationV2, payload) == 100 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerChapterModeOffsetCheck[
+    offsetof(
+        struct ExpansionAutoplayPlannerCampaignCheckpointV2,
+        chapterMode) == 20 ? 1 : -1];
 
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
 
@@ -1285,7 +1303,7 @@ static void SetSemanticField(
     u32 value)
 {
     struct ExpansionAutoplayPlannerSemanticFieldV2* field =
-        &gExpansionAutoplayPlannerObservation.fields[index];
+        &gExpansionAutoplayPlannerObservation.payload.fields[index];
 
     field->id = id;
     field->availability = availability;
@@ -1388,8 +1406,8 @@ static void PublishSummaryPage(void)
         MixDigest(
             MixDigest(2166136261u, gPlaySt.partyGoldAmount),
             convoyDigest));
-    gExpansionAutoplayPlannerObservation.recordStart = 0;
-    gExpansionAutoplayPlannerObservation.recordCount =
+    gExpansionAutoplayPlannerObservation.start.recordStart = 0;
+    gExpansionAutoplayPlannerObservation.count.recordCount =
         EXPANSION_AUTOPLAY_PLANNER_SEMANTIC_FIELD_CAPACITY;
     gExpansionAutoplayPlannerObservation.totalRecordCount =
         EXPANSION_AUTOPLAY_PLANNER_SEMANTIC_FIELD_CAPACITY;
@@ -1418,15 +1436,15 @@ static void PublishMapPage(u32 pageIndex)
         u32 unit = availability == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
             ? gBmMapUnit[y][x] : 0;
 
-        gExpansionAutoplayPlannerObservation.mapCells[index] =
+        gExpansionAutoplayPlannerObservation.payload.mapCells[index] =
             (x & 0x3F)
             | ((u32)(y & 0x3F) << 6)
             | ((u32)gBmMapTerrain[y][x] << 12)
             | (unit << 20)
             | ((u32)availability << 28);
     }
-    gExpansionAutoplayPlannerObservation.recordStart = start;
-    gExpansionAutoplayPlannerObservation.recordCount = count;
+    gExpansionAutoplayPlannerObservation.start.recordStart = start;
+    gExpansionAutoplayPlannerObservation.count.recordCount = count;
     gExpansionAutoplayPlannerObservation.totalRecordCount = total;
 }
 
@@ -1462,7 +1480,7 @@ static void PublishUnitPage(u32 pageIndex)
     {
         struct Unit* unit = GetUnitRecord(start + index);
         struct ExpansionAutoplayPlannerUnitV2* record =
-            &gExpansionAutoplayPlannerObservation.units[index];
+            &gExpansionAutoplayPlannerObservation.payload.units[index];
         enum ExpansionAutoplayPlannerAvailability availability =
             IsVisibleValidUnit(unit)
                 ? EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
@@ -1481,8 +1499,8 @@ static void PublishUnitPage(u32 pageIndex)
             record->inventoryDigest = InventoryDigest(unit);
         }
     }
-    gExpansionAutoplayPlannerObservation.recordStart = start;
-    gExpansionAutoplayPlannerObservation.recordCount = count;
+    gExpansionAutoplayPlannerObservation.start.recordStart = start;
+    gExpansionAutoplayPlannerObservation.count.recordCount = count;
     gExpansionAutoplayPlannerObservation.totalRecordCount = total;
 }
 
@@ -1499,7 +1517,7 @@ static bool CollectPageAction(
         return true;
     if (ordinal >= collector->start + collector->count)
         return false;
-    action = &gExpansionAutoplayPlannerObservation.actions[
+    action = &gExpansionAutoplayPlannerObservation.payload.actions[
         ordinal - collector->start];
     tokenLo = MakeTokenLo(
         decision,
@@ -1537,8 +1555,8 @@ static void PublishActionPage(u32 pageIndex)
         CollectPageAction,
         &collector,
         NULL);
-    gExpansionAutoplayPlannerObservation.recordStart = start;
-    gExpansionAutoplayPlannerObservation.recordCount = collector.count;
+    gExpansionAutoplayPlannerObservation.start.recordStart = start;
+    gExpansionAutoplayPlannerObservation.count.recordCount = collector.count;
     gExpansionAutoplayPlannerObservation.totalRecordCount = CandidateCount();
 }
 
@@ -1547,8 +1565,11 @@ static bool PublishPage(u32 pageIndex)
     u32 mapPages = MapPageCount();
     u32 unitPages = UnitPageCount();
     u32 pageCount = TotalPageCount();
-    u8* payload = (u8*)gExpansionAutoplayPlannerObservation.actions;
+    u8* payload =
+        (u8*)gExpansionAutoplayPlannerObservation.payload.actions;
     int index;
+    int payloadSize =
+        sizeof(gExpansionAutoplayPlannerObservation.payload.actions);
     u16 seeds[3];
 
     if (pageIndex >= pageCount)
@@ -1556,9 +1577,7 @@ static bool PublishPage(u32 pageIndex)
 
     gExpansionAutoplayPlannerObservation.state =
         EXPANSION_AUTOPLAY_PLANNER_STATE_DISABLED;
-    for (index = 0;
-         index < (int)sizeof(gExpansionAutoplayPlannerObservation.actions);
-         index++)
+    for (index = 0; index < payloadSize; index++)
         payload[index] = 0;
     StoreRNState(seeds);
     gExpansionAutoplayPlannerObservation.magic =
