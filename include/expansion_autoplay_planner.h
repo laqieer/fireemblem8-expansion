@@ -16,6 +16,16 @@
 #define FE8_EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID 0x00009201u
 #endif
 
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_EXPANSION_MODERN_BUILD \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER
+enum { ExpansionAutoplayPlannerScenarioIdMustBeIntegerConstant =
+    FE8_EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID };
+typedef char ExpansionAutoplayPlannerScenarioIdMustFitU32[
+    FE8_EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID >= 0
+    && (unsigned long long)FE8_EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID
+        <= 0xFFFFFFFFULL ? 1 : -1];
+#endif
+
 enum ExpansionAutoplayPlannerCommandKind
 {
     EXPANSION_AUTOPLAY_PLANNER_COMMAND_NONE = 0,

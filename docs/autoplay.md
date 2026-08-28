@@ -961,8 +961,10 @@ It participates in configuration identity but adds no save field, migration,
 epoch, localization, generated chapter data, or archival behavior. Release
 and archival builds omit its state and hooks. The separate
 `EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID` build value namespaces the runtime
-scenario contract; the published identity also binds the initialized chapter
-and map dimensions. The only exported records are
+scenario contract. Enabled modern builds require an integer constant from `0`
+through `0xFFFFFFFF` and reject negative, oversized, or invalid expressions
+at compilation; archival/inactive builds remain unaffected. The published
+identity also binds initialized chapter/map dimensions. The only exported records are
 the fixed-width, pointer-free `PlannerObservationV2`, `PlannerCommandV2`, and
 `PlannerCampaignCheckpointV2`; the host may read those symbols and may submit
 only one typed mailbox command. There is no raw-address, arbitrary-memory,
@@ -978,8 +980,8 @@ digests. An `INVENTORY` page exposes all five item slots for every valid unit,
 including item ID and uses. `RESOURCES` pages expose current gold, all 100
 convoy slots with item ID and uses, and every word of autoplay telemetry.
 `FLAGS` pages expose every bounded permanent and chapter flag ID and state.
-The summary retains map, objective, flag, inventory, and resource digests as
-integrity fields rather than substitutes for those values.
+The summary retains map, active-unit, objective, flag, and resource integrity
+fields; per-unit inventory digests remain only on unit records.
 Flag and convoy/resource availability derives only from the backing pointer
 and bounded domain sizes. A valid 32-bit digest of zero remains `AVAILABLE`
 and is published unchanged; null storage or an out-of-range flag domain is
@@ -1175,6 +1177,9 @@ mailbox, checkpoint, or transcript state.
 Input is newline framed with at most 511 bytes before the delimiter. An
 overlong or NUL-bearing line is drained through its one newline or EOF and
 produces exactly one error; no suffix can become a second typed command.
+Numeric command words use only unsigned hexadecimal digits, consume the whole
+token, and may not exceed `0xFFFFFFFF`; signs, prefixes, whitespace inside a
+token, overflow, and trailing junk reject before any mailbox write.
 Before any initial OBS or stdin handling, the backend requires the exact
 magic/version/size, READY state, control page zero, and one-page identity. The
 four-frame synthetic path and optional fixed launcher both pass this same

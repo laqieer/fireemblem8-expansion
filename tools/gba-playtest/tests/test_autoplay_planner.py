@@ -15,7 +15,6 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from unittest import mock
 
-
 TESTS_DIR = Path(__file__).resolve().parent
 PLAYTEST_DIR = TESTS_DIR.parent
 for path in (str(PLAYTEST_DIR), str(TESTS_DIR)):
@@ -30,7 +29,6 @@ from homebrew_fixture import (
     build_production_planner_rom,
 )
 
-
 PROVENANCE = {
     "config": "modern-debug",
     "rom": {"sha1": "fixture", "size": 1024},
@@ -41,6 +39,19 @@ TRANSCRIPT_SESSION = {
     "scenario_identity": 0, "seed_identity": 0,
     "ready_run_id": 0, "run_id": 1,
 }
+PLANNER_DRIVER_SOURCES = (
+    "src/action_semantics.c", "src/bmtarget.c",
+    "src/expansion_autoplay_planner.c",
+    "tools/gba-playtest/tests/c/expansion_autoplay_planner_driver.c",
+)
+PLANNER_DRIVER_DEFINES = (
+    "-DFE8_EXPANSION_MODERN_BUILD=1", "-DFE8_EXPANSION_DEBUG=1",
+    "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
+    "-DFE8_AUTOPLAY_PLANNER_RUNTIME_TEST=1",
+)
+INVALID_SCENARIO_IDS = (
+    "-1", "0x100000000", "0x1FFFFFFFF", "1.0", "not_a_constant",
+)
 TRANSCRIPT_RECORDS = {
     "map_cells": {
         "x": 0, "y": 0, "terrain": 1, "unit": 0,
@@ -65,17 +76,14 @@ TRANSCRIPT_RECORDS = {
     },
 }
 
-
 def _transcript_event(document, kind):
     return next(event for event in document["events"] if event["event"] == kind)
-
 
 def _transcript_target(document, event_kind, path=()):
     target = document if event_kind is None else _transcript_event(document, event_kind)
     for key in path:
         target = target[key]
     return target
-
 
 def _rechain_transcript(document):
     previous = "0" * 64
@@ -86,13 +94,11 @@ def _rechain_transcript(document):
         event["event_digest"] = planner._digest(event)
         previous = event["event_digest"]
 
-
 def _assert_import_rejected(test, document, message, *, rechain=True):
     if rechain:
         _rechain_transcript(document)
     with test.assertRaisesRegex(planner.PlannerError, message):
         planner.PlannerTranscript.import_bytes(planner._canonical(document))
-
 
 def _assert_replay_rejected(test, data, message=None):
     factory = mock.Mock(
@@ -107,7 +113,6 @@ def _assert_replay_rejected(test, data, message=None):
         planner.replay_transcript_on_clean_transport(data, factory)
     factory.assert_not_called()
 
-
 def _sync_settled_observation(settled, observation):
     settled["observation_identity"] = [observation[field] for field in (
         "run_id", "observation_id", "page_index", "page_count",
@@ -121,7 +126,6 @@ def _sync_settled_observation(settled, observation):
     settled["telemetry"] = [record["value"] for record in observation["resources"]
                             if record["kind"] == planner.ValueKind.AUTOPLAY_TELEMETRY.value]
 
-
 def _rejected_response(document, page_kind):
     events = document["events"]
     for index, event in enumerate(events[:-4]):
@@ -133,12 +137,10 @@ def _rejected_response(document, page_kind):
             return events[index + 3]["observation"], events[index + 4]
     raise AssertionError(f"missing rejected {page_kind.value} response")
 
-
 def _xor_nested(target, path):
     for key in path[:-1]:
         target = target[key]
     target[path[-1]] ^= 1
-
 
 def _assert_page_mutation_rejected(test, pages, exported, index, changes):
     mutated = list(pages)
@@ -177,11 +179,9 @@ def _assert_page_mutation_rejected(test, pages, exported, index, changes):
         transport.exchange.assert_not_called()
         test.assertEqual(transport.transcript.export(), before)
 
-
 def _set_transcript_value(document, event_kind, path, value):
     target = _transcript_target(document, event_kind, path[:-1])
     target[path[-1]] = value
-
 
 def _recorded_transcript():
     bridge = planner.PlannerBridge(PROVENANCE)
@@ -215,7 +215,6 @@ def _recorded_transcript():
     )
     return bridge.transcript.export()
 
-
 def _single_action_bridge():
     bridge = planner.PlannerBridge(PROVENANCE)
     bridge.begin(PROVENANCE)
@@ -233,7 +232,6 @@ def _single_action_bridge():
         complete.actions[0].token,
     )
     return bridge, observation, command
-
 
 def _run_host_c_driver(
     test,
@@ -306,7 +304,6 @@ def _run_host_c_driver(
         )
         return completed.stdout
 
-
 def _compile_arm_object(
     test,
     compiler,
@@ -315,6 +312,7 @@ def _compile_arm_object(
     *,
     planner_enabled,
     debug=True,
+    extra_defines=(),
 ):
     root = TESTS_DIR.parents[2]
     command = [
@@ -338,6 +336,7 @@ def _compile_arm_object(
         f"-DFE8_EXPANSION_AUTOPLAY_PLANNER={int(planner_enabled)}",
     ]
     command.append("-DFE8_EXPANSION_DEBUG=1" if debug else "-DNDEBUG")
+    command.extend(extra_defines)
     completed = subprocess.run(
         [*command, "-c", str(source), "-o", str(output)],
         cwd=root,
@@ -350,7 +349,6 @@ def _compile_arm_object(
         completed.stdout + completed.stderr,
     )
     return output
-
 
 def _arm_section_sizes(test, size_tool, *objects):
     root = TESTS_DIR.parents[2]
@@ -373,7 +371,6 @@ def _arm_section_sizes(test, size_tool, *objects):
     ):
         totals[section] = totals.get(section, 0) + int(value)
     return totals
-
 
 class _PageReplayTransport:
     def __init__(self, pages):
@@ -398,7 +395,6 @@ class _PageReplayTransport:
         self.transcript.record_settled(ready, (0,) * 13, (0,) * 16)
         self.command_id = 1
         self.largest_exchange = 0
-
     def _respond(self, command, page):
         size_before = len(self.transcript.export())
         kind = planner._COMMAND_KIND_CODES[command["kind"]]
@@ -413,7 +409,6 @@ class _PageReplayTransport:
             self.largest_exchange, len(self.transcript.export()) - size_before
         )
         return page
-
     def start(self, *, scenario_identity=None):
         first = self.pages[0]
         identities = (
@@ -426,26 +421,22 @@ class _PageReplayTransport:
             "run_id": 0, "observation_id": 0,
             "expected_identities": identities,
         }, first)
-
     def exchange(self, command):
         if command.kind is not planner.CommandKind.PAGE:
             raise AssertionError("page replay transport accepts only PAGE")
         return self._respond(
             planner._command_payload(command), self.pages[command.page_index]
         )
-
     def record_complete_observation(self, observation):
         self.transcript.record_complete_and_settled(
             observation, (0,) * 13, (0,) * 16
         )
-
 
 def _arm_code_size(sections):
     return sum(
         sections.get(name, 0)
         for name in (".text", ".rodata", ".rodata.str1.4")
     )
-
 
 class PlannerBridgeTests(unittest.TestCase):
     def test_public_validation_errors_name_protocol_v2(self):
@@ -470,7 +461,6 @@ class PlannerBridgeTests(unittest.TestCase):
                     for _ in range(planner.MAX_ACTIONS + 1)
                 ),
             )
-
     def test_transcript_round_trip_tamper_order_and_atomic_limits(self):
         bridge = planner.PlannerBridge(PROVENANCE)
         run_id = bridge.begin(PROVENANCE)
@@ -654,7 +644,6 @@ class PlannerBridgeTests(unittest.TestCase):
             "invalid planner transcript JSON|not canonical",
         ):
             planner.PlannerTranscript.import_bytes(exported[:-1])
-
     def test_transcript_json_depth_and_recursion_fail_closed(self):
         def nested_array(depth):
             value = 0
@@ -757,7 +746,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 "invalid planner transcript JSON recursion",
             ):
                 planner.PlannerTranscript.import_bytes(valid)
-
     def test_completion_timing_is_typed_and_kind_bounded(self):
         bridge = planner.PlannerBridge(PROVENANCE)
         run_id = bridge.begin(PROVENANCE)
@@ -868,7 +856,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 factory,
             )
         self.assertEqual(factory_calls, 0)
-
     def test_transcript_schema_rejects_unknown_keys_pre_factory(self):
         encoded = _recorded_transcript()
         targets = (
@@ -950,7 +937,6 @@ class PlannerBridgeTests(unittest.TestCase):
         _assert_import_rejected(
             self, missing_required, "command schema"
         )
-
     def test_transcript_scalars_and_nonfinite_reject_pre_factory(self):
         encoded = _recorded_transcript()
         complete = "observation_complete"
@@ -1105,7 +1091,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 ):
                     transcript.record_session(bad_session)
                 self.assertEqual(transcript.events, ())
-
     def test_mailbox_has_no_arbitrary_memory_write_api(self):
         mailbox = planner.Mailbox()
         self.assertFalse(hasattr(mailbox, "write"))
@@ -1113,7 +1098,6 @@ class PlannerBridgeTests(unittest.TestCase):
         mailbox.submit(planner.Command(planner.CommandKind.START, 1, 0))
         with self.assertRaisesRegex(planner.PlannerError, "unconsumed"):
             mailbox.submit(planner.Command(planner.CommandKind.START, 1, 0))
-
     def test_maximum_semantic_transcript_fits_two_mib(self):
         available = planner.Availability.AVAILABLE
         field_values = (64 | (64 << 16), 0, 1, 0, 0, 0, 0, 0)
@@ -1401,7 +1385,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 _assert_page_mutation_rejected(
                     self, pages, exported, index, changes
                 )
-
     def test_action_page_decodes_actor_and_target_slots(self):
         words = [0] * 249
         words[:15] = [
@@ -1529,7 +1512,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 planner.PlannerError, "outside fixed u32 range"
             ):
                 planner.parse_transport_observation(malformed)
-
     def test_host_begin_and_commit_limits_are_atomic(self):
         boundary, boundary_observation, boundary_command = (
             _single_action_bridge()
@@ -1593,7 +1575,6 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertEqual(atomic.transcript.export(), trace_before)
         self.assertEqual(atomic._next_observation_id, next_id_before)
         self.assertIsNone(atomic._observation)
-
     def test_security_boundary_has_no_raw_memory_save_or_network_surface(self):
         root = TESTS_DIR.parents[2]
         target = (root / "src" / "expansion_autoplay_planner.c").read_text(encoding="utf-8")
@@ -1615,7 +1596,6 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertNotIn('"RUN"', transport)
         self.assertNotIn("setKeys", transport)
         self.assertIn("PLANNER_COMMAND_ADDR", transport)
-
     def test_expansion_config_preserves_positional_api(self):
         from scripts.modernize import expansion_config
         root = TESTS_DIR.parents[2]
@@ -1675,7 +1655,6 @@ class PlannerBridgeTests(unittest.TestCase):
         appended = expansion_config.ExpansionIdentity(*legacy_values, 1)
         self.assertEqual(legacy.config_fingerprint, "legacy-fingerprint")
         self.assertEqual((legacy.autoplay_planner, appended.autoplay_planner), (0, 1))
-
     def test_configured_bare_make_selects_release_and_fails_closed(self):
         root = TESTS_DIR.parents[2]
         build_root = root / "build" / "test-artifacts" / "planner-configure"
@@ -1798,7 +1777,6 @@ raise SystemExit(child.returncode)
                 forbidden_compiler_record.exists(),
                 "host-only configure coverage invoked the ARM compiler",
             )
-
     def test_configured_explicit_debug_goal_builds_in_toolchain_lane(self):
         if host_mode.host_only_enabled():
             self.skipTest("configured ROM build belongs to the toolchain lane")
@@ -1842,7 +1820,6 @@ raise SystemExit(child.returncode)
                 env=environment,
             )
             self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
-
     def test_host_only_ready_gate_capability_skips(self):
         root = TESTS_DIR.parents[2]
         build_root = root / "build"
@@ -1881,7 +1858,6 @@ raise SystemExit(child.returncode)
                 "skipped=1",
                 completed.stdout + completed.stderr,
             )
-
     def test_public_protocol_layout_is_fixed_width_and_offset_stable(self):
         output = _run_host_c_driver(
             self,
@@ -1916,7 +1892,6 @@ raise SystemExit(child.returncode)
                 "checkpoint_mode_offset": 20,
             },
         )
-
     def test_transport_acknowledgement_enum_is_exact(self):
         root = TESTS_DIR.parents[2]
         build_root = root / "build"
@@ -1948,42 +1923,39 @@ raise SystemExit(child.returncode)
                 "PLANNER_TRANSPORT_SECURITY_TEST: PASS",
                 completed.stdout,
             )
-
     def test_c_mailbox_adapter_accepts_only_typed_token_commit(self):
         output = _run_host_c_driver(
-            self,
-            "planner-driver",
-            (
-                "src/action_semantics.c",
-                "src/bmtarget.c",
-                "src/expansion_autoplay_planner.c",
-                "tools/gba-playtest/tests/c/expansion_autoplay_planner_driver.c",
-            ),
-            defines=(
-                "-DFE8_EXPANSION_MODERN_BUILD=1",
-                "-DFE8_EXPANSION_DEBUG=1",
-                "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
-                "-DFE8_AUTOPLAY_PLANNER_RUNTIME_TEST=1",
-            ),
+            self, "planner-driver", PLANNER_DRIVER_SOURCES,
+            defines=PLANNER_DRIVER_DEFINES,
         )
         self.assertIn("AUTOPLAY_PLANNER_HOST_TEST: PASS", output)
-
+        identities, configs = [], []
+        def host_scenario(value, name, sources=PLANNER_DRIVER_SOURCES):
+            return _run_host_c_driver(
+                self, name, sources, defines=(
+                    *PLANNER_DRIVER_DEFINES[:3],
+                    "-DFE8_AUTOPLAY_PLANNER_RUNTIME_TEST=1",
+                    f"-DFE8_EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID={value}"))
+        for value in ("0", "0xFFFFFFFF"):
+            scenario_output = host_scenario(value, f"planner-scenario-{value}")
+            identities.append(
+                re.search(r"SCENARIO_IDENTITY=([0-9a-f]+)", scenario_output).group(1))
+            configs.append(
+                re.search(r"CONFIG_IDENTITY=([0-9a-f]+)", scenario_output).group(1))
+        self.assertNotEqual(*identities)
+        self.assertEqual(configs[0], configs[1])
+        for value in INVALID_SCENARIO_IDS:
+            with self.subTest(host_scenario_id=value):
+                with self.assertRaisesRegex(
+                    AssertionError, "ScenarioId|not_a_constant"
+                ):
+                    host_scenario(value, "planner-scenario-reject", (
+                        "tools/gba-playtest/tests/c/"
+                        "expansion_autoplay_planner_layout_driver.c",))
     def test_flag_checkpoint_bounds_under_sanitizers(self):
         output = _run_host_c_driver(
-            self,
-            "planner-flag-sanitizer",
-            (
-                "src/action_semantics.c",
-                "src/bmtarget.c",
-                "src/expansion_autoplay_planner.c",
-                "tools/gba-playtest/tests/c/expansion_autoplay_planner_driver.c",
-            ),
-            defines=(
-                "-DFE8_EXPANSION_MODERN_BUILD=1",
-                "-DFE8_EXPANSION_DEBUG=1",
-                "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
-                "-DFE8_AUTOPLAY_PLANNER_RUNTIME_TEST=1",
-            ),
+            self, "planner-flag-sanitizer", PLANNER_DRIVER_SOURCES,
+            defines=PLANNER_DRIVER_DEFINES,
             extra_flags=(
                 "-O1", "-g", "-fsanitize=address,undefined",
                 "-fno-omit-frame-pointer",
@@ -1992,7 +1964,6 @@ raise SystemExit(child.returncode)
             environment={"ASAN_OPTIONS": "detect_leaks=0"},
         )
         self.assertIn("AUTOPLAY_PLANNER_HOST_TEST: PASS", output)
-
     def test_native_summon_executor_preserves_action_and_coordinates(self):
         output = _run_host_c_driver(
             self,
@@ -2013,7 +1984,6 @@ raise SystemExit(child.returncode)
             ),
         )
         self.assertIn("PLANNER_EXECUTOR_HOST_TEST: PASS", output)
-
     def test_arm_adapter_compiles_at_the_existing_computer_decision_boundary(self):
         compiler = shutil.which("arm-none-eabi-gcc")
         nm = shutil.which("arm-none-eabi-nm")
@@ -2025,6 +1995,27 @@ raise SystemExit(child.returncode)
         build_root.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=build_root) as temporary:
             temporary_path = Path(temporary)
+            scenario_source = (
+                root / "tools/gba-playtest/tests/c/"
+                "expansion_autoplay_planner_layout_driver.c"
+            )
+            def compile_scenario(value, name, *extra):
+                return _compile_arm_object(
+                    self, compiler, scenario_source, temporary_path / name,
+                    planner_enabled=True, extra_defines=(
+                        *extra,
+                        f"-DFE8_EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID={value}",
+                    ))
+            for value in ("0", "0xFFFFFFFF"):
+                compile_scenario(value, f"scenario-{value}.o")
+            compile_scenario(
+                "-1", "scenario-archival-inactive.o", "-DFE8_ARCHIVAL_BUILD=1")
+            for value in INVALID_SCENARIO_IDS:
+                with self.subTest(arm_scenario_id=value):
+                    with self.assertRaisesRegex(
+                        AssertionError, "ScenarioId|not_a_constant"
+                    ):
+                        compile_scenario(value, "scenario-reject.o")
             objects = []
             for source in (
                 root / "src" / "expansion_autoplay_planner.c",
@@ -2219,7 +2210,6 @@ raise SystemExit(child.returncode)
             self.assertEqual(symbols.returncode, 0, symbols.stdout + symbols.stderr)
             self.assertNotIn("gExpansionAutoplayPlanner", symbols.stdout)
             self.assertNotIn("ActionSemantics_", symbols.stdout)
-
     def test_archival_target_predicates_keep_original_call_graph(self):
         compiler = shutil.which("arm-none-eabi-gcc")
         nm = shutil.which("arm-none-eabi-nm")
@@ -2308,7 +2298,6 @@ raise SystemExit(child.returncode)
             self.assertIn("GetUnitCurrentHp", latona)
             self.assertNotIn("IsUnitIn", heal + hammerne + latona)
 
-
 @dataclass(frozen=True)
 class TransportAcknowledgement:
     command_id: int
@@ -2316,13 +2305,11 @@ class TransportAcknowledgement:
     result: int
     rejection: int
 
-
 @dataclass(frozen=True)
 class TransportCompletion:
     command_id: int
     kind: int
     response_frames: int
-
 
 class PlannerTransportError(RuntimeError):
     def __init__(self, code: str, command_id: int, kind: int) -> None:
@@ -2332,7 +2319,6 @@ class PlannerTransportError(RuntimeError):
         self.code = code
         self.command_id = command_id
         self.kind = kind
-
 
 class PlannerProcessTransport:
     def __init__(self, backend: Path, rom: Path) -> None:
@@ -2353,7 +2339,6 @@ class PlannerProcessTransport:
         self._transcript_started = False
         self.observation = self._read_state()
         self._begin_transcript(self.observation)
-
     def _begin_transcript(
         self,
         observation: planner.Observation,
@@ -2382,7 +2367,6 @@ class PlannerProcessTransport:
             self.command,
         )
         self._transcript_started = True
-
     def _read_protocol_line(self) -> tuple[list[str], str]:
         assert self.process.stdout is not None
         line = self.process.stdout.readline()
@@ -2404,7 +2388,6 @@ class PlannerProcessTransport:
                 int(fields[3], 16),
             )
         return fields, line
-
     def _read_acknowledgement(self) -> TransportAcknowledgement:
         fields, line = self._read_protocol_line()
         if not fields or fields[0] != "ACK" or len(fields) != 5:
@@ -2427,7 +2410,6 @@ class PlannerProcessTransport:
             acknowledgement.rejection,
         )
         return acknowledgement
-
     def _read_completion(
         self,
         acknowledgement: TransportAcknowledgement,
@@ -2452,7 +2434,6 @@ class PlannerProcessTransport:
             completion.response_frames,
         )
         return completion
-
     def _read_state(self) -> planner.Observation:
         fields, line = self._read_protocol_line()
         if (
@@ -2476,7 +2457,6 @@ class PlannerProcessTransport:
         )
         self.observation = observation
         return observation
-
     def _send(
         self,
         line: str,
@@ -2510,7 +2490,6 @@ class PlannerProcessTransport:
         else:
             self._begin_transcript(observation)
         return observation
-
     def start(
         self,
         *,
@@ -2538,7 +2517,6 @@ class PlannerProcessTransport:
                 "expected_identities": expected_identities,
             },
         )
-
     def exchange(
         self, command: planner.Command
     ) -> planner.Observation:
@@ -2590,7 +2568,6 @@ class PlannerProcessTransport:
                 },
             )
         raise AssertionError(f"unsupported transport command {command.kind}")
-
     def record_complete_observation(
         self,
         observation: planner.Observation,
@@ -2600,7 +2577,6 @@ class PlannerProcessTransport:
             self.checkpoint,
             self.command,
         )
-
     def close(self) -> None:
         if self.process.poll() is None and self.process.stdin is not None:
             try:
@@ -2610,7 +2586,6 @@ class PlannerProcessTransport:
                 pass
         self.process.communicate(timeout=10)
 
-
 @contextmanager
 def _open_transport(backend, rom):
     transport = PlannerProcessTransport(backend, rom)
@@ -2618,7 +2593,6 @@ def _open_transport(backend, rom):
         yield transport
     finally:
         transport.close()
-
 
 class PlannerLibmGBAIntegrationTests(unittest.TestCase):
     def _build_transport(
@@ -2664,7 +2638,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             test_bootstrap=test_bootstrap,
         )
         return rom, backend
-
     def _build_or_skip(self, temporary, **kwargs):
         try:
             return self._build_transport(temporary, **kwargs)
@@ -2688,7 +2661,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=root) as temporary:
             rom, backend = self._build_or_skip(temporary, **kwargs)
             yield rom, backend, Path(temporary)
-
     def _run_planner(
         self,
         backend: Path,
@@ -2807,7 +2779,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 transition_checkpoint,
                 transport.transcript.export(),
             )
-
     def test_host_driven_production_mailbox_replays_two_chapters(self):
         with self._fixture() as (rom, backend, _):
             symbols = subprocess.run(
@@ -2878,7 +2849,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             ]
             self.assertTrue(settled_events)
             self.assertEqual(len(settled_events[-1]["telemetry"]), 16)
-
     def test_clean_transport_replays_rejection_and_cancel(self):
         with self._fixture() as (rom, backend, _):
             with _open_transport(backend, rom) as transport:
@@ -2973,7 +2943,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 planner.PlannerTranscript.import_bytes(transcript).export(),
                 transcript,
             )
-
     def test_no_save_transition_records_and_rearms_checkpoint(self):
         with self._fixture(transition_subcode=3) as (rom, backend, _):
             symbols = subprocess.run(
@@ -3017,7 +2986,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 planner.PlannerTranscript.import_bytes(transcript).export(),
                 transcript,
             )
-
     def test_exhausted_runs_restore_without_fallback_or_reentry(self):
         for candidate_mode, rejection in ((1, 5), (2, 7)):
             with self.subTest(candidate_mode=candidate_mode):
@@ -3049,7 +3017,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                             transport.last_acknowledgement.rejection,
                             9,
                         )
-
     def test_available_zero_digests_round_trip_live_transport(self):
         with self._fixture(zero_digest=True) as (rom, backend, _):
             for implementation in (
@@ -3089,7 +3056,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         exported,
                     )
                     self.assertIsNotNone(choice)
-
     def test_flag_checkpoint_bounds_on_arm_transport(self):
         root = (
             TESTS_DIR.parents[2]
@@ -3152,7 +3118,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         transport.checkpoint[4],
                         first.chapter,
                     )
-
     def test_commit_waits_beyond_legacy_120_frame_window(self):
         with self._fixture(
             commit_delay_frames=180,
@@ -3192,7 +3157,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         completion.command_id,
                         acknowledgement.command_id,
                     )
-
     def test_acknowledged_commit_timeout_never_emits_stale_observation(self):
         with self._fixture(
             stall_after_commit=True,
@@ -3224,7 +3188,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 remaining_stdout, _ = transport.process.communicate(timeout=10)
                 self.assertEqual(remaining_stdout, "")
                 self.assertEqual(transport.process.returncode, 3)
-
     def test_unacknowledged_command_returns_typed_timeout(self):
         with self._fixture(
             ignore_commands=True,
@@ -3242,7 +3205,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 remaining_stdout, _ = transport.process.communicate(timeout=10)
                 self.assertEqual(remaining_stdout, "")
                 self.assertEqual(transport.process.returncode, 3)
-
     def test_backend_requires_exact_ready_before_stdin(self):
         if host_mode.host_only_enabled():
             self.skipTest(
@@ -3302,7 +3264,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     self.assertEqual(completed.returncode, 3)
                     self.assertEqual(completed.stdout, "")
                     self.assertIn(diagnostic, completed.stderr)
-
     def test_invalid_ack_is_rejected_before_ack_or_observation(self):
         with self._fixture(
             acknowledgement_override=(0, 0xFFFFFFFF)
@@ -3321,7 +3282,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 )
                 self.assertEqual(remaining_stdout, "")
                 self.assertEqual(transport.process.returncode, 3)
-
     def test_restricted_backend_rejects_frame_and_key_controls(self):
         with self._fixture() as (rom, backend, _):
             with _open_transport(backend, rom) as transport:
@@ -3331,30 +3291,42 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 transcript_before = transport.transcript.export()
                 assert transport.process.stdin is not None
                 assert transport.process.stdout is not None
+                def assert_rejected(raw_command, diagnostic):
+                    transport.process.stdin.write(raw_command + "\n")
+                    transport.process.stdin.flush()
+                    self.assertEqual(
+                        transport.process.stdout.readline(), diagnostic
+                    )
+                    transport.process.stdin.write("READ\n")
+                    transport.process.stdin.flush()
+                    self.assertEqual((
+                        transport._read_state(), transport.checkpoint,
+                        transport.command, transport.transcript.export(),
+                    ), (
+                        observation_before, checkpoint_before,
+                        command_before, transcript_before,
+                    ))
                 for raw_command in (
                     "STEP",
                     "RUN 100 1",
                     "KEYS 3ff",
                 ):
-                    transport.process.stdin.write(raw_command + "\n")
-                    transport.process.stdin.flush()
-                    self.assertEqual(
-                        transport.process.stdout.readline(),
-                        "ERROR unknown typed command\n",
-                    )
-                    transport.process.stdin.write("READ\n")
-                    transport.process.stdin.flush()
-                    observed = transport._read_state()
-                    self.assertEqual(observed, observation_before)
-                    self.assertEqual(
-                        transport.checkpoint,
-                        checkpoint_before,
-                    )
-                    self.assertEqual(transport.command, command_before)
-                    self.assertEqual(
-                        transport.transcript.export(),
-                        transcript_before,
-                    )
+                    assert_rejected(raw_command, "ERROR unknown typed command\n")
+                invalid_words = (
+                    "-0", "+0", "-1", "+1", " +0", "\t-0",
+                    "100000000", "FFFFFFFFF", "0x1", "1junk",
+                )
+                commands = (
+                    ("START {} 0 0 0", "START"),
+                    ("PAGE {} 0 0", "PAGE"),
+                    ("COMMIT {} 0 0 0 0 0 0", "COMMIT"),
+                    ("CANCEL {} 0", "CANCEL"),
+                )
+                for template, name in commands:
+                    for word in invalid_words:
+                        assert_rejected(
+                            template.format(word), f"ERROR malformed {name}\n"
+                        )
                 transport.process.stdin.write("READ" + " " * 507 + "\n")
                 transport.process.stdin.flush()
                 self.assertEqual(
@@ -3366,31 +3338,9 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     " COMMIT 00000000 00000000 00000000 "
                     "00000000 00000000 00000000 00000000",
                 ):
-                    transport.process.stdin.write(
-                        "X" * 600 + trailing_command + "\n"
-                    )
-                    transport.process.stdin.flush()
-                    self.assertEqual(
-                        transport.process.stdout.readline(),
+                    assert_rejected(
+                        "X" * 600 + trailing_command,
                         "ERROR malformed line\n",
-                    )
-                    transport.process.stdin.write("READ\n")
-                    transport.process.stdin.flush()
-                    self.assertEqual(
-                        transport._read_state(),
-                        observation_before,
-                    )
-                    self.assertEqual(
-                        (
-                            transport.checkpoint,
-                            transport.command,
-                            transport.transcript.export(),
-                        ),
-                        (
-                            checkpoint_before,
-                            command_before,
-                            transcript_before,
-                        ),
                     )
                 waiting = transport.start()
                 cancelled = transport.exchange(
@@ -3442,7 +3392,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                             factory,
                         )
                     self.assertEqual(factory_calls, 0)
-
     def test_production_transcript_capacity_rejects_before_mailbox_write(self):
         with self._fixture() as (rom, backend, _):
             with _open_transport(backend, rom) as transport:
@@ -3467,7 +3416,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 self.assertIs(transport.observation, observation_before)
                 self.assertIsNone(transport.last_acknowledgement)
                 self.assertIsNone(transport.last_completion)
-
     def test_host_driven_transport_rejects_and_times_out(self):
         with self._fixture() as (rom, backend, _):
             with _open_transport(backend, rom) as transport:
@@ -3703,7 +3651,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     imported.events[0]["event"],
                     "session",
                 )
-
 
 if __name__ == "__main__":
     unittest.main()

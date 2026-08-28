@@ -13,7 +13,6 @@ from dataclasses import asdict, dataclass, replace
 from enum import Enum
 from typing import Callable, Iterable
 
-
 PROTOCOL_VERSION = 2
 MAX_MAP_CELLS = 64 * 64
 MAX_UNITS = 62 + 20 + 50
@@ -36,7 +35,6 @@ UNIT_ITEM_COUNT = 5
 CONVOY_ITEM_COUNT = 100
 AUTOPLAY_TELEMETRY_WORDS = 16
 
-
 class PageKind(str, Enum):
     CONTROL = "CONTROL"
     SUMMARY = "SUMMARY"
@@ -47,7 +45,6 @@ class PageKind(str, Enum):
     RESOURCES = "RESOURCES"
     FLAGS = "FLAGS"
 
-
 class ValueKind(int, Enum):
     UNIT_ITEM = 1
     GOLD = 2
@@ -56,10 +53,8 @@ class ValueKind(int, Enum):
     CHAPTER_FLAG = 5
     AUTOPLAY_TELEMETRY = 6
 
-
 class PlannerError(ValueError):
     """A protocol violation that must never be converted into success."""
-
 
 class Availability(str, Enum):
     AVAILABLE = "AVAILABLE"
@@ -70,7 +65,6 @@ class Availability(str, Enum):
     UNINITIALIZED = "UNINITIALIZED"
     UNAVAILABLE = "UNAVAILABLE"
     EMPTY = "EMPTY"
-
 
 class Rejection(str, Enum):
     NOT_READY = "NOT_READY"
@@ -83,13 +77,11 @@ class Rejection(str, Enum):
     CANCELLED = "CANCELLED"
     PROTOCOL_ERROR = "PROTOCOL_ERROR"
 
-
 class CommandKind(str, Enum):
     START = "START"
     COMMIT = "COMMIT"
     CANCEL = "CANCEL"
     PAGE = "PAGE"
-
 
 _COMMAND_KIND_CODES = {
     CommandKind.START.value: 1,
@@ -118,7 +110,6 @@ _REJECTIONS_BY_COMMAND = {
     CommandKind.CANCEL.value: {2, 8, 9, 10},
 }
 
-
 @dataclass(frozen=True)
 class Field:
     name: str
@@ -126,7 +117,6 @@ class Field:
     bound: int
     availability: Availability
     value: object | None
-
 
 @dataclass(frozen=True)
 class Action:
@@ -148,7 +138,6 @@ class Action:
             object.__setattr__(self, "target_position", (0, 0))
         _validate_action_contract(asdict(self), "action")
 
-
 @dataclass(frozen=True)
 class OpaqueToken:
     word0: int
@@ -164,13 +153,11 @@ class OpaqueToken:
     def words(self) -> tuple[int, int, int, int]:
         return (self.word0, self.word1, self.word2, self.word3)
 
-
 @dataclass(frozen=True)
 class ActionRecord:
     ordinal: int
     action: Action
     token: OpaqueToken
-
 
 @dataclass(frozen=True)
 class MapCell:
@@ -179,7 +166,6 @@ class MapCell:
     terrain: int
     unit: int
     availability: Availability
-
 
 @dataclass(frozen=True)
 class UnitRecord:
@@ -192,7 +178,6 @@ class UnitRecord:
     inventory_digest: int
     availability: Availability
 
-
 @dataclass(frozen=True)
 class InventoryRecord:
     unit: int
@@ -201,7 +186,6 @@ class InventoryRecord:
     uses: int
     raw_item: int
     availability: Availability
-
 
 @dataclass(frozen=True)
 class ResourceRecord:
@@ -212,14 +196,12 @@ class ResourceRecord:
     uses: int | None
     availability: Availability
 
-
 @dataclass(frozen=True)
 class FlagRecord:
     kind: ValueKind
     flag_id: int
     state: int | None
     availability: Availability
-
 
 @dataclass(frozen=True)
 class Observation:
@@ -251,7 +233,6 @@ class Observation:
     record_count: int = 0
     total_record_count: int = 0
 
-
 @dataclass(frozen=True)
 class Command:
     kind: CommandKind
@@ -260,7 +241,6 @@ class Command:
     action_ordinal: int | None = None
     token: OpaqueToken | None = None
     page_index: int | None = None
-
 
 def _command_payload(command: Command) -> dict[str, object]:
     payload: dict[str, object] = {
@@ -278,7 +258,6 @@ def _command_payload(command: Command) -> dict[str, object]:
             else None
         )
     return payload
-
 
 def _validate_json_structure(value: object) -> None:
     stack = [(value, 1, False)]
@@ -306,7 +285,6 @@ def _validate_json_structure(value: object) -> None:
         for child in values:
             stack.append((child, depth + 1, False))
 
-
 def _validate_json_text_depth(data: bytes) -> None:
     depth = 0
     in_string = False
@@ -332,7 +310,6 @@ def _validate_json_text_depth(data: bytes) -> None:
         elif value in (ord("}"), ord("]")):
             depth -= 1
 
-
 def _canonical(value: object) -> bytes:
     _validate_json_structure(value)
     try:
@@ -353,10 +330,8 @@ def _canonical(value: object) -> bytes:
         ) from error
     return encoded.encode("ascii")
 
-
 def _reject_json_constant(value: str) -> None:
     raise ValueError(f"nonfinite JSON constant {value}")
-
 
 _OBSERVATION_KEYS = {
     "run_id", "observation_id", "chapter", "fields", "actions",
@@ -395,7 +370,6 @@ _TRANSPORT_ERROR_CODES = frozenset({
     "COMMAND_RESPONSE_TIMEOUT", "INVALID_COMMAND_ACK",
 })
 
-
 def _require_exact_keys(
     value: object,
     keys: set[str],
@@ -406,7 +380,6 @@ def _require_exact_keys(
             f"invalid planner transcript {context} schema"
         )
     return value
-
 
 def _require_int(
     value: object,
@@ -426,7 +399,6 @@ def _require_int(
         )
     return value
 
-
 def _require_text(
     value: object,
     context: str,
@@ -443,7 +415,6 @@ def _require_text(
         )
     return value
 
-
 def _require_digest(value: object, context: str) -> str:
     text = _require_text(value, context)
     if len(text) != 64 or any(
@@ -454,7 +425,6 @@ def _require_digest(value: object, context: str) -> str:
             f"invalid planner transcript {context} scalar"
         )
     return text
-
 
 def _require_list(
     value: object,
@@ -473,7 +443,6 @@ def _require_list(
             message or f"invalid planner transcript {context} schema"
         )
     return value
-
 
 def _require_int_list(
     value: object,
@@ -500,7 +469,6 @@ def _require_int_list(
         )
     return values
 
-
 def _require_optional_int(
     value: object,
     context: str,
@@ -515,7 +483,6 @@ def _require_optional_int(
             allowed=allowed,
         )
 
-
 def _require_coordinate(
     value: object,
     context: str,
@@ -529,10 +496,8 @@ def _require_coordinate(
     for coordinate in value:
         _require_int(coordinate, context, maximum=63)
 
-
 def _require_availability(value: object, context: str) -> str:
     return _require_text(value, context, _AVAILABILITY_VALUES)
-
 
 def _validate_token_schema(token: object, context: str) -> None:
     value = _require_exact_keys(
@@ -540,7 +505,6 @@ def _validate_token_schema(token: object, context: str) -> None:
     )
     for word in value.values():
         _require_int(word, context)
-
 
 def _validate_rejected_response(
     command: dict[str, object], acknowledgement: dict[str, object],
@@ -571,12 +535,10 @@ def _validate_rejected_response(
         raise PlannerError("rejected response has invalid state transition")
     return terminal_state is not None
 
-
 def _is_roster_slot(value: int) -> bool:
     return (1 <= value <= 0x3E
         or 0x41 <= value <= 0x54
         or 0x81 <= value <= 0xB2)
-
 
 def _validate_action_contract(action: object, context: str) -> None:
     value = _require_exact_keys(
@@ -624,7 +586,6 @@ def _validate_action_contract(action: object, context: str) -> None:
     ):
         raise PlannerError(f"invalid planner {context} sentinel contract")
 
-
 def _validate_action_schema(record: object) -> None:
     value = _require_exact_keys(
         record, {"ordinal", "action", "token"}, "action record"
@@ -632,7 +593,6 @@ def _validate_action_schema(record: object) -> None:
     _require_int(value["ordinal"], "action ordinal", maximum=MAX_ACTIONS - 1)
     _validate_action_contract(value["action"], "action")
     _validate_token_schema(value["token"], "action token")
-
 
 def _validate_field_schema(record: object) -> None:
     value = _require_exact_keys(
@@ -647,7 +607,6 @@ def _validate_field_schema(record: object) -> None:
     elif value["value"] is not None:
         raise PlannerError("invalid planner transcript field value scalar")
 
-
 def _validate_map_cell_schema(record: object) -> None:
     value = _require_exact_keys(
         record, {"x", "y", "terrain", "unit", "availability"}, "map cell"
@@ -657,7 +616,6 @@ def _validate_map_cell_schema(record: object) -> None:
     _require_int(value["terrain"], "map terrain", maximum=0xFF)
     _require_int(value["unit"], "map unit", maximum=0xFF)
     _require_availability(value["availability"], "map availability")
-
 
 def _validate_unit_schema(record: object) -> None:
     value = _require_exact_keys(
@@ -676,7 +634,6 @@ def _validate_unit_schema(record: object) -> None:
     _require_int(value["inventory_digest"], "unit inventory digest")
     _require_availability(value["availability"], "unit availability")
 
-
 def _validate_inventory_schema(record: object) -> None:
     value = _require_exact_keys(
         record,
@@ -691,7 +648,6 @@ def _validate_inventory_schema(record: object) -> None:
     if _decode_item(raw_item) != (value["item_id"], value["uses"]):
         raise PlannerError("invalid planner transcript inventory item state")
     _require_availability(value["availability"], "inventory availability")
-
 
 def _validate_resource_schema(record: object) -> None:
     value = _require_exact_keys(
@@ -731,7 +687,6 @@ def _validate_resource_schema(record: object) -> None:
             raise PlannerError("invalid planner transcript telemetry sentinel")
     _require_availability(value["availability"], "resource availability")
 
-
 def _validate_flag_schema(record: object) -> None:
     value = _require_exact_keys(
         record,
@@ -752,7 +707,6 @@ def _validate_flag_schema(record: object) -> None:
         _require_int(value["state"], "flag state", maximum=1)
     elif value["state"] is not None:
         raise PlannerError("invalid planner transcript flag state scalar")
-
 
 def _validate_observation_schema(observation: object) -> None:
     value = _require_exact_keys(
@@ -826,7 +780,6 @@ def _validate_observation_schema(observation: object) -> None:
         for record in _require_list(value[name], name, maximum=maximum):
             validator(record)
 
-
 def _validate_session_schema(provenance: object) -> None:
     required = {
         "transport",
@@ -877,7 +830,6 @@ def _validate_session_schema(provenance: object) -> None:
             "invalid planner transcript session run identity"
         )
 
-
 def _validate_command_schema(command: object) -> None:
     if not isinstance(command, dict):
         raise PlannerError("invalid planner transcript command schema")
@@ -919,7 +871,6 @@ def _validate_command_schema(command: object) -> None:
             "COMMIT action ordinal",
         )
         _validate_token_schema(command["token"], "command token")
-
 
 def _validate_event_schema(event: object) -> str:
     if not isinstance(event, dict):
@@ -1042,10 +993,8 @@ def _validate_event_schema(event: object) -> str:
         )
     return kind
 
-
 def _mix_digest(digest: int, value: int) -> int:
     return ((digest ^ (value & 0xFFFFFFFF)) * 16777619) & 0xFFFFFFFF
-
 
 def _fixture_action_token(
     run_id: int, observation_id: int, ordinal: int, action: Action
@@ -1087,14 +1036,11 @@ def _fixture_action_token(
         words.append(digest)
     return OpaqueToken(*words)
 
-
 def _digest(value: object) -> str:
     return hashlib.sha256(_canonical(value)).hexdigest()
 
-
 def semantic_state_digest(state: object) -> str:
     return _digest(state)
-
 
 def _observation_semantics(observation: Observation) -> dict[str, object]:
     serialized = asdict(observation)
@@ -1114,7 +1060,6 @@ def _observation_semantics(observation: Observation) -> dict[str, object]:
             "units",
         )
     }
-
 
 class PlannerTranscript:
     """Canonical bounded transcript shared by mirror and live transports."""
@@ -1819,7 +1764,6 @@ class PlannerTranscript:
                 )
         return active_identity_bound or run_id == session["run_id"]
 
-
 class Mailbox:
     """The sole host-to-ROM command surface; it intentionally has no address API."""
 
@@ -1835,7 +1779,6 @@ class Mailbox:
         command = self._command
         self._command = None
         return command
-
 
 class PlannerBridge:
     """In-memory mirror of the ROM's paged observation/token state machine."""
@@ -2054,7 +1997,6 @@ class PlannerBridge:
     def trace_digest(self) -> str:
         return self.transcript.digest()
 
-
 _AVAILABILITY_BY_VALUE = dict(enumerate(Availability))
 _PAGE_KIND_BY_VALUE = dict(enumerate(PageKind))
 _ACTION_KIND_BY_VALUE = {
@@ -2112,7 +2054,6 @@ _ROSTER_SLOTS = (
     *range(0x41, 0x55),
     *range(0x81, 0xB3),
 )
-
 
 def _validate_complete_observation(
     observation: dict[str, object],
@@ -2352,7 +2293,6 @@ def _validate_complete_observation(
                 f"complete observation {name} pages are not canonical"
             )
 
-
 def _decode_optional_item_slot(value: int) -> int | None:
     if value == 0xFF:
         return None
@@ -2360,12 +2300,10 @@ def _decode_optional_item_slot(value: int) -> int | None:
         return value
     raise PlannerError("invalid optional item-slot sentinel")
 
-
 def _decode_item(raw_item: int) -> tuple[int, int]:
     if not 0 <= raw_item <= 0xFFFF:
         raise PlannerError("item state exceeds fixed u16 representation")
     return raw_item & 0xFF, (raw_item >> 8) & 0xFF
-
 
 def parse_transport_observation(words: Iterable[int]) -> Observation:
     values = tuple(words)
@@ -2693,7 +2631,6 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
         total_record_count=total_records,
     )
 
-
 def _assemble_observation_pages(pages: Iterable[Observation]) -> Observation:
     page_values = tuple(pages)
     if not page_values:
@@ -2714,7 +2651,6 @@ def _assemble_observation_pages(pages: Iterable[Observation]) -> Observation:
         (asdict(page) for page in page_values),
     )
     return complete
-
 
 def collect_observation_pages(transport: object, first: Observation) -> Observation:
     if (
@@ -2752,7 +2688,6 @@ def collect_observation_pages(transport: object, first: Observation) -> Observat
     if callable(record_complete):
         record_complete(complete)
     return complete
-
 
 def replay_transcript_on_clean_transport(
     data: bytes,
@@ -2838,7 +2773,6 @@ def replay_transcript_on_clean_transport(
         if callable(close):
             close()
 
-
 def _consume_semantic_observation(observation: Observation) -> str:
     if (
         len(observation.map_cells) > MAX_MAP_CELLS
@@ -2853,7 +2787,6 @@ def _consume_semantic_observation(observation: Observation) -> str:
     _validate_complete_observation(asdict(observation))
     return _digest(_observation_semantics(observation))
 
-
 class ScriptedPlanner:
     def __init__(self) -> None:
         self.last_semantic_digest: str | None = None
@@ -2864,7 +2797,6 @@ class ScriptedPlanner:
             if record.action.kind in {"MOVE_WAIT", "COMBAT"}:
                 return record
         raise PlannerError(Rejection.CAPABILITY_UNAVAILABLE.value)
-
 
 class BoundedSearchPlanner:
     def __init__(self, max_nodes: int = 32) -> None:
@@ -2888,7 +2820,6 @@ class BoundedSearchPlanner:
                 record.ordinal,
             ),
         )
-
 
 def run_two_chapter_replay(
     planner: ScriptedPlanner | BoundedSearchPlanner,

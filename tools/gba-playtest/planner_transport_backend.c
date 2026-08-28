@@ -97,7 +97,6 @@ static void write_word(
 static void clear_command(struct mCore* core)
 {
     size_t index;
-
     for (index = 0; index < COMMAND_WORD_COUNT; index++)
         write_word(core, PLANNER_COMMAND_ADDR, index, 0);
 }
@@ -113,7 +112,6 @@ static void write_command(
     const uint32_t expected_identities[4])
 {
     size_t index;
-
     clear_command(core);
     write_word(core, PLANNER_COMMAND_ADDR, 0, EXPANSION_AUTOPLAY_PLANNER_MAGIC);
     write_word(
@@ -146,7 +144,6 @@ static void write_command(
 static void emit_state(struct mCore* core)
 {
     size_t index;
-
     fputs("OBS", stdout);
     for (index = 0; index < OBSERVATION_WORD_COUNT; index++)
         printf(" %08" PRIx32, read_word(core, PLANNER_OBSERVATION_ADDR, index));
@@ -204,7 +201,6 @@ static bool wait_for_command_acknowledgement(
     struct command_acknowledgement* acknowledgement)
 {
     uint32_t frames;
-
     for (frames = 0; frames < PLANNER_COMMAND_ACK_FRAME_LIMIT; frames++)
     {
         core->runFrame(core);
@@ -267,7 +263,6 @@ static bool is_command_response_complete(
         read_word(core, PLANNER_OBSERVATION_ADDR, 4);
     uint32_t page =
         read_word(core, PLANNER_OBSERVATION_ADDR, 6);
-
     if (acknowledgement->result == 0)
     {
         if (acknowledgement->rejection == 0)
@@ -287,16 +282,13 @@ static bool is_command_response_complete(
     case EXPANSION_AUTOPLAY_PLANNER_COMMAND_START:
         return state == EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING
             || is_terminal_state(state);
-
     case EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE:
         return state == EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING
             && page == requested_page;
-
     case EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT:
         return (state == EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING
                 && observation != previous_observation)
             || is_terminal_state(state);
-
     default:
         return false;
     }
@@ -315,7 +307,6 @@ static bool wait_for_command_response(
         ? PLANNER_COMMIT_COMPLETION_FRAME_LIMIT
         : PLANNER_COMMAND_RESPONSE_FRAME_LIMIT;
     uint32_t frames;
-
     *response_frames = 0;
     if (is_command_response_complete(
             core,
@@ -339,23 +330,30 @@ static bool wait_for_command_response(
 
 static bool parse_hex(const char* text, uint32_t* value)
 {
-    char* end;
-    unsigned long parsed;
-
-    parsed = strtoul(text, &end, 16);
-    if (text[0] == '\0' || *end != '\0' || parsed > UINT32_MAX)
+    uint32_t parsed = 0, digit;
+    if (*text == '\0')
         return false;
-    *value = (uint32_t)parsed;
+    for (; *text != '\0'; text++)
+    {
+        if (*text >= '0' && *text <= '9')
+            digit = *text - '0';
+        else if (*text >= 'a' && *text <= 'f')
+            digit = *text - 'a' + 10;
+        else if (*text >= 'A' && *text <= 'F')
+            digit = *text - 'A' + 10;
+        else
+            return false;
+        if (parsed > (UINT32_MAX - digit) / 16)
+            return false;
+        parsed = parsed * 16 + digit;
+    }
+    *value = parsed;
     return true;
 }
 
-static bool read_values(
-    char** token,
-    size_t count,
-    uint32_t* values)
+static bool read_values(char** token, size_t count, uint32_t* values)
 {
     size_t index;
-
     for (index = 0; index < count; index++)
     {
         token[index] = strtok(NULL, " \t\r\n");
@@ -377,7 +375,6 @@ static int read_input_line(FILE* input, char* line, size_t capacity)
     size_t length = 0;
     bool malformed = false;
     int byte;
-
     while ((byte = fgetc(input)) != EOF)
     {
         if (byte == '\n')
@@ -409,6 +406,11 @@ int PlannerTransport_ReadLineForTest(
 {
     return read_input_line(input, line, capacity);
 }
+
+bool PlannerTransport_ParseHexForTest(const char* text, uint32_t* value)
+{
+    return parse_hex(text, value);
+}
 #endif
 
 static int run_transport(const char* rom_path)
@@ -422,7 +424,6 @@ static int run_transport(const char* rom_path)
     int transport_result = 0;
     int line_result;
     uint32_t next_command_id = 1;
-
     core = mCoreFind(rom_path);
     if (core == NULL || !core->init(core))
     {
@@ -469,7 +470,6 @@ static int run_transport(const char* rom_path)
         return 3;
     }
     emit_state(core);
-
     while (
         (line_result = read_input_line(stdin, line, sizeof(line)))
             != INPUT_LINE_EOF)
@@ -483,7 +483,6 @@ static int run_transport(const char* rom_path)
             read_word(core, PLANNER_OBSERVATION_ADDR, 4);
         uint32_t response_frames;
         struct command_acknowledgement acknowledgement;
-
         if (line_result == INPUT_LINE_MALFORMED)
         {
             fputs("ERROR malformed line\n", stdout);
@@ -635,7 +634,6 @@ static int run_transport(const char* rom_path)
         if (next_command_id == 0)
             next_command_id = 1;
     }
-
     free(buffer);
     mCoreConfigDeinit(&core->config);
     core->deinit(core);
@@ -646,7 +644,6 @@ static int run_transport(const char* rom_path)
 int main(int argc, char** argv)
 {
     struct mLogger logger = { .log = discard_log, .filter = NULL };
-
     if (argc != 2)
     {
         fprintf(stderr, "usage: %s <planner-rom.gba>\n", argv[0]);

@@ -747,6 +747,10 @@ checkpoint, and transcript byte-identical; such commands cannot be encoded in
 a valid transcript. A 512-byte-or-longer input line is drained atomically, so
 a same-line valid COMMIT/CANCEL suffix is never parsed; the next separately
 delimited typed command remains usable.
+Signed, prefixed, overflowing, whitespace-contaminated, or trailing-junk
+numeric words reject on START/PAGE/COMMIT/CANCEL without mailbox mutation.
+Scenario IDs `0` and `0xFFFFFFFF` compile distinctly from the fingerprint;
+negative, oversized, floating, or unresolved modern overrides do not compile.
 Unknown numeric command kinds likewise fail import before transport creation.
 Negative, oversized, boolean, string, float, or wrong-kind completion timings
 fail before replay.

@@ -5,13 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
-bool PlannerTransport_IsAcknowledgementValid(
-    uint32_t result,
-    uint32_t rejection);
-int PlannerTransport_ReadLineForTest(
-    FILE* input,
-    char* line,
-    size_t capacity);
+bool PlannerTransport_IsAcknowledgementValid(uint32_t result, uint32_t rejection);
+int PlannerTransport_ReadLineForTest(FILE* input, char* line, size_t capacity);
+bool PlannerTransport_ParseHexForTest(const char* text, uint32_t* value);
 
 enum
 {
@@ -22,13 +18,10 @@ enum
 
 static int CheckLineFraming(void)
 {
-    char line[512];
-    char exact[512];
-    char chained[768];
-    char no_newline[600];
+    char line[512], exact[512];
+    char chained[768], no_newline[600];
     FILE* input;
     size_t length;
-
     memset(exact, ' ', sizeof(exact));
     memcpy(exact, "READ", 4);
     exact[sizeof(exact) - 1] = '\n';
@@ -41,12 +34,9 @@ static int CheckLineFraming(void)
             != INPUT_LINE_EOF)
         return 1;
     fclose(input);
-
     memset(chained, 'X', 700);
-    memcpy(
-        chained + 700,
-        " CANCEL 00000001 00000001\nREAD\n",
-        sizeof(" CANCEL 00000001 00000001\nREAD\n") - 1);
+    memcpy(chained + 700, " CANCEL 00000001 00000001\nREAD\n",
+           sizeof(" CANCEL 00000001 00000001\nREAD\n") - 1);
     length = 700 + sizeof(" CANCEL 00000001 00000001\nREAD\n") - 1;
     input = fmemopen(chained, length, "r");
     if (input == NULL
@@ -59,7 +49,6 @@ static int CheckLineFraming(void)
             != INPUT_LINE_EOF)
         return 1;
     fclose(input);
-
     memset(no_newline, 'X', sizeof(no_newline));
     input = fmemopen(no_newline, sizeof(no_newline), "r");
     if (input == NULL
@@ -69,7 +58,6 @@ static int CheckLineFraming(void)
             != INPUT_LINE_EOF)
         return 1;
     fclose(input);
-
     input = fmemopen("READ", 4, "r");
     if (input == NULL
         || PlannerTransport_ReadLineForTest(input, line, sizeof(line))
@@ -82,10 +70,26 @@ static int CheckLineFraming(void)
     return 0;
 }
 
+static int CheckHexParser(void)
+{
+    static const char* invalid[] = {
+        "", "-0", "+0", "-1", "+1", " -0", "\t+0", "100000000",
+        "FFFFFFFFF", "0x1", "1g", "1 " };
+    uint32_t value;
+    size_t index;
+    if (!PlannerTransport_ParseHexForTest("0", &value) || value != 0
+        || !PlannerTransport_ParseHexForTest("FFFFFFFF", &value)
+        || value != UINT32_MAX)
+        return 1;
+    for (index = 0; index < sizeof(invalid) / sizeof(*invalid); index++)
+        if (PlannerTransport_ParseHexForTest(invalid[index], &value))
+            return 1;
+    return 0;
+}
+
 int main(void)
 {
     uint32_t rejection;
-
     if (!PlannerTransport_IsAcknowledgementValid(1, 0))
         return 1;
     for (rejection = 1; rejection <= 10; rejection++)
@@ -97,7 +101,8 @@ int main(void)
         || PlannerTransport_IsAcknowledgementValid(0, UINT32_MAX)
         || PlannerTransport_IsAcknowledgementValid(2, 0)
         || PlannerTransport_IsAcknowledgementValid(UINT32_MAX, 1)
-        || CheckLineFraming())
+        || CheckLineFraming()
+        || CheckHexParser())
         return 1;
     puts("PLANNER_TRANSPORT_SECURITY_TEST: PASS");
     return 0;

@@ -1517,6 +1517,7 @@ int main(void)
     struct AiDecision original;
     const struct ExpansionAutoplayPlannerActionV2* action;
     u32 selectedOrdinal, selectedToken[4], forgedToken[4];
+    u32 configuredConfigIdentity, configuredScenarioIdentity;
     u32 previousScenarioIdentity, previousSeedIdentity;
     int index, other, restoreBefore, selectedX, selectedY;
     gPlaySt.chapterIndex = 1;
@@ -1565,6 +1566,10 @@ int main(void)
     ExpansionAutoplayPlanner_OnMapReady();
     CHECK(!ExpansionAutoplayPlanner_PollStart(),
           "idle poll without a command must publish READY");
+    configuredScenarioIdentity =
+        gExpansionAutoplayPlannerObservation.actualScenarioIdentity;
+    configuredConfigIdentity =
+        gExpansionAutoplayPlannerObservation.actualConfigIdentity;
     WriteCommand((enum ExpansionAutoplayPlannerCommandKind)99, 0, 0, 0, 0, NULL);
     CHECK(!ExpansionAutoplayPlanner_PollStart(), "unknown idle command must reject");
     CHECK(gExpansionAutoplayPlannerObservation.rejection
@@ -1980,6 +1985,8 @@ int main(void)
             && gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
             && sRestoreRequests == restoreBefore + 1,
         "capacity overflow must terminate and queue safe restoration");
+    printf("SCENARIO_IDENTITY=%08x\n", configuredScenarioIdentity);
+    printf("CONFIG_IDENTITY=%08x\n", configuredConfigIdentity);
     puts("AUTOPLAY_PLANNER_HOST_TEST: PASS");
     return 0;
 }
