@@ -19,6 +19,18 @@ int main(void)
     printf(
         "value_size=%lu\n",
         (unsigned long)sizeof(struct ExpansionAutoplayPlannerValueRecordV2));
+    printf("objective_size=%lu\n",
+           (unsigned long)sizeof(struct ExpansionAutoplayPlannerObjectiveV2));
+    printf("group_size=%lu\n",
+           (unsigned long)sizeof(struct ExpansionAutoplayPlannerGroupV2));
+    printf("strategy_size=%lu\n",
+           (unsigned long)sizeof(struct ExpansionAutoplayPlannerStrategyV2));
+    printf("assignment_size=%lu\n",
+           (unsigned long)sizeof(struct ExpansionAutoplayPlannerAssignmentV2));
+    printf("campaign_size=%lu\n",
+           (unsigned long)sizeof(struct ExpansionAutoplayPlannerCampaignV2));
+    printf("summary_size=%lu\n",
+           (unsigned long)sizeof(struct ExpansionAutoplayPlannerSummaryV2));
     printf(
         "start_union_size=%lu\n",
         (unsigned long)sizeof(union ExpansionAutoplayPlannerRecordStartV2));

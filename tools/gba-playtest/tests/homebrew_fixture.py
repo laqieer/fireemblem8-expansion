@@ -355,6 +355,7 @@ def build_planner_transport_backend(
     acknowledgement_frame_limit: int = 120,
     response_frame_limit: int = 600,
     commit_completion_frame_limit: int = 18000,
+    wall_timeout_ms: int = 5000,
     test_bootstrap: bool = False,
 ) -> None:
     """Build the fixed-symbol stdin/stdout libmGBA planner adapter."""
@@ -362,8 +363,11 @@ def build_planner_transport_backend(
         acknowledgement_frame_limit,
         response_frame_limit,
         commit_completion_frame_limit,
+        wall_timeout_ms,
     ) <= 0:
         raise ValueError("planner transport frame limits must be positive")
+    if wall_timeout_ms > 5000:
+        raise ValueError("planner transport wall timeout exceeds five seconds")
     root = Path(__file__).resolve().parents[3]
     compiler = shutil.which(os.environ.get("CC", "cc"))
     if compiler is None:
@@ -394,6 +398,7 @@ def build_planner_transport_backend(
         "-DPLANNER_COMMIT_COMPLETION_FRAME_LIMIT={}u".format(
             commit_completion_frame_limit
         ),
+        f"-DPLANNER_DECISION_WALL_TIMEOUT_MS={wall_timeout_ms}u",
         f"-DPLANNER_TRANSPORT_TEST_BOOTSTRAP={int(test_bootstrap)}",
         str(root / "tools" / "gba-playtest" / "planner_transport_backend.c"),
         *(

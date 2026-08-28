@@ -115,6 +115,24 @@ enum ExpansionAutoplayPlannerValueKind
     EXPANSION_AUTOPLAY_PLANNER_VALUE_AUTOPLAY_TELEMETRY = 6,
 };
 
+enum ExpansionAutoplayPlannerAssignmentSource
+{
+    EXPANSION_AUTOPLAY_PLANNER_ASSIGNMENT_NONE = 0,
+    EXPANSION_AUTOPLAY_PLANNER_ASSIGNMENT_CHAPTER = 1,
+    EXPANSION_AUTOPLAY_PLANNER_ASSIGNMENT_GROUP = 2,
+    EXPANSION_AUTOPLAY_PLANNER_ASSIGNMENT_UNIT = 3,
+};
+
+enum ExpansionAutoplayPlannerUnitSemanticFlag
+{
+    EXPANSION_AUTOPLAY_PLANNER_UNIT_DEPLOYED = (1 << 0),
+    EXPANSION_AUTOPLAY_PLANNER_UNIT_DEAD = (1 << 1),
+    EXPANSION_AUTOPLAY_PLANNER_UNIT_MOVED = (1 << 2),
+    EXPANSION_AUTOPLAY_PLANNER_UNIT_ACTED = (1 << 3),
+    EXPANSION_AUTOPLAY_PLANNER_UNIT_RESCUED = (1 << 4),
+    EXPANSION_AUTOPLAY_PLANNER_UNIT_RESCUING = (1 << 5),
+};
+
 enum ExpansionAutoplayPlannerDecisionResult
 {
     EXPANSION_AUTOPLAY_PLANNER_DECISION_FALLBACK = 0,
@@ -136,13 +154,18 @@ enum
     EXPANSION_AUTOPLAY_PLANNER_PAGE_MAX_BYTES = 1024,
     EXPANSION_AUTOPLAY_PLANNER_MAP_CELL_CAPACITY = 64 * 64,
     EXPANSION_AUTOPLAY_PLANNER_SEMANTIC_FIELD_CAPACITY = 8,
-    EXPANSION_AUTOPLAY_PLANNER_MAP_RECORD_CAPACITY = 224,
-    EXPANSION_AUTOPLAY_PLANNER_UNIT_RECORD_CAPACITY = 56,
-    EXPANSION_AUTOPLAY_PLANNER_VALUE_RECORD_CAPACITY = 112,
-    EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY = 22,
+    EXPANSION_AUTOPLAY_PLANNER_MAP_RECORD_CAPACITY = 231,
+    EXPANSION_AUTOPLAY_PLANNER_UNIT_RECORD_CAPACITY = 23,
+    EXPANSION_AUTOPLAY_PLANNER_VALUE_RECORD_CAPACITY = 115,
+    EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY = 23,
     EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY = 512,
     EXPANSION_AUTOPLAY_PLANNER_TRACE_ACTION_CAPACITY = 4096,
     EXPANSION_AUTOPLAY_PLANNER_DECISION_TIMEOUT_FRAMES = 300,
+    EXPANSION_AUTOPLAY_PLANNER_OBJECTIVE_CAPACITY = 8,
+    EXPANSION_AUTOPLAY_PLANNER_GROUP_CAPACITY = 8,
+    EXPANSION_AUTOPLAY_PLANNER_GROUP_MEMBER_CAPACITY = 16,
+    EXPANSION_AUTOPLAY_PLANNER_STRATEGY_CAPACITY = 8,
+    EXPANSION_AUTOPLAY_PLANNER_ASSIGNMENT_CAPACITY = 17,
 };
 
 struct ExpansionAutoplayPlannerSemanticFieldV2
@@ -173,12 +196,79 @@ struct ExpansionAutoplayPlannerUnitV2
     u32 position;
     u32 state;
     u32 inventoryDigest;
+    u32 status;
+    u32 rescueAndEquipped;
+    u32 stats0;
+    u32 stats1;
+    u32 ranks0;
+    u32 ranks1;
 };
 
 struct ExpansionAutoplayPlannerValueRecordV2
 {
     u32 identity;
     u32 value;
+};
+
+struct ExpansionAutoplayPlannerObjectiveV2
+{
+    u32 id;
+    u32 completionObjectiveId;
+    u32 groupId;
+    u32 activationFlags;
+    u32 completionFlags;
+    u32 kind;
+    u32 area;
+    u32 status;
+};
+
+struct ExpansionAutoplayPlannerGroupV2
+{
+    u32 id;
+    u32 identity;
+    u32 members[4];
+};
+
+struct ExpansionAutoplayPlannerStrategyV2
+{
+    u32 id;
+    u32 objectiveCapabilities;
+    u32 actionCapabilities;
+    u32 identity;
+};
+
+struct ExpansionAutoplayPlannerAssignmentV2
+{
+    u32 identity;
+    u32 subjectId;
+    u32 strategyId;
+};
+
+struct ExpansionAutoplayPlannerCampaignV2
+{
+    u32 availability;
+    u32 chapter;
+    u32 counts;
+    u32 currentStrategyId;
+    u32 currentObjectiveCapabilities;
+    u32 currentActionCapabilities;
+    u32 currentAssignment;
+    u32 currentAssignmentSubject;
+    struct ExpansionAutoplayPlannerObjectiveV2
+        objectives[EXPANSION_AUTOPLAY_PLANNER_OBJECTIVE_CAPACITY];
+    struct ExpansionAutoplayPlannerGroupV2
+        groups[EXPANSION_AUTOPLAY_PLANNER_GROUP_CAPACITY];
+    struct ExpansionAutoplayPlannerStrategyV2
+        strategies[EXPANSION_AUTOPLAY_PLANNER_STRATEGY_CAPACITY];
+    struct ExpansionAutoplayPlannerAssignmentV2
+        assignments[EXPANSION_AUTOPLAY_PLANNER_ASSIGNMENT_CAPACITY];
+};
+
+struct ExpansionAutoplayPlannerSummaryV2
+{
+    struct ExpansionAutoplayPlannerSemanticFieldV2
+        fields[EXPANSION_AUTOPLAY_PLANNER_SEMANTIC_FIELD_CAPACITY];
+    struct ExpansionAutoplayPlannerCampaignV2 campaign;
 };
 
 union ExpansionAutoplayPlannerRecordStartV2
@@ -195,8 +285,7 @@ union ExpansionAutoplayPlannerRecordCountV2
 
 union ExpansionAutoplayPlannerPayloadV2
 {
-    struct ExpansionAutoplayPlannerSemanticFieldV2
-        fields[EXPANSION_AUTOPLAY_PLANNER_SEMANTIC_FIELD_CAPACITY];
+    struct ExpansionAutoplayPlannerSummaryV2 summary;
     u32 mapCells[EXPANSION_AUTOPLAY_PLANNER_MAP_RECORD_CAPACITY];
     struct ExpansionAutoplayPlannerUnitV2
         units[EXPANSION_AUTOPLAY_PLANNER_UNIT_RECORD_CAPACITY];

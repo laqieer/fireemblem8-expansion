@@ -10,12 +10,16 @@
 #include <mgba/core/log.h>
 
 #include <inttypes.h>
+#include <errno.h>
+#include <poll.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 #if !defined(PLANNER_OBSERVATION_ADDR) || !defined(PLANNER_COMMAND_ADDR) \
     || !defined(PLANNER_CHECKPOINT_ADDR)
@@ -36,7 +40,7 @@
 #define EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED UINT32_C(4)
 #define EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED UINT32_C(5)
 #define COMMAND_WORD_COUNT 16u
-#define OBSERVATION_WORD_COUNT 249u
+#define OBSERVATION_WORD_COUNT 256u
 #define CHECKPOINT_WORD_COUNT 13u
 
 #ifndef PLANNER_COMMAND_ACK_FRAME_LIMIT
@@ -50,6 +54,15 @@
 #ifndef PLANNER_COMMIT_COMPLETION_FRAME_LIMIT
 #define PLANNER_COMMIT_COMPLETION_FRAME_LIMIT 18000u
 #endif
+
+#ifndef PLANNER_DECISION_WALL_TIMEOUT_MS
+#define PLANNER_DECISION_WALL_TIMEOUT_MS 5000u
+#endif
+#if PLANNER_DECISION_WALL_TIMEOUT_MS == 0 || PLANNER_DECISION_WALL_TIMEOUT_MS > 5000u
+#error "PLANNER_DECISION_WALL_TIMEOUT_MS must be in 1..5000"
+#endif
+
+#define PLANNER_FRAME_INTERVAL_NS UINT64_C(16666667)
 
 struct command_acknowledgement
 {
@@ -365,12 +378,31 @@ static bool read_values(char** token, size_t count, uint32_t* values)
 
 enum input_line_result
 {
+    INPUT_LINE_ERROR = -1,
     INPUT_LINE_EOF,
     INPUT_LINE_READY,
     INPUT_LINE_MALFORMED,
+    INPUT_LINE_IDLE,
 };
 
-static int read_input_line(FILE* input, char* line, size_t capacity)
+struct input_line_state
+{
+    size_t length;
+    bool malformed;
+    bool eof;
+};
+
+struct decision_timer
+{
+    uint32_t run_id;
+    uint32_t observation_id;
+    uint64_t deadline;
+    uint64_t next_frame;
+    bool active;
+};
+
+static int __attribute__((unused)) read_input_line(
+    FILE* input, char* line, size_t capacity)
 {
     size_t length = 0;
     bool malformed = false;
@@ -398,6 +430,151 @@ static int read_input_line(FILE* input, char* line, size_t capacity)
     return length == 0 ? INPUT_LINE_EOF : INPUT_LINE_READY;
 }
 
+static bool monotonic_now(uint64_t* value)
+{
+    struct timespec time;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &time) != 0)
+        return false;
+    *value = (uint64_t)time.tv_sec * UINT64_C(1000000000) + (uint64_t)time.tv_nsec;
+    return true;
+}
+
+static int poll_input_line(
+    int fd,
+    struct input_line_state* state,
+    char* line,
+    size_t capacity,
+    int timeout)
+{
+    struct pollfd descriptor = { fd, POLLIN, 0 };
+    unsigned char byte;
+    ssize_t count;
+    int result;
+
+    if (state->eof)
+        return INPUT_LINE_EOF;
+    do
+        result = poll(&descriptor, 1, timeout);
+    while (result < 0 && errno == EINTR);
+    if (result < 0)
+        return INPUT_LINE_ERROR;
+    if (result == 0)
+        return INPUT_LINE_IDLE;
+    do
+        count = read(fd, &byte, 1);
+    while (count < 0 && errno == EINTR);
+    if (count == 0)
+    {
+        line[state->length] = '\0';
+        result = state->malformed
+            ? INPUT_LINE_MALFORMED
+            : (state->length == 0 ? INPUT_LINE_EOF : INPUT_LINE_READY);
+        state->length = 0;
+        state->malformed = false;
+        state->eof = true;
+        return result;
+    }
+    if (count < 0)
+        return errno == EAGAIN || errno == EWOULDBLOCK
+            ? INPUT_LINE_IDLE : INPUT_LINE_ERROR;
+    if (byte == '\n')
+    {
+        line[state->length] = '\0';
+        result = state->malformed ? INPUT_LINE_MALFORMED : INPUT_LINE_READY;
+        state->length = 0;
+        state->malformed = false;
+        return result;
+    }
+    if (byte == '\0' || state->length + 1 >= capacity)
+        state->malformed = true;
+    else if (!state->malformed)
+        line[state->length++] = (char)byte;
+    return INPUT_LINE_IDLE;
+}
+
+static bool refresh_decision_timer(
+    struct mCore* core,
+    struct decision_timer* timer)
+{
+    uint32_t state = read_word(core, PLANNER_OBSERVATION_ADDR, 5);
+    uint32_t run_id = read_word(core, PLANNER_OBSERVATION_ADDR, 3);
+    uint32_t observation_id = read_word(core, PLANNER_OBSERVATION_ADDR, 4);
+    uint64_t now;
+
+    if (state != EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING)
+    {
+        timer->active = false;
+        return true;
+    }
+    if (timer->active
+        && timer->run_id == run_id
+        && timer->observation_id == observation_id)
+        return true;
+    if (!monotonic_now(&now))
+        return false;
+    timer->run_id = run_id;
+    timer->observation_id = observation_id;
+    timer->deadline = now + (uint64_t)PLANNER_DECISION_WALL_TIMEOUT_MS * UINT64_C(1000000);
+    timer->next_frame = now + PLANNER_FRAME_INTERVAL_NS;
+    timer->active = true;
+    return true;
+}
+
+static int service_decision_timer(
+    struct mCore* core,
+    struct decision_timer* timer)
+{
+    uint64_t now;
+    uint32_t state;
+    uint32_t frames;
+
+    if (!timer->active)
+        return 0;
+    if (!monotonic_now(&now))
+        return -1;
+    while (now >= timer->next_frame && now < timer->deadline)
+    {
+        core->runFrame(core);
+        timer->next_frame += PLANNER_FRAME_INTERVAL_NS;
+        state = read_word(core, PLANNER_OBSERVATION_ADDR, 5);
+        if (state != EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING)
+        {
+            emit_state(core);
+            timer->active = false;
+            return 1;
+        }
+    }
+    if (now < timer->deadline)
+        return 0;
+    for (frames = 0; frames < 300
+         && read_word(core, PLANNER_OBSERVATION_ADDR, 5)
+            == EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING;
+         frames++)
+        core->runFrame(core);
+    state = read_word(core, PLANNER_OBSERVATION_ADDR, 5);
+    if (!is_terminal_state(state))
+        return -1;
+    emit_state(core);
+    timer->active = false;
+    return 1;
+}
+
+static int decision_poll_timeout(const struct decision_timer* timer)
+{
+    uint64_t now;
+    uint64_t next;
+
+    if (!timer->active)
+        return -1;
+    if (!monotonic_now(&now))
+        return 0;
+    next = timer->next_frame < timer->deadline ? timer->next_frame : timer->deadline;
+    if (next <= now)
+        return 0;
+    return (int)((next - now + UINT64_C(999999)) / UINT64_C(1000000));
+}
+
 #if PLANNER_TRANSPORT_LINE_TEST
 int PlannerTransport_ReadLineForTest(
     FILE* input,
@@ -423,7 +600,10 @@ static int run_transport(const char* rom_path)
     int startup_frames;
     int transport_result = 0;
     int line_result;
+    int timer_result;
     uint32_t next_command_id = 1;
+    struct input_line_state input_state = { 0, false, false };
+    struct decision_timer decision = { 0 };
     core = mCoreFind(rom_path);
     if (core == NULL || !core->init(core))
     {
@@ -470,11 +650,11 @@ static int run_transport(const char* rom_path)
         return 3;
     }
     emit_state(core);
-    while (
-        (line_result = read_input_line(stdin, line, sizeof(line)))
-            != INPUT_LINE_EOF)
+    if (!refresh_decision_timer(core, &decision))
+        transport_result = 3;
+    while (transport_result == 0)
     {
-        char* command = strtok(line, " \t\r\n");
+        char* command;
         char* tokens[11];
         uint32_t values[11];
         uint32_t kind = 0;
@@ -483,6 +663,45 @@ static int run_transport(const char* rom_path)
             read_word(core, PLANNER_OBSERVATION_ADDR, 4);
         uint32_t response_frames;
         struct command_acknowledgement acknowledgement;
+        timer_result = service_decision_timer(core, &decision);
+        if (timer_result < 0)
+        {
+            fputs("planner transport monotonic decision timer failed\n", stderr);
+            transport_result = 3;
+            break;
+        }
+        if (timer_result > 0)
+        {
+            input_state.length = 0;
+            input_state.malformed = false;
+            continue;
+        }
+        line_result = poll_input_line(
+            STDIN_FILENO,
+            &input_state,
+            line,
+            sizeof(line),
+            decision_poll_timeout(&decision));
+        if (line_result == INPUT_LINE_ERROR)
+        {
+            fputs("planner transport stdin poll failed\n", stderr);
+            transport_result = 3;
+            break;
+        }
+        if (line_result == INPUT_LINE_IDLE)
+            continue;
+        if (line_result == INPUT_LINE_EOF)
+            break;
+        timer_result = service_decision_timer(core, &decision);
+        if (timer_result != 0)
+        {
+            if (timer_result < 0)
+                transport_result = 3;
+            input_state.length = 0;
+            input_state.malformed = false;
+            continue;
+        }
+        command = strtok(line, " \t\r\n");
         if (line_result == INPUT_LINE_MALFORMED)
         {
             fputs("ERROR malformed line\n", stdout);
@@ -502,6 +721,8 @@ static int run_transport(const char* rom_path)
                 continue;
             }
             emit_state(core);
+            if (!refresh_decision_timer(core, &decision))
+                transport_result = 3;
             continue;
         }
         if (strcmp(command, "START") == 0)
@@ -630,6 +851,11 @@ static int run_transport(const char* rom_path)
         }
         emit_completion(&acknowledgement, response_frames);
         emit_state(core);
+        if (!refresh_decision_timer(core, &decision))
+        {
+            transport_result = 3;
+            break;
+        }
         next_command_id++;
         if (next_command_id == 0)
             next_command_id = 1;

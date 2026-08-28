@@ -46,6 +46,14 @@ enum ExpansionAutoplayStrategyResult
     EXPANSION_AUTOPLAY_STRATEGY_ERR_PHASE_ACTIVE = 10,
 };
 
+enum ExpansionAutoplayStrategyAssignmentSource
+{
+    EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_NONE = 0,
+    EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_CHAPTER = 1,
+    EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_GROUP = 2,
+    EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_UNIT = 3,
+};
+
 enum
 {
     EXPANSION_AUTOPLAY_STRATEGY_CAPACITY = 8,
@@ -107,9 +115,22 @@ struct ExpansionAutoplayStrategyBundle
     const struct ExpansionAutoplayStrategyUnitAssignment* unitAssignments;
 };
 
+struct ExpansionAutoplayStrategyResolution
+{
+    u32 strategyId;
+    u32 subjectId;
+    u8 source;
+};
+
 extern const struct ExpansionAutoplayStrategy gExpansionAutoplayStrategies[];
 extern const struct ExpansionAutoplayStrategyBundle gExpansionAutoplayStrategyBundles[];
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+const struct ExpansionAutoplayStrategyBundle* ExpansionAutoplayStrategies_GetCurrentBundle(void);
+const struct ExpansionAutoplayStrategy* ExpansionAutoplayStrategies_Find(u32 id);
+enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ResolveCurrent(
+    struct ExpansionAutoplayStrategyResolution* resolution);
+#endif
 bool ExpansionAutoplayStrategies_HasStrategies(void);
 enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ValidateRegistry(
     const struct ExpansionAutoplayStrategy* registry,

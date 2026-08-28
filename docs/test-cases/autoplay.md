@@ -581,9 +581,9 @@ two-chapter transcript. The ROM's pure visitor enumerates every legal choice
 in the declared six action families from current movement, terrain,
 visibility, unit, item, objective, and resource state without mutating
 decision, unit, map, or RNG state. Candidate records are unique and repeat in
-canonical row-major then action/item/target order. The 996-byte page carries
-either eight typed summary fields, 224 map cells, 56 units, 112
-inventory/resource/flag values, or 22 40-byte actions; typed `PAGE` traversal
+canonical row-major then action/item/target order. The 1,024-byte page carries
+eight summary fields plus the bounded campaign aggregate, 231 map cells, 23
+40-byte rich units, 115 inventory/resource/flag values, or 23 actions; `PAGE`
 reaches all 512 candidate ordinals without an in-process list shortcut.
 Every reachable destination has one `MOVE_WAIT`, including exactly one
 current-tile action. An immobile valid actor can select that action; it enters
@@ -596,8 +596,16 @@ every valid unit's five inventory slots, every bounded event flag, gold, all
 100 convoy slots, telemetry, and RNG data with explicit availability on every
 semantic field or record. `US_UNAVAILABLE` actors and targets remain
 unavailable even with stale in-bounds coordinates. Empty and present items
-retain their item IDs, uses, and availability. Both host planners echo the
-ROM's four independently mixed token words unchanged, validate and retain a
+retain their item IDs, uses, and availability.
+Rich unit records additionally expose status/duration, level/EXP, explicit
+deployed/dead/moved/acted/rescued/rescuing state and rescue partner, equipped
+slot/raw item, eight combat stats, and all eight weapon ranks. The summary's
+typed campaign aggregate exposes current phase/chapter/route, complete bounded
+#89 objectives and groups, the #90 strategy registry/capabilities, all
+chapter/group/unit assignments, activation state, and current assignment
+source. Available/default and maximum-capacity forms round-trip and mutate the
+semantic digest independently. Both host planners echo the ROM's four
+independently mixed token words unchanged, validate and retain a
 digest of the complete typed semantic values before choosing, commit through
 the #85 computer-action route, and preserve a
 52-byte checkpoint through `MNCH`/`MNC2`/`MNC3` into chapter two. The checkpoint
@@ -619,7 +627,8 @@ in the current phase domain. Rogue Pick remains item-free; each non-Rogue
 target publishes every applicable Lockpick, Chest Key/bundle, or Door Key slot
 in slot order and consumes only the committed stack. Wrong-purpose, depleted,
 replaced, or swapped slots reject even while another valid key remains.
-Prologue route, accepts a host-selected nontrivial action, reaches the next
+The enabled full expansion ROM follows the clean-boot Prologue route, accepts
+a host-selected nontrivial action, reaches the next
 planner observation with the actor at the committed destination, then cancels
 safely. Explicit exit, restart, load, new-game, full-reset, and cancel paths
 clear the run/checkpoint.
@@ -637,19 +646,23 @@ two tested destinations. Demon King summon remains a distinct coordinate-free
 action with its existing population cap. Timeout and explicit cancel
 invalidate and zero the complete checkpoint before control restoration; a
 later START exposes no prior chapter, run, or digest.
-The named-union C89 layout preserves the 996-byte observation, with start,
+The named-union C89 layout preserves the 1,024-byte observation, with start,
 count, and payload at byte offsets 36, 40, and 100; command and checkpoint
 remain 64 and 52 bytes. The host-only configure test actually executes bare
 generated Make through a recursive-Make recorder, observes the release `all`
 goal, and proves the persisted planner fails closed without an ARM compiler.
 The toolchain gate separately executes the real explicit debug-target
 compile/link/boot path.
+Otherwise-identical enabled/disabled debug maps and ELFs bind the complete
+planner delta to `__floating_end`: 11,104/12,288 ROM bytes, 1,172/4,096 EWRAM,
+zero IWRAM, and fail-closed representative-hook growth controls.
 Every wire page has a count from 1 through 92 and an in-range index. Before
 either planner or replay factory runs, the shared live/import validator
 requires one ordered summary/map/unit/inventory/resource/flag/action sequence,
 contiguous spans and totals, canonical unique record identities, row-major map
 dimensions, map-relative destination/target coordinates, roster-owned unique
-inventory slots, and complete action ordinals.
+inventory slots, complete action ordinals, rich unit state/equipment/ranks,
+and objective/group/strategy/assignment cross-record identities.
 Each typed transport command first returns a matching monotonic `ACK`, then a
 matching `COMPLETE`, then its observation. Both planners execute a synthetic
 180-frame movement/camera/battle/event-style COMMIT and receive only the new
@@ -692,6 +705,9 @@ exact READY control record before initial OBS. Delayed startup without
 bootstrap, never-ready timeout, WAITING, and EXHAUSTED startup fail with no
 stdout or stdin handling. Completion frame counts are exact integers bounded
 to 600, except accepted COMMIT may use up to 18,000.
+WAITING also owns one monotonic five-second deadline. The backend advances the
+ROM at fixed cadence without keys while stdin is silent/partial or serves
+READ/malformed/unknown floods, then emits the ROM timeout and zero checkpoint.
 
 ### Negative control
 

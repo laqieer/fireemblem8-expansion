@@ -970,18 +970,24 @@ the fixed-width, pointer-free `PlannerObservationV2`, `PlannerCommandV2`, and
 only one typed mailbox command. There is no raw-address, arbitrary-memory,
 save, savestate, socket, HTTP, model, or upload API.
 
-The 996-byte pre-release v2 observation is a tagged fixed-width page. This
+The 1,024-byte pre-release v2 observation is a tagged fixed-width page. This
 unreleased extension changes v2 in place; there is no deployed v2 peer to
 migrate. Page zero contains eight semantic fields. Further pages carry up to
-224 row-major map cells, 56 unit records, 112 typed value records, or 22
-pointer-free action records. Map and unit pages expose actual bounded runtime
-terrain, occupancy, visibility, identity, position, HP/state, and inventory
-digests. An `INVENTORY` page exposes all five item slots for every valid unit,
-including item ID and uses. `RESOURCES` pages expose current gold, all 100
-convoy slots with item ID and uses, and every word of autoplay telemetry.
-`FLAGS` pages expose every bounded permanent and chapter flag ID and state.
+231 row-major map cells, 23 typed 40-byte unit records, 115 typed value
+records, or 23 pointer-free action records. Unit records expose availability,
+faction/character/class, position/HP, raw state plus explicit deployed, dead,
+moved, acted, rescued and rescuing flags, rescue partner, status/duration,
+level/EXP, equipped slot/raw item, power/skill/speed/luck/defense/resistance/
+constitution/movement, all eight weapon ranks, and the inventory digest.
+`INVENTORY` pages expose all five raw slots; `RESOURCES` exposes gold, all 100
+convoy slots, and telemetry; `FLAGS` exposes every bounded flag ID and state.
 The summary retains map, active-unit, objective, flag, and resource integrity
 fields; per-unit inventory digests remain only on unit records.
+Its otherwise-unused payload contains a fixed 812-byte campaign record: phase,
+chapter/route mode, up to eight complete #89 objectives and eight 16-member
+groups, the eight-entry #90 strategy registry, and seventeen chapter/group/
+unit assignments with activation/current source and capabilities. Every domain
+and nested record carries availability; no pointer crosses the wire.
 Flag and convoy/resource availability derives only from the backing pointer
 and bounded domain sizes. A valid 32-bit digest of zero remains `AVAILABLE`
 and is published unchanged; null storage or an out-of-range flag domain is
@@ -1011,9 +1017,8 @@ no selection, follow-up command, or transcript mutation.
 
 The observation's overlapping start/count aliases and tagged payload are
 declared as named C89 unions (`start`, `count`, and `payload`), not anonymous
-members. This keeps the public wire offsets at 36, 40, and 100 respectively,
-the observation at 996 bytes, and the modern/host transport ABI unchanged
-while allowing the inactive header contract to compile under archival agbcc.
+members. Public wire offsets remain 36, 40, and 100 while unreleased v2 grows
+atomically to 1,024 bytes; inactive headers still compile under archival agbcc.
 The archival planner translation unit retains compile-time size and offset
 checks even though release and archival builds emit no planner runtime state.
 
@@ -1022,8 +1027,8 @@ header: START uses four expected identity words, while COMMIT uses the four
 opaque token words. Result and rejection remain at offsets 56 and 60. The host
 obtains all data only by sending typed `PAGE` commands with a fixed
 `page_index`; there is no in-process action-list shortcut. Up to 512 actions
-use at most 24 action pages. With maximum map, unit, inventory, resource, flag,
-and action records, the complete bounded observation uses at most 92 pages.
+use at most 23 action pages. Maximum map, 132 rich units, inventory, resources,
+4,096 flags, campaign registries, and actions still use exactly 92 pages.
 Before planner selection, transcript mutation, or replay transport creation,
 one shared whole-observation validator requires `1 <= page_count <= 92`,
 `page_index < page_count`, exact `u32` words, and a projected capture within
@@ -1216,8 +1221,12 @@ handling. An accepted COMMIT instead waits up to 18,000 execution frames for a
 genuinely new WAITING observation or a terminal planner state, allowing
 movement, camera, battle, trap, and event Procs to finish. The 120-frame
 mailbox-acknowledgement bound and 600-frame fast-response bound are separate
-from both that execution bound and the ROM's existing 300-frame/five-second
-decision deadline. An unacknowledged command emits
+from both that execution bound and the ROM's 300-frame/five-second decision
+deadline. While WAITING, the restricted backend polls stdin with
+`CLOCK_MONOTONIC`, runs the ROM at a fixed 60 Hz cadence without keypad input,
+and keeps one absolute five-second deadline per observation. Silence, partial
+lines, READ, malformed, or unknown floods cannot reset it; expiry publishes
+the ROM-owned timeout terminal and cleared checkpoint. An unacknowledged command emits
 `TRANSPORT_ERROR COMMAND_ACK_TIMEOUT`; an acknowledged COMMIT that never
 completes emits `TRANSPORT_ERROR ACTION_COMPLETION_TIMEOUT`. Either error
 terminates the adapter without emitting or serializing the old COMMITTED page.
@@ -1236,16 +1245,15 @@ The Python configuration resolver appends `autoplay_planner` after every
 pre-existing positional parameter, preserving the established BGM-policy and
 item-cap slots while also supporting keyword use.
 
-The enabled ARM planner and shared action-semantics objects use 996-byte pages,
-64-byte commands, 52-byte checkpoints, 1,140 bytes of EWRAM/BSS, zero IWRAM,
-and 11,976 bytes of text/rodata. Shared target predicates replace duplicated
-planner rules. Planner-specific executor lowering adds a 176-byte
-`cp_perform` text/rodata delta, and the settled event-transition checkpoint
-adds four bytes while the MNC3 pre-transition hook adds 16 bytes, for 12,172
-bytes across the complete planner/action/lifecycle seam (116 bytes below
-12 KiB). The
-planner-specific RNG counter and cancellation latch add five EWRAM bytes and
-no IWRAM, keeping total planner state at 1,145 bytes (2,951 bytes below 4 KiB).
+The authoritative resource gate builds otherwise-identical enabled and
+disabled debug profiles, parses both linker reports/maps/ELFs, and compares
+their real `__floating_end` plus EWRAM/IWRAM occupancy. The current complete
+linked delta is 11,104/12,288 ROM bytes (1,184 headroom), 1,172/4,096 EWRAM
+bytes (2,924 headroom), and zero IWRAM. This naturally includes every planner
+hook, including `cp_decide`, targeting/item/menu/action/map/lifecycle/RNG
+owners omitted by the old object subtotal. Each representative-hook +1-byte
+over-limit mutation fails. The debug-only planner translation unit uses `-Os`
+to retain the frozen cap without changing behavior or release/archival code.
 Disabled release and archival builds omit planner state and the normal-summon
 executor hook while retaining their original player/executor paths.
 The shared target-query functions are modern-only. `FE8_ARCHIVAL_BUILD`

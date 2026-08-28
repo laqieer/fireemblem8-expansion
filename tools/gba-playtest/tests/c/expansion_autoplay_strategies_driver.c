@@ -436,6 +436,40 @@ static void ResetFixture(void)
 #endif
 }
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_AUTOPLAY_STRATEGIES
+static int TestPlannerAssignmentResolution(void)
+{
+    struct ExpansionAutoplayStrategyResolution resolution;
+
+    ResetFixture();
+    CHECK(
+        ExpansionAutoplayStrategies_ResolveCurrent(&resolution)
+                == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && resolution.strategyId == EXPANSION_AUTOPLAY_STRATEGY_AGGRESSIVE_ID
+            && resolution.source == EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_CHAPTER,
+        "planner snapshot must expose the chapter assignment"
+    );
+    sFlags[EVFLAG_HIDE_BLINKING_ICON] = true;
+    CHECK(
+        ExpansionAutoplayStrategies_ResolveCurrent(&resolution)
+                == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && resolution.strategyId == EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID
+            && resolution.source == EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_GROUP,
+        "planner snapshot must expose the active group assignment"
+    );
+    sFlags[EVFLAG_BATTLE_QUOTES] = true;
+    CHECK(
+        ExpansionAutoplayStrategies_ResolveCurrent(&resolution)
+                == EXPANSION_AUTOPLAY_STRATEGY_OK
+            && resolution.strategyId == AUTOPLAY_STRATEGY_TENTATIVE_FALLBACK_ID
+            && resolution.source == EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_UNIT
+            && resolution.subjectId == CHARACTER_EIRIKA,
+        "planner snapshot must preserve unit-over-group assignment priority"
+    );
+    return 0;
+}
+#endif
+
 static int TestRegistryFailures(void)
 {
     const struct ExpansionAutoplayStrategy duplicate[] = {
@@ -1185,6 +1219,9 @@ int main(void)
     CHECK(TestCombatMovementPreparation() == 0, "combat movement preparation");
     CHECK(TestRectangleDestinationSelection() == 0, "rectangle destination selection");
     CHECK(TestReferenceProfiles() == 0, "reference profiles");
+#if FE8_EXPANSION_AUTOPLAY_PLANNER
+    CHECK(TestPlannerAssignmentResolution() == 0, "planner assignment resolution");
+#endif
 #else
     CHECK(TestDisabledProfileNegative() == 0, "disabled profile negative");
 #endif

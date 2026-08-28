@@ -1052,14 +1052,28 @@ expansion-modern-autoplay-strategies-objects: \
 		'$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(EXPANSION_AUTOPLAY_STRATEGIES)'
 
 MODERN_AUTOPLAY_PLANNER_ROOT := build/expansion-modern-autoplay-planner
+MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT := build/expansion-modern-autoplay-planner-disabled
 MODERN_AUTOPLAY_PLANNER_ROM := \
 	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/fireemblem8.gba
 MODERN_AUTOPLAY_PLANNER_ELF := \
 	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/fireemblem8.elf
-CLEAN_DIRS += $(MODERN_AUTOPLAY_PLANNER_ROOT)
+MODERN_AUTOPLAY_PLANNER_MAP := \
+	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/fireemblem8.map
+MODERN_AUTOPLAY_PLANNER_ENABLED_BUDGET := \
+	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/linker-budget.json
+MODERN_AUTOPLAY_PLANNER_DISABLED_ELF := \
+	$(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT)/debug/aapcs/fireemblem8.elf
+MODERN_AUTOPLAY_PLANNER_DISABLED_MAP := \
+	$(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT)/debug/aapcs/fireemblem8.map
+MODERN_AUTOPLAY_PLANNER_DISABLED_BUDGET := \
+	$(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT)/debug/aapcs/linker-budget.json
+MODERN_AUTOPLAY_PLANNER_LINKED_BUDGET := \
+	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/planner-linked-budget.json
+CLEAN_DIRS += $(MODERN_AUTOPLAY_PLANNER_ROOT) $(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT)
 
 .PHONY: expansion-modern-autoplay-planner-objects \
-	expansion-modern-autoplay-planner-profile-rom
+	expansion-modern-autoplay-planner-profile-rom \
+	expansion-modern-autoplay-planner-disabled-profile-rom
 expansion-modern-autoplay-planner-objects: \
 	$(MODERN_OUTPUT_DIR)/src/action_semantics.o \
 	$(MODERN_OUTPUT_DIR)/src/bmtarget.o \
@@ -1074,13 +1088,32 @@ expansion-modern-autoplay-planner-objects: \
 		'$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(EXPANSION_AUTOPLAY_PLANNER)'
 
 expansion-modern-autoplay-planner-profile-rom:
-	+$(MAKE) expansion-modern-rom \
+	+$(MAKE) expansion-modern-rom expansion-modern-budget \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs \
 		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_PLANNER_ROOT) \
+		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_PLANNER_ENABLED_BUDGET) \
 		EXPANSION_AUTOPLAY_PLANNER=1
 
+expansion-modern-autoplay-planner-disabled-profile-rom: \
+	expansion-modern-autoplay-planner-profile-rom
+	+$(MAKE) expansion-modern-rom expansion-modern-budget \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT) \
+		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_PLANNER_DISABLED_BUDGET) \
+		EXPANSION_AUTOPLAY_PLANNER=0
+
 .PHONY: expansion-modern-autoplay-planner-check
-expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profile-rom
+expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profile-rom \
+	expansion-modern-autoplay-planner-disabled-profile-rom
+	"$(PYTHON)" scripts/linker_report/autoplay_planner_budget.py \
+		--enabled-report "$(MODERN_AUTOPLAY_PLANNER_ENABLED_BUDGET)" \
+		--disabled-report "$(MODERN_AUTOPLAY_PLANNER_DISABLED_BUDGET)" \
+		--enabled-map "$(MODERN_AUTOPLAY_PLANNER_MAP)" \
+		--disabled-map "$(MODERN_AUTOPLAY_PLANNER_DISABLED_MAP)" \
+		--enabled-elf "$(MODERN_AUTOPLAY_PLANNER_ELF)" \
+		--disabled-elf "$(MODERN_AUTOPLAY_PLANNER_DISABLED_ELF)" \
+		--nm "$(MODERN_NM)" --limit 12288 \
+		--output "$(MODERN_AUTOPLAY_PLANNER_LINKED_BUDGET)"
 	+$(MAKE) expansion-modern-autoplay-planner-objects \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_AUTOPLAY_PLANNER=1
 	PLANNER_PRODUCTION_ROM="$(MODERN_AUTOPLAY_PLANNER_ROM)" \
@@ -1119,6 +1152,7 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_invalid_ack_is_rejected_before_ack_or_observation \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_restricted_backend_rejects_frame_and_key_controls \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_production_transcript_capacity_rejects_before_mailbox_write \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_wall_time_deadline_drives_silent_and_noisy_timeouts \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_transport_rejects_and_times_out \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_enabled_production_rom_executes_host_selected_action
 
@@ -1155,6 +1189,7 @@ $(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o: $(GENERATED_DATA_WEAPONTRIANGLE_C
 # IWRAM-placed symbols need per-symbol BSS sections. agb_sram.c additionally
 # subtracts adjacent function addresses when copying routines into IWRAM.
 $(MODERN_OUTPUT_DIR)/src/agb_sram.o: MODERN_CFLAGS += -fdata-sections -fno-toplevel-reorder -fno-reorder-functions
+$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_planner.o: MODERN_CFLAGS += -Os
 $(MODERN_OUTPUT_DIR)/src/m4a.o: MODERN_CFLAGS += -fdata-sections
 $(MODERN_OUTPUT_DIR)/src/bmshop.o: MODERN_CFLAGS += -fdata-sections
 $(MODERN_ALL_DATA_OBJECTS): MODERN_CFLAGS += $(MODERN_DATA_LAYOUT_FLAGS)

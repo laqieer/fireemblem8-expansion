@@ -27,7 +27,7 @@ COMMAND_RESPONSE_FRAME_LIMIT = 600
 COMMIT_COMPLETION_FRAME_LIMIT = 18000
 PAGE_MAX_BYTES = 1024
 OBSERVATION_HEADER_BYTES = 100
-OBSERVATION_PAYLOAD_BYTES = 896
+OBSERVATION_PAYLOAD_BYTES = 924
 ACTION_RECORD_BYTES = 40
 ACTIONS_PER_PAGE = OBSERVATION_PAYLOAD_BYTES // ACTION_RECORD_BYTES
 SEMANTIC_FIELD_COUNT = 8
@@ -52,6 +52,12 @@ class ValueKind(int, Enum):
     PERMANENT_FLAG = 4
     CHAPTER_FLAG = 5
     AUTOPLAY_TELEMETRY = 6
+
+class AssignmentSource(int, Enum):
+    NONE = 0
+    CHAPTER = 1
+    GROUP = 2
+    UNIT = 3
 
 class PlannerError(ValueError):
     """A protocol violation that must never be converted into success."""
@@ -177,6 +183,90 @@ class UnitRecord:
     state: int
     inventory_digest: int
     availability: Availability
+    status_index: int = 0
+    status_duration: int = 0
+    deployed: int = 1
+    dead: int = 0
+    moved: int = 0
+    acted: int = 0
+    rescued: int = 0
+    rescuing: int = 0
+    rescue_partner: int = 0
+    equipped_slot: int | None = None
+    equipped_item: int = 0
+    level: int = 0
+    exp: int = 0
+    power: int = 0
+    skill: int = 0
+    speed: int = 0
+    luck: int = 0
+    defense: int = 0
+    resistance: int = 0
+    constitution: int = 0
+    movement: int = 0
+    weapon_ranks: tuple[int, ...] = (0,) * 8
+
+@dataclass(frozen=True)
+class ObjectiveRecord:
+    objective_id: int
+    completion_objective_id: int
+    group_id: int
+    activation_flag: int
+    deactivation_flag: int
+    event_flag: int
+    completion_flag: int
+    until_turn: int
+    kind: int
+    protected_character: int
+    area: tuple[int, int, int, int]
+    state: int
+    progress: int
+    availability: Availability
+
+@dataclass(frozen=True)
+class GroupRecord:
+    group_id: int
+    members: tuple[int, ...]
+    availability: Availability
+
+@dataclass(frozen=True)
+class StrategyRecord:
+    strategy_id: int
+    objective_capabilities: int
+    action_capabilities: int
+    flags: int
+    availability: Availability
+
+@dataclass(frozen=True)
+class AssignmentRecord:
+    source: AssignmentSource
+    subject_id: int
+    strategy_id: int
+    activation_flag: int
+    active: int
+    current: int
+    availability: Availability
+
+@dataclass(frozen=True)
+class CampaignRecord:
+    phase: int
+    chapter: int
+    mode: int
+    phase_availability: Availability
+    objective_availability: Availability
+    strategy_availability: Availability
+    assignment_availability: Availability
+    current_strategy_id: int
+    current_objective_capabilities: int
+    current_action_capabilities: int
+    current_strategy_flags: int
+    current_assignment_source: AssignmentSource
+    current_assignment_subject: int
+    current_assignment_availability: Availability
+    objectives: tuple[ObjectiveRecord, ...]
+    groups: tuple[GroupRecord, ...]
+    strategies: tuple[StrategyRecord, ...]
+    assignments: tuple[AssignmentRecord, ...]
 
 @dataclass(frozen=True)
 class InventoryRecord:
@@ -232,6 +322,7 @@ class Observation:
     record_start: int = 0
     record_count: int = 0
     total_record_count: int = 0
+    campaign: CampaignRecord | None = None
 
 @dataclass(frozen=True)
 class Command:
@@ -340,7 +431,7 @@ _OBSERVATION_KEYS = {
     "state", "rejection", "chapter_turn", "rng_state", "rng_lcg",
     "rng_consumption", "actual_rom_identity", "actual_config_identity",
     "actual_scenario_identity", "actual_seed_identity", "record_start",
-    "record_count", "total_record_count",
+    "record_count", "total_record_count", "campaign",
 }
 _TRANSCRIPT_EVENT_KEYS = {
     "session": {"provenance"},
@@ -433,9 +524,9 @@ def _require_list(
     length: int | None = None,
     maximum: int | None = None,
     message: str | None = None,
-) -> list[object]:
+) -> list[object] | tuple[object, ...]:
     if (
-        not isinstance(value, list)
+        not isinstance(value, (list, tuple))
         or length is not None and len(value) != length
         or maximum is not None and len(value) > maximum
     ):
@@ -622,7 +713,12 @@ def _validate_unit_schema(record: object) -> None:
         record,
         {
             "slot", "character", "unit_class", "position", "hp", "state",
-            "inventory_digest", "availability",
+            "inventory_digest", "availability", "status_index",
+            "status_duration", "deployed", "dead", "moved", "acted",
+            "rescued", "rescuing", "rescue_partner", "equipped_slot",
+            "equipped_item", "level", "exp", "power", "skill", "speed",
+            "luck", "defense", "resistance", "constitution", "movement",
+            "weapon_ranks",
         },
         "unit",
     )
@@ -632,7 +728,60 @@ def _validate_unit_schema(record: object) -> None:
     _require_int_list(value["hp"], "unit hp", length=2, item_maximum=0xFF)
     _require_int(value["state"], "unit state")
     _require_int(value["inventory_digest"], "unit inventory digest")
-    _require_availability(value["availability"], "unit availability")
+    availability = _require_availability(value["availability"], "unit availability")
+    for field in (
+        "status_index", "status_duration", "rescue_partner", "level", "exp",
+        "power", "skill", "speed", "luck", "defense", "resistance",
+        "constitution", "movement",
+    ):
+        _require_int(value[field], f"unit {field}", maximum=0xFF)
+    for field in ("deployed", "dead", "moved", "acted", "rescued", "rescuing"):
+        _require_int(value[field], f"unit {field}", maximum=1)
+    _require_optional_int(value["equipped_slot"], "unit equipped slot", UNIT_ITEM_COUNT - 1)
+    _require_int(value["equipped_item"], "unit equipped item", maximum=0xFFFF)
+    _require_int_list(
+        value["weapon_ranks"], "unit weapon ranks", length=8, item_maximum=0xFF
+    )
+    if value["equipped_slot"] is None and value["equipped_item"] != 0:
+        raise PlannerError("invalid planner transcript equipped item sentinel")
+    if availability in {
+        Availability.NOT_VISIBLE.value,
+        Availability.NOT_APPLICABLE.value,
+    } and any((
+        value["character"], value["unit_class"], *value["position"], *value["hp"],
+        value["state"], value["inventory_digest"], value["status_index"],
+        value["status_duration"], value["rescue_partner"], value["equipped_item"],
+        value["level"], value["exp"], value["power"], value["skill"], value["speed"],
+        value["luck"], value["defense"], value["resistance"],
+        value["constitution"], value["movement"], *value["weapon_ranks"],
+        value["deployed"], value["dead"], value["moved"], value["acted"],
+        value["rescued"], value["rescuing"],
+    )) or (
+        availability in {
+            Availability.NOT_VISIBLE.value,
+            Availability.NOT_APPLICABLE.value,
+        } and value["equipped_slot"] is not None
+    ):
+        raise PlannerError("invalid planner transcript unavailable unit semantics")
+    if availability not in {
+        Availability.NOT_VISIBLE.value,
+        Availability.NOT_APPLICABLE.value,
+    }:
+        state = value["state"]
+        expected = (
+            int(not state & ((1 << 2) | (1 << 3) | (1 << 16))),
+            int(bool(state & (1 << 2))),
+            int(bool(state & (1 << 6))),
+            int(bool(state & ((1 << 6) | (1 << 10)))),
+            int(bool(state & (1 << 5))),
+            int(bool(state & (1 << 4))),
+        )
+        actual = tuple(
+            value[field]
+            for field in ("deployed", "dead", "moved", "acted", "rescued", "rescuing")
+        )
+        if actual != expected:
+            raise PlannerError("invalid planner transcript unit semantic flags")
 
 def _validate_inventory_schema(record: object) -> None:
     value = _require_exact_keys(
@@ -708,6 +857,101 @@ def _validate_flag_schema(record: object) -> None:
     elif value["state"] is not None:
         raise PlannerError("invalid planner transcript flag state scalar")
 
+def _validate_objective_schema(record: object) -> None:
+    value = _require_exact_keys(record, {
+        "objective_id", "completion_objective_id", "group_id",
+        "activation_flag", "deactivation_flag", "event_flag",
+        "completion_flag", "until_turn", "kind", "protected_character",
+        "area", "state", "progress", "availability",
+    }, "objective")
+    for field in ("objective_id", "completion_objective_id", "group_id"):
+        _require_int(value[field], f"objective {field}")
+    for field in (
+        "activation_flag", "deactivation_flag", "event_flag",
+        "completion_flag", "until_turn",
+    ):
+        _require_int(value[field], f"objective {field}", maximum=0xFFFF)
+    _require_int(value["kind"], "objective kind", minimum=1, maximum=5)
+    _require_int(value["protected_character"], "objective protected character", maximum=0xFF)
+    _require_int_list(value["area"], "objective area", length=4, item_maximum=63)
+    _require_int(value["state"], "objective state", maximum=3)
+    _require_int(value["progress"], "objective progress", maximum=0xFFFF)
+    _require_availability(value["availability"], "objective availability")
+
+def _validate_group_schema(record: object) -> None:
+    value = _require_exact_keys(
+        record, {"group_id", "members", "availability"}, "objective group"
+    )
+    _require_int(value["group_id"], "objective group id")
+    members = _require_list(value["members"], "objective group members")
+    if len(members) > 16:
+        raise PlannerError("invalid planner transcript objective group capacity")
+    for member in members:
+        _require_int(member, "objective group member", maximum=0xFF)
+    _require_availability(value["availability"], "objective group availability")
+
+def _validate_strategy_schema(record: object) -> None:
+    value = _require_exact_keys(record, {
+        "strategy_id", "objective_capabilities", "action_capabilities",
+        "flags", "availability",
+    }, "strategy")
+    for field in ("strategy_id", "objective_capabilities", "action_capabilities"):
+        _require_int(value[field], f"strategy {field}")
+    _require_int(value["flags"], "strategy flags", maximum=0xFF)
+    _require_availability(value["availability"], "strategy availability")
+
+def _validate_assignment_schema(record: object) -> None:
+    value = _require_exact_keys(record, {
+        "source", "subject_id", "strategy_id", "activation_flag",
+        "active", "current", "availability",
+    }, "strategy assignment")
+    _require_int(value["source"], "assignment source", allowed=frozenset(range(1, 4)))
+    _require_int(value["subject_id"], "assignment subject")
+    _require_int(value["strategy_id"], "assignment strategy")
+    _require_int(value["activation_flag"], "assignment activation flag", maximum=0xFFFF)
+    _require_int(value["active"], "assignment active", maximum=1)
+    _require_int(value["current"], "assignment current", maximum=1)
+    _require_availability(value["availability"], "assignment availability")
+
+def _validate_campaign_schema(record: object) -> None:
+    value = _require_exact_keys(record, {
+        "phase", "chapter", "mode", "phase_availability",
+        "objective_availability", "strategy_availability",
+        "assignment_availability", "current_strategy_id",
+        "current_objective_capabilities", "current_action_capabilities",
+        "current_strategy_flags", "current_assignment_source",
+        "current_assignment_subject", "current_assignment_availability",
+        "objectives", "groups", "strategies", "assignments",
+    }, "campaign")
+    for field in ("phase", "chapter", "mode", "current_strategy_flags"):
+        _require_int(value[field], f"campaign {field}", maximum=0xFF)
+    for field in (
+        "current_strategy_id", "current_objective_capabilities",
+        "current_action_capabilities", "current_assignment_subject",
+    ):
+        _require_int(value[field], f"campaign {field}")
+    for field in (
+        "phase_availability", "objective_availability",
+        "strategy_availability", "assignment_availability",
+        "current_assignment_availability",
+    ):
+        _require_availability(value[field], f"campaign {field}")
+    _require_int(
+        value["current_assignment_source"], "current assignment source",
+        maximum=AssignmentSource.UNIT.value,
+    )
+    for field, capacity, validator in (
+        ("objectives", 8, _validate_objective_schema),
+        ("groups", 8, _validate_group_schema),
+        ("strategies", 8, _validate_strategy_schema),
+        ("assignments", 17, _validate_assignment_schema),
+    ):
+        records = _require_list(value[field], f"campaign {field}")
+        if len(records) > capacity:
+            raise PlannerError(f"invalid planner transcript campaign {field} capacity")
+        for item in records:
+            validator(item)
+
 def _validate_observation_schema(observation: object) -> None:
     value = _require_exact_keys(
         observation, _OBSERVATION_KEYS, "observation"
@@ -779,6 +1023,8 @@ def _validate_observation_schema(observation: object) -> None:
     for name, maximum, validator in record_specs:
         for record in _require_list(value[name], name, maximum=maximum):
             validator(record)
+    if value["campaign"] is not None:
+        _validate_campaign_schema(value["campaign"])
 
 def _validate_session_schema(provenance: object) -> None:
     required = {
@@ -1049,6 +1295,7 @@ def _observation_semantics(observation: Observation) -> dict[str, object]:
         for key in (
             "chapter",
             "chapter_turn",
+            "campaign",
             "fields",
             "flags",
             "inventory",
@@ -1639,6 +1886,7 @@ class PlannerTranscript:
                     for key in (
                         "chapter",
                         "chapter_turn",
+                        "campaign",
                         "fields",
                         "flags",
                         "inventory",
@@ -2017,16 +2265,16 @@ _SEMANTIC_FIELD_NAMES = {
     7: ("flags_digest", "event flag storage", 0xFFFFFFFF),
     8: ("resource_digest", "party gold and convoy", 0xFFFFFFFF),
 }
-_OBSERVATION_WORD_COUNT = 249
+_OBSERVATION_WORD_COUNT = 256
 _OBSERVATION_HEADER_WORDS = 25
 _PAGE_RECORD_CAPACITIES = {
     PageKind.CONTROL: 0,
     PageKind.SUMMARY: SEMANTIC_FIELD_COUNT,
-    PageKind.MAP: 224,
-    PageKind.UNITS: 56,
-    PageKind.INVENTORY: 112,
-    PageKind.RESOURCES: 112,
-    PageKind.FLAGS: 112,
+    PageKind.MAP: 231,
+    PageKind.UNITS: 23,
+    PageKind.INVENTORY: 115,
+    PageKind.RESOURCES: 115,
+    PageKind.FLAGS: 115,
     PageKind.ACTIONS: ACTIONS_PER_PAGE,
 }
 _PAGE_TOTAL_LIMITS = {
@@ -2137,6 +2385,62 @@ def _validate_complete_observation(
             and record["availability"] != availability
         ):
             raise PlannerError("complete observation inventory availability mismatch")
+    inventory_by_slot = {
+        (record["unit"], record["slot"]): record for record in inventory
+    }
+    for unit in units:
+        if unit["availability"] in {
+            Availability.NOT_VISIBLE,
+            Availability.NOT_APPLICABLE,
+        }:
+            if (
+                unit["equipped_slot"] is not None
+                or any((
+                    unit["character"], unit["unit_class"], *unit["position"],
+                    *unit["hp"], unit["state"], unit["inventory_digest"],
+                    unit["status_index"], unit["status_duration"],
+                    unit["rescue_partner"], unit["equipped_item"], unit["level"],
+                    unit["exp"], unit["power"], unit["skill"], unit["speed"],
+                    unit["luck"], unit["defense"], unit["resistance"],
+                    unit["constitution"], unit["movement"], *unit["weapon_ranks"],
+                    unit["deployed"], unit["dead"], unit["moved"], unit["acted"],
+                    unit["rescued"], unit["rescuing"],
+                ))
+            ):
+                raise PlannerError("complete observation unavailable unit semantics mismatch")
+            continue
+        records = tuple(
+            inventory_by_slot[(unit["slot"], slot)]
+            for slot in range(UNIT_ITEM_COUNT)
+        )
+        digest = 2166136261
+        for record in records:
+            digest = _mix_digest(digest, record["raw_item"])
+        equipped = unit["equipped_slot"]
+        state = unit["state"]
+        expected_flags = (
+            int(not state & ((1 << 2) | (1 << 3) | (1 << 16))),
+            int(bool(state & (1 << 2))),
+            int(bool(state & (1 << 6))),
+            int(bool(state & ((1 << 6) | (1 << 10)))),
+            int(bool(state & (1 << 5))),
+            int(bool(state & (1 << 4))),
+        )
+        if (
+            digest != unit["inventory_digest"]
+            or equipped is None and unit["equipped_item"] != 0
+            or equipped is not None
+                and records[equipped]["raw_item"] != unit["equipped_item"]
+            or unit["rescue_partner"] != 0
+                and unit["rescue_partner"] not in unit_availability
+            or tuple(
+                unit[field] for field in
+                ("deployed", "dead", "moved", "acted", "rescued", "rescuing")
+            ) != expected_flags
+            or bool(unit["rescue_partner"])
+                != bool(unit["rescued"] or unit["rescuing"])
+        ):
+            raise PlannerError("complete observation unit semantics mismatch")
     actions = observation["actions"]
     if (
         len(actions) != observation["total_action_count"]
@@ -2176,6 +2480,93 @@ def _validate_complete_observation(
         )
     ):
         raise PlannerError("complete observation actions are not canonical")
+
+    campaign = observation["campaign"]
+    if strict and campaign is None:
+        raise PlannerError("complete observation omitted campaign semantics")
+    if campaign is not None:
+        objectives = campaign["objectives"]
+        groups = campaign["groups"]
+        strategies = campaign["strategies"]
+        assignments = campaign["assignments"]
+        objective_ids = tuple(record["objective_id"] for record in objectives)
+        group_ids = tuple(record["group_id"] for record in groups)
+        strategy_ids = tuple(record["strategy_id"] for record in strategies)
+        assignment_ids = tuple(
+            (record["source"], record["subject_id"], record["strategy_id"],
+             record["activation_flag"])
+            for record in assignments
+        )
+        if (
+            campaign["chapter"] != observation["chapter"]
+            or campaign["phase_availability"] != Availability.AVAILABLE
+            or len(objective_ids) != len(set(objective_ids))
+            or len(group_ids) != len(set(group_ids))
+            or len(strategy_ids) != len(set(strategy_ids))
+            or len(assignment_ids) != len(set(assignment_ids))
+            or any(
+                record["group_id"] != 0 and record["group_id"] not in group_ids
+                for record in objectives
+            )
+            or any(
+                record["completion_objective_id"] != 0
+                and record["completion_objective_id"] not in objective_ids
+                for record in objectives
+            )
+            or any(len(record["members"]) != len(set(record["members"]))
+                   for record in groups)
+            or any(record["strategy_id"] not in strategy_ids for record in assignments)
+            or any(
+                record["source"] == AssignmentSource.CHAPTER
+                    and record["subject_id"] != campaign["chapter"]
+                or record["source"] == AssignmentSource.GROUP
+                    and record["subject_id"] not in group_ids
+                for record in assignments
+            )
+            or tuple(record["source"] for record in assignments)
+                != tuple(sorted(record["source"] for record in assignments))
+        ):
+            raise PlannerError("complete observation campaign semantics mismatch")
+        for availability, records in (
+            (campaign["objective_availability"], (*objectives, *groups)),
+            (campaign["strategy_availability"], strategies),
+            (campaign["assignment_availability"], assignments),
+        ):
+            if (
+                availability == Availability.AVAILABLE and not records
+                or availability != Availability.AVAILABLE and records
+                or any(record["availability"] != Availability.AVAILABLE
+                       for record in records)
+            ):
+                raise PlannerError("complete observation campaign availability mismatch")
+        current = tuple(record for record in assignments if record["current"])
+        current_strategy = next((
+            record for record in strategies
+            if record["strategy_id"] == campaign["current_strategy_id"]
+        ), None)
+        if campaign["current_strategy_id"] == 0:
+            if (
+                current
+                or campaign["current_assignment_source"] != AssignmentSource.NONE
+                or campaign["current_assignment_subject"] != 0
+                or campaign["current_assignment_availability"]
+                    != Availability.NOT_APPLICABLE
+            ):
+                raise PlannerError("complete observation current assignment mismatch")
+        elif (
+            len(current) != 1
+            or current_strategy is None
+            or campaign["current_assignment_availability"] != Availability.AVAILABLE
+            or current[0]["strategy_id"] != campaign["current_strategy_id"]
+            or current[0]["source"] != campaign["current_assignment_source"]
+            or current[0]["subject_id"] != campaign["current_assignment_subject"]
+            or current_strategy["objective_capabilities"]
+                != campaign["current_objective_capabilities"]
+            or current_strategy["action_capabilities"]
+                != campaign["current_action_capabilities"]
+            or current_strategy["flags"] != campaign["current_strategy_flags"]
+        ):
+            raise PlannerError("complete observation current assignment mismatch")
 
     resources = observation["resources"]
     resource_ids = tuple((record["kind"], record["slot"]) for record in resources)
@@ -2241,6 +2632,8 @@ def _validate_complete_observation(
                 for page in page_values
             ))
         or PageKind(page_values[0]["page_kind"]) is not PageKind.SUMMARY
+        or page_values[0]["campaign"] != campaign
+        or any(page["campaign"] is not None for page in page_values[1:])
     ):
         raise PlannerError("complete observation page sequence is not canonical")
     common = (
@@ -2305,6 +2698,18 @@ def _decode_item(raw_item: int) -> tuple[int, int]:
         raise PlannerError("item state exceeds fixed u16 representation")
     return raw_item & 0xFF, (raw_item >> 8) & 0xFF
 
+def _decode_availability(value: int, context: str) -> Availability:
+    try:
+        return _AVAILABILITY_BY_VALUE[value]
+    except KeyError as error:
+        raise PlannerError(f"unknown {context} availability") from error
+
+def _decode_assignment_source(value: int) -> AssignmentSource:
+    try:
+        return AssignmentSource(value)
+    except ValueError as error:
+        raise PlannerError("unknown campaign assignment source") from error
+
 def parse_transport_observation(words: Iterable[int]) -> Observation:
     values = tuple(words)
     if len(values) != _OBSERVATION_WORD_COUNT:
@@ -2363,6 +2768,7 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
     resource_records: list[ResourceRecord] = []
     flag_records: list[FlagRecord] = []
     actions: list[ActionRecord] = []
+    campaign = None
     if page_kind is PageKind.CONTROL:
         if record_count != 0 or total_records != 0:
             raise PlannerError("control page must not publish payload records")
@@ -2392,6 +2798,78 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
                     else None,
                 )
             )
+        availability_words = payload[16]
+        counts = payload[18]
+        objective_count = counts & 0xFF
+        group_count = (counts >> 8) & 0xFF
+        strategy_count = (counts >> 16) & 0xFF
+        assignment_count = counts >> 24
+        if (
+            objective_count > 8 or group_count > 8
+            or strategy_count > 8 or assignment_count > 17
+        ):
+            raise PlannerError("campaign summary exceeds fixed capacities")
+        objectives = []
+        for index in range(objective_count):
+            start = 24 + index * 8
+            record = payload[start : start + 8]
+            objectives.append(ObjectiveRecord(
+                record[0], record[1], record[2],
+                record[3] & 0xFFFF, record[3] >> 16,
+                record[4] & 0xFFFF, record[4] >> 16,
+                record[5] & 0xFFFF, (record[5] >> 16) & 0xFF,
+                record[5] >> 24,
+                (record[6] & 0xFF, (record[6] >> 8) & 0xFF,
+                 (record[6] >> 16) & 0xFF, record[6] >> 24),
+                record[7] & 0xFF, record[7] >> 16,
+                _decode_availability((record[7] >> 8) & 0xFF, "objective"),
+            ))
+        groups = []
+        for index in range(group_count):
+            start = 88 + index * 6
+            record = payload[start : start + 6]
+            member_count = record[1] & 0xFF
+            if member_count > 16:
+                raise PlannerError("campaign group exceeds fixed capacity")
+            members = tuple(
+                (record[2 + member // 4] >> (member % 4 * 8)) & 0xFF
+                for member in range(member_count)
+            )
+            groups.append(GroupRecord(
+                record[0], members,
+                _decode_availability(record[1] >> 24, "objective group"),
+            ))
+        strategies = []
+        for index in range(strategy_count):
+            start = 136 + index * 4
+            record = payload[start : start + 4]
+            strategies.append(StrategyRecord(
+                record[0], record[1], record[2], record[3] & 0xFF,
+                _decode_availability(record[3] >> 24, "strategy"),
+            ))
+        assignments = []
+        for index in range(assignment_count):
+            start = 168 + index * 3
+            identity, subject, strategy = payload[start : start + 3]
+            assignments.append(AssignmentRecord(
+                _decode_assignment_source((identity >> 16) & 0xF),
+                subject, strategy, identity & 0xFFFF,
+                (identity >> 20) & 1, (identity >> 21) & 1,
+                _decode_availability(identity >> 24, "assignment"),
+            ))
+        current = payload[22]
+        campaign = CampaignRecord(
+            payload[17] & 0xFF, (payload[17] >> 8) & 0xFF,
+            (payload[17] >> 16) & 0xFF,
+            _decode_availability(availability_words & 0xFF, "phase"),
+            _decode_availability((availability_words >> 8) & 0xFF, "objective"),
+            _decode_availability((availability_words >> 16) & 0xFF, "strategy"),
+            _decode_availability(availability_words >> 24, "assignment"),
+            payload[19], payload[20], payload[21], current & 0xFF,
+            _decode_assignment_source((current >> 8) & 0xFF), payload[23],
+            _decode_availability((current >> 16) & 0xFF, "current assignment"),
+            tuple(objectives), tuple(groups), tuple(strategies), tuple(assignments),
+        )
     elif page_kind is PageKind.MAP:
         if record_count > len(payload):
             raise PlannerError("map page exceeds fixed payload")
@@ -2411,10 +2889,13 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
                 )
             )
     elif page_kind is PageKind.UNITS:
-        if record_count * 4 > len(payload):
+        if record_count * 10 > len(payload):
             raise PlannerError("unit page exceeds fixed payload")
         for index in range(record_count):
-            identity, position, state, inventory = payload[index * 4 : index * 4 + 4]
+            (
+                identity, position, state, inventory, status, rescue,
+                stats0, stats1, ranks0, ranks1,
+            ) = payload[index * 10 : index * 10 + 10]
             availability_value = identity >> 24
             try:
                 availability = _AVAILABILITY_BY_VALUE[availability_value]
@@ -2430,6 +2911,32 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
                     state,
                     inventory,
                     availability,
+                    status_index=status & 0xF,
+                    status_duration=(status >> 4) & 0xF,
+                    deployed=(status >> 24) & 1,
+                    dead=(status >> 25) & 1,
+                    moved=(status >> 26) & 1,
+                    acted=(status >> 27) & 1,
+                    rescued=(status >> 28) & 1,
+                    rescuing=(status >> 29) & 1,
+                    rescue_partner=rescue & 0xFF,
+                    equipped_slot=_decode_optional_item_slot((rescue >> 8) & 0xFF),
+                    equipped_item=rescue >> 16,
+                    level=(status >> 8) & 0xFF,
+                    exp=(status >> 16) & 0xFF,
+                    power=stats0 & 0xFF,
+                    skill=(stats0 >> 8) & 0xFF,
+                    speed=(stats0 >> 16) & 0xFF,
+                    luck=stats0 >> 24,
+                    defense=stats1 & 0xFF,
+                    resistance=(stats1 >> 8) & 0xFF,
+                    constitution=(stats1 >> 16) & 0xFF,
+                    movement=stats1 >> 24,
+                    weapon_ranks=tuple(
+                        (ranks0 >> (rank * 8)) & 0xFF
+                        if rank < 4 else (ranks1 >> ((rank - 4) * 8)) & 0xFF
+                        for rank in range(8)
+                    ),
                 )
             )
     elif page_kind is PageKind.ACTIONS:
@@ -2629,6 +3136,7 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
         record_start=record_start,
         record_count=record_count,
         total_record_count=total_records,
+        campaign=campaign,
     )
 
 def _assemble_observation_pages(pages: Iterable[Observation]) -> Observation:

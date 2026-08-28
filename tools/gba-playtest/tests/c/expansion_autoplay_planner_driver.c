@@ -23,6 +23,8 @@
 #include "constants/terrains.h"
 #include "expansion_autoplay.h"
 #include "expansion_autoplay_planner.h"
+#include "expansion_autoplay_strategies.h"
+#include "expansion_chapter_objectives.h"
 #include "rng.h"
 
 #define CHECK(condition, message) \
@@ -99,6 +101,49 @@ static u8 sRangeData[17][32];
 static u8* sRangeRows[17];
 static struct SelectTarget sTargets[16];
 static int sTargetCount;
+static const u8 sObjectiveMembers[] = { 1, 2 };
+static const struct ExpansionChapterAiGroup sObjectiveGroups[] = {
+    { 0x1001, sObjectiveMembers, 2 },
+};
+static const struct ExpansionChapterObjective sObjectives[] = {
+    {
+        0x2001, 0, &sObjectiveGroups[0], 0xFFFF, 0xFFFF, 1, 2, 5,
+        EXPANSION_CHAPTER_OBJECTIVE_REACH_AREA, 0, 1, 1, 4, 4,
+    },
+};
+const struct ExpansionChapterObjectiveBundle gExpansionChapterObjectiveBundles[] = {
+    { 1, 1, 1, sObjectives, sObjectiveGroups },
+    { EXPANSION_CHAPTER_OBJECTIVE_CHAPTER_NONE, 0, 0, NULL, NULL },
+};
+struct ExpansionChapterObjectiveTelemetry gExpansionChapterObjectiveTelemetry;
+static const struct ExpansionAutoplayStrategyGroupAssignment sStrategyGroups[] = {
+    { 0x1001, EXPANSION_AUTOPLAY_STRATEGY_AGGRESSIVE_ID, 0xFFFF },
+};
+static const struct ExpansionAutoplayStrategyUnitAssignment sStrategyUnits[] = {
+    { 1, EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID, 0xFFFF },
+};
+const struct ExpansionAutoplayStrategy gExpansionAutoplayStrategies[] = {
+    {
+        EXPANSION_AUTOPLAY_STRATEGY_AGGRESSIVE_ID,
+        EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_ALL,
+        EXPANSION_AUTOPLAY_STRATEGY_ACTION_COMBAT,
+        NULL, 1,
+    },
+    {
+        EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID,
+        EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_REACH_AREA,
+        EXPANSION_AUTOPLAY_STRATEGY_ACTION_ALL,
+        NULL, 0,
+    },
+    { 0 },
+};
+const struct ExpansionAutoplayStrategyBundle gExpansionAutoplayStrategyBundles[] = {
+    {
+        1, 1, 1, EXPANSION_AUTOPLAY_STRATEGY_AGGRESSIVE_ID, 0xFFFF,
+        sStrategyGroups, sStrategyUnits,
+    },
+    { EXPANSION_AUTOPLAY_STRATEGY_CHAPTER_NONE, 0, 0, 0, 0, NULL, NULL },
+};
 
 void StoreRNState(u16* seeds)
 {
@@ -143,12 +188,53 @@ u8* GetPermanentFlagBits(void) { return sFlagPointersAvailable ? sPermanentFlags
 int GetPermanentFlagBitsSize(void) { return sPermanentFlagSize; }
 u8* GetChapterFlagBits(void) { return sFlagPointersAvailable ? sChapterFlags : NULL; }
 int GetChapterFlagBitsSize(void) { return sChapterFlagSize; }
+bool CheckFlag(int flag) { return (sPermanentFlags[flag >> 3] >> (flag & 7)) & 1; }
 u16* GetConvoyItemArray(void) { return sConvoyAvailable ? sConvoy : NULL; }
 s8 AreUnitsAllied(int left, int right) { return (left & 0x80) == (right & 0x80); }
 s8 IsSameAllegiance(int left, int right) { return (left & 0xC0) == (right & 0xC0); }
 int GetCurrentPhase(void) { return FACTION_BLUE; }
 int GetUnitCurrentHp(struct Unit* unit) { return unit->curHP; }
 int GetUnitMaxHp(struct Unit* unit) { return unit->maxHP; }
+int GetUnitPower(struct Unit* unit) { return unit->pow; }
+int GetUnitSkill(struct Unit* unit) { return unit->skl; }
+int GetUnitSpeed(struct Unit* unit) { return unit->spd; }
+int GetUnitDefense(struct Unit* unit) { return unit->def; }
+int GetUnitResistance(struct Unit* unit) { return unit->res; }
+int GetUnitLuck(struct Unit* unit) { return unit->lck; }
+int GetUnitEquippedWeaponSlot(struct Unit* unit) { return unit->items[0] == 0 ? -1 : 0; }
+const struct ExpansionChapterObjectiveBundle* ExpansionChapterObjectives_GetCurrentBundle(void)
+{
+    return gPlaySt.chapterIndex == 1 ? &gExpansionChapterObjectiveBundles[0] : NULL;
+}
+enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetSnapshot(
+    u32 objectiveId, u32* progressOut)
+{
+    if (progressOut != NULL)
+        *progressOut = objectiveId == sObjectives[0].id ? 1 : 0;
+    return objectiveId == sObjectives[0].id
+        ? EXPANSION_CHAPTER_OBJECTIVE_PENDING
+        : EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
+}
+const struct ExpansionAutoplayStrategyBundle* ExpansionAutoplayStrategies_GetCurrentBundle(void)
+{
+    return gPlaySt.chapterIndex == 1 ? &gExpansionAutoplayStrategyBundles[0] : NULL;
+}
+const struct ExpansionAutoplayStrategy* ExpansionAutoplayStrategies_Find(u32 id)
+{
+    int index;
+    for (index = 0; gExpansionAutoplayStrategies[index].id != 0; index++)
+        if (gExpansionAutoplayStrategies[index].id == id)
+            return &gExpansionAutoplayStrategies[index];
+    return NULL;
+}
+enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ResolveCurrent(
+    struct ExpansionAutoplayStrategyResolution* resolution)
+{
+    resolution->strategyId = EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID;
+    resolution->subjectId = 1;
+    resolution->source = EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_UNIT;
+    return EXPANSION_AUTOPLAY_STRATEGY_OK;
+}
 s8 CanUnitUseWeapon(struct Unit* unit, int item)
 {
     (void)unit;
@@ -1200,30 +1286,30 @@ static int TestMaximumSemanticPaging(void)
           "maximum semantic-page run must start");
     CHECK(ExpansionAutoplayPlanner_OfferDecision(&decision)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
-            && gExpansionAutoplayPlannerObservation.pageCount == 51,
+            && gExpansionAutoplayPlannerObservation.pageCount == 53,
         "maximum units and flags must use bounded canonical pages");
     CHECK(PageMatches(
-            &decision, 4, EXPANSION_AUTOPLAY_PLANNER_PAGE_UNITS, 112, 20),
+            &decision, 7, EXPANSION_AUTOPLAY_PLANNER_PAGE_UNITS, 115, 17),
         "maximum unit page boundary must be exact");
     CHECK(PageMatches(
-            &decision, 10, EXPANSION_AUTOPLAY_PLANNER_PAGE_INVENTORY, 560, 100)
+            &decision, 13, EXPANSION_AUTOPLAY_PLANNER_PAGE_INVENTORY, 575, 85)
             && ((gExpansionAutoplayPlannerObservation
-                    .payload.inventory[0].identity >> 8) & 0xFF) == 0x9F
+                    .payload.inventory[0].identity >> 8) & 0xFF) == 0xA2
             && ((gExpansionAutoplayPlannerObservation
                     .payload.inventory[0].identity >> 16) & 0xFF) == 0
             && ((gExpansionAutoplayPlannerObservation
-                    .payload.inventory[99].identity >> 8) & 0xFF) == 0xB2
+                    .payload.inventory[84].identity >> 8) & 0xFF) == 0xB2
             && ((gExpansionAutoplayPlannerObservation
-                    .payload.inventory[99].identity >> 16) & 0xFF) == 4,
+                    .payload.inventory[84].identity >> 16) & 0xFF) == 4,
         "maximum inventory page boundary must be exact");
     CHECK(PageMatches(
-            &decision, 12, EXPANSION_AUTOPLAY_PLANNER_PAGE_RESOURCES, 112, 5),
+            &decision, 15, EXPANSION_AUTOPLAY_PLANNER_PAGE_RESOURCES, 115, 2),
         "maximum resource page boundary must be exact");
     CHECK(PageMatches(
-            &decision, 49, EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS, 4032, 64),
+            &decision, 51, EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS, 4025, 71),
         "maximum flag page boundary must be exact");
     CHECK(PageMatches(
-            &decision, 50, EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS, 0, 1),
+            &decision, 52, EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS, 0, 1),
         "action page must follow every maximum semantic page");
     ExpansionAutoplayPlanner_Reset();
     sUseMaxUnits = false;
@@ -1260,15 +1346,15 @@ static int TestZeroDigestAvailability(void)
     CHECK(ExpansionAutoplayPlanner_OfferDecision(&decision)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation
-                    .payload.fields[6].availability
+                    .payload.summary.fields[6].availability
                 == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
             && gExpansionAutoplayPlannerObservation
-                    .payload.fields[6].value == 0
+                    .payload.summary.fields[6].value == 0
             && gExpansionAutoplayPlannerObservation
-                    .payload.fields[7].availability
+                    .payload.summary.fields[7].availability
                 == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
             && gExpansionAutoplayPlannerObservation
-                    .payload.fields[7].value == 0,
+                    .payload.summary.fields[7].value == 0,
         "valid zero flag and convoy/resource digests must remain available");
     ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
     availableZeroCheckpointDigest =
@@ -1283,10 +1369,10 @@ static int TestZeroDigestAvailability(void)
     CHECK(ExpansionAutoplayPlanner_OfferDecision(&decision)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation
-                    .payload.fields[6].availability
+                    .payload.summary.fields[6].availability
                 == EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED
             && gExpansionAutoplayPlannerObservation
-                    .payload.fields[7].availability
+                    .payload.summary.fields[7].availability
                 == EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED,
         "null flag and convoy domains must be unavailable");
     ExpansionAutoplayPlanner_Reset();
@@ -1300,7 +1386,7 @@ static int TestZeroDigestAvailability(void)
     CHECK(ExpansionAutoplayPlanner_OfferDecision(&decision)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation
-                    .payload.fields[6].availability
+                    .payload.summary.fields[6].availability
                 == EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED,
         "out-of-bounds flag storage must be unavailable");
     ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
@@ -1543,7 +1629,24 @@ int main(void)
     ResetActionFixture(32, 17);
     sUnit.xPos = 0;
     sUnit.yPos = 0;
+    sUnit.level = 12;
+    sUnit.exp = 34;
+    sUnit.pow = 5;
+    sUnit.skl = 6;
+    sUnit.spd = 7;
+    sUnit.lck = 8;
+    sUnit.def = 9;
+    sUnit.res = 10;
+    sUnit.conBonus = 2;
+    sUnit.movBonus = 1;
+    sUnit.statusIndex = UNIT_STATUS_POISON;
+    sUnit.statusDuration = 3;
     sUnit.items[0] = ITEM_SWORD_IRON | (30 << 8);
+    sUnit.ranks[0] = 0x1F;
+    sUnit.ranks[4] = 0x20;
+    sCharacter.baseCon = 1;
+    sClass.baseCon = 6;
+    sClass.baseMov = 5;
     sAllyCharacter.number = 2;
     sAllyClass.number = 2;
     SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 5, 5);
@@ -1627,18 +1730,42 @@ int main(void)
         "complete enumerator must retain the 512-candidate boundary");
     CHECK(sizeof(gExpansionAutoplayPlannerObservation)
                 <= EXPANSION_AUTOPLAY_PLANNER_PAGE_MAX_BYTES
-            && gExpansionAutoplayPlannerObservation.pageCount == 34
+            && gExpansionAutoplayPlannerObservation.pageCount == 33
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_SUMMARY
             && gExpansionAutoplayPlannerObservation.count.recordCount
                 == EXPANSION_AUTOPLAY_PLANNER_SEMANTIC_FIELD_CAPACITY,
         "summary/map/unit/action pages must share the fixed-width boundary");
-    CHECK(gExpansionAutoplayPlannerObservation.payload.fields[0].availability
+    CHECK(gExpansionAutoplayPlannerObservation.payload.summary.fields[0].availability
                 == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
-            && gExpansionAutoplayPlannerObservation.payload.fields[1].value != 0
-            && gExpansionAutoplayPlannerObservation.payload.fields[2].value
+            && gExpansionAutoplayPlannerObservation.payload.summary.fields[1].value != 0
+            && gExpansionAutoplayPlannerObservation.payload.summary.fields[2].value
                 == 0x010101,
         "summary page must expose actual map and active-unit semantics");
+    CHECK(gExpansionAutoplayPlannerObservation.payload.summary.campaign.chapter
+                == (1u << 8)
+            && (gExpansionAutoplayPlannerObservation
+                    .payload.summary.campaign.counts & 0xFFFFFF) == 0x020101
+            && gExpansionAutoplayPlannerObservation
+                    .payload.summary.campaign.currentStrategyId
+                == EXPANSION_AUTOPLAY_STRATEGY_OBJECTIVE_FIRST_ID
+            && ((gExpansionAutoplayPlannerObservation
+                    .payload.summary.campaign.currentAssignment >> 8) & 0xFF)
+                == EXPANSION_AUTOPLAY_PLANNER_ASSIGNMENT_UNIT,
+        "summary must expose chapter objective and current strategy semantics");
+    CHECK(gExpansionAutoplayPlannerObservation
+                .payload.summary.campaign.objectives[0].id == 0x2001
+            && (gExpansionAutoplayPlannerObservation
+                    .payload.summary.campaign.objectives[0].status & 0xFF)
+                == EXPANSION_CHAPTER_OBJECTIVE_PENDING
+            && gExpansionAutoplayPlannerObservation
+                    .payload.summary.campaign.groups[0].members[0] == 0x0201
+            && gExpansionAutoplayPlannerObservation
+                    .payload.summary.campaign.strategies[1].actionCapabilities
+                == EXPANSION_AUTOPLAY_STRATEGY_ACTION_ALL
+            && ((gExpansionAutoplayPlannerObservation
+                    .payload.summary.campaign.assignments[2].identity >> 21) & 1) == 1,
+        "summary must expose typed objective, group, strategy, and assignment records");
     CHECK(PageMatches(
             &decision, 4, EXPANSION_AUTOPLAY_PLANNER_PAGE_UNITS, 0, 2)
             && (gExpansionAutoplayPlannerObservation
@@ -1647,6 +1774,20 @@ int main(void)
             && gExpansionAutoplayPlannerObservation.payload.units[1].state
                 == US_NOT_DEPLOYED,
         "unit page must mark benched stale-coordinate units unavailable");
+    CHECK((gExpansionAutoplayPlannerObservation.payload.units[0].status & 0xFFFF)
+                == (UNIT_STATUS_POISON | (3 << 4) | (12 << 8))
+            && (gExpansionAutoplayPlannerObservation.payload.units[0].status >> 16)
+                == (34 | (EXPANSION_AUTOPLAY_PLANNER_UNIT_DEPLOYED << 8))
+            && gExpansionAutoplayPlannerObservation
+                    .payload.units[0].rescueAndEquipped
+                == ((ITEM_SWORD_IRON | (30 << 8)) << 16)
+            && gExpansionAutoplayPlannerObservation.payload.units[0].stats0
+                == 0x08070605
+            && gExpansionAutoplayPlannerObservation.payload.units[0].stats1
+                == 0x06090A09
+            && gExpansionAutoplayPlannerObservation.payload.units[0].ranks0 == 0x1F
+            && gExpansionAutoplayPlannerObservation.payload.units[0].ranks1 == 0x20,
+        "unit page must expose status, level, stats, equipment, and weapon ranks");
     CHECK(PageMatches(
             &decision, 5, EXPANSION_AUTOPLAY_PLANNER_PAGE_INVENTORY, 0, 10)
             && (gExpansionAutoplayPlannerObservation
@@ -1669,7 +1810,7 @@ int main(void)
                 == (ITEM_VULNERARY | (2 << 8)),
         "inventory page must expose present, empty, and unavailable unit slots");
     CHECK(PageMatches(
-            &decision, 6, EXPANSION_AUTOPLAY_PLANNER_PAGE_RESOURCES, 0, 112)
+            &decision, 6, EXPANSION_AUTOPLAY_PLANNER_PAGE_RESOURCES, 0, 115)
             && gExpansionAutoplayPlannerObservation
                     .payload.resources[0].value == 1234
             && gExpansionAutoplayPlannerObservation
@@ -1681,17 +1822,17 @@ int main(void)
         "resource page must expose gold plus present and empty convoy slots");
     CHECK(PageMatches(
             &decision, 7,
-            EXPANSION_AUTOPLAY_PLANNER_PAGE_RESOURCES, 112, 5),
+            EXPANSION_AUTOPLAY_PLANNER_PAGE_RESOURCES, 115, 2),
         "resource paging must include the complete autoplay telemetry");
     CHECK(PageMatches(
-            &decision, 8, EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS, 0, 112)
+            &decision, 8, EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS, 0, 115)
             && gExpansionAutoplayPlannerObservation
                     .payload.flags[0].value == 1
             && gExpansionAutoplayPlannerObservation
                     .payload.flags[1].value == 0,
         "flag page must expose explicit set and clear states");
     CHECK(PageMatches(
-            &decision, 9, EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS, 112, 16),
+            &decision, 9, EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS, 115, 13),
         "flag paging must retain canonical record boundaries");
     for (index = 0; index < 4; index++)
     {
@@ -1709,7 +1850,7 @@ int main(void)
         );
     }
     CHECK(PageMatches(
-            &decision, 33,
+            &decision, 32,
             EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS, 506, 6),
         "valid PAGE command must publish another page");
     WriteCommand(
@@ -1724,7 +1865,7 @@ int main(void)
             && gExpansionAutoplayPlannerObservation.rejection
                 == EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR,
         "unexpected waiting command must reject instead of waiting forever");
-    CHECK(RequestPage(&decision, 33)
+    CHECK(RequestPage(&decision, 32)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
         "page must republish after malformed command");
     action = &gExpansionAutoplayPlannerObservation.payload.actions[5];

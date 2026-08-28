@@ -24,11 +24,12 @@
 #include "expansion_autoplay.h"
 #include "expansion_autoplay_internal.h"
 #include "expansion_autoplay_planner.h"
+#include "expansion_autoplay_strategies.h"
 #include "expansion_chapter_objectives.h"
 #include "expansion_config.h"
 
 typedef char ExpansionAutoplayPlannerObservationSizeCheck[
-    sizeof(struct ExpansionAutoplayPlannerObservationV2) == 996 ? 1 : -1];
+    sizeof(struct ExpansionAutoplayPlannerObservationV2) == 1024 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerCommandSizeCheck[
     sizeof(struct ExpansionAutoplayPlannerCommandV2) == 64 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerCheckpointSizeCheck[
@@ -38,7 +39,7 @@ typedef char ExpansionAutoplayPlannerPointerFreeActionCheck[
 typedef char ExpansionAutoplayPlannerPointerFreeSemanticCheck[
     sizeof(struct ExpansionAutoplayPlannerSemanticFieldV2) == 8 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerPointerFreeUnitCheck[
-    sizeof(struct ExpansionAutoplayPlannerUnitV2) == 16 ? 1 : -1];
+    sizeof(struct ExpansionAutoplayPlannerUnitV2) == 40 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerPointerFreeValueCheck[
     sizeof(struct ExpansionAutoplayPlannerValueRecordV2) == 8 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerRecordStartSizeCheck[
@@ -46,7 +47,19 @@ typedef char ExpansionAutoplayPlannerRecordStartSizeCheck[
 typedef char ExpansionAutoplayPlannerRecordCountSizeCheck[
     sizeof(union ExpansionAutoplayPlannerRecordCountV2) == 4 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerPayloadSizeCheck[
-    sizeof(union ExpansionAutoplayPlannerPayloadV2) == 896 ? 1 : -1];
+    sizeof(union ExpansionAutoplayPlannerPayloadV2) == 924 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerCampaignSizeCheck[
+    sizeof(struct ExpansionAutoplayPlannerCampaignV2) == 812 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerObjectiveSizeCheck[
+    sizeof(struct ExpansionAutoplayPlannerObjectiveV2) == 32 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerGroupSizeCheck[
+    sizeof(struct ExpansionAutoplayPlannerGroupV2) == 24 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerStrategySizeCheck[
+    sizeof(struct ExpansionAutoplayPlannerStrategyV2) == 16 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerAssignmentSizeCheck[
+    sizeof(struct ExpansionAutoplayPlannerAssignmentV2) == 12 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerSummarySizeCheck[
+    sizeof(struct ExpansionAutoplayPlannerSummaryV2) == 876 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerRecordStartOffsetCheck[
     offsetof(struct ExpansionAutoplayPlannerObservationV2, start) == 36 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerRecordCountOffsetCheck[
@@ -1104,13 +1117,259 @@ static void SetSemanticField(int index, enum ExpansionAutoplayPlannerSemanticFie
                              enum ExpansionAutoplayPlannerAvailability availability, u32 value)
 {
     struct ExpansionAutoplayPlannerSemanticFieldV2* field =
-        &gExpansionAutoplayPlannerObservation.payload.fields[index];
+        &gExpansionAutoplayPlannerObservation.payload.summary.fields[index];
 
     field->id = id;
     field->availability = availability;
     field->valueSize = sizeof(value);
     field->value = availability == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
         ? value : 0;
+}
+
+static u32 CampaignAssignmentIdentity(
+    u16 activationFlag,
+    enum ExpansionAutoplayPlannerAssignmentSource source,
+    bool active,
+    bool current)
+{
+    return activationFlag
+        | ((u32)source << 16)
+        | ((u32)active << 20)
+        | ((u32)current << 21)
+        | ((u32)EXPANSION_AUTOPLAY_PLANNER_AVAILABLE << 24);
+}
+
+static void PublishCampaignSummary(void)
+{
+    struct ExpansionAutoplayPlannerCampaignV2* campaign =
+        &gExpansionAutoplayPlannerObservation.payload.summary.campaign;
+    const struct ExpansionAutoplayStrategyBundle* strategyBundle =
+        ExpansionAutoplayStrategies_GetCurrentBundle();
+    struct ExpansionAutoplayStrategyResolution resolution;
+    enum ExpansionAutoplayPlannerAvailability objectiveAvailability =
+        EXPANSION_AUTOPLAY_PLANNER_UNSUPPORTED_RULE;
+    enum ExpansionAutoplayPlannerAvailability strategyAvailability;
+    enum ExpansionAutoplayPlannerAvailability assignmentAvailability;
+    enum ExpansionAutoplayPlannerAvailability currentAssignmentAvailability =
+        EXPANSION_AUTOPLAY_PLANNER_NOT_APPLICABLE;
+    const struct ExpansionAutoplayStrategy* currentStrategy = NULL;
+    u8 objectiveCount = 0;
+    u8 groupCount = 0;
+    u8 strategyCount;
+    u8 assignmentCount = 0;
+    u8 index;
+#if FE8_CHAPTER_OBJECTIVES_ENABLED
+    const struct ExpansionChapterObjectiveBundle* objectiveBundle =
+        ExpansionChapterObjectives_GetCurrentBundle();
+
+    if (objectiveBundle != NULL)
+    {
+        objectiveAvailability = EXPANSION_AUTOPLAY_PLANNER_AVAILABLE;
+        objectiveCount = objectiveBundle->objectiveCount;
+        groupCount = objectiveBundle->groupCount;
+        if (objectiveCount > EXPANSION_AUTOPLAY_PLANNER_OBJECTIVE_CAPACITY
+            || groupCount > EXPANSION_AUTOPLAY_PLANNER_GROUP_CAPACITY)
+        {
+            objectiveCount = 0;
+            groupCount = 0;
+            objectiveAvailability = EXPANSION_AUTOPLAY_PLANNER_OUT_OF_RANGE;
+        }
+    }
+    else
+    {
+        objectiveAvailability = EXPANSION_AUTOPLAY_PLANNER_NOT_APPLICABLE;
+    }
+#endif
+
+    for (strategyCount = 0;
+         strategyCount <= EXPANSION_AUTOPLAY_PLANNER_STRATEGY_CAPACITY;
+         strategyCount++)
+        if (gExpansionAutoplayStrategies[strategyCount].id == 0)
+            break;
+    strategyAvailability =
+        strategyCount == 0
+            ? EXPANSION_AUTOPLAY_PLANNER_NOT_APPLICABLE
+            : EXPANSION_AUTOPLAY_PLANNER_AVAILABLE;
+    if (strategyCount > EXPANSION_AUTOPLAY_PLANNER_STRATEGY_CAPACITY)
+    {
+        strategyCount = 0;
+        strategyAvailability = EXPANSION_AUTOPLAY_PLANNER_OUT_OF_RANGE;
+    }
+    if (strategyBundle != NULL)
+    {
+        assignmentCount = strategyBundle->groupAssignmentCount
+            + strategyBundle->unitAssignmentCount
+            + (strategyBundle->chapterStrategyId != 0);
+    }
+    if (assignmentCount > EXPANSION_AUTOPLAY_PLANNER_ASSIGNMENT_CAPACITY)
+    {
+        assignmentCount = 0;
+        strategyBundle = NULL;
+        assignmentAvailability = EXPANSION_AUTOPLAY_PLANNER_OUT_OF_RANGE;
+    }
+    else
+    {
+        assignmentAvailability =
+            assignmentCount == 0
+                ? EXPANSION_AUTOPLAY_PLANNER_NOT_APPLICABLE
+                : EXPANSION_AUTOPLAY_PLANNER_AVAILABLE;
+    }
+    if (assignmentAvailability == EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
+        && ExpansionAutoplayStrategies_ResolveCurrent(&resolution)
+        == EXPANSION_AUTOPLAY_STRATEGY_OK)
+    {
+        currentStrategy = ExpansionAutoplayStrategies_Find(resolution.strategyId);
+        currentAssignmentAvailability = EXPANSION_AUTOPLAY_PLANNER_AVAILABLE;
+    }
+    else
+    {
+        resolution.strategyId = 0;
+        resolution.subjectId = 0;
+        resolution.source = EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_NONE;
+    }
+
+    campaign->availability = EXPANSION_AUTOPLAY_PLANNER_AVAILABLE
+        | ((u32)objectiveAvailability << 8)
+        | ((u32)strategyAvailability << 16)
+        | ((u32)assignmentAvailability << 24);
+    campaign->chapter = (u8)gPlaySt.faction
+        | ((u32)(u8)gPlaySt.chapterIndex << 8)
+        | ((u32)gPlaySt.chapterModeIndex << 16);
+    campaign->counts = objectiveCount
+        | ((u32)groupCount << 8)
+        | ((u32)strategyCount << 16)
+        | ((u32)assignmentCount << 24);
+    campaign->currentStrategyId = resolution.strategyId;
+    campaign->currentAssignment = (u32)resolution.source << 8
+        | ((u32)currentAssignmentAvailability << 16);
+    if (currentStrategy != NULL)
+    {
+        campaign->currentObjectiveCapabilities = currentStrategy->objectiveCapabilities;
+        campaign->currentActionCapabilities = currentStrategy->actionCapabilities;
+        campaign->currentAssignment |= currentStrategy->flags;
+        campaign->currentAssignmentSubject = resolution.subjectId;
+    }
+
+#if FE8_CHAPTER_OBJECTIVES_ENABLED
+    for (index = 0; index < objectiveCount; index++)
+    {
+        const struct ExpansionChapterObjective* objective =
+            &objectiveBundle->objectives[index];
+        struct ExpansionAutoplayPlannerObjectiveV2* record =
+            &campaign->objectives[index];
+        u32 progress;
+        enum ExpansionChapterObjectiveState state =
+            ExpansionChapterObjectives_GetSnapshot(objective->id, &progress);
+
+        record->id = objective->id;
+        record->completionObjectiveId = objective->completionObjectiveId;
+        record->groupId = objective->group == NULL ? 0 : objective->group->id;
+        record->activationFlags =
+            objective->activationFlag | ((u32)objective->deactivationFlag << 16);
+        record->completionFlags =
+            objective->eventFlag | ((u32)objective->completionFlag << 16);
+        record->kind = objective->untilTurn
+            | ((u32)objective->kind << 16)
+            | ((u32)objective->protectedCharacter << 24);
+        record->area = objective->xMin
+            | ((u32)objective->yMin << 8)
+            | ((u32)objective->xMax << 16)
+            | ((u32)objective->yMax << 24);
+        record->status = state
+            | ((u32)EXPANSION_AUTOPLAY_PLANNER_AVAILABLE << 8)
+            | (progress << 16);
+    }
+    for (index = 0; index < groupCount; index++)
+    {
+        const struct ExpansionChapterAiGroup* group = &objectiveBundle->groups[index];
+        struct ExpansionAutoplayPlannerGroupV2* record = &campaign->groups[index];
+        int member;
+
+        record->id = group->id;
+        if (group->memberCount > EXPANSION_AUTOPLAY_PLANNER_GROUP_MEMBER_CAPACITY)
+        {
+            record->identity = (u32)EXPANSION_AUTOPLAY_PLANNER_OUT_OF_RANGE << 24;
+            continue;
+        }
+        record->identity = group->memberCount
+            | ((u32)EXPANSION_AUTOPLAY_PLANNER_AVAILABLE << 24);
+        for (member = 0; member < group->memberCount; member++)
+            record->members[member / 4] |= (u32)group->members[member] << (member % 4 * 8);
+    }
+#endif
+    for (index = 0; index < strategyCount; index++)
+    {
+        const struct ExpansionAutoplayStrategy* strategy =
+            &gExpansionAutoplayStrategies[index];
+        struct ExpansionAutoplayPlannerStrategyV2* record =
+            &campaign->strategies[index];
+
+        record->id = strategy->id;
+        record->objectiveCapabilities = strategy->objectiveCapabilities;
+        record->actionCapabilities = strategy->actionCapabilities;
+        record->identity = strategy->flags
+            | ((u32)EXPANSION_AUTOPLAY_PLANNER_AVAILABLE << 24);
+    }
+    index = 0;
+    if (strategyBundle != NULL && strategyBundle->chapterStrategyId != 0)
+    {
+        struct ExpansionAutoplayPlannerAssignmentV2* record =
+            &campaign->assignments[index++];
+        bool active = strategyBundle->chapterActivationFlag
+                == EXPANSION_AUTOPLAY_STRATEGY_FLAG_NONE
+            || CheckFlag(strategyBundle->chapterActivationFlag);
+
+        record->identity = CampaignAssignmentIdentity(
+            strategyBundle->chapterActivationFlag,
+            EXPANSION_AUTOPLAY_PLANNER_ASSIGNMENT_CHAPTER,
+            active,
+            resolution.source == EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_CHAPTER);
+        record->subjectId = strategyBundle->chapterId;
+        record->strategyId = strategyBundle->chapterStrategyId;
+    }
+    if (strategyBundle != NULL)
+    {
+        int assignment;
+
+        for (assignment = 0; assignment < strategyBundle->groupAssignmentCount; assignment++)
+        {
+            const struct ExpansionAutoplayStrategyGroupAssignment* source =
+                &strategyBundle->groupAssignments[assignment];
+            struct ExpansionAutoplayPlannerAssignmentV2* record =
+                &campaign->assignments[index++];
+            bool active = source->activationFlag == EXPANSION_AUTOPLAY_STRATEGY_FLAG_NONE
+                || CheckFlag(source->activationFlag);
+
+            record->identity = CampaignAssignmentIdentity(
+                source->activationFlag,
+                EXPANSION_AUTOPLAY_PLANNER_ASSIGNMENT_GROUP,
+                active,
+                resolution.source == EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_GROUP
+                    && resolution.subjectId == source->groupId
+                    && resolution.strategyId == source->strategyId);
+            record->subjectId = source->groupId;
+            record->strategyId = source->strategyId;
+        }
+        for (assignment = 0; assignment < strategyBundle->unitAssignmentCount; assignment++)
+        {
+            const struct ExpansionAutoplayStrategyUnitAssignment* source =
+                &strategyBundle->unitAssignments[assignment];
+            struct ExpansionAutoplayPlannerAssignmentV2* record =
+                &campaign->assignments[index++];
+            bool active = source->activationFlag == EXPANSION_AUTOPLAY_STRATEGY_FLAG_NONE
+                || CheckFlag(source->activationFlag);
+
+            record->identity = CampaignAssignmentIdentity(
+                source->activationFlag,
+                EXPANSION_AUTOPLAY_PLANNER_ASSIGNMENT_UNIT,
+                active,
+                resolution.source == EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_UNIT
+                    && resolution.subjectId == source->character
+                    && resolution.strategyId == source->strategyId);
+            record->subjectId = source->character;
+            record->strategyId = source->strategyId;
+        }
+    }
 }
 
 static void PublishSummaryPage(void)
@@ -1187,6 +1446,7 @@ static void PublishSummaryPage(void)
     SetSemanticField(7, EXPANSION_AUTOPLAY_PLANNER_FIELD_RESOURCE_DIGEST,
                      resourceAvailability,
                      MixDigest(MixDigest(2166136261u, gPlaySt.partyGoldAmount), convoyDigest));
+    PublishCampaignSummary();
     gExpansionAutoplayPlannerObservation.start.recordStart = 0;
     gExpansionAutoplayPlannerObservation.count.recordCount =
         EXPANSION_AUTOPLAY_PLANNER_SEMANTIC_FIELD_CAPACITY;
@@ -1258,8 +1518,11 @@ static void PublishUnitPage(u32 unitPage)
             &gExpansionAutoplayPlannerObservation.payload.units[index];
         enum ExpansionAutoplayPlannerAvailability availability =
             GetUnitAvailability(unit);
+        int equippedSlot;
+        u32 semanticFlags = 0;
 
         record->identity = (u8)unit->index | ((u32)availability << 24);
+        record->rescueAndEquipped = 0xFF00;
         if (availability != EXPANSION_AUTOPLAY_PLANNER_NOT_VISIBLE
             && availability != EXPANSION_AUTOPLAY_PLANNER_NOT_APPLICABLE)
         {
@@ -1271,6 +1534,45 @@ static void PublishUnitPage(u32 unitPage)
                 | ((u32)(u8)unit->maxHP << 24);
             record->state = unit->state;
             record->inventoryDigest = InventoryDigest(unit);
+            if (!(unit->state & US_UNAVAILABLE))
+                semanticFlags |= EXPANSION_AUTOPLAY_PLANNER_UNIT_DEPLOYED;
+            if (unit->state & US_DEAD)
+                semanticFlags |= EXPANSION_AUTOPLAY_PLANNER_UNIT_DEAD;
+            if (unit->state & US_HAS_MOVED)
+                semanticFlags |= EXPANSION_AUTOPLAY_PLANNER_UNIT_MOVED;
+            if (unit->state & (US_HAS_MOVED | US_HAS_MOVED_AI))
+                semanticFlags |= EXPANSION_AUTOPLAY_PLANNER_UNIT_ACTED;
+            if (unit->state & US_RESCUED)
+                semanticFlags |= EXPANSION_AUTOPLAY_PLANNER_UNIT_RESCUED;
+            if (unit->state & US_RESCUING)
+                semanticFlags |= EXPANSION_AUTOPLAY_PLANNER_UNIT_RESCUING;
+            record->status = unit->statusIndex
+                | ((u32)unit->statusDuration << 4)
+                | ((u32)(u8)unit->level << 8)
+                | ((u32)unit->exp << 16)
+                | (semanticFlags << 24);
+            equippedSlot = GetUnitEquippedWeaponSlot(unit);
+            if (equippedSlot >= UNIT_ITEM_COUNT)
+                equippedSlot = -1;
+            record->rescueAndEquipped = unit->rescue
+                | ((u32)(equippedSlot < 0 ? 0xFF : equippedSlot) << 8)
+                | ((u32)(equippedSlot < 0 ? 0 : unit->items[equippedSlot]) << 16);
+            record->stats0 = (u8)GetUnitPower(unit)
+                | ((u32)(u8)GetUnitSkill(unit) << 8)
+                | ((u32)(u8)GetUnitSpeed(unit) << 16)
+                | ((u32)(u8)GetUnitLuck(unit) << 24);
+            record->stats1 = (u8)GetUnitDefense(unit)
+                | ((u32)(u8)GetUnitResistance(unit) << 8)
+                | ((u32)(u8)UNIT_CON(unit) << 16)
+                | ((u32)(u8)UNIT_MOV(unit) << 24);
+            record->ranks0 = unit->ranks[0]
+                | ((u32)unit->ranks[1] << 8)
+                | ((u32)unit->ranks[2] << 16)
+                | ((u32)unit->ranks[3] << 24);
+            record->ranks1 = unit->ranks[4]
+                | ((u32)unit->ranks[5] << 8)
+                | ((u32)unit->ranks[6] << 16)
+                | ((u32)unit->ranks[7] << 24);
         }
     }
     gExpansionAutoplayPlannerObservation.start.recordStart = start;

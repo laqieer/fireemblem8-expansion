@@ -115,6 +115,11 @@ extern struct ExpansionChapterObjectiveRuntimeProbe gExpansionChapterObjectiveRu
 extern const struct ExpansionChapterObjectiveBundle gExpansionChapterObjectiveBundles[];
 extern struct ExpansionChapterObjectiveTelemetry gExpansionChapterObjectiveTelemetry;
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+const struct ExpansionChapterObjectiveBundle* ExpansionChapterObjectives_GetCurrentBundle(void);
+enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetSnapshot(
+    u32 objectiveId, u32* progressOut);
+#endif
 void ExpansionChapterObjectives_ResetTelemetry(void);
 void ExpansionChapterObjectives_OnBeginningEventsComplete(void);
 void ExpansionChapterObjectives_OnMapChangeStarted(void);

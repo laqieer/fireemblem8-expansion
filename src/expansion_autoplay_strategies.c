@@ -135,6 +135,62 @@ static enum ExpansionAutoplayStrategyResult ResolveAssignment(
     return EXPANSION_AUTOPLAY_STRATEGY_FALLBACK;
 }
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+const struct ExpansionAutoplayStrategyBundle* ExpansionAutoplayStrategies_GetCurrentBundle(void)
+{
+    return GetCurrentBundle();
+}
+
+const struct ExpansionAutoplayStrategy* ExpansionAutoplayStrategies_Find(u32 id)
+{
+    return FindStrategy(id);
+}
+
+enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ResolveCurrent(
+    struct ExpansionAutoplayStrategyResolution* resolution)
+{
+    const struct ExpansionAutoplayStrategyBundle* bundle = GetCurrentBundle();
+    enum ExpansionAutoplayStrategyResult result;
+    u8 character;
+    u8 index;
+
+    if (resolution == NULL)
+        return EXPANSION_AUTOPLAY_STRATEGY_FALLBACK;
+    resolution->subjectId = 0;
+    resolution->source = EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_NONE;
+    result = ResolveAssignment(bundle, &resolution->strategyId);
+    if (result != EXPANSION_AUTOPLAY_STRATEGY_OK)
+        return result;
+    character = gActiveUnit->pCharacterData->number;
+    for (index = 0; index < bundle->unitAssignmentCount; index++)
+    {
+        const struct ExpansionAutoplayStrategyUnitAssignment* assignment =
+            &bundle->unitAssignments[index];
+        if (assignment->character == character && IsAssignmentActive(assignment->activationFlag))
+        {
+            resolution->subjectId = character;
+            resolution->source = EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_UNIT;
+            return result;
+        }
+    }
+    for (index = 0; index < bundle->groupAssignmentCount; index++)
+    {
+        const struct ExpansionAutoplayStrategyGroupAssignment* assignment =
+            &bundle->groupAssignments[index];
+        if (ExpansionChapterObjectives_GroupContains(assignment->groupId, character)
+            && IsAssignmentActive(assignment->activationFlag))
+        {
+            resolution->subjectId = assignment->groupId;
+            resolution->source = EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_GROUP;
+            return result;
+        }
+    }
+    resolution->subjectId = bundle->chapterId;
+    resolution->source = EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_CHAPTER;
+    return result;
+}
+#endif
+
 static u32 ObjectiveCapabilityForKind(enum ExpansionChapterObjectiveKind kind)
 {
     if (kind < EXPANSION_CHAPTER_OBJECTIVE_PROTECT

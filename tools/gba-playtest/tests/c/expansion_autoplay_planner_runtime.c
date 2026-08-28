@@ -15,6 +15,7 @@
 #include "expansion_autoplay.h"
 #include "expansion_autoplay_internal.h"
 #include "expansion_autoplay_planner.h"
+#include "expansion_autoplay_strategies.h"
 #include "gamecontrol.h"
 #include "proc.h"
 #include "rng.h"
@@ -80,6 +81,10 @@ u8** gBmMapFog;
 u8 gSummonConfig[4][2];
 u32 gEventSlots[EVENT_SLOT_COUNT];
 struct EnqueuedEventCall gEventCallQueue[16];
+const struct ExpansionAutoplayStrategy gExpansionAutoplayStrategies[] = { { 0 } };
+const struct ExpansionAutoplayStrategyBundle gExpansionAutoplayStrategyBundles[] = {
+    { EXPANSION_AUTOPLAY_STRATEGY_CHAPTER_NONE, 0, 0, 0, 0, NULL, NULL },
+};
 
 static u16 sSeeds[3];
 static u32 sConsumption;
@@ -216,6 +221,7 @@ u8* GetPermanentFlagBits(void)
 int GetPermanentFlagBitsSize(void) { return sPermanentFlagSize; }
 u8* GetChapterFlagBits(void) { return sChapterFlags; }
 int GetChapterFlagBitsSize(void) { return sChapterFlagSize; }
+bool CheckFlag(int flag) { return (sPermanentFlags[flag >> 3] >> (flag & 7)) & 1; }
 u16* GetConvoyItemArray(void) { return sConvoy; }
 s8 AreUnitsAllied(int left, int right) { return (left & 0xC0) == (right & 0xC0); }
 s8 IsSameAllegiance(int left, int right) { return (left & 0xC0) == (right & 0xC0); }
@@ -256,6 +262,30 @@ int GetItemAttributes(int item)
         ? IA_STAFF : 0;
 }
 int GetItemIndex(int item) { return item & 0xFF; }
+int GetUnitEquippedWeaponSlot(struct Unit* unit) { return unit->items[0] == 0 ? -1 : 0; }
+int GetUnitPower(struct Unit* unit) { return unit->pow; }
+int GetUnitSkill(struct Unit* unit) { return unit->skl; }
+int GetUnitSpeed(struct Unit* unit) { return unit->spd; }
+int GetUnitDefense(struct Unit* unit) { return unit->def; }
+int GetUnitResistance(struct Unit* unit) { return unit->res; }
+int GetUnitLuck(struct Unit* unit) { return unit->lck; }
+const struct ExpansionAutoplayStrategyBundle* ExpansionAutoplayStrategies_GetCurrentBundle(void)
+{
+    return NULL;
+}
+const struct ExpansionAutoplayStrategy* ExpansionAutoplayStrategies_Find(u32 id)
+{
+    (void)id;
+    return NULL;
+}
+enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ResolveCurrent(
+    struct ExpansionAutoplayStrategyResolution* resolution)
+{
+    resolution->strategyId = 0;
+    resolution->subjectId = 0;
+    resolution->source = EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_NONE;
+    return EXPANSION_AUTOPLAY_STRATEGY_FALLBACK;
+}
 int GetItemMinRange(int item) { (void)item; return 1; }
 int GetItemMaxRange(int item) { (void)item; return 1; }
 int GetUnitMagBy2Range(struct Unit* unit)
