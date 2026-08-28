@@ -98,14 +98,6 @@ def build_report(enabled_report, disabled_report, enabled_map, disabled_map,
     disabled_symbols = _symbols(nm, disabled_elf)
     if not all(enabled_symbols.values()) or any(disabled_symbols.values()):
         raise PlannerBudgetError("linked planner symbol presence is inconsistent")
-    mutations = {}
-    for hook in REPRESENTATIVE_HOOKS:
-        try:
-            validate_delta(limit + 1, limit, hook)
-        except PlannerBudgetError:
-            mutations[hook] = "rejected"
-        else:
-            raise PlannerBudgetError(f"{hook} mutation did not fail")
     return {
         "schema": "fe8.autoplay-planner-linked-budget.v1",
         "metric": "__floating_end enabled-minus-disabled linked ROM bytes",
@@ -127,7 +119,6 @@ def build_report(enabled_report, disabled_report, enabled_map, disabled_map,
             "symbols": disabled_symbols,
             "representative_hooks": _hook_map_evidence(disabled_map),
         },
-        "mutation_controls": mutations,
     }
 
 

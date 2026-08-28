@@ -655,7 +655,8 @@ The toolchain gate separately executes the real explicit debug-target
 compile/link/boot path.
 Otherwise-identical enabled/disabled debug maps and ELFs bind the complete
 planner delta to `__floating_end`: 11,104/12,288 ROM bytes, 1,172/4,096 EWRAM,
-zero IWRAM, and fail-closed representative-hook growth controls.
+and zero IWRAM. Both maps must contain every named representative hook; the
+inclusive linked-delta comparator accepts 12,288 bytes and rejects 12,289.
 Every wire page has a count from 1 through 92 and an in-range index. Before
 either planner or replay factory runs, the shared live/import validator
 requires one ordered summary/map/unit/inventory/resource/flag/action sequence,
@@ -673,6 +674,12 @@ ROM/configuration/scenario/seed plus ready/active run identities to subsequent
 observations and accepted START. Every imported ACK must be exactly success
 with no rejection or failure with one known nonzero rejection before an
 accepted COMMIT token is interpreted.
+Production import and clean replay receive a trusted `PRODUCTION` validation
+mode from their API/transport caller rather than any transcript field. They
+require nonzero provenance and the complete production map, campaign,
+coordinate, page, and record contract even after an attacker zeroes every
+matching identity and recomputes all chains. Bounded host fixtures explicitly
+use `SYNTHETIC`; serialized validation-mode keys reject as unknown schema.
 The live backend applies the same exact `result/rejection` enum check before
 emitting ACK, COMPLETE, or OBS.
 Each command must then have one matching ACK, one matching COMPLETE, one exact

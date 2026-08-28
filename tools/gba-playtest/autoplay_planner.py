@@ -35,6 +35,7 @@ UNIT_ITEM_COUNT = 5
 CONVOY_ITEM_COUNT = 100
 AUTOPLAY_TELEMETRY_WORDS = 16
 
+
 class PageKind(str, Enum):
     CONTROL = "CONTROL"
     SUMMARY = "SUMMARY"
@@ -45,6 +46,7 @@ class PageKind(str, Enum):
     RESOURCES = "RESOURCES"
     FLAGS = "FLAGS"
 
+
 class ValueKind(int, Enum):
     UNIT_ITEM = 1
     GOLD = 2
@@ -53,17 +55,26 @@ class ValueKind(int, Enum):
     CHAPTER_FLAG = 5
     AUTOPLAY_TELEMETRY = 6
 
+
 class AssignmentSource(int, Enum):
     NONE = 0
     CHAPTER = 1
     GROUP = 2
     UNIT = 3
 
+
+class ValidationMode(str, Enum):
+    SYNTHETIC = "SYNTHETIC"
+    PRODUCTION = "PRODUCTION"
+
+
 class PlannerError(ValueError):
     """A protocol violation that must never be converted into success."""
 
+
 class PlannerTransportFailure(RuntimeError):
     """A typed restricted-transport failure recorded in the transcript."""
+
 
 class Availability(str, Enum):
     AVAILABLE = "AVAILABLE"
@@ -74,6 +85,7 @@ class Availability(str, Enum):
     UNINITIALIZED = "UNINITIALIZED"
     UNAVAILABLE = "UNAVAILABLE"
     EMPTY = "EMPTY"
+
 
 class Rejection(str, Enum):
     NOT_READY = "NOT_READY"
@@ -86,11 +98,13 @@ class Rejection(str, Enum):
     CANCELLED = "CANCELLED"
     PROTOCOL_ERROR = "PROTOCOL_ERROR"
 
+
 class CommandKind(str, Enum):
     START = "START"
     COMMIT = "COMMIT"
     CANCEL = "CANCEL"
     PAGE = "PAGE"
+
 
 _COMMAND_KIND_CODES = {
     CommandKind.START.value: 1,
@@ -106,10 +120,7 @@ _ACTION_IDS_BY_KIND = {
     "PICK": frozenset({13}),
     "SUMMON": frozenset({12, 14}),
 }
-_DEFAULT_ACTION_ID = {
-    kind: max(action_ids)
-    for kind, action_ids in _ACTION_IDS_BY_KIND.items()
-}
+_DEFAULT_ACTION_ID = {kind: max(action_ids) for kind, action_ids in _ACTION_IDS_BY_KIND.items()}
 _VALID_WIRE_REJECTION_CODES = frozenset(range(1, 11))
 _WIRE_STALE_OBSERVATION = 2
 _REJECTIONS_BY_COMMAND = {
@@ -119,6 +130,7 @@ _REJECTIONS_BY_COMMAND = {
     CommandKind.CANCEL.value: {2, 8, 9, 10},
 }
 
+
 @dataclass(frozen=True)
 class Field:
     name: str
@@ -126,6 +138,7 @@ class Field:
     bound: int
     availability: Availability
     value: object | None
+
 
 @dataclass(frozen=True)
 class Action:
@@ -147,6 +160,7 @@ class Action:
             object.__setattr__(self, "target_position", (0, 0))
         _validate_action_contract(asdict(self), "action")
 
+
 @dataclass(frozen=True)
 class OpaqueToken:
     word0: int
@@ -162,11 +176,13 @@ class OpaqueToken:
     def words(self) -> tuple[int, int, int, int]:
         return (self.word0, self.word1, self.word2, self.word3)
 
+
 @dataclass(frozen=True)
 class ActionRecord:
     ordinal: int
     action: Action
     token: OpaqueToken
+
 
 @dataclass(frozen=True)
 class MapCell:
@@ -175,6 +191,7 @@ class MapCell:
     terrain: int
     unit: int
     availability: Availability
+
 
 @dataclass(frozen=True)
 class UnitRecord:
@@ -207,7 +224,8 @@ class UnitRecord:
     resistance: int = 0
     constitution: int = 0
     movement: int = 0
-    weapon_ranks: tuple[int, ...] = (0,) * 8
+    weapon_ranks: tuple[int, ...] = (0, ) * 8
+
 
 @dataclass(frozen=True)
 class ObjectiveRecord:
@@ -226,11 +244,13 @@ class ObjectiveRecord:
     progress: int
     availability: Availability
 
+
 @dataclass(frozen=True)
 class GroupRecord:
     group_id: int
     members: tuple[int, ...]
     availability: Availability
+
 
 @dataclass(frozen=True)
 class StrategyRecord:
@@ -239,6 +259,7 @@ class StrategyRecord:
     action_capabilities: int
     flags: int
     availability: Availability
+
 
 @dataclass(frozen=True)
 class AssignmentRecord:
@@ -249,6 +270,7 @@ class AssignmentRecord:
     active: int
     current: int
     availability: Availability
+
 
 @dataclass(frozen=True)
 class CampaignRecord:
@@ -271,6 +293,7 @@ class CampaignRecord:
     strategies: tuple[StrategyRecord, ...]
     assignments: tuple[AssignmentRecord, ...]
 
+
 @dataclass(frozen=True)
 class InventoryRecord:
     unit: int
@@ -279,6 +302,7 @@ class InventoryRecord:
     uses: int
     raw_item: int
     availability: Availability
+
 
 @dataclass(frozen=True)
 class ResourceRecord:
@@ -289,12 +313,14 @@ class ResourceRecord:
     uses: int | None
     availability: Availability
 
+
 @dataclass(frozen=True)
 class FlagRecord:
     kind: ValueKind
     flag_id: int
     state: int | None
     availability: Availability
+
 
 @dataclass(frozen=True)
 class Observation:
@@ -327,6 +353,7 @@ class Observation:
     total_record_count: int = 0
     campaign: CampaignRecord | None = None
 
+
 @dataclass(frozen=True)
 class Command:
     kind: CommandKind
@@ -335,6 +362,7 @@ class Command:
     action_ordinal: int | None = None
     token: OpaqueToken | None = None
     page_index: int | None = None
+
 
 def _command_payload(command: Command) -> dict[str, object]:
     payload: dict[str, object] = {
@@ -346,12 +374,9 @@ def _command_payload(command: Command) -> dict[str, object]:
         payload["page_index"] = command.page_index
     elif command.kind is CommandKind.COMMIT:
         payload["action_ordinal"] = command.action_ordinal
-        payload["token"] = (
-            asdict(command.token)
-            if command.token is not None
-            else None
-        )
+        payload["token"] = (asdict(command.token) if command.token is not None else None)
     return payload
+
 
 def _validate_json_structure(value: object) -> None:
     stack = [(value, 1, False)]
@@ -371,13 +396,10 @@ def _validate_json_structure(value: object) -> None:
             raise PlannerError("invalid planner transcript JSON structure")
         active.add(identity)
         stack.append((current, depth, True))
-        values = (
-            current.values()
-            if isinstance(current, dict)
-            else current
-        )
+        values = (current.values() if isinstance(current, dict) else current)
         for child in values:
             stack.append((child, depth + 1, False))
+
 
 def _validate_json_text_depth(data: bytes) -> None:
     depth = 0
@@ -398,11 +420,10 @@ def _validate_json_text_depth(data: bytes) -> None:
         elif value in (ord("{"), ord("[")):
             depth += 1
             if depth > MAX_JSON_DEPTH:
-                raise PlannerError(
-                    "invalid planner transcript JSON depth"
-                )
+                raise PlannerError("invalid planner transcript JSON depth")
         elif value in (ord("}"), ord("]")):
             depth -= 1
+
 
 def _canonical(value: object) -> bytes:
     _validate_json_structure(value)
@@ -415,39 +436,66 @@ def _canonical(value: object) -> bytes:
             allow_nan=False,
         )
     except (TypeError, ValueError) as error:
-        raise PlannerError(
-            "invalid planner transcript JSON value"
-        ) from error
+        raise PlannerError("invalid planner transcript JSON value") from error
     except RecursionError as error:
-        raise PlannerError(
-            "invalid planner transcript JSON recursion"
-        ) from error
+        raise PlannerError("invalid planner transcript JSON recursion") from error
     return encoded.encode("ascii")
+
 
 def _reject_json_constant(value: str) -> None:
     raise ValueError(f"nonfinite JSON constant {value}")
 
+
 _OBSERVATION_KEYS = {
-    "run_id", "observation_id", "chapter", "fields", "actions",
-    "page_index", "page_count", "page_kind", "total_action_count",
-    "map_cells", "units", "inventory", "resources", "flags",
-    "state", "rejection", "chapter_turn", "rng_state", "rng_lcg",
-    "rng_consumption", "actual_rom_identity", "actual_config_identity",
-    "actual_scenario_identity", "actual_seed_identity", "record_start",
-    "record_count", "total_record_count", "campaign",
+    "run_id",
+    "observation_id",
+    "chapter",
+    "fields",
+    "actions",
+    "page_index",
+    "page_count",
+    "page_kind",
+    "total_action_count",
+    "map_cells",
+    "units",
+    "inventory",
+    "resources",
+    "flags",
+    "state",
+    "rejection",
+    "chapter_turn",
+    "rng_state",
+    "rng_lcg",
+    "rng_consumption",
+    "actual_rom_identity",
+    "actual_config_identity",
+    "actual_scenario_identity",
+    "actual_seed_identity",
+    "record_start",
+    "record_count",
+    "total_record_count",
+    "campaign",
 }
 _TRANSCRIPT_EVENT_KEYS = {
     "session": {"provenance"},
     "observation_page": {"observation"},
     "observation_complete": {
-        "observation", "candidate_set_digest", "semantic_digest", "page_identity",
+        "observation",
+        "candidate_set_digest",
+        "semantic_digest",
+        "page_identity",
     },
     "command": {"command"},
     "acknowledgement": {"command_id", "kind", "result", "rejection"},
     "completion": {"command_id", "kind", "response_frames"},
     "settled": {
-        "observation_identity", "observation_digest", "checkpoint",
-        "command_words", "telemetry", "rng", "terminal",
+        "observation_identity",
+        "observation_digest",
+        "checkpoint",
+        "command_words",
+        "telemetry",
+        "rng",
+        "terminal",
     },
     "transport_error": {"code", "command_id", "kind"},
 }
@@ -456,13 +504,21 @@ _U32_MAX = 0xFFFFFFFF
 _AVAILABILITY_VALUES = frozenset(value.value for value in Availability)
 _PAGE_KIND_VALUES = frozenset(value.value for value in PageKind)
 _ACTION_KIND_VALUES = frozenset({
-    "MOVE_WAIT", "COMBAT", "STAFF", "USE_ITEM", "PICK", "SUMMON",
+    "MOVE_WAIT",
+    "COMBAT",
+    "STAFF",
+    "USE_ITEM",
+    "PICK",
+    "SUMMON",
 })
 _ACTION_ID_VALUES = frozenset().union(*_ACTION_IDS_BY_KIND.values())
 _TRANSPORT_ERROR_CODES = frozenset({
-    "ACTION_COMPLETION_TIMEOUT", "COMMAND_ACK_TIMEOUT",
-    "COMMAND_RESPONSE_TIMEOUT", "INVALID_COMMAND_ACK",
+    "ACTION_COMPLETION_TIMEOUT",
+    "COMMAND_ACK_TIMEOUT",
+    "COMMAND_RESPONSE_TIMEOUT",
+    "INVALID_COMMAND_ACK",
 })
+
 
 def _require_exact_keys(
     value: object,
@@ -470,10 +526,9 @@ def _require_exact_keys(
     context: str,
 ) -> dict[str, object]:
     if not isinstance(value, dict) or set(value) != keys:
-        raise PlannerError(
-            f"invalid planner transcript {context} schema"
-        )
+        raise PlannerError(f"invalid planner transcript {context} schema")
     return value
+
 
 def _require_int(
     value: object,
@@ -483,42 +538,27 @@ def _require_int(
     allowed: frozenset[int] | None = None,
     message: str | None = None,
 ) -> int:
-    if (
-        type(value) is not int
-        or not minimum <= value <= maximum
-        or allowed is not None and value not in allowed
-    ):
-        raise PlannerError(
-            message or f"invalid planner transcript {context} scalar"
-        )
+    if (type(value) is not int or not minimum <= value <= maximum or allowed is not None and value not in allowed):
+        raise PlannerError(message or f"invalid planner transcript {context} scalar")
     return value
+
 
 def _require_text(
     value: object,
     context: str,
     allowed: frozenset[str] | None = None,
 ) -> str:
-    if (
-        type(value) is not str
-        or not value
-        or len(value) > 256
-        or allowed is not None and value not in allowed
-    ):
-        raise PlannerError(
-            f"invalid planner transcript {context} scalar"
-        )
+    if (type(value) is not str or not value or len(value) > 256 or allowed is not None and value not in allowed):
+        raise PlannerError(f"invalid planner transcript {context} scalar")
     return value
+
 
 def _require_digest(value: object, context: str) -> str:
     text = _require_text(value, context)
-    if len(text) != 64 or any(
-        character not in "0123456789abcdef"
-        for character in text
-    ):
-        raise PlannerError(
-            f"invalid planner transcript {context} scalar"
-        )
+    if len(text) != 64 or any(character not in "0123456789abcdef" for character in text):
+        raise PlannerError(f"invalid planner transcript {context} scalar")
     return text
+
 
 def _require_list(
     value: object,
@@ -528,15 +568,11 @@ def _require_list(
     maximum: int | None = None,
     message: str | None = None,
 ) -> list[object] | tuple[object, ...]:
-    if (
-        not isinstance(value, (list, tuple))
-        or length is not None and len(value) != length
-        or maximum is not None and len(value) > maximum
-    ):
-        raise PlannerError(
-            message or f"invalid planner transcript {context} schema"
-        )
+    if (not isinstance(value, (list, tuple)) or length is not None and len(value) != length
+            or maximum is not None and len(value) > maximum):
+        raise PlannerError(message or f"invalid planner transcript {context} schema")
     return value
+
 
 def _require_int_list(
     value: object,
@@ -563,6 +599,7 @@ def _require_int_list(
         )
     return values
 
+
 def _require_optional_int(
     value: object,
     context: str,
@@ -577,6 +614,7 @@ def _require_optional_int(
             allowed=allowed,
         )
 
+
 def _require_coordinate(
     value: object,
     context: str,
@@ -590,29 +628,28 @@ def _require_coordinate(
     for coordinate in value:
         _require_int(coordinate, context, maximum=63)
 
+
 def _require_availability(value: object, context: str) -> str:
     return _require_text(value, context, _AVAILABILITY_VALUES)
 
+
 def _validate_token_schema(token: object, context: str) -> None:
-    value = _require_exact_keys(
-        token, {"word0", "word1", "word2", "word3"}, context
-    )
+    value = _require_exact_keys(token, {"word0", "word1", "word2", "word3"}, context)
     for word in value.values():
         _require_int(word, context)
 
+
 def _validate_rejected_response(
-    command: dict[str, object], acknowledgement: dict[str, object],
-    previous: dict[str, object] | None, response: dict[str, object],
+    command: dict[str, object],
+    acknowledgement: dict[str, object],
+    previous: dict[str, object] | None,
+    response: dict[str, object],
 ) -> bool:
     rejection = acknowledgement["rejection"]
     kind = command["kind"]
-    if (
-        previous is None
-        or rejection not in _REJECTIONS_BY_COMMAND[kind]
-        or any(response[field] != previous[field]
-               for field in _OBSERVATION_KEYS - {"state", "rejection"})
-        or response["rejection"] != rejection
-    ):
+    if (previous is None or rejection not in _REJECTIONS_BY_COMMAND[kind]
+            or any(response[field] != previous[field] for field in _OBSERVATION_KEYS - {"state", "rejection"})
+            or response["rejection"] != rejection):
         raise PlannerError("rejected response changed immutable observation")
     prior_state = previous["state"]
     terminal_state = None
@@ -623,38 +660,37 @@ def _validate_rejected_response(
     elif kind == CommandKind.COMMIT.value and rejection == 7 and prior_state == 2:
         terminal_state = 5
     expected_state = prior_state if terminal_state is None else terminal_state
-    if response["state"] != expected_state or (
-        rejection in {7, 8, 10} and terminal_state is None
-    ):
+    if response["state"] != expected_state or (rejection in {7, 8, 10} and terminal_state is None):
         raise PlannerError("rejected response has invalid state transition")
     return terminal_state is not None
 
+
 def _is_roster_slot(value: int) -> bool:
-    return (1 <= value <= 0x3E
-        or 0x41 <= value <= 0x54
-        or 0x81 <= value <= 0xB2)
+    return (1 <= value <= 0x3E or 0x41 <= value <= 0x54 or 0x81 <= value <= 0xB2)
+
 
 def _validate_action_contract(action: object, context: str) -> None:
     value = _require_exact_keys(
         action,
         {
-            "kind", "actor", "destination", "target", "item_slot",
-            "target_position", "action_id", "target_item_slot",
+            "kind",
+            "actor",
+            "destination",
+            "target",
+            "item_slot",
+            "target_position",
+            "action_id",
+            "target_item_slot",
         },
         context,
     )
     kind = _require_text(value["kind"], f"{context} kind", _ACTION_KIND_VALUES)
-    action_id = _require_int(
-        value["action_id"], f"{context} action id", allowed=_ACTION_ID_VALUES
-    )
+    action_id = _require_int(value["action_id"], f"{context} action id", allowed=_ACTION_ID_VALUES)
     if action_id not in _ACTION_IDS_BY_KIND[kind]:
         raise PlannerError(f"invalid planner {context} kind/action mapping")
     actor = _require_int(value["actor"], f"{context} actor", maximum=0xFF)
     target = _require_int(value["target"], f"{context} target", maximum=0xFF)
-    if (
-        not _is_roster_slot(actor)
-        or target != 0 and not _is_roster_slot(target)
-    ):
+    if (not _is_roster_slot(actor) or target != 0 and not _is_roster_slot(target)):
         raise PlannerError(f"invalid planner {context} unit identity")
     _require_coordinate(value["destination"], f"{context} destination")
     _require_coordinate(value["target_position"], f"{context} target position")
@@ -662,36 +698,26 @@ def _validate_action_contract(action: object, context: str) -> None:
     target_slot = value["target_item_slot"]
     target_position = tuple(value["target_position"])
     _require_optional_int(item_slot, f"{context} item slot", UNIT_ITEM_COUNT - 1)
-    _require_optional_int(
-        target_slot, f"{context} target item slot", UNIT_ITEM_COUNT - 1
-    )
-    if (
-        kind in {"COMBAT", "STAFF", "USE_ITEM"} and item_slot is None
-        or kind in {"MOVE_WAIT", "SUMMON"} and item_slot is not None
-        or target_slot is not None and kind != "STAFF"
-        or target_slot is not None
-            and (target == 0 or target_position != (0, 0))
-        or kind in {"MOVE_WAIT", "USE_ITEM", "PICK", "SUMMON"} and target != 0
-        or kind in {"MOVE_WAIT", "USE_ITEM"} and target_position != (0, 0)
-        or kind == "SUMMON" and action_id == 12
-            and target_position != (0, 0)
-        or kind == "COMBAT" and target != 0
-            and target_position != (0, 0)
-    ):
+    _require_optional_int(target_slot, f"{context} target item slot", UNIT_ITEM_COUNT - 1)
+    if (kind in {"COMBAT", "STAFF", "USE_ITEM"} and item_slot is None
+            or kind in {"MOVE_WAIT", "SUMMON"} and item_slot is not None or target_slot is not None and kind != "STAFF"
+            or target_slot is not None and (target == 0 or target_position != (0, 0))
+            or kind in {"MOVE_WAIT", "USE_ITEM", "PICK", "SUMMON"} and target != 0
+            or kind in {"MOVE_WAIT", "USE_ITEM"} and target_position != (0, 0)
+            or kind == "SUMMON" and action_id == 12 and target_position != (0, 0)
+            or kind == "COMBAT" and target != 0 and target_position != (0, 0)):
         raise PlannerError(f"invalid planner {context} sentinel contract")
 
+
 def _validate_action_schema(record: object) -> None:
-    value = _require_exact_keys(
-        record, {"ordinal", "action", "token"}, "action record"
-    )
+    value = _require_exact_keys(record, {"ordinal", "action", "token"}, "action record")
     _require_int(value["ordinal"], "action ordinal", maximum=MAX_ACTIONS - 1)
     _validate_action_contract(value["action"], "action")
     _validate_token_schema(value["token"], "action token")
 
+
 def _validate_field_schema(record: object) -> None:
-    value = _require_exact_keys(
-        record, {"name", "source", "bound", "availability", "value"}, "field"
-    )
+    value = _require_exact_keys(record, {"name", "source", "bound", "availability", "value"}, "field")
     _require_text(value["name"], "field name")
     _require_text(value["source"], "field source")
     _require_int(value["bound"], "field bound")
@@ -701,26 +727,49 @@ def _validate_field_schema(record: object) -> None:
     elif value["value"] is not None:
         raise PlannerError("invalid planner transcript field value scalar")
 
+
 def _validate_map_cell_schema(record: object) -> None:
-    value = _require_exact_keys(
-        record, {"x", "y", "terrain", "unit", "availability"}, "map cell"
-    )
+    value = _require_exact_keys(record, {"x", "y", "terrain", "unit", "availability"}, "map cell")
     _require_int(value["x"], "map x", maximum=63)
     _require_int(value["y"], "map y", maximum=63)
     _require_int(value["terrain"], "map terrain", maximum=0xFF)
     _require_int(value["unit"], "map unit", maximum=0xFF)
     _require_availability(value["availability"], "map availability")
 
+
 def _validate_unit_schema(record: object) -> None:
     value = _require_exact_keys(
         record,
         {
-            "slot", "character", "unit_class", "position", "hp", "state",
-            "inventory_digest", "availability", "status_index",
-            "status_duration", "deployed", "dead", "moved", "acted",
-            "rescued", "rescuing", "rescue_partner", "equipped_slot",
-            "equipped_item", "level", "exp", "power", "skill", "speed",
-            "luck", "defense", "resistance", "constitution", "movement",
+            "slot",
+            "character",
+            "unit_class",
+            "position",
+            "hp",
+            "state",
+            "inventory_digest",
+            "availability",
+            "status_index",
+            "status_duration",
+            "deployed",
+            "dead",
+            "moved",
+            "acted",
+            "rescued",
+            "rescuing",
+            "rescue_partner",
+            "equipped_slot",
+            "equipped_item",
+            "level",
+            "exp",
+            "power",
+            "skill",
+            "speed",
+            "luck",
+            "defense",
+            "resistance",
+            "constitution",
+            "movement",
             "weapon_ranks",
         },
         "unit",
@@ -733,42 +782,67 @@ def _validate_unit_schema(record: object) -> None:
     _require_int(value["inventory_digest"], "unit inventory digest")
     availability = _require_availability(value["availability"], "unit availability")
     for field in (
-        "status_index", "status_duration", "rescue_partner", "level", "exp",
-        "power", "skill", "speed", "luck", "defense", "resistance",
-        "constitution", "movement",
+            "status_index",
+            "status_duration",
+            "rescue_partner",
+            "level",
+            "exp",
+            "power",
+            "skill",
+            "speed",
+            "luck",
+            "defense",
+            "resistance",
+            "constitution",
+            "movement",
     ):
         _require_int(value[field], f"unit {field}", maximum=0xFF)
     for field in ("deployed", "dead", "moved", "acted", "rescued", "rescuing"):
         _require_int(value[field], f"unit {field}", maximum=1)
     _require_optional_int(value["equipped_slot"], "unit equipped slot", UNIT_ITEM_COUNT - 1)
     _require_int(value["equipped_item"], "unit equipped item", maximum=0xFFFF)
-    _require_int_list(
-        value["weapon_ranks"], "unit weapon ranks", length=8, item_maximum=0xFF
-    )
+    _require_int_list(value["weapon_ranks"], "unit weapon ranks", length=8, item_maximum=0xFF)
     if value["equipped_slot"] is None and value["equipped_item"] != 0:
         raise PlannerError("invalid planner transcript equipped item sentinel")
     if availability in {
-        Availability.NOT_VISIBLE.value,
-        Availability.NOT_APPLICABLE.value,
-    } and any((
-        value["character"], value["unit_class"], *value["position"], *value["hp"],
-        value["state"], value["inventory_digest"], value["status_index"],
-        value["status_duration"], value["rescue_partner"], value["equipped_item"],
-        value["level"], value["exp"], value["power"], value["skill"], value["speed"],
-        value["luck"], value["defense"], value["resistance"],
-        value["constitution"], value["movement"], *value["weapon_ranks"],
-        value["deployed"], value["dead"], value["moved"], value["acted"],
-        value["rescued"], value["rescuing"],
-    )) or (
-        availability in {
             Availability.NOT_VISIBLE.value,
             Availability.NOT_APPLICABLE.value,
-        } and value["equipped_slot"] is not None
-    ):
+    } and any((
+            value["character"],
+            value["unit_class"],
+            *value["position"],
+            *value["hp"],
+            value["state"],
+            value["inventory_digest"],
+            value["status_index"],
+            value["status_duration"],
+            value["rescue_partner"],
+            value["equipped_item"],
+            value["level"],
+            value["exp"],
+            value["power"],
+            value["skill"],
+            value["speed"],
+            value["luck"],
+            value["defense"],
+            value["resistance"],
+            value["constitution"],
+            value["movement"],
+            *value["weapon_ranks"],
+            value["deployed"],
+            value["dead"],
+            value["moved"],
+            value["acted"],
+            value["rescued"],
+            value["rescuing"],
+    )) or (availability in {
+            Availability.NOT_VISIBLE.value,
+            Availability.NOT_APPLICABLE.value,
+    } and value["equipped_slot"] is not None):
         raise PlannerError("invalid planner transcript unavailable unit semantics")
     if availability not in {
-        Availability.NOT_VISIBLE.value,
-        Availability.NOT_APPLICABLE.value,
+            Availability.NOT_VISIBLE.value,
+            Availability.NOT_APPLICABLE.value,
     }:
         state = value["state"]
         expected = (
@@ -779,12 +853,10 @@ def _validate_unit_schema(record: object) -> None:
             int(bool(state & (1 << 5))),
             int(bool(state & (1 << 4))),
         )
-        actual = tuple(
-            value[field]
-            for field in ("deployed", "dead", "moved", "acted", "rescued", "rescuing")
-        )
+        actual = tuple(value[field] for field in ("deployed", "dead", "moved", "acted", "rescued", "rescuing"))
         if actual != expected:
             raise PlannerError("invalid planner transcript unit semantic flags")
+
 
 def _validate_inventory_schema(record: object) -> None:
     value = _require_exact_keys(
@@ -800,6 +872,7 @@ def _validate_inventory_schema(record: object) -> None:
     if _decode_item(raw_item) != (value["item_id"], value["uses"]):
         raise PlannerError("invalid planner transcript inventory item state")
     _require_availability(value["availability"], "inventory availability")
+
 
 def _validate_resource_schema(record: object) -> None:
     value = _require_exact_keys(
@@ -818,26 +891,20 @@ def _validate_resource_schema(record: object) -> None:
     )
     resource_value = _require_int(value["value"], "resource value")
     if kind == ValueKind.GOLD.value:
-        if any(
-            value[field] is not None
-            for field in ("slot", "item_id", "uses")
-        ):
+        if any(value[field] is not None for field in ("slot", "item_id", "uses")):
             raise PlannerError("invalid planner transcript gold sentinel")
     elif kind == ValueKind.CONVOY_ITEM.value:
         _require_int(value["slot"], "convoy slot", maximum=CONVOY_ITEM_COUNT - 1)
         _require_int(value["item_id"], "convoy item id", maximum=0xFF)
         _require_int(value["uses"], "convoy item uses", maximum=0xFF)
-        if (
-            resource_value > 0xFFFF
-            or _decode_item(resource_value)
-                != (value["item_id"], value["uses"])
-        ):
+        if (resource_value > 0xFFFF or _decode_item(resource_value) != (value["item_id"], value["uses"])):
             raise PlannerError("invalid planner transcript convoy item state")
     else:
         _require_int(value["slot"], "telemetry slot", maximum=AUTOPLAY_TELEMETRY_WORDS - 1)
         if value["item_id"] is not None or value["uses"] is not None:
             raise PlannerError("invalid planner transcript telemetry sentinel")
     _require_availability(value["availability"], "resource availability")
+
 
 def _validate_flag_schema(record: object) -> None:
     value = _require_exact_keys(
@@ -860,18 +927,33 @@ def _validate_flag_schema(record: object) -> None:
     elif value["state"] is not None:
         raise PlannerError("invalid planner transcript flag state scalar")
 
+
 def _validate_objective_schema(record: object) -> None:
-    value = _require_exact_keys(record, {
-        "objective_id", "completion_objective_id", "group_id",
-        "activation_flag", "deactivation_flag", "event_flag",
-        "completion_flag", "until_turn", "kind", "protected_character",
-        "area", "state", "progress", "availability",
-    }, "objective")
+    value = _require_exact_keys(
+        record, {
+            "objective_id",
+            "completion_objective_id",
+            "group_id",
+            "activation_flag",
+            "deactivation_flag",
+            "event_flag",
+            "completion_flag",
+            "until_turn",
+            "kind",
+            "protected_character",
+            "area",
+            "state",
+            "progress",
+            "availability",
+        }, "objective")
     for field in ("objective_id", "completion_objective_id", "group_id"):
         _require_int(value[field], f"objective {field}")
     for field in (
-        "activation_flag", "deactivation_flag", "event_flag",
-        "completion_flag", "until_turn",
+            "activation_flag",
+            "deactivation_flag",
+            "event_flag",
+            "completion_flag",
+            "until_turn",
     ):
         _require_int(value[field], f"objective {field}", maximum=0xFFFF)
     _require_int(value["kind"], "objective kind", minimum=1, maximum=5)
@@ -881,10 +963,9 @@ def _validate_objective_schema(record: object) -> None:
     _require_int(value["progress"], "objective progress", maximum=0xFFFF)
     _require_availability(value["availability"], "objective availability")
 
+
 def _validate_group_schema(record: object) -> None:
-    value = _require_exact_keys(
-        record, {"group_id", "members", "availability"}, "objective group"
-    )
+    value = _require_exact_keys(record, {"group_id", "members", "availability"}, "objective group")
     _require_int(value["group_id"], "objective group id")
     members = _require_list(value["members"], "objective group members")
     if len(members) > 16:
@@ -893,20 +974,30 @@ def _validate_group_schema(record: object) -> None:
         _require_int(member, "objective group member", maximum=0xFF)
     _require_availability(value["availability"], "objective group availability")
 
+
 def _validate_strategy_schema(record: object) -> None:
     value = _require_exact_keys(record, {
-        "strategy_id", "objective_capabilities", "action_capabilities",
-        "flags", "availability",
+        "strategy_id",
+        "objective_capabilities",
+        "action_capabilities",
+        "flags",
+        "availability",
     }, "strategy")
     for field in ("strategy_id", "objective_capabilities", "action_capabilities"):
         _require_int(value[field], f"strategy {field}")
     _require_int(value["flags"], "strategy flags", maximum=0xFF)
     _require_availability(value["availability"], "strategy availability")
 
+
 def _validate_assignment_schema(record: object) -> None:
     value = _require_exact_keys(record, {
-        "source", "subject_id", "strategy_id", "activation_flag",
-        "active", "current", "availability",
+        "source",
+        "subject_id",
+        "strategy_id",
+        "activation_flag",
+        "active",
+        "current",
+        "availability",
     }, "strategy assignment")
     _require_int(value["source"], "assignment source", allowed=frozenset(range(1, 4)))
     _require_int(value["subject_id"], "assignment subject")
@@ -916,31 +1007,49 @@ def _validate_assignment_schema(record: object) -> None:
     _require_int(value["current"], "assignment current", maximum=1)
     _require_availability(value["availability"], "assignment availability")
 
+
 def _validate_campaign_schema(record: object) -> None:
-    value = _require_exact_keys(record, {
-        "phase", "chapter", "mode", "phase_availability",
-        "objective_availability", "strategy_availability",
-        "assignment_availability", "current_strategy_id",
-        "current_objective_capabilities", "current_action_capabilities",
-        "current_strategy_flags", "current_assignment_source",
-        "current_assignment_subject", "current_assignment_availability",
-        "objectives", "groups", "strategies", "assignments",
-    }, "campaign")
+    value = _require_exact_keys(
+        record, {
+            "phase",
+            "chapter",
+            "mode",
+            "phase_availability",
+            "objective_availability",
+            "strategy_availability",
+            "assignment_availability",
+            "current_strategy_id",
+            "current_objective_capabilities",
+            "current_action_capabilities",
+            "current_strategy_flags",
+            "current_assignment_source",
+            "current_assignment_subject",
+            "current_assignment_availability",
+            "objectives",
+            "groups",
+            "strategies",
+            "assignments",
+        }, "campaign")
     for field in ("phase", "chapter", "mode", "current_strategy_flags"):
         _require_int(value[field], f"campaign {field}", maximum=0xFF)
     for field in (
-        "current_strategy_id", "current_objective_capabilities",
-        "current_action_capabilities", "current_assignment_subject",
+            "current_strategy_id",
+            "current_objective_capabilities",
+            "current_action_capabilities",
+            "current_assignment_subject",
     ):
         _require_int(value[field], f"campaign {field}")
     for field in (
-        "phase_availability", "objective_availability",
-        "strategy_availability", "assignment_availability",
-        "current_assignment_availability",
+            "phase_availability",
+            "objective_availability",
+            "strategy_availability",
+            "assignment_availability",
+            "current_assignment_availability",
     ):
         _require_availability(value[field], f"campaign {field}")
     _require_int(
-        value["current_assignment_source"], "current assignment source",
+        value["current_assignment_source"],
+        "current assignment source",
         maximum=AssignmentSource.UNIT.value,
     )
     for field, capacity, validator in (
@@ -955,10 +1064,9 @@ def _validate_campaign_schema(record: object) -> None:
         for item in records:
             validator(item)
 
+
 def _validate_observation_schema(observation: object) -> None:
-    value = _require_exact_keys(
-        observation, _OBSERVATION_KEYS, "observation"
-    )
+    value = _require_exact_keys(observation, _OBSERVATION_KEYS, "observation")
     for field in ("run_id", "observation_id"):
         _require_int(value[field], f"observation {field}")
     _require_int(value["chapter"], "observation chapter", maximum=0xFF)
@@ -970,9 +1078,7 @@ def _validate_observation_schema(observation: object) -> None:
         minimum=1,
         maximum=MAX_PAGE_COUNT,
     )
-    page_index = _require_int(
-        value["page_index"], "observation page index", maximum=MAX_PAGE_COUNT - 1
-    )
+    page_index = _require_int(value["page_index"], "observation page index", maximum=MAX_PAGE_COUNT - 1)
     if page_index >= page_count:
         raise PlannerError("invalid planner transcript observation page identity")
     page_kind_text = _require_text(
@@ -981,9 +1087,7 @@ def _validate_observation_schema(observation: object) -> None:
         _PAGE_KIND_VALUES,
     )
     page_kind = PageKind(page_kind_text)
-    record_start = _require_int(
-        value["record_start"], "observation record start"
-    )
+    record_start = _require_int(value["record_start"], "observation record start")
     record_count = _require_int(
         value["record_count"],
         "observation record count",
@@ -998,16 +1102,14 @@ def _validate_observation_schema(observation: object) -> None:
         raise PlannerError("invalid planner transcript observation record span")
     _require_int(value["total_action_count"], "observation total actions", maximum=MAX_ACTIONS)
     _require_int(value["chapter_turn"], "observation chapter turn", maximum=0xFFFF)
-    _require_int_list(
-        value["rng_state"], "observation RNG state", length=3, item_maximum=0xFFFF
-    )
+    _require_int_list(value["rng_state"], "observation RNG state", length=3, item_maximum=0xFFFF)
     for field in (
-        "rng_lcg",
-        "rng_consumption",
-        "actual_rom_identity",
-        "actual_config_identity",
-        "actual_scenario_identity",
-        "actual_seed_identity",
+            "rng_lcg",
+            "rng_consumption",
+            "actual_rom_identity",
+            "actual_config_identity",
+            "actual_scenario_identity",
+            "actual_seed_identity",
     ):
         _require_int(value[field], f"observation {field}")
     record_specs = (
@@ -1029,6 +1131,7 @@ def _validate_observation_schema(observation: object) -> None:
     if value["campaign"] is not None:
         _validate_campaign_schema(value["campaign"])
 
+
 def _validate_session_schema(provenance: object) -> None:
     required = {
         "transport",
@@ -1040,12 +1143,10 @@ def _validate_session_schema(provenance: object) -> None:
         "run_id",
     }
     if not isinstance(provenance, dict) or set(provenance) not in (
-        required,
-        required | {"source"},
+            required,
+            required | {"source"},
     ):
-        raise PlannerError(
-            "invalid planner transcript session provenance schema"
-        )
+        raise PlannerError("invalid planner transcript session provenance schema")
     if "source" in provenance:
         source = _require_exact_keys(
             provenance["source"],
@@ -1075,9 +1176,8 @@ def _validate_session_schema(provenance: object) -> None:
     for field in required - {"transport"}:
         _require_int(provenance[field], f"session {field}")
     if provenance["run_id"] != provenance["ready_run_id"] + 1:
-        raise PlannerError(
-            "invalid planner transcript session run identity"
-        )
+        raise PlannerError("invalid planner transcript session run identity")
+
 
 def _validate_command_schema(command: object) -> None:
     if not isinstance(command, dict):
@@ -1085,28 +1185,34 @@ def _validate_command_schema(command: object) -> None:
     kind = command.get("kind")
     keys = {
         CommandKind.START.value: {
-            "kind", "run_id", "observation_id", "expected_identities",
+            "kind",
+            "run_id",
+            "observation_id",
+            "expected_identities",
         },
         CommandKind.PAGE.value: {
-            "kind", "run_id", "observation_id", "page_index",
+            "kind",
+            "run_id",
+            "observation_id",
+            "page_index",
         },
         CommandKind.COMMIT.value: {
-            "kind", "run_id", "observation_id", "action_ordinal", "token",
+            "kind",
+            "run_id",
+            "observation_id",
+            "action_ordinal",
+            "token",
         },
         CommandKind.CANCEL.value: {"kind", "run_id", "observation_id"},
     }.get(kind)
     if keys is None:
-        raise PlannerError(
-            "transcript contains an unsupported command kind"
-        )
+        raise PlannerError("transcript contains an unsupported command kind")
     _require_exact_keys(command, keys, "command")
     _require_int(command["run_id"], "command run id")
     _require_int(command["observation_id"], "command observation id")
     if kind == CommandKind.START.value:
         if command["run_id"] != 0 or command["observation_id"] != 0:
-            raise PlannerError(
-                "invalid planner transcript START identity"
-            )
+            raise PlannerError("invalid planner transcript START identity")
         _require_int_list(
             command["expected_identities"],
             "START identities",
@@ -1120,6 +1226,7 @@ def _validate_command_schema(command: object) -> None:
             "COMMIT action ordinal",
         )
         _validate_token_schema(command["token"], "command token")
+
 
 def _validate_event_schema(event: object) -> str:
     if not isinstance(event, dict):
@@ -1145,72 +1252,71 @@ def _validate_event_schema(event: object) -> str:
         if kind == "observation_complete":
             _require_digest(event["candidate_set_digest"], "candidate-set digest")
             _require_digest(event["semantic_digest"], "semantic digest")
-            identity = _require_int_list(
-                event["page_identity"], "complete page identity", length=4
-            )
-            _require_int(
-                identity[2], "complete page count",
-                minimum=1, maximum=MAX_PAGE_COUNT
-            )
+            identity = _require_int_list(event["page_identity"], "complete page identity", length=4)
+            _require_int(identity[2], "complete page count", minimum=1, maximum=MAX_PAGE_COUNT)
             _require_int(identity[3], "complete action count", maximum=MAX_ACTIONS)
     elif kind == "acknowledgement":
         _require_int(event["command_id"], "acknowledgement command id", minimum=1)
         _require_int(
-            event["kind"], "acknowledgement kind",
+            event["kind"],
+            "acknowledgement kind",
             allowed=frozenset(_COMMAND_KIND_CODES.values()),
             message="acknowledgement kind mismatch",
         )
         _require_int(
-            event["result"], "acknowledgement result", maximum=1,
+            event["result"],
+            "acknowledgement result",
+            maximum=1,
             message="invalid acknowledgement result/rejection pair",
         )
         _require_int(
-            event["rejection"], "acknowledgement rejection", maximum=10,
+            event["rejection"],
+            "acknowledgement rejection",
+            maximum=10,
             message="invalid acknowledgement result/rejection pair",
         )
     elif kind == "completion":
         _require_int(event["command_id"], "completion command id", minimum=1)
         _require_int(
-            event["kind"], "completion kind",
+            event["kind"],
+            "completion kind",
             allowed=frozenset(_COMMAND_KIND_CODES.values()),
         )
         _require_int(
-            event["response_frames"], "completion frames",
+            event["response_frames"],
+            "completion frames",
             message="planner transcript completion timing is invalid",
         )
     elif kind == "settled":
-        identity = _require_list(
-            event["observation_identity"], "settled observation identity", length=6
-        )
+        identity = _require_list(event["observation_identity"], "settled observation identity", length=6)
         for field in (0, 1, 2, 3, 5):
             _require_int(identity[field], "settled observation identity")
         _require_text(identity[4], "settled page kind", _PAGE_KIND_VALUES)
-        if (
-            not 1 <= identity[3] <= MAX_PAGE_COUNT
-            or identity[2] >= identity[3]
-            or identity[5] > MAX_ACTIONS
-        ):
+        if (not 1 <= identity[3] <= MAX_PAGE_COUNT or identity[2] >= identity[3] or identity[5] > MAX_ACTIONS):
             raise PlannerError("invalid planner transcript settled page identity")
         _require_digest(event["observation_digest"], "settled observation digest")
         checkpoint = _require_int_list(
-            event["checkpoint"], "settled checkpoint", length=13,
+            event["checkpoint"],
+            "settled checkpoint",
+            length=13,
             message="invalid settled transcript record",
         )
         if any(checkpoint):
             if checkpoint[:3] != [0x41504C4E, PROTOCOL_VERSION, 52]:
                 raise PlannerError("invalid planner transcript checkpoint identity")
-            _require_int(
-                checkpoint[4], "checkpoint chapter", maximum=0xFF
-            )
+            _require_int(checkpoint[4], "checkpoint chapter", maximum=0xFF)
             _require_int(checkpoint[5], "checkpoint mode", maximum=0xFF)
             for seed in checkpoint[7:10]:
                 _require_int(seed, "checkpoint RNG state", maximum=0xFFFF)
         _require_int_list(
-            event["command_words"], "settled command words", length=16,
+            event["command_words"],
+            "settled command words",
+            length=16,
             message="invalid settled transcript record",
         )
         _require_int_list(
-            event["telemetry"], "settled telemetry",
+            event["telemetry"],
+            "settled telemetry",
             maximum=AUTOPLAY_TELEMETRY_WORDS,
             message="invalid settled transcript record",
         )
@@ -1219,9 +1325,7 @@ def _validate_event_schema(event: object) -> str:
             {"state", "lcg", "consumption"},
             "settled RNG",
         )
-        _require_int_list(
-            rng["state"], "settled RNG state", length=3, item_maximum=0xFFFF
-        )
+        _require_int_list(rng["state"], "settled RNG state", length=3, item_maximum=0xFFFF)
         _require_int(rng["lcg"], "settled RNG LCG")
         _require_int(rng["consumption"], "settled RNG consumption")
         terminal = _require_exact_keys(
@@ -1232,22 +1336,21 @@ def _validate_event_schema(event: object) -> str:
         _require_int(terminal["state"], "terminal state", maximum=5)
         _require_int(terminal["rejection"], "terminal rejection", maximum=10)
     elif kind == "transport_error":
-        _require_text(
-            event["code"], "transport error code", _TRANSPORT_ERROR_CODES
-        )
+        _require_text(event["code"], "transport error code", _TRANSPORT_ERROR_CODES)
         _require_int(event["command_id"], "transport error command id", minimum=1)
         _require_int(
-            event["kind"], "transport error kind",
+            event["kind"],
+            "transport error kind",
             allowed=frozenset(_COMMAND_KIND_CODES.values()),
         )
     return kind
 
+
 def _mix_digest(digest: int, value: int) -> int:
     return ((digest ^ (value & 0xFFFFFFFF)) * 16777619) & 0xFFFFFFFF
 
-def _fixture_action_token(
-    run_id: int, observation_id: int, ordinal: int, action: Action
-) -> OpaqueToken:
+
+def _fixture_action_token(run_id: int, observation_id: int, ordinal: int, action: Action) -> OpaqueToken:
     action_ids = {
         "MOVE_WAIT": 0,
         "COMBAT": 1,
@@ -1261,9 +1364,7 @@ def _fixture_action_token(
         action_id = action_ids[action.kind]
     target_id = action.target or 0
     item_slot = 0xFF if action.item_slot is None else action.item_slot
-    target_item_slot = (
-        0xFF if action.target_item_slot is None else action.target_item_slot
-    )
+    target_item_slot = (0xFF if action.target_item_slot is None else action.target_item_slot)
     x_target, y_target = action.target_position or (0, 0)
     x_move, y_move = action.destination
     values = (
@@ -1285,11 +1386,14 @@ def _fixture_action_token(
         words.append(digest)
     return OpaqueToken(*words)
 
+
 def _digest(value: object) -> str:
     return hashlib.sha256(_canonical(value)).hexdigest()
 
+
 def semantic_state_digest(state: object) -> str:
     return _digest(state)
+
 
 def _observation_semantics(observation: Observation) -> dict[str, object]:
     serialized = asdict(observation)
@@ -1310,6 +1414,7 @@ def _observation_semantics(observation: Observation) -> dict[str, object]:
             "units",
         )
     }
+
 
 class PlannerTranscript:
     """Canonical bounded transcript shared by mirror and live transports."""
@@ -1337,11 +1442,7 @@ class PlannerTranscript:
         for event in events:
             chained = {
                 "sequence": len(prospective),
-                "previous_digest": (
-                    prospective[-1]["event_digest"]
-                    if prospective
-                    else "0" * 64
-                ),
+                "previous_digest": (prospective[-1]["event_digest"] if prospective else "0" * 64),
                 **event,
             }
             chained["event_digest"] = _digest(chained)
@@ -1351,29 +1452,21 @@ class PlannerTranscript:
         self._events = prospective
 
     def _append(self, event: dict[str, object]) -> None:
-        self._append_many((event,))
+        self._append_many((event, ))
 
     def reserve_exchange(self) -> None:
-        if (
-            len(_canonical(self._document(self._events)))
-            + MAX_TRANSCRIPT_EXCHANGE_BYTES
-            > self.max_bytes
-        ):
+        if (len(_canonical(self._document(self._events))) + MAX_TRANSCRIPT_EXCHANGE_BYTES > self.max_bytes):
             raise PlannerError(Rejection.RESOURCE_LIMIT.value)
 
     @staticmethod
-    def _session_event(
-        provenance: dict[str, object],
-    ) -> dict[str, object]:
+    def _session_event(provenance: dict[str, object], ) -> dict[str, object]:
         return {
             "event": "session",
             "provenance": json.loads(_canonical(provenance)),
         }
 
     @staticmethod
-    def _observation_page_event(
-        observation: Observation,
-    ) -> dict[str, object]:
+    def _observation_page_event(observation: Observation, ) -> dict[str, object]:
         return {
             "event": "observation_page",
             "observation": asdict(observation),
@@ -1392,29 +1485,29 @@ class PlannerTranscript:
         checkpoint: Iterable[int],
         command_words: Iterable[int],
     ) -> None:
-        self._append_many(
-            (
-                self._session_event(provenance),
-                self._observation_page_event(observation),
-                self._settled_event(
-                    observation,
-                    checkpoint,
-                    command_words,
-                ),
-            )
-        )
+        self._append_many((
+            self._session_event(provenance),
+            self._observation_page_event(observation),
+            self._settled_event(
+                observation,
+                checkpoint,
+                command_words,
+            ),
+        ))
 
     @staticmethod
-    def _complete_observation_event(
-        observation: Observation,
-    ) -> dict[str, object]:
+    def _complete_observation_event(observation: Observation, ) -> dict[str, object]:
         actions = tuple(asdict(record) for record in observation.actions)
         semantics = _observation_semantics(observation)
         return {
-            "event": "observation_complete",
-            "observation": asdict(observation),
-            "candidate_set_digest": _digest(actions),
-            "semantic_digest": _digest(semantics),
+            "event":
+            "observation_complete",
+            "observation":
+            asdict(observation),
+            "candidate_set_digest":
+            _digest(actions),
+            "semantic_digest":
+            _digest(semantics),
             "page_identity": [
                 observation.run_id,
                 observation.observation_id,
@@ -1427,12 +1520,10 @@ class PlannerTranscript:
         self._append(self._complete_observation_event(observation))
 
     def record_command(self, command: dict[str, object]) -> None:
-        self._append(
-            {
-                "event": "command",
-                "command": json.loads(_canonical(command)),
-            }
-        )
+        self._append({
+            "event": "command",
+            "command": json.loads(_canonical(command)),
+        })
 
     def record_acknowledgement(
         self,
@@ -1441,15 +1532,13 @@ class PlannerTranscript:
         result: int,
         rejection: int,
     ) -> None:
-        self._append(
-            {
-                "event": "acknowledgement",
-                "command_id": command_id,
-                "kind": kind,
-                "result": result,
-                "rejection": rejection,
-            }
-        )
+        self._append({
+            "event": "acknowledgement",
+            "command_id": command_id,
+            "kind": kind,
+            "result": result,
+            "rejection": rejection,
+        })
 
     def record_completion(
         self,
@@ -1457,14 +1546,12 @@ class PlannerTranscript:
         kind: int,
         response_frames: int,
     ) -> None:
-        self._append(
-            {
-                "event": "completion",
-                "command_id": command_id,
-                "kind": kind,
-                "response_frames": response_frames,
-            }
-        )
+        self._append({
+            "event": "completion",
+            "command_id": command_id,
+            "kind": kind,
+            "response_frames": response_frames,
+        })
 
     @staticmethod
     def _settled_event(
@@ -1476,13 +1563,11 @@ class PlannerTranscript:
         command_values = tuple(command_words)
         if len(checkpoint_values) != 13 or len(command_values) != 16:
             raise PlannerError("settled transcript record has invalid width")
-        telemetry = tuple(
-            record.value
-            for record in observation.resources
-            if record.kind is ValueKind.AUTOPLAY_TELEMETRY
-        )
+        telemetry = tuple(record.value for record in observation.resources
+                          if record.kind is ValueKind.AUTOPLAY_TELEMETRY)
         return {
-            "event": "settled",
+            "event":
+            "settled",
             "observation_identity": [
                 observation.run_id,
                 observation.observation_id,
@@ -1491,10 +1576,14 @@ class PlannerTranscript:
                 observation.page_kind,
                 observation.total_action_count,
             ],
-            "observation_digest": _digest(asdict(observation)),
-            "checkpoint": checkpoint_values,
-            "command_words": command_values,
-            "telemetry": telemetry,
+            "observation_digest":
+            _digest(asdict(observation)),
+            "checkpoint":
+            checkpoint_values,
+            "command_words":
+            command_values,
+            "telemetry":
+            telemetry,
             "rng": {
                 "state": observation.rng_state,
                 "lcg": observation.rng_lcg,
@@ -1512,9 +1601,7 @@ class PlannerTranscript:
         checkpoint: Iterable[int],
         command_words: Iterable[int],
     ) -> None:
-        self._append(
-            self._settled_event(observation, checkpoint, command_words)
-        )
+        self._append(self._settled_event(observation, checkpoint, command_words))
 
     def record_complete_and_settled(
         self,
@@ -1522,16 +1609,14 @@ class PlannerTranscript:
         checkpoint: Iterable[int],
         command_words: Iterable[int],
     ) -> None:
-        self._append_many(
-            (
-                self._complete_observation_event(observation),
-                self._settled_event(
-                    observation,
-                    checkpoint,
-                    command_words,
-                ),
-            )
-        )
+        self._append_many((
+            self._complete_observation_event(observation),
+            self._settled_event(
+                observation,
+                checkpoint,
+                command_words,
+            ),
+        ))
 
     def record_transport_error(
         self,
@@ -1539,14 +1624,12 @@ class PlannerTranscript:
         command_id: int,
         kind: int,
     ) -> None:
-        self._append(
-            {
-                "event": "transport_error",
-                "code": code,
-                "command_id": command_id,
-                "kind": kind,
-            }
-        )
+        self._append({
+            "event": "transport_error",
+            "code": code,
+            "command_id": command_id,
+            "kind": kind,
+        })
 
     def export(self) -> bytes:
         return _canonical(self._document(self._events))
@@ -1555,7 +1638,13 @@ class PlannerTranscript:
         return hashlib.sha256(self.export()).hexdigest()
 
     @classmethod
-    def import_bytes(cls, data: bytes) -> "PlannerTranscript":
+    def import_bytes(
+        cls,
+        data: bytes,
+        validation_mode: ValidationMode = ValidationMode.PRODUCTION,
+    ) -> "PlannerTranscript":
+        if not isinstance(validation_mode, ValidationMode):
+            raise PlannerError("invalid trusted transcript validation mode")
         if len(data) > MAX_TRACE_BYTES:
             raise PlannerError(Rejection.RESOURCE_LIMIT.value)
         _validate_json_text_depth(data)
@@ -1565,18 +1654,15 @@ class PlannerTranscript:
                 parse_constant=_reject_json_constant,
             )
         except (
-            UnicodeDecodeError,
-            ValueError,
-            RecursionError,
+                UnicodeDecodeError,
+                ValueError,
+                RecursionError,
         ) as error:
             raise PlannerError("invalid planner transcript JSON") from error
         if _canonical(document) != data:
             raise PlannerError("planner transcript is not canonical")
-        if (
-            not isinstance(document, dict)
-            or document.get("schema") != cls.SCHEMA
-            or not isinstance(document.get("events"), list)
-        ):
+        if (not isinstance(document, dict) or document.get("schema") != cls.SCHEMA
+                or not isinstance(document.get("events"), list)):
             raise PlannerError("invalid planner transcript envelope")
         _require_exact_keys(
             document,
@@ -1584,21 +1670,19 @@ class PlannerTranscript:
             "envelope",
         )
         events = document["events"]
-        if (
-            not events
-            or not isinstance(events[0], dict)
-            or events[0].get("event") != "session"
-            or sum(
-                isinstance(event, dict)
-                    and event.get("event") == "session"
-                for event in events
-            ) != 1
-        ):
-            raise PlannerError(
-                "planner transcript requires exactly one leading session"
-            )
+        if (not events or not isinstance(events[0], dict) or events[0].get("event") != "session"
+                or sum(isinstance(event, dict) and event.get("event") == "session" for event in events) != 1):
+            raise PlannerError("planner transcript requires exactly one leading session")
         session_provenance = events[0].get("provenance")
         _validate_session_schema(session_provenance)
+        if validation_mode is ValidationMode.PRODUCTION and (session_provenance["transport"] != "restricted-libmgba"
+                                                             or any(session_provenance[field] == 0 for field in (
+                                                                 "rom_identity",
+                                                                 "config_identity",
+                                                                 "scenario_identity",
+                                                                 "seed_identity",
+                                                             ))):
+            raise PlannerError("invalid production transcript provenance")
         transcript = cls()
         previous_digest = "0" * 64
         pending_command: dict[str, object] | None = None
@@ -1620,10 +1704,7 @@ class PlannerTranscript:
         for sequence, event in enumerate(events):
             if not isinstance(event, dict):
                 raise PlannerError("invalid planner transcript event")
-            if (
-                event.get("sequence") != sequence
-                or event.get("previous_digest") != previous_digest
-            ):
+            if (event.get("sequence") != sequence or event.get("previous_digest") != previous_digest):
                 raise PlannerError("planner transcript order is invalid")
             event_without_digest = dict(event)
             event_digest = event_without_digest.pop("event_digest", None)
@@ -1633,9 +1714,7 @@ class PlannerTranscript:
             kind = _validate_event_schema(event)
             if kind == "session":
                 if sequence != 0:
-                    raise PlannerError(
-                        "planner transcript session must be first"
-                    )
+                    raise PlannerError("planner transcript session must be first")
             elif kind == "command":
                 if pending_command is not None or awaiting_settlement:
                     raise PlannerError("planner transcript command overlap")
@@ -1647,76 +1726,38 @@ class PlannerTranscript:
                 pending_previous_checkpoint = latest_checkpoint
                 pending_rejection_terminal = False
             elif kind == "acknowledgement":
-                if (
-                    pending_command is None
-                    or pending_ack is not None
-                    or event.get("command_id") != expected_command_id
-                ):
+                if (pending_command is None or pending_ack is not None
+                        or event.get("command_id") != expected_command_id):
                     raise PlannerError("planner transcript acknowledgement order")
                 command = pending_command["command"]
                 command_kind_code = _COMMAND_KIND_CODES[command["kind"]]
-                if (
-                    event.get("kind") != command_kind_code
-                ):
+                if (event.get("kind") != command_kind_code):
                     raise PlannerError("acknowledgement kind mismatch")
                 result = event.get("result")
                 rejection = event.get("rejection")
                 accepted = result == 1 and rejection == 0
-                rejected = (
-                    result == 0
-                    and rejection in _VALID_WIRE_REJECTION_CODES
-                )
-                if not (accepted or rejected) or (
-                    accepted
-                    and command_kind_code not in _COMMAND_KIND_CODES.values()
-                ):
-                    raise PlannerError(
-                        "invalid acknowledgement result/rejection pair"
-                    )
-                if accepted and (
-                    latest_observation is None
-                    or command.get("run_id")
-                        != latest_observation.get("run_id")
-                    or command.get("run_id")
-                        != (
-                            session_provenance["ready_run_id"]
-                            if command_kind_code == 1
-                            else session_provenance["run_id"]
-                        )
-                ):
-                    raise PlannerError(
-                        "accepted command run identity mismatch"
-                    )
-                if (
-                    command_kind_code != 1
-                    and rejection != _WIRE_STALE_OBSERVATION
-                    and (
-                        latest_observation is None
-                        or command.get("observation_id")
-                            != latest_observation.get("observation_id")
-                    )
-                ):
-                    raise PlannerError(
-                        "command observation identity mismatch"
-                    )
+                rejected = (result == 0 and rejection in _VALID_WIRE_REJECTION_CODES)
+                if not (accepted or rejected) or (accepted and command_kind_code not in _COMMAND_KIND_CODES.values()):
+                    raise PlannerError("invalid acknowledgement result/rejection pair")
+                if accepted and (latest_observation is None or command.get("run_id") != latest_observation.get("run_id")
+                                 or command.get("run_id") != (session_provenance["ready_run_id"] if command_kind_code
+                                                              == 1 else session_provenance["run_id"])):
+                    raise PlannerError("accepted command run identity mismatch")
+                if (command_kind_code != 1 and rejection != _WIRE_STALE_OBSERVATION
+                        and (latest_observation is None
+                             or command.get("observation_id") != latest_observation.get("observation_id"))):
+                    raise PlannerError("command observation identity mismatch")
                 if accepted and command_kind_code == 4 and (
-                    latest_observation is None
-                    or not 0 <= command["page_index"]
-                        < latest_observation.get("page_count", 0)
-                ):
+                        latest_observation is None
+                        or not 0 <= command["page_index"] < latest_observation.get("page_count", 0)):
                     raise PlannerError("PAGE command identity mismatch")
-                if accepted and command_kind_code == 1 and (
-                    command.get("expected_identities")
-                    != [
+                if accepted and command_kind_code == 1 and (command.get("expected_identities") != [
                         session_provenance["rom_identity"],
                         session_provenance["config_identity"],
                         session_provenance["scenario_identity"],
                         session_provenance["seed_identity"],
-                    ]
-                ):
-                    raise PlannerError(
-                        "START command session identity mismatch"
-                    )
+                ]):
+                    raise PlannerError("START command session identity mismatch")
                 pending_ack = event
                 expected_command_id += 1
                 if accepted and command_kind_code == 2:
@@ -1728,54 +1769,30 @@ class PlannerTranscript:
                         ),
                         [],
                     )
-                    action = (
-                        actions[ordinal]
-                        if 0 <= ordinal < len(actions)
-                        else None
-                    )
-                    if (
-                        not 0 <= ordinal < len(actions)
-                        or not isinstance(action, dict)
-                        or command.get("token")
-                            != action.get("token")
-                    ):
+                    action = (actions[ordinal] if 0 <= ordinal < len(actions) else None)
+                    if (not 0 <= ordinal < len(actions) or not isinstance(action, dict)
+                            or command.get("token") != action.get("token")):
                         raise PlannerError("accepted transcript token mismatch")
             elif kind == "completion":
-                if (
-                    pending_ack is None
-                    or pending_completion
-                    or event.get("command_id")
-                        != pending_ack.get("command_id")
-                    or event.get("kind") != pending_ack.get("kind")
-                ):
+                if (pending_ack is None or pending_completion
+                        or event.get("command_id") != pending_ack.get("command_id")
+                        or event.get("kind") != pending_ack.get("kind")):
                     raise PlannerError("planner transcript completion order")
                 response_frames = event.get("response_frames")
-                completion_limit = (
-                    COMMIT_COMPLETION_FRAME_LIMIT
-                    if pending_ack.get("kind") == 2
-                        and pending_ack.get("result") == 1
-                        and pending_ack.get("rejection") == 0
-                    else COMMAND_RESPONSE_FRAME_LIMIT
-                )
-                if (
-                    response_frames > completion_limit
-                ):
-                    raise PlannerError(
-                        "planner transcript completion timing is invalid"
-                    )
+                completion_limit = (COMMIT_COMPLETION_FRAME_LIMIT
+                                    if pending_ack.get("kind") == 2 and pending_ack.get("result") == 1
+                                    and pending_ack.get("rejection") == 0 else COMMAND_RESPONSE_FRAME_LIMIT)
+                if (response_frames > completion_limit):
+                    raise PlannerError("planner transcript completion timing is invalid")
                 pending_completion = True
             elif kind == "settled":
                 settled_command = pending_command
                 settled_ack = pending_ack
                 if not awaiting_settlement:
-                    raise PlannerError(
-                        "settled event has no response observation"
-                    )
+                    raise PlannerError("settled event has no response observation")
                 if pending_command is not None:
                     if not pending_completion or not pending_response:
-                        raise PlannerError(
-                            "settled event precedes command response"
-                        )
+                        raise PlannerError("settled event precedes command response")
                     pending_command = None
                     pending_ack = None
                     pending_completion = False
@@ -1794,107 +1811,59 @@ class PlannerTranscript:
                     latest_observation.get("total_action_count"),
                 ]
                 expected_telemetry = [
-                    record.get("value")
-                    for record in latest_observation.get("resources", [])
-                    if record.get("kind")
-                        == ValueKind.AUTOPLAY_TELEMETRY.value
+                    record.get("value") for record in latest_observation.get("resources", [])
+                    if record.get("kind") == ValueKind.AUTOPLAY_TELEMETRY.value
                 ]
-                if (
-                    event["observation_identity"] != expected_identity
-                    or event.get("observation_digest")
-                        != _digest(latest_observation)
-                    or terminal != {
-                        "state": latest_observation.get("state"),
-                        "rejection": latest_observation.get("rejection"),
-                    }
-                    or rng != {
-                        "state": latest_observation.get("rng_state"),
-                        "lcg": latest_observation.get("rng_lcg"),
-                        "consumption": latest_observation.get(
-                            "rng_consumption"
-                        ),
-                    }
-                    or event["telemetry"] != expected_telemetry
-                ):
+                if (event["observation_identity"] != expected_identity
+                        or event.get("observation_digest") != _digest(latest_observation) or terminal != {
+                            "state": latest_observation.get("state"),
+                            "rejection": latest_observation.get("rejection"),
+                        } or rng != {
+                            "state": latest_observation.get("rng_state"),
+                            "lcg": latest_observation.get("rng_lcg"),
+                            "consumption": latest_observation.get("rng_consumption"),
+                        } or event["telemetry"] != expected_telemetry):
                     raise PlannerError("settled runtime state mismatch")
                 if settled_ack is not None:
-                    acknowledgement_accepted = (
-                        settled_ack.get("result") == 1
-                        and settled_ack.get("rejection") == 0
-                    )
-                    expected_rejection = (
-                        0
-                        if acknowledgement_accepted
-                        else settled_ack.get("rejection")
-                    )
+                    acknowledgement_accepted = (settled_ack.get("result") == 1 and settled_ack.get("rejection") == 0)
+                    expected_rejection = (0 if acknowledgement_accepted else settled_ack.get("rejection"))
                     if terminal["rejection"] != expected_rejection:
-                        raise PlannerError(
-                            "settled rejection does not match acknowledgement"
-                        )
+                        raise PlannerError("settled rejection does not match acknowledgement")
                     if not acknowledgement_accepted:
-                        expected_checkpoint = ([0] * 13 if pending_rejection_terminal
-                                               else pending_previous_checkpoint)
+                        expected_checkpoint = ([0] * 13 if pending_rejection_terminal else pending_previous_checkpoint)
                         if event["checkpoint"] != expected_checkpoint:
-                            raise PlannerError(
-                                "rejected response changed checkpoint"
-                            )
+                            raise PlannerError("rejected response changed checkpoint")
                     command = settled_command.get("command")
-                    if (
-                        not acknowledgement_accepted
-                        and isinstance(command, dict)
-                        and command.get("kind")
-                            == CommandKind.COMMIT.value
-                        and terminal["state"] == 3
-                    ):
-                        raise PlannerError(
-                            "rejected COMMIT cannot settle as COMMITTED"
-                        )
+                    if (not acknowledgement_accepted and isinstance(command, dict)
+                            and command.get("kind") == CommandKind.COMMIT.value and terminal["state"] == 3):
+                        raise PlannerError("rejected COMMIT cannot settle as COMMITTED")
                 latest_checkpoint = event["checkpoint"]
             elif kind == "transport_error":
                 code = event["code"]
-                if (
-                    sequence != len(document["events"]) - 1
-                    or awaiting_settlement
-                    or pending_command is None
-                    or pending_completion
-                    or pending_response
-                ):
+                if (sequence != len(document["events"]) - 1 or awaiting_settlement or pending_command is None
+                        or pending_completion or pending_response):
                     raise PlannerError("transport error must terminate transcript")
                 command_kind = _COMMAND_KIND_CODES[pending_command["command"]["kind"]]
-                command_id = (
-                    pending_ack["command_id"]
-                    if pending_ack is not None else expected_command_id
-                )
+                command_id = (pending_ack["command_id"] if pending_ack is not None else expected_command_id)
                 if event["kind"] != command_kind or event["command_id"] != command_id:
                     raise PlannerError("transport error command identity mismatch")
                 if code in {"COMMAND_ACK_TIMEOUT", "INVALID_COMMAND_ACK"}:
                     valid_stage = pending_ack is None
                 elif code == "ACTION_COMPLETION_TIMEOUT":
-                    valid_stage = (
-                        pending_ack is not None
-                        and pending_ack["kind"] == _COMMAND_KIND_CODES[CommandKind.COMMIT.value]
-                        and pending_ack["result"] == 1
-                        and pending_ack["rejection"] == 0
-                    )
+                    valid_stage = (pending_ack is not None
+                                   and pending_ack["kind"] == _COMMAND_KIND_CODES[CommandKind.COMMIT.value]
+                                   and pending_ack["result"] == 1 and pending_ack["rejection"] == 0)
                 else:
-                    valid_stage = (
-                        pending_ack is not None
-                        and not (
-                            pending_ack["kind"]
-                                == _COMMAND_KIND_CODES[CommandKind.COMMIT.value]
-                            and pending_ack["result"] == 1
-                            and pending_ack["rejection"] == 0
-                        )
-                    )
+                    valid_stage = (pending_ack is not None
+                                   and not (pending_ack["kind"] == _COMMAND_KIND_CODES[CommandKind.COMMIT.value]
+                                            and pending_ack["result"] == 1 and pending_ack["rejection"] == 0))
                 if not valid_stage:
                     raise PlannerError("transport error command stage mismatch")
                 pending_command = None
                 pending_ack = None
             elif kind == "observation_complete":
                 if pending_command is not None or awaiting_settlement:
-                    raise PlannerError(
-                        "complete observation violates command ordering"
-                    )
+                    raise PlannerError("complete observation violates command ordering")
                 observation = event["observation"]
                 active_identity_bound = cls._validate_session_observation(
                     observation,
@@ -1908,13 +1877,9 @@ class PlannerTranscript:
                     observation.get("total_action_count"),
                 ]
                 if event.get("page_identity") != expected_page_identity:
-                    raise PlannerError(
-                        "complete observation page identity mismatch"
-                    )
+                    raise PlannerError("complete observation page identity mismatch")
                 actions = observation["actions"]
-                if event.get("candidate_set_digest") != _digest(
-                    actions
-                ):
+                if event.get("candidate_set_digest") != _digest(actions):
                     raise PlannerError("candidate-set transcript digest mismatch")
                 semantics = {
                     key: observation.get(key)
@@ -1940,32 +1905,20 @@ class PlannerTranscript:
                     observation.get("observation_id"),
                 )
                 pages = observation_pages.pop(page_key, [])
-                if (
-                    session_provenance["transport"]
-                        == "restricted-libmgba"
-                    and not pages
-                ):
-                    raise PlannerError(
-                        "complete observation has no transport pages"
-                    )
-                _validate_complete_observation(observation, pages)
-                actions_by_observation[
-                    (
-                        observation.get("run_id"),
-                        observation.get("observation_id"),
-                    )
-                ] = actions
+                if (session_provenance["transport"] == "restricted-libmgba" and not pages):
+                    raise PlannerError("complete observation has no transport pages")
+                _validate_complete_observation(observation, pages, validation_mode)
+                actions_by_observation[(
+                    observation.get("run_id"),
+                    observation.get("observation_id"),
+                )] = actions
                 latest_observation = observation
                 awaiting_settlement = True
             elif kind == "observation_page":
                 if awaiting_settlement:
-                    raise PlannerError(
-                        "response observation is missing settlement"
-                    )
+                    raise PlannerError("response observation is missing settlement")
                 if pending_command is not None and not pending_completion:
-                    raise PlannerError(
-                        "response observation precedes completion"
-                    )
+                    raise PlannerError("response observation precedes completion")
                 observation = event["observation"]
                 active_identity_bound = cls._validate_session_observation(
                     observation,
@@ -1985,23 +1938,13 @@ class PlannerTranscript:
                 if pending_command is not None:
                     command = pending_command["command"]
                     command_kind = command.get("kind")
-                    accepted = (
-                        pending_ack is not None
-                        and pending_ack.get("result") == 1
-                        and pending_ack.get("rejection") == 0
-                    )
+                    accepted = (pending_ack is not None and pending_ack.get("result") == 1
+                                and pending_ack.get("rejection") == 0)
                     if accepted and command_kind == CommandKind.PAGE.value:
-                        if (
-                            observation.get("run_id")
-                                != command.get("run_id")
-                            or observation.get("observation_id")
-                                != command.get("observation_id")
-                            or observation.get("page_index")
-                                != command.get("page_index")
-                        ):
-                            raise PlannerError(
-                                "PAGE response identity mismatch"
-                            )
+                        if (observation.get("run_id") != command.get("run_id")
+                                or observation.get("observation_id") != command.get("observation_id")
+                                or observation.get("page_index") != command.get("page_index")):
+                            raise PlannerError("PAGE response identity mismatch")
                     elif not accepted:
                         pending_rejection_terminal = _validate_rejected_response(
                             command,
@@ -2020,6 +1963,14 @@ class PlannerTranscript:
         transcript._events = document["events"]
         return transcript
 
+    @classmethod
+    def import_production_bytes(cls, data: bytes) -> "PlannerTranscript":
+        return cls.import_bytes(data, ValidationMode.PRODUCTION)
+
+    @classmethod
+    def import_synthetic_bytes(cls, data: bytes) -> "PlannerTranscript":
+        return cls.import_bytes(data, ValidationMode.SYNTHETIC)
+
     @staticmethod
     def _validate_session_observation(
         observation: dict[str, object],
@@ -2027,25 +1978,16 @@ class PlannerTranscript:
         active_identity_bound: bool,
     ) -> bool:
         run_id = observation.get("run_id")
-        if (
-            run_id not in {session["ready_run_id"], session["run_id"]}
-            or observation.get("actual_rom_identity")
-                != session["rom_identity"]
-            or observation.get("actual_config_identity")
-                != session["config_identity"]
-        ):
+        if (run_id not in {session["ready_run_id"], session["run_id"]}
+                or observation.get("actual_rom_identity") != session["rom_identity"]
+                or observation.get("actual_config_identity") != session["config_identity"]):
             raise PlannerError("observation session identity mismatch")
         if run_id == session["ready_run_id"] or not active_identity_bound:
-            if (
-                observation.get("actual_scenario_identity")
-                    != session["scenario_identity"]
-                or observation.get("actual_seed_identity")
-                    != session["seed_identity"]
-            ):
-                raise PlannerError(
-                    "observation session scenario/seed mismatch"
-                )
+            if (observation.get("actual_scenario_identity") != session["scenario_identity"]
+                    or observation.get("actual_seed_identity") != session["seed_identity"]):
+                raise PlannerError("observation session scenario/seed mismatch")
         return active_identity_bound or run_id == session["run_id"]
+
 
 class Mailbox:
     """The sole host-to-ROM command surface; it intentionally has no address API."""
@@ -2063,7 +2005,9 @@ class Mailbox:
         self._command = None
         return command
 
+
 class PlannerBridge:
+    validation_mode = ValidationMode.SYNTHETIC
     """In-memory mirror of the ROM's paged observation/token state machine."""
 
     def __init__(self, provenance: dict[str, object]) -> None:
@@ -2093,18 +2037,16 @@ class PlannerBridge:
         self._observation = None
         self._all_actions = ()
         self.transcript = PlannerTranscript()
-        self.transcript.record_session(
-            {
-                "transport": "mirror",
-                "rom_identity": 0,
-                "config_identity": 0,
-                "scenario_identity": 0,
-                "seed_identity": 0,
-                "ready_run_id": self._run_id - 1,
-                "run_id": self._run_id,
-                "source": self._provenance,
-            }
-        )
+        self.transcript.record_session({
+            "transport": "mirror",
+            "rom_identity": 0,
+            "config_identity": 0,
+            "scenario_identity": 0,
+            "seed_identity": 0,
+            "ready_run_id": self._run_id - 1,
+            "run_id": self._run_id,
+            "source": self._provenance,
+        })
         self._committed_count = 0
         self._next_command_id = 1
         self._active = True
@@ -2137,9 +2079,7 @@ class PlannerBridge:
                     index,
                     action,
                 ),
-            )
-            for index, action in enumerate(action_tuple)
-        )
+            ) for index, action in enumerate(action_tuple))
         observation_id = self._next_observation_id
         page_count = 1 + (len(records) + ACTIONS_PER_PAGE - 1) // ACTIONS_PER_PAGE
         complete_observation = Observation(
@@ -2155,8 +2095,8 @@ class PlannerBridge:
         )
         self.transcript.record_complete_and_settled(
             complete_observation,
-            (0,) * 13,
-            (0,) * 16,
+            (0, ) * 13,
+            (0, ) * 16,
         )
         observation = Observation(
             self._run_id,
@@ -2185,15 +2125,12 @@ class PlannerBridge:
             raise PlannerError(Rejection.NOT_READY.value)
         if command.kind is not CommandKind.PAGE:
             raise PlannerError(Rejection.PROTOCOL_ERROR.value)
-        if (
-            command.run_id != observation.run_id
-            or command.observation_id != observation.observation_id
-        ):
+        if (command.run_id != observation.run_id or command.observation_id != observation.observation_id):
             raise PlannerError(Rejection.STALE_OBSERVATION.value)
         if command.page_index is None or not 1 <= command.page_index < observation.page_count:
             raise PlannerError(Rejection.UNKNOWN_ACTION.value)
         start = (command.page_index - 1) * ACTIONS_PER_PAGE
-        actions = self._all_actions[start : start + ACTIONS_PER_PAGE]
+        actions = self._all_actions[start:start + ACTIONS_PER_PAGE]
         page = Observation(
             observation.run_id,
             observation.observation_id,
@@ -2215,7 +2152,7 @@ class PlannerBridge:
         self.transcript.record_acknowledgement(command_id, 4, 1, 0)
         self.transcript.record_completion(command_id, 4, 0)
         self.transcript.record_observation_page(page)
-        self.transcript.record_settled(page, (0,) * 13, (0,) * 16)
+        self.transcript.record_settled(page, (0, ) * 13, (0, ) * 16)
         return page
 
     def commit(self, command: Command) -> ActionRecord:
@@ -2240,8 +2177,8 @@ class PlannerBridge:
             self.transcript.record_observation_page(settled)
             self.transcript.record_settled(
                 settled,
-                (0,) * 13,
-                (0,) * 16,
+                (0, ) * 13,
+                (0, ) * 16,
             )
             self._observation = None
             self._all_actions = ()
@@ -2269,8 +2206,8 @@ class PlannerBridge:
         self.transcript.record_observation_page(settled)
         self.transcript.record_settled(
             settled,
-            (0,) * 13,
-            (0,) * 16,
+            (0, ) * 13,
+            (0, ) * 16,
         )
         self._committed_count += 1
         self._observation = None
@@ -2279,6 +2216,7 @@ class PlannerBridge:
 
     def trace_digest(self) -> str:
         return self.transcript.digest()
+
 
 _AVAILABILITY_BY_VALUE = dict(enumerate(Availability))
 _PAGE_KIND_BY_VALUE = dict(enumerate(PageKind))
@@ -2338,17 +2276,16 @@ _ROSTER_SLOTS = (
     *range(0x81, 0xB3),
 )
 
+
 def _validate_complete_observation(
-    observation: dict[str, object],
-    pages: Iterable[dict[str, object]] = (),
+        observation: dict[str, object],
+        pages: Iterable[dict[str, object]] = (),
+        validation_mode: ValidationMode = ValidationMode.SYNTHETIC,
 ) -> None:
     page_values = tuple(pages)
-    strict = observation["actual_rom_identity"] != 0
+    strict = validation_mode is ValidationMode.PRODUCTION
     fields = observation["fields"]
-    field_ids = tuple(
-        (field["name"], field["source"], field["bound"])
-        for field in fields
-    )
+    field_ids = tuple((field["name"], field["source"], field["bound"]) for field in fields)
     field_names = tuple(identity[0] for identity in field_ids)
     if len(field_names) != len(set(field_names)):
         raise PlannerError("complete observation has duplicate fields")
@@ -2364,14 +2301,9 @@ def _validate_complete_observation(
     if dimensions is not None and dimensions["availability"] == Availability.AVAILABLE:
         width = dimensions["value"] & 0xFFFF
         height = dimensions["value"] >> 16
-        if (
-            not 1 <= width <= 64
-            or not 1 <= height <= 64
-            or len(cells) != width * height
-            or tuple((cell["x"], cell["y"]) for cell in cells)
-                != tuple((index % width, index // width)
-                         for index in range(width * height))
-        ):
+        if (not 1 <= width <= 64 or not 1 <= height <= 64 or len(cells) != width * height or tuple(
+            (cell["x"], cell["y"]) for cell in cells) != tuple(
+                (index % width, index // width) for index in range(width * height))):
             raise PlannerError("complete observation map dimensions mismatch")
         map_size = (width, height)
     elif strict or dimensions is not None and observation["actions"]:
@@ -2379,75 +2311,63 @@ def _validate_complete_observation(
 
     units = observation["units"]
     unit_slots = tuple(unit["slot"] for unit in units)
-    if (
-        len(unit_slots) != len(set(unit_slots))
-        or any(slot not in _ROSTER_SLOTS for slot in unit_slots)
-        or unit_slots != tuple(slot for slot in _ROSTER_SLOTS if slot in unit_slots)
-    ):
+    if (len(unit_slots) != len(set(unit_slots)) or any(slot not in _ROSTER_SLOTS for slot in unit_slots)
+            or unit_slots != tuple(slot for slot in _ROSTER_SLOTS if slot in unit_slots)):
         raise PlannerError("complete observation roster is not canonical")
-    unit_availability = {
-        unit["slot"]: unit["availability"]
-        for unit in units
-    }
-    if (strict or units) and any(
-        cell["unit"] != 0 and cell["unit"] not in unit_availability
-        for cell in cells
-    ):
+    unit_availability = {unit["slot"]: unit["availability"] for unit in units}
+    if (strict or units) and any(cell["unit"] != 0 and cell["unit"] not in unit_availability for cell in cells):
         raise PlannerError("complete observation map unit is not in roster")
 
     inventory = observation["inventory"]
-    inventory_ids = tuple(
-        (record["unit"], record["slot"])
-        for record in inventory
-    )
-    expected_inventory = tuple(
-        (unit, slot)
-        for unit in unit_slots
-        for slot in range(UNIT_ITEM_COUNT)
-    )
+    inventory_ids = tuple((record["unit"], record["slot"]) for record in inventory)
+    expected_inventory = tuple((unit, slot) for unit in unit_slots for slot in range(UNIT_ITEM_COUNT))
     if (strict or inventory) and inventory_ids != expected_inventory:
         raise PlannerError("complete observation inventory is not canonical")
     for record in inventory:
         availability = unit_availability.get(record["unit"])
-        if availability is None or (
-            availability == Availability.AVAILABLE
-            and record["availability"] != (
-                Availability.AVAILABLE
-                if record["raw_item"] else Availability.EMPTY
-            )
-        ) or (
-            availability != Availability.AVAILABLE
-            and record["availability"] != availability
-        ):
+        if availability is None or (availability == Availability.AVAILABLE and record["availability"]
+                                    != (Availability.AVAILABLE if record["raw_item"] else Availability.EMPTY)) or (
+                                        availability != Availability.AVAILABLE
+                                        and record["availability"] != availability):
             raise PlannerError("complete observation inventory availability mismatch")
-    inventory_by_slot = {
-        (record["unit"], record["slot"]): record for record in inventory
-    }
+    inventory_by_slot = {(record["unit"], record["slot"]): record for record in inventory}
     for unit in units:
         if unit["availability"] in {
-            Availability.NOT_VISIBLE,
-            Availability.NOT_APPLICABLE,
+                Availability.NOT_VISIBLE,
+                Availability.NOT_APPLICABLE,
         }:
-            if (
-                unit["equipped_slot"] is not None
-                or any((
-                    unit["character"], unit["unit_class"], *unit["position"],
-                    *unit["hp"], unit["state"], unit["inventory_digest"],
-                    unit["status_index"], unit["status_duration"],
-                    unit["rescue_partner"], unit["equipped_item"], unit["level"],
-                    unit["exp"], unit["power"], unit["skill"], unit["speed"],
-                    unit["luck"], unit["defense"], unit["resistance"],
-                    unit["constitution"], unit["movement"], *unit["weapon_ranks"],
-                    unit["deployed"], unit["dead"], unit["moved"], unit["acted"],
-                    unit["rescued"], unit["rescuing"],
-                ))
-            ):
+            if (unit["equipped_slot"] is not None or any((
+                    unit["character"],
+                    unit["unit_class"],
+                    *unit["position"],
+                    *unit["hp"],
+                    unit["state"],
+                    unit["inventory_digest"],
+                    unit["status_index"],
+                    unit["status_duration"],
+                    unit["rescue_partner"],
+                    unit["equipped_item"],
+                    unit["level"],
+                    unit["exp"],
+                    unit["power"],
+                    unit["skill"],
+                    unit["speed"],
+                    unit["luck"],
+                    unit["defense"],
+                    unit["resistance"],
+                    unit["constitution"],
+                    unit["movement"],
+                    *unit["weapon_ranks"],
+                    unit["deployed"],
+                    unit["dead"],
+                    unit["moved"],
+                    unit["acted"],
+                    unit["rescued"],
+                    unit["rescuing"],
+            ))):
                 raise PlannerError("complete observation unavailable unit semantics mismatch")
             continue
-        records = tuple(
-            inventory_by_slot[(unit["slot"], slot)]
-            for slot in range(UNIT_ITEM_COUNT)
-        )
+        records = tuple(inventory_by_slot[(unit["slot"], slot)] for slot in range(UNIT_ITEM_COUNT))
         digest = 2166136261
         for record in records:
             digest = _mix_digest(digest, record["raw_item"])
@@ -2461,59 +2381,32 @@ def _validate_complete_observation(
             int(bool(state & (1 << 5))),
             int(bool(state & (1 << 4))),
         )
-        if (
-            digest != unit["inventory_digest"]
-            or equipped is None and unit["equipped_item"] != 0
-            or equipped is not None
-                and records[equipped]["raw_item"] != unit["equipped_item"]
-            or unit["rescue_partner"] != 0
-                and unit["rescue_partner"] not in unit_availability
-            or tuple(
-                unit[field] for field in
-                ("deployed", "dead", "moved", "acted", "rescued", "rescuing")
-            ) != expected_flags
-            or bool(unit["rescue_partner"])
-                != bool(unit["rescued"] or unit["rescuing"])
-        ):
+        if (digest != unit["inventory_digest"] or equipped is None and unit["equipped_item"] != 0
+                or equipped is not None and records[equipped]["raw_item"] != unit["equipped_item"]
+                or unit["rescue_partner"] != 0 and unit["rescue_partner"] not in unit_availability
+                or tuple(unit[field]
+                         for field in ("deployed", "dead", "moved", "acted", "rescued", "rescuing")) != expected_flags
+                or bool(unit["rescue_partner"]) != bool(unit["rescued"] or unit["rescuing"])):
             raise PlannerError("complete observation unit semantics mismatch")
     actions = observation["actions"]
-    if (
-        len(actions) != observation["total_action_count"]
-        or tuple(action["ordinal"] for action in actions)
-            != tuple(range(len(actions)))
-        or len({_canonical(action["action"]) for action in actions})
-            != len(actions)
-        or len({
-            tuple(action["token"][f"word{index}"] for index in range(4))
-            for action in actions
-        }) != len(actions)
-        or map_size is not None and any(
-            x >= map_size[0] or y >= map_size[1]
-            for record in actions
-            for x, y in (
+    if (len(actions) != observation["total_action_count"] or tuple(action["ordinal"]
+                                                                   for action in actions) != tuple(range(len(actions)))
+            or len({_canonical(action["action"])
+                    for action in actions}) != len(actions)
+            or len({tuple(action["token"][f"word{index}"] for index in range(4))
+                    for action in actions}) != len(actions)
+            or map_size is not None and any(x >= map_size[0] or y >= map_size[1] for record in actions for x, y in (
                 record["action"]["destination"],
                 record["action"]["target_position"],
-            )
-        )
-        or strict and any(
-            action["action"]["kind"] == "STAFF"
-            and next((
-                record["item_id"] for record in inventory
-                if record["unit"] == action["action"]["actor"]
-                and record["slot"] == action["action"]["item_slot"]
-            ), None) not in {0x54, 0x56, 0x58}
-            and tuple(action["action"]["target_position"]) != (0, 0)
-            for action in actions
-        )
-        or (strict or units) and any(
-            unit_availability.get(action["action"]["actor"])
-                != Availability.AVAILABLE
-            or action["action"]["target"] != 0
-                and unit_availability.get(action["action"]["target"])
-                    != Availability.AVAILABLE
-            for action in actions
-        )
-    ):
+            )) or strict and any(action["action"]["kind"] == "STAFF" and next(
+                (record["item_id"] for record in inventory
+                 if record["unit"] == action["action"]["actor"] and record["slot"] == action["action"]["item_slot"]
+                 ), None) not in {0x54, 0x56, 0x58} and tuple(action["action"]["target_position"]) != (0, 0)
+                                 for action in actions)
+            or (strict or units) and any(
+                unit_availability.get(action["action"]["actor"]) != Availability.AVAILABLE or action["action"]["target"]
+                != 0 and unit_availability.get(action["action"]["target"]) != Availability.AVAILABLE
+                for action in actions)):
         raise PlannerError("complete observation actions are not canonical")
 
     campaign = observation["campaign"]
@@ -2528,198 +2421,126 @@ def _validate_complete_observation(
         group_ids = tuple(record["group_id"] for record in groups)
         strategy_ids = tuple(record["strategy_id"] for record in strategies)
         assignment_ids = tuple(
-            (record["source"], record["subject_id"], record["strategy_id"],
-             record["activation_flag"])
-            for record in assignments
-        )
-        if (
-            campaign["chapter"] != observation["chapter"]
-            or campaign["phase_availability"] != Availability.AVAILABLE
-            or len(objective_ids) != len(set(objective_ids))
-            or len(group_ids) != len(set(group_ids))
-            or len(strategy_ids) != len(set(strategy_ids))
-            or len(assignment_ids) != len(set(assignment_ids))
-            or any(
-                record["group_id"] != 0 and record["group_id"] not in group_ids
-                for record in objectives
-            )
-            or any(
-                record["completion_objective_id"] != 0
-                and record["completion_objective_id"] not in objective_ids
-                for record in objectives
-            )
-            or any(len(record["members"]) != len(set(record["members"]))
-                   for record in groups)
-            or any(record["strategy_id"] not in strategy_ids for record in assignments)
-            or any(
-                record["source"] == AssignmentSource.CHAPTER
-                    and record["subject_id"] != campaign["chapter"]
-                or record["source"] == AssignmentSource.GROUP
-                    and record["subject_id"] not in group_ids
-                for record in assignments
-            )
-            or tuple(record["source"] for record in assignments)
-                != tuple(sorted(record["source"] for record in assignments))
-        ):
+            (record["source"], record["subject_id"], record["strategy_id"], record["activation_flag"])
+            for record in assignments)
+        if (campaign["chapter"] != observation["chapter"] or campaign["phase_availability"] != Availability.AVAILABLE
+                or len(objective_ids) != len(set(objective_ids)) or len(group_ids) != len(set(group_ids))
+                or len(strategy_ids) != len(set(strategy_ids)) or len(assignment_ids) != len(set(assignment_ids))
+                or any(record["group_id"] != 0 and record["group_id"] not in group_ids for record in objectives)
+                or any(record["completion_objective_id"] != 0 and record["completion_objective_id"] not in objective_ids
+                       for record in objectives)
+                or any(len(record["members"]) != len(set(record["members"]))
+                       for record in groups) or any(record["strategy_id"] not in strategy_ids for record in assignments)
+                or any(record["source"] == AssignmentSource.CHAPTER and record["subject_id"] != campaign["chapter"]
+                       or record["source"] == AssignmentSource.GROUP and record["subject_id"] not in group_ids
+                       for record in assignments)
+                or tuple(record["source"]
+                         for record in assignments) != tuple(sorted(record["source"] for record in assignments))):
             raise PlannerError("complete observation campaign semantics mismatch")
         for availability, records in (
             (campaign["objective_availability"], (*objectives, *groups)),
             (campaign["strategy_availability"], strategies),
             (campaign["assignment_availability"], assignments),
         ):
-            if (
-                availability == Availability.AVAILABLE and not records
-                or availability != Availability.AVAILABLE and records
-                or any(record["availability"] != Availability.AVAILABLE
-                       for record in records)
-            ):
+            if (availability == Availability.AVAILABLE and not records
+                    or availability != Availability.AVAILABLE and records
+                    or any(record["availability"] != Availability.AVAILABLE for record in records)):
                 raise PlannerError("complete observation campaign availability mismatch")
         current = tuple(record for record in assignments if record["current"])
-        current_strategy = next((
-            record for record in strategies
-            if record["strategy_id"] == campaign["current_strategy_id"]
-        ), None)
+        current_strategy = next(
+            (record for record in strategies if record["strategy_id"] == campaign["current_strategy_id"]), None)
         if campaign["current_strategy_id"] == 0:
-            if (
-                current
-                or campaign["current_assignment_source"] != AssignmentSource.NONE
-                or campaign["current_assignment_subject"] != 0
-                or campaign["current_assignment_availability"]
-                    != Availability.NOT_APPLICABLE
-            ):
+            if (current or campaign["current_assignment_source"] != AssignmentSource.NONE
+                    or campaign["current_assignment_subject"] != 0
+                    or campaign["current_assignment_availability"] != Availability.NOT_APPLICABLE):
                 raise PlannerError("complete observation current assignment mismatch")
-        elif (
-            len(current) != 1
-            or current_strategy is None
-            or campaign["current_assignment_availability"] != Availability.AVAILABLE
-            or current[0]["strategy_id"] != campaign["current_strategy_id"]
-            or current[0]["source"] != campaign["current_assignment_source"]
-            or current[0]["subject_id"] != campaign["current_assignment_subject"]
-            or current_strategy["objective_capabilities"]
-                != campaign["current_objective_capabilities"]
-            or current_strategy["action_capabilities"]
-                != campaign["current_action_capabilities"]
-            or current_strategy["flags"] != campaign["current_strategy_flags"]
-        ):
+        elif (len(current) != 1 or current_strategy is None
+              or campaign["current_assignment_availability"] != Availability.AVAILABLE
+              or current[0]["strategy_id"] != campaign["current_strategy_id"]
+              or current[0]["source"] != campaign["current_assignment_source"]
+              or current[0]["subject_id"] != campaign["current_assignment_subject"]
+              or current_strategy["objective_capabilities"] != campaign["current_objective_capabilities"]
+              or current_strategy["action_capabilities"] != campaign["current_action_capabilities"]
+              or current_strategy["flags"] != campaign["current_strategy_flags"]):
             raise PlannerError("complete observation current assignment mismatch")
 
     resources = observation["resources"]
     resource_ids = tuple((record["kind"], record["slot"]) for record in resources)
     expected_resources = (
         (ValueKind.GOLD, None),
-        *((ValueKind.CONVOY_ITEM, slot)
-          for slot in range(CONVOY_ITEM_COUNT)),
-        *((ValueKind.AUTOPLAY_TELEMETRY, slot)
-          for slot in range(AUTOPLAY_TELEMETRY_WORDS)),
+        *((ValueKind.CONVOY_ITEM, slot) for slot in range(CONVOY_ITEM_COUNT)),
+        *((ValueKind.AUTOPLAY_TELEMETRY, slot) for slot in range(AUTOPLAY_TELEMETRY_WORDS)),
     )
     if (strict or resources) and resource_ids != expected_resources:
         raise PlannerError("complete observation resources are not canonical")
-    if resources and (
-        resources[0]["availability"] != Availability.AVAILABLE
-        or any(
-            record["availability"] == Availability.AVAILABLE
-                and record["value"] == 0
-            or record["availability"] == Availability.EMPTY
-                and record["value"] != 0
-            or record["availability"] not in {
+    if resources and (resources[0]["availability"] != Availability.AVAILABLE or any(
+            record["availability"] == Availability.AVAILABLE and record["value"] == 0
+            or record["availability"] == Availability.EMPTY and record["value"] != 0 or record["availability"] not in {
                 Availability.AVAILABLE,
                 Availability.EMPTY,
                 Availability.UNINITIALIZED,
             }
-            for record in resources[1 : 1 + CONVOY_ITEM_COUNT]
-        )
-        or any(
-            record["availability"] != Availability.AVAILABLE
-            for record in resources[1 + CONVOY_ITEM_COUNT :]
-        )
-    ):
+            for record in resources[1:1 + CONVOY_ITEM_COUNT]) or any(record["availability"] != Availability.AVAILABLE
+                                                                     for record in resources[1 + CONVOY_ITEM_COUNT:])):
         raise PlannerError("complete observation resource availability mismatch")
 
     flags = observation["flags"]
     flag_ids = tuple((record["kind"], record["flag_id"]) for record in flags)
     expected_flags = []
     for kind in (ValueKind.PERMANENT_FLAG, ValueKind.CHAPTER_FLAG):
-        expected_flags.extend(
-            (kind, flag_id)
-            for flag_id in range(sum(record["kind"] == kind for record in flags))
-        )
+        expected_flags.extend((kind, flag_id) for flag_id in range(sum(record["kind"] == kind for record in flags)))
     if flag_ids != tuple(expected_flags):
         raise PlannerError("complete observation flags are not canonical")
 
     if not page_values:
         return
-    page_order = tuple(
-        dict.fromkeys(PageKind(page["page_kind"]) for page in page_values)
-    )
-    expected_order = (
-        _PAGE_ORDER
-        if strict
-        else tuple(kind for kind in _PAGE_ORDER if kind in page_order)
-    )
-    if (
-        len(page_values) != observation["page_count"]
-        or tuple(page["page_index"] for page in page_values)
-            != tuple(range(len(page_values)))
-        or page_order != expected_order
-        or tuple(_PAGE_ORDER.index(PageKind(page["page_kind"])) for page in page_values)
-            != tuple(sorted(
-                _PAGE_ORDER.index(PageKind(page["page_kind"]))
-                for page in page_values
-            ))
-        or PageKind(page_values[0]["page_kind"]) is not PageKind.SUMMARY
-        or page_values[0]["campaign"] != campaign
-        or any(page["campaign"] is not None for page in page_values[1:])
-    ):
+    page_order = tuple(dict.fromkeys(PageKind(page["page_kind"]) for page in page_values))
+    expected_order = (_PAGE_ORDER if strict else tuple(kind for kind in _PAGE_ORDER if kind in page_order))
+    if (len(page_values) != observation["page_count"]
+            or tuple(page["page_index"]
+                     for page in page_values) != tuple(range(len(page_values))) or page_order != expected_order
+            or tuple(_PAGE_ORDER.index(PageKind(page["page_kind"])) for page in page_values) != tuple(
+                sorted(_PAGE_ORDER.index(PageKind(page["page_kind"]))
+                       for page in page_values)) or PageKind(page_values[0]["page_kind"]) is not PageKind.SUMMARY
+            or page_values[0]["campaign"] != campaign or any(page["campaign"] is not None for page in page_values[1:])):
         raise PlannerError("complete observation page sequence is not canonical")
     common = (
-        "run_id", "observation_id", "chapter", "chapter_turn", "page_count",
-        "total_action_count", "state", "rejection", "rng_state", "rng_lcg",
-        "rng_consumption", "actual_rom_identity", "actual_config_identity",
-        "actual_scenario_identity", "actual_seed_identity",
+        "run_id",
+        "observation_id",
+        "chapter",
+        "chapter_turn",
+        "page_count",
+        "total_action_count",
+        "state",
+        "rejection",
+        "rng_state",
+        "rng_lcg",
+        "rng_consumption",
+        "actual_rom_identity",
+        "actual_config_identity",
+        "actual_scenario_identity",
+        "actual_seed_identity",
     )
-    if any(
-        any(page[field] != observation[field] for field in common)
-        for page in page_values
-    ):
+    if any(any(page[field] != observation[field] for field in common) for page in page_values):
         raise PlannerError("complete observation page state mismatch")
     for kind, name in _PAGE_COLLECTION.items():
-        kind_pages = tuple(
-            page for page in page_values
-            if PageKind(page["page_kind"]) is kind
-        )
+        kind_pages = tuple(page for page in page_values if PageKind(page["page_kind"]) is kind)
         if not kind_pages and not strict:
             continue
         total = len(observation[name])
         capacity = _PAGE_RECORD_CAPACITIES[kind]
-        expected_counts = (
-            (0,) if total == 0
-            else tuple(
-                min(capacity, total - start)
-                for start in range(0, total, capacity)
-            )
-        )
-        if (
-            not kind_pages
-            or kind is PageKind.SUMMARY and len(kind_pages) != 1
-            or tuple(page["record_count"] for page in kind_pages)
-                != expected_counts
-            or any(page["total_record_count"] != total for page in kind_pages)
-            or any(page["record_count"] != len(page[name]) for page in kind_pages)
-            or tuple(page["record_start"] for page in kind_pages)
-                != tuple(
+        expected_counts = ((0, ) if total == 0 else tuple(
+            min(capacity, total - start) for start in range(0, total, capacity)))
+        if (not kind_pages or kind is PageKind.SUMMARY and len(kind_pages) != 1
+                or tuple(page["record_count"] for page in kind_pages) != expected_counts
+                or any(page["total_record_count"] != total
+                       for page in kind_pages) or any(page["record_count"] != len(page[name]) for page in kind_pages)
+                or tuple(page["record_start"] for page in kind_pages) != tuple(
                     sum(previous["record_count"] for previous in kind_pages[:index])
-                    for index in range(len(kind_pages))
-                )
-            or sum(page["record_count"] for page in kind_pages) != total
-            or tuple(
-                record
-                for page in kind_pages
-                for record in page[name]
-            ) != tuple(observation[name])
-        ):
-            raise PlannerError(
-                f"complete observation {name} pages are not canonical"
-            )
+                    for index in range(len(kind_pages))) or sum(page["record_count"] for page in kind_pages) != total
+                or tuple(record for page in kind_pages for record in page[name]) != tuple(observation[name])):
+            raise PlannerError(f"complete observation {name} pages are not canonical")
+
 
 def _decode_optional_item_slot(value: int) -> int | None:
     if value == 0xFF:
@@ -2728,10 +2549,12 @@ def _decode_optional_item_slot(value: int) -> int | None:
         return value
     raise PlannerError("invalid optional item-slot sentinel")
 
+
 def _decode_item(raw_item: int) -> tuple[int, int]:
     if not 0 <= raw_item <= 0xFFFF:
         raise PlannerError("item state exceeds fixed u16 representation")
     return raw_item & 0xFF, (raw_item >> 8) & 0xFF
+
 
 def _decode_availability(value: int, context: str) -> Availability:
     try:
@@ -2739,18 +2562,19 @@ def _decode_availability(value: int, context: str) -> Availability:
     except KeyError as error:
         raise PlannerError(f"unknown {context} availability") from error
 
+
 def _decode_assignment_source(value: int) -> AssignmentSource:
     try:
         return AssignmentSource(value)
     except ValueError as error:
         raise PlannerError("unknown campaign assignment source") from error
 
+
 def parse_transport_observation(words: Iterable[int]) -> Observation:
     values = tuple(words)
     if len(values) != _OBSERVATION_WORD_COUNT:
         raise PlannerError("malformed fixed-width observation")
-    if any(type(value) is not int or not 0 <= value <= 0xFFFFFFFF
-           for value in values):
+    if any(type(value) is not int or not 0 <= value <= 0xFFFFFFFF for value in values):
         raise PlannerError("observation word is outside fixed u32 range")
     if not any(values):
         return Observation(
@@ -2765,10 +2589,7 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
         raise PlannerError("unexpected planner protocol identity")
     if values[2] > PAGE_MAX_BYTES or values[2] != _OBSERVATION_WORD_COUNT * 4:
         raise PlannerError("unexpected planner observation size")
-    if (
-        not 1 <= values[7] <= MAX_PAGE_COUNT
-        or values[6] >= values[7]
-    ):
+    if (not 1 <= values[7] <= MAX_PAGE_COUNT or values[6] >= values[7]):
         raise PlannerError("planner page identity is outside v2 bounds")
     try:
         page_kind = _PAGE_KIND_BY_VALUE[values[8]]
@@ -2778,21 +2599,10 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
     record_count = values[10]
     total_records = values[11]
     total_actions = values[12]
-    if (
-        record_count > _PAGE_RECORD_CAPACITIES[page_kind]
-        or total_records > _PAGE_TOTAL_LIMITS[page_kind]
-        or record_start + record_count > total_records
-        or total_actions > MAX_ACTIONS
-        or (
-            page_kind is not PageKind.CONTROL
-            and record_count == 0
-            and not (
-                page_kind is PageKind.FLAGS
-                and record_start == 0
-                and total_records == 0
-            )
-        )
-    ):
+    if (record_count > _PAGE_RECORD_CAPACITIES[page_kind] or total_records > _PAGE_TOTAL_LIMITS[page_kind]
+            or record_start + record_count > total_records or total_actions > MAX_ACTIONS
+            or (page_kind is not PageKind.CONTROL and record_count == 0
+                and not (page_kind is PageKind.FLAGS and record_start == 0 and total_records == 0))):
         raise PlannerError("planner page bounds are inconsistent")
 
     payload = values[_OBSERVATION_HEADER_WORDS:]
@@ -2828,82 +2638,96 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
                     source,
                     bound,
                     availability,
-                    payload[index * 2 + 1]
-                    if availability is Availability.AVAILABLE
-                    else None,
-                )
-            )
+                    payload[index * 2 + 1] if availability is Availability.AVAILABLE else None,
+                ))
         availability_words = payload[16]
         counts = payload[18]
         objective_count = counts & 0xFF
         group_count = (counts >> 8) & 0xFF
         strategy_count = (counts >> 16) & 0xFF
         assignment_count = counts >> 24
-        if (
-            objective_count > 8 or group_count > 8
-            or strategy_count > 8 or assignment_count > 17
-        ):
+        if (objective_count > 8 or group_count > 8 or strategy_count > 8 or assignment_count > 17):
             raise PlannerError("campaign summary exceeds fixed capacities")
         objectives = []
         for index in range(objective_count):
             start = 24 + index * 8
-            record = payload[start : start + 8]
-            objectives.append(ObjectiveRecord(
-                record[0], record[1], record[2],
-                record[3] & 0xFFFF, record[3] >> 16,
-                record[4] & 0xFFFF, record[4] >> 16,
-                record[5] & 0xFFFF, (record[5] >> 16) & 0xFF,
-                record[5] >> 24,
-                (record[6] & 0xFF, (record[6] >> 8) & 0xFF,
-                 (record[6] >> 16) & 0xFF, record[6] >> 24),
-                record[7] & 0xFF, record[7] >> 16,
-                _decode_availability((record[7] >> 8) & 0xFF, "objective"),
-            ))
+            record = payload[start:start + 8]
+            objectives.append(
+                ObjectiveRecord(
+                    record[0],
+                    record[1],
+                    record[2],
+                    record[3] & 0xFFFF,
+                    record[3] >> 16,
+                    record[4] & 0xFFFF,
+                    record[4] >> 16,
+                    record[5] & 0xFFFF,
+                    (record[5] >> 16) & 0xFF,
+                    record[5] >> 24,
+                    (record[6] & 0xFF, (record[6] >> 8) & 0xFF, (record[6] >> 16) & 0xFF, record[6] >> 24),
+                    record[7] & 0xFF,
+                    record[7] >> 16,
+                    _decode_availability((record[7] >> 8) & 0xFF, "objective"),
+                ))
         groups = []
         for index in range(group_count):
             start = 88 + index * 6
-            record = payload[start : start + 6]
+            record = payload[start:start + 6]
             member_count = record[1] & 0xFF
             if member_count > 16:
                 raise PlannerError("campaign group exceeds fixed capacity")
-            members = tuple(
-                (record[2 + member // 4] >> (member % 4 * 8)) & 0xFF
-                for member in range(member_count)
-            )
+            members = tuple((record[2 + member // 4] >> (member % 4 * 8)) & 0xFF for member in range(member_count))
             groups.append(GroupRecord(
-                record[0], members,
+                record[0],
+                members,
                 _decode_availability(record[1] >> 24, "objective group"),
             ))
         strategies = []
         for index in range(strategy_count):
             start = 136 + index * 4
-            record = payload[start : start + 4]
-            strategies.append(StrategyRecord(
-                record[0], record[1], record[2], record[3] & 0xFF,
-                _decode_availability(record[3] >> 24, "strategy"),
-            ))
+            record = payload[start:start + 4]
+            strategies.append(
+                StrategyRecord(
+                    record[0],
+                    record[1],
+                    record[2],
+                    record[3] & 0xFF,
+                    _decode_availability(record[3] >> 24, "strategy"),
+                ))
         assignments = []
         for index in range(assignment_count):
             start = 168 + index * 3
-            identity, subject, strategy = payload[start : start + 3]
-            assignments.append(AssignmentRecord(
-                _decode_assignment_source((identity >> 16) & 0xF),
-                subject, strategy, identity & 0xFFFF,
-                (identity >> 20) & 1, (identity >> 21) & 1,
-                _decode_availability(identity >> 24, "assignment"),
-            ))
+            identity, subject, strategy = payload[start:start + 3]
+            assignments.append(
+                AssignmentRecord(
+                    _decode_assignment_source((identity >> 16) & 0xF),
+                    subject,
+                    strategy,
+                    identity & 0xFFFF,
+                    (identity >> 20) & 1,
+                    (identity >> 21) & 1,
+                    _decode_availability(identity >> 24, "assignment"),
+                ))
         current = payload[22]
         campaign = CampaignRecord(
-            payload[17] & 0xFF, (payload[17] >> 8) & 0xFF,
+            payload[17] & 0xFF,
+            (payload[17] >> 8) & 0xFF,
             (payload[17] >> 16) & 0xFF,
             _decode_availability(availability_words & 0xFF, "phase"),
             _decode_availability((availability_words >> 8) & 0xFF, "objective"),
             _decode_availability((availability_words >> 16) & 0xFF, "strategy"),
             _decode_availability(availability_words >> 24, "assignment"),
-            payload[19], payload[20], payload[21], current & 0xFF,
-            _decode_assignment_source((current >> 8) & 0xFF), payload[23],
+            payload[19],
+            payload[20],
+            payload[21],
+            current & 0xFF,
+            _decode_assignment_source((current >> 8) & 0xFF),
+            payload[23],
             _decode_availability((current >> 16) & 0xFF, "current assignment"),
-            tuple(objectives), tuple(groups), tuple(strategies), tuple(assignments),
+            tuple(objectives),
+            tuple(groups),
+            tuple(strategies),
+            tuple(assignments),
         )
     elif page_kind is PageKind.MAP:
         if record_count > len(payload):
@@ -2921,16 +2745,23 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
                     (encoded >> 12) & 0xFF,
                     (encoded >> 20) & 0xFF,
                     availability,
-                )
-            )
+                ))
     elif page_kind is PageKind.UNITS:
         if record_count * 10 > len(payload):
             raise PlannerError("unit page exceeds fixed payload")
         for index in range(record_count):
             (
-                identity, position, state, inventory, status, rescue,
-                stats0, stats1, ranks0, ranks1,
-            ) = payload[index * 10 : index * 10 + 10]
+                identity,
+                position,
+                state,
+                inventory,
+                status,
+                rescue,
+                stats0,
+                stats1,
+                ranks0,
+                ranks1,
+            ) = payload[index * 10:index * 10 + 10]
             availability_value = identity >> 24
             try:
                 availability = _AVAILABILITY_BY_VALUE[availability_value]
@@ -2967,13 +2798,10 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
                     resistance=(stats1 >> 8) & 0xFF,
                     constitution=(stats1 >> 16) & 0xFF,
                     movement=stats1 >> 24,
-                    weapon_ranks=tuple(
-                        (ranks0 >> (rank * 8)) & 0xFF
-                        if rank < 4 else (ranks1 >> ((rank - 4) * 8)) & 0xFF
-                        for rank in range(8)
-                    ),
-                )
-            )
+                    weapon_ranks=tuple((ranks0 >> (rank * 8))
+                                       & 0xFF if rank < 4 else (ranks1 >> ((rank - 4) * 8)) & 0xFF
+                                       for rank in range(8)),
+                ))
     elif page_kind is PageKind.ACTIONS:
         if record_count * 10 > len(payload):
             raise PlannerError("action page exceeds fixed payload")
@@ -2989,7 +2817,7 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
                 token2,
                 token3,
                 action_id,
-            ) = payload[index * 10 : index * 10 + 10]
+            ) = payload[index * 10:index * 10 + 10]
             if kind not in _ACTION_KIND_BY_VALUE:
                 raise PlannerError("unknown planner action kind")
             if target >> 24 or item_slot >> 16:
@@ -3005,9 +2833,7 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
                     (target >> 16) & 0xFF,
                 ],
                 "action_id": action_id,
-                "target_item_slot": _decode_optional_item_slot(
-                    (item_slot >> 8) & 0xFF
-                ),
+                "target_item_slot": _decode_optional_item_slot((item_slot >> 8) & 0xFF),
             }
             token_values = {
                 "word0": token0,
@@ -3019,18 +2845,16 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
             _validate_token_schema(token_values, "live action token")
             action_values["destination"] = tuple(action_values["destination"])
             action_values["target_position"] = tuple(action_values["target_position"])
-            actions.append(
-                ActionRecord(
-                    record_start + index,
-                    Action(**action_values),
-                    OpaqueToken(**token_values),
-                )
-            )
+            actions.append(ActionRecord(
+                record_start + index,
+                Action(**action_values),
+                OpaqueToken(**token_values),
+            ))
     elif page_kind is PageKind.INVENTORY:
         if record_count * 2 > len(payload):
             raise PlannerError("inventory page exceeds fixed payload")
         for index in range(record_count):
-            identity, raw_item = payload[index * 2 : index * 2 + 2]
+            identity, raw_item = payload[index * 2:index * 2 + 2]
             if (identity & 0xFF) != ValueKind.UNIT_ITEM.value:
                 raise PlannerError("invalid inventory value kind")
             availability_value = identity >> 24
@@ -3042,26 +2866,22 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
             unit = value_index & 0xFF
             slot = value_index >> 8
             if slot >= UNIT_ITEM_COUNT:
-                raise PlannerError(
-                    "inventory slot exceeds fixed unit capacity: "
-                    f"identity={identity:#010x}, slot={slot}"
-                )
+                raise PlannerError("inventory slot exceeds fixed unit capacity: "
+                                   f"identity={identity:#010x}, slot={slot}")
             item_id, uses = _decode_item(raw_item)
-            inventory_records.append(
-                InventoryRecord(
-                    unit,
-                    slot,
-                    item_id,
-                    uses,
-                    raw_item,
-                    availability,
-                )
-            )
+            inventory_records.append(InventoryRecord(
+                unit,
+                slot,
+                item_id,
+                uses,
+                raw_item,
+                availability,
+            ))
     elif page_kind is PageKind.RESOURCES:
         if record_count * 2 > len(payload):
             raise PlannerError("resource page exceeds fixed payload")
         for index in range(record_count):
-            identity, value = payload[index * 2 : index * 2 + 2]
+            identity, value = payload[index * 2:index * 2 + 2]
             availability_value = identity >> 24
             try:
                 availability = _AVAILABILITY_BY_VALUE[availability_value]
@@ -3075,48 +2895,42 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
             if kind is ValueKind.GOLD:
                 if value_index != 0:
                     raise PlannerError("gold resource index must be zero")
-                resource_records.append(
-                    ResourceRecord(
-                        kind,
-                        None,
-                        value,
-                        None,
-                        None,
-                        availability,
-                    )
-                )
+                resource_records.append(ResourceRecord(
+                    kind,
+                    None,
+                    value,
+                    None,
+                    None,
+                    availability,
+                ))
             elif kind is ValueKind.CONVOY_ITEM:
                 if value_index >= CONVOY_ITEM_COUNT:
                     raise PlannerError("convoy slot exceeds fixed capacity")
                 item_id, uses = _decode_item(value)
-                resource_records.append(
-                    ResourceRecord(
-                        kind,
-                        value_index,
-                        value,
-                        item_id,
-                        uses,
-                        availability,
-                    )
-                )
+                resource_records.append(ResourceRecord(
+                    kind,
+                    value_index,
+                    value,
+                    item_id,
+                    uses,
+                    availability,
+                ))
             elif kind is ValueKind.AUTOPLAY_TELEMETRY:
-                resource_records.append(
-                    ResourceRecord(
-                        kind,
-                        value_index,
-                        value,
-                        None,
-                        None,
-                        availability,
-                    )
-                )
+                resource_records.append(ResourceRecord(
+                    kind,
+                    value_index,
+                    value,
+                    None,
+                    None,
+                    availability,
+                ))
             else:
                 raise PlannerError("invalid resource value kind")
     elif page_kind is PageKind.FLAGS:
         if record_count * 2 > len(payload):
             raise PlannerError("flag page exceeds fixed payload")
         for index in range(record_count):
-            identity, value = payload[index * 2 : index * 2 + 2]
+            identity, value = payload[index * 2:index * 2 + 2]
             availability_value = identity >> 24
             try:
                 availability = _AVAILABILITY_BY_VALUE[availability_value]
@@ -3127,8 +2941,8 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
             except ValueError as error:
                 raise PlannerError("unknown flag value kind") from error
             if kind not in {
-                ValueKind.PERMANENT_FLAG,
-                ValueKind.CHAPTER_FLAG,
+                    ValueKind.PERMANENT_FLAG,
+                    ValueKind.CHAPTER_FLAG,
             }:
                 raise PlannerError("invalid flag value kind")
             if availability is Availability.AVAILABLE and value not in {0, 1}:
@@ -3137,12 +2951,9 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
                 FlagRecord(
                     kind,
                     (identity >> 8) & 0xFFFF,
-                    value
-                    if availability is Availability.AVAILABLE
-                    else None,
+                    value if availability is Availability.AVAILABLE else None,
                     availability,
-                )
-            )
+                ))
     return Observation(
         values[3],
         values[4],
@@ -3174,7 +2985,11 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
         campaign=campaign,
     )
 
-def _assemble_observation_pages(pages: Iterable[Observation]) -> Observation:
+
+def _assemble_observation_pages(
+    pages: Iterable[Observation],
+    validation_mode: ValidationMode = ValidationMode.SYNTHETIC,
+) -> Observation:
     page_values = tuple(pages)
     if not page_values:
         raise PlannerError("planner observation has no pages")
@@ -3192,37 +3007,33 @@ def _assemble_observation_pages(pages: Iterable[Observation]) -> Observation:
     _validate_complete_observation(
         asdict(complete),
         (asdict(page) for page in page_values),
+        validation_mode,
     )
     return complete
 
+
 def collect_observation_pages(transport: object, first: Observation) -> Observation:
-    if (
-        not 1 <= first.page_count <= MAX_PAGE_COUNT
-        or first.page_index != 0
-        or first.page_count * PAGE_MAX_BYTES > MAX_SEARCH_BYTES
-    ):
+    if (not 1 <= first.page_count <= MAX_PAGE_COUNT or first.page_index != 0
+            or first.page_count * PAGE_MAX_BYTES > MAX_SEARCH_BYTES):
         raise PlannerError("planner page traversal exceeds host bounds")
     pages = [first]
     for page_index in range(1, first.page_count):
-        page = transport.exchange(
-            Command(
-                CommandKind.PAGE,
-                first.run_id,
-                first.observation_id,
-                page_index=page_index,
-            )
-        )
+        page = transport.exchange(Command(
+            CommandKind.PAGE,
+            first.run_id,
+            first.observation_id,
+            page_index=page_index,
+        ))
         if not isinstance(page, Observation):
             raise PlannerError("PAGE did not return an observation")
-        if (
-            page.run_id != first.run_id
-            or page.observation_id != first.observation_id
-            or page.page_index != page_index
-            or page.page_count != first.page_count
-        ):
+        if (page.run_id != first.run_id or page.observation_id != first.observation_id or page.page_index != page_index
+                or page.page_count != first.page_count):
             raise PlannerError(Rejection.STALE_OBSERVATION.value)
         pages.append(page)
-    complete = _assemble_observation_pages(pages)
+    validation_mode = getattr(transport, "validation_mode", ValidationMode.SYNTHETIC)
+    if not isinstance(validation_mode, ValidationMode):
+        raise PlannerError("invalid trusted transport validation mode")
+    complete = _assemble_observation_pages(pages, validation_mode)
     record_complete = getattr(
         transport,
         "record_complete_observation",
@@ -3232,17 +3043,25 @@ def collect_observation_pages(transport: object, first: Observation) -> Observat
         record_complete(complete)
     return complete
 
+
 def replay_transcript_on_clean_transport(
     data: bytes,
     transport_factory: Callable[[], object],
+    validation_mode: ValidationMode = ValidationMode.PRODUCTION,
 ) -> bytes:
-    expected = PlannerTranscript.import_bytes(data)
+    expected = PlannerTranscript.import_bytes(data, validation_mode)
     transport = transport_factory()
     pages: dict[tuple[int, int], dict[int, Observation]] = {}
 
     class CapturedPageTransport:
-        def __init__(self, captured: dict[int, Observation]) -> None:
+
+        def __init__(
+            self,
+            captured: dict[int, Observation],
+            mode: ValidationMode,
+        ) -> None:
             self.captured = captured
+            self.validation_mode = mode
 
         def exchange(self, command: Command) -> Observation:
             return self.captured[command.page_index]
@@ -3256,25 +3075,31 @@ def replay_transcript_on_clean_transport(
                     command = event["command"]
                     kind = command["kind"]
                     if kind == CommandKind.START.value:
-                        response = transport.start(
-                            scenario_identity=command["expected_identities"][2],
-                        )
+                        response = transport.start(scenario_identity=command["expected_identities"][2], )
                     elif kind == CommandKind.PAGE.value:
-                        response = transport.exchange(Command(
-                            CommandKind.PAGE, command["run_id"],
-                            command["observation_id"], page_index=command["page_index"],
-                        ))
+                        response = transport.exchange(
+                            Command(
+                                CommandKind.PAGE,
+                                command["run_id"],
+                                command["observation_id"],
+                                page_index=command["page_index"],
+                            ))
                     elif kind == CommandKind.COMMIT.value:
-                        response = transport.exchange(Command(
-                            CommandKind.COMMIT, command["run_id"],
-                            command["observation_id"], command["action_ordinal"],
-                            OpaqueToken(**command["token"]),
-                        ))
+                        response = transport.exchange(
+                            Command(
+                                CommandKind.COMMIT,
+                                command["run_id"],
+                                command["observation_id"],
+                                command["action_ordinal"],
+                                OpaqueToken(**command["token"]),
+                            ))
                     elif kind == CommandKind.CANCEL.value:
-                        response = transport.exchange(Command(
-                            CommandKind.CANCEL, command["run_id"],
-                            command["observation_id"],
-                        ))
+                        response = transport.exchange(
+                            Command(
+                                CommandKind.CANCEL,
+                                command["run_id"],
+                                command["observation_id"],
+                            ))
                     else:
                         raise PlannerError("transcript contains an unsupported command")
                     if isinstance(response, Observation):
@@ -3285,18 +3110,14 @@ def replay_transcript_on_clean_transport(
                     key = (identity[0], identity[1])
                     captured = pages.pop(key, {})
                     if set(captured) != set(range(identity[2])):
-                        raise PlannerError(
-                            "clean replay did not capture every observation page"
-                        )
+                        raise PlannerError("clean replay did not capture every observation page")
                     complete = collect_observation_pages(
-                        CapturedPageTransport(captured), captured[0],
+                        CapturedPageTransport(captured, validation_mode),
+                        captured[0],
                     )
                     transport.record_complete_observation(complete)
         except PlannerTransportFailure as error:
-            if (
-                expected.events[-1]["event"] != "transport_error"
-                or transport.transcript.export() != data
-            ):
+            if (expected.events[-1]["event"] != "transport_error" or transport.transcript.export() != data):
                 raise PlannerError("clean transport error replay mismatch") from error
             return data
         actual = transport.transcript.export()
@@ -3308,21 +3129,19 @@ def replay_transcript_on_clean_transport(
         if callable(close):
             close()
 
+
 def _consume_semantic_observation(observation: Observation) -> str:
-    if (
-        len(observation.map_cells) > MAX_MAP_CELLS
-        or len(observation.units) > MAX_UNITS
-        or len(observation.inventory) > MAX_UNITS * UNIT_ITEM_COUNT
-        or len(observation.resources)
-            > 1 + CONVOY_ITEM_COUNT + AUTOPLAY_TELEMETRY_WORDS
-        or len(observation.flags) > 2 * 256 * 8
-        or len(observation.actions) > MAX_ACTIONS
-    ):
+    if (len(observation.map_cells) > MAX_MAP_CELLS or len(observation.units) > MAX_UNITS
+            or len(observation.inventory) > MAX_UNITS * UNIT_ITEM_COUNT
+            or len(observation.resources) > 1 + CONVOY_ITEM_COUNT + AUTOPLAY_TELEMETRY_WORDS
+            or len(observation.flags) > 2 * 256 * 8 or len(observation.actions) > MAX_ACTIONS):
         raise PlannerError(Rejection.RESOURCE_LIMIT.value)
     _validate_complete_observation(asdict(observation))
     return _digest(_observation_semantics(observation))
 
+
 class ScriptedPlanner:
+
     def __init__(self) -> None:
         self.last_semantic_digest: str | None = None
 
@@ -3333,7 +3152,9 @@ class ScriptedPlanner:
                 return record
         raise PlannerError(Rejection.CAPABILITY_UNAVAILABLE.value)
 
+
 class BoundedSearchPlanner:
+
     def __init__(self, max_nodes: int = 32) -> None:
         self.max_nodes = max_nodes
         self.last_semantic_digest: str | None = None
@@ -3342,7 +3163,7 @@ class BoundedSearchPlanner:
         self.last_semantic_digest = _consume_semantic_observation(observation)
         if not 1 <= self.max_nodes <= MAX_ACTIONS:
             raise PlannerError(Rejection.RESOURCE_LIMIT.value)
-        candidates = observation.actions[: self.max_nodes]
+        candidates = observation.actions[:self.max_nodes]
         if not candidates:
             raise PlannerError(Rejection.CAPABILITY_UNAVAILABLE.value)
         if len(_canonical([asdict(candidate) for candidate in candidates])) > MAX_SEARCH_BYTES:
@@ -3355,6 +3176,7 @@ class BoundedSearchPlanner:
                 record.ordinal,
             ),
         )
+
 
 def run_two_chapter_replay(
     planner: ScriptedPlanner | BoundedSearchPlanner,
@@ -3373,19 +3195,38 @@ def run_two_chapter_replay(
     ))
     first_choice = planner.choose(collect_observation_pages(bridge, first))
     bridge.commit(Command(
-        CommandKind.COMMIT, run_id, first.observation_id,
-        first_choice.ordinal, first_choice.token,
+        CommandKind.COMMIT,
+        run_id,
+        first.observation_id,
+        first_choice.ordinal,
+        first_choice.token,
     ))
     semantic_state = {
         "accepted_token": asdict(first_choice.token),
-        "casualties": {"blue": 0, "green": 0, "red": 0},
-        "chapter": 2, "chapter_turn": 1,
-        "flags": {"objective_complete": False, "village_saved": True},
-        "inventory": ("fixture-key",),
-        "objectives": {"kind": "seize", "progress": 1},
-        "promotions": (), "recruitment": ("unit-1",),
-        "resources": {"gold": 1000}, "roster": ("unit-1", "unit-2"),
-        "rng": (1, 2, 3), "trace_digest": bridge.trace_digest(),
+        "casualties": {
+            "blue": 0,
+            "green": 0,
+            "red": 0
+        },
+        "chapter": 2,
+        "chapter_turn": 1,
+        "flags": {
+            "objective_complete": False,
+            "village_saved": True
+        },
+        "inventory": ("fixture-key", ),
+        "objectives": {
+            "kind": "seize",
+            "progress": 1
+        },
+        "promotions": (),
+        "recruitment": ("unit-1", ),
+        "resources": {
+            "gold": 1000
+        },
+        "roster": ("unit-1", "unit-2"),
+        "rng": (1, 2, 3),
+        "trace_digest": bridge.trace_digest(),
     }
     checkpoint = {
         **semantic_state,
@@ -3393,16 +3234,21 @@ def run_two_chapter_replay(
     }
     second = bridge.observe(2, (
         Field("chapter", "PlaySt.chapterIndex", 0xFF, Availability.AVAILABLE, 2),
-        Field("campaign_checkpoint", "normal_chapter_transition", 1,
-              Availability.AVAILABLE, checkpoint),
-    ), (Action("MOVE_WAIT", 1, (0, 0)),))
+        Field("campaign_checkpoint", "normal_chapter_transition", 1, Availability.AVAILABLE, checkpoint),
+    ), (Action("MOVE_WAIT", 1, (0, 0)), ))
     second_choice = planner.choose(collect_observation_pages(bridge, second))
-    bridge.commit(Command(
-        CommandKind.COMMIT, run_id, second.observation_id,
-        second_choice.ordinal, second_choice.token,
-    ))
+    bridge.commit(
+        Command(
+            CommandKind.COMMIT,
+            run_id,
+            second.observation_id,
+            second_choice.ordinal,
+            second_choice.token,
+        ))
     return {
-        "campaign_checkpoint": checkpoint, "run_id": run_id,
-        "terminal": "success", "trace": bridge.trace,
+        "campaign_checkpoint": checkpoint,
+        "run_id": run_id,
+        "terminal": "success",
+        "trace": bridge.trace,
         "trace_digest": bridge.trace_digest(),
     }

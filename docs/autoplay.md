@@ -1065,6 +1065,17 @@ chapter-local identities may advance. Deep replay requires equivalent
 observations, commands, settlements, and terminal state; truncation,
 reordering, or field tampering fails. The bounded-search reference accepts at
 most 512 nodes and enforces the 64 MiB host-search ceiling.
+Production strictness is trusted API context, never transcript data:
+`import_production_bytes` and clean live replay select `PRODUCTION`, while
+bounded host fixtures must explicitly select `SYNTHETIC`. Restricted libmGBA
+transport likewise selects production validation before either planner runs.
+Production mode requires nonzero ROM/configuration/scenario/seed provenance
+and the complete field, map, campaign, coordinate, page, and record contract
+even when a re-chained transcript zeroes its published identities. Validation
+mode is not serialized, and an attempted mode field is an unknown schema key.
+The original single-argument `import_bytes` call remains positionally
+compatible and now defaults safely to production validation; fixtures use the
+explicit `import_synthetic_bytes` entrypoint.
 Transcript JSON has an explicit maximum structural depth of 64 containers.
 An iterative byte preflight runs before decoding and an iterative object
 validator runs before canonicalization. Excess depth plus specifically
@@ -1259,9 +1270,10 @@ their real `__floating_end` plus EWRAM/IWRAM occupancy. The current complete
 linked delta is 11,104/12,288 ROM bytes (1,184 headroom), 1,172/4,096 EWRAM
 bytes (2,924 headroom), and zero IWRAM. This naturally includes every planner
 hook, including `cp_decide`, targeting/item/menu/action/map/lifecycle/RNG
-owners omitted by the old object subtotal. Each representative-hook +1-byte
-over-limit mutation fails. The debug-only planner translation unit uses `-Os`
-to retain the frozen cap without changing behavior or release/archival code.
+owners omitted by the old object subtotal. Both linked maps must contain every
+representative hook, and the inclusive 12,288-byte comparator rejects the
+first byte over the cap. The debug-only planner translation unit uses `-Os` to
+retain the frozen cap without changing behavior or release/archival code.
 Disabled release and archival builds omit planner state and the normal-summon
 executor hook while retaining their original player/executor paths.
 The shared target-query functions are modern-only. `FE8_ARCHIVAL_BUILD`
