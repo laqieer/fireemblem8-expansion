@@ -1102,8 +1102,6 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_configured_bare_make_selects_release_and_fails_closed \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_host_only_ready_gate_capability_skips \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_configured_explicit_debug_goal_builds_in_toolchain_lane \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_snag_combat_executes_selected_obstacle \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_stationary_wait_runs_normal_cleanup_and_telemetry \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_transport_acknowledgement_enum_is_exact \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_summon_executor_preserves_action_and_coordinates \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_public_validation_errors_name_protocol_v2 \

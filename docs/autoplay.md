@@ -995,16 +995,16 @@ Every semantic field or record has an explicit `AVAILABLE`, `NOT_APPLICABLE`,
 units whose stale coordinates remain in bounds, are always `UNAVAILABLE` and
 are excluded before actor or target enumeration.
 
-Each 40-byte action record carries six action-identity words and four
-independently domain-mixed opaque token words. `destination` packs the acting
-unit's X/Y coordinates. `target` packs the target unit in its low byte and a
-coordinate target in the next two bytes. `itemSlot` packs the acting inventory
-slot in its low byte and the Hammerne target inventory slot in the next byte.
-Each absent slot is exactly `0xFF`, so normal and Demon King Summon, MOVE_WAIT,
-Rogue Pick, and every other no-item action remain distinct from inventory slot
-zero. Python decodes only `0xFF` as `None` and rejects every other invalid
-sentinel. All four token words bind every action identity field, remain opaque
-to the host, and are echoed unchanged.
+Each 40-byte action record carries six action-identity words and four opaque
+token words. `destination` packs acting X/Y; `target` packs target ID and X/Y;
+`itemSlot` packs acting and Hammerne-target slots. The shared transcript/live
+validator requires the exact kind-to-engine-action mapping, canonical unit IDs,
+map-bounded coordinates, slot sentinels, and zero reserved bits before creating
+an action or invoking either planner. Each absent slot is exactly `0xFF`, so
+Summon, MOVE_WAIT, Rogue Pick, and other no-item actions remain distinct from
+slot zero. All four independently mixed token words bind every identity field,
+remain opaque to the host, and are echoed unchanged. A malformed page produces
+no selection, follow-up command, or transcript mutation.
 
 The observation's overlapping start/count aliases and tagged payload are
 declared as named C89 unions (`start`, `count`, and `payload`), not anonymous

@@ -97,6 +97,18 @@ _COMMAND_KIND_CODES = {
     CommandKind.CANCEL.value: 3,
     CommandKind.PAGE.value: 4,
 }
+_ACTION_IDS_BY_KIND = {
+    "MOVE_WAIT": frozenset({0}),
+    "COMBAT": frozenset({1}),
+    "STAFF": frozenset({5}),
+    "USE_ITEM": frozenset({6}),
+    "PICK": frozenset({13}),
+    "SUMMON": frozenset({12, 14}),
+}
+_DEFAULT_ACTION_ID = {
+    kind: max(action_ids)
+    for kind, action_ids in _ACTION_IDS_BY_KIND.items()
+}
 _VALID_WIRE_REJECTION_CODES = frozenset(range(1, 11))
 _WIRE_STALE_OBSERVATION = 2
 
@@ -122,12 +134,13 @@ class Action:
     target_item_slot: int | None = None
 
     def __post_init__(self) -> None:
-        for name, slot in (
-            ("item_slot", self.item_slot),
-            ("target_item_slot", self.target_item_slot),
-        ):
-            if slot is not None and not 0 <= slot < UNIT_ITEM_COUNT:
-                raise PlannerError(f"invalid optional {name} sentinel")
+        if self.kind in _DEFAULT_ACTION_ID and self.action_id is None:
+            object.__setattr__(self, "action_id", _DEFAULT_ACTION_ID[self.kind])
+        if self.target is None:
+            object.__setattr__(self, "target", 0)
+        if self.target_position is None:
+            object.__setattr__(self, "target_position", (0, 0))
+        _validate_action_contract(asdict(self), "action")
 
 
 @dataclass(frozen=True)
@@ -370,7 +383,7 @@ _PAGE_KIND_VALUES = frozenset(value.value for value in PageKind)
 _ACTION_KIND_VALUES = frozenset({
     "MOVE_WAIT", "COMBAT", "STAFF", "USE_ITEM", "PICK", "SUMMON",
 })
-_ACTION_ID_VALUES = frozenset({0, 1, 5, 6, 12, 13, 14})
+_ACTION_ID_VALUES = frozenset().union(*_ACTION_IDS_BY_KIND.values())
 _TRANSPORT_ERROR_CODES = frozenset({
     "ACTION_COMPLETION_TIMEOUT", "COMMAND_ACK_TIMEOUT",
     "COMMAND_RESPONSE_TIMEOUT", "INVALID_COMMAND_ACK",
@@ -505,7 +518,9 @@ def _require_coordinate(
 ) -> None:
     if optional and value is None:
         return
-    for coordinate in _require_list(value, context, length=2):
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise PlannerError(f"invalid planner transcript {context} schema")
+    for coordinate in value:
         _require_int(coordinate, context, maximum=63)
 
 
@@ -521,33 +536,65 @@ def _validate_token_schema(token: object, context: str) -> None:
         _require_int(word, context)
 
 
+def _is_roster_slot(value: int) -> bool:
+    return (1 <= value <= 0x3E
+        or 0x41 <= value <= 0x54
+        or 0x81 <= value <= 0xB2)
+
+
+def _validate_action_contract(action: object, context: str) -> None:
+    value = _require_exact_keys(
+        action,
+        {
+            "kind", "actor", "destination", "target", "item_slot",
+            "target_position", "action_id", "target_item_slot",
+        },
+        context,
+    )
+    kind = _require_text(value["kind"], f"{context} kind", _ACTION_KIND_VALUES)
+    action_id = _require_int(
+        value["action_id"], f"{context} action id", allowed=_ACTION_ID_VALUES
+    )
+    if action_id not in _ACTION_IDS_BY_KIND[kind]:
+        raise PlannerError(f"invalid planner {context} kind/action mapping")
+    actor = _require_int(value["actor"], f"{context} actor", maximum=0xFF)
+    target = _require_int(value["target"], f"{context} target", maximum=0xFF)
+    if (
+        not _is_roster_slot(actor)
+        or target != 0 and not _is_roster_slot(target)
+    ):
+        raise PlannerError(f"invalid planner {context} unit identity")
+    _require_coordinate(value["destination"], f"{context} destination")
+    _require_coordinate(value["target_position"], f"{context} target position")
+    item_slot = value["item_slot"]
+    target_slot = value["target_item_slot"]
+    target_position = tuple(value["target_position"])
+    _require_optional_int(item_slot, f"{context} item slot", UNIT_ITEM_COUNT - 1)
+    _require_optional_int(
+        target_slot, f"{context} target item slot", UNIT_ITEM_COUNT - 1
+    )
+    if (
+        kind in {"COMBAT", "STAFF", "USE_ITEM"} and item_slot is None
+        or kind in {"MOVE_WAIT", "SUMMON"} and item_slot is not None
+        or target_slot is not None and kind != "STAFF"
+        or target_slot is not None
+            and (target == 0 or target_position != (0, 0))
+        or kind in {"MOVE_WAIT", "USE_ITEM", "PICK", "SUMMON"} and target != 0
+        or kind in {"MOVE_WAIT", "USE_ITEM"} and target_position != (0, 0)
+        or kind == "SUMMON" and action_id == 12
+            and target_position != (0, 0)
+        or kind == "COMBAT" and target != 0
+            and target_position != (0, 0)
+    ):
+        raise PlannerError(f"invalid planner {context} sentinel contract")
+
+
 def _validate_action_schema(record: object) -> None:
     value = _require_exact_keys(
         record, {"ordinal", "action", "token"}, "action record"
     )
     _require_int(value["ordinal"], "action ordinal", maximum=MAX_ACTIONS - 1)
-    action = _require_exact_keys(
-        value["action"],
-        {
-            "kind", "actor", "destination", "target", "item_slot",
-            "target_position", "action_id", "target_item_slot",
-        },
-        "action",
-    )
-    _require_text(action["kind"], "action kind", _ACTION_KIND_VALUES)
-    _require_int(action["actor"], "action actor", maximum=0xFF)
-    _require_coordinate(action["destination"], "action destination")
-    _require_optional_int(action["target"], "action target", 0xFF)
-    _require_optional_int(action["item_slot"], "action item slot", UNIT_ITEM_COUNT - 1)
-    _require_coordinate(
-        action["target_position"],
-        "action target position",
-        optional=True,
-    )
-    _require_optional_int(action["action_id"], "action id", 0xFF, _ACTION_ID_VALUES)
-    _require_optional_int(
-        action["target_item_slot"], "action target item slot", UNIT_ITEM_COUNT - 1
-    )
+    _validate_action_contract(value["action"], "action")
     _validate_token_schema(value["token"], "action token")
 
 
@@ -2244,22 +2291,38 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
             ) = payload[index * 10 : index * 10 + 10]
             if kind not in _ACTION_KIND_BY_VALUE:
                 raise PlannerError("unknown planner action kind")
-            if item_slot >> 16:
-                raise PlannerError("action item-slot reserved bits are nonzero")
+            if target >> 24 or item_slot >> 16:
+                raise PlannerError("planner action reserved bits are nonzero")
+            action_values = {
+                "kind": _ACTION_KIND_BY_VALUE[kind],
+                "actor": actor,
+                "destination": [destination & 0xFFFF, destination >> 16],
+                "target": target & 0xFF,
+                "item_slot": _decode_optional_item_slot(item_slot & 0xFF),
+                "target_position": [
+                    (target >> 8) & 0xFF,
+                    (target >> 16) & 0xFF,
+                ],
+                "action_id": action_id,
+                "target_item_slot": _decode_optional_item_slot(
+                    (item_slot >> 8) & 0xFF
+                ),
+            }
+            token_values = {
+                "word0": token0,
+                "word1": token1,
+                "word2": token2,
+                "word3": token3,
+            }
+            _validate_action_contract(action_values, "live action")
+            _validate_token_schema(token_values, "live action token")
+            action_values["destination"] = tuple(action_values["destination"])
+            action_values["target_position"] = tuple(action_values["target_position"])
             actions.append(
                 ActionRecord(
                     record_start + index,
-                    Action(
-                        _ACTION_KIND_BY_VALUE[kind],
-                        actor,
-                        (destination & 0xFFFF, destination >> 16),
-                        target & 0xFF,
-                        _decode_optional_item_slot(item_slot & 0xFF),
-                        ((target >> 8) & 0xFF, (target >> 16) & 0xFF),
-                        action_id,
-                        _decode_optional_item_slot((item_slot >> 8) & 0xFF),
-                    ),
-                    OpaqueToken(token0, token1, token2, token3),
+                    Action(**action_values),
+                    OpaqueToken(**token_values),
                 )
             )
     elif page_kind is PageKind.INVENTORY:
@@ -2772,7 +2835,10 @@ def run_two_chapter_replay(
             Field("campaign_flag", "event_flag", 1, Availability.AVAILABLE, 0),
             Field("rng", "rng.c", 3, Availability.AVAILABLE, (1, 2, 3)),
         ),
-        (Action("MOVE_WAIT", 1, (1, 0)), Action("COMBAT", 1, (2, 0), target=0x81)),
+        (
+            Action("MOVE_WAIT", 1, (1, 0)),
+            Action("COMBAT", 1, (2, 0), target=0x81, item_slot=0),
+        ),
     )
     first_complete = collect_observation_pages(bridge, first)
     first_choice = planner.choose(first_complete)

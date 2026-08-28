@@ -725,7 +725,6 @@ static int TestCoordinateActionFamilies(void)
     struct AiDecision* pickFirst;
     struct AiDecision* pickSecond;
     int index;
-
     ResetActionFixture(6, 6);
     sUnit.items[0] = ITEM_STAFF_TORCH;
     CHECK(
@@ -923,7 +922,6 @@ static int TestSnagActionFamily(void)
     struct AiDecision* combat;
     struct AiDecision* firstSnag;
     struct AiDecision* secondSnag;
-
     ResetActionFixture(6, 6);
     sUnit.items[0] = ITEM_SWORD_IRON | (30 << 8);
     SetupTestUnit(&sEnemy, &sEnemyCharacter, &sEnemyClass, 0x81, 1, 2);
@@ -985,7 +983,6 @@ static int TestStaffTargetParity(void)
     u32 count = 0;
     struct AiDecision* first;
     struct AiDecision* second;
-
     ResetActionFixture(8, 8);
     sUnit.items[0] = ITEM_STAFF_REPAIR;
     SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 3, 2);
@@ -1073,7 +1070,6 @@ static int TestSummonActionFamily(void)
     u32 stateBefore;
     int summonCount;
     int index;
-
     ResetActionFixture(6, 6);
     sCharacter.number = CHARACTER_EWAN;
     sClass.attributes = CA_SUMMON;
@@ -1203,7 +1199,6 @@ static int TestSummonActionFamily(void)
 static int TestUnavailableUnitSemantics(void)
 {
     u32 count = 99;
-
     ResetActionFixture(6, 6);
     sUnit.state = US_NOT_DEPLOYED;
     CHECK(
@@ -1233,7 +1228,6 @@ static int TestMaximumSemanticPaging(void)
 {
     struct AiDecision decision = { 0 };
     int index;
-
     ResetActionFixture(6, 6);
     sUseMaxUnits = true;
     for (index = 0; index < 132; index++)
@@ -1348,7 +1342,6 @@ static int TestZeroDigestAvailability(void)
     u32 availableZeroCheckpointDigest;
     int sizes[] = { 0, 1, 256, 257, INT_MAX };
     int index;
-
     ResetActionFixture(6, 6);
     sMovementData[2][3] = 1;
     memset(sPermanentFlags, 0, sizeof(sPermanentFlags));
@@ -1463,7 +1456,6 @@ static int TestHammerneWireIdentity(void)
     struct ExpansionAutoplayPlannerActionV2 first;
     struct ExpansionAutoplayPlannerActionV2 second;
     u32 actionPage;
-
     ResetActionFixture(6, 6);
     sUnit.items[0] = ITEM_STAFF_REPAIR;
     sAllyCharacter.number = 2;
@@ -1534,7 +1526,6 @@ static int TestCompleteEnumerator(void)
     u32 kinds = 0;
     int index;
     int other;
-
     ResetActionFixture(3, 3);
     sCharacter.number = CHARACTER_EWAN;
     sClass.attributes = CA_STEAL | CA_SUMMON;
@@ -1634,7 +1625,6 @@ int main(void)
     int restoreBefore;
     int selectedX;
     int selectedY;
-
     gPlaySt.chapterIndex = 1;
     gPlaySt.chapterTurnNumber = 1;
     gActiveUnitId = 1;

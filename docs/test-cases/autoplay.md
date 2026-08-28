@@ -705,13 +705,12 @@ Prospective host observations exceeding 2 MiB fail without changing the trace,
 observation, or next ID. The transport accepts no address-bearing command and
 has no arbitrary-memory API. Release configuration rejects
 `EXPANSION_AUTOPLAY_PLANNER=1`; no bridge state is present when disabled.
-The canonical production transcript rejects truncation, event reordering,
-hash or semantic tampering, stale candidate/page identities, and mismatched
-ACK/COMPLETE settlement. Failed prospective 64 KiB exchanges do not write the
-mailbox or mutate transcript state. No-item actions encode both optional
-inventory slots as `0xFF`; slot zero round-trips distinctly, while every other
-invalid sentinel rejects. Forging any one of the four opaque token words
-rejects without execution.
+The canonical transcript rejects truncation, reordering, hash/semantic
+tampering, stale page identities, and mismatched ACK/COMPLETE settlement.
+Malformed live actions—including kind/engine-ID mismatch, invalid unit,
+coordinate, slot, token, or reserved fields—reject before selection, command,
+or transcript mutation. No-item slots encode `0xFF`; slot zero remains
+distinct, and forging any opaque token word rejects without execution.
 Page counts of zero, 93, one billion, or `0xFFFFFFFF`, negative/overflow words,
 out-of-range or duplicate indices, missing spans, and reordered or incomplete
 typed-page sequences fail before unbounded traversal or retention.

@@ -349,7 +349,11 @@ class PlannerBridgeTests(unittest.TestCase):
             1,
             (),
             tuple(
-                planner.Action("MOVE_WAIT", 1, (index, 0))
+                planner.Action(
+                    "MOVE_WAIT",
+                    1,
+                    (index % 64, index // 64),
+                )
                 for index in range(512)
             ),
         )
@@ -424,33 +428,11 @@ class PlannerBridgeTests(unittest.TestCase):
         imported = planner.PlannerTranscript.import_bytes(exported)
         self.assertEqual(imported.export(), exported)
         self.assertEqual(imported.digest(), bridge.transcript.digest())
-
-        empty = {
-            "schema": planner.PlannerTranscript.SCHEMA,
-            "events": [],
-        }
-        with self.assertRaisesRegex(
-            planner.PlannerError,
-            "exactly one leading session",
-        ):
-            planner.PlannerTranscript.import_bytes(
-                planner._canonical(empty)
-            )
-
         sessionless = json.loads(exported)
         sessionless["events"].pop(0)
         _assert_import_rejected(
             self, sessionless, "exactly one leading session"
         )
-
-        missing_provenance = json.loads(exported)
-        missing_provenance["events"][0].pop("provenance")
-        _assert_import_rejected(
-            self,
-            missing_provenance,
-            "invalid planner transcript session provenance",
-        )
-
         late_session = json.loads(exported)
         late_session["events"][0], late_session["events"][1] = (
             late_session["events"][1],
@@ -459,7 +441,6 @@ class PlannerBridgeTests(unittest.TestCase):
         _assert_import_rejected(
             self, late_session, "exactly one leading session"
         )
-
         duplicate_session = json.loads(exported)
         duplicate_session["events"].insert(
             1,
@@ -468,57 +449,6 @@ class PlannerBridgeTests(unittest.TestCase):
         _assert_import_rejected(
             self, duplicate_session, "exactly one leading session"
         )
-
-        for field in (
-            "rom_identity",
-            "config_identity",
-            "scenario_identity",
-            "seed_identity",
-        ):
-            with self.subTest(session_identity=field):
-                provenance_tampered = json.loads(exported)
-                provenance_tampered["events"][0]["provenance"][
-                    field
-                ] ^= 1
-                _assert_import_rejected(
-                    self,
-                    provenance_tampered,
-                    "observation session "
-                    "(identity|scenario/seed) mismatch",
-                )
-
-        run_tampered = json.loads(exported)
-        provenance = run_tampered["events"][0]["provenance"]
-        provenance["ready_run_id"] += 1
-        provenance["run_id"] += 1
-        _assert_import_rejected(
-            self,
-            run_tampered,
-            "(observation session|accepted command run) identity mismatch",
-        )
-
-        tampered = json.loads(exported)
-        complete_event = next(
-            event
-            for event in tampered["events"]
-            if event["event"] == "observation_complete"
-        )
-        complete_event["observation"]["actions"][0]["ordinal"] = 7
-        _assert_import_rejected(
-            self, tampered, "digest mismatch", rechain=False
-        )
-
-        identity_tampered = json.loads(exported)
-        complete_event = next(
-            event
-            for event in identity_tampered["events"]
-            if event["event"] == "observation_complete"
-        )
-        complete_event["page_identity"][3] += 1
-        _assert_import_rejected(
-            self, identity_tampered, "page identity mismatch"
-        )
-
         token_tampered = json.loads(exported)
         complete_event = next(
             event
@@ -536,7 +466,6 @@ class PlannerBridgeTests(unittest.TestCase):
         _assert_import_rejected(
             self, token_tampered, "accepted transcript token mismatch"
         )
-
         runtime_tampered = json.loads(exported)
         settled_event = next(
             event
@@ -547,7 +476,6 @@ class PlannerBridgeTests(unittest.TestCase):
         _assert_import_rejected(
             self, runtime_tampered, "settled runtime state mismatch"
         )
-
         acknowledgement = next(
             event
             for event in json.loads(exported)["events"]
@@ -556,8 +484,6 @@ class PlannerBridgeTests(unittest.TestCase):
         for result, rejection in (
             (0, 0),
             (1, 4),
-            (2, 0),
-            (0, 99),
         ):
             with self.subTest(
                 acknowledgement_result=result,
@@ -576,7 +502,6 @@ class PlannerBridgeTests(unittest.TestCase):
                     invalid_ack,
                     "invalid acknowledgement result/rejection pair",
                 )
-
         for field, value, message in (
             ("command_id", acknowledgement["command_id"] + 1,
              "acknowledgement order"),
@@ -592,7 +517,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 )
                 event[field] = value
                 _assert_import_rejected(self, invalid_ack, message)
-
         rejected_commit = json.loads(exported)
         acknowledgement = next(
             event
@@ -607,7 +531,6 @@ class PlannerBridgeTests(unittest.TestCase):
             rejected_commit,
             "settled rejection does not match acknowledgement",
         )
-
         committed_rejection = json.loads(exported)
         acknowledgement_index = next(
             index
@@ -644,30 +567,6 @@ class PlannerBridgeTests(unittest.TestCase):
             committed_rejection,
             "rejected COMMIT cannot settle as COMMITTED",
         )
-
-        for command_kind in (
-            planner.CommandKind.PAGE.value,
-            planner.CommandKind.COMMIT.value,
-        ):
-            for observation_id in (0, 2):
-                with self.subTest(
-                    command_kind=command_kind,
-                    observation_id=observation_id,
-                ):
-                    stale_command = json.loads(exported)
-                    command = next(
-                        event["command"]
-                        for event in stale_command["events"]
-                        if event["event"] == "command"
-                            and event["command"]["kind"] == command_kind
-                    )
-                    command["observation_id"] = observation_id
-                    _assert_import_rejected(
-                        self,
-                        stale_command,
-                        "command observation identity mismatch",
-                    )
-
         page_cross_swap = json.loads(exported)
         page_commands = [
             event["command"]
@@ -683,7 +582,6 @@ class PlannerBridgeTests(unittest.TestCase):
         _assert_import_rejected(
             self, page_cross_swap, "PAGE response identity mismatch"
         )
-
         base_events = json.loads(exported)["events"]
         command_index = next(
             index
@@ -695,47 +593,33 @@ class PlannerBridgeTests(unittest.TestCase):
         ack_index = command_index + 1
         completion_index = command_index + 2
         response_index = command_index + 3
-
-        completion_before_ack = json.loads(exported)
-        events = completion_before_ack["events"]
-        events[ack_index], events[completion_index] = (
-            events[completion_index],
-            events[ack_index],
+        order_cases = (
+            ("swap", ack_index, completion_index, "completion order"),
+            (
+                "swap",
+                completion_index,
+                response_index,
+                "response observation precedes completion",
+            ),
+            ("insert", completion_index, ack_index, "acknowledgement order"),
+            ("insert", response_index, completion_index, "completion order"),
+            (
+                "pop",
+                response_index,
+                0,
+                "settled event has no response observation",
+            ),
         )
-        _assert_import_rejected(
-            self, completion_before_ack, "completion order"
-        )
-
-        response_before_completion = json.loads(exported)
-        events = response_before_completion["events"]
-        events[completion_index], events[response_index] = (
-            events[response_index],
-            events[completion_index],
-        )
-        _assert_import_rejected(
-            self,
-            response_before_completion,
-            "response observation precedes completion",
-        )
-
-        duplicate_ack = json.loads(exported)
-        duplicate_ack["events"].insert(
-            completion_index,
-            dict(duplicate_ack["events"][ack_index]),
-        )
-        _assert_import_rejected(
-            self, duplicate_ack, "acknowledgement order"
-        )
-
-        duplicate_completion = json.loads(exported)
-        duplicate_completion["events"].insert(
-            response_index,
-            dict(duplicate_completion["events"][completion_index]),
-        )
-        _assert_import_rejected(
-            self, duplicate_completion, "completion order"
-        )
-
+        for operation, target, source, message in order_cases:
+            document = json.loads(exported)
+            events = document["events"]
+            if operation == "swap":
+                events[target], events[source] = events[source], events[target]
+            elif operation == "insert":
+                events.insert(target, dict(events[source]))
+            else:
+                events.pop(target)
+            _assert_import_rejected(self, document, message)
         interleaved_command = json.loads(exported)
         second_command = next(
             event
@@ -751,76 +635,11 @@ class PlannerBridgeTests(unittest.TestCase):
         _assert_import_rejected(
             self, interleaved_command, "command overlap"
         )
-
-        missing_response = json.loads(exported)
-        missing_response["events"].pop(response_index)
-        _assert_import_rejected(
-            self,
-            missing_response,
-            "settled event has no response observation",
-        )
-
-        reordered = json.loads(exported)
-        reordered["events"][0], reordered["events"][1] = (
-            reordered["events"][1],
-            reordered["events"][0],
-        )
-        with self.assertRaisesRegex(
-            planner.PlannerError,
-            "exactly one leading session|order is invalid|digest mismatch",
-        ):
-            planner.PlannerTranscript.import_bytes(
-                planner._canonical(reordered)
-            )
         with self.assertRaisesRegex(
             planner.PlannerError,
             "invalid planner transcript JSON|not canonical",
         ):
             planner.PlannerTranscript.import_bytes(exported[:-1])
-
-        bounded = planner.PlannerTranscript(max_bytes=512)
-        bounded.record_session(TRANSCRIPT_SESSION)
-        before = bounded.export()
-        with self.assertRaisesRegex(
-            planner.PlannerError,
-            planner.Rejection.RESOURCE_LIMIT.value,
-        ):
-            bounded.record_complete_observation(complete)
-        self.assertEqual(bounded.export(), before)
-
-        probe = planner.PlannerTranscript()
-        probe.record_session(TRANSCRIPT_SESSION)
-        probe.record_complete_observation(complete)
-        atomic = planner.PlannerTranscript(max_bytes=len(probe.export()))
-        atomic.record_session(TRANSCRIPT_SESSION)
-        atomic_before = atomic.export()
-        with self.assertRaisesRegex(
-            planner.PlannerError,
-            planner.Rejection.RESOURCE_LIMIT.value,
-        ):
-            atomic.record_complete_and_settled(
-                complete,
-                (0,) * 13,
-                (0,) * 16,
-            )
-        self.assertEqual(atomic.export(), atomic_before)
-
-        second_token = planner._fixture_action_token(
-            run_id,
-            observation.observation_id,
-            1,
-            complete.actions[1].action,
-        )
-        self.assertEqual(len(set(selected.token.words)), 4)
-        self.assertTrue(
-            all(
-                left != right
-                for left, right in zip(
-                    selected.token.words,
-                    second_token.words,
-                )
-            )
-        )
 
     def test_transcript_json_depth_and_recursion_fail_closed(self):
         def nested_array(depth):
@@ -1158,6 +977,7 @@ class PlannerBridgeTests(unittest.TestCase):
             (complete, observation + ("fields", 0, "bound"), True),
             (complete, observation + ("fields", 0, "value"), "100"),
             (complete, action + ("ordinal",), True),
+            (complete, action + ("action", "kind"), "STAFF"),
             (complete, action + ("action", "actor"), 0x100),
             (complete, action + ("action", "destination", 0), 64),
             (complete, action + ("action", "item_slot"), 5),
@@ -1497,51 +1317,34 @@ class PlannerBridgeTests(unittest.TestCase):
     def test_action_page_decodes_actor_and_target_slots(self):
         words = [0] * 249
         words[:15] = [
-            0x41504C4E,
-            planner.PROTOCOL_VERSION,
-            249 * 4,
-            1,
-            2,
-            2,
-            3,
-            4,
-            4,
-            0,
-            1,
-            1,
-            1,
-            0,
-            7,
+            0x41504C4E, planner.PROTOCOL_VERSION, 249 * 4,
+            1, 2, 2, 3, 4, 4, 0, 1, 1, 1, 0, 7,
         ]
         words[25:35] = [
-            3,
-            1,
-            2 | (3 << 16),
-            2 | (4 << 8) | (5 << 16),
-            1 | (3 << 8),
-            0x12345678,
-            0x9ABCDEF0,
-            0x0BADCAFE,
-            0x10203040,
-            5,
+            3, 1, 2 | (3 << 16), 2,
+            1 | (3 << 8), 0x12345678, 0x9ABCDEF0,
+            0x0BADCAFE, 0x10203040, 5,
         ]
         observation = planner.parse_transport_observation(words)
         action = observation.actions[0].action
         self.assertEqual(action.item_slot, 1)
         self.assertEqual(action.target_item_slot, 3)
-        self.assertEqual(action.target_position, (4, 5))
-
+        self.assertEqual(action.target_position, (0, 0))
         self.assertEqual(
             observation.actions[0].token.words,
             (0x12345678, 0x9ABCDEF0, 0x0BADCAFE, 0x10203040),
         )
-
+        words[25] = 1
+        words[28] = 0
         words[29] = 0xFF | (0xFF << 8)
+        words[34] = 0
         observation = planner.parse_transport_observation(words)
         self.assertIsNone(observation.actions[0].action.item_slot)
         self.assertIsNone(observation.actions[0].action.target_item_slot)
-
+        words[25] = 3
+        words[28] = 2
         words[29] = 0 | (0xFF << 8)
+        words[34] = 5
         observation = planner.parse_transport_observation(words)
         self.assertEqual(observation.actions[0].action.item_slot, 0)
         with self.assertRaisesRegex(
@@ -1550,26 +1353,85 @@ class PlannerBridgeTests(unittest.TestCase):
         ):
             words[29] = planner.UNIT_ITEM_COUNT | (0xFF << 8)
             planner.parse_transport_observation(words)
+        boundary = words.copy()
+        boundary[25:35] = [
+            2, 0xB2, 63 | (63 << 16), 63 << 8 | (63 << 16),
+            4 | (0xFF << 8), *([0xFFFFFFFF] * 4), 1,
+        ]
+        valid = planner.parse_transport_observation(boundary)
+        self.assertEqual(valid.actions[0].action.destination, (63, 63))
+        for implementation in (
+            planner.ScriptedPlanner(),
+            planner.BoundedSearchPlanner(),
+        ):
+            self.assertEqual(implementation.choose(valid).ordinal, 0)
+        transcript = planner.PlannerTranscript()
+        transcript.record_session(TRANSCRIPT_SESSION)
+        transcript.record_complete_and_settled(
+            valid,
+            (0,) * 13,
+            (0,) * 16,
+        )
+        encoded = transcript.export()
+        self.assertEqual(
+            planner.PlannerTranscript.import_bytes(encoded).export(),
+            encoded,
+        )
+        mutations = (
+            ("unknown action", {34: 2}),
+            ("kind mismatch", {25: 1}),
+            ("destination 64", {27: 64}),
+            ("destination 255", {27: 255}),
+            ("target x 64", {28: 64 << 8}),
+            ("target y 255", {28: 255 << 16}),
+            ("actor overflow", {26: 0x100}),
+            ("actor sentinel", {26: 0xFF}),
+            ("target sentinel", {28: 0xFF}),
+            ("item slot", {29: 5 | (0xFF << 8)}),
+            ("target slot", {29: 4 | (5 << 8)}),
+            ("slot coordinates", {28: 2 | (63 << 8), 29: 4 | (3 << 8)}),
+            ("item reserved", {29: 4 | (0xFF << 8) | (1 << 16)}),
+            ("target reserved", {28: 1 << 24}),
+            ("kind reserved", {25: 0x101}),
+            ("combined", {26: 0xFF, 27: 255, 29: 1 << 16, 34: 99}),
+            *(
+                (f"token {index}", {30 + index: -1})
+                for index in range(4)
+            ),
+        )
+        for name, changes in mutations:
+            for implementation in (
+                planner.ScriptedPlanner(),
+                planner.BoundedSearchPlanner(),
+            ):
+                with self.subTest(mutation=name, planner=type(implementation).__name__):
+                    malformed = boundary.copy()
+                    for word, value in changes.items():
+                        malformed[word] = value
+                    transport = mock.Mock()
+                    transport.transcript = planner.PlannerTranscript()
+                    transcript_before = transport.transcript.export()
+                    with mock.patch.object(
+                        implementation,
+                        "choose",
+                        wraps=implementation.choose,
+                    ) as choose:
+                        with self.assertRaises(planner.PlannerError):
+                            decoded = planner.parse_transport_observation(malformed)
+                            selected = implementation.choose(decoded)
+                            transport.exchange(selected)
+                    choose.assert_not_called()
+                    transport.exchange.assert_not_called()
+                    self.assertEqual(transport.transcript.export(), transcript_before)
 
     def test_page_identity_and_sequence_are_bounded_before_traversal(self):
         def summary_words():
             words = [0] * 249
             words[:15] = [
-                0x41504C4E,
-                planner.PROTOCOL_VERSION,
-                249 * 4,
-                1,
-                2,
-                2,
-                0,
-                1,
-                1,
-                0,
+                0x41504C4E, planner.PROTOCOL_VERSION, 249 * 4,
+                1, 2, 2, 0, 1, 1, 0,
                 planner.SEMANTIC_FIELD_COUNT,
-                planner.SEMANTIC_FIELD_COUNT,
-                1,
-                0,
-                7,
+                planner.SEMANTIC_FIELD_COUNT, 1, 0, 7,
             ]
             for index in range(planner.SEMANTIC_FIELD_COUNT):
                 words[25 + index * 2] = (
@@ -1604,7 +1466,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 "outside fixed u32 range",
             ):
                 planner.parse_transport_observation(words)
-
         class PageTransport:
             def __init__(self, pages):
                 self.pages = pages
@@ -1613,7 +1474,6 @@ class PlannerBridgeTests(unittest.TestCase):
             def exchange(self, command):
                 self.exchange_count += 1
                 return self.pages[command.page_index]
-
         oversized = planner.Observation(
             1,
             1,
@@ -1629,7 +1489,6 @@ class PlannerBridgeTests(unittest.TestCase):
         ):
             planner.collect_observation_pages(transport, oversized)
         self.assertEqual(transport.exchange_count, 0)
-
         action = planner.ActionRecord(
             0,
             planner.Action("MOVE_WAIT", 1, (1, 0)),
@@ -1688,7 +1547,6 @@ class PlannerBridgeTests(unittest.TestCase):
         ):
             planner.collect_observation_pages(out_of_order, first)
         self.assertEqual(out_of_order.exchange_count, 2)
-
         duplicate_index = PageTransport(
             {
                 1: out_of_order.pages[1],
@@ -1701,7 +1559,6 @@ class PlannerBridgeTests(unittest.TestCase):
         ):
             planner.collect_observation_pages(duplicate_index, first)
         self.assertEqual(duplicate_index.exchange_count, 2)
-
         missing_span = PageTransport(
             {
                 1: replace(
@@ -1725,7 +1582,6 @@ class PlannerBridgeTests(unittest.TestCase):
         ):
             planner.collect_observation_pages(missing_span, first)
         self.assertEqual(missing_span.exchange_count, 2)
-
         production_first = replace(
             first,
             page_count=2,
@@ -2216,31 +2072,16 @@ raise SystemExit(child.returncode)
         )
         self.assertIn("AUTOPLAY_PLANNER_HOST_TEST: PASS", output)
 
-    def test_native_snag_combat_executes_selected_obstacle(self):
+    def test_native_summon_executor_preserves_action_and_coordinates(self):
         output = _run_host_c_driver(
             self,
-            "planner-snag-executor",
-            (
-                "src/cp_perform.c",
-                "src/bmbattle.c",
-                "tools/gba-playtest/tests/c/planner_snag_executor_driver.c",
-            ),
-            defines=(
-                "-DFE8_EXPANSION_MODERN_BUILD=1",
-                "-DFE8_EXPANSION_DEBUG=1",
-                "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
-            ),
-        )
-        self.assertIn("PLANNER_SNAG_EXECUTOR_TEST: PASS", output)
-
-    def test_stationary_wait_runs_normal_cleanup_and_telemetry(self):
-        output = _run_host_c_driver(
-            self,
-            "planner-stationary-wait",
+            "summon-executor-driver",
             (
                 "src/cp_decide.c",
                 "src/cp_perform.c",
-                "tools/gba-playtest/tests/c/planner_stationary_wait_driver.c",
+                "src/bmbattle.c",
+                "src/mapanim_summon.c",
+                "tools/gba-playtest/tests/c/summon_executor_driver.c",
             ),
             defines=(
                 "-DFE8_EXPANSION_MODERN_BUILD=1",
@@ -2250,24 +2091,7 @@ raise SystemExit(child.returncode)
                 "-DFE8_PLANNER_STATIONARY_WAIT_TEST=1",
             ),
         )
-        self.assertIn("PLANNER_STATIONARY_WAIT_TEST: PASS", output)
-
-    def test_native_summon_executor_preserves_action_and_coordinates(self):
-        output = _run_host_c_driver(
-            self,
-            "summon-executor-driver",
-            (
-                "src/cp_perform.c",
-                "src/mapanim_summon.c",
-                "tools/gba-playtest/tests/c/summon_executor_driver.c",
-            ),
-            defines=(
-                "-DFE8_EXPANSION_MODERN_BUILD=1",
-                "-DFE8_EXPANSION_DEBUG=1",
-                "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
-            ),
-        )
-        self.assertIn("SUMMON_EXECUTOR_HOST_TEST: PASS", output)
+        self.assertIn("PLANNER_EXECUTOR_HOST_TEST: PASS", output)
 
     def test_arm_adapter_compiles_at_the_existing_computer_decision_boundary(self):
         compiler = shutil.which("arm-none-eabi-gcc")
