@@ -111,6 +111,12 @@ _DEFAULT_ACTION_ID = {
 }
 _VALID_WIRE_REJECTION_CODES = frozenset(range(1, 11))
 _WIRE_STALE_OBSERVATION = 2
+_REJECTIONS_BY_COMMAND = {
+    CommandKind.START.value: {1, 9, 10},
+    CommandKind.PAGE.value: {2, 3, 6, 9, 10},
+    CommandKind.COMMIT.value: {2, 3, 4, 6, 7, 9, 10},
+    CommandKind.CANCEL.value: {2, 8, 9, 10},
+}
 
 
 @dataclass(frozen=True)
@@ -534,6 +540,36 @@ def _validate_token_schema(token: object, context: str) -> None:
     )
     for word in value.values():
         _require_int(word, context)
+
+
+def _validate_rejected_response(
+    command: dict[str, object], acknowledgement: dict[str, object],
+    previous: dict[str, object] | None, response: dict[str, object],
+) -> bool:
+    rejection = acknowledgement["rejection"]
+    kind = command["kind"]
+    if (
+        previous is None
+        or rejection not in _REJECTIONS_BY_COMMAND[kind]
+        or any(response[field] != previous[field]
+               for field in _OBSERVATION_KEYS - {"state", "rejection"})
+        or response["rejection"] != rejection
+    ):
+        raise PlannerError("rejected response changed immutable observation")
+    prior_state = previous["state"]
+    terminal_state = None
+    if rejection == 10 and prior_state == 2:
+        terminal_state = 4
+    elif kind == CommandKind.CANCEL.value and rejection == 8 and prior_state == 2:
+        terminal_state = 4
+    elif kind == CommandKind.COMMIT.value and rejection == 7 and prior_state == 2:
+        terminal_state = 5
+    expected_state = prior_state if terminal_state is None else terminal_state
+    if response["state"] != expected_state or (
+        rejection in {7, 8, 10} and terminal_state is None
+    ):
+        raise PlannerError("rejected response has invalid state transition")
+    return terminal_state is not None
 
 
 def _is_roster_slot(value: int) -> bool:
@@ -1375,12 +1411,15 @@ class PlannerTranscript:
         pending_completion = False
         pending_response = False
         awaiting_settlement = False
+        pending_previous_page = pending_previous_checkpoint = None
+        pending_rejection_terminal = False
         expected_command_id = 1
         actions_by_observation: dict[
             tuple[int, int],
             list[object],
         ] = {}
         latest_observation: dict[str, object] | None = None
+        latest_page = latest_checkpoint = None
         observation_pages: dict[tuple[int, int], list[dict[str, object]]] = {}
         active_identity_bound = False
         for sequence, event in enumerate(events):
@@ -1409,6 +1448,9 @@ class PlannerTranscript:
                 pending_ack = None
                 pending_completion = False
                 pending_response = False
+                pending_previous_page = latest_page
+                pending_previous_checkpoint = latest_checkpoint
+                pending_rejection_terminal = False
             elif kind == "acknowledgement":
                 if (
                     pending_command is None
@@ -1594,6 +1636,13 @@ class PlannerTranscript:
                         raise PlannerError(
                             "settled rejection does not match acknowledgement"
                         )
+                    if not acknowledgement_accepted:
+                        expected_checkpoint = ([0] * 13 if pending_rejection_terminal
+                                               else pending_previous_checkpoint)
+                        if event["checkpoint"] != expected_checkpoint:
+                            raise PlannerError(
+                                "rejected response changed checkpoint"
+                            )
                     command = settled_command.get("command")
                     if (
                         not acknowledgement_accepted
@@ -1605,6 +1654,7 @@ class PlannerTranscript:
                         raise PlannerError(
                             "rejected COMMIT cannot settle as COMMITTED"
                         )
+                latest_checkpoint = event["checkpoint"]
             elif kind == "transport_error":
                 if (
                     sequence != len(document["events"]) - 1
@@ -1724,8 +1774,16 @@ class PlannerTranscript:
                             raise PlannerError(
                                 "PAGE response identity mismatch"
                             )
+                    elif not accepted:
+                        pending_rejection_terminal = _validate_rejected_response(
+                            command,
+                            pending_ack,
+                            pending_previous_page,
+                            observation,
+                        )
                     pending_response = True
                 latest_observation = observation
+                latest_page = observation
                 awaiting_settlement = True
             else:
                 raise PlannerError("unknown planner transcript event")
@@ -2078,6 +2136,7 @@ def _validate_complete_observation(
         None,
     )
     cells = observation["map_cells"]
+    map_size = None
     if dimensions is not None and dimensions["availability"] == Availability.AVAILABLE:
         width = dimensions["value"] & 0xFFFF
         height = dimensions["value"] >> 16
@@ -2090,7 +2149,8 @@ def _validate_complete_observation(
                          for index in range(width * height))
         ):
             raise PlannerError("complete observation map dimensions mismatch")
-    elif strict:
+        map_size = (width, height)
+    elif strict or dimensions is not None and observation["actions"]:
         raise PlannerError("complete observation omitted map dimensions")
 
     units = observation["units"]
@@ -2136,7 +2196,6 @@ def _validate_complete_observation(
             and record["availability"] != availability
         ):
             raise PlannerError("complete observation inventory availability mismatch")
-
     actions = observation["actions"]
     if (
         len(actions) != observation["total_action_count"]
@@ -2148,6 +2207,24 @@ def _validate_complete_observation(
             tuple(action["token"][f"word{index}"] for index in range(4))
             for action in actions
         }) != len(actions)
+        or map_size is not None and any(
+            x >= map_size[0] or y >= map_size[1]
+            for record in actions
+            for x, y in (
+                record["action"]["destination"],
+                record["action"]["target_position"],
+            )
+        )
+        or strict and any(
+            action["action"]["kind"] == "STAFF"
+            and next((
+                record["item_id"] for record in inventory
+                if record["unit"] == action["action"]["actor"]
+                and record["slot"] == action["action"]["item_slot"]
+            ), None) not in {0x54, 0x56, 0x58}
+            and tuple(action["action"]["target_position"]) != (0, 0)
+            for action in actions
+        )
         or (strict or units) and any(
             unit_availability.get(action["action"]["actor"])
                 != Availability.AVAILABLE

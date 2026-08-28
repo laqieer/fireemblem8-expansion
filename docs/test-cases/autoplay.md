@@ -648,7 +648,8 @@ Every wire page has a count from 1 through 92 and an in-range index. Before
 either planner or replay factory runs, the shared live/import validator
 requires one ordered summary/map/unit/inventory/resource/flag/action sequence,
 contiguous spans and totals, canonical unique record identities, row-major map
-dimensions, roster-owned unique inventory slots, and complete action ordinals.
+dimensions, map-relative destination/target coordinates, roster-owned unique
+inventory slots, and complete action ordinals.
 Each typed transport command first returns a matching monotonic `ACK`, then a
 matching `COMPLETE`, then its observation. Both planners execute a synthetic
 180-frame movement/camera/battle/event-style COMMIT and receive only the new
@@ -664,7 +665,10 @@ emitting ACK, COMPLETE, or OBS.
 Each command must then have one matching ACK, one matching COMPLETE, one exact
 response page, and one settlement. Accepted PAGE commands bind the current
 observation and requested index to that response; accepted COMMIT commands
-resolve their action/token only from the named current observation.
+resolve their action/token only from the named current observation. Rejected
+responses preserve the prior wire page and nonterminal checkpoint exactly;
+only documented rejection/terminal transitions may change, and terminals zero
+their checkpoint.
 The recorded accepted two-chapter run and rejection/cancel run are each
 reissued through a newly booted production ROM/backend, and their complete
 transcripts must match byte-for-byte.
@@ -712,6 +716,9 @@ Malformed live actions—including kind/engine-ID mismatch, invalid unit,
 coordinate, slot, token, or reserved fields—reject before selection, command,
 or transcript mutation. No-item slots encode `0xFF`; slot zero remains
 distinct, and forging any opaque token word rejects without execution.
+Coordinates equal to width/height or `(63,63)` on a smaller map, zero or
+unavailable dimensions, and independent destination/target overflow reject
+before either planner, transcript mutation, or replay factory creation.
 Page counts of zero, 93, one billion, or `0xFFFFFFFF`, negative/overflow words,
 duplicate/out-of-order/missing fields, maps, units, inventory slots, actions,
 or cross-page identities, inconsistent dimensions/totals, absent-roster
@@ -730,6 +737,9 @@ responses before completion, COMPLETE before ACK, duplicate ACK/COMPLETE,
 interleaved commands, missing responses/settlements, and terminal disagreement
 also fail before replay. A tampered transcript never starts the clean replay
 factory.
+Rejected responses with changed chapter/turn, RNG, map, unit, inventory,
+resource, flag, action/token, telemetry, page identity, state, or checkpoint
+also fail before the replay factory.
 Over-depth arrays/objects, parser or canonicalizer recursion, and re-chained
 deep inputs fail without state mutation. Client `STEP`, `RUN`, raw-key, and
 arbitrary-kind commands return an error and leave observation, RNG, mailbox,

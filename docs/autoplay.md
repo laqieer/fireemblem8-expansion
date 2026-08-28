@@ -999,8 +999,9 @@ Each 40-byte action record carries six action-identity words and four opaque
 token words. `destination` packs acting X/Y; `target` packs target ID and X/Y;
 `itemSlot` packs acting and Hammerne-target slots. The shared transcript/live
 validator requires the exact kind-to-engine-action mapping, canonical unit IDs,
-map-bounded coordinates, slot sentinels, and zero reserved bits before creating
-an action or invoking either planner. Each absent slot is exactly `0xFF`, so
+coordinates strictly inside the available published width/height, exact
+coordinate/slot sentinels, and zero reserved bits before creating an action or
+invoking either planner. Each absent slot is exactly `0xFF`, so
 Summon, MOVE_WAIT, Rogue Pick, and other no-item actions remain distinct from
 slot zero. All four independently mixed token words bind every identity field,
 remain opaque to the host, and are echoed unchanged. A malformed page produces
@@ -1027,8 +1028,9 @@ one shared whole-observation validator requires `1 <= page_count <= 92`,
 64 MiB. It requires one summary followed by contiguous typed spans; canonical
 unique field, map, roster, inventory-slot, resource, flag, action-ordinal, and
 candidate identities; row-major map dimensions/counts; roster-owned inventory;
-and matching page totals. Invalid, duplicate, missing, cross-page, or reordered
-records reject without an unbounded exchange or retained partial observation.
+map-relative action destinations/targets; and matching page totals. Invalid,
+duplicate, missing, cross-page, or reordered records reject without an
+unbounded exchange or retained partial observation.
 Global ordinals and all four token words returned by ROM are opaque to host
 planners and are echoed unchanged. The host never sends coordinates, targets,
 item IDs, `ActionData`, unit pointers, or RNG state: a commit carries only
@@ -1079,8 +1081,10 @@ interleaved stages, missing settlements, and terminal/settled disagreement.
 Every accepted non-START command names the current observation. COMMIT looks
 up its action and token only in that exact observation's candidate set; PAGE
 binds both the command observation and requested index to the returned page.
-Re-chaining a stale, prior, future, or cross-swapped identity cannot bypass
-these checks.
+Rejected START/PAGE/COMMIT/CANCEL responses must retain the prior wire page
+byte-for-semantic-byte except for their documented rejection and terminal
+state; nonterminal checkpoints remain identical and terminal checkpoints zero.
+Re-chaining stale, cross-swapped, or rejected-response data cannot bypass this.
 Only the four protocol command kinds are transcript-representable. Unknown
 numeric or text kinds reject during import before a replay factory starts;
 malformed fields on START/PAGE/COMMIT/CANCEL remain representable when the

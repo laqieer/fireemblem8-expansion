@@ -108,6 +108,76 @@ def _assert_replay_rejected(test, data, message=None):
     factory.assert_not_called()
 
 
+def _sync_settled_observation(settled, observation):
+    settled["observation_identity"] = [observation[field] for field in (
+        "run_id", "observation_id", "page_index", "page_count",
+        "page_kind", "total_action_count")]
+    settled["observation_digest"] = planner._digest(observation)
+    settled["terminal"] = dict(state=observation["state"],
+                               rejection=observation["rejection"])
+    settled["rng"] = {
+        "state": observation["rng_state"], "lcg": observation["rng_lcg"],
+        "consumption": observation["rng_consumption"]}
+    settled["telemetry"] = [record["value"] for record in observation["resources"]
+                            if record["kind"] == planner.ValueKind.AUTOPLAY_TELEMETRY.value]
+
+
+def _rejected_response(document, page_kind):
+    events = document["events"]
+    for index, event in enumerate(events[:-4]):
+        if (event["event"] == "command"
+            and events[index + 1]["event"] == "acknowledgement"
+            and events[index + 1]["result"] == 0
+            and events[index + 3]["event"] == "observation_page"
+            and events[index + 3]["observation"]["page_kind"] == page_kind.value):
+            return events[index + 3]["observation"], events[index + 4]
+    raise AssertionError(f"missing rejected {page_kind.value} response")
+
+
+def _xor_nested(target, path):
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] ^= 1
+
+
+def _assert_page_mutation_rejected(test, pages, exported, index, changes):
+    mutated = list(pages)
+    mutated[index] = replace(mutated[index], **changes)
+    document = json.loads(exported)
+    expected = mutated[index]
+    page_event = next(
+        event for event in document["events"]
+        if event["event"] == "observation_page"
+            and event["observation"]["run_id"] == expected.run_id
+            and event["observation"]["observation_id"] == expected.observation_id
+            and event["observation"]["page_index"] == index
+    )
+    page_data = asdict(expected)
+    page_event["observation"] = page_data
+    settled = document["events"][document["events"].index(page_event) + 1]
+    _sync_settled_observation(settled, page_data)
+    _rechain_transcript(document)
+    _assert_replay_rejected(test, planner._canonical(document))
+    for implementation in (
+        planner.ScriptedPlanner(),
+        planner.BoundedSearchPlanner(max_nodes=planner.MAX_ACTIONS),
+    ):
+        transport = mock.Mock()
+        transport.transcript = planner.PlannerTranscript()
+        before = transport.transcript.export()
+        with mock.patch.object(
+            implementation, "choose", wraps=implementation.choose
+        ) as choose:
+            with test.assertRaises(planner.PlannerError):
+                selected = implementation.choose(
+                    planner._assemble_observation_pages(mutated)
+                )
+                transport.exchange(selected)
+        choose.assert_not_called()
+        transport.exchange.assert_not_called()
+        test.assertEqual(transport.transcript.export(), before)
+
+
 def _set_transcript_value(document, event_kind, path, value):
     target = _transcript_target(document, event_kind, path[:-1])
     target[path[-1]] = value
@@ -438,25 +508,15 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertEqual(imported.digest(), bridge.transcript.digest())
         sessionless = json.loads(exported)
         sessionless["events"].pop(0)
-        _assert_import_rejected(
-            self, sessionless, "exactly one leading session"
-        )
+        _assert_import_rejected(self, sessionless, "exactly one leading session")
         late_session = json.loads(exported)
         late_session["events"][0], late_session["events"][1] = (
-            late_session["events"][1],
-            late_session["events"][0],
+            late_session["events"][1], late_session["events"][0],
         )
-        _assert_import_rejected(
-            self, late_session, "exactly one leading session"
-        )
+        _assert_import_rejected(self, late_session, "exactly one leading session")
         duplicate_session = json.loads(exported)
-        duplicate_session["events"].insert(
-            1,
-            dict(duplicate_session["events"][0]),
-        )
-        _assert_import_rejected(
-            self, duplicate_session, "exactly one leading session"
-        )
+        duplicate_session["events"].insert(1, dict(duplicate_session["events"][0]))
+        _assert_import_rejected(self, duplicate_session, "exactly one leading session")
         token_tampered = json.loads(exported)
         complete_event = next(
             event
@@ -465,15 +525,13 @@ class PlannerBridgeTests(unittest.TestCase):
         )
         complete_event["observation"]["actions"][0]["token"]["word3"] ^= 1
         complete_event["candidate_set_digest"] = planner._digest(
-            complete_event["observation"]["actions"]
-        )
+            complete_event["observation"]["actions"])
         complete_index = token_tampered["events"].index(complete_event)
         token_tampered["events"][complete_index + 1][
             "observation_digest"
         ] = planner._digest(complete_event["observation"])
         _assert_import_rejected(
-            self, token_tampered, "accepted transcript token mismatch"
-        )
+            self, token_tampered, "accepted transcript token mismatch")
         runtime_tampered = json.loads(exported)
         settled_event = next(
             event
@@ -481,9 +539,7 @@ class PlannerBridgeTests(unittest.TestCase):
             if event["event"] == "settled"
         )
         settled_event["terminal"]["state"] ^= 1
-        _assert_import_rejected(
-            self, runtime_tampered, "settled runtime state mismatch"
-        )
+        _assert_import_rejected(self, runtime_tampered, "settled runtime state mismatch")
         acknowledgement = next(
             event
             for event in json.loads(exported)["events"]
@@ -525,56 +581,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 )
                 event[field] = value
                 _assert_import_rejected(self, invalid_ack, message)
-        rejected_commit = json.loads(exported)
-        acknowledgement = next(
-            event
-            for event in rejected_commit["events"]
-            if event["event"] == "acknowledgement"
-                and event["kind"] == 2
-        )
-        acknowledgement["result"] = 0
-        acknowledgement["rejection"] = 4
-        _assert_import_rejected(
-            self,
-            rejected_commit,
-            "settled rejection does not match acknowledgement",
-        )
-        committed_rejection = json.loads(exported)
-        acknowledgement_index = next(
-            index
-            for index, event in enumerate(committed_rejection["events"])
-            if event["event"] == "acknowledgement"
-                and event["kind"] == 2
-        )
-        acknowledgement = committed_rejection["events"][
-            acknowledgement_index
-        ]
-        acknowledgement["result"] = 0
-        acknowledgement["rejection"] = 4
-        observation_event = next(
-            event
-            for event in committed_rejection["events"][
-                acknowledgement_index + 1 :
-            ]
-            if event["event"] == "observation_page"
-        )
-        observation_event["observation"]["rejection"] = 4
-        settled_event = next(
-            event
-            for event in committed_rejection["events"][
-                acknowledgement_index + 1 :
-            ]
-            if event["event"] == "settled"
-        )
-        settled_event["terminal"]["rejection"] = 4
-        settled_event["observation_digest"] = planner._digest(
-            observation_event["observation"]
-        )
-        _assert_import_rejected(
-            self,
-            committed_rejection,
-            "rejected COMMIT cannot settle as COMMITTED",
-        )
         page_cross_swap = json.loads(exported)
         page_commands = [
             event["command"]
@@ -1242,21 +1248,69 @@ class PlannerBridgeTests(unittest.TestCase):
             ),
             exported,
         )
-        page_index = {
-            kind: next(
-                index
-                for index, page in enumerate(pages)
-                if page.page_kind is kind
-            )
-            for kind in (
-                planner.PageKind.MAP,
-                planner.PageKind.UNITS,
-                planner.PageKind.INVENTORY,
-                planner.PageKind.RESOURCES,
-                planner.PageKind.FLAGS,
-                planner.PageKind.ACTIONS,
-            )
-        }
+        def raw_page(index, kind, count, total, payload):
+            words = [0] * 249
+            words[:15] = [
+                0x41504C4E, planner.PROTOCOL_VERSION, 996, 1, 2, 2,
+                index, 3, kind, 0, count, total, 2, 0, 1,
+            ]
+            words[25 : 25 + len(payload)] = payload
+            return planner.parse_transport_observation(words)
+        small_pages = (
+            raw_page(0, 1, 8, 8, [
+                word for field in range(1, 9)
+                for word in (field | (4 << 24), 3 | (2 << 16) if field == 1 else 0)
+            ]),
+            raw_page(1, 2, 6, 6, [
+                x | (y << 6) | (1 << 12)
+                for y in range(2) for x in range(3)
+            ]),
+            raw_page(2, 4, 2, 2, [
+                1, 1, 2 | (1 << 16), 0, 0xFFFF, 1, 2, 3, 4, 0,
+                5, 1, 0, 2 << 8 | 1 << 16, 0xFFFF, 5, 6, 7, 8, 13,
+            ]),
+        )
+        small_fields = small_pages[0].fields
+        small_actions = small_pages[2].actions
+        small_transport = _PageReplayTransport(small_pages)
+        small_complete = planner.collect_observation_pages(
+            small_transport, small_transport.start()
+        )
+        self.assertEqual((
+            small_complete.actions[0].action.destination,
+            small_complete.actions[1].action.target_position,
+        ), ((2, 1), (2, 1)))
+        for implementation in (planner.ScriptedPlanner(), planner.BoundedSearchPlanner()):
+            implementation.choose(small_complete)
+        small_exported = small_transport.transcript.export()
+        def action_mutation(index, field, value):
+            records = list(small_actions)
+            records[index] = replace(records[index], action=replace(
+                records[index].action, **{field: value}
+            ))
+            return {"actions": tuple(records)}
+        coordinate_mutations = (
+            ("destination 63", 2, action_mutation(0, "destination", (63, 63))),
+            ("destination width", 2, action_mutation(0, "destination", (3, 1))),
+            ("destination height", 2, action_mutation(0, "destination", (2, 2))),
+            ("target 63", 2, action_mutation(1, "target_position", (63, 63))),
+            ("target width", 2, action_mutation(1, "target_position", (3, 1))),
+            ("target height", 2, action_mutation(1, "target_position", (2, 2))),
+            ("zero dimensions", 0,
+             {"fields": (replace(small_fields[0], value=0),)}),
+            ("unavailable dimensions", 0, {"fields": (replace(
+                small_fields[0], availability=planner.Availability.UNAVAILABLE,
+                value=None,
+            ),)}),
+        )
+        for name, index, changes in coordinate_mutations:
+            with self.subTest(map_coordinate=name):
+                _assert_page_mutation_rejected(
+                    self, small_pages, small_exported, index, changes
+                )
+        page_index = {}
+        for index, page in enumerate(pages):
+            page_index.setdefault(page.page_kind, index)
         map_page = pages[page_index[planner.PageKind.MAP]]
         unit_page = pages[page_index[planner.PageKind.UNITS]]
         inventory_page = pages[page_index[planner.PageKind.INVENTORY]]
@@ -1343,46 +1397,10 @@ class PlannerBridgeTests(unittest.TestCase):
                           *action_page.actions[2:])}),
         )
         for name, index, changes in mutations:
-            mutated = list(pages)
-            mutated[index] = replace(mutated[index], **changes)
-            document = json.loads(exported)
-            page_event = next(
-                event for event in document["events"]
-                if event["event"] == "observation_page"
-                    and event["observation"]["page_index"] == index
-            )
-            page_data = asdict(mutated[index])
-            page_event["observation"] = page_data
-            settled = document["events"][
-                document["events"].index(page_event) + 1
-            ]
-            settled["observation_identity"] = [
-                page_data[field] for field in (
-                    "run_id", "observation_id", "page_index", "page_count",
-                    "page_kind", "total_action_count",
+            with self.subTest(mutation=name):
+                _assert_page_mutation_rejected(
+                    self, pages, exported, index, changes
                 )
-            ]
-            settled["observation_digest"] = planner._digest(page_data)
-            _rechain_transcript(document)
-            _assert_replay_rejected(self, planner._canonical(document))
-            for implementation in (
-                planner.ScriptedPlanner(),
-                planner.BoundedSearchPlanner(max_nodes=512),
-            ):
-                transport = mock.Mock()
-                transport.transcript = planner.PlannerTranscript()
-                before = transport.transcript.export()
-                with mock.patch.object(
-                    implementation, "choose", wraps=implementation.choose
-                ) as choose:
-                    with self.assertRaises(planner.PlannerError):
-                        selected = implementation.choose(
-                            planner._assemble_observation_pages(mutated)
-                        )
-                        transport.exchange(selected)
-                choose.assert_not_called()
-                transport.exchange.assert_not_called()
-                self.assertEqual(transport.transcript.export(), before)
 
     def test_action_page_decodes_actor_and_target_slots(self):
         words = [0] * 249
@@ -2865,19 +2883,27 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
         with self._fixture() as (rom, backend, _):
             with _open_transport(backend, rom) as transport:
                 first = planner.collect_observation_pages(
-                    transport,
-                    transport.start(),
-                )
+                    transport, transport.start())
                 choice = planner.ScriptedPlanner().choose(first)
-                stale_page = transport.exchange(
-                    planner.Command(
-                        planner.CommandKind.PAGE,
-                        first.run_id,
-                        first.observation_id + 1,
-                        page_index=1,
-                    )
-                )
-                self.assertEqual(stale_page.rejection, 2)
+                page_indices = {
+                    planner.PageKind(observation["page_kind"]): observation["page_index"]
+                    for event in reversed(transport.transcript.events)
+                    if event["event"] == "observation_page"
+                    for observation in (event["observation"],)
+                    if observation["run_id"] == first.run_id
+                        and observation["observation_id"] == first.observation_id
+                }
+                for page_kind in planner._PAGE_ORDER[1:]:
+                    page_index = page_indices[page_kind]
+                    transport.exchange(planner.Command(
+                        planner.CommandKind.PAGE, first.run_id,
+                        first.observation_id, page_index=page_index,
+                    ))
+                    stale_page = transport.exchange(planner.Command(
+                        planner.CommandKind.PAGE, first.run_id,
+                        first.observation_id + 1, page_index=page_index,
+                    ))
+                    self.assertEqual(stale_page.rejection, 2)
                 forged = transport.exchange(
                     planner.Command(
                         planner.CommandKind.COMMIT,
@@ -2893,47 +2919,47 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     )
                 )
                 self.assertEqual(forged.rejection, 4)
-                cancelled = transport.exchange(
-                    planner.Command(
-                        planner.CommandKind.CANCEL,
-                        first.run_id,
-                        first.observation_id,
-                    )
-                )
+                cancelled = transport.exchange(planner.Command(
+                    planner.CommandKind.CANCEL, first.run_id, first.observation_id))
                 self.assertEqual(cancelled.state, 4)
                 recorded = transport.transcript.export()
-            self.assertEqual(
-                planner.replay_transcript_on_clean_transport(
-                    recorded,
-                    lambda: PlannerProcessTransport(backend, rom),
-                ),
-                recorded,
+            self.assertEqual(planner.replay_transcript_on_clean_transport(
+                recorded, lambda: PlannerProcessTransport(backend, rom)), recorded)
+            mutations = (
+                ("chapter", planner.PageKind.ACTIONS, False, ("chapter",)),
+                ("turn", planner.PageKind.ACTIONS, False, ("chapter_turn",)),
+                ("rng", planner.PageKind.ACTIONS, False, ("rng_state", 0)),
+                ("map", planner.PageKind.MAP, False, ("map_cells", 0, "terrain")),
+                ("unit", planner.PageKind.UNITS, False, ("units", 0, "state")),
+                ("resource", planner.PageKind.RESOURCES, False, ("resources", 0, "value")),
+                ("telemetry", planner.PageKind.RESOURCES, False, ("resources", -1, "value")),
+                ("flag", planner.PageKind.FLAGS, False, ("flags", 0, "state")),
+                ("action", planner.PageKind.ACTIONS, False,
+                 ("actions", 0, "action", "destination", 0)),
+                ("token", planner.PageKind.ACTIONS, False,
+                 ("actions", 0, "token", "word0")),
+                ("page identity", planner.PageKind.ACTIONS, False, ("page_index",)),
+                ("terminal state", planner.PageKind.ACTIONS, False, ("state",)),
+                ("checkpoint", planner.PageKind.ACTIONS, True, ("checkpoint", 12)),
             )
-            tampered = json.loads(recorded)
-            commit = next(
-                event["command"]
-                for event in tampered["events"]
-                if event["event"] == "command"
-                    and event["command"]["kind"]
-                        == planner.CommandKind.COMMIT.value
-            )
-            commit["observation_id"] += 1
-            _rechain_transcript(tampered)
-            factory_calls = 0
-            def factory():
-                nonlocal factory_calls
-                factory_calls += 1
-                return PlannerProcessTransport(backend, rom)
-            with self.assertRaisesRegex(
-                planner.PlannerError,
-                "command observation identity mismatch",
-            ):
-                planner.replay_transcript_on_clean_transport(
-                    planner._canonical(tampered),
-                    factory,
-                )
-            self.assertEqual(factory_calls, 0)
-
+            for name, page_kind, settled_target, path in mutations:
+                with self.subTest(rejected_response=name):
+                    document = json.loads(recorded)
+                    observation, settled = _rejected_response(document, page_kind)
+                    if settled_target:
+                        settled["checkpoint"] = [
+                            0x41504C4E, planner.PROTOCOL_VERSION, 52,
+                            observation["run_id"], observation["chapter"], 0,
+                            observation["chapter_turn"], *observation["rng_state"],
+                            observation["rng_lcg"], observation["rng_consumption"], 1,
+                        ]
+                    else:
+                        _xor_nested(observation, path)
+                        _sync_settled_observation(settled, observation)
+                    _rechain_transcript(document)
+                    _assert_replay_rejected(
+                        self, planner._canonical(document), "rejected response"
+                    )
     def test_world_map_transition_records_settled_checkpoint(self):
         with self._fixture(transition_subcode=1) as (rom, backend, _):
             _, checkpoint, transcript = self._run_planner(
