@@ -1230,6 +1230,11 @@ the ROM-owned timeout terminal and cleared checkpoint. An unacknowledged command
 `TRANSPORT_ERROR COMMAND_ACK_TIMEOUT`; an acknowledged COMMIT that never
 completes emits `TRANSPORT_ERROR ACTION_COMPLETION_TIMEOUT`. Either error
 terminates the adapter without emitting or serializing the old COMMITTED page.
+Transcript import requires that terminal error to be final and bound to an
+active command's exact ID/kind. ACK timeout and invalid ACK occur only before
+an ACK; ordinary response timeout requires a matching ACK; action completion
+timeout requires an accepted COMMIT ACK. No error may follow COMPLETE,
+response, or settlement, and clean fault replay must reproduce the same event.
 
 Host-only configuration coverage runs the generated GNUmakefile normally but
 replaces its recursive `$(MAKE)` boundary with a hermetic recorder. The
@@ -1244,6 +1249,9 @@ rejects during configuration validation before compilation.
 The Python configuration resolver appends `autoplay_planner` after every
 pre-existing positional parameter, preserving the established BGM-policy and
 item-cap slots while also supporting keyword use.
+The authoritative Make gate invokes the complete `PlannerBridgeTests` class,
+then the individually selected toolchain/libmGBA scenarios. Class discovery
+therefore includes every future Bridge method rather than a name allowlist.
 
 The authoritative resource gate builds otherwise-identical enabled and
 disabled debug profiles, parses both linker reports/maps/ELFs, and compares

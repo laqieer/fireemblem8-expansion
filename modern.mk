@@ -1119,25 +1119,7 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 	PLANNER_PRODUCTION_ROM="$(MODERN_AUTOPLAY_PLANNER_ROM)" \
 		PLANNER_PRODUCTION_ELF="$(MODERN_AUTOPLAY_PLANNER_ELF)" \
 		"$(PYTHON)" -m unittest \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_c_mailbox_adapter_accepts_only_typed_token_commit \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_flag_checkpoint_bounds_under_sanitizers \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_public_protocol_layout_is_fixed_width_and_offset_stable \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_action_page_decodes_actor_and_target_slots \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_transcript_round_trip_tamper_order_and_atomic_limits \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_transcript_json_depth_and_recursion_fail_closed \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_completion_timing_is_typed_and_kind_bounded \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_transcript_schema_rejects_unknown_keys_pre_factory \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_transcript_scalars_and_nonfinite_reject_pre_factory \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_maximum_semantic_transcript_fits_two_mib \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_expansion_config_preserves_positional_api \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_configured_bare_make_selects_release_and_fails_closed \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_host_only_ready_gate_capability_skips \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_configured_explicit_debug_goal_builds_in_toolchain_lane \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_transport_acknowledgement_enum_is_exact \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_native_summon_executor_preserves_action_and_coordinates \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_public_validation_errors_name_protocol_v2 \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_arm_adapter_compiles_at_the_existing_computer_decision_boundary \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_archival_target_predicates_keep_original_call_graph \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_production_mailbox_replays_two_chapters \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_clean_transport_replays_rejection_and_cancel \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_world_map_transition_records_settled_checkpoint \

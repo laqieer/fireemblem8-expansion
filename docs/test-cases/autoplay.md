@@ -708,6 +708,9 @@ to 600, except accepted COMMIT may use up to 18,000.
 WAITING also owns one monotonic five-second deadline. The backend advances the
 ROM at fixed cadence without keys while stdin is silent/partial or serves
 READ/malformed/unknown floods, then emits the ROM timeout and zero checkpoint.
+Terminal transport errors require a pending command and exact ID/kind. ACK
+errors precede ACK, response timeout follows ACK, and action timeout follows
+only an accepted COMMIT ACK; COMPLETE/response/settled forbid later errors.
 
 ### Negative control
 
@@ -756,6 +759,10 @@ factory.
 Rejected responses with changed chapter/turn, RNG, map, unit, inventory,
 resource, flag, action/token, telemetry, page identity, state, or checkpoint
 also fail before the replay factory.
+Standalone, wrong-ID/kind/code, wrong-stage, duplicate, or late transport
+errors fail pre-factory; real ACK/invalid-ACK/COMMIT-timeout faults import and
+replay exactly. The Make gate discovers the whole Bridge class, including all
+three security/atomicity controls and a dynamically added test method.
 Over-depth arrays/objects, parser or canonicalizer recursion, and re-chained
 deep inputs fail without state mutation. Client `STEP`, `RUN`, raw-key, and
 arbitrary-kind commands return an error and leave observation, RNG, mailbox,

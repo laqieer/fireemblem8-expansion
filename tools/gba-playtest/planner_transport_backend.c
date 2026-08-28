@@ -842,6 +842,8 @@ static int run_transport(const char* rom_path)
         {
             emit_transport_error(
                 kind == EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT
+                    && acknowledgement.result == 1
+                    && acknowledgement.rejection == 0
                     ? "ACTION_COMPLETION_TIMEOUT"
                     : "COMMAND_RESPONSE_TIMEOUT",
                 next_command_id,

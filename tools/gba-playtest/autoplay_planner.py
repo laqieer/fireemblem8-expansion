@@ -62,6 +62,9 @@ class AssignmentSource(int, Enum):
 class PlannerError(ValueError):
     """A protocol violation that must never be converted into success."""
 
+class PlannerTransportFailure(RuntimeError):
+    """A typed restricted-transport failure recorded in the transcript."""
+
 class Availability(str, Enum):
     AVAILABLE = "AVAILABLE"
     NOT_APPLICABLE = "NOT_APPLICABLE"
@@ -1848,11 +1851,43 @@ class PlannerTranscript:
                         )
                 latest_checkpoint = event["checkpoint"]
             elif kind == "transport_error":
+                code = event["code"]
                 if (
                     sequence != len(document["events"]) - 1
                     or awaiting_settlement
+                    or pending_command is None
+                    or pending_completion
+                    or pending_response
                 ):
                     raise PlannerError("transport error must terminate transcript")
+                command_kind = _COMMAND_KIND_CODES[pending_command["command"]["kind"]]
+                command_id = (
+                    pending_ack["command_id"]
+                    if pending_ack is not None else expected_command_id
+                )
+                if event["kind"] != command_kind or event["command_id"] != command_id:
+                    raise PlannerError("transport error command identity mismatch")
+                if code in {"COMMAND_ACK_TIMEOUT", "INVALID_COMMAND_ACK"}:
+                    valid_stage = pending_ack is None
+                elif code == "ACTION_COMPLETION_TIMEOUT":
+                    valid_stage = (
+                        pending_ack is not None
+                        and pending_ack["kind"] == _COMMAND_KIND_CODES[CommandKind.COMMIT.value]
+                        and pending_ack["result"] == 1
+                        and pending_ack["rejection"] == 0
+                    )
+                else:
+                    valid_stage = (
+                        pending_ack is not None
+                        and not (
+                            pending_ack["kind"]
+                                == _COMMAND_KIND_CODES[CommandKind.COMMIT.value]
+                            and pending_ack["result"] == 1
+                            and pending_ack["rejection"] == 0
+                        )
+                    )
+                if not valid_stage:
+                    raise PlannerError("transport error command stage mismatch")
                 pending_command = None
                 pending_ack = None
             elif kind == "observation_complete":
@@ -3213,65 +3248,57 @@ def replay_transcript_on_clean_transport(
             return self.captured[command.page_index]
 
     try:
-        for event in expected.events:
-            event_kind = event["event"]
-            response = None
-            if event_kind == "command":
-                command = event["command"]
-                kind = command["kind"]
-                if kind == CommandKind.START.value:
-                    response = transport.start(
-                        scenario_identity=command[
-                            "expected_identities"
-                        ][2],
-                    )
-                elif kind == CommandKind.PAGE.value:
-                    response = transport.exchange(
-                        Command(
-                            CommandKind.PAGE,
-                            command["run_id"],
-                            command["observation_id"],
-                            page_index=command["page_index"],
+        try:
+            for event in expected.events:
+                event_kind = event["event"]
+                response = None
+                if event_kind == "command":
+                    command = event["command"]
+                    kind = command["kind"]
+                    if kind == CommandKind.START.value:
+                        response = transport.start(
+                            scenario_identity=command["expected_identities"][2],
                         )
-                    )
-                elif kind == CommandKind.COMMIT.value:
-                    response = transport.exchange(
-                        Command(
-                            CommandKind.COMMIT,
-                            command["run_id"],
-                            command["observation_id"],
-                            command["action_ordinal"],
+                    elif kind == CommandKind.PAGE.value:
+                        response = transport.exchange(Command(
+                            CommandKind.PAGE, command["run_id"],
+                            command["observation_id"], page_index=command["page_index"],
+                        ))
+                    elif kind == CommandKind.COMMIT.value:
+                        response = transport.exchange(Command(
+                            CommandKind.COMMIT, command["run_id"],
+                            command["observation_id"], command["action_ordinal"],
                             OpaqueToken(**command["token"]),
-                        )
-                    )
-                elif kind == CommandKind.CANCEL.value:
-                    response = transport.exchange(
-                        Command(
-                            CommandKind.CANCEL,
-                            command["run_id"],
+                        ))
+                    elif kind == CommandKind.CANCEL.value:
+                        response = transport.exchange(Command(
+                            CommandKind.CANCEL, command["run_id"],
                             command["observation_id"],
+                        ))
+                    else:
+                        raise PlannerError("transcript contains an unsupported command")
+                    if isinstance(response, Observation):
+                        key = (response.run_id, response.observation_id)
+                        pages.setdefault(key, {})[response.page_index] = response
+                elif event_kind == "observation_complete":
+                    identity = event["page_identity"]
+                    key = (identity[0], identity[1])
+                    captured = pages.pop(key, {})
+                    if set(captured) != set(range(identity[2])):
+                        raise PlannerError(
+                            "clean replay did not capture every observation page"
                         )
+                    complete = collect_observation_pages(
+                        CapturedPageTransport(captured), captured[0],
                     )
-                else:
-                    raise PlannerError(
-                        "transcript contains an unsupported command"
-                    )
-                if isinstance(response, Observation):
-                    key = (response.run_id, response.observation_id)
-                    pages.setdefault(key, {})[response.page_index] = response
-            elif event_kind == "observation_complete":
-                identity = event["page_identity"]
-                key = (identity[0], identity[1])
-                captured = pages.pop(key, {})
-                if set(captured) != set(range(identity[2])):
-                    raise PlannerError(
-                        "clean replay did not capture every observation page"
-                    )
-                complete = collect_observation_pages(
-                    CapturedPageTransport(captured),
-                    captured[0],
-                )
-                transport.record_complete_observation(complete)
+                    transport.record_complete_observation(complete)
+        except PlannerTransportFailure as error:
+            if (
+                expected.events[-1]["event"] != "transport_error"
+                or transport.transcript.export() != data
+            ):
+                raise PlannerError("clean transport error replay mismatch") from error
+            return data
         actual = transport.transcript.export()
         if actual != data:
             raise PlannerError("clean transport transcript replay mismatch")

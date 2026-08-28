@@ -865,6 +865,68 @@ class PlannerBridgeTests(unittest.TestCase):
                 factory,
             )
         self.assertEqual(factory_calls, 0)
+    def test_transport_errors_bind_command_and_stage_pre_factory(self):
+        encoded = _recorded_transcript()
+        def error_transcript(kind, code, stage, rejected=False):
+            document = json.loads(encoded)
+            events = document["events"]
+            command_index = next(
+                index for index, event in enumerate(events)
+                if event["event"] == "command"
+                and event["command"]["kind"] == kind
+            )
+            acknowledgement = events[command_index + 1]
+            if rejected:
+                acknowledgement["result"] = 0
+                acknowledgement["rejection"] = 4
+            document["events"] = events[:command_index + 1 + stage]
+            document["events"].append({
+                "event": "transport_error", "code": code,
+                "command_id": acknowledgement["command_id"],
+                "kind": acknowledgement["kind"],
+            })
+            _rechain_transcript(document)
+            return planner._canonical(document)
+        valid = (
+            ("PAGE", "COMMAND_ACK_TIMEOUT", 0),
+            ("PAGE", "INVALID_COMMAND_ACK", 0),
+            ("PAGE", "COMMAND_RESPONSE_TIMEOUT", 1),
+            ("COMMIT", "ACTION_COMPLETION_TIMEOUT", 1),
+        )
+        for kind, code, stage in valid:
+            transcript = error_transcript(kind, code, stage)
+            self.assertEqual(
+                planner.PlannerTranscript.import_bytes(transcript).export(),
+                transcript,
+            )
+        invalid = (
+            ("PAGE", "COMMAND_ACK_TIMEOUT", 1, False),
+            ("PAGE", "INVALID_COMMAND_ACK", 1, False),
+            ("PAGE", "COMMAND_RESPONSE_TIMEOUT", 0, False),
+            ("COMMIT", "ACTION_COMPLETION_TIMEOUT", 0, False),
+            ("PAGE", "ACTION_COMPLETION_TIMEOUT", 1, False),
+            ("COMMIT", "ACTION_COMPLETION_TIMEOUT", 1, True),
+            ("COMMIT", "COMMAND_RESPONSE_TIMEOUT", 1, False),
+            ("PAGE", "COMMAND_RESPONSE_TIMEOUT", 2, False),
+            ("PAGE", "COMMAND_RESPONSE_TIMEOUT", 3, False),
+            ("PAGE", "COMMAND_RESPONSE_TIMEOUT", 4, False),
+        )
+        for kind, code, stage, rejected in invalid:
+            _assert_replay_rejected(
+                self, error_transcript(kind, code, stage, rejected)
+            )
+        baseline = json.loads(error_transcript("PAGE", "COMMAND_ACK_TIMEOUT", 0))
+        for field, value in (
+            ("command_id", 2), ("kind", 2), ("code", "UNKNOWN_TIMEOUT")
+        ):
+            document = json.loads(planner._canonical(baseline))
+            document["events"][-1][field] = value
+            _rechain_transcript(document)
+            _assert_replay_rejected(self, planner._canonical(document))
+        duplicate = json.loads(planner._canonical(baseline))
+        duplicate["events"].append(dict(duplicate["events"][-1]))
+        _rechain_transcript(duplicate)
+        _assert_replay_rejected(self, planner._canonical(duplicate))
     def test_transcript_schema_rejects_unknown_keys_pre_factory(self):
         encoded = _recorded_transcript()
         targets = (
@@ -1727,6 +1789,35 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertNotIn('"RUN"', transport)
         self.assertNotIn("setKeys", transport)
         self.assertIn("PLANNER_COMMAND_ADDR", transport)
+    def test_authoritative_make_discovers_entire_bridge_class(self):
+        recipe = (TESTS_DIR.parents[2] / "modern.mk").read_text(encoding="utf-8")
+        target = recipe.split(
+            "expansion-modern-autoplay-planner-check:", 1
+        )[1].split("\n# Issue #5", 1)[0]
+        class_name = (
+            "tools.gba-playtest.tests.test_autoplay_planner."
+            "PlannerBridgeTests"
+        )
+        self.assertIn(class_name, target)
+        self.assertNotIn(class_name + ".test_", target)
+        names = set(unittest.defaultTestLoader.getTestCaseNames(PlannerBridgeTests))
+        self.assertTrue({
+            "test_mailbox_has_no_arbitrary_memory_write_api",
+            "test_host_begin_and_commit_limits_are_atomic",
+            "test_security_boundary_has_no_raw_memory_save_or_network_surface",
+        } <= names)
+        executed = []
+        method = "test_future_bridge_gate_discovery"
+        setattr(PlannerBridgeTests, method, lambda self: executed.append(method))
+        try:
+            suite = unittest.defaultTestLoader.loadTestsFromTestCase(PlannerBridgeTests)
+            future = next(test for test in suite if test._testMethodName == method)
+            result = unittest.TestResult()
+            future.run(result)
+            self.assertTrue(result.wasSuccessful())
+            self.assertEqual(executed, [method])
+        finally:
+            delattr(PlannerBridgeTests, method)
     def test_expansion_config_preserves_positional_api(self):
         from scripts.modernize import expansion_config
         root = TESTS_DIR.parents[2]
@@ -2413,7 +2504,7 @@ class TransportCompletion:
     kind: int
     response_frames: int
 
-class PlannerTransportError(RuntimeError):
+class PlannerTransportError(planner.PlannerTransportFailure):
     def __init__(self, code: str, command_id: int, kind: int) -> None:
         super().__init__(
             f"{code}: command_id={command_id:#x} kind={kind:#x}"
@@ -3308,6 +3399,14 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 remaining_stdout, _ = transport.process.communicate(timeout=10)
                 self.assertEqual(remaining_stdout, "")
                 self.assertEqual(transport.process.returncode, 3)
+                transcript = transport.transcript.export()
+                planner.PlannerTranscript.import_bytes(transcript)
+            self.assertEqual(
+                planner.replay_transcript_on_clean_transport(
+                    transcript, lambda: PlannerProcessTransport(backend, rom)
+                ),
+                transcript,
+            )
     def test_unacknowledged_command_returns_typed_timeout(self):
         with self._fixture(
             ignore_commands=True,
@@ -3325,6 +3424,14 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 remaining_stdout, _ = transport.process.communicate(timeout=10)
                 self.assertEqual(remaining_stdout, "")
                 self.assertEqual(transport.process.returncode, 3)
+                transcript = transport.transcript.export()
+                planner.PlannerTranscript.import_bytes(transcript)
+            self.assertEqual(
+                planner.replay_transcript_on_clean_transport(
+                    transcript, lambda: PlannerProcessTransport(backend, rom)
+                ),
+                transcript,
+            )
     def test_backend_requires_exact_ready_before_stdin(self):
         if host_mode.host_only_enabled():
             self.skipTest(
@@ -3402,6 +3509,14 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 )
                 self.assertEqual(remaining_stdout, "")
                 self.assertEqual(transport.process.returncode, 3)
+                transcript = transport.transcript.export()
+                planner.PlannerTranscript.import_bytes(transcript)
+            self.assertEqual(
+                planner.replay_transcript_on_clean_transport(
+                    transcript, lambda: PlannerProcessTransport(backend, rom)
+                ),
+                transcript,
+            )
     def test_restricted_backend_rejects_frame_and_key_controls(self):
         with self._fixture() as (rom, backend, _):
             with _open_transport(backend, rom) as transport:
