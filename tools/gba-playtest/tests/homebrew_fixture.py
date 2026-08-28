@@ -461,6 +461,7 @@ def build_planner_transport_ack_driver(path: Path) -> None:
         "-DPLANNER_COMMAND_ADDR=0u",
         "-DPLANNER_CHECKPOINT_ADDR=0u",
         "-DPLANNER_TRANSPORT_NO_MAIN=1",
+        "-DPLANNER_TRANSPORT_LINE_TEST=1",
         str(root / "tools" / "gba-playtest" / "planner_transport_backend.c"),
         str(
             root

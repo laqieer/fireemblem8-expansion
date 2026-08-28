@@ -731,10 +731,10 @@ class ExpansionIdentity:
     casual_mode: int = 0
     hq_mixer: int = 0
     autoplay_strategies: int = 0
-    autoplay_planner: int = 0
     bgm_continuation_policy: str = "preserve"
     item_id_cap: int = ITEM_ID_DEFAULT_CAP
     config_fingerprint: str = field(default="")
+    autoplay_planner: int = 0
 
     @property
     def version_string(self) -> str:
@@ -844,9 +844,9 @@ def load_identity(
     casual_mode=None,
     hq_mixer=None,
     autoplay_strategies=None,
-    autoplay_planner=None,
     bgm_continuation_policy=None,
     item_id_cap=None,
+    autoplay_planner=None,
 ) -> ExpansionIdentity:
     """Parse, validate, and resolve a complete ExpansionIdentity.
 

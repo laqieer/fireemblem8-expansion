@@ -677,7 +677,9 @@ recursion become typed invalid-transcript errors before transport creation.
 Every wire-v2 envelope, event, and nested provenance, command/token,
 observation/record, ACK, completion, settlement, RNG, terminal, and transport
 error object has an exact allowed/required schema; unknown or missing keys
-reject before transport creation even after re-chaining.
+reject before transport creation even after re-chaining. Exact integer,
+enum, coordinate, page, slot, sentinel, and u32 bounds apply to every scalar;
+nonfinite JSON rejects during both import and export without mutation.
 After its fixed test-only pre-stdin boot routine, the enabled production
 backend accepts only READ/status, START, PAGE, COMMIT, CANCEL, and QUIT.
 Both immediate synthetic startup and delayed fixed bootstrap must publish the
@@ -730,7 +732,9 @@ Over-depth arrays/objects, parser or canonicalizer recursion, and re-chained
 deep inputs fail without state mutation. Client `STEP`, `RUN`, raw-key, and
 arbitrary-kind commands return an error and leave observation, RNG, mailbox,
 checkpoint, and transcript byte-identical; such commands cannot be encoded in
-a valid transcript.
+a valid transcript. A 512-byte-or-longer input line is drained atomically, so
+a same-line valid COMMIT/CANCEL suffix is never parsed; the next separately
+delimited typed command remains usable.
 Unknown numeric command kinds likewise fail import before transport creation.
 Negative, oversized, boolean, string, float, or wrong-kind completion timings
 fail before replay.

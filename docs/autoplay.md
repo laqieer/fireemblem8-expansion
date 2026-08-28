@@ -1066,7 +1066,11 @@ envelope, event, provenance/source/ROM/scenario, command/token, observation
 and every record, ACK, completion, settlement, RNG, terminal, and transport
 error boundary. Unknown extension keys and missing required keys fail before a
 clean replay transport is created, even when an attacker recomputes the hash
-chain.
+chain. Every numeric scalar must be an exact Python/JSON integer within its
+wire width, enum, coordinate, page, slot, or sentinel domain; booleans,
+strings, floats, and out-of-range values reject before transport creation.
+`NaN` and positive/negative infinity are rejected during decode and canonical
+emission, with no transcript mutation.
 The importer is an explicit command state machine: each command must be
 followed by its matching ACK, matching COMPLETE, one response page, and that
 response's settlement. It rejects responses before completion, duplicate or
@@ -1163,6 +1167,9 @@ READY boundary through a separately linked test-only bootstrap routine before
 stdin is exposed. Sending `STEP`, `RUN`, raw keys, or equivalent unknown input
 returns an error without advancing the emulator or changing observation, RNG,
 mailbox, checkpoint, or transcript state.
+Input is newline framed with at most 511 bytes before the delimiter. An
+overlong or NUL-bearing line is drained through its one newline or EOF and
+produces exactly one error; no suffix can become a second typed command.
 Before any initial OBS or stdin handling, the backend requires the exact
 magic/version/size, READY state, control page zero, and one-page identity. The
 four-frame synthetic path and optional fixed launcher both pass this same
@@ -1215,6 +1222,9 @@ toolchain-equipped planner gate separately runs the real out-of-tree
 `make expansion-modern-boot-check MODERN_CONFIG=debug` to compile, link, and
 boot the enabled ROM. An explicit release request executes normally and
 rejects during configuration validation before compilation.
+The Python configuration resolver appends `autoplay_planner` after every
+pre-existing positional parameter, preserving the established BGM-policy and
+item-cap slots while also supporting keyword use.
 
 The enabled ARM planner and shared action-semantics objects use 996-byte pages,
 64-byte commands, 52-byte checkpoints, 1,140 bytes of EWRAM/BSS, zero IWRAM,

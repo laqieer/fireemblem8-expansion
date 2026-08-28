@@ -44,6 +44,96 @@ TRANSCRIPT_SESSION = {
     "ready_run_id": 0,
     "run_id": 1,
 }
+TRANSCRIPT_RECORDS = {
+    "map_cells": {
+        "x": 0, "y": 0, "terrain": 1, "unit": 0,
+        "availability": "AVAILABLE",
+    },
+    "units": {
+        "slot": 1, "character": 1, "unit_class": 1,
+        "position": [0, 0], "hp": [20, 20], "state": 0,
+        "inventory_digest": 0, "availability": "AVAILABLE",
+    },
+    "inventory": {
+        "unit": 1, "slot": 0, "item_id": 1, "uses": 30,
+        "raw_item": 0x1E01, "availability": "AVAILABLE",
+    },
+    "resources": {
+        "kind": 3, "slot": 0, "value": 0x1E01,
+        "item_id": 1, "uses": 30, "availability": "AVAILABLE",
+    },
+    "flags": {
+        "kind": 4, "flag_id": 0, "state": 0,
+        "availability": "AVAILABLE",
+    },
+}
+
+
+def _transcript_event(document, kind):
+    return next(
+        event
+        for event in document["events"]
+        if event["event"] == kind
+    )
+
+
+def _transcript_target(document, event_kind, path=()):
+    target = (
+        document
+        if event_kind is None
+        else _transcript_event(document, event_kind)
+    )
+    for key in path:
+        target = target[key]
+    return target
+
+
+def _rechain_transcript(document):
+    previous = "0" * 64
+    for sequence, event in enumerate(document["events"]):
+        event.pop("event_digest", None)
+        event["sequence"] = sequence
+        event["previous_digest"] = previous
+        event["event_digest"] = planner._digest(event)
+        previous = event["event_digest"]
+
+
+def _set_transcript_value(document, event_kind, path, value):
+    target = _transcript_target(document, event_kind, path[:-1])
+    target[path[-1]] = value
+
+
+def _recorded_transcript():
+    bridge = planner.PlannerBridge(PROVENANCE)
+    run_id = bridge.begin(PROVENANCE)
+    observation = bridge.observe(
+        1,
+        (
+            planner.Field(
+                "gold",
+                "gPlaySt.partyGoldAmount",
+                0xFFFFFFFF,
+                planner.Availability.AVAILABLE,
+                100,
+            ),
+        ),
+        tuple(
+            planner.Action("MOVE_WAIT", 1, (index + 1, 0))
+            for index in range(23)
+        ),
+    )
+    complete = planner.collect_observation_pages(bridge, observation)
+    choice = complete.actions[0]
+    bridge.commit(
+        planner.Command(
+            planner.CommandKind.COMMIT,
+            run_id,
+            observation.observation_id,
+            choice.ordinal,
+            choice.token,
+        )
+    )
+    return bridge.transcript.export()
 
 
 class PlannerBridgeTests(unittest.TestCase):
@@ -187,15 +277,6 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertEqual(imported.export(), exported)
         self.assertEqual(imported.digest(), bridge.transcript.digest())
 
-        def rechain(document):
-            previous = "0" * 64
-            for sequence, event in enumerate(document["events"]):
-                event.pop("event_digest", None)
-                event["sequence"] = sequence
-                event["previous_digest"] = previous
-                event["event_digest"] = planner._digest(event)
-                previous = event["event_digest"]
-
         empty = {
             "schema": planner.PlannerTranscript.SCHEMA,
             "events": [],
@@ -210,7 +291,7 @@ class PlannerBridgeTests(unittest.TestCase):
 
         sessionless = json.loads(exported)
         sessionless["events"].pop(0)
-        rechain(sessionless)
+        _rechain_transcript(sessionless)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "exactly one leading session",
@@ -221,7 +302,7 @@ class PlannerBridgeTests(unittest.TestCase):
 
         missing_provenance = json.loads(exported)
         missing_provenance["events"][0].pop("provenance")
-        rechain(missing_provenance)
+        _rechain_transcript(missing_provenance)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "invalid planner transcript session provenance",
@@ -235,7 +316,7 @@ class PlannerBridgeTests(unittest.TestCase):
             late_session["events"][1],
             late_session["events"][0],
         )
-        rechain(late_session)
+        _rechain_transcript(late_session)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "exactly one leading session",
@@ -249,7 +330,7 @@ class PlannerBridgeTests(unittest.TestCase):
             1,
             dict(duplicate_session["events"][0]),
         )
-        rechain(duplicate_session)
+        _rechain_transcript(duplicate_session)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "exactly one leading session",
@@ -269,7 +350,7 @@ class PlannerBridgeTests(unittest.TestCase):
                 provenance_tampered["events"][0]["provenance"][
                     field
                 ] ^= 1
-                rechain(provenance_tampered)
+                _rechain_transcript(provenance_tampered)
                 with self.assertRaisesRegex(
                     planner.PlannerError,
                     "observation session "
@@ -283,7 +364,7 @@ class PlannerBridgeTests(unittest.TestCase):
         provenance = run_tampered["events"][0]["provenance"]
         provenance["ready_run_id"] += 1
         provenance["run_id"] += 1
-        rechain(run_tampered)
+        _rechain_transcript(run_tampered)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "(observation session|accepted command run) identity mismatch",
@@ -314,7 +395,7 @@ class PlannerBridgeTests(unittest.TestCase):
             if event["event"] == "observation_complete"
         )
         complete_event["page_identity"][3] += 1
-        rechain(identity_tampered)
+        _rechain_transcript(identity_tampered)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "page identity mismatch",
@@ -337,7 +418,7 @@ class PlannerBridgeTests(unittest.TestCase):
         token_tampered["events"][complete_index + 1][
             "observation_digest"
         ] = planner._digest(complete_event["observation"])
-        rechain(token_tampered)
+        _rechain_transcript(token_tampered)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "accepted transcript token mismatch",
@@ -353,7 +434,7 @@ class PlannerBridgeTests(unittest.TestCase):
             if event["event"] == "settled"
         )
         settled_event["terminal"]["state"] ^= 1
-        rechain(runtime_tampered)
+        _rechain_transcript(runtime_tampered)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "settled runtime state mismatch",
@@ -385,7 +466,7 @@ class PlannerBridgeTests(unittest.TestCase):
                 )
                 event["result"] = result
                 event["rejection"] = rejection
-                rechain(invalid_ack)
+                _rechain_transcript(invalid_ack)
                 with self.assertRaisesRegex(
                     planner.PlannerError,
                     "invalid acknowledgement result/rejection pair",
@@ -408,7 +489,7 @@ class PlannerBridgeTests(unittest.TestCase):
                     if item["event"] == "acknowledgement"
                 )
                 event[field] = value
-                rechain(invalid_ack)
+                _rechain_transcript(invalid_ack)
                 with self.assertRaisesRegex(
                     planner.PlannerError,
                     message,
@@ -426,7 +507,7 @@ class PlannerBridgeTests(unittest.TestCase):
         )
         acknowledgement["result"] = 0
         acknowledgement["rejection"] = 4
-        rechain(rejected_commit)
+        _rechain_transcript(rejected_commit)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "settled rejection does not match acknowledgement",
@@ -466,7 +547,7 @@ class PlannerBridgeTests(unittest.TestCase):
         settled_event["observation_digest"] = planner._digest(
             observation_event["observation"]
         )
-        rechain(committed_rejection)
+        _rechain_transcript(committed_rejection)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "rejected COMMIT cannot settle as COMMITTED",
@@ -492,7 +573,7 @@ class PlannerBridgeTests(unittest.TestCase):
                             and event["command"]["kind"] == command_kind
                     )
                     command["observation_id"] = observation_id
-                    rechain(stale_command)
+                    _rechain_transcript(stale_command)
                     with self.assertRaisesRegex(
                         planner.PlannerError,
                         "command observation identity mismatch",
@@ -513,7 +594,7 @@ class PlannerBridgeTests(unittest.TestCase):
             page_commands[1]["page_index"],
             page_commands[0]["page_index"],
         )
-        rechain(page_cross_swap)
+        _rechain_transcript(page_cross_swap)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "PAGE response identity mismatch",
@@ -540,7 +621,7 @@ class PlannerBridgeTests(unittest.TestCase):
             events[completion_index],
             events[ack_index],
         )
-        rechain(completion_before_ack)
+        _rechain_transcript(completion_before_ack)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "completion order",
@@ -555,7 +636,7 @@ class PlannerBridgeTests(unittest.TestCase):
             events[response_index],
             events[completion_index],
         )
-        rechain(response_before_completion)
+        _rechain_transcript(response_before_completion)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "response observation precedes completion",
@@ -569,7 +650,7 @@ class PlannerBridgeTests(unittest.TestCase):
             completion_index,
             dict(duplicate_ack["events"][ack_index]),
         )
-        rechain(duplicate_ack)
+        _rechain_transcript(duplicate_ack)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "acknowledgement order",
@@ -583,7 +664,7 @@ class PlannerBridgeTests(unittest.TestCase):
             response_index,
             dict(duplicate_completion["events"][completion_index]),
         )
-        rechain(duplicate_completion)
+        _rechain_transcript(duplicate_completion)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "completion order",
@@ -604,7 +685,7 @@ class PlannerBridgeTests(unittest.TestCase):
             ack_index,
             dict(second_command),
         )
-        rechain(interleaved_command)
+        _rechain_transcript(interleaved_command)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "command overlap",
@@ -615,7 +696,7 @@ class PlannerBridgeTests(unittest.TestCase):
 
         missing_response = json.loads(exported)
         missing_response["events"].pop(response_index)
-        rechain(missing_response)
+        _rechain_transcript(missing_response)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "settled event has no response observation",
@@ -831,13 +912,7 @@ class PlannerBridgeTests(unittest.TestCase):
                     and event["kind"] == kind
             )
             completion["response_frames"] = response_frames
-            previous = "0" * 64
-            for sequence, event in enumerate(document["events"]):
-                event.pop("event_digest", None)
-                event["sequence"] = sequence
-                event["previous_digest"] = previous
-                event["event_digest"] = planner._digest(event)
-                previous = event["event_digest"]
+            _rechain_transcript(document)
             return planner._canonical(document)
 
         for kind, response_frames in (
@@ -892,13 +967,7 @@ class PlannerBridgeTests(unittest.TestCase):
         completion["response_frames"] = (
             planner.COMMAND_RESPONSE_FRAME_LIMIT + 1
         )
-        previous = "0" * 64
-        for sequence, event in enumerate(rejected_commit["events"]):
-            event.pop("event_digest", None)
-            event["sequence"] = sequence
-            event["previous_digest"] = previous
-            event["event_digest"] = planner._digest(event)
-            previous = event["event_digest"]
+        _rechain_transcript(rejected_commit)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "completion timing is invalid",
@@ -925,257 +994,63 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertEqual(factory_calls, 0)
 
     def test_transcript_schema_rejects_unknown_keys_pre_factory(self):
-        bridge = planner.PlannerBridge(PROVENANCE)
-        run_id = bridge.begin(PROVENANCE)
-        observation = bridge.observe(
-            1,
-            (
-                planner.Field(
-                    "gold",
-                    "gPlaySt.partyGoldAmount",
-                    0xFFFFFFFF,
-                    planner.Availability.AVAILABLE,
-                    100,
-                ),
-            ),
-            tuple(
-                planner.Action("MOVE_WAIT", 1, (index + 1, 0))
-                for index in range(23)
-            ),
-        )
-        complete = planner.collect_observation_pages(
-            bridge,
-            observation,
-        )
-        choice = complete.actions[0]
-        bridge.commit(
-            planner.Command(
-                planner.CommandKind.COMMIT,
-                run_id,
-                observation.observation_id,
-                choice.ordinal,
-                choice.token,
-            )
-        )
-        encoded = bridge.transcript.export()
-
-        def event(document, kind):
-            return next(
-                item
-                for item in document["events"]
-                if item["event"] == kind
-            )
-
-        def observation_payload(document):
-            return event(document, "observation_complete")[
-                "observation"
-            ]
-
-        def inject_record(document, name, record):
-            observation_value = observation_payload(document)
-            observation_value[name] = [record]
-            return observation_value[name][0]
-
-        def add_transport_error(document):
-            value = {
-                "event": "transport_error",
-                "code": "TEST",
-                "command_id": 99,
-                "kind": 1,
-            }
-            document["events"].append(value)
-            return value
-
-        selectors = (
-            ("envelope", lambda document: document),
-            ("session event", lambda document: event(document, "session")),
-            (
-                "session provenance",
-                lambda document: event(document, "session")["provenance"],
-            ),
-            (
-                "session source",
-                lambda document: event(document, "session")["provenance"][
-                    "source"
-                ],
-            ),
+        encoded = _recorded_transcript()
+        targets = (
+            ("envelope", None, ()),
+            ("session event", "session", ()),
+            ("session provenance", "session", ("provenance",)),
+            ("session source", "session", ("provenance", "source")),
             (
                 "session ROM",
-                lambda document: event(document, "session")["provenance"][
-                    "source"
-                ]["rom"],
+                "session",
+                ("provenance", "source", "rom"),
             ),
             (
                 "session scenario",
-                lambda document: event(document, "session")["provenance"][
-                    "source"
-                ]["scenario"],
+                "session",
+                ("provenance", "source", "scenario"),
             ),
-            (
-                "complete event",
-                lambda document: event(
-                    document,
-                    "observation_complete",
-                ),
-            ),
-            ("observation", observation_payload),
+            ("complete event", "observation_complete", ()),
+            ("observation", "observation_complete", ("observation",)),
             (
                 "field",
-                lambda document: observation_payload(document)["fields"][0],
+                "observation_complete",
+                ("observation", "fields", 0),
             ),
             (
                 "action record",
-                lambda document: observation_payload(document)["actions"][0],
+                "observation_complete",
+                ("observation", "actions", 0),
             ),
             (
                 "action",
-                lambda document: observation_payload(document)["actions"][0][
-                    "action"
-                ],
+                "observation_complete",
+                ("observation", "actions", 0, "action"),
             ),
             (
                 "action token",
-                lambda document: observation_payload(document)["actions"][0][
-                    "token"
-                ],
+                "observation_complete",
+                ("observation", "actions", 0, "token"),
             ),
-            (
-                "map cell",
-                lambda document: inject_record(
-                    document,
-                    "map_cells",
-                    {
-                        "x": 0,
-                        "y": 0,
-                        "terrain": 1,
-                        "unit": 0,
-                        "availability": "AVAILABLE",
-                    },
-                ),
-            ),
-            (
-                "unit",
-                lambda document: inject_record(
-                    document,
-                    "units",
-                    {
-                        "slot": 1,
-                        "character": 1,
-                        "unit_class": 1,
-                        "position": [0, 0],
-                        "hp": [20, 20],
-                        "state": 0,
-                        "inventory_digest": 0,
-                        "availability": "AVAILABLE",
-                    },
-                ),
-            ),
-            (
-                "inventory",
-                lambda document: inject_record(
-                    document,
-                    "inventory",
-                    {
-                        "unit": 1,
-                        "slot": 0,
-                        "item_id": 0,
-                        "uses": 0,
-                        "raw_item": 0,
-                        "availability": "EMPTY",
-                    },
-                ),
-            ),
-            (
-                "resource",
-                lambda document: inject_record(
-                    document,
-                    "resources",
-                    {
-                        "kind": 2,
-                        "slot": None,
-                        "value": 0,
-                        "item_id": None,
-                        "uses": None,
-                        "availability": "AVAILABLE",
-                    },
-                ),
-            ),
-            (
-                "flag",
-                lambda document: inject_record(
-                    document,
-                    "flags",
-                    {
-                        "kind": 4,
-                        "flag_id": 0,
-                        "state": 0,
-                        "availability": "AVAILABLE",
-                    },
-                ),
-            ),
-            ("command event", lambda document: event(document, "command")),
-            (
-                "command",
-                lambda document: event(document, "command")["command"],
-            ),
-            (
-                "command token",
-                lambda document: next(
-                    item["command"]["token"]
-                    for item in document["events"]
-                    if item["event"] == "command"
-                        and item["command"]["kind"]
-                            == planner.CommandKind.COMMIT.value
-                ),
-            ),
-            (
-                "acknowledgement",
-                lambda document: event(document, "acknowledgement"),
-            ),
-            (
-                "completion",
-                lambda document: event(document, "completion"),
-            ),
-            (
-                "observation page event",
-                lambda document: event(document, "observation_page"),
-            ),
-            (
-                "settled event",
-                lambda document: event(document, "settled"),
-            ),
-            (
-                "settled RNG",
-                lambda document: event(document, "settled")["rng"],
-            ),
-            (
-                "settled terminal",
-                lambda document: event(document, "settled")["terminal"],
-            ),
-            ("transport error", add_transport_error),
+            ("command event", "command", ()),
+            ("command", "command", ("command",)),
+            ("acknowledgement", "acknowledgement", ()),
+            ("completion", "completion", ()),
+            ("observation page", "observation_page", ()),
+            ("settled event", "settled", ()),
+            ("settled RNG", "settled", ("rng",)),
+            ("settled terminal", "settled", ("terminal",)),
         )
-
-        def rechain(document):
-            previous = "0" * 64
-            for sequence, item in enumerate(document["events"]):
-                item.pop("event_digest", None)
-                item["sequence"] = sequence
-                item["previous_digest"] = previous
-                item["event_digest"] = planner._digest(item)
-                previous = item["event_digest"]
-
-        for name, selector in selectors:
+        for name, event_kind, path in targets:
             with self.subTest(schema=name):
                 document = json.loads(encoded)
-                selector(document)["unexpected"] = 1
-                rechain(document)
-                factory_calls = 0
-
-                def factory():
-                    nonlocal factory_calls
-                    factory_calls += 1
-                    raise AssertionError("invalid schema started transport")
-
+                _transcript_target(
+                    document,
+                    event_kind,
+                    path,
+                )["unexpected"] = 1
+                _rechain_transcript(document)
+                factory = mock.Mock()
                 with self.assertRaisesRegex(
                     planner.PlannerError,
                     "schema",
@@ -1184,30 +1059,77 @@ class PlannerBridgeTests(unittest.TestCase):
                         planner._canonical(document),
                         factory,
                     )
-                self.assertEqual(factory_calls, 0)
+                factory.assert_not_called()
 
-        for name in ("checkpoint", "telemetry"):
-            with self.subTest(payload=name):
+        for name, record in TRANSCRIPT_RECORDS.items():
+            with self.subTest(record=name):
                 document = json.loads(encoded)
-                settled = event(document, "settled")
-                if name == "checkpoint":
-                    settled[name][0] = {"unexpected": 1}
-                else:
-                    settled[name] = [{"unexpected": 1}]
-                rechain(document)
+                observation = _transcript_target(
+                    document,
+                    "observation_complete",
+                    ("observation",),
+                )
+                observation[name] = [{**record, "unexpected": 1}]
+                _rechain_transcript(document)
                 with self.assertRaisesRegex(
                     planner.PlannerError,
-                    "invalid settled transcript record",
+                    "schema",
                 ):
                     planner.PlannerTranscript.import_bytes(
                         planner._canonical(document)
                     )
 
+        document = json.loads(encoded)
+        commit = next(
+            event["command"]
+            for event in document["events"]
+            if event["event"] == "command"
+                and event["command"]["kind"] == "COMMIT"
+        )
+        commit["token"]["unexpected"] = 1
+        _rechain_transcript(document)
+        with self.assertRaisesRegex(planner.PlannerError, "schema"):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(document)
+            )
+
+        for name in ("checkpoint", "telemetry"):
+            document = json.loads(encoded)
+            _transcript_event(document, "settled")[name] = [
+                {"unexpected": 1}
+            ]
+            _rechain_transcript(document)
+            with self.assertRaisesRegex(
+                planner.PlannerError,
+                "invalid settled transcript record",
+            ):
+                planner.PlannerTranscript.import_bytes(
+                    planner._canonical(document)
+                )
+
+        document = json.loads(encoded)
+        error = {
+            "event": "transport_error",
+            "code": "COMMAND_ACK_TIMEOUT",
+            "command_id": 99,
+            "kind": 1,
+            "unexpected": 1,
+        }
+        document["events"].append(error)
+        _rechain_transcript(document)
+        with self.assertRaisesRegex(planner.PlannerError, "schema"):
+            planner.PlannerTranscript.import_bytes(
+                planner._canonical(document)
+            )
+
         missing_required = json.loads(encoded)
-        event(missing_required, "command")["command"].pop(
+        _transcript_event(
+            missing_required,
+            "command",
+        )["command"].pop(
             "observation_id"
         )
-        rechain(missing_required)
+        _rechain_transcript(missing_required)
         with self.assertRaisesRegex(
             planner.PlannerError,
             "command schema",
@@ -1215,6 +1137,177 @@ class PlannerBridgeTests(unittest.TestCase):
             planner.PlannerTranscript.import_bytes(
                 planner._canonical(missing_required)
             )
+
+    def test_transcript_scalars_and_nonfinite_reject_pre_factory(self):
+        encoded = _recorded_transcript()
+
+        def assert_pre_factory(data, message=None):
+            factory = mock.Mock(
+                side_effect=AssertionError("invalid transcript started transport")
+            )
+            context = (
+                self.assertRaisesRegex(planner.PlannerError, message)
+                if message
+                else self.assertRaises(planner.PlannerError)
+            )
+            with context:
+                planner.replay_transcript_on_clean_transport(data, factory)
+            factory.assert_not_called()
+
+        complete = "observation_complete"
+        observation = ("observation",)
+        action = observation + ("actions", 0)
+        scalar_cases = (
+            ("session", ("provenance", "rom_identity"), True),
+            ("session", ("provenance", "source", "rom", "size"), -1),
+            ("session", ("provenance", "source", "scenario", "schema_version"), 1.0),
+            (complete, observation + ("run_id",), "1"),
+            (complete, observation + ("chapter",), 0x100),
+            (complete, observation + ("page_count",), 0),
+            (complete, observation + ("page_index",), 92),
+            (complete, observation + ("page_kind",), 1),
+            (complete, observation + ("state",), 6),
+            (complete, observation + ("rejection",), 11),
+            (complete, observation + ("rng_state", 0), "1"),
+            (complete, observation + ("actual_seed_identity",), 1.0),
+            (complete, observation + ("record_count",), -1),
+            (complete, observation + ("fields", 0, "bound"), True),
+            (complete, observation + ("fields", 0, "value"), "100"),
+            (complete, action + ("ordinal",), True),
+            (complete, action + ("action", "actor"), 0x100),
+            (complete, action + ("action", "destination", 0), 64),
+            (complete, action + ("action", "item_slot"), 5),
+            *(
+                (complete, action + ("token", f"word{word}"), invalid)
+                for word, invalid in enumerate((True, "0", 1.0, -1))
+            ),
+            (complete, ("page_identity", 2), 93),
+            ("settled", ("checkpoint", 0), "0"),
+            ("settled", ("command_words", 0), True),
+            ("settled", ("telemetry",), [1.0]),
+            ("settled", ("rng", "state", 0), -1),
+            ("settled", ("terminal", "state"), True),
+            ("acknowledgement", ("result",), True),
+            ("completion", ("response_frames",), 1.0),
+        )
+        for event_kind, path, value in scalar_cases:
+            with self.subTest(event=event_kind, path=path):
+                document = json.loads(encoded)
+                _set_transcript_value(document, event_kind, path, value)
+                _rechain_transcript(document)
+                assert_pre_factory(planner._canonical(document))
+
+        record_cases = (
+            ("map_cells", "x", 64),
+            ("units", "state", -1),
+            ("inventory", "slot", 5),
+            ("resources", "slot", 100),
+            ("flags", "state", 2),
+        )
+        for field, key, value in record_cases:
+            with self.subTest(record=field):
+                document = json.loads(encoded)
+                observation = _transcript_event(
+                    document,
+                    "observation_complete",
+                )["observation"]
+                observation[field] = [{
+                    **TRANSCRIPT_RECORDS[field],
+                    key: value,
+                }]
+                _rechain_transcript(document)
+                assert_pre_factory(planner._canonical(document))
+
+        session_only = planner.PlannerTranscript()
+        session_only.record_session(TRANSCRIPT_SESSION)
+        command_cases = (
+            {
+                "kind": "START", "run_id": 0, "observation_id": 0,
+                "expected_identities": [0, 0, "0", 0],
+            },
+            {
+                "kind": "PAGE", "run_id": 1, "observation_id": 1,
+                "page_index": -1,
+            },
+            {
+                "kind": "CANCEL", "run_id": True, "observation_id": 1,
+            },
+            {
+                "kind": "COMMIT", "run_id": 1, "observation_id": 1,
+                "action_ordinal": 1.0,
+                "token": {
+                    "word0": 0, "word1": 0, "word2": 0, "word3": 0,
+                },
+            },
+        )
+        for command in command_cases:
+            with self.subTest(command=command["kind"]):
+                document = json.loads(session_only.export())
+                document["events"].append(
+                    {"event": "command", "command": command}
+                )
+                _rechain_transcript(document)
+                assert_pre_factory(planner._canonical(document))
+
+        rejected_commit = json.loads(session_only.export())
+        rejected_commit["events"].extend((
+            {
+                "event": "command",
+                "command": {
+                    "kind": "COMMIT", "run_id": 1,
+                    "observation_id": 1, "action_ordinal": 0,
+                    "token": {
+                        "word0": 0, "word1": 0,
+                        "word2": "0", "word3": 0,
+                    },
+                },
+            },
+            {
+                "event": "acknowledgement", "command_id": 1,
+                "kind": 2, "result": 0, "rejection": 4,
+            },
+        ))
+        _rechain_transcript(rejected_commit)
+        assert_pre_factory(planner._canonical(rejected_commit))
+
+        transport_error = json.loads(session_only.export())
+        transport_error["events"].append({
+            "event": "transport_error",
+            "code": "COMMAND_ACK_TIMEOUT",
+            "command_id": "1",
+            "kind": 1,
+        })
+        _rechain_transcript(transport_error)
+        assert_pre_factory(planner._canonical(transport_error))
+
+        for constant in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(nonfinite=constant):
+                assert_pre_factory(
+                    (
+                        '{"events":[],"schema":'
+                        + constant
+                        + "}"
+                    ).encode(),
+                    "invalid planner transcript JSON",
+                )
+                nested = encoded.replace(
+                    b'"rom_identity":0',
+                    f'"rom_identity":{constant}'.encode(),
+                    1,
+                )
+                assert_pre_factory(
+                    nested,
+                    "invalid planner transcript JSON",
+                )
+                transcript = planner.PlannerTranscript()
+                bad_session = dict(TRANSCRIPT_SESSION)
+                bad_session["rom_identity"] = float(constant)
+                with self.assertRaisesRegex(
+                    planner.PlannerError,
+                    "invalid planner transcript JSON value",
+                ):
+                    transcript.record_session(bad_session)
+                self.assertEqual(transcript.events, ())
 
     def test_mailbox_has_no_arbitrary_memory_write_api(self):
         mailbox = planner.Mailbox()
@@ -1905,6 +1998,67 @@ class PlannerBridgeTests(unittest.TestCase):
         for destructive in (mnts, mnc4):
             self.assertNotIn("EV_STATE_PLANNER_CHAPTER_TRANSITION", destructive)
 
+    def test_expansion_config_preserves_positional_api(self):
+        from scripts.modernize import expansion_config
+
+        root = TESTS_DIR.parents[2]
+        names = (
+            "config_mk_path", "config_preset", "abi", "rom_size",
+            "text_shift", "build_id_override", "repo_root",
+            "version_major", "version_minor", "version_patch",
+            "rom_title", "rom_game_code", "rom_maker_code",
+            "rom_revision", "save_compat_epoch", "enabled_locales",
+            "default_locale", "pseudo_locale", "mechanics_hooks",
+            "mechanics_sample", "danger_overlay_menu",
+            "blue_phase_delegate", "starter_content", "aoe_reference",
+            "custom_spell_effects", "asset_manifest",
+            "localized_text_auto_wrap", "casual_mode", "hq_mixer",
+            "autoplay_strategies", "bgm_continuation_policy",
+            "item_id_cap",
+        )
+        old_arguments = (
+            root / "config.mk", "debug", "aapcs", "16M", 0,
+            "abcdef12", root, 1, 2, 3, "POSITIONAL", "TST1", "01",
+            1, 2, "en", "en", "0", "0", "0", "0", "0", "0", "0",
+            "0", None, "0", "0", "0", "0", "restart", "0xCE",
+        )
+        keywords = dict(zip(names, old_arguments))
+        old_positional = expansion_config.load_identity(*old_arguments)
+        old_keyword = expansion_config.load_identity(**keywords)
+        self.assertEqual(old_positional.to_dict(), old_keyword.to_dict())
+        self.assertEqual(old_positional.bgm_continuation_policy, "restart")
+        self.assertEqual(old_positional.item_id_cap, 0xCE)
+        self.assertEqual(old_positional.autoplay_planner, 0)
+        new_positional = expansion_config.load_identity(
+            *old_arguments,
+            "1",
+        )
+        new_keyword = expansion_config.load_identity(
+            **keywords,
+            autoplay_planner="1",
+        )
+        self.assertEqual(new_positional.to_dict(), new_keyword.to_dict())
+        self.assertEqual(new_positional.autoplay_planner, 1)
+        identity_fields = tuple(
+            expansion_config.ExpansionIdentity.__dataclass_fields__
+        )
+        self.assertEqual(
+            identity_fields[-4:],
+            (
+                "bgm_continuation_policy", "item_id_cap",
+                "config_fingerprint", "autoplay_planner",
+            ),
+        )
+        legacy_values = [
+            getattr(old_keyword, name)
+            for name in identity_fields[:-1]
+        ]
+        legacy_values[-1] = "legacy-fingerprint"
+        legacy = expansion_config.ExpansionIdentity(*legacy_values)
+        appended = expansion_config.ExpansionIdentity(*legacy_values, 1)
+        self.assertEqual(legacy.config_fingerprint, "legacy-fingerprint")
+        self.assertEqual((legacy.autoplay_planner, appended.autoplay_planner), (0, 1))
+
     def test_debug_only_configuration_rejects_release_mailbox(self):
         root = TESTS_DIR.parents[2]
         command = [
@@ -2246,7 +2400,7 @@ raise SystemExit(child.returncode)
                 completed.stdout + completed.stderr,
             )
             self.assertIn(
-                "PLANNER_TRANSPORT_ACK_TEST: PASS",
+                "PLANNER_TRANSPORT_SECURITY_TEST: PASS",
                 completed.stdout,
             )
 
@@ -3751,15 +3905,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         == planner.CommandKind.START.value
             )
             start_command["expected_identities"][2] ^= 1
-            previous = "0" * 64
-            for sequence, event in enumerate(
-                identity_tampered["events"]
-            ):
-                event.pop("event_digest", None)
-                event["sequence"] = sequence
-                event["previous_digest"] = previous
-                event["event_digest"] = planner._digest(event)
-                previous = event["event_digest"]
+            _rechain_transcript(identity_tampered)
             with self.assertRaisesRegex(
                 planner.PlannerError,
                 "START command session identity mismatch",
@@ -3863,13 +4009,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         == planner.CommandKind.COMMIT.value
             )
             commit["observation_id"] += 1
-            previous = "0" * 64
-            for sequence, event in enumerate(tampered["events"]):
-                event.pop("event_digest", None)
-                event["sequence"] = sequence
-                event["previous_digest"] = previous
-                event["event_digest"] = planner._digest(event)
-                previous = event["event_digest"]
+            _rechain_transcript(tampered)
             factory_calls = 0
 
             def factory():
@@ -4475,6 +4615,44 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         transcript_before,
                     )
 
+                transport.process.stdin.write("READ" + " " * 507 + "\n")
+                transport.process.stdin.flush()
+                self.assertEqual(
+                    transport._read_state(),
+                    observation_before,
+                )
+                for trailing_command in (
+                    " CANCEL 00000000 00000000",
+                    " COMMIT 00000000 00000000 00000000 "
+                    "00000000 00000000 00000000 00000000",
+                ):
+                    transport.process.stdin.write(
+                        "X" * 600 + trailing_command + "\n"
+                    )
+                    transport.process.stdin.flush()
+                    self.assertEqual(
+                        transport.process.stdout.readline(),
+                        "ERROR malformed line\n",
+                    )
+                    transport.process.stdin.write("READ\n")
+                    transport.process.stdin.flush()
+                    self.assertEqual(
+                        transport._read_state(),
+                        observation_before,
+                    )
+                    self.assertEqual(
+                        (
+                            transport.checkpoint,
+                            transport.command,
+                            transport.transcript.export(),
+                        ),
+                        (
+                            checkpoint_before,
+                            command_before,
+                            transcript_before,
+                        ),
+                    )
+
                 waiting = transport.start()
                 cancelled = transport.exchange(
                     planner.Command(
@@ -4488,6 +4666,23 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             finally:
                 transport.close()
 
+            overlong_eof = subprocess.run(
+                [str(backend), str(rom)],
+                input="X" * 600,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            self.assertEqual(overlong_eof.returncode, 0)
+            self.assertEqual(
+                overlong_eof.stdout.splitlines()[-1:],
+                ["ERROR malformed line"],
+            )
+            self.assertEqual(
+                overlong_eof.stdout.count("ERROR malformed line"),
+                1,
+            )
+
             for unsupported_kind in ("RUN", 0xFFFFFFFF):
                 with self.subTest(unsupported_kind=unsupported_kind):
                     tampered = json.loads(planner._canonical(encoded))
@@ -4497,13 +4692,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         if event["event"] == "command"
                     )
                     command_event["command"]["kind"] = unsupported_kind
-                    previous = "0" * 64
-                    for sequence, event in enumerate(tampered["events"]):
-                        event.pop("event_digest", None)
-                        event["sequence"] = sequence
-                        event["previous_digest"] = previous
-                        event["event_digest"] = planner._digest(event)
-                        previous = event["event_digest"]
+                    _rechain_transcript(tampered)
                     factory_calls = 0
 
                     def factory():

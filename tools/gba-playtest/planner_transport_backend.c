@@ -365,6 +365,52 @@ static bool read_values(
     return strtok(NULL, " \t\r\n") == NULL;
 }
 
+enum input_line_result
+{
+    INPUT_LINE_EOF,
+    INPUT_LINE_READY,
+    INPUT_LINE_MALFORMED,
+};
+
+static int read_input_line(FILE* input, char* line, size_t capacity)
+{
+    size_t length = 0;
+    bool malformed = false;
+    int byte;
+
+    while ((byte = fgetc(input)) != EOF)
+    {
+        if (byte == '\n')
+        {
+            line[length] = '\0';
+            return malformed
+                ? INPUT_LINE_MALFORMED
+                : INPUT_LINE_READY;
+        }
+        if (byte == '\0' || length + 1 >= capacity)
+        {
+            malformed = true;
+            continue;
+        }
+        if (!malformed)
+            line[length++] = (char)byte;
+    }
+    line[length] = '\0';
+    if (malformed)
+        return INPUT_LINE_MALFORMED;
+    return length == 0 ? INPUT_LINE_EOF : INPUT_LINE_READY;
+}
+
+#if PLANNER_TRANSPORT_LINE_TEST
+int PlannerTransport_ReadLineForTest(
+    FILE* input,
+    char* line,
+    size_t capacity)
+{
+    return read_input_line(input, line, capacity);
+}
+#endif
+
 static int run_transport(const char* rom_path)
 {
     struct mCore* core;
@@ -374,6 +420,7 @@ static int run_transport(const char* rom_path)
     char line[512];
     int startup_frames;
     int transport_result = 0;
+    int line_result;
     uint32_t next_command_id = 1;
 
     core = mCoreFind(rom_path);
@@ -423,7 +470,9 @@ static int run_transport(const char* rom_path)
     }
     emit_state(core);
 
-    while (fgets(line, sizeof(line), stdin) != NULL)
+    while (
+        (line_result = read_input_line(stdin, line, sizeof(line)))
+            != INPUT_LINE_EOF)
     {
         char* command = strtok(line, " \t\r\n");
         char* tokens[11];
@@ -435,6 +484,12 @@ static int run_transport(const char* rom_path)
         uint32_t response_frames;
         struct command_acknowledgement acknowledgement;
 
+        if (line_result == INPUT_LINE_MALFORMED)
+        {
+            fputs("ERROR malformed line\n", stdout);
+            fflush(stdout);
+            continue;
+        }
         if (command == NULL)
             continue;
         if (strcmp(command, "QUIT") == 0)
