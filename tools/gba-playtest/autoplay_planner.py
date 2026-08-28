@@ -1052,12 +1052,12 @@ def _fixture_action_token(
     return OpaqueToken(*words)
 
 
-def semantic_state_digest(state: object) -> str:
-    return hashlib.sha256(_canonical(state)).hexdigest()
-
-
 def _digest(value: object) -> str:
     return hashlib.sha256(_canonical(value)).hexdigest()
+
+
+def semantic_state_digest(state: object) -> str:
+    return _digest(state)
 
 
 def _observation_semantics(observation: Observation) -> dict[str, object]:
@@ -1635,18 +1635,6 @@ class PlannerTranscript:
                         "complete observation page identity mismatch"
                     )
                 actions = observation["actions"]
-                if (
-                    len(actions)
-                        != observation.get("total_action_count")
-                    or [
-                        action.get("ordinal")
-                        for action in actions
-                        if isinstance(action, dict)
-                    ] != list(range(len(actions)))
-                ):
-                    raise PlannerError(
-                        "complete observation action identity mismatch"
-                    )
                 if event.get("candidate_set_digest") != _digest(
                     actions
                 ):
@@ -1682,86 +1670,7 @@ class PlannerTranscript:
                     raise PlannerError(
                         "complete observation has no transport pages"
                     )
-                if pages:
-                    if (
-                        len(pages) != observation.get("page_count")
-                        or [page.get("page_index") for page in pages]
-                            != list(range(len(pages)))
-                    ):
-                        raise PlannerError(
-                            "complete observation page order mismatch"
-                        )
-                    common_fields = (
-                        "run_id",
-                        "observation_id",
-                        "chapter",
-                        "chapter_turn",
-                        "page_count",
-                        "total_action_count",
-                        "state",
-                        "rejection",
-                        "rng_state",
-                        "rng_lcg",
-                        "rng_consumption",
-                        "actual_rom_identity",
-                        "actual_config_identity",
-                        "actual_scenario_identity",
-                        "actual_seed_identity",
-                    )
-                    if any(
-                        any(
-                            page.get(field) != observation.get(field)
-                            for field in common_fields
-                        )
-                        for page in pages
-                    ):
-                        raise PlannerError(
-                            "complete observation page state mismatch"
-                        )
-                    page_kind_order = {
-                        PageKind.SUMMARY.value: 0,
-                        PageKind.MAP.value: 1,
-                        PageKind.UNITS.value: 2,
-                        PageKind.INVENTORY.value: 3,
-                        PageKind.RESOURCES.value: 4,
-                        PageKind.FLAGS.value: 5,
-                        PageKind.ACTIONS.value: 6,
-                    }
-                    try:
-                        ranks = [
-                            page_kind_order[page.get("page_kind")]
-                            for page in pages
-                        ]
-                    except KeyError as error:
-                        raise PlannerError(
-                            "complete observation contains a control page"
-                        ) from error
-                    if (
-                        ranks[0] != 0
-                        or ranks != sorted(ranks)
-                        or ranks.count(0) != 1
-                    ):
-                        raise PlannerError(
-                            "complete observation page-kind order mismatch"
-                        )
-                    for field in (
-                        "fields",
-                        "map_cells",
-                        "units",
-                        "inventory",
-                        "resources",
-                        "flags",
-                        "actions",
-                    ):
-                        flattened = [
-                            record
-                            for page in pages
-                            for record in page.get(field, [])
-                        ]
-                        if flattened != observation.get(field):
-                            raise PlannerError(
-                                "complete observation payload mismatch"
-                            )
+                _validate_complete_observation(observation, pages)
                 actions_by_observation[
                     (
                         observation.get("run_id"),
@@ -2130,6 +2039,241 @@ _PAGE_TOTAL_LIMITS = {
     PageKind.FLAGS: 2 * 256 * 8,
     PageKind.ACTIONS: MAX_ACTIONS,
 }
+_PAGE_COLLECTION = {
+    PageKind.SUMMARY: "fields",
+    PageKind.MAP: "map_cells",
+    PageKind.UNITS: "units",
+    PageKind.INVENTORY: "inventory",
+    PageKind.RESOURCES: "resources",
+    PageKind.FLAGS: "flags",
+    PageKind.ACTIONS: "actions",
+}
+_PAGE_ORDER = tuple(_PAGE_COLLECTION)
+_ROSTER_SLOTS = (
+    *range(1, 0x3F),
+    *range(0x41, 0x55),
+    *range(0x81, 0xB3),
+)
+
+
+def _validate_complete_observation(
+    observation: dict[str, object],
+    pages: Iterable[dict[str, object]] = (),
+) -> None:
+    page_values = tuple(pages)
+    strict = observation["actual_rom_identity"] != 0
+    fields = observation["fields"]
+    field_ids = tuple(
+        (field["name"], field["source"], field["bound"])
+        for field in fields
+    )
+    field_names = tuple(identity[0] for identity in field_ids)
+    if len(field_names) != len(set(field_names)):
+        raise PlannerError("complete observation has duplicate fields")
+    if strict and field_ids != tuple(_SEMANTIC_FIELD_NAMES.values()):
+        raise PlannerError("complete observation summary is not canonical")
+
+    dimensions = next(
+        (field for field in fields if field["name"] == "map_dimensions"),
+        None,
+    )
+    cells = observation["map_cells"]
+    if dimensions is not None and dimensions["availability"] == Availability.AVAILABLE:
+        width = dimensions["value"] & 0xFFFF
+        height = dimensions["value"] >> 16
+        if (
+            not 1 <= width <= 64
+            or not 1 <= height <= 64
+            or len(cells) != width * height
+            or tuple((cell["x"], cell["y"]) for cell in cells)
+                != tuple((index % width, index // width)
+                         for index in range(width * height))
+        ):
+            raise PlannerError("complete observation map dimensions mismatch")
+    elif strict:
+        raise PlannerError("complete observation omitted map dimensions")
+
+    units = observation["units"]
+    unit_slots = tuple(unit["slot"] for unit in units)
+    if (
+        len(unit_slots) != len(set(unit_slots))
+        or any(slot not in _ROSTER_SLOTS for slot in unit_slots)
+        or unit_slots != tuple(slot for slot in _ROSTER_SLOTS if slot in unit_slots)
+    ):
+        raise PlannerError("complete observation roster is not canonical")
+    unit_availability = {
+        unit["slot"]: unit["availability"]
+        for unit in units
+    }
+    if (strict or units) and any(
+        cell["unit"] != 0 and cell["unit"] not in unit_availability
+        for cell in cells
+    ):
+        raise PlannerError("complete observation map unit is not in roster")
+
+    inventory = observation["inventory"]
+    inventory_ids = tuple(
+        (record["unit"], record["slot"])
+        for record in inventory
+    )
+    expected_inventory = tuple(
+        (unit, slot)
+        for unit in unit_slots
+        for slot in range(UNIT_ITEM_COUNT)
+    )
+    if (strict or inventory) and inventory_ids != expected_inventory:
+        raise PlannerError("complete observation inventory is not canonical")
+    for record in inventory:
+        availability = unit_availability.get(record["unit"])
+        if availability is None or (
+            availability == Availability.AVAILABLE
+            and record["availability"] != (
+                Availability.AVAILABLE
+                if record["raw_item"] else Availability.EMPTY
+            )
+        ) or (
+            availability != Availability.AVAILABLE
+            and record["availability"] != availability
+        ):
+            raise PlannerError("complete observation inventory availability mismatch")
+
+    actions = observation["actions"]
+    if (
+        len(actions) != observation["total_action_count"]
+        or tuple(action["ordinal"] for action in actions)
+            != tuple(range(len(actions)))
+        or len({_canonical(action["action"]) for action in actions})
+            != len(actions)
+        or len({
+            tuple(action["token"][f"word{index}"] for index in range(4))
+            for action in actions
+        }) != len(actions)
+        or (strict or units) and any(
+            unit_availability.get(action["action"]["actor"])
+                != Availability.AVAILABLE
+            or action["action"]["target"] != 0
+                and unit_availability.get(action["action"]["target"])
+                    != Availability.AVAILABLE
+            for action in actions
+        )
+    ):
+        raise PlannerError("complete observation actions are not canonical")
+
+    resources = observation["resources"]
+    resource_ids = tuple((record["kind"], record["slot"]) for record in resources)
+    expected_resources = (
+        (ValueKind.GOLD, None),
+        *((ValueKind.CONVOY_ITEM, slot)
+          for slot in range(CONVOY_ITEM_COUNT)),
+        *((ValueKind.AUTOPLAY_TELEMETRY, slot)
+          for slot in range(AUTOPLAY_TELEMETRY_WORDS)),
+    )
+    if (strict or resources) and resource_ids != expected_resources:
+        raise PlannerError("complete observation resources are not canonical")
+    if resources and (
+        resources[0]["availability"] != Availability.AVAILABLE
+        or any(
+            record["availability"] == Availability.AVAILABLE
+                and record["value"] == 0
+            or record["availability"] == Availability.EMPTY
+                and record["value"] != 0
+            or record["availability"] not in {
+                Availability.AVAILABLE,
+                Availability.EMPTY,
+                Availability.UNINITIALIZED,
+            }
+            for record in resources[1 : 1 + CONVOY_ITEM_COUNT]
+        )
+        or any(
+            record["availability"] != Availability.AVAILABLE
+            for record in resources[1 + CONVOY_ITEM_COUNT :]
+        )
+    ):
+        raise PlannerError("complete observation resource availability mismatch")
+
+    flags = observation["flags"]
+    flag_ids = tuple((record["kind"], record["flag_id"]) for record in flags)
+    expected_flags = []
+    for kind in (ValueKind.PERMANENT_FLAG, ValueKind.CHAPTER_FLAG):
+        expected_flags.extend(
+            (kind, flag_id)
+            for flag_id in range(sum(record["kind"] == kind for record in flags))
+        )
+    if flag_ids != tuple(expected_flags):
+        raise PlannerError("complete observation flags are not canonical")
+
+    if not page_values:
+        return
+    page_order = tuple(
+        dict.fromkeys(PageKind(page["page_kind"]) for page in page_values)
+    )
+    expected_order = (
+        _PAGE_ORDER
+        if strict
+        else tuple(kind for kind in _PAGE_ORDER if kind in page_order)
+    )
+    if (
+        len(page_values) != observation["page_count"]
+        or tuple(page["page_index"] for page in page_values)
+            != tuple(range(len(page_values)))
+        or page_order != expected_order
+        or tuple(_PAGE_ORDER.index(PageKind(page["page_kind"])) for page in page_values)
+            != tuple(sorted(
+                _PAGE_ORDER.index(PageKind(page["page_kind"]))
+                for page in page_values
+            ))
+        or PageKind(page_values[0]["page_kind"]) is not PageKind.SUMMARY
+    ):
+        raise PlannerError("complete observation page sequence is not canonical")
+    common = (
+        "run_id", "observation_id", "chapter", "chapter_turn", "page_count",
+        "total_action_count", "state", "rejection", "rng_state", "rng_lcg",
+        "rng_consumption", "actual_rom_identity", "actual_config_identity",
+        "actual_scenario_identity", "actual_seed_identity",
+    )
+    if any(
+        any(page[field] != observation[field] for field in common)
+        for page in page_values
+    ):
+        raise PlannerError("complete observation page state mismatch")
+    for kind, name in _PAGE_COLLECTION.items():
+        kind_pages = tuple(
+            page for page in page_values
+            if PageKind(page["page_kind"]) is kind
+        )
+        if not kind_pages and not strict:
+            continue
+        total = len(observation[name])
+        capacity = _PAGE_RECORD_CAPACITIES[kind]
+        expected_counts = (
+            (0,) if total == 0
+            else tuple(
+                min(capacity, total - start)
+                for start in range(0, total, capacity)
+            )
+        )
+        if (
+            not kind_pages
+            or kind is PageKind.SUMMARY and len(kind_pages) != 1
+            or tuple(page["record_count"] for page in kind_pages)
+                != expected_counts
+            or any(page["total_record_count"] != total for page in kind_pages)
+            or any(page["record_count"] != len(page[name]) for page in kind_pages)
+            or tuple(page["record_start"] for page in kind_pages)
+                != tuple(
+                    sum(previous["record_count"] for previous in kind_pages[:index])
+                    for index in range(len(kind_pages))
+                )
+            or sum(page["record_count"] for page in kind_pages) != total
+            or tuple(
+                record
+                for page in kind_pages
+                for record in page[name]
+            ) != tuple(observation[name])
+        ):
+            raise PlannerError(
+                f"complete observation {name} pages are not canonical"
+            )
 
 
 def _decode_optional_item_slot(value: int) -> int | None:
@@ -2473,6 +2617,28 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
     )
 
 
+def _assemble_observation_pages(pages: Iterable[Observation]) -> Observation:
+    page_values = tuple(pages)
+    if not page_values:
+        raise PlannerError("planner observation has no pages")
+    first = page_values[0]
+    complete = replace(
+        first,
+        fields=tuple(field for page in page_values for field in page.fields),
+        map_cells=tuple(cell for page in page_values for cell in page.map_cells),
+        units=tuple(unit for page in page_values for unit in page.units),
+        inventory=tuple(record for page in page_values for record in page.inventory),
+        resources=tuple(record for page in page_values for record in page.resources),
+        flags=tuple(record for page in page_values for record in page.flags),
+        actions=tuple(action for page in page_values for action in page.actions),
+    )
+    _validate_complete_observation(
+        asdict(complete),
+        (asdict(page) for page in page_values),
+    )
+    return complete
+
+
 def collect_observation_pages(transport: object, first: Observation) -> Observation:
     if (
         not 1 <= first.page_count <= MAX_PAGE_COUNT
@@ -2500,141 +2666,7 @@ def collect_observation_pages(transport: object, first: Observation) -> Observat
         ):
             raise PlannerError(Rejection.STALE_OBSERVATION.value)
         pages.append(page)
-    page_ranks = {
-        PageKind.SUMMARY: 0,
-        PageKind.MAP: 1,
-        PageKind.UNITS: 2,
-        PageKind.INVENTORY: 3,
-        PageKind.RESOURCES: 4,
-        PageKind.FLAGS: 5,
-        PageKind.ACTIONS: 6,
-    }
-    try:
-        ranks = [page_ranks[page.page_kind] for page in pages]
-    except KeyError as error:
-        raise PlannerError("control page cannot enter PAGE traversal") from error
-    if (
-        ranks[0] != 0
-        or ranks != sorted(ranks)
-        or ranks.count(0) != 1
-        or first.actual_rom_identity != 0
-            and set(ranks) != set(page_ranks.values())
-    ):
-        raise PlannerError("planner typed-page sequence is not canonical")
-    for page_kind in page_ranks:
-        kind_pages = tuple(
-            page for page in pages if page.page_kind is page_kind
-        )
-        if not kind_pages:
-            continue
-        total = kind_pages[0].total_record_count
-        expected_start = 0
-        for page in kind_pages:
-            if (
-                page.total_record_count != total
-                or page.record_start != expected_start
-                or page.record_count
-                    > _PAGE_RECORD_CAPACITIES[page_kind]
-            ):
-                raise PlannerError(
-                    "planner typed-page record span is not canonical"
-                )
-            expected_start += page.record_count
-        if expected_start != total:
-            raise PlannerError(
-                "planner typed-page sequence is incomplete"
-            )
-    actions = tuple(
-        action
-        for page in pages
-        if page.page_kind is PageKind.ACTIONS
-        for action in page.actions
-    )
-    if len(actions) != first.total_action_count:
-        raise PlannerError("PAGE traversal did not return every legal action")
-    if tuple(action.ordinal for action in actions) != tuple(range(len(actions))):
-        raise PlannerError("PAGE traversal returned non-canonical action ordinals")
-    inventory = tuple(
-        record
-        for page in pages
-        if page.page_kind is PageKind.INVENTORY
-        for record in page.inventory
-    )
-    resources = tuple(
-        record
-        for page in pages
-        if page.page_kind is PageKind.RESOURCES
-        for record in page.resources
-    )
-    flags = tuple(
-        record
-        for page in pages
-        if page.page_kind is PageKind.FLAGS
-        for record in page.flags
-    )
-    units = tuple(unit for page in pages for unit in page.units)
-    if inventory or resources or flags:
-        expected_inventory = tuple(
-            (unit.slot, slot)
-            for unit in units
-            for slot in range(UNIT_ITEM_COUNT)
-        )
-        if (
-            tuple((record.unit, record.slot) for record in inventory)
-            != expected_inventory
-        ):
-            raise PlannerError("inventory PAGE traversal is not canonical")
-        if len(resources) != (
-            1 + CONVOY_ITEM_COUNT + AUTOPLAY_TELEMETRY_WORDS
-        ):
-            raise PlannerError("resource PAGE traversal is incomplete")
-        if resources[0].kind is not ValueKind.GOLD:
-            raise PlannerError("resource PAGE traversal omitted canonical gold")
-        if tuple(
-            record.slot
-            for record in resources[1 : 1 + CONVOY_ITEM_COUNT]
-        ) != tuple(range(CONVOY_ITEM_COUNT)):
-            raise PlannerError("convoy PAGE traversal is not canonical")
-        if tuple(
-            record.slot
-            for record in resources[1 + CONVOY_ITEM_COUNT :]
-        ) != tuple(range(AUTOPLAY_TELEMETRY_WORDS)):
-            raise PlannerError("telemetry PAGE traversal is not canonical")
-        for kind in (ValueKind.PERMANENT_FLAG, ValueKind.CHAPTER_FLAG):
-            kind_flags = tuple(record for record in flags if record.kind is kind)
-            if tuple(record.flag_id for record in kind_flags) != tuple(
-                range(len(kind_flags))
-            ):
-                raise PlannerError("flag PAGE traversal is not canonical")
-    complete = Observation(
-        first.run_id,
-        first.observation_id,
-        first.chapter,
-        tuple(field for page in pages for field in page.fields),
-        actions,
-        page_index=first.page_index,
-        page_count=first.page_count,
-        page_kind=first.page_kind,
-        total_action_count=first.total_action_count,
-        map_cells=tuple(cell for page in pages for cell in page.map_cells),
-        units=units,
-        inventory=inventory,
-        resources=resources,
-        flags=flags,
-        state=first.state,
-        rejection=first.rejection,
-        chapter_turn=first.chapter_turn,
-        rng_state=first.rng_state,
-        rng_lcg=first.rng_lcg,
-        rng_consumption=first.rng_consumption,
-        actual_rom_identity=first.actual_rom_identity,
-        actual_config_identity=first.actual_config_identity,
-        actual_scenario_identity=first.actual_scenario_identity,
-        actual_seed_identity=first.actual_seed_identity,
-        record_start=first.record_start,
-        record_count=first.record_count,
-        total_record_count=first.total_record_count,
-    )
+    complete = _assemble_observation_pages(pages)
     record_complete = getattr(
         transport,
         "record_complete_observation",
@@ -2741,46 +2773,7 @@ def _consume_semantic_observation(observation: Observation) -> str:
         or len(observation.actions) > MAX_ACTIONS
     ):
         raise PlannerError(Rejection.RESOURCE_LIMIT.value)
-    unavailable = {
-        unit.slot
-        for unit in observation.units
-        if unit.availability is not Availability.AVAILABLE
-    }
-    if any(
-        record.action.actor in unavailable
-        or (
-            record.action.target not in {None, 0}
-            and record.action.target in unavailable
-        )
-        for record in observation.actions
-    ):
-        raise PlannerError("candidate references an unavailable unit")
-    if observation.inventory or observation.resources or observation.flags:
-        if len(observation.inventory) != len(observation.units) * UNIT_ITEM_COUNT:
-            raise PlannerError("typed inventory semantics are incomplete")
-        if len(observation.resources) != (
-            1 + CONVOY_ITEM_COUNT + AUTOPLAY_TELEMETRY_WORDS
-        ):
-            raise PlannerError("typed resource semantics are incomplete")
-        if any(
-            record.availability is Availability.EMPTY
-                and record.raw_item != 0
-            or record.availability is Availability.AVAILABLE
-                and record.raw_item == 0
-            for record in observation.inventory
-        ):
-            raise PlannerError("typed inventory availability is inconsistent")
-        if any(
-            record.kind is ValueKind.CONVOY_ITEM
-                and (
-                    record.availability is Availability.EMPTY
-                        and record.value != 0
-                    or record.availability is Availability.AVAILABLE
-                        and record.value == 0
-                )
-            for record in observation.resources
-        ):
-            raise PlannerError("typed convoy availability is inconsistent")
+    _validate_complete_observation(asdict(observation))
     return _digest(_observation_semantics(observation))
 
 
@@ -2824,59 +2817,49 @@ def run_two_chapter_replay(
     planner: ScriptedPlanner | BoundedSearchPlanner,
     provenance: dict[str, object],
 ) -> dict[str, object]:
-    """A deterministic two-chapter semantic fixture; no save or snapshot is used."""
-
+    """Run the deterministic two-chapter in-memory compatibility fixture."""
     bridge = PlannerBridge(provenance)
     run_id = bridge.begin(provenance)
-    first = bridge.observe(
-        1,
-        (
-            Field("chapter", "PlaySt.chapterIndex", 0xFF, Availability.AVAILABLE, 1),
-            Field("campaign_flag", "event_flag", 1, Availability.AVAILABLE, 0),
-            Field("rng", "rng.c", 3, Availability.AVAILABLE, (1, 2, 3)),
-        ),
-        (
-            Action("MOVE_WAIT", 1, (1, 0)),
-            Action("COMBAT", 1, (2, 0), target=0x81, item_slot=0),
-        ),
-    )
-    first_complete = collect_observation_pages(bridge, first)
-    first_choice = planner.choose(first_complete)
-    bridge.commit(Command(CommandKind.COMMIT, run_id, first.observation_id, first_choice.ordinal, first_choice.token))
+    first = bridge.observe(1, (
+        Field("chapter", "PlaySt.chapterIndex", 0xFF, Availability.AVAILABLE, 1),
+        Field("campaign_flag", "event_flag", 1, Availability.AVAILABLE, 0),
+        Field("rng", "rng.c", 3, Availability.AVAILABLE, (1, 2, 3)),
+    ), (
+        Action("MOVE_WAIT", 1, (1, 0)),
+        Action("COMBAT", 1, (2, 0), target=0x81, item_slot=0),
+    ))
+    first_choice = planner.choose(collect_observation_pages(bridge, first))
+    bridge.commit(Command(
+        CommandKind.COMMIT, run_id, first.observation_id,
+        first_choice.ordinal, first_choice.token,
+    ))
     semantic_state = {
         "accepted_token": asdict(first_choice.token),
         "casualties": {"blue": 0, "green": 0, "red": 0},
-        "chapter": 2,
-        "chapter_turn": 1,
+        "chapter": 2, "chapter_turn": 1,
         "flags": {"objective_complete": False, "village_saved": True},
         "inventory": ("fixture-key",),
         "objectives": {"kind": "seize", "progress": 1},
-        "promotions": (),
-        "recruitment": ("unit-1",),
-        "resources": {"gold": 1000},
-        "roster": ("unit-1", "unit-2"),
-        "rng": (1, 2, 3),
-        "trace_digest": bridge.trace_digest(),
+        "promotions": (), "recruitment": ("unit-1",),
+        "resources": {"gold": 1000}, "roster": ("unit-1", "unit-2"),
+        "rng": (1, 2, 3), "trace_digest": bridge.trace_digest(),
     }
     checkpoint = {
         **semantic_state,
         "semantic_state_digest": semantic_state_digest(semantic_state),
     }
-    second = bridge.observe(
-        2,
-        (
-            Field("chapter", "PlaySt.chapterIndex", 0xFF, Availability.AVAILABLE, 2),
-            Field("campaign_checkpoint", "normal_chapter_transition", 1, Availability.AVAILABLE, checkpoint),
-        ),
-        (Action("MOVE_WAIT", 1, (0, 0)),),
-    )
-    second_complete = collect_observation_pages(bridge, second)
-    second_choice = planner.choose(second_complete)
-    bridge.commit(Command(CommandKind.COMMIT, run_id, second.observation_id, second_choice.ordinal, second_choice.token))
+    second = bridge.observe(2, (
+        Field("chapter", "PlaySt.chapterIndex", 0xFF, Availability.AVAILABLE, 2),
+        Field("campaign_checkpoint", "normal_chapter_transition", 1,
+              Availability.AVAILABLE, checkpoint),
+    ), (Action("MOVE_WAIT", 1, (0, 0)),))
+    second_choice = planner.choose(collect_observation_pages(bridge, second))
+    bridge.commit(Command(
+        CommandKind.COMMIT, run_id, second.observation_id,
+        second_choice.ordinal, second_choice.token,
+    ))
     return {
-        "campaign_checkpoint": checkpoint,
-        "run_id": run_id,
-        "terminal": "success",
-        "trace": bridge.trace,
+        "campaign_checkpoint": checkpoint, "run_id": run_id,
+        "terminal": "success", "trace": bridge.trace,
         "trace_digest": bridge.trace_digest(),
     }

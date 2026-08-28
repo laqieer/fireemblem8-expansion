@@ -305,6 +305,71 @@ def _arm_section_sizes(test, size_tool, *objects):
     return totals
 
 
+class _PageReplayTransport:
+    def __init__(self, pages):
+        self.pages = pages
+        self.transcript = planner.PlannerTranscript()
+        identity = pages[0]
+        self.transcript.record_session({
+            **TRANSCRIPT_SESSION,
+            "rom_identity": identity.actual_rom_identity,
+            "config_identity": identity.actual_config_identity,
+            "scenario_identity": identity.actual_scenario_identity,
+            "seed_identity": identity.actual_seed_identity,
+        })
+        ready = planner.Observation(
+            0, 0, identity.chapter, (), (), page_kind=planner.PageKind.CONTROL,
+            state=1, actual_rom_identity=identity.actual_rom_identity,
+            actual_config_identity=identity.actual_config_identity,
+            actual_scenario_identity=identity.actual_scenario_identity,
+            actual_seed_identity=identity.actual_seed_identity,
+        )
+        self.transcript.record_observation_page(ready)
+        self.transcript.record_settled(ready, (0,) * 13, (0,) * 16)
+        self.command_id = 1
+        self.largest_exchange = 0
+
+    def _respond(self, command, page):
+        size_before = len(self.transcript.export())
+        kind = planner._COMMAND_KIND_CODES[command["kind"]]
+        self.transcript.reserve_exchange()
+        self.transcript.record_command(command)
+        self.transcript.record_acknowledgement(self.command_id, kind, 1, 0)
+        self.transcript.record_completion(self.command_id, kind, 0)
+        self.transcript.record_observation_page(page)
+        self.transcript.record_settled(page, (0,) * 13, (0,) * 16)
+        self.command_id += 1
+        self.largest_exchange = max(
+            self.largest_exchange, len(self.transcript.export()) - size_before
+        )
+        return page
+
+    def start(self, *, scenario_identity=None):
+        first = self.pages[0]
+        identities = (
+            first.actual_rom_identity, first.actual_config_identity,
+            first.actual_scenario_identity if scenario_identity is None else scenario_identity,
+            first.actual_seed_identity,
+        )
+        return self._respond({
+            "kind": planner.CommandKind.START.value,
+            "run_id": 0, "observation_id": 0,
+            "expected_identities": identities,
+        }, first)
+
+    def exchange(self, command):
+        if command.kind is not planner.CommandKind.PAGE:
+            raise AssertionError("page replay transport accepts only PAGE")
+        return self._respond(
+            planner._command_payload(command), self.pages[command.page_index]
+        )
+
+    def record_complete_observation(self, observation):
+        self.transcript.record_complete_and_settled(
+            observation, (0,) * 13, (0,) * 16
+        )
+
+
 def _arm_code_size(sections):
     return sum(
         sections.get(name, 0)
@@ -313,62 +378,6 @@ def _arm_code_size(sections):
 
 
 class PlannerBridgeTests(unittest.TestCase):
-    def test_scripted_and_search_planners_replay_two_chapters_without_save_state(self):
-        scripted = planner.run_two_chapter_replay(
-            planner.ScriptedPlanner(), PROVENANCE
-        )
-        searched = planner.run_two_chapter_replay(
-            planner.BoundedSearchPlanner(), PROVENANCE
-        )
-        self.assertEqual((scripted["terminal"], searched["terminal"]), ("success",) * 2)
-        self.assertEqual(
-            scripted["campaign_checkpoint"]["semantic_state_digest"],
-            searched["campaign_checkpoint"]["semantic_state_digest"],
-        )
-        repeated = planner.run_two_chapter_replay(
-            planner.ScriptedPlanner(), PROVENANCE
-        )
-        self.assertEqual(scripted["trace_digest"], repeated["trace_digest"])
-
-    def test_bounds_availability_pages_and_provenance_fail_closed(self):
-        bridge = planner.PlannerBridge(PROVENANCE)
-        with self.assertRaisesRegex(planner.PlannerError, "provenance mismatch"):
-            bridge.begin({**PROVENANCE, "config": "modern-release"})
-        bridge.begin(PROVENANCE)
-        unavailable = planner.Field(
-            "objective", "chapter objectives", 32, planner.Availability.UNSUPPORTED_RULE, None
-        )
-        actions = tuple(planner.Action("MOVE_WAIT", 1, (index, 0)) for index in range(41))
-        observation = bridge.observe(1, (unavailable,), actions)
-        complete = planner.collect_observation_pages(bridge, observation)
-        self.assertEqual(len(complete.actions), 41)
-        self.assertEqual(complete.actions[-1].ordinal, 40)
-        bounded = planner.PlannerBridge(PROVENANCE)
-        bounded.begin(PROVENANCE)
-        maximum = bounded.observe(
-            1,
-            (),
-            tuple(
-                planner.Action(
-                    "MOVE_WAIT",
-                    1,
-                    (index % 64, index // 64),
-                )
-                for index in range(512)
-            ),
-        )
-        maximum_complete = planner.collect_observation_pages(bounded, maximum)
-        self.assertEqual(maximum.page_count, 25)
-        self.assertEqual(maximum_complete.actions[-1].ordinal, 511)
-        with self.assertRaisesRegex(planner.PlannerError, "resource limit"):
-            overflow = planner.PlannerBridge(PROVENANCE)
-            overflow.begin(PROVENANCE)
-            overflow.observe(
-                1,
-                (),
-                tuple(planner.Action("MOVE_WAIT", 1, (0, 0)) for _ in range(513)),
-            )
-
     def test_public_validation_errors_name_protocol_v2(self):
         bridge = planner.PlannerBridge(PROVENANCE)
         bridge.begin(PROVENANCE)
@@ -1125,126 +1134,68 @@ class PlannerBridgeTests(unittest.TestCase):
 
     def test_maximum_semantic_transcript_fits_two_mib(self):
         available = planner.Availability.AVAILABLE
-        map_cells = tuple(
-            planner.MapCell(
-                index % 64,
-                index // 64,
-                1,
-                0,
-                available,
+        field_values = (64 | (64 << 16), 0, 1, 0, 0, 0, 0, 0)
+        fields = tuple(
+            planner.Field(name, source, bound, available, field_values[index])
+            for index, (name, source, bound) in enumerate(
+                planner._SEMANTIC_FIELD_NAMES.values()
             )
+        )
+        map_cells = tuple(
+            planner.MapCell(index % 64, index // 64, 1, 0, available)
             for index in range(planner.MAX_MAP_CELLS)
         )
         units = tuple(
-            planner.UnitRecord(
-                index,
-                1,
-                1,
-                (0, 0),
-                (20, 20),
-                0,
-                0,
-                available,
-            )
-            for index in range(planner.MAX_UNITS)
+            planner.UnitRecord(slot, 1, 1, (0, 0), (20, 20), 0, 0, available)
+            for slot in planner._ROSTER_SLOTS
         )
         inventory = tuple(
-            planner.InventoryRecord(
-                index // planner.UNIT_ITEM_COUNT,
-                index % planner.UNIT_ITEM_COUNT,
-                1,
-                30,
-                0x1E01,
-                available,
-            )
-            for index in range(
-                planner.MAX_UNITS * planner.UNIT_ITEM_COUNT
-            )
+            planner.InventoryRecord(unit, slot, 1, 30, 0x1E01, available)
+            for unit in planner._ROSTER_SLOTS
+            for slot in range(planner.UNIT_ITEM_COUNT)
         )
         resources = (
             planner.ResourceRecord(
-                planner.ValueKind.GOLD,
-                None,
-                999,
-                None,
-                None,
-                available,
+                planner.ValueKind.GOLD, None, 999, None, None, available
             ),
             *(
                 planner.ResourceRecord(
-                    planner.ValueKind.CONVOY_ITEM,
-                    index,
-                    0,
-                    0,
-                    0,
-                    planner.Availability.EMPTY,
+                    planner.ValueKind.CONVOY_ITEM, index, 0, 0, 0,
+                    planner.Availability.EMPTY
                 )
                 for index in range(planner.CONVOY_ITEM_COUNT)
             ),
             *(
                 planner.ResourceRecord(
                     planner.ValueKind.AUTOPLAY_TELEMETRY,
-                    index,
-                    0,
-                    None,
-                    None,
-                    available,
+                    index, 0, None, None, available
                 )
                 for index in range(planner.AUTOPLAY_TELEMETRY_WORDS)
             ),
         )
         flags = tuple(
             planner.FlagRecord(
-                (
-                    planner.ValueKind.PERMANENT_FLAG
-                    if index < 2048
-                    else planner.ValueKind.CHAPTER_FLAG
-                ),
-                index % 2048,
-                index & 1,
-                available,
+                planner.ValueKind.PERMANENT_FLAG
+                    if index < 2048 else planner.ValueKind.CHAPTER_FLAG,
+                index % 2048, index & 1, available
             )
             for index in range(4096)
         )
         actions = tuple(
             planner.ActionRecord(
                 index,
-                planner.Action(
-                    "MOVE_WAIT",
-                    1,
-                    (index % 64, index // 64),
-                ),
-                planner.OpaqueToken(
-                    index,
-                    index + 1,
-                    index + 2,
-                    index + 3,
-                ),
+                planner.Action("MOVE_WAIT", 1, (index % 64, index // 64)),
+                planner.OpaqueToken(index, index + 1, index + 2, index + 3),
             )
             for index in range(planner.MAX_ACTIONS)
         )
         components = (
             (planner.PageKind.MAP, "map_cells", map_cells, 224),
             (planner.PageKind.UNITS, "units", units, 56),
-            (
-                planner.PageKind.INVENTORY,
-                "inventory",
-                inventory,
-                112,
-            ),
-            (
-                planner.PageKind.RESOURCES,
-                "resources",
-                resources,
-                112,
-            ),
+            (planner.PageKind.INVENTORY, "inventory", inventory, 112),
+            (planner.PageKind.RESOURCES, "resources", resources, 112),
             (planner.PageKind.FLAGS, "flags", flags, 112),
-            (
-                planner.PageKind.ACTIONS,
-                "actions",
-                actions,
-                planner.ACTIONS_PER_PAGE,
-            ),
+            (planner.PageKind.ACTIONS, "actions", actions, planner.ACTIONS_PER_PAGE),
         )
         page_count = 1 + sum(
             (len(records) + capacity - 1) // capacity
@@ -1259,60 +1210,203 @@ class PlannerBridgeTests(unittest.TestCase):
             "actions": (),
             "page_count": page_count,
             "total_action_count": planner.MAX_ACTIONS,
+            "actual_rom_identity": 1,
+            "actual_config_identity": 1,
+            "actual_scenario_identity": 1,
+            "actual_seed_identity": 1,
+            "state": 2,
         }
-        pages = [planner.Observation(**common)]
+        pages = [planner.Observation(
+            **{**common, "fields": fields},
+            record_count=len(fields),
+            total_record_count=len(fields),
+        )]
         for page_kind, field, records, capacity in components:
             for start in range(0, len(records), capacity):
-                pages.append(
-                    planner.Observation(
-                        **{
-                            **common,
-                            "page_index": len(pages),
-                            "page_kind": page_kind,
-                            field: records[start : start + capacity],
-                        }
-                    )
-                )
-        complete = planner.Observation(
-            1,
-            1,
-            1,
-            (),
-            actions,
-            page_count=page_count,
-            total_action_count=planner.MAX_ACTIONS,
+                chunk = records[start : start + capacity]
+                pages.append(planner.Observation(
+                    **{**common, "page_index": len(pages), "page_kind": page_kind,
+                       "record_start": start, "record_count": len(chunk),
+                       "total_record_count": len(records), field: chunk}
+                ))
+        complete = replace(
+            pages[0],
+            actions=actions,
             map_cells=map_cells,
             units=units,
             inventory=inventory,
             resources=resources,
             flags=flags,
         )
-        transcript = planner.PlannerTranscript()
-        transcript.record_session(TRANSCRIPT_SESSION)
-        largest_page_exchange = 0
-        for page in pages:
-            size_before = len(transcript.export())
-            transcript.record_observation_page(page)
-            transcript.record_settled(page, (0,) * 13, (0,) * 16)
-            largest_page_exchange = max(
-                largest_page_exchange,
-                len(transcript.export()) - size_before,
-            )
+        assembled = planner._assemble_observation_pages(pages)
+        self.assertEqual(assembled, complete)
+        for implementation in (
+            planner.ScriptedPlanner(),
+            planner.BoundedSearchPlanner(max_nodes=512),
+        ):
+            self.assertEqual(implementation.choose(assembled).ordinal, 0)
+        transport = _PageReplayTransport(pages)
+        replayed = planner.collect_observation_pages(
+            transport, transport.start(scenario_identity=1)
+        )
+        self.assertEqual(replayed, complete)
         self.assertLessEqual(
-            largest_page_exchange,
+            transport.largest_exchange,
             planner.MAX_TRANSCRIPT_EXCHANGE_BYTES,
         )
-        transcript.record_complete_and_settled(
-            complete,
-            (0,) * 13,
-            (0,) * 16,
-        )
-        exported = transcript.export()
+        exported = transport.transcript.export()
         self.assertLessEqual(len(exported), planner.MAX_TRACE_BYTES)
         self.assertEqual(
             planner.PlannerTranscript.import_bytes(exported).export(),
             exported,
         )
+        self.assertEqual(
+            planner.replay_transcript_on_clean_transport(
+                exported, lambda: _PageReplayTransport(pages)
+            ),
+            exported,
+        )
+        page_index = {
+            kind: next(
+                index
+                for index, page in enumerate(pages)
+                if page.page_kind is kind
+            )
+            for kind in (
+                planner.PageKind.MAP,
+                planner.PageKind.UNITS,
+                planner.PageKind.INVENTORY,
+                planner.PageKind.RESOURCES,
+                planner.PageKind.FLAGS,
+                planner.PageKind.ACTIONS,
+            )
+        }
+        map_page = pages[page_index[planner.PageKind.MAP]]
+        unit_page = pages[page_index[planner.PageKind.UNITS]]
+        inventory_page = pages[page_index[planner.PageKind.INVENTORY]]
+        resource_page = pages[page_index[planner.PageKind.RESOURCES]]
+        flag_page = pages[page_index[planner.PageKind.FLAGS]]
+        action_page = pages[page_index[planner.PageKind.ACTIONS]]
+        swapped = lambda records: (records[1], records[0], *records[2:])
+        mutations = (
+            ("dimensions", 0,
+             {"fields": (replace(pages[0].fields[0],
+                                 value=63 | (64 << 16)),
+                         *pages[0].fields[1:])}),
+            ("field order", 0, {"fields": swapped(pages[0].fields)}),
+            ("field identity", 0,
+             {"fields": (replace(pages[0].fields[0], source="wrong"),
+                         *pages[0].fields[1:])}),
+            ("field duplicate", 0,
+             {"fields": (pages[0].fields[0],
+                                 replace(pages[0].fields[1],
+                                         name=pages[0].fields[0].name),
+                                 *pages[0].fields[2:])}),
+            ("duplicate summary", page_index[planner.PageKind.MAP], {
+                "page_kind": planner.PageKind.SUMMARY,
+                "map_cells": (), "record_count": 0,
+                "total_record_count": len(fields),
+            }),
+            ("missing summary", 0, {"page_kind": planner.PageKind.MAP}),
+            ("duplicate page index", page_index[planner.PageKind.MAP],
+             {"page_index": 0}),
+            ("map order", page_index[planner.PageKind.MAP],
+             {"map_cells": swapped(map_page.map_cells)}),
+            ("map duplicate", page_index[planner.PageKind.MAP],
+             {"map_cells": (map_page.map_cells[0], map_page.map_cells[0],
+                            *map_page.map_cells[2:])}),
+            ("map unit absent from roster", page_index[planner.PageKind.MAP],
+             {"map_cells": (replace(map_page.map_cells[0], unit=0x40),
+                            *map_page.map_cells[1:])}),
+            ("cross-page map duplicate", page_index[planner.PageKind.MAP] + 1,
+             {"map_cells": (map_page.map_cells[-1],
+                            *pages[page_index[planner.PageKind.MAP] + 1]
+                                .map_cells[1:])}),
+            ("unit order", page_index[planner.PageKind.UNITS],
+             {"units": swapped(unit_page.units)}),
+            ("unit duplicate", page_index[planner.PageKind.UNITS],
+             {"units": (unit_page.units[1], unit_page.units[1],
+                        *unit_page.units[2:])}),
+            ("absent inventory unit", page_index[planner.PageKind.INVENTORY],
+             {"inventory": (replace(inventory_page.inventory[0], unit=0),
+                            *inventory_page.inventory[1:])}),
+            ("duplicate inventory slot", page_index[planner.PageKind.INVENTORY],
+             {"inventory": (inventory_page.inventory[0],
+                            inventory_page.inventory[0],
+                            *inventory_page.inventory[2:])}),
+            ("inventory availability", page_index[planner.PageKind.INVENTORY],
+             {"inventory": (replace(inventory_page.inventory[0],
+                                    availability=planner.Availability.UNAVAILABLE),
+                            *inventory_page.inventory[1:])}),
+            ("convoy duplicate", page_index[planner.PageKind.RESOURCES],
+             {"resources": (resource_page.resources[0],
+                            resource_page.resources[1],
+                            resource_page.resources[1],
+                            *resource_page.resources[3:])}),
+            ("convoy availability", page_index[planner.PageKind.RESOURCES],
+             {"resources": (resource_page.resources[0],
+                            replace(resource_page.resources[1],
+                                    availability=available),
+                            *resource_page.resources[2:])}),
+            ("flag order", page_index[planner.PageKind.FLAGS],
+             {"flags": swapped(flag_page.flags)}),
+            ("flag duplicate", page_index[planner.PageKind.FLAGS],
+             {"flags": (flag_page.flags[0], flag_page.flags[0],
+                        *flag_page.flags[2:])}),
+            ("page total", page_index[planner.PageKind.MAP],
+             {"total_record_count": len(map_cells) - 1}),
+            ("page record count", page_index[planner.PageKind.MAP],
+             {"record_count": len(map_page.map_cells) - 1}),
+            ("action ordinal", page_index[planner.PageKind.ACTIONS],
+             {"actions": (replace(action_page.actions[0], ordinal=1),
+                          *action_page.actions[1:])}),
+            ("candidate duplicate", page_index[planner.PageKind.ACTIONS],
+             {"actions": (action_page.actions[0],
+                          replace(action_page.actions[1],
+                                  action=action_page.actions[0].action),
+                          *action_page.actions[2:])}),
+        )
+        for name, index, changes in mutations:
+            mutated = list(pages)
+            mutated[index] = replace(mutated[index], **changes)
+            document = json.loads(exported)
+            page_event = next(
+                event for event in document["events"]
+                if event["event"] == "observation_page"
+                    and event["observation"]["page_index"] == index
+            )
+            page_data = asdict(mutated[index])
+            page_event["observation"] = page_data
+            settled = document["events"][
+                document["events"].index(page_event) + 1
+            ]
+            settled["observation_identity"] = [
+                page_data[field] for field in (
+                    "run_id", "observation_id", "page_index", "page_count",
+                    "page_kind", "total_action_count",
+                )
+            ]
+            settled["observation_digest"] = planner._digest(page_data)
+            _rechain_transcript(document)
+            _assert_replay_rejected(self, planner._canonical(document))
+            for implementation in (
+                planner.ScriptedPlanner(),
+                planner.BoundedSearchPlanner(max_nodes=512),
+            ):
+                transport = mock.Mock()
+                transport.transcript = planner.PlannerTranscript()
+                before = transport.transcript.export()
+                with mock.patch.object(
+                    implementation, "choose", wraps=implementation.choose
+                ) as choose:
+                    with self.assertRaises(planner.PlannerError):
+                        selected = implementation.choose(
+                            planner._assemble_observation_pages(mutated)
+                        )
+                        transport.exchange(selected)
+                choose.assert_not_called()
+                transport.exchange.assert_not_called()
+                self.assertEqual(transport.transcript.export(), before)
 
     def test_action_page_decodes_actor_and_target_slots(self):
         words = [0] * 249
@@ -1423,186 +1517,24 @@ class PlannerBridgeTests(unittest.TestCase):
                     choose.assert_not_called()
                     transport.exchange.assert_not_called()
                     self.assertEqual(transport.transcript.export(), transcript_before)
-
-    def test_page_identity_and_sequence_are_bounded_before_traversal(self):
-        def summary_words():
-            words = [0] * 249
-            words[:15] = [
-                0x41504C4E, planner.PROTOCOL_VERSION, 249 * 4,
-                1, 2, 2, 0, 1, 1, 0,
-                planner.SEMANTIC_FIELD_COUNT,
-                planner.SEMANTIC_FIELD_COUNT, 1, 0, 7,
-            ]
-            for index in range(planner.SEMANTIC_FIELD_COUNT):
-                words[25 + index * 2] = (
-                    (4 << 24) | (index + 1)
-                )
-            return words
-
         for page_count, page_index in (
-            (0, 0),
-            (planner.MAX_PAGE_COUNT + 1, 0),
-            (1_000_000_000, 0),
-            (0xFFFFFFFF, 0),
-            (1, 1),
+            (0, 0), (planner.MAX_PAGE_COUNT + 1, 0),
+            (1_000_000_000, 0), (0xFFFFFFFF, 0), (1, 1),
         ):
-            with self.subTest(
-                page_count=page_count,
-                page_index=page_index,
-            ):
-                words = summary_words()
-                words[6] = page_index
-                words[7] = page_count
-                with self.assertRaisesRegex(
-                    planner.PlannerError,
-                    "page identity is outside v2 bounds",
-                ):
-                    planner.parse_transport_observation(words)
-        for invalid_word in (-1, 0x100000000):
-            words = summary_words()
-            words[7] = invalid_word
+            malformed = boundary.copy()
+            malformed[6:8] = [page_index, page_count]
             with self.assertRaisesRegex(
                 planner.PlannerError,
-                "outside fixed u32 range",
+                "page identity is outside v2 bounds",
             ):
-                planner.parse_transport_observation(words)
-        class PageTransport:
-            def __init__(self, pages):
-                self.pages = pages
-                self.exchange_count = 0
-
-            def exchange(self, command):
-                self.exchange_count += 1
-                return self.pages[command.page_index]
-        oversized = planner.Observation(
-            1,
-            1,
-            1,
-            (),
-            (),
-            page_count=planner.MAX_PAGE_COUNT + 1,
-        )
-        transport = PageTransport({})
-        with self.assertRaisesRegex(
-            planner.PlannerError,
-            "traversal exceeds host bounds",
-        ):
-            planner.collect_observation_pages(transport, oversized)
-        self.assertEqual(transport.exchange_count, 0)
-        action = planner.ActionRecord(
-            0,
-            planner.Action("MOVE_WAIT", 1, (1, 0)),
-            planner.OpaqueToken(1, 2, 3, 4),
-        )
-        first = planner.Observation(
-            1,
-            1,
-            1,
-            (),
-            (),
-            page_count=3,
-        )
-        out_of_order = PageTransport(
-            {
-                1: planner.Observation(
-                    1,
-                    1,
-                    1,
-                    (),
-                    (action,),
-                    page_index=1,
-                    page_count=3,
-                    page_kind=planner.PageKind.ACTIONS,
-                    total_action_count=1,
-                    record_count=1,
-                    total_record_count=1,
-                ),
-                2: planner.Observation(
-                    1,
-                    1,
-                    1,
-                    (),
-                    (),
-                    page_index=2,
-                    page_count=3,
-                    page_kind=planner.PageKind.MAP,
-                    total_action_count=1,
-                    record_count=1,
-                    total_record_count=1,
-                    map_cells=(
-                        planner.MapCell(
-                            0,
-                            0,
-                            1,
-                            0,
-                            planner.Availability.AVAILABLE,
-                        ),
-                    ),
-                ),
-            }
-        )
-        with self.assertRaisesRegex(
-            planner.PlannerError,
-            "typed-page sequence is not canonical",
-        ):
-            planner.collect_observation_pages(out_of_order, first)
-        self.assertEqual(out_of_order.exchange_count, 2)
-        duplicate_index = PageTransport(
-            {
-                1: out_of_order.pages[1],
-                2: out_of_order.pages[1],
-            }
-        )
-        with self.assertRaisesRegex(
-            planner.PlannerError,
-            planner.Rejection.STALE_OBSERVATION.value,
-        ):
-            planner.collect_observation_pages(duplicate_index, first)
-        self.assertEqual(duplicate_index.exchange_count, 2)
-        missing_span = PageTransport(
-            {
-                1: replace(
-                    out_of_order.pages[1],
-                    page_count=3,
-                    record_start=0,
-                    total_record_count=2,
-                ),
-                2: replace(
-                    out_of_order.pages[1],
-                    page_index=2,
-                    page_count=3,
-                    record_start=2,
-                    total_record_count=3,
-                ),
-            }
-        )
-        with self.assertRaisesRegex(
-            planner.PlannerError,
-            "record span is not canonical",
-        ):
-            planner.collect_observation_pages(missing_span, first)
-        self.assertEqual(missing_span.exchange_count, 2)
-        production_first = replace(
-            first,
-            page_count=2,
-            actual_rom_identity=1,
-        )
-        incomplete = PageTransport(
-            {
-                1: replace(
-                    out_of_order.pages[1],
-                    page_count=2,
-                ),
-            }
-        )
-        with self.assertRaisesRegex(
-            planner.PlannerError,
-            "typed-page sequence is not canonical",
-        ):
-            planner.collect_observation_pages(
-                incomplete,
-                production_first,
-            )
+                planner.parse_transport_observation(malformed)
+        for invalid_word in (-1, 0x100000000):
+            malformed = boundary.copy()
+            malformed[7] = invalid_word
+            with self.assertRaisesRegex(
+                planner.PlannerError, "outside fixed u32 range"
+            ):
+                planner.parse_transport_observation(malformed)
 
     def test_host_begin_and_commit_limits_are_atomic(self):
         boundary, boundary_observation, boundary_command = (

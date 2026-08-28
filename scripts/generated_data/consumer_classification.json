@@ -4469,6 +4469,10 @@
       "category": "external-interface",
       "reason": null
     },
+    "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|inventory_ids": {
+      "category": "reviewed-exclusion",
+      "reason": "Whole-observation validator set of published unit/slot identities; its values are protocol record keys, not game item IDs."
+    },
     "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|item_slot": {
       "category": "reviewed-exclusion",
       "reason": "Planner action item_slot is an inventory-slot ordinal, not a game item ID."
@@ -4476,6 +4480,10 @@
     "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|target_item_slot": {
       "category": "reviewed-exclusion",
       "reason": "Planner action target_item_slot is a unit-inventory-slot ordinal, not a game item ID."
+    },
+    "tools/gba-playtest/autoplay_planner.py|tool-symbol|unit|unit_slots": {
+      "category": "reviewed-exclusion",
+      "reason": "Whole-observation validator list of canonical roster slots; it verifies protocol identity ordering rather than consuming a content unit ID."
     },
     "tools/gba-playtest/gba_playtest.py|tool-symbol|item|item": {
       "category": "external-interface",

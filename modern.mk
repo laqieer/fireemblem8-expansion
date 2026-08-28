@@ -1090,8 +1090,6 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_flag_checkpoint_bounds_under_sanitizers \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_public_protocol_layout_is_fixed_width_and_offset_stable \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_action_page_decodes_actor_and_target_slots \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_page_identity_and_sequence_are_bounded_before_traversal \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_bounds_availability_pages_and_provenance_fail_closed \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_transcript_round_trip_tamper_order_and_atomic_limits \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_transcript_json_depth_and_recursion_fail_closed \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests.test_completion_timing_is_typed_and_kind_bounded \

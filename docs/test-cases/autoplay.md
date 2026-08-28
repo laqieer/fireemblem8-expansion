@@ -644,10 +644,11 @@ generated Make through a recursive-Make recorder, observes the release `all`
 goal, and proves the persisted planner fails closed without an ARM compiler.
 The toolchain gate separately executes the real explicit debug-target
 compile/link/boot path.
-Every wire page has a count from 1 through 92 and an in-range index. Both
-planners traverse exactly one bounded, ordered summary/map/unit/inventory/
-resource/flag/action sequence with contiguous record spans under the 64 MiB
-host ceiling.
+Every wire page has a count from 1 through 92 and an in-range index. Before
+either planner or replay factory runs, the shared live/import validator
+requires one ordered summary/map/unit/inventory/resource/flag/action sequence,
+contiguous spans and totals, canonical unique record identities, row-major map
+dimensions, roster-owned unique inventory slots, and complete action ordinals.
 Each typed transport command first returns a matching monotonic `ACK`, then a
 matching `COMPLETE`, then its observation. Both planners execute a synthetic
 180-frame movement/camera/battle/event-style COMMIT and receive only the new
@@ -712,8 +713,10 @@ coordinate, slot, token, or reserved fields—reject before selection, command,
 or transcript mutation. No-item slots encode `0xFF`; slot zero remains
 distinct, and forging any opaque token word rejects without execution.
 Page counts of zero, 93, one billion, or `0xFFFFFFFF`, negative/overflow words,
-out-of-range or duplicate indices, missing spans, and reordered or incomplete
-typed-page sequences fail before unbounded traversal or retention.
+duplicate/out-of-order/missing fields, maps, units, inventory slots, actions,
+or cross-page identities, inconsistent dimensions/totals, absent-roster
+inventory, and incomplete typed-page sequences fail before planner/factory
+calls, transcript mutation, unbounded traversal, or retention.
 Empty/sessionless, late-session, duplicate-session, moved-provenance, invalid
 ACK result/rejection pairs, unknown results or rejections, mismatched command
 IDs/kinds, and a rejected-pair rewrite that retains a COMMITTED observation

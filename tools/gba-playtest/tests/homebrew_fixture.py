@@ -20,6 +20,19 @@ ROM_SIZE = 0x400
 ENTRY = 0xC0
 
 
+def _run_checked(command, root, environment=None):
+    completed = subprocess.run(
+        command,
+        cwd=root,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode:
+        raise RuntimeError(completed.stdout + completed.stderr)
+    return completed
+
+
 def _word(rom: bytearray, address: int, value: int) -> None:
     struct.pack_into("<I", rom, address, value)
 
@@ -264,7 +277,7 @@ def build_production_planner_rom(
     production_objects = []
     for source_name in ("event", "eventscr", "bmio", "bmtarget", "bm"):
         output = path.parent / f"planner-production-{source_name}.o"
-        completed = subprocess.run(
+        _run_checked(
             [
                 compiler,
                 *compile_flags,
@@ -273,13 +286,9 @@ def build_production_planner_rom(
                 "-o",
                 str(output),
             ],
-            cwd=root,
-            env=environment,
-            capture_output=True,
-            text=True,
+            root,
+            environment,
         )
-        if completed.returncode:
-            raise RuntimeError(completed.stdout + completed.stderr)
         production_objects.append(output)
     command = [
         compiler,
@@ -295,24 +304,12 @@ def build_production_planner_rom(
         "-o",
         str(elf),
     ]
-    completed = subprocess.run(
-        command,
-        cwd=root,
-        env=environment,
-        capture_output=True,
-        text=True,
-    )
-    if completed.returncode:
-        raise RuntimeError(completed.stdout + completed.stderr)
-    completed = subprocess.run(
+    _run_checked(command, root, environment)
+    _run_checked(
         [objcopy, "-O", "binary", str(elf), str(path)],
-        cwd=root,
-        env=environment,
-        capture_output=True,
-        text=True,
+        root,
+        environment,
     )
-    if completed.returncode:
-        raise RuntimeError(completed.stdout + completed.stderr)
     rom = bytearray(path.read_bytes())
     if len(rom) < ROM_SIZE:
         rom.extend(b"\0" * (ROM_SIZE - len(rom)))
@@ -417,14 +414,7 @@ def build_planner_transport_backend(
         str(path),
     ]
     command.extend(_libmgba_flags())
-    completed = subprocess.run(
-        command,
-        cwd=root,
-        capture_output=True,
-        text=True,
-    )
-    if completed.returncode:
-        raise RuntimeError(completed.stdout + completed.stderr)
+    _run_checked(command, root)
 
 
 def _libmgba_flags() -> list[str]:
@@ -475,11 +465,4 @@ def build_planner_transport_ack_driver(path: Path) -> None:
         str(path),
         *_libmgba_flags(),
     ]
-    completed = subprocess.run(
-        command,
-        cwd=root,
-        capture_output=True,
-        text=True,
-    )
-    if completed.returncode:
-        raise RuntimeError(completed.stdout + completed.stderr)
+    _run_checked(command, root)

@@ -1021,13 +1021,14 @@ obtains all data only by sending typed `PAGE` commands with a fixed
 `page_index`; there is no in-process action-list shortcut. Up to 512 actions
 use at most 24 action pages. With maximum map, unit, inventory, resource, flag,
 and action records, the complete bounded observation uses at most 92 pages.
-The host rejects every non-control wire observation unless
-`1 <= page_count <= 92`, `page_index < page_count`, every word is an exact
-`u32`, and the projected fixed-page capture remains within 64 MiB. PAGE
-traversal then requires one summary followed by contiguous map, unit,
-inventory, resource, flag, and action spans in that order. Zero, oversized,
-negative/overflow, duplicate, missing, or reordered page identities fail
-without an unbounded exchange or retained partial observation.
+Before planner selection, transcript mutation, or replay transport creation,
+one shared whole-observation validator requires `1 <= page_count <= 92`,
+`page_index < page_count`, exact `u32` words, and a projected capture within
+64 MiB. It requires one summary followed by contiguous typed spans; canonical
+unique field, map, roster, inventory-slot, resource, flag, action-ordinal, and
+candidate identities; row-major map dimensions/counts; roster-owned inventory;
+and matching page totals. Invalid, duplicate, missing, cross-page, or reordered
+records reject without an unbounded exchange or retained partial observation.
 Global ordinals and all four token words returned by ROM are opaque to host
 planners and are echoed unchanged. The host never sends coordinates, targets,
 item IDs, `ActionData`, unit pointers, or RNG state: a commit carries only
