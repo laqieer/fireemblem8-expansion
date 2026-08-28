@@ -12540,7 +12540,7 @@
       "domain": "item",
       "key": "tools/gba-playtest/tests/test_autoplay_planner.py|tool-symbol|item|inventory",
       "kind": "tool-symbol",
-      "line": 1345,
+      "line": 1331,
       "path": "tools/gba-playtest/tests/test_autoplay_planner.py",
       "reason": null,
       "record_count": 206,
@@ -17898,7 +17898,7 @@
       "domain": "item",
       "key": "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|_decode_optional_item_slot",
       "kind": "tool-symbol",
-      "line": 2191,
+      "line": 2088,
       "path": "tools/gba-playtest/autoplay_planner.py",
       "reason": "Protocol helper that decodes an inventory-slot ordinal and no-slot sentinel; it does not consume a game item ID.",
       "record_count": 206,
@@ -21582,7 +21582,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "b26bd3b37b1d81d21a052210b78323d14851d9cc3ac9142adad099ff529c0703",
+  "digest": "522657cfd26c13122891fd701ee3ee9ad26339e682111b104d300d4d99ab103d",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,

@@ -340,85 +340,40 @@ def _reject_json_constant(value: str) -> None:
 
 
 _OBSERVATION_KEYS = {
-    "run_id",
-    "observation_id",
-    "chapter",
-    "fields",
-    "actions",
-    "page_index",
-    "page_count",
-    "page_kind",
-    "total_action_count",
-    "map_cells",
-    "units",
-    "inventory",
-    "resources",
-    "flags",
-    "state",
-    "rejection",
-    "chapter_turn",
-    "rng_state",
-    "rng_lcg",
-    "rng_consumption",
-    "actual_rom_identity",
-    "actual_config_identity",
-    "actual_scenario_identity",
-    "actual_seed_identity",
-    "record_start",
-    "record_count",
-    "total_record_count",
+    "run_id", "observation_id", "chapter", "fields", "actions",
+    "page_index", "page_count", "page_kind", "total_action_count",
+    "map_cells", "units", "inventory", "resources", "flags",
+    "state", "rejection", "chapter_turn", "rng_state", "rng_lcg",
+    "rng_consumption", "actual_rom_identity", "actual_config_identity",
+    "actual_scenario_identity", "actual_seed_identity", "record_start",
+    "record_count", "total_record_count",
 }
 _TRANSCRIPT_EVENT_KEYS = {
     "session": {"provenance"},
     "observation_page": {"observation"},
     "observation_complete": {
-        "observation",
-        "candidate_set_digest",
-        "semantic_digest",
-        "page_identity",
+        "observation", "candidate_set_digest", "semantic_digest", "page_identity",
     },
     "command": {"command"},
-    "acknowledgement": {
-        "command_id",
-        "kind",
-        "result",
-        "rejection",
-    },
+    "acknowledgement": {"command_id", "kind", "result", "rejection"},
     "completion": {"command_id", "kind", "response_frames"},
     "settled": {
-        "observation_identity",
-        "observation_digest",
-        "checkpoint",
-        "command_words",
-        "telemetry",
-        "rng",
-        "terminal",
+        "observation_identity", "observation_digest", "checkpoint",
+        "command_words", "telemetry", "rng", "terminal",
     },
     "transport_error": {"code", "command_id", "kind"},
 }
-_TRANSCRIPT_COMMON_EVENT_KEYS = {
-    "sequence",
-    "previous_digest",
-    "event",
-    "event_digest",
-}
+_TRANSCRIPT_COMMON_EVENT_KEYS = {"sequence", "previous_digest", "event", "event_digest"}
 _U32_MAX = 0xFFFFFFFF
 _AVAILABILITY_VALUES = frozenset(value.value for value in Availability)
 _PAGE_KIND_VALUES = frozenset(value.value for value in PageKind)
 _ACTION_KIND_VALUES = frozenset({
-    "MOVE_WAIT",
-    "COMBAT",
-    "STAFF",
-    "USE_ITEM",
-    "PICK",
-    "SUMMON",
+    "MOVE_WAIT", "COMBAT", "STAFF", "USE_ITEM", "PICK", "SUMMON",
 })
 _ACTION_ID_VALUES = frozenset({0, 1, 5, 6, 12, 13, 14})
 _TRANSPORT_ERROR_CODES = frozenset({
-    "ACTION_COMPLETION_TIMEOUT",
-    "COMMAND_ACK_TIMEOUT",
-    "COMMAND_RESPONSE_TIMEOUT",
-    "INVALID_COMMAND_ACK",
+    "ACTION_COMPLETION_TIMEOUT", "COMMAND_ACK_TIMEOUT",
+    "COMMAND_RESPONSE_TIMEOUT", "INVALID_COMMAND_ACK",
 })
 
 
@@ -574,14 +529,8 @@ def _validate_action_schema(record: object) -> None:
     action = _require_exact_keys(
         value["action"],
         {
-            "kind",
-            "actor",
-            "destination",
-            "target",
-            "item_slot",
-            "target_position",
-            "action_id",
-            "target_item_slot",
+            "kind", "actor", "destination", "target", "item_slot",
+            "target_position", "action_id", "target_item_slot",
         },
         "action",
     )
@@ -631,14 +580,8 @@ def _validate_unit_schema(record: object) -> None:
     value = _require_exact_keys(
         record,
         {
-            "slot",
-            "character",
-            "unit_class",
-            "position",
-            "hp",
-            "state",
-            "inventory_digest",
-            "availability",
+            "slot", "character", "unit_class", "position", "hp", "state",
+            "inventory_digest", "availability",
         },
         "unit",
     )
@@ -654,14 +597,7 @@ def _validate_unit_schema(record: object) -> None:
 def _validate_inventory_schema(record: object) -> None:
     value = _require_exact_keys(
         record,
-        {
-            "unit",
-            "slot",
-            "item_id",
-            "uses",
-            "raw_item",
-            "availability",
-        },
+        {"unit", "slot", "item_id", "uses", "raw_item", "availability"},
         "inventory",
     )
     _require_int(value["unit"], "inventory unit", maximum=0xFF)
@@ -677,14 +613,7 @@ def _validate_inventory_schema(record: object) -> None:
 def _validate_resource_schema(record: object) -> None:
     value = _require_exact_keys(
         record,
-        {
-            "kind",
-            "slot",
-            "value",
-            "item_id",
-            "uses",
-            "availability",
-        },
+        {"kind", "slot", "value", "item_id", "uses", "availability"},
         "resource",
     )
     kind = _require_int(
@@ -872,29 +801,15 @@ def _validate_command_schema(command: object) -> None:
     kind = command.get("kind")
     keys = {
         CommandKind.START.value: {
-            "kind",
-            "run_id",
-            "observation_id",
-            "expected_identities",
+            "kind", "run_id", "observation_id", "expected_identities",
         },
         CommandKind.PAGE.value: {
-            "kind",
-            "run_id",
-            "observation_id",
-            "page_index",
+            "kind", "run_id", "observation_id", "page_index",
         },
         CommandKind.COMMIT.value: {
-            "kind",
-            "run_id",
-            "observation_id",
-            "action_ordinal",
-            "token",
+            "kind", "run_id", "observation_id", "action_ordinal", "token",
         },
-        CommandKind.CANCEL.value: {
-            "kind",
-            "run_id",
-            "observation_id",
-        },
+        CommandKind.CANCEL.value: {"kind", "run_id", "observation_id"},
     }.get(kind)
     if keys is None:
         raise PlannerError(
@@ -2126,26 +2041,8 @@ class PlannerBridge:
         return self.transcript.digest()
 
 
-_AVAILABILITY_BY_VALUE = {
-    0: Availability.AVAILABLE,
-    1: Availability.NOT_APPLICABLE,
-    2: Availability.NOT_VISIBLE,
-    3: Availability.UNSUPPORTED_RULE,
-    4: Availability.OUT_OF_RANGE,
-    5: Availability.UNINITIALIZED,
-    6: Availability.UNAVAILABLE,
-    7: Availability.EMPTY,
-}
-_PAGE_KIND_BY_VALUE = {
-    0: PageKind.CONTROL,
-    1: PageKind.SUMMARY,
-    2: PageKind.MAP,
-    3: PageKind.UNITS,
-    4: PageKind.ACTIONS,
-    5: PageKind.INVENTORY,
-    6: PageKind.RESOURCES,
-    7: PageKind.FLAGS,
-}
+_AVAILABILITY_BY_VALUE = dict(enumerate(Availability))
+_PAGE_KIND_BY_VALUE = dict(enumerate(PageKind))
 _ACTION_KIND_BY_VALUE = {
     1: "MOVE_WAIT",
     2: "COMBAT",

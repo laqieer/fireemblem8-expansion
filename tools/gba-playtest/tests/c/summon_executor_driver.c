@@ -3,10 +3,13 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "bmbattle.h"
 #include "bmmind.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "expansion_autoplay_planner.h"
+#include "constants/characters.h"
+#include "constants/classes.h"
 
 #define CHECK(condition, message) \
     do \
@@ -22,12 +25,18 @@ struct CpPerformProc;
 
 s8 AiSummonAction(struct CpPerformProc* proc);
 void AiDKSummonAction(struct CpPerformProc* proc);
+void GenerateSummonUnitDef(void);
 
 struct PlaySt gPlaySt;
 struct ActionData gActionData;
 struct Unit* gActiveUnit;
 u8 gActiveUnitId;
 struct AiDecision gAiDecision;
+struct BattleUnit gBattleActor;
+struct UnitDefinition gUnitDef1;
+u8 gSummonConfig[4][2] = {
+    { CHARACTER_EWAN, CHARACTER_SUMMON_EWAN },
+};
 
 static bool sPlannerActive;
 static bool sPrepareResult;
@@ -35,10 +44,44 @@ static int sApplyCount;
 static u8 sAppliedAction;
 static s8 sAppliedX;
 static s8 sAppliedY;
+static struct CharacterData sSummonCharacter;
+static struct ClassData sSummonClass;
+static struct Unit sSummon;
+static bool sSummonLoaded;
 
-bool ExpansionAutoplayPlanner_IsActive(void)
+bool ExpansionAutoplayPlanner_IsActive(void) { return sPlannerActive; }
+unsigned AdvanceGetLCGRNValue(void) { return 0; }
+int DivRem(int value, int divisor) { return value % divisor; }
+
+struct Unit* GetUnit(int id)
 {
-    return sPlannerActive;
+    return id == 2 && sSummonLoaded ? &sSummon : NULL;
+}
+
+struct Unit* GetUnitFromCharId(int character)
+{
+    return sSummonLoaded && sSummon.pCharacterData->number == character
+        ? &sSummon : NULL;
+}
+
+void ClearUnit(struct Unit* unit)
+{
+    memset(unit, 0, sizeof(*unit));
+    sSummonLoaded = false;
+}
+
+int LoadUnits(const struct UnitDefinition* definition)
+{
+    memset(&sSummon, 0, sizeof(sSummon));
+    sSummonCharacter.number = definition->charIndex;
+    sSummonClass.number = definition->classIndex;
+    sSummon.pCharacterData = &sSummonCharacter;
+    sSummon.pClassData = &sSummonClass;
+    sSummon.index = 2;
+    sSummon.xPos = definition->xPosition;
+    sSummon.yPos = definition->yPosition;
+    sSummonLoaded = true;
+    return 1;
 }
 
 bool ExpansionAutoplayPlanner_PrepareActionData(
@@ -132,6 +175,28 @@ int main(void)
               && unit.xPos == 3
               && unit.yPos == 4,
           "dark summon must remain distinct from coordinate-targeted Summon");
+
+    character.number = CHARACTER_EWAN;
+    unitClass.number = 1;
+    unit.level = 10;
+    gActiveUnit = &unit;
+    gActionData.xOther = 2;
+    gActionData.yOther = 1;
+    GenerateSummonUnitDef();
+    CHECK(sSummonLoaded
+              && sSummon.xPos == 2
+              && sSummon.yPos == 1
+              && gUnitDef1.xPosition == 2
+              && gUnitDef1.yPosition == 1,
+          "normal Summon effect must create at the first selected tile");
+    gActionData.xOther = 5;
+    gActionData.yOther = 4;
+    GenerateSummonUnitDef();
+    CHECK(sSummon.xPos == 5
+              && sSummon.yPos == 4
+              && gUnitDef1.xPosition == 5
+              && gUnitDef1.yPosition == 4,
+          "normal Summon effect must replace at the second selected tile");
 
     puts("SUMMON_EXECUTOR_HOST_TEST: PASS");
     return 0;

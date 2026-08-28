@@ -140,18 +140,10 @@ static enum PlannerRuntimeStage sStage;
 static u32 sCommitDelayFrames;
 static struct GameCtrlProc sGameControl;
 static struct BMapMainProc sMapMain;
-struct ProcCmd gProc_BMapMain[] = {
-    PROC_END,
-};
-struct ProcCmd gProcScr_PlayerPhase[] = {
-    PROC_END,
-};
-struct ProcCmd gProcScr_CpPhase[] = {
-    PROC_END,
-};
-struct ProcCmd gProcScr_BerserkCpPhase[] = {
-    PROC_END,
-};
+struct ProcCmd gProc_BMapMain[] = { PROC_END };
+struct ProcCmd gProcScr_PlayerPhase[] = { PROC_END };
+struct ProcCmd gProcScr_CpPhase[] = { PROC_END };
+struct ProcCmd gProcScr_BerserkCpPhase[] = { PROC_END };
 
 void* memcpy(void* destination, const void* source, size_t size)
 {
@@ -162,7 +154,6 @@ void* memcpy(void* destination, const void* source, size_t size)
         *output++ = *input++;
     return destination;
 }
-
 void* memset(void* destination, int value, size_t size)
 {
     u8* output = destination;
@@ -171,156 +162,48 @@ void* memset(void* destination, int value, size_t size)
         *output++ = value;
     return destination;
 }
-
-void SetTextFont(struct Font* font)
-{
-    (void)font;
-}
-
-void InitSystemTextFont(void)
-{
-}
-
-void LoadUiFrameGraphics(void)
-{
-}
-
-void __wrap_ReadGameSaveCoreGfx(void)
-{
-}
-
-void UnpackChapterMapPalette(void)
-{
-}
-
-void ChangeUnitSpritePalette(u16 palette)
-{
-    (void)palette;
-}
-
-void EndAllMus(void)
-{
-}
-
-void __wrap_UnlockGame(void)
-{
-}
-
-void ResumeMenu(void)
-{
-}
-
-void ResetBkselPalette(void)
-{
-}
-
-void ClearCutsceneUnits(void)
-{
-}
-
-void EndTalk(void)
-{
-}
-
-void EndCgText(void)
-{
-}
-
-void EndAllBoxDialogue(void)
-{
-}
-
-void __wrap_EndEventFaces(struct EventEngineProc* proc)
-{
-    (void)proc;
-}
-
-void SetNextGameActionId(int id)
-{
-    (void)id;
-}
-
-void SetNextChapterId(int id)
-{
-    (void)id;
-}
-
-void DeleteAll6CWaitMusicRelated(void)
-{
-}
-
-void Sound_FadeOutBGM(int speed)
-{
-    (void)speed;
-}
-
-void Proc_EndEachMarked(int mark)
-{
-    (void)mark;
-}
-
-ProcPtr Proc_Find(const struct ProcCmd* script)
-{
-    (void)script;
-    return (ProcPtr)&sMapMain;
-}
-
+void SetTextFont(struct Font* font) { (void)font; }
+void InitSystemTextFont(void) {}
+void LoadUiFrameGraphics(void) {}
+void __wrap_ReadGameSaveCoreGfx(void) {}
+void UnpackChapterMapPalette(void) {}
+void ChangeUnitSpritePalette(u16 palette) { (void)palette; }
+void EndAllMus(void) {}
+void __wrap_UnlockGame(void) {}
+void ResumeMenu(void) {}
+void ResetBkselPalette(void) {}
+void ClearCutsceneUnits(void) {}
+void EndTalk(void) {}
+void EndCgText(void) {}
+void EndAllBoxDialogue(void) {}
+void __wrap_EndEventFaces(struct EventEngineProc* proc) { (void)proc; }
+void SetNextGameActionId(int id) { (void)id; }
+void SetNextChapterId(int id) { (void)id; }
+void DeleteAll6CWaitMusicRelated(void) {}
+void Sound_FadeOutBGM(int speed) { (void)speed; }
+void Proc_EndEachMarked(int mark) { (void)mark; }
+ProcPtr Proc_Find(const struct ProcCmd* script) { (void)script; return (ProcPtr)&sMapMain; }
 void Proc_Goto(ProcPtr proc, int label)
 {
     (void)proc;
     if (label == 2)
         ExpansionAutoplay_ResetForChapterTransition();
 }
-
-void Proc_EndEach(const struct ProcCmd* script)
-{
-    (void)script;
-}
-
-void Proc_End(ProcPtr proc)
-{
-    (void)proc;
-}
-
-void ExpansionAutoplay_ResetForChapterTransition(void)
-{
-    ExpansionAutoplayPlanner_OnMapReset();
-}
-
-void ExpansionAutoplay_Reset(void)
-{
-    ExpansionAutoplayPlanner_Reset();
-}
-
-void DebugToolsPhaseControl_Reset(void)
-{
-}
-
-void DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition(void)
-{
-}
-
+void Proc_EndEach(const struct ProcCmd* script) { (void)script; }
+void Proc_End(ProcPtr proc) { (void)proc; }
+void ExpansionAutoplay_ResetForChapterTransition(void) { ExpansionAutoplayPlanner_OnMapReset(); }
+void ExpansionAutoplay_Reset(void) { ExpansionAutoplayPlanner_Reset(); }
+void DebugToolsPhaseControl_Reset(void) {}
+void DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition(void) {}
 void StoreRNState(u16* seeds)
 {
     seeds[0] = sSeeds[0];
     seeds[1] = sSeeds[1];
     seeds[2] = sSeeds[2];
 }
-
-unsigned GetLCGRNValue(void)
-{
-    return 0x12345678;
-}
-
-u32 GetRNConsumptionCount(void)
-{
-    return sConsumption;
-}
-
-struct Unit* GetUnit(int id)
-{
-    return id == 1 ? &sUnit : NULL;
-}
+unsigned GetLCGRNValue(void) { return 0x12345678; }
+u32 GetRNConsumptionCount(void) { return sConsumption; }
+struct Unit* GetUnit(int id) { return id == 1 ? &sUnit : NULL; }
 
 u8* GetPermanentFlagBits(void)
 {
@@ -330,61 +213,19 @@ u8* GetPermanentFlagBits(void)
     return sPermanentFlags;
 #endif
 }
-
-int GetPermanentFlagBitsSize(void)
-{
-    return sPermanentFlagSize;
-}
-
-u8* GetChapterFlagBits(void)
-{
-    return sChapterFlags;
-}
-
-int GetChapterFlagBitsSize(void)
-{
-    return sChapterFlagSize;
-}
-
-u16* GetConvoyItemArray(void)
-{
-    return sConvoy;
-}
-
-s8 AreUnitsAllied(int left, int right)
-{
-    return (left & 0xC0) == (right & 0xC0);
-}
-
-s8 IsSameAllegiance(int left, int right)
-{
-    return (left & 0xC0) == (right & 0xC0);
-}
-
-int GetCurrentPhase(void)
-{
-    return FACTION_BLUE;
-}
-
-int GetUnitCurrentHp(struct Unit* unit)
-{
-    return unit->curHP;
-}
-
-int GetUnitMaxHp(struct Unit* unit)
-{
-    return unit->maxHP;
-}
-
-struct Trap* GetTrap(int id)
-{
-    return &sTraps[id];
-}
-
+int GetPermanentFlagBitsSize(void) { return sPermanentFlagSize; }
+u8* GetChapterFlagBits(void) { return sChapterFlags; }
+int GetChapterFlagBitsSize(void) { return sChapterFlagSize; }
+u16* GetConvoyItemArray(void) { return sConvoy; }
+s8 AreUnitsAllied(int left, int right) { return (left & 0xC0) == (right & 0xC0); }
+s8 IsSameAllegiance(int left, int right) { return (left & 0xC0) == (right & 0xC0); }
+int GetCurrentPhase(void) { return FACTION_BLUE; }
+int GetUnitCurrentHp(struct Unit* unit) { return unit->curHP; }
+int GetUnitMaxHp(struct Unit* unit) { return unit->maxHP; }
+struct Trap* GetTrap(int id) { return &sTraps[id]; }
 struct Trap* GetTrapAt(int x, int y)
 {
     int index;
-
     for (index = 0; index < TRAP_MAX_COUNT; index++)
     {
         if (sTraps[index].type == TRAP_NONE)
@@ -394,21 +235,13 @@ struct Trap* GetTrapAt(int x, int y)
     }
     return NULL;
 }
-
-s8 CanUnitUseWeapon(struct Unit* unit, int item)
-{
-    (void)unit;
-    (void)item;
-    return false;
-}
-
+s8 CanUnitUseWeapon(struct Unit* unit, int item) { (void)unit; (void)item; return false; }
 s8 CanUnitUseStaff(struct Unit* unit, int item)
 {
     (void)unit;
     return FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 2
         && GetItemIndex(item) == ITEM_STAFF_TORCH;
 }
-
 int GetUnitItemUseReachBits(struct Unit* unit, int itemSlot)
 {
     (void)unit;
@@ -416,128 +249,43 @@ int GetUnitItemUseReachBits(struct Unit* unit, int itemSlot)
     return FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 2
         ? REACH_MAGBY2 : REACH_RANGE1;
 }
-
 int GetUnitKeyItemSlotForTerrain(struct Unit* unit, int terrain)
 {
     (void)unit;
     (void)terrain;
     return -1;
 }
-
 int GetItemAttributes(int item)
 {
     return FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 2
         && GetItemIndex(item) == ITEM_STAFF_TORCH
         ? IA_STAFF : 0;
 }
-
-int GetItemIndex(int item)
-{
-    return item & 0xFF;
-}
-
-int GetItemMinRange(int item)
-{
-    (void)item;
-    return 1;
-}
-
-int GetItemMaxRange(int item)
-{
-    (void)item;
-    return 1;
-}
-
+int GetItemIndex(int item) { return item & 0xFF; }
+int GetItemMinRange(int item) { (void)item; return 1; }
+int GetItemMaxRange(int item) { (void)item; return 1; }
 int GetUnitMagBy2Range(struct Unit* unit)
 {
     (void)unit;
     return FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 2
         ? 4 : 1;
 }
-
-bool IsPositionMagicSealed(int x, int y)
-{
-    (void)x;
-    (void)y;
-    return false;
-}
-
-s8 CanUnitCrossTerrain(struct Unit* unit, int terrain)
-{
-    (void)unit;
-    (void)terrain;
-    return true;
-}
-
-bool IsThereClosedChestAt(s8 x, s8 y)
-{
-    (void)x;
-    (void)y;
-    return false;
-}
-
-bool IsThereClosedDoorAt(s8 x, s8 y)
-{
-    (void)x;
-    (void)y;
-    return false;
-}
-
-s8 IsItemHammernable(int item)
-{
-    (void)item;
-    return false;
-}
-
-s8 CanUnitUseHealItem(struct Unit* unit)
-{
-    (void)unit;
-    return false;
-}
-
-s8 CanUnitUsePureWaterItem(struct Unit* unit)
-{
-    (void)unit;
-    return false;
-}
-
-s8 CanUnitUseTorchItem(struct Unit* unit)
-{
-    (void)unit;
-    return false;
-}
-
-s8 CanUnitUseAntitoxinItem(struct Unit* unit)
-{
-    (void)unit;
-    return false;
-}
-
-s8 CanUnitUsePromotionItem(struct Unit* unit, int item)
-{
-    (void)unit;
-    (void)item;
-    return false;
-}
-
-s8 CanUnitUseStatGainItem(struct Unit* unit, int item)
-{
-    (void)unit;
-    (void)item;
-    return false;
-}
-
-s8 CanUnitUseFruitItem(struct Unit* unit)
-{
-    (void)unit;
-    return false;
-}
-
+bool IsPositionMagicSealed(int x, int y) { (void)x; (void)y; return false; }
+s8 CanUnitCrossTerrain(struct Unit* unit, int terrain) { (void)unit; (void)terrain; return true; }
+bool IsThereClosedChestAt(s8 x, s8 y) { (void)x; (void)y; return false; }
+bool IsThereClosedDoorAt(s8 x, s8 y) { (void)x; (void)y; return false; }
+s8 IsItemHammernable(int item) { (void)item; return false; }
+s8 CanUnitUseHealItem(struct Unit* unit) { (void)unit; return false; }
+s8 CanUnitUsePureWaterItem(struct Unit* unit) { (void)unit; return false; }
+s8 CanUnitUseTorchItem(struct Unit* unit) { (void)unit; return false; }
+s8 CanUnitUseAntitoxinItem(struct Unit* unit) { (void)unit; return false; }
+s8 CanUnitUsePromotionItem(struct Unit* unit, int item) { (void)unit; (void)item; return false; }
+s8 CanUnitUseStatGainItem(struct Unit* unit, int item) { (void)unit; (void)item; return false; }
+s8 CanUnitUseFruitItem(struct Unit* unit) { (void)unit; return false; }
 void ExpansionAutoplay_RequestPlayerControlRestore(void)
 {
     sRestoreRequests++;
 }
-
 enum ExpansionAutoplayResult ExpansionAutoplay_SetBlueControl(
     enum ExpansionBlueControl control)
 {
@@ -545,7 +293,6 @@ enum ExpansionAutoplayResult ExpansionAutoplay_SetBlueControl(
         ? EXPANSION_AUTOPLAY_OK
         : EXPANSION_AUTOPLAY_ERR_INVALID_CONTROL;
 }
-
 static void PrepareDecision(struct AiDecision* decision)
 {
     decision->actionId = AI_ACTION_NONE;
@@ -560,14 +307,12 @@ static void PrepareDecision(struct AiDecision* decision)
     decision->yTarget = 0;
     decision->actionPerformed = true;
 }
-
 static void InitializeRuntime(void)
 {
     int height = 8;
     int width = 8;
     int y;
     int x;
-
     sSeeds[0] = 1;
     sSeeds[1] = 2;
     sSeeds[2] = 3;
@@ -641,7 +386,6 @@ static void InitializeRuntime(void)
 #endif
     sStage = PLANNER_RUNTIME_WAIT_START;
 }
-
 static void PublishChapterTwo(struct AiDecision* decision)
 {
     u32 command = _EvtArg0(
@@ -665,12 +409,36 @@ static void PublishChapterTwo(struct AiDecision* decision)
     ExpansionAutoplayPlanner_OfferDecision(decision);
     sStage = PLANNER_RUNTIME_WAIT_CHAPTER_TWO;
 }
-
 static void PublishFinalObservation(struct AiDecision* decision)
 {
     PrepareDecision(decision);
     ExpansionAutoplayPlanner_OfferDecision(decision);
     sStage = PLANNER_RUNTIME_WAIT_FINAL;
+}
+static void PollCommittedDecision(
+    struct AiDecision* decision,
+    enum PlannerRuntimeStage delayStage)
+{
+    enum ExpansionAutoplayPlannerDecisionResult result =
+        ExpansionAutoplayPlanner_PollDecision(decision);
+    if (result == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED)
+    {
+        sUnit.xPos = decision->xMove;
+        sUnit.yPos = decision->yMove;
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_STALL_AFTER_COMMIT
+        sStage = PLANNER_RUNTIME_DONE;
+#else
+        sCommitDelayFrames =
+            FE8_AUTOPLAY_PLANNER_RUNTIME_COMMIT_DELAY_FRAMES;
+        if (sCommitDelayFrames == 0)
+            sCommitDelayFrames = 1;
+        sStage = delayStage;
+#endif
+    }
+    else if (result == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED)
+    {
+        sStage = PLANNER_RUNTIME_DONE;
+    }
 }
 
 static void TickRuntime(void)
@@ -704,67 +472,29 @@ static void TickRuntime(void)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT)
             sStage = PLANNER_RUNTIME_WAIT_CHAPTER_ONE;
         return;
-
     case PLANNER_RUNTIME_WAIT_CHAPTER_ONE:
-        result = ExpansionAutoplayPlanner_PollDecision(&decision);
-        if (result == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED)
-        {
-            sUnit.xPos = decision.xMove;
-            sUnit.yPos = decision.yMove;
-#if FE8_AUTOPLAY_PLANNER_RUNTIME_STALL_AFTER_COMMIT
-            sStage = PLANNER_RUNTIME_DONE;
-#else
-            sCommitDelayFrames =
-                FE8_AUTOPLAY_PLANNER_RUNTIME_COMMIT_DELAY_FRAMES;
-            if (sCommitDelayFrames == 0)
-                sCommitDelayFrames = 1;
-            sStage = PLANNER_RUNTIME_DELAY_CHAPTER_ONE;
-#endif
-        }
-        else if (result == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED)
-        {
-            sStage = PLANNER_RUNTIME_DONE;
-        }
+        PollCommittedDecision(
+            &decision,
+            PLANNER_RUNTIME_DELAY_CHAPTER_ONE);
         return;
-
     case PLANNER_RUNTIME_DELAY_CHAPTER_ONE:
         if (--sCommitDelayFrames == 0)
             PublishChapterTwo(&decision);
         return;
-
     case PLANNER_RUNTIME_WAIT_CHAPTER_TWO:
-        result = ExpansionAutoplayPlanner_PollDecision(&decision);
-        if (result == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED)
-        {
-            sUnit.xPos = decision.xMove;
-            sUnit.yPos = decision.yMove;
-#if FE8_AUTOPLAY_PLANNER_RUNTIME_STALL_AFTER_COMMIT
-            sStage = PLANNER_RUNTIME_DONE;
-#else
-            sCommitDelayFrames =
-                FE8_AUTOPLAY_PLANNER_RUNTIME_COMMIT_DELAY_FRAMES;
-            if (sCommitDelayFrames == 0)
-                sCommitDelayFrames = 1;
-            sStage = PLANNER_RUNTIME_DELAY_CHAPTER_TWO;
-#endif
-        }
-        else if (result == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED)
-        {
-            sStage = PLANNER_RUNTIME_DONE;
-        }
+        PollCommittedDecision(
+            &decision,
+            PLANNER_RUNTIME_DELAY_CHAPTER_TWO);
         return;
-
     case PLANNER_RUNTIME_DELAY_CHAPTER_TWO:
         if (--sCommitDelayFrames == 0)
             PublishFinalObservation(&decision);
         return;
-
     case PLANNER_RUNTIME_WAIT_FINAL:
         result = ExpansionAutoplayPlanner_PollDecision(&decision);
         if (result != EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT)
             sStage = PLANNER_RUNTIME_DONE;
         return;
-
     default:
         return;
     }

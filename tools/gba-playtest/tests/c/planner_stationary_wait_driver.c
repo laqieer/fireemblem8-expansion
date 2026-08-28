@@ -48,20 +48,9 @@ void CpDecide_CompleteDecisionForTest(ProcPtr proc);
 void CpPerform_Cleanup(struct CpPerformProc* proc);
 s8 AiDummyAction(struct CpPerformProc* proc);
 
-bool ExpansionAutoplayPlanner_IsActive(void)
-{
-    return true;
-}
-
-bool ExpansionAutoplay_IsBlueComputerPhase(void)
-{
-    return true;
-}
-
-bool ExpansionAutoplay_IsActionSupported(u8 actionId)
-{
-    return actionId == AI_ACTION_NONE;
-}
+bool ExpansionAutoplayPlanner_IsActive(void) { return true; }
+bool ExpansionAutoplay_IsBlueComputerPhase(void) { return true; }
+bool ExpansionAutoplay_IsActionSupported(u8 actionId) { return actionId == AI_ACTION_NONE; }
 
 void ExpansionAutoplay_RecordCommittedAction(
     int faction,
@@ -110,20 +99,9 @@ void UpdateAllPhaseHealingAIStatus(void)
     sStatusCleanupCount++;
 }
 
-struct Unit* GetUnit(int id)
-{
-    return id == 1 ? &sUnit : NULL;
-}
-
-void SetCursorMapPosition(int x, int y)
-{
-    (void)x;
-    (void)y;
-}
-
-void RenderBmMapOnBg2(void)
-{
-}
+struct Unit* GetUnit(int id) { return id == 1 ? &sUnit : NULL; }
+void SetCursorMapPosition(int x, int y) { (void)x; (void)y; }
+void RenderBmMapOnBg2(void) {}
 
 void MoveActiveUnit(int x, int y)
 {
@@ -131,37 +109,18 @@ void MoveActiveUnit(int x, int y)
     sUnit.yPos = y;
 }
 
-void RefreshEntityBmMaps(void)
-{
-}
+void RefreshEntityBmMaps(void) {}
 
 void RenderBmMap(void)
 {
     sMapCleanupCount++;
 }
 
-void NewBMXFADE(s8 lock)
-{
-    (void)lock;
-}
-
-void EndAllMus(void)
-{
-}
-
-void ShowUnitSprite(struct Unit* unit)
-{
-    (void)unit;
-}
-
-void RefreshUnitSprites(void)
-{
-}
-
-s8 IsAllegianceAllied(int left, int right)
-{
-    return (left & 0x80) == (right & 0x80);
-}
+void NewBMXFADE(s8 lock) { (void)lock; }
+void EndAllMus(void) {}
+void ShowUnitSprite(struct Unit* unit) { (void)unit; }
+void RefreshUnitSprites(void) {}
+s8 IsAllegianceAllied(int left, int right) { return (left & 0x80) == (right & 0x80); }
 
 int NextRN_N(int max)
 {

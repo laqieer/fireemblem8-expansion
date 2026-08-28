@@ -50,10 +50,7 @@ static u8* sTerrainRows[8];
 static int sApplyCount;
 static int sMapChangeCount;
 
-bool ExpansionAutoplayPlanner_IsActive(void)
-{
-    return true;
-}
+bool ExpansionAutoplayPlanner_IsActive(void) { return true; }
 
 bool ExpansionAutoplayPlanner_PrepareActionData(
     const struct AiDecision* decision)
@@ -98,7 +95,6 @@ const struct ClassData* GetClassData(int id)
 {
     return id == CLASS_OBSTACLE ? &sObstacleClass : &sClass;
 }
-
 const struct CharacterData* GetCharacterData(int id)
 {
     return id == CHARACTER_SNAG ? &sSnagCharacter : &sCharacter;
@@ -110,31 +106,11 @@ const struct ROMChapterData* GetROMChapterStruct(unsigned chapter)
     return &sChapter;
 }
 
-int GetMapChangeIdAt(int x, int y)
-{
-    (void)x;
-    (void)y;
-    return 7;
-}
-
-void PlaySoundEffect(int song)
-{
-    (void)song;
-}
-
-void m4aSongNumStart(u16 song)
-{
-    (void)song;
-}
-
-void NewBMXFADE(s8 lock)
-{
-    (void)lock;
-}
-
-void RenderBmMapOnBg2(void)
-{
-}
+int GetMapChangeIdAt(int x, int y) { (void)x; (void)y; return 7; }
+void PlaySoundEffect(int song) { (void)song; }
+void m4aSongNumStart(u16 song) { (void)song; }
+void NewBMXFADE(s8 lock) { (void)lock; }
+void RenderBmMapOnBg2(void) {}
 
 void ApplyMapChangesById(int id)
 {
@@ -142,30 +118,12 @@ void ApplyMapChangesById(int id)
         sMapChangeCount++;
 }
 
-void EnableMapChange(int id)
-{
-    (void)id;
-}
-
-void RefreshTerrainBmMap(void)
-{
-}
-
-void UpdateRoofedUnits(void)
-{
-}
-
-void RenderBmMap(void)
-{
-}
-
-void RefreshEntityBmMaps(void)
-{
-}
-
-void UpdateUnitMapAndVision(void)
-{
-}
+void EnableMapChange(int id) { (void)id; }
+void RefreshTerrainBmMap(void) {}
+void UpdateRoofedUnits(void) {}
+void RenderBmMap(void) {}
+void RefreshEntityBmMaps(void) {}
+void UpdateUnitMapAndVision(void) {}
 
 int main(void)
 {

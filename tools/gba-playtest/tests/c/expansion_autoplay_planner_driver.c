@@ -7,12 +7,16 @@
 #include "action_semantics.h"
 #include "bm.h"
 #include "bmcontainer.h"
+#include "bmidoten.h"
 #include "bmitem.h"
 #include "bmmap.h"
 #include "bmmind.h"
+#include "bmphase.h"
+#include "bmtarget.h"
 #include "bmtrick.h"
 #include "bmunit.h"
 #include "cp_common.h"
+#include "uiselecttarget.h"
 #include "constants/characters.h"
 #include "constants/classes.h"
 #include "constants/items.h"
@@ -33,6 +37,7 @@
 
 struct PlaySt gPlaySt;
 struct ActionData gActionData;
+struct BattleUnit gBattleTarget;
 struct ExpansionAutoplayTelemetry gExpansionAutoplayTelemetry;
 struct Unit* gActiveUnit;
 u8 gActiveUnitId;
@@ -42,6 +47,8 @@ u8** gBmMapMovement;
 u8** gBmMapUnit;
 u8** gBmMapTerrain;
 u8** gBmMapFog;
+u8** gBmMapRange;
+u8** gWorkingBmMap;
 u8 gSummonConfig[4][2] = {
     { CHARACTER_EWAN, CHARACTER_SUMMON_EWAN },
     { 0, 0 },
@@ -75,6 +82,10 @@ static bool sFlagPointersAvailable = true;
 static bool sConvoyAvailable = true;
 static bool sUseMaxUnits;
 static int sMagRange = 1;
+static int sRedUnitCount;
+static int sTrapApplyCount;
+static int sConsumedSlot;
+static bool sTrapContractFailed;
 static u16 sConvoy[CONVOY_ITEM_COUNT];
 static u8 sMovementData[17][32];
 static u8* sMovementRows[17];
@@ -84,6 +95,10 @@ static u8 sTerrainData[17][32];
 static u8* sTerrainRows[17];
 static u8 sFogData[17][32];
 static u8* sFogRows[17];
+static u8 sRangeData[17][32];
+static u8* sRangeRows[17];
+static struct SelectTarget sTargets[16];
+static int sTargetCount;
 
 void StoreRNState(u16* seeds)
 {
@@ -92,20 +107,11 @@ void StoreRNState(u16* seeds)
     seeds[2] = sSeeds[2];
 }
 
-unsigned GetLCGRNValue(void)
-{
-    return 0;
-}
-
-u32 GetRNConsumptionCount(void)
-{
-    return sConsumption;
-}
-
+unsigned GetLCGRNValue(void) { return 0; }
+u32 GetRNConsumptionCount(void) { return sConsumption; }
 struct Unit* GetUnit(int id)
 {
     int ordinal;
-
     if (sUseMaxUnits)
     {
         if (id >= 1 && id <= 0x3E)
@@ -126,59 +132,23 @@ struct Unit* GetUnit(int id)
         return &sSummon;
     if (id == (u8)sEnemy.index && sEnemy.pCharacterData != NULL)
         return &sEnemy;
+    if (id > FACTION_RED
+        && id < FACTION_PURPLE
+        && id - FACTION_RED <= sRedUnitCount)
+        return &sEnemy;
     return NULL;
 }
 
-u8* GetPermanentFlagBits(void)
-{
-    return sFlagPointersAvailable ? sPermanentFlags : NULL;
-}
-
-int GetPermanentFlagBitsSize(void)
-{
-    return sPermanentFlagSize;
-}
-
-u8* GetChapterFlagBits(void)
-{
-    return sFlagPointersAvailable ? sChapterFlags : NULL;
-}
-
-int GetChapterFlagBitsSize(void)
-{
-    return sChapterFlagSize;
-}
-
-u16* GetConvoyItemArray(void)
-{
-    return sConvoyAvailable ? sConvoy : NULL;
-}
-
-s8 AreUnitsAllied(int left, int right)
-{
-    return (left & 0x80) == (right & 0x80);
-}
-
-s8 IsSameAllegiance(int left, int right)
-{
-    return (left & 0xC0) == (right & 0xC0);
-}
-
-int GetCurrentPhase(void)
-{
-    return FACTION_BLUE;
-}
-
-int GetUnitCurrentHp(struct Unit* unit)
-{
-    return unit->curHP;
-}
-
-int GetUnitMaxHp(struct Unit* unit)
-{
-    return unit->maxHP;
-}
-
+u8* GetPermanentFlagBits(void) { return sFlagPointersAvailable ? sPermanentFlags : NULL; }
+int GetPermanentFlagBitsSize(void) { return sPermanentFlagSize; }
+u8* GetChapterFlagBits(void) { return sFlagPointersAvailable ? sChapterFlags : NULL; }
+int GetChapterFlagBitsSize(void) { return sChapterFlagSize; }
+u16* GetConvoyItemArray(void) { return sConvoyAvailable ? sConvoy : NULL; }
+s8 AreUnitsAllied(int left, int right) { return (left & 0x80) == (right & 0x80); }
+s8 IsSameAllegiance(int left, int right) { return (left & 0xC0) == (right & 0xC0); }
+int GetCurrentPhase(void) { return FACTION_BLUE; }
+int GetUnitCurrentHp(struct Unit* unit) { return unit->curHP; }
+int GetUnitMaxHp(struct Unit* unit) { return unit->maxHP; }
 s8 CanUnitUseWeapon(struct Unit* unit, int item)
 {
     (void)unit;
@@ -215,7 +185,6 @@ int GetUnitItemUseReachBits(struct Unit* unit, int itemSlot)
 int GetUnitKeyItemSlotForTerrain(struct Unit* unit, int terrain)
 {
     int slot;
-
     for (slot = 0; slot < UNIT_ITEM_COUNT; slot++)
     {
         int item = GetItemIndex(unit->items[slot]);
@@ -242,17 +211,8 @@ int GetItemAttributes(int item)
     return 0;
 }
 
-int GetItemIndex(int item)
-{
-    return item & 0xFF;
-}
-
-int GetItemMinRange(int item)
-{
-    (void)item;
-    return 1;
-}
-
+int GetItemIndex(int item) { return item & 0xFF; }
+int GetItemMinRange(int item) { (void)item; return 1; }
 int GetItemMaxRange(int item)
 {
     if (GetItemIndex(item) == ITEM_STAFF_WARP
@@ -263,19 +223,8 @@ int GetItemMaxRange(int item)
     return 1;
 }
 
-int GetUnitMagBy2Range(struct Unit* unit)
-{
-    (void)unit;
-    return sMagRange;
-}
-
-bool IsPositionMagicSealed(int x, int y)
-{
-    (void)x;
-    (void)y;
-    return false;
-}
-
+int GetUnitMagBy2Range(struct Unit* unit) { (void)unit; return sMagRange; }
+bool IsPositionMagicSealed(int x, int y) { (void)x; (void)y; return false; }
 s8 CanUnitCrossTerrain(struct Unit* unit, int terrain)
 {
     (void)unit;
@@ -293,10 +242,7 @@ bool IsThereClosedDoorAt(s8 x, s8 y)
         || gBmMapTerrain[y][x] == TERRAIN_BRIDGE_14;
 }
 
-s8 IsItemHammernable(int item)
-{
-    return item != 0 && (item & 0xFF00) != 0xFF00;
-}
+s8 IsItemHammernable(int item) { return item != 0 && (item & 0xFF00) != 0xFF00; }
 
 struct Trap* GetTrap(int id)
 {
@@ -306,7 +252,6 @@ struct Trap* GetTrap(int id)
 struct Trap* GetTrapAt(int x, int y)
 {
     int index;
-
     for (index = 0; index < TRAP_MAX_COUNT; index++)
     {
         if (sTraps[index].type == TRAP_NONE)
@@ -317,46 +262,93 @@ struct Trap* GetTrapAt(int x, int y)
     return NULL;
 }
 
-s8 CanUnitUseHealItem(struct Unit* unit)
+struct Trap* AddTrap(int x, int y, int trapType, int meta)
 {
-    return unit->curHP < unit->maxHP;
+    struct Trap* trap = &sTraps[sTrapApplyCount];
+    if (trapType != TRAP_TORCHLIGHT || meta != 8
+        || sTrapApplyCount >= TRAP_MAX_COUNT)
+    {
+        sTrapContractFailed = true;
+        return NULL;
+    }
+    trap->xPos = x;
+    trap->yPos = y;
+    trap->type = trapType;
+    sTrapApplyCount++;
+    return trap;
 }
 
-s8 CanUnitUsePureWaterItem(struct Unit* unit)
+int MakeNewItem(int item) { return (item & 0xFF) | 0xFF00; }
+
+void UnitUpdateUsedItem(struct Unit* unit, int itemSlot)
 {
-    return unit->barrierDuration < 7;
+    sConsumedSlot = itemSlot;
+    unit->items[itemSlot] -= 0x100;
 }
 
+void BmMapFill(u8** map, int value)
+{
+    int y;
+    int x;
+    for (y = 0; y < gBmMapSize.y; y++)
+        for (x = 0; x < gBmMapSize.x; x++)
+            map[y][x] = value;
+}
+
+void MapAddInRange(int x, int y, int range, int value)
+{
+    int iy;
+    int ix;
+    for (iy = 0; iy < gBmMapSize.y; iy++)
+        for (ix = 0; ix < gBmMapSize.x; ix++)
+            if (ABS(ix - x) + ABS(iy - y) <= range)
+                gWorkingBmMap[iy][ix] += value;
+}
+
+void MapAddInBoundedRange(short x, short y, short minRange, short maxRange)
+{
+    int iy;
+    int ix;
+    for (iy = 0; iy < gBmMapSize.y; iy++)
+        for (ix = 0; ix < gBmMapSize.x; ix++)
+        {
+            int distance = ABS(ix - x) + ABS(iy - y);
+            if (distance >= minRange && distance <= maxRange)
+                gWorkingBmMap[iy][ix] = 1;
+        }
+}
+
+void InitTargets(int xRoot, int yRoot)
+{
+    (void)xRoot;
+    (void)yRoot;
+    sTargetCount = 0;
+    gWorkingBmMap = gBmMapRange;
+}
+
+void AddTarget(int x, int y, int unitId, int targetId)
+{
+    struct SelectTarget* target = &sTargets[sTargetCount++];
+    target->x = x;
+    target->y = y;
+    target->uid = unitId;
+    target->extra = targetId;
+}
+
+s8 CanUnitUseHealItem(struct Unit* unit) { return unit->curHP < unit->maxHP; }
+s8 CanUnitUsePureWaterItem(struct Unit* unit) { return unit->barrierDuration < 7; }
 s8 CanUnitUseTorchItem(struct Unit* unit)
 {
     return gPlaySt.chapterVisionRange != 0 && unit->torchDuration != 4;
 }
-
 s8 CanUnitUseAntitoxinItem(struct Unit* unit)
 {
     return unit->statusIndex == UNIT_STATUS_POISON;
 }
 
-s8 CanUnitUsePromotionItem(struct Unit* unit, int item)
-{
-    (void)unit;
-    (void)item;
-    return false;
-}
-
-s8 CanUnitUseStatGainItem(struct Unit* unit, int item)
-{
-    (void)unit;
-    (void)item;
-    return false;
-}
-
-s8 CanUnitUseFruitItem(struct Unit* unit)
-{
-    (void)unit;
-    return false;
-}
-
+s8 CanUnitUsePromotionItem(struct Unit* unit, int item) { (void)unit; (void)item; return false; }
+s8 CanUnitUseStatGainItem(struct Unit* unit, int item) { (void)unit; (void)item; return false; }
+s8 CanUnitUseFruitItem(struct Unit* unit) { (void)unit; return false; }
 void ExpansionAutoplay_RequestPlayerControlRestore(void)
 {
     sRestoreRequests++;
@@ -411,6 +403,60 @@ static void WriteCommand(
     gExpansionAutoplayPlannerCommand.kind = kind;
 }
 
+static void PreparePlannerStart(void)
+{
+    ExpansionAutoplayPlanner_Reset();
+    ExpansionAutoplayPlanner_OnMapReady();
+    ExpansionAutoplayPlanner_PollStart();
+}
+
+static bool StartPreparedPlanner(void)
+{
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_START,
+        0,
+        0,
+        0,
+        0,
+        NULL);
+    return ExpansionAutoplayPlanner_PollStart();
+}
+
+static bool ResetAndStartPlanner(void)
+{
+    PreparePlannerStart();
+    return StartPreparedPlanner();
+}
+
+static enum ExpansionAutoplayPlannerDecisionResult RequestPage(
+    struct AiDecision* decision,
+    u32 pageIndex)
+{
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        pageIndex,
+        0,
+        NULL);
+    return ExpansionAutoplayPlanner_PollDecision(decision);
+}
+
+static enum ExpansionAutoplayPlannerDecisionResult CommitCurrent(
+    struct AiDecision* decision,
+    u32 ordinal,
+    const u32* token)
+{
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
+        gExpansionAutoplayPlannerObservation.runId,
+        gExpansionAutoplayPlannerObservation.observationId,
+        0,
+        ordinal,
+        token);
+    return ExpansionAutoplayPlanner_PollDecision(decision);
+}
+
 static struct AiDecision sEnumeratedActions[EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY];
 
 static bool CollectAction(
@@ -426,11 +472,20 @@ static bool CollectAction(
     return true;
 }
 
+static enum ExpansionAutoplayPlannerEnumerationResult CollectActions(
+    u32* count)
+{
+    *count = 0;
+    return ExpansionAutoplayPlanner_EnumerateLegalActions(
+        CollectAction,
+        count,
+        NULL);
+}
+
 static u32 DigestBytes(u32 digest, const void* data, int size)
 {
     const u8* bytes = data;
     int index;
-
     for (index = 0; index < size; index++)
         digest = (digest ^ bytes[index]) * 16777619u;
     return digest;
@@ -439,7 +494,6 @@ static u32 DigestBytes(u32 digest, const void* data, int size)
 static u32 RuntimeStateDigest(void)
 {
     u32 digest = 2166136261u;
-
     digest = DigestBytes(digest, &sUnit, sizeof(sUnit));
     digest = DigestBytes(digest, &gAiDecision, sizeof(gAiDecision));
     digest = DigestBytes(digest, &sAlly, sizeof(sAlly));
@@ -454,11 +508,27 @@ static u32 RuntimeStateDigest(void)
     return digest;
 }
 
+static void SetupTestUnit(
+    struct Unit* unit,
+    struct CharacterData* character,
+    struct ClassData* unitClass,
+    int index,
+    int x,
+    int y)
+{
+    unit->pCharacterData = character;
+    unit->pClassData = unitClass;
+    unit->index = index;
+    unit->xPos = x;
+    unit->yPos = y;
+    unit->maxHP = 20;
+    unit->curHP = 20;
+}
+
 static void ResetActionFixture(int width, int height)
 {
     int y;
     int x;
-
     for (y = 0; y < 17; y++)
     {
         for (x = 0; x < 32; x++)
@@ -467,6 +537,7 @@ static void ResetActionFixture(int width, int height)
             sUnitData[y][x] = 0;
             sTerrainData[y][x] = 1;
             sFogData[y][x] = 1;
+            sRangeData[y][x] = 0;
         }
     }
     memset(&sUnit, 0, sizeof(sUnit));
@@ -478,13 +549,7 @@ static void ResetActionFixture(int width, int height)
     sCharacter.number = 1;
     sClass.number = 1;
     sClass.attributes = 0;
-    sUnit.pCharacterData = &sCharacter;
-    sUnit.pClassData = &sClass;
-    sUnit.index = 1;
-    sUnit.xPos = 2;
-    sUnit.yPos = 2;
-    sUnit.maxHP = 20;
-    sUnit.curHP = 20;
+    SetupTestUnit(&sUnit, &sCharacter, &sClass, 1, 2, 2);
     gActiveUnit = &sUnit;
     gActiveUnitId = 1;
     gBmMapSize.x = width;
@@ -499,13 +564,16 @@ static void ResetActionFixture(int width, int height)
     sMagRange = 1;
     sFlagPointersAvailable = true;
     sConvoyAvailable = true;
+    sRedUnitCount = 0;
+    sTrapApplyCount = 0;
+    sConsumedSlot = -1;
+    sTrapContractFailed = false;
 }
 
 static int CountActionId(u32 count, int actionId)
 {
     int result = 0;
     int index;
-
     for (index = 0; index < (int)count; index++)
         if (sEnumeratedActions[index].actionId == actionId)
             result++;
@@ -518,7 +586,6 @@ static struct AiDecision* GetActionId(
     int actionIndex)
 {
     int index;
-
     for (index = 0; index < (int)count; index++)
     {
         if (sEnumeratedActions[index].actionId != actionId)
@@ -527,6 +594,127 @@ static struct AiDecision* GetActionId(
             return &sEnumeratedActions[index];
     }
     return NULL;
+}
+
+static int TestActionSemanticEffects(void)
+{
+    ResetActionFixture(8, 8);
+    sCharacter.number = CHARACTER_EWAN;
+    sClass.attributes = CA_SUMMON;
+    SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 4, 4);
+
+    CHECK(ActionSemantics_ApplyTorchTarget(1, 6)
+              && ActionSemantics_ApplyTorchTarget(6, 1)
+              && !sTrapContractFailed
+              && sTrapApplyCount == 2
+              && sTraps[1].xPos == 6
+              && sTraps[1].yPos == 1,
+          "Torch effect must use both selected coordinates");
+    CHECK(!ActionSemantics_ApplyTorchTarget(8, 1)
+              && sTrapApplyCount == 2,
+          "out-of-bounds Torch coordinate must not apply");
+
+    CHECK(ActionSemantics_ApplyWarpTarget(&sAlly, 1, 5)
+              && sAlly.xPos == 1 && sAlly.yPos == 5
+              && ActionSemantics_ApplyWarpTarget(&sAlly, 6, 2)
+              && sAlly.xPos == 6 && sAlly.yPos == 2,
+          "Warp must apply both selected destinations");
+    CHECK(!ActionSemantics_ApplyWarpTarget(&sAlly, -1, 2)
+              && sAlly.xPos == 6 && sAlly.yPos == 2,
+          "invalid Warp coordinates must preserve the target");
+
+    CHECK(ActionSemantics_ApplyUnlockTarget(3, 4)
+              && gBattleTarget.unit.xPos == 3
+              && gBattleTarget.unit.yPos == 4
+              && ActionSemantics_ApplyUnlockTarget(5, 1)
+              && gBattleTarget.unit.xPos == 5
+              && gBattleTarget.unit.yPos == 1,
+          "Unlock must lower both selected coordinates");
+    CHECK(!ActionSemantics_ApplyUnlockTarget(3, 9)
+              && gBattleTarget.unit.xPos == 5
+              && gBattleTarget.unit.yPos == 1,
+          "invalid Unlock coordinates must preserve the target");
+
+    sAlly.items[0] = 0x0101;
+    sAlly.items[1] = 0x0202;
+    CHECK(ActionSemantics_ApplyHammerneTarget(&sAlly, 1)
+              && sAlly.items[0] == 0x0101
+              && sAlly.items[1] == 0xFF02
+              && ActionSemantics_ApplyHammerneTarget(&sAlly, 0)
+              && sAlly.items[0] == 0xFF01,
+          "Hammerne must repair only each selected target slot");
+    CHECK(!ActionSemantics_ApplyHammerneTarget(&sAlly, 4)
+              && sAlly.items[4] == 0,
+          "stale Hammerne slot must fail without mutation");
+
+    sUnit.items[2] = ITEM_CHESTKEY | (3 << 8);
+    CHECK(ActionSemantics_ConsumePickKey(&sUnit, 2)
+              && sUnit.items[2] == (ITEM_CHESTKEY | (2 << 8))
+              && sConsumedSlot == 2,
+          "Pick key path must consume the selected slot");
+    sConsumedSlot = -1;
+    CHECK(ActionSemantics_ConsumePickKey(&sUnit, 0xFF)
+              && sConsumedSlot == -1
+              && !ActionSemantics_ConsumePickKey(&sUnit, UNIT_ITEM_COUNT),
+          "Rogue and invalid Pick slots must not consume an item");
+
+    CHECK(ActionSemantics_IsNormalSummonAvailable(&sUnit, false)
+              && ActionSemantics_IsNormalSummonTarget(&sUnit, 2, 2, 2, 1)
+              && ActionSemantics_IsNormalSummonTarget(&sUnit, 2, 2, 3, 2),
+          "normal Summon must expose multiple adjacent legal tiles");
+    sUnitData[2][2] = 1;
+    CHECK(ActionSemantics_IsNormalSummonTarget(&sUnit, 2, 3, 2, 2),
+          "normal Summon must allow the vacated origin tile");
+    sUnitData[2][2] = 0;
+    CHECK(!ActionSemantics_IsNormalSummonTarget(&sUnit, 2, 2, 4, 2),
+          "normal Summon must reject non-adjacent tiles");
+    sUnitData[1][2] = 2;
+    CHECK(!ActionSemantics_IsNormalSummonTarget(&sUnit, 2, 2, 2, 1),
+          "normal Summon must reject occupied tiles");
+    sUnitData[1][2] = 0;
+    sFogData[1][2] = 0;
+    CHECK(!ActionSemantics_IsNormalSummonTarget(&sUnit, 2, 2, 2, 1),
+          "normal Summon must reject hidden tiles");
+    sFogData[1][2] = 1;
+
+    sAllyCharacter.number = CHARACTER_SUMMON_EWAN;
+    sAlly.state = 0;
+    CHECK(!ActionSemantics_IsNormalSummonAvailable(&sUnit, false),
+          "available existing summon must reject");
+    sAlly.state = US_NOT_DEPLOYED;
+    CHECK(ActionSemantics_IsNormalSummonAvailable(&sUnit, false)
+              && sAlly.state == US_NOT_DEPLOYED
+              && ActionSemantics_IsNormalSummonAvailable(&sUnit, true)
+              && !(sAlly.state & US_UNAVAILABLE),
+          "summon availability must preserve planner and player restoration");
+    sAlly.pCharacterData = NULL;
+    sUnit.state = US_HAS_MOVED;
+    CHECK(!ActionSemantics_IsNormalSummonAvailable(&sUnit, false),
+          "moved summoner must reject");
+    sUnit.state = 0;
+    sClass.attributes = 0;
+    CHECK(!ActionSemantics_IsNormalSummonAvailable(&sUnit, false),
+          "unit without CA_SUMMON must reject");
+    sClass.attributes = CA_SUMMON;
+    sUnit.index = FACTION_RED + 1;
+    CHECK(!ActionSemantics_IsNormalSummonAvailable(&sUnit, false),
+          "non-player summoner must not receive the player command");
+    sUnit.index = 1;
+
+    sClass.number = CLASS_DEMON_KING;
+    sEnemy.pCharacterData = &sEnemyCharacter;
+    sEnemy.pClassData = &sEnemyClass;
+    sRedUnitCount = 40;
+    CHECK(ActionSemantics_IsDarkSummonAvailable(&sUnit),
+          "dark summon must allow the forty-unit boundary");
+    sRedUnitCount = 41;
+    CHECK(!ActionSemantics_IsDarkSummonAvailable(&sUnit),
+          "dark summon must reject a forty-first red unit");
+    sRedUnitCount = 0;
+    sClass.number = 1;
+    CHECK(!ActionSemantics_IsDarkSummonAvailable(&sUnit),
+          "non-Demon-King unit must reject dark summon");
+    return 0;
 }
 
 static int TestCoordinateActionFamilies(void)
@@ -540,12 +728,8 @@ static int TestCoordinateActionFamilies(void)
 
     ResetActionFixture(6, 6);
     sUnit.items[0] = ITEM_STAFF_TORCH;
-    count = 0;
     CHECK(
-        ExpansionAutoplayPlanner_EnumerateLegalActions(
-            CollectAction,
-            &count,
-            &count)
+        CollectActions(&count)
             == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK,
         "Torch enumeration must succeed"
     );
@@ -599,37 +783,11 @@ static int TestCoordinateActionFamilies(void)
     sUnit.items[0] = ITEM_STAFF_WARP;
     sAllyCharacter.number = 2;
     sAllyClass.number = 2;
-    sAlly.pCharacterData = &sAllyCharacter;
-    sAlly.pClassData = &sAllyClass;
-    sAlly.index = 2;
-    sAlly.xPos = 3;
-    sAlly.yPos = 2;
-    sAlly.maxHP = 20;
-    sAlly.curHP = 20;
+    SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 3, 2);
     sUnitData[2][3] = 2;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
-    first.actionPerformed = false;
-    second.actionPerformed = false;
-    for (index = 0; index < (int)count; index++)
-    {
-        struct AiDecision* candidate = &sEnumeratedActions[index];
-
-        if (candidate->actionId != AI_ACTION_STAFF
-            || candidate->targetId != 2)
-            continue;
-        if (!first.actionPerformed)
-            first = *candidate;
-        else if (candidate->xTarget != first.xTarget
-            || candidate->yTarget != first.yTarget)
-        {
-            second = *candidate;
-            break;
-        }
-    }
+    CollectActions(&count);
+    first = *GetActionId(count, AI_ACTION_STAFF, 0);
+    second = *GetActionId(count, AI_ACTION_STAFF, 1);
     CHECK(first.actionPerformed && second.actionPerformed,
           "Warp must enumerate multiple legal destinations");
     CHECK(ExpansionAutoplayPlanner_PrepareActionData(&first)
@@ -652,27 +810,9 @@ static int TestCoordinateActionFamilies(void)
     sUnit.items[0] = ITEM_STAFF_UNLOCK;
     sTerrainData[1][2] = TERRAIN_DOOR;
     sTerrainData[2][4] = TERRAIN_DOOR;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
-    first.actionPerformed = false;
-    second.actionPerformed = false;
-    for (index = 0; index < (int)count; index++)
-    {
-        struct AiDecision* candidate = &sEnumeratedActions[index];
-
-        if (candidate->actionId != AI_ACTION_STAFF)
-            continue;
-        if (!first.actionPerformed)
-            first = *candidate;
-        else
-        {
-            second = *candidate;
-            break;
-        }
-    }
+    CollectActions(&count);
+    first = *GetActionId(count, AI_ACTION_STAFF, 0);
+    second = *GetActionId(count, AI_ACTION_STAFF, 1);
     CHECK(first.actionPerformed && second.actionPerformed,
           "Unlock must enumerate multiple closed doors");
     CHECK(ExpansionAutoplayPlanner_PrepareActionData(&first)
@@ -691,35 +831,13 @@ static int TestCoordinateActionFamilies(void)
     sUnit.items[0] = ITEM_STAFF_REPAIR;
     sAllyCharacter.number = 2;
     sAllyClass.number = 2;
-    sAlly.pCharacterData = &sAllyCharacter;
-    sAlly.pClassData = &sAllyClass;
-    sAlly.index = 2;
-    sAlly.xPos = 3;
-    sAlly.yPos = 2;
-    sAlly.maxHP = 20;
-    sAlly.curHP = 20;
+    SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 3, 2);
     sAlly.items[0] = 0x0101;
     sAlly.items[1] = 0x0202;
     sUnitData[2][3] = 2;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
-    first.actionPerformed = false;
-    second.actionPerformed = false;
-    for (index = 0; index < (int)count; index++)
-    {
-        struct AiDecision* candidate = &sEnumeratedActions[index];
-
-        if (candidate->actionId != AI_ACTION_STAFF
-            || candidate->targetId != 2)
-            continue;
-        if (candidate->unk04 == 0)
-            first = *candidate;
-        else if (candidate->unk04 == 1)
-            second = *candidate;
-    }
+    CollectActions(&count);
+    first = *GetActionId(count, AI_ACTION_STAFF, 0);
+    second = *GetActionId(count, AI_ACTION_STAFF, 1);
     CHECK(first.actionPerformed && second.actionPerformed,
           "Hammerne must enumerate each repairable target slot");
     CHECK(ExpansionAutoplayPlanner_PrepareActionData(&first)
@@ -736,11 +854,7 @@ static int TestCoordinateActionFamilies(void)
     sTerrainData[2][2] = TERRAIN_CHEST_FULL;
     sTerrainData[2][3] = TERRAIN_DOOR;
     sClass.number = CLASS_ROGUE;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     pickFirst = GetActionId(count, AI_ACTION_PICK, 0);
     pickSecond = GetActionId(count, AI_ACTION_PICK, 1);
     CHECK(CountActionId(count, AI_ACTION_PICK) == 2
@@ -751,11 +865,7 @@ static int TestCoordinateActionFamilies(void)
     sClass.number = 1;
     sClass.attributes = CA_THIEF;
     sUnit.items[0] = ITEM_LOCKPICK;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     pickFirst = GetActionId(count, AI_ACTION_PICK, 0);
     pickSecond = GetActionId(count, AI_ACTION_PICK, 1);
     CHECK(CountActionId(count, AI_ACTION_PICK) == 2
@@ -768,21 +878,13 @@ static int TestCoordinateActionFamilies(void)
     sUnit.items[0] = 0;
     CHECK(!ExpansionAutoplayPlanner_PrepareActionData(pickFirst),
           "consumed Pick key must fail revalidation");
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_PICK) == 0,
           "thief without Lockpick or key must publish no Pick action");
 
     sUnit.items[0] = ITEM_CHESTKEY;
     sUnit.items[1] = ITEM_DOORKEY;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     pickFirst = GetActionId(count, AI_ACTION_PICK, 0);
     pickSecond = GetActionId(count, AI_ACTION_PICK, 1);
     CHECK(CountActionId(count, AI_ACTION_PICK) == 2
@@ -801,19 +903,11 @@ static int TestCoordinateActionFamilies(void)
     sTerrainData[2][3] = TERRAIN_BRIDGE_14;
     sUnit.items[0] = ITEM_DOORKEY;
     sUnit.items[1] = 0;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_PICK) == 0,
           "Door Key must not substitute for a bridge Lockpick");
     sUnit.items[0] = ITEM_LOCKPICK;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     pickFirst = GetActionId(count, AI_ACTION_PICK, 0);
     CHECK(CountActionId(count, AI_ACTION_PICK) == 1
              && pickFirst->xTarget == 3
@@ -832,13 +926,8 @@ static int TestSnagActionFamily(void)
 
     ResetActionFixture(6, 6);
     sUnit.items[0] = ITEM_SWORD_IRON | (30 << 8);
-    sEnemy.pCharacterData = &sEnemyCharacter;
-    sEnemy.pClassData = &sEnemyClass;
-    sEnemy.index = 0x81;
-    sEnemy.xPos = 1;
-    sEnemy.yPos = 2;
-    sEnemy.maxHP = 20;
-    sEnemy.curHP = 20;
+    SetupTestUnit(&sEnemy, &sEnemyCharacter, &sEnemyClass, 0x81, 1, 2);
+    sUnitData[2][1] = 0x81;
     sTraps[0].type = TRAP_OBSTACLE;
     sTraps[0].xPos = 3;
     sTraps[0].yPos = 2;
@@ -849,11 +938,14 @@ static int TestSnagActionFamily(void)
     sTraps[1].extra = 20;
     sTerrainData[2][3] = TERRAIN_SNAG;
     sTerrainData[3][2] = TERRAIN_SNAG;
+    MakeTargetListForWeapon(&sUnit, sUnit.items[0]);
+    CHECK(sTargetCount == 3
+              && (u8)sTargets[0].uid == 0x81
+              && sTargets[1].uid == 0
+              && sTargets[2].uid == 0,
+          "production weapon builder must retain unit and snag targets");
     CHECK(
-        ExpansionAutoplayPlanner_EnumerateLegalActions(
-            CollectAction,
-            &count,
-            &count)
+        CollectActions(&count)
             == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
             && CountActionId(count, AI_ACTION_COMBAT) == 3,
         "combat enumeration must include one unit and two snag targets"
@@ -896,30 +988,24 @@ static int TestStaffTargetParity(void)
 
     ResetActionFixture(8, 8);
     sUnit.items[0] = ITEM_STAFF_REPAIR;
-    sAlly.pCharacterData = &sAllyCharacter;
-    sAlly.pClassData = &sAllyClass;
-    sAlly.index = 2;
-    sAlly.xPos = 3;
-    sAlly.yPos = 2;
+    SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 3, 2);
     sAlly.items[0] = 0x0101;
     sAlly.items[1] = 0x0202;
-    sEnemy.pCharacterData = &sEnemyCharacter;
-    sEnemy.pClassData = &sEnemyClass;
-    sEnemy.index = 0x41;
-    sEnemy.xPos = 2;
-    sEnemy.yPos = 3;
+    sUnitData[2][3] = 2;
+    SetupTestUnit(&sEnemy, &sEnemyCharacter, &sEnemyClass, 0x41, 2, 3);
     sEnemy.items[0] = 0x0101;
-    sSummon.pCharacterData = &sSummonCharacter;
-    sSummon.pClassData = &sSummonClass;
-    sSummon.index = 0x81;
-    sSummon.xPos = 1;
-    sSummon.yPos = 2;
+    sUnitData[3][2] = 0x41;
+    SetupTestUnit(&sSummon, &sSummonCharacter, &sSummonClass, 0x81, 1, 2);
     sSummon.items[0] = 0x0101;
+    sUnitData[2][1] = 0x81;
+    MakeTargetListForHammerne(&sUnit);
+    CHECK(sTargetCount == 1
+              && sTargets[0].uid == 2
+              && !IsUnitInHammerneTargetList(&sUnit, &sEnemy)
+              && !IsUnitInHammerneTargetList(&sUnit, &sSummon),
+          "production Hammerne builder must retain only same-faction targets");
     CHECK(
-        ExpansionAutoplayPlanner_EnumerateLegalActions(
-            CollectAction,
-            &count,
-            &count)
+        CollectActions(&count)
             == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
             && CountActionId(count, AI_ACTION_STAFF) == 2,
         "Hammerne must retain only same-faction repairable slots"
@@ -939,59 +1025,41 @@ static int TestStaffTargetParity(void)
     sUnit.items[0] = ITEM_STAFF_FORTIFY;
     sUnit.curHP = 10;
     sMagRange = 3;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        &count);
+    CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_STAFF) == 0,
           "Fortify must not target an injured caster");
-    sAlly.pCharacterData = &sAllyCharacter;
-    sAlly.pClassData = &sAllyClass;
-    sAlly.index = 2;
-    sAlly.xPos = 6;
-    sAlly.yPos = 2;
-    sAlly.maxHP = 20;
+    sUnit.curHP = sUnit.maxHP;
+    SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 6, 2);
     sAlly.curHP = 10;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        &count);
-    CHECK(CountActionId(count, AI_ACTION_STAFF) == 0,
+    sUnitData[2][6] = 2;
+    CollectActions(&count);
+    MakeTargetListForRangedHeal(&sUnit);
+    CHECK(CountActionId(count, AI_ACTION_STAFF) == 0
+              && sTargetCount == 0,
           "Fortify must reject an ally outside MAG/2 range");
     sAlly.xPos = 5;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        &count);
-    CHECK(CountActionId(count, AI_ACTION_STAFF) == 1,
+    sUnitData[2][6] = 0;
+    sUnitData[2][5] = 2;
+    CollectActions(&count);
+    MakeTargetListForRangedHeal(&sUnit);
+    CHECK(CountActionId(count, AI_ACTION_STAFF) == 1
+              && sTargetCount == 1,
           "Fortify must retain an injured ally inside MAG/2 range");
 
     ResetActionFixture(8, 8);
     sUnit.items[0] = ITEM_STAFF_LATONA;
     sUnit.curHP = 10;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        &count);
-    CHECK(CountActionId(count, AI_ACTION_STAFF) == 0,
+    CollectActions(&count);
+    MakeTargetListForLatona(&sUnit);
+    CHECK(CountActionId(count, AI_ACTION_STAFF) == 0
+              && sTargetCount == 0,
           "Latona must exclude an injured caster");
-    sAlly.pCharacterData = &sAllyCharacter;
-    sAlly.pClassData = &sAllyClass;
-    sAlly.index = 2;
-    sAlly.xPos = 7;
-    sAlly.yPos = 7;
-    sAlly.maxHP = 20;
+    SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 7, 7);
     sAlly.curHP = 10;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        &count);
-    CHECK(CountActionId(count, AI_ACTION_STAFF) == 1,
+    CollectActions(&count);
+    MakeTargetListForLatona(&sUnit);
+    CHECK(CountActionId(count, AI_ACTION_STAFF) == 1
+              && sTargetCount == 1,
           "Latona must retain an injured non-caster in its phase domain");
     return 0;
 }
@@ -1010,12 +1078,8 @@ static int TestSummonActionFamily(void)
     sCharacter.number = CHARACTER_EWAN;
     sClass.attributes = CA_SUMMON;
     stateBefore = RuntimeStateDigest();
-    count = 0;
     CHECK(
-        ExpansionAutoplayPlanner_EnumerateLegalActions(
-            CollectAction,
-            &count,
-            NULL)
+        CollectActions(&count)
             == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK,
         "normal Summon enumeration must succeed"
     );
@@ -1076,11 +1140,7 @@ static int TestSummonActionFamily(void)
 
     gSummonConfig[0][0] = 0;
     gSummonConfig[0][1] = 0;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_SUMMON) == 0,
           "missing gSummonConfig entry must publish no normal Summon");
 
@@ -1088,53 +1148,31 @@ static int TestSummonActionFamily(void)
     gSummonConfig[0][1] = CHARACTER_SUMMON_EWAN;
     sSummonCharacter.number = CHARACTER_SUMMON_EWAN;
     sSummonClass.number = CLASS_PHANTOM;
-    sSummon.pCharacterData = &sSummonCharacter;
-    sSummon.pClassData = &sSummonClass;
-    sSummon.index = 3;
+    SetupTestUnit(&sSummon, &sSummonCharacter, &sSummonClass, 3, 0, 0);
     sSummon.state = 0;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_SUMMON) == 0,
           "available existing summon must block another normal Summon");
 
     sSummon.state = US_NOT_DEPLOYED;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_SUMMON) == 4
               && sSummon.state == US_NOT_DEPLOYED,
           "unavailable existing summon must be reusable without enumeration mutation");
 
     sUnit.state = US_HAS_MOVED;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_SUMMON) == 0,
           "moved summoner must publish no normal Summon");
     sUnit.state = 0;
     sClass.attributes = 0;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_SUMMON) == 0,
           "unit without CA_SUMMON must publish no normal Summon");
 
     ResetActionFixture(6, 6);
     sClass.number = CLASS_DEMON_KING;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_DKSUMMON) == 1
               && CountActionId(count, AI_ACTION_SUMMON) == 0,
           "Demon King must retain one distinct dark-summon action");
@@ -1169,10 +1207,7 @@ static int TestUnavailableUnitSemantics(void)
     ResetActionFixture(6, 6);
     sUnit.state = US_NOT_DEPLOYED;
     CHECK(
-        ExpansionAutoplayPlanner_EnumerateLegalActions(
-            CollectAction,
-            &count,
-            &count)
+        CollectActions(&count)
             == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_UNAVAILABLE
             && count == 0,
         "not-deployed active unit must be unavailable before enumeration"
@@ -1182,27 +1217,13 @@ static int TestUnavailableUnitSemantics(void)
     sUnit.items[0] = ITEM_SWORD_IRON;
     sEnemyCharacter.number = 3;
     sEnemyClass.number = 3;
-    sEnemy.pCharacterData = &sEnemyCharacter;
-    sEnemy.pClassData = &sEnemyClass;
-    sEnemy.index = 0x81;
-    sEnemy.xPos = 3;
-    sEnemy.yPos = 2;
-    sEnemy.maxHP = 20;
-    sEnemy.curHP = 20;
+    SetupTestUnit(&sEnemy, &sEnemyCharacter, &sEnemyClass, 0x81, 3, 2);
     sEnemy.state = US_NOT_DEPLOYED;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_COMBAT) == 0,
           "not-deployed stale-coordinate target must not be legal");
     sEnemy.state = 0;
-    count = 0;
-    ExpansionAutoplayPlanner_EnumerateLegalActions(
-        CollectAction,
-        &count,
-        NULL);
+    CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_COMBAT) == 1,
           "available in-range target must remain legal");
     return 0;
@@ -1249,17 +1270,7 @@ static int TestMaximumSemanticPaging(void)
     sPermanentFlags[255] = 0x80;
     sChapterFlags[255] = 0x80;
 
-    ExpansionAutoplayPlanner_Reset();
-    ExpansionAutoplayPlanner_OnMapReady();
-    ExpansionAutoplayPlanner_PollStart();
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_START,
-        0,
-        0,
-        0,
-        0,
-        NULL);
-    CHECK(ExpansionAutoplayPlanner_PollStart(),
+    CHECK(ResetAndStartPlanner(),
           "maximum semantic-page run must start");
     CHECK(
         ExpansionAutoplayPlanner_OfferDecision(&decision)
@@ -1268,15 +1279,8 @@ static int TestMaximumSemanticPaging(void)
         "maximum units and flags must use bounded canonical pages"
     );
 
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        4,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 4)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_UNITS
@@ -1284,15 +1288,8 @@ static int TestMaximumSemanticPaging(void)
             && gExpansionAutoplayPlannerObservation.count.recordCount == 20,
         "maximum unit page boundary must be exact"
     );
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        10,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 10)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_INVENTORY
@@ -1308,15 +1305,8 @@ static int TestMaximumSemanticPaging(void)
                     .payload.inventory[99].identity >> 16) & 0xFF) == 4,
         "maximum inventory page boundary must be exact"
     );
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        12,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 12)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_RESOURCES
@@ -1324,15 +1314,8 @@ static int TestMaximumSemanticPaging(void)
             && gExpansionAutoplayPlannerObservation.count.recordCount == 5,
         "maximum resource page boundary must be exact"
     );
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        49,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 49)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS
@@ -1340,15 +1323,8 @@ static int TestMaximumSemanticPaging(void)
             && gExpansionAutoplayPlannerObservation.count.recordCount == 64,
         "maximum flag page boundary must be exact"
     );
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        50,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 50)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS
@@ -1387,17 +1363,7 @@ static int TestZeroDigestAvailability(void)
     sConvoy[97] = 0xEDD0;
     sConvoy[98] = 0xC25D;
     gPlaySt.partyGoldAmount = 2166136261u;
-    ExpansionAutoplayPlanner_Reset();
-    ExpansionAutoplayPlanner_OnMapReady();
-    ExpansionAutoplayPlanner_PollStart();
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_START,
-        0,
-        0,
-        0,
-        0,
-        NULL);
-    CHECK(ExpansionAutoplayPlanner_PollStart(),
+    CHECK(ResetAndStartPlanner(),
           "zero-digest availability run must start");
     CHECK(
         ExpansionAutoplayPlanner_OfferDecision(&decision)
@@ -1423,14 +1389,7 @@ static int TestZeroDigestAvailability(void)
     sConvoyAvailable = false;
     ExpansionAutoplayPlanner_OnMapReady();
     ExpansionAutoplayPlanner_PollStart();
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_START,
-        0,
-        0,
-        0,
-        0,
-        NULL);
-    CHECK(ExpansionAutoplayPlanner_PollStart(),
+    CHECK(StartPreparedPlanner(),
           "null semantic-domain run must start");
     CHECK(
         ExpansionAutoplayPlanner_OfferDecision(&decision)
@@ -1450,14 +1409,7 @@ static int TestZeroDigestAvailability(void)
     sPermanentFlagSize = 257;
     ExpansionAutoplayPlanner_OnMapReady();
     ExpansionAutoplayPlanner_PollStart();
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_START,
-        0,
-        0,
-        0,
-        0,
-        NULL);
-    CHECK(ExpansionAutoplayPlanner_PollStart(),
+    CHECK(StartPreparedPlanner(),
           "out-of-bounds flag-domain run must start");
     CHECK(
         ExpansionAutoplayPlanner_OfferDecision(&decision)
@@ -1516,28 +1468,12 @@ static int TestHammerneWireIdentity(void)
     sUnit.items[0] = ITEM_STAFF_REPAIR;
     sAllyCharacter.number = 2;
     sAllyClass.number = 2;
-    sAlly.pCharacterData = &sAllyCharacter;
-    sAlly.pClassData = &sAllyClass;
-    sAlly.index = 2;
-    sAlly.xPos = 3;
-    sAlly.yPos = 2;
-    sAlly.maxHP = 20;
-    sAlly.curHP = 20;
+    SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 3, 2);
     sAlly.items[0] = 0x0101;
     sAlly.items[1] = 0x0202;
     sUnitData[2][3] = 2;
 
-    ExpansionAutoplayPlanner_Reset();
-    ExpansionAutoplayPlanner_OnMapReady();
-    ExpansionAutoplayPlanner_PollStart();
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_START,
-        0,
-        0,
-        0,
-        0,
-        NULL);
-    CHECK(ExpansionAutoplayPlanner_PollStart(),
+    CHECK(ResetAndStartPlanner(),
           "Hammerne wire run must start");
     CHECK(
         ExpansionAutoplayPlanner_OfferDecision(&decision)
@@ -1545,15 +1481,8 @@ static int TestHammerneWireIdentity(void)
         "Hammerne wire run must publish candidates"
     );
     actionPage = gExpansionAutoplayPlannerObservation.pageCount - 1;
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        actionPage,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, actionPage)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS
@@ -1571,29 +1500,21 @@ static int TestHammerneWireIdentity(void)
                 || first.token3 != second.token3),
         "Hammerne target slot must be packed and token-bound"
     );
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        0,
-        gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 2,
-        &first.token0);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        CommitCurrent(
+            &decision,
+            gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 2,
+            &first.token0)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.rejection
                 == EXPANSION_AUTOPLAY_PLANNER_REJECTION_TOKEN_MISMATCH,
         "Hammerne token for another inventory slot must reject"
     );
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        0,
-        gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 2,
-        &second.token0);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        CommitCurrent(
+            &decision,
+            gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 2,
+            &second.token0)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED
             && decision.unk04 == 1
             && ExpansionAutoplayPlanner_PrepareActionData(&decision)
@@ -1614,13 +1535,13 @@ static int TestCompleteEnumerator(void)
     int index;
     int other;
 
-    gBmMapSize.x = 3;
-    gBmMapSize.y = 3;
+    ResetActionFixture(3, 3);
     sCharacter.number = CHARACTER_EWAN;
     sClass.attributes = CA_STEAL | CA_SUMMON;
     sClass.number = CLASS_ROGUE;
     sUnit.xPos = 1;
     sUnit.yPos = 1;
+    sMovementData[1][1] = 0;
     sUnit.maxHP = 20;
     sUnit.curHP = 10;
     sUnit.items[0] = ITEM_SWORD_IRON;
@@ -1629,32 +1550,18 @@ static int TestCompleteEnumerator(void)
     sUnitData[1][1] = 1;
     sAllyCharacter.number = 2;
     sAllyClass.number = 2;
-    sAlly.pCharacterData = &sAllyCharacter;
-    sAlly.pClassData = &sAllyClass;
-    sAlly.index = 2;
-    sAlly.xPos = 1;
-    sAlly.yPos = 0;
-    sAlly.maxHP = 20;
+    SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 1, 0);
     sAlly.curHP = 10;
     sUnitData[0][1] = 2;
     sEnemyCharacter.number = 3;
     sEnemyClass.number = 3;
-    sEnemy.pCharacterData = &sEnemyCharacter;
-    sEnemy.pClassData = &sEnemyClass;
-    sEnemy.index = 0x81;
-    sEnemy.xPos = 2;
-    sEnemy.yPos = 1;
-    sEnemy.maxHP = 20;
-    sEnemy.curHP = 20;
+    SetupTestUnit(&sEnemy, &sEnemyCharacter, &sEnemyClass, 0x81, 2, 1);
     sUnitData[1][2] = 0x81;
     sTerrainData[2][1] = TERRAIN_CHEST_FULL;
     sTerrainData[1][0] = TERRAIN_DOOR;
     stateBefore = RuntimeStateDigest();
     CHECK(
-        ExpansionAutoplayPlanner_EnumerateLegalActions(
-            CollectAction,
-            &firstCount,
-            NULL)
+        CollectActions(&firstCount)
             == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK,
         "complete legal-action enumeration must succeed"
     );
@@ -1690,10 +1597,7 @@ static int TestCompleteEnumerator(void)
         "complete enumeration must cover every declared action family"
     );
     CHECK(
-        ExpansionAutoplayPlanner_EnumerateLegalActions(
-            CollectAction,
-            &secondCount,
-            NULL)
+        CollectActions(&secondCount)
             == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK,
         "repeated legal-action enumeration must succeed"
     );
@@ -1752,18 +1656,24 @@ int main(void)
         sUnitRows[index] = sUnitData[index];
         sTerrainRows[index] = sTerrainData[index];
         sFogRows[index] = sFogData[index];
+        sRangeRows[index] = sRangeData[index];
         for (x = 0; x < 32; x++)
         {
             sMovementData[index][x] = 1;
             sUnitData[index][x] = 0;
             sTerrainData[index][x] = 1;
             sFogData[index][x] = 1;
+            sRangeData[index][x] = 0;
         }
     }
     gBmMapMovement = sMovementRows;
     gBmMapUnit = sUnitRows;
     gBmMapTerrain = sTerrainRows;
     gBmMapFog = sFogRows;
+    gBmMapRange = sRangeRows;
+    gWorkingBmMap = gBmMapRange;
+    CHECK(TestActionSemanticEffects() == 0,
+          "action semantics effect test");
     CHECK(TestCompleteEnumerator() == 0, "complete action enumerator test");
     CHECK(TestCoordinateActionFamilies() == 0,
           "coordinate-sensitive action family test");
@@ -1792,13 +1702,7 @@ int main(void)
     sUnit.items[0] = ITEM_SWORD_IRON | (30 << 8);
     sAllyCharacter.number = 2;
     sAllyClass.number = 2;
-    sAlly.pCharacterData = &sAllyCharacter;
-    sAlly.pClassData = &sAllyClass;
-    sAlly.index = 2;
-    sAlly.xPos = 5;
-    sAlly.yPos = 5;
-    sAlly.maxHP = 20;
-    sAlly.curHP = 20;
+    SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 5, 5);
     sAlly.state = US_NOT_DEPLOYED;
     sAlly.items[0] = ITEM_VULNERARY | (2 << 8);
     sEnemy.pCharacterData = NULL;
@@ -1859,9 +1763,7 @@ int main(void)
         "a START prepared from an older READY seed must reject provenance"
     );
     sSeeds[0] = 1;
-    ExpansionAutoplayPlanner_Reset();
-    ExpansionAutoplayPlanner_OnMapReady();
-    ExpansionAutoplayPlanner_PollStart();
+    PreparePlannerStart();
 
     WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
     gExpansionAutoplayPlannerCommand.payload.start.expectedRomIdentity ^= 1;
@@ -1871,9 +1773,7 @@ int main(void)
                 == EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR,
         "same header with different build identity must reject provenance"
     );
-    ExpansionAutoplayPlanner_Reset();
-    ExpansionAutoplayPlanner_OnMapReady();
-    ExpansionAutoplayPlanner_PollStart();
+    PreparePlannerStart();
 
     WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
     gExpansionAutoplayPlannerCommand.payload.start.expectedScenarioIdentity ^= 1;
@@ -1930,15 +1830,8 @@ int main(void)
         "summary page must expose actual map and active-unit semantics"
     );
 
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        4,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 4)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_UNITS
@@ -1950,15 +1843,8 @@ int main(void)
                 == US_NOT_DEPLOYED,
         "unit page must mark benched stale-coordinate units unavailable"
     );
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        5,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 5)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_INVENTORY
@@ -1983,15 +1869,8 @@ int main(void)
                 == (ITEM_VULNERARY | (2 << 8)),
         "inventory page must expose present, empty, and unavailable unit slots"
     );
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        6,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 6)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_RESOURCES
@@ -2006,15 +1885,8 @@ int main(void)
                 == EXPANSION_AUTOPLAY_PLANNER_EMPTY,
         "resource page must expose gold plus present and empty convoy slots"
     );
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        7,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 7)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_RESOURCES
@@ -2022,15 +1894,8 @@ int main(void)
             && gExpansionAutoplayPlannerObservation.count.recordCount == 5,
         "resource paging must include the complete autoplay telemetry"
     );
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        8,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 8)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS
@@ -2041,15 +1906,8 @@ int main(void)
                     .payload.flags[1].value == 0,
         "flag page must expose explicit set and clear states"
     );
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        9,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 9)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS
@@ -2074,15 +1932,8 @@ int main(void)
         );
     }
 
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        33,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 33)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
         "valid PAGE command must publish another page"
     );
@@ -2110,15 +1961,8 @@ int main(void)
                 == EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR,
         "unexpected waiting command must reject instead of waiting forever"
     );
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        33,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 33)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
         "page must republish after malformed command"
     );
@@ -2144,15 +1988,8 @@ int main(void)
             forgedToken[other] = selectedToken[other];
         }
         forgedToken[index] ^= 1;
-        WriteCommand(
-            EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
-            gExpansionAutoplayPlannerObservation.runId,
-            gExpansionAutoplayPlannerObservation.observationId,
-            0,
-            selectedOrdinal,
-            forgedToken);
         CHECK(
-            ExpansionAutoplayPlanner_PollDecision(&decision)
+            CommitCurrent(&decision, selectedOrdinal, forgedToken)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
             "every forged token word must reject"
         );
@@ -2164,30 +2001,16 @@ int main(void)
     }
 
     sMovementData[selectedY][selectedX] = MAP_MOVEMENT_MAX + 1;
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        0,
-        selectedOrdinal,
-        selectedToken);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        CommitCurrent(&decision, selectedOrdinal, selectedToken)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.rejection
                 == EXPANSION_AUTOPLAY_PLANNER_REJECTION_ACTION_BECAME_ILLEGAL,
         "candidate-set mutation must reject before ordinal reconstruction"
     );
     sMovementData[selectedY][selectedX] = 1;
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        0,
-        selectedOrdinal,
-        selectedToken);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        CommitCurrent(&decision, selectedOrdinal, selectedToken)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED,
         "matching token must commit the existing production decision"
     );
@@ -2277,15 +2100,8 @@ int main(void)
             "non-idle malformed traffic must not evade the deadline"
         );
     }
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        0,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(&decision, 0)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED
             && gExpansionAutoplayPlannerObservation.rejection
                 == EXPANSION_AUTOPLAY_PLANNER_REJECTION_TIMEOUT
@@ -2306,8 +2122,7 @@ int main(void)
     );
     ExpansionAutoplayPlanner_OnMapReady();
     ExpansionAutoplayPlanner_PollStart();
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
-    CHECK(ExpansionAutoplayPlanner_PollStart(), "second run must start after reset");
+    CHECK(StartPreparedPlanner(), "second run must start after reset");
     CHECK(
         gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
             && gExpansionAutoplayPlannerCampaignCheckpoint.chapterIndex == 0
@@ -2345,11 +2160,7 @@ int main(void)
         "explicit cancellation must clear checkpoint before restoration"
     );
 
-    ExpansionAutoplayPlanner_Reset();
-    ExpansionAutoplayPlanner_OnMapReady();
-    ExpansionAutoplayPlanner_PollStart();
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
-    CHECK(ExpansionAutoplayPlanner_PollStart(), "wait-candidate run must start");
+    CHECK(ResetAndStartPlanner(), "wait-candidate run must start");
     CHECK(
         gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
             && gExpansionAutoplayPlannerCampaignCheckpoint.runId == 0
@@ -2376,15 +2187,10 @@ int main(void)
             && gExpansionAutoplayPlannerObservation.totalActionCount == 1,
         "immobile active unit must publish exactly one stationary Wait"
     );
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        gExpansionAutoplayPlannerObservation.pageCount - 1,
-        0,
-        NULL);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        RequestPage(
+            &decision,
+            gExpansionAutoplayPlannerObservation.pageCount - 1)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageKind
                 == EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS,
@@ -2398,30 +2204,22 @@ int main(void)
         "stationary Wait must bind the active unit current tile"
     );
     sMovementData[sUnit.yPos][sUnit.xPos] = MAP_MOVEMENT_MAX + 1;
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        0,
-        gExpansionAutoplayPlannerObservation.start.actionStartOrdinal,
-        &action->token0);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        CommitCurrent(
+            &decision,
+            gExpansionAutoplayPlannerObservation.start.actionStartOrdinal,
+            &action->token0)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.rejection
                 == EXPANSION_AUTOPLAY_PLANNER_REJECTION_ACTION_BECAME_ILLEGAL,
         "stale stationary Wait must reject before execution"
     );
     sMovementData[sUnit.yPos][sUnit.xPos] = 0;
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
-        gExpansionAutoplayPlannerObservation.runId,
-        gExpansionAutoplayPlannerObservation.observationId,
-        0,
-        gExpansionAutoplayPlannerObservation.start.actionStartOrdinal,
-        &action->token0);
     CHECK(
-        ExpansionAutoplayPlanner_PollDecision(&decision)
+        CommitCurrent(
+            &decision,
+            gExpansionAutoplayPlannerObservation.start.actionStartOrdinal,
+            &action->token0)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED
             && decision.xMove == sUnit.xPos
             && decision.yMove == sUnit.yPos
@@ -2438,11 +2236,7 @@ int main(void)
           "Hammerne fixed-width wire identity test");
 
     ResetActionFixture(32, 17);
-    ExpansionAutoplayPlanner_Reset();
-    ExpansionAutoplayPlanner_OnMapReady();
-    ExpansionAutoplayPlanner_PollStart();
-    WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
-    CHECK(ExpansionAutoplayPlanner_PollStart(), "unavailable-actor run must start");
+    CHECK(ResetAndStartPlanner(), "unavailable-actor run must start");
     sUnit.state = US_NOT_DEPLOYED;
     restoreBefore = sRestoreRequests;
     original = decision;
@@ -2474,17 +2268,7 @@ int main(void)
     }
     sUnitData[sUnit.yPos][sUnit.xPos] = 1;
     sUnit.state = 0;
-    ExpansionAutoplayPlanner_Reset();
-    ExpansionAutoplayPlanner_OnMapReady();
-    ExpansionAutoplayPlanner_PollStart();
-    WriteCommand(
-        EXPANSION_AUTOPLAY_PLANNER_COMMAND_START,
-        0,
-        0,
-        0,
-        0,
-        NULL);
-    CHECK(ExpansionAutoplayPlanner_PollStart(),
+    CHECK(ResetAndStartPlanner(),
           "capacity terminal run must start");
     restoreBefore = sRestoreRequests;
     CHECK(
