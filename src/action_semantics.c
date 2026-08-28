@@ -300,7 +300,8 @@ bool ActionSemantics_ConsumePickKey(
         return true;
     if (itemSlot < 0
         || itemSlot >= UNIT_ITEM_COUNT
-        || unit->items[itemSlot] == 0)
+        || unit->items[itemSlot] == 0
+        || ITEM_USES(unit->items[itemSlot]) == 0)
         return false;
     UnitUpdateUsedItem(unit, itemSlot);
     return true;

@@ -386,7 +386,6 @@ class PlannerBridgeTests(unittest.TestCase):
             r"chapter is outside the v2 range",
         ):
             bridge.observe(0, (), (planner.Action("MOVE_WAIT", 1, (0, 0)),))
-
         bridge = planner.PlannerBridge(PROVENANCE)
         bridge.begin(PROVENANCE)
         with self.assertRaisesRegex(
@@ -656,13 +655,11 @@ class PlannerBridgeTests(unittest.TestCase):
             for _ in range(depth):
                 value = [value]
             return value
-
         def nested_object(depth):
             value = 0
             for _ in range(depth):
                 value = {"value": value}
             return value
-
         for factory in (nested_array, nested_object):
             for depth in (
                 planner.MAX_JSON_DEPTH - 1,
@@ -681,7 +678,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 planner._canonical(
                     factory(planner.MAX_JSON_DEPTH + 1)
                 )
-
         at_limit = (
             b"[" * planner.MAX_JSON_DEPTH
             + b"0"
@@ -708,12 +704,10 @@ class PlannerBridgeTests(unittest.TestCase):
             + b"}" * (planner.MAX_JSON_DEPTH + 1)
         )
         factory_calls = 0
-
         def transport_factory():
             nonlocal factory_calls
             factory_calls += 1
             raise AssertionError("invalid transcript started transport")
-
         with self.assertRaisesRegex(
             planner.PlannerError,
             "invalid planner transcript JSON depth",
@@ -728,7 +722,6 @@ class PlannerBridgeTests(unittest.TestCase):
             "invalid planner transcript JSON",
         ):
             planner.PlannerTranscript.import_bytes(b'{"value":"\xff"}')
-
         bridge = planner.PlannerBridge(PROVENANCE)
         bridge.begin(PROVENANCE)
         observation = bridge.observe(
@@ -785,7 +778,6 @@ class PlannerBridgeTests(unittest.TestCase):
             )
         )
         encoded = bridge.transcript.export()
-
         def mutate_completion(kind, response_frames):
             document = json.loads(encoded)
             completion = next(
@@ -797,7 +789,6 @@ class PlannerBridgeTests(unittest.TestCase):
             completion["response_frames"] = response_frames
             _rechain_transcript(document)
             return planner._canonical(document)
-
         for kind, response_frames in (
             (4, planner.COMMAND_RESPONSE_FRAME_LIMIT),
             (2, planner.COMMAND_RESPONSE_FRAME_LIMIT + 1),
@@ -811,7 +802,6 @@ class PlannerBridgeTests(unittest.TestCase):
                     mutate_completion(kind, response_frames)
                 )
                 self.assertTrue(imported.events)
-
         for kind, response_frames in (
             (4, -1),
             (4, planner.COMMAND_RESPONSE_FRAME_LIMIT + 1),
@@ -831,7 +821,6 @@ class PlannerBridgeTests(unittest.TestCase):
                     planner.PlannerTranscript.import_bytes(
                         mutate_completion(kind, response_frames)
                     )
-
         rejected_commit = json.loads(encoded)
         acknowledgement = next(
             event
@@ -858,14 +847,12 @@ class PlannerBridgeTests(unittest.TestCase):
             planner.PlannerTranscript.import_bytes(
                 planner._canonical(rejected_commit)
             )
-
         factory_calls = 0
 
         def factory():
             nonlocal factory_calls
             factory_calls += 1
             raise AssertionError("invalid timing started transport")
-
         with self.assertRaisesRegex(
             planner.PlannerError,
             "completion timing is invalid",
@@ -908,7 +895,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 _assert_replay_rejected(
                     self, planner._canonical(document), "schema"
                 )
-
         for name, record in TRANSCRIPT_RECORDS.items():
             with self.subTest(record=name):
                 document = json.loads(encoded)
@@ -919,7 +905,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 )
                 observation[name] = [{**record, "unexpected": 1}]
                 _assert_import_rejected(self, document, "schema")
-
         document = json.loads(encoded)
         commit = next(
             event["command"]
@@ -929,7 +914,6 @@ class PlannerBridgeTests(unittest.TestCase):
         )
         commit["token"]["unexpected"] = 1
         _assert_import_rejected(self, document, "schema")
-
         for name in ("checkpoint", "telemetry"):
             document = json.loads(encoded)
             _transcript_event(document, "settled")[name] = [
@@ -940,7 +924,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 document,
                 "invalid settled transcript record",
             )
-
         document = json.loads(encoded)
         error = {
             "event": "transport_error",
@@ -951,7 +934,6 @@ class PlannerBridgeTests(unittest.TestCase):
         }
         document["events"].append(error)
         _assert_import_rejected(self, document, "schema")
-
         missing_required = json.loads(encoded)
         _transcript_event(
             missing_required,
@@ -965,7 +947,6 @@ class PlannerBridgeTests(unittest.TestCase):
 
     def test_transcript_scalars_and_nonfinite_reject_pre_factory(self):
         encoded = _recorded_transcript()
-
         complete = "observation_complete"
         observation = ("observation",)
         action = observation + ("actions", 0)
@@ -1009,7 +990,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 _set_transcript_value(document, event_kind, path, value)
                 _rechain_transcript(document)
                 _assert_replay_rejected(self, planner._canonical(document))
-
         record_cases = (
             ("map_cells", "x", 64),
             ("units", "state", -1),
@@ -1030,7 +1010,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 }]
                 _rechain_transcript(document)
                 _assert_replay_rejected(self, planner._canonical(document))
-
         session_only = planner.PlannerTranscript()
         session_only.record_session(TRANSCRIPT_SESSION)
         command_cases = (
@@ -1061,7 +1040,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 )
                 _rechain_transcript(document)
                 _assert_replay_rejected(self, planner._canonical(document))
-
         rejected_commit = json.loads(session_only.export())
         rejected_commit["events"].extend((
             {
@@ -1082,7 +1060,6 @@ class PlannerBridgeTests(unittest.TestCase):
         ))
         _rechain_transcript(rejected_commit)
         _assert_replay_rejected(self, planner._canonical(rejected_commit))
-
         transport_error = json.loads(session_only.export())
         transport_error["events"].append({
             "event": "transport_error",
@@ -1092,7 +1069,6 @@ class PlannerBridgeTests(unittest.TestCase):
         })
         _rechain_transcript(transport_error)
         _assert_replay_rejected(self, planner._canonical(transport_error))
-
         for constant in ("NaN", "Infinity", "-Infinity"):
             with self.subTest(nonfinite=constant):
                 _assert_replay_rejected(
@@ -1543,7 +1519,6 @@ class PlannerBridgeTests(unittest.TestCase):
         boundary._committed_count = planner.MAX_TRACE_ACTIONS - 1
         boundary.commit(boundary_command)
         self.assertEqual(boundary._committed_count, planner.MAX_TRACE_ACTIONS)
-
         bridge, observation, command = _single_action_bridge()
         with self.assertRaisesRegex(
             planner.PlannerError,
@@ -1571,7 +1546,6 @@ class PlannerBridgeTests(unittest.TestCase):
                 )
             )
         bridge.begin(PROVENANCE)
-
         oversized, observation, command = _single_action_bridge()
         oversized.transcript = planner.PlannerTranscript(
             max_bytes=planner.MAX_TRANSCRIPT_EXCHANGE_BYTES
@@ -1584,7 +1558,6 @@ class PlannerBridgeTests(unittest.TestCase):
             oversized.commit(command)
         self.assertEqual(oversized.transcript.export(), trace_before)
         self.assertIs(oversized._observation, observation)
-
         atomic = planner.PlannerBridge(PROVENANCE)
         atomic.begin(PROVENANCE)
         atomic.transcript = planner.PlannerTranscript(max_bytes=256)
@@ -1627,7 +1600,6 @@ class PlannerBridgeTests(unittest.TestCase):
 
     def test_expansion_config_preserves_positional_api(self):
         from scripts.modernize import expansion_config
-
         root = TESTS_DIR.parents[2]
         names = (
             "config_mk_path", "config_preset", "abi", "rom_size",
@@ -1730,7 +1702,6 @@ exit 97
             )
             self.assertNotIn("MODERN_CONFIG :=", fragment)
             self.assertIn("EXPANSION_AUTOPLAY_PLANNER := 1", fragment)
-
             recorder = Path(temporary) / "recursive-make-recorder"
             record_path = Path(temporary) / "recursive-make.json"
             recorder.write_text(
@@ -2085,7 +2056,6 @@ raise SystemExit(child.returncode)
             self.assertEqual(int(checkpoint.group(1), 16), 52)
             self.assertNotIn("sPlannerCandidates", symbols.stdout)
             self.assertNotIn("sPlannerSelectedDecision", symbols.stdout)
-
             section_sizes = _arm_section_sizes(
                 self, size, objects[0], objects[1]
             )
@@ -2100,7 +2070,6 @@ raise SystemExit(child.returncode)
                 planner_code_size,
                 12 * 1024,
             )
-
             hook_code_sizes: dict[bool, int] = {}
             hook_objects: dict[bool, Path] = {}
             for enabled in (False, True):
@@ -2174,7 +2143,6 @@ raise SystemExit(child.returncode)
             )
             self.assertNotIn("AiSummonAction", disabled_hook_symbols.stdout)
             self.assertIn("AiSummonAction", enabled_hook_symbols.stdout)
-
             profile_sections: dict[bool, dict[str, int]] = {}
             for enabled in (False, True):
                 profile_objects = []
@@ -2204,7 +2172,6 @@ raise SystemExit(child.returncode)
                 - profile_sections[False].get("ewram_data", 0),
                 5,
             )
-
             disabled = temporary_path / "planner-release-disabled.o"
             _compile_arm_object(
                 self,
@@ -2794,7 +2761,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             )
             self.assertNotEqual(transition_checkpoint[12], 0)
             self.assertEqual(waiting.run_id, first.run_id)
-
             second = planner.collect_observation_pages(transport, waiting)
             choice = implementation.choose(second)
             committed = transport.exchange(
@@ -2943,7 +2909,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 ),
                 recorded,
             )
-
             tampered = json.loads(recorded)
             commit = next(
                 event["command"]
@@ -2955,12 +2920,10 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             commit["observation_id"] += 1
             _rechain_transcript(tampered)
             factory_calls = 0
-
             def factory():
                 nonlocal factory_calls
                 factory_calls += 1
                 return PlannerProcessTransport(backend, rom)
-
             with self.assertRaisesRegex(
                 planner.PlannerError,
                 "command observation identity mismatch",
@@ -3272,7 +3235,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             rom, backend = self._build_transport(str(immediate_dir))
             with _open_transport(backend, rom) as transport:
                 self.assertEqual(transport.observation.state, 1)
-
             delayed_dir = Path(temporary) / "delayed"
             delayed_dir.mkdir()
             rom, backend = self._build_transport(
@@ -3282,7 +3244,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             )
             with _open_transport(backend, rom) as transport:
                 self.assertEqual(transport.observation.state, 1)
-
             failure_cases = (
                 ("delayed-no-bootstrap", 8, 0, False, "startup"),
                 ("never-ready", 10000, 0, True, "bootstrap"),
@@ -3368,7 +3329,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         transport.transcript.export(),
                         transcript_before,
                     )
-
                 transport.process.stdin.write("READ" + " " * 507 + "\n")
                 transport.process.stdin.flush()
                 self.assertEqual(
@@ -3406,7 +3366,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                             transcript_before,
                         ),
                     )
-
                 waiting = transport.start()
                 cancelled = transport.exchange(
                     planner.Command(
@@ -3417,7 +3376,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 )
                 self.assertEqual(cancelled.state, 4)
                 encoded = json.loads(transport.transcript.export())
-
             overlong_eof = subprocess.run(
                 [str(backend), str(rom)],
                 input="X" * 600,
@@ -3434,7 +3392,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 overlong_eof.stdout.count("ERROR malformed line"),
                 1,
             )
-
             for unsupported_kind in ("RUN", 0xFFFFFFFF):
                 with self.subTest(unsupported_kind=unsupported_kind):
                     tampered = json.loads(planner._canonical(encoded))
@@ -3446,12 +3403,10 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     command_event["command"]["kind"] = unsupported_kind
                     _rechain_transcript(tampered)
                     factory_calls = 0
-
                     def factory():
                         nonlocal factory_calls
                         factory_calls += 1
                         return PlannerProcessTransport(backend, rom)
-
                     with self.assertRaisesRegex(
                         planner.PlannerError,
                         "unsupported command kind",
@@ -3572,7 +3527,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 self.assertEqual(cancel_acknowledgement.rejection, 8)
                 self.assertLess(cancel_completion.response_frames, 120)
                 self.assertTrue(all(value == 0 for value in transport.checkpoint))
-
             with _open_transport(backend, rom) as transport:
                 waiting = transport.start()
                 complete = planner.collect_observation_pages(transport, waiting)
@@ -3599,7 +3553,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 self.assertEqual(cancelled.state, 4)
                 self.assertEqual(cancelled.rejection, 8)
                 self.assertTrue(all(value == 0 for value in transport.checkpoint))
-
             with _open_transport(backend, rom) as transport:
                 waiting = transport.start()
                 complete = planner.collect_observation_pages(transport, waiting)
@@ -3654,7 +3607,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             self.assertEqual(blocked.returncode, 3)
             self.assertEqual(blocked.stdout, "")
             self.assertIn("startup is not READY", blocked.stderr)
-
             backend = Path(temporary) / "planner-transport"
             build_planner_transport_backend(
                 backend,
@@ -3674,7 +3626,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     unit for unit in complete.units if unit.slot == choice.action.actor
                 )
                 self.assertNotEqual(actor_before.position, choice.action.destination)
-
                 forged = transport.exchange(
                     planner.Command(
                         planner.CommandKind.COMMIT,

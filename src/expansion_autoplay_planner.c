@@ -151,7 +151,6 @@ static u32 ActualRomIdentity(void)
 #else
     const volatile u8* header = (const volatile u8*)0x080000A0;
     int index;
-
     for (index = 0; index < 16; index++)
         digest = MixDigest(digest, header[index]);
     return digest;
@@ -263,7 +262,6 @@ static void ClearObservation(void)
 {
     u8* bytes = (u8*)&gExpansionAutoplayPlannerObservation;
     int index;
-
     for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerObservation); index++)
         bytes[index] = 0;
 }
@@ -286,7 +284,6 @@ static void ClearFullCommand(void)
 {
     u8* bytes = (u8*)&gExpansionAutoplayPlannerCommand;
     int index;
-
     for (index = 0; index < (int)sizeof(gExpansionAutoplayPlannerCommand); index++)
         bytes[index] = 0;
 }
@@ -386,7 +383,6 @@ static enum ExpansionAutoplayPlannerEnumerationResult EmitDecision(
 {
     if (enumeration->count >= EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY)
         return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_CAPACITY;
-
     if (enumeration->visitor != NULL
         && !enumeration->visitor(enumeration->count, decision, enumeration->context))
     {
@@ -399,7 +395,6 @@ static enum ExpansionAutoplayPlannerEnumerationResult EmitDecision(
 static bool IsCombatTargetLegal(const struct Unit* target, int xMove, int yMove, int item)
 {
     int distance;
-
     if (!IsVisibleValidUnit(target)
         || AreUnitsAllied(gActiveUnitId, target->index))
         return false;
@@ -483,7 +478,6 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateCombat(
 {
     int itemSlot;
     int targetId;
-
     for (itemSlot = 0; itemSlot < UNIT_ITEM_COUNT; itemSlot++)
     {
         int item = gActiveUnit->items[itemSlot];
@@ -539,7 +533,6 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateWarpDestinations(
 {
     int yTarget;
     int xTarget;
-
     for (yTarget = 0; yTarget < gBmMapSize.y; yTarget++)
     {
         for (xTarget = 0; xTarget < gBmMapSize.x; xTarget++)
@@ -566,7 +559,6 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateUnlockTargets(
 {
     int yTarget;
     int xTarget;
-
     for (yTarget = 0; yTarget < gBmMapSize.y; yTarget++)
     {
         for (xTarget = 0; xTarget < gBmMapSize.x; xTarget++)
@@ -591,7 +583,6 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateTorchTargets(
     int reach = GetUnitItemUseReachBits(gActiveUnit, itemSlot);
     int yTarget;
     int xTarget;
-
     if (gPlaySt.chapterVisionRange == 0)
         return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
     for (yTarget = 0; yTarget < gBmMapSize.y; yTarget++)
@@ -619,7 +610,6 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateHammerneSlots(
     struct Unit* target)
 {
     int targetSlot;
-
     for (targetSlot = 0; targetSlot < UNIT_ITEM_COUNT; targetSlot++)
     {
         struct AiDecision decision;
@@ -641,7 +631,6 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateStaff(
     struct PlannerEnumeration* enumeration, int xMove, int yMove)
 {
     int itemSlot;
-
     for (itemSlot = 0; itemSlot < UNIT_ITEM_COUNT; itemSlot++)
     {
         int item = gActiveUnit->items[itemSlot];
@@ -727,7 +716,6 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateItems(
     struct PlannerEnumeration* enumeration, int xMove, int yMove)
 {
     int itemSlot;
-
     for (itemSlot = 0; itemSlot < UNIT_ITEM_COUNT; itemSlot++)
     {
         struct AiDecision decision;
@@ -749,55 +737,56 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateItems(
     return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
 }
 
-static int PickItemSlotForTarget(int xMove, int yMove, int xTarget, int yTarget)
+static bool IsPickItemSlotForTarget(
+    const struct Unit* unit, int itemSlot, int xMove, int yMove, int xTarget, int yTarget)
 {
-    int terrain;
-    int keySlot;
-
-    if (gActiveUnit->pClassData == NULL
-        || xTarget < 0
-        || xTarget >= gBmMapSize.x
-        || yTarget < 0
-        || yTarget >= gBmMapSize.y)
-        return -2;
+    int terrain, item, itemId;
+    if (unit == NULL || unit->pClassData == NULL
+        || itemSlot < 0 || itemSlot >= UNIT_ITEM_COUNT
+        || !ActionSemantics_IsKeyTarget(xMove, yMove, xTarget, yTarget))
+        return false;
+    item = unit->items[itemSlot];
+    if (item == 0 || ITEM_USES(item) == 0)
+        return false;
     terrain = gBmMapTerrain[yTarget][xTarget];
-    if (gActiveUnit->pClassData->number == CLASS_ROGUE)
-        return ActionSemantics_IsPickTarget(xMove, yMove, xTarget, yTarget) ? -1 : -2;
-    if (!ActionSemantics_IsKeyTarget(xMove, yMove, xTarget, yTarget))
-        return -2;
-    if (terrain == TERRAIN_BRIDGE_14)
-        terrain = TERRAIN_DOOR;
-    keySlot = GetUnitKeyItemSlotForTerrain(gActiveUnit, terrain);
-    if (keySlot < 0)
-        return -2;
-    if (gBmMapTerrain[yTarget][xTarget] == TERRAIN_BRIDGE_14
-        && GetItemIndex(gActiveUnit->items[keySlot]) != ITEM_LOCKPICK)
-        return -2;
-    return keySlot;
+    itemId = GetItemIndex(item);
+    if ((UNIT_CATTRIBUTES(unit) & CA_THIEF) && itemId == ITEM_LOCKPICK)
+        return true;
+    if (terrain == TERRAIN_CHEST_FULL)
+        return itemId == ITEM_CHESTKEY || itemId == ITEM_CHESTKEY_BUNDLE;
+    return terrain == TERRAIN_DOOR && itemId == ITEM_DOORKEY;
 }
 
 static enum ExpansionAutoplayPlannerEnumerationResult EnumeratePick(
     struct PlannerEnumeration* enumeration, int xMove, int yMove)
 {
-    int yTarget;
-    int xTarget;
-
+    int yTarget, xTarget;
+    bool rogue = gActiveUnit->pClassData->number == CLASS_ROGUE;
     for (yTarget = 0; yTarget < gBmMapSize.y; yTarget++)
     {
         for (xTarget = 0; xTarget < gBmMapSize.x; xTarget++)
         {
-            struct AiDecision decision;
-            enum ExpansionAutoplayPlannerEnumerationResult result;
-            int keySlot = PickItemSlotForTarget(xMove, yMove, xTarget, yTarget);
+            int slot;
+            int slotCount = rogue ? 1 : UNIT_ITEM_COUNT;
 
-            if (keySlot < -1)
-                continue;
-            MakeDecision(&decision, xMove, yMove, AI_ACTION_PICK, 0,
-                         keySlot < 0 ? 0xFF : keySlot, xTarget, yTarget);
-            result = EmitDecision(enumeration, &decision);
-            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
-                || enumeration->stopped)
-                return result;
+            for (slot = 0; slot < slotCount; slot++)
+            {
+                struct AiDecision decision;
+                enum ExpansionAutoplayPlannerEnumerationResult result;
+                int itemSlot = rogue ? -1 : slot;
+
+                if (itemSlot < 0
+                    ? !ActionSemantics_IsPickTarget(xMove, yMove, xTarget, yTarget)
+                    : !IsPickItemSlotForTarget(
+                        gActiveUnit, itemSlot, xMove, yMove, xTarget, yTarget))
+                    continue;
+                MakeDecision(&decision, xMove, yMove, AI_ACTION_PICK, 0,
+                             itemSlot < 0 ? 0xFF : itemSlot, xTarget, yTarget);
+                result = EmitDecision(enumeration, &decision);
+                if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                    || enumeration->stopped)
+                    return result;
+            }
         }
     }
     return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
@@ -809,7 +798,6 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateSummon(
 {
     int yTarget;
     int xTarget;
-
     if (normalSummonAvailable)
     {
         for (yTarget = 0; yTarget < gBmMapSize.y; yTarget++)
@@ -851,7 +839,6 @@ enum ExpansionAutoplayPlannerEnumerationResult ExpansionAutoplayPlanner_Enumerat
     int xMove;
     bool normalSummonAvailable;
     bool darkSummonAvailable;
-
     if (countOut != NULL)
         *countOut = 0;
     if (gActiveUnit == NULL
@@ -910,7 +897,6 @@ done:
 static bool FindCandidate(u32 ordinal, const struct AiDecision* decision, void* context)
 {
     struct PlannerCandidateLookup* lookup = context;
-
     if (ordinal != lookup->requested)
         return true;
     *lookup->output = *decision;
@@ -929,6 +915,8 @@ static bool DigestCandidate(u32 ordinal, const struct AiDecision* decision, void
     *digest = MixDigest(*digest, decision->targetId | ((u32)decision->itemSlot << 8));
     *digest = MixDigest(*digest, decision->xTarget | ((u32)decision->yTarget << 8));
     *digest = MixDigest(*digest, decision->unk04);
+    if (decision->actionId == AI_ACTION_PICK && decision->itemSlot < UNIT_ITEM_COUNT)
+        *digest = MixDigest(*digest, gActiveUnit->items[decision->itemSlot]);
     return true;
 }
 
@@ -968,7 +956,6 @@ static u32 UnitRecordCount(void)
 {
     u32 count = 0;
     int unitId;
-
     for (unitId = 1; unitId < 0xC0; unitId++)
         if (IsCanonicalUnitSlot(unitId)
             && UNIT_IS_VALID(GetUnit(unitId)))
@@ -1035,7 +1022,6 @@ static u32 FlagPageCount(void)
 {
     u32 pageCount =
         PageCountFor(FlagRecordCount(), EXPANSION_AUTOPLAY_PLANNER_VALUE_RECORD_CAPACITY);
-
     return pageCount == 0 ? 1 : pageCount;
 }
 
@@ -1049,7 +1035,6 @@ static u32 MapStateDigest(void)
     u32 digest = 2166136261u;
     int y;
     int x;
-
     if (!IsMapReady())
         return 0;
     for (y = 0; y < gBmMapSize.y; y++)
@@ -1097,7 +1082,6 @@ static u32 InventoryDigest(const struct Unit* unit)
 {
     u32 digest = 2166136261u;
     int item;
-
     for (item = 0; item < UNIT_ITEM_COUNT; item++)
         digest = MixDigest(digest, unit->items[item]);
     return digest;
@@ -1108,7 +1092,6 @@ static bool GetConvoyDigest(u32* result)
     u16* convoy = GetConvoyItemArray();
     u32 digest = 2166136261u;
     int index;
-
     if (convoy == NULL)
         return false;
     for (index = 0; index < CONVOY_ITEM_COUNT; index++)
@@ -1145,7 +1128,6 @@ static void PublishSummaryPage(void)
     u32 objectiveState = 0;
     u32 flagDigest;
     u32 convoyDigest;
-
     if (!IsMapReady())
         mapAvailability = EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED;
     unitAvailability = GetUnitAvailability(gActiveUnit);
@@ -1221,7 +1203,6 @@ static void PublishMapPage(u32 mapPage)
         ? remaining
         : EXPANSION_AUTOPLAY_PLANNER_MAP_RECORD_CAPACITY;
     u32 index;
-
     for (index = 0; index < count; index++)
     {
         u32 ordinal = start + index;
@@ -1250,7 +1231,6 @@ static struct Unit* GetUnitRecord(u32 ordinal)
 {
     u32 current = 0;
     int unitId;
-
     for (unitId = 1; unitId < 0xC0; unitId++)
     {
         struct Unit* unit = GetUnit(unitId);
@@ -1271,7 +1251,6 @@ static void PublishUnitPage(u32 unitPage)
     u32 count = remaining < EXPANSION_AUTOPLAY_PLANNER_UNIT_RECORD_CAPACITY
         ? remaining : EXPANSION_AUTOPLAY_PLANNER_UNIT_RECORD_CAPACITY;
     u32 index;
-
     for (index = 0; index < count; index++)
     {
         struct Unit* unit = GetUnitRecord(start + index);
@@ -1318,7 +1297,6 @@ static void PublishInventoryPage(u32 inventoryPage)
             ? remaining
             : EXPANSION_AUTOPLAY_PLANNER_VALUE_RECORD_CAPACITY;
     u32 index;
-
     for (index = 0; index < count; index++)
     {
         u32 ordinal = start + index;
@@ -1359,7 +1337,6 @@ static void PublishResourcePage(u32 resourcePage)
     u16* convoy = GetConvoyItemArray();
     const u32* telemetry = (const u32*)&gExpansionAutoplayTelemetry;
     u32 index;
-
     for (index = 0; index < count; index++)
     {
         u32 ordinal = start + index;
@@ -1416,7 +1393,6 @@ static void PublishFlagPage(u32 flagPage)
     u8* permanentFlags = GetPermanentFlagBits();
     u8* chapterFlags = GetChapterFlagBits();
     u32 index;
-
     for (index = 0; index < count; index++)
     {
         u32 ordinal = start + index;
@@ -1450,7 +1426,6 @@ static bool CollectPageAction(u32 ordinal, const struct AiDecision* decision, vo
     struct PlannerPageCollector* collector = context;
     struct ExpansionAutoplayPlannerActionV2* action;
     u32 token[4];
-
     if (ordinal < collector->start)
         return true;
     if (ordinal >= collector->start + collector->count)
@@ -1491,6 +1466,20 @@ static void PublishActionPage(u32 actionPage)
     gExpansionAutoplayPlannerObservation.totalRecordCount = CandidateCount();
 }
 
+static void __attribute__((noinline)) PublishRuntimeIdentity(void)
+{
+    gExpansionAutoplayPlannerObservation.magic = EXPANSION_AUTOPLAY_PLANNER_MAGIC;
+    gExpansionAutoplayPlannerObservation.version =
+        EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION;
+    gExpansionAutoplayPlannerObservation.byteSize =
+        sizeof(struct ExpansionAutoplayPlannerObservationV2);
+    gExpansionAutoplayPlannerObservation.runId = sPlannerRunId;
+    gExpansionAutoplayPlannerObservation.actualRomIdentity = ActualRomIdentity();
+    gExpansionAutoplayPlannerObservation.actualConfigIdentity = ActualConfigIdentity();
+    gExpansionAutoplayPlannerObservation.actualScenarioIdentity = ActualScenarioIdentity();
+    gExpansionAutoplayPlannerObservation.actualSeedIdentity = ActualSeedIdentity();
+}
+
 static bool PublishPage(u32 pageIndex)
 {
     u32 mapPages = MapPageCount();
@@ -1510,7 +1499,6 @@ static bool PublishPage(u32 pageIndex)
     int index;
     int payloadSize = sizeof(gExpansionAutoplayPlannerObservation.payload);
     u16 seeds[3];
-
     if (pageIndex >= pageCount)
         return false;
 
@@ -1519,13 +1507,7 @@ static bool PublishPage(u32 pageIndex)
     for (index = 0; index < payloadSize; index++)
         payload[index] = 0;
     StoreRNState(seeds);
-    gExpansionAutoplayPlannerObservation.magic =
-        EXPANSION_AUTOPLAY_PLANNER_MAGIC;
-    gExpansionAutoplayPlannerObservation.version =
-        EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION;
-    gExpansionAutoplayPlannerObservation.byteSize =
-        sizeof(struct ExpansionAutoplayPlannerObservationV2);
-    gExpansionAutoplayPlannerObservation.runId = sPlannerRunId;
+    PublishRuntimeIdentity();
     gExpansionAutoplayPlannerObservation.pageCount = pageCount;
     gExpansionAutoplayPlannerObservation.totalActionCount = CandidateCount();
     gExpansionAutoplayPlannerObservation.rejection =
@@ -1540,15 +1522,6 @@ static bool PublishPage(u32 pageIndex)
     gExpansionAutoplayPlannerObservation.rngLcg = GetLCGRNValue();
     gExpansionAutoplayPlannerObservation.rngConsumption =
         GetRNConsumptionCount();
-    gExpansionAutoplayPlannerObservation.actualRomIdentity =
-        ActualRomIdentity();
-    gExpansionAutoplayPlannerObservation.actualConfigIdentity =
-        ActualConfigIdentity();
-    gExpansionAutoplayPlannerObservation.actualScenarioIdentity =
-        ActualScenarioIdentity();
-    gExpansionAutoplayPlannerObservation.actualSeedIdentity =
-        ActualSeedIdentity();
-
     if (pageIndex == 0)
     {
         gExpansionAutoplayPlannerObservation.pageKind =
@@ -1677,22 +1650,8 @@ static void PublishReadyState(void)
     u32 rejection = gExpansionAutoplayPlannerObservation.rejection;
 
     ClearObservation();
-    gExpansionAutoplayPlannerObservation.magic =
-        EXPANSION_AUTOPLAY_PLANNER_MAGIC;
-    gExpansionAutoplayPlannerObservation.version =
-        EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION;
-    gExpansionAutoplayPlannerObservation.byteSize =
-        sizeof(struct ExpansionAutoplayPlannerObservationV2);
-    gExpansionAutoplayPlannerObservation.runId = sPlannerRunId;
+    PublishRuntimeIdentity();
     gExpansionAutoplayPlannerObservation.pageCount = 1;
-    gExpansionAutoplayPlannerObservation.actualRomIdentity =
-        ActualRomIdentity();
-    gExpansionAutoplayPlannerObservation.actualConfigIdentity =
-        ActualConfigIdentity();
-    gExpansionAutoplayPlannerObservation.actualScenarioIdentity =
-        ActualScenarioIdentity();
-    gExpansionAutoplayPlannerObservation.actualSeedIdentity =
-        ActualSeedIdentity();
     gExpansionAutoplayPlannerObservation.rejection = rejection;
     PLANNER_PUBLISH_BARRIER();
     gExpansionAutoplayPlannerObservation.state =
@@ -1747,7 +1706,6 @@ bool ExpansionAutoplayPlanner_PollStart(void)
             PublishReadyState();
         return false;
     }
-
     if (sPlannerActive
         || gExpansionAutoplayPlannerObservation.state
             != EXPANSION_AUTOPLAY_PLANNER_STATE_READY
@@ -1757,13 +1715,11 @@ bool ExpansionAutoplayPlanner_PollStart(void)
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
         return false;
     }
-
     if (!IsCommandHeaderValid())
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
         return false;
     }
-
     if (gExpansionAutoplayPlannerCommand.payload.start.expectedRomIdentity
             != gExpansionAutoplayPlannerObservation.actualRomIdentity
         || gExpansionAutoplayPlannerCommand.payload.start.expectedConfigIdentity
@@ -1776,7 +1732,6 @@ bool ExpansionAutoplayPlanner_PollStart(void)
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
         return false;
     }
-
     if (ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER)
         != EXPANSION_AUTOPLAY_OK)
     {
@@ -1808,13 +1763,10 @@ bool ExpansionAutoplayPlanner_PrepareActionData(const struct AiDecision* decisio
     struct Unit* target;
     int item;
     int itemId;
-    int expectedKeySlot;
-
     if (decision == NULL
         || gActiveUnit == NULL
         || decision->unitId != gActiveUnitId)
         return false;
-
     if (decision->actionId == AI_ACTION_COMBAT
         && decision->targetId == 0)
     {
@@ -1827,7 +1779,6 @@ bool ExpansionAutoplayPlanner_PrepareActionData(const struct AiDecision* decisio
             && IsSnagAttackTargetAt(item, decision->xMove, decision->yMove, decision->xTarget,
                                     decision->yTarget);
     }
-
     if (decision->actionId == AI_ACTION_SUMMON)
     {
         if (decision->targetId != 0
@@ -1853,18 +1804,33 @@ bool ExpansionAutoplayPlanner_PrepareActionData(const struct AiDecision* decisio
     }
     if (decision->actionId == AI_ACTION_PICK)
     {
-        expectedKeySlot = PickItemSlotForTarget(decision->xMove, decision->yMove,
-                                                decision->xTarget, decision->yTarget);
-        if (expectedKeySlot < -1
-            || decision->itemSlot
-                != (expectedKeySlot < 0 ? 0xFF : expectedKeySlot))
+        if (decision->targetId != 0)
             return false;
+        if (gActiveUnit->pClassData->number == CLASS_ROGUE)
+        {
+            if (decision->itemSlot != 0xFF || decision->unk04 != 0xFF
+                || decision->unk05 != 0
+                || !ActionSemantics_IsPickTarget(
+                    decision->xMove, decision->yMove, decision->xTarget, decision->yTarget))
+                return false;
+        }
+        else
+        {
+            if (decision->itemSlot >= UNIT_ITEM_COUNT
+                || (gExpansionAutoplayPlannerObservation.state
+                        == EXPANSION_AUTOPLAY_PLANNER_STATE_COMMITTED
+                    && gActiveUnit->items[decision->itemSlot]
+                        != (u16)sPlannerCandidateDigest)
+                || !IsPickItemSlotForTarget(
+                    gActiveUnit, decision->itemSlot, decision->xMove, decision->yMove,
+                    decision->xTarget, decision->yTarget))
+                return false;
+        }
         gActionData.xOther = decision->xTarget;
         gActionData.yOther = decision->yTarget;
         gActionData.itemSlotIndex = decision->itemSlot;
         return true;
     }
-
     if (decision->actionId != AI_ACTION_STAFF
         || decision->itemSlot >= UNIT_ITEM_COUNT)
         return decision->actionId != AI_ACTION_STAFF;
@@ -1930,7 +1896,6 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_OfferDecisi
     (void)decision;
     if (!sPlannerActive)
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_FALLBACK;
-
     if (gExpansionAutoplayPlannerObservation.state
         == EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING)
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
@@ -1978,25 +1943,21 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
 {
     struct AiDecision candidate;
     u32 token[4];
-
     if (!sPlannerActive
         || gExpansionAutoplayPlannerObservation.state
             != EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING)
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_FALLBACK;
     if (!AdvanceDecisionDeadline())
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED;
-
     if (gExpansionAutoplayPlannerCommand.kind
         == EXPANSION_AUTOPLAY_PLANNER_COMMAND_NONE)
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
-
     if (gExpansionAutoplayPlannerCommand.kind
         == EXPANSION_AUTOPLAY_PLANNER_COMMAND_START)
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
-
     if (gExpansionAutoplayPlannerCommand.kind
         == EXPANSION_AUTOPLAY_PLANNER_COMMAND_CANCEL)
     {
@@ -2013,7 +1974,6 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         EndPlannerRun(EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED;
     }
-
     if (gExpansionAutoplayPlannerCommand.kind
         == EXPANSION_AUTOPLAY_PLANNER_COMMAND_PAGE)
     {
@@ -2039,20 +1999,17 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         ClearCommand();
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
-
     if (gExpansionAutoplayPlannerCommand.kind
         != EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT)
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
-
     if (!IsCommandHeaderValid())
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
-
     if (gExpansionAutoplayPlannerCommand.runId != sPlannerRunId
         || gExpansionAutoplayPlannerCommand.observationId
             != gExpansionAutoplayPlannerObservation.observationId)
@@ -2060,13 +2017,11 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_STALE_OBSERVATION);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
-
     if (gExpansionAutoplayPlannerCommand.actionOrdinal >= CandidateCount())
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_UNKNOWN_ACTION);
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
-
     if (!CandidateSetUnchanged())
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_ACTION_BECAME_ILLEGAL);
@@ -2103,6 +2058,8 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
     gExpansionAutoplayPlannerCommand.rejection =
         EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
     ClearCommand();
+    if (candidate.actionId == AI_ACTION_PICK && candidate.itemSlot < UNIT_ITEM_COUNT)
+        sPlannerCandidateDigest = gActiveUnit->items[candidate.itemSlot];
     sPlannerTraceDigest = MixDigest(sPlannerTraceDigest, token[0]);
     sPlannerTraceDigest = MixDigest(sPlannerTraceDigest, token[1]);
     sPlannerTraceDigest = MixDigest(sPlannerTraceDigest, token[2]);
@@ -2115,7 +2072,6 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
 void ExpansionAutoplayPlanner_RecordCampaignCheckpoint(void)
 {
     u16 seeds[3];
-
     if (!sPlannerActive)
         return;
 

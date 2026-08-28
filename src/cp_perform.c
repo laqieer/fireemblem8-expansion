@@ -439,6 +439,7 @@ s8 AiPickAction(struct CpPerformProc* proc) {
 #if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
     if (!PreparePlannerAction())
         return 1;
+    gActionData.subjectIndex = gActiveUnitId;
 #endif
     gActiveUnit->xPos = gAiDecision.xMove;
     gActiveUnit->yPos = gAiDecision.yMove;

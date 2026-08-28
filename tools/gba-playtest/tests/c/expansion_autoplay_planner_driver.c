@@ -168,7 +168,6 @@ s8 CanUnitUseStaff(struct Unit* unit, int item)
     case ITEM_STAFF_FORTIFY:
     case ITEM_STAFF_LATONA:
         return true;
-
     default:
         return false;
     }
@@ -177,29 +176,8 @@ s8 CanUnitUseStaff(struct Unit* unit, int item)
 int GetUnitItemUseReachBits(struct Unit* unit, int itemSlot)
 {
     int item = unit->items[itemSlot];
-
     return GetItemIndex(item) == ITEM_STAFF_TORCH
         ? REACH_MAGBY2 : REACH_RANGE1;
-}
-
-int GetUnitKeyItemSlotForTerrain(struct Unit* unit, int terrain)
-{
-    int slot;
-    for (slot = 0; slot < UNIT_ITEM_COUNT; slot++)
-    {
-        int item = GetItemIndex(unit->items[slot]);
-
-        if ((UNIT_CATTRIBUTES(unit) & CA_THIEF)
-            && item == ITEM_LOCKPICK)
-            return slot;
-        if (terrain == TERRAIN_CHEST_FULL
-            && (item == ITEM_CHESTKEY
-                || item == ITEM_CHESTKEY_BUNDLE))
-            return slot;
-        if (terrain == TERRAIN_DOOR && item == ITEM_DOORKEY)
-            return slot;
-    }
-    return -1;
 }
 
 int GetItemAttributes(int item)
@@ -443,12 +421,29 @@ static enum ExpansionAutoplayPlannerDecisionResult CommitCurrent(
     return ExpansionAutoplayPlanner_PollDecision(decision);
 }
 
+static bool StartActionPage(struct AiDecision* decision, u32 count)
+{
+    return ResetAndStartPlanner()
+        && ExpansionAutoplayPlanner_OfferDecision(decision)
+            == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+        && PageMatches(decision, gExpansionAutoplayPlannerObservation.pageCount - 1,
+                       EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS, 0, count);
+}
+
+static bool CommitBecameIllegal(
+    struct AiDecision* decision, u32 ordinal, const u32* token)
+{
+    return CommitCurrent(decision, ordinal, token)
+            == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+        && gExpansionAutoplayPlannerObservation.rejection
+            == EXPANSION_AUTOPLAY_PLANNER_REJECTION_ACTION_BECAME_ILLEGAL;
+}
+
 static struct AiDecision sEnumeratedActions[EXPANSION_AUTOPLAY_PLANNER_TOTAL_ACTION_CAPACITY];
 
 static bool CollectAction(u32 ordinal, const struct AiDecision* decision, void* context)
 {
     u32* count = context;
-
     CHECK(ordinal == *count, "enumerator ordinals must be contiguous");
     sEnumeratedActions[*count] = *decision;
     (*count)++;
@@ -502,7 +497,6 @@ static void SetupTestUnit(struct Unit* unit, struct CharacterData* character,
 static void BindFixtureMaps(void)
 {
     int y;
-
     for (y = 0; y < 17; y++)
     {
         sMovementRows[y] = sMovementData[y];
@@ -523,7 +517,6 @@ static void FillFixtureMaps(int movement)
 {
     int y;
     int x;
-
     for (y = 0; y < 17; y++)
     {
         for (x = 0; x < 32; x++)
@@ -600,14 +593,12 @@ static int TestActionSemanticEffects(void)
     sCharacter.number = CHARACTER_EWAN;
     sClass.attributes = CA_SUMMON;
     SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 4, 4);
-
     CHECK(ActionSemantics_ApplyTorchTarget(1, 6)
               && ActionSemantics_ApplyTorchTarget(6, 1) && !sTrapContractFailed
               && sTrapApplyCount == 2 && sTraps[1].xPos == 6 && sTraps[1].yPos == 1,
           "Torch effect must use both selected coordinates");
     CHECK(!ActionSemantics_ApplyTorchTarget(8, 1) && sTrapApplyCount == 2,
           "out-of-bounds Torch coordinate must not apply");
-
     CHECK(ActionSemantics_ApplyWarpTarget(&sAlly, 1, 5)
               && sAlly.xPos == 1 && sAlly.yPos == 5
               && ActionSemantics_ApplyWarpTarget(&sAlly, 6, 2)
@@ -616,7 +607,6 @@ static int TestActionSemanticEffects(void)
     CHECK(!ActionSemantics_ApplyWarpTarget(&sAlly, -1, 2) && sAlly.xPos == 6
               && sAlly.yPos == 2,
           "invalid Warp coordinates must preserve the target");
-
     CHECK(ActionSemantics_ApplyUnlockTarget(3, 4)
               && gBattleTarget.unit.xPos == 3 && gBattleTarget.unit.yPos == 4
               && ActionSemantics_ApplyUnlockTarget(5, 1)
@@ -625,7 +615,6 @@ static int TestActionSemanticEffects(void)
     CHECK(!ActionSemantics_ApplyUnlockTarget(3, 9) && gBattleTarget.unit.xPos == 5
               && gBattleTarget.unit.yPos == 1,
           "invalid Unlock coordinates must preserve the target");
-
     sAlly.items[0] = 0x0101;
     sAlly.items[1] = 0x0202;
     CHECK(ActionSemantics_ApplyHammerneTarget(&sAlly, 1)
@@ -635,7 +624,6 @@ static int TestActionSemanticEffects(void)
           "Hammerne must repair only each selected target slot");
     CHECK(!ActionSemantics_ApplyHammerneTarget(&sAlly, 4) && sAlly.items[4] == 0,
           "stale Hammerne slot must fail without mutation");
-
     sUnit.items[2] = ITEM_CHESTKEY | (3 << 8);
     CHECK(ActionSemantics_ConsumePickKey(&sUnit, 2)
               && sUnit.items[2] == (ITEM_CHESTKEY | (2 << 8))
@@ -646,7 +634,6 @@ static int TestActionSemanticEffects(void)
               && sConsumedSlot == -1
               && !ActionSemantics_ConsumePickKey(&sUnit, UNIT_ITEM_COUNT),
           "Rogue and invalid Pick slots must not consume an item");
-
     sUnitData[2][2] = 1;
     CHECK(ActionSemantics_IsNormalSummonTarget(&sUnit, 2, 3, 2, 2),
           "normal Summon must allow the vacated origin tile");
@@ -655,7 +642,6 @@ static int TestActionSemanticEffects(void)
     CHECK(!ActionSemantics_IsNormalSummonTarget(&sUnit, 2, 2, 2, 1),
           "normal Summon must reject hidden tiles");
     sFogData[1][2] = 1;
-
     sAllyCharacter.number = CHARACTER_SUMMON_EWAN;
     sAlly.state = US_NOT_DEPLOYED;
     CHECK(ActionSemantics_IsNormalSummonAvailable(&sUnit, false)
@@ -668,7 +654,6 @@ static int TestActionSemanticEffects(void)
     CHECK(!ActionSemantics_IsNormalSummonAvailable(&sUnit, false),
           "non-player summoner must not receive the player command");
     sUnit.index = 1;
-
     sClass.number = CLASS_DEMON_KING;
     sEnemy.pCharacterData = &sEnemyCharacter;
     sEnemy.pClassData = &sEnemyClass;
@@ -690,8 +675,6 @@ static int TestCoordinateActionFamilies(void)
     u32 count;
     struct AiDecision first;
     struct AiDecision second;
-    struct AiDecision* pickFirst;
-    struct AiDecision* pickSecond;
     int index;
     ResetActionFixture(6, 6);
     sUnit.items[0] = ITEM_STAFF_TORCH;
@@ -702,7 +685,6 @@ static int TestCoordinateActionFamilies(void)
     for (index = 0; index < (int)count; index++)
     {
         struct AiDecision* candidate = &sEnumeratedActions[index];
-
         if (candidate->actionId != AI_ACTION_STAFF
             || candidate->itemSlot != 0)
             continue;
@@ -736,7 +718,6 @@ static int TestCoordinateActionFamilies(void)
     gPlaySt.chapterVisionRange = 0;
     CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&second),
           "Torch must revalidate live fog capability");
-
     ResetActionFixture(7, 7);
     sUnit.items[0] = ITEM_STAFF_WARP;
     sAllyCharacter.number = 2;
@@ -763,7 +744,6 @@ static int TestCoordinateActionFamilies(void)
     sUnitData[second.yTarget][second.xTarget] = 0x81;
     CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&second),
           "occupied Warp destination must fail revalidation");
-
     ResetActionFixture(6, 6);
     sUnit.items[0] = ITEM_STAFF_UNLOCK;
     sTerrainData[1][2] = TERRAIN_DOOR;
@@ -784,7 +764,6 @@ static int TestCoordinateActionFamilies(void)
     sTerrainData[first.yTarget][first.xTarget] = 1;
     CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&first),
           "opened or wrong Unlock coordinate must reject");
-
     ResetActionFixture(6, 6);
     sUnit.items[0] = ITEM_STAFF_REPAIR;
     sAllyCharacter.number = 2;
@@ -807,71 +786,91 @@ static int TestCoordinateActionFamilies(void)
     sAlly.items[1] = 0xFF02;
     CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&second),
           "stale Hammerne target slot must reject");
+    return 0;
+}
 
+static bool PickSlotsMatch(u32 count, int x, int y, const u8* slots, int slotCount)
+{
+    int index;
+    if (CountActionId(count, AI_ACTION_PICK) != slotCount)
+        return false;
+    for (index = 0; index < slotCount; index++)
+    {
+        struct AiDecision* action = GetActionId(count, AI_ACTION_PICK, index);
+        if (action == NULL || action->xTarget != x || action->yTarget != y
+            || action->itemSlot != slots[index])
+            return false;
+    }
+    return true;
+}
+
+static int TestPickActionFamily(void)
+{
+    static const u8 sDoorSlots[] = { 0, 1, 3 };
+    static const u8 sChestSlots[] = { 0, 1, 2, 4 };
+    static const u8 sAllSlots[] = { 0, 1, 2, 3, 4 };
+    static const u8 sBridgeSlot[] = { 1 };
+    struct AiDecision selected;
+    u32 count, stateBefore;
     ResetActionFixture(6, 6);
     sTerrainData[2][2] = TERRAIN_CHEST_FULL;
     sTerrainData[2][3] = TERRAIN_DOOR;
     sClass.number = CLASS_ROGUE;
     CollectActions(&count);
-    pickFirst = GetActionId(count, AI_ACTION_PICK, 0);
-    pickSecond = GetActionId(count, AI_ACTION_PICK, 1);
     CHECK(CountActionId(count, AI_ACTION_PICK) == 2
-              && pickFirst->itemSlot == 0xFF
-              && pickSecond->itemSlot == 0xFF,
-          "Rogue Pick must enumerate chest and door without a key");
-
-    sClass.number = 1;
+              && GetActionId(count, AI_ACTION_PICK, 0)->itemSlot == 0xFF
+              && GetActionId(count, AI_ACTION_PICK, 1)->itemSlot == 0xFF,
+          "Rogue Pick must remain one item-free action per target");
+    ResetActionFixture(6, 6);
+    sTerrainData[2][3] = TERRAIN_DOOR;
     sClass.attributes = CA_THIEF;
-    sUnit.items[0] = ITEM_LOCKPICK;
+    sUnit.items[0] = ITEM_LOCKPICK | (3 << 8);
+    sUnit.items[1] = ITEM_DOORKEY | (2 << 8);
+    sUnit.items[2] = ITEM_CHESTKEY | (2 << 8);
+    sUnit.items[3] = ITEM_DOORKEY | (1 << 8);
+    sUnit.items[4] = ITEM_VULNERARY | (2 << 8);
+    stateBefore = RuntimeStateDigest();
     CollectActions(&count);
-    pickFirst = GetActionId(count, AI_ACTION_PICK, 0);
-    pickSecond = GetActionId(count, AI_ACTION_PICK, 1);
-    CHECK(CountActionId(count, AI_ACTION_PICK) == 2
-              && pickFirst->itemSlot == 0
-              && pickSecond->itemSlot == 0,
-          "non-Rogue thief Pick must bind the Lockpick slot");
-    CHECK(ExpansionAutoplayPlanner_PrepareActionData(pickFirst)
-              && gActionData.itemSlotIndex == 0,
-          "Pick lowering must preserve consumable key identity");
-    sUnit.items[0] = 0;
-    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(pickFirst),
-          "consumed Pick key must fail revalidation");
+    CHECK(stateBefore == RuntimeStateDigest()
+              && PickSlotsMatch(count, 3, 2, sDoorSlots, ARRAY_COUNT(sDoorSlots)),
+          "Door Pick must enumerate Lockpick and every Door Key slot in slot order");
+    selected = *GetActionId(count, AI_ACTION_PICK, 1);
     CollectActions(&count);
-    CHECK(CountActionId(count, AI_ACTION_PICK) == 0,
-          "thief without Lockpick or key must publish no Pick action");
-
-    sUnit.items[0] = ITEM_CHESTKEY;
+    CHECK(memcmp(&selected, GetActionId(count, AI_ACTION_PICK, 1), sizeof(selected)) == 0,
+          "Pick target and inventory-slot ordering must be deterministic");
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&selected)
+              && gActionData.itemSlotIndex == 1,
+          "nonpreferred Door Key must lower its exact inventory slot");
     sUnit.items[1] = ITEM_DOORKEY;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&selected),
+          "depleted selected key must reject while other keys remain");
+    sUnit.items[1] = sUnit.items[2];
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&selected),
+          "wrong-purpose key swapped into selected slot must reject");
+    sUnit.items[1] = ITEM_DOORKEY | (2 << 8);
+    sUnit.items[2] = ITEM_DOORKEY | (4 << 8);
+    sUnit.items[4] = ITEM_LOCKPICK | (5 << 8);
     CollectActions(&count);
-    pickFirst = GetActionId(count, AI_ACTION_PICK, 0);
-    pickSecond = GetActionId(count, AI_ACTION_PICK, 1);
-    CHECK(CountActionId(count, AI_ACTION_PICK) == 2
-             && pickFirst->xTarget == 2
-             && pickFirst->yTarget == 2
-             && pickFirst->itemSlot == 0
-             && pickSecond->xTarget == 3
-             && pickSecond->yTarget == 2
-             && pickSecond->itemSlot == 1,
-          "chest and door actions must bind their applicable key slots");
-    CHECK(ExpansionAutoplayPlanner_PrepareActionData(pickSecond)
-             && gActionData.itemSlotIndex == 1,
-          "door-key lowering must preserve the selected consumable slot");
-
+    CHECK(PickSlotsMatch(count, 3, 2, sAllSlots, ARRAY_COUNT(sAllSlots)),
+          "five applicable inventory stacks must remain bounded and distinct");
+    ResetActionFixture(6, 6);
+    sTerrainData[2][2] = TERRAIN_CHEST_FULL;
+    sClass.attributes = CA_THIEF;
+    sUnit.items[0] = ITEM_LOCKPICK | (3 << 8);
+    sUnit.items[1] = ITEM_CHESTKEY | (2 << 8);
+    sUnit.items[2] = ITEM_CHESTKEY_BUNDLE | (5 << 8);
+    sUnit.items[3] = ITEM_DOORKEY | (2 << 8);
+    sUnit.items[4] = ITEM_CHESTKEY | (1 << 8);
+    CollectActions(&count);
+    CHECK(PickSlotsMatch(count, 2, 2, sChestSlots, ARRAY_COUNT(sChestSlots)),
+          "Chest Pick must include Lockpick, both chest-key types, and duplicate stacks");
     sTerrainData[2][2] = 1;
     sTerrainData[2][3] = TERRAIN_BRIDGE_14;
-    sUnit.items[0] = ITEM_DOORKEY;
-    sUnit.items[1] = 0;
+    sUnit.items[0] = ITEM_DOORKEY | (2 << 8);
+    sUnit.items[1] = ITEM_LOCKPICK | (3 << 8);
     CollectActions(&count);
-    CHECK(CountActionId(count, AI_ACTION_PICK) == 0,
-          "Door Key must not substitute for a bridge Lockpick");
-    sUnit.items[0] = ITEM_LOCKPICK;
-    CollectActions(&count);
-    pickFirst = GetActionId(count, AI_ACTION_PICK, 0);
-    CHECK(CountActionId(count, AI_ACTION_PICK) == 1
-             && pickFirst->xTarget == 3
-             && pickFirst->yTarget == 2
-             && pickFirst->itemSlot == 0,
-          "thief Lockpick must retain the normal bridge path");
+    CHECK(PickSlotsMatch(count, 3, 2, sBridgeSlot, ARRAY_COUNT(sBridgeSlot)),
+          "bridge Pick must exclude Door and Chest Keys and retain only Lockpick");
     return 0;
 }
 
@@ -970,7 +969,6 @@ static int TestStaffTargetParity(void)
     CHECK(ExpansionAutoplayPlanner_PrepareActionData(second)
               && gActionData.trapType == 1,
           "Hammerne must revalidate and lower the same-faction slot");
-
     ResetActionFixture(8, 8);
     sUnit.items[0] = ITEM_STAFF_FORTIFY;
     sUnit.curHP = 10;
@@ -995,7 +993,6 @@ static int TestStaffTargetParity(void)
     CHECK(CountActionId(count, AI_ACTION_STAFF) == 1
               && sTargetCount == 1,
           "Fortify must retain an injured ally inside MAG/2 range");
-
     ResetActionFixture(8, 8);
     sUnit.items[0] = ITEM_STAFF_LATONA;
     sUnit.curHP = 10;
@@ -1016,13 +1013,9 @@ static int TestStaffTargetParity(void)
 
 static int TestSummonActionFamily(void)
 {
-    struct AiDecision first;
-    struct AiDecision second;
-    struct AiDecision adversary;
-    u32 count;
-    u32 stateBefore;
-    int summonCount;
-    int index;
+    struct AiDecision first, second, adversary;
+    u32 count, stateBefore;
+    int summonCount, index;
     ResetActionFixture(6, 6);
     sCharacter.number = CHARACTER_EWAN;
     sClass.attributes = CA_SUMMON;
@@ -1038,7 +1031,6 @@ static int TestSummonActionFamily(void)
     for (index = 0; index < (int)count; index++)
     {
         struct AiDecision* candidate = &sEnumeratedActions[index];
-
         if (candidate->actionId != AI_ACTION_SUMMON)
             continue;
         summonCount++;
@@ -1070,7 +1062,6 @@ static int TestSummonActionFamily(void)
               && gActionData.xOther == second.xTarget
               && gActionData.yOther == second.yTarget,
           "normal Summon must lower its second selected tile");
-
     sUnitData[first.yTarget][first.xTarget] = 2;
     CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&first),
           "occupied normal Summon tile must fail live revalidation");
@@ -1084,13 +1075,11 @@ static int TestSummonActionFamily(void)
     adversary.actionId = AI_ACTION_DKSUMMON;
     CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&adversary),
           "normal Summon candidate must not lower as dark summon");
-
     gSummonConfig[0][0] = 0;
     gSummonConfig[0][1] = 0;
     CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_SUMMON) == 0,
           "missing gSummonConfig entry must publish no normal Summon");
-
     gSummonConfig[0][0] = CHARACTER_EWAN;
     gSummonConfig[0][1] = CHARACTER_SUMMON_EWAN;
     sSummonCharacter.number = CHARACTER_SUMMON_EWAN;
@@ -1100,13 +1089,11 @@ static int TestSummonActionFamily(void)
     CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_SUMMON) == 0,
           "available existing summon must block another normal Summon");
-
     sSummon.state = US_NOT_DEPLOYED;
     CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_SUMMON) == 4
               && sSummon.state == US_NOT_DEPLOYED,
           "unavailable existing summon must be reusable without enumeration mutation");
-
     sUnit.state = US_HAS_MOVED;
     CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_SUMMON) == 0,
@@ -1116,7 +1103,6 @@ static int TestSummonActionFamily(void)
     CollectActions(&count);
     CHECK(CountActionId(count, AI_ACTION_SUMMON) == 0,
           "unit without CA_SUMMON must publish no normal Summon");
-
     ResetActionFixture(6, 6);
     sClass.number = CLASS_DEMON_KING;
     CollectActions(&count);
@@ -1156,7 +1142,6 @@ static int TestUnavailableUnitSemantics(void)
             == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_UNAVAILABLE
             && count == 0,
         "not-deployed active unit must be unavailable before enumeration");
-
     ResetActionFixture(6, 6);
     sUnit.items[0] = ITEM_SWORD_IRON;
     sEnemyCharacter.number = 3;
@@ -1182,7 +1167,6 @@ static int TestMaximumSemanticPaging(void)
     for (index = 0; index < 132; index++)
     {
         int unitId;
-
         if (index < 62)
             unitId = index + 1;
         else if (index < 82)
@@ -1212,14 +1196,12 @@ static int TestMaximumSemanticPaging(void)
     memset(sChapterFlags, 0, sizeof(sChapterFlags));
     sPermanentFlags[255] = 0x80;
     sChapterFlags[255] = 0x80;
-
     CHECK(ResetAndStartPlanner(),
           "maximum semantic-page run must start");
     CHECK(ExpansionAutoplayPlanner_OfferDecision(&decision)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
             && gExpansionAutoplayPlannerObservation.pageCount == 51,
         "maximum units and flags must use bounded canonical pages");
-
     CHECK(PageMatches(
             &decision, 4, EXPANSION_AUTOPLAY_PLANNER_PAGE_UNITS, 112, 20),
         "maximum unit page boundary must be exact");
@@ -1243,7 +1225,6 @@ static int TestMaximumSemanticPaging(void)
     CHECK(PageMatches(
             &decision, 50, EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS, 0, 1),
         "action page must follow every maximum semantic page");
-
     ExpansionAutoplayPlanner_Reset();
     sUseMaxUnits = false;
     sPermanentFlagSize = 8;
@@ -1292,7 +1273,6 @@ static int TestZeroDigestAvailability(void)
     ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
     availableZeroCheckpointDigest =
         gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest;
-
     ExpansionAutoplayPlanner_Reset();
     sFlagPointersAvailable = false;
     sConvoyAvailable = false;
@@ -1309,7 +1289,6 @@ static int TestZeroDigestAvailability(void)
                     .payload.fields[7].availability
                 == EXPANSION_AUTOPLAY_PLANNER_UNINITIALIZED,
         "null flag and convoy domains must be unavailable");
-
     ExpansionAutoplayPlanner_Reset();
     sFlagPointersAvailable = true;
     sConvoyAvailable = true;
@@ -1358,12 +1337,12 @@ static int TestZeroDigestAvailability(void)
     return 0;
 }
 
-static int TestHammerneWireIdentity(void)
+static int TestInventorySlotWireIdentity(void)
 {
     struct AiDecision decision = { 0 };
-    struct ExpansionAutoplayPlannerActionV2 first;
-    struct ExpansionAutoplayPlannerActionV2 second;
-    u32 actionPage;
+    struct ExpansionAutoplayPlannerActionV2 first, second;
+    u32 checkpointDigest, ordinal;
+    u16 item;
     ResetActionFixture(6, 6);
     sUnit.items[0] = ITEM_STAFF_REPAIR;
     sAllyCharacter.number = 2;
@@ -1372,25 +1351,13 @@ static int TestHammerneWireIdentity(void)
     sAlly.items[0] = 0x0101;
     sAlly.items[1] = 0x0202;
     sUnitData[2][3] = 2;
-
-    CHECK(ResetAndStartPlanner(),
-          "Hammerne wire run must start");
-    CHECK(ExpansionAutoplayPlanner_OfferDecision(&decision)
-            == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
-        "Hammerne wire run must publish candidates");
-    actionPage = gExpansionAutoplayPlannerObservation.pageCount - 1;
-    CHECK(PageMatches(
-            &decision, actionPage,
-            EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS, 0, 3),
-        "Hammerne candidates must traverse the fixed action page");
+    CHECK(StartActionPage(&decision, 3),
+          "Hammerne candidates must traverse the fixed action page");
     first = gExpansionAutoplayPlannerObservation.payload.actions[1];
     second = gExpansionAutoplayPlannerObservation.payload.actions[2];
     CHECK(first.itemSlot == 0x0000
             && second.itemSlot == 0x0100
-            && (first.token0 != second.token0
-                || first.token1 != second.token1
-                || first.token2 != second.token2
-                || first.token3 != second.token3),
+            && memcmp(&first.token0, &second.token0, sizeof(first.token0) * 4) != 0,
         "Hammerne target slot must be packed and token-bound");
     CHECK(CommitCurrent(
             &decision,
@@ -1409,19 +1376,73 @@ static int TestHammerneWireIdentity(void)
             && ExpansionAutoplayPlanner_PrepareActionData(&decision)
             && gActionData.trapType == 1,
         "matching Hammerne slot token must lower the selected slot");
+    ResetActionFixture(6, 6);
+    sTerrainData[2][3] = TERRAIN_DOOR;
+    sClass.attributes = CA_THIEF;
+    sUnit.items[0] = ITEM_LOCKPICK | (3 << 8);
+    sUnit.items[1] = ITEM_DOORKEY | (2 << 8);
+    CHECK(StartActionPage(&decision, 3),
+        "Wait plus two Pick inventory choices must share the action page");
+    first = gExpansionAutoplayPlannerObservation.payload.actions[1];
+    second = gExpansionAutoplayPlannerObservation.payload.actions[2];
+    CHECK(first.itemSlot == 0xFF00
+            && second.itemSlot == 0xFF01
+            && memcmp(&first.token0, &second.token0, sizeof(first.token0) * 4) != 0,
+        "Pick inventory slots must be distinct and token-bound");
+    ordinal = gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 2;
+    sUnit.items[1] = ITEM_DOORKEY;
+    CHECK(CommitBecameIllegal(&decision, ordinal, &second.token0),
+        "depleted selected Pick slot must reject while Lockpick remains");
+    sUnit.items[1] = ITEM_DOORKEY | (2 << 8);
+    item = sUnit.items[0];
+    sUnit.items[0] = sUnit.items[1];
+    sUnit.items[1] = item;
+    CHECK(CommitBecameIllegal(&decision, ordinal, &second.token0),
+        "swapped applicable Pick stacks must invalidate candidate identity");
+    item = sUnit.items[0];
+    sUnit.items[0] = sUnit.items[1];
+    sUnit.items[1] = item;
+    sUnit.items[1] = ITEM_CHESTKEY | (2 << 8);
+    CHECK(CommitBecameIllegal(&decision, ordinal, &second.token0),
+        "wrong-purpose selected key must reject while Lockpick remains");
+    sUnit.items[1] = ITEM_DOORKEY | (2 << 8);
+    CHECK(CommitCurrent(
+            &decision,
+            ordinal,
+            &second.token0)
+                == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED
+            && decision.itemSlot == 1,
+        "matching nonpreferred Pick token must commit the selected stack");
+    item = sUnit.items[1];
+    sUnit.items[1] = sUnit.items[0];
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&decision),
+          "post-commit applicable stack swap must reject");
+    sUnit.items[1] = item;
+    CHECK(ExpansionAutoplayPlanner_PrepareActionData(&decision)
+              && gActionData.itemSlotIndex == 1,
+          "unchanged committed Pick stack must lower its exact slot");
+    ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+    checkpointDigest =
+        gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest;
+    item = sUnit.items[0];
+    CHECK(ActionSemantics_ConsumePickKey(gActiveUnit, gActionData.itemSlotIndex)
+              && sConsumedSlot == 1
+              && sUnit.items[0] == item
+              && sUnit.items[1] == (ITEM_DOORKEY | (1 << 8)),
+          "Pick execution must consume only the selected nonpreferred stack");
+    ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+    CHECK(checkpointDigest
+              != gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest,
+          "selected Pick stack consumption must alter the campaign digest");
     return 0;
 }
 
 static int TestCompleteEnumerator(void)
 {
-    u32 firstCount = 0;
-    u32 secondCount = 0;
-    u32 stateBefore;
-    u32 sequenceDigest = 2166136261u;
-    u32 secondSequenceDigest = 2166136261u;
+    u32 firstCount = 0, secondCount = 0, stateBefore;
+    u32 sequenceDigest = 2166136261u, secondSequenceDigest = 2166136261u;
     u32 kinds = 0;
-    int index;
-    int other;
+    int index, other;
     ResetActionFixture(3, 3);
     sCharacter.number = CHARACTER_EWAN;
     sClass.attributes = CA_STEAL | CA_SUMMON;
@@ -1457,19 +1478,12 @@ static int TestCompleteEnumerator(void)
     {
         kinds |= 1u << sEnumeratedActions[index].actionId;
         sequenceDigest = DigestBytes(
-            sequenceDigest,
-            &sEnumeratedActions[index],
-            sizeof(sEnumeratedActions[index]));
+            sequenceDigest, &sEnumeratedActions[index], sizeof(sEnumeratedActions[index]));
         for (other = 0; other < index; other++)
         {
-            CHECK(
-                memcmp(
-                    &sEnumeratedActions[index],
-                    &sEnumeratedActions[other],
-                    sizeof(sEnumeratedActions[index]))
-                    != 0,
-                "legal-action enumeration must not publish duplicates"
-            );
+            CHECK(memcmp(&sEnumeratedActions[index], &sEnumeratedActions[other],
+                         sizeof(sEnumeratedActions[index])) != 0,
+                  "legal-action enumeration must not publish duplicates");
         }
     }
     CHECK((kinds & (1u << AI_ACTION_NONE))
@@ -1484,12 +1498,9 @@ static int TestCompleteEnumerator(void)
         "repeated legal-action enumeration must succeed");
     for (index = 0; index < (int)secondCount; index++)
         secondSequenceDigest = DigestBytes(
-            secondSequenceDigest,
-            &sEnumeratedActions[index],
-            sizeof(sEnumeratedActions[index]));
+            secondSequenceDigest, &sEnumeratedActions[index], sizeof(sEnumeratedActions[index]));
     CHECK(firstCount == secondCount && sequenceDigest == secondSequenceDigest,
           "legal-action ordering must be deterministic");
-
     sClass.attributes = 0;
     sClass.number = 1;
     sUnit.items[0] = 0;
@@ -1505,16 +1516,9 @@ int main(void)
     struct AiDecision decision = { 0 };
     struct AiDecision original;
     const struct ExpansionAutoplayPlannerActionV2* action;
-    u32 selectedOrdinal;
-    u32 selectedToken[4];
-    u32 forgedToken[4];
-    u32 previousScenarioIdentity;
-    u32 previousSeedIdentity;
-    int index;
-    int other;
-    int restoreBefore;
-    int selectedX;
-    int selectedY;
+    u32 selectedOrdinal, selectedToken[4], forgedToken[4];
+    u32 previousScenarioIdentity, previousSeedIdentity;
+    int index, other, restoreBefore, selectedX, selectedY;
     gPlaySt.chapterIndex = 1;
     gPlaySt.chapterTurnNumber = 1;
     CHECK(TestActionSemanticEffects() == 0,
@@ -1522,6 +1526,7 @@ int main(void)
     CHECK(TestCompleteEnumerator() == 0, "complete action enumerator test");
     CHECK(TestCoordinateActionFamilies() == 0,
           "coordinate-sensitive action family test");
+    CHECK(TestPickActionFamily() == 0, "Pick inventory-slot action family test");
     CHECK(TestSnagActionFamily() == 0,
           "snag combat action family test");
     CHECK(TestStaffTargetParity() == 0,
@@ -1534,7 +1539,6 @@ int main(void)
           "maximum semantic paging test");
     CHECK(TestZeroDigestAvailability() == 0,
           "zero semantic digest availability test");
-
     ResetActionFixture(32, 17);
     sUnit.xPos = 0;
     sUnit.yPos = 0;
@@ -1561,13 +1565,11 @@ int main(void)
     ExpansionAutoplayPlanner_OnMapReady();
     CHECK(!ExpansionAutoplayPlanner_PollStart(),
           "idle poll without a command must publish READY");
-
     WriteCommand((enum ExpansionAutoplayPlannerCommandKind)99, 0, 0, 0, 0, NULL);
     CHECK(!ExpansionAutoplayPlanner_PollStart(), "unknown idle command must reject");
     CHECK(gExpansionAutoplayPlannerObservation.rejection
             == EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR,
         "unknown idle command must report protocol error");
-
     previousSeedIdentity =
         gExpansionAutoplayPlannerObservation.actualSeedIdentity;
     sSeeds[0] = 9;
@@ -1584,7 +1586,6 @@ int main(void)
         "a START prepared from an older READY seed must reject provenance");
     sSeeds[0] = 1;
     PreparePlannerStart();
-
     WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
     gExpansionAutoplayPlannerCommand.payload.start.expectedRomIdentity ^= 1;
     CHECK(!ExpansionAutoplayPlanner_PollStart()
@@ -1592,21 +1593,17 @@ int main(void)
                 == EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR,
         "same header with different build identity must reject provenance");
     PreparePlannerStart();
-
     WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
     gExpansionAutoplayPlannerCommand.payload.start.expectedScenarioIdentity ^= 1;
     CHECK(!ExpansionAutoplayPlanner_PollStart(), "mismatched provenance must reject");
-
     WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
     CHECK(ExpansionAutoplayPlanner_PollStart(), "typed START mailbox command must activate");
     CHECK(sControlRequests == 1, "valid provenance activates computer control once");
-
     WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
     CHECK(!ExpansionAutoplayPlanner_PollStart(), "duplicate START must reject");
     CHECK(gExpansionAutoplayPlannerObservation.rejection
             == EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR,
         "duplicate START must report protocol error");
-
     decision.actionPerformed = true;
     decision.unitId = 1;
     decision.xMove = 2;
@@ -1637,7 +1634,6 @@ int main(void)
             && gExpansionAutoplayPlannerObservation.payload.fields[2].value
                 == 0x010101,
         "summary page must expose actual map and active-unit semantics");
-
     CHECK(PageMatches(
             &decision, 4, EXPANSION_AUTOPLAY_PLANNER_PAGE_UNITS, 0, 2)
             && (gExpansionAutoplayPlannerObservation
@@ -1692,7 +1688,6 @@ int main(void)
     CHECK(PageMatches(
             &decision, 9, EXPANSION_AUTOPLAY_PLANNER_PAGE_FLAGS, 112, 16),
         "flag paging must retain canonical record boundaries");
-
     for (index = 0; index < 4; index++)
     {
         CHECK(
@@ -1708,7 +1703,6 @@ int main(void)
             "poll latency must not regenerate or replace the decision/RNG"
         );
     }
-
     CHECK(PageMatches(
             &decision, 33,
             EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS, 506, 6),
@@ -1728,7 +1722,6 @@ int main(void)
     CHECK(RequestPage(&decision, 33)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
         "page must republish after malformed command");
-
     action = &gExpansionAutoplayPlannerObservation.payload.actions[5];
     selectedOrdinal =
         gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 5;
@@ -1761,7 +1754,6 @@ int main(void)
             "forged token word must have explicit rejection"
         );
     }
-
     sMovementData[selectedY][selectedX] = MAP_MOVEMENT_MAX + 1;
     CHECK(CommitCurrent(&decision, selectedOrdinal, selectedToken)
                 == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
@@ -1776,7 +1768,6 @@ int main(void)
             && decision.xMove == selectedX
             && decision.yMove == selectedY,
         "last-page selection must map to its stable row-major candidate");
-
     sConsumption = 4;
     gPlaySt.chapterIndex = 1;
     ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
@@ -1804,7 +1795,6 @@ int main(void)
             && gExpansionAutoplayPlannerCampaignCheckpoint.rngConsumption == 4
             && gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest != 0,
         "campaign checkpoint must be semantic and RNG-owned");
-
     {
         u32 digest =
             gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest;
@@ -1819,7 +1809,6 @@ int main(void)
             "route-only changes must alter the semantic checkpoint digest"
         );
     }
-
     {
         u32 digest = gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest;
         sConvoy[99] = 2;
@@ -1829,7 +1818,6 @@ int main(void)
             "convoy-only changes must alter the semantic checkpoint digest"
         );
     }
-
     ExpansionAutoplayPlanner_OfferDecision(&decision);
     for (index = 1;
          index < EXPANSION_AUTOPLAY_PLANNER_DECISION_TIMEOUT_FRAMES;
@@ -1859,7 +1847,6 @@ int main(void)
                 == 0
             && sRestoreRequests == 1,
         "deadline must clear checkpoint before restoring player control");
-
     ExpansionAutoplayPlanner_Reset();
     CHECK(!ExpansionAutoplayPlanner_IsActive()
             && gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0,
@@ -1895,7 +1882,6 @@ int main(void)
                 == 0
             && sRestoreRequests == 2,
         "explicit cancellation must clear checkpoint before restoration");
-
     CHECK(ResetAndStartPlanner(), "wait-candidate run must start");
     CHECK(gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
             && gExpansionAutoplayPlannerCampaignCheckpoint.runId == 0
@@ -1904,7 +1890,6 @@ int main(void)
     for (index = 0; index < 17; index++)
     {
         int x;
-
         for (x = 0; x < 32; x++)
             sMovementData[index][x] = MAP_MOVEMENT_MAX + 1;
     }
@@ -1953,10 +1938,8 @@ int main(void)
     ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
     CHECK(gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest != 0,
         "accepted wait token must enter the semantic action trace digest");
-
-    CHECK(TestHammerneWireIdentity() == 0,
-          "Hammerne fixed-width wire identity test");
-
+    CHECK(TestInventorySlotWireIdentity() == 0,
+          "inventory-slot fixed-width wire identity test");
     ResetActionFixture(32, 17);
     CHECK(ResetAndStartPlanner(), "unavailable-actor run must start");
     sUnit.state = US_NOT_DEPLOYED;
@@ -1976,11 +1959,9 @@ int main(void)
     CHECK(ExpansionAutoplayPlanner_OfferDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_FALLBACK,
         "exhausted planner must not re-enter its stale terminal state");
-
     for (index = 0; index < 17; index++)
     {
         int x;
-
         for (x = 0; x < 32; x++)
             sMovementData[index][x] = 1;
     }
@@ -1999,7 +1980,6 @@ int main(void)
             && gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
             && sRestoreRequests == restoreBefore + 1,
         "capacity overflow must terminate and queue safe restoration");
-
     puts("AUTOPLAY_PLANNER_HOST_TEST: PASS");
     return 0;
 }

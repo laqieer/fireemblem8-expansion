@@ -615,10 +615,10 @@ and enemies reject. Combat includes every legal Snag obstacle after ordinary
 unit targets, binds `targetId=0` plus coordinates, and executes real obstacle
 damage and destruction. Fortify requires an injured allied non-caster within
 MAG/2, while Latona excludes its caster and retains every eligible non-caster
-in the current phase domain. Rogue Pick opens chest/door targets without an
-item; a non-Rogue key path binds and consumes the applicable
-Lockpick, Chest Key, or Door Key; a thief without one publishes no such
-candidate. The enabled full expansion ROM follows the established clean-boot
+in the current phase domain. Rogue Pick remains item-free; each non-Rogue
+target publishes every applicable Lockpick, Chest Key/bundle, or Door Key slot
+in slot order and consumes only the committed stack. Wrong-purpose, depleted,
+replaced, or swapped slots reject even while another valid key remains.
 Prologue route, accepts a host-selected nontrivial action, reaches the next
 planner observation with the actor at the committed destination, then cancels
 safely. Explicit exit, restart, load, new-game, full-reset, and cancel paths

@@ -935,11 +935,11 @@ Hammerne builder. It revalidates that slot and lowers it to
 live Snag terrain after ordinary unit targets. They bind `targetId=0` plus the
 selected coordinates, revalidate the trap and weapon range, and use the
 existing obstacle battle setup and destruction path. Rogue Pick candidates
-use the direct no-item path. Other units must have the target-appropriate
-Lockpick, Chest Key, or Door Key selected by the normal item helper; the
-committed slot is revalidated and consumed through `UnitUpdateUsedItem`. A
-missing, consumed, wrong-purpose, or stale item therefore rejects before the
-tile event.
+remain one direct no-item action per target. Non-Rogue targets emit every
+applicable inventory slot in target-then-slot order: thief Lockpicks, Chest
+Keys/bundles for chests, and Door Keys for doors; bridges remain Lockpick-only.
+The exact selected item and uses bind candidate identity, revalidate directly,
+and alone are consumed; depletion, replacement, or slot swapping rejects.
 Fortify uses the production ranged-heal predicate and therefore requires an
 injured allied non-caster from range 1 through MAG/2. Latona scans only the
 current phase's bounded 0x80-slot domain and excludes its caster while

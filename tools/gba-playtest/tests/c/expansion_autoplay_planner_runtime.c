@@ -249,12 +249,6 @@ int GetUnitItemUseReachBits(struct Unit* unit, int itemSlot)
     return FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 2
         ? REACH_MAGBY2 : REACH_RANGE1;
 }
-int GetUnitKeyItemSlotForTerrain(struct Unit* unit, int terrain)
-{
-    (void)unit;
-    (void)terrain;
-    return -1;
-}
 int GetItemAttributes(int item)
 {
     return FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 2

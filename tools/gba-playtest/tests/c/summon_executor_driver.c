@@ -31,6 +31,7 @@
 struct CpPerformProc;
 
 s8 AiSummonAction(struct CpPerformProc* proc);
+s8 AiPickAction(struct CpPerformProc* proc);
 void AiDKSummonAction(struct CpPerformProc* proc);
 void GenerateSummonUnitDef(void);
 void AiStartCombatAction(struct CpPerformProc* proc);
@@ -277,11 +278,9 @@ int main(void)
     struct ClassData unitClass = { 0 };
     struct Unit unit = { 0 };
     int y;
-
     unit.pCharacterData = &character;
     unit.pClassData = &unitClass;
     unit.index = 1;
-
     PrepareDecision(&unit, 2, 2, 2, 1);
     gAiDecision.actionId = AI_ACTION_SUMMON;
     sPlannerActive = true;
@@ -293,7 +292,6 @@ int main(void)
               && unit.xPos == 2
               && unit.yPos == 2,
           "normal Summon must execute the first selected tile");
-
     PrepareDecision(&unit, 4, 3, 5, 3);
     gAiDecision.actionId = AI_ACTION_SUMMON;
     CHECK(AiSummonAction(NULL) == 1
@@ -304,7 +302,6 @@ int main(void)
               && unit.xPos == 4
               && unit.yPos == 3,
           "normal Summon must execute another selected tile");
-
     PrepareDecision(&unit, 1, 1, 1, 2);
     gAiDecision.actionId = AI_ACTION_SUMMON;
     sPrepareResult = false;
@@ -312,7 +309,16 @@ int main(void)
               && sApplyCount == 0
               && !gAiDecision.actionPerformed,
           "failed normal Summon revalidation must not execute");
-
+    PrepareDecision(&unit, 3, 2, 4, 2);
+    gAiDecision.actionId = AI_ACTION_PICK;
+    gAiDecision.itemSlot = 1;
+    CHECK(AiPickAction(NULL) == 1
+              && sApplyCount == 1
+              && sAppliedAction == UNIT_ACTION_PICK
+              && sAppliedX == 4
+              && sAppliedY == 2
+              && gActionData.subjectIndex == 1,
+          "Pick executor must lower the selected actor and target");
     PrepareDecision(&unit, 3, 4, 6, 6);
     gAiDecision.actionId = AI_ACTION_DKSUMMON;
     gActionData.xOther = 9;
@@ -325,7 +331,6 @@ int main(void)
               && unit.xPos == 3
               && unit.yPos == 4,
           "dark summon must remain distinct from coordinate-targeted Summon");
-
     character.number = CHARACTER_EWAN;
     unitClass.number = 1;
     unit.level = 10;
@@ -347,7 +352,6 @@ int main(void)
               && gUnitDef1.xPosition == 5
               && gUnitDef1.yPosition == 4,
           "normal Summon effect must replace at the second selected tile");
-
     sCharacter.number = 1;
     sClass.number = 1;
     sUnit.pCharacterData = &sCharacter;
@@ -386,7 +390,6 @@ int main(void)
               && sUnit.yPos == 3
               && sRngCount == 0,
           "stationary Wait must run cleanup without movement or RNG");
-
     gBmMapSize.x = 8;
     gBmMapSize.y = 8;
     for (y = 0; y < 8; y++)
@@ -437,7 +440,6 @@ int main(void)
     AiStartCombatAction(NULL);
     CHECK(sApplyCount == 1 && !gAiDecision.actionPerformed,
           "destroyed snag must not reach the executor");
-
     puts("PLANNER_EXECUTOR_HOST_TEST: PASS");
     return 0;
 }
