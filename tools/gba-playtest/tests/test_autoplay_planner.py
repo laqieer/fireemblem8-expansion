@@ -207,6 +207,21 @@ def _rejected_response(document, page_kind):
     raise AssertionError(f"missing rejected {page_kind.value} response")
 
 
+def _accepted_response(document, command_kind, occurrence=0):
+    seen = 0
+    for index, event in enumerate(document["events"][:-4]):
+        if (event["event"] != "command"
+                or event["command"]["kind"] != command_kind
+                or document["events"][index + 1]["event"] != "acknowledgement"
+                or document["events"][index + 1]["result"] != 1):
+            continue
+        if seen == occurrence:
+            return (document["events"][index + 3]["observation"],
+                    document["events"][index + 4])
+        seen += 1
+    raise AssertionError(f"missing accepted {command_kind} response")
+
+
 def _xor_nested(target, path):
     for key in path[:-1]:
         target = target[key]
@@ -472,6 +487,11 @@ class _PageReplayTransport:
         self.transcript.record_settled(ready, (0, ) * 13, (0, ) * 16)
         self.command_id = 1
         self.largest_exchange = 0
+        self.invalid_settlement_page = None
+    def snapshot_collection_state(self):
+        return self.command_id, self.largest_exchange
+    def restore_collection_state(self, state):
+        self.command_id, self.largest_exchange = state
     def _respond(self, command, page):
         size_before = len(self.transcript.export())
         kind = planner._COMMAND_KIND_CODES[command["kind"]]
@@ -480,7 +500,10 @@ class _PageReplayTransport:
         self.transcript.record_acknowledgement(self.command_id, kind, 1, 0)
         self.transcript.record_completion(self.command_id, kind, 0)
         self.transcript.record_observation_page(page)
-        self.transcript.record_settled(page, (0, ) * 13, (0, ) * 16)
+        self.transcript.record_settled(
+            page,
+            (0, ) * (12 if page.page_index == self.invalid_settlement_page else 13),
+            (0, ) * 16)
         self.command_id += 1
         self.largest_exchange = max(self.largest_exchange, len(self.transcript.export()) - size_before)
         return page
@@ -552,6 +575,25 @@ class PlannerBridgeTests(unittest.TestCase):
         imported = planner.PlannerTranscript.import_synthetic_bytes(exported)
         self.assertEqual(imported.export(), exported)
         self.assertEqual(imported.digest(), bridge.transcript.digest())
+        atomic = planner.PlannerBridge(PROVENANCE)
+        atomic.begin(PROVENANCE)
+        first = atomic.observe(
+            1, (), tuple(
+                planner.Action("MOVE_WAIT", 1, (index + 1, 0))
+                for index in range(24)))
+        before = atomic.transcript.export()
+        state = atomic.snapshot_collection_state()
+        original_page = atomic.page
+        def malformed_page(command):
+            page = original_page(command)
+            return replace(page, page_index=page.page_index + 1)
+        with mock.patch.object(atomic, "page", side_effect=malformed_page):
+            with self.assertRaisesRegex(
+                    planner.PlannerError,
+                    planner.Rejection.STALE_OBSERVATION.value):
+                planner.collect_observation_pages(atomic, first)
+        self.assertEqual(atomic.transcript.export(), before)
+        self.assertEqual(atomic.snapshot_collection_state(), state)
         with self.assertRaisesRegex(planner.PlannerError, "production transcript provenance"):
             planner.PlannerTranscript.import_production_bytes(exported)
         _assert_replay_rejected(
@@ -1239,6 +1281,21 @@ class PlannerBridgeTests(unittest.TestCase):
         exported = transport.transcript.export()
         self.assertLessEqual(len(exported), planner.MAX_TRACE_BYTES)
         self.assertEqual(planner.PlannerTranscript.import_production_bytes(exported).export(), exported)
+        malformed_pages = list(pages)
+        malformed_pages[-1] = replace(
+            malformed_pages[-1], record_start=0)
+        for malformed, settlement_page in (
+                (malformed_pages, None), (pages, 1)):
+            atomic = _PageReplayTransport(
+                malformed, planner.ValidationMode.PRODUCTION)
+            first = atomic.start(scenario_identity=1)
+            before = atomic.transcript.export()
+            state = atomic.snapshot_collection_state()
+            atomic.invalid_settlement_page = settlement_page
+            with self.assertRaises(planner.PlannerError):
+                planner.collect_observation_pages(atomic, first)
+            self.assertEqual(atomic.transcript.export(), before)
+            self.assertEqual(atomic.snapshot_collection_state(), state)
         for path, value in (
             (("campaign", "phase"), True),
             (("campaign", "objectives", 0, "progress"), -1),
@@ -2628,6 +2685,17 @@ class PlannerProcessTransport:
         self._transcript_started = False
         self.observation = self._read_state()
         self._begin_transcript(self.observation)
+    def snapshot_collection_state(self):
+        return (
+            self._next_acknowledgement_id, self.observation,
+            self.checkpoint, self.command,
+            self.last_acknowledgement, self.last_completion)
+    def restore_collection_state(self, state):
+        (
+            self._next_acknowledgement_id, self.observation,
+            self.checkpoint, self.command,
+            self.last_acknowledgement, self.last_completion,
+        ) = state
     def _begin_transcript(
         self,
         observation: planner.Observation,
@@ -3008,6 +3076,34 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 self.assertEqual(planner.replay_transcript_on_clean_transport(recorded, lambda: PlannerProcessTransport(backend, rom)), recorded)
             imported = planner.PlannerTranscript.import_production_bytes(scripted[2])
             self.assertEqual(imported.export(), scripted[2])
+            transition_mutations = (
+                ("START READY", "START", 0, "state", lambda value, command: 1),
+                ("START arbitrary", "START", 0, "state", lambda value, command: 3),
+                ("COMMIT reused observation", "COMMIT", 0, "observation_id",
+                 lambda value, command: command["observation_id"]),
+                ("COMMIT committed state", "COMMIT", 0, "state",
+                 lambda value, command: 3),
+                ("COMMIT ROM provenance", "COMMIT", 0, "actual_rom_identity",
+                 lambda value, command: value ^ 1),
+                ("COMMIT scenario provenance", "COMMIT", 1,
+                 "actual_scenario_identity", lambda value, command: value ^ 1),
+            )
+            for name, kind, occurrence, field, mutate in transition_mutations:
+                with self.subTest(accepted_transition=name):
+                    document = json.loads(scripted[2])
+                    response, settled = _accepted_response(
+                        document, kind, occurrence)
+                    commands = [
+                        event["command"] for event in document["events"]
+                        if event["event"] == "command"
+                        and event["command"]["kind"] == kind]
+                    command = commands[occurrence]
+                    response[field] = mutate(response[field], command)
+                    _sync_settled_observation(settled, response)
+                    _rechain_transcript(document)
+                    _assert_replay_rejected(
+                        self, planner._canonical(document),
+                        validation_mode=planner.ValidationMode.PRODUCTION)
             for identity in ("rom", "config", "scenario", "seed"):
                 with self.subTest(zeroed_production_identity=identity):
                     zeroed = json.loads(scripted[2])
@@ -3035,6 +3131,36 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             self.assertEqual(len(settled_events[-1]["telemetry"]), 16)
     def test_clean_transport_replays_rejection_and_cancel(self):
         with self._fixture() as (rom, backend, _):
+            for failure in ("page", "settlement"):
+                with self.subTest(atomic_collection=failure):
+                    with _open_transport(backend, rom) as atomic:
+                        first = atomic.start()
+                        before = atomic.transcript.export()
+                        state = atomic.snapshot_collection_state()
+                        if failure == "page":
+                            original = atomic.exchange
+                            def corrupt(command):
+                                page = original(command)
+                                return replace(
+                                    page, page_index=page.page_index + 1)
+                            patch = mock.patch.object(
+                                atomic, "exchange", side_effect=corrupt)
+                        else:
+                            original = atomic.transcript.record_settled
+                            def corrupt(observation, checkpoint, command):
+                                if observation.page_index == 1:
+                                    raise planner.PlannerError(
+                                        "invalid settled transcript record")
+                                return original(
+                                    observation, checkpoint, command)
+                            patch = mock.patch.object(
+                                atomic.transcript, "record_settled",
+                                side_effect=corrupt)
+                        with patch, self.assertRaises(planner.PlannerError):
+                            planner.collect_observation_pages(atomic, first)
+                        self.assertEqual(atomic.transcript.export(), before)
+                        self.assertEqual(
+                            atomic.snapshot_collection_state(), state)
             with _open_transport(backend, rom) as transport:
                 first = planner.collect_observation_pages(transport, transport.start())
                 choice = planner.ScriptedPlanner().choose(first)
@@ -3179,6 +3305,11 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         self.assertEqual(exhausted.rejection, rejection)
                         self.assertEqual(exhausted.page_count, 1)
                         self.assertTrue(all(value == 0 for value in transport.checkpoint))
+                        if candidate_mode == 2:
+                            terminal = transport.transcript.export()
+                            self.assertEqual(
+                                planner.PlannerTranscript.import_production_bytes(
+                                    terminal).export(), terminal)
                         stale_start = transport.start()
                         self.assertEqual(stale_start.state, 5)
                         self.assertEqual(stale_start.rejection, 9)

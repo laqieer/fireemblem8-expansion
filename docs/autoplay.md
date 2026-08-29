@@ -1045,7 +1045,9 @@ unique field, map, roster, inventory-slot, resource, flag, action-ordinal, and
 candidate identities; row-major map dimensions/counts; roster-owned inventory;
 map-relative action destinations/targets; and matching page totals. Invalid,
 duplicate, missing, cross-page, or reordered records reject without an
-unbounded exchange or retained partial observation.
+unbounded exchange or retained partial observation. PAGE collection snapshots
+the transcript and host transport state after page zero, then restores both
+exactly if any later exchange, settlement, or whole-observation check fails.
 Global ordinals and all four token words returned by ROM are opaque to host
 planners and are echoed unchanged. The host never sends coordinates, targets,
 item IDs, `ActionData`, unit pointers, or RNG state: a commit carries only
@@ -1107,6 +1109,11 @@ interleaved stages, missing settlements, and terminal/settled disagreement.
 Every accepted non-START command names the current observation. COMMIT looks
 up its action and token only in that exact observation's candidate set; PAGE
 binds both the command observation and requested index to the returned page.
+Accepted START must leave READY for the declared active run and produce its
+first WAITING page or a documented terminal. Accepted COMMIT must produce a
+strictly newer WAITING observation in the same run or a documented terminal;
+reused observations, COMMITTED responses, and invalid provenance reject
+before replay transport creation.
 Rejected START/PAGE/COMMIT/CANCEL responses must retain the prior wire page
 byte-for-semantic-byte except for their documented rejection and terminal
 state; nonterminal checkpoints remain identical and terminal checkpoints zero.

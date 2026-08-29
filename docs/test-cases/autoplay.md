@@ -688,7 +688,11 @@ emitting ACK, COMPLETE, or OBS.
 Each command must then have one matching ACK, one matching COMPLETE, one exact
 response page, and one settlement. Accepted PAGE commands bind the current
 observation and requested index to that response; accepted COMMIT commands
-resolve their action/token only from the named current observation. Rejected
+resolve their action/token only from the named current observation and require
+a newer WAITING response or documented terminal. Accepted START leaves READY
+for the declared active run. Reused states/observations or invalid provenance
+reject pre-factory. Multi-page collection rolls transcript and transport state
+back exactly if a later page, settlement, or assembled observation fails. Rejected
 responses preserve the prior wire page and nonterminal checkpoint exactly;
 only documented rejection/terminal transitions may change, and terminals zero
 their checkpoint.
@@ -819,11 +823,11 @@ COMPLETE, emits no stale observation, and terminates the adapter.
 
 ### Interactions and save compatibility
 
-This is a stacked child of #91 and hard-depends on #85, #86, #89, #90, and
-#91. #87 is unrelated; #88 is an optional later accelerated-fidelity
-comparison. The bridge reuses production controller/strategy paths and makes
-no save-byte, preference, migration, compatibility-epoch, generated-data, or
-localization change.
+PR #150 is based directly on `master`. Issues #85, #86, #89, #90, and #91
+are delivered dependencies, not current stack parents. #87 is unrelated and
+#88 remains optional accelerated-fidelity integration. The bridge reuses
+production controller/strategy paths and makes no save-byte, preference,
+migration, compatibility-epoch, generated-data, or localization change.
 
 ### Automation
 

@@ -688,6 +688,74 @@ def _validate_rejected_response(
     return terminal_state is not None
 
 
+def _accepted_terminal(response: dict[str, object]) -> bool:
+    return response["rejection"] in {
+        4: {8, 10},
+        5: {5, 7},
+    }.get(response["state"], set())
+
+
+def _validate_accepted_response(
+        command: dict[str, object],
+        previous: dict[str, object] | None,
+        response: dict[str, object],
+        session: dict[str, object],
+        production: bool,
+) -> bool:
+    kind = command["kind"]
+    if kind == CommandKind.PAGE.value:
+        if (previous is None or response["state"] != previous["state"]
+                or response["rejection"] != 0
+                or response["run_id"] != command["run_id"]
+                or response["observation_id"] != command["observation_id"]
+                or response["page_index"] != command["page_index"]):
+            raise PlannerError("PAGE response identity mismatch")
+        return False
+    if not production:
+        return False
+    if kind not in {CommandKind.START.value, CommandKind.COMMIT.value} or previous is None:
+        return False
+    terminal = _accepted_terminal(response)
+    if production and any(response[field] == 0 for field in (
+            "actual_rom_identity", "actual_config_identity",
+            "actual_scenario_identity", "actual_seed_identity")):
+        raise PlannerError("accepted response provenance is unavailable")
+    if kind == CommandKind.START.value:
+        expected = command["expected_identities"]
+        if (previous["state"] != 1
+                or previous["run_id"] != session["ready_run_id"]
+                or response["run_id"] != session["run_id"]
+                or [response[f"actual_{name}_identity"]
+                    for name in ("rom", "config", "scenario", "seed")] != expected
+                or not terminal and (
+                    response["state"] != 2 or response["rejection"] != 0
+                    or response["observation_id"] <= previous["observation_id"]
+                    or response["page_index"] != 0
+                    or response["page_kind"] != PageKind.SUMMARY.value)
+                or terminal and (
+                    response["page_index"] != 0 or response["page_count"] != 1
+                    or response["page_kind"] != PageKind.CONTROL.value
+                    or response["record_count"] != 0
+                    or response["total_record_count"] != 0
+                    or response["total_action_count"] != 0)):
+            raise PlannerError("accepted START response transition mismatch")
+        return terminal
+    if (previous["state"] != 2 or response["run_id"] != previous["run_id"]
+            or response["actual_rom_identity"] != previous["actual_rom_identity"]
+            or response["actual_config_identity"] != previous["actual_config_identity"]
+            or (response["chapter"] == previous["chapter"]
+                and response["actual_scenario_identity"]
+                    != previous["actual_scenario_identity"])
+            or not terminal and (
+                response["state"] != 2 or response["rejection"] != 0
+                or response["observation_id"] <= previous["observation_id"]
+                or response["page_index"] != 0
+                or response["page_kind"] != PageKind.SUMMARY.value)
+            or terminal and response["state"] == previous["state"]):
+        raise PlannerError("accepted COMMIT response transition mismatch")
+    return terminal
+
+
 def _is_roster_slot(value: int) -> bool:
     return (1 <= value <= 0x3E or 0x41 <= value <= 0x54 or 0x81 <= value <= 0xB2)
 
@@ -1469,6 +1537,12 @@ class PlannerTranscript:
         self._events = prospective
     def _append(self, event: dict[str, object]) -> None:
         self._append_many((event, ))
+    def snapshot(self) -> int:
+        return len(self._events)
+    def restore(self, snapshot: int) -> None:
+        if not 0 <= snapshot <= len(self._events):
+            raise PlannerError("invalid transcript snapshot")
+        del self._events[snapshot:]
     def reserve_exchange(self) -> None:
         if (len(_canonical(self._document(self._events))) + MAX_TRANSCRIPT_EXCHANGE_BYTES > self.max_bytes):
             raise PlannerError(Rejection.RESOURCE_LIMIT.value)
@@ -1684,6 +1758,7 @@ class PlannerTranscript:
         awaiting_settlement = False
         pending_previous_page = pending_previous_checkpoint = None
         pending_rejection_terminal = False
+        pending_accepted_terminal = False
         expected_command_id = 1
         actions_by_observation: dict[
             tuple[int, int],
@@ -1714,9 +1789,12 @@ class PlannerTranscript:
                 pending_ack = None
                 pending_completion = False
                 pending_response = False
-                pending_previous_page = latest_page
+                pending_previous_page = (
+                    latest_page
+                    if latest_page is not None else latest_observation)
                 pending_previous_checkpoint = latest_checkpoint
                 pending_rejection_terminal = False
+                pending_accepted_terminal = False
             elif kind == "acknowledgement":
                 if (pending_command is None or pending_ack is not None or event.get("command_id") != expected_command_id):
                     raise PlannerError("planner transcript acknowledgement order")
@@ -1809,13 +1887,19 @@ class PlannerTranscript:
                     raise PlannerError("settled runtime state mismatch")
                 if settled_ack is not None:
                     acknowledgement_accepted = (settled_ack.get("result") == 1 and settled_ack.get("rejection") == 0)
-                    expected_rejection = (0 if acknowledgement_accepted else settled_ack.get("rejection"))
-                    if terminal["rejection"] != expected_rejection:
+                    if (acknowledgement_accepted
+                            and not pending_accepted_terminal
+                            and terminal["rejection"] != 0
+                            or not acknowledgement_accepted
+                            and terminal["rejection"] != settled_ack.get("rejection")):
                         raise PlannerError("settled rejection does not match acknowledgement")
                     if not acknowledgement_accepted:
                         expected_checkpoint = ([0] * 13 if pending_rejection_terminal else pending_previous_checkpoint)
                         if event["checkpoint"] != expected_checkpoint:
                             raise PlannerError("rejected response changed checkpoint")
+                    elif pending_accepted_terminal:
+                        if event["checkpoint"] != [0] * 13:
+                            raise PlannerError("accepted terminal response retained checkpoint")
                     command = settled_command.get("command")
                     if (not acknowledgement_accepted and isinstance(command, dict) and command.get("kind") == CommandKind.COMMIT.value
                             and terminal["state"] == 3):
@@ -1919,10 +2003,11 @@ class PlannerTranscript:
                     command = pending_command["command"]
                     command_kind = command.get("kind")
                     accepted = (pending_ack is not None and pending_ack.get("result") == 1 and pending_ack.get("rejection") == 0)
-                    if accepted and command_kind == CommandKind.PAGE.value:
-                        if (observation.get("run_id") != command.get("run_id") or observation.get("observation_id") != command.get("observation_id")
-                                or observation.get("page_index") != command.get("page_index")):
-                            raise PlannerError("PAGE response identity mismatch")
+                    if accepted:
+                        pending_accepted_terminal = _validate_accepted_response(
+                            command, pending_previous_page, observation,
+                            session_provenance,
+                            validation_mode is ValidationMode.PRODUCTION)
                     elif not accepted:
                         pending_rejection_terminal = _validate_rejected_response(
                             command,
@@ -1995,6 +2080,17 @@ class PlannerBridge:
     @property
     def trace(self) -> tuple[dict[str, object], ...]:
         return self.transcript.events
+    def snapshot_collection_state(self) -> tuple[object, ...]:
+        return (
+            self._next_command_id, self._observation, self._all_actions,
+            self._next_observation_id, self._committed_count,
+            self._active, self.cancelled)
+    def restore_collection_state(self, state: tuple[object, ...]) -> None:
+        (
+            self._next_command_id, self._observation, self._all_actions,
+            self._next_observation_id, self._committed_count,
+            self._active, self.cancelled,
+        ) = state
     def begin(self, provenance: dict[str, object]) -> int:
         if self._active:
             raise PlannerError(Rejection.PROTOCOL_ERROR.value)
@@ -2950,33 +3046,47 @@ def _assemble_observation_pages(
 
 
 def collect_observation_pages(transport: object, first: Observation) -> Observation:
-    if (not 1 <= first.page_count <= MAX_PAGE_COUNT or first.page_index != 0 or first.page_count * PAGE_MAX_BYTES > MAX_SEARCH_BYTES):
-        raise PlannerError("planner page traversal exceeds host bounds")
-    pages = [first]
-    for page_index in range(1, first.page_count):
-        page = transport.exchange(Command(
-            CommandKind.PAGE,
-            first.run_id,
-            first.observation_id,
-            page_index=page_index,
-        ))
-        if not isinstance(page, Observation):
-            raise PlannerError("PAGE did not return an observation")
-        if (page.run_id != first.run_id or page.observation_id != first.observation_id or page.page_index != page_index or page.page_count != first.page_count):
-            raise PlannerError(Rejection.STALE_OBSERVATION.value)
-        pages.append(page)
-    validation_mode = getattr(transport, "validation_mode", ValidationMode.SYNTHETIC)
-    if not isinstance(validation_mode, ValidationMode):
-        raise PlannerError("invalid trusted transport validation mode")
-    complete = _assemble_observation_pages(pages, validation_mode)
-    record_complete = getattr(
-        transport,
-        "record_complete_observation",
-        None,
-    )
-    if callable(record_complete):
-        record_complete(complete)
-    return complete
+    transcript = getattr(transport, "transcript", None)
+    transcript_snapshot = (
+        transcript.snapshot()
+        if isinstance(transcript, PlannerTranscript) else None)
+    snapshot_state = getattr(transport, "snapshot_collection_state", None)
+    state_snapshot = snapshot_state() if callable(snapshot_state) else None
+    try:
+        if (not 1 <= first.page_count <= MAX_PAGE_COUNT
+                or first.page_index != 0
+                or first.page_count * PAGE_MAX_BYTES > MAX_SEARCH_BYTES):
+            raise PlannerError("planner page traversal exceeds host bounds")
+        pages = [first]
+        for page_index in range(1, first.page_count):
+            page = transport.exchange(Command(
+                CommandKind.PAGE, first.run_id, first.observation_id,
+                page_index=page_index))
+            if not isinstance(page, Observation):
+                raise PlannerError("PAGE did not return an observation")
+            if (page.run_id != first.run_id
+                    or page.observation_id != first.observation_id
+                    or page.page_index != page_index
+                    or page.page_count != first.page_count):
+                raise PlannerError(Rejection.STALE_OBSERVATION.value)
+            pages.append(page)
+        validation_mode = getattr(
+            transport, "validation_mode", ValidationMode.SYNTHETIC)
+        if not isinstance(validation_mode, ValidationMode):
+            raise PlannerError("invalid trusted transport validation mode")
+        complete = _assemble_observation_pages(pages, validation_mode)
+        record_complete = getattr(
+            transport, "record_complete_observation", None)
+        if callable(record_complete):
+            record_complete(complete)
+        return complete
+    except Exception:
+        if transcript_snapshot is not None:
+            transcript.restore(transcript_snapshot)
+        restore_state = getattr(transport, "restore_collection_state", None)
+        if callable(restore_state) and state_snapshot is not None:
+            restore_state(state_snapshot)
+        raise
 
 
 def replay_transcript_on_clean_transport(
