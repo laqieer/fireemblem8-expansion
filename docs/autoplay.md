@@ -902,219 +902,168 @@ back the feature without save recovery.
 
 ## Local external planner bridge
 
-Issue [#92](https://github.com/laqieer/fireemblem8-expansion/issues/92) provides a default-off, **modern-debug-only** local planner bridge. It builds
-on the one blue `COMPUTER` controller from #85, #86's bounded terminal contract, issue issue #89's objective telemetry, #90's decision callback seam,
-and #91's provenance/report vocabulary. The bridge is not a new phase router. At the existing `CpDecide` boundary, a narrow visitor API enumerates
-every legal choice in the declared `MOVE_WAIT`, `COMBAT`, `STAFF`, `USE_ITEM`, `PICK`, and `SUMMON` families from the live movement, terrain, fog,
-unit, item, and objective state. Enumeration is row-major, then action-kind/item/target order; it neither calls perform nor writes decision, unit, map,
-target-list, or RNG state. If the complete set exceeds 512 entries, the observation fails with `RESOURCE_LIMIT` rather than silently truncating. A
-valid typed commit reconstructs the chosen ordinal and returns that `AiDecision` to the unchanged `CpPerform` / `ApplyUnitAction` path. `MOVE_WAIT`
-includes exactly one candidate for the active unit's current tile. An otherwise immobile valid actor can therefore end its turn normally instead of
-producing a false empty-set terminal. The accepted stationary action still enters `CpPerform`, runs ordinary wait-event, trap, status, map, equipment,
-and telemetry cleanup, and consumes no RN.
+Issue [#92](https://github.com/laqieer/fireemblem8-expansion/issues/92) provides a default-off, **modern-debug-only** local planner bridge. It builds on the one blue `COMPUTER` controller from #85, #86's
+bounded terminal contract, issue issue #89's objective telemetry, #90's decision callback seam, and #91's provenance/report vocabulary. The bridge is not a new phase router. At the existing `CpDecide`
+boundary, a narrow visitor API enumerates every legal choice in the declared `MOVE_WAIT`, `COMBAT`, `STAFF`, `USE_ITEM`, `PICK`, and `SUMMON` families from the live movement, terrain, fog, unit, item, and
+objective state. Enumeration is row-major, then action-kind/item/target order; it neither calls perform nor writes decision, unit, map, target-list, or RNG state. If the complete set exceeds 512 entries,
+the observation fails with `RESOURCE_LIMIT` rather than silently truncating. A valid typed commit reconstructs the chosen ordinal and returns that `AiDecision` to the unchanged `CpPerform` / `ApplyUnitAction`
+path. `MOVE_WAIT` includes exactly one candidate for the active unit's current tile. An otherwise immobile valid actor can therefore end its turn normally instead of producing a false empty-set terminal. The
+accepted stationary action still enters `CpPerform`, runs ordinary wait-event, trap, status, map, equipment, and telemetry cleanup, and consumes no RN.
 
-Coordinate-sensitive choices remain distinct candidates. Torch publishes every in-bounds tile in the acting unit's staff range; Warp publishes every
-empty, visible, traversable destination in range of the selected allied unit; and Unlock publishes every closed door in staff range. The committed
-coordinates are revalidated against live state and lowered to `ActionData.xOther/yOther` before their existing executors run. Hammerne publishes one
-candidate per repairable inventory slot on a same-faction unit; blue-to-green allied targets remain ineligible exactly like the production Hammerne
-builder. It revalidates that slot and lowers it to `ActionData.trapType`. Weapon actions include every in-range Snag and both damaged-wall cells
-associated with each obstacle trap only when the upper and lower cells are both damaged-wall terrain; a Snag or unrelated obstacle above a lower wall
-cannot own that lower cell. Ballista-capable units also enumerate every target from each reachable usable ballista with `BU_ISLOT_AUTO`; its exact
-weapon/uses bind the opaque identity and lower to `BU_ISLOT_BALLISTA`. Obstacle actions bind `targetId=0` and coordinates, then reuse the existing
-damage/destruction path. Mine and Light Rune enumerate their exact adjacent production tiles; all four dance rings enumerate eligible blue adjacent
-units while rejecting dead, not-deployed, bit-16 unavailable, hidden, and rescued targets even if a stale map entry names them. Their target tile/unit,
-coordinates, and selected item are revalidated and lowered before the unchanged item executor. Rogue Pick candidates
-remain one direct no-item action per target. Non-Rogue targets emit every applicable inventory slot in target-then-slot order: thief Lockpicks, Chest
-Keys/bundles for chests, and Door Keys for doors; bridges remain Lockpick-only. Every item-using candidate binds its actor slot and exact raw item/uses
-to both its token and candidate-set identity. Hammerne additionally binds the selected target slot and raw target item. Changes, replacement, emptying,
-or slot swapping reject COMMIT before execution; unrelated unusable slots do not. Only the selected Pick stack is consumed. Fortify uses the production
-ranged-heal predicate and therefore requires an injured allied non-caster from range 1 through MAG/2. Latona scans only the current phase's bounded
-0x80-slot domain and excludes its caster while accepting non-casters with missing HP or status. Physic and other ordinary staff actions continue through
-their owning range and target predicates. Normal Summon is a separate `AI_ACTION_SUMMON` / `UNIT_ACTION_SUMMON` route: the active blue unit must have
-`CA_SUMMON`, an exact `gSummonConfig` entry, no available existing configured summon, and at least one legal adjacent tile. Every empty, visible,
-traversable tile is a distinct deterministic candidate; the selected coordinates are revalidated, lowered to `ActionData.xOther/yOther`, and consumed
-by the existing map-animation summon effect. An unavailable prior summon remains reusable without mutating it during enumeration. Demon King summon
-remains the distinct, coordinate-free `AI_ACTION_DKSUMMON` / `UNIT_ACTION_SUMMON_DK` route and retains its existing red-unit capacity rule; neither
-action can be lowered through the other.
+Coordinate-sensitive choices remain distinct candidates. Torch publishes every in-bounds tile in the acting unit's staff range; Warp publishes every empty, visible, traversable destination in range of the
+selected allied unit; and Unlock publishes every closed door in staff range. The committed coordinates are revalidated against live state and lowered to `ActionData.xOther/yOther` before their existing executors
+run. Hammerne publishes one candidate per repairable inventory slot on a same-faction unit; blue-to-green allied targets remain ineligible exactly like the production Hammerne builder. It revalidates that
+slot and lowers it to `ActionData.trapType`. Weapon actions include every in-range Snag and both damaged-wall cells associated with each obstacle trap only when the upper and lower cells are both damaged-wall
+terrain; a Snag or unrelated obstacle above a lower wall cannot own that lower cell. Ballista-capable units also enumerate every target from each reachable usable ballista with `BU_ISLOT_AUTO`; its exact
+weapon/uses bind the opaque identity and lower to `BU_ISLOT_BALLISTA`. Obstacle actions bind `targetId=0` and coordinates, then reuse the existing damage/destruction path. Mine and Light Rune enumerate their
+exact adjacent production tiles; all four dance rings enumerate eligible blue adjacent units while rejecting dead, not-deployed, bit-16 unavailable, hidden, and rescued targets even if a stale map entry names
+them. Their target tile/unit, coordinates, and selected item are revalidated and lowered before the unchanged item executor. Rogue Pick candidates remain one direct no-item action per target. Non-Rogue targets
+emit every applicable inventory slot in target-then-slot order: thief Lockpicks, Chest Keys/bundles for chests, and Door Keys for doors; bridges remain Lockpick-only. Every item-using candidate binds its actor
+slot and exact raw item/uses to both its token and candidate-set identity. Hammerne additionally binds the selected target slot and raw target item. Changes, replacement, emptying, or slot swapping reject
+COMMIT before execution; unrelated unusable slots do not. Only the selected Pick stack is consumed. Fortify uses the production ranged-heal predicate and therefore requires an injured allied non-caster from
+range 1 through MAG/2. Latona scans only the current phase's bounded 0x80-slot domain and excludes its caster while accepting non-casters with missing HP or status. Physic and other ordinary staff actions
+continue through their owning range and target predicates. Normal Summon is a separate `AI_ACTION_SUMMON` / `UNIT_ACTION_SUMMON` route: the active blue unit must have `CA_SUMMON`, an exact `gSummonConfig`
+entry, no available existing configured summon, and at least one legal adjacent tile. Every empty, visible, traversable tile is a distinct deterministic candidate; the selected coordinates are revalidated,
+lowered to `ActionData.xOther/yOther`, and consumed by the existing map-animation summon effect. An unavailable prior summon remains reusable without mutating it during enumeration. Demon King summon remains
+the distinct, coordinate-free `AI_ACTION_DKSUMMON` / `UNIT_ACTION_SUMMON_DK` route and retains its existing red-unit capacity rule; neither action can be lowered through the other.
 
-`EXPANSION_AUTOPLAY_PLANNER=1` is valid only with `MODERN_CONFIG=debug`. It participates in configuration identity but adds no save field,
-migration, epoch, localization, generated chapter data, or archival behavior. Release and archival builds omit its state and hooks. The separate
-`EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID` build value namespaces the runtime scenario contract. Enabled modern builds require an integer constant
-from `0` through `0xFFFFFFFF` and reject negative, oversized, or invalid expressions at compilation; archival/inactive builds remain unaffected. The
-published identity also binds initialized chapter/map dimensions. The only exported records are the fixed-width, pointer-free `PlannerObservationV2`,
-`PlannerCommandV2`, and `PlannerCampaignCheckpointV2`; the host may read those symbols and may submit only one typed mailbox command. There is no
-raw-address, arbitrary-memory, save, savestate, socket, HTTP, model, or upload API.
+`EXPANSION_AUTOPLAY_PLANNER=1` is valid only with `MODERN_CONFIG=debug`. It participates in configuration identity but adds no save field, migration, epoch, localization, generated chapter data, or archival
+behavior. Release and archival builds omit its state and hooks. The separate `EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID` build value namespaces the runtime scenario contract. Enabled modern builds require an
+integer constant from `0` through `0xFFFFFFFF` and reject negative, oversized, or invalid expressions at compilation; archival/inactive builds remain unaffected. The published identity also binds initialized
+chapter/map dimensions. The only exported records are the fixed-width, pointer-free `PlannerObservationV2`, `PlannerCommandV2`, and `PlannerCampaignCheckpointV2`; the host may read those symbols and may
+submit only one typed mailbox command. There is no raw-address, arbitrary-memory, save, savestate, socket, HTTP, model, or upload API.
 
-The 1,024-byte pre-release v2 observation is a tagged fixed-width page. This unreleased extension changes v2 in place; there is no deployed v2 peer
-to migrate. Page zero contains eight semantic fields. Further pages carry up to 230 row-major map cells, 23 typed 40-byte unit records, 115 typed value
-records, or 23 pointer-free action records. Unit records expose availability, faction/character/class, position/HP, raw state plus explicit deployed, dead,
-moved, acted, rescued and rescuing flags, rescue partner, status/duration, level/EXP, equipped slot/raw item, power/skill/speed/luck/defense/resistance/
-constitution/movement, all eight weapon ranks, and the inventory digest. `INVENTORY` pages expose all five raw slots; `RESOURCES` exposes gold, all
-100 convoy slots, and telemetry; `FLAGS` exposes every bounded flag ID and state. The summary retains map, active-unit, objective, flag, and resource
-integrity fields; per-unit inventory digests remain only on unit records. Its otherwise-unused payload contains a fixed 812-byte campaign record: phase,
-chapter/route mode, up to eight complete #89 objectives and eight 16-member groups, the eight-entry #90 strategy registry, and seventeen chapter/group/
-unit assignments with activation/current source and capabilities. Every domain and nested record carries availability; no pointer crosses the wire. Flag
-and convoy/resource availability derives only from the backing pointer and bounded domain sizes. A valid 32-bit digest of zero remains `AVAILABLE`
-and is published unchanged; null storage or an out-of-range flag domain is `UNINITIALIZED`. Each flag byte domain is capped at 256 bytes for semantic
-pages and campaign-checkpoint hashing. Zero bytes is a valid available domain and emits one explicit zero-record `FLAGS` page; 1- and 256-byte domains
-are read exactly, while negative, 257-byte, larger, or null domains are never dereferenced.
+The 1,024-byte pre-release v2 observation is a tagged fixed-width page. This unreleased extension changes v2 in place; there is no deployed v2 peer to migrate. Page zero contains eight semantic fields. Further
+pages carry up to 230 row-major map cells, 23 typed 40-byte unit records, 115 typed value records, or 23 pointer-free action records. Unit records expose availability, faction/character/class, position/HP, raw
+state plus explicit deployed, dead, moved, acted, rescued and rescuing flags, rescue partner, status/duration, level/EXP, equipped slot/raw item, power/skill/speed/luck/defense/resistance/ constitution/movement,
+all eight weapon ranks, and the inventory digest. `INVENTORY` pages expose all five raw slots; `RESOURCES` exposes gold, all 100 convoy slots, and telemetry; `FLAGS` exposes every bounded flag ID and state. The
+summary retains map, active-unit, objective, flag, and resource integrity fields; per-unit inventory digests remain only on unit records. Its otherwise-unused payload contains a fixed 812-byte campaign record:
+phase, chapter/route mode, up to eight complete #89 objectives and eight 16-member groups, the eight-entry #90 strategy registry, and seventeen chapter/group/ unit assignments with activation/current source
+and capabilities. Every domain and nested record carries availability; no pointer crosses the wire. Flag and convoy/resource availability derives only from the backing pointer and bounded domain sizes. A
+valid 32-bit digest of zero remains `AVAILABLE` and is published unchanged; null storage or an out-of-range flag domain is `UNINITIALIZED`. Each flag byte domain is capped at 256 bytes for semantic pages
+and campaign-checkpoint hashing. Zero bytes is a valid available domain and emits one explicit zero-record `FLAGS` page; 1- and 256-byte domains are read exactly, while negative, 257-byte, larger, or null
+domains are never dereferenced.
 
-Every semantic field or record has an explicit `AVAILABLE`, `NOT_APPLICABLE`, `NOT_VISIBLE`, `UNSUPPORTED_RULE`, `OUT_OF_RANGE`, `UNINITIALIZED`,
-`UNAVAILABLE`, or `EMPTY` state. `US_UNAVAILABLE` units, including benched units whose stale coordinates remain in bounds, are always `UNAVAILABLE`
-and are excluded before actor or target enumeration.
+Every semantic field or record has an explicit `AVAILABLE`, `NOT_APPLICABLE`, `NOT_VISIBLE`, `UNSUPPORTED_RULE`, `OUT_OF_RANGE`, `UNINITIALIZED`, `UNAVAILABLE`, or `EMPTY` state. `US_UNAVAILABLE` units,
+including benched units whose stale coordinates remain in bounds, are always `UNAVAILABLE` and are excluded before actor or target enumeration.
 
-Each 40-byte action record carries six action-identity words and four opaque token words. `destination` packs acting X/Y; `target` packs target ID and
-X/Y; `itemSlot` packs acting and Hammerne-target slots. The shared transcript/live validator requires the exact kind-to-engine-action mapping, canonical
-unit IDs, coordinates strictly inside the available published width/height, exact coordinate/slot sentinels, and zero reserved bits before creating
-an action or invoking either planner. `COMBAT target=0` treats `(0,0)` as a real coordinate only when that published map cell is Snag or damaged-wall
-terrain; unit-target combat retains its coordinate-free `(0,0)` sentinel. Each absent slot is exactly `0xFF`, so Summon, MOVE_WAIT, Rogue Pick, and
-other no-item actions remain distinct from slot zero. All four independently mixed token words bind every identity field, remain opaque to the host,
-and are echoed unchanged. A malformed page produces no selection, follow-up command, or transcript mutation.
+Each 40-byte action record carries six action-identity words and four opaque token words. `destination` packs acting X/Y; `target` packs target ID and X/Y; `itemSlot` packs acting and Hammerne-target slots. The
+shared transcript/live validator requires the exact kind-to-engine-action mapping, canonical unit IDs, coordinates strictly inside the available published width/height, exact coordinate/slot sentinels, and
+zero reserved bits before creating an action or invoking either planner. `COMBAT target=0` treats `(0,0)` as a real coordinate only when that published map cell is Snag or damaged-wall terrain; unit-target
+combat retains its coordinate-free `(0,0)` sentinel. Each absent slot is exactly `0xFF`, so Summon, MOVE_WAIT, Rogue Pick, and other no-item actions remain distinct from slot zero. All four independently mixed
+token words bind every identity field, remain opaque to the host, and are echoed unchanged. Direct token, action-record, and command construction requires exact built-in Python integers in `0..0xFFFFFFFF`;
+booleans, floats, integer subclasses, negative values, and overflow reject before selection, transport, or transcript mutation. A malformed page produces no selection, follow-up command, or transcript mutation.
 
-The observation's overlapping start/count aliases and tagged payload are declared as named C89 unions (`start`, `count`, and `payload`), not anonymous
-members. Public wire offsets remain 36, 40, and 100 while unreleased v2 grows atomically to 1,024 bytes; inactive headers still compile under archival
-agbcc. The archival planner translation unit retains compile-time size and offset checks even though release and archival builds emit no planner runtime state.
+The observation's overlapping start/count aliases and tagged payload are declared as named C89 unions (`start`, `count`, and `payload`), not anonymous members. Public wire offsets remain 36, 40, and 100 while
+unreleased v2 grows atomically to 1,024 bytes; inactive headers still compile under archival agbcc. The archival planner translation unit retains compile-time size and offset checks even though release and
+archival builds emit no planner runtime state.
 
-The 64-byte command overlays a 24-byte typed payload after its common 32-byte header: START uses four expected identity words, while COMMIT uses the
-four opaque token words. Result and rejection remain at offsets 56 and 60. The host obtains all data only by sending typed `PAGE` commands with a fixed
-`page_index`; there is no in-process action-list shortcut. Up to 512 actions use at most 23 action pages. Maximum map, 132 rich units, inventory, resources,
-4,096 flags, campaign registries, and actions still use exactly 92 pages. Before planner selection, transcript mutation, or replay transport creation,
-one shared whole-observation validator requires `1 <= page_count <= 92`, `page_index < page_count`, exact `u32` words, and a projected capture within 64
-MiB. It requires one summary followed by contiguous typed spans; canonical unique field, map, roster, inventory-slot, resource, flag, action-ordinal, and
-candidate identities; row-major map dimensions/counts; roster-owned inventory; map-relative action destinations/targets; and matching page totals. Invalid,
-duplicate, missing, cross-page, or reordered records reject without an unbounded exchange or retained partial observation. PAGE collection snapshots
-the transcript and host transport state after page zero, then restores both exactly if any later exchange, settlement, or whole-observation check
-fails. Global ordinals and all four token words returned by ROM are opaque to host planners and are echoed unchanged. The host never sends coordinates,
-targets, item IDs, `ActionData`, unit pointers, or RNG state: a commit carries only `{run_id, observation_id, ordinal, token[4]}`. Stale pages, unknown
-commands, duplicate START, forged tokens, unsupported actions, cancellation, and resource overflow produce typed rejection and do not execute an action.
-The ROM does not retain a candidate array. It retains only compact count, deadline, run, and trace state, freezes normal AI while waiting, and invokes the
-pure enumerator for each action page and commit. Native adversarial tests digest decision, unit, map, and RNG state before/after enumeration and also prove
-candidate uniqueness and repeatable ordering. Each run is capped at 4,096 accepted commits. Both host planners and the live transport use one canonical
-hash-chained transcript capped at 2 MiB. It records every full semantic observation and candidate/page-set identity, exact command, acknowledgement,
-completion or rejection, settled telemetry and RNG, checkpoint, and terminal state. A production command reserves and prospectively sizes one bounded 64
-KiB exchange before any mailbox write, sequence increment, or transcript mutation. Canonical export/import validates the chain and event order. Exactly
-one provenance session must be event zero; empty, sessionless, late-session, and duplicate-session transcripts fail even after an attacker recomputes
-the chain. Its ROM/configuration identities bind every observation, and its initial scenario, seed, ready-run, and active-run identities bind READY,
-accepted START, and the first active observation before chapter-local identities may advance. Deep replay requires equivalent observations, commands,
-settlements, and terminal state; truncation, reordering, or field tampering fails. The bounded-search reference accepts at most 512 nodes and enforces the
-64 MiB host-search ceiling. Production strictness is trusted API context, never transcript data: `import_production_bytes` and clean live replay select
-`PRODUCTION`, while bounded host fixtures must explicitly select `SYNTHETIC`. Restricted libmGBA transport likewise selects production validation before
-either planner runs. Production mode requires nonzero ROM/configuration/scenario/seed provenance and the complete field, map, campaign, coordinate, page,
-and record contract even when a re-chained transcript zeroes its published identities. Validation mode is not serialized, and an attempted mode field is
-an unknown schema key. The original single-argument `import_bytes` call remains positionally compatible and now defaults safely to production validation;
-fixtures use the explicit `import_synthetic_bytes` entrypoint. Transcript JSON has an explicit maximum structural depth of 64 containers. An iterative byte
-preflight runs before decoding and an iterative object validator runs before canonicalization. Excess depth plus specifically JSON-decode, Unicode-decode,
-parser-recursion, and canonicalizer-recursion failures become stable invalid-transcript errors before state mutation or transport creation. Wire-v2
-transcript objects also use exact allowed and required key sets at the envelope, event, provenance/source/ROM/scenario, command/token, observation and
-every record, ACK, completion, settlement, RNG, terminal, and transport error boundary. Unknown extension keys and missing required keys fail before a
-clean replay transport is created, even when an attacker recomputes the hash chain. Every numeric scalar must be an exact Python/JSON integer within its
-wire width, enum, coordinate, page, slot, or sentinel domain; booleans, strings, floats, and out-of-range values reject before transport creation. `NaN`
-and positive/negative infinity are rejected during decode and canonical emission, with no transcript mutation. The importer is an explicit command state
-machine: each command must be followed by its matching ACK, matching COMPLETE, one response page, and that response's settlement. It rejects responses
-before completion, duplicate or interleaved stages, missing settlements, and terminal/settled disagreement. Every settlement must contain the exact
-16-word cleared mailbox implied by its command, ACK, and response lifecycle, including retained arguments, result, rejection, and zero reserved words;
-chapter-transition reset is all-zero and accepted START exhaustion carries its terminal result/rejection. Checkpoints bind to the session run and first
-appear only after a matching accepted COMMIT token; derivable chapter, mode, turn, and RNG progress must agree, later records remain identical, and
-terminal records are all zero. Every accepted non-START command names the current observation. COMMIT looks up its action and token only in that exact
-observation's candidate set; PAGE binds both the command observation and requested index to the returned page. Accepted START must leave READY for the
-declared active run and produce its first WAITING page or a documented terminal. Accepted COMMIT must produce a strictly newer WAITING observation in the
-same run or a documented terminal; reused observations, COMMITTED responses, and invalid provenance reject before replay transport creation. Rejected
-START/PAGE/COMMIT/CANCEL responses must retain the prior wire page byte-for-semantic-byte except for their documented rejection and terminal state;
-nonterminal checkpoints remain identical and terminal checkpoints zero. Re-chaining stale, cross-swapped, or rejected-response data cannot bypass
-this. Only the four protocol command kinds are transcript-representable. Unknown numeric or text kinds reject during import before a replay factory
-starts; malformed fields on START/PAGE/COMMIT/CANCEL remain representable when the restricted backend can reproduce their typed rejection. Before
-selecting an action, both reference planners validate the complete typed inventory/resource/flag set, reject any candidate that names an unavailable
-actor or target, and retain the semantic digest they consumed. The digests therefore audit real bounded values received through PAGE rather than a
-disconnected Python-only mirror. The Python bridge and every public validation diagnostic consistently identify this as protocol v2; invalid chapter
-and action-cap inputs report the v2 range or resource boundary rather than the obsolete v1 label.
+The 64-byte command overlays a 24-byte typed payload after its common 32-byte header: START uses four expected identity words, while COMMIT uses the four opaque token words. Result and rejection remain at
+offsets 56 and 60. The host obtains all data only by sending typed `PAGE` commands with a fixed `page_index`; there is no in-process action-list shortcut. Up to 512 actions use at most 23 action pages. Maximum
+map, 132 rich units, inventory, resources, 4,096 flags, campaign registries, and actions still use exactly 92 pages. Before planner selection, transcript mutation, or replay transport creation, one shared
+whole-observation validator requires `1 <= page_count <= 92`, `page_index < page_count`, exact `u32` words, and a projected capture within 64 MiB. It requires one summary followed by contiguous typed spans;
+canonical unique field, map, roster, inventory-slot, resource, flag, action-ordinal, and candidate identities; row-major map dimensions/counts; roster-owned inventory; map-relative action destinations/targets;
+and matching page totals. Invalid, duplicate, missing, cross-page, or reordered records reject without an unbounded exchange or retained partial observation. PAGE collection snapshots the transcript and host
+transport state after page zero, then restores both exactly if any later exchange, settlement, or whole-observation check fails. Global ordinals and all four token words returned by ROM are opaque to host
+planners and are echoed unchanged. The host never sends coordinates, targets, item IDs, `ActionData`, unit pointers, or RNG state: a commit carries only `{run_id, observation_id, ordinal, token[4]}`. Stale
+pages, unknown commands, duplicate START, forged tokens, unsupported actions, cancellation, and resource overflow produce typed rejection and do not execute an action. Before exposure it also binds each
+selected inventory record to the exact weapon, staff, targeted/self-use item, or terrain-specific Pick family. Hammerne binds the named same-faction target slot to a present damaged hammernable weapon/staff;
+a different valid item elsewhere cannot substitute for any selected slot. The ROM does not retain a candidate array. It retains only compact count, deadline, run, and trace state, freezes normal AI while
+waiting, and invokes the pure enumerator for each action page and commit. Native adversarial tests digest decision, unit, map, and RNG state before/after enumeration and also prove candidate uniqueness
+and repeatable ordering. Each run is capped at 4,096 accepted commits. Both host planners and the live transport use one canonical hash-chained transcript capped at 2 MiB. It records every full semantic
+observation and candidate/page-set identity, exact command, acknowledgement, completion or rejection, settled telemetry and RNG, checkpoint, and terminal state. A production command reserves and prospectively
+sizes one bounded 64 KiB exchange before any mailbox write, sequence increment, or transcript mutation. Canonical export/import validates the chain and event order. Exactly one provenance session must be
+event zero; empty, sessionless, late-session, and duplicate-session transcripts fail even after an attacker recomputes the chain. Its ROM/configuration identities bind every observation, and its initial
+scenario, seed, ready-run, and active-run identities bind READY, accepted START, and the first active observation before chapter-local identities may advance. Deep replay requires equivalent observations,
+commands, settlements, and terminal state; truncation, reordering, or field tampering fails. The bounded-search reference accepts at most 512 nodes and enforces the 64 MiB host-search ceiling. Production
+strictness is trusted API context, never transcript data: `import_production_bytes` and clean live replay select `PRODUCTION`, while bounded host fixtures must explicitly select `SYNTHETIC`. Restricted libmGBA
+transport likewise selects production validation before either planner runs. Production mode requires nonzero ROM/configuration/scenario/seed provenance and the complete field, map, campaign, coordinate, page,
+and record contract even when a re-chained transcript zeroes its published identities. Validation mode is not serialized, and an attempted mode field is an unknown schema key. The original single-argument
+`import_bytes` call remains positionally compatible and now defaults safely to production validation; fixtures use the explicit `import_synthetic_bytes` entrypoint. Transcript JSON has an explicit maximum
+structural depth of 64 containers. An iterative byte preflight runs before decoding and an iterative object validator runs before canonicalization. Excess depth plus specifically JSON-decode, Unicode-decode,
+parser-recursion, and canonicalizer-recursion failures become stable invalid-transcript errors before state mutation or transport creation. Wire-v2 transcript objects also use exact allowed and required key
+sets at the envelope, event, provenance/source/ROM/scenario, command/token, observation and every record, ACK, completion, settlement, RNG, terminal, and transport error boundary. Unknown extension keys and
+missing required keys fail before a clean replay transport is created, even when an attacker recomputes the hash chain. Every numeric scalar must be an exact Python/JSON integer within its wire width, enum,
+coordinate, page, slot, or sentinel domain; booleans, strings, floats, and out-of-range values reject before transport creation. `NaN` and positive/negative infinity are rejected during decode and canonical
+emission, with no transcript mutation. The importer is an explicit command state machine: each command must be followed by its matching ACK, matching COMPLETE, one response page, and that response's
+settlement. It rejects responses before completion, duplicate or interleaved stages, missing settlements, and terminal/settled disagreement. Every settlement must contain the exact 16-word cleared mailbox
+implied by its command, ACK, and response lifecycle, including retained arguments, result, rejection, and zero reserved words; chapter-transition reset is all-zero and accepted START exhaustion carries its
+terminal result/rejection. Checkpoints bind to the session run and first appear only after a matching accepted COMMIT token; derivable chapter, mode, turn, and RNG progress must agree, later records remain
+identical, and terminal records are all zero. Every accepted non-START command names the current observation. COMMIT looks up its action and token only in that exact observation's candidate set; PAGE binds
+both the command observation and requested index to the returned page. Accepted START must leave READY for the declared active run and produce its first WAITING page or a documented terminal. Accepted COMMIT
+must produce a strictly newer WAITING observation in the same run or a documented terminal; reused observations, COMMITTED responses, and invalid provenance reject before replay transport creation. Rejected
+START/PAGE/COMMIT/CANCEL responses must retain the prior wire page byte-for-semantic-byte except for their documented rejection and terminal state; nonterminal checkpoints remain identical and terminal
+checkpoints zero. Re-chaining stale, cross-swapped, or rejected-response data cannot bypass this. Only the four protocol command kinds are transcript-representable. Unknown numeric or text kinds reject
+during import before a replay factory starts; malformed fields on START/PAGE/COMMIT/CANCEL remain representable when the restricted backend can reproduce their typed rejection. Before selecting an action,
+both reference planners validate the complete typed inventory/resource/flag set, reject any candidate that names an unavailable actor or target, and retain the semantic digest they consumed. The digests
+therefore audit real bounded values received through PAGE rather than a disconnected Python-only mirror. The Python bridge and every public validation diagnostic consistently identify this as protocol v2;
+invalid chapter and action-cap inputs report the v2 range or resource boundary rather than the obsolete v1 label.
 
-START carries expected fixed-width ROM, configuration, scenario, and seed identities. READY/WAITING observations publish the actual runtime identities
-derived from immutable build provenance plus ROM header, configuration fingerprint, scenario namespace plus initialized chapter/map, and all three RN
-words plus LCG state. READY is published only after map, fog/weather RNG, and map-display initialization; a command prepared from an earlier identity
-rejects before computer control activation.
+START carries expected fixed-width ROM, configuration, scenario, and seed identities. READY/WAITING observations publish the actual runtime identities derived from immutable build provenance plus ROM header,
+configuration fingerprint, scenario namespace plus initialized chapter/map, and all three RN words plus LCG state. READY is published only after map, fog/weather RNG, and map-display initialization; a command
+prepared from an earlier identity rejects before computer control activation.
 
-Other action families remain unavailable and are never silently lowered to a raw engine call. A zero-candidate enumeration reports
-`EXHAUSTED/CAPABILITY_UNAVAILABLE` before entering `WAITING`; a legal set above 512 reports `EXHAUSTED/RESOURCE_LIMIT`. Both terminal paths atomically
-clear the checkpoint, deactivate the planner, and queue player-control restoration at the next safe phase without running fallback AI. The terminal
-observation remains stable and a stale START cannot reactivate it. Ordinary nonterminal observations remain active. Cancellation is observed only at
-a decision safe point; it never interrupts a battle, event, movement, or Proc halfway through. Once an observation is published, `CpDecide` moves to
-a dedicated mailbox-poll state. Every poll advances the single 300-frame deadline, including valid `PAGE` and native malformed-mailbox traffic, while
-never rerunning AI, consuming RN, or advancing a unit. Accepted commits alone rejoin the normal perform state.
+Other action families remain unavailable and are never silently lowered to a raw engine call. A zero-candidate enumeration reports `EXHAUSTED/CAPABILITY_UNAVAILABLE` before entering `WAITING`; a legal set
+above 512 reports `EXHAUSTED/RESOURCE_LIMIT`. Both terminal paths atomically clear the checkpoint, deactivate the planner, and queue player-control restoration at the next safe phase without running fallback
+AI. The terminal observation remains stable and a stale START cannot reactivate it. Ordinary nonterminal observations remain active. Cancellation is observed only at a decision safe point; it never interrupts
+a battle, event, movement, or Proc halfway through. Once an observation is published, `CpDecide` moves to a dedicated mailbox-poll state. Every poll advances the single 300-frame deadline, including valid
+`PAGE` and native malformed-mailbox traffic, while never rerunning AI, consuming RN, or advancing a unit. Accepted commits alone rejoin the normal perform state.
 
-Replay begins from a fresh emulator and a blank in-memory SRAM image. It replays the complete chapter-one action prefix through normal game control,
-records a 52-byte semantic chapter-two checkpoint (chapter/route-mode/turn/RN/trace digest), and continues the same live emulator. Branching replays a
-clean prefix; it never loads a save fixture or savestate. `rng.c` remains the authority: the bridge only snapshots its public RN state and read-only
-consumption counter. The checkpoint digest includes `gPlaySt.chapterModeIndex` and the complete bounded 100-slot convoy in addition to roster, held
-items, gold, flags, RNG, and accepted-token state. Route-only and convoy-only changes therefore produce distinct checkpoints. Only the `MNCH`, `MNC2`,
-and `MNC3` paths set the typed transition flag. For `MNCH` and `MNC2`, the production event engine records settled campaign state immediately before
-`EndBMapMainForChapterTransition` changes any map state. Because `MNC3`'s `GotoChapterWithoutSave` changes chapter identity synchronously, that path
-records immediately before the call, then the scheduled `StartBattleMap` reset preserves and re-arms the same run. Ordinary actions do not rewrite
-a transition checkpoint. Other map exits, restart, suspend load, new game, full reset, timeout, resource termination, and CANCEL remain destructive
-boundaries and never use a recording path. Timeout and explicit CANCEL first publish an invalid checkpoint magic value, then zero the entire 52-byte
-record before deactivating the planner or restoring player control. A later START also clears the record before activation, so no cancelled-run checkpoint
-can become readable again.
+Replay begins from a fresh emulator and a blank in-memory SRAM image. It replays the complete chapter-one action prefix through normal game control, records a 52-byte semantic chapter-two checkpoint
+(chapter/route-mode/turn/RN/trace digest), and continues the same live emulator. Branching replays a clean prefix; it never loads a save fixture or savestate. `rng.c` remains the authority: the bridge only
+snapshots its public RN state and read-only consumption counter. The checkpoint digest includes `gPlaySt.chapterModeIndex` and the complete bounded 100-slot convoy in addition to roster, held items, gold,
+flags, RNG, and accepted-token state. Route-only and convoy-only changes therefore produce distinct checkpoints. Only the `MNCH`, `MNC2`, and `MNC3` paths set the typed transition flag. For `MNCH` and `MNC2`,
+the production event engine records settled campaign state immediately before `EndBMapMainForChapterTransition` changes any map state. Because `MNC3`'s `GotoChapterWithoutSave` changes chapter identity
+synchronously, that path records immediately before the call, then the scheduled `StartBattleMap` reset preserves and re-arms the same run. Ordinary actions do not rewrite a transition checkpoint. Other
+map exits, restart, suspend load, new game, full reset, timeout, resource termination, and CANCEL remain destructive boundaries and never use a recording path. Timeout and explicit CANCEL first publish an
+invalid checkpoint magic value, then zero the entire 52-byte record before deactivating the planner or restoring player control. A later START also clears the record before activation, so no cancelled-run
+checkpoint can become readable again.
 
-`TC-AUTOPLAY-PLANNER-001` proves both a scripted chooser and a bounded search chooser consume the same page/token contract, reject negative commands,
-and produce deterministic two-chapter semantic transcripts. A separately compiled libmGBA adapter is bound to the exact linked observation, command,
-and checkpoint symbols and accepts only the restricted typed/status operations above over stdin/stdout. Both Python planners drive the production-linked
-ROM through that adapter; the ROM does not self-write commands. The integration covers all semantic/action pages, opaque-token acceptance and rejection,
-same-ROM/config/seed scenario mismatch, non-idle PAGE timeout, cancellation, and same-run chapter-two checkpoint continuation. Canonical replay is
-transport-driven rather than a hard-coded observation fixture. It imports a recorded transcript, starts a new clean-boot ROM and libmGBA backend,
-reissues its START/PAGE/COMMIT/CANCEL or malformed commands at the recorded semantic boundaries, reconstructs complete observations from the newly
-returned pages, and requires the new transcript bytes to match. This compares every semantic page, ACK/result, completion, telemetry, RNG, checkpoint,
-and terminal state without a save, savestate, emulator snapshot, or raw-memory operation. The post-startup backend accepts only `READ`, `START`,
-`PAGE`, `COMMIT`, `CANCEL`, and `QUIT`. It exposes no frame-step, arbitrary-frame, keypad, or arbitrary-kind command. The enabled full-ROM test reaches
-its fixed mailbox READY boundary through a separately linked test-only bootstrap routine before stdin is exposed. Sending `STEP`, `RUN`, raw keys, or
-equivalent unknown input returns an error without advancing the emulator or changing observation, RNG, mailbox, checkpoint, or transcript state. Input
-is newline framed with at most 511 bytes before the delimiter. An overlong or NUL-bearing line is drained through its one newline or EOF and produces
-exactly one error; no suffix can become a second typed command. Numeric command words use only unsigned hexadecimal digits, consume the whole token,
-and may not exceed `0xFFFFFFFF`; signs, prefixes, whitespace inside a token, overflow, and trailing junk reject before any mailbox write. Before any
-initial OBS or stdin handling, one shared validator requires the complete 1,024-byte READY record: exact protocol/header/control values, rejection
-`NONE`, zero run/observation/count/runtime/payload/reserved words, and four nonzero identities matching the fixed bootstrap snapshot. The four-frame
-synthetic path and optional launcher both use that validator. Any malformed word terminates with an explicit startup error and no stdout or stdin
-handling. Every nonzero wire-v2 observation stores a page digest in payload word 230 (wire word 255, byte 1020). It mixes all 256 little-endian `u32`
-words in wire order with the digest word treated as zero. The ROM writes the digest before final state and command-ACK publication; the backend and
-Python decoder validate it before exposing or parsing READY, WAITING, rejection, or terminal records. Unused payload words remain zero after digest
-validation. Reserving this word reduces map records per page from 231 to 230 without changing the 92-page maximum or the 1,024-byte record.
+`TC-AUTOPLAY-PLANNER-001` proves both a scripted chooser and a bounded search chooser consume the same page/token contract, reject negative commands, and produce deterministic two-chapter semantic transcripts. A
+separately compiled libmGBA adapter is bound to the exact linked observation, command, and checkpoint symbols and accepts only the restricted typed/status operations above over stdin/stdout. Both Python planners
+drive the production-linked ROM through that adapter; the ROM does not self-write commands. The integration covers all semantic/action pages, opaque-token acceptance and rejection, same-ROM/config/seed
+scenario mismatch, non-idle PAGE timeout, cancellation, and same-run chapter-two checkpoint continuation. Canonical replay is transport-driven rather than a hard-coded observation fixture. It imports a
+recorded transcript, starts a new clean-boot ROM and libmGBA backend, reissues its START/PAGE/COMMIT/CANCEL or malformed commands at the recorded semantic boundaries, reconstructs complete observations
+from the newly returned pages, and requires the new transcript bytes to match. This compares every semantic page, ACK/result, completion, telemetry, RNG, checkpoint, and terminal state without a save,
+savestate, emulator snapshot, or raw-memory operation. The post-startup backend accepts only `READ`, `START`, `PAGE`, `COMMIT`, `CANCEL`, and `QUIT`. It exposes no frame-step, arbitrary-frame, keypad, or
+arbitrary-kind command. The enabled full-ROM test reaches its fixed mailbox READY boundary through a separately linked test-only bootstrap routine before stdin is exposed. Sending `STEP`, `RUN`, raw keys,
+or equivalent unknown input returns an error without advancing the emulator or changing observation, RNG, mailbox, checkpoint, or transcript state. Input is newline framed with at most 511 bytes before
+the delimiter. An overlong or NUL-bearing line is drained through its one newline or EOF and produces exactly one error; no suffix can become a second typed command. Numeric command words use only unsigned
+hexadecimal digits, consume the whole token, and may not exceed `0xFFFFFFFF`; signs, prefixes, whitespace inside a token, overflow, and trailing junk reject before any mailbox write. Before any initial OBS
+or stdin handling, one shared validator requires the complete 1,024-byte READY record: exact protocol/header/control values, rejection `NONE`, zero run/observation/count/runtime/payload/reserved words, and
+four nonzero identities matching the fixed bootstrap snapshot. The four-frame synthetic path and optional launcher both use that validator. Any malformed word terminates with an explicit startup error and
+no stdout or stdin handling. Every nonzero wire-v2 observation stores a page digest in payload word 230 (wire word 255, byte 1020). It mixes all 256 little-endian `u32` words in wire order with the digest
+word treated as zero. The ROM writes the digest before final state and command-ACK publication; the backend and Python decoder validate it before exposing or parsing READY, WAITING, rejection, or terminal
+records. Unused payload words remain zero after digest validation. Reserving this word reduces map records per page from 231 to 230 without changing the 92-page maximum or the 1,024-byte record.
 
-Every typed mailbox command now produces three distinct line-protocol stages: `ACK command_id kind result rejection` after the ROM consumes the exact
-nonzero command kind, `COMPLETE command_id kind response_frames` only after the requested response condition is true, and then `OBS`. The backend writes
-the command kind last, assigns monotonically increasing fixed-width host ACK IDs, and accepts the acknowledgement only after the ROM clears that kind
-and publishes its command result. Repeated commands with the same rejection code therefore remain distinct without comparing rejection values. Before
-emitting ACK, COMPLETE, or OBS, the live backend accepts only `result=1/rejection=0` or `result=0/rejection=1..10`; zero, unknown, out-of-range, and
-`0xFFFFFFFF` rejection values terminate with `INVALID_COMMAND_ACK`. Transcript import applies the same invariant before interpreting an ACK: success
-is exactly `result=1/rejection=NONE`, while rejection is exactly `result=0` with one known nonzero rejection. Zero/zero, success plus rejection,
-unknown results or rejections, and command-ID/kind mismatches fail. Every `CANCEL` is narrower: only `result=0/rejection=CANCELLED` followed by its
-documented terminal and cleared checkpoint is canonical. Every accepted COMMIT then validates its ordinal and all four token words; changing a pair to
-look rejected cannot bypass token validation while retaining a COMMITTED settlement. Completion timing is also typed protocol data: `response_frames`
-must be an exact nonnegative integer, at most 600 for ordinary or rejected commands, and at most 18,000 only for an accepted COMMIT. Booleans, strings,
-floats, negative values, overflow, and kind/bound mismatches reject before replay.
+Every typed mailbox command now produces three distinct line-protocol stages: `ACK command_id kind result rejection` after the ROM consumes the exact nonzero command kind, `COMPLETE command_id kind response_frames`
+only after the requested response condition is true, and then `OBS`. The backend writes the command kind last, assigns monotonically increasing fixed-width host ACK IDs, and accepts the acknowledgement only
+after the ROM clears that kind and publishes its command result. Repeated commands with the same rejection code therefore remain distinct without comparing rejection values. Before emitting ACK, COMPLETE,
+or OBS, the live backend accepts only `result=1/rejection=0` or `result=0/rejection=1..10`; zero, unknown, out-of-range, and `0xFFFFFFFF` rejection values terminate with `INVALID_COMMAND_ACK`. Transcript
+import applies the same invariant before interpreting an ACK: success is exactly `result=1/rejection=NONE`, while rejection is exactly `result=0` with one known nonzero rejection. Zero/zero, success plus
+rejection, unknown results or rejections, and command-ID/kind mismatches fail. Every `CANCEL` is narrower: only `result=0/rejection=CANCELLED` followed by its documented terminal and cleared checkpoint is
+canonical. Every accepted COMMIT then validates its ordinal and all four token words; changing a pair to look rejected cannot bypass token validation while retaining a COMMITTED settlement. Completion timing
+is also typed protocol data: `response_frames` must be an exact nonnegative integer, at most 600 for ordinary or rejected commands, and at most 18,000 only for an accepted COMMIT. Booleans, strings, floats,
+negative values, overflow, and kind/bound mismatches reject before replay.
 
-START, PAGE, CANCEL, and rejected commands retain bounded fast-response handling. An accepted COMMIT instead waits up to 18,000 execution frames for
-a genuinely new WAITING observation or a terminal planner state, allowing movement, camera, battle, trap, and event Procs to finish. The 120-frame
-mailbox-acknowledgement bound and 600-frame fast-response bound are separate from both that execution bound and the ROM's 300-frame/five-second decision
-deadline. While WAITING, the restricted backend polls stdin with `CLOCK_MONOTONIC`, runs the ROM at a fixed 60 Hz cadence without keypad input, and
-keeps one absolute five-second deadline per observation. Silence, partial lines, READ, malformed, or unknown floods cannot reset it; expiry publishes
-the ROM-owned timeout terminal and cleared checkpoint. An unacknowledged command emits `TRANSPORT_ERROR COMMAND_ACK_TIMEOUT`; an acknowledged COMMIT
-that never completes emits `TRANSPORT_ERROR ACTION_COMPLETION_TIMEOUT`. Either error terminates the adapter without emitting or serializing the old
-COMMITTED page. Transcript import requires that terminal error to be final and bound to an active command's exact ID/kind. ACK timeout and invalid ACK
-occur only before an ACK; ordinary response timeout requires a matching ACK; action completion timeout requires an accepted COMMIT ACK. No error may
-follow COMPLETE, response, or settlement, and clean fault replay must reproduce the same event.
+START, PAGE, CANCEL, and rejected commands retain bounded fast-response handling. An accepted COMMIT instead waits up to 18,000 execution frames for a genuinely new WAITING observation or a terminal planner
+state, allowing movement, camera, battle, trap, and event Procs to finish. The 120-frame mailbox-acknowledgement bound and 600-frame fast-response bound are separate from both that execution bound and the
+ROM's 300-frame/five-second decision deadline. While WAITING, the restricted backend polls stdin with `CLOCK_MONOTONIC`, runs the ROM at a fixed 60 Hz cadence without keypad input, and keeps one absolute
+five-second deadline per observation. Silence, partial lines, READ, malformed, or unknown floods cannot reset it; expiry publishes the ROM-owned timeout terminal and cleared checkpoint. An unacknowledged
+command emits `TRANSPORT_ERROR COMMAND_ACK_TIMEOUT`; an acknowledged COMMIT that never completes emits `TRANSPORT_ERROR ACTION_COMPLETION_TIMEOUT`. Either error terminates the adapter without emitting or
+serializing the old COMMITTED page. Transcript import requires that terminal error to be final and bound to an active command's exact ID/kind. ACK timeout and invalid ACK occur only before an ACK; ordinary
+response timeout requires a matching ACK; action completion timeout requires an accepted COMMIT ACK. No error may follow COMPLETE, response, or settlement, and clean fault replay must reproduce the same event.
 
-Host-only configuration coverage runs the generated GNUmakefile normally but replaces its recursive `$(MAKE)` boundary with a hermetic recorder. The
-recorder executes the child Makefile's variable probes with the same arguments and proves that bare Make selected `all` and release, then failed
-closed on the persisted debug-only planner before invoking an ARM compiler. The toolchain-equipped planner gate separately runs the real out-of-tree
-`configure --enable-autoplay-planner` followed by `make expansion-modern-boot-check MODERN_CONFIG=debug` to compile, link, and boot the enabled ROM. An
-explicit release request executes normally and rejects during configuration validation before compilation. The Python configuration resolver appends
-`autoplay_planner` after every pre-existing positional parameter, preserving the established BGM-policy and item-cap slots while also supporting keyword
-use. The authoritative Make gate invokes the complete `PlannerBridgeTests` class, then the individually selected toolchain/libmGBA scenarios. Class
-discovery therefore includes every future Bridge method rather than a name allowlist.
+Host-only configuration coverage runs the generated GNUmakefile normally but replaces its recursive `$(MAKE)` boundary with a hermetic recorder. The recorder executes the child Makefile's variable probes
+with the same arguments and proves that bare Make selected `all` and release, then failed closed on the persisted debug-only planner before invoking an ARM compiler. The toolchain-equipped planner gate
+separately runs the real out-of-tree `configure --enable-autoplay-planner` followed by `make expansion-modern-boot-check MODERN_CONFIG=debug` to compile, link, and boot the enabled ROM. An explicit release
+request executes normally and rejects during configuration validation before compilation. The Python configuration resolver appends `autoplay_planner` after every pre-existing positional parameter, preserving
+the established BGM-policy and item-cap slots while also supporting keyword use. The authoritative Make gate invokes the complete `PlannerBridgeTests` class, then the individually selected toolchain/libmGBA
+scenarios. Class discovery therefore includes every future Bridge method rather than a name allowlist.
 
-The authoritative resource gate builds otherwise-identical enabled and disabled debug profiles, parses both linker reports/maps/ELFs, and compares
-their real `__floating_end` plus EWRAM/IWRAM occupancy. The current complete linked delta is 12,288/12,288 ROM bytes (zero headroom), 1,172/4,096 EWRAM
-bytes (2,924 headroom), and zero IWRAM. This naturally includes every planner hook, including `cp_decide`, targeting/item/menu/action/map/lifecycle/RNG
-owners omitted by the old object subtotal. Both linked maps must contain every representative hook, and the inclusive 12,288-byte comparator rejects
-the first byte over the cap. The debug-only planner translation units use `-Os` to retain the frozen cap without changing behavior or release/archival
-code. Disabled release and archival builds omit planner state and the normal-summon executor hook while retaining their original player/executor paths. The
-shared target-query functions are modern-only. `FE8_ARCHIVAL_BUILD` retains the original inline Snag, heal, Hammerne, and Latona bodies and call graph;
-pinned agbcc produces text identical to the pre-refactor archival object and exports none of the modern query symbols.
+The authoritative resource gate builds otherwise-identical enabled and disabled debug profiles, parses both linker reports/maps/ELFs, and compares their real `__floating_end` plus EWRAM/IWRAM occupancy. The
+current complete linked delta is 12,288/12,288 ROM bytes (zero headroom), 1,172/4,096 EWRAM bytes (2,924 headroom), and zero IWRAM. This naturally includes every planner hook, including `cp_decide`,
+targeting/item/menu/action/map/lifecycle/RNG owners omitted by the old object subtotal. Both linked maps must contain every representative hook, and the inclusive 12,288-byte comparator rejects the first
+byte over the cap. The debug-only planner translation units use `-Os` to retain the frozen cap without changing behavior or release/archival code. Disabled release and archival builds omit planner state and
+the normal-summon executor hook while retaining their original player/executor paths. The shared target-query functions are modern-only. `FE8_ARCHIVAL_BUILD` retains the original inline Snag, heal, Hammerne,
+and Latona bodies and call graph; pinned agbcc produces text identical to the pre-refactor archival object and exports none of the modern query symbols.

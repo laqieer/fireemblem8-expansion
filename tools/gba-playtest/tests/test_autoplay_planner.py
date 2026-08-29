@@ -202,6 +202,21 @@ def _rewrite_transcript_identity(document, name, value):
     _rechain_transcript(document)
 
 
+def _rewrite_transcript_action(document, ordinal, changes):
+    for index, event in enumerate(document["events"]):
+        observation = event.get("observation")
+        if observation is None:
+            continue
+        for record in observation["actions"]:
+            if record["ordinal"] == ordinal:
+                record["action"].update(changes)
+        if event["event"] == "observation_complete":
+            event["candidate_set_digest"] = planner._digest(observation["actions"])
+        if index + 1 < len(document["events"]) and document["events"][index + 1]["event"] == "settled":
+            _sync_settled_observation(document["events"][index + 1], observation)
+    _rechain_transcript(document)
+
+
 def _rejected_response(document, page_kind):
     events = document["events"]
     for index, event in enumerate(events[:-4]):
@@ -1197,18 +1212,27 @@ class PlannerBridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(planner.PlannerError, "unconsumed"):
             mailbox.submit(planner.Command(planner.CommandKind.START, 1, 0))
     def test_maximum_semantic_transcript_fits_two_mib(self):
+        from scripts.generated_data.validators import extract_enum_constants
         available = planner.Availability.AVAILABLE
+        root = TESTS_DIR.parents[2]
+        ids = {name: value for name, (value, _) in extract_enum_constants(root / "include/constants/items.h", "ITEM_").items()}
+        records = json.loads((root / "src/data/items.json").read_text())["items"]
+        with_attribute = lambda attribute: frozenset(ids[record["item"]] for record in records if attribute in record.get("attributes", ()))
+        blocked = {"IA_UNBREAKABLE", "IA_HAMMERNE", "IA_LOCK_3"}
+        max_uses = {ids[record["item"]]: record.get("maxUses", 0) or 0 for record in records}
+        self.assertEqual((planner._WEAPON_IDS, planner._STAFF_IDS, planner._HAMMERNE_IDS, planner._MAX_USES), (with_attribute("IA_WEAPON"), with_attribute("IA_STAFF"), frozenset(ids[record["item"]] for record in records if set(record.get("attributes", ())) & {"IA_WEAPON", "IA_STAFF"} and not set(record.get("attributes", ())) & blocked), bytes(max_uses.get(index, 0) for index in range(0xCE))))
         field_values = (64 | (64 << 16), 0, 1, 0, 0, 0, 0, 0)
         fields = tuple(
             planner.Field(name, source, bound, available, field_values[index])
             for index, (name, source, bound) in enumerate(planner._SEMANTIC_FIELD_NAMES.values()))
-        map_cells = tuple(planner.MapCell(index % 64, index // 64, 1, 0, available) for index in range(planner.MAX_MAP_CELLS))
-        inventory_digest = 2166136261
-        for _ in range(planner.UNIT_ITEM_COUNT):
-            inventory_digest = planner._mix_digest(inventory_digest, 0x1E01)
-        units = tuple(planner.UnitRecord(slot, 1, 1, (0, 0), (20, 20), 0, inventory_digest, available) for slot in planner._ROSTER_SLOTS)
+        map_cells = tuple(planner.MapCell(index % 64, index // 64, {4: 0x1E, 5: 0x21}.get(index, 1), 0, available) for index in range(planner.MAX_MAP_CELLS))
+        item_states = {(1, 1): 0x1E4B, (1, 2): 0x036C, (1, 3): 0x016A, (1, 4): 0x0357, (2, 1): 0x2E01, (2, 2): 0x036C}
         inventory = tuple(
-            planner.InventoryRecord(unit, slot, 1, 30, 0x1E01, available) for unit in planner._ROSTER_SLOTS for slot in range(planner.UNIT_ITEM_COUNT))
+            planner.InventoryRecord(unit, slot, raw & 0xFF, raw >> 8, raw, available) for unit in planner._ROSTER_SLOTS for slot in range(planner.UNIT_ITEM_COUNT) for raw in (item_states.get((unit, slot), 0x1E01), ))
+        digests = {unit: 2166136261 for unit in planner._ROSTER_SLOTS}
+        for record in inventory:
+            digests[record.unit] = planner._mix_digest(digests[record.unit], record.raw_item)
+        units = tuple(planner.UnitRecord(slot, 1, 0x33 if slot == 1 else 1, (0, 0), (20, 20), 0, digests[slot], available) for slot in planner._ROSTER_SLOTS)
         resources = (
             planner.ResourceRecord(planner.ValueKind.GOLD, None, 999, None, None, available),
             *(planner.ResourceRecord(planner.ValueKind.CONVOY_ITEM, index, 0, 0, 0, planner.Availability.EMPTY) for index in range(planner.CONVOY_ITEM_COUNT)),
@@ -1218,9 +1242,16 @@ class PlannerBridgeTests(unittest.TestCase):
         flags = tuple(
             planner.FlagRecord(planner.ValueKind.PERMANENT_FLAG if index < 2048 else planner.ValueKind.CHAPTER_FLAG, index % 2048, index
                                & 1, available) for index in range(4096))
-        actions = tuple(
-            planner.ActionRecord(index, planner.Action("MOVE_WAIT", 1, (index % 64, index // 64)), planner.OpaqueToken(index, index + 1, index + 2, index + 3))
-            for index in range(planner.MAX_ACTIONS))
+        family_actions = (
+            planner.Action("COMBAT", 1, (0, 0), target=0x81, item_slot=0),
+            planner.Action("STAFF", 1, (63, 63), target=2, item_slot=1),
+            planner.Action("USE_ITEM", 1, (63, 62), item_slot=2),
+            planner.Action("PICK", 1, (3, 0), item_slot=3, target_position=(4, 0)),
+            planner.Action("STAFF", 1, (62, 63), target=2, item_slot=4, target_item_slot=0),
+            planner.Action("COMBAT", 1, (63, 63), target=0x81),
+            planner.Action("PICK", 1, (5, 0), target_position=(5, 0)),
+        )
+        actions = tuple(planner.ActionRecord(index, family_actions[index] if index < len(family_actions) else planner.Action("MOVE_WAIT", 1, (index % 64, index // 64)), planner.OpaqueToken(index, index + 1, index + 2, index + 3)) for index in range(planner.MAX_ACTIONS))
         groups = tuple(planner.GroupRecord(index + 1, tuple(range(1, 17)), available) for index in range(8))
         objectives = tuple(
             planner.ObjectiveRecord(index + 1, 0, index + 1, 0xFFFF, 0xFFFF, 1, 2, 20, index % 5 + 1, 1, (0, 0, 63, 63), 1, 16, available)
@@ -1297,6 +1328,22 @@ class PlannerBridgeTests(unittest.TestCase):
         exported = transport.transcript.export()
         self.assertLessEqual(len(exported), planner.MAX_TRACE_BYTES)
         self.assertEqual(planner.PlannerTranscript.import_production_bytes(exported).export(), exported)
+        semantic = asdict(complete)
+        inventory_by_slot = {(record["unit"], record["slot"]): record for record in semantic["inventory"]}
+        units_by_slot = {unit["slot"]: unit for unit in semantic["units"]}
+        map_by_position = {(cell["x"], cell["y"]): cell for cell in semantic["map_cells"]}
+        self.assertTrue(all(planner._observation_action_item_valid(asdict(action), inventory_by_slot, units_by_slot, map_by_position) for action in family_actions))
+        missing_target = dict(inventory_by_slot)
+        missing_target.pop((2, 0))
+        self.assertFalse(planner._observation_action_item_valid(asdict(family_actions[4]), missing_target, units_by_slot, map_by_position))
+        for ordinal, changes in (
+                (0, {"item_slot": 2}), (1, {"item_slot": 0}),
+                (1, {"target_item_slot": 0}), (2, {"item_slot": 0}),
+                (3, {"item_slot": 2}), (4, {"target_item_slot": None}),
+                (4, {"target_item_slot": 1}), (4, {"target_item_slot": 2})):
+            document = json.loads(exported)
+            _rewrite_transcript_action(document, ordinal, changes)
+            _assert_replay_rejected(self, planner._canonical(document), "actions are not canonical", validation_mode=planner.ValidationMode.PRODUCTION)
         malformed_pages = list(pages)
         malformed_pages[-1] = replace(
             malformed_pages[-1], record_start=0)
@@ -1474,8 +1521,7 @@ class PlannerBridgeTests(unittest.TestCase):
                 for implementation in (
                         planner.ScriptedPlanner(),
                         planner.BoundedSearchPlanner(max_nodes=512)):
-                    self.assertEqual(
-                        implementation.choose(obstacle).ordinal, 0)
+                    self.assertEqual(implementation.choose(obstacle).ordinal, 0)
                 transport = _PageReplayTransport(
                     obstacle_pages, planner.ValidationMode.PRODUCTION)
                 replayed = planner.collect_observation_pages(
@@ -1753,11 +1799,12 @@ class PlannerBridgeTests(unittest.TestCase):
             },
         }
         units = {2: {"position": [3, 2]}}
+        map_cells = {(3, 2): {"terrain": 1, "unit": 0}}
         tile = asdict(planner.Action("USE_ITEM", 1, (2, 2), item_slot=0, target_position=(3, 2)))
-        self.assertTrue(planner._observation_action_item_valid(tile, inventory, units))
+        self.assertTrue(planner._observation_action_item_valid(tile, inventory, units, map_cells))
         inventory[(1, 0)]["item_id"] = 0x7D
         ring = asdict(planner.Action("USE_ITEM", 1, (2, 2), target=2, item_slot=0, target_position=(3, 2)))
-        self.assertTrue(planner._observation_action_item_valid(ring, inventory, units))
+        self.assertTrue(planner._observation_action_item_valid(ring, inventory, units, map_cells))
         for mutation, item_id in (
             ({
                 **ring, "target_position": (2, 3)
@@ -1770,7 +1817,7 @@ class PlannerBridgeTests(unittest.TestCase):
             }, 0x7A),
         ):
             inventory[(1, 0)]["item_id"] = item_id
-            self.assertFalse(planner._observation_action_item_valid(mutation, inventory, units))
+            self.assertFalse(planner._observation_action_item_valid(mutation, inventory, units, map_cells))
         with self.assertRaisesRegex(
                 planner.PlannerError,
                 "invalid optional item-slot sentinel",
@@ -1975,6 +2022,32 @@ class PlannerBridgeTests(unittest.TestCase):
         self.assertEqual(atomic.transcript.export(), trace_before)
         self.assertEqual(atomic._next_observation_id, next_id_before)
         self.assertIsNone(atomic._observation)
+        class IntSubclass(int):
+            pass
+        token_bridge, token_observation, token_command = _single_action_bridge()
+        token_before, choose, transport = token_bridge.transcript.export(), mock.Mock(), mock.Mock()
+        for invalid in (True, False, 1.0, IntSubclass(1), -1, 0x100000000):
+            for index in range(4):
+                words = [0] * 4
+                words[index] = invalid
+                with self.assertRaises(planner.PlannerError):
+                    token_bridge.commit(replace(token_command, token=planner.OpaqueToken(*words)))
+                    choose(token_observation)
+                    transport.exchange(token_command)
+        for factory in (
+                lambda: planner.ActionRecord(0, planner.Action("MOVE_WAIT", 1, (0, 0)), object()),
+                lambda: planner.Command(planner.CommandKind.COMMIT, 1, 1, 0, object())):
+            with self.assertRaises(planner.PlannerError):
+                factory()
+        self.assertEqual(planner.OpaqueToken(0, 0xFFFFFFFF, 0, 0).words, (0, 0xFFFFFFFF, 0, 0))
+        object.__setattr__(token_command.token, "word0", float(token_command.token.word0))
+        with self.assertRaises(planner.PlannerError):
+            token_bridge.commit(token_command)
+        with self.assertRaises(planner.PlannerError):
+            planner.ScriptedPlanner().choose(replace(token_observation, actions=token_bridge._all_actions, total_action_count=1))
+        self.assertEqual(token_bridge.transcript.export(), token_before)
+        choose.assert_not_called()
+        transport.exchange.assert_not_called()
     def test_security_boundary_has_no_raw_memory_save_or_network_surface(self):
         root = TESTS_DIR.parents[2]
         target = (root / "src" / "expansion_autoplay_planner.c").read_text(encoding="utf-8")

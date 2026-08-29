@@ -125,6 +125,12 @@ _DEFAULT_ACTION_ID = {kind: max(action_ids) for kind, action_ids in _ACTION_IDS_
 _TILE_TARGET_ITEM_IDS = frozenset({0x7A, 0x7B})
 _DANCE_RING_ITEM_IDS = frozenset({0x7D, 0x7E, 0x7F, 0x80})
 _OBSTACLE_TERRAIN_IDS = frozenset({0x1B, 0x33})
+_WEAPON_IDS = frozenset((*range(1, 0x4B), 0x5A, 0x78, *range(0x81, 0x88), 0x8B, *range(0x8D, 0x97), 0xA1, *range(0xA7, 0xB7), *range(0xBC, 0xC1), *range(0xC2, 0xCC)))
+_STAFF_IDS = frozenset((*range(0x4B, 0x5A), 0x8C, 0xA6))
+_SELF_USE_IDS = frozenset((*range(0x5B, 0x69), *range(0x6C, 0x71), 0x88, 0x89, 0x8A, 0x97, 0x98, 0x99, 0xA2, 0xB7, 0xC1))
+_PICK_IDS_BY_TERRAIN = {0x14: {0x6B}, 0x1E: {0x6A, 0x6B}, 0x21: {0x69, 0x6B, 0x79}}
+_HAMMERNE_IDS = (_WEAPON_IDS | _STAFF_IDS) - {0x57, 0x8B, 0x8F, 0x90, *range(0xA7, 0xAC), *range(0xAD, 0xB5)}
+_MAX_USES = bytes.fromhex("002e1e1e1423190f28282d1e1414121e190f0f122d1e1e14281e1410140f0f2d1e14281e14121414140f0f14322d1e1428141e161405050528231e0514141e231e190514142d1e1405141e1e140f0f080a03030305030a030a0f1e010101010101010101010101010101010f0303030305000101010101012d050101000f0f0f0f3c3c3c3c1e141e01010100031e1e00001e1e1e1e101201010101010101010101283c3c3c0001000000320005000000000000000005140101010101000000000000000000000000000000000100")
 _VALID_WIRE_REJECTION_CODES = frozenset(range(1, 11))
 _WIRE_STALE_OBSERVATION = 2
 _REJECTIONS_BY_COMMAND = {
@@ -171,8 +177,7 @@ class OpaqueToken:
     word2: int
     word3: int
     def __post_init__(self) -> None:
-        if any(not 0 <= word <= 0xFFFFFFFF for word in self.words):
-            raise PlannerError("opaque token word is outside u32 range")
+        _validate_opaque_token(self, "opaque token")
     @property
     def words(self) -> tuple[int, int, int, int]:
         return (self.word0, self.word1, self.word2, self.word3)
@@ -183,6 +188,8 @@ class ActionRecord:
     ordinal: int
     action: Action
     token: OpaqueToken
+    def __post_init__(self) -> None:
+        _validate_opaque_token(self.token, "action token")
 
 
 @dataclass(frozen=True)
@@ -363,6 +370,9 @@ class Command:
     action_ordinal: int | None = None
     token: OpaqueToken | None = None
     page_index: int | None = None
+    def __post_init__(self) -> None:
+        if self.token is not None:
+            _validate_opaque_token(self.token, "command token")
 
 
 def _command_payload(command: Command) -> dict[str, object]:
@@ -374,6 +384,7 @@ def _command_payload(command: Command) -> dict[str, object]:
     if command.kind is CommandKind.PAGE:
         payload["page_index"] = command.page_index
     elif command.kind is CommandKind.COMMIT:
+        _validate_opaque_token(command.token, "command token")
         payload["action_ordinal"] = command.action_ordinal
         payload["token"] = (asdict(command.token) if command.token is not None else None)
     return payload
@@ -703,30 +714,59 @@ def _require_availability(value: object, context: str) -> str:
     return _require_text(value, context, _AVAILABILITY_VALUES)
 
 
+def _validate_opaque_token(token: object, context: str) -> None:
+    if type(token) is not OpaqueToken:
+        raise PlannerError(f"invalid planner {context} type")
+    for word in token.words:
+        _require_int(word, context)
+
+
 def _observation_action_item_valid(
     action: dict[str, object],
     inventory: dict[tuple[int, int], dict[str, object]],
     units: dict[int, dict[str, object]],
+    map_cells: dict[tuple[int, int], dict[str, object]],
 ) -> bool:
     kind = action["kind"]
     item_slot = action["item_slot"]
+    target = action["target"]
+    target_position = tuple(action["target_position"])
+    cell = map_cells.get(target_position)
+    distance = sum(abs(left - right) for left, right in zip(action["destination"], target_position))
     if item_slot is None:
-        return kind not in {"STAFF", "USE_ITEM"}
+        return (kind in {"MOVE_WAIT", "SUMMON"}
+                or kind == "COMBAT" and target != 0 and target_position == (0, 0)
+                or kind == "PICK" and units.get(action["actor"], {}).get("unit_class") == 0x33
+                and cell is not None and cell["terrain"] in _PICK_IDS_BY_TERRAIN
+                and distance == (0 if cell["terrain"] == 0x21 else 1))
     item = inventory.get((action["actor"], item_slot))
     if item is None or item["availability"] != Availability.AVAILABLE or item["raw_item"] == 0:
         return False
-    if kind != "USE_ITEM":
-        return True
     item_id = item["item_id"]
-    target = action["target"]
-    target_position = tuple(action["target_position"])
-    distance = sum(abs(left - right) for left, right in zip(action["destination"], target_position))
+    if kind == "COMBAT":
+        return item_id in _WEAPON_IDS
+    if kind == "STAFF":
+        target_slot = action["target_item_slot"]
+        if item_id not in _STAFF_IDS - {0xA6} or (item_id == 0x57) != (target_slot is not None):
+            return False
+        if item_id == 0x57:
+            target_item = inventory.get((target, target_slot))
+            return ((action["actor"] ^ target) & 0xC0) == 0 and target_item is not None and target_item["availability"] == Availability.AVAILABLE and target_item["raw_item"] != 0 and target_item["item_id"] in _HAMMERNE_IDS and target_item["uses"] != _MAX_USES[target_item["item_id"]]
+        if item_id in {0x4F, 0x8C}:
+            return target == 0 and target_position == (0, 0)
+        if item_id in {0x56, 0x58}:
+            return target == 0 and cell is not None and (item_id != 0x58 or cell["terrain"] == 0x1E)
+        return target != 0 and (item_id == 0x54 or target_position == (0, 0))
+    if kind == "PICK":
+        return cell is not None and distance == (0 if cell["terrain"] == 0x21 else 1) and item["uses"] != 0 and item_id in _PICK_IDS_BY_TERRAIN.get(cell["terrain"], ())
+    if kind != "USE_ITEM":
+        return False
     if item_id in _TILE_TARGET_ITEM_IDS:
-        return target == 0 and distance == 1
+        return target == 0 and distance == 1 and cell is not None and cell["unit"] in {0, action["actor"]}
     if item_id in _DANCE_RING_ITEM_IDS:
         unit = units.get(target)
         return (unit is not None and target != action["actor"] and target_position == tuple(unit["position"]) and distance == 1)
-    return target == 0 and target_position == (0, 0)
+    return item_id in _SELF_USE_IDS and target == 0 and target_position == (0, 0)
 
 
 def _observation_action_target_valid(
@@ -2588,6 +2628,8 @@ def _validate_complete_observation(
                 or bool(unit["rescue_partner"]) != bool(unit["rescued"] or unit["rescuing"])):
             raise PlannerError("complete observation unit semantics mismatch")
     actions = observation["actions"]
+    for action in actions:
+        _validate_action_schema(action)
     if (len(actions) != observation["total_action_count"] or tuple(action["ordinal"] for action in actions) != tuple(range(len(actions)))
             or len({_canonical(action["action"])
                     for action in actions}) != len(actions) or len({tuple(action["token"][f"word{index}"] for index in range(4))
@@ -2595,10 +2637,7 @@ def _validate_complete_observation(
             or map_size is not None and any(x >= map_size[0] or y >= map_size[1] for record in actions for x, y in (
                 record["action"]["destination"],
                 record["action"]["target_position"],
-            )) or strict and any(action["action"]["kind"] == "STAFF" and next(
-                (record["item_id"] for record in inventory if record["unit"] == action["action"]["actor"] and record["slot"] == action["action"]["item_slot"]
-                 ), None) not in {0x54, 0x56, 0x58} and tuple(action["action"]["target_position"]) != (0, 0) for action in actions)
-            or (strict or inventory) and any(not _observation_action_item_valid(action["action"], inventory_by_slot, units_by_slot) for action in actions)
+            )) or (strict or inventory) and any(not _observation_action_item_valid(action["action"], inventory_by_slot, units_by_slot, map_cells_by_position) for action in actions)
             or any(
                 not _observation_action_target_valid(
                     action["action"], map_cells_by_position)
