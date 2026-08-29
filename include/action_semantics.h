@@ -35,6 +35,14 @@ bool ActionSemantics_IsKeyTarget(
     int originY,
     int targetX,
     int targetY);
+bool ActionSemantics_IsTargetedItemTarget(
+    struct Unit* unit,
+    struct Unit* target,
+    int item,
+    int originX,
+    int originY,
+    int targetX,
+    int targetY);
 bool ActionSemantics_IsNormalSummonAvailable(
     struct Unit* unit,
     bool restoreUnavailable);

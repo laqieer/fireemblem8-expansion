@@ -5,6 +5,7 @@
 
 #include "bm.h"
 #include "bmbattle.h"
+#include "bmitem.h"
 #include "bmmap.h"
 #include "bmmind.h"
 #include "bmtrick.h"
@@ -35,6 +36,7 @@ s8 AiPickAction(struct CpPerformProc* proc);
 void AiDKSummonAction(struct CpPerformProc* proc);
 void GenerateSummonUnitDef(void);
 void AiStartCombatAction(struct CpPerformProc* proc);
+s8 AiUseItemAction(struct CpPerformProc* proc);
 void CpDecide_CompleteDecisionForTest(ProcPtr proc);
 void CpPerform_Cleanup(struct CpPerformProc* proc);
 s8 AiDummyAction(struct CpPerformProc* proc);
@@ -81,6 +83,7 @@ static int sMapCleanupCount;
 static int sTelemetryCount;
 static int sRngCount;
 static int sMapChangeCount;
+static int sItemUseCount;
 static u8 sUnitIds[2] = { 1, 0 };
 
 struct ProcCmd gProcScr_CpPerform[] = { PROC_END };
@@ -128,9 +131,19 @@ bool ExpansionAutoplayPlanner_PrepareActionData(
     if (sSnagMode)
         return decision->targetId == 0
             && decision->xTarget == sTrap.xPos
-            && decision->yTarget == sTrap.yPos
+            && (decision->yTarget == sTrap.yPos
+                || decision->yTarget == sTrap.yPos + 1)
             && sTrap.type == TRAP_OBSTACLE
-            && gBmMapTerrain[sTrap.yPos][sTrap.xPos] == TERRAIN_SNAG;
+            && (gBmMapTerrain[decision->yTarget][decision->xTarget]
+                    == TERRAIN_SNAG
+                || gBmMapTerrain[decision->yTarget][decision->xTarget]
+                    == TERRAIN_WALL_DAMAGED);
+    if (decision->actionId == AI_ACTION_USEITEM)
+    {
+        gActionData.targetIndex = decision->targetId;
+        gActionData.xOther = decision->xTarget;
+        gActionData.yOther = decision->yTarget;
+    }
     return sPrepareResult;
 }
 
@@ -219,6 +232,46 @@ struct Trap* GetTrapAt(int x, int y)
         ? &sTrap : NULL;
 }
 
+struct Trap* GetTrap(int index)
+{
+    return index == 0 ? &sTrap : NULL;
+}
+
+struct Trap* GetObstacleTrapForTarget(int x, int y)
+{
+    if (sTrap.type != TRAP_OBSTACLE || sTrap.xPos != x)
+        return NULL;
+    if (sTrap.yPos == y)
+        return &sTrap;
+    return y == sTrap.yPos + 1
+        && gBmMapTerrain[y][x] == TERRAIN_WALL_DAMAGED
+        ? &sTrap : NULL;
+}
+
+int GetObstacleHpAt(int x, int y)
+{
+    struct Trap* trap = GetObstacleTrapForTarget(x, y);
+    return trap == NULL ? 0 : trap->extra;
+}
+
+int GetBallistaItemAt(int x, int y)
+{
+    return sTrap.type == TRAP_BALLISTA
+        && sTrap.xPos == x && sTrap.yPos == y
+        ? sTrap.extra | (sTrap.data[TRAP_EXTDATA_BLST_ITEMUSES] << 8)
+        : 0;
+}
+
+int GetItemAttributes(int item) { (void)item; return IA_WEAPON; }
+int GetItemType(int item) { (void)item; return ITYPE_BOW; }
+int GetItemUses(int item) { return (item >> 8) & 0xFF; }
+
+void ActionStaffDoorChestUseItem(ProcPtr proc)
+{
+    (void)proc;
+    sItemUseCount++;
+}
+
 void EquipUnitItemSlot(struct Unit* unit, int slot)
 {
     u16 item = unit->items[slot];
@@ -270,6 +323,7 @@ static void PrepareDecision(
     gAiDecision.actionPerformed = true;
     sApplyCount = 0;
     sPrepareResult = true;
+    sItemUseCount = 0;
 }
 
 int main(void)
@@ -440,6 +494,61 @@ int main(void)
     AiStartCombatAction(NULL);
     CHECK(sApplyCount == 1 && !gAiDecision.actionPerformed,
           "destroyed snag must not reach the executor");
+    sTrap.type = TRAP_OBSTACLE;
+    sTrap.xPos = 3;
+    sTrap.yPos = 2;
+    sTrap.extra = 20;
+    sTerrainData[2][3] = TERRAIN_WALL_DAMAGED;
+    sTerrainData[3][3] = TERRAIN_WALL_DAMAGED;
+    PrepareDecision(&sUnit, 2, 3, 3, 3);
+    gAiDecision.actionId = AI_ACTION_COMBAT;
+    gAiDecision.targetId = 0;
+    gAiDecision.itemSlot = 0;
+    AiStartCombatAction(NULL);
+    CHECK(sApplyCount == 1 && gActionData.trapType == 20,
+          "lower damaged-wall cell must lower shared obstacle HP");
+    InitObstacleBattleUnit();
+    gBattleTarget.unit.curHP = 0;
+    UpdateObstacleFromBattle(&gBattleTarget);
+    CHECK(sTrap.type == TRAP_NONE && sMapChangeCount == 2,
+          "lower damaged-wall combat must destroy owning obstacle");
+    sSnagMode = false;
+    sTrap.type = TRAP_BALLISTA;
+    sTrap.xPos = 4;
+    sTrap.yPos = 3;
+    sTrap.extra = ITEM_BALLISTA_REGULAR;
+    sTrap.data[TRAP_EXTDATA_BLST_ITEMUSES] = 3;
+    PrepareDecision(&sUnit, 4, 3, 0, 0);
+    gAiDecision.actionId = AI_ACTION_COMBAT;
+    gAiDecision.targetId = 2;
+    gAiDecision.itemSlot = BU_ISLOT_AUTO;
+    AiStartCombatAction(NULL);
+    CHECK(sApplyCount == 1
+              && gActionData.itemSlotIndex == BU_ISLOT_BALLISTA
+              && gActionData.targetIndex == 2,
+          "ballista combat must lower through BU_ISLOT_BALLISTA");
+    gBattleActor.unit = sUnit;
+    gBattleActor.unit.ballistaIndex = 0;
+    SetBattleUnitWeaponBallista(&gBattleActor);
+    CHECK(gBattleActor.weapon == (ITEM_BALLISTA_REGULAR | (3 << 8)),
+          "real ballista battle must resolve selected trap weapon");
+    gBattleActor.weapon = ITEM_BALLISTA_REGULAR | (2 << 8);
+    gBattleStats.config = BATTLE_CONFIG_BALLISTA;
+    BattleApplyBallistaUpdates();
+    CHECK(sTrap.data[TRAP_EXTDATA_BLST_ITEMUSES] == 2,
+          "real ballista battle must consume selected trap uses");
+    PrepareDecision(&sUnit, 3, 3, 4, 3);
+    gAiDecision.actionId = AI_ACTION_USEITEM;
+    gAiDecision.targetId = 2;
+    gAiDecision.itemSlot = 1;
+    AiUseItemAction(NULL);
+    CHECK(sItemUseCount == 1
+              && gActionData.subjectIndex == 1
+              && gActionData.targetIndex == 2
+              && gActionData.itemSlotIndex == 1
+              && gActionData.xOther == 4
+              && gActionData.yOther == 3,
+          "targeted item must lower through AiUseItemAction");
     puts("PLANNER_EXECUTOR_HOST_TEST: PASS");
     return 0;
 }

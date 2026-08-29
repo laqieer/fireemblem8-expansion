@@ -620,8 +620,10 @@ coordinate targets and execute the selected coordinate rather than stale
 defaults. Every actor-item action token and candidate set bind the selected slot and raw
 item/uses. Hammerne also binds each selected repairable target slot and raw
 target item on a same-faction unit; green allies and enemies reject. Combat
-includes every legal Snag obstacle after ordinary
-unit targets, binds `targetId=0` plus coordinates, and executes real obstacle
+includes every legal Snag and both damaged-wall cells, plus every target from
+each reachable usable ballista using the canonical no-item sentinel. Mine,
+Light Rune, and all four dance rings publish their exact production tile/unit
+targets. Obstacle choices bind `targetId=0` plus coordinates and execute real obstacle
 damage and destruction. Fortify requires an injured allied non-caster within
 MAG/2, while Latona excludes its caster and retains every eligible non-caster
 in the current phase domain. Rogue Pick remains item-free; each non-Rogue
@@ -655,7 +657,7 @@ goal, and proves the persisted planner fails closed without an ARM compiler.
 The toolchain gate separately executes the real explicit debug-target
 compile/link/boot path.
 Otherwise-identical enabled/disabled debug maps and ELFs bind the complete
-planner delta to `__floating_end`: 11,200/12,288 ROM bytes, 1,172/4,096 EWRAM,
+planner delta to `__floating_end`: 12,176/12,288 ROM bytes, 1,172/4,096 EWRAM,
 and zero IWRAM. Both maps must contain every named representative hook; the
 inclusive linked-delta comparator accepts 12,288 bytes and rejects 12,289.
 Every wire page has a count from 1 through 92 and an in-range index. Before

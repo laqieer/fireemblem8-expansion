@@ -51,6 +51,7 @@ u8** gBmMapTerrain;
 u8** gBmMapFog;
 u8** gBmMapRange;
 u8** gWorkingBmMap;
+s8 TerrainTable_MovCost_FlyNormal[0x100];
 u8 gSummonConfig[4][2] = {
     { CHARACTER_EWAN, CHARACTER_SUMMON_EWAN },
     { 0, 0 },
@@ -276,9 +277,17 @@ int GetItemAttributes(int item)
 }
 
 int GetItemIndex(int item) { return item & 0xFF; }
-int GetItemMinRange(int item) { (void)item; return 1; }
+int GetItemMinRange(int item)
+{
+    int itemId = GetItemIndex(item);
+    return itemId >= ITEM_BALLISTA_REGULAR
+        && itemId <= ITEM_BALLISTA_KILLER ? 2 : 1;
+}
 int GetItemMaxRange(int item)
 {
+    if (GetItemIndex(item) >= ITEM_BALLISTA_REGULAR
+        && GetItemIndex(item) <= ITEM_BALLISTA_KILLER)
+        return 4;
     if (GetItemIndex(item) == ITEM_STAFF_WARP
         || GetItemIndex(item) == ITEM_STAFF_TORCH)
         return 0;
@@ -326,10 +335,46 @@ struct Trap* GetTrapAt(int x, int y)
     return NULL;
 }
 
+struct Trap* GetObstacleTrapForTarget(int x, int y)
+{
+    struct Trap* trap = GetTrapAt(x, y);
+
+    if (trap != NULL && trap->type == TRAP_OBSTACLE)
+        return trap;
+    if (y <= 0 || gBmMapTerrain[y][x] != TERRAIN_WALL_DAMAGED)
+        return NULL;
+    trap = GetTrapAt(x, y - 1);
+    return trap != NULL && trap->type == TRAP_OBSTACLE
+        ? trap : NULL;
+}
+
+int GetObstacleHpAt(int x, int y)
+{
+    struct Trap* trap = GetObstacleTrapForTarget(x, y);
+    return trap == NULL ? 0 : trap->extra;
+}
+
+int GetBallistaItemAt(int x, int y)
+{
+    struct Trap* trap = GetTrapAt(x, y);
+
+    if (trap == NULL
+        || trap->type != TRAP_BALLISTA
+        || trap->data[TRAP_EXTDATA_BLST_ITEMUSES] == 0)
+        return 0;
+    return trap->extra
+        | (trap->data[TRAP_EXTDATA_BLST_ITEMUSES] << 8);
+}
+
+struct Trap* GetRiddenBallistaAt(int x, int y)
+{
+    return GetBallistaItemAt(x, y) == 0 ? NULL : GetTrapAt(x, y);
+}
+
 struct Trap* AddTrap(int x, int y, int trapType, int meta)
 {
     struct Trap* trap = &sTraps[sTrapApplyCount];
-    if (trapType != TRAP_TORCHLIGHT || meta != 8
+    if ((trapType == TRAP_TORCHLIGHT && meta != 8)
         || sTrapApplyCount >= TRAP_MAX_COUNT)
     {
         sTrapContractFailed = true;
@@ -340,6 +385,17 @@ struct Trap* AddTrap(int x, int y, int trapType, int meta)
     trap->type = trapType;
     sTrapApplyCount++;
     return trap;
+}
+
+struct Trap* AddLightRune(int x, int y)
+{
+    return AddTrap(x, y, TRAP_LIGHT_RUNE, 0);
+}
+
+void SetUnitStatusExt(struct Unit* unit, int status, int duration)
+{
+    unit->statusIndex = status;
+    unit->statusDuration = duration;
 }
 
 int MakeNewItem(int item) { return (item & 0xFF) | 0xFF00; }
@@ -547,7 +603,6 @@ static bool SelectAction(struct AiDecision* decision, int actionId, int occurren
 {
     u32 count, index, seen = 0;
     u32 actionPageCount, actionPage, actionStart, actionCount;
-
     if (CollectActions(&count) != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK)
         return false;
     for (index = 0; index < count; index++)
@@ -663,6 +718,9 @@ static void ResetActionFixture(int width, int height)
     memset(&sSummon, 0, sizeof(sSummon));
     memset(sTraps, 0, sizeof(sTraps));
     memset(&gActionData, 0, sizeof(gActionData));
+    memset(TerrainTable_MovCost_FlyNormal, 0,
+           sizeof(TerrainTable_MovCost_FlyNormal));
+    TerrainTable_MovCost_FlyNormal[1] = 1;
     sCharacter.number = 1;
     sClass.number = 1;
     sClass.attributes = 0;
@@ -694,6 +752,18 @@ static int CountActionId(u32 count, int actionId)
     int index;
     for (index = 0; index < (int)count; index++)
         if (sEnumeratedActions[index].actionId == actionId)
+            result++;
+    return result;
+}
+
+static int CountActionSlot(u32 count, int actionId, int itemSlot)
+{
+    int result = 0;
+    int index;
+
+    for (index = 0; index < (int)count; index++)
+        if (sEnumeratedActions[index].actionId == actionId
+            && sEnumeratedActions[index].itemSlot == itemSlot)
             result++;
     return result;
 }
@@ -1570,7 +1640,6 @@ static int TestCandidateInventoryBinding(void)
     struct ExpansionAutoplayPlannerActionV2 original, refreshed;
     u32 ordinal;
     u16 item;
-
     ResetActionFixture(5, 5);
     sUnit.items[0] = ITEM_SWORD_IRON | (2 << 8);
     sUnit.items[1] = ITEM_SWORD_IRON | (4 << 8);
@@ -1602,7 +1671,6 @@ static int TestCandidateInventoryBinding(void)
     CHECK(CommitCurrent(&decision, ordinal, &original.token0)
               == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED,
           "ignore unselected unusable inventory");
-
     ResetActionFixture(5, 5);
     sUnit.items[0] = ITEM_STAFF_TORCH | (2 << 8);
     CHECK(SelectAction(&decision, AI_ACTION_STAFF, 0, &ordinal, &original), "publish Staff");
@@ -1610,7 +1678,6 @@ static int TestCandidateInventoryBinding(void)
     CHECK(CommitBecameIllegal(&decision, ordinal, &original.token0), "bind Staff uses");
     sUnit.items[0] = 0;
     CHECK(CommitBecameIllegal(&decision, ordinal, &original.token0), "reject empty Staff");
-
     ResetActionFixture(5, 5);
     sUnit.curHP = 10;
     sUnit.items[0] = ITEM_VULNERARY | (2 << 8);
@@ -1618,7 +1685,6 @@ static int TestCandidateInventoryBinding(void)
           "publish use-item");
     sUnit.items[0] = ITEM_ELIXIR | (2 << 8);
     CHECK(CommitBecameIllegal(&decision, ordinal, &original.token0), "bind item replacement");
-
     ResetActionFixture(5, 5);
     sUnit.items[0] = ITEM_STAFF_REPAIR | (2 << 8);
     sAllyCharacter.number = 2;
@@ -1638,6 +1704,250 @@ static int TestCandidateInventoryBinding(void)
     sAlly.items[0] = sAlly.items[1];
     sAlly.items[1] = item;
     CHECK(CommitBecameIllegal(&decision, ordinal, &original.token0), "bind Hammerne swap");
+    return 0;
+}
+
+static int TestBallistaAndWallCombat(void)
+{
+    struct AiDecision decision = { 0 };
+    struct ExpansionAutoplayPlannerActionV2 selected;
+    struct Trap* ballista;
+    u32 count, ordinal = 0;
+    int index, occurrence = 0;
+    int wallTop = 0, wallBottom = 0, snag = 0;
+    ResetActionFixture(8, 8);
+    sClass.attributes = CA_BALLISTAE;
+    sUnit.items[0] = ITEM_SWORD_IRON | (20 << 8);
+    sMovementData[2][3] = 1;
+    sMovementData[2][4] = 2;
+    sTraps[0].type = TRAP_BALLISTA;
+    sTraps[0].xPos = 2;
+    sTraps[0].yPos = 2;
+    sTraps[0].extra = ITEM_BALLISTA_REGULAR;
+    sTraps[0].data[TRAP_EXTDATA_BLST_ITEMUSES] = 3;
+    sTraps[1].type = TRAP_BALLISTA;
+    sTraps[1].xPos = 3;
+    sTraps[1].yPos = 2;
+    sTraps[1].extra = ITEM_BALLISTA_LONG;
+    sTraps[1].data[TRAP_EXTDATA_BLST_ITEMUSES] = 2;
+    SetupTestUnit(&sEnemy, &sEnemyCharacter, &sEnemyClass, 0x81, 5, 2);
+    sUnitData[2][5] = 0x81;
+    CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 2
+              && CountActionSlot(count, AI_ACTION_COMBAT, 0) != 0,
+          "inventory and two reachable ballista attacks must coexist");
+    sUnit.state |= US_IN_BALLISTA;
+    sUnit.ballistaIndex = 0;
+    CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 1
+              && CountActionSlot(count, AI_ACTION_COMBAT, 0) == 0,
+          "riding unit must use only its current ballista");
+    sUnit.state &= ~US_IN_BALLISTA;
+    for (index = 0; index < (int)count; index++)
+    {
+        if (sEnumeratedActions[index].actionId != AI_ACTION_COMBAT)
+            continue;
+        if (sEnumeratedActions[index].itemSlot == 0xFF)
+        {
+            ordinal = index;
+            break;
+        }
+        occurrence++;
+    }
+    CHECK(SelectAction(
+            &decision, AI_ACTION_COMBAT, occurrence, &ordinal, &selected)
+              && selected.itemSlot == 0xFFFF,
+          "ballista must use canonical no-inventory sentinel");
+    ballista = GetTrapAt(
+        sEnumeratedActions[ordinal].xMove,
+        sEnumeratedActions[ordinal].yMove);
+    ballista->data[TRAP_EXTDATA_BLST_ITEMUSES]--;
+    CHECK(CommitBecameIllegal(&decision, ordinal, &selected.token0),
+          "changed ballista uses must stale the selected resource");
+    ballista->data[TRAP_EXTDATA_BLST_ITEMUSES]++;
+    CHECK(SelectAction(
+            &decision, AI_ACTION_COMBAT, occurrence, &ordinal, &selected),
+          "changed ballista weapon candidate must republish");
+    ballista->extra = ITEM_BALLISTA_KILLER;
+    CHECK(CommitBecameIllegal(&decision, ordinal, &selected.token0),
+          "changed ballista weapon must stale the selected resource");
+    ballista->extra = ITEM_BALLISTA_REGULAR;
+    ballista->data[TRAP_EXTDATA_BLST_ITEMUSES] = 0;
+    CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 1,
+          "broken ballista must be absent");
+    sClass.attributes = 0;
+    CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 0,
+          "actor without ballista capability must publish none");
+    sClass.attributes = CA_BALLISTAE;
+    sTraps[0].data[TRAP_EXTDATA_BLST_ITEMUSES] = 3;
+    sFogData[2][5] = 0;
+    CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 0,
+          "fog-hidden target must not receive ballista combat");
+    sFogData[2][5] = 1;
+    sUnitData[2][5] = 0;
+    sEnemy.xPos = 7;
+    sEnemy.yPos = 7;
+    sUnitData[7][7] = 0x81;
+    CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 0,
+          "out-of-range target must not receive ballista combat");
+    ResetActionFixture(6, 6);
+    sUnit.items[0] = ITEM_SWORD_IRON | (20 << 8);
+    sMovementData[3][2] = 1;
+    sTraps[0].type = TRAP_OBSTACLE;
+    sTraps[0].xPos = 3;
+    sTraps[0].yPos = 2;
+    sTraps[0].extra = 20;
+    sTerrainData[2][3] = TERRAIN_WALL_DAMAGED;
+    sTerrainData[3][3] = TERRAIN_WALL_DAMAGED;
+    sTraps[1].type = TRAP_OBSTACLE;
+    sTraps[1].xPos = 1;
+    sTraps[1].yPos = 2;
+    sTraps[1].extra = 10;
+    sTerrainData[2][1] = TERRAIN_SNAG;
+    CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK,
+          "wall and Snag enumeration must succeed");
+    for (index = 0; index < (int)count; index++)
+    {
+        struct AiDecision* action = &sEnumeratedActions[index];
+        if (action->actionId != AI_ACTION_COMBAT || action->targetId != 0)
+            continue;
+        wallTop += action->xTarget == 3 && action->yTarget == 2;
+        wallBottom += action->xTarget == 3 && action->yTarget == 3;
+        snag += action->xTarget == 1 && action->yTarget == 2;
+    }
+    CHECK(wallTop == 1 && wallBottom == 1 && snag == 1,
+          "both damaged-wall cells and Snag must coexist");
+    for (index = 0; index < (int)count; index++)
+    {
+        if (sEnumeratedActions[index].actionId == AI_ACTION_COMBAT
+            && sEnumeratedActions[index].targetId == 0
+            && sEnumeratedActions[index].xTarget == 3
+            && sEnumeratedActions[index].yTarget == 3)
+        {
+            int seen = CountActionId(index, AI_ACTION_COMBAT);
+            CHECK(SelectAction(
+                    &decision, AI_ACTION_COMBAT, seen, &ordinal, &selected),
+                  "lower wall target must publish");
+            sTraps[0].extra--;
+            CHECK(CommitBecameIllegal(&decision, ordinal, &selected.token0),
+                  "changed wall HP must stale obstacle identity");
+            sTraps[0].extra++;
+            CHECK(SelectAction(
+                    &decision, AI_ACTION_COMBAT, seen, &ordinal, &selected),
+                  "lower wall target must republish");
+            sTerrainData[3][3] = 1;
+            CHECK(CommitBecameIllegal(&decision, ordinal, &selected.token0),
+                  "stale lower wall must reject before executor");
+            break;
+        }
+    }
+    return 0;
+}
+
+static int TestTargetedItemActions(void)
+{
+    static const int ringItems[] = {
+        ITEM_FILLAS_MIGHT, ITEM_NINISS_GRACE,
+        ITEM_THORS_IRE, ITEM_SETS_LITANY,
+    };
+    static const int ringStatus[] = {
+        UNIT_STATUS_ATTACK, UNIT_STATUS_DEFENSE,
+        UNIT_STATUS_CRIT, UNIT_STATUS_AVOID,
+    };
+    struct AiDecision decision = { 0 };
+    struct ExpansionAutoplayPlannerActionV2 selected;
+    u32 count, ordinal;
+    int index;
+    ResetActionFixture(5, 5);
+    sUnit.items[0] = ITEM_MINE | (2 << 8);
+    CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+              && CountActionId(count, AI_ACTION_USEITEM) == 4
+              && SelectAction(
+                &decision, AI_ACTION_USEITEM, 0, &ordinal, &selected),
+          "Mine must enumerate every adjacent legal tile");
+    CHECK(!ActionSemantics_IsTargetedItemTarget(
+            &sUnit, NULL, sUnit.items[0], sUnit.xPos, sUnit.yPos, -1, 2),
+          "targeted item must reject out-of-range tile");
+    sUnitData[sEnumeratedActions[ordinal].yTarget]
+        [sEnumeratedActions[ordinal].xTarget] = 2;
+    CHECK(CommitBecameIllegal(&decision, ordinal, &selected.token0),
+          "occupied Mine tile must stale before execution");
+    sUnitData[sEnumeratedActions[ordinal].yTarget]
+        [sEnumeratedActions[ordinal].xTarget] = 0;
+    CHECK(ActionSemantics_IsTargetedItemTarget(
+            &sUnit, NULL, sUnit.items[0], sUnit.xPos, sUnit.yPos,
+            sEnumeratedActions[ordinal].xTarget,
+            sEnumeratedActions[ordinal].yTarget),
+          "Mine effect target must remain legal");
+    AddTrap(sEnumeratedActions[ordinal].xTarget,
+            sEnumeratedActions[ordinal].yTarget, TRAP_MINE, 0);
+    CHECK(sTraps[0].type == TRAP_MINE,
+          "Mine effect must use selected tile");
+    UnitUpdateUsedItem(&sUnit, 0);
+    CHECK(sUnit.items[0] == (ITEM_MINE | (1 << 8)),
+          "Mine effect must consume selected item");
+    ResetActionFixture(5, 5);
+    sUnit.items[0] = ITEM_LIGHTRUNE | (2 << 8);
+    CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+              && CountActionId(count, AI_ACTION_USEITEM) == 4
+              && SelectAction(
+                &decision, AI_ACTION_USEITEM, 0, &ordinal, &selected),
+          "Light Rune must enumerate every adjacent legal tile");
+    sTraps[0].type = TRAP_MINE;
+    sTraps[0].xPos = sEnumeratedActions[ordinal].xTarget;
+    sTraps[0].yPos = sEnumeratedActions[ordinal].yTarget;
+    CHECK(CommitBecameIllegal(&decision, ordinal, &selected.token0),
+          "trapped Light Rune tile must stale before execution");
+    sTraps[0].type = TRAP_NONE;
+    CHECK(ActionSemantics_IsTargetedItemTarget(
+            &sUnit, NULL, sUnit.items[0], sUnit.xPos, sUnit.yPos,
+            sEnumeratedActions[ordinal].xTarget,
+            sEnumeratedActions[ordinal].yTarget),
+          "Light Rune effect target must remain legal");
+    AddLightRune(sEnumeratedActions[ordinal].xTarget,
+                 sEnumeratedActions[ordinal].yTarget);
+    CHECK(sTraps[0].type == TRAP_LIGHT_RUNE,
+          "Light Rune effect must use selected tile");
+    UnitUpdateUsedItem(&sUnit, 0);
+    CHECK(sUnit.items[0] == (ITEM_LIGHTRUNE | (1 << 8)),
+          "Light Rune effect must consume selected item");
+    for (index = 0; index < (int)ARRAY_COUNT(ringItems); index++)
+    {
+        ResetActionFixture(5, 5);
+        sUnit.items[0] = ringItems[index] | (2 << 8);
+        SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 3, 2);
+        SetupTestUnit(&sSummon, &sSummonCharacter, &sSummonClass, 3, 2, 3);
+        SetupTestUnit(&sEnemy, &sEnemyCharacter, &sEnemyClass, 0x81, 1, 2);
+        sUnitData[2][3] = 2;
+        sUnitData[3][2] = 3;
+        sUnitData[2][1] = 0x81;
+        CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                  && CountActionId(count, AI_ACTION_USEITEM) == 2
+                  && SelectAction(
+                    &decision, AI_ACTION_USEITEM, 0, &ordinal, &selected),
+              "dance ring targets must be complete and exclude enemies");
+        CHECK(sEnumeratedActions[ordinal].targetId == 3
+                  && sEnumeratedActions[ordinal + 1].targetId == 2,
+              "dance ring targets must use deterministic unit order");
+        sAlly.statusIndex = UNIT_STATUS_POISON;
+        CHECK(CommitBecameIllegal(&decision, ordinal, &selected.token0),
+              "stale dance-ring target status must reject");
+        sAlly.statusIndex = UNIT_STATUS_NONE;
+        CHECK(ActionSemantics_IsTargetedItemTarget(
+                &sUnit, &sAlly, sUnit.items[0],
+                sUnit.xPos, sUnit.yPos, sAlly.xPos, sAlly.yPos),
+              "dance ring effect target must remain legal");
+        SetUnitStatusExt(&sAlly, ringStatus[index], 1);
+        CHECK(sAlly.statusIndex == ringStatus[index],
+              "dance ring must apply its exact status");
+        UnitUpdateUsedItem(&sUnit, 0);
+        CHECK(sUnit.items[0] == (ringItems[index] | (1 << 8)),
+              "dance ring must consume selected item");
+    }
     return 0;
 }
 
@@ -2206,6 +2516,10 @@ int main(void)
           "inventory-slot fixed-width wire identity test");
     CHECK(TestCandidateInventoryBinding() == 0,
           "candidate inventory-state identity test");
+    CHECK(TestBallistaAndWallCombat() == 0,
+          "ballista and damaged-wall combat test");
+    CHECK(TestTargetedItemActions() == 0,
+          "targeted item action family test");
     ResetActionFixture(32, 17);
     CHECK(ResetAndStartPlanner(), "unavailable-actor run must start");
     sUnit.state = US_NOT_DEPLOYED;

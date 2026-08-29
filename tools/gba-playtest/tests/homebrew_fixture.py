@@ -181,7 +181,7 @@ def build_production_planner_rom(
         raise ValueError(
             "planner transition subcode must be MNCH, MNC2, or MNC3"
         )
-    if candidate_mode not in {0, 1, 2, 3}:
+    if candidate_mode not in {0, 1, 2, 3, 4, 5}:
         raise ValueError("planner candidate mode is outside fixture bounds")
     if flag_domain_mode not in range(7):
         raise ValueError("planner flag-domain mode is outside fixture bounds")

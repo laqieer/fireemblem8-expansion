@@ -4461,6 +4461,14 @@
       "category": "reviewed-exclusion",
       "reason": "Bounded convoy slot count used by the planner protocol; it is not a game item ID."
     },
+    "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|_DANCE_RING_ITEM_IDS": {
+      "category": "external-interface",
+      "reason": null
+    },
+    "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|_TILE_TARGET_ITEM_IDS": {
+      "category": "external-interface",
+      "reason": null
+    },
     "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|INVENTORY": {
       "category": "reviewed-exclusion",
       "reason": "Planner protocol page-kind label for typed inventory records; it is not a game item ID."
@@ -4480,6 +4488,14 @@
     "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|inventory_ids": {
       "category": "reviewed-exclusion",
       "reason": "Whole-observation validator set of published unit/slot identities; its values are protocol record keys, not game item IDs."
+    },
+    "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|item": {
+      "category": "external-interface",
+      "reason": null
+    },
+    "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|item_id": {
+      "category": "external-interface",
+      "reason": null
     },
     "tools/gba-playtest/autoplay_planner.py|tool-symbol|item|item_slot": {
       "category": "reviewed-exclusion",

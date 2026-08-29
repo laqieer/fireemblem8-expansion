@@ -28,6 +28,9 @@
 struct Unit* EWRAM_DATA gSubjectUnit = NULL;
 
 s8 CanUnitCrossTerrain(struct Unit* unit, int terrain);
+#ifndef FE8_ARCHIVAL_BUILD
+static bool IsObstacleTargetAt(int x, int y);
+#endif
 
 void ForEachUnitInMovement(void(*func)(struct Unit* unit)) {
     int ix;
@@ -165,6 +168,7 @@ void TryAddTrapsToTargetList(void) {
             continue;
         }
 
+#ifdef FE8_ARCHIVAL_BUILD
         if ((gBmMapTerrain[trap->yPos][trap->xPos] == TERRAIN_WALL_DAMAGED) && (gMapRangeSigned[trap->yPos][trap->xPos] != 0)) {
             AddTarget(trap->xPos, trap->yPos, 0, trap->extra);
         }
@@ -173,14 +177,18 @@ void TryAddTrapsToTargetList(void) {
             AddTarget(trap->xPos, trap->yPos + 1, 0, trap->extra);
         }
 
-#ifdef FE8_ARCHIVAL_BUILD
         if ((gBmMapTerrain[trap->yPos][trap->xPos] == TERRAIN_SNAG) && (gMapRangeSigned[trap->yPos][trap->xPos] != 0)) {
-#else
-        if (IsSnagObstacleTarget(trap->xPos, trap->yPos)
-            && (gMapRangeSigned[trap->yPos][trap->xPos] != 0)) {
-#endif
             AddTarget(trap->xPos, trap->yPos, 0, trap->extra);
         }
+#else
+        if (IsObstacleTargetAt(trap->xPos, trap->yPos)
+            && gMapRangeSigned[trap->yPos][trap->xPos] != 0)
+            AddTarget(trap->xPos, trap->yPos, 0, trap->extra);
+        if (trap->yPos + 1 < gBmMapSize.y
+            && IsObstacleTargetAt(trap->xPos, trap->yPos + 1)
+            && gMapRangeSigned[trap->yPos + 1][trap->xPos] != 0)
+            AddTarget(trap->xPos, trap->yPos + 1, 0, trap->extra);
+#endif
     }
 
     return;
@@ -199,6 +207,16 @@ bool IsSnagObstacleTarget(int x, int y)
     return trap != NULL && trap->type == TRAP_OBSTACLE;
 }
 
+static bool IsObstacleTargetAt(int x, int y)
+{
+    if (x < 0 || x >= gBmMapSize.x
+        || y < 0 || y >= gBmMapSize.y)
+        return false;
+    return GetObstacleTrapForTarget(x, y) != NULL
+        && (gBmMapTerrain[y][x] == TERRAIN_SNAG
+            || gBmMapTerrain[y][x] == TERRAIN_WALL_DAMAGED);
+}
+
 bool IsSnagAttackTargetAt(
     int item,
     int x,
@@ -209,6 +227,22 @@ bool IsSnagAttackTargetAt(
     int distance;
 
     if (!IsSnagObstacleTarget(targetX, targetY))
+        return false;
+    distance = ABS(x - targetX) + ABS(y - targetY);
+    return distance >= GetItemMinRange(item)
+        && distance <= GetItemMaxRange(item);
+}
+
+bool IsObstacleAttackTargetAt(
+    int item,
+    int x,
+    int y,
+    int targetX,
+    int targetY)
+{
+    int distance;
+
+    if (!IsObstacleTargetAt(targetX, targetY))
         return false;
     distance = ABS(x - targetX) + ABS(y - targetY);
     return distance >= GetItemMinRange(item)
@@ -1505,6 +1539,13 @@ void PidStatsRecordTargetListDeaths(int unk) {
 }
 
 void TryAddToMineTargetList(int x, int y) {
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_IsTargetedItemTarget(
+            gSubjectUnit, NULL, ITEM_MINE,
+            gSubjectUnit->xPos, gSubjectUnit->yPos, x, y))
+        return;
+#else
     struct Trap* trap;
 
     if (gBmMapUnit[y][x] != 0) {
@@ -1524,6 +1565,7 @@ void TryAddToMineTargetList(int x, int y) {
     if ((trap != 0) && (trap->type != TRAP_TORCHLIGHT)) {
         return;
     }
+#endif
 
     AddTarget(x, y, 0, 0);
 
@@ -1543,6 +1585,13 @@ void MakeTargetListForMine(struct Unit* unit) {
 }
 
 void TryAddToLightRuneTargetList(int x, int y) {
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_IsTargetedItemTarget(
+            gSubjectUnit, NULL, ITEM_LIGHTRUNE,
+            gSubjectUnit->xPos, gSubjectUnit->yPos, x, y))
+        return;
+#else
     struct Trap* trap;
 
     if (gBmMapUnit[y][x] != 0) {
@@ -1558,6 +1607,7 @@ void TryAddToLightRuneTargetList(int x, int y) {
     if (TerrainTable_MovCost_FlyNormal[gBmMapTerrain[y][x]] <= 0) {
         return;
     }
+#endif
 
     AddTarget(x, y, 0, 0);
 
@@ -1578,7 +1628,14 @@ void MakeTargetListForLightRune(struct Unit* unit) {
 }
 
 void TryAddUnitToDanceRingTargetList(struct Unit* unit) {
-
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_IsTargetedItemTarget(
+            gSubjectUnit, unit, ITEM_FILLAS_MIGHT,
+            gSubjectUnit->xPos, gSubjectUnit->yPos,
+            unit->xPos, unit->yPos))
+        return;
+#else
     if (UNIT_FACTION(unit) != FACTION_BLUE) {
         return;
     }
@@ -1586,6 +1643,7 @@ void TryAddUnitToDanceRingTargetList(struct Unit* unit) {
     if (unit->statusIndex != UNIT_STATUS_NONE) {
         return;
     }
+#endif
 
     AddTarget(unit->xPos, unit->yPos, unit->index, 0);
 

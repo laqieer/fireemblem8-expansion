@@ -121,6 +121,8 @@ _ACTION_IDS_BY_KIND = {
     "SUMMON": frozenset({12, 14}),
 }
 _DEFAULT_ACTION_ID = {kind: max(action_ids) for kind, action_ids in _ACTION_IDS_BY_KIND.items()}
+_TILE_TARGET_ITEM_IDS = frozenset({0x7A, 0x7B})
+_DANCE_RING_ITEM_IDS = frozenset({0x7D, 0x7E, 0x7F, 0x80})
 _VALID_WIRE_REJECTION_CODES = frozenset(range(1, 11))
 _WIRE_STALE_OBSERVATION = 2
 _REJECTIONS_BY_COMMAND = {
@@ -565,8 +567,7 @@ def _require_list(
     maximum: int | None = None,
     message: str | None = None,
 ) -> list[object] | tuple[object, ...]:
-    if (not isinstance(value, (list, tuple)) or length is not None and len(value) != length
-            or maximum is not None and len(value) > maximum):
+    if (not isinstance(value, (list, tuple)) or length is not None and len(value) != length or maximum is not None and len(value) > maximum):
         raise PlannerError(message or f"invalid planner transcript {context} schema")
     return value
 
@@ -630,6 +631,32 @@ def _require_availability(value: object, context: str) -> str:
     return _require_text(value, context, _AVAILABILITY_VALUES)
 
 
+def _observation_action_item_valid(
+    action: dict[str, object],
+    inventory: dict[tuple[int, int], dict[str, object]],
+    units: dict[int, dict[str, object]],
+) -> bool:
+    kind = action["kind"]
+    item_slot = action["item_slot"]
+    if item_slot is None:
+        return kind not in {"STAFF", "USE_ITEM"}
+    item = inventory.get((action["actor"], item_slot))
+    if item is None or item["availability"] != Availability.AVAILABLE or item["raw_item"] == 0:
+        return False
+    if kind != "USE_ITEM":
+        return True
+    item_id = item["item_id"]
+    target = action["target"]
+    target_position = tuple(action["target_position"])
+    distance = sum(abs(left - right) for left, right in zip(action["destination"], target_position))
+    if item_id in _TILE_TARGET_ITEM_IDS:
+        return target == 0 and distance == 1
+    if item_id in _DANCE_RING_ITEM_IDS:
+        unit = units.get(target)
+        return (unit is not None and target != action["actor"] and target_position == tuple(unit["position"]) and distance == 1)
+    return target == 0 and target_position == (0, 0)
+
+
 def _validate_token_schema(token: object, context: str) -> None:
     value = _require_exact_keys(token, {"word0", "word1", "word2", "word3"}, context)
     for word in value.values():
@@ -645,8 +672,7 @@ def _validate_rejected_response(
     rejection = acknowledgement["rejection"]
     kind = command["kind"]
     if (previous is None or rejection not in _REJECTIONS_BY_COMMAND[kind]
-            or any(response[field] != previous[field] for field in _OBSERVATION_KEYS - {"state", "rejection"})
-            or response["rejection"] != rejection):
+            or any(response[field] != previous[field] for field in _OBSERVATION_KEYS - {"state", "rejection"}) or response["rejection"] != rejection):
         raise PlannerError("rejected response changed immutable observation")
     prior_state = previous["state"]
     terminal_state = None
@@ -696,12 +722,11 @@ def _validate_action_contract(action: object, context: str) -> None:
     target_position = tuple(value["target_position"])
     _require_optional_int(item_slot, f"{context} item slot", UNIT_ITEM_COUNT - 1)
     _require_optional_int(target_slot, f"{context} target item slot", UNIT_ITEM_COUNT - 1)
-    if (kind in {"COMBAT", "STAFF", "USE_ITEM"} and item_slot is None or kind in {"MOVE_WAIT", "SUMMON"} and item_slot is not None
+    if (kind in {"STAFF", "USE_ITEM"} and item_slot is None or kind in {"MOVE_WAIT", "SUMMON"} and item_slot is not None
             or target_slot is not None and kind != "STAFF" or target_slot is not None and (target == 0 or target_position != (0, 0))
-            or kind in {"MOVE_WAIT", "USE_ITEM", "PICK", "SUMMON"} and target != 0
-            or kind in {"MOVE_WAIT", "USE_ITEM"} and target_position != (0, 0)
-            or kind == "SUMMON" and action_id == 12 and target_position != (0, 0)
-            or kind == "COMBAT" and target != 0 and target_position != (0, 0)):
+            or kind in {"MOVE_WAIT", "PICK", "SUMMON"} and target != 0 or kind == "MOVE_WAIT" and target_position != (0, 0)
+            or kind == "SUMMON" and action_id == 12 and target_position != (0, 0) or kind == "COMBAT" and (target == 0) == (target_position == (0, 0))
+            or kind == "COMBAT" and item_slot is None and target == 0):
         raise PlannerError(f"invalid planner {context} sentinel contract")
 
 
@@ -1642,13 +1667,13 @@ class PlannerTranscript:
             raise PlannerError("planner transcript requires exactly one leading session")
         session_provenance = events[0].get("provenance")
         _validate_session_schema(session_provenance)
-        if validation_mode is ValidationMode.PRODUCTION and (session_provenance["transport"] != "restricted-libmgba"
-                                                             or any(session_provenance[field] == 0 for field in (
-                                                                 "rom_identity",
-                                                                 "config_identity",
-                                                                 "scenario_identity",
-                                                                 "seed_identity",
-                                                             ))):
+        if validation_mode is ValidationMode.PRODUCTION and (session_provenance["transport"] != "restricted-libmgba" or any(session_provenance[field] == 0
+                                                                                                                            for field in (
+                                                                                                                                "rom_identity",
+                                                                                                                                "config_identity",
+                                                                                                                                "scenario_identity",
+                                                                                                                                "seed_identity",
+                                                                                                                            ))):
             raise PlannerError("invalid production transcript provenance")
         transcript = cls()
         previous_digest = "0" * 64
@@ -1706,8 +1731,7 @@ class PlannerTranscript:
                 if not (accepted or rejected) or (accepted and command_kind_code not in _COMMAND_KIND_CODES.values()):
                     raise PlannerError("invalid acknowledgement result/rejection pair")
                 if accepted and (latest_observation is None or command.get("run_id") != latest_observation.get("run_id")
-                                 or command.get("run_id")
-                                 != (session_provenance["ready_run_id"] if command_kind_code == 1 else session_provenance["run_id"])):
+                                 or command.get("run_id") != (session_provenance["ready_run_id"] if command_kind_code == 1 else session_provenance["run_id"])):
                     raise PlannerError("accepted command run identity mismatch")
                 if (command_kind_code != 1 and rejection != _WIRE_STALE_OBSERVATION
                         and (latest_observation is None or command.get("observation_id") != latest_observation.get("observation_id"))):
@@ -1772,18 +1796,16 @@ class PlannerTranscript:
                     latest_observation.get("total_action_count"),
                 ]
                 expected_telemetry = [
-                    record.get("value") for record in latest_observation.get("resources", [])
-                    if record.get("kind") == ValueKind.AUTOPLAY_TELEMETRY.value
+                    record.get("value") for record in latest_observation.get("resources", []) if record.get("kind") == ValueKind.AUTOPLAY_TELEMETRY.value
                 ]
-                if (event["observation_identity"] != expected_identity or event.get("observation_digest") != _digest(latest_observation)
-                        or terminal != {
-                            "state": latest_observation.get("state"),
-                            "rejection": latest_observation.get("rejection"),
-                        } or rng != {
-                            "state": latest_observation.get("rng_state"),
-                            "lcg": latest_observation.get("rng_lcg"),
-                            "consumption": latest_observation.get("rng_consumption"),
-                        } or event["telemetry"] != expected_telemetry):
+                if (event["observation_identity"] != expected_identity or event.get("observation_digest") != _digest(latest_observation) or terminal != {
+                        "state": latest_observation.get("state"),
+                        "rejection": latest_observation.get("rejection"),
+                } or rng != {
+                        "state": latest_observation.get("rng_state"),
+                        "lcg": latest_observation.get("rng_lcg"),
+                        "consumption": latest_observation.get("rng_consumption"),
+                } or event["telemetry"] != expected_telemetry):
                     raise PlannerError("settled runtime state mismatch")
                 if settled_ack is not None:
                     acknowledgement_accepted = (settled_ack.get("result") == 1 and settled_ack.get("rejection") == 0)
@@ -1801,8 +1823,7 @@ class PlannerTranscript:
                 latest_checkpoint = event["checkpoint"]
             elif kind == "transport_error":
                 code = event["code"]
-                if (sequence != len(document["events"]) - 1 or awaiting_settlement or pending_command is None or pending_completion
-                        or pending_response):
+                if (sequence != len(document["events"]) - 1 or awaiting_settlement or pending_command is None or pending_completion or pending_response):
                     raise PlannerError("transport error must terminate transcript")
                 command_kind = _COMMAND_KIND_CODES[pending_command["command"]["kind"]]
                 command_id = (pending_ack["command_id"] if pending_ack is not None else expected_command_id)
@@ -1899,8 +1920,7 @@ class PlannerTranscript:
                     command_kind = command.get("kind")
                     accepted = (pending_ack is not None and pending_ack.get("result") == 1 and pending_ack.get("rejection") == 0)
                     if accepted and command_kind == CommandKind.PAGE.value:
-                        if (observation.get("run_id") != command.get("run_id")
-                                or observation.get("observation_id") != command.get("observation_id")
+                        if (observation.get("run_id") != command.get("run_id") or observation.get("observation_id") != command.get("observation_id")
                                 or observation.get("page_index") != command.get("page_index")):
                             raise PlannerError("PAGE response identity mismatch")
                     elif not accepted:
@@ -2244,8 +2264,8 @@ def _validate_complete_observation(
     if dimensions is not None and dimensions["availability"] == Availability.AVAILABLE:
         width = dimensions["value"] & 0xFFFF
         height = dimensions["value"] >> 16
-        if (not 1 <= width <= 64 or not 1 <= height <= 64 or len(cells) != width * height or tuple(
-            (cell["x"], cell["y"]) for cell in cells) != tuple((index % width, index // width) for index in range(width * height))):
+        if (not 1 <= width <= 64 or not 1 <= height <= 64 or len(cells) != width * height or tuple((cell["x"], cell["y"]) for cell in cells) != tuple(
+            (index % width, index // width) for index in range(width * height))):
             raise PlannerError("complete observation map dimensions mismatch")
         map_size = (width, height)
     elif strict or dimensions is not None and observation["actions"]:
@@ -2267,11 +2287,12 @@ def _validate_complete_observation(
         raise PlannerError("complete observation inventory is not canonical")
     for record in inventory:
         availability = unit_availability.get(record["unit"])
-        if availability is None or (availability == Availability.AVAILABLE
-                                    and record["availability"] != (Availability.AVAILABLE if record["raw_item"] else Availability.EMPTY)
-                                    ) or (availability != Availability.AVAILABLE and record["availability"] != availability):
+        if availability is None or (availability == Availability.AVAILABLE and record["availability"]
+                                    != (Availability.AVAILABLE if record["raw_item"] else Availability.EMPTY)) or (availability != Availability.AVAILABLE
+                                                                                                                   and record["availability"] != availability):
             raise PlannerError("complete observation inventory availability mismatch")
     inventory_by_slot = {(record["unit"], record["slot"]): record for record in inventory}
+    units_by_slot = {unit["slot"]: unit for unit in units}
     for unit in units:
         if unit["availability"] in {
                 Availability.NOT_VISIBLE,
@@ -2331,20 +2352,18 @@ def _validate_complete_observation(
     actions = observation["actions"]
     if (len(actions) != observation["total_action_count"] or tuple(action["ordinal"] for action in actions) != tuple(range(len(actions)))
             or len({_canonical(action["action"])
-                    for action in actions}) != len(actions)
-            or len({tuple(action["token"][f"word{index}"] for index in range(4))
-                    for action in actions}) != len(actions)
+                    for action in actions}) != len(actions) or len({tuple(action["token"][f"word{index}"] for index in range(4))
+                                                                    for action in actions}) != len(actions)
             or map_size is not None and any(x >= map_size[0] or y >= map_size[1] for record in actions for x, y in (
                 record["action"]["destination"],
                 record["action"]["target_position"],
             )) or strict and any(action["action"]["kind"] == "STAFF" and next(
-                (record["item_id"]
-                 for record in inventory if record["unit"] == action["action"]["actor"] and record["slot"] == action["action"]["item_slot"]
+                (record["item_id"] for record in inventory if record["unit"] == action["action"]["actor"] and record["slot"] == action["action"]["item_slot"]
                  ), None) not in {0x54, 0x56, 0x58} and tuple(action["action"]["target_position"]) != (0, 0) for action in actions)
+            or (strict or inventory) and any(not _observation_action_item_valid(action["action"], inventory_by_slot, units_by_slot) for action in actions)
             or (strict or units) and any(
                 unit_availability.get(action["action"]["actor"]) != Availability.AVAILABLE
-                or action["action"]["target"] != 0 and unit_availability.get(action["action"]["target"]) != Availability.AVAILABLE
-                for action in actions)):
+                or action["action"]["target"] != 0 and unit_availability.get(action["action"]["target"]) != Availability.AVAILABLE for action in actions)):
         raise PlannerError("complete observation actions are not canonical")
 
     campaign = observation["campaign"]
@@ -2358,19 +2377,18 @@ def _validate_complete_observation(
         objective_ids = tuple(record["objective_id"] for record in objectives)
         group_ids = tuple(record["group_id"] for record in groups)
         strategy_ids = tuple(record["strategy_id"] for record in strategies)
-        assignment_ids = tuple(
-            (record["source"], record["subject_id"], record["strategy_id"], record["activation_flag"]) for record in assignments)
+        assignment_ids = tuple((record["source"], record["subject_id"], record["strategy_id"], record["activation_flag"]) for record in assignments)
         if (campaign["chapter"] != observation["chapter"] or campaign["phase_availability"] != Availability.AVAILABLE
-                or len(objective_ids) != len(set(objective_ids)) or len(group_ids) != len(set(group_ids))
-                or len(strategy_ids) != len(set(strategy_ids)) or len(assignment_ids) != len(set(assignment_ids))
-                or any(record["group_id"] != 0 and record["group_id"] not in group_ids for record in objectives)
+                or len(objective_ids) != len(set(objective_ids)) or len(group_ids) != len(set(group_ids)) or len(strategy_ids) != len(set(strategy_ids))
+                or len(assignment_ids) != len(set(assignment_ids)) or any(record["group_id"] != 0 and record["group_id"] not in group_ids
+                                                                          for record in objectives)
                 or any(record["completion_objective_id"] != 0 and record["completion_objective_id"] not in objective_ids
                        for record in objectives) or any(len(record["members"]) != len(set(record["members"]))
-                                                        for record in groups) or any(record["strategy_id"] not in strategy_ids
-                                                                                     for record in assignments)
+                                                        for record in groups) or any(record["strategy_id"] not in strategy_ids for record in assignments)
                 or any(record["source"] == AssignmentSource.CHAPTER and record["subject_id"] != campaign["chapter"]
-                       or record["source"] == AssignmentSource.GROUP and record["subject_id"] not in group_ids for record in assignments)
-                or tuple(record["source"] for record in assignments) != tuple(sorted(record["source"] for record in assignments))):
+                       or record["source"] == AssignmentSource.GROUP and record["subject_id"] not in group_ids
+                       for record in assignments) or tuple(record["source"]
+                                                           for record in assignments) != tuple(sorted(record["source"] for record in assignments))):
             raise PlannerError("complete observation campaign semantics mismatch")
         for availability, records in (
             (campaign["objective_availability"], (*objectives, *groups)),
@@ -2387,8 +2405,7 @@ def _validate_complete_observation(
                     or campaign["current_assignment_availability"] != Availability.NOT_APPLICABLE):
                 raise PlannerError("complete observation current assignment mismatch")
         elif (len(current) != 1 or current_strategy is None or campaign["current_assignment_availability"] != Availability.AVAILABLE
-              or current[0]["strategy_id"] != campaign["current_strategy_id"]
-              or current[0]["source"] != campaign["current_assignment_source"]
+              or current[0]["strategy_id"] != campaign["current_strategy_id"] or current[0]["source"] != campaign["current_assignment_source"]
               or current[0]["subject_id"] != campaign["current_assignment_subject"]
               or current_strategy["objective_capabilities"] != campaign["current_objective_capabilities"]
               or current_strategy["action_capabilities"] != campaign["current_action_capabilities"]
@@ -2426,12 +2443,12 @@ def _validate_complete_observation(
         return
     page_order = tuple(dict.fromkeys(PageKind(page["page_kind"]) for page in page_values))
     expected_order = (_PAGE_ORDER if strict else tuple(kind for kind in _PAGE_ORDER if kind in page_order))
-    if (len(page_values) != observation["page_count"] or tuple(page["page_index"] for page in page_values) != tuple(range(len(page_values)))
-            or page_order != expected_order
+    if (len(page_values) != observation["page_count"] or tuple(page["page_index"]
+                                                               for page in page_values) != tuple(range(len(page_values))) or page_order != expected_order
             or tuple(_PAGE_ORDER.index(PageKind(page["page_kind"]))
                      for page in page_values) != tuple(sorted(_PAGE_ORDER.index(PageKind(page["page_kind"])) for page in page_values))
-            or PageKind(page_values[0]["page_kind"]) is not PageKind.SUMMARY or page_values[0]["campaign"] != campaign
-            or any(page["campaign"] is not None for page in page_values[1:])):
+            or PageKind(page_values[0]["page_kind"]) is not PageKind.SUMMARY or page_values[0]["campaign"] != campaign or any(page["campaign"] is not None
+                                                                                                                              for page in page_values[1:])):
         raise PlannerError("complete observation page sequence is not canonical")
     common = (
         "run_id",
@@ -2459,14 +2476,12 @@ def _validate_complete_observation(
         total = len(observation[name])
         capacity = _PAGE_RECORD_CAPACITIES[kind]
         expected_counts = ((0, ) if total == 0 else tuple(min(capacity, total - start) for start in range(0, total, capacity)))
-        if (not kind_pages or kind is PageKind.SUMMARY and len(kind_pages) != 1 or tuple(page["record_count"]
-                                                                                         for page in kind_pages) != expected_counts
-                or any(page["total_record_count"] != total for page in kind_pages) or any(page["record_count"] != len(page[name])
-                                                                                          for page in kind_pages)
-                or tuple(page["record_start"] for page in kind_pages) != tuple(
-                    sum(previous["record_count"] for previous in kind_pages[:index])
-                    for index in range(len(kind_pages))) or sum(page["record_count"] for page in kind_pages) != total
-                or tuple(record for page in kind_pages for record in page[name]) != tuple(observation[name])):
+        if (not kind_pages or kind is PageKind.SUMMARY and len(kind_pages) != 1 or tuple(page["record_count"] for page in kind_pages) != expected_counts
+                or any(page["total_record_count"] != total for page in kind_pages) or any(page["record_count"] != len(page[name]) for page in kind_pages)
+                or tuple(page["record_start"]
+                         for page in kind_pages) != tuple(sum(previous["record_count"] for previous in kind_pages[:index]) for index in range(len(kind_pages)))
+                or sum(page["record_count"] for page in kind_pages) != total or tuple(record for page in kind_pages
+                                                                                      for record in page[name]) != tuple(observation[name])):
             raise PlannerError(f"complete observation {name} pages are not canonical")
 
 
@@ -2527,10 +2542,9 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
     record_count = values[10]
     total_records = values[11]
     total_actions = values[12]
-    if (record_count > _PAGE_RECORD_CAPACITIES[page_kind] or total_records > _PAGE_TOTAL_LIMITS[page_kind]
-            or record_start + record_count > total_records or total_actions > MAX_ACTIONS
-            or (page_kind is not PageKind.CONTROL and record_count == 0
-                and not (page_kind is PageKind.FLAGS and record_start == 0 and total_records == 0))):
+    if (record_count > _PAGE_RECORD_CAPACITIES[page_kind] or total_records > _PAGE_TOTAL_LIMITS[page_kind] or record_start + record_count > total_records
+            or total_actions > MAX_ACTIONS
+            or (page_kind is not PageKind.CONTROL and record_count == 0 and not (page_kind is PageKind.FLAGS and record_start == 0 and total_records == 0))):
         raise PlannerError("planner page bounds are inconsistent")
 
     payload = values[_OBSERVATION_HEADER_WORDS:]
@@ -2560,14 +2574,13 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
             except KeyError as error:
                 raise PlannerError("unknown semantic availability") from error
             name, source, bound = _SEMANTIC_FIELD_NAMES[field_id]
-            fields.append(
-                Field(
-                    name,
-                    source,
-                    bound,
-                    availability,
-                    payload[index * 2 + 1] if availability is Availability.AVAILABLE else None,
-                ))
+            fields.append(Field(
+                name,
+                source,
+                bound,
+                availability,
+                payload[index * 2 + 1] if availability is Availability.AVAILABLE else None,
+            ))
         availability_words = payload[16]
         counts = payload[18]
         objective_count = counts & 0xFF
@@ -2614,14 +2627,13 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
         for index in range(strategy_count):
             start = 136 + index * 4
             record = payload[start:start + 4]
-            strategies.append(
-                StrategyRecord(
-                    record[0],
-                    record[1],
-                    record[2],
-                    record[3] & 0xFF,
-                    _decode_availability(record[3] >> 24, "strategy"),
-                ))
+            strategies.append(StrategyRecord(
+                record[0],
+                record[1],
+                record[2],
+                record[3] & 0xFF,
+                _decode_availability(record[3] >> 24, "strategy"),
+            ))
         assignments = []
         for index in range(assignment_count):
             start = 168 + index * 3
@@ -2873,13 +2885,12 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
                 raise PlannerError("invalid flag value kind")
             if availability is Availability.AVAILABLE and value not in {0, 1}:
                 raise PlannerError("flag state must be zero or one")
-            flag_records.append(
-                FlagRecord(
-                    kind,
-                    (identity >> 8) & 0xFFFF,
-                    value if availability is Availability.AVAILABLE else None,
-                    availability,
-                ))
+            flag_records.append(FlagRecord(
+                kind,
+                (identity >> 8) & 0xFFFF,
+                value if availability is Availability.AVAILABLE else None,
+                availability,
+            ))
     return Observation(
         values[3],
         values[4],
@@ -2951,8 +2962,7 @@ def collect_observation_pages(transport: object, first: Observation) -> Observat
         ))
         if not isinstance(page, Observation):
             raise PlannerError("PAGE did not return an observation")
-        if (page.run_id != first.run_id or page.observation_id != first.observation_id or page.page_index != page_index
-                or page.page_count != first.page_count):
+        if (page.run_id != first.run_id or page.observation_id != first.observation_id or page.page_index != page_index or page.page_count != first.page_count):
             raise PlannerError(Rejection.STALE_OBSERVATION.value)
         pages.append(page)
     validation_mode = getattr(transport, "validation_mode", ValidationMode.SYNTHETIC)
@@ -3055,8 +3065,7 @@ def replay_transcript_on_clean_transport(
 
 
 def _consume_semantic_observation(observation: Observation) -> str:
-    if (len(observation.map_cells) > MAX_MAP_CELLS or len(observation.units) > MAX_UNITS
-            or len(observation.inventory) > MAX_UNITS * UNIT_ITEM_COUNT
+    if (len(observation.map_cells) > MAX_MAP_CELLS or len(observation.units) > MAX_UNITS or len(observation.inventory) > MAX_UNITS * UNIT_ITEM_COUNT
             or len(observation.resources) > 1 + CONVOY_ITEM_COUNT + AUTOPLAY_TELEMETRY_WORDS or len(observation.flags) > 2 * 256 * 8
             or len(observation.actions) > MAX_ACTIONS):
         raise PlannerError(Rejection.RESOURCE_LIMIT.value)

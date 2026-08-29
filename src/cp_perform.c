@@ -226,6 +226,13 @@ void AiStartCombatAction(struct CpPerformProc* proc) {
         struct Trap* trap = GetTrapAt(gAiDecision.xTarget, gAiDecision.yTarget);
         gActionData.xOther = gAiDecision.xTarget;
         gActionData.yOther = gAiDecision.yTarget;
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+        if (ExpansionAutoplayPlanner_IsActive())
+            gActionData.trapType = GetObstacleHpAt(
+                gAiDecision.xTarget, gAiDecision.yTarget);
+        else
+#endif
         gActionData.trapType = trap->extra;
     }
 
@@ -333,6 +340,13 @@ s8 AiStaffAction(struct CpPerformProc* proc) {
 }
 
 s8 AiUseItemAction(struct CpPerformProc* proc) {
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!PreparePlannerAction())
+        return 1;
+    gActionData.subjectIndex = gActiveUnitId;
+    gActionData.targetIndex = gAiDecision.targetId;
+#endif
     gActiveUnit->xPos = gAiDecision.xMove;
     gActiveUnit->yPos = gAiDecision.yMove;
 

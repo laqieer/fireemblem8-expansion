@@ -1127,6 +1127,7 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_exhausted_runs_restore_without_fallback_or_reentry \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_available_zero_digests_round_trip_live_transport \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_live_commit_rejects_stale_selected_item_before_execution \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_new_action_pages_replay_live_transport \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_flag_checkpoint_bounds_on_arm_transport \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_commit_waits_beyond_legacy_120_frame_window \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_acknowledged_commit_timeout_never_emits_stale_observation \
@@ -1172,6 +1173,7 @@ $(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o: $(GENERATED_DATA_WEAPONTRIANGLE_C
 # IWRAM-placed symbols need per-symbol BSS sections. agb_sram.c additionally
 # subtracts adjacent function addresses when copying routines into IWRAM.
 $(MODERN_OUTPUT_DIR)/src/agb_sram.o: MODERN_CFLAGS += -fdata-sections -fno-toplevel-reorder -fno-reorder-functions
+$(MODERN_OUTPUT_DIR)/src/action_semantics.o \
 $(MODERN_OUTPUT_DIR)/src/expansion_autoplay_planner.o: MODERN_CFLAGS += -Os
 $(MODERN_OUTPUT_DIR)/src/m4a.o: MODERN_CFLAGS += -fdata-sections
 $(MODERN_OUTPUT_DIR)/src/bmshop.o: MODERN_CFLAGS += -fdata-sections

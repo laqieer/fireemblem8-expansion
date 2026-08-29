@@ -72,6 +72,9 @@ void InitMapObstacles(void);
 void ApplyEnabledMapChanges(void);
 void RefreshAllLightRunes(void);
 int GetObstacleHpAt(int x, int y);
+#ifndef FE8_ARCHIVAL_BUILD
+struct Trap* GetObstacleTrapForTarget(int x, int y);
+#endif
 const struct MapChange* GetMapChange(int id);
 bool IsMapChangeInBounds(const struct MapChange * mapChange);
 int GetMapChangeIdAt(int x, int y);

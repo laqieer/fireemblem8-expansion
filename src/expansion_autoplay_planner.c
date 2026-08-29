@@ -4,6 +4,7 @@
 
 #include "action_semantics.h"
 #include "bm.h"
+#include "bmarch.h"
 #include "bmcontainer.h"
 #include "bmitem.h"
 #include "bmitemuse.h"
@@ -199,20 +200,28 @@ static u32 ActualSeedIdentity(void)
 static u32 MixCandidateItemState(u32 digest, const struct AiDecision* decision)
 {
     if (decision->itemSlot < UNIT_ITEM_COUNT && gActiveUnit != NULL)
-    {
-        digest = MixDigest(digest, 0xA17E0000u | decision->itemSlot);
         digest = MixDigest(digest, gActiveUnit->items[decision->itemSlot]);
-    }
     if (decision->actionId == AI_ACTION_STAFF && decision->unk04 < UNIT_ITEM_COUNT)
     {
         struct Unit* target = GetUnit(decision->targetId);
 
         digest = MixDigest(
             digest,
-            0x7A260000u | ((u32)decision->targetId << 8) | decision->unk04);
+            target == NULL ? 0 : target->items[decision->unk04]);
+    }
+    else if (decision->actionId == AI_ACTION_COMBAT
+        && (s8)decision->itemSlot == BU_ISLOT_AUTO)
+    {
         digest = MixDigest(
             digest,
-            target == NULL ? 0 : target->items[decision->unk04]);
+            GetBallistaItemAt(decision->xMove, decision->yMove));
+    }
+    if (decision->actionId == AI_ACTION_COMBAT
+        && decision->targetId == 0)
+    {
+        digest = MixDigest(
+            digest,
+            GetObstacleHpAt(decision->xTarget, decision->yTarget));
     }
     return digest;
 }
@@ -512,50 +521,84 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateCombat(
 {
     int itemSlot;
     int targetId;
-    for (itemSlot = 0; itemSlot < UNIT_ITEM_COUNT; itemSlot++)
+    bool riding = (gActiveUnit->state & US_IN_BALLISTA)
+        && GetRiddenBallistaAt(
+            gActiveUnit->xPos, gActiveUnit->yPos) != NULL;
+
+    if (!riding)
     {
-        int item = gActiveUnit->items[itemSlot];
-
-        if (item == 0)
-            break;
-        if (!CanUnitUseWeapon(gActiveUnit, item))
-            continue;
-        if ((GetItemAttributes(item) & IA_MAGIC)
-            && IsPositionMagicSealed(xMove, yMove))
-            continue;
-
-        for (targetId = 1; targetId < 0xC0; targetId++)
+        for (itemSlot = 0; itemSlot < UNIT_ITEM_COUNT; itemSlot++)
         {
-            struct Unit* target = GetUnit(targetId);
-            struct AiDecision decision;
-            enum ExpansionAutoplayPlannerEnumerationResult result;
+            int item = gActiveUnit->items[itemSlot];
 
-            if (!IsCanonicalUnitSlot(targetId)
-                || !IsCombatTargetLegal(target, xMove, yMove, item))
-                continue;
-            MakeDecision(&decision, xMove, yMove, AI_ACTION_COMBAT, target->index, itemSlot, 0,
-                         0);
-            result = EmitDecision(enumeration, &decision);
-            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
-                || enumeration->stopped)
-                return result;
-        }
-        for (targetId = 0; targetId < TRAP_MAX_COUNT; targetId++)
-        {
-            struct Trap* trap = GetTrap(targetId);
-            struct AiDecision decision;
-            enum ExpansionAutoplayPlannerEnumerationResult result;
-
-            if (trap->type == TRAP_NONE)
+            if (item == 0)
                 break;
-            if (!IsSnagAttackTargetAt(item, xMove, yMove, trap->xPos, trap->yPos))
+            if (!CanUnitUseWeapon(gActiveUnit, item))
                 continue;
-            MakeDecision(&decision, xMove, yMove, AI_ACTION_COMBAT, 0, itemSlot, trap->xPos,
-                         trap->yPos);
-            result = EmitDecision(enumeration, &decision);
-            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
-                || enumeration->stopped)
-                return result;
+            if ((GetItemAttributes(item) & IA_MAGIC)
+                && IsPositionMagicSealed(xMove, yMove))
+                continue;
+
+            for (targetId = 1; targetId < 0xC0; targetId++)
+            {
+                struct Unit* target = GetUnit(targetId);
+                struct AiDecision decision;
+                enum ExpansionAutoplayPlannerEnumerationResult result;
+
+                if (!IsCanonicalUnitSlot(targetId)
+                    || !IsCombatTargetLegal(target, xMove, yMove, item))
+                    continue;
+                MakeDecision(&decision, xMove, yMove, AI_ACTION_COMBAT, target->index, itemSlot, 0,
+                             0);
+                result = EmitDecision(enumeration, &decision);
+                if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                    || enumeration->stopped)
+                    return result;
+            }
+            for (targetId = 0; targetId < gBmMapSize.y * gBmMapSize.x; targetId++)
+            {
+                struct AiDecision decision;
+                enum ExpansionAutoplayPlannerEnumerationResult result;
+                int xTarget = targetId % gBmMapSize.x;
+                int yTarget = targetId / gBmMapSize.x;
+
+                if (!IsObstacleAttackTargetAt(
+                        item, xMove, yMove, xTarget, yTarget))
+                    continue;
+                MakeDecision(
+                    &decision, xMove, yMove, AI_ACTION_COMBAT, 0,
+                    itemSlot, xTarget, yTarget);
+                result = EmitDecision(enumeration, &decision);
+                if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                    || enumeration->stopped)
+                    return result;
+            }
+        }
+    }
+    if (UNIT_CATTRIBUTES(gActiveUnit) & CA_BALLISTAE)
+    {
+        int item = GetBallistaItemAt(xMove, yMove);
+
+        if (item != 0)
+        {
+            for (targetId = 1; targetId < 0xC0; targetId++)
+            {
+                struct Unit* target = GetUnit(targetId);
+                struct AiDecision decision;
+                enum ExpansionAutoplayPlannerEnumerationResult result;
+
+                if (!IsCanonicalUnitSlot(targetId)
+                    || !IsCombatTargetLegal(
+                        target, xMove, yMove, item))
+                    continue;
+                MakeDecision(
+                    &decision, xMove, yMove, AI_ACTION_COMBAT,
+                    target->index, BU_ISLOT_AUTO, 0, 0);
+                result = EmitDecision(enumeration, &decision);
+                if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                    || enumeration->stopped)
+                    return result;
+            }
         }
     }
     return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
@@ -746,6 +789,49 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateStaff(
     return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
 }
 
+static enum ExpansionAutoplayPlannerEnumerationResult EnumerateTargetedItem(
+    struct PlannerEnumeration* enumeration,
+    int xMove,
+    int yMove,
+    int itemSlot,
+    int itemId)
+{
+    int yTarget;
+    int xTarget;
+    for (yTarget = yMove + 1; yTarget >= yMove - 1; yTarget--)
+    {
+        for (xTarget = xMove + 1; xTarget >= xMove - 1; xTarget--)
+        {
+            struct Unit* target;
+            struct AiDecision decision;
+            enum ExpansionAutoplayPlannerEnumerationResult result;
+            if (itemId != ITEM_MINE && itemId != ITEM_LIGHTRUNE)
+            {
+                if (xTarget < 0 || xTarget >= gBmMapSize.x
+                    || yTarget < 0 || yTarget >= gBmMapSize.y)
+                    continue;
+                target = GetUnit(gBmMapUnit[yTarget][xTarget]);
+            }
+            else
+                target = NULL;
+            if (!ActionSemantics_IsTargetedItemTarget(
+                    gActiveUnit, target, itemId,
+                    xMove, yMove, xTarget, yTarget))
+                continue;
+            MakeDecision(
+                &decision, xMove, yMove, AI_ACTION_USEITEM,
+                itemId == ITEM_MINE || itemId == ITEM_LIGHTRUNE
+                    ? 0 : target->index,
+                itemSlot, xTarget, yTarget);
+            result = EmitDecision(enumeration, &decision);
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration->stopped)
+                return result;
+        }
+    }
+    return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+}
+
 static enum ExpansionAutoplayPlannerEnumerationResult EnumerateItems(
     struct PlannerEnumeration* enumeration, int xMove, int yMove)
 {
@@ -760,6 +846,18 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateItems(
             break;
         if (GetItemAttributes(item) & (IA_WEAPON | IA_STAFF))
             continue;
+        if (GetItemIndex(item) == ITEM_MINE
+            || GetItemIndex(item) == ITEM_LIGHTRUNE
+            || (GetItemIndex(item) >= ITEM_FILLAS_MIGHT
+                && GetItemIndex(item) <= ITEM_SETS_LITANY))
+        {
+            result = EnumerateTargetedItem(
+                enumeration, xMove, yMove, itemSlot, GetItemIndex(item));
+            if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                || enumeration->stopped)
+                return result;
+            continue;
+        }
         if (!IsSelfUseItemLegal(item))
             continue;
         MakeDecision(&decision, xMove, yMove, AI_ACTION_USEITEM, 0, itemSlot, 0, 0);
@@ -873,6 +971,7 @@ enum ExpansionAutoplayPlannerEnumerationResult ExpansionAutoplayPlanner_Enumerat
     int xMove;
     bool normalSummonAvailable;
     bool darkSummonAvailable;
+    bool riding;
     if (countOut != NULL)
         *countOut = 0;
     if (gActiveUnit == NULL
@@ -884,6 +983,9 @@ enum ExpansionAutoplayPlannerEnumerationResult ExpansionAutoplayPlanner_Enumerat
 
     normalSummonAvailable = ActionSemantics_IsNormalSummonAvailable(gActiveUnit, false);
     darkSummonAvailable = ActionSemantics_IsDarkSummonAvailable(gActiveUnit);
+    riding = (gActiveUnit->state & US_IN_BALLISTA)
+        && GetRiddenBallistaAt(
+            gActiveUnit->xPos, gActiveUnit->yPos) != NULL;
     enumeration.visitor = visitor;
     enumeration.context = context;
     enumeration.count = 0;
@@ -894,6 +996,10 @@ enum ExpansionAutoplayPlannerEnumerationResult ExpansionAutoplayPlanner_Enumerat
         {
             if (!IsReachableDestination(xMove, yMove))
                 continue;
+            if (riding
+                && (xMove != gActiveUnit->xPos
+                    || yMove != gActiveUnit->yPos))
+                continue;
             result = EnumerateWait(&enumeration, xMove, yMove);
             if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
                 || enumeration.stopped)
@@ -902,6 +1008,8 @@ enum ExpansionAutoplayPlannerEnumerationResult ExpansionAutoplayPlanner_Enumerat
             if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
                 || enumeration.stopped)
                 goto done;
+            if (riding)
+                continue;
             result = EnumerateStaff(&enumeration, xMove, yMove);
             if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
                 || enumeration.stopped)
@@ -2089,17 +2197,37 @@ bool ExpansionAutoplayPlanner_PrepareActionData(const struct AiDecision* decisio
         || gActiveUnit == NULL
         || decision->unitId != gActiveUnitId)
         return false;
-    if (decision->actionId == AI_ACTION_COMBAT
-        && decision->targetId == 0)
+    if (decision->actionId == AI_ACTION_COMBAT)
     {
+        target = GetUnit(decision->targetId);
+        if ((s8)decision->itemSlot == BU_ISLOT_AUTO)
+        {
+            item = GetBallistaItemAt(
+                decision->xMove, decision->yMove);
+            return decision->targetId != 0
+                && (UNIT_CATTRIBUTES(gActiveUnit) & CA_BALLISTAE)
+                && IsReachableDestination(
+                    decision->xMove, decision->yMove)
+                && item != 0
+                && IsCombatTargetLegal(
+                    target, decision->xMove, decision->yMove, item);
+        }
         if (decision->itemSlot >= UNIT_ITEM_COUNT)
             return false;
         item = gActiveUnit->items[decision->itemSlot];
+        if (decision->targetId != 0)
+            return CanUnitUseWeapon(gActiveUnit, item)
+                && !((GetItemAttributes(item) & IA_MAGIC)
+                    && IsPositionMagicSealed(
+                        decision->xMove, decision->yMove))
+                && IsCombatTargetLegal(
+                    target, decision->xMove, decision->yMove, item);
         return CanUnitUseWeapon(gActiveUnit, item)
             && !((GetItemAttributes(item) & IA_MAGIC)
                 && IsPositionMagicSealed(decision->xMove, decision->yMove))
-            && IsSnagAttackTargetAt(item, decision->xMove, decision->yMove, decision->xTarget,
-                                    decision->yTarget);
+            && IsObstacleAttackTargetAt(
+                item, decision->xMove, decision->yMove,
+                decision->xTarget, decision->yTarget);
     }
     if (decision->actionId == AI_ACTION_SUMMON)
     {
@@ -2151,6 +2279,49 @@ bool ExpansionAutoplayPlanner_PrepareActionData(const struct AiDecision* decisio
         gActionData.xOther = decision->xTarget;
         gActionData.yOther = decision->yTarget;
         gActionData.itemSlotIndex = decision->itemSlot;
+        return true;
+    }
+    if (decision->actionId == AI_ACTION_USEITEM)
+    {
+        if (decision->itemSlot >= UNIT_ITEM_COUNT
+            || decision->unk04 != 0xFF)
+            return false;
+        item = gActiveUnit->items[decision->itemSlot];
+        itemId = GetItemIndex(item);
+        if (itemId == ITEM_MINE || itemId == ITEM_LIGHTRUNE)
+        {
+            if (decision->targetId != 0
+                || !ActionSemantics_IsTargetedItemTarget(
+                    gActiveUnit, NULL, item,
+                    decision->xMove, decision->yMove,
+                    decision->xTarget, decision->yTarget))
+                return false;
+            gActionData.targetIndex = 0;
+        }
+        else if (itemId >= ITEM_FILLAS_MIGHT
+            && itemId <= ITEM_SETS_LITANY)
+        {
+            target = GetUnit(decision->targetId);
+            if (!IsCanonicalUnitSlot(decision->targetId)
+                || !ActionSemantics_IsTargetedItemTarget(
+                    gActiveUnit, target, item,
+                    decision->xMove, decision->yMove,
+                    decision->xTarget, decision->yTarget)
+                || target->xPos != decision->xTarget
+                || target->yPos != decision->yTarget)
+                return false;
+            gActionData.targetIndex = decision->targetId;
+        }
+        else if (decision->targetId != 0
+            || decision->xTarget != 0
+            || decision->yTarget != 0
+            || !IsSelfUseItemLegal(item))
+        {
+            return false;
+        }
+        gActionData.xOther = decision->xTarget;
+        gActionData.yOther = decision->yTarget;
+        gActionData.trapType = 0;
         return true;
     }
     if (decision->actionId != AI_ACTION_STAFF

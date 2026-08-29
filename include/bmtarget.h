@@ -20,6 +20,12 @@ bool IsSnagAttackTargetAt(
     int y,
     int targetX,
     int targetY);
+bool IsObstacleAttackTargetAt(
+    int item,
+    int x,
+    int y,
+    int targetX,
+    int targetY);
 #endif
 // ??? TryAddUnitToTradeTargetList(???);
 void MakeTradeTargetList(struct Unit* unit);

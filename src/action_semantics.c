@@ -12,6 +12,7 @@
 #include "eventinfo.h"
 
 #include "constants/classes.h"
+#include "constants/items.h"
 #include "constants/terrains.h"
 
 s8 CanUnitCrossTerrain(struct Unit* unit, int terrain);
@@ -164,6 +165,44 @@ bool ActionSemantics_IsKeyTarget(
     if (terrain == TERRAIN_CHEST_FULL)
         return IsThereClosedChestAt(targetX, targetY);
     return IsThereClosedDoorAt(targetX, targetY);
+}
+
+bool ActionSemantics_IsTargetedItemTarget(
+    struct Unit* unit,
+    struct Unit* target,
+    int item,
+    int originX,
+    int originY,
+    int targetX,
+    int targetY)
+{
+    struct Trap* trap;
+    int itemId;
+    if (unit == NULL
+        || !IsMapPosition(targetX, targetY)
+        || Distance(originX, originY, targetX, targetY) != 1)
+        return false;
+    itemId = GetItemIndex(item);
+    if (itemId >= ITEM_FILLAS_MIGHT && itemId <= ITEM_SETS_LITANY)
+        return target != NULL
+            && target != unit
+            && UNIT_IS_VALID(target)
+            && UNIT_FACTION(target) == FACTION_BLUE
+            && target->statusIndex == UNIT_STATUS_NONE
+            && target->xPos == targetX
+            && target->yPos == targetY;
+    if ((gBmMapUnit[targetY][targetX] != 0
+            && (targetX != unit->xPos || targetY != unit->yPos)))
+        return false;
+    trap = GetTrapAt(targetX, targetY);
+    if (itemId == ITEM_MINE)
+        return (gPlaySt.chapterVisionRange == 0
+                || gBmMapFog[targetY][targetX] != 0)
+            && CanUnitCrossTerrain(unit, gBmMapTerrain[targetY][targetX])
+            && (trap == NULL || trap->type == TRAP_TORCHLIGHT);
+    return itemId == ITEM_LIGHTRUNE
+        && trap == NULL
+        && TerrainTable_MovCost_FlyNormal[gBmMapTerrain[targetY][targetX]] > 0;
 }
 
 bool ActionSemantics_IsNormalSummonAvailable(

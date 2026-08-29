@@ -2029,7 +2029,12 @@ void ComputeBattleObstacleStats(void) {
 }
 
 void UpdateObstacleFromBattle(struct BattleUnit* bu) {
+#ifdef FE8_ARCHIVAL_BUILD
     struct Trap* trap = GetTrapAt(bu->unit.xPos, bu->unit.yPos);
+#else
+    struct Trap* trap = GetObstacleTrapForTarget(
+        bu->unit.xPos, bu->unit.yPos);
+#endif
 
     trap->extra = bu->unit.curHP;
 

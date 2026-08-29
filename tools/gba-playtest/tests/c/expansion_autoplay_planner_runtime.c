@@ -82,6 +82,7 @@ u8** gBmMapMovement;
 u8** gBmMapUnit;
 u8** gBmMapTerrain;
 u8** gBmMapFog;
+s8 TerrainTable_MovCost_FlyNormal[0x100];
 u8 gSummonConfig[4][2];
 u32 gEventSlots[EVENT_SLOT_COUNT];
 struct EnqueuedEventCall gEventCallQueue[16];
@@ -94,8 +95,11 @@ static u16 sSeeds[3];
 static u32 sConsumption;
 static u32 sRestoreRequests;
 static struct CharacterData sCharacter;
+static struct CharacterData sTargetCharacter;
 static struct ClassData sClass;
+static struct ClassData sTargetClass;
 static struct Unit sUnit;
+static struct Unit sTarget;
 static u8 sPermanentFlags[256];
 static u8 sChapterFlags[256];
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_ZERO_DIGEST
@@ -212,7 +216,13 @@ void StoreRNState(u16* seeds)
 }
 unsigned GetLCGRNValue(void) { return 0x12345678; }
 u32 GetRNConsumptionCount(void) { return sConsumption; }
-struct Unit* GetUnit(int id) { return id == 1 ? &sUnit : NULL; }
+struct Unit* GetUnit(int id)
+{
+    if (id == 1)
+        return &sUnit;
+    return id == 0x81 && sTarget.pCharacterData != NULL
+        ? &sTarget : NULL;
+}
 
 u8* GetPermanentFlagBits(void)
 {
@@ -244,6 +254,35 @@ struct Trap* GetTrapAt(int x, int y)
             return &sTraps[index];
     }
     return NULL;
+}
+struct Trap* GetObstacleTrapForTarget(int x, int y)
+{
+    struct Trap* trap = GetTrapAt(x, y);
+    if (trap != NULL && trap->type == TRAP_OBSTACLE)
+        return trap;
+    if (y <= 0 || gBmMapTerrain[y][x] != TERRAIN_WALL_DAMAGED)
+        return NULL;
+    trap = GetTrapAt(x, y - 1);
+    return trap != NULL && trap->type == TRAP_OBSTACLE
+        ? trap : NULL;
+}
+int GetObstacleHpAt(int x, int y)
+{
+    struct Trap* trap = GetObstacleTrapForTarget(x, y);
+    return trap == NULL ? 0 : trap->extra;
+}
+int GetBallistaItemAt(int x, int y)
+{
+    struct Trap* trap = GetTrapAt(x, y);
+    if (trap == NULL || trap->type != TRAP_BALLISTA
+        || trap->data[TRAP_EXTDATA_BLST_ITEMUSES] == 0)
+        return 0;
+    return trap->extra
+        | (trap->data[TRAP_EXTDATA_BLST_ITEMUSES] << 8);
+}
+struct Trap* GetRiddenBallistaAt(int x, int y)
+{
+    return GetBallistaItemAt(x, y) == 0 ? NULL : GetTrapAt(x, y);
 }
 s8 CanUnitUseWeapon(struct Unit* unit, int item) { (void)unit; (void)item; return false; }
 s8 CanUnitUseStaff(struct Unit* unit, int item)
@@ -290,8 +329,16 @@ enum ExpansionAutoplayStrategyResult ExpansionAutoplayStrategies_ResolveCurrent(
     resolution->source = EXPANSION_AUTOPLAY_STRATEGY_ASSIGNMENT_NONE;
     return EXPANSION_AUTOPLAY_STRATEGY_FALLBACK;
 }
-int GetItemMinRange(int item) { (void)item; return 1; }
-int GetItemMaxRange(int item) { (void)item; return 1; }
+int GetItemMinRange(int item)
+{
+    return GetItemIndex(item) >= ITEM_BALLISTA_REGULAR
+        && GetItemIndex(item) <= ITEM_BALLISTA_KILLER ? 2 : 1;
+}
+int GetItemMaxRange(int item)
+{
+    return GetItemIndex(item) >= ITEM_BALLISTA_REGULAR
+        && GetItemIndex(item) <= ITEM_BALLISTA_KILLER ? 4 : 1;
+}
 int GetUnitMagBy2Range(struct Unit* unit)
 {
     (void)unit;
@@ -348,6 +395,7 @@ static void InitializeRuntime(void)
     sSeeds[0] = 1;
     sSeeds[1] = 2;
     sSeeds[2] = 3;
+    TerrainTable_MovCost_FlyNormal[1] = 1;
     sCharacter.number = 1;
     sClass.number = 1;
     sUnit.pCharacterData = &sCharacter;
@@ -363,6 +411,24 @@ static void InitializeRuntime(void)
 #elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 3
     sUnit.items[0] = ITEM_VULNERARY | (2 << 8);
     sUnit.curHP = 10;
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 4
+    sUnit.items[0] = ITEM_MINE | (2 << 8);
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 5
+    sClass.attributes = CA_BALLISTAE;
+    sTargetCharacter.number = 2;
+    sTargetClass.number = 2;
+    sTarget.pCharacterData = &sTargetCharacter;
+    sTarget.pClassData = &sTargetClass;
+    sTarget.index = 0x81;
+    sTarget.xPos = 3;
+    sTarget.yPos = 0;
+    sTarget.maxHP = 20;
+    sTarget.curHP = 20;
+    sTraps[0].type = TRAP_BALLISTA;
+    sTraps[0].xPos = 0;
+    sTraps[0].yPos = 0;
+    sTraps[0].extra = ITEM_BALLISTA_REGULAR;
+    sTraps[0].data[TRAP_EXTDATA_BLST_ITEMUSES] = 3;
 #elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 1
     sUnit.state = US_NOT_DEPLOYED;
 #endif
@@ -386,6 +452,9 @@ static void InitializeRuntime(void)
     }
     sFogData[0][1] = 0;
     sUnitData[0][0] = 1;
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 5
+    sUnitData[0][3] = 0x81;
+#endif
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 1
     for (y = 0; y < height; y++)
         for (x = 0; x < width; x++)
@@ -457,13 +526,26 @@ static void PollCommittedDecision(
     enum ExpansionAutoplayPlannerDecisionResult result;
     u16 selectedItem = sUnit.items[0];
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_MUTATE_SELECTED_ITEM
-    if (gExpansionAutoplayPlannerCommand.kind
-        == EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT)
+    bool mutated =
+        gExpansionAutoplayPlannerCommand.kind
+        == EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT;
+#endif
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_MUTATE_SELECTED_ITEM
+    if (mutated)
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 5
+        sTraps[0].data[TRAP_EXTDATA_BLST_ITEMUSES]--;
+#else
         sUnit.items[0] ^= 0x100;
+#endif
 #endif
     result = ExpansionAutoplayPlanner_PollDecision(decision);
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_MUTATE_SELECTED_ITEM
-    sUnit.items[0] = selectedItem;
+    if (mutated)
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 5
+        sTraps[0].data[TRAP_EXTDATA_BLST_ITEMUSES]++;
+#else
+        sUnit.items[0] = selectedItem;
+#endif
 #else
     (void)selectedItem;
 #endif

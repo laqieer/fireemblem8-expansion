@@ -178,9 +178,7 @@ def _sync_settled_observation(settled, observation):
     settled["observation_digest"] = planner._digest(observation)
     settled["terminal"] = dict(state=observation["state"], rejection=observation["rejection"])
     settled["rng"] = {"state": observation["rng_state"], "lcg": observation["rng_lcg"], "consumption": observation["rng_consumption"]}
-    settled["telemetry"] = [
-        record["value"] for record in observation["resources"] if record["kind"] == planner.ValueKind.AUTOPLAY_TELEMETRY.value
-    ]
+    settled["telemetry"] = [record["value"] for record in observation["resources"] if record["kind"] == planner.ValueKind.AUTOPLAY_TELEMETRY.value]
 
 
 def _rewrite_transcript_identity(document, name, value):
@@ -216,8 +214,7 @@ def _xor_nested(target, path):
 
 
 def _commit(observation, choice, token=None):
-    return planner.Command(planner.CommandKind.COMMIT, observation.run_id, observation.observation_id, choice.ordinal, token
-                           or choice.token)
+    return planner.Command(planner.CommandKind.COMMIT, observation.run_id, observation.observation_id, choice.ordinal, token or choice.token)
 
 
 def _cancel(observation):
@@ -236,8 +233,7 @@ def _assert_page_mutation_rejected(
     mutated[index] = replace(mutated[index], **changes)
     document = json.loads(exported)
     expected = mutated[index]
-    page_event = next(event for event in document["events"]
-                      if event["event"] == "observation_page" and event["observation"]["run_id"] == expected.run_id
+    page_event = next(event for event in document["events"] if event["event"] == "observation_page" and event["observation"]["run_id"] == expected.run_id
                       and event["observation"]["observation_id"] == expected.observation_id and event["observation"]["page_index"] == index)
     page_data = asdict(expected)
     page_event["observation"] = page_data
@@ -496,13 +492,12 @@ class _PageReplayTransport:
             first.actual_scenario_identity if scenario_identity is None else scenario_identity,
             first.actual_seed_identity,
         )
-        return self._respond(
-            {
-                "kind": planner.CommandKind.START.value,
-                "run_id": 0,
-                "observation_id": 0,
-                "expected_identities": identities,
-            }, first)
+        return self._respond({
+            "kind": planner.CommandKind.START.value,
+            "run_id": 0,
+            "observation_id": 0,
+            "expected_identities": identities,
+        }, first)
     def exchange(self, command):
         if command.kind is not planner.CommandKind.PAGE:
             raise AssertionError("page replay transport accepts only PAGE")
@@ -854,8 +849,7 @@ class PlannerBridgeTests(unittest.TestCase):
         def error_transcript(kind, code, stage, rejected=False):
             document = json.loads(encoded)
             events = document["events"]
-            command_index = next(index for index, event in enumerate(events)
-                                 if event["event"] == "command" and event["command"]["kind"] == kind)
+            command_index = next(index for index, event in enumerate(events) if event["event"] == "command" and event["command"]["kind"] == kind)
             acknowledgement = events[command_index + 1]
             if rejected:
                 acknowledgement["result"] = 0
@@ -947,8 +941,7 @@ class PlannerBridgeTests(unittest.TestCase):
                 observation[name] = [{**record, "unexpected": 1}]
                 _assert_import_rejected(self, document, "schema")
         document = json.loads(encoded)
-        commit = next(event["command"] for event in document["events"]
-                      if event["event"] == "command" and event["command"]["kind"] == "COMMIT")
+        commit = next(event["command"] for event in document["events"] if event["event"] == "command" and event["command"]["kind"] == "COMMIT")
         commit["token"]["unexpected"] = 1
         _assert_import_rejected(self, document, "schema")
         for name in ("checkpoint", "telemetry"):
@@ -1157,12 +1150,10 @@ class PlannerBridgeTests(unittest.TestCase):
             inventory_digest = planner._mix_digest(inventory_digest, 0x1E01)
         units = tuple(planner.UnitRecord(slot, 1, 1, (0, 0), (20, 20), 0, inventory_digest, available) for slot in planner._ROSTER_SLOTS)
         inventory = tuple(
-            planner.InventoryRecord(unit, slot, 1, 30, 0x1E01, available) for unit in planner._ROSTER_SLOTS
-            for slot in range(planner.UNIT_ITEM_COUNT))
+            planner.InventoryRecord(unit, slot, 1, 30, 0x1E01, available) for unit in planner._ROSTER_SLOTS for slot in range(planner.UNIT_ITEM_COUNT))
         resources = (
             planner.ResourceRecord(planner.ValueKind.GOLD, None, 999, None, None, available),
-            *(planner.ResourceRecord(planner.ValueKind.CONVOY_ITEM, index, 0, 0, 0, planner.Availability.EMPTY)
-              for index in range(planner.CONVOY_ITEM_COUNT)),
+            *(planner.ResourceRecord(planner.ValueKind.CONVOY_ITEM, index, 0, 0, 0, planner.Availability.EMPTY) for index in range(planner.CONVOY_ITEM_COUNT)),
             *(planner.ResourceRecord(planner.ValueKind.AUTOPLAY_TELEMETRY, index, 0, None, None, available)
               for index in range(planner.AUTOPLAY_TELEMETRY_WORDS)),
         )
@@ -1170,8 +1161,7 @@ class PlannerBridgeTests(unittest.TestCase):
             planner.FlagRecord(planner.ValueKind.PERMANENT_FLAG if index < 2048 else planner.ValueKind.CHAPTER_FLAG, index % 2048, index
                                & 1, available) for index in range(4096))
         actions = tuple(
-            planner.ActionRecord(index, planner.Action("MOVE_WAIT", 1, (index % 64, index //
-                                                                        64)), planner.OpaqueToken(index, index + 1, index + 2, index + 3))
+            planner.ActionRecord(index, planner.Action("MOVE_WAIT", 1, (index % 64, index // 64)), planner.OpaqueToken(index, index + 1, index + 2, index + 3))
             for index in range(planner.MAX_ACTIONS))
         groups = tuple(planner.GroupRecord(index + 1, tuple(range(1, 17)), available) for index in range(8))
         objectives = tuple(
@@ -1180,13 +1170,12 @@ class PlannerBridgeTests(unittest.TestCase):
         strategies = tuple(planner.StrategyRecord(index + 1, 0x1F, 3, 0, available) for index in range(8))
         assignments = (
             planner.AssignmentRecord(planner.AssignmentSource.CHAPTER, 1, 1, 0xFFFF, 1, 0, available),
-            *(planner.AssignmentRecord(planner.AssignmentSource.GROUP, index + 1, index + 1, 0xFFFF, 1, 0, available)
+            *(planner.AssignmentRecord(planner.AssignmentSource.GROUP, index + 1, index + 1, 0xFFFF, 1, 0, available) for index in range(8)),
+            *(planner.AssignmentRecord(planner.AssignmentSource.UNIT, planner._ROSTER_SLOTS[index], index + 1, 0xFFFF, 1, int(index == 0), available)
               for index in range(8)),
-            *(planner.AssignmentRecord(planner.AssignmentSource.UNIT, planner._ROSTER_SLOTS[index], index + 1, 0xFFFF, 1, int(index == 0),
-                                       available) for index in range(8)),
         )
-        campaign = planner.CampaignRecord(0, 1, 0, available, available, available, available, 1, 0x1F, 3, 0, planner.AssignmentSource.UNIT,
-                                          1, available, objectives, groups, strategies, assignments)
+        campaign = planner.CampaignRecord(0, 1, 0, available, available, available, available, 1, 0x1F, 3, 0, planner.AssignmentSource.UNIT, 1, available,
+                                          objectives, groups, strategies, assignments)
         components = (
             (planner.PageKind.MAP, "map_cells", map_cells, 231),
             (planner.PageKind.UNITS, "units", units, 23),
@@ -1211,16 +1200,14 @@ class PlannerBridgeTests(unittest.TestCase):
             "actual_seed_identity": 1,
             "state": 2,
         }
-        pages = [
-            planner.Observation(
-                **{
-                    **common, "fields": fields,
-                    "campaign": campaign
-                },
-                record_count=len(fields),
-                total_record_count=len(fields),
-            )
-        ]
+        pages = [planner.Observation(
+            **{
+                **common, "fields": fields,
+                "campaign": campaign
+            },
+            record_count=len(fields),
+            total_record_count=len(fields),
+        )]
         for page_kind, field, records, capacity in components:
             for start in range(0, len(records), capacity):
                 chunk = records[start:start + capacity]
@@ -1234,13 +1221,7 @@ class PlannerBridgeTests(unittest.TestCase):
                             "total_record_count": len(records),
                             field: chunk
                         }))
-        complete = replace(pages[0],
-                           actions=actions,
-                           map_cells=map_cells,
-                           units=units,
-                           inventory=inventory,
-                           resources=resources,
-                           flags=flags)
+        complete = replace(pages[0], actions=actions, map_cells=map_cells, units=units, inventory=inventory, resources=resources, flags=flags)
         assembled = planner._assemble_observation_pages(pages, planner.ValidationMode.PRODUCTION)
         self.assertEqual(assembled, complete)
         for implementation in (
@@ -1318,9 +1299,8 @@ class PlannerBridgeTests(unittest.TestCase):
             return planner.parse_transport_observation(words)
 
         small_pages = (
-            raw_page(0, 1, 8, 8,
-                     [word for field in range(1, 9)
-                      for word in (field | (4 << 24), 3 | (2 << 16) if field == 1 else 0)] + [0x01010100, 1 << 8, 0, 0, 0, 0, 1 << 16, 0]),
+            raw_page(0, 1, 8, 8, [word for field in range(1, 9)
+                                  for word in (field | (4 << 24), 3 | (2 << 16) if field == 1 else 0)] + [0x01010100, 1 << 8, 0, 0, 0, 0, 1 << 16, 0]),
             raw_page(1, 2, 6, 6, [x | (y << 6) | (1 << 12) for y in range(2) for x in range(3)]),
             raw_page(2, 4, 2, 2, [
                 1,
@@ -1452,16 +1432,13 @@ class PlannerBridgeTests(unittest.TestCase):
                 "inventory": (inventory_page.inventory[0], inventory_page.inventory[0], *inventory_page.inventory[2:])
             }),
             ("inventory availability", page_index[planner.PageKind.INVENTORY], {
-                "inventory": (replace(inventory_page.inventory[0],
-                                      availability=planner.Availability.UNAVAILABLE), *inventory_page.inventory[1:])
+                "inventory": (replace(inventory_page.inventory[0], availability=planner.Availability.UNAVAILABLE), *inventory_page.inventory[1:])
             }),
             ("convoy duplicate", page_index[planner.PageKind.RESOURCES], {
-                "resources":
-                (resource_page.resources[0], resource_page.resources[1], resource_page.resources[1], *resource_page.resources[3:])
+                "resources": (resource_page.resources[0], resource_page.resources[1], resource_page.resources[1], *resource_page.resources[3:])
             }),
             ("convoy availability", page_index[planner.PageKind.RESOURCES], {
-                "resources": (resource_page.resources[0], replace(resource_page.resources[1],
-                                                                  availability=available), *resource_page.resources[2:])
+                "resources": (resource_page.resources[0], replace(resource_page.resources[1], availability=available), *resource_page.resources[2:])
             }),
             ("flag order", page_index[planner.PageKind.FLAGS], {
                 "flags": swapped(flag_page.flags)
@@ -1479,8 +1456,7 @@ class PlannerBridgeTests(unittest.TestCase):
                 "actions": (replace(action_page.actions[0], ordinal=1), *action_page.actions[1:])
             }),
             ("candidate duplicate", page_index[planner.PageKind.ACTIONS], {
-                "actions": (action_page.actions[0], replace(action_page.actions[1],
-                                                            action=action_page.actions[0].action), *action_page.actions[2:])
+                "actions": (action_page.actions[0], replace(action_page.actions[1], action=action_page.actions[0].action), *action_page.actions[2:])
             }),
             ("objective duplicate", 0, {
                 "campaign": replace(campaign, objectives=(objectives[0], objectives[0], *objectives[2:]))
@@ -1603,6 +1579,55 @@ class PlannerBridgeTests(unittest.TestCase):
         words[34] = 5
         observation = planner.parse_transport_observation(words)
         self.assertEqual(observation.actions[0].action.item_slot, 0)
+        valid_forms = (
+            ("ballista", 2, 2, 0xFFFF),
+            ("tile item", 4, 3 << 8 | 2 << 16, 0xFF00),
+            ("dance ring", 4, 2 | 3 << 8 | 2 << 16, 0xFF00),
+        )
+        for name, kind, target, item_slot in valid_forms:
+            with self.subTest(valid_action_form=name):
+                words[25:35] = [
+                    kind,
+                    1,
+                    2 | 2 << 16,
+                    target,
+                    item_slot,
+                    1,
+                    2,
+                    3,
+                    4,
+                    1 if kind == 2 else 6,
+                ]
+                parsed = planner.parse_transport_observation(words).actions[0].action
+                self.assertEqual(parsed.kind, "COMBAT" if kind == 2 else "USE_ITEM")
+        inventory = {
+            (1, 0): {
+                "actor": 1,
+                "slot": 0,
+                "item_id": 0x7A,
+                "raw_item": 0x017A,
+                "availability": planner.Availability.AVAILABLE,
+            },
+        }
+        units = {2: {"position": [3, 2]}}
+        tile = asdict(planner.Action("USE_ITEM", 1, (2, 2), item_slot=0, target_position=(3, 2)))
+        self.assertTrue(planner._observation_action_item_valid(tile, inventory, units))
+        inventory[(1, 0)]["item_id"] = 0x7D
+        ring = asdict(planner.Action("USE_ITEM", 1, (2, 2), target=2, item_slot=0, target_position=(3, 2)))
+        self.assertTrue(planner._observation_action_item_valid(ring, inventory, units))
+        for mutation, item_id in (
+            ({
+                **ring, "target_position": (2, 3)
+            }, 0x7D),
+            ({
+                **ring, "target": 0
+            }, 0x7D),
+            ({
+                **tile, "target": 2
+            }, 0x7A),
+        ):
+            inventory[(1, 0)]["item_id"] = item_id
+            self.assertFalse(planner._observation_action_item_valid(mutation, inventory, units))
         with self.assertRaisesRegex(
                 planner.PlannerError,
                 "invalid optional item-slot sentinel",
@@ -1798,7 +1823,7 @@ class PlannerBridgeTests(unittest.TestCase):
         transport = (PLAYTEST_DIR / "planner_transport_backend.c").read_text(encoding="utf-8")
         self.assertEqual(
             set(re.findall(r"gActionData\.([A-Za-z0-9_]+)\s*=", target)),
-            {"xOther", "yOther", "itemSlotIndex", "trapType"},
+            {"targetIndex", "xOther", "yOther", "itemSlotIndex", "trapType"},
         )
         self.assertNotIn("busWrite", target)
         self.assertNotIn("socket", host)
@@ -2200,10 +2225,7 @@ raise SystemExit(child.returncode)
         identities, configs = [], []
 
         def host_scenario(value, name, sources=PLANNER_DRIVER_SOURCES):
-            return _run_host_c_driver(self,
-                                      name,
-                                      sources,
-                                      defines=(*PLANNER_DRIVER_DEFINES, f"-DFE8_EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID={value}"))
+            return _run_host_c_driver(self, name, sources, defines=(*PLANNER_DRIVER_DEFINES, f"-DFE8_EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID={value}"))
 
         for value in ("0", "0xFFFFFFFF"):
             scenario_output = host_scenario(value, f"planner-scenario-{value}")
@@ -2266,12 +2288,10 @@ raise SystemExit(child.returncode)
         root = TESTS_DIR.parents[2]
         registry = json.loads((root / "docs/test-cases/registry.json").read_text())
         case = next(entry for entry in registry["cases"] if entry["id"] == "TC-AUTOPLAY-PLANNER-001")
-        claims = case["expected_result"] + "".join(
-            (root / path).read_text() for path in ("docs/autoplay.md", "docs/test-cases/autoplay.md"))
-        self.assertNotRegex(
-            claims, r"(?i)(representative-hook \+1-byte|"
-            r"representative-hook growth controls|"
-            r"representative omitted-hook growth)")
+        claims = case["expected_result"] + "".join((root / path).read_text() for path in ("docs/autoplay.md", "docs/test-cases/autoplay.md"))
+        self.assertNotRegex(claims, r"(?i)(representative-hook \+1-byte|"
+                            r"representative-hook growth controls|"
+                            r"representative omitted-hook growth)")
     def test_arm_adapter_compiles_at_the_existing_computer_decision_boundary(self):
         compiler = shutil.which("arm-none-eabi-gcc")
         nm = shutil.which("arm-none-eabi-nm")
@@ -2891,7 +2911,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             if ("planner runtime toolchain unavailable" in str(error) or "planner transport host compiler unavailable" in str(error)):
                 self.skipTest(str(error))
             raise
-
     @contextmanager
     def _fixture(self, **kwargs):
         root = (TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner")
@@ -2986,8 +3005,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             searched = self._run_planner(backend, rom, planner.BoundedSearchPlanner(max_nodes=512))
             self.assertEqual(scripted, searched)
             for recorded in (scripted[2], searched[2]):
-                self.assertEqual(planner.replay_transcript_on_clean_transport(recorded, lambda: PlannerProcessTransport(backend, rom)),
-                                 recorded)
+                self.assertEqual(planner.replay_transcript_on_clean_transport(recorded, lambda: PlannerProcessTransport(backend, rom)), recorded)
             imported = planner.PlannerTranscript.import_production_bytes(scripted[2])
             self.assertEqual(imported.export(), scripted[2])
             for identity in ("rom", "config", "scenario", "seed"):
@@ -2996,10 +3014,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     _rewrite_transcript_identity(zeroed, identity, 0)
                     encoded = planner._canonical(zeroed)
                     self.assertEqual(planner.PlannerTranscript.import_bytes(encoded, planner.ValidationMode.SYNTHETIC).export(), encoded)
-                    _assert_replay_rejected(self,
-                                            encoded,
-                                            "production transcript provenance",
-                                            validation_mode=planner.ValidationMode.PRODUCTION)
+                    _assert_replay_rejected(self, encoded, "production transcript provenance", validation_mode=planner.ValidationMode.PRODUCTION)
             identity_tampered = json.loads(scripted[2])
             start_command = next(event["command"] for event in identity_tampered["events"]
                                  if event["event"] == "command" and event["command"]["kind"] == planner.CommandKind.START.value)
@@ -3025,41 +3040,36 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 choice = planner.ScriptedPlanner().choose(first)
                 page_indices = {
                     planner.PageKind(observation["page_kind"]): observation["page_index"]
-                    for event in reversed(transport.transcript.events) if event["event"] == "observation_page"
-                    for observation in (event["observation"], )
+                    for event in reversed(transport.transcript.events) if event["event"] == "observation_page" for observation in (event["observation"], )
                     if observation["run_id"] == first.run_id and observation["observation_id"] == first.observation_id
                 }
                 for page_kind in planner._PAGE_ORDER[1:]:
                     page_index = page_indices[page_kind]
-                    transport.exchange(
-                        planner.Command(
-                            planner.CommandKind.PAGE,
-                            first.run_id,
-                            first.observation_id,
-                            page_index=page_index,
-                        ))
-                    stale_page = transport.exchange(
-                        planner.Command(
-                            planner.CommandKind.PAGE,
-                            first.run_id,
-                            first.observation_id + 1,
-                            page_index=page_index,
-                        ))
+                    transport.exchange(planner.Command(
+                        planner.CommandKind.PAGE,
+                        first.run_id,
+                        first.observation_id,
+                        page_index=page_index,
+                    ))
+                    stale_page = transport.exchange(planner.Command(
+                        planner.CommandKind.PAGE,
+                        first.run_id,
+                        first.observation_id + 1,
+                        page_index=page_index,
+                    ))
                     self.assertEqual(stale_page.rejection, 2)
                 forged = transport.exchange(
-                    _commit(first, choice,
-                            planner.OpaqueToken(
-                                choice.token.word0 ^ 1,
-                                choice.token.word1,
-                                choice.token.word2,
-                                choice.token.word3,
-                            )))
+                    _commit(first, choice, planner.OpaqueToken(
+                        choice.token.word0 ^ 1,
+                        choice.token.word1,
+                        choice.token.word2,
+                        choice.token.word3,
+                    )))
                 self.assertEqual(forged.rejection, 4)
                 cancelled = transport.exchange(_cancel(first))
                 self.assertEqual(cancelled.state, 4)
                 recorded = transport.transcript.export()
-            self.assertEqual(planner.replay_transcript_on_clean_transport(recorded, lambda: PlannerProcessTransport(backend, rom)),
-                             recorded)
+            self.assertEqual(planner.replay_transcript_on_clean_transport(recorded, lambda: PlannerProcessTransport(backend, rom)), recorded)
             mutations = (
                 ("chapter", planner.PageKind.ACTIONS, False, ("chapter", )),
                 ("turn", planner.PageKind.ACTIONS, False, ("chapter_turn", )),
@@ -3230,15 +3240,38 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         rejected = transport.exchange(_commit(complete, choice))
                         self.assertEqual((rejected.state, rejected.rejection), (2, 6))
                         self.assertEqual((transport.last_acknowledgement.result, transport.last_acknowledgement.rejection), (0, 6))
-                        summary = transport.exchange(
-                            planner.Command(planner.CommandKind.PAGE, complete.run_id, complete.observation_id, page_index=0))
+                        summary = transport.exchange(planner.Command(planner.CommandKind.PAGE, complete.run_id, complete.observation_id, page_index=0))
                         refreshed = planner.collect_observation_pages(transport, summary)
                         actor_after = next(unit for unit in refreshed.units if unit.slot == choice.action.actor)
                         self.assertEqual(actor_after.position, actor_before.position)
                         self.assertFalse(
-                            any(event["event"] == "acknowledgement" and event["kind"] == 2 and event["result"] == 1
-                                for event in transport.transcript.events))
+                            any(event["event"] == "acknowledgement" and event["kind"] == 2 and event["result"] == 1 for event in transport.transcript.events))
                         transport.exchange(_cancel(refreshed))
+    def test_new_action_pages_replay_live_transport(self):
+        for mode, kind in ((4, "USE_ITEM"), (5, "COMBAT")):
+            with self.subTest(action_kind=kind):
+                with self._fixture(candidate_mode=mode) as (rom, backend, _):
+                    with _open_transport(backend, rom) as transport:
+                        complete = planner.collect_observation_pages(transport, transport.start())
+                        for implementation in (planner.ScriptedPlanner(), planner.BoundedSearchPlanner(max_nodes=512)):
+                            self.assertIsNotNone(implementation.choose(complete))
+                        choice = next(record for record in complete.actions
+                                      if record.action.kind == kind and (kind == "COMBAT" or record.action.target_position != (0, 0)))
+                        self.assertEqual(choice.action.item_slot, None if mode == 5 else 0)
+                        waiting = transport.exchange(_commit(complete, choice))
+                        followup = planner.collect_observation_pages(transport, waiting)
+                        transport.exchange(_cancel(followup))
+                        transcript = transport.transcript.export()
+                    self.assertEqual(planner.replay_transcript_on_clean_transport(transcript, lambda: PlannerProcessTransport(backend, rom)), transcript)
+        with self._fixture(
+                candidate_mode=5,
+                mutate_selected_item_before_commit=True,
+        ) as (rom, backend, _):
+            with _open_transport(backend, rom) as transport:
+                complete = planner.collect_observation_pages(transport, transport.start())
+                choice = next(record for record in complete.actions if record.action.kind == "COMBAT" and record.action.item_slot is None)
+                rejected = transport.exchange(_commit(complete, choice))
+                self.assertEqual((rejected.state, rejected.rejection), (2, 6))
     def test_flag_checkpoint_bounds_on_arm_transport(self):
         root = (TESTS_DIR.parents[2] / "build" / "test-artifacts" / "autoplay-planner")
         root.mkdir(parents=True, exist_ok=True)
@@ -3651,13 +3684,12 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 waiting = transport.start()
                 started = time.monotonic()
                 time.sleep(0.15)
-                before_deadline = transport.exchange(
-                    planner.Command(
-                        planner.CommandKind.PAGE,
-                        waiting.run_id,
-                        waiting.observation_id,
-                        page_index=0,
-                    ))
+                before_deadline = transport.exchange(planner.Command(
+                    planner.CommandKind.PAGE,
+                    waiting.run_id,
+                    waiting.observation_id,
+                    page_index=0,
+                ))
                 self.assertEqual(before_deadline.state, 2)
                 terminal = transport._read_state()
                 self.assertGreaterEqual(time.monotonic() - started, 0.25)
@@ -3719,13 +3751,12 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 self.assertLess(page_completion.response_frames, 120)
                 choice = planner.ScriptedPlanner().choose(complete)
                 forged = transport.exchange(
-                    _commit(complete, choice,
-                            planner.OpaqueToken(
-                                choice.token.word0,
-                                choice.token.word1,
-                                choice.token.word2,
-                                choice.token.word3 ^ 1,
-                            )))
+                    _commit(complete, choice, planner.OpaqueToken(
+                        choice.token.word0,
+                        choice.token.word1,
+                        choice.token.word2,
+                        choice.token.word3 ^ 1,
+                    )))
                 self.assertEqual(forged.rejection, 4)
                 cancelled = transport.exchange(_cancel(complete))
                 self.assertEqual(cancelled.state, 4)
@@ -3750,7 +3781,6 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 self.assertEqual(cancelled.state, 4)
                 self.assertEqual(cancelled.rejection, 8)
                 self.assertTrue(all(value == 0 for value in transport.checkpoint))
-
     @unittest.skipUnless(
         os.environ.get("PLANNER_PRODUCTION_ROM") and os.environ.get("PLANNER_PRODUCTION_ELF"),
         "enabled production ROM/ELF not supplied",
@@ -3793,13 +3823,12 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 actor_before = next(unit for unit in complete.units if unit.slot == choice.action.actor)
                 self.assertNotEqual(actor_before.position, choice.action.destination)
                 forged = transport.exchange(
-                    _commit(complete, choice,
-                            planner.OpaqueToken(
-                                choice.token.word0 ^ 1,
-                                choice.token.word1,
-                                choice.token.word2,
-                                choice.token.word3,
-                            )))
+                    _commit(complete, choice, planner.OpaqueToken(
+                        choice.token.word0 ^ 1,
+                        choice.token.word1,
+                        choice.token.word2,
+                        choice.token.word3,
+                    )))
                 self.assertEqual(forged.rejection, 4)
                 accepted = transport.exchange(_commit(complete, choice))
                 self.assertEqual(accepted.state, 2)

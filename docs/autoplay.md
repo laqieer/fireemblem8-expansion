@@ -931,10 +931,15 @@ coordinates are revalidated against live state and lowered to
 publishes one candidate per repairable inventory slot on a same-faction unit;
 blue-to-green allied targets remain ineligible exactly like the production
 Hammerne builder. It revalidates that slot and lowers it to
-`ActionData.trapType`. Weapon actions include every in-range obstacle trap on
-live Snag terrain after ordinary unit targets. They bind `targetId=0` plus the
-selected coordinates, revalidate the trap and weapon range, and use the
-existing obstacle battle setup and destruction path. Rogue Pick candidates
+`ActionData.trapType`. Weapon actions include every in-range Snag and both
+damaged-wall cells associated with each obstacle trap. Ballista-capable units
+also enumerate every target from each reachable usable ballista with
+`BU_ISLOT_AUTO`; its exact weapon/uses bind the opaque identity and lower to
+`BU_ISLOT_BALLISTA`. Obstacle actions bind `targetId=0` and coordinates, then
+reuse the existing damage/destruction path. Mine and Light Rune enumerate
+their exact adjacent production tiles; all four dance rings enumerate eligible
+blue adjacent units. Their target tile/unit, coordinates, and selected item
+are revalidated and lowered before the unchanged item executor. Rogue Pick candidates
 remain one direct no-item action per target. Non-Rogue targets emit every
 applicable inventory slot in target-then-slot order: thief Lockpicks, Chest
 Keys/bundles for chests, and Door Keys for doors; bridges remain Lockpick-only.
@@ -1271,12 +1276,12 @@ therefore includes every future Bridge method rather than a name allowlist.
 The authoritative resource gate builds otherwise-identical enabled and
 disabled debug profiles, parses both linker reports/maps/ELFs, and compares
 their real `__floating_end` plus EWRAM/IWRAM occupancy. The current complete
-linked delta is 11,200/12,288 ROM bytes (1,088 headroom), 1,172/4,096 EWRAM
+linked delta is 12,176/12,288 ROM bytes (112 headroom), 1,172/4,096 EWRAM
 bytes (2,924 headroom), and zero IWRAM. This naturally includes every planner
 hook, including `cp_decide`, targeting/item/menu/action/map/lifecycle/RNG
 owners omitted by the old object subtotal. Both linked maps must contain every
 representative hook, and the inclusive 12,288-byte comparator rejects the
-first byte over the cap. The debug-only planner translation unit uses `-Os` to
+first byte over the cap. The debug-only planner translation units use `-Os` to
 retain the frozen cap without changing behavior or release/archival code.
 Disabled release and archival builds omit planner state and the normal-summon
 executor hook while retaining their original player/executor paths.
