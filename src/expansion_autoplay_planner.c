@@ -67,6 +67,9 @@ typedef char ExpansionAutoplayPlannerRecordCountOffsetCheck[
     offsetof(struct ExpansionAutoplayPlannerObservationV2, count) == 40 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerPayloadOffsetCheck[
     offsetof(struct ExpansionAutoplayPlannerObservationV2, payload) == 100 ? 1 : -1];
+typedef char ExpansionAutoplayPlannerPageDigestOffsetCheck[
+    offsetof(struct ExpansionAutoplayPlannerObservationV2, payload.words[
+        EXPANSION_AUTOPLAY_PLANNER_PAGE_DIGEST_WORD]) == 1020 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerChapterModeOffsetCheck[
     offsetof(struct ExpansionAutoplayPlannerCampaignCheckpointV2, chapterMode) == 20 ? 1 : -1];
 typedef char ExpansionAutoplayPlannerCommandPayloadOffsetCheck[
@@ -293,11 +296,28 @@ static bool IsCommandHeaderValid(void)
             == sizeof(struct ExpansionAutoplayPlannerCommandV2);
 }
 
+static void PublishObservationState(enum ExpansionAutoplayPlannerState state)
+{
+    u32* words = (u32*)&gExpansionAutoplayPlannerObservation;
+    u32 digest = 2166136261u;
+    int index;
+
+    for (index = 0; index < 255; index++)
+        digest = MixDigest(
+            digest, index == 5 ? (u32)state : words[index]);
+    gExpansionAutoplayPlannerObservation.payload.words[
+        EXPANSION_AUTOPLAY_PLANNER_PAGE_DIGEST_WORD] =
+            MixDigest(digest, 0);
+    PLANNER_PUBLISH_BARRIER();
+    gExpansionAutoplayPlannerObservation.state = state;
+}
+
 static void Reject(enum ExpansionAutoplayPlannerRejection rejection)
 {
     gExpansionAutoplayPlannerObservation.rejection = rejection;
     gExpansionAutoplayPlannerCommand.result = 0;
     gExpansionAutoplayPlannerCommand.rejection = rejection;
+    PublishObservationState(gExpansionAutoplayPlannerObservation.state);
     ClearCommand();
 }
 
@@ -334,7 +354,7 @@ static void ClearFullCommand(void)
 static void EndPlannerRun(enum ExpansionAutoplayPlannerState state)
 {
     ClearCheckpoint();
-    gExpansionAutoplayPlannerObservation.state = state;
+    PublishObservationState(state);
     sPlannerActive = false;
     ExpansionAutoplay_RequestPlayerControlRestore();
 }
@@ -2020,9 +2040,7 @@ static bool PublishPage(u32 pageIndex)
             - flagPages);
     }
     gExpansionAutoplayPlannerObservation.pageIndex = pageIndex;
-    PLANNER_PUBLISH_BARRIER();
-    gExpansionAutoplayPlannerObservation.state =
-        EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING;
+    PublishObservationState(EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING);
     return true;
 }
 
@@ -2083,9 +2101,7 @@ static void PublishReadyState(void)
     PublishRuntimeIdentity();
     gExpansionAutoplayPlannerObservation.pageCount = 1;
     gExpansionAutoplayPlannerObservation.rejection = rejection;
-    PLANNER_PUBLISH_BARRIER();
-    gExpansionAutoplayPlannerObservation.state =
-        EXPANSION_AUTOPLAY_PLANNER_STATE_READY;
+    PublishObservationState(EXPANSION_AUTOPLAY_PLANNER_STATE_READY);
 }
 
 void ExpansionAutoplayPlanner_Reset(void)
@@ -2543,10 +2559,9 @@ enum ExpansionAutoplayPlannerDecisionResult ExpansionAutoplayPlanner_PollDecisio
         return EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT;
     }
 
-    gExpansionAutoplayPlannerObservation.state =
-        EXPANSION_AUTOPLAY_PLANNER_STATE_COMMITTED;
     gExpansionAutoplayPlannerObservation.rejection =
         EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;
+    PublishObservationState(EXPANSION_AUTOPLAY_PLANNER_STATE_COMMITTED);
     gExpansionAutoplayPlannerCommand.result = 1;
     gExpansionAutoplayPlannerCommand.rejection =
         EXPANSION_AUTOPLAY_PLANNER_REJECTION_NONE;

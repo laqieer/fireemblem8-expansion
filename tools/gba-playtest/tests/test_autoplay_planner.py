@@ -184,10 +184,11 @@ def _sync_settled_observation(settled, observation):
 def _rewrite_transcript_identity(document, name, value):
     index = ("rom", "config", "scenario", "seed").index(name)
     document["events"][0]["provenance"][f"{name}_identity"] = value
-    latest = None
+    latest = command = None
     for event in document["events"]:
-        command = event.get("command", {})
-        if command.get("kind") == planner.CommandKind.START.value:
+        if event["event"] == "command":
+            command = event["command"]
+        if command is not None and command.get("kind") == planner.CommandKind.START.value:
             command["expected_identities"][index] = value
         observation = event.get("observation")
         if observation is not None:
@@ -195,6 +196,9 @@ def _rewrite_transcript_identity(document, name, value):
             latest = observation
         if event["event"] == "settled" and latest is not None:
             _sync_settled_observation(event, latest)
+            if command is not None and command["kind"] == planner.CommandKind.START.value:
+                event["command_words"][8 + index] = value
+            command = None
     _rechain_transcript(document)
 
 
@@ -488,10 +492,11 @@ class _PageReplayTransport:
         self.command_id = 1
         self.largest_exchange = 0
         self.invalid_settlement_page = None
+        self.command_words = (0, ) * 16
     def snapshot_collection_state(self):
-        return self.command_id, self.largest_exchange
+        return self.command_id, self.largest_exchange, self.command_words
     def restore_collection_state(self, state):
-        self.command_id, self.largest_exchange = state
+        self.command_id, self.largest_exchange, self.command_words = state
     def _respond(self, command, page):
         size_before = len(self.transcript.export())
         kind = planner._COMMAND_KIND_CODES[command["kind"]]
@@ -500,10 +505,12 @@ class _PageReplayTransport:
         self.transcript.record_acknowledgement(self.command_id, kind, 1, 0)
         self.transcript.record_completion(self.command_id, kind, 0)
         self.transcript.record_observation_page(page)
+        self.command_words = planner._cleared_command_words(
+            command, {"result": 1, "rejection": 0})
         self.transcript.record_settled(
             page,
             (0, ) * (12 if page.page_index == self.invalid_settlement_page else 13),
-            (0, ) * 16)
+            self.command_words)
         self.command_id += 1
         self.largest_exchange = max(self.largest_exchange, len(self.transcript.export()) - size_before)
         return page
@@ -526,7 +533,8 @@ class _PageReplayTransport:
             raise AssertionError("page replay transport accepts only PAGE")
         return self._respond(planner._command_payload(command), self.pages[command.page_index])
     def record_complete_observation(self, observation):
-        self.transcript.record_complete_and_settled(observation, (0, ) * 13, (0, ) * 16)
+        self.transcript.record_complete_and_settled(
+            observation, (0, ) * 13, self.command_words)
 
 
 def _arm_code_size(sections):
@@ -630,6 +638,14 @@ class PlannerBridgeTests(unittest.TestCase):
         settled_event = next(event for event in runtime_tampered["events"] if event["event"] == "settled")
         settled_event["terminal"]["state"] ^= 1
         _assert_import_rejected(self, runtime_tampered, "settled runtime state mismatch")
+        for word in range(16):
+            command_tampered = json.loads(exported)
+            [event for event in command_tampered["events"]
+             if event["event"] == "settled"][-1]["command_words"][word] ^= 1
+            _rechain_transcript(command_tampered)
+            _assert_replay_rejected(
+                self, planner._canonical(command_tampered),
+                "settled command mailbox mismatch")
         acknowledgement = next(event for event in json.loads(exported)["events"] if event["event"] == "acknowledgement")
         for result, rejection in (
             (0, 0),
@@ -1219,7 +1235,7 @@ class PlannerBridgeTests(unittest.TestCase):
         campaign = planner.CampaignRecord(0, 1, 0, available, available, available, available, 1, 0x1F, 3, 0, planner.AssignmentSource.UNIT, 1, available,
                                           objectives, groups, strategies, assignments)
         components = (
-            (planner.PageKind.MAP, "map_cells", map_cells, 231),
+            (planner.PageKind.MAP, "map_cells", map_cells, 230),
             (planner.PageKind.UNITS, "units", units, 23),
             (planner.PageKind.INVENTORY, "inventory", inventory, 115),
             (planner.PageKind.RESOURCES, "resources", resources, 115),
@@ -1353,6 +1369,7 @@ class PlannerBridgeTests(unittest.TestCase):
                 1,
             ]
             words[25:25 + len(payload)] = payload
+            words[planner.OBSERVATION_DIGEST_WORD] = planner.wire_page_digest(words)
             return planner.parse_transport_observation(words)
 
         small_pages = (
@@ -1640,6 +1657,10 @@ class PlannerBridgeTests(unittest.TestCase):
         planner.BoundedSearchPlanner(max_nodes=512).choose(changed)
     def test_action_page_decodes_actor_and_target_slots(self):
         words = [0] * 256
+        def parse_page(values):
+            values[planner.OBSERVATION_DIGEST_WORD] = planner.wire_page_digest(values)
+            return planner.parse_transport_observation(values)
+
         words[:15] = [
             0x41504C4E,
             planner.PROTOCOL_VERSION,
@@ -1669,7 +1690,7 @@ class PlannerBridgeTests(unittest.TestCase):
             0x10203040,
             5,
         ]
-        observation = planner.parse_transport_observation(words)
+        observation = parse_page(words)
         action = observation.actions[0].action
         self.assertEqual(action.item_slot, 1)
         self.assertEqual(action.target_item_slot, 3)
@@ -1682,14 +1703,14 @@ class PlannerBridgeTests(unittest.TestCase):
         words[28] = 0
         words[29] = 0xFF | (0xFF << 8)
         words[34] = 0
-        observation = planner.parse_transport_observation(words)
+        observation = parse_page(words)
         self.assertIsNone(observation.actions[0].action.item_slot)
         self.assertIsNone(observation.actions[0].action.target_item_slot)
         words[25] = 3
         words[28] = 2
         words[29] = 0 | (0xFF << 8)
         words[34] = 5
-        observation = planner.parse_transport_observation(words)
+        observation = parse_page(words)
         self.assertEqual(observation.actions[0].action.item_slot, 0)
         valid_forms = (
             ("ballista", 2, 2, 0xFFFF),
@@ -1710,18 +1731,18 @@ class PlannerBridgeTests(unittest.TestCase):
                     4,
                     1 if kind == 2 else 6,
                 ]
-                parsed = planner.parse_transport_observation(words).actions[0].action
+                parsed = parse_page(words).actions[0].action
                 self.assertEqual(parsed.kind, "COMBAT" if kind == 2 else "USE_ITEM")
         words[25:35] = [
             2, 1, 1, 0, 0xFF00, 1, 2, 3, 4, 1,
         ]
-        top_left = planner.parse_transport_observation(words).actions[0].action
+        top_left = parse_page(words).actions[0].action
         self.assertEqual(
             (top_left.target, top_left.target_position), (0, (0, 0)))
         words[28] = 2 | (1 << 8)
         with self.assertRaisesRegex(
                 planner.PlannerError, "sentinel contract"):
-            planner.parse_transport_observation(words)
+            parse_page(words)
         inventory = {
             (1, 0): {
                 "actor": 1,
@@ -1755,7 +1776,7 @@ class PlannerBridgeTests(unittest.TestCase):
                 "invalid optional item-slot sentinel",
         ):
             words[29] = planner.UNIT_ITEM_COUNT | (0xFF << 8)
-            planner.parse_transport_observation(words)
+            parse_page(words)
         boundary = words.copy()
         boundary[25:35] = [
             2,
@@ -1766,8 +1787,26 @@ class PlannerBridgeTests(unittest.TestCase):
             *([0xFFFFFFFF] * 4),
             1,
         ]
-        valid = planner.parse_transport_observation(boundary)
+        valid = parse_page(boundary)
         self.assertEqual(valid.actions[0].action.destination, (63, 63))
+        for name, word, value in (
+                ("missing", 255, 0),
+                ("wrong", 255, boundary[255] ^ 1),
+                ("stale", 30, boundary[30] ^ 1),
+                ("header bit flip", 14, boundary[14] ^ 1)):
+            with self.subTest(page_digest=name):
+                malformed = boundary.copy()
+                malformed[word] = value
+                for implementation in (
+                        planner.ScriptedPlanner(),
+                        planner.BoundedSearchPlanner()):
+                    with mock.patch.object(
+                            implementation, "choose") as choose:
+                        with self.assertRaisesRegex(
+                                planner.PlannerError, "page digest mismatch"):
+                            implementation.choose(
+                                planner.parse_transport_observation(malformed))
+                    choose.assert_not_called()
         transcript = planner.PlannerTranscript()
         transcript.record_session(TRANSCRIPT_SESSION)
         transcript.record_complete_and_settled(
@@ -1827,6 +1866,9 @@ class PlannerBridgeTests(unittest.TestCase):
             ("kind reserved", {
                 25: 0x101
             }),
+            ("unused payload", {
+                35: 1
+            }),
             ("combined", {
                 26: 0xFF,
                 27: 255,
@@ -1855,7 +1897,7 @@ class PlannerBridgeTests(unittest.TestCase):
                             wraps=implementation.choose,
                     ) as choose:
                         with self.assertRaises(planner.PlannerError):
-                            decoded = planner.parse_transport_observation(malformed)
+                            decoded = parse_page(malformed)
                             selected = implementation.choose(decoded)
                             transport.exchange(selected)
                     choose.assert_not_called()
@@ -1874,12 +1916,12 @@ class PlannerBridgeTests(unittest.TestCase):
                     planner.PlannerError,
                     "page identity is outside v2 bounds",
             ):
-                planner.parse_transport_observation(malformed)
+                parse_page(malformed)
         for invalid_word in (-1, 0x100000000):
             malformed = boundary.copy()
             malformed[7] = invalid_word
             with self.assertRaisesRegex(planner.PlannerError, "outside fixed u32 range"):
-                planner.parse_transport_observation(malformed)
+                parse_page(malformed)
     def test_host_begin_and_commit_limits_are_atomic(self):
         boundary, boundary_observation, boundary_command = (_single_action_bridge())
         boundary._committed_count = planner.MAX_TRACE_ACTIONS - 1
@@ -2297,6 +2339,7 @@ raise SystemExit(child.returncode)
                 "observation_start_offset": 36,
                 "observation_count_offset": 40,
                 "observation_payload_offset": 100,
+                "observation_digest_offset": 1020,
                 "command_size": 64,
                 "command_payload_offset": 32,
                 "command_result_offset": 56,
@@ -3136,6 +3179,25 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 self.assertEqual(planner.replay_transcript_on_clean_transport(recorded, lambda: PlannerProcessTransport(backend, rom)), recorded)
             imported = planner.PlannerTranscript.import_production_bytes(scripted[2])
             self.assertEqual(imported.export(), scripted[2])
+            checkpoint_event = next(
+                event for event in imported.events
+                if event["event"] == "settled" and any(event["checkpoint"]))
+            for word in (0, 1, 2, 3, 4, 5, 6, 12):
+                document = json.loads(scripted[2])
+                target = next(event for event in document["events"]
+                              if event["sequence"] == checkpoint_event["sequence"])
+                target["checkpoint"][word] ^= 1
+                _rechain_transcript(document)
+                _assert_replay_rejected(
+                    self, planner._canonical(document),
+                    validation_mode=planner.ValidationMode.PRODUCTION)
+            standalone = json.loads(scripted[2])
+            _transcript_event(standalone, "settled")["checkpoint"] = (
+                checkpoint_event["checkpoint"])
+            _rechain_transcript(standalone)
+            _assert_replay_rejected(
+                self, planner._canonical(standalone),
+                validation_mode=planner.ValidationMode.PRODUCTION)
             transition_mutations = (
                 ("START READY", "START", 0, "state", lambda value, command: 1),
                 ("START arbitrary", "START", 0, "state", lambda value, command: 3),
@@ -3290,7 +3352,12 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         response["state"] = 2
                         _sync_settled_observation(settled, response)
                     elif name == "retained checkpoint":
-                        settled["checkpoint"][0] = 0x41504C4E
+                        settled["checkpoint"] = [
+                            0x41504C4E, planner.PROTOCOL_VERSION, 52,
+                            response["run_id"], response["chapter"],
+                            0,
+                            response["chapter_turn"], *response["rng_state"],
+                            response["rng_lcg"], response["rng_consumption"], 1]
                     elif owner == "response":
                         response[field] = value
                         _sync_settled_observation(settled, response)
@@ -3341,7 +3408,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     _assert_replay_rejected(
                         self,
                         planner._canonical(document),
-                        "rejected response",
+                        "rejected response|checkpoint",
                         validation_mode=planner.ValidationMode.PRODUCTION,
                     )
     def test_world_map_transition_records_settled_checkpoint(self):
@@ -3673,7 +3740,8 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 ("chapter", 14, 1, False),
                 ("phase-runtime", 15, 1, False),
                 ("availability", 25, 1 << 16, False),
-                ("payload-tail", 255, 1, False),
+                ("digest-missing", 255, 0, False),
+                ("digest-wrong", 255, 1, False),
                 *((f"{name}-zero", 21 + index, 0, False) for index, name in enumerate(("rom", "config", "scenario", "seed"))),
                 *((f"{name}-mismatch", 21 + index, 1, True) for index, name in enumerate(("rom", "config", "scenario", "seed"))),
             )

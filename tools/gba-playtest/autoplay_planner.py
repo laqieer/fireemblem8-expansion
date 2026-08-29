@@ -28,6 +28,7 @@ COMMIT_COMPLETION_FRAME_LIMIT = 18000
 PAGE_MAX_BYTES = 1024
 OBSERVATION_HEADER_BYTES = 100
 OBSERVATION_PAYLOAD_BYTES = 924
+OBSERVATION_DIGEST_WORD = 255
 ACTION_RECORD_BYTES = 40
 ACTIONS_PER_PAGE = OBSERVATION_PAYLOAD_BYTES // ACTION_RECORD_BYTES
 SEMANTIC_FIELD_COUNT = 8
@@ -376,6 +377,76 @@ def _command_payload(command: Command) -> dict[str, object]:
         payload["action_ordinal"] = command.action_ordinal
         payload["token"] = (asdict(command.token) if command.token is not None else None)
     return payload
+
+
+def _cleared_command_words(
+    command: dict[str, object],
+    acknowledgement: dict[str, object],
+) -> list[int]:
+    words = [0] * 16
+    words[:6] = [
+        0x41504C4E, PROTOCOL_VERSION, 64, 0,
+        command["run_id"], command["observation_id"],
+    ]
+    kind = command["kind"]
+    if kind == CommandKind.PAGE.value:
+        words[6] = command["page_index"]
+    elif kind == CommandKind.COMMIT.value:
+        words[7] = command["action_ordinal"]
+        words[8:12] = [
+            command["token"][f"word{index}"] for index in range(4)]
+    elif kind == CommandKind.START.value:
+        words[8:12] = command["expected_identities"]
+    words[14:16] = [
+        acknowledgement["result"], acknowledgement["rejection"]]
+    return words
+
+
+def _validate_checkpoint_binding(
+    checkpoint: list[int],
+    session: dict[str, object],
+    previous_checkpoint: list[int] | None,
+    command: dict[str, object] | None,
+    acknowledgement: dict[str, object] | None,
+    previous_observation: dict[str, object] | None,
+    terminal: dict[str, object],
+    initial_settlement: bool,
+) -> None:
+    accepted_kind = (
+        command["kind"] if command is not None
+        and acknowledgement is not None
+        and acknowledgement["result"] == 1
+        and acknowledgement["rejection"] == 0 else None)
+    if terminal["state"] in {4, 5}:
+        if any(checkpoint):
+            raise PlannerError("terminal response retained checkpoint")
+        return
+    if not any(checkpoint):
+        if (previous_checkpoint is not None and any(previous_checkpoint)
+                and accepted_kind != CommandKind.START.value):
+            raise PlannerError("nonterminal response cleared checkpoint")
+        return
+    if checkpoint[3] == 0 or checkpoint[3] not in {
+            session["ready_run_id"], session["run_id"]} or checkpoint[12] == 0:
+        raise PlannerError("checkpoint run or semantic identity mismatch")
+    if previous_checkpoint is not None and any(previous_checkpoint):
+        if checkpoint != previous_checkpoint:
+            raise PlannerError("checkpoint changed after publication")
+        return
+    if command is None:
+        if (not initial_settlement
+                or checkpoint[3] != session["ready_run_id"]):
+            raise PlannerError("checkpoint appeared without accepted COMMIT")
+        return
+    if accepted_kind != CommandKind.COMMIT.value or previous_observation is None:
+        raise PlannerError("checkpoint appeared without accepted COMMIT")
+    campaign = previous_observation.get("campaign")
+    if (checkpoint[3] != command["run_id"]
+            or checkpoint[4] != previous_observation["chapter"]
+            or checkpoint[6] != previous_observation["chapter_turn"]
+            or checkpoint[11] < previous_observation["rng_consumption"]
+            or campaign is not None and checkpoint[5] != campaign["mode"]):
+        raise PlannerError("checkpoint does not bind settled campaign state")
 
 
 def _validate_json_structure(value: object) -> None:
@@ -1452,6 +1523,17 @@ def _mix_digest(digest: int, value: int) -> int:
     return ((digest ^ (value & 0xFFFFFFFF)) * 16777619) & 0xFFFFFFFF
 
 
+def wire_page_digest(words: Iterable[int]) -> int:
+    values = tuple(words)
+    if len(values) != 256:
+        raise PlannerError("malformed fixed-width observation")
+    digest = 2166136261
+    for index, value in enumerate(values):
+        digest = _mix_digest(
+            digest, 0 if index == OBSERVATION_DIGEST_WORD else value)
+    return digest
+
+
 def _fixture_action_token(run_id: int, observation_id: int, ordinal: int, action: Action) -> OpaqueToken:
     action_ids = {
         "MOVE_WAIT": 0,
@@ -1770,6 +1852,7 @@ class PlannerTranscript:
         pending_response = False
         awaiting_settlement = False
         pending_previous_page = pending_previous_checkpoint = None
+        pending_previous_observation = None
         pending_rejection_terminal = False
         pending_accepted_terminal = False
         expected_command_id = 1
@@ -1778,7 +1861,7 @@ class PlannerTranscript:
             list[object],
         ] = {}
         latest_observation: dict[str, object] | None = None
-        latest_page = latest_checkpoint = None
+        latest_page = latest_checkpoint = latest_command_words = None
         observation_pages: dict[tuple[int, int], list[dict[str, object]]] = {}
         active_identity_bound = False
         for sequence, event in enumerate(events):
@@ -1806,6 +1889,7 @@ class PlannerTranscript:
                     latest_page
                     if latest_page is not None else latest_observation)
                 pending_previous_checkpoint = latest_checkpoint
+                pending_previous_observation = latest_observation
                 pending_rejection_terminal = False
                 pending_accepted_terminal = False
             elif kind == "acknowledgement":
@@ -1900,6 +1984,38 @@ class PlannerTranscript:
                         "consumption": latest_observation.get("rng_consumption"),
                 } or event["telemetry"] != expected_telemetry):
                     raise PlannerError("settled runtime state mismatch")
+                _validate_checkpoint_binding(
+                    event["checkpoint"], session_provenance,
+                    pending_previous_checkpoint, (
+                        settled_command["command"]
+                        if settled_command is not None else None),
+                    settled_ack, pending_previous_observation, terminal,
+                    settled_command is None and latest_command_words is None)
+                transition_reset = (
+                    settled_command is not None and settled_ack is not None
+                    and settled_command["command"]["kind"]
+                        == CommandKind.COMMIT.value
+                    and settled_ack["result"] == 1
+                    and any(event["checkpoint"])
+                    and pending_previous_observation is not None
+                    and latest_observation["chapter"]
+                        != pending_previous_observation["chapter"])
+                mailbox_ack = settled_ack
+                if (settled_command is not None and settled_ack is not None
+                        and settled_command["command"]["kind"]
+                            == CommandKind.START.value
+                        and settled_ack["result"] == 1
+                        and terminal["state"] == 5):
+                    mailbox_ack = {
+                        "result": 0, "rejection": terminal["rejection"]}
+                expected_words = (
+                    [0] * 16 if transition_reset else
+                    _cleared_command_words(
+                        settled_command["command"], mailbox_ack)
+                    if settled_command is not None and mailbox_ack is not None
+                    else latest_command_words or [0] * 16)
+                if event["command_words"] != expected_words:
+                    raise PlannerError("settled command mailbox mismatch")
                 if settled_ack is not None:
                     acknowledgement_accepted = (settled_ack.get("result") == 1 and settled_ack.get("rejection") == 0)
                     if (acknowledgement_accepted
@@ -1920,6 +2036,7 @@ class PlannerTranscript:
                             and terminal["state"] == 3):
                         raise PlannerError("rejected COMMIT cannot settle as COMMITTED")
                 latest_checkpoint = event["checkpoint"]
+                latest_command_words = event["command_words"]
             elif kind == "transport_error":
                 code = event["code"]
                 if (sequence != len(document["events"]) - 1 or awaiting_settlement or pending_command is None or pending_completion or pending_response):
@@ -2228,7 +2345,10 @@ class PlannerBridge:
         self.transcript.record_acknowledgement(command_id, 4, 1, 0)
         self.transcript.record_completion(command_id, 4, 0)
         self.transcript.record_observation_page(page)
-        self.transcript.record_settled(page, (0, ) * 13, (0, ) * 16)
+        self.transcript.record_settled(
+            page, (0, ) * 13,
+            _cleared_command_words(
+                _command_payload(command), {"result": 1, "rejection": 0}))
         return page
     def commit(self, command: Command) -> ActionRecord:
         observation = self._observation
@@ -2253,7 +2373,9 @@ class PlannerBridge:
             self.transcript.record_settled(
                 settled,
                 (0, ) * 13,
-                (0, ) * 16,
+                _cleared_command_words(
+                    _command_payload(command),
+                    {"result": 0, "rejection": 8}),
             )
             self._observation = None
             self._all_actions = ()
@@ -2282,7 +2404,9 @@ class PlannerBridge:
         self.transcript.record_settled(
             settled,
             (0, ) * 13,
-            (0, ) * 16,
+            _cleared_command_words(
+                _command_payload(command),
+                {"result": 1, "rejection": 0}),
         )
         self._committed_count += 1
         self._observation = None
@@ -2317,7 +2441,7 @@ _OBSERVATION_HEADER_WORDS = 25
 _PAGE_RECORD_CAPACITIES = {
     PageKind.CONTROL: 0,
     PageKind.SUMMARY: SEMANTIC_FIELD_COUNT,
-    PageKind.MAP: 231,
+    PageKind.MAP: 230,
     PageKind.UNITS: 23,
     PageKind.INVENTORY: 115,
     PageKind.RESOURCES: 115,
@@ -2646,6 +2770,8 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
             (),
             page_kind=PageKind.CONTROL,
         )
+    if values[OBSERVATION_DIGEST_WORD] != wire_page_digest(values):
+        raise PlannerError("planner observation page digest mismatch")
     if values[0] != 0x41504C4E or values[1] != PROTOCOL_VERSION:
         raise PlannerError("unexpected planner protocol identity")
     if values[2] > PAGE_MAX_BYTES or values[2] != _OBSERVATION_WORD_COUNT * 4:
@@ -2665,7 +2791,8 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
             or (page_kind is not PageKind.CONTROL and record_count == 0 and not (page_kind is PageKind.FLAGS and record_start == 0 and total_records == 0))):
         raise PlannerError("planner page bounds are inconsistent")
 
-    payload = values[_OBSERVATION_HEADER_WORDS:]
+    payload = values[
+        _OBSERVATION_HEADER_WORDS:OBSERVATION_DIGEST_WORD]
     fields: list[Field] = []
     map_cells: list[MapCell] = []
     units: list[UnitRecord] = []
@@ -3009,6 +3136,25 @@ def parse_transport_observation(words: Iterable[int]) -> Observation:
                 value if availability is Availability.AVAILABLE else None,
                 availability,
             ))
+    if page_kind is PageKind.SUMMARY:
+        reserved = (
+            payload[24 + objective_count * 8:88]
+            + payload[88 + group_count * 6:136]
+            + payload[136 + strategy_count * 4:168]
+            + payload[168 + assignment_count * 3:])
+    else:
+        used_words = {
+            PageKind.CONTROL: 0,
+            PageKind.MAP: record_count,
+            PageKind.UNITS: record_count * 10,
+            PageKind.ACTIONS: record_count * 10,
+            PageKind.INVENTORY: record_count * 2,
+            PageKind.RESOURCES: record_count * 2,
+            PageKind.FLAGS: record_count * 2,
+        }[page_kind]
+        reserved = payload[used_words:]
+    if any(reserved):
+        raise PlannerError("planner observation reserved payload is nonzero")
     return Observation(
         values[3],
         values[4],

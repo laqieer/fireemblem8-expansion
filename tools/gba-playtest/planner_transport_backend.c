@@ -42,6 +42,7 @@
 #define EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED UINT32_C(5)
 #define COMMAND_WORD_COUNT 16u
 #define OBSERVATION_WORD_COUNT 256u
+#define OBSERVATION_DIGEST_WORD 255u
 #define CHECKPOINT_WORD_COUNT 13u
 
 #ifndef PLANNER_COMMAND_ACK_FRAME_LIMIT
@@ -157,12 +158,47 @@ static void write_command(
     write_word(core, PLANNER_COMMAND_ADDR, 3, kind);
 }
 
-static void emit_state(struct mCore* core)
+uint32_t PlannerTransport_ObservationDigest(
+    const uint32_t words[OBSERVATION_WORD_COUNT])
 {
+    uint32_t digest = UINT32_C(2166136261);
     size_t index;
+
+    for (index = 0; index < OBSERVATION_WORD_COUNT; index++)
+        digest = (digest
+            ^ (index == OBSERVATION_DIGEST_WORD ? 0 : words[index]))
+            * UINT32_C(16777619);
+    return digest;
+}
+
+static bool read_observation(
+    struct mCore* core,
+    uint32_t words[OBSERVATION_WORD_COUNT])
+{
+    uint32_t digest;
+    size_t index;
+
+    for (index = 0; index < OBSERVATION_WORD_COUNT; index++)
+        words[index] = read_word(core, PLANNER_OBSERVATION_ADDR, index);
+    digest = PlannerTransport_ObservationDigest(words);
+    if (words[OBSERVATION_DIGEST_WORD] != digest)
+        fprintf(stderr,
+            "planner transport observation digest mismatch: %08" PRIx32
+            " != %08" PRIx32 "\n",
+            words[OBSERVATION_DIGEST_WORD], digest);
+    return words[OBSERVATION_DIGEST_WORD] == digest;
+}
+
+static bool emit_state(struct mCore* core)
+{
+    uint32_t words[OBSERVATION_WORD_COUNT];
+    size_t index;
+
+    if (!read_observation(core, words))
+        return false;
     fputs("OBS", stdout);
     for (index = 0; index < OBSERVATION_WORD_COUNT; index++)
-        printf(" %08" PRIx32, read_word(core, PLANNER_OBSERVATION_ADDR, index));
+        printf(" %08" PRIx32, words[index]);
     fputs(" CHECKPOINT", stdout);
     for (index = 0; index < CHECKPOINT_WORD_COUNT; index++)
         printf(" %08" PRIx32, read_word(core, PLANNER_CHECKPOINT_ADDR, index));
@@ -171,6 +207,7 @@ static void emit_state(struct mCore* core)
         printf(" %08" PRIx32, read_word(core, PLANNER_COMMAND_ADDR, index));
     fputc('\n', stdout);
     fflush(stdout);
+    return true;
 }
 
 static void emit_acknowledgement(
@@ -246,6 +283,8 @@ bool PlannerTransport_IsReadyObservationValid(
     size_t index;
 
     if (words == NULL
+        || words[OBSERVATION_DIGEST_WORD]
+            != PlannerTransport_ObservationDigest(words)
         || words[0] != EXPANSION_AUTOPLAY_PLANNER_MAGIC
         || words[1] != EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION
         || words[2] != OBSERVATION_WORD_COUNT * sizeof(uint32_t)
@@ -254,7 +293,7 @@ bool PlannerTransport_IsReadyObservationValid(
         return false;
     for (index = 3; index < OBSERVATION_WORD_COUNT; index++)
     {
-        if (index == 5 || index == 7
+        if (index == 5 || index == 7 || index == OBSERVATION_DIGEST_WORD
             || (index >= 21 && index <= 24))
             continue;
         if (words[index] != 0)
@@ -579,7 +618,8 @@ static int service_decision_timer(
         state = read_word(core, PLANNER_OBSERVATION_ADDR, 5);
         if (state != EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING)
         {
-            emit_state(core);
+            if (!emit_state(core))
+                return -1;
             timer->active = false;
             return 1;
         }
@@ -594,7 +634,8 @@ static int service_decision_timer(
     state = read_word(core, PLANNER_OBSERVATION_ADDR, 5);
     if (!is_terminal_state(state))
         return -1;
-    emit_state(core);
+    if (!emit_state(core))
+        return -1;
     timer->active = false;
     return 1;
 }
@@ -698,7 +739,8 @@ static int run_transport(const char* rom_path)
         core->deinit(core);
         return 3;
     }
-    emit_state(core);
+    if (!emit_state(core))
+        transport_result = 3;
     if (!refresh_decision_timer(core, &decision))
         transport_result = 3;
     while (transport_result == 0)
@@ -769,7 +811,11 @@ static int run_transport(const char* rom_path)
                 fflush(stdout);
                 continue;
             }
-            emit_state(core);
+            if (!emit_state(core))
+            {
+                transport_result = 3;
+                break;
+            }
             if (!refresh_decision_timer(core, &decision))
                 transport_result = 3;
             continue;
@@ -900,8 +946,20 @@ static int run_transport(const char* rom_path)
             transport_result = 3;
             break;
         }
+        {
+            uint32_t words[OBSERVATION_WORD_COUNT];
+            if (!read_observation(core, words))
+            {
+                transport_result = 3;
+                break;
+            }
+        }
         emit_completion(&acknowledgement, response_frames);
-        emit_state(core);
+        if (!emit_state(core))
+        {
+            transport_result = 3;
+            break;
+        }
         if (!refresh_decision_timer(core, &decision))
         {
             transport_result = 3;

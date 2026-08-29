@@ -9,6 +9,7 @@ bool PlannerTransport_IsAcknowledgementValid(uint32_t result, uint32_t rejection
 bool PlannerTransport_IsReadyObservationValid(
     const uint32_t words[256],
     const uint32_t expected_identities[4]);
+uint32_t PlannerTransport_ObservationDigest(const uint32_t words[256]);
 int PlannerTransport_ReadLineForTest(FILE* input, char* line, size_t capacity);
 bool PlannerTransport_ParseHexForTest(const char* text, uint32_t* value);
 
@@ -116,6 +117,7 @@ static int CheckReadyObservation(void)
     words[5] = 1;
     words[7] = 1;
     memcpy(&words[21], expected, sizeof(expected));
+    words[255] = PlannerTransport_ObservationDigest(words);
     if (!PlannerTransport_IsReadyObservationValid(words, NULL)
         || !PlannerTransport_IsReadyObservationValid(words, expected))
         return 1;
@@ -124,29 +126,40 @@ static int CheckReadyObservation(void)
         uint32_t saved = words[fixed_mutations[index][0]];
 
         words[fixed_mutations[index][0]] = fixed_mutations[index][1];
+        words[255] = PlannerTransport_ObservationDigest(words);
         if (!ReadyRejectsWithoutMutation(words, expected))
             return 1;
         words[fixed_mutations[index][0]] = saved;
+        words[255] = PlannerTransport_ObservationDigest(words);
     }
     for (index = 3; index < 256; index++)
     {
-        if (index == 5 || index == 7 || (index >= 21 && index <= 24))
+        if (index == 5 || index == 7 || index == 255
+            || (index >= 21 && index <= 24))
             continue;
         words[index] = 1;
+        words[255] = PlannerTransport_ObservationDigest(words);
         if (!ReadyRejectsWithoutMutation(words, expected))
             return 1;
         words[index] = 0;
+        words[255] = PlannerTransport_ObservationDigest(words);
     }
     for (index = 0; index < 4; index++)
     {
         words[21 + index] = 0;
+        words[255] = PlannerTransport_ObservationDigest(words);
         if (!ReadyRejectsWithoutMutation(words, expected))
             return 1;
         words[21 + index] = expected[index] ^ 1;
+        words[255] = PlannerTransport_ObservationDigest(words);
         if (!ReadyRejectsWithoutMutation(words, expected))
             return 1;
         words[21 + index] = expected[index];
+        words[255] = PlannerTransport_ObservationDigest(words);
     }
+    words[255] ^= 1;
+    if (!ReadyRejectsWithoutMutation(words, expected))
+        return 1;
     return 0;
 }
 

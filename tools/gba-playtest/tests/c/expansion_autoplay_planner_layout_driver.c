@@ -59,6 +59,11 @@ int main(void)
             struct ExpansionAutoplayPlannerObservationV2,
             payload));
     printf(
+        "observation_digest_offset=%lu\n",
+        (unsigned long)offsetof(
+            struct ExpansionAutoplayPlannerObservationV2,
+            payload.words[EXPANSION_AUTOPLAY_PLANNER_PAGE_DIGEST_WORD]));
+    printf(
         "command_size=%lu\n",
         (unsigned long)sizeof(struct ExpansionAutoplayPlannerCommandV2));
     printf(

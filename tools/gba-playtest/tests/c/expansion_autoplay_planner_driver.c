@@ -522,10 +522,23 @@ static void PreparePlannerStart(void)
     ExpansionAutoplayPlanner_PollStart();
 }
 
+static bool ObservationDigestMatches(void)
+{
+    u32* words = (u32*)&gExpansionAutoplayPlannerObservation;
+    u32 digest = 2166136261u;
+    int index;
+
+    for (index = 0; index < 256; index++)
+        digest = (digest
+            ^ (index == 255 ? 0 : words[index])) * 16777619u;
+    return words[255] == digest;
+}
+
 static bool StartPreparedPlanner(void)
 {
     WriteCommand(EXPANSION_AUTOPLAY_PLANNER_COMMAND_START, 0, 0, 0, 0, NULL);
-    return ExpansionAutoplayPlanner_PollStart();
+    return ExpansionAutoplayPlanner_PollStart()
+        && ObservationDigestMatches();
 }
 
 static bool ResetAndStartPlanner(void)
@@ -551,7 +564,8 @@ static bool PageMatches(struct AiDecision* decision, u32 pageIndex, u32 pageKind
         && gExpansionAutoplayPlannerObservation.pageIndex == pageIndex
         && gExpansionAutoplayPlannerObservation.pageKind == pageKind
         && gExpansionAutoplayPlannerObservation.start.recordStart == recordStart
-        && gExpansionAutoplayPlannerObservation.count.recordCount == recordCount;
+        && gExpansionAutoplayPlannerObservation.count.recordCount == recordCount
+        && ObservationDigestMatches();
 }
 
 static enum ExpansionAutoplayPlannerDecisionResult CommitCurrent(
@@ -2097,6 +2111,8 @@ int main(void)
     ExpansionAutoplayPlanner_OnMapReady();
     CHECK(!ExpansionAutoplayPlanner_PollStart(),
           "idle poll without a command must publish READY");
+    CHECK(ObservationDigestMatches(),
+          "READY must publish a canonical page digest");
     configuredScenarioIdentity =
         gExpansionAutoplayPlannerObservation.actualScenarioIdentity;
     configuredConfigIdentity =
@@ -2324,7 +2340,8 @@ int main(void)
         );
         CHECK(
             gExpansionAutoplayPlannerObservation.rejection
-                == EXPANSION_AUTOPLAY_PLANNER_REJECTION_TOKEN_MISMATCH,
+                == EXPANSION_AUTOPLAY_PLANNER_REJECTION_TOKEN_MISMATCH
+                && ObservationDigestMatches(),
             "forged token word must have explicit rejection"
         );
     }
