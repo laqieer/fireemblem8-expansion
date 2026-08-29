@@ -69,6 +69,10 @@
 #define FE8_AUTOPLAY_PLANNER_RUNTIME_STARTUP_STATE 0
 #endif
 
+#ifndef FE8_AUTOPLAY_PLANNER_RUNTIME_MUTATE_SELECTED_ITEM
+#define FE8_AUTOPLAY_PLANNER_RUNTIME_MUTATE_SELECTED_ITEM 0
+#endif
+
 struct ActionData gActionData;
 struct ExpansionAutoplayTelemetry gExpansionAutoplayTelemetry;
 struct Unit* gActiveUnit;
@@ -299,7 +303,11 @@ s8 CanUnitCrossTerrain(struct Unit* unit, int terrain) { (void)unit; (void)terra
 bool IsThereClosedChestAt(s8 x, s8 y) { (void)x; (void)y; return false; }
 bool IsThereClosedDoorAt(s8 x, s8 y) { (void)x; (void)y; return false; }
 s8 IsItemHammernable(int item) { (void)item; return false; }
-s8 CanUnitUseHealItem(struct Unit* unit) { (void)unit; return false; }
+s8 CanUnitUseHealItem(struct Unit* unit)
+{
+    return FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 3
+        && unit->curHP < unit->maxHP;
+}
 s8 CanUnitUsePureWaterItem(struct Unit* unit) { (void)unit; return false; }
 s8 CanUnitUseTorchItem(struct Unit* unit) { (void)unit; return false; }
 s8 CanUnitUseAntitoxinItem(struct Unit* unit) { (void)unit; return false; }
@@ -352,6 +360,9 @@ static void InitializeRuntime(void)
     sUnit.yPos = 0;
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 2
     sUnit.items[0] = ITEM_STAFF_TORCH;
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 3
+    sUnit.items[0] = ITEM_VULNERARY | (2 << 8);
+    sUnit.curHP = 10;
 #elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 1
     sUnit.state = US_NOT_DEPLOYED;
 #endif
@@ -443,8 +454,19 @@ static void PollCommittedDecision(
     struct AiDecision* decision,
     enum PlannerRuntimeStage delayStage)
 {
-    enum ExpansionAutoplayPlannerDecisionResult result =
-        ExpansionAutoplayPlanner_PollDecision(decision);
+    enum ExpansionAutoplayPlannerDecisionResult result;
+    u16 selectedItem = sUnit.items[0];
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_MUTATE_SELECTED_ITEM
+    if (gExpansionAutoplayPlannerCommand.kind
+        == EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT)
+        sUnit.items[0] ^= 0x100;
+#endif
+    result = ExpansionAutoplayPlanner_PollDecision(decision);
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_MUTATE_SELECTED_ITEM
+    sUnit.items[0] = selectedItem;
+#else
+    (void)selectedItem;
+#endif
     if (result == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED)
     {
         sUnit.xPos = decision->xMove;

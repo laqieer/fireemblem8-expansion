@@ -36,6 +36,7 @@
 #define EXPANSION_AUTOPLAY_PLANNER_REJECTION_NOT_READY UINT32_C(1)
 #define EXPANSION_AUTOPLAY_PLANNER_REJECTION_CANCELLED UINT32_C(8)
 #define EXPANSION_AUTOPLAY_PLANNER_REJECTION_TIMEOUT UINT32_C(10)
+#define EXPANSION_AUTOPLAY_PLANNER_STATE_READY UINT32_C(1)
 #define EXPANSION_AUTOPLAY_PLANNER_STATE_WAITING UINT32_C(2)
 #define EXPANSION_AUTOPLAY_PLANNER_STATE_CANCELLED UINT32_C(4)
 #define EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED UINT32_C(5)
@@ -73,7 +74,9 @@ struct command_acknowledgement
 };
 
 #if PLANNER_TRANSPORT_TEST_BOOTSTRAP
-bool PlannerTransport_TestBootstrap(struct mCore* core);
+bool PlannerTransport_TestBootstrap(
+    struct mCore* core,
+    uint32_t expected_identities[4]);
 #endif
 
 static void discard_log(
@@ -236,19 +239,55 @@ static bool is_terminal_state(uint32_t state)
         || state == EXPANSION_AUTOPLAY_PLANNER_STATE_EXHAUSTED;
 }
 
-static bool is_planner_ready(struct mCore* core)
+bool PlannerTransport_IsReadyObservationValid(
+    const uint32_t words[OBSERVATION_WORD_COUNT],
+    const uint32_t expected_identities[4])
 {
-    return read_word(core, PLANNER_OBSERVATION_ADDR, 0)
-            == EXPANSION_AUTOPLAY_PLANNER_MAGIC
-        && read_word(core, PLANNER_OBSERVATION_ADDR, 1)
-            == EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION
-        && read_word(core, PLANNER_OBSERVATION_ADDR, 2)
-            == OBSERVATION_WORD_COUNT * sizeof(uint32_t)
-        && read_word(core, PLANNER_OBSERVATION_ADDR, 5)
-            == UINT32_C(1)
-        && read_word(core, PLANNER_OBSERVATION_ADDR, 6) == 0
-        && read_word(core, PLANNER_OBSERVATION_ADDR, 7) == 1
-        && read_word(core, PLANNER_OBSERVATION_ADDR, 8) == 0;
+    size_t index;
+
+    if (words == NULL
+        || words[0] != EXPANSION_AUTOPLAY_PLANNER_MAGIC
+        || words[1] != EXPANSION_AUTOPLAY_PLANNER_PROTOCOL_VERSION
+        || words[2] != OBSERVATION_WORD_COUNT * sizeof(uint32_t)
+        || words[5] != EXPANSION_AUTOPLAY_PLANNER_STATE_READY
+        || words[7] != 1)
+        return false;
+    for (index = 3; index < OBSERVATION_WORD_COUNT; index++)
+    {
+        if (index == 5 || index == 7
+            || (index >= 21 && index <= 24))
+            continue;
+        if (words[index] != 0)
+            return false;
+    }
+    for (index = 0; index < 4; index++)
+    {
+        if (words[21 + index] == 0
+            || (expected_identities != NULL
+                && words[21 + index] != expected_identities[index]))
+            return false;
+    }
+    return true;
+}
+
+bool PlannerTransport_IsReady(
+    struct mCore* core,
+    const uint32_t expected_identities[4])
+{
+    uint32_t words[OBSERVATION_WORD_COUNT];
+    uint32_t confirmation[OBSERVATION_WORD_COUNT];
+    size_t index;
+
+    for (index = 0; index < OBSERVATION_WORD_COUNT; index++)
+        words[index] = read_word(core, PLANNER_OBSERVATION_ADDR, index);
+    if (!PlannerTransport_IsReadyObservationValid(words, expected_identities))
+        return false;
+    for (index = 0; index < OBSERVATION_WORD_COUNT; index++)
+        confirmation[index] = read_word(core, PLANNER_OBSERVATION_ADDR, index);
+    return memcmp(words, confirmation, sizeof(words)) == 0
+        && PlannerTransport_IsReadyObservationValid(
+            confirmation,
+            expected_identities == NULL ? &words[21] : expected_identities);
 }
 
 bool PlannerTransport_IsAcknowledgementValid(
@@ -602,6 +641,9 @@ static int run_transport(const char* rom_path)
     int line_result;
     int timer_result;
     uint32_t next_command_id = 1;
+#if PLANNER_TRANSPORT_TEST_BOOTSTRAP
+    uint32_t expected_ready_identities[4];
+#endif
     struct input_line_state input_state = { 0, false, false };
     struct decision_timer decision = { 0 };
     core = mCoreFind(rom_path);
@@ -632,7 +674,7 @@ static int run_transport(const char* rom_path)
     for (startup_frames = 0; startup_frames < 4; startup_frames++)
         core->runFrame(core);
 #if PLANNER_TRANSPORT_TEST_BOOTSTRAP
-    if (!PlannerTransport_TestBootstrap(core))
+    if (!PlannerTransport_TestBootstrap(core, expected_ready_identities))
     {
         fprintf(stderr, "planner transport bootstrap did not reach READY\n");
         free(buffer);
@@ -641,7 +683,14 @@ static int run_transport(const char* rom_path)
         return 3;
     }
 #endif
-    if (!is_planner_ready(core))
+    if (!PlannerTransport_IsReady(
+            core,
+#if PLANNER_TRANSPORT_TEST_BOOTSTRAP
+            expected_ready_identities
+#else
+            NULL
+#endif
+        ))
     {
         fprintf(stderr, "planner transport startup is not READY\n");
         free(buffer);

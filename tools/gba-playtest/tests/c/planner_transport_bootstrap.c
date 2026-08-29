@@ -13,10 +13,19 @@
 #define KEY_RIGHT UINT32_C(0x010)
 #define KEY_LEFT UINT32_C(0x020)
 #define KEY_DOWN UINT32_C(0x080)
-#define PLANNER_MAGIC UINT32_C(0x41504C4E)
-#define PLANNER_VERSION UINT32_C(2)
-#define PLANNER_OBSERVATION_BYTES UINT32_C(1024)
-#define PLANNER_READY UINT32_C(1)
+#ifndef PLANNER_READY_MUTATION_WORD
+#define PLANNER_READY_MUTATION_WORD 256
+#endif
+#ifndef PLANNER_READY_MUTATION_VALUE
+#define PLANNER_READY_MUTATION_VALUE UINT32_C(0)
+#endif
+#ifndef PLANNER_READY_MUTATION_XOR
+#define PLANNER_READY_MUTATION_XOR 0
+#endif
+
+bool PlannerTransport_IsReady(
+    struct mCore* core,
+    const uint32_t expected_identities[4]);
 
 struct BootstrapInput
 {
@@ -58,17 +67,7 @@ static const struct BootstrapInput sBootstrapInputs[] = {
 
 static bool PlannerReady(struct mCore* core)
 {
-    return core->busRead32(core, PLANNER_OBSERVATION_ADDR)
-            == PLANNER_MAGIC
-        && core->busRead32(core, PLANNER_OBSERVATION_ADDR + 4)
-            == PLANNER_VERSION
-        && core->busRead32(core, PLANNER_OBSERVATION_ADDR + 8)
-            == PLANNER_OBSERVATION_BYTES
-        && core->busRead32(core, PLANNER_OBSERVATION_ADDR + 5 * 4)
-            == PLANNER_READY
-        && core->busRead32(core, PLANNER_OBSERVATION_ADDR + 6 * 4) == 0
-        && core->busRead32(core, PLANNER_OBSERVATION_ADDR + 7 * 4) == 1
-        && core->busRead32(core, PLANNER_OBSERVATION_ADDR + 8 * 4) == 0;
+    return PlannerTransport_IsReady(core, NULL);
 }
 
 static bool RunFrameToReady(struct mCore* core)
@@ -77,7 +76,9 @@ static bool RunFrameToReady(struct mCore* core)
     return PlannerReady(core);
 }
 
-bool PlannerTransport_TestBootstrap(struct mCore* core)
+bool PlannerTransport_TestBootstrap(
+    struct mCore* core,
+    uint32_t expected_identities[4])
 {
     uint32_t frame = 4;
     unsigned index;
@@ -125,5 +126,22 @@ bool PlannerTransport_TestBootstrap(struct mCore* core)
     }
 ready:
     core->setKeys(core, 0);
-    return PlannerReady(core);
+    if (!PlannerReady(core))
+        return false;
+    for (index = 0; index < 4; index++)
+        expected_identities[index] = core->busRead32(
+            core,
+            PLANNER_OBSERVATION_ADDR + (uint32_t)((21 + index) * 4));
+#if PLANNER_READY_MUTATION_WORD < 256
+    {
+        uint32_t address =
+            PLANNER_OBSERVATION_ADDR + PLANNER_READY_MUTATION_WORD * 4;
+        uint32_t value = PLANNER_READY_MUTATION_VALUE;
+#if PLANNER_READY_MUTATION_XOR
+        value ^= core->busRead32(core, address);
+#endif
+        core->busWrite32(core, address, value);
+    }
+#endif
+    return true;
 }

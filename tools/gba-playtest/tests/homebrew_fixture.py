@@ -172,6 +172,7 @@ def build_production_planner_rom(
     zero_digest: bool = False,
     startup_delay_frames: int = 0,
     startup_state_override: int = 0,
+    mutate_selected_item_before_commit: bool = False,
 ) -> None:
     """Link the production planner implementation into a tiny freestanding ROM."""
     if commit_delay_frames < 0:
@@ -180,7 +181,7 @@ def build_production_planner_rom(
         raise ValueError(
             "planner transition subcode must be MNCH, MNC2, or MNC3"
         )
-    if candidate_mode not in {0, 1, 2}:
+    if candidate_mode not in {0, 1, 2, 3}:
         raise ValueError("planner candidate mode is outside fixture bounds")
     if flag_domain_mode not in range(7):
         raise ValueError("planner flag-domain mode is outside fixture bounds")
@@ -271,6 +272,9 @@ def build_production_planner_rom(
         "-DFE8_AUTOPLAY_PLANNER_RUNTIME_STARTUP_STATE={}".format(
             startup_state_override
         ),
+        "-DFE8_AUTOPLAY_PLANNER_RUNTIME_MUTATE_SELECTED_ITEM={}".format(
+            int(mutate_selected_item_before_commit)
+        ),
     ]
     environment = dict(os.environ)
     environment["TMPDIR"] = str(path.parent)
@@ -357,6 +361,7 @@ def build_planner_transport_backend(
     commit_completion_frame_limit: int = 18000,
     wall_timeout_ms: int = 5000,
     test_bootstrap: bool = False,
+    ready_mutation: tuple[int, int, bool] | None = None,
 ) -> None:
     """Build the fixed-symbol stdin/stdout libmGBA planner adapter."""
     if min(
@@ -368,6 +373,14 @@ def build_planner_transport_backend(
         raise ValueError("planner transport frame limits must be positive")
     if wall_timeout_ms > 5000:
         raise ValueError("planner transport wall timeout exceeds five seconds")
+    if ready_mutation is not None and (
+        not test_bootstrap
+        or len(ready_mutation) != 3
+        or not 0 <= ready_mutation[0] < 256
+        or not 0 <= ready_mutation[1] <= 0xFFFFFFFF
+        or type(ready_mutation[2]) is not bool
+    ):
+        raise ValueError("READY mutation requires a bounded test bootstrap")
     root = Path(__file__).resolve().parents[3]
     compiler = shutil.which(os.environ.get("CC", "cc"))
     if compiler is None:
@@ -400,6 +413,15 @@ def build_planner_transport_backend(
         ),
         f"-DPLANNER_DECISION_WALL_TIMEOUT_MS={wall_timeout_ms}u",
         f"-DPLANNER_TRANSPORT_TEST_BOOTSTRAP={int(test_bootstrap)}",
+        "-DPLANNER_READY_MUTATION_WORD={}".format(
+            256 if ready_mutation is None else ready_mutation[0]
+        ),
+        "-DPLANNER_READY_MUTATION_VALUE={}u".format(
+            0 if ready_mutation is None else ready_mutation[1]
+        ),
+        "-DPLANNER_READY_MUTATION_XOR={}".format(
+            0 if ready_mutation is None else int(ready_mutation[2])
+        ),
         str(root / "tools" / "gba-playtest" / "planner_transport_backend.c"),
         *(
             [

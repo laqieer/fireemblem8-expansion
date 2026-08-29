@@ -196,6 +196,27 @@ static u32 ActualSeedIdentity(void)
     return MixDigest(digest, GetLCGRNValue());
 }
 
+static u32 MixCandidateItemState(u32 digest, const struct AiDecision* decision)
+{
+    if (decision->itemSlot < UNIT_ITEM_COUNT && gActiveUnit != NULL)
+    {
+        digest = MixDigest(digest, 0xA17E0000u | decision->itemSlot);
+        digest = MixDigest(digest, gActiveUnit->items[decision->itemSlot]);
+    }
+    if (decision->actionId == AI_ACTION_STAFF && decision->unk04 < UNIT_ITEM_COUNT)
+    {
+        struct Unit* target = GetUnit(decision->targetId);
+
+        digest = MixDigest(
+            digest,
+            0x7A260000u | ((u32)decision->targetId << 8) | decision->unk04);
+        digest = MixDigest(
+            digest,
+            target == NULL ? 0 : target->items[decision->unk04]);
+    }
+    return digest;
+}
+
 static u32 MakeTokenWord(const struct AiDecision* decision, u32 observationId, u32 ordinal,
                          u32 domain)
 {
@@ -214,7 +235,7 @@ static u32 MakeTokenWord(const struct AiDecision* decision, u32 observationId, u
         decision->xTarget
             | ((u32)decision->yTarget << 8)
             | ((u32)decision->unk04 << 16));
-    return digest;
+    return MixCandidateItemState(digest, decision);
 }
 
 static void MakeToken(const struct AiDecision* decision, u32 observationId, u32 ordinal,
@@ -928,8 +949,7 @@ static bool DigestCandidate(u32 ordinal, const struct AiDecision* decision, void
     *digest = MixDigest(*digest, decision->targetId | ((u32)decision->itemSlot << 8));
     *digest = MixDigest(*digest, decision->xTarget | ((u32)decision->yTarget << 8));
     *digest = MixDigest(*digest, decision->unk04);
-    if (decision->actionId == AI_ACTION_PICK && decision->itemSlot < UNIT_ITEM_COUNT)
-        *digest = MixDigest(*digest, gActiveUnit->items[decision->itemSlot]);
+    *digest = MixCandidateItemState(*digest, decision);
     return true;
 }
 

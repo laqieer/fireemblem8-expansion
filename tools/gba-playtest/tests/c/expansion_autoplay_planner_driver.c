@@ -542,6 +542,44 @@ static enum ExpansionAutoplayPlannerEnumerationResult CollectActions(u32* count)
     return ExpansionAutoplayPlanner_EnumerateLegalActions(CollectAction, count, NULL);
 }
 
+static bool SelectAction(struct AiDecision* decision, int actionId, int occurrence,
+                         u32* ordinal, struct ExpansionAutoplayPlannerActionV2* action)
+{
+    u32 count, index, seen = 0;
+    u32 actionPageCount, actionPage, actionStart, actionCount;
+
+    if (CollectActions(&count) != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK)
+        return false;
+    for (index = 0; index < count; index++)
+    {
+        if (sEnumeratedActions[index].actionId == actionId
+            && seen++ == (u32)occurrence)
+            break;
+    }
+    if (index == count
+        || !ResetAndStartPlanner()
+        || ExpansionAutoplayPlanner_OfferDecision(decision)
+            != EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT)
+        return false;
+    actionPageCount = (count + EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY - 1)
+        / EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
+    actionStart = index / EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY
+        * EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
+    actionCount = count - actionStart;
+    if (actionCount > EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY)
+        actionCount = EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
+    actionPage = gExpansionAutoplayPlannerObservation.pageCount
+        - actionPageCount
+        + index / EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY;
+    if (!PageMatches(decision, actionPage, EXPANSION_AUTOPLAY_PLANNER_PAGE_ACTIONS,
+                     actionStart, actionCount))
+        return false;
+    *ordinal = index;
+    *action = gExpansionAutoplayPlannerObservation.payload.actions[
+        index % EXPANSION_AUTOPLAY_PLANNER_ACTION_CAPACITY];
+    return true;
+}
+
 static u32 DigestBytes(u32 digest, const void* data, int size)
 {
     const u8* bytes = data;
@@ -1476,6 +1514,9 @@ static int TestInventorySlotWireIdentity(void)
             && memcmp(&first.token0, &second.token0, sizeof(first.token0) * 4) != 0,
         "Pick inventory slots must be distinct and token-bound");
     ordinal = gExpansionAutoplayPlannerObservation.start.actionStartOrdinal + 2;
+    sUnit.items[1] = ITEM_DOORKEY | (1 << 8);
+    CHECK(CommitBecameIllegal(&decision, ordinal, &second.token0),
+        "changed uses in still-applicable Pick slot must stale identity");
     sUnit.items[1] = ITEM_DOORKEY;
     CHECK(CommitBecameIllegal(&decision, ordinal, &second.token0),
         "depleted selected Pick slot must reject while Lockpick remains");
@@ -1520,6 +1561,83 @@ static int TestInventorySlotWireIdentity(void)
     CHECK(checkpointDigest
               != gExpansionAutoplayPlannerCampaignCheckpoint.semanticStateDigest,
           "selected Pick stack consumption must alter the campaign digest");
+    return 0;
+}
+
+static int TestCandidateInventoryBinding(void)
+{
+    struct AiDecision decision = { 0 };
+    struct ExpansionAutoplayPlannerActionV2 original, refreshed;
+    u32 ordinal;
+    u16 item;
+
+    ResetActionFixture(5, 5);
+    sUnit.items[0] = ITEM_SWORD_IRON | (2 << 8);
+    sUnit.items[1] = ITEM_SWORD_IRON | (4 << 8);
+    sEnemyCharacter.number = 3;
+    sEnemyClass.number = 3;
+    SetupTestUnit(&sEnemy, &sEnemyCharacter, &sEnemyClass, 0x81, 3, 2);
+    sUnitData[2][3] = 0x81;
+    CHECK(SelectAction(&decision, AI_ACTION_COMBAT, 0, &ordinal, &original),
+          "publish Combat");
+    sUnit.items[0] = ITEM_SWORD_IRON | (1 << 8);
+    CHECK(CommitBecameIllegal(&decision, ordinal, &original.token0), "bind Combat uses");
+    CHECK(SelectAction(&decision, AI_ACTION_COMBAT, 0, &ordinal, &refreshed)
+              && memcmp(&original.token0, &refreshed.token0, sizeof(original.token0) * 4) != 0,
+          "bind selected Combat raw item into token");
+    sUnit.items[0] = ITEM_SWORD_IRON | (2 << 8);
+    CHECK(SelectAction(&decision, AI_ACTION_COMBAT, 0, &ordinal, &original),
+          "publish Combat swap");
+    item = sUnit.items[0];
+    sUnit.items[0] = sUnit.items[1];
+    sUnit.items[1] = item;
+    CHECK(CommitBecameIllegal(&decision, ordinal, &original.token0), "bind Combat slots");
+    item = sUnit.items[0];
+    sUnit.items[0] = sUnit.items[1];
+    sUnit.items[1] = item;
+    sUnit.items[2] = ITEM_CHESTKEY | (2 << 8);
+    CHECK(SelectAction(&decision, AI_ACTION_COMBAT, 0, &ordinal, &original),
+          "publish Combat control");
+    sUnit.items[2] = ITEM_CHESTKEY | (1 << 8);
+    CHECK(CommitCurrent(&decision, ordinal, &original.token0)
+              == EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED,
+          "ignore unselected unusable inventory");
+
+    ResetActionFixture(5, 5);
+    sUnit.items[0] = ITEM_STAFF_TORCH | (2 << 8);
+    CHECK(SelectAction(&decision, AI_ACTION_STAFF, 0, &ordinal, &original), "publish Staff");
+    sUnit.items[0] = ITEM_STAFF_TORCH | (1 << 8);
+    CHECK(CommitBecameIllegal(&decision, ordinal, &original.token0), "bind Staff uses");
+    sUnit.items[0] = 0;
+    CHECK(CommitBecameIllegal(&decision, ordinal, &original.token0), "reject empty Staff");
+
+    ResetActionFixture(5, 5);
+    sUnit.curHP = 10;
+    sUnit.items[0] = ITEM_VULNERARY | (2 << 8);
+    CHECK(SelectAction(&decision, AI_ACTION_USEITEM, 0, &ordinal, &original),
+          "publish use-item");
+    sUnit.items[0] = ITEM_ELIXIR | (2 << 8);
+    CHECK(CommitBecameIllegal(&decision, ordinal, &original.token0), "bind item replacement");
+
+    ResetActionFixture(5, 5);
+    sUnit.items[0] = ITEM_STAFF_REPAIR | (2 << 8);
+    sAllyCharacter.number = 2;
+    sAllyClass.number = 2;
+    SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 3, 2);
+    sAlly.items[0] = 0x0101;
+    sAlly.items[1] = 0x0202;
+    sUnitData[2][3] = 2;
+    CHECK(SelectAction(&decision, AI_ACTION_STAFF, 1, &ordinal, &original),
+          "publish Hammerne slot");
+    sAlly.items[1] = 0x0102;
+    CHECK(CommitBecameIllegal(&decision, ordinal, &original.token0), "bind Hammerne uses");
+    sAlly.items[1] = 0x0202;
+    CHECK(SelectAction(&decision, AI_ACTION_STAFF, 1, &ordinal, &original),
+          "publish Hammerne swap");
+    item = sAlly.items[0];
+    sAlly.items[0] = sAlly.items[1];
+    sAlly.items[1] = item;
+    CHECK(CommitBecameIllegal(&decision, ordinal, &original.token0), "bind Hammerne swap");
     return 0;
 }
 
@@ -2086,6 +2204,8 @@ int main(void)
         "accepted wait token must enter the semantic action trace digest");
     CHECK(TestInventorySlotWireIdentity() == 0,
           "inventory-slot fixed-width wire identity test");
+    CHECK(TestCandidateInventoryBinding() == 0,
+          "candidate inventory-state identity test");
     ResetActionFixture(32, 17);
     CHECK(ResetAndStartPlanner(), "unavailable-actor run must start");
     sUnit.state = US_NOT_DEPLOYED;

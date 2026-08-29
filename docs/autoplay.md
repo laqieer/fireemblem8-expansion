@@ -938,8 +938,11 @@ existing obstacle battle setup and destruction path. Rogue Pick candidates
 remain one direct no-item action per target. Non-Rogue targets emit every
 applicable inventory slot in target-then-slot order: thief Lockpicks, Chest
 Keys/bundles for chests, and Door Keys for doors; bridges remain Lockpick-only.
-The exact selected item and uses bind candidate identity, revalidate directly,
-and alone are consumed; depletion, replacement, or slot swapping rejects.
+Every item-using candidate binds its actor slot and exact raw item/uses to both
+its token and candidate-set identity. Hammerne additionally binds the selected
+target slot and raw target item. Changes, replacement, emptying, or slot
+swapping reject COMMIT before execution; unrelated unusable slots do not.
+Only the selected Pick stack is consumed.
 Fortify uses the production ranged-heal predicate and therefore requires an
 injured allied non-caster from range 1 through MAG/2. Latona scans only the
 current phase's bounded 0x80-slot domain and excludes its caster while
@@ -1196,12 +1199,13 @@ produces exactly one error; no suffix can become a second typed command.
 Numeric command words use only unsigned hexadecimal digits, consume the whole
 token, and may not exceed `0xFFFFFFFF`; signs, prefixes, whitespace inside a
 token, overflow, and trailing junk reject before any mailbox write.
-Before any initial OBS or stdin handling, the backend requires the exact
-magic/version/size, READY state, control page zero, and one-page identity. The
-four-frame synthetic path and optional fixed launcher both pass this same
-gate. Delayed startup without a launcher, a timed-out launcher, WAITING or
-EXHAUSTED startup state, and a launcher that returns without READY terminate
-with an explicit startup error and no stdout.
+Before any initial OBS or stdin handling, one shared validator requires the
+complete 1,024-byte READY record: exact protocol/header/control values,
+rejection `NONE`, zero run/observation/count/runtime/payload/reserved words,
+and four nonzero identities matching the fixed bootstrap snapshot. The
+four-frame synthetic path and optional launcher both use that validator.
+Any malformed word terminates with an explicit startup error and no stdout or
+stdin handling.
 
 Every typed mailbox command now produces three distinct line-protocol stages:
 `ACK command_id kind result rejection` after the ROM consumes the exact
@@ -1267,7 +1271,7 @@ therefore includes every future Bridge method rather than a name allowlist.
 The authoritative resource gate builds otherwise-identical enabled and
 disabled debug profiles, parses both linker reports/maps/ELFs, and compares
 their real `__floating_end` plus EWRAM/IWRAM occupancy. The current complete
-linked delta is 11,104/12,288 ROM bytes (1,184 headroom), 1,172/4,096 EWRAM
+linked delta is 11,200/12,288 ROM bytes (1,088 headroom), 1,172/4,096 EWRAM
 bytes (2,924 headroom), and zero IWRAM. This naturally includes every planner
 hook, including `cp_decide`, targeting/item/menu/action/map/lifecycle/RNG
 owners omitted by the old object subtotal. Both linked maps must contain every

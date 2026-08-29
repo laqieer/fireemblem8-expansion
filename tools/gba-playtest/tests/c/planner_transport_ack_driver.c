@@ -6,6 +6,9 @@
 #include <string.h>
 
 bool PlannerTransport_IsAcknowledgementValid(uint32_t result, uint32_t rejection);
+bool PlannerTransport_IsReadyObservationValid(
+    const uint32_t words[256],
+    const uint32_t expected_identities[4]);
 int PlannerTransport_ReadLineForTest(FILE* input, char* line, size_t capacity);
 bool PlannerTransport_ParseHexForTest(const char* text, uint32_t* value);
 
@@ -87,6 +90,66 @@ static int CheckHexParser(void)
     return 0;
 }
 
+static bool ReadyRejectsWithoutMutation(
+    uint32_t words[256],
+    const uint32_t expected[4])
+{
+    uint32_t before[256];
+
+    memcpy(before, words, sizeof(before));
+    return !PlannerTransport_IsReadyObservationValid(words, expected)
+        && memcmp(before, words, sizeof(before)) == 0;
+}
+
+static int CheckReadyObservation(void)
+{
+    static const uint32_t fixed_mutations[][2] = {
+        { 0, 0 }, { 1, 3 }, { 2, 1020 }, { 5, 2 }, { 7, 2 },
+    };
+    uint32_t words[256] = { 0 };
+    uint32_t expected[] = { 11, 22, 33, 44 };
+    size_t index;
+
+    words[0] = UINT32_C(0x41504C4E);
+    words[1] = 2;
+    words[2] = sizeof(words);
+    words[5] = 1;
+    words[7] = 1;
+    memcpy(&words[21], expected, sizeof(expected));
+    if (!PlannerTransport_IsReadyObservationValid(words, NULL)
+        || !PlannerTransport_IsReadyObservationValid(words, expected))
+        return 1;
+    for (index = 0; index < sizeof(fixed_mutations) / sizeof(*fixed_mutations); index++)
+    {
+        uint32_t saved = words[fixed_mutations[index][0]];
+
+        words[fixed_mutations[index][0]] = fixed_mutations[index][1];
+        if (!ReadyRejectsWithoutMutation(words, expected))
+            return 1;
+        words[fixed_mutations[index][0]] = saved;
+    }
+    for (index = 3; index < 256; index++)
+    {
+        if (index == 5 || index == 7 || (index >= 21 && index <= 24))
+            continue;
+        words[index] = 1;
+        if (!ReadyRejectsWithoutMutation(words, expected))
+            return 1;
+        words[index] = 0;
+    }
+    for (index = 0; index < 4; index++)
+    {
+        words[21 + index] = 0;
+        if (!ReadyRejectsWithoutMutation(words, expected))
+            return 1;
+        words[21 + index] = expected[index] ^ 1;
+        if (!ReadyRejectsWithoutMutation(words, expected))
+            return 1;
+        words[21 + index] = expected[index];
+    }
+    return 0;
+}
+
 int main(void)
 {
     uint32_t rejection;
@@ -102,7 +165,8 @@ int main(void)
         || PlannerTransport_IsAcknowledgementValid(2, 0)
         || PlannerTransport_IsAcknowledgementValid(UINT32_MAX, 1)
         || CheckLineFraming()
-        || CheckHexParser())
+        || CheckHexParser()
+        || CheckReadyObservation())
         return 1;
     puts("PLANNER_TRANSPORT_SECURITY_TEST: PASS");
     return 0;

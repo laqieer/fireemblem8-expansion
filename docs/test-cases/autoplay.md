@@ -617,9 +617,10 @@ identity and survives the scheduled `StartBattleMap` reset. It survives
 next-map re-arming and is not rewritten by an ordinary chapter-two action.
 Torch, Warp, and Unlock enumerate multiple bounded
 coordinate targets and execute the selected coordinate rather than stale
-defaults. Hammerne enumerates and token-binds each repairable target inventory
-slot on a same-faction unit and repairs only the selected slot; green allies
-and enemies reject. Combat includes every legal Snag obstacle after ordinary
+defaults. Every actor-item action token and candidate set bind the selected slot and raw
+item/uses. Hammerne also binds each selected repairable target slot and raw
+target item on a same-faction unit; green allies and enemies reject. Combat
+includes every legal Snag obstacle after ordinary
 unit targets, binds `targetId=0` plus coordinates, and executes real obstacle
 damage and destruction. Fortify requires an injured allied non-caster within
 MAG/2, while Latona excludes its caster and retains every eligible non-caster
@@ -654,7 +655,7 @@ goal, and proves the persisted planner fails closed without an ARM compiler.
 The toolchain gate separately executes the real explicit debug-target
 compile/link/boot path.
 Otherwise-identical enabled/disabled debug maps and ELFs bind the complete
-planner delta to `__floating_end`: 11,104/12,288 ROM bytes, 1,172/4,096 EWRAM,
+planner delta to `__floating_end`: 11,200/12,288 ROM bytes, 1,172/4,096 EWRAM,
 and zero IWRAM. Both maps must contain every named representative hook; the
 inclusive linked-delta comparator accepts 12,288 bytes and rejects 12,289.
 Every wire page has a count from 1 through 92 and an in-range index. Before
@@ -707,10 +708,11 @@ enum, coordinate, page, slot, sentinel, and u32 bounds apply to every scalar;
 nonfinite JSON rejects during both import and export without mutation.
 After its fixed test-only pre-stdin boot routine, the enabled production
 backend accepts only READ/status, START, PAGE, COMMIT, CANCEL, and QUIT.
-Both immediate synthetic startup and delayed fixed bootstrap must publish the
-exact READY control record before initial OBS. Delayed startup without
-bootstrap, never-ready timeout, WAITING, and EXHAUSTED startup fail with no
-stdout or stdin handling. Completion frame counts are exact integers bounded
+Both immediate synthetic startup and delayed fixed bootstrap must pass one
+complete 256-word READY validator before initial OBS. Header/control values,
+`NONE` rejection, zero runtime/payload/reserved words, and four nonzero
+bootstrap-matching identities are exact; every single-word mutation fails
+with no stdout or stdin handling. Completion frame counts are exact integers bounded
 to 600, except accepted COMMIT may use up to 18,000.
 WAITING also owns one monotonic five-second deadline. The backend advances the
 ROM at fixed cadence without keys while stdin is silent/partial or serves
@@ -785,9 +787,10 @@ Unknown numeric command kinds likewise fail import before transport creation.
 Negative, oversized, boolean, string, float, or wrong-kind completion timings
 fail before replay.
 Out-of-range/occupied Warp destinations, opened or wrong Unlock tiles, stale
-Torch coordinates, consumed keys, non-repairable or wrong Hammerne slots, and
-a token copied from another Hammerne slot all reject without applying the
-selected action.
+Torch coordinates, selected actor item ID/use/slot changes, consumed keys,
+Hammerne target item/slot changes, and cross-slot tokens all reject before
+applying the selected action. An unrelated unusable inventory change remains
+the positive control.
 Green-allied Hammerne targets, caster-only Fortify/Latona state, out-of-range
 Fortify allies, and stale, destroyed, non-Snag, or out-of-range obstacle
 coordinates reject. Unknown live ACK rejections are rejected before any ACK
