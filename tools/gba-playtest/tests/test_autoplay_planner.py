@@ -1429,6 +1429,61 @@ class PlannerBridgeTests(unittest.TestCase):
         resource_page = pages[page_index[planner.PageKind.RESOURCES]]
         flag_page = pages[page_index[planner.PageKind.FLAGS]]
         action_page = pages[page_index[planner.PageKind.ACTIONS]]
+        for name, position, terrain in (
+                ("top-left Snag", (0, 0), 0x33),
+                ("top-left wall", (0, 0), 0x1B),
+                ("nonzero Snag", (1, 0), 0x33),
+        ):
+            with self.subTest(obstacle_action=name):
+                obstacle_pages = list(pages)
+                map_records = list(map_page.map_cells)
+                cell_index = position[1] * 64 + position[0]
+                map_records[cell_index] = replace(
+                    map_records[cell_index], terrain=terrain, unit=0)
+                obstacle_pages[page_index[planner.PageKind.MAP]] = replace(
+                    map_page, map_cells=tuple(map_records))
+                action_records = list(action_page.actions)
+                action_records[0] = replace(
+                    action_records[0],
+                    action=planner.Action(
+                        "COMBAT", 1,
+                        (1, 0) if position == (0, 0) else (0, 0),
+                        target=0, item_slot=0,
+                        target_position=position))
+                obstacle_pages[page_index[planner.PageKind.ACTIONS]] = replace(
+                    action_page, actions=tuple(action_records))
+                obstacle = planner._assemble_observation_pages(
+                    obstacle_pages, planner.ValidationMode.PRODUCTION)
+                for implementation in (
+                        planner.ScriptedPlanner(),
+                        planner.BoundedSearchPlanner(max_nodes=512)):
+                    self.assertEqual(
+                        implementation.choose(obstacle).ordinal, 0)
+                transport = _PageReplayTransport(
+                    obstacle_pages, planner.ValidationMode.PRODUCTION)
+                replayed = planner.collect_observation_pages(
+                    transport, transport.start(scenario_identity=1))
+                encoded = transport.transcript.export()
+                self.assertEqual(replayed.actions[0].action.target_position,
+                                 position)
+                self.assertEqual(
+                    planner.PlannerTranscript.import_production_bytes(
+                        encoded).export(), encoded)
+                self.assertEqual(
+                    planner.replay_transcript_on_clean_transport(
+                        encoded, lambda: _PageReplayTransport(
+                            obstacle_pages,
+                            planner.ValidationMode.PRODUCTION)),
+                    encoded)
+                map_records[cell_index] = replace(
+                    map_records[cell_index], terrain=1)
+                obstacle_pages[page_index[planner.PageKind.MAP]] = replace(
+                    map_page, map_cells=tuple(map_records))
+                with self.assertRaisesRegex(
+                        planner.PlannerError,
+                        "actions are not canonical"):
+                    planner._assemble_observation_pages(
+                        obstacle_pages, planner.ValidationMode.PRODUCTION)
         swapped = lambda records: (records[1], records[0], *records[2:])
         mutations = (
             ("dimensions", 0, {
@@ -1657,6 +1712,16 @@ class PlannerBridgeTests(unittest.TestCase):
                 ]
                 parsed = planner.parse_transport_observation(words).actions[0].action
                 self.assertEqual(parsed.kind, "COMBAT" if kind == 2 else "USE_ITEM")
+        words[25:35] = [
+            2, 1, 1, 0, 0xFF00, 1, 2, 3, 4, 1,
+        ]
+        top_left = planner.parse_transport_observation(words).actions[0].action
+        self.assertEqual(
+            (top_left.target, top_left.target_position), (0, (0, 0)))
+        words[28] = 2 | (1 << 8)
+        with self.assertRaisesRegex(
+                planner.PlannerError, "sentinel contract"):
+            planner.parse_transport_observation(words)
         inventory = {
             (1, 0): {
                 "actor": 1,
@@ -1696,18 +1761,13 @@ class PlannerBridgeTests(unittest.TestCase):
             2,
             0xB2,
             63 | (63 << 16),
-            63 << 8 | (63 << 16),
+            0x81,
             4 | (0xFF << 8),
             *([0xFFFFFFFF] * 4),
             1,
         ]
         valid = planner.parse_transport_observation(boundary)
         self.assertEqual(valid.actions[0].action.destination, (63, 63))
-        for implementation in (
-                planner.ScriptedPlanner(),
-                planner.BoundedSearchPlanner(),
-        ):
-            self.assertEqual(implementation.choose(valid).ordinal, 0)
         transcript = planner.PlannerTranscript()
         transcript.record_session(TRANSCRIPT_SESSION)
         transcript.record_complete_and_settled(
@@ -3195,7 +3255,52 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 cancelled = transport.exchange(_cancel(first))
                 self.assertEqual(cancelled.state, 4)
                 recorded = transport.transcript.export()
+            self.assertEqual(
+                planner.PlannerTranscript.import_production_bytes(
+                    recorded).export(), recorded)
             self.assertEqual(planner.replay_transcript_on_clean_transport(recorded, lambda: PlannerProcessTransport(backend, rom)), recorded)
+            cancel_mutations = (
+                ("accepted", "ack", "result", 1),
+                ("wrong rejection", "ack", "rejection", 9),
+                ("wrong result", "ack", "result", 2),
+                ("waiting response", "response", "state", 2),
+                ("arbitrary response", "response", "state", 3),
+                ("retained checkpoint", "settled", "checkpoint", None),
+                ("completion command", "completion", "command_id", None),
+                ("completion kind", "completion", "kind", None),
+            )
+            for name, owner, field, value in cancel_mutations:
+                with self.subTest(cancel_semantics=name):
+                    document = json.loads(recorded)
+                    events = document["events"]
+                    index = next(
+                        index for index, event in enumerate(events)
+                        if event["event"] == "command"
+                        and event["command"]["kind"] == "CANCEL")
+                    ack, completion = events[index + 1:index + 3]
+                    response, settled = (
+                        events[index + 3]["observation"], events[index + 4])
+                    target = {
+                        "ack": ack, "completion": completion,
+                        "response": response, "settled": settled,
+                    }[owner]
+                    if name == "accepted":
+                        ack["rejection"] = 0
+                        response["rejection"] = 0
+                        response["state"] = 2
+                        _sync_settled_observation(settled, response)
+                    elif name == "retained checkpoint":
+                        settled["checkpoint"][0] = 0x41504C4E
+                    elif owner == "response":
+                        response[field] = value
+                        _sync_settled_observation(settled, response)
+                    else:
+                        target[field] = (
+                            target[field] + 1 if value is None else value)
+                    _rechain_transcript(document)
+                    _assert_replay_rejected(
+                        self, planner._canonical(document),
+                        validation_mode=planner.ValidationMode.PRODUCTION)
             mutations = (
                 ("chapter", planner.PageKind.ACTIONS, False, ("chapter", )),
                 ("turn", planner.PageKind.ACTIONS, False, ("chapter_turn", )),

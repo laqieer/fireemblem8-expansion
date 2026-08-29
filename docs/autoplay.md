@@ -1017,7 +1017,9 @@ token words. `destination` packs acting X/Y; `target` packs target ID and X/Y;
 validator requires the exact kind-to-engine-action mapping, canonical unit IDs,
 coordinates strictly inside the available published width/height, exact
 coordinate/slot sentinels, and zero reserved bits before creating an action or
-invoking either planner. Each absent slot is exactly `0xFF`, so
+invoking either planner. `COMBAT target=0` treats `(0,0)` as a real coordinate
+only when that published map cell is Snag or damaged-wall terrain; unit-target
+combat retains its coordinate-free `(0,0)` sentinel. Each absent slot is exactly `0xFF`, so
 Summon, MOVE_WAIT, Rogue Pick, and other no-item actions remain distinct from
 slot zero. All four independently mixed token words bind every identity field,
 remain opaque to the host, and are echoed unchanged. A malformed page produces
@@ -1235,6 +1237,8 @@ Transcript import applies the same invariant before interpreting an ACK:
 success is exactly `result=1/rejection=NONE`, while rejection is exactly
 `result=0` with one known nonzero rejection. Zero/zero, success plus rejection,
 unknown results or rejections, and command-ID/kind mismatches fail. Every
+`CANCEL` is narrower: only `result=0/rejection=CANCELLED` followed by its
+documented terminal and cleared checkpoint is canonical. Every
 accepted COMMIT then validates its ordinal and all four token words; changing a
 pair to look rejected cannot bypass token validation while retaining a
 COMMITTED settlement.

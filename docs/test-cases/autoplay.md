@@ -667,6 +667,9 @@ contiguous spans and totals, canonical unique record identities, row-major map
 dimensions, map-relative destination/target coordinates, roster-owned unique
 inventory slots, complete action ordinals, rich unit state/equipment/ranks,
 and objective/group/strategy/assignment cross-record identities.
+Top-left Snag and damaged-wall combat uses `(0,0)` as a real coordinate only
+when that published map cell proves the obstacle; ordinary empty terrain and
+unit-target combat cannot use the same representation.
 Each typed transport command first returns a matching monotonic `ACK`, then a
 matching `COMPLETE`, then its observation. Both planners execute a synthetic
 180-frame movement/camera/battle/event-style COMMIT and receive only the new
@@ -702,6 +705,9 @@ transcripts must match byte-for-byte.
 Unknown numeric or text command kinds fail import before the replay factory is
 called. Stale PAGE and forged COMMIT fields remain valid-kind rejection
 records and replay exactly through the restricted backend.
+Only `result=0/rejection=CANCELLED` is valid for CANCEL; successful, wrongly
+rejected, nonterminal, mismatched-COMPLETE, or checkpoint-retaining variants
+fail before replay transport creation.
 Transcript JSON is iteratively bounded to 64 structural containers before
 decode and canonicalization. Below-limit and exact-limit arrays/objects are
 accepted by that boundary; excess depth and explicit parser/canonicalizer

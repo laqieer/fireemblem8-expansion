@@ -123,6 +123,7 @@ _ACTION_IDS_BY_KIND = {
 _DEFAULT_ACTION_ID = {kind: max(action_ids) for kind, action_ids in _ACTION_IDS_BY_KIND.items()}
 _TILE_TARGET_ITEM_IDS = frozenset({0x7A, 0x7B})
 _DANCE_RING_ITEM_IDS = frozenset({0x7D, 0x7E, 0x7F, 0x80})
+_OBSTACLE_TERRAIN_IDS = frozenset({0x1B, 0x33})
 _VALID_WIRE_REJECTION_CODES = frozenset(range(1, 11))
 _WIRE_STALE_OBSERVATION = 2
 _REJECTIONS_BY_COMMAND = {
@@ -657,6 +658,17 @@ def _observation_action_item_valid(
     return target == 0 and target_position == (0, 0)
 
 
+def _observation_action_target_valid(
+    action: dict[str, object],
+    map_cells: dict[tuple[int, int], dict[str, object]],
+) -> bool:
+    if action["kind"] != "COMBAT" or action["target"] != 0:
+        return True
+    cell = map_cells.get(tuple(action["target_position"]))
+    return (cell is not None and cell["unit"] == 0
+            and cell["terrain"] in _OBSTACLE_TERRAIN_IDS)
+
+
 def _validate_token_schema(token: object, context: str) -> None:
     value = _require_exact_keys(token, {"word0", "word1", "word2", "word3"}, context)
     for word in value.values():
@@ -793,7 +805,8 @@ def _validate_action_contract(action: object, context: str) -> None:
     if (kind in {"STAFF", "USE_ITEM"} and item_slot is None or kind in {"MOVE_WAIT", "SUMMON"} and item_slot is not None
             or target_slot is not None and kind != "STAFF" or target_slot is not None and (target == 0 or target_position != (0, 0))
             or kind in {"MOVE_WAIT", "PICK", "SUMMON"} and target != 0 or kind == "MOVE_WAIT" and target_position != (0, 0)
-            or kind == "SUMMON" and action_id == 12 and target_position != (0, 0) or kind == "COMBAT" and (target == 0) == (target_position == (0, 0))
+            or kind == "SUMMON" and action_id == 12 and target_position != (0, 0)
+            or kind == "COMBAT" and target != 0 and target_position != (0, 0)
             or kind == "COMBAT" and item_slot is None and target == 0):
         raise PlannerError(f"invalid planner {context} sentinel contract")
 
@@ -1808,6 +1821,8 @@ class PlannerTranscript:
                 rejected = (result == 0 and rejection in _VALID_WIRE_REJECTION_CODES)
                 if not (accepted or rejected) or (accepted and command_kind_code not in _COMMAND_KIND_CODES.values()):
                     raise PlannerError("invalid acknowledgement result/rejection pair")
+                if command["kind"] == CommandKind.CANCEL.value and (result != 0 or rejection != 8):
+                    raise PlannerError("invalid CANCEL acknowledgement")
                 if accepted and (latest_observation is None or command.get("run_id") != latest_observation.get("run_id")
                                  or command.get("run_id") != (session_provenance["ready_run_id"] if command_kind_code == 1 else session_provenance["run_id"])):
                     raise PlannerError("accepted command run identity mismatch")
@@ -2356,6 +2371,9 @@ def _validate_complete_observation(
         None,
     )
     cells = observation["map_cells"]
+    map_cells_by_position = {
+        (cell["x"], cell["y"]): cell for cell in cells
+    }
     map_size = None
     if dimensions is not None and dimensions["availability"] == Availability.AVAILABLE:
         width = dimensions["value"] & 0xFFFF
@@ -2457,6 +2475,10 @@ def _validate_complete_observation(
                 (record["item_id"] for record in inventory if record["unit"] == action["action"]["actor"] and record["slot"] == action["action"]["item_slot"]
                  ), None) not in {0x54, 0x56, 0x58} and tuple(action["action"]["target_position"]) != (0, 0) for action in actions)
             or (strict or inventory) and any(not _observation_action_item_valid(action["action"], inventory_by_slot, units_by_slot) for action in actions)
+            or any(
+                not _observation_action_target_valid(
+                    action["action"], map_cells_by_position)
+                for action in actions)
             or (strict or units) and any(
                 unit_availability.get(action["action"]["actor"]) != Availability.AVAILABLE
                 or action["action"]["target"] != 0 and unit_availability.get(action["action"]["target"]) != Availability.AVAILABLE for action in actions)):
