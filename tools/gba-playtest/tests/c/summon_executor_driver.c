@@ -130,10 +130,8 @@ bool ExpansionAutoplayPlanner_PrepareActionData(
 {
     if (sSnagMode)
         return decision->targetId == 0
-            && decision->xTarget == sTrap.xPos
-            && (decision->yTarget == sTrap.yPos
-                || decision->yTarget == sTrap.yPos + 1)
-            && sTrap.type == TRAP_OBSTACLE
+            && GetObstacleTrapForTarget(
+                decision->xTarget, decision->yTarget) != NULL
             && (gBmMapTerrain[decision->yTarget][decision->xTarget]
                     == TERRAIN_SNAG
                 || gBmMapTerrain[decision->yTarget][decision->xTarget]
@@ -244,6 +242,7 @@ struct Trap* GetObstacleTrapForTarget(int x, int y)
     if (sTrap.yPos == y)
         return &sTrap;
     return y == sTrap.yPos + 1
+        && gBmMapTerrain[y - 1][x] == TERRAIN_WALL_DAMAGED
         && gBmMapTerrain[y][x] == TERRAIN_WALL_DAMAGED
         ? &sTrap : NULL;
 }
@@ -498,12 +497,17 @@ int main(void)
     sTrap.xPos = 3;
     sTrap.yPos = 2;
     sTrap.extra = 20;
-    sTerrainData[2][3] = TERRAIN_WALL_DAMAGED;
     sTerrainData[3][3] = TERRAIN_WALL_DAMAGED;
     PrepareDecision(&sUnit, 2, 3, 3, 3);
     gAiDecision.actionId = AI_ACTION_COMBAT;
     gAiDecision.targetId = 0;
     gAiDecision.itemSlot = 0;
+    gAiDecision.actionPerformed = true;
+    sTerrainData[2][3] = TERRAIN_SNAG;
+    AiStartCombatAction(NULL);
+    CHECK(sApplyCount == 0 && !gAiDecision.actionPerformed,
+          "unrelated Snag above wall must not reach executor");
+    sTerrainData[2][3] = TERRAIN_WALL_DAMAGED;
     AiStartCombatAction(NULL);
     CHECK(sApplyCount == 1 && gActionData.trapType == 20,
           "lower damaged-wall cell must lower shared obstacle HP");

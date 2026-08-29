@@ -220,7 +220,7 @@ struct Unit* GetUnit(int id)
 {
     if (id == 1)
         return &sUnit;
-    return id == 0x81 && sTarget.pCharacterData != NULL
+    return id == (u8)sTarget.index && sTarget.pCharacterData != NULL
         ? &sTarget : NULL;
 }
 
@@ -254,17 +254,6 @@ struct Trap* GetTrapAt(int x, int y)
             return &sTraps[index];
     }
     return NULL;
-}
-struct Trap* GetObstacleTrapForTarget(int x, int y)
-{
-    struct Trap* trap = GetTrapAt(x, y);
-    if (trap != NULL && trap->type == TRAP_OBSTACLE)
-        return trap;
-    if (y <= 0 || gBmMapTerrain[y][x] != TERRAIN_WALL_DAMAGED)
-        return NULL;
-    trap = GetTrapAt(x, y - 1);
-    return trap != NULL && trap->type == TRAP_OBSTACLE
-        ? trap : NULL;
 }
 int GetObstacleHpAt(int x, int y)
 {
@@ -415,15 +404,24 @@ static void InitializeRuntime(void)
     sUnit.items[0] = ITEM_MINE | (2 << 8);
 #elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 5
     sClass.attributes = CA_BALLISTAE;
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE >= 6
+    sUnit.items[0] = (ITEM_FILLAS_MIGHT
+        + FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE - 6) | (2 << 8);
+#endif
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE >= 5
     sTargetCharacter.number = 2;
     sTargetClass.number = 2;
     sTarget.pCharacterData = &sTargetCharacter;
     sTarget.pClassData = &sTargetClass;
-    sTarget.index = 0x81;
-    sTarget.xPos = 3;
+    sTarget.index =
+        FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 5 ? 0x81 : 2;
+    sTarget.xPos =
+        FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 5 ? 3 : 1;
     sTarget.yPos = 0;
     sTarget.maxHP = 20;
     sTarget.curHP = 20;
+#endif
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 5
     sTraps[0].type = TRAP_BALLISTA;
     sTraps[0].xPos = 0;
     sTraps[0].yPos = 0;
@@ -454,6 +452,8 @@ static void InitializeRuntime(void)
     sUnitData[0][0] = 1;
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 5
     sUnitData[0][3] = 0x81;
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE >= 6
+    sUnitData[0][1] = 2;
 #endif
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 1
     for (y = 0; y < height; y++)
@@ -534,6 +534,8 @@ static void PollCommittedDecision(
     if (mutated)
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 5
         sTraps[0].data[TRAP_EXTDATA_BLST_ITEMUSES]--;
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE >= 6
+        sTarget.state |= US_DEAD;
 #else
         sUnit.items[0] ^= 0x100;
 #endif
@@ -543,6 +545,8 @@ static void PollCommittedDecision(
     if (mutated)
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 5
         sTraps[0].data[TRAP_EXTDATA_BLST_ITEMUSES]++;
+#elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE >= 6
+        sTarget.state &= ~US_DEAD;
 #else
         sUnit.items[0] = selectedItem;
 #endif

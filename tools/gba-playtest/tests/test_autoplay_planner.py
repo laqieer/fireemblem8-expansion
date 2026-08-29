@@ -3530,29 +3530,34 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 planner.ScriptedPlanner(),
                 planner.BoundedSearchPlanner(max_nodes=512),
         ):
-            with self.subTest(planner=type(implementation).__name__):
-                with self._fixture(
-                        candidate_mode=3,
-                        mutate_selected_item_before_commit=True,
-                ) as (rom, backend, _):
-                    with _open_transport(backend, rom) as transport:
-                        complete = planner.collect_observation_pages(transport, transport.start())
-                        implementation.choose(complete)
-                        choice = next(record for record in complete.actions if record.action.kind == "USE_ITEM")
-                        actor_before = next(unit for unit in complete.units if unit.slot == choice.action.actor)
-                        rejected = transport.exchange(_commit(complete, choice))
-                        self.assertEqual((rejected.state, rejected.rejection), (2, 6))
-                        self.assertEqual((transport.last_acknowledgement.result, transport.last_acknowledgement.rejection), (0, 6))
-                        summary = transport.exchange(planner.Command(planner.CommandKind.PAGE, complete.run_id, complete.observation_id, page_index=0))
-                        refreshed = planner.collect_observation_pages(transport, summary)
-                        actor_after = next(unit for unit in refreshed.units if unit.slot == choice.action.actor)
-                        self.assertEqual(actor_after.position, actor_before.position)
-                        self.assertFalse(
-                            any(event["event"] == "acknowledgement" and event["kind"] == 2 and event["result"] == 1 for event in transport.transcript.events))
-                        transport.exchange(_cancel(refreshed))
+            for candidate_mode in (3, 6):
+                with self.subTest(
+                        planner=type(implementation).__name__,
+                        candidate_mode=candidate_mode):
+                    with self._fixture(
+                            candidate_mode=candidate_mode,
+                            mutate_selected_item_before_commit=True,
+                    ) as (rom, backend, _):
+                        with _open_transport(backend, rom) as transport:
+                            complete = planner.collect_observation_pages(transport, transport.start())
+                            implementation.choose(complete)
+                            choice = next(record for record in complete.actions if record.action.kind == "USE_ITEM")
+                            actor_before = next(unit for unit in complete.units if unit.slot == choice.action.actor)
+                            rejected = transport.exchange(_commit(complete, choice))
+                            self.assertEqual((rejected.state, rejected.rejection), (2, 6))
+                            self.assertEqual((transport.last_acknowledgement.result, transport.last_acknowledgement.rejection), (0, 6))
+                            summary = transport.exchange(planner.Command(planner.CommandKind.PAGE, complete.run_id, complete.observation_id, page_index=0))
+                            refreshed = planner.collect_observation_pages(transport, summary)
+                            actor_after = next(unit for unit in refreshed.units if unit.slot == choice.action.actor)
+                            self.assertEqual(actor_after.position, actor_before.position)
+                            self.assertFalse(
+                                any(event["event"] == "acknowledgement" and event["kind"] == 2 and event["result"] == 1 for event in transport.transcript.events))
+                            transport.exchange(_cancel(refreshed))
     def test_new_action_pages_replay_live_transport(self):
-        for mode, kind in ((4, "USE_ITEM"), (5, "COMBAT")):
-            with self.subTest(action_kind=kind):
+        for mode, kind in (
+                (4, "USE_ITEM"), (5, "COMBAT"),
+                *((mode, "USE_ITEM") for mode in range(6, 10))):
+            with self.subTest(action_kind=kind, candidate_mode=mode):
                 with self._fixture(candidate_mode=mode) as (rom, backend, _):
                     with _open_transport(backend, rom) as transport:
                         complete = planner.collect_observation_pages(transport, transport.start())
@@ -3561,6 +3566,10 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         choice = next(record for record in complete.actions
                                       if record.action.kind == kind and (kind == "COMBAT" or record.action.target_position != (0, 0)))
                         self.assertEqual(choice.action.item_slot, None if mode == 5 else 0)
+                        if mode >= 6:
+                            self.assertEqual((choice.action.target,
+                                              complete.inventory[0].item_id),
+                                             (2, 0x7D + mode - 6))
                         waiting = transport.exchange(_commit(complete, choice))
                         followup = planner.collect_observation_pages(transport, waiting)
                         transport.exchange(_cancel(followup))

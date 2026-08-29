@@ -187,7 +187,11 @@ bool ActionSemantics_IsTargetedItemTarget(
         return target != NULL
             && target != unit
             && UNIT_IS_VALID(target)
-            && UNIT_FACTION(target) == FACTION_BLUE
+            && !((u16)target->state
+                & (US_UNAVAILABLE | US_HIDDEN | US_RESCUED))
+            && !((u16)(target->state >> 16)
+                & (US_UNAVAILABLE >> 16))
+            && (u8)target->index < FACTION_GREEN
             && target->statusIndex == UNIT_STATUS_NONE
             && target->xPos == targetX
             && target->yPos == targetY;

@@ -335,19 +335,6 @@ struct Trap* GetTrapAt(int x, int y)
     return NULL;
 }
 
-struct Trap* GetObstacleTrapForTarget(int x, int y)
-{
-    struct Trap* trap = GetTrapAt(x, y);
-
-    if (trap != NULL && trap->type == TRAP_OBSTACLE)
-        return trap;
-    if (y <= 0 || gBmMapTerrain[y][x] != TERRAIN_WALL_DAMAGED)
-        return NULL;
-    trap = GetTrapAt(x, y - 1);
-    return trap != NULL && trap->type == TRAP_OBSTACLE
-        ? trap : NULL;
-}
-
 int GetObstacleHpAt(int x, int y)
 {
     struct Trap* trap = GetObstacleTrapForTarget(x, y);
@@ -1835,6 +1822,17 @@ static int TestBallistaAndWallCombat(void)
     }
     CHECK(wallTop == 1 && wallBottom == 1 && snag == 1,
           "both damaged-wall cells and Snag must coexist");
+    sTerrainData[2][3] = TERRAIN_SNAG;
+    CHECK(!IsObstacleAttackTargetAt(
+              sUnit.items[0], 2, 3, 3, 3)
+              && IsObstacleAttackTargetAt(
+                sUnit.items[0], 2, 2, 3, 2),
+          "Snag above an unrelated damaged wall must not own it");
+    sTerrainData[2][3] = 1;
+    CHECK(!IsObstacleAttackTargetAt(sUnit.items[0], 2, 3, 3, 3)
+              && GetObstacleTrapForTarget(0, 0) == NULL,
+          "ordinary and edge cells must not borrow an obstacle");
+    sTerrainData[2][3] = TERRAIN_WALL_DAMAGED;
     for (index = 0; index < (int)count; index++)
     {
         if (sEnumeratedActions[index].actionId == AI_ACTION_COMBAT
@@ -1856,6 +1854,10 @@ static int TestBallistaAndWallCombat(void)
             sTerrainData[3][3] = 1;
             CHECK(CommitBecameIllegal(&decision, ordinal, &selected.token0),
                   "stale lower wall must reject before executor");
+            sTerrainData[3][3] = TERRAIN_WALL_DAMAGED;
+            sTraps[0].type = TRAP_NONE;
+            CHECK(GetObstacleTrapForTarget(3, 3) == NULL,
+                  "destroyed wall trap must not remain targetable");
             break;
         }
     }
@@ -1872,10 +1874,13 @@ static int TestTargetedItemActions(void)
         UNIT_STATUS_ATTACK, UNIT_STATUS_DEFENSE,
         UNIT_STATUS_CRIT, UNIT_STATUS_AVOID,
     };
+    static const u32 unavailableStates[] = {
+        US_HIDDEN, US_RESCUED, US_NOT_DEPLOYED, US_BIT16, US_DEAD,
+    };
     struct AiDecision decision = { 0 };
     struct ExpansionAutoplayPlannerActionV2 selected;
     u32 count, ordinal;
-    int index;
+    int index, stateIndex;
     ResetActionFixture(5, 5);
     sUnit.items[0] = ITEM_MINE | (2 << 8);
     CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
@@ -1939,7 +1944,9 @@ static int TestTargetedItemActions(void)
         sUnitData[2][3] = 2;
         sUnitData[3][2] = 3;
         sUnitData[2][1] = 0x81;
-        CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+        MakeTargetListForDanceRing(&sUnit);
+        CHECK(sTargetCount == 2
+                  && CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
                   && CountActionId(count, AI_ACTION_USEITEM) == 2
                   && SelectAction(
                     &decision, AI_ACTION_USEITEM, 0, &ordinal, &selected),
@@ -1947,6 +1954,31 @@ static int TestTargetedItemActions(void)
         CHECK(sEnumeratedActions[ordinal].targetId == 3
                   && sEnumeratedActions[ordinal + 1].targetId == 2,
               "dance ring targets must use deterministic unit order");
+        for (stateIndex = 0;
+             stateIndex < (int)ARRAY_COUNT(unavailableStates);
+             stateIndex++)
+        {
+            sSummon.state = unavailableStates[stateIndex];
+            MakeTargetListForDanceRing(&sUnit);
+            CHECK(sTargetCount == 1
+                      && !ActionSemantics_IsTargetedItemTarget(
+                      &sUnit, &sSummon, sUnit.items[0],
+                      sUnit.xPos, sUnit.yPos, sSummon.xPos, sSummon.yPos)
+                      && CollectActions(&count)
+                        == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
+                      && CountActionId(count, AI_ACTION_USEITEM) == 1,
+                  "unavailable dance-ring target must not publish");
+        }
+        CHECK(CommitBecameIllegal(&decision, ordinal, &selected.token0),
+              "unavailable selected dance-ring target must stale");
+        sSummon.state = 0;
+        CHECK(SelectAction(
+                &decision, AI_ACTION_USEITEM, 0, &ordinal, &selected),
+              "restored dance-ring target must republish");
+        sUnitData[3][2] = 0;
+        CHECK(CommitBecameIllegal(&decision, ordinal, &selected.token0),
+              "stale dance-ring map entry must reject");
+        sUnitData[3][2] = 3;
         sAlly.statusIndex = UNIT_STATUS_POISON;
         CHECK(CommitBecameIllegal(&decision, ordinal, &selected.token0),
               "stale dance-ring target status must reject");

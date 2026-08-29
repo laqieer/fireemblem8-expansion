@@ -246,22 +246,6 @@ void RefreshAllLightRunes(void)
     }
 }
 
-#ifndef FE8_ARCHIVAL_BUILD
-struct Trap* GetObstacleTrapForTarget(int x, int y)
-{
-    struct Trap* trap;
-    trap = GetTrapAt(x, y);
-    if (trap != NULL && trap->type == TRAP_OBSTACLE)
-        return trap;
-
-    if (y <= 0 || gBmMapTerrain[y][x] != TERRAIN_WALL_DAMAGED)
-        return NULL;
-    trap = GetTrapAt(x, y - 1);
-    return trap != NULL && trap->type == TRAP_OBSTACLE
-        ? trap : NULL;
-}
-#endif
-
 int GetObstacleHpAt(int x, int y)
 {
     struct Trap* trap;
