@@ -219,9 +219,11 @@ or condition controls, deployment environment, concurrency, reusable-job
 or reordered keys fail before dry-run.
 
 CI additionally hydrates commit authority before the workflow-pilot tests with
-the strict fixture-derived helper. It fetches only missing exact commit IDs
-from fixed `origin`, in bounded no-tags/blob-filtered/no-ref batches, verifies
-every commit, and then derives the exact historical
+the strict fixture-derived helper. It derives the minimal maximal commit tips,
+requires fixed `origin` to have the exact lightweight
+`refs/tags/workflow-pilot-baseline/<full-sha>` mappings, and fetches missing
+history only through those named refs in bounded no-tags/blob-filtered/no-local-
+ref batches. It verifies raw-parent coverage and then derives the exact historical
 `.github/workflow-pilot-decisions.json` blobs needed by override introduction
 and first-review commits from the strict fixture and current decisions. Only
 those blob object IDs are fetched without the commit-level blob filter; other
@@ -230,6 +232,9 @@ complete ref set, and FETCH_HEAD after both phases. This covers force-pushed
 candidates that an all-head fetch cannot recover. It is CI setup, not one of
 the 28 local gates; normal local clones are never hydrated by `verify`, which
 remains deliberately network-independent and fails if authority is incomplete.
+The read-only `isolated_launcher.py anchor-refs` command documented in
+[`workflow-pilot.md`](workflow-pilot.md) prints the mappings for the owner
+orchestrator; it never creates or pushes them.
 
 Before a non-dry-run local `verify`, install both the supported modern
 toolchain and the explicit archival `make legacy` prerequisites. The

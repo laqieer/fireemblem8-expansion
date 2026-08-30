@@ -338,6 +338,11 @@ Commit hydration keeps `blob:none`, then strict fixture/decision relationships
 derive only override-introduction and first-review decision-record blob IDs.
 Those exact blobs are fetched separately while unrelated blobs, HEAD, refs,
 and FETCH_HEAD remain unchanged.
+The fixture parent graph also derives a minimal maximal-tip set and exact
+lightweight remote anchor names. Only a complete exact fixed-origin namespace
+may hydrate commits; local refs and FETCH_HEAD remain unchanged, and remote
+GC/repack retains otherwise force-pushed history. The read-only print mode
+emits the same mappings twice without remote mutation.
 The expected cohort seal binds normalized identities plus review, event,
 timestamp, PR/SHA, and other metric relationships.
 Every Build and non-Build workflow run is also rejected when its creation
@@ -364,6 +369,10 @@ The committed artifacts additionally pass actual sandboxed removal/failure
 and restoration/success execution through the closed command allowlist while
 the plain `build/test-artifacts/` sandbox continues to use the immutable
 original checkout and object database as separate Git authority.
+Each child uses only `/usr/bin/python3 -I` and the copied closed launcher with
+explicit sandbox/authority/check arguments; repository and user-site
+`sitecustomize.py` exit hooks cannot run first, and root/mode/check/extra
+argument mutations reject.
 
 ### Negative control
 

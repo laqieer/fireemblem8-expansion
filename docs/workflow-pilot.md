@@ -137,9 +137,14 @@ supplies this authority. A clean Actions
 exact-candidate checkout can omit older force-pushed commits, so the
 `host-tests` job runs one CI-only helper before reporter tests. The helper
 reads only the committed strict baseline fixture, derives its unique commit
-IDs, and fetches missing objects from fixed remote `origin` in bounded batches
-with no tags, eager blobs, FETCH_HEAD write, or ref movement. It verifies every
-identity as a commit. From the strict fixture and current decisions it then
+IDs and minimal maximal-tip set, and requires fixed `origin` to expose exactly
+the corresponding lightweight
+`refs/tags/workflow-pilot-baseline/<full-sha>` namespace. The current fixture
+derives 12 anchors. Missing, moved, extra, duplicate, malformed, or
+incompletely covering refs fail; missing objects are fetched only through the
+named refs in bounded no-tags/blob-filtered batches without local ref or
+FETCH_HEAD movement. It verifies every identity as a commit and re-derives
+coverage from raw parents. From the strict fixture and current decisions it then
 derives only override-introduction and first-reviewed commits, resolves their
 exact `.github/workflow-pilot-decisions.json` blob IDs from hydrated trees,
 and fetches those blobs explicitly without hydrating unrelated blobs. Both
@@ -147,14 +152,26 @@ bounded phases recheck that `HEAD`, refs, and FETCH_HEAD are unchanged and
 that `HEAD` still equals `EXPECTED_BUILD_SHA`. This hydration is environment
 setup, not a 29th local semantic gate; local
 `scripts.upstream_port verify` remains network-independent.
+The deterministic read-only owner handoff is:
+
+```bash
+/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py anchor-refs \
+  --repository-root . \
+  --fixture scripts/workflow_pilot/tests/fixtures/baseline.json \
+  --decisions .github/workflow-pilot-decisions.json
+```
+
+These remote refs are operational Git reachability, not committed provenance,
+a SHA ledger, an anchor commit, or an object snapshot. The command only prints
+derived mappings; it never creates or pushes refs.
 
 Checkout, exact-revision verification, hydration, host dependency setup, and
 the three preceding host suites are one exact ordered pre-pilot sequence with
 reviewed actions, commands, and fields. Hydration plus both reporter gates use
 `/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py`. Python
 therefore completes isolated startup before the launcher inserts only its
-resolved source root and dispatches exactly `hydrate`, `reporter-tests`, or
-`baseline`; it exposes no arbitrary module, command, or evaluation mode. The
+resolved source root and dispatches its closed modes; it exposes no arbitrary
+module, command, or evaluation mode. The
 hydration helper uses `/usr/bin/git`. Protected step environments set
 `BASH_ENV`, `ENV`, `PYTHONPATH`, and known Git redirection controls to reviewed
 safe values and pin `PATH=/usr/bin:/bin`; the isolated launcher removes every
@@ -180,7 +197,12 @@ allowlisted artifact it removes the sandbox copy, runs its declared reporter
 consumer and/or focused consistency check and requires failure, restores the
 copy, and requires both checks to pass. The command identifiers and file paths
 come from a closed allowlist in the reporter; fixture text cannot supply
-executable commands. An empty or fabricated `git init` cannot validate the
+executable commands. Every proof child is exactly `/usr/bin/python3 -I` plus
+the copied reviewed launcher's `lifecycle-check` mode, explicit sandbox and
+authority roots, and one allowlisted check ID. Only after isolated startup does
+the launcher insert the sandbox root. There is no `-c`, `-m`, `-E`, arbitrary
+mode, or user/repository `sitecustomize.py` path before control. An empty or
+fabricated `git init` cannot validate the
 baseline. The sandbox is removed automatically and the checked out worktree is
 never modified.
 

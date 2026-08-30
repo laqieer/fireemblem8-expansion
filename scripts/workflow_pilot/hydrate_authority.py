@@ -14,6 +14,7 @@ from . import reporter
 GIT = reporter.GIT
 BATCH_SIZE = 256
 FETCH_TIMEOUT_SECONDS = 120
+ANCHOR_PREFIX = "refs/tags/workflow-pilot-baseline/"
 FETCH_OPTIONS = (
     "--quiet",
     "--no-tags",
@@ -146,6 +147,75 @@ def available_commits(
 def required_commits_from_fixture(fixture_path: Path) -> tuple[str, list[str]]:
     data = reporter.validate_fixture(reporter.load_json(fixture_path))
     return data["fixture"]["repository"], sorted(data["commits"])
+
+
+def maximal_commit_tips(graph: dict[str, list[str]]) -> list[str]:
+    ancestors = set()
+    for sha in graph:
+        pending = list(graph[sha])
+        while pending:
+            candidate = pending.pop()
+            if candidate in ancestors or candidate not in graph:
+                continue
+            ancestors.add(candidate)
+            pending.extend(graph[candidate])
+    return sorted(set(graph) - ancestors)
+
+
+def required_anchor_refs(fixture_path: Path) -> dict[str, str]:
+    data = reporter.validate_fixture(reporter.load_json(fixture_path))
+    graph = {
+        sha: commit["parents"]
+        for sha, commit in data["commits"].items()
+    }
+    tips = maximal_commit_tips(graph)
+    covered = set()
+    for tip in tips:
+        pending = [tip]
+        while pending:
+            candidate = pending.pop()
+            if candidate in covered or candidate not in graph:
+                continue
+            covered.add(candidate)
+            pending.extend(graph[candidate])
+    if covered != set(graph):
+        raise reporter.PilotDataError(
+            "derived baseline anchors do not cover every fixture commit"
+        )
+    return {f"{ANCHOR_PREFIX}{sha}": sha for sha in tips}
+
+
+def parse_remote_anchor_refs(raw: bytes) -> dict[str, str]:
+    anchors = {}
+    for line in raw.decode("ascii").splitlines():
+        fields = line.split("\t")
+        if len(fields) != 2:
+            raise reporter.PilotDataError("origin anchor response is malformed")
+        sha, name = fields
+        reporter.expect_sha(sha, "origin anchor target")
+        suffix = name.removeprefix(ANCHOR_PREFIX)
+        if (
+            suffix == name
+            or reporter.SHA_RE.fullmatch(suffix) is None
+            or name in anchors
+        ):
+            raise reporter.PilotDataError(
+                "origin anchor name is malformed or duplicated"
+            )
+        anchors[name] = sha
+    return anchors
+
+
+def query_remote_anchor_refs(repository_root: Path) -> dict[str, str]:
+    return parse_remote_anchor_refs(
+        run_git(
+            repository_root,
+            "ls-remote",
+            "--refs",
+            "origin",
+            f"{ANCHOR_PREFIX}*",
+        ).stdout
+    )
 
 
 def required_override_decision_commits(
@@ -350,10 +420,11 @@ def require_unchanged_authority_state(
         )
 
 
-def hydrate_exact_commits(
+def hydrate_anchor_commits(
     repository_root: Path,
     repository: str,
     required: list[str],
+    anchors: dict[str, str],
     expected_head: str,
 ) -> dict[str, int]:
     repository_root = reporter.validate_repository_root(repository_root)
@@ -367,6 +438,14 @@ def hydrate_exact_commits(
         raise reporter.PilotDataError(
             "required commits must be unique and sorted"
         )
+    expected_anchors = {
+        f"{ANCHOR_PREFIX}{sha}": sha
+        for sha in sorted(anchors.values())
+    }
+    if anchors != expected_anchors:
+        raise reporter.PilotDataError(
+            "required anchor refs must be canonical, unique, and sorted"
+        )
 
     remote = reporter.run_git(
         repository_root,
@@ -379,6 +458,19 @@ def hydrate_exact_commits(
         raise reporter.PilotDataError(
             "origin does not match the required repository"
         )
+    remote_anchors = query_remote_anchor_refs(repository_root)
+    if remote_anchors != anchors:
+        missing = sorted(set(anchors) - set(remote_anchors))
+        extra = sorted(set(remote_anchors) - set(anchors))
+        moved = sorted(
+            name
+            for name in set(anchors) & set(remote_anchors)
+            if anchors[name] != remote_anchors[name]
+        )
+        raise reporter.PilotDataError(
+            "origin baseline anchor refs differ from derived fixture authority "
+            f"(missing={missing}, extra={extra}, moved={moved})"
+        )
 
     before = authority_state(repository_root)
     head_before = before[0].decode("ascii").strip()
@@ -387,15 +479,16 @@ def hydrate_exact_commits(
             f"checked-out HEAD {head_before} does not match {expected_head}"
         )
     missing = sorted(set(required) - available_commits(repository_root, required))
-    for offset in range(0, len(missing), BATCH_SIZE):
-        batch = missing[offset : offset + BATCH_SIZE]
-        run_git(
-            repository_root,
-            "fetch",
-            *FETCH_OPTIONS,
-            "origin",
-            *batch,
-        )
+    anchor_names = sorted(anchors)
+    if missing:
+        for offset in range(0, len(anchor_names), BATCH_SIZE):
+            run_git(
+                repository_root,
+                "fetch",
+                *FETCH_OPTIONS,
+                "origin",
+                *anchor_names[offset : offset + BATCH_SIZE],
+            )
 
     unavailable = sorted(
         set(required) - available_commits(repository_root, required)
@@ -404,6 +497,14 @@ def hydrate_exact_commits(
         raise reporter.PilotDataError(
             "exact fixture authority remains unavailable: "
             + ", ".join(unavailable)
+        )
+    actual = reporter._load_git_commit_objects(repository_root, required)
+    actual_tips = maximal_commit_tips(
+        {sha: commit["parents"] for sha, commit in actual.items()}
+    )
+    if set(anchors.values()) != set(actual_tips):
+        raise reporter.PilotDataError(
+            "origin baseline anchors do not cover the validated raw parent graph"
         )
     require_unchanged_authority_state(repository_root, expected_head, before)
     return {"required": len(required), "fetched": len(missing)}
@@ -500,6 +601,36 @@ def hydrate_authority(
     decisions_path: Path,
     expected_head: str,
 ) -> dict[str, int]:
+    repository_root, fixture_path, decisions_path = validate_input_paths(
+        repository_root,
+        fixture_path,
+        decisions_path,
+    )
+    repository, required, decision_commits = required_override_decision_commits(
+        fixture_path,
+        decisions_path,
+    )
+    commit_result = hydrate_anchor_commits(
+        repository_root,
+        repository,
+        required,
+        required_anchor_refs(fixture_path),
+        expected_head,
+    )
+    blob_result = hydrate_override_decision_blobs(
+        repository_root,
+        repository,
+        decision_commits,
+        expected_head,
+    )
+    return {**commit_result, **blob_result}
+
+
+def validate_input_paths(
+    repository_root: Path,
+    fixture_path: Path,
+    decisions_path: Path,
+) -> tuple[Path, Path, Path]:
     repository_root = reporter.validate_repository_root(repository_root)
     expected_fixture = (repository_root / reporter.BASELINE_FIXTURE_PATH).resolve()
     try:
@@ -523,23 +654,30 @@ def hydrate_authority(
         raise reporter.PilotDataError(
             f"--decisions must identify {expected_decisions}"
         )
-    repository, required, decision_commits = required_override_decision_commits(
-        fixture_path,
-        decisions_path,
+    return repository_root, fixture_path, decisions_path
+
+
+def print_anchor_refs(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        description="Print required workflow-pilot remote anchor refs."
     )
-    commit_result = hydrate_exact_commits(
-        repository_root,
-        repository,
-        required,
-        expected_head,
-    )
-    blob_result = hydrate_override_decision_blobs(
-        repository_root,
-        repository,
-        decision_commits,
-        expected_head,
-    )
-    return {**commit_result, **blob_result}
+    parser.add_argument("--repository-root", type=Path, required=True)
+    parser.add_argument("--fixture", type=Path, required=True)
+    parser.add_argument("--decisions", type=Path, required=True)
+    args = parser.parse_args(argv)
+    try:
+        _, fixture, _ = validate_input_paths(
+            args.repository_root,
+            args.fixture,
+            args.decisions,
+        )
+        anchors = required_anchor_refs(fixture)
+    except reporter.PilotDataError as error:
+        print(f"workflow-pilot-anchors: {error}", file=sys.stderr)
+        return 2
+    for name, sha in anchors.items():
+        print(f"{name} {sha}")
+    return 0
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

@@ -1432,6 +1432,12 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 f"{historical}:refs/heads/force-pushed",
                 offline=False,
             )
+            anchors = {
+                f"{hydrate_authority.ANCHOR_PREFIX}{sha}": sha
+                for sha in sorted((expected_head, historical))
+            }
+            for name, sha in anchors.items():
+                _git_run(remote, "update-ref", name, sha)
             _git_run(
                 seed,
                 "push",
@@ -1440,6 +1446,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 ":refs/heads/force-pushed",
                 offline=False,
             )
+            _git_run(remote, "reflog", "expire", "--expire=now", "--all")
+            _git_run(remote, "gc", "--prune=now")
             _git_run(
                 remote,
                 "config",
@@ -1519,10 +1527,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "GIT_WORK_TREE": str(seed),
             }
             with mock.patch.dict(os.environ, hostile, clear=False):
-                result = hydrate_authority.hydrate_exact_commits(
+                result = hydrate_authority.hydrate_anchor_commits(
                     checkout,
                     "laqieer/fireemblem8-expansion",
                     required,
+                    anchors,
                     expected_head,
                 )
             self.assertEqual(result["required"], 2)
@@ -1616,6 +1625,57 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 fetch_head_before,
             )
 
+            missing_name = next(iter(anchors))
+            _git_run(remote, "update-ref", "-d", missing_name)
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "missing=",
+            ):
+                hydrate_authority.hydrate_anchor_commits(
+                    checkout,
+                    "laqieer/fireemblem8-expansion",
+                    required,
+                    anchors,
+                    expected_head,
+                )
+            wrong_target = (
+                historical
+                if anchors[missing_name] == expected_head
+                else expected_head
+            )
+            _git_run(remote, "update-ref", missing_name, wrong_target)
+            with self.assertRaisesRegex(reporter.PilotDataError, "moved="):
+                hydrate_authority.hydrate_anchor_commits(
+                    checkout,
+                    "laqieer/fireemblem8-expansion",
+                    required,
+                    anchors,
+                    expected_head,
+                )
+            _git_run(remote, "update-ref", missing_name, anchors[missing_name])
+            extra_name = f"{hydrate_authority.ANCHOR_PREFIX}{'f' * 40}"
+            _git_run(remote, "update-ref", extra_name, expected_head)
+            with self.assertRaisesRegex(reporter.PilotDataError, "extra="):
+                hydrate_authority.hydrate_anchor_commits(
+                    checkout,
+                    "laqieer/fireemblem8-expansion",
+                    required,
+                    anchors,
+                    expected_head,
+                )
+            _git_run(remote, "update-ref", "-d", extra_name)
+            omitted = next(name for name in anchors if name != missing_name)
+            _git_run(remote, "update-ref", "-d", omitted)
+            subset = {missing_name: anchors[missing_name]}
+            with self.assertRaisesRegex(reporter.PilotDataError, "do not cover"):
+                hydrate_authority.hydrate_anchor_commits(
+                    checkout,
+                    "laqieer/fireemblem8-expansion",
+                    required,
+                    subset,
+                    expected_head,
+                )
+
     def test_production_hydration_extracts_only_strict_fixture_commits(self):
         fixture_path = ROOT / "scripts/workflow_pilot/tests/fixtures/baseline.json"
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
@@ -1646,6 +1706,64 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             if event["type"] == "threshold_override_introduced"
         }
         self.assertEqual(set(decision_commits), introduction_commits)
+        anchors = hydrate_authority.required_anchor_refs(fixture_path)
+        self.assertEqual(len(anchors), 12)
+        self.assertEqual(
+            anchors,
+            {
+                f"{hydrate_authority.ANCHOR_PREFIX}{sha}": sha
+                for sha in anchors.values()
+            },
+        )
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "malformed or duplicated",
+        ):
+            hydrate_authority.parse_remote_anchor_refs(
+                b"0" * 40
+                + b"\trefs/tags/workflow-pilot-baseline/not-a-sha\n"
+            )
+        duplicate = next(iter(anchors.items()))
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "malformed or duplicated",
+        ):
+            hydrate_authority.parse_remote_anchor_refs(
+                (
+                    f"{duplicate[1]}\t{duplicate[0]}\n"
+                    f"{duplicate[1]}\t{duplicate[0]}\n"
+                ).encode("ascii")
+            )
+
+    def test_anchor_ref_print_mode_is_deterministic_and_read_only(self):
+        command = [
+            "/usr/bin/python3",
+            "-I",
+            "scripts/workflow_pilot/isolated_launcher.py",
+            "anchor-refs",
+            "--repository-root",
+            str(ROOT),
+            "--fixture",
+            str(ROOT / reporter.BASELINE_FIXTURE_PATH),
+            "--decisions",
+            str(ROOT / reporter.DECISION_RECORD_PATH),
+        ]
+        before = hydrate_authority.authority_state(ROOT)
+        first = subprocess.run(
+            command,
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout
+        second = subprocess.run(
+            command,
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout
+        self.assertEqual(first, second)
+        self.assertEqual(len(first.splitlines()), 12)
+        self.assertEqual(hydrate_authority.authority_state(ROOT), before)
 
     def test_synthetic_stacked_pull_request_runs_candidate_jobs_on_its_real_base(self):
         event = {

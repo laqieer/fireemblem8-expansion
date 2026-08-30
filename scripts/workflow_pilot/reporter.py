@@ -44,35 +44,18 @@ BASELINE_EXPECTED_PATH = Path(
 )
 REPORTER_PATH = Path("scripts/workflow_pilot/reporter.py")
 REPORTER_PACKAGE_PATH = Path("scripts/workflow_pilot/__init__.py")
+ISOLATED_LAUNCHER_PATH = Path("scripts/workflow_pilot/isolated_launcher.py")
 REPORTER_TEST_PATH = Path("scripts/workflow_pilot/tests/test_reporter.py")
 REPORTER_TEST_PACKAGE_PATH = Path("scripts/workflow_pilot/tests/__init__.py")
 DELETION_PROOF_SUPPORT_PATHS = (
     BASELINE_EXPECTED_PATH,
+    ISOLATED_LAUNCHER_PATH,
     REPORTER_PACKAGE_PATH,
     REPORTER_TEST_PATH,
     REPORTER_TEST_PACKAGE_PATH,
 )
 DELETION_PROOF_REASON = "removal loses the issue #176 baseline decision invariant"
 DELETION_PROOF_TIMEOUT_SECONDS = 30
-DELETION_PROOF_REPORTER_PROGRAM = """
-import importlib.util
-import pathlib
-import sys
-
-artifact_root = pathlib.Path(sys.argv[1])
-authority_root = pathlib.Path(sys.argv[2])
-reporter_path = artifact_root / "scripts/workflow_pilot/reporter.py"
-spec = importlib.util.spec_from_file_location("workflow_pilot_proof", reporter_path)
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-fixture = module.load_json(artifact_root / module.BASELINE_FIXTURE_PATH)
-decisions = module.load_json(artifact_root / module.DECISION_RECORD_PATH)
-report = module.build_report(fixture, decisions, authority_root)
-module.check_expected(
-    report,
-    module.load_json(artifact_root / module.BASELINE_EXPECTED_PATH),
-)
-"""
 EXECUTABLE_DELETION_PROOFS = {
     "workflow-pilot-decisions": {
         "path": DECISION_RECORD_PATH,
@@ -2979,36 +2962,23 @@ def _run_deletion_proof_check(
     authority_root: Path,
     check_id: str,
 ) -> subprocess.CompletedProcess[bytes]:
-    if check_id == "workflow-pilot-reporter":
-        command = (
-            sys.executable,
-            "-I",
-            "-c",
-            DELETION_PROOF_REPORTER_PROGRAM,
-            str(artifact_root),
-            str(authority_root),
-        )
-    elif check_id == "workflow-pilot-tests":
-        command = (
-            sys.executable,
-            "-E",
-            "-m",
-            "unittest",
-            (
-                "scripts.workflow_pilot.tests.test_reporter."
-                "BaselineFixtureTests.test_frozen_baseline_and_expected_values"
-            ),
-        )
-    else:
+    if check_id not in {"workflow-pilot-reporter", "workflow-pilot-tests"}:
         raise PilotDataError(
             f"deletion-proof check {check_id!r} is not allowlisted"
         )
-    environment = {
-        "LC_ALL": "C",
-        "PATH": "/usr/bin:/bin",
-        "PYTHONHASHSEED": "0",
-        "WORKFLOW_PILOT_TEST_AUTHORITY_ROOT": str(authority_root),
-    }
+    command = (
+        "/usr/bin/python3",
+        "-I",
+        str(artifact_root / ISOLATED_LAUNCHER_PATH),
+        "lifecycle-check",
+        "--artifact-root",
+        str(artifact_root),
+        "--authority-root",
+        str(authority_root),
+        "--check",
+        check_id,
+    )
+    environment = {"LC_ALL": "C", "PATH": "/usr/bin:/bin", "PYTHONHASHSEED": "0"}
     try:
         return subprocess.run(
             command,

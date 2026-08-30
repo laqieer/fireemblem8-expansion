@@ -3815,6 +3815,116 @@ class ArtifactLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(before, {path: path.read_bytes() for path in paths})
 
+    def test_lifecycle_launcher_isolated_from_sitecustomize_and_closed(self):
+        from scripts.workflow_pilot import isolated_launcher
+
+        self.assertEqual(
+            isolated_launcher.LIFECYCLE_CHECKS,
+            {"workflow-pilot-reporter", "workflow-pilot-tests"},
+        )
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-pilot-lifecycle-launcher-",
+            dir=TEST_ARTIFACTS,
+        ) as temporary:
+            sandbox = Path(temporary) / "sandbox"
+            for relative in {
+                *reporter.DELETION_PROOF_SUPPORT_PATHS,
+                *(
+                    profile["path"]
+                    for profile in reporter.EXECUTABLE_DELETION_PROOFS.values()
+                ),
+            }:
+                target = sandbox / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / relative, target)
+            exit_hook = "import os\nos._exit(0)\n"
+            (sandbox / "sitecustomize.py").write_text(
+                exit_hook,
+                encoding="ascii",
+            )
+            user_site = (
+                Path(temporary)
+                / "user"
+                / "lib"
+                / f"python{sys.version_info.major}.{sys.version_info.minor}"
+                / "site-packages"
+            )
+            user_site.mkdir(parents=True)
+            (user_site / "sitecustomize.py").write_text(
+                exit_hook,
+                encoding="ascii",
+            )
+            for source, environment in (
+                ("repository", {"PYTHONPATH": str(sandbox)}),
+                (
+                    "user",
+                    {
+                        "HOME": str(Path(temporary)),
+                        "PYTHONUSERBASE": str(Path(temporary) / "user"),
+                        "PYTHONPATH": str(user_site),
+                    },
+                ),
+            ):
+                with self.subTest(source=source):
+                    completed = subprocess.run(
+                        ["/usr/bin/python3", "-c", "raise SystemExit(9)"],
+                        env={"PATH": "/usr/bin:/bin", **environment},
+                        check=False,
+                    )
+                    self.assertEqual(completed.returncode, 0)
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "PYTHONPATH": str(sandbox),
+                    "PYTHONUSERBASE": str(Path(temporary) / "user"),
+                },
+                clear=False,
+            ):
+                completed = reporter._run_deletion_proof_check(
+                    sandbox,
+                    ROOT,
+                    "workflow-pilot-reporter",
+                )
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+
+            launcher = sandbox / reporter.ISOLATED_LAUNCHER_PATH
+            common = [
+                "/usr/bin/python3",
+                "-I",
+                str(launcher),
+                "lifecycle-check",
+                "--artifact-root",
+                str(sandbox),
+                "--authority-root",
+                str(ROOT),
+                "--check",
+                "workflow-pilot-reporter",
+            ]
+            self.assertEqual(list(completed.args), common)
+            self.assertEqual(common[:2], ["/usr/bin/python3", "-I"])
+            self.assertNotIn("-c", common)
+            self.assertNotIn("-m", common)
+            self.assertNotIn("-E", common)
+            for changed in (
+                [*common[:3], "arbitrary", *common[4:]],
+                [
+                    *common[:5],
+                    str(Path(temporary)),
+                    *common[6:],
+                ],
+                [*common[:-1], "arbitrary"],
+                [*common, "extra"],
+            ):
+                self.assertEqual(
+                    subprocess.run(
+                        changed,
+                        check=False,
+                        capture_output=True,
+                    ).returncode,
+                    2,
+                )
+
     def test_empty_git_authority_cannot_validate_executable_proofs(self):
         fixture = reporter.load_json(BASELINE)
         decisions = reporter.load_json(DECISIONS)
