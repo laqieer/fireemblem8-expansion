@@ -1,6 +1,8 @@
 import copy
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -400,6 +402,61 @@ def add_second_pr(fixture):
     )
 
 
+def add_stack_pr(
+    fixture,
+    decisions,
+    *,
+    number,
+    parent_pr,
+    depth,
+    sha_character,
+    exception_reason=None,
+):
+    parent = (
+        fixture["pull_requests"][0]
+        if parent_pr == 1
+        else next(
+            item for item in fixture["pull_requests"] if item["number"] == parent_pr
+        )
+    )
+    head_sha = sha(sha_character)
+    fixture["pull_requests"].append(
+        {
+            "number": number,
+            "state": "open",
+            "created_at": f"2026-01-01T09:{number:02d}:00Z",
+            "merged_at": None,
+            "closed_at": None,
+            "base_ref": parent["head_branch"],
+            "head_branch": f"agent/{number}",
+            "head_sha": head_sha,
+            "merge_sha": None,
+            "issue_numbers": [],
+            "review_ids": [],
+            "commit_shas": [head_sha],
+            "additions": 10,
+            "deletions": 0,
+            "files": [f"scripts/stack_{number}.py"],
+        }
+    )
+    fixture["commits"].append(
+        {
+            "sha": head_sha,
+            "committed_at": f"2026-01-01T09:{number:02d}:00Z",
+            "parents": [parent["head_sha"]],
+            "message": f"feat: stack layer {number}",
+        }
+    )
+    decision = copy.deepcopy(minimal_decisions()["pull_requests"][0])
+    decision["pull_request"] = number
+    decision["stack"] = {
+        "depth": depth,
+        "parent_pr": parent_pr,
+        "exception_reason": exception_reason,
+    }
+    decisions["pull_requests"].append(decision)
+
+
 def add_override(fixture, decisions, commit_sha=sha("b"), occurred_at=None):
     override = {
         "enabled": True,
@@ -547,6 +604,45 @@ class BaselineFixtureTests(unittest.TestCase):
         )
         self.assertEqual(wrong_decisions.returncode, 2)
         self.assertIn(b"--decisions must identify", wrong_decisions.stderr)
+
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-pilot-inputs-",
+            dir=ROOT.parent,
+        ) as temporary:
+            alternate_fixture = Path(temporary) / "baseline.json"
+            alternate_expected = Path(temporary) / "baseline_expected.json"
+            shutil.copy2(BASELINE, alternate_fixture)
+            shutil.copy2(BASELINE_EXPECTED, alternate_expected)
+            for option, replacement in (
+                ("--fixture", alternate_fixture),
+                ("--expected", alternate_expected),
+            ):
+                with self.subTest(option=option):
+                    command = [
+                        sys.executable,
+                        "-m",
+                        "scripts.workflow_pilot.reporter",
+                        "--fixture",
+                        str(BASELINE),
+                        "--decisions",
+                        str(DECISIONS),
+                        "--expected",
+                        str(BASELINE_EXPECTED),
+                        "--repository-root",
+                        str(ROOT),
+                    ]
+                    command[command.index(option) + 1] = str(replacement)
+                    result = subprocess.run(
+                        command,
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                    )
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn(
+                        f"{option} must identify".encode("ascii"),
+                        result.stderr,
+                    )
 
 
 class FormulaAndClassificationTests(unittest.TestCase):
@@ -754,6 +850,96 @@ class FormulaAndClassificationTests(unittest.TestCase):
         builds = reporter.build_report(fixture, minimal_decisions())["builds"]
         self.assertEqual(builds["minutes"], 150)
         self.assertEqual(builds["spotlight"]["minutes"], 150)
+
+    def test_every_workflow_run_has_coherent_status_and_timestamps(self):
+        mutations = (
+            (
+                {"completed_at": "2026-01-01T07:29:59Z"},
+                "ends before it starts",
+            ),
+            (
+                {"started_at": None},
+                "completed_at requires started_at",
+            ),
+            (
+                {"completed_at": None},
+                "completed status requires completed_at",
+            ),
+            (
+                {"started_at": "2026-01-01T07:29:59Z"},
+                "started_at precedes creation",
+            ),
+            (
+                {"completed_at": "2026-01-01T10:00:01Z"},
+                "completed_at follows the snapshot",
+            ),
+            (
+                {"conclusion": None},
+                "conclusion must be one of",
+            ),
+            (
+                {"conclusion": "timed_out"},
+                "conclusion must be one of",
+            ),
+            (
+                {
+                    "status": "in_progress",
+                    "conclusion": None,
+                    "completed_at": None,
+                    "started_at": None,
+                },
+                "in_progress status requires started_at",
+            ),
+            (
+                {"status": "in_progress", "conclusion": None},
+                "in_progress status requires null",
+            ),
+            (
+                {"status": "queued", "conclusion": "success", "completed_at": None},
+                "queued status requires null",
+            ),
+            (
+                {"status": "queued", "conclusion": None,
+                 "started_at": "2026-01-01T10:00:01Z", "completed_at": None},
+                "started_at follows the snapshot",
+            ),
+        )
+        for changes, pattern in mutations:
+            with self.subTest(changes=changes):
+                fixture = minimal_fixture()
+                fixture["workflow_runs"][4].update(changes)
+                with self.assertRaisesRegex(reporter.PilotDataError, pattern):
+                    reporter.build_report(fixture, minimal_decisions())
+
+    def test_non_build_run_status_boundaries_and_conclusions_are_accepted(self):
+        for conclusion in sorted(reporter.RUN_CONCLUSIONS):
+            with self.subTest(conclusion=conclusion):
+                fixture = minimal_fixture()
+                fixture["workflow_runs"][4].update(
+                    {
+                        "conclusion": conclusion,
+                        "started_at": "2026-01-01T10:00:00Z",
+                        "completed_at": "2026-01-01T10:00:00Z",
+                    }
+                )
+                reporter.build_report(fixture, minimal_decisions())
+
+        fixture = minimal_fixture()
+        fixture["workflow_runs"][4].update(
+            {
+                "status": "queued",
+                "conclusion": None,
+                "started_at": None,
+                "completed_at": None,
+            }
+        )
+        reporter.build_report(fixture, minimal_decisions())
+
+        fixture["workflow_runs"][4]["started_at"] = "2026-01-01T10:00:00Z"
+        reporter.build_report(fixture, minimal_decisions())
+
+        fixture["workflow_runs"][4]["status"] = "in_progress"
+        reporter.build_report(fixture, minimal_decisions())
 
     def test_terminal_build_conclusion_partition_is_exhaustive(self):
         fixture = minimal_fixture()
@@ -1351,55 +1537,169 @@ class FailClosedDataTests(unittest.TestCase):
             pattern="unavailable review-thread event source cannot contain",
         )
 
-    def test_stack_parent_depth_and_exception_are_consistent(self):
+    def test_genuine_depth_three_stack_requires_exception(self):
         fixture = minimal_fixture()
-        fixture["pull_requests"].append(
-            {
-                "number": 2,
-                "state": "open",
-                "created_at": "2026-01-01T00:30:00Z",
-                "merged_at": None,
-                "closed_at": None,
-                "base_ref": "master",
-                "head_branch": "agent/two",
-                "head_sha": sha("e"),
-                "merge_sha": None,
-                "issue_numbers": [],
-                "review_ids": [],
-                "commit_shas": [sha("e")],
-                "additions": 10,
-                "deletions": 0,
-                "files": ["scripts/parent.py"],
-            }
-        )
-        fixture["commits"].append(
-            {
-                "sha": sha("e"),
-                "committed_at": "2026-01-01T00:30:00Z",
-                "parents": [],
-                "message": "feat: parent",
-            }
-        )
-        fixture["pull_requests"][0]["base_ref"] = "agent/two"
         decisions = minimal_decisions()
-        stack = decisions["pull_requests"][0]["stack"]
-        stack.update({"depth": 2, "parent_pr": 2})
-        reporter.build_report(fixture, decisions)
-
-        stack.update({"depth": 3, "exception_reason": None})
+        add_stack_pr(
+            fixture,
+            decisions,
+            number=2,
+            parent_pr=1,
+            depth=1,
+            sha_character="e",
+        )
+        add_stack_pr(
+            fixture,
+            decisions,
+            number=3,
+            parent_pr=2,
+            depth=2,
+            sha_character="f",
+        )
+        add_stack_pr(
+            fixture,
+            decisions,
+            number=4,
+            parent_pr=3,
+            depth=3,
+            sha_character="1",
+        )
         self.assert_rejected(
             fixture=fixture,
             decisions=decisions,
             pattern="exception_reason",
         )
-        stack["exception_reason"] = "foundation -> protocol -> feature"
+        decisions["pull_requests"][-1]["stack"]["exception_reason"] = (
+            "The protocol layer requires one temporary third dependent layer."
+        )
         reporter.build_report(fixture, decisions)
 
-        stack["parent_pr"] = 999
+    def test_stack_depth_parent_presence_and_authoritative_base_are_enforced(self):
+        fixture = minimal_fixture()
+        decisions = minimal_decisions()
+        add_stack_pr(
+            fixture,
+            decisions,
+            number=2,
+            parent_pr=1,
+            depth=2,
+            sha_character="e",
+        )
         self.assert_rejected(
             fixture=fixture,
             decisions=decisions,
-            pattern="no authoritative PR",
+            pattern=r"depth must equal parent depth \+ 1 \(1\)",
+        )
+
+        fixture = minimal_fixture()
+        decisions = minimal_decisions()
+        fixture["pull_requests"][0]["base_ref"] = "agent/missing"
+        decisions["pull_requests"][0]["stack"].update(
+            {"depth": 1, "parent_pr": 999}
+        )
+        self.assert_rejected(
+            fixture=fixture,
+            decisions=decisions,
+            pattern="has no authoritative PR",
+        )
+
+        fixture = minimal_fixture()
+        decisions = minimal_decisions()
+        add_stack_pr(
+            fixture,
+            decisions,
+            number=2,
+            parent_pr=1,
+            depth=1,
+            sha_character="e",
+        )
+        add_stack_pr(
+            fixture,
+            decisions,
+            number=3,
+            parent_pr=2,
+            depth=2,
+            sha_character="f",
+        )
+        decisions["pull_requests"] = [
+            decision
+            for decision in decisions["pull_requests"]
+            if decision["pull_request"] != 2
+        ]
+        self.assert_rejected(
+            fixture=fixture,
+            decisions=decisions,
+            pattern="has no parent decision",
+        )
+
+        fixture = minimal_fixture()
+        decisions = minimal_decisions()
+        add_stack_pr(
+            fixture,
+            decisions,
+            number=2,
+            parent_pr=1,
+            depth=1,
+            sha_character="e",
+        )
+        add_stack_pr(
+            fixture,
+            decisions,
+            number=3,
+            parent_pr=1,
+            depth=1,
+            sha_character="f",
+        )
+        decisions["pull_requests"][1]["stack"]["parent_pr"] = 3
+        self.assert_rejected(
+            fixture=fixture,
+            decisions=decisions,
+            pattern="parent contradicts the authoritative PR base",
+        )
+
+    def test_stack_root_cycle_and_maximum_depth_fail_closed(self):
+        decisions = minimal_decisions()
+        decisions["pull_requests"][0]["stack"]["depth"] = 1
+        self.assert_rejected(
+            fixture=minimal_fixture(),
+            decisions=decisions,
+            pattern="root must have depth 0",
+        )
+
+        fixture = minimal_fixture()
+        decisions = minimal_decisions()
+        add_stack_pr(
+            fixture,
+            decisions,
+            number=2,
+            parent_pr=1,
+            depth=4,
+            sha_character="e",
+        )
+        self.assert_rejected(
+            fixture=fixture,
+            decisions=decisions,
+            pattern="exceeds the supported maximum",
+        )
+
+        fixture = minimal_fixture()
+        decisions = minimal_decisions()
+        add_stack_pr(
+            fixture,
+            decisions,
+            number=2,
+            parent_pr=1,
+            depth=1,
+            sha_character="e",
+        )
+        fixture["pull_requests"][0]["base_ref"] = "agent/2"
+        decisions["pull_requests"][0]["stack"].update(
+            {"depth": 1, "parent_pr": 2}
+        )
+        self.assert_rejected(
+            fixture=fixture,
+            decisions=decisions,
+            pattern="parent cycle",
         )
 
     def test_unknown_risk_event_edge_disposition_and_top_level_field(self):
@@ -1438,7 +1738,7 @@ class FailClosedDataTests(unittest.TestCase):
         fixture["workflow_runs"][3]["conclusion"] = "success"
         self.assert_rejected(
             fixture=fixture,
-            pattern="active status requires null",
+            pattern="in_progress status requires null",
         )
 
 
@@ -1478,21 +1778,175 @@ class ArtifactLifecycleTests(unittest.TestCase):
             "deletion-ready but not Delete",
         )
 
-    def test_necessary_artifact_removal_fails_then_restore_passes(self):
+    def test_every_lifecycle_proof_must_restore_in_any_event_order(self):
         fixture = minimal_fixture()
-        fixture["events"][-1]["restored_result"] = "fail"
-        self.assert_rejected(
-            fixture,
-            minimal_decisions(),
-            "was not restored",
+        fixture["dependency_edges"].append(
+            {
+                "id": "review:dependency",
+                "type": "review_depends_on",
+                "source": "review:10",
+                "target": "dependency:api",
+            }
         )
+        fixture["events"].extend(
+            [
+                {
+                    "id": "artifact:dependency-change",
+                    "type": "dependency_changed",
+                    "occurred_at": "2026-01-01T09:02:10Z",
+                    "artifact_id": "contract",
+                    "dependency_id": "dependency:api",
+                },
+                {
+                    "id": "artifact:dependency-proof",
+                    "type": "deletion_proof",
+                    "occurred_at": "2026-01-01T09:02:20Z",
+                    "artifact_id": "contract",
+                    "trigger_event_id": "artifact:dependency-change",
+                    "semantic_result": "fail",
+                    "reason": "the changed dependency still requires the contract",
+                    "restored_result": "pass",
+                },
+            ]
+        )
+        proof_ids = [
+            event["id"]
+            for event in fixture["events"]
+            if event["type"] == "deletion_proof"
+        ]
+        for proof_id in proof_ids:
+            with self.subTest(proof_id=proof_id):
+                mutated = copy.deepcopy(fixture)
+                proof = next(
+                    event for event in mutated["events"] if event["id"] == proof_id
+                )
+                proof["restored_result"] = "fail"
+                self.assert_rejected(
+                    mutated,
+                    minimal_decisions(),
+                    rf"deletion proof '{re.escape(proof_id)}' did not restore",
+                )
 
-        fixture["events"][-1]["restored_result"] = "pass"
+        fixture["events"].reverse()
         report = reporter.build_report(fixture, minimal_decisions())
         self.assertEqual(
             report["artifacts"]["current"][0]["current_disposition"],
             "Graduate",
         )
+
+    def test_committed_artifact_proofs_execute_removal_and_restoration(self):
+        fixture = reporter.load_json(BASELINE)
+        decisions = reporter.load_json(DECISIONS)
+        paths = [
+            ROOT / profile["path"]
+            for profile in reporter.EXECUTABLE_DELETION_PROOFS.values()
+        ]
+        before = {path: path.read_bytes() for path in paths}
+        results = reporter.validate_executable_deletion_proofs(
+            ROOT,
+            BASELINE,
+            DECISIONS,
+            BASELINE_EXPECTED,
+            fixture,
+            decisions,
+        )
+        self.assertEqual(
+            results,
+            {
+                artifact_id: {
+                    "removal": "fail",
+                    "reason": reporter.DELETION_PROOF_REASON,
+                    "restoration": "pass",
+                }
+                for artifact_id in reporter.EXECUTABLE_DELETION_PROOFS
+            },
+        )
+        self.assertEqual(before, {path: path.read_bytes() for path in paths})
+
+    def test_fabricated_proof_and_fixture_commands_are_not_executable(self):
+        fixture = reporter.load_json(BASELINE)
+        decisions = reporter.load_json(DECISIONS)
+        next(
+            event
+            for event in fixture["events"]
+            if event["type"] == "deletion_proof"
+        )["reason"] = "self-authored claim"
+        reporter.build_report(fixture, decisions)
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "differs from its executable fail/remove/restore contract",
+        ):
+            reporter.validate_executable_deletion_proofs(
+                ROOT,
+                BASELINE,
+                DECISIONS,
+                BASELINE_EXPECTED,
+                fixture,
+                decisions,
+            )
+
+        fixture = reporter.load_json(BASELINE)
+        decisions = reporter.load_json(DECISIONS)
+        fixture["dependency_edges"][0]["source"] = "python3 -c arbitrary"
+        decisions["artifacts"][0]["executable_consumer"] = "python3 -c arbitrary"
+        reporter.build_report(fixture, decisions)
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "consumer differs from its executable allowlist",
+        ):
+            reporter.validate_executable_deletion_proofs(
+                ROOT,
+                BASELINE,
+                DECISIONS,
+                BASELINE_EXPECTED,
+                fixture,
+                decisions,
+            )
+
+    def test_stale_executable_deletion_proof_is_rejected(self):
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-pilot-stale-proof-",
+            dir=ROOT.parent,
+        ) as temporary:
+            repository_root = Path(temporary)
+            copy_paths = {
+                *reporter.DELETION_PROOF_SUPPORT_PATHS,
+                *(
+                    profile["path"]
+                    for profile in reporter.EXECUTABLE_DELETION_PROOFS.values()
+                ),
+            }
+            for relative in copy_paths:
+                source = ROOT / relative
+                target = repository_root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+            subprocess.run(
+                ["git", "init", "-q", "-b", "master", str(repository_root)],
+                check=True,
+                capture_output=True,
+            )
+            expected_path = repository_root / reporter.BASELINE_EXPECTED_PATH
+            expected = reporter.load_json(expected_path)
+            expected["paths"]["builds.runs"] = -1
+            expected_path.write_bytes(reporter.normalized_json(expected))
+
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "stale executable deletion-proof baseline does not pass",
+            ):
+                reporter.validate_executable_deletion_proofs(
+                    repository_root,
+                    repository_root / reporter.BASELINE_FIXTURE_PATH,
+                    repository_root / reporter.DECISION_RECORD_PATH,
+                    expected_path,
+                    reporter.load_json(
+                        repository_root / reporter.BASELINE_FIXTURE_PATH
+                    ),
+                    reporter.load_json(
+                        repository_root / reporter.DECISION_RECORD_PATH
+                    ),
+                )
 
     def test_deletion_ready_artifact_passes_only_with_delete_disposition(self):
         fixture = minimal_fixture()

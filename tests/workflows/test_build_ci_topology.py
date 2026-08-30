@@ -64,7 +64,8 @@ WORKFLOW_PILOT_BASELINE_GATE = (
     '--repository-root "$GITHUB_WORKSPACE" '
     "--fixture scripts/workflow_pilot/tests/fixtures/baseline.json "
     "--decisions .github/workflow-pilot-decisions.json "
-    "--expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json"
+    "--expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json "
+    "> /dev/null"
 )
 
 
@@ -223,6 +224,36 @@ def _contains_command(job: str, command: str) -> bool:
     )
 
 
+def _step_blocks(job: str) -> list[str]:
+    matches = list(re.finditer(r"^    - (?=[A-Za-z])", job, re.MULTILINE))
+    return [
+        job[
+            match.start():
+            matches[index + 1].start() if index + 1 < len(matches) else len(job)
+        ]
+        for index, match in enumerate(matches)
+    ]
+
+
+def _contains_exact_command(job: str, command: str) -> bool:
+    expected = _normalise(command)
+    for step in _step_blocks(job):
+        commands = _run_block_commands(step)
+        if len(commands) != 1 or _normalise(commands[0]) != expected:
+            continue
+        execution_fields = {
+            match.group("field")
+            for match in re.finditer(
+                r"^      (?P<field>[A-Za-z][A-Za-z0-9_-]*):",
+                step,
+                re.MULTILINE,
+            )
+        }
+        if execution_fields == {"run"}:
+            return True
+    return False
+
+
 def _hashed_requirements_errors(text: str) -> list[str]:
     logical_lines = []
     current = ""
@@ -329,6 +360,8 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     for job_name in COMBINED_WORKERS:
         if "if:" in jobs[job_name]:
             errors.append(f"{job_name} must run for pull-request candidates and master pushes")
+        if re.search(r"^    continue-on-error:", jobs[job_name], re.MULTILINE):
+            errors.append(f"{job_name} must not be advisory")
 
     if f"if: {MASTER_PUBLISHER_CONDITION}" not in jobs["patch-release"]:
         errors.append("patch-release must remain master-push-only")
@@ -372,11 +405,14 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     for command in (
         "scripts.localization.game_locales check-crosswalk",
         "scripts.localization.game_locales check-raw-closure",
-        WORKFLOW_PILOT_GATE,
-        WORKFLOW_PILOT_BASELINE_GATE,
     ):
         if not _contains_command(jobs["host-tests"], command):
             errors.append(f"candidate host lost Build-owned evidence: {command}")
+    for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
+        if not _contains_exact_command(jobs["host-tests"], command):
+            errors.append(
+                f"candidate host lost exact fail-closed Build evidence: {command}"
+            )
 
     legacy = jobs["legacy"]
     for command in ("make legacy -j2", "make -C mgfembp compare"):
@@ -746,7 +782,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
             with self.subTest(command=command):
                 self.assertTrue(
-                    _contains_command(
+                    _contains_exact_command(
                         host_tests,
                         command,
                     )
@@ -763,23 +799,111 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertNotEqual(changed, self.text)
         self.assertTrue(
             any(
-                f"candidate host lost Build-owned evidence: {WORKFLOW_PILOT_GATE}"
+                "candidate host lost exact fail-closed Build evidence: "
+                f"{WORKFLOW_PILOT_GATE}"
                 in error
                 for error in _errors(changed, False)
             )
         )
 
         changed = self.text.replace(
-            f"      run: {WORKFLOW_PILOT_BASELINE_GATE} > /dev/null\n",
+            f"      run: {WORKFLOW_PILOT_BASELINE_GATE}\n",
             "      run: true\n",
             1,
         )
         self.assertNotEqual(changed, self.text)
         self.assertTrue(
             any(
-                "candidate host lost Build-owned evidence: "
+                "candidate host lost exact fail-closed Build evidence: "
                 f"{WORKFLOW_PILOT_BASELINE_GATE}"
                 in error
+                for error in _errors(changed, False)
+            )
+        )
+
+    def test_workflow_pilot_gates_reject_shell_success_masks_and_wrappers(self):
+        mutations = (
+            f"{WORKFLOW_PILOT_GATE} || true",
+            f"{WORKFLOW_PILOT_GATE}; true",
+            f"{WORKFLOW_PILOT_GATE} && true",
+            f"sh -c \"{WORKFLOW_PILOT_GATE}\"",
+            f"echo {WORKFLOW_PILOT_GATE}",
+            f"$({WORKFLOW_PILOT_GATE})",
+            f"{WORKFLOW_PILOT_GATE} 2>/dev/null",
+        )
+        for replacement in mutations:
+            with self.subTest(replacement=replacement):
+                changed = self.text.replace(
+                    f"      run: {WORKFLOW_PILOT_GATE}\n",
+                    f"      run: {replacement}\n",
+                    1,
+                )
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "candidate host lost exact fail-closed Build evidence"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+        baseline_mutations = (
+            f"{WORKFLOW_PILOT_BASELINE_GATE} || true",
+            f"{WORKFLOW_PILOT_BASELINE_GATE}; true",
+            f"{WORKFLOW_PILOT_BASELINE_GATE} && true",
+            f"sh -c '{WORKFLOW_PILOT_BASELINE_GATE}'",
+            f"echo {WORKFLOW_PILOT_BASELINE_GATE}",
+            f"$({WORKFLOW_PILOT_BASELINE_GATE})",
+            WORKFLOW_PILOT_BASELINE_GATE.replace(
+                "> /dev/null", "> /dev/null 2>&1"
+            ),
+        )
+        for replacement in baseline_mutations:
+            with self.subTest(replacement=replacement):
+                changed = self.text.replace(
+                    f"      run: {WORKFLOW_PILOT_BASELINE_GATE}\n",
+                    f"      run: {replacement}\n",
+                    1,
+                )
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "candidate host lost exact fail-closed Build evidence"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+        for field in (
+            "continue-on-error: true",
+            "if: ${{ false }}",
+            "shell: bash {0} || true",
+        ):
+            with self.subTest(advisory_field=field):
+                changed = self.text.replace(
+                    f"      run: {WORKFLOW_PILOT_BASELINE_GATE}\n",
+                    f"      {field}\n      run: {WORKFLOW_PILOT_BASELINE_GATE}\n",
+                    1,
+                )
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "candidate host lost exact fail-closed Build evidence"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+        changed = self.text.replace(
+            "  host-tests:\n    runs-on: ubuntu-latest\n",
+            "  host-tests:\n    runs-on: ubuntu-latest\n"
+            "    continue-on-error: true\n",
+            1,
+        )
+        self.assertNotEqual(changed, self.text)
+        self.assertTrue(
+            any(
+                "host-tests must not be advisory" in error
                 for error in _errors(changed, False)
             )
         )

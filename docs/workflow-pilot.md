@@ -88,11 +88,24 @@ is byte-identical. `baseline_expected.json` contains only immutable expected
 values, not another authored current-state report.
 
 `--repository-root` is required and must resolve to the exact checked-out Git
-top level. The decision path must resolve to
+top level. The fixture, decision, and expected paths must resolve to the
+committed baseline inputs, including
 `.github/workflow-pilot-decisions.json` in that tree. Build CI passes
 `"$GITHUB_WORKSPACE"` explicitly, runs both the same stdlib suite and the
 baseline/expected invocation in its required `host-tests` job, and the parsed
-workflow topology regression rejects removal or substitution.
+workflow topology regression requires both pilot commands exactly. Appended
+shell operators, wrappers, substitutions, or changed redirections cannot turn
+either command into advisory evidence.
+
+Before the command succeeds, it creates a bounded temporary repository beside
+the checkout and copies only the three declared pilot artifacts, the expected
+values, and the focused reporter-test support files. For each allowlisted
+artifact it removes the copy, runs its declared reporter consumer and/or
+focused consistency check and requires failure, restores the copy, and
+requires both checks to pass. The command identifiers and file paths come from
+a closed allowlist in the reporter; fixture text cannot supply executable
+commands. The temporary repository is removed automatically and the checked
+out worktree is never modified.
 
 The fixture carries derivable Git/GitHub/Actions facts. The single versioned
 decision record,
@@ -105,7 +118,7 @@ contains only the decisions those systems cannot supply:
 | `threshold.triggers` | Closed enum for risk, changed-line, changed-file, and major-boundary triggers. |
 | `threshold.override_history` | Ordered override decisions containing only `enabled` and a nonempty reason. The cited introduction SHA must be an actual candidate ancestor of the first-reviewed commit. The reporter reads `.github/workflow-pilot-decisions.json` directly from both immutable Git trees and requires the exact PR, schema, index, entry, and digest to match the current record. |
 | `gate_mode` | Exactly `concurrent` or `review-first`. |
-| `stack` | Depth, immediate parent decision, and a required depth-three exception reason; the parent/base relation is checked against authoritative PR data. |
+| `stack` | Root depth is zero with no parent. Every child requires the immediate parent's decision, authoritative base/branch agreement, and depth exactly `parent.depth + 1`; cycles and depths above three fail. A genuine root -> depth-one -> depth-two -> depth-three chain requires a nonempty exception reason only on its depth-three member. |
 | `pilot` | Inclusion boolean and a closed pilot disposition. |
 | artifact admission/history | Owner, executable consumer, unique decision, consistency check, bounded cost, deletion criterion, expiry, and disposition history. |
 
@@ -134,7 +147,7 @@ convention.
 | First-push-to-clean-review | For each declared subject: the first GitHub-visible candidate boundary is the earlier of PR `created_at` and its earliest retained Actions head event. Subtract it from the first Copilot review with no findings only when complete GitHub review-thread webhook history proves every cumulative prior thread's latest action strictly before that review is `resolved`. `unresolved` transitions remain cumulative evidence, and a delivery at or after the review cannot make that review clean retroactively. Without complete source coverage or a proven clean boundary, emit `status: unavailable`, a nonempty reason, `pilot_ready: false`, and `median_hours: null`; pilot comparison or promotion must not consume a numeric value. Local commit dates and current thread state are never substituted for historical delivery evidence. |
 | Review rounds | Count unique submitted Copilot review IDs for the subject PR. |
 | Valid findings | Count captured inline Copilot finding identities independently of historical timing availability; report current resolved/unresolved counts, `findings / ((additions + deletions) / 1000)`, and `findings / review rounds`. A zero denominator is reported as unavailable, not infinity. Current unresolved conversations must still be zero for real delivery. |
-| Build totals | From the declared latest-1,000 cohort, count runs whose workflow name is `Build CI`; exhaustively partition terminal `success`, `failure`, `cancelled`, `neutral`, `skipped`, and `action_required` conclusions plus active queued/in-progress runs. Unknown conclusions fail instead of disappearing from the partition. |
+| Build totals | Validate status, conclusion, start, and completion coherence for every authoritative workflow run before selecting the declared latest-1,000 cohort. Completed intervals cannot end before they start; in-progress runs require a start; queued/in-progress runs require null conclusion/completion; timestamps cannot exceed the snapshot. Then count runs whose workflow name is `Build CI` and exhaustively partition terminal `success`, `failure`, `cancelled`, `neutral`, `skipped`, and `action_required` conclusions plus active queued/in-progress runs. Unknown conclusions fail instead of disappearing from the partition. |
 | Build minutes | Sum `completed_at - started_at`; clamp an in-progress run at the inclusive end, count a queued run as zero even if `started_at` is populated, then floor the aggregate seconds divided by 60. |
 | Duplicate unchanged-SHA Builds | Group sampled Builds by exact `head_sha`; sum `group size - 1` for groups larger than one. Attempts remain separate runs. |
 | PR #150 Build totals | Select sampled Builds whose `head_branch` equals PR #150's authoritative head branch; older matching runs outside the declared latest-1,000 cohort are excluded. Apply the same exhaustive status and minute formulas. |
@@ -189,6 +202,14 @@ strictly later non-destructive deletion proof:
   disposition must be `Delete`;
 - if removal loses a named invariant, the proof must name that reason,
   restoration must pass, and `Delete` is forbidden.
+
+Every proof in the required history is checked independently, so a failed
+earlier restoration cannot be hidden by a later successful proof. For the
+committed baseline's three retained artifacts, every recorded proof must state
+the allowlisted issue #176 semantic failure and successful restoration, and
+the reporter reruns that removal/restoration behavior in its isolated
+temporary repository. A stale restored artifact, fabricated reason/result, or
+fixture-authored command fails before a success-shaped report is emitted.
 
 Disposition values are exactly `Delete`, `Derive`, `Consolidate`, and
 `Graduate`. History is append-only and strictly chronological; current

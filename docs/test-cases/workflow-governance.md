@@ -281,7 +281,14 @@ availability or grant credentials.
    `resolved_at`, and an untrusted source kind. Confirm only a complete
    identity-bound GitHub webhook history can produce numeric clean-review
    evidence.
-7. Run `python3 scripts/check_docs.py --check`.
+7. Inspect the executable lifecycle controls. Confirm the reporter creates a
+   bounded temporary repository outside the checkout, removes each allowlisted
+   decision/fixture/reporter artifact in turn, runs the declared production
+   reporter consumer and/or focused reporter consistency test, observes the
+   named semantic failure, restores the artifact, and observes success.
+   Confirm the source artifact bytes are unchanged afterward and stale,
+   fabricated, or fixture-command substitutions fail closed.
+8. Run `python3 scripts/check_docs.py --check`.
 
 ### Expected result
 
@@ -297,9 +304,14 @@ historical thread events were collected; no numeric result is emitted or
 eligible for pilot comparison/promotion.
 
 The positive controls report Build/review savings beside coordination and
-metadata-maintenance overhead. Checkpoint, dependency-change, and
-pre-graduation removal proofs preserve necessary artifacts after a named
-semantic failure, and a deletion-ready artifact passes only with `Delete`.
+metadata-maintenance overhead. Every authoritative workflow run has a coherent
+status/timestamp interval before Build selection. Stack depths are proven from
+the complete parent-decision chain, including a genuine depth-three exception.
+Checkpoint, dependency-change, and pre-graduation removal proofs preserve
+necessary artifacts after a named semantic failure; every historical
+restoration passes, and a deletion-ready artifact passes only with `Delete`.
+The committed artifacts additionally pass actual isolated removal/failure and
+restoration/success execution through the closed command allowlist.
 
 ### Negative control
 
@@ -310,13 +322,17 @@ override insertion/backdating/reordering/current-record mutation, a cited tree
 without the exact override entry, cumulative unresolved findings, post-review
 resolution, direct synthetic resolution timestamps, untrusted/incomplete
 resolution history, wrong-PR or missing event SHA, inconsistent stack
-parent/base/depth, an older spotlight run outside the cohort, queued duration,
+parent/base/depth, missing parent decisions, stack cycles, false depth-two or
+depth-three claims, an older spotlight run outside the cohort, impossible
+non-Build intervals, incoherent queued/in-progress/completed timestamps,
 unreported accepted conclusion, unknown risk/event/edge/disposition,
 unclaimed or ambiguously owned dependency edge, orphan/duplicate/expired
 artifact, deletion-ready non-Delete artifact, non-causal or missing deletion
-proof, premature disposition, stale lifecycle expiry, and failed restoration
-of a necessary artifact. It also proves that restoring that artifact makes the
-same semantic contract pass.
+proof, premature disposition, stale lifecycle expiry, any failed historical
+restoration, a stale or fabricated executable proof, and any unallowlisted
+fixture command. Build topology mutations also reject pilot commands hidden by
+`|| true`, `; true`, `&& true`, wrappers, substitutions, or changed
+redirections.
 
 ### Interactions and save compatibility
 

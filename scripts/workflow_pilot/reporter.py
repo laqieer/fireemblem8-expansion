@@ -7,8 +7,10 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
@@ -26,6 +28,56 @@ REVERT_RE = re.compile(r"(?im)^This reverts commit ([0-9a-f]{40})\.\s*$")
 REVIEW_BOT = "copilot-pull-request-reviewer[bot]"
 DECISION_RECORD_PATH = Path(".github/workflow-pilot-decisions.json")
 REVIEW_THREAD_EVENT_SOURCE = "github-webhook-deliveries"
+BASELINE_FIXTURE_PATH = Path(
+    "scripts/workflow_pilot/tests/fixtures/baseline.json"
+)
+BASELINE_EXPECTED_PATH = Path(
+    "scripts/workflow_pilot/tests/fixtures/baseline_expected.json"
+)
+REPORTER_PATH = Path("scripts/workflow_pilot/reporter.py")
+REPORTER_PACKAGE_PATH = Path("scripts/workflow_pilot/__init__.py")
+REPORTER_TEST_PATH = Path("scripts/workflow_pilot/tests/test_reporter.py")
+REPORTER_TEST_PACKAGE_PATH = Path("scripts/workflow_pilot/tests/__init__.py")
+DELETION_PROOF_SUPPORT_PATHS = (
+    BASELINE_EXPECTED_PATH,
+    REPORTER_PACKAGE_PATH,
+    REPORTER_TEST_PATH,
+    REPORTER_TEST_PACKAGE_PATH,
+)
+DELETION_PROOF_REASON = "removal loses the issue #176 baseline decision invariant"
+DELETION_PROOF_TIMEOUT_SECONDS = 30
+DELETION_PROOF_REPORTER_PROGRAM = """
+import importlib.util
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+reporter_path = root / "scripts/workflow_pilot/reporter.py"
+spec = importlib.util.spec_from_file_location("workflow_pilot_proof", reporter_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+fixture = module.load_json(root / module.BASELINE_FIXTURE_PATH)
+decisions = module.load_json(root / module.DECISION_RECORD_PATH)
+report = module.build_report(fixture, decisions, root)
+module.check_expected(report, module.load_json(root / module.BASELINE_EXPECTED_PATH))
+"""
+EXECUTABLE_DELETION_PROOFS = {
+    "workflow-pilot-decisions": {
+        "path": DECISION_RECORD_PATH,
+        "consumer": "workflow-pilot-reporter",
+        "check": "workflow-pilot-tests",
+    },
+    "workflow-pilot-fixture": {
+        "path": BASELINE_FIXTURE_PATH,
+        "consumer": "workflow-pilot-reporter",
+        "check": "workflow-pilot-tests",
+    },
+    "workflow-pilot-reporter": {
+        "path": REPORTER_PATH,
+        "consumer": "workflow-pilot-tests",
+        "check": "workflow-pilot-tests",
+    },
+}
 
 RISK_BOUNDARIES = {
     "abi",
@@ -1082,18 +1134,31 @@ def validate_runs(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
             raise PilotDataError(f"{label}.created_at follows the snapshot")
         if started is not None and started < created:
             raise PilotDataError(f"{label}.started_at precedes creation")
+        if started is not None and started > captured:
+            raise PilotDataError(f"{label}.started_at follows the snapshot")
         if completed is not None and started is None:
             raise PilotDataError(f"{label}.completed_at requires started_at")
+        if completed is not None:
+            duration_seconds(started, completed, label)
         if completed is not None and completed > captured:
             raise PilotDataError(f"{label}.completed_at follows the snapshot")
         if status == "completed":
             expect_enum(conclusion, RUN_CONCLUSIONS, f"{label}.conclusion")
+            if started is None:
+                raise PilotDataError(f"{label} completed status requires started_at")
             if completed is None:
                 raise PilotDataError(f"{label} completed status requires completed_at")
+        elif status == "in_progress":
+            if started is None:
+                raise PilotDataError(f"{label} in_progress status requires started_at")
+            if conclusion is not None or completed is not None:
+                raise PilotDataError(
+                    f"{label} in_progress status requires null conclusion/completed_at"
+                )
         else:
             if conclusion is not None or completed is not None:
                 raise PilotDataError(
-                    f"{label} active status requires null conclusion/completed_at"
+                    f"{label} queued status requires null conclusion/completed_at"
                 )
         expect_sha(item["head_sha"], f"{label}.head_sha")
         expect_string(item["head_branch"], f"{label}.head_branch")
@@ -1751,41 +1816,13 @@ def validate_decisions(
         expect_enum(record["gate_mode"], GATE_MODES, f"{label}.gate_mode")
         stack = expect_object(record["stack"], f"{label}.stack")
         expect_keys(stack, f"{label}.stack", ("depth", "parent_pr", "exception_reason"))
-        depth = expect_int(stack["depth"], f"{label}.stack.depth", 0)
-        if depth > 3:
-            raise PilotDataError(f"{label}.stack.depth exceeds the supported maximum")
-        parent_pr = stack["parent_pr"]
-        exception_reason = stack["exception_reason"]
-        if depth == 0:
-            if parent_pr is not None or exception_reason is not None:
-                raise PilotDataError(
-                    f"{label}.stack root cannot name a parent or exception"
-                )
-            if data["pull_requests"][number]["base_ref"] != data["fixture"]["default_branch"]:
-                raise PilotDataError(
-                    f"{label}.stack root contradicts the authoritative PR base"
-                )
-        else:
-            parent = expect_int(parent_pr, f"{label}.stack.parent_pr", 1)
-            if parent == number:
-                raise PilotDataError(f"{label}.stack cannot name itself as parent")
-            if parent not in data["pull_requests"]:
-                raise PilotDataError(
-                    f"{label}.stack.parent_pr has no authoritative PR"
-                )
-            expected_base = data["pull_requests"][parent]["head_branch"]
-            if data["pull_requests"][number]["base_ref"] != expected_base:
-                raise PilotDataError(
-                    f"{label}.stack parent contradicts the authoritative PR base"
-                )
-            if depth == 3:
-                expect_string(
-                    exception_reason, f"{label}.stack.exception_reason"
-                )
-            elif exception_reason is not None:
-                raise PilotDataError(
-                    f"{label}.stack.exception_reason is only valid at depth three"
-                )
+        expect_int(stack["depth"], f"{label}.stack.depth", 0)
+        if stack["parent_pr"] is not None:
+            expect_int(stack["parent_pr"], f"{label}.stack.parent_pr", 1)
+        if stack["exception_reason"] is not None:
+            expect_string(
+                stack["exception_reason"], f"{label}.stack.exception_reason"
+            )
 
         pilot = expect_object(record["pilot"], f"{label}.pilot")
         expect_keys(pilot, f"{label}.pilot", ("included", "disposition"))
@@ -1800,6 +1837,8 @@ def validate_decisions(
         if not pilot["included"] and disposition in {"evaluate", "graduated"}:
             raise PilotDataError(f"{label}.pilot exclusion contradicts disposition")
         pr_decisions[number] = record
+
+    validate_stack_decisions(pr_decisions, data)
 
     introduction_prs = {
         event["pr_number"]
@@ -1921,6 +1960,84 @@ def validate_decisions(
     }
 
 
+def validate_stack_decisions(
+    pr_decisions: dict[int, dict[str, Any]],
+    data: dict[str, Any],
+) -> None:
+    default_branch = data["fixture"]["default_branch"]
+    parents: dict[int, int] = {}
+
+    for number, record in pr_decisions.items():
+        label = f"PR decision {number}.stack"
+        stack = record["stack"]
+        depth = stack["depth"]
+        parent = stack["parent_pr"]
+        exception_reason = stack["exception_reason"]
+        authoritative = data["pull_requests"][number]
+        is_root = authoritative["base_ref"] == default_branch
+
+        if depth > 3:
+            raise PilotDataError(f"{label}.depth exceeds the supported maximum")
+        if parent is None:
+            if depth != 0 or exception_reason is not None:
+                raise PilotDataError(
+                    f"{label} root must have depth 0 and no exception"
+                )
+            if not is_root:
+                raise PilotDataError(
+                    f"{label} root contradicts the authoritative PR base"
+                )
+            continue
+
+        if depth == 0:
+            raise PilotDataError(f"{label} root cannot name a parent")
+        if is_root:
+            raise PilotDataError(
+                f"{label} parent contradicts the authoritative PR base"
+            )
+        if parent == number:
+            raise PilotDataError(f"{label} cannot name itself as parent")
+        if parent not in data["pull_requests"]:
+            raise PilotDataError(f"{label}.parent_pr has no authoritative PR")
+        if parent not in pr_decisions:
+            raise PilotDataError(f"{label}.parent_pr has no parent decision")
+        expected_base = data["pull_requests"][parent]["head_branch"]
+        if authoritative["base_ref"] != expected_base:
+            raise PilotDataError(
+                f"{label} parent contradicts the authoritative PR base"
+            )
+        if depth == 3:
+            expect_string(exception_reason, f"{label}.exception_reason")
+        elif exception_reason is not None:
+            raise PilotDataError(
+                f"{label}.exception_reason is only valid at depth three"
+            )
+        parents[number] = parent
+
+    states: dict[int, str] = {}
+
+    def visit(number: int) -> None:
+        state = states.get(number)
+        if state == "visiting":
+            raise PilotDataError("stack decisions contain a parent cycle")
+        if state == "visited":
+            return
+        states[number] = "visiting"
+        parent = parents.get(number)
+        if parent is not None:
+            visit(parent)
+            expected_depth = pr_decisions[parent]["stack"]["depth"] + 1
+            if pr_decisions[number]["stack"]["depth"] != expected_depth:
+                raise PilotDataError(
+                    f"PR decision {number}.stack.depth must equal parent "
+                    f"depth + 1 ({expected_depth})"
+                )
+        states[number] = "visited"
+
+    for number in pr_decisions:
+        visit(number)
+
+
 def validate_artifact_lifecycle(
     data: dict[str, Any],
     artifact_decisions: dict[str, dict[str, Any]],
@@ -1988,6 +2105,12 @@ def validate_artifact_lifecycle(
                 raise PilotDataError(
                     f"artifact {artifact_id!r} has no {required_type} deletion proof"
                 )
+        for proof in proofs:
+            if proof["restored_result"] != "pass":
+                raise PilotDataError(
+                    f"artifact {artifact_id!r} deletion proof "
+                    f"{proof['id']!r} did not restore"
+                )
         latest_proof = max(
             proofs,
             key=lambda proof: parse_time(
@@ -2009,23 +2132,210 @@ def validate_artifact_lifecycle(
             )
         current_disposition = decision["history"][-1]["disposition"]
         if latest_proof["semantic_result"] == "pass":
-            if latest_proof["restored_result"] != "pass":
-                raise PilotDataError(
-                    f"artifact {artifact_id!r} deletion proof did not restore"
-                )
             if current_disposition != "Delete":
                 raise PilotDataError(
                     f"artifact {artifact_id!r} is deletion-ready but not Delete"
                 )
         else:
-            if latest_proof["restored_result"] != "pass":
-                raise PilotDataError(
-                    f"necessary artifact {artifact_id!r} was not restored"
-                )
             if current_disposition == "Delete":
                 raise PilotDataError(
                     f"necessary artifact {artifact_id!r} cannot be Delete"
                 )
+
+
+def _run_deletion_proof_check(
+    repository_root: Path,
+    check_id: str,
+) -> subprocess.CompletedProcess[bytes]:
+    if check_id == "workflow-pilot-reporter":
+        command = (
+            sys.executable,
+            "-I",
+            "-c",
+            DELETION_PROOF_REPORTER_PROGRAM,
+            str(repository_root),
+        )
+    elif check_id == "workflow-pilot-tests":
+        command = (
+            sys.executable,
+            "-E",
+            "-m",
+            "unittest",
+            (
+                "scripts.workflow_pilot.tests.test_reporter."
+                "BaselineFixtureTests.test_frozen_baseline_and_expected_values"
+            ),
+        )
+    else:
+        raise PilotDataError(
+            f"deletion-proof check {check_id!r} is not allowlisted"
+        )
+    try:
+        return subprocess.run(
+            command,
+            cwd=repository_root,
+            check=False,
+            capture_output=True,
+            timeout=DELETION_PROOF_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise PilotDataError(
+            f"cannot execute allowlisted deletion-proof check: {error}"
+        ) from error
+
+
+def validate_executable_deletion_proofs(
+    repository_root: Path,
+    fixture_path: Path,
+    decisions_path: Path,
+    expected_path: Path | None,
+    fixture: dict[str, Any],
+    decisions: dict[str, Any],
+) -> dict[str, dict[str, str]]:
+    repository_root = validate_repository_root(repository_root)
+    required_inputs = {
+        "fixture": (fixture_path, BASELINE_FIXTURE_PATH),
+        "decisions": (decisions_path, DECISION_RECORD_PATH),
+        "expected": (expected_path, BASELINE_EXPECTED_PATH),
+    }
+    for label, (actual, relative) in required_inputs.items():
+        if actual is None:
+            raise PilotDataError(
+                f"--{label} is required for executable deletion proofs"
+            )
+        try:
+            resolved = actual.resolve(strict=True)
+            required = (repository_root / relative).resolve(strict=True)
+        except OSError as error:
+            raise PilotDataError(
+                f"cannot resolve executable deletion-proof {label}: {error}"
+            ) from error
+        if resolved != required:
+            raise PilotDataError(
+                f"--{label} must identify {required} for executable deletion proofs"
+            )
+
+    artifact_records = {
+        artifact["id"]: artifact for artifact in fixture["artifacts"]
+    }
+    decision_records = {
+        decision["artifact_id"]: decision for decision in decisions["artifacts"]
+    }
+    allowlisted_ids = set(EXECUTABLE_DELETION_PROOFS)
+    if set(artifact_records) != allowlisted_ids or set(decision_records) != allowlisted_ids:
+        raise PilotDataError(
+            "executable deletion proofs require the exact allowlisted artifact set"
+        )
+
+    for artifact_id, profile in EXECUTABLE_DELETION_PROOFS.items():
+        artifact = artifact_records[artifact_id]
+        decision = decision_records[artifact_id]
+        if Path(artifact["path"]) != profile["path"]:
+            raise PilotDataError(
+                f"artifact {artifact_id!r} path differs from its executable allowlist"
+            )
+        if decision["executable_consumer"] != profile["consumer"]:
+            raise PilotDataError(
+                f"artifact {artifact_id!r} consumer differs from its executable allowlist"
+            )
+        if decision["consistency_check"] != profile["check"]:
+            raise PilotDataError(
+                f"artifact {artifact_id!r} check differs from its executable allowlist"
+            )
+        proofs = [
+            event
+            for event in fixture["events"]
+            if event["type"] == "deletion_proof"
+            and event["artifact_id"] == artifact_id
+        ]
+        for proof in proofs:
+            if (
+                proof["semantic_result"] != "fail"
+                or proof["reason"] != DELETION_PROOF_REASON
+                or proof["restored_result"] != "pass"
+            ):
+                raise PilotDataError(
+                    f"artifact {artifact_id!r} proof {proof['id']!r} differs "
+                    "from its executable fail/remove/restore contract"
+                )
+
+    copy_paths = {
+        *DELETION_PROOF_SUPPORT_PATHS,
+        *(profile["path"] for profile in EXECUTABLE_DELETION_PROOFS.values()),
+    }
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix=f".{repository_root.name}-workflow-pilot-proof-",
+            dir=repository_root.parent,
+        ) as temporary:
+            sandbox = Path(temporary)
+            for relative in copy_paths:
+                source = repository_root / relative
+                target = sandbox / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+            run_git(sandbox, "init", "-q", "-b", "master")
+
+            for check_id in ("workflow-pilot-reporter", "workflow-pilot-tests"):
+                initial = _run_deletion_proof_check(sandbox, check_id)
+                if initial.returncode != 0:
+                    detail = initial.stderr.decode(
+                        "utf-8", errors="replace"
+                    ).strip()
+                    raise PilotDataError(
+                        "stale executable deletion-proof baseline does not pass"
+                        + (f": {detail}" if detail else "")
+                    )
+
+            results: dict[str, dict[str, str]] = {}
+            backup_root = sandbox / ".workflow-pilot-proof-backups"
+            backup_root.mkdir()
+            for artifact_id, profile in EXECUTABLE_DELETION_PROOFS.items():
+                relative = profile["path"]
+                artifact_path = sandbox / relative
+                backup_path = backup_root / artifact_id
+                artifact_path.replace(backup_path)
+                check_ids = tuple(
+                    dict.fromkeys((profile["consumer"], profile["check"]))
+                )
+                removed = [
+                    _run_deletion_proof_check(sandbox, check_id)
+                    for check_id in check_ids
+                ]
+                backup_path.replace(artifact_path)
+
+                if any(completed.returncode == 0 for completed in removed):
+                    raise PilotDataError(
+                        f"artifact {artifact_id!r} removal did not fail for "
+                        "its allowlisted semantic contract"
+                    )
+                restored = [
+                    _run_deletion_proof_check(sandbox, check_id)
+                    for check_id in check_ids
+                ]
+                failed_restorations = [
+                    completed
+                    for completed in restored
+                    if completed.returncode != 0
+                ]
+                if failed_restorations:
+                    detail = failed_restorations[0].stderr.decode(
+                        "utf-8", errors="replace"
+                    ).strip()
+                    raise PilotDataError(
+                        f"artifact {artifact_id!r} restoration did not pass"
+                        + (f": {detail}" if detail else "")
+                    )
+                results[artifact_id] = {
+                    "removal": "fail",
+                    "reason": DELETION_PROOF_REASON,
+                    "restoration": "pass",
+                }
+            return results
+    except OSError as error:
+        raise PilotDataError(
+            f"cannot prepare isolated deletion-proof repository: {error}"
+        ) from error
 
 
 def is_generated_path(path: str) -> bool:
@@ -2598,7 +2908,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--decisions", type=Path, required=True)
-    parser.add_argument("--expected", type=Path)
+    parser.add_argument("--expected", type=Path, required=True)
     parser.add_argument(
         "--repository-root",
         type=Path,
@@ -2623,8 +2933,15 @@ def main(argv: list[str] | None = None) -> int:
         fixture = load_json(args.fixture)
         decisions = load_json(args.decisions)
         report = build_report(fixture, decisions, repository_root)
-        if args.expected is not None:
-            check_expected(report, load_json(args.expected))
+        check_expected(report, load_json(args.expected))
+        validate_executable_deletion_proofs(
+            repository_root,
+            args.fixture,
+            args.decisions,
+            args.expected,
+            fixture,
+            decisions,
+        )
     except PilotDataError as error:
         print(f"workflow-pilot: {error}", file=sys.stderr)
         return 2
