@@ -1112,7 +1112,7 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		--disabled-map "$(MODERN_AUTOPLAY_PLANNER_DISABLED_MAP)" \
 		--enabled-elf "$(MODERN_AUTOPLAY_PLANNER_ELF)" \
 		--disabled-elf "$(MODERN_AUTOPLAY_PLANNER_DISABLED_ELF)" \
-		--nm "$(MODERN_NM)" --limit 12288 \
+		--nm "$(MODERN_NM)" --objdump "$(MODERN_OBJDUMP)" --limit 12288 \
 		--output "$(MODERN_AUTOPLAY_PLANNER_LINKED_BUDGET)"
 	+$(MAKE) expansion-modern-autoplay-planner-objects \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_AUTOPLAY_PLANNER=1

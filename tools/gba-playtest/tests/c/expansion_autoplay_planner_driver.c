@@ -37,6 +37,8 @@
         } \
     } while (0)
 
+void ExpansionAutoplayPlanner_SetRunIdForTest(u32 runId);
+
 struct PlaySt gPlaySt;
 struct ActionData gActionData;
 struct BattleUnit gBattleTarget;
@@ -2082,6 +2084,11 @@ int main(void)
     int index, other, restoreBefore, selectedX, selectedY;
     gPlaySt.chapterIndex = 1;
     gPlaySt.chapterTurnNumber = 1;
+    ResetActionFixture(3, 3);
+    CHECK(ResetAndStartPlanner()
+              && gExpansionAutoplayPlannerObservation.runId == 1,
+          "clean boot must activate canonical run one");
+    ExpansionAutoplayPlanner_Reset();
     CHECK(TestActionSemanticEffects() == 0,
           "action semantics effect test");
     CHECK(TestCompleteEnumerator() == 0, "complete action enumerator test");
@@ -2485,6 +2492,18 @@ int main(void)
     CHECK(ExpansionAutoplayPlanner_OfferDecision(&decision)
             == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
         "second run must publish before cancellation");
+    CHECK(RequestPage(
+              &decision, gExpansionAutoplayPlannerObservation.pageCount - 1)
+              == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+              && gExpansionAutoplayPlannerObservation.count.actionCount != 0,
+          "destructive-reset stale token must come from a real action");
+    previousScenarioIdentity = gExpansionAutoplayPlannerObservation.runId;
+    previousSeedIdentity = gExpansionAutoplayPlannerObservation.observationId;
+    selectedOrdinal =
+        gExpansionAutoplayPlannerObservation.start.actionStartOrdinal;
+    memcpy(selectedToken,
+           &gExpansionAutoplayPlannerObservation.payload.actions[0].token0,
+           sizeof(selectedToken));
     ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
     CHECK(gExpansionAutoplayPlannerCampaignCheckpoint.magic
             == EXPANSION_AUTOPLAY_PLANNER_MAGIC,
@@ -2505,11 +2524,32 @@ int main(void)
                 == 0
             && sRestoreRequests == 2,
         "explicit cancellation must clear checkpoint before restoration");
-    CHECK(ResetAndStartPlanner(), "wait-candidate run must start");
+    CHECK(ResetAndStartPlanner()
+              && gExpansionAutoplayPlannerObservation.runId
+                == previousScenarioIdentity + 1,
+          "destructive reset must preserve the monotonic run counter");
     CHECK(gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
             && gExpansionAutoplayPlannerCampaignCheckpoint.runId == 0
             && gExpansionAutoplayPlannerCampaignCheckpoint.chapterIndex == 0,
         "START after explicit cancel must retain no prior checkpoint");
+    CHECK(ExpansionAutoplayPlanner_OfferDecision(&decision)
+            == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT,
+          "identical post-reset candidates must publish");
+    WriteCommand(
+        EXPANSION_AUTOPLAY_PLANNER_COMMAND_COMMIT,
+        previousScenarioIdentity, previousSeedIdentity, 0,
+        selectedOrdinal, selectedToken);
+    CHECK(ExpansionAutoplayPlanner_PollDecision(&decision)
+              == EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT
+              && gExpansionAutoplayPlannerObservation.rejection
+                == EXPANSION_AUTOPLAY_PLANNER_REJECTION_STALE_OBSERVATION,
+          "prior-run token must reject before execution");
+    ExpansionAutoplayPlanner_Reset();
+    ExpansionAutoplayPlanner_Reset();
+    CHECK(ResetAndStartPlanner()
+              && gExpansionAutoplayPlannerObservation.runId
+                == previousScenarioIdentity + 2,
+          "repeated destructive resets must not reuse a run ID");
     for (index = 0; index < 17; index++)
     {
         int x;
@@ -2609,6 +2649,13 @@ int main(void)
             && gExpansionAutoplayPlannerCampaignCheckpoint.magic == 0
             && sRestoreRequests == restoreBefore + 1,
         "capacity overflow must terminate and queue safe restoration");
+    ExpansionAutoplayPlanner_SetRunIdForTest(0xFFFFFFFFu);
+    PreparePlannerStart();
+    CHECK(!StartPreparedPlanner()
+              && gExpansionAutoplayPlannerObservation.runId == 0xFFFFFFFFu
+              && gExpansionAutoplayPlannerObservation.rejection
+                == EXPANSION_AUTOPLAY_PLANNER_REJECTION_NOT_READY,
+          "run counter wrap must reject without ID reuse");
     printf("SCENARIO_IDENTITY=%08x\n", configuredScenarioIdentity);
     printf("CONFIG_IDENTITY=%08x\n", configuredConfigIdentity);
     puts("AUTOPLAY_PLANNER_HOST_TEST: PASS");

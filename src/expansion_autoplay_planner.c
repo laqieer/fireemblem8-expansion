@@ -2110,13 +2110,19 @@ void ExpansionAutoplayPlanner_Reset(void)
     ClearCheckpoint();
     ClearFullCommand();
     sPlannerActive = false;
-    sPlannerRunId = 0;
     sPlannerNextObservationId = 1;
     SetCandidateState(0, 0);
     sPlannerTraceDigest = 2166136261u;
     sPlannerCommitCount = 0;
     sPlannerCandidateDigest = 0;
 }
+
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_TEST
+void ExpansionAutoplayPlanner_SetRunIdForTest(u32 runId)
+{
+    sPlannerRunId = runId;
+}
+#endif
 
 void ExpansionAutoplayPlanner_OnMapReset(void)
 {
@@ -2178,7 +2184,8 @@ bool ExpansionAutoplayPlanner_PollStart(void)
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_PROTOCOL_ERROR);
         return false;
     }
-    if (ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER)
+    if (sPlannerRunId == 0xFFFFFFFFu
+        || ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER)
         != EXPANSION_AUTOPLAY_OK)
     {
         Reject(EXPANSION_AUTOPLAY_PLANNER_REJECTION_NOT_READY);

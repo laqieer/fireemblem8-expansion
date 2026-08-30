@@ -14,6 +14,7 @@ from enum import Enum
 from typing import Callable, Iterable
 
 PROTOCOL_VERSION = 2
+SCENARIO_NAMESPACE = 0x00009201
 MAX_MAP_CELLS = 64 * 64
 MAX_UNITS = 62 + 20 + 50
 MAX_ACTIONS = 512
@@ -1563,6 +1564,19 @@ def _mix_digest(digest: int, value: int) -> int:
     return ((digest ^ (value & 0xFFFFFFFF)) * 16777619) & 0xFFFFFFFF
 
 
+def _runtime_seed_identity(observation: dict[str, object]) -> int:
+    digest = 2166136261
+    for value in (*observation["rng_state"], observation["rng_lcg"]):
+        digest = _mix_digest(digest, value)
+    return digest
+
+
+def _runtime_scenario_identity(namespace: int, chapter: int, dimensions: int) -> int:
+    return _mix_digest(
+        _mix_digest(_mix_digest(2166136261, namespace), chapter),
+        dimensions)
+
+
 def wire_page_digest(words: Iterable[int]) -> int:
     values = tuple(words)
     if len(values) != 256:
@@ -1844,9 +1858,11 @@ class PlannerTranscript:
         cls,
         data: bytes,
         validation_mode: ValidationMode = ValidationMode.PRODUCTION,
+        scenario_namespace: int = SCENARIO_NAMESPACE,
     ) -> "PlannerTranscript":
         if not isinstance(validation_mode, ValidationMode):
             raise PlannerError("invalid trusted transcript validation mode")
+        _require_int(scenario_namespace, "trusted scenario namespace")
         if len(data) > MAX_TRACE_BYTES:
             raise PlannerError(Rejection.RESOURCE_LIMIT.value)
         _validate_json_text_depth(data)
@@ -1904,6 +1920,7 @@ class PlannerTranscript:
         latest_page = latest_checkpoint = latest_command_words = None
         observation_pages: dict[tuple[int, int], list[dict[str, object]]] = {}
         active_identity_bound = False
+        scenario_identities = {}
         for sequence, event in enumerate(events):
             if not isinstance(event, dict):
                 raise PlannerError("invalid planner transcript event")
@@ -2105,6 +2122,9 @@ class PlannerTranscript:
                     observation,
                     session_provenance,
                     active_identity_bound,
+                    scenario_namespace,
+                    scenario_identities,
+                    validation_mode is ValidationMode.PRODUCTION,
                 )
                 expected_page_identity = [
                     observation.get("run_id"),
@@ -2160,6 +2180,9 @@ class PlannerTranscript:
                     observation,
                     session_provenance,
                     active_identity_bound,
+                    scenario_namespace,
+                    scenario_identities,
+                    validation_mode is ValidationMode.PRODUCTION,
                 )
                 page_key = (
                     observation.get("run_id"),
@@ -2198,8 +2221,13 @@ class PlannerTranscript:
         transcript._events = document["events"]
         return transcript
     @classmethod
-    def import_production_bytes(cls, data: bytes) -> "PlannerTranscript":
-        return cls.import_bytes(data, ValidationMode.PRODUCTION)
+    def import_production_bytes(
+        cls,
+        data: bytes,
+        scenario_namespace: int = SCENARIO_NAMESPACE,
+    ) -> "PlannerTranscript":
+        return cls.import_bytes(
+            data, ValidationMode.PRODUCTION, scenario_namespace)
     @classmethod
     def import_synthetic_bytes(cls, data: bytes) -> "PlannerTranscript":
         return cls.import_bytes(data, ValidationMode.SYNTHETIC)
@@ -2208,6 +2236,9 @@ class PlannerTranscript:
         observation: dict[str, object],
         session: dict[str, object],
         active_identity_bound: bool,
+        scenario_namespace: int,
+        scenario_identities: dict[tuple[int, int], int],
+        production: bool,
     ) -> bool:
         run_id = observation.get("run_id")
         if (run_id not in {session["ready_run_id"], session["run_id"]} or observation.get("actual_rom_identity") != session["rom_identity"]
@@ -2217,6 +2248,20 @@ class PlannerTranscript:
             if (observation.get("actual_scenario_identity") != session["scenario_identity"]
                     or observation.get("actual_seed_identity") != session["seed_identity"]):
                 raise PlannerError("observation session scenario/seed mismatch")
+        if production and observation["observation_id"] != 0:
+            if observation["actual_seed_identity"] != _runtime_seed_identity(observation):
+                raise PlannerError("observation runtime seed identity mismatch")
+            key = (run_id, observation["observation_id"])
+            expected_scenario = scenario_identities.get(key)
+            dimensions = next((field["value"] for field in observation["fields"]
+                               if field["name"] == "map_dimensions"
+                               and field["availability"] == Availability.AVAILABLE), None)
+            if dimensions is not None:
+                expected_scenario = _runtime_scenario_identity(
+                    scenario_namespace, observation["chapter"], dimensions)
+                scenario_identities[key] = expected_scenario
+            if observation["actual_scenario_identity"] != expected_scenario:
+                raise PlannerError("observation runtime scenario identity mismatch")
         return active_identity_bound or run_id == session["run_id"]
 
 
@@ -3300,8 +3345,10 @@ def replay_transcript_on_clean_transport(
     data: bytes,
     transport_factory: Callable[[], object],
     validation_mode: ValidationMode = ValidationMode.PRODUCTION,
+    scenario_namespace: int = SCENARIO_NAMESPACE,
 ) -> bytes:
-    expected = PlannerTranscript.import_bytes(data, validation_mode)
+    expected = PlannerTranscript.import_bytes(
+        data, validation_mode, scenario_namespace)
     transport = transport_factory()
     pages: dict[tuple[int, int], dict[int, Observation]] = {}
 

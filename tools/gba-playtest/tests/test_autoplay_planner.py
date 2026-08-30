@@ -1275,6 +1275,8 @@ class PlannerBridgeTests(unittest.TestCase):
         )
         page_count = 1 + sum((len(records) + capacity - 1) // capacity for _, _, records, capacity in components)
         self.assertEqual(page_count, 92)
+        scenario_identity = planner._runtime_scenario_identity(
+            planner.SCENARIO_NAMESPACE, 1, 64 | (64 << 16))
         common = {
             "run_id": 1,
             "observation_id": 1,
@@ -1285,8 +1287,8 @@ class PlannerBridgeTests(unittest.TestCase):
             "total_action_count": planner.MAX_ACTIONS,
             "actual_rom_identity": 1,
             "actual_config_identity": 1,
-            "actual_scenario_identity": 1,
-            "actual_seed_identity": 1,
+            "actual_scenario_identity": scenario_identity,
+            "actual_seed_identity": planner._runtime_seed_identity({"rng_state": (0, 0, 0), "rng_lcg": 0}),
             "state": 2,
         }
         pages = [planner.Observation(
@@ -1319,7 +1321,7 @@ class PlannerBridgeTests(unittest.TestCase):
         ):
             self.assertEqual(implementation.choose(assembled).ordinal, 0)
         transport = _PageReplayTransport(pages, planner.ValidationMode.PRODUCTION)
-        replayed = planner.collect_observation_pages(transport, transport.start(scenario_identity=1))
+        replayed = planner.collect_observation_pages(transport, transport.start(scenario_identity=scenario_identity))
         self.assertEqual(replayed, complete)
         self.assertLessEqual(
             transport.largest_exchange,
@@ -1351,7 +1353,7 @@ class PlannerBridgeTests(unittest.TestCase):
                 (malformed_pages, None), (pages, 1)):
             atomic = _PageReplayTransport(
                 malformed, planner.ValidationMode.PRODUCTION)
-            first = atomic.start(scenario_identity=1)
+            first = atomic.start(scenario_identity=scenario_identity)
             before = atomic.transcript.export()
             state = atomic.snapshot_collection_state()
             atomic.invalid_settlement_page = settlement_page
@@ -1525,7 +1527,7 @@ class PlannerBridgeTests(unittest.TestCase):
                 transport = _PageReplayTransport(
                     obstacle_pages, planner.ValidationMode.PRODUCTION)
                 replayed = planner.collect_observation_pages(
-                    transport, transport.start(scenario_identity=1))
+                    transport, transport.start(scenario_identity=scenario_identity))
                 encoded = transport.transcript.export()
                 self.assertEqual(replayed.actions[0].action.target_position,
                                  position)
@@ -2512,12 +2514,19 @@ raise SystemExit(child.returncode)
         self.assertEqual(autoplay_planner_budget.validate_delta(autoplay_planner_budget.LIMIT), 0)
         with self.assertRaises(autoplay_planner_budget.PlannerBudgetError):
             autoplay_planner_budget.validate_delta(autoplay_planner_budget.LIMIT + 1)
+        disassembly = "".join(f"{index:x} <{caller}>:\n {index:x}: bl {index:x} <{callee}>\n" for index, (caller, callee) in enumerate(autoplay_planner_budget.HOOK_REFERENCES.values()))
+        self.assertTrue(all(autoplay_planner_budget._hook_reference_evidence(disassembly, True).values()))
+        self.assertFalse(any(autoplay_planner_budget._hook_reference_evidence("", False).values()))
+        for mutation in (disassembly.replace(": bl ", ": nop ", 1), disassembly.replace("ExpansionAutoplayPlanner_OfferDecision", "RedirectedHook", 1)):
+            with self.assertRaises(autoplay_planner_budget.PlannerBudgetError):
+                autoplay_planner_budget._hook_reference_evidence(mutation, True)
         rom = os.environ.get("PLANNER_PRODUCTION_ROM")
         if rom:
             report = json.loads(Path(rom).with_name("planner-linked-budget.json").read_text())
             self.assertNotIn("mutation_controls", report)
-            for profile in ("enabled", "disabled"):
-                self.assertTrue(all(report[profile]["representative_hooks"].values()))
+            self.assertTrue(all(report["enabled"]["hook_references"].values()))
+            self.assertTrue(report["enabled"]["planner_symbols"])
+            self.assertFalse(any(report["disabled"]["hook_references"].values()) or report["disabled"]["planner_symbols"])
         root = TESTS_DIR.parents[2]
         registry = json.loads((root / "docs/test-cases/registry.json").read_text())
         case = next(entry for entry in registry["cases"] if entry["id"] == "TC-AUTOPLAY-PLANNER-001")
@@ -3264,6 +3273,24 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 _assert_replay_rejected(
                     self, planner._canonical(document),
                     validation_mode=planner.ValidationMode.PRODUCTION)
+            forged = json.loads(scripted[2])
+            dimensions = {(event["observation"]["run_id"], event["observation"]["observation_id"]): next(field["value"] for field in event["observation"]["fields"] if field["name"] == "map_dimensions") for event in forged["events"] if event["event"] == "observation_complete"}
+            first_identity = planner._runtime_scenario_identity(1, 1, next(iter(dimensions.values())))
+            forged["events"][0]["provenance"]["scenario_identity"] = first_identity
+            next(event for event in forged["events"] if event["event"] == "settled" and event["command_words"][14] == 1)["command_words"][10] = first_identity
+            latest = None
+            for event in forged["events"]:
+                if event["event"] == "command" and event["command"]["kind"] == "START":
+                    event["command"]["expected_identities"][2] = first_identity
+                observation = event.get("observation")
+                if observation is not None:
+                    latest = observation
+                    latest["actual_scenario_identity"] = (first_identity if latest["observation_id"] == 0 else planner._runtime_scenario_identity(1, latest["chapter"], dimensions[(latest["run_id"], latest["observation_id"])]))
+                if event["event"] == "settled" and latest is not None:
+                    _sync_settled_observation(event, latest)
+            _rechain_transcript(forged)
+            self.assertEqual(planner.PlannerTranscript.import_production_bytes(planner._canonical(forged), 1).export(), planner._canonical(forged))
+            _assert_replay_rejected(self, planner._canonical(forged), "runtime scenario identity", validation_mode=planner.ValidationMode.PRODUCTION)
             standalone = json.loads(scripted[2])
             _transcript_event(standalone, "settled")["checkpoint"] = (
                 checkpoint_event["checkpoint"])
@@ -3280,8 +3307,10 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                  lambda value, command: 3),
                 ("COMMIT ROM provenance", "COMMIT", 0, "actual_rom_identity",
                  lambda value, command: value ^ 1),
-                ("COMMIT scenario provenance", "COMMIT", 1,
+                ("COMMIT scenario provenance", "COMMIT", 0,
                  "actual_scenario_identity", lambda value, command: value ^ 1),
+                ("COMMIT seed provenance", "COMMIT", 1,
+                 "actual_seed_identity", lambda value, command: value ^ 1),
             )
             for name, kind, occurrence, field, mutate in transition_mutations:
                 with self.subTest(accepted_transition=name):
@@ -3299,6 +3328,13 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     _assert_replay_rejected(
                         self, planner._canonical(document),
                         validation_mode=planner.ValidationMode.PRODUCTION)
+            scenario_map = json.loads(scripted[2])
+            response, settled = _accepted_response(scenario_map, "COMMIT", 0)
+            response["fields"][0]["value"] ^= 1
+            _sync_settled_observation(settled, response)
+            _rechain_transcript(scenario_map)
+            _assert_replay_rejected(self, planner._canonical(scenario_map),
+                                    validation_mode=planner.ValidationMode.PRODUCTION)
             for identity in ("rom", "config", "scenario", "seed"):
                 with self.subTest(zeroed_production_identity=identity):
                     zeroed = json.loads(scripted[2])
@@ -3481,7 +3517,7 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                     _assert_replay_rejected(
                         self,
                         planner._canonical(document),
-                        "rejected response|checkpoint",
+                        "rejected response|checkpoint|runtime (?:seed|scenario) identity",
                         validation_mode=planner.ValidationMode.PRODUCTION,
                     )
     def test_world_map_transition_records_settled_checkpoint(self):
