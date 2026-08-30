@@ -262,6 +262,12 @@ int main(void)
     ResetFixture();
     sEirika.state = US_DEAD;
     CHECK(
+        ExpansionChapterObjectives_GetSnapshot(ObjectiveId(4), &progress)
+            == EXPANSION_CHAPTER_OBJECTIVE_FAILURE
+            && !CheckFlag(EVFLAG_DEFEAT_BOSS),
+        "planner snapshot must report failure without latching event state"
+    );
+    CHECK(
         ExpansionChapterObjectives_GetStatus(ObjectiveId(4), &progress)
             == EXPANSION_CHAPTER_OBJECTIVE_FAILURE,
         "protect objective must latch a death before its completion"

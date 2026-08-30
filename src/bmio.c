@@ -30,6 +30,7 @@
 #include "bm.h"
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_autoplay_internal.h"
+#include "expansion_autoplay_planner.h"
 #include "expansion_chapter_objectives.h"
 #endif
 #include "bmsave.h"
@@ -985,7 +986,7 @@ void StartBattleMap(struct GameCtrlProc* gameCtrl) {
     int i;
 
 #ifndef FE8_ARCHIVAL_BUILD
-    ExpansionAutoplay_Reset();
+    ExpansionAutoplay_ResetForChapterTransition();
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
     DebugToolsPhaseControl_Reset();
 #endif
@@ -1058,6 +1059,9 @@ void StartBattleMap(struct GameCtrlProc* gameCtrl) {
     SetBlendBackdropA(TRUE);
 
     SetBlendConfig(3, 0, 0, 0x10);
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    ExpansionAutoplayPlanner_OnMapReady();
+#endif
 }
 
 void RestartBattleMap(void) {
@@ -1105,6 +1109,9 @@ void RestartBattleMap(void) {
     gLCDControlBuffer.dispcnt.bg2_on = TRUE;
     gLCDControlBuffer.dispcnt.bg3_on = FALSE;
     gLCDControlBuffer.dispcnt.obj_on = FALSE;
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    ExpansionAutoplayPlanner_OnMapReady();
+#endif
 }
 
 /**
@@ -1184,6 +1191,9 @@ void GameCtrl_StartResumedGame(struct GameCtrlProc* gameCtrl) {
     SetBlendBackdropA(TRUE);
 
     SetBlendConfig(3, 0, 0, 0x10);
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    ExpansionAutoplayPlanner_OnMapReady();
+#endif
 }
 
 void RefreshBMapDisplay_FromBattle(void) {
@@ -1245,14 +1255,20 @@ struct BMapMainProc* StartBMapMain(struct GameCtrlProc* gameCtrl) {
     return mapMain;
 }
 
-void EndBMapMain(void) {
+static void EndBMapMainInternal(bool preservePlannerCampaign)
+{
     struct BMapMainProc* mapMain;
 
 #ifndef FE8_ARCHIVAL_BUILD
-    ExpansionAutoplay_Reset();
+    if (preservePlannerCampaign)
+        ExpansionAutoplay_ResetForChapterTransition();
+    else
+        ExpansionAutoplay_Reset();
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
     DebugToolsPhaseControl_Reset();
 #endif
+#else
+    (void)preservePlannerCampaign;
 #endif
 #if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
     ExpansionChapterObjectives_ResetTelemetry();
@@ -1266,11 +1282,20 @@ void EndBMapMain(void) {
     Proc_End(mapMain);
 }
 
-#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+void EndBMapMain(void)
+{
+    EndBMapMainInternal(false);
+}
+
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && (FE8_EXPANSION_DEBUGTOOLS_ENABLED \
+        || (FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG))
 void EndBMapMainForChapterTransition(void)
 {
+#if FE8_EXPANSION_DEBUGTOOLS_ENABLED
     DebugToolsPhaseControl_RestorePersistentTurnForChapterTransition();
-    EndBMapMain();
+#endif
+    EndBMapMainInternal(true);
 }
 #endif
 

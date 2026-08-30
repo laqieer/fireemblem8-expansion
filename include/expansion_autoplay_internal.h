@@ -13,6 +13,8 @@ bool ExpansionAutoplay_TryRestorePlayerControlAfterPhase(void);
 void ExpansionAutoplay_OnPlayerPhaseStart(void);
 void ExpansionAutoplay_OnBlueComputerPhaseStart(void);
 void ExpansionAutoplay_OnBlueComputerPhaseComplete(void);
+void ExpansionAutoplay_RequestPlayerControlRestore(void);
+void ExpansionAutoplay_ResetForChapterTransition(void);
 void ExpansionAutoplayStrategies_ResetPendingActivation(void);
 void ExpansionAutoplayStrategies_ApplyPendingActivation(void);
 void ExpansionAutoplay_RecordEligibleActors(int side, int count);

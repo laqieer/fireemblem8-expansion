@@ -95,6 +95,13 @@ build output. The specialized ROM/asset recipes remain in the committed
 Makefile, so existing direct `make VAR=value` commands and bare-`make`
 defaults continue to work.
 
+Bare `make` and `make all` always select the modern release target, including
+after `--enable-autoplay-planner`. Because that persisted planner flag is
+debug-only, bare Make then fails closed with an explicit instruction instead
+of silently changing profiles. Build the configured planner explicitly with
+`make expansion-modern-boot-check MODERN_CONFIG=debug`; an explicit
+planner-enabled release request also fails before compilation.
+
 
 ## After installation: configure, author, test, debug
 

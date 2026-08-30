@@ -17,10 +17,17 @@
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_autoplay_internal.h"
 #include "expansion_autoplay_strategies.h"
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#include "expansion_autoplay_planner.h"
+#endif
 #endif
 
 static void CpDecide_Suspend(ProcPtr proc);
 static void CpDecide_Main(ProcPtr proc);
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+static void CpDecide_PollPlanner(ProcPtr proc);
+#endif
+static void CpDecide_CompleteDecision(ProcPtr proc);
 
 static void DecideHealOrEscape(void);
 static void DecideScriptA(void);
@@ -60,6 +67,18 @@ PROC_LABEL(0),
     PROC_CALL(CpDecide_Suspend),
 
     PROC_GOTO(0),
+
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+PROC_LABEL(1),
+    PROC_REPEAT(CpDecide_PollPlanner),
+    PROC_GOTO(2),
+
+PROC_LABEL(2),
+    PROC_CALL(CpDecide_CompleteDecision),
+    PROC_SLEEP(0),
+    PROC_CALL(CpDecide_Suspend),
+    PROC_GOTO(0),
+#endif
 
     PROC_END,
 };
@@ -114,60 +133,120 @@ next_unit:
             AiInitDangerMap();
 
             AiClearDecision();
-#ifndef FE8_ARCHIVAL_BUILD
-#if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
-            if (ExpansionAutoplay_IsBlueComputerPhase())
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_EXPANSION_AUTOPLAY_PLANNER \
+    && FE8_EXPANSION_DEBUG
+            if (ExpansionAutoplayPlanner_IsActive())
             {
-                enum ExpansionAutoplayStrategyResult strategyResult =
-                    ExpansionAutoplayStrategies_TryDecide();
-
-                if (strategyResult != EXPANSION_AUTOPLAY_STRATEGY_OK
-                    && strategyResult != EXPANSION_AUTOPLAY_STRATEGY_FALLBACK)
+                AiGenerateUnitMovementMapRespectStay(gActiveUnit);
+                switch (ExpansionAutoplayPlanner_OfferDecision(NULL))
                 {
-                    ExpansionAutoplay_RecordStrategyFailure(strategyResult);
+                case EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT:
+                    Proc_Goto(proc, 1);
+                    return;
+
+                case EXPANSION_AUTOPLAY_PLANNER_DECISION_CANCELLED:
+                case EXPANSION_AUTOPLAY_PLANNER_DECISION_EXHAUSTED:
                     Proc_End(proc);
                     return;
+
+                default:
+                    break;
                 }
-
-                if (strategyResult == EXPANSION_AUTOPLAY_STRATEGY_FALLBACK)
-                    AiDecideMainFunc();
             }
             else
 #endif
-#endif
-            AiDecideMainFunc();
-
-            gActiveUnit->state |= US_HAS_MOVED_AI;
-
-            if (!gAiDecision.actionPerformed ||
-                (gActiveUnit->xPos == gAiDecision.xMove && gActiveUnit->yPos == gAiDecision.yMove && gAiDecision.actionId == AI_ACTION_NONE))
             {
-                // Ignoring actions that are just moving to the same square
-
-                gAiState.unitIt++;
-                Proc_Goto(proc, 0);
-            }
-            else
-            {
-                gAiState.unitIt++;
 #ifndef FE8_ARCHIVAL_BUILD
-                if (ExpansionAutoplay_IsBlueComputerPhase()
-                    && !ExpansionAutoplay_IsActionSupported(gAiDecision.actionId))
+#if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
+                if (ExpansionAutoplay_IsBlueComputerPhase())
                 {
-                    gAiDecision.actionPerformed = FALSE;
-                    Proc_Goto(proc, 0);
-                    return;
+                    enum ExpansionAutoplayStrategyResult strategyResult =
+                        ExpansionAutoplayStrategies_TryDecide();
+
+                    if (strategyResult != EXPANSION_AUTOPLAY_STRATEGY_OK
+                        && strategyResult != EXPANSION_AUTOPLAY_STRATEGY_FALLBACK)
+                    {
+                        ExpansionAutoplay_RecordStrategyFailure(strategyResult);
+                        Proc_End(proc);
+                        return;
+                    }
+
+                    if (strategyResult == EXPANSION_AUTOPLAY_STRATEGY_FALLBACK)
+                        AiDecideMainFunc();
                 }
+                else
 #endif
-                Proc_StartBlocking(gProcScr_CpPerform, proc);
+#endif
+                AiDecideMainFunc();
             }
+            CpDecide_CompleteDecision(proc);
         } while (0);
     }
+
     else
     {
         Proc_End(proc);
     }
 }
+
+#if !defined(FE8_ARCHIVAL_BUILD) && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+static void CpDecide_PollPlanner(ProcPtr proc)
+{
+    switch (ExpansionAutoplayPlanner_PollDecision(&gAiDecision))
+    {
+    case EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT:
+        return;
+
+    case EXPANSION_AUTOPLAY_PLANNER_DECISION_ACCEPTED:
+        Proc_Break(proc);
+        return;
+
+    default:
+        Proc_End(proc);
+        return;
+    }
+}
+#endif
+
+static void CpDecide_CompleteDecision(ProcPtr proc)
+{
+    gActiveUnit->state |= US_HAS_MOVED_AI;
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!gAiDecision.actionPerformed ||
+        (!ExpansionAutoplayPlanner_IsActive()
+            && gActiveUnit->xPos == gAiDecision.xMove
+            && gActiveUnit->yPos == gAiDecision.yMove
+            && gAiDecision.actionId == AI_ACTION_NONE))
+#else
+    if (!gAiDecision.actionPerformed ||
+        (gActiveUnit->xPos == gAiDecision.xMove && gActiveUnit->yPos == gAiDecision.yMove && gAiDecision.actionId == AI_ACTION_NONE))
+#endif
+    {
+        gAiState.unitIt++;
+        Proc_Goto(proc, 0);
+        return;
+    }
+
+    gAiState.unitIt++;
+#ifndef FE8_ARCHIVAL_BUILD
+    if (ExpansionAutoplay_IsBlueComputerPhase()
+        && !ExpansionAutoplay_IsActionSupported(gAiDecision.actionId))
+    {
+        gAiDecision.actionPerformed = FALSE;
+        Proc_Goto(proc, 0);
+        return;
+    }
+#endif
+    Proc_StartBlocking(gProcScr_CpPerform, proc);
+}
+
+#if FE8_AUTOPLAY_PLANNER_RUNTIME_TEST
+void CpDecide_CompleteDecisionForTest(ProcPtr proc)
+{
+    CpDecide_CompleteDecision(proc);
+}
+#endif
 
 void AiClearDecision(void)
 {

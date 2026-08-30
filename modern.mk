@@ -72,6 +72,8 @@ MODERN_GOALS := \
 	expansion-modern-autoplay-strategy-enabled-budget \
 	expansion-modern-autoplay-strategy-budget \
 	expansion-modern-autoplay-strategies-objects \
+	expansion-modern-autoplay-planner-check \
+	expansion-modern-autoplay-planner-objects \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-idspace-active-check \
@@ -1049,6 +1051,95 @@ expansion-modern-autoplay-strategies-objects: \
 	@printf 'Modern autoplay strategy objects built (config=%s abi=%s profiles=%s)\n' \
 		'$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(EXPANSION_AUTOPLAY_STRATEGIES)'
 
+MODERN_AUTOPLAY_PLANNER_ROOT := build/expansion-modern-autoplay-planner
+MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT := build/expansion-modern-autoplay-planner-disabled
+MODERN_AUTOPLAY_PLANNER_ROM := \
+	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/fireemblem8.gba
+MODERN_AUTOPLAY_PLANNER_ELF := \
+	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/fireemblem8.elf
+MODERN_AUTOPLAY_PLANNER_MAP := \
+	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/fireemblem8.map
+MODERN_AUTOPLAY_PLANNER_ENABLED_BUDGET := \
+	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/linker-budget.json
+MODERN_AUTOPLAY_PLANNER_DISABLED_ELF := \
+	$(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT)/debug/aapcs/fireemblem8.elf
+MODERN_AUTOPLAY_PLANNER_DISABLED_MAP := \
+	$(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT)/debug/aapcs/fireemblem8.map
+MODERN_AUTOPLAY_PLANNER_DISABLED_BUDGET := \
+	$(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT)/debug/aapcs/linker-budget.json
+MODERN_AUTOPLAY_PLANNER_LINKED_BUDGET := \
+	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/planner-linked-budget.json
+CLEAN_DIRS += $(MODERN_AUTOPLAY_PLANNER_ROOT) $(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT)
+
+.PHONY: expansion-modern-autoplay-planner-objects \
+	expansion-modern-autoplay-planner-profile-rom \
+	expansion-modern-autoplay-planner-disabled-profile-rom
+expansion-modern-autoplay-planner-objects: \
+	$(MODERN_OUTPUT_DIR)/src/action_semantics.o \
+	$(MODERN_OUTPUT_DIR)/src/bmtarget.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_planner.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies.o \
+	$(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives.o \
+	$(MODERN_OUTPUT_DIR)/src/cp_decide.o \
+	$(MODERN_OUTPUT_DIR)/src/playerphase.o \
+	$(MODERN_OUTPUT_DIR)/src/rng.o
+	@printf 'Modern local autoplay planner objects built (config=%s abi=%s planner=%s)\n' \
+		'$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(EXPANSION_AUTOPLAY_PLANNER)'
+
+expansion-modern-autoplay-planner-profile-rom:
+	+$(MAKE) expansion-modern-rom expansion-modern-budget \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_PLANNER_ROOT) \
+		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_PLANNER_ENABLED_BUDGET) \
+		EXPANSION_AUTOPLAY_PLANNER=1
+
+expansion-modern-autoplay-planner-disabled-profile-rom: \
+	expansion-modern-autoplay-planner-profile-rom
+	+$(MAKE) expansion-modern-rom expansion-modern-budget \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT) \
+		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_PLANNER_DISABLED_BUDGET) \
+		EXPANSION_AUTOPLAY_PLANNER=0
+
+.PHONY: expansion-modern-autoplay-planner-check
+expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profile-rom \
+	expansion-modern-autoplay-planner-disabled-profile-rom
+	"$(PYTHON)" scripts/linker_report/autoplay_planner_budget.py \
+		--enabled-report "$(MODERN_AUTOPLAY_PLANNER_ENABLED_BUDGET)" \
+		--disabled-report "$(MODERN_AUTOPLAY_PLANNER_DISABLED_BUDGET)" \
+		--enabled-map "$(MODERN_AUTOPLAY_PLANNER_MAP)" \
+		--disabled-map "$(MODERN_AUTOPLAY_PLANNER_DISABLED_MAP)" \
+		--enabled-elf "$(MODERN_AUTOPLAY_PLANNER_ELF)" \
+		--disabled-elf "$(MODERN_AUTOPLAY_PLANNER_DISABLED_ELF)" \
+		--nm "$(MODERN_NM)" --objdump "$(MODERN_OBJDUMP)" --limit 12288 \
+		--output "$(MODERN_AUTOPLAY_PLANNER_LINKED_BUDGET)"
+	+$(MAKE) expansion-modern-autoplay-planner-objects \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_AUTOPLAY_PLANNER=1
+	PLANNER_PRODUCTION_ROM="$(MODERN_AUTOPLAY_PLANNER_ROM)" \
+		PLANNER_PRODUCTION_ELF="$(MODERN_AUTOPLAY_PLANNER_ELF)" \
+		"$(PYTHON)" -m unittest \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_production_mailbox_replays_multiple_chapters \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_clean_transport_replays_rejection_and_cancel \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_world_map_transition_records_settled_checkpoint \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_no_save_transition_records_and_rearms_checkpoint \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_exhausted_runs_restore_without_fallback_or_reentry \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_available_zero_digests_round_trip_live_transport \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_live_commit_rejects_stale_selected_item_before_execution \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_new_action_pages_replay_live_transport \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_flag_checkpoint_bounds_on_arm_transport \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_commit_waits_beyond_legacy_120_frame_window \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_acknowledged_commit_timeout_never_emits_stale_observation \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_unacknowledged_command_returns_typed_timeout \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_backend_requires_exact_ready_before_stdin \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_invalid_ack_is_rejected_before_ack_or_observation \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_restricted_backend_rejects_frame_and_key_controls \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_production_transcript_capacity_rejects_before_mailbox_write \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_wall_time_deadline_drives_silent_and_noisy_timeouts \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_transport_rejects_and_times_out \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_enabled_production_rom_executes_host_selected_action
+
 # Issue #5 Batch 1 (mechanics): same reasoning as the units/traps/shops/
 # eventlists synthetic-slot rules above, for the terrainstats table's
 # synthetic slot object. A safe no-op target when
@@ -1082,6 +1173,8 @@ $(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o: $(GENERATED_DATA_WEAPONTRIANGLE_C
 # IWRAM-placed symbols need per-symbol BSS sections. agb_sram.c additionally
 # subtracts adjacent function addresses when copying routines into IWRAM.
 $(MODERN_OUTPUT_DIR)/src/agb_sram.o: MODERN_CFLAGS += -fdata-sections -fno-toplevel-reorder -fno-reorder-functions
+$(MODERN_OUTPUT_DIR)/src/action_semantics.o \
+$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_planner.o: MODERN_CFLAGS += -Os
 $(MODERN_OUTPUT_DIR)/src/m4a.o: MODERN_CFLAGS += -fdata-sections
 $(MODERN_OUTPUT_DIR)/src/bmshop.o: MODERN_CFLAGS += -fdata-sections
 $(MODERN_ALL_DATA_OBJECTS): MODERN_CFLAGS += $(MODERN_DATA_LAYOUT_FLAGS)
@@ -1677,6 +1770,7 @@ ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 		--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 		--hq-mixer "$(EXPANSION_HQ_MIXER)" \
 		--autoplay-strategies "$(EXPANSION_AUTOPLAY_STRATEGIES)" \
+		--autoplay-planner "$(EXPANSION_AUTOPLAY_PLANNER)" \
 		--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 		--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 		--output-dir "$(MODERN_GENERATED_DIR)"
@@ -1746,6 +1840,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	--casual-mode "$(EXPANSION_CASUAL_MODE)" \
 	--hq-mixer "$(EXPANSION_HQ_MIXER)" \
 	--autoplay-strategies "$(EXPANSION_AUTOPLAY_STRATEGIES)" \
+	--autoplay-planner "$(EXPANSION_AUTOPLAY_PLANNER)" \
 	--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 	--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 	--save-compat-epoch "$(EXPANSION_SAVE_COMPAT_EPOCH)" 2>&1)
@@ -1779,6 +1874,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
   MODERN_EXPANSION_CASUAL_MODE := $(patsubst MODERN_EXPANSION_CASUAL_MODE=%,%,$(filter MODERN_EXPANSION_CASUAL_MODE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_HQ_MIXER := $(patsubst MODERN_EXPANSION_HQ_MIXER=%,%,$(filter MODERN_EXPANSION_HQ_MIXER=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_AUTOPLAY_STRATEGIES := $(patsubst MODERN_EXPANSION_AUTOPLAY_STRATEGIES=%,%,$(filter MODERN_EXPANSION_AUTOPLAY_STRATEGIES=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_EXPANSION_AUTOPLAY_PLANNER := $(patsubst MODERN_EXPANSION_AUTOPLAY_PLANNER=%,%,$(filter MODERN_EXPANSION_AUTOPLAY_PLANNER=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_BGM_CONTINUATION_POLICY := $(patsubst MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,%,$(filter MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),preserve)
     MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 0
@@ -1834,6 +1930,8 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	-DFE8_EXPANSION_CASUAL_MODE=$(EXPANSION_CASUAL_MODE) \
 	-DFE8_EXPANSION_HQ_MIXER=$(EXPANSION_HQ_MIXER) \
 	-DFE8_EXPANSION_AUTOPLAY_STRATEGIES=$(EXPANSION_AUTOPLAY_STRATEGIES) \
+	-DFE8_EXPANSION_AUTOPLAY_PLANNER=$(EXPANSION_AUTOPLAY_PLANNER) \
+	-DFE8_EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID=$(EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID) \
 	-DFE8_EXPANSION_BGM_CONTINUATION_POLICY=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID)
 
   # Internal modern-build provenance discriminator (NOT a user feature flag,

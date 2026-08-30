@@ -20,9 +20,9 @@ Run `./configure --help` to see the persistent feature/profile interface.
 `scripts/modernize/expansion_config.py` implementation used by the build, then
 writes ignored `config.autotools.mk` and `GNUmakefile` files. Supported options
 cover the starter flags, one-phase blue delegation, autoplay strategy
-references, AoE reference, casual-mode policy, HQ mixer, localized-text
-auto-wrap, enabled/default/pseudo locales, ROM size, item ID cap, and link-time
-text shift.
+references, the debug-only autoplay planner bridge, AoE reference, casual-mode
+policy, HQ mixer, localized-text auto-wrap, enabled/default/pseudo locales, ROM
+size, item ID cap, and link-time text shift.
 
 Only options explicitly passed to `configure` are written, so unspecified
 settings continue to use `config.mk`/`modern.mk` defaults. Precedence is:
@@ -64,12 +64,20 @@ regenerate the committed `configure` script with `autoreconf -fi`.
 | `EXPANSION_CASUAL_MODE` | `0` or `1` | `0` | issue #34 optional ordinary player-defeat restoration (fingerprint); combat/arena defeats are restored at the next chapter boundary, while scripted deaths and explicit removals remain permanent |
 | `EXPANSION_HQ_MIXER` | `0` or `1`; only `en` or `en,qps-ploc` locale profiles | `0` | issue #83 optional modern-only high-resolution MP2K PCM mixer (fingerprint); archival and real-localized-game requests fail before compilation and save compatibility is unchanged |
 | `EXPANSION_AUTOPLAY_STRATEGIES` | `0` or `1` | `0` | issue #90 permanent default-off Aggressive and Objective-first reference profiles (fingerprint); the generic registry remains available, no save state or migration is added |
+| `EXPANSION_AUTOPLAY_PLANNER` | `0` or `1`; `1` requires an explicit `MODERN_CONFIG=debug` target | `0` | issue #92 default-off local external planner bridge (fingerprint); generated bare `make` retains the invariant release target and therefore fails closed when the planner is persisted, `make expansion-modern-boot-check MODERN_CONFIG=debug` consumes the flag, release/archival builds omit the bridge, and save data is unchanged |
 | `EXPANSION_BGM_CONTINUATION_POLICY` | `preserve`, `resume`, or `restart` | `preserve` | issues #37/#39 typed BGM continuation policy (fingerprint); never save-compatible |
 
 Every value has a `?=` default, so an explicit `./configure` option, `make`
 command-line override (e.g.
 `make expansion-modern-rom EXPANSION_ROM_TITLE=MYHACK`), or environment value
 changes the built ROM's identity without editing the file.
+`EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID` is a separate 32-bit planner
+scenario/build-contract namespace (default `0x00009201`), combined at runtime
+with initialized chapter/map dimensions. Enabled modern planner builds accept
+only an integer constant in `0..0xFFFFFFFF` and reject negative, oversized, or
+invalid expressions at compilation. It remains independent of the
+configuration fingerprint so another scenario cannot reuse a command merely
+because ROM/configuration/seed match.
 `config.mk` deliberately does **not** duplicate `MODERN_CONFIG`,
 `MODERN_ABI`, `MODERN_ROM_SIZE`, or `MODERN_TEXT_SHIFT` -- those remain
 owned by `modern.mk`, which already had working presets for them before

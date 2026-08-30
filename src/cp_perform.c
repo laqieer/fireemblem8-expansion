@@ -23,6 +23,7 @@
 #include "eventinfo.h"
 #ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_autoplay_internal.h"
+#include "expansion_autoplay_planner.h"
 #endif
 
 #include "cp_perform.h"
@@ -70,6 +71,7 @@ void CpPerform_WaitAction(struct CpPerformProc* proc);
 void CpPerform_Cleanup(struct CpPerformProc* proc);
 void CpPerform_EquipBest(struct CpPerformProc* proc);
 
+#if !FE8_PLANNER_STATIONARY_WAIT_TEST
 struct ProcCmd CONST_DATA gProcScr_CpPerform[] = {
     PROC_NAME("E_CPPERFORM"),
 
@@ -95,6 +97,7 @@ struct ProcCmd CONST_DATA gProcScr_CpPerform[] = {
 PROC_LABEL(1),
     PROC_END,
 };
+#endif
 
 s8 AiDummyAction(struct CpPerformProc*);
 s8 AiEscapeAction(struct CpPerformProc*);
@@ -202,8 +205,16 @@ void AiRefreshMap(void) {
     return;
 }
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+static bool PreparePlannerAction(void);
+#endif
+
 void AiStartCombatAction(struct CpPerformProc* proc) {
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!PreparePlannerAction())
+        return;
+#endif
     gActionData.subjectIndex = gActiveUnitId;
     gActionData.unitActionType = UNIT_ACTION_COMBAT;
     gActionData.targetIndex = gAiDecision.targetId;
@@ -215,6 +226,13 @@ void AiStartCombatAction(struct CpPerformProc* proc) {
         struct Trap* trap = GetTrapAt(gAiDecision.xTarget, gAiDecision.yTarget);
         gActionData.xOther = gAiDecision.xTarget;
         gActionData.yOther = gAiDecision.yTarget;
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+        if (ExpansionAutoplayPlanner_IsActive())
+            gActionData.trapType = GetObstacleHpAt(
+                gAiDecision.xTarget, gAiDecision.yTarget);
+        else
+#endif
         gActionData.trapType = trap->extra;
     }
 
@@ -290,7 +308,24 @@ s8 AiPillageAction(struct CpPerformProc* proc) {
     return 1;
 }
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+static bool PreparePlannerAction(void)
+{
+    if (ExpansionAutoplayPlanner_IsActive()
+        && !ExpansionAutoplayPlanner_PrepareActionData(&gAiDecision))
+    {
+        gAiDecision.actionPerformed = false;
+        return false;
+    }
+    return true;
+}
+#endif
+
 s8 AiStaffAction(struct CpPerformProc* proc) {
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!PreparePlannerAction())
+        return 1;
+#endif
     gActiveUnit->xPos = gAiDecision.xMove;
     gActiveUnit->yPos = gAiDecision.yMove;
 
@@ -305,6 +340,13 @@ s8 AiStaffAction(struct CpPerformProc* proc) {
 }
 
 s8 AiUseItemAction(struct CpPerformProc* proc) {
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!PreparePlannerAction())
+        return 1;
+    gActionData.subjectIndex = gActiveUnitId;
+    gActionData.targetIndex = gAiDecision.targetId;
+#endif
     gActiveUnit->xPos = gAiDecision.xMove;
     gActiveUnit->yPos = gAiDecision.yMove;
 
@@ -373,6 +415,10 @@ s8 AiDKNightmareAction(struct CpPerformProc* proc) {
 
 void AiDKSummonAction(struct CpPerformProc* proc) {
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!PreparePlannerAction())
+        return;
+#endif
     gActionData.subjectIndex = gActiveUnitId;
     gActionData.unitActionType = UNIT_ACTION_SUMMON_DK;
 
@@ -384,8 +430,31 @@ void AiDKSummonAction(struct CpPerformProc* proc) {
     return;
 }
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+s8 AiSummonAction(struct CpPerformProc* proc) {
+    if (!PreparePlannerAction())
+        return 1;
+    gActionData.subjectIndex = gActiveUnitId;
+    gActionData.unitActionType = UNIT_ACTION_SUMMON;
+    gActionData.xOther = gAiDecision.xTarget;
+    gActionData.yOther = gAiDecision.yTarget;
+
+    gActiveUnit->xPos = gAiDecision.xMove;
+    gActiveUnit->yPos = gAiDecision.yMove;
+
+    ApplyUnitAction(proc);
+
+    return 1;
+}
+#endif
+
 s8 AiPickAction(struct CpPerformProc* proc) {
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!PreparePlannerAction())
+        return 1;
+    gActionData.subjectIndex = gActiveUnitId;
+#endif
     gActiveUnit->xPos = gAiDecision.xMove;
     gActiveUnit->yPos = gAiDecision.yMove;
 
@@ -421,6 +490,14 @@ void CpPerform_MoveCameraOntoTarget(struct CpPerformProc* proc) {
         case AI_ACTION_PICK:
 
             return;
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+        case AI_ACTION_SUMMON:
+            x = gAiDecision.xTarget;
+            y = gAiDecision.yTarget;
+
+            break;
+#endif
 
         case AI_ACTION_COMBAT:
             if (gAiDecision.targetId == 0) {
@@ -573,6 +650,13 @@ void CpPerform_PerformAction(struct CpPerformProc* proc) {
             proc->func = AiPickAction;
 
             break;
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+        case AI_ACTION_SUMMON:
+            proc->func = AiSummonAction;
+
+            break;
+#endif
     }
 
     return;

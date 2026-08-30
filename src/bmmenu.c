@@ -22,6 +22,9 @@
 #include "playerphase.h"
 #include "uichapterstatus.h"
 #include "uiselecttarget.h"
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#include "action_semantics.h"
+#endif
 #include "bmunit.h"
 #include "bmtarget.h"
 #include "icon.h"
@@ -1741,6 +1744,9 @@ u8 PickSelection_OnSelect(ProcPtr proc, struct SelectTarget* target) {
     gActionData.yOther = target->y;
 
     gActionData.unitActionType = UNIT_ACTION_PICK;
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    gActionData.itemSlotIndex = 0xFF;
+#endif
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
@@ -2053,9 +2059,11 @@ u8 StealItemMenuCommand_Effect(struct MenuProc* menu, struct MenuItemProc* menuI
 }
 
 u8 SummonCommandUsability(const struct MenuItemDef* def, int number) {
+#if !FE8_EXPANSION_AUTOPLAY_PLANNER || !FE8_EXPANSION_DEBUG
     u16 a;
     s16 summonerId;
     int i;
+#endif
 
     if (!(UNIT_CATTRIBUTES(gActiveUnit) & CA_SUMMON)) {
         return MENU_NOTSHOWN;
@@ -2070,6 +2078,11 @@ u8 SummonCommandUsability(const struct MenuItemDef* def, int number) {
         return MENU_NOTSHOWN;
     }
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    return ActionSemantics_IsNormalSummonAvailable(gActiveUnit, true)
+        ? MENU_ENABLED
+        : MENU_NOTSHOWN;
+#else
     summonerId = -1;
 
     for (a = 0; a < 3; a++) {
@@ -2104,6 +2117,7 @@ u8 SummonCommandUsability(const struct MenuItemDef* def, int number) {
     }
 
     return MENU_ENABLED;
+#endif
 }
 
 u8 SummonCommandEffect(struct MenuProc* menu, struct MenuItemProc* menuItem) {
@@ -2127,6 +2141,11 @@ u8 SummonSelection_OnSelect(ProcPtr proc, struct SelectTarget* target) {
 
 u8 YobimaCommandUsability(const struct MenuItemDef* def, int number) {
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    return ActionSemantics_IsDarkSummonAvailable(gActiveUnit)
+        ? MENU_ENABLED
+        : MENU_NOTSHOWN;
+#else
     u16 count;
     int i;
 
@@ -2155,6 +2174,7 @@ u8 YobimaCommandUsability(const struct MenuItemDef* def, int number) {
     }
 
     return MENU_ENABLED;
+#endif
 }
 
 u8 YobimaCommandEffect(struct MenuProc* menu, struct MenuItemProc* menuItem) {

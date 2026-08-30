@@ -26,6 +26,20 @@
 struct PlaySt gPlaySt;
 static int sPendingActivationResetCount;
 static int sPendingActivationApplyCount;
+#if FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+static int sPlannerDestructiveResetCount;
+static int sPlannerTransitionResetCount;
+
+void ExpansionAutoplayPlanner_Reset(void)
+{
+    sPlannerDestructiveResetCount++;
+}
+
+void ExpansionAutoplayPlanner_OnMapReset(void)
+{
+    sPlannerTransitionResetCount++;
+}
+#endif
 
 void ExpansionAutoplayStrategies_ResetPendingActivation(void)
 {
@@ -73,6 +87,10 @@ static int TestControllerAndLifecycle(void)
         byte[i] = 0xA5;
     sPendingActivationResetCount = 0;
     sPendingActivationApplyCount = 0;
+#if FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+    sPlannerDestructiveResetCount = 0;
+    sPlannerTransitionResetCount = 0;
+#endif
     ExpansionAutoplay_Reset();
     telemetry = ExpansionAutoplay_GetTelemetry();
 
@@ -88,6 +106,15 @@ static int TestControllerAndLifecycle(void)
           "reset must clear committed actions");
     CHECK(sPendingActivationResetCount == 1,
           "autoplay reset must clear pending strategy activation");
+#if FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+    CHECK(sPlannerDestructiveResetCount == 1
+              && sPlannerTransitionResetCount == 0,
+          "ordinary reset must destructively clear the planner campaign");
+    ExpansionAutoplay_ResetForChapterTransition();
+    CHECK(sPlannerDestructiveResetCount == 1
+              && sPlannerTransitionResetCount == 1,
+          "chapter transition reset must preserve the planner campaign");
+#endif
 
     CHECK(ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER)
               == EXPANSION_AUTOPLAY_OK,
@@ -131,6 +158,18 @@ static int TestControllerAndLifecycle(void)
           "successful phase must terminate without a failure");
     CHECK(sPendingActivationApplyCount == 1,
           "computer phase completion must apply pending strategy activation");
+
+#if FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+    ExpansionAutoplay_Reset();
+    ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER);
+    ExpansionAutoplay_OnBlueComputerPhaseStart();
+    ExpansionAutoplay_RequestPlayerControlRestore();
+    CHECK(ExpansionAutoplay_GetBlueControl() == EXPANSION_BLUE_CONTROL_COMPUTER,
+          "planner cancellation must queue rather than interrupt active AI");
+    ExpansionAutoplay_OnBlueComputerPhaseComplete();
+    CHECK(ExpansionAutoplay_GetBlueControl() == EXPANSION_BLUE_CONTROL_PLAYER,
+          "safe phase completion must restore queued PLAYER control");
+#endif
 
     return 0;
 }
@@ -251,6 +290,13 @@ static int TestActionCapabilities(void)
         CHECK(ExpansionAutoplay_IsActionSupported(action) == expected,
               "known action capability mismatch");
     }
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    CHECK(ExpansionAutoplay_IsActionSupported(AI_ACTION_SUMMON),
+          "planner-enabled normal Summon must have an executor path");
+#else
+    CHECK(!ExpansionAutoplay_IsActionSupported(AI_ACTION_SUMMON),
+          "planner-disabled normal Summon must remain absent");
+#endif
     CHECK(!ExpansionAutoplay_IsActionSupported(0xFF),
           "unknown action must not be supported");
 

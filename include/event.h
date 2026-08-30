@@ -66,7 +66,8 @@ enum EventStateFlags {
     EV_STATE_UNITCAM   = (1 << 0x9), // camera follows unit movement
     EV_STATE_CHANGECH  = (1 << 0xA), // moving to another chapter (?)
     EV_STATE_CHANGEGM  = (1 << 0xB), // changing "game mode" (GAMECTRL field 0x29 was changed?)
-    EV_STATE_GFXLOCKED = (1 << 0xC)  // set when the game graphics have been locked through events (codes 0x23/0x24)
+    EV_STATE_GFXLOCKED = (1 << 0xC), // set when the game graphics have been locked through events (codes 0x23/0x24)
+    EV_STATE_PLANNER_CHAPTER_TRANSITION = (1 << 0xD),
 
     // I don't think there's more, but I could be wrong
 };

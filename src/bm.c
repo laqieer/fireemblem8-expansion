@@ -56,6 +56,7 @@ enum
 #endif
 };
 
+#if !FE8_AUTOPLAY_PLANNER_RUNTIME_TEST
 struct ProcCmd CONST_DATA gProc_BMapMain[] = {
     PROC_SLEEP(0),
 
@@ -184,6 +185,7 @@ PROC_LABEL(7),
 
     PROC_END,
 };
+#endif
 
 s8 CONST_DATA sDirKeysToOffsetLut[][2] = {
     {  0,  0, }, // 0000 none

@@ -1,6 +1,9 @@
 
 #include "global.h"
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#include "action_semantics.h"
+#endif
 #if FE8_EXPANSION_MODERN_BUILD
 #include "expansion_aoe.h"
 #endif
@@ -716,7 +719,17 @@ void WarpSelect_OnInit(struct WarpSelectProc* proc)
 
 void WarpSelect_OnIdle(struct WarpSelectProc* proc)
 {
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    s8 warpAllowed = ActionSemantics_IsWarpDestination(
+        gActiveUnit,
+        GetUnit(gActionData.targetIndex),
+        gActiveUnit->xPos,
+        gActiveUnit->yPos,
+        gBmSt.playerCursor.x,
+        gBmSt.playerCursor.y);
+#else
     s8 warpAllowed = gMapMovementSigned[gBmSt.playerCursor.y][gBmSt.playerCursor.x] != -1;
+#endif
 
     HandlePlayerCursorMovement();
 
@@ -1072,7 +1085,17 @@ void TorchSelect_OnIdle(struct WarpSelectProc* proc)
     int xTorch = gBmSt.playerCursor.x;
     int yTorch = gBmSt.playerCursor.y;
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    s8 canTorch = ActionSemantics_IsStandingReachPosition(
+        gActiveUnit,
+        gActiveUnit->xPos,
+        gActiveUnit->yPos,
+        GetUnitItemUseReachBits(gActiveUnit, gActionData.itemSlotIndex),
+        xTorch,
+        yTorch);
+#else
     s8 canTorch = gMapRangeSigned[yTorch][xTorch];
+#endif
 
     HandlePlayerCursorMovement();
 

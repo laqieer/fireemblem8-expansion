@@ -1,0 +1,353 @@
+#include "global.h"
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+
+#include "action_semantics.h"
+#include "bmbattle.h"
+#include "bmitem.h"
+#include "bmmap.h"
+#include "bmtrap.h"
+#include "bmtrick.h"
+#include "bmunit.h"
+#include "eventinfo.h"
+
+#include "constants/classes.h"
+#include "constants/items.h"
+#include "constants/terrains.h"
+
+s8 CanUnitCrossTerrain(struct Unit* unit, int terrain);
+
+static bool IsMapPosition(int x, int y)
+{
+    return x >= 0 && x < gBmMapSize.x && y >= 0 && y < gBmMapSize.y;
+}
+
+static int Distance(int xA, int yA, int xB, int yB)
+{
+    return ABS(xA - xB) + ABS(yA - yB);
+}
+
+bool ActionSemantics_IsStandingReachPosition(
+    struct Unit* unit,
+    int originX,
+    int originY,
+    int reach,
+    int targetX,
+    int targetY)
+{
+    int distance;
+
+    if (unit == NULL || !IsMapPosition(targetX, targetY))
+        return false;
+    distance = Distance(originX, originY, targetX, targetY);
+    switch (reach)
+    {
+    case REACH_RANGE1:
+        return distance == 1;
+
+    case REACH_RANGE1 | REACH_RANGE2:
+        return distance >= 1 && distance <= 2;
+
+    case REACH_RANGE1 | REACH_RANGE2 | REACH_RANGE3:
+        return distance >= 1 && distance <= 3;
+
+    case REACH_RANGE2:
+        return distance == 2;
+
+    case REACH_RANGE2 | REACH_RANGE3:
+        return distance >= 2 && distance <= 3;
+
+    case REACH_RANGE3:
+        return distance == 3;
+
+    case REACH_RANGE3 | REACH_TO10:
+        return distance >= 3 && distance <= 10;
+
+    case REACH_RANGE1 | REACH_RANGE3:
+        return distance == 1 || distance == 3;
+
+    case REACH_RANGE1 | REACH_RANGE3 | REACH_TO10:
+        return distance == 1 || (distance >= 3 && distance <= 10);
+
+    case REACH_RANGE1 | REACH_RANGE2 | REACH_RANGE3 | REACH_TO10:
+        return distance >= 1 && distance <= 10;
+
+    case REACH_RANGE1 | REACH_TO10:
+        return distance >= 1 && distance <= 4;
+
+    case REACH_MAGBY2:
+        return distance >= 1 && distance <= GetUnitMagBy2Range(unit);
+
+    default:
+        return false;
+    }
+}
+
+bool ActionSemantics_IsWarpDestination(
+    struct Unit* caster,
+    struct Unit* target,
+    int casterX,
+    int casterY,
+    int targetX,
+    int targetY)
+{
+    if (caster == NULL || target == NULL || !IsMapPosition(targetX, targetY))
+        return false;
+    if (targetX == casterX && targetY == casterY)
+        return false;
+    if (Distance(target->xPos, target->yPos, targetX, targetY) < 1
+        || Distance(target->xPos, target->yPos, targetX, targetY)
+            > GetUnitMagBy2Range(caster))
+        return false;
+    if (gBmMapUnit[targetY][targetX] != 0
+        && (targetX != caster->xPos || targetY != caster->yPos))
+        return false;
+    if (!CanUnitCrossTerrain(target, gBmMapTerrain[targetY][targetX]))
+        return false;
+    if (gPlaySt.chapterVisionRange != 0
+        && gBmMapFog != NULL
+        && gBmMapFog[targetY][targetX] == 0)
+        return false;
+    return true;
+}
+
+bool ActionSemantics_IsUnlockStaffTarget(
+    struct Unit* caster,
+    int casterX,
+    int casterY,
+    int targetX,
+    int targetY)
+{
+    int distance;
+
+    if (caster == NULL || !IsMapPosition(targetX, targetY))
+        return false;
+    distance = Distance(casterX, casterY, targetX, targetY);
+    return distance >= 1
+        && distance <= 2
+        && gBmMapTerrain[targetY][targetX] == TERRAIN_DOOR
+        && IsThereClosedDoorAt(targetX, targetY);
+}
+
+bool ActionSemantics_IsPickTarget(
+    int originX,
+    int originY,
+    int targetX,
+    int targetY)
+{
+    int terrain;
+
+    if (!IsMapPosition(targetX, targetY))
+        return false;
+    terrain = gBmMapTerrain[targetY][targetX];
+    if (targetX == originX && targetY == originY)
+        return terrain == TERRAIN_CHEST_FULL;
+    return Distance(originX, originY, targetX, targetY) == 1
+        && (terrain == TERRAIN_DOOR
+            || terrain == TERRAIN_BRIDGE_14);
+}
+
+bool ActionSemantics_IsKeyTarget(
+    int originX,
+    int originY,
+    int targetX,
+    int targetY)
+{
+    int terrain;
+
+    if (!ActionSemantics_IsPickTarget(
+            originX,
+            originY,
+            targetX,
+            targetY))
+        return false;
+    terrain = gBmMapTerrain[targetY][targetX];
+    if (terrain == TERRAIN_CHEST_FULL)
+        return IsThereClosedChestAt(targetX, targetY);
+    return IsThereClosedDoorAt(targetX, targetY);
+}
+
+bool ActionSemantics_IsTargetedItemTarget(
+    struct Unit* unit,
+    struct Unit* target,
+    int item,
+    int originX,
+    int originY,
+    int targetX,
+    int targetY)
+{
+    struct Trap* trap;
+    int itemId;
+    if (unit == NULL
+        || !IsMapPosition(targetX, targetY)
+        || Distance(originX, originY, targetX, targetY) != 1)
+        return false;
+    itemId = GetItemIndex(item);
+    if (itemId >= ITEM_FILLAS_MIGHT && itemId <= ITEM_SETS_LITANY)
+        return target != NULL
+            && target != unit
+            && UNIT_IS_VALID(target)
+            && !((u16)target->state
+                & (US_UNAVAILABLE | US_HIDDEN | US_RESCUED))
+            && !((u16)(target->state >> 16)
+                & (US_UNAVAILABLE >> 16))
+            && (u8)target->index < FACTION_GREEN
+            && target->statusIndex == UNIT_STATUS_NONE
+            && target->xPos == targetX
+            && target->yPos == targetY;
+    if ((gBmMapUnit[targetY][targetX] != 0
+            && (targetX != unit->xPos || targetY != unit->yPos)))
+        return false;
+    trap = GetTrapAt(targetX, targetY);
+    if (itemId == ITEM_MINE)
+        return (gPlaySt.chapterVisionRange == 0
+                || gBmMapFog[targetY][targetX] != 0)
+            && CanUnitCrossTerrain(unit, gBmMapTerrain[targetY][targetX])
+            && (trap == NULL || trap->type == TRAP_TORCHLIGHT);
+    return itemId == ITEM_LIGHTRUNE
+        && trap == NULL
+        && TerrainTable_MovCost_FlyNormal[gBmMapTerrain[targetY][targetX]] > 0;
+}
+
+bool ActionSemantics_IsNormalSummonAvailable(
+    struct Unit* unit,
+    bool restoreUnavailable)
+{
+    struct Unit* summon;
+    int summonCharacter = 0;
+    int index;
+
+    if (unit == NULL
+        || unit->pCharacterData == NULL
+        || unit->pClassData == NULL
+        || UNIT_FACTION(unit) != FACTION_BLUE
+        || !(UNIT_CATTRIBUTES(unit) & CA_SUMMON)
+        || (unit->state & US_HAS_MOVED))
+        return false;
+    for (index = 0; index < 3; index++)
+    {
+        if (unit->pCharacterData->number != gSummonConfig[index][0])
+            continue;
+        summonCharacter = gSummonConfig[index][1];
+        break;
+    }
+    if (summonCharacter == 0)
+        return false;
+    for (index = FACTION_BLUE + 1; index < FACTION_GREEN; index++)
+    {
+        summon = GetUnit(index);
+        if (!UNIT_IS_VALID(summon)
+            || summon->pCharacterData->number != summonCharacter)
+            continue;
+        if (!(summon->state & US_UNAVAILABLE))
+            return false;
+        if (restoreUnavailable)
+            summon->state &= ~US_UNAVAILABLE;
+        return true;
+    }
+    return true;
+}
+
+bool ActionSemantics_IsNormalSummonTarget(
+    struct Unit* unit,
+    int originX,
+    int originY,
+    int targetX,
+    int targetY)
+{
+    if (unit == NULL
+        || !IsMapPosition(targetX, targetY)
+        || Distance(originX, originY, targetX, targetY) != 1
+        || (gBmMapUnit[targetY][targetX] != 0
+            && (targetX != unit->xPos || targetY != unit->yPos))
+        || !CanUnitCrossTerrain(unit, gBmMapTerrain[targetY][targetX]))
+        return false;
+    return gPlaySt.chapterVisionRange == 0
+        || gBmMapFog == NULL
+        || gBmMapFog[targetY][targetX] != 0;
+}
+
+bool ActionSemantics_IsDarkSummonAvailable(struct Unit* unit)
+{
+    int count = 0;
+    int index;
+
+    if (unit == NULL
+        || unit->pClassData == NULL
+        || unit->pClassData->number != CLASS_DEMON_KING
+        || (unit->state & US_HAS_MOVED))
+        return false;
+    for (index = FACTION_RED + 1; index < FACTION_PURPLE; index++)
+    {
+        if (!UNIT_IS_VALID(GetUnit(index)))
+            continue;
+        if (count >= 40)
+            return false;
+        count++;
+    }
+    return true;
+}
+
+bool ActionSemantics_ApplyTorchTarget(int targetX, int targetY)
+{
+    if (!IsMapPosition(targetX, targetY))
+        return false;
+    AddTrap(targetX, targetY, TRAP_TORCHLIGHT, 8);
+    return true;
+}
+
+bool ActionSemantics_ApplyWarpTarget(
+    struct Unit* target,
+    int targetX,
+    int targetY)
+{
+    if (target == NULL || !IsMapPosition(targetX, targetY))
+        return false;
+    target->xPos = targetX;
+    target->yPos = targetY;
+    return true;
+}
+
+bool ActionSemantics_ApplyUnlockTarget(int targetX, int targetY)
+{
+    if (!IsMapPosition(targetX, targetY))
+        return false;
+    gBattleTarget.unit.xPos = targetX;
+    gBattleTarget.unit.yPos = targetY;
+    gBattleTarget.changeHP = targetX;
+    gBattleTarget.changePow = targetY;
+    return true;
+}
+
+bool ActionSemantics_ApplyHammerneTarget(
+    struct Unit* target,
+    int targetItemSlot)
+{
+    if (target == NULL
+        || targetItemSlot < 0
+        || targetItemSlot >= UNIT_ITEM_COUNT
+        || !IsItemHammernable(target->items[targetItemSlot]))
+        return false;
+    target->items[targetItemSlot] =
+        MakeNewItem(target->items[targetItemSlot]);
+    return true;
+}
+
+bool ActionSemantics_ConsumePickKey(
+    struct Unit* unit,
+    int itemSlot)
+{
+    if (unit == NULL)
+        return false;
+    if (itemSlot == 0xFF)
+        return true;
+    if (itemSlot < 0
+        || itemSlot >= UNIT_ITEM_COUNT
+        || unit->items[itemSlot] == 0
+        || ITEM_USES(unit->items[itemSlot]) == 0)
+        return false;
+    UnitUpdateUsedItem(unit, itemSlot);
+    return true;
+}
+
+#endif

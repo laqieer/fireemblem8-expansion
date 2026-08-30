@@ -7,6 +7,9 @@
 #include "chapterdata.h"
 #include "hardware.h"
 #include "bmudisp.h"
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#include "action_semantics.h"
+#endif
 
 s8 CanUnitCrossTerrain(struct Unit* unit, int terrain);
 
@@ -45,16 +48,30 @@ void FillWarpRangeMap(struct Unit *unit_act, struct Unit *unit_tar) {
     y = unit_tar->yPos;
     MapAddInBoundedRange(x, y, 1, GetUnitMagBy2Range(unit_act));
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    for (y = gBmMapSize.y - 1; y >= 0; y--) {
+        for (x = gBmMapSize.x - 1; x >= 0; x--) {
+            if (!ActionSemantics_IsWarpDestination(
+                    unit_act,
+                    unit_tar,
+                    unit_act->xPos,
+                    unit_act->yPos,
+                    x,
+                    y))
+                gMapMovementSigned[y][x] = -1;
+        }
+    }
+#else
     if (0 == gPlaySt.chapterVisionRange) {
         for (y = gBmMapSize.y - 1; y >= 0; y--) {
             for (x = gBmMapSize.x - 1; x >= 0; x--) {
                 if (gBmMapMovement[y][x] > 0x78)
                     continue;
-                
+
                 if (CanUnitCrossTerrain(unit_tar, gBmMapTerrain[y][x]) &&
                     0 == gBmMapUnit[y][x])
                     continue;
-                    
+
                 gMapMovementSigned[y][x] = -1;
             }
         }
@@ -63,7 +80,7 @@ void FillWarpRangeMap(struct Unit *unit_act, struct Unit *unit_tar) {
             for (x = gBmMapSize.x - 1; x >= 0; x--) {
                 if (gBmMapMovement[y][x] > 0x78)
                     continue;
-                
+
                 if (CanUnitCrossTerrain(unit_tar, gBmMapTerrain[y][x]) &&
                     0 == gBmMapUnit[y][x] &&
                     0 != gBmMapFog[y][x])
@@ -74,4 +91,5 @@ void FillWarpRangeMap(struct Unit *unit_act, struct Unit *unit_tar) {
         }
     }
     gMapMovementSigned[unit_act->yPos][unit_act->xPos] = -1;
+#endif
 }

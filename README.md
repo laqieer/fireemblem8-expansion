@@ -76,6 +76,15 @@ the modern release AAPCS ROM — it never requires, builds, or resolves to a
 make                # equivalent to: make all
 ```
 
+The generated GNUmakefile preserves that invariant for every configured
+profile. Because the autoplay planner is debug-only,
+`./configure --enable-autoplay-planner && make` deliberately fails closed
+rather than redirecting bare Make. Build that persisted profile explicitly:
+
+```bash
+make expansion-modern-boot-check MODERN_CONFIG=debug
+```
+
 Equivalently, and explicitly:
 
 ```bash

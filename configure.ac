@@ -160,6 +160,18 @@ AC_ARG_ENABLE(
         [AC_MSG_ERROR([--enable-autoplay-strategies accepts only yes or no])])],
     [fe8_autoplay_strategies=])
 
+AC_ARG_ENABLE(
+    [autoplay-planner],
+    [AS_HELP_STRING(
+        [--enable-autoplay-planner],
+        [enable the local debug-only external autoplay planner bridge])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_autoplay_planner=1],
+        [no], [fe8_autoplay_planner=0],
+        [AC_MSG_ERROR([--enable-autoplay-planner accepts only yes or no])])],
+    [fe8_autoplay_planner=])
+
 AC_ARG_WITH(
     [bgm-continuation-policy],
     [AS_HELP_STRING(
@@ -289,6 +301,12 @@ AS_IF(
     [FE8_CFG_AUTOPLAY_STRATEGIES="EXPANSION_AUTOPLAY_STRATEGIES := $fe8_autoplay_strategies"],
     [FE8_CFG_AUTOPLAY_STRATEGIES=])
 AS_IF(
+    [test -n "$fe8_autoplay_planner"],
+    [FE8_CFG_AUTOPLAY_PLANNER="EXPANSION_AUTOPLAY_PLANNER := $fe8_autoplay_planner"],
+    [FE8_CFG_AUTOPLAY_PLANNER=])
+FE8_CFG_MODERN_CONFIG=
+FE8_AUTOTOOLS_DEFAULT_GOAL=all
+AS_IF(
     [test -n "$fe8_bgm_continuation_policy"],
     [FE8_CFG_BGM_CONTINUATION_POLICY="EXPANSION_BGM_CONTINUATION_POLICY := $fe8_bgm_continuation_policy"],
     [FE8_CFG_BGM_CONTINUATION_POLICY=])
@@ -329,6 +347,9 @@ AC_SUBST([FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP])
 AC_SUBST([FE8_CFG_CASUAL_MODE])
 AC_SUBST([FE8_CFG_HQ_MIXER])
 AC_SUBST([FE8_CFG_AUTOPLAY_STRATEGIES])
+AC_SUBST([FE8_CFG_AUTOPLAY_PLANNER])
+AC_SUBST([FE8_CFG_MODERN_CONFIG])
+AC_SUBST([FE8_AUTOTOOLS_DEFAULT_GOAL])
 AC_SUBST([FE8_CFG_BGM_CONTINUATION_POLICY])
 AC_SUBST([FE8_CFG_PSEUDO_LOCALE])
 AC_SUBST([FE8_CFG_ENABLED_LOCALES])
@@ -339,13 +360,18 @@ AC_SUBST([FE8_CFG_TEXT_SHIFT])
 
 fe8_validate_rom_size=${fe8_rom_size:-16M}
 fe8_validate_text_shift=${fe8_text_shift:-0}
+fe8_validate_config=release
+if test "$fe8_autoplay_planner" = 1
+then
+    fe8_validate_config=debug
+fi
 fe8_abs_srcdir=`cd "$srcdir" && pwd`
 
 AC_MSG_CHECKING([configured expansion profile])
 fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     "$PYTHON" "$fe8_abs_srcdir/scripts/modernize/expansion_config.py" validate \
     --config-mk "$fe8_abs_srcdir/config.mk" \
-    --config release \
+    --config "$fe8_validate_config" \
     --abi aapcs \
     --rom-size "$fe8_validate_rom_size" \
     --text-shift "$fe8_validate_text_shift" \
@@ -365,6 +391,7 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --casual-mode "$fe8_casual_mode" \
     --hq-mixer "$fe8_hq_mixer" \
     --autoplay-strategies "$fe8_autoplay_strategies" \
+    --autoplay-planner "$fe8_autoplay_planner" \
     --bgm-continuation-policy "$fe8_bgm_continuation_policy" \
     --item-id-cap "$fe8_item_id_cap" 2>&1`
 fe8_config_status=$?
@@ -380,5 +407,9 @@ AC_CONFIG_FILES([
     config.autotools.mk:config.autotools.mk.in
 ])
 AC_MSG_NOTICE([configuration saved in config.autotools.mk])
-AC_MSG_NOTICE([run 'make' to build the configured modern release ROM])
+AS_IF(
+    [test "$fe8_autoplay_planner" = 1],
+    [AC_MSG_NOTICE([bare 'make' remains release-only and rejects this debug-only planner profile])
+     AC_MSG_NOTICE([run 'make expansion-modern-boot-check MODERN_CONFIG=debug' explicitly])],
+    [AC_MSG_NOTICE([run 'make' to build the configured modern release ROM])])
 AC_OUTPUT

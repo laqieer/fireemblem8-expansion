@@ -37,6 +37,10 @@
 #if !defined(FE8_ARCHIVAL_BUILD) && FE8_CHAPTER_OBJECTIVES_ENABLED
 #include "expansion_chapter_objectives.h"
 #endif
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#include "expansion_autoplay_planner.h"
+#endif
 #include "EAstdlib.h"
 #include "constants/backgrounds.h"
 #include "eventcall.h"
@@ -45,6 +49,13 @@
 #include "bmfx.h"
 #include "colorfade.h"
 #include "constants/songs.h"
+
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#define EVENT_PLANNER_CHAPTER_TRANSITION EV_STATE_PLANNER_CHAPTER_TRANSITION
+#else
+#define EVENT_PLANNER_CHAPTER_TRANSITION 0
+#endif
 
 void BgChangeChr(int, int);
 
@@ -2139,7 +2150,7 @@ u8 Event2A_MoveToChapter(struct EventEngineProc * proc)
         gPlaySt.save_menu_type = 1;
 
         SetNextGameActionId(GAME_ACTION_CLASS_REEL);
-        proc->evStateBits |= EV_STATE_CHANGEGM;
+        proc->evStateBits |= EV_STATE_CHANGEGM | EVENT_PLANNER_CHAPTER_TRANSITION;
 
         break;
 
@@ -2149,11 +2160,16 @@ u8 Event2A_MoveToChapter(struct EventEngineProc * proc)
         gPlaySt.save_menu_type = 2;
 
         SetNextGameActionId(GAME_ACTION_USR_SKIPPED);
-        proc->evStateBits |= EV_STATE_CHANGEGM;
+        proc->evStateBits |= EV_STATE_CHANGEGM | EVENT_PLANNER_CHAPTER_TRANSITION;
 
         break;
 
     case EVSUBCMD_MNC3:
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+        ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+        proc->evStateBits |= EV_STATE_PLANNER_CHAPTER_TRANSITION;
+#endif
         GotoChapterWithoutSave(chIndex);
         break;
 

@@ -1,5 +1,11 @@
 #include "global.h"
 
+#ifndef FE8_ARCHIVAL_BUILD
+#include "bmtarget.h"
+#endif
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#include "action_semantics.h"
+#endif
 #include "bmmap.h"
 #include "bmunit.h"
 #include "uiselecttarget.h"
@@ -14,11 +20,17 @@
 #include "eventinfo.h"
 
 #include "constants/classes.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "constants/items.h"
+#endif
 #include "constants/terrains.h"
 
 struct Unit* EWRAM_DATA gSubjectUnit = NULL;
 
 s8 CanUnitCrossTerrain(struct Unit* unit, int terrain);
+#ifndef FE8_ARCHIVAL_BUILD
+static bool IsObstacleTargetAt(int x, int y);
+#endif
 
 void ForEachUnitInMovement(void(*func)(struct Unit* unit)) {
     int ix;
@@ -156,6 +168,7 @@ void TryAddTrapsToTargetList(void) {
             continue;
         }
 
+#ifdef FE8_ARCHIVAL_BUILD
         if ((gBmMapTerrain[trap->yPos][trap->xPos] == TERRAIN_WALL_DAMAGED) && (gMapRangeSigned[trap->yPos][trap->xPos] != 0)) {
             AddTarget(trap->xPos, trap->yPos, 0, trap->extra);
         }
@@ -167,10 +180,92 @@ void TryAddTrapsToTargetList(void) {
         if ((gBmMapTerrain[trap->yPos][trap->xPos] == TERRAIN_SNAG) && (gMapRangeSigned[trap->yPos][trap->xPos] != 0)) {
             AddTarget(trap->xPos, trap->yPos, 0, trap->extra);
         }
+#else
+        if (IsObstacleTargetAt(trap->xPos, trap->yPos)
+            && gMapRangeSigned[trap->yPos][trap->xPos] != 0)
+            AddTarget(trap->xPos, trap->yPos, 0, trap->extra);
+        if (trap->yPos + 1 < gBmMapSize.y
+            && IsObstacleTargetAt(trap->xPos, trap->yPos + 1)
+            && gMapRangeSigned[trap->yPos + 1][trap->xPos] != 0)
+            AddTarget(trap->xPos, trap->yPos + 1, 0, trap->extra);
+#endif
     }
 
     return;
 }
+
+#ifndef FE8_ARCHIVAL_BUILD
+struct Trap* GetObstacleTrapForTarget(int x, int y)
+{
+    struct Trap* trap;
+
+    for (trap = GetTrap(0); trap->type != TRAP_NONE; ++trap)
+        if (trap->xPos == x && trap->yPos == y)
+            return trap->type == TRAP_OBSTACLE ? trap : NULL;
+    if (y <= 0
+        || gBmMapTerrain[y][x] != TERRAIN_WALL_DAMAGED
+        || gBmMapTerrain[y - 1][x] != TERRAIN_WALL_DAMAGED)
+        return NULL;
+    for (trap = GetTrap(0); trap->type != TRAP_NONE; ++trap)
+        if (trap->xPos == x && trap->yPos == y - 1)
+            return trap->type == TRAP_OBSTACLE ? trap : NULL;
+    return NULL;
+}
+
+bool IsSnagObstacleTarget(int x, int y)
+{
+    struct Trap* trap;
+
+    if (x < 0 || x >= gBmMapSize.x
+        || y < 0 || y >= gBmMapSize.y
+        || gBmMapTerrain[y][x] != TERRAIN_SNAG)
+        return false;
+    trap = GetTrapAt(x, y);
+    return trap != NULL && trap->type == TRAP_OBSTACLE;
+}
+
+static bool IsObstacleTargetAt(int x, int y)
+{
+    if (x < 0 || x >= gBmMapSize.x
+        || y < 0 || y >= gBmMapSize.y)
+        return false;
+    return gBmMapUnit[y][x] == 0 && GetObstacleTrapForTarget(x, y) != NULL
+        && (gBmMapTerrain[y][x] == TERRAIN_SNAG
+            || gBmMapTerrain[y][x] == TERRAIN_WALL_DAMAGED);
+}
+
+bool IsSnagAttackTargetAt(
+    int item,
+    int x,
+    int y,
+    int targetX,
+    int targetY)
+{
+    int distance;
+
+    if (!IsSnagObstacleTarget(targetX, targetY))
+        return false;
+    distance = ABS(x - targetX) + ABS(y - targetY);
+    return distance >= GetItemMinRange(item)
+        && distance <= GetItemMaxRange(item);
+}
+
+bool IsObstacleAttackTargetAt(
+    int item,
+    int x,
+    int y,
+    int targetX,
+    int targetY)
+{
+    int distance;
+
+    if (!IsObstacleTargetAt(targetX, targetY))
+        return false;
+    distance = ABS(x - targetX) + ABS(y - targetY);
+    return distance >= GetItemMinRange(item)
+        && distance <= GetItemMaxRange(item);
+}
+#endif
 
 void AddUnitToTargetListIfNotAllied(struct Unit* unit) {
 
@@ -506,6 +601,16 @@ void FillBallistaRangeMaybe(struct Unit* unit) {
 
 void TryAddClosedDoorToTargetList(int x, int y) {
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_IsUnlockStaffTarget(
+            gSubjectUnit,
+            gSubjectUnit->xPos,
+            gSubjectUnit->yPos,
+            x,
+            y)) {
+        return;
+    }
+#else
     if (gBmMapTerrain[y][x] != TERRAIN_DOOR) {
         return;
     }
@@ -513,6 +618,7 @@ void TryAddClosedDoorToTargetList(int x, int y) {
     if (!IsThereClosedDoorAt(x, y)) {
         return;
     }
+#endif
 
     AddTarget(x, y, TERRAIN_DOOR, 0);
 
@@ -555,6 +661,15 @@ void MakeTargetListForDoorAndBridges(struct Unit* unit, int terrainId) {
 }
 
 void TryAddDoorOrBridgeToTargetList(int x, int y) {
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_IsPickTarget(
+            gSubjectUnit->xPos,
+            gSubjectUnit->yPos,
+            x,
+            y)) {
+        return;
+    }
+#endif
     switch (gBmMapTerrain[y][x]) {
         case TERRAIN_DOOR:
             AddTarget(x, y, TERRAIN_DOOR, 0);
@@ -577,7 +692,11 @@ void MakeTargetListForPick(struct Unit* unit) {
 
     ForEachAdjacentPosition(x, y, TryAddDoorOrBridgeToTargetList);
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (ActionSemantics_IsPickTarget(x, y, x, y)) {
+#else
     if (gBmMapTerrain[unit->yPos][unit->xPos] == TERRAIN_CHEST_FULL) {
+#endif
         AddTarget(x, y, TERRAIN_CHEST_FULL, 0);
     }
 
@@ -801,6 +920,16 @@ void MakeTargetListForSteal(struct Unit* unit) {
 
 void AddAsTarget_IfPositionCleanForSummon(int x, int y) {
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_IsNormalSummonTarget(
+            gSubjectUnit,
+            gSubjectUnit->xPos,
+            gSubjectUnit->yPos,
+            x,
+            y)) {
+        return;
+    }
+#else
     if (gBmMapUnit[y][x] != 0) {
         return;
     }
@@ -812,6 +941,7 @@ void AddAsTarget_IfPositionCleanForSummon(int x, int y) {
     if (!CanUnitCrossTerrain(gSubjectUnit, gBmMapTerrain[y][x])) {
         return;
     }
+#endif
 
     AddTarget(x, y, 0, 0);
 
@@ -902,8 +1032,21 @@ void MakeSummonTargetListNorth(struct Unit* unit) {
     return;
 }
 
-void TryAddUnitToHealTargetList(struct Unit* unit) {
+#ifndef FE8_ARCHIVAL_BUILD
+bool IsUnitInHealTargetList(
+    const struct Unit* subject,
+    const struct Unit* unit)
+{
+    return UNIT_IS_VALID(unit)
+        && AreUnitsAllied(subject->index, unit->index)
+        && !(unit->state & US_RESCUED)
+        && GetUnitCurrentHp((struct Unit*)unit)
+            < GetUnitMaxHp((struct Unit*)unit);
+}
+#endif
 
+void TryAddUnitToHealTargetList(struct Unit* unit) {
+#ifdef FE8_ARCHIVAL_BUILD
     if (!AreUnitsAllied(gSubjectUnit->index, unit->index)) {
         return;
     }
@@ -915,11 +1058,41 @@ void TryAddUnitToHealTargetList(struct Unit* unit) {
     if (GetUnitCurrentHp(unit) == GetUnitMaxHp(unit)) {
         return;
     }
+#else
+    if (!IsUnitInHealTargetList(gSubjectUnit, unit))
+        return;
+#endif
 
     AddTarget(unit->xPos, unit->yPos, unit->index, 0);
 
     return;
 }
+
+#ifndef FE8_ARCHIVAL_BUILD
+bool HasRangedHealTargetAt(
+    const struct Unit* subject,
+    int x,
+    int y)
+{
+    int unitId;
+    int range = GetUnitMagBy2Range((struct Unit*)subject);
+
+    for (unitId = 1; unitId < 0xC0; unitId++)
+    {
+        struct Unit* unit = GetUnit(unitId);
+        int distance;
+
+        if (unit == subject
+            || !IsUnitInHealTargetList(subject, unit)
+            || (unit->state & (US_UNAVAILABLE | US_HIDDEN)))
+            continue;
+        distance = ABS(x - unit->xPos) + ABS(y - unit->yPos);
+        if (distance >= 1 && distance <= range)
+            return true;
+    }
+    return false;
+}
+#endif
 
 void MakeTargetListForAdjacentHeal(struct Unit* unit) {
     int x = unit->xPos;
@@ -1180,7 +1353,28 @@ void MakeTargetListForUnlock(struct Unit* unit) {
     return;
 }
 
+#ifndef FE8_ARCHIVAL_BUILD
+bool IsUnitInHammerneTargetList(
+    const struct Unit* subject,
+    const struct Unit* unit)
+{
+    int i;
+
+    if (!UNIT_IS_VALID(unit)
+        || !IsSameAllegiance(subject->index, unit->index))
+        return false;
+
+    for (i = 0; i < UNIT_ITEM_COUNT; i++) {
+        if (IsItemHammernable(unit->items[i]))
+            return true;
+    }
+
+    return false;
+}
+#endif
+
 void TryAddUnitToHammerneTargetList(struct Unit* unit) {
+#ifdef FE8_ARCHIVAL_BUILD
     int i;
 
     if (!IsSameAllegiance(gSubjectUnit->index, unit->index)) {
@@ -1193,8 +1387,12 @@ void TryAddUnitToHammerneTargetList(struct Unit* unit) {
             break;
         }
     }
+#else
+    if (!IsUnitInHammerneTargetList(gSubjectUnit, unit))
+        return;
 
-    return;
+    AddTarget(unit->xPos, unit->yPos, unit->index, 0);
+#endif
 }
 
 void MakeTargetListForHammerne(struct Unit* unit) {
@@ -1221,6 +1419,7 @@ void MakeTargetListForLatona(struct Unit* unit) {
     for (i = phase + 1; i < phase + 0x80; i++) {
         struct Unit* other = GetUnit(i);
 
+#ifdef FE8_ARCHIVAL_BUILD
         if (!UNIT_IS_VALID(other)) {
             continue;
         }
@@ -1236,12 +1435,107 @@ void MakeTargetListForLatona(struct Unit* unit) {
         if (other == unit) {
             continue;
         }
+#else
+        if (!IsUnitInLatonaTargetList(unit, other))
+            continue;
+#endif
 
         AddTarget(other->xPos, other->yPos, other->index, 0);
     }
 
     return;
 }
+
+#ifndef FE8_ARCHIVAL_BUILD
+bool IsUnitInLatonaTargetList(
+    const struct Unit* subject,
+    const struct Unit* unit)
+{
+    return UNIT_IS_VALID(unit)
+        && !(unit->state & US_UNAVAILABLE)
+        && unit != subject
+        && (GetUnitCurrentHp((struct Unit*)unit)
+                < GetUnitMaxHp((struct Unit*)unit)
+            || unit->statusIndex != UNIT_STATUS_NONE);
+}
+
+bool HasLatonaTarget(const struct Unit* subject)
+{
+    int phase = GetCurrentPhase();
+    int unitId;
+
+    for (unitId = phase + 1; unitId < phase + 0x80; unitId++)
+    {
+        struct Unit* unit = GetUnit(unitId);
+
+        if (IsUnitInLatonaTargetList(subject, unit))
+            return true;
+    }
+    return false;
+}
+
+bool IsUnitInStaffTargetListAt(
+    struct Unit* subject,
+    struct Unit* unit,
+    int item,
+    int x,
+    int y)
+{
+    int itemId = GetItemIndex(item);
+    int range = GetItemMaxRange(item);
+    int distance;
+    bool allied;
+
+    if (!UNIT_IS_VALID(unit) || unit == subject)
+        return false;
+    distance = ABS(x - unit->xPos) + ABS(y - unit->yPos);
+    if (range == 0)
+        range = GetUnitMagBy2Range(subject);
+    if (distance < GetItemMinRange(item) || distance > range)
+        return false;
+    allied = AreUnitsAllied(subject->index, unit->index);
+
+    switch (itemId)
+    {
+    case ITEM_STAFF_HEAL:
+    case ITEM_STAFF_MEND:
+    case ITEM_STAFF_RECOVER:
+    case ITEM_STAFF_PHYSIC:
+        return IsUnitInHealTargetList(subject, unit);
+
+    case ITEM_STAFF_RESTORE:
+        return allied && unit->statusIndex != UNIT_STATUS_NONE;
+
+    case ITEM_STAFF_RESCUE:
+    case ITEM_STAFF_WARP:
+        return allied;
+
+    case ITEM_STAFF_REPAIR:
+        return IsUnitInHammerneTargetList(subject, unit);
+
+    case ITEM_STAFF_BARRIER:
+        return allied && unit->barrierDuration < 7;
+
+    case ITEM_STAFF_SILENCE:
+        return !allied
+            && (unit->statusIndex == UNIT_STATUS_NONE
+                || unit->statusIndex == UNIT_STATUS_SILENCED);
+
+    case ITEM_STAFF_SLEEP:
+        return !allied
+            && (unit->statusIndex == UNIT_STATUS_NONE
+                || unit->statusIndex == UNIT_STATUS_SLEEP);
+
+    case ITEM_STAFF_BERSERK:
+        return !allied
+            && (unit->statusIndex == UNIT_STATUS_NONE
+                || unit->statusIndex == UNIT_STATUS_BERSERK);
+
+    default:
+        return false;
+    }
+}
+#endif
 
 void PidStatsRecordTargetListDeaths(int unk) {
     int i;
@@ -1262,6 +1556,13 @@ void PidStatsRecordTargetListDeaths(int unk) {
 }
 
 void TryAddToMineTargetList(int x, int y) {
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_IsTargetedItemTarget(
+            gSubjectUnit, NULL, ITEM_MINE,
+            gSubjectUnit->xPos, gSubjectUnit->yPos, x, y))
+        return;
+#else
     struct Trap* trap;
 
     if (gBmMapUnit[y][x] != 0) {
@@ -1281,6 +1582,7 @@ void TryAddToMineTargetList(int x, int y) {
     if ((trap != 0) && (trap->type != TRAP_TORCHLIGHT)) {
         return;
     }
+#endif
 
     AddTarget(x, y, 0, 0);
 
@@ -1300,6 +1602,13 @@ void MakeTargetListForMine(struct Unit* unit) {
 }
 
 void TryAddToLightRuneTargetList(int x, int y) {
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_IsTargetedItemTarget(
+            gSubjectUnit, NULL, ITEM_LIGHTRUNE,
+            gSubjectUnit->xPos, gSubjectUnit->yPos, x, y))
+        return;
+#else
     struct Trap* trap;
 
     if (gBmMapUnit[y][x] != 0) {
@@ -1315,6 +1624,7 @@ void TryAddToLightRuneTargetList(int x, int y) {
     if (TerrainTable_MovCost_FlyNormal[gBmMapTerrain[y][x]] <= 0) {
         return;
     }
+#endif
 
     AddTarget(x, y, 0, 0);
 
@@ -1335,7 +1645,14 @@ void MakeTargetListForLightRune(struct Unit* unit) {
 }
 
 void TryAddUnitToDanceRingTargetList(struct Unit* unit) {
-
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    if (!ActionSemantics_IsTargetedItemTarget(
+            gSubjectUnit, unit, ITEM_FILLAS_MIGHT,
+            gSubjectUnit->xPos, gSubjectUnit->yPos,
+            unit->xPos, unit->yPos))
+        return;
+#else
     if (UNIT_FACTION(unit) != FACTION_BLUE) {
         return;
     }
@@ -1343,6 +1660,7 @@ void TryAddUnitToDanceRingTargetList(struct Unit* unit) {
     if (unit->statusIndex != UNIT_STATUS_NONE) {
         return;
     }
+#endif
 
     AddTarget(unit->xPos, unit->yPos, unit->index, 0);
 

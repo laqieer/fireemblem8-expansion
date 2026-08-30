@@ -12,6 +12,21 @@ void ForEachUnitInRange(void(* func)(struct Unit * unit));
 // ??? TryAddTrapsToTargetList(???);
 void AddUnitToTargetListIfNotAllied(struct Unit * unit);
 void MakeTargetListForWeapon(struct Unit* unit, int item);
+#ifndef FE8_ARCHIVAL_BUILD
+bool IsSnagObstacleTarget(int x, int y);
+bool IsSnagAttackTargetAt(
+    int item,
+    int x,
+    int y,
+    int targetX,
+    int targetY);
+bool IsObstacleAttackTargetAt(
+    int item,
+    int x,
+    int y,
+    int targetX,
+    int targetY);
+#endif
 // ??? TryAddUnitToTradeTargetList(???);
 void MakeTradeTargetList(struct Unit* unit);
 // ??? TryAddUnitToRescueTargetList(???);
@@ -69,6 +84,28 @@ void MakeTargetListForUnlock(struct Unit* unit);
 // ??? TryAddUnitToHammerneTargetList(???);
 void MakeTargetListForHammerne(struct Unit* unit);
 void MakeTargetListForLatona(struct Unit* unit);
+#ifndef FE8_ARCHIVAL_BUILD
+bool IsUnitInHealTargetList(
+    const struct Unit* subject,
+    const struct Unit* unit);
+bool HasRangedHealTargetAt(
+    const struct Unit* subject,
+    int x,
+    int y);
+bool IsUnitInHammerneTargetList(
+    const struct Unit* subject,
+    const struct Unit* unit);
+bool IsUnitInLatonaTargetList(
+    const struct Unit* subject,
+    const struct Unit* unit);
+bool HasLatonaTarget(const struct Unit* subject);
+bool IsUnitInStaffTargetListAt(
+    struct Unit* subject,
+    struct Unit* unit,
+    int item,
+    int x,
+    int y);
+#endif
 void PidStatsRecordTargetListDeaths(int unk);
 // ??? TryAddToMineTargetList(???);
 void MakeTargetListForMine(struct Unit* unit);

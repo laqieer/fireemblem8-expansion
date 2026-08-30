@@ -18,6 +18,7 @@
       "typed-chapter-autoplay-objectives",
       "typed-autoplay-strategy-profiles",
       "deterministic-autoplay-batch-reports",
+      "local-external-autoplay-planner",
       "transient-debugtools-phase-control",
       "accelerated-fidelity-harness",
       "custom-spell-runtime",
@@ -304,6 +305,18 @@
       "status": "current",
       "required_cases": [
         "TC-AUTOPLAY-001"
+      ]
+    },
+    {
+      "id": "local-external-autoplay-planner",
+      "title": "Local external autoplay planner bridge",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/92"
+      ],
+      "reference": "docs/autoplay.md",
+      "status": "current",
+      "required_cases": [
+        "TC-AUTOPLAY-PLANNER-001"
       ]
     },
     {
@@ -2481,6 +2494,44 @@
         {
           "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_batch.AutoplayBatchLibmGBAIntegrationTests.test_three_seed_clean_boot_fixture_is_serial_parallel_identical -v",
           "evidence": "tools/gba-playtest/tests/test_autoplay_batch.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-AUTOPLAY-PLANNER-001",
+      "title": "Local external planner step and replay contract",
+      "feature_id": "local-external-autoplay-planner",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/92"
+      ],
+      "document": "docs/test-cases/autoplay.md",
+      "anchor": "tc-autoplay-planner-001-local-external-planner-step-and-replay-contract",
+      "profiles": [
+        "Modern AAPCS debug with EXPANSION_AUTOPLAY_PLANNER=1",
+        "Clean-boot production-linked multi-chapter ROM with fixed-symbol stdin/stdout libmGBA transport",
+        "Enabled full expansion debug ROM driven through the same restricted transport"
+      ],
+      "purpose": "Prove fixed-width START provenance, typed summary/map/unit/inventory/resource/flag/action pages, complete non-mutating 512-candidate legal-action enumeration including stationary Wait and unit-first/row-major unoccupied ballista obstacles, coordinate and inventory-slot execution identity, opaque 128-bit token commit/rejection, exact-schema canonical production transcript replay, bounded polling, three chapter-transition forms, and replaceable scripted/search planners.",
+      "prerequisites": "Repository root with Python 3, host C compiler, ARM toolchain, libmGBA development files, exact debug provenance, and blank in-memory SRAM; no save fixture, savestate, or network.",
+      "actions": "Run PlannerBridgeTests, both host-driven PlannerLibmGBAIntegrationTests, make expansion-modern-autoplay-planner-check, then configure --enable-autoplay-planner, execute bare make for the release fail-closed control, and execute the explicit debug target plus explicit release-negative command.",
+      "expected_result": "Both planners traverse one ordered v2 sequence of 1024-byte pages whose shared validator proves canonical map, rich 40-byte unit, inventory, resource, flag, action, and fixed summary-campaign records before selection. Unit records expose explicit status/movement/rescue/death/equipment/stats/ranks; the summary exposes phase/chapter/route, all bounded #89 objectives/groups and #90 strategies/assignments/capabilities with availability. Maximum data plus 512 actions remains exactly 92 pages; each nonzero page carries a canonical digest at byte 1020 that is validated before exposure or parsing. Trusted caller context applies complete production validation independently of transcript identities; every non-control seed/scenario identity is derived from its RN/LCG and chapter/map fields. Bounded fixtures explicitly select synthetic validation. Every item action token/candidate set binds its actor slot and raw item; Hammerne also binds its target slot/raw item. Direct trap data wins in GetObstacleHpAt before the paired-wall fallback; damaged-wall lower targets require the same two-wall terrain pair as production, and all four dance rings reject unavailable, hidden, or rescued targets. Complete READY validation precedes all state/stdin exposure. Commands receive exact ACK/COMPLETE/response/settled stages and clean replay; settlements bind all cleared command words and derivable checkpoint state before factory creation. A checkpoint may be replaced only by accepted COMMIT settling into a changed chapter, supporting repeated transitions while same-chapter and other traffic preserve it. Destructive resets preserve a monotonic boot-lifetime run counter and prior-run tokens cannot commit identical later candidates. Typed terminal transport errors bind the pending command/stage and fault replay exactly. Rejected responses preserve prior runtime state. Unsigned command words are host-width independent, scenario boundaries compile distinctly, and the backend advances WAITING at fixed cadence under one monotonic five-second deadline despite silence/partial/noisy input. The authoritative Make target discovers the entire Bridge class before selected libmGBA scenarios. The enabled-minus-disabled full-link gate reports 12272/12288 ROM bytes, 1172/4096 EWRAM, zero IWRAM, requires 14 exact enabled caller/callee references, no disabled references or planner symbols, and rejects removed/redirected calls or a 12289-byte delta. Stationary Wait, complete Pick slots, opaque tokens, MNCH/MNC2/MNC3 checkpoints, restricted commands, configure compatibility, and archival isolation remain satisfied.",
+      "negative_control": "Silent, partial-line, READ, malformed, and unknown-command floods cannot extend the absolute decision deadline; timeout publishes the ROM terminal, clears checkpoint, and restores control. CANCEL accepts only result=0/rejection=CANCELLED plus its terminal and cleared checkpoint. Accepted START cannot remain READY or enter an arbitrary state; accepted COMMIT cannot reuse its prior observation/state or alter invalid provenance. Later-page/transition seed, scenario, and map-input mutations reject pre-factory. A malformed later page, settlement, or cross-page record rolls transcript and transport state back exactly before planner/replay exposure. Missing, wrong, stale, or bit-flipped page digests, nonzero reserved payload, altered cleared command words, stale repeated-transition checkpoints, same-chapter/wrong-stage replacement, standalone or mutated derivable checkpoints, and terminal checkpoint retention reject pre-factory. Top-left obstacle combat requires published Snag/damaged-wall terrain; unrelated Snag/obstacle-above-wall, absent, edge, destroyed, and stale wall forms reject while a direct ballista or Snag trap remains authoritative. Every unavailable-state bit and stale dance-ring map/target rejects before COMMIT or execution. Empty terrain and ambiguous unit-target coordinates reject. Actor item ID/use/slot and Hammerne target item/slot mutations reject stale COMMIT before execution; unrelated unusable inventory remains accepted. Repeated destructive resets and counter wrap cannot reuse run/observation IDs; an old token rejects before execution. Any malformed READY header, state, rejection, provenance, runtime, payload, or reserved word exits before stdout/stdin. Re-chained zero or mismatched production identities and serialized validation-mode fields reject before replay transport creation; transcript data cannot select synthetic validation. Standalone, altered, wrong-stage, duplicate, or late transport errors reject pre-factory; ACK/response/action error codes cannot cross their stage matrix. Invalid unit/campaign availability, status/rescue/death/moved/equipment/rank, objective/group/strategy/assignment/capability, page, coordinate, candidate, rejected-response, scalar/schema/depth/nonfinite, signed/prefixed/overflowing command, scenario override, ACK/timing, provenance, token, Pick, flag-domain, lifecycle, layout, and full-linked-budget mutations fail before their protected boundary. STEP/RUN/key/frame/memory/save/savestate/network/model surfaces remain absent, release rejects the planner, and archival behavior remains unchanged.",
+      "interactions": "PR #150 is based directly on master. Issues #85, #86, #89, #90, and #91 are delivered dependencies, not current stack parents; #87 is unrelated and #88 remains optional integration. The bridge adds no second router or policy model.",
+      "save_compatibility": "Fresh in-memory SRAM only; no save field, loaded save fixture, savestate, migration, preference, or compatibility-epoch change.",
+      "cleanup": "The generated fixture is removed under ignored build/test-artifacts.",
+      "limitations": "Proves a bounded local interface and replay, not human-like play, optimality, balance, or campaign viability.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests -v",
+          "evidence": "tools/gba-playtest/tests/test_autoplay_planner.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests -v",
+          "evidence": "tools/gba-playtest/tests/test_autoplay_planner.py"
+        },
+        {
+          "command": "make expansion-modern-autoplay-planner-check",
+          "evidence": "modern.mk"
         }
       ]
     },

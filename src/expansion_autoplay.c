@@ -10,6 +10,7 @@
 #include "constants/event-flags.h"
 
 #include "expansion_autoplay_internal.h"
+#include "expansion_autoplay_planner.h"
 #include "expansion_autoplay_strategies.h"
 
 typedef char ExpansionAutoplayTelemetrySizeCheck[
@@ -24,6 +25,10 @@ typedef char ExpansionAutoplayTelemetrySizeCheck[
 
 static u32 EXPANSION_AUTOPLAY_IWRAM_DATA sExpansionBlueControl =
     EXPANSION_BLUE_CONTROL_PLAYER;
+#if (FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG) \
+    || FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+EWRAM_DATA static bool sPlannerRestorePlayerControl;
+#endif
 struct ExpansionAutoplayTelemetry EXPANSION_AUTOPLAY_IWRAM_DATA
     gExpansionAutoplayTelemetry = { 0 };
 #if FE8_AUTOPLAY_EVENT_TRACE_TEST
@@ -54,7 +59,7 @@ static void SetFailure(enum ExpansionAutoplayFailure failure)
     gExpansionAutoplayTelemetry.failure = failure;
 }
 
-void ExpansionAutoplay_Reset(void)
+static void ResetAutoplayState(bool preservePlannerCampaign)
 {
     u8* byte = (u8*)&gExpansionAutoplayTelemetry;
 #if FE8_AUTOPLAY_EVENT_TRACE_TEST
@@ -73,10 +78,31 @@ void ExpansionAutoplay_Reset(void)
 #endif
 
     sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
+#if (FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG) \
+    || FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+    sPlannerRestorePlayerControl = false;
+#endif
     gExpansionAutoplayTelemetry.controller = EXPANSION_BLUE_CONTROL_PLAYER;
 #if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
     ExpansionAutoplayStrategies_ResetPendingActivation();
 #endif
+#if (FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG) \
+    || FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+    if (preservePlannerCampaign)
+        ExpansionAutoplayPlanner_OnMapReset();
+    else
+        ExpansionAutoplayPlanner_Reset();
+#endif
+}
+
+void ExpansionAutoplay_Reset(void)
+{
+    ResetAutoplayState(false);
+}
+
+void ExpansionAutoplay_ResetForChapterTransition(void)
+{
+    ResetAutoplayState(true);
 }
 
 enum ExpansionAutoplayResult ExpansionAutoplay_SetBlueControl(enum ExpansionBlueControl control)
@@ -181,6 +207,9 @@ bool ExpansionAutoplay_IsActionSupported(u8 actionId)
     case AI_ACTION_DKNIGHTMARE:
     case AI_ACTION_DKSUMMON:
     case AI_ACTION_PICK:
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    case AI_ACTION_SUMMON:
+#endif
         return true;
 
     case AI_ACTION_ESCAPE:
@@ -199,6 +228,10 @@ void ExpansionAutoplay_OnPlayerPhaseStart(void)
 {
     if (gExpansionAutoplayTelemetry.state != EXPANSION_AUTOPLAY_STATE_FAILURE)
         gExpansionAutoplayTelemetry.state = EXPANSION_AUTOPLAY_STATE_PLAYER_PHASE;
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+    ExpansionAutoplayPlanner_RecordCampaignCheckpoint();
+    ExpansionAutoplayPlanner_OnMapReady();
+#endif
 }
 
 void ExpansionAutoplay_OnBlueComputerPhaseStart(void)
@@ -222,6 +255,15 @@ void ExpansionAutoplay_OnBlueComputerPhaseComplete(void)
 #if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
         ExpansionAutoplayStrategies_ResetPendingActivation();
 #endif
+#if (FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG) \
+    || FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+        if (sPlannerRestorePlayerControl)
+        {
+            sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
+            gExpansionAutoplayTelemetry.controller = EXPANSION_BLUE_CONTROL_PLAYER;
+            sPlannerRestorePlayerControl = false;
+        }
+#endif
         return;
     }
 
@@ -239,6 +281,23 @@ void ExpansionAutoplay_OnBlueComputerPhaseComplete(void)
     gExpansionAutoplayTelemetry.state = EXPANSION_AUTOPLAY_STATE_COMPUTER_PHASE_COMPLETE;
 #if !defined(FE8_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT)
     ExpansionAutoplayStrategies_ApplyPendingActivation();
+#endif
+#if (FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG) \
+    || FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+    if (sPlannerRestorePlayerControl)
+    {
+        sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
+        gExpansionAutoplayTelemetry.controller = EXPANSION_BLUE_CONTROL_PLAYER;
+        sPlannerRestorePlayerControl = false;
+    }
+#endif
+}
+
+void ExpansionAutoplay_RequestPlayerControlRestore(void)
+{
+#if (FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG) \
+    || FE8_AUTOPLAY_PLANNER_RESTORE_TEST
+    sPlannerRestorePlayerControl = true;
 #endif
 }
 

@@ -250,20 +250,21 @@ int GetObstacleHpAt(int x, int y)
 {
     struct Trap* trap;
 
+#ifdef FE8_ARCHIVAL_BUILD
     if ((trap = GetTrapAt(x, y)) != NULL)
-    {
         return trap->extra;
-    }
-
-    if ((gBmMapTerrain[y][x] == TERRAIN_WALL_DAMAGED) && (gBmMapTerrain[y-1][x] == TERRAIN_WALL_DAMAGED))
-    {
-        if ((trap = GetTrapAt(x, y-1)) != NULL)
-        {
-            return trap->extra;
-        }
-    }
-
+    if ((gBmMapTerrain[y][x] == TERRAIN_WALL_DAMAGED)
+        && (gBmMapTerrain[y-1][x] == TERRAIN_WALL_DAMAGED)
+        && (trap = GetTrapAt(x, y-1)) != NULL)
+        return trap->extra;
     return 0;
+#else
+    for (trap = GetTrap(0); trap->type != TRAP_NONE; ++trap)
+        if (trap->xPos == x && trap->yPos == y)
+            return trap->extra;
+    trap = GetObstacleTrapForTarget(x, y);
+    return trap == NULL ? 0 : trap->extra;
+#endif
 }
 
 const struct MapChange* GetMapChange(int id)

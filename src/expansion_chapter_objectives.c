@@ -140,11 +140,21 @@ static struct ObjectiveResult GetGroupAreaResult(
     return result;
 }
 
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+#define OBJECTIVE_TRANSITION_PARAMETER , bool applyTransitions
+#define OBJECTIVE_TRANSITION_FORWARD , applyTransitions
+#define OBJECTIVE_TRANSITION_APPLY , true
+#else
+#define OBJECTIVE_TRANSITION_PARAMETER
+#define OBJECTIVE_TRANSITION_FORWARD
+#define OBJECTIVE_TRANSITION_APPLY
+#endif
+
 static struct ObjectiveResult EvaluateObjective(
     const struct ObjectiveEvaluationContext* context,
     const struct ExpansionChapterObjectiveBundle* bundle,
     const struct ExpansionChapterObjective* objective,
-    int depth)
+    int depth OBJECTIVE_TRANSITION_PARAMETER)
 {
     struct ObjectiveResult result = { EXPANSION_CHAPTER_OBJECTIVE_PENDING, 0 };
 
@@ -198,10 +208,14 @@ static struct ObjectiveResult EvaluateObjective(
             return result;
         }
 
-        result = EvaluateObjective(context, bundle, completion, depth + 1);
+        result = EvaluateObjective(
+            context, bundle, completion, depth + 1 OBJECTIVE_TRANSITION_FORWARD);
         if (result.state == EXPANSION_CHAPTER_OBJECTIVE_SUCCESS)
         {
-            SetFlag(objective->completionFlag);
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+            if (applyTransitions)
+#endif
+                SetFlag(objective->completionFlag);
             return result;
         }
 
@@ -214,7 +228,10 @@ static struct ObjectiveResult EvaluateObjective(
         protectedState = GetUnitObjectiveState(context, objective->protectedCharacter);
         if (protectedState != UNIT_OBJECTIVE_ALIVE)
         {
-            SetFlag(objective->eventFlag);
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+            if (applyTransitions)
+#endif
+                SetFlag(objective->eventFlag);
             result.state = EXPANSION_CHAPTER_OBJECTIVE_FAILURE;
             result.progress = 0;
             return result;
@@ -274,7 +291,10 @@ static struct ObjectiveResult EvaluateObjective(
         result = GetGroupAreaResult(context, objective->group, objective);
         if (result.state != EXPANSION_CHAPTER_OBJECTIVE_SUCCESS)
         {
-            SetFlag(objective->eventFlag);
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+            if (applyTransitions)
+#endif
+                SetFlag(objective->eventFlag);
             result.state = EXPANSION_CHAPTER_OBJECTIVE_FAILURE;
             return result;
         }
@@ -547,7 +567,8 @@ void ExpansionChapterObjectives_RefreshTelemetry(void)
     for (index = 0; index < bundle->objectiveCount; index++)
     {
         const struct ExpansionChapterObjective* objective = &bundle->objectives[index];
-        struct ObjectiveResult result = EvaluateObjective(&context, bundle, objective, 0);
+        struct ObjectiveResult result =
+            EvaluateObjective(&context, bundle, objective, 0 OBJECTIVE_TRANSITION_APPLY);
         int priority = ObjectivePriority(result.state);
 
         if (result.state != EXPANSION_CHAPTER_OBJECTIVE_INACTIVE)
@@ -584,7 +605,9 @@ enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetStatus(u32 obj
     {
         if (bundle->objectives[index].id == objectiveId)
         {
-            struct ObjectiveResult result = EvaluateObjective(NULL, bundle, &bundle->objectives[index], 0);
+            struct ObjectiveResult result =
+                EvaluateObjective(
+                    NULL, bundle, &bundle->objectives[index], 0 OBJECTIVE_TRANSITION_APPLY);
 
             if (progressOut != NULL)
                 *progressOut = result.progress;
@@ -594,6 +617,37 @@ enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetStatus(u32 obj
 
     return EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
 }
+
+#if FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG
+const struct ExpansionChapterObjectiveBundle* ExpansionChapterObjectives_GetCurrentBundle(void)
+{
+    return GetCurrentBundle();
+}
+
+enum ExpansionChapterObjectiveState ExpansionChapterObjectives_GetSnapshot(
+    u32 objectiveId, u32* progressOut)
+{
+    const struct ExpansionChapterObjectiveBundle* bundle = GetCurrentBundle();
+    int index;
+
+    if (progressOut != NULL)
+        *progressOut = 0;
+    if (!sExpansionChapterObjectivesReady || bundle == NULL)
+        return EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
+    for (index = 0; index < bundle->objectiveCount; index++)
+    {
+        if (bundle->objectives[index].id == objectiveId)
+        {
+            struct ObjectiveResult result =
+                EvaluateObjective(NULL, bundle, &bundle->objectives[index], 0, false);
+            if (progressOut != NULL)
+                *progressOut = result.progress;
+            return result.state;
+        }
+    }
+    return EXPANSION_CHAPTER_OBJECTIVE_INACTIVE;
+}
+#endif
 
 const struct ExpansionChapterObjective* ExpansionChapterObjectives_GetActiveObjective(void)
 {

@@ -80,7 +80,9 @@ void BMapDispResume_FromBattleDelayed(void);
 void RefreshBMapGraphics(void);
 struct BMapMainProc* StartBMapMain(struct GameCtrlProc* gameCtrl);
 void EndBMapMain(void);
-#if FE8_EXPANSION_DEBUGTOOLS_ENABLED && !defined(FE8_ARCHIVAL_BUILD)
+#if !defined(FE8_ARCHIVAL_BUILD) \
+    && (FE8_EXPANSION_DEBUGTOOLS_ENABLED \
+        || (FE8_EXPANSION_AUTOPLAY_PLANNER && FE8_EXPANSION_DEBUG))
 void EndBMapMainForChapterTransition(void);
 #endif
 void ChapterChangeUnitCleanup(void);

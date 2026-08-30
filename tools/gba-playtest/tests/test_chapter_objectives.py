@@ -133,6 +133,8 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
                     "-I",
                     str(ROOT / "include" / "generated"),
                     "-DFE8_EXPANSION_MODERN_BUILD=1",
+                    "-DFE8_EXPANSION_DEBUG=1",
+                    "-DFE8_EXPANSION_AUTOPLAY_PLANNER=1",
                     str(SOURCE),
                     str(generated),
                     str(DRIVER),
@@ -287,7 +289,10 @@ class ChapterObjectivesRuntimeTests(unittest.TestCase):
                 fields = line.split("\t")
                 stack_usage[fields[0].rsplit(":", 1)[-1]] = int(fields[1])
             refresh_stack = stack_usage["ExpansionChapterObjectives_RefreshTelemetry"]
-            evaluate_stack = stack_usage["EvaluateObjective"]
+            evaluate_stack = max(
+                size for name, size in stack_usage.items()
+                if name.startswith("EvaluateObjective")
+            )
             group_stack = max(
                 (size for name, size in stack_usage.items() if name.startswith("GetGroupAreaResult")),
                 default=0,

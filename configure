@@ -626,6 +626,9 @@ FE8_CFG_DEFAULT_LOCALE
 FE8_CFG_ENABLED_LOCALES
 FE8_CFG_PSEUDO_LOCALE
 FE8_CFG_BGM_CONTINUATION_POLICY
+FE8_AUTOTOOLS_DEFAULT_GOAL
+FE8_CFG_MODERN_CONFIG
+FE8_CFG_AUTOPLAY_PLANNER
 FE8_CFG_AUTOPLAY_STRATEGIES
 FE8_CFG_HQ_MIXER
 FE8_CFG_CASUAL_MODE
@@ -693,6 +696,7 @@ enable_localized_text_auto_wrap
 enable_casual_mode
 enable_hq_mixer
 enable_autoplay_strategies
+enable_autoplay_planner
 with_bgm_continuation_policy
 enable_pseudo_locale
 with_enabled_locales
@@ -1348,6 +1352,9 @@ Optional Features:
   --enable-autoplay-strategies
                           enable Aggressive and Objective-first autoplay
                           strategy references
+  --enable-autoplay-planner
+                          enable the local debug-only external autoplay
+                          planner bridge
   --enable-pseudo-locale  enable qps-ploc (also include it in
                           --with-enabled-locales)
 
@@ -2070,6 +2077,22 @@ else $as_nop
 fi
 
 
+# Check whether --enable-autoplay-planner was given.
+if test ${enable_autoplay_planner+y}
+then :
+  enableval=$enable_autoplay_planner; case $enableval in #(
+  yes) :
+    fe8_autoplay_planner=1 ;; #(
+  no) :
+    fe8_autoplay_planner=0 ;; #(
+  *) :
+    as_fn_error $? "--enable-autoplay-planner accepts only yes or no" "$LINENO" 5 ;;
+esac
+else $as_nop
+  fe8_autoplay_planner=
+fi
+
+
 
 # Check whether --with-bgm-continuation-policy was given.
 if test ${with_bgm_continuation_policy+y}
@@ -2252,6 +2275,14 @@ then :
 else $as_nop
   FE8_CFG_AUTOPLAY_STRATEGIES=
 fi
+if test -n "$fe8_autoplay_planner"
+then :
+  FE8_CFG_AUTOPLAY_PLANNER="EXPANSION_AUTOPLAY_PLANNER := $fe8_autoplay_planner"
+else $as_nop
+  FE8_CFG_AUTOPLAY_PLANNER=
+fi
+FE8_CFG_MODERN_CONFIG=
+FE8_AUTOTOOLS_DEFAULT_GOAL=all
 if test -n "$fe8_bgm_continuation_policy"
 then :
   FE8_CFG_BGM_CONTINUATION_POLICY="EXPANSION_BGM_CONTINUATION_POLICY := $fe8_bgm_continuation_policy"
@@ -2313,8 +2344,18 @@ fi
 
 
 
+
+
+
+
+
 fe8_validate_rom_size=${fe8_rom_size:-16M}
 fe8_validate_text_shift=${fe8_text_shift:-0}
+fe8_validate_config=release
+if test "$fe8_autoplay_planner" = 1
+then
+    fe8_validate_config=debug
+fi
 fe8_abs_srcdir=`cd "$srcdir" && pwd`
 
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking configured expansion profile" >&5
@@ -2322,7 +2363,7 @@ printf %s "checking configured expansion profile... " >&6; }
 fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     "$PYTHON" "$fe8_abs_srcdir/scripts/modernize/expansion_config.py" validate \
     --config-mk "$fe8_abs_srcdir/config.mk" \
-    --config release \
+    --config "$fe8_validate_config" \
     --abi aapcs \
     --rom-size "$fe8_validate_rom_size" \
     --text-shift "$fe8_validate_text_shift" \
@@ -2342,6 +2383,7 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --casual-mode "$fe8_casual_mode" \
     --hq-mixer "$fe8_hq_mixer" \
     --autoplay-strategies "$fe8_autoplay_strategies" \
+    --autoplay-planner "$fe8_autoplay_planner" \
     --bgm-continuation-policy "$fe8_bgm_continuation_policy" \
     --item-id-cap "$fe8_item_id_cap" 2>&1`
 fe8_config_status=$?
@@ -2360,8 +2402,16 @@ ac_config_files="$ac_config_files GNUmakefile:GNUmakefile.in config.autotools.mk
 
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: configuration saved in config.autotools.mk" >&5
 printf "%s\n" "$as_me: configuration saved in config.autotools.mk" >&6;}
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: run 'make' to build the configured modern release ROM" >&5
+if test "$fe8_autoplay_planner" = 1
+then :
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: bare 'make' remains release-only and rejects this debug-only planner profile" >&5
+printf "%s\n" "$as_me: bare 'make' remains release-only and rejects this debug-only planner profile" >&6;}
+     { printf "%s\n" "$as_me:${as_lineno-$LINENO}: run 'make expansion-modern-boot-check MODERN_CONFIG=debug' explicitly" >&5
+printf "%s\n" "$as_me: run 'make expansion-modern-boot-check MODERN_CONFIG=debug' explicitly" >&6;}
+else $as_nop
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: run 'make' to build the configured modern release ROM" >&5
 printf "%s\n" "$as_me: run 'make' to build the configured modern release ROM" >&6;}
+fi
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
 # tests run on this system so they can be shared between configure
@@ -3512,4 +3562,5 @@ if test -n "$ac_unrecognized_opts" && test "$enable_option_checking" != no; then
   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: WARNING: unrecognized options: $ac_unrecognized_opts" >&5
 printf "%s\n" "$as_me: WARNING: unrecognized options: $ac_unrecognized_opts" >&2;}
 fi
+
 
