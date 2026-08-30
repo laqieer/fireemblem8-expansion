@@ -30,6 +30,7 @@
     "events.base_changes": 31,
     "events.close_reopen_cycles": 16,
     "events.superseded_candidates": 45,
+    "identities.seal": "47a76d2d74b54937c3713e6f946ae58256aa323e8975c2af391657b0da0bfc18",
     "reviews.rounds": 34,
     "reviews.current_resolved_findings": 101,
     "reviews.current_unresolved_findings": 0,

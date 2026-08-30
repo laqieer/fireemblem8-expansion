@@ -52,9 +52,40 @@ def _split_stdout_redirect(command):
     return argv, subprocess.PIPE
 
 
-def _expand_workspace(argv, cwd):
-    workspace = os.environ.get("GITHUB_WORKSPACE", os.path.abspath(cwd))
-    return [workspace if argument == "$GITHUB_WORKSPACE" else argument for argument in argv]
+def _git_top_level(path):
+    try:
+        return os.path.realpath(
+            subprocess.check_output(
+                ["git", "-C", path, "rev-parse", "--show-toplevel"],
+                stderr=subprocess.PIPE,
+                text=True,
+            ).strip()
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise ValueError(
+            f"{path!r} is not inside a checked-out Git repository"
+        ) from error
+
+
+def _repository_root(cwd):
+    caller_root = _git_top_level(os.path.abspath(cwd))
+    workspace = os.environ.get("GITHUB_WORKSPACE")
+    if workspace is None:
+        return caller_root
+    workspace_root = _git_top_level(os.path.abspath(workspace))
+    if workspace_root != caller_root:
+        raise ValueError(
+            "GITHUB_WORKSPACE and the caller cwd identify different Git "
+            "repositories"
+        )
+    return workspace_root
+
+
+def _expand_workspace(argv, repository_root):
+    return [
+        repository_root if argument == "$GITHUB_WORKSPACE" else argument
+        for argument in argv
+    ]
 
 
 @dataclass
@@ -511,13 +542,14 @@ def run_gates(cwd: str, jobs: int = 2, dry_run: bool = False) -> List[GateResult
     that either.)
     """
     results: List[GateResult] = []
+    repository_root = None if dry_run else _repository_root(cwd)
     for gate in gates(jobs=jobs):
         if dry_run:
             results.append(GateResult(gate=gate, ran=False, returncode=0, stdout="", stderr=""))
             continue
         env_overrides, argv = _split_env_prefix(gate.command)
         argv, stdout = _split_stdout_redirect(argv)
-        argv = _expand_workspace(argv, cwd)
+        argv = _expand_workspace(argv, repository_root)
         child_env = None
         if env_overrides:
             child_env = dict(os.environ)

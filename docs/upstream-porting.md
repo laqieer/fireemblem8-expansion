@@ -189,6 +189,12 @@ standalone issues #7/#17 documentation-governance workflow gate described
 below. The four combined workers run in parallel in CI; `summary` is their
 only serial, fail-closed join. Local `verify` runs the same 28 gates in its
 documented order and therefore does not reproduce CI wall-clock parallelism.
+In CI, `GITHUB_WORKSPACE` and the caller working directory must resolve to the
+same checked-out Git repository. Locally, `verify` derives that repository's
+top level from the caller directory. The pilot baseline receives that exact
+repository authority root, while every subprocess retains the caller's
+working directory; a nested caller directory therefore cannot be mistaken for
+the Git authority root.
 
 Before a non-dry-run local `verify`, install both the supported modern
 toolchain and the explicit archival `make legacy` prerequisites. The

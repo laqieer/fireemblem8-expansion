@@ -689,7 +689,18 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
         parent_env = {key: value for key, value in os.environ.items()}
         parent_env.pop(self.HOST_ONLY_ENV, None)
         with mock.patch.dict(os.environ, parent_env, clear=True):
-            with mock.patch.object(verify_mod.subprocess, "run", side_effect=fake_run):
+            with (
+                mock.patch.object(
+                    verify_mod.subprocess,
+                    "run",
+                    side_effect=fake_run,
+                ),
+                mock.patch.object(
+                    verify_mod,
+                    "_repository_root",
+                    return_value=REPO_ROOT,
+                ),
+            ):
                 results = verify_mod.run_gates(".", jobs=2)
             self.assertNotIn(
                 self.HOST_ONLY_ENV,
@@ -721,29 +732,70 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
             seen.append((list(argv), kwargs))
             return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
-        caller_cwd = os.path.join(REPO_ROOT, "caller-cwd")
-        with mock.patch.dict(os.environ, {}, clear=True):
-            with mock.patch.object(verify_mod.subprocess, "run", side_effect=fake_run):
-                results = verify_mod.run_gates(caller_cwd, jobs=2)
+        caller_cwd = os.path.join(REPO_ROOT, "tests")
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(verify_mod.subprocess, "run", side_effect=fake_run),
+            mock.patch.object(
+                verify_mod,
+                "_repository_root",
+                return_value=REPO_ROOT,
+            ),
+        ):
+            results = verify_mod.run_gates(caller_cwd, jobs=2)
 
         expected_argv = []
         expected_stdout = []
         for gate in verify_mod.gates(jobs=2):
             _, argv = verify_mod._split_env_prefix(gate.command)
             argv, stdout = verify_mod._split_stdout_redirect(argv)
-            expected_argv.append(verify_mod._expand_workspace(argv, caller_cwd))
+            expected_argv.append(verify_mod._expand_workspace(argv, REPO_ROOT))
             expected_stdout.append(stdout)
 
         self.assertEqual([argv for argv, _ in seen], expected_argv)
         self.assertEqual([kwargs["cwd"] for _, kwargs in seen], [caller_cwd] * 28)
+        baseline_argv = seen[
+            [gate.name for gate in verify_mod.gates()].index(
+                "workflow-pilot-baseline"
+            )
+        ][0]
         self.assertEqual(
-            [kwargs["stdout"] for _, kwargs in seen],
-            expected_stdout,
+            baseline_argv[baseline_argv.index("--repository-root") + 1],
+            REPO_ROOT,
         )
+        self.assertNotEqual(caller_cwd, REPO_ROOT)
+        self.assertEqual([kwargs["stdout"] for _, kwargs in seen], expected_stdout)
         self.assertEqual(
             [result.gate.name for result in results],
             [gate.name for gate in verify_mod.gates(jobs=2)],
         )
+
+    def test_local_repository_authority_is_distinct_from_caller_cwd(self):
+        caller_cwd = os.path.join(REPO_ROOT, "tests")
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(verify_mod._repository_root(caller_cwd), REPO_ROOT)
+        with mock.patch.dict(
+            os.environ,
+            {"GITHUB_WORKSPACE": REPO_ROOT},
+            clear=True,
+        ):
+            self.assertEqual(verify_mod._repository_root(caller_cwd), REPO_ROOT)
+
+    def test_workspace_and_caller_must_identify_the_same_checkout(self):
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"GITHUB_WORKSPACE": "/different/repository"},
+                clear=True,
+            ),
+            mock.patch.object(
+                verify_mod,
+                "_git_top_level",
+                side_effect=[REPO_ROOT, "/different/repository"],
+            ),
+            self.assertRaisesRegex(ValueError, "different Git repositories"),
+        ):
+            verify_mod._repository_root(REPO_ROOT)
 
     def test_baseline_gate_expands_workspace_and_redirects_without_a_shell(self):
         seen = []
@@ -753,7 +805,18 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
             return subprocess.CompletedProcess(argv, 0, stdout=None, stderr="")
 
         with mock.patch.dict(os.environ, {}, clear=True):
-            with mock.patch.object(verify_mod.subprocess, "run", side_effect=fake_run):
+            with (
+                mock.patch.object(
+                    verify_mod.subprocess,
+                    "run",
+                    side_effect=fake_run,
+                ),
+                mock.patch.object(
+                    verify_mod,
+                    "_repository_root",
+                    return_value=REPO_ROOT,
+                ),
+            ):
                 results = verify_mod.run_gates(".", jobs=2)
 
         index = [gate.name for gate in verify_mod.gates()].index(

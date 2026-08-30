@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -51,15 +52,19 @@ import importlib.util
 import pathlib
 import sys
 
-root = pathlib.Path(sys.argv[1])
-reporter_path = root / "scripts/workflow_pilot/reporter.py"
+artifact_root = pathlib.Path(sys.argv[1])
+authority_root = pathlib.Path(sys.argv[2])
+reporter_path = artifact_root / "scripts/workflow_pilot/reporter.py"
 spec = importlib.util.spec_from_file_location("workflow_pilot_proof", reporter_path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-fixture = module.load_json(root / module.BASELINE_FIXTURE_PATH)
-decisions = module.load_json(root / module.DECISION_RECORD_PATH)
-report = module.build_report(fixture, decisions, root)
-module.check_expected(report, module.load_json(root / module.BASELINE_EXPECTED_PATH))
+fixture = module.load_json(artifact_root / module.BASELINE_FIXTURE_PATH)
+decisions = module.load_json(artifact_root / module.DECISION_RECORD_PATH)
+report = module.build_report(fixture, decisions, authority_root)
+module.check_expected(
+    report,
+    module.load_json(artifact_root / module.BASELINE_EXPECTED_PATH),
+)
 """
 EXECUTABLE_DELETION_PROOFS = {
     "workflow-pilot-decisions": {
@@ -350,6 +355,19 @@ def run_git(
     )
 
 
+def _github_repository_from_remote(remote: str) -> str | None:
+    patterns = (
+        r"https://github\.com/([^/]+/[^/]+?)(?:\.git)?/?$",
+        r"git@github\.com:([^/]+/[^/]+?)(?:\.git)?$",
+        r"ssh://git@github\.com/([^/]+/[^/]+?)(?:\.git)?/?$",
+    )
+    for pattern in patterns:
+        match = re.fullmatch(pattern, remote)
+        if match is not None:
+            return match.group(1)
+    return None
+
+
 def validate_repository_root(repository_root: Path) -> Path:
     try:
         resolved = repository_root.resolve(strict=True)
@@ -369,6 +387,99 @@ def validate_repository_root(repository_root: Path) -> Path:
             f"repository root must be the exact Git top level {top_level}"
         )
     return resolved
+
+
+def _load_git_commit_objects(
+    repository_root: Path,
+    shas: Iterable[str],
+) -> dict[str, dict[str, Any]]:
+    ordered = sorted(set(shas))
+    try:
+        completed = subprocess.run(
+            ("git", "-C", str(repository_root), "cat-file", "--batch"),
+            input=b"".join(f"{sha}\n".encode("ascii") for sha in ordered),
+            check=False,
+            capture_output=True,
+        )
+    except OSError as error:
+        raise PilotDataError(f"cannot execute Git: {error}") from error
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise PilotDataError(
+            "Git cat-file --batch failed" + (f": {detail}" if detail else "")
+        )
+
+    output = completed.stdout
+    offset = 0
+    result: dict[str, dict[str, Any]] = {}
+    for requested_sha in ordered:
+        header_end = output.find(b"\n", offset)
+        if header_end < 0:
+            raise PilotDataError(
+                f"Git returned an incomplete object header for {requested_sha}"
+            )
+        header = output[offset:header_end].decode("ascii", errors="replace")
+        offset = header_end + 1
+        if header.endswith(" missing"):
+            raise PilotDataError(
+                f"fixture commit {requested_sha} does not exist in the repository"
+            )
+        fields = header.split()
+        if len(fields) != 3 or fields[1] != "commit":
+            raise PilotDataError(
+                f"fixture identity {requested_sha} is not a Git commit object"
+            )
+        try:
+            size = int(fields[2])
+        except ValueError as error:
+            raise PilotDataError(
+                f"Git returned an invalid object size for {requested_sha}"
+            ) from error
+        payload = output[offset : offset + size]
+        offset += size
+        if len(payload) != size or output[offset : offset + 1] != b"\n":
+            raise PilotDataError(
+                f"Git returned an incomplete commit object for {requested_sha}"
+            )
+        offset += 1
+        try:
+            headers, message_bytes = payload.split(b"\n\n", 1)
+            header_lines = headers.decode("utf-8").splitlines()
+            message = message_bytes.decode("utf-8").rstrip("\n")
+        except (ValueError, UnicodeDecodeError) as error:
+            raise PilotDataError(
+                f"Git commit {requested_sha} is not valid UTF-8 commit data"
+            ) from error
+        parents = [
+            line.split(" ", 1)[1]
+            for line in header_lines
+            if line.startswith("parent ")
+        ]
+        committer = next(
+            (line for line in header_lines if line.startswith("committer ")),
+            None,
+        )
+        if committer is None:
+            raise PilotDataError(
+                f"Git commit {requested_sha} lacks a committer timestamp"
+            )
+        try:
+            timestamp = int(committer.rsplit(" ", 2)[1])
+        except (IndexError, ValueError) as error:
+            raise PilotDataError(
+                f"Git commit {requested_sha} has an invalid committer timestamp"
+            ) from error
+        result[requested_sha] = {
+            "parents": parents,
+            "committed_at": datetime.fromtimestamp(
+                timestamp,
+                timezone.utc,
+            ),
+            "message": message,
+        }
+    if offset != len(output):
+        raise PilotDataError("Git returned unexpected trailing object data")
+    return result
 
 
 def git_commit_time(repository_root: Path, sha: str) -> datetime:
@@ -415,6 +526,209 @@ def git_is_ancestor(repository_root: Path, ancestor: str, descendant: str) -> bo
         f"Git cannot compare commits {ancestor} and {descendant}"
         + (f": {detail}" if detail else "")
     )
+
+
+def _git_parent_graph(
+    repository_root: Path,
+    shas: Iterable[str],
+) -> dict[str, list[str]]:
+    raw = run_git(
+        repository_root,
+        "rev-list",
+        "--parents",
+        *sorted(set(shas)),
+    ).decode("ascii")
+    graph = {}
+    for line in raw.splitlines():
+        fields = line.split()
+        graph[fields[0]] = fields[1:]
+    return graph
+
+
+def _git_ancestors(sha: str, graph: dict[str, list[str]]) -> set[str]:
+    result = set()
+    pending = [sha]
+    while pending:
+        current = pending.pop()
+        if current in result:
+            continue
+        result.add(current)
+        pending.extend(graph.get(current, ()))
+    return result
+
+
+def validate_repository_authority(
+    repository_root: Path,
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    repository_root = validate_repository_root(repository_root)
+    fixture = data["fixture"]
+    remote = run_git(
+        repository_root,
+        "config",
+        "--get",
+        "remote.origin.url",
+    ).decode("utf-8").strip()
+    repository = _github_repository_from_remote(remote)
+    if repository != fixture["repository"]:
+        raise PilotDataError(
+            "fixture.repository does not match the checked-out origin "
+            f"({fixture['repository']!r} != {repository!r})"
+        )
+
+    commits = data["commits"]
+    actual = _load_git_commit_objects(repository_root, commits)
+    for sha, commit in commits.items():
+        actual_commit = actual[sha]
+        if actual_commit["parents"] != commit["parents"]:
+            raise PilotDataError(
+                f"commit {sha} parents do not match the Git object database"
+            )
+        fixture_time = parse_time(
+            commit["committed_at"],
+            f"commit {sha}.committed_at",
+        )
+        if actual_commit["committed_at"] != fixture_time:
+            raise PilotDataError(
+                f"commit {sha} timestamp does not match the Git object database"
+            )
+        if actual_commit["message"] != commit["message"].rstrip("\n"):
+            raise PilotDataError(
+                f"commit {sha} message does not match the Git object database"
+            )
+
+    base_sha = fixture["base_sha"]
+    if base_sha not in actual:
+        raise PilotDataError("fixture.base_sha is not a validated Git commit")
+    parent_graph = _git_parent_graph(repository_root, commits)
+    ancestor_cache = {
+        sha: _git_ancestors(sha, parent_graph)
+        for sha in commits
+    }
+    base_history = ancestor_cache[base_sha]
+
+    pull_requests = data["pull_requests"]
+    prs_by_branch = {
+        pr["head_branch"]: pr for pr in pull_requests.values()
+    }
+    for number, pr in pull_requests.items():
+        candidate_shas = set(pr["commit_shas"])
+        if pr["head_sha"] not in candidate_shas:
+            raise PilotDataError(
+                f"PR {number} head is absent from its candidate commit identities"
+            )
+        if pr["state"] == "merged":
+            merge_sha = pr["merge_sha"]
+            merge_parents = actual[merge_sha]["parents"]
+            if len(merge_parents) != 2 or merge_parents[1] != pr["head_sha"]:
+                raise PilotDataError(
+                    f"PR {number} merge commit does not bind its exact candidate head"
+                )
+            authoritative_candidates = (
+                ancestor_cache[pr["head_sha"]]
+                - _git_ancestors(merge_parents[0], parent_graph)
+            )
+            if candidate_shas != authoritative_candidates:
+                raise PilotDataError(
+                    f"PR {number} candidate identities do not match its Git merge range"
+                )
+            if merge_sha not in base_history:
+                raise PilotDataError(
+                    f"PR {number} merge commit is outside the frozen base history"
+                )
+        else:
+            parent_pr = next(
+                (
+                    candidate
+                    for candidate in pull_requests.values()
+                    if candidate["head_branch"] == pr["base_ref"]
+                ),
+                None,
+            )
+            if parent_pr is not None:
+                base = parent_pr["head_sha"]
+            else:
+                base = (
+                    run_git(
+                        repository_root,
+                        "merge-base",
+                        base_sha,
+                        pr["head_sha"],
+                    )
+                    .decode("ascii")
+                    .strip()
+                )
+            authoritative_candidates = (
+                ancestor_cache[pr["head_sha"]]
+                - _git_ancestors(base, parent_graph)
+            )
+            if candidate_shas != authoritative_candidates:
+                raise PilotDataError(
+                    f"PR {number} candidate identities do not match its Git history"
+                )
+
+    for review_id, review in data["reviews"].items():
+        pr = pull_requests[review["pr_number"]]
+        if not (
+            ancestor_cache[review["commit_sha"]]
+            & ancestor_cache[pr["head_sha"]]
+        ):
+            raise PilotDataError(
+                f"review {review_id} commit is outside PR {pr['number']} Git history"
+            )
+
+    for run_id, run in data["runs"].items():
+        pr = prs_by_branch.get(run["head_branch"])
+        pull_ref = re.fullmatch(r"refs/pull/([1-9][0-9]*)/head", run["head_branch"])
+        if pr is None and pull_ref is not None:
+            pr = pull_requests.get(int(pull_ref.group(1)))
+        if pr is not None:
+            if run["head_sha"] not in pr["commit_shas"]:
+                raise PilotDataError(
+                    f"workflow run {run_id} commit is outside PR "
+                    f"{pr['number']} candidate history"
+                )
+        if (
+            run["head_branch"] == fixture["default_branch"]
+            and run["head_sha"] not in base_history
+        ):
+            raise PilotDataError(
+                f"workflow run {run_id} is outside the frozen base history"
+            )
+
+    reverts = []
+    for sha, commit in commits.items():
+        match = REVERT_RE.search(commit["message"])
+        if match is None:
+            continue
+        target = match.group(1)
+        if target not in actual:
+            raise PilotDataError(
+                f"revert commit {sha} targets unavailable commit {target}"
+            )
+        if actual[sha]["committed_at"] <= actual[target]["committed_at"]:
+            raise PilotDataError(
+                f"revert commit {sha} is not later than target {target}"
+            )
+        if target not in ancestor_cache[sha]:
+            raise PilotDataError(
+                f"revert commit {sha} is not descended from target {target}"
+            )
+        if target not in base_history or sha not in base_history:
+            raise PilotDataError(
+                f"revert commit {sha} and target {target} are not both in "
+                "the frozen base history"
+            )
+        reverts.append({"commit": sha, "reverts": target})
+
+    return {
+        "repository_root": repository_root,
+        "commits": actual,
+        "reverts": sorted(
+            reverts,
+            key=lambda relation: (relation["commit"], relation["reverts"]),
+        ),
+    }
 
 
 def load_decisions_from_commit(repository_root: Path, sha: str) -> dict[str, Any]:
@@ -2264,7 +2578,8 @@ def validate_artifact_lifecycle(
 
 
 def _run_deletion_proof_check(
-    repository_root: Path,
+    artifact_root: Path,
+    authority_root: Path,
     check_id: str,
 ) -> subprocess.CompletedProcess[bytes]:
     if check_id == "workflow-pilot-reporter":
@@ -2273,7 +2588,8 @@ def _run_deletion_proof_check(
             "-I",
             "-c",
             DELETION_PROOF_REPORTER_PROGRAM,
-            str(repository_root),
+            str(artifact_root),
+            str(authority_root),
         )
     elif check_id == "workflow-pilot-tests":
         command = (
@@ -2290,10 +2606,13 @@ def _run_deletion_proof_check(
         raise PilotDataError(
             f"deletion-proof check {check_id!r} is not allowlisted"
         )
+    environment = dict(os.environ)
+    environment["WORKFLOW_PILOT_TEST_AUTHORITY_ROOT"] = str(authority_root)
     try:
         return subprocess.run(
             command,
-            cwd=repository_root,
+            cwd=artifact_root,
+            env=environment,
             check=False,
             capture_output=True,
             timeout=DELETION_PROOF_TIMEOUT_SECONDS,
@@ -2313,6 +2632,8 @@ def validate_executable_deletion_proofs(
     decisions: dict[str, Any],
 ) -> dict[str, dict[str, str]]:
     repository_root = validate_repository_root(repository_root)
+    data = validate_fixture(fixture)
+    validate_repository_authority(repository_root, data)
     required_inputs = {
         "fixture": (fixture_path, BASELINE_FIXTURE_PATH),
         "decisions": (decisions_path, DECISION_RECORD_PATH),
@@ -2384,9 +2705,11 @@ def validate_executable_deletion_proofs(
         *(profile["path"] for profile in EXECUTABLE_DELETION_PROOFS.values()),
     }
     try:
+        sandbox_parent = repository_root / "build" / "test-artifacts"
+        sandbox_parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix=f".{repository_root.name}-workflow-pilot-proof-",
-            dir=repository_root.parent,
+            dir=sandbox_parent,
         ) as temporary:
             sandbox = Path(temporary)
             for relative in copy_paths:
@@ -2394,10 +2717,13 @@ def validate_executable_deletion_proofs(
                 target = sandbox / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
-            run_git(sandbox, "init", "-q", "-b", "master")
 
             for check_id in ("workflow-pilot-reporter", "workflow-pilot-tests"):
-                initial = _run_deletion_proof_check(sandbox, check_id)
+                initial = _run_deletion_proof_check(
+                    sandbox,
+                    repository_root,
+                    check_id,
+                )
                 if initial.returncode != 0:
                     detail = initial.stderr.decode(
                         "utf-8", errors="replace"
@@ -2419,7 +2745,11 @@ def validate_executable_deletion_proofs(
                     dict.fromkeys((profile["consumer"], profile["check"]))
                 )
                 removed = [
-                    _run_deletion_proof_check(sandbox, check_id)
+                    _run_deletion_proof_check(
+                        sandbox,
+                        repository_root,
+                        check_id,
+                    )
                     for check_id in check_ids
                 ]
                 backup_path.replace(artifact_path)
@@ -2430,7 +2760,11 @@ def validate_executable_deletion_proofs(
                         "its allowlisted semantic contract"
                     )
                 restored = [
-                    _run_deletion_proof_check(sandbox, check_id)
+                    _run_deletion_proof_check(
+                        sandbox,
+                        repository_root,
+                        check_id,
+                    )
                     for check_id in check_ids
                 ]
                 failed_restorations = [
@@ -2803,16 +3137,6 @@ def report_events(data: dict[str, Any]) -> dict[str, Any]:
             spotlight_counts[event["type"]] += 1
         if event["type"] in SAFETY_EVENT_TYPES:
             safety_counts[event["type"]] += 1
-    reverts = []
-    for commit in data["commits"].values():
-        match = REVERT_RE.search(commit["message"])
-        if match is not None:
-            target = match.group(1)
-            if target not in data["commits"]:
-                raise PilotDataError(
-                    f"revert commit {commit['sha']} targets unavailable commit {target}"
-                )
-            reverts.append({"commit": commit["sha"], "reverts": target})
     branch = data["pull_requests"][spotlight]["head_branch"]
     candidate_shas = {
         run["head_sha"]
@@ -2832,7 +3156,7 @@ def report_events(data: dict[str, Any]) -> dict[str, Any]:
         "broken_master": safety_counts["broken_master"],
         "security_findings": safety_counts["security_finding"],
         "manual_rejects": safety_counts["manual_reject"],
-        "reverts": reverts,
+        "reverts": data["repository_authority"]["reverts"],
     }
 
 
@@ -2864,9 +3188,8 @@ def report_classifications(data: dict[str, Any]) -> list[dict[str, Any]]:
     for run in data["runs"].values():
         runs_by_branch[run["head_branch"]].append(run)
     reverted_shas = {
-        match.group(1)
-        for commit in data["commits"].values()
-        if (match := REVERT_RE.search(commit["message"])) is not None
+        relation["reverts"]
+        for relation in data["repository_authority"]["reverts"]
     }
     result = []
     for number, pr in sorted(data["pull_requests"].items()):
@@ -2963,14 +3286,38 @@ def report_artifacts(
     }
 
 
+IDENTITY_SEAL_DOMAIN = b"workflow-pilot-cohort-identities-v1\0"
+
+
+def cohort_identity_seal(data: dict[str, Any]) -> str:
+    identities = {
+        "commits": sorted(data["commits"]),
+        "findings": sorted(data["findings"]),
+        "issues": sorted(data["issues"]),
+        "pull_requests": sorted(data["pull_requests"]),
+        "reviews": sorted(data["reviews"]),
+        "workflow_runs": sorted(data["runs"]),
+    }
+    return hashlib.sha256(
+        IDENTITY_SEAL_DOMAIN + normalized_json(identities)
+    ).hexdigest()
+
+
 def build_report(
     fixture: Any,
     raw_decisions: Any,
     repository_root: Path | None = None,
 ) -> dict[str, Any]:
-    if repository_root is not None:
-        repository_root = validate_repository_root(repository_root)
+    if repository_root is None:
+        raise PilotDataError(
+            "report construction requires an explicit repository authority root"
+        )
+    repository_root = validate_repository_root(repository_root)
     data = validate_fixture(fixture)
+    data["repository_authority"] = validate_repository_authority(
+        repository_root,
+        data,
+    )
     decisions = validate_decisions(raw_decisions, data, repository_root)
     workflow_sample(data)
     return {
@@ -2986,9 +3333,11 @@ def build_report(
             "pull_requests": sorted(data["pull_requests"]),
             "issues": sorted(data["issues"]),
             "reviews": sorted(data["reviews"]),
+            "findings": sorted(data["findings"]),
             "review_thread_deliveries": sorted(data["review_thread_events"]),
             "workflow_runs": sorted(data["runs"]),
             "commits": sorted(data["commits"]),
+            "seal": cohort_identity_seal(data),
         },
         "delivery": report_delivery(data),
         "reviews": report_reviews(data),
@@ -3006,6 +3355,15 @@ def check_expected(report: dict[str, Any], expected: Any) -> None:
     if expected["schema_version"] != SCHEMA_VERSION:
         raise PilotDataError(f"expected schema_version must be {SCHEMA_VERSION}")
     paths = expect_object(expected["paths"], "expected.paths")
+    if "identities.seal" not in paths:
+        raise PilotDataError(
+            "expected.paths must pin the canonical identities.seal"
+        )
+    seal = paths["identities.seal"]
+    if not isinstance(seal, str) or SHA256_RE.fullmatch(seal) is None:
+        raise PilotDataError(
+            "expected identities.seal must be a lowercase SHA-256"
+        )
     for path, wanted in sorted(paths.items()):
         expect_string(path, "expected.paths key")
         value: Any = report
@@ -3034,8 +3392,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         required=True,
         help=(
-            "exact checked-out Git top level used to verify immutable override "
-            "decision history"
+            "exact checked-out Git top level whose origin and object database "
+            "authorize every fixture Git fact"
         ),
     )
     return parser.parse_args(argv)

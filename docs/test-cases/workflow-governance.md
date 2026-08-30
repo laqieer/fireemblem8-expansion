@@ -298,10 +298,14 @@ measurement boundary even though GitHub later completed it. Current PR and
 artifact states are derived from authoritative facts and disposition history;
 threshold override decisions contain no editable introduction timestamp, SHA,
 diff, run conclusion, or copied current-state field. Every override is read
-from the cited candidate commit and first-reviewed commit trees. PR #150's
-clean-review timing remains explicitly unavailable because no authoritative
-historical thread events were collected; no numeric result is emitted or
-eligible for pilot comparison/promotion.
+from the cited candidate commit and first-reviewed commit trees. Before these
+calculations, the repository origin, base, every commit object, exact parents,
+timestamps, messages, PR candidate/merge ranges, and referenced history are
+validated against the real object database. The expected cohort seal binds
+the normalized PR, issue, review, workflow-run, finding, and commit identities.
+PR #150's clean-review timing remains explicitly unavailable because no
+authoritative historical thread events were collected; no numeric result is
+emitted or eligible for pilot comparison/promotion.
 
 The positive controls report Build/review savings beside coordination and
 metadata-maintenance overhead. Every authoritative workflow run has a coherent
@@ -311,7 +315,9 @@ Checkpoint, dependency-change, and pre-graduation removal proofs preserve
 necessary artifacts after a named semantic failure; every historical
 restoration passes, and a deletion-ready artifact passes only with `Delete`.
 The committed artifacts additionally pass actual isolated removal/failure and
-restoration/success execution through the closed command allowlist.
+restoration/success execution through the closed command allowlist while the
+artifact sandbox continues to use the immutable real checkout as Git
+authority.
 
 ### Negative control
 
@@ -321,18 +327,21 @@ missing issue/commit/review/decision, derived-fact override, post-review
 override insertion/backdating/reordering/current-record mutation, a cited tree
 without the exact override entry, cumulative unresolved findings, post-review
 resolution, direct synthetic resolution timestamps, untrusted/incomplete
-resolution history, wrong-PR or missing event SHA, inconsistent stack
-parent/base/depth, missing parent decisions, stack cycles, false depth-two or
-depth-three claims, an older spotlight run outside the cohort, impossible
-non-Build intervals, incoherent queued/in-progress/completed timestamps,
-unreported accepted conclusion, unknown risk/event/edge/disposition,
-unclaimed or ambiguously owned dependency edge, orphan/duplicate/expired
-artifact, deletion-ready non-Delete artifact, non-causal or missing deletion
-proof, premature disposition, stale lifecycle expiry, any failed historical
-restoration, a stale or fabricated executable proof, and any unallowlisted
-fixture command. Build topology mutations also reject pilot commands hidden by
-`|| true`, `; true`, `&& true`, wrappers, substitutions, or changed
-redirections.
+resolution history, wrong-PR or missing event SHA, fabricated repository
+identity/commit/parent/timestamp/message, incoherent candidate/merge or review
+history, any PR/issue/review/run/finding/commit identity substitution, an
+omitted identity seal, earlier/equal/unrelated/fabricated reverts,
+inconsistent stack parent/base/depth, missing parent decisions, stack cycles,
+false depth-two or depth-three claims, an older spotlight run outside the
+cohort, impossible non-Build intervals, incoherent
+queued/in-progress/completed timestamps, unreported accepted conclusion,
+unknown risk/event/edge/disposition, unclaimed or ambiguously owned dependency
+edge, orphan/duplicate/expired artifact, deletion-ready non-Delete artifact,
+non-causal or missing deletion proof, premature disposition, stale lifecycle
+expiry, any failed historical restoration, an empty/fabricated Git authority,
+a stale or fabricated executable proof, and any unallowlisted fixture command.
+Build topology mutations also reject pilot commands hidden by `|| true`, `; true`,
+`&& true`, wrappers, substitutions, or changed redirections.
 
 ### Interactions and save compatibility
 

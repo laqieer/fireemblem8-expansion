@@ -85,11 +85,23 @@ python3 -m scripts.workflow_pilot.reporter \
 Successful output is canonical ASCII JSON: recursively sorted keys, compact
 separators, and one trailing newline. Running over identical immutable inputs
 is byte-identical. `baseline_expected.json` contains only immutable expected
-values, not another authored current-state report.
+values, not another authored current-state report. Its
+`identities.seal` is a domain-separated SHA-256 of normalized, sorted PR
+numbers, issue numbers, review IDs, workflow-run IDs, finding IDs, and commit
+SHAs. It is an input-format/cohort checksum: it detects identity substitution
+that preserves aggregate metrics, but does not hash source files, blobs,
+objects, ROMs, or the repository tree.
 
 `--repository-root` is required and must resolve to the exact checked-out Git
-top level. The fixture, decision, and expected paths must resolve to the
-committed baseline inputs, including
+top level. Before any metric or report section is constructed, the reporter
+requires its `origin` to identify the fixture repository, loads every listed
+commit from that repository's real object database, and compares the exact
+object type, parent list, committer timestamp, and message. It then verifies
+the base commit, each PR's exact candidate-to-merge range, merge-head binding,
+frozen-base membership, and the PR-history association of review, run, event,
+safety, and override references. A fixture-authored SHA, parent, timestamp, or
+message cannot replace Git authority. The fixture, decision, and expected
+paths must resolve to the committed baseline inputs, including
 `.github/workflow-pilot-decisions.json` in that tree. Build CI passes
 `"$GITHUB_WORKSPACE"` explicitly, runs both the same stdlib suite and the
 baseline/expected invocation in its required `host-tests` job, and the parsed
@@ -97,15 +109,19 @@ workflow topology regression requires both pilot commands exactly. Appended
 shell operators, wrappers, substitutions, or changed redirections cannot turn
 either command into advisory evidence.
 
-Before the command succeeds, it creates a bounded temporary repository beside
-the checkout and copies only the three declared pilot artifacts, the expected
-values, and the focused reporter-test support files. For each allowlisted
-artifact it removes the copy, runs its declared reporter consumer and/or
-focused consistency check and requires failure, restores the copy, and
-requires both checks to pass. The command identifiers and file paths come from
-a closed allowlist in the reporter; fixture text cannot supply executable
-commands. The temporary repository is removed automatically and the checked
-out worktree is never modified.
+Before the command succeeds, it creates a bounded mutable artifact sandbox
+under the checkout's ignored `build/test-artifacts/` directory and copies only
+the three declared pilot artifacts, the expected values, and the focused
+reporter-test support files. The sandbox is not Git authority: every sandbox
+check receives the original immutable checked-out object database as a
+separate root and repeats the complete repository-authority phase. For each
+allowlisted artifact it removes the sandbox copy, runs its declared reporter
+consumer and/or focused consistency check and requires failure, restores the
+copy, and requires both checks to pass. The command identifiers and file paths
+come from a closed allowlist in the reporter; fixture text cannot supply
+executable commands. An empty or fabricated `git init` cannot validate the
+baseline. The sandbox is removed automatically and the checked out worktree is
+never modified.
 
 The fixture carries derivable Git/GitHub/Actions facts. The single versioned
 decision record,
@@ -155,7 +171,7 @@ convention.
 | Conflicts | Count typed authoritative conflict events for every PR inside the window. No event means zero; an unknown event name is not treated as zero. |
 | Superseded candidates | For a PR head branch, count distinct authoritative workflow `head_sha` values minus one. Repeated runs on one SHA are duplicates, not supersessions. |
 | Escaped defects, broken master, security findings, manual rejects | Count their typed in-window events across every PR, independently of spotlight metrics. Each identity binds a full SHA to an authoritative commit and that PR's candidate/merge history. |
-| Reverts | Parse the exact Git-generated `This reverts commit <full SHA>.` relation and require the target commit in the fixture. |
+| Reverts | Parse the exact Git-generated `This reverts commit <full SHA>.` relation from the validated commit message. Require both commits in the real object database and frozen base history, require the target to be an ancestor of the revert, and require the revert's authoritative committer timestamp to be strictly later than the target's. Earlier, equal-time, unrelated, or fixture-only relations fail. |
 | Pilot coordination and metadata maintenance | Sum only typed in-window pilot minutes. Report both beside saved Build and review minutes; net saved minutes are savings minus both overhead classes. |
 
 The 9.4-hour published baseline is specifically **PR-open-to-merge**, because
@@ -243,6 +259,12 @@ removing any one loses a dependency required by issues #177 through #181.
 These values are immutable fixture expectations only. The reporter derives
 them from identities and timestamps; they are not editable fields in the
 decision record.
+
+Review-size evidence is deliberately not stored as mutable current-head
+numbers in this document. At each candidate, the coordinator derives the
+changed-file list, per-file numstat, and shortstat from
+`git diff <immediate-base>...HEAD` and publishes that exact-head preflight
+through the canonical remote workflow action.
 
 The unavailable clean-review result is the actual historical boundary, not a
 zero, success, or estimate. It makes that metric ineligible for pilot

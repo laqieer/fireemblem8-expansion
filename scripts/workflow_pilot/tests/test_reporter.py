@@ -21,6 +21,11 @@ BASELINE = FIXTURES / "baseline.json"
 BASELINE_EXPECTED = FIXTURES / "baseline_expected.json"
 DECISIONS = ROOT / ".github" / "workflow-pilot-decisions.json"
 REVIEWER_OVERRIDE_REPRO_SHA = "980dbee7337633b97fb4d8217ae7cc71f34a9035"
+TEST_ARTIFACTS = ROOT / "build" / "test-artifacts"
+TEST_ARTIFACTS.mkdir(parents=True, exist_ok=True)
+BASELINE_AUTHORITY = Path(
+    os.environ.get("WORKFLOW_PILOT_TEST_AUTHORITY_ROOT", ROOT)
+)
 
 
 def sha(character):
@@ -193,7 +198,7 @@ def minimal_fixture():
             {
                 "sha": sha("a"),
                 "committed_at": "2026-01-01T01:00:00Z",
-                "parents": [],
+                "parents": [sha("0")],
                 "message": "feat: begin",
             },
             {
@@ -211,8 +216,14 @@ def minimal_fixture():
             {
                 "sha": sha("d"),
                 "committed_at": "2026-01-01T09:00:00Z",
-                "parents": [sha("c")],
+                "parents": [sha("0"), sha("c")],
                 "message": "Merge pull request #1",
+            },
+            {
+                "sha": sha("0"),
+                "committed_at": "2025-12-31T23:00:00Z",
+                "parents": [],
+                "message": "test base",
             },
         ],
         "events": [
@@ -375,6 +386,136 @@ def minimal_decisions():
     }
 
 
+def _replace_commit_identities(value, replacements):
+    if isinstance(value, dict):
+        return {
+            key: _replace_commit_identities(item, replacements)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _replace_commit_identities(item, replacements)
+            for item in value
+        ]
+    if isinstance(value, str):
+        for old, new in replacements.items():
+            value = value.replace(old, new)
+    return value
+
+
+@contextlib.contextmanager
+def git_authority(fixture):
+    fixture = copy.deepcopy(fixture)
+    reporter.validate_fixture(fixture)
+    with tempfile.TemporaryDirectory(
+        prefix="workflow-pilot-authority-",
+        dir=TEST_ARTIFACTS,
+    ) as temporary:
+        repository_root = Path(temporary)
+        subprocess.run(
+            ["git", "init", "-q", "-b", "master", str(repository_root)],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repository_root),
+                "remote",
+                "add",
+                "origin",
+                f"https://github.com/{fixture['repository']}.git",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        empty_tree = (
+            subprocess.run(
+                ["git", "-C", str(repository_root), "mktree"],
+                input=b"",
+                check=True,
+                capture_output=True,
+            )
+            .stdout.decode("ascii")
+            .strip()
+        )
+        commits = {commit["sha"]: commit for commit in fixture["commits"]}
+        replacements = {}
+        pending = set(commits)
+        while pending:
+            ready = [
+                sha_value
+                for sha_value in sorted(pending)
+                if all(
+                    parent_sha in replacements
+                    for parent_sha in commits[sha_value]["parents"]
+                )
+                and all(
+                    referenced_sha in replacements
+                    for referenced_sha in commits
+                    if referenced_sha in commits[sha_value]["message"]
+                )
+            ]
+            if not ready:
+                raise AssertionError("test fixture commit graph is cyclic or incomplete")
+            for old_sha in ready:
+                commit = commits[old_sha]
+                message = _replace_commit_identities(
+                    commit["message"],
+                    replacements,
+                )
+                command = [
+                    "git",
+                    "-C",
+                    str(repository_root),
+                    "commit-tree",
+                    empty_tree,
+                ]
+                for parent_sha in commit["parents"]:
+                    command.extend(("-p", replacements[parent_sha]))
+                environment = dict(os.environ)
+                environment.update(
+                    {
+                        "GIT_AUTHOR_NAME": "Pilot Test",
+                        "GIT_AUTHOR_EMAIL": "pilot@example.invalid",
+                        "GIT_COMMITTER_NAME": "Pilot Test",
+                        "GIT_COMMITTER_EMAIL": "pilot@example.invalid",
+                        "GIT_AUTHOR_DATE": commit["committed_at"],
+                        "GIT_COMMITTER_DATE": commit["committed_at"],
+                    }
+                )
+                replacements[old_sha] = (
+                    subprocess.run(
+                        command,
+                        input=(message + "\n").encode("utf-8"),
+                        check=True,
+                        capture_output=True,
+                        env=environment,
+                    )
+                    .stdout.decode("ascii")
+                    .strip()
+                )
+                pending.remove(old_sha)
+        yield (
+            _replace_commit_identities(fixture, replacements),
+            repository_root,
+        )
+
+
+def authoritative_report(fixture, decisions, repository_root=None):
+    if repository_root is not None:
+        return reporter.build_report(fixture, decisions, repository_root)
+    if fixture["repository"] == "laqieer/fireemblem8-expansion":
+        return reporter.build_report(fixture, decisions, BASELINE_AUTHORITY)
+    with git_authority(fixture) as (authoritative_fixture, authority_root):
+        return reporter.build_report(
+            authoritative_fixture,
+            decisions,
+            authority_root,
+        )
+
+
 def add_second_pr(fixture):
     fixture["pull_requests"].append(
         {
@@ -491,7 +632,7 @@ class BaselineFixtureTests(unittest.TestCase):
         cls.expected = reporter.load_json(BASELINE_EXPECTED)
 
     def test_frozen_baseline_and_expected_values(self):
-        result = reporter.build_report(self.fixture, self.decisions)
+        result = authoritative_report(self.fixture, self.decisions)
         reporter.check_expected(result, self.expected)
         self.assertEqual(
             {
@@ -519,15 +660,20 @@ class BaselineFixtureTests(unittest.TestCase):
         self.assertEqual(len(result["identities"]["pull_requests"]), 64)
         self.assertEqual(len(result["identities"]["issues"]), 53)
         self.assertEqual(len(result["identities"]["reviews"]), 566)
+        self.assertEqual(len(result["identities"]["findings"]), 643)
         self.assertEqual(len(result["identities"]["commits"]), 1017)
         self.assertGreaterEqual(len(result["identities"]["workflow_runs"]), 1000)
+        self.assertEqual(
+            result["identities"]["seal"],
+            self.expected["paths"]["identities.seal"],
+        )
 
     def test_normalized_result_is_byte_identical(self):
         first = reporter.normalized_json(
-            reporter.build_report(self.fixture, self.decisions)
+            authoritative_report(self.fixture, self.decisions)
         )
         second = reporter.normalized_json(
-            reporter.build_report(
+            authoritative_report(
                 json.loads(json.dumps(self.fixture)),
                 json.loads(json.dumps(self.decisions)),
             )
@@ -535,16 +681,23 @@ class BaselineFixtureTests(unittest.TestCase):
         self.assertEqual(first, second)
 
     def test_expected_rejects_coordinated_snapshot_identity_drift(self):
-        mutations = []
-
         repository = copy.deepcopy(self.fixture)
         repository["repository"] = "laqieer/coordinated-drift"
-        mutations.append(repository)
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "does not match the checked-out origin",
+        ):
+            reporter.build_report(repository, self.decisions, BASELINE_AUTHORITY)
 
         base_sha = copy.deepcopy(self.fixture)
         base_sha["base_sha"] = base_sha["commits"][0]["sha"]
-        mutations.append(base_sha)
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "outside the frozen base history",
+        ):
+            reporter.build_report(base_sha, self.decisions, BASELINE_AUTHORITY)
 
+        mutations = []
         captured = copy.deepcopy(self.fixture)
         captured["captured_at"] = "2026-08-30T11:17:09Z"
         captured["window"]["end"] = captured["captured_at"]
@@ -556,7 +709,7 @@ class BaselineFixtureTests(unittest.TestCase):
 
         for fixture in mutations:
             with self.subTest(snapshot=fixture["repository"], window=fixture["window"]):
-                report = reporter.build_report(fixture, self.decisions)
+                report = authoritative_report(fixture, self.decisions)
                 with self.assertRaisesRegex(
                     reporter.PilotDataError,
                     "expected path 'snapshot\\.",
@@ -610,7 +763,7 @@ class BaselineFixtureTests(unittest.TestCase):
                 ),
             },
         )
-        result = reporter.build_report(self.fixture, self.decisions)
+        result = authoritative_report(self.fixture, self.decisions)
         timing = result["delivery"]["first_push_to_clean_review"]
         self.assertEqual(timing["status"], "unavailable")
         self.assertIsNone(timing["median_hours"])
@@ -643,7 +796,7 @@ class BaselineFixtureTests(unittest.TestCase):
         self.assertEqual(
             result.stdout,
             reporter.normalized_json(
-                reporter.build_report(self.fixture, self.decisions)
+                authoritative_report(self.fixture, self.decisions)
             ),
         )
 
@@ -689,7 +842,7 @@ class BaselineFixtureTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(
             prefix="workflow-pilot-inputs-",
-            dir=ROOT.parent,
+            dir=TEST_ARTIFACTS,
         ) as temporary:
             alternate_fixture = Path(temporary) / "baseline.json"
             alternate_expected = Path(temporary) / "baseline_expected.json"
@@ -727,10 +880,175 @@ class BaselineFixtureTests(unittest.TestCase):
                     )
 
 
+class RepositoryAuthorityTests(unittest.TestCase):
+    def test_report_construction_requires_explicit_repository_authority(self):
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "requires an explicit repository authority root",
+        ):
+            reporter.build_report(minimal_fixture(), minimal_decisions())
+
+    def test_temporary_real_repository_accepts_exact_git_facts(self):
+        fixture = minimal_fixture()
+        with git_authority(fixture) as (authoritative_fixture, repository_root):
+            report = reporter.build_report(
+                authoritative_fixture,
+                minimal_decisions(),
+                repository_root,
+            )
+        self.assertEqual(report["delivery"]["merged_pull_requests"], 1)
+        self.assertEqual(len(report["identities"]["commits"]), 5)
+
+    def test_real_repository_rejects_fabricated_git_facts(self):
+        fixture = minimal_fixture()
+        with git_authority(fixture) as (authoritative_fixture, repository_root):
+            mutations = []
+
+            changed = copy.deepcopy(authoritative_fixture)
+            changed["repository"] = "example/fabricated"
+            for event in changed["review_thread_events"]:
+                event["repository"] = changed["repository"]
+            mutations.append((changed, "checked-out origin"))
+
+            changed = copy.deepcopy(authoritative_fixture)
+            changed["commits"][-1]["committed_at"] = "2025-12-31T23:00:01Z"
+            mutations.append((changed, "timestamp does not match"))
+
+            changed = copy.deepcopy(authoritative_fixture)
+            changed["commits"][0]["parents"] = []
+            mutations.append((changed, "parents do not match"))
+
+            changed = copy.deepcopy(authoritative_fixture)
+            changed["commits"][0]["message"] = "fabricated message"
+            mutations.append((changed, "message does not match"))
+
+            changed = copy.deepcopy(authoritative_fixture)
+            old_merge = changed["pull_requests"][0]["merge_sha"]
+            fabricated = "f" * 40
+            changed = _replace_commit_identities(
+                changed,
+                {old_merge: fabricated},
+            )
+            mutations.append((changed, "does not exist"))
+
+            changed = copy.deepcopy(authoritative_fixture)
+            changed["pull_requests"][0]["commit_shas"] = changed[
+                "pull_requests"
+            ][0]["commit_shas"][1:]
+            mutations.append((changed, "candidate identities do not match"))
+
+            for changed, pattern in mutations:
+                with self.subTest(pattern=pattern):
+                    with self.assertRaisesRegex(
+                        reporter.PilotDataError,
+                        pattern,
+                    ):
+                        reporter.build_report(
+                            changed,
+                            minimal_decisions(),
+                            repository_root,
+                        )
+
+    def test_frozen_fixture_is_bound_to_actual_checkout(self):
+        fixture = reporter.load_json(BASELINE)
+        data = reporter.validate_fixture(fixture)
+        authority = reporter.validate_repository_authority(
+            BASELINE_AUTHORITY,
+            data,
+        )
+        self.assertEqual(len(authority["commits"]), 1017)
+        self.assertEqual(authority["reverts"], [])
+
+    def test_review_commit_must_share_real_pr_history(self):
+        fixture = minimal_fixture()
+        fixture["commits"].append(
+            {
+                "sha": sha("9"),
+                "committed_at": "2026-01-01T02:00:00Z",
+                "parents": [],
+                "message": "unrelated commit",
+            }
+        )
+        fixture["reviews"][0]["commit_sha"] = sha("9")
+        with git_authority(fixture) as (authoritative_fixture, repository_root):
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "review 10 commit is outside PR 1 Git history",
+            ):
+                reporter.build_report(
+                    authoritative_fixture,
+                    minimal_decisions(),
+                    repository_root,
+                )
+
+
+class CohortIdentitySealTests(unittest.TestCase):
+    def identity_data(self):
+        return {
+            "commits": {"a" * 40: {}},
+            "findings": {101: {}},
+            "issues": {10: {}},
+            "pull_requests": {20: {}},
+            "reviews": {30: {}},
+            "runs": {40: {}},
+        }
+
+    def test_every_frozen_identity_family_changes_the_expected_seal(self):
+        baseline_data = self.identity_data()
+        seal = reporter.cohort_identity_seal(baseline_data)
+        expected = {
+            "schema_version": reporter.SCHEMA_VERSION,
+            "paths": {"identities.seal": seal},
+        }
+        families = {
+            "pull_requests": (20, 21),
+            "issues": (10, 11),
+            "reviews": (30, 31),
+            "runs": (40, 41),
+            "findings": (101, 102),
+            "commits": ("a" * 40, "b" * 40),
+        }
+        for family, (old, new) in families.items():
+            with self.subTest(family=family):
+                changed = copy.deepcopy(baseline_data)
+                changed[family][new] = changed[family].pop(old)
+                report = {
+                    "identities": {
+                        "seal": reporter.cohort_identity_seal(changed),
+                    }
+                }
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "identities.seal",
+                ):
+                    reporter.check_expected(report, expected)
+
+    def test_identity_seal_normalizes_family_ordering(self):
+        forward = self.identity_data()
+        reverse = {
+            family: dict(reversed(list(identities.items())))
+            for family, identities in reversed(list(forward.items()))
+        }
+        self.assertEqual(
+            reporter.cohort_identity_seal(forward),
+            reporter.cohort_identity_seal(reverse),
+        )
+
+    def test_expected_contract_cannot_omit_identity_seal(self):
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "must pin the canonical identities.seal",
+        ):
+            reporter.check_expected(
+                {"identities": {"seal": "a" * 64}},
+                {"schema_version": 1, "paths": {}},
+            )
+
+
 class FormulaAndClassificationTests(unittest.TestCase):
     def assert_rejected(self, fixture, pattern):
         with self.assertRaisesRegex(reporter.PilotDataError, pattern):
-            reporter.build_report(fixture, minimal_decisions())
+            authoritative_report(fixture, minimal_decisions())
 
     def test_boundary_timestamps_are_inclusive(self):
         for boundary in (
@@ -749,11 +1067,11 @@ class FormulaAndClassificationTests(unittest.TestCase):
                 fixture["reviews"] = []
                 fixture["review_findings"] = []
                 fixture["review_thread_events"] = []
-                report = reporter.build_report(fixture, minimal_decisions())
+                report = authoritative_report(fixture, minimal_decisions())
                 self.assertEqual(report["delivery"]["merged_pull_requests"], 1)
 
     def test_build_cancellation_duplicate_supersession_and_overhead_formulas(self):
-        result = reporter.build_report(minimal_fixture(), minimal_decisions())
+        result = authoritative_report(minimal_fixture(), minimal_decisions())
         self.assertEqual(result["builds"]["runs"], 4)
         self.assertEqual(result["builds"]["failure"], 1)
         self.assertEqual(result["builds"]["cancelled"], 1)
@@ -778,6 +1096,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
     def test_cancelled_still_running_stack_generated_bulk_and_revert_classes(self):
         fixture = minimal_fixture()
         data = reporter.validate_fixture(fixture)
+        data["repository_authority"] = {"reverts": []}
         self.assertEqual(
             reporter.report_classifications(data)[0],
             {
@@ -800,6 +1119,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
             }
         )
         data = reporter.validate_fixture(fixture)
+        data["repository_authority"] = {"reverts": []}
         classification = reporter.report_classifications(data)[0]
         self.assertEqual(classification["work_state"], "cancelled")
         self.assertEqual(
@@ -814,6 +1134,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
             }
         )
         data = reporter.validate_fixture(fixture)
+        data["repository_authority"] = {"reverts": []}
         self.assertEqual(
             reporter.report_classifications(data)[0]["work_state"],
             "still-running",
@@ -828,15 +1149,89 @@ class FormulaAndClassificationTests(unittest.TestCase):
                 "message": f"Revert delivery\n\nThis reverts commit {sha('d')}.\n",
             }
         )
-        data = reporter.validate_fixture(fixture)
-        self.assertIn("reverted", reporter.report_classifications(data)[0]["flags"])
-        self.assertEqual(
-            reporter.report_events(data)["reverts"],
-            [{"commit": sha("e"), "reverts": sha("d")}],
+        fixture["base_sha"] = sha("e")
+        result = authoritative_report(fixture, minimal_decisions())
+        self.assertIn("reverted", result["classifications"][0]["flags"])
+        self.assertEqual(len(result["events"]["reverts"]), 1)
+        self.assertNotEqual(
+            result["events"]["reverts"][0]["commit"],
+            result["events"]["reverts"][0]["reverts"],
         )
 
+    def test_revert_requires_later_authoritative_timestamp(self):
+        for committed_at in (
+            "2026-01-01T08:59:59Z",
+            "2026-01-01T09:00:00Z",
+        ):
+            with self.subTest(committed_at=committed_at):
+                fixture = minimal_fixture()
+                fixture["commits"].append(
+                    {
+                        "sha": sha("e"),
+                        "committed_at": committed_at,
+                        "parents": [sha("d")],
+                        "message": (
+                            "Revert delivery\n\n"
+                            f"This reverts commit {sha('d')}.\n"
+                        ),
+                    }
+                )
+                fixture["base_sha"] = sha("e")
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "is not later than target",
+                ):
+                    authoritative_report(fixture, minimal_decisions())
+
+    def test_revert_requires_target_ancestry_and_frozen_history(self):
+        fixture = minimal_fixture()
+        fixture["commits"].extend(
+            [
+                {
+                    "sha": sha("e"),
+                    "committed_at": "2026-01-01T09:30:00Z",
+                    "parents": [sha("0")],
+                    "message": (
+                        "Unrelated revert\n\n"
+                        f"This reverts commit {sha('d')}.\n"
+                    ),
+                },
+                {
+                    "sha": sha("f"),
+                    "committed_at": "2026-01-01T09:40:00Z",
+                    "parents": [sha("d"), sha("e")],
+                    "message": "Snapshot both histories",
+                },
+            ]
+        )
+        fixture["base_sha"] = sha("f")
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "is not descended from target",
+        ):
+            authoritative_report(fixture, minimal_decisions())
+
+        fixture = minimal_fixture()
+        fixture["commits"].append(
+            {
+                "sha": sha("e"),
+                "committed_at": "2026-01-01T09:30:00Z",
+                "parents": [sha("d")],
+                "message": (
+                    "Unknown target\n\n"
+                    f"This reverts commit {sha('f')}.\n"
+                ),
+            }
+        )
+        fixture["base_sha"] = sha("e")
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "targets unavailable commit",
+        ):
+            authoritative_report(fixture, minimal_decisions())
+
     def test_review_round_and_density_formulas(self):
-        result = reporter.build_report(minimal_fixture(), minimal_decisions())
+        result = authoritative_report(minimal_fixture(), minimal_decisions())
         self.assertEqual(result["reviews"]["rounds"], 2)
         self.assertEqual(result["reviews"]["superseded_rounds"], 0)
         self.assertEqual(result["reviews"]["valid_findings"], 1)
@@ -869,7 +1264,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
                 "sha": sha("d"),
             }
             fixture["events"].append(event)
-        events = reporter.build_report(fixture, minimal_decisions())["events"]
+        events = authoritative_report(fixture, minimal_decisions())["events"]
         self.assertEqual(events["conflicts"], 1)
         self.assertEqual(events["escaped_defects"], 1)
         self.assertEqual(events["broken_master"], 1)
@@ -888,7 +1283,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
                 "sha": sha("e"),
             }
         )
-        events = reporter.build_report(fixture, minimal_decisions())["events"]
+        events = authoritative_report(fixture, minimal_decisions())["events"]
         self.assertEqual(events["spotlight_pr"], 1)
         self.assertEqual(events["security_findings"], 1)
 
@@ -910,14 +1305,14 @@ class FormulaAndClassificationTests(unittest.TestCase):
                     }
                 )
                 with self.assertRaisesRegex(reporter.PilotDataError, pattern):
-                    reporter.build_report(fixture, minimal_decisions())
+                    authoritative_report(fixture, minimal_decisions())
 
     def test_review_capture_boundary_and_temporal_binding(self):
         fixture = minimal_fixture()
         fixture["pull_requests"][0]["merged_at"] = fixture["captured_at"]
         fixture["pull_requests"][0]["closed_at"] = fixture["captured_at"]
         fixture["reviews"][1]["submitted_at"] = fixture["captured_at"]
-        reporter.build_report(fixture, minimal_decisions())
+        authoritative_report(fixture, minimal_decisions())
 
         mutations = (
             ("submitted_at", "2026-01-01T10:00:00.000001Z", "analysis window"),
@@ -956,7 +1351,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
             "unavailable_reason": "historical-review-thread-events-not-collected",
         }
         fixture["review_thread_events"] = []
-        reporter.build_report(fixture, minimal_decisions())
+        authoritative_report(fixture, minimal_decisions())
 
         for value, pattern in (
             ("2026-01-01T10:00:00.000001Z", "analysis window"),
@@ -985,7 +1380,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
         fixture["pull_requests"][0]["merged_at"] = fixture["captured_at"]
         fixture["pull_requests"][0]["closed_at"] = fixture["captured_at"]
         fixture["review_thread_events"][0]["delivered_at"] = fixture["captured_at"]
-        reporter.build_report(fixture, minimal_decisions())
+        authoritative_report(fixture, minimal_decisions())
 
         fixture = minimal_fixture()
         fixture["review_thread_events"][0]["delivered_at"] = (
@@ -1023,7 +1418,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
                 "attempt": 1,
             }
         )
-        builds = reporter.build_report(fixture, minimal_decisions())["builds"]
+        builds = authoritative_report(fixture, minimal_decisions())["builds"]
         self.assertEqual(builds["sample_size"], 5)
         self.assertEqual(builds["spotlight"]["runs"], 4)
         self.assertEqual(builds["spotlight"]["success"], 1)
@@ -1031,7 +1426,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
     def test_queued_run_accrues_zero_duration_even_with_started_at(self):
         fixture = minimal_fixture()
         fixture["workflow_runs"][3]["status"] = "queued"
-        builds = reporter.build_report(fixture, minimal_decisions())["builds"]
+        builds = authoritative_report(fixture, minimal_decisions())["builds"]
         self.assertEqual(builds["minutes"], 150)
         self.assertEqual(builds["spotlight"]["minutes"], 150)
 
@@ -1093,7 +1488,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
                 fixture = minimal_fixture()
                 fixture["workflow_runs"][4].update(changes)
                 with self.assertRaisesRegex(reporter.PilotDataError, pattern):
-                    reporter.build_report(fixture, minimal_decisions())
+                    authoritative_report(fixture, minimal_decisions())
 
     def test_non_build_run_status_boundaries_and_conclusions_are_accepted(self):
         for conclusion in sorted(reporter.RUN_CONCLUSIONS):
@@ -1106,7 +1501,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
                         "completed_at": "2026-01-01T10:00:00Z",
                     }
                 )
-                reporter.build_report(fixture, minimal_decisions())
+                authoritative_report(fixture, minimal_decisions())
 
         fixture = minimal_fixture()
         fixture["workflow_runs"][4].update(
@@ -1117,13 +1512,13 @@ class FormulaAndClassificationTests(unittest.TestCase):
                 "completed_at": None,
             }
         )
-        reporter.build_report(fixture, minimal_decisions())
+        authoritative_report(fixture, minimal_decisions())
 
         fixture["workflow_runs"][4]["started_at"] = "2026-01-01T10:00:00Z"
-        reporter.build_report(fixture, minimal_decisions())
+        authoritative_report(fixture, minimal_decisions())
 
         fixture["workflow_runs"][4]["status"] = "in_progress"
-        reporter.build_report(fixture, minimal_decisions())
+        authoritative_report(fixture, minimal_decisions())
 
     def test_terminal_build_conclusion_partition_is_exhaustive(self):
         fixture = minimal_fixture()
@@ -1132,7 +1527,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
             ("neutral", "skipped", "action_required"),
         ):
             run["conclusion"] = conclusion
-        builds = reporter.build_report(fixture, minimal_decisions())["builds"]
+        builds = authoritative_report(fixture, minimal_decisions())["builds"]
         self.assertEqual(builds["neutral"], 1)
         self.assertEqual(builds["skipped"], 1)
         self.assertEqual(builds["action_required"], 1)
@@ -1165,7 +1560,7 @@ class FailClosedDataTests(unittest.TestCase):
             reporter.PilotDataError,
             pattern or ".+",
         ):
-            reporter.build_report(
+            authoritative_report(
                 fixture if fixture is not None else minimal_fixture(),
                 decisions if decisions is not None else minimal_decisions(),
                 repository_root,
@@ -1178,12 +1573,10 @@ class FailClosedDataTests(unittest.TestCase):
         introduction="a",
         override_count=1,
     ):
-        temp_parent = ROOT / "build" / "test-artifacts"
-        temp_parent.mkdir(parents=True, exist_ok=True)
         directory = self.enterContext(
             tempfile.TemporaryDirectory(
                 prefix="workflow-pilot-git-",
-                dir=temp_parent,
+                dir=TEST_ARTIFACTS,
             )
         )
         repository_root = Path(directory)
@@ -1210,6 +1603,19 @@ class FailClosedDataTests(unittest.TestCase):
             capture_output=True,
         )
 
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repository_root),
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/example/workflow.git",
+            ],
+            check=True,
+            capture_output=True,
+        )
         decisions = minimal_decisions()
         overrides = [
             {
@@ -1242,13 +1648,21 @@ class FailClosedDataTests(unittest.TestCase):
         decision_path = repository_root / reporter.DECISION_RECORD_PATH
         decision_path.parent.mkdir(parents=True, exist_ok=True)
         dates = {
+            "0": "2025-12-31T23:00:00+00:00",
             "a": "2026-01-01T01:00:00+00:00",
             "b": "2026-01-01T03:00:00+00:00",
             "c": "2026-01-01T06:00:00+00:00",
             "d": "2026-01-01T09:00:00+00:00",
         }
+        messages = {
+            "0": "test base",
+            "a": "feat: begin",
+            "b": "fix: review",
+            "c": "fix: finish",
+            "d": "Merge pull request #1",
+        }
         shas = {}
-        for letter in ("a", "b", "c", "d"):
+        for letter in ("0", "a", "b", "c"):
             tree_decisions = first_decisions if letter == "a" else exact_tree
             if tree_decisions is None:
                 decision_path.unlink(missing_ok=True)
@@ -1277,7 +1691,7 @@ class FailClosedDataTests(unittest.TestCase):
                     "commit",
                     "-q",
                     "-m",
-                    f"test commit {letter}",
+                    messages[letter],
                 ],
                 check=True,
                 capture_output=True,
@@ -1292,6 +1706,52 @@ class FailClosedDataTests(unittest.TestCase):
                 )
                 .stdout.strip()
             )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repository_root),
+                "checkout",
+                "-q",
+                "-b",
+                "integration",
+                shas["0"],
+            ],
+            check=True,
+            capture_output=True,
+        )
+        env = dict(os.environ)
+        env.update(
+            {
+                "GIT_AUTHOR_DATE": dates["d"],
+                "GIT_COMMITTER_DATE": dates["d"],
+            }
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repository_root),
+                "merge",
+                "--no-ff",
+                "-q",
+                "-m",
+                messages["d"],
+                "master",
+            ],
+            check=True,
+            capture_output=True,
+            env=env,
+        )
+        shas["d"] = (
+            subprocess.run(
+                ["git", "-C", str(repository_root), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            .stdout.strip()
+        )
 
         fixture_text = json.dumps(minimal_fixture())
         for letter, commit_sha in shas.items():
@@ -1356,7 +1816,7 @@ class FailClosedDataTests(unittest.TestCase):
 
     def test_pre_review_override_exists_in_immutable_reviewed_tree(self):
         repository_root, fixture, decisions, _, _ = self.make_override_case()
-        reporter.build_report(fixture, decisions, repository_root)
+        authoritative_report(fixture, decisions, repository_root)
 
     def test_reviewer_old_sha_fixture_event_reproducer_is_rejected(self):
         with self.assertRaisesRegex(
@@ -1478,7 +1938,7 @@ class FailClosedDataTests(unittest.TestCase):
             fixture=fixture,
             decisions=decisions,
             repository_root=repository_root,
-            pattern="does not match its immutable Git commit",
+            pattern="timestamp does not match the Git object database",
         )
 
     def test_reordered_override_with_recomputed_digests_is_rejected(self):
@@ -1602,7 +2062,7 @@ class FailClosedDataTests(unittest.TestCase):
                 "actor": "review-owner",
             }
         )
-        result = reporter.build_report(fixture, minimal_decisions())
+        result = authoritative_report(fixture, minimal_decisions())
         timing = result["delivery"]["first_push_to_clean_review"]
         self.assertEqual(timing["status"], "unavailable")
         self.assertEqual(timing["reason"], "no-authoritative-clean-review-boundary")
@@ -1614,7 +2074,7 @@ class FailClosedDataTests(unittest.TestCase):
         fixture["review_thread_events"][0]["delivered_at"] = (
             "2026-01-01T08:00:01Z"
         )
-        result = reporter.build_report(fixture, minimal_decisions())
+        result = authoritative_report(fixture, minimal_decisions())
         timing = result["delivery"]["first_push_to_clean_review"]
         self.assertEqual(timing["status"], "unavailable")
         self.assertEqual(timing["reason"], "no-authoritative-clean-review-boundary")
@@ -1622,7 +2082,7 @@ class FailClosedDataTests(unittest.TestCase):
         self.assertFalse(timing["pilot_ready"])
 
     def test_authoritative_resolution_before_review_is_numeric(self):
-        result = reporter.build_report(minimal_fixture(), minimal_decisions())
+        result = authoritative_report(minimal_fixture(), minimal_decisions())
         timing = result["delivery"]["first_push_to_clean_review"]
         self.assertEqual(timing["status"], "available")
         self.assertEqual(timing["median_hours"], "7.0")
@@ -1646,7 +2106,7 @@ class FailClosedDataTests(unittest.TestCase):
             }
         )
         fixture["review_findings"][0]["is_resolved"] = False
-        timing = reporter.build_report(fixture, minimal_decisions())["delivery"][
+        timing = authoritative_report(fixture, minimal_decisions())["delivery"][
             "first_push_to_clean_review"
         ]
         self.assertEqual(timing["status"], "unavailable")
@@ -1663,7 +2123,7 @@ class FailClosedDataTests(unittest.TestCase):
             "unavailable_reason": "historical-review-thread-events-not-collected",
         }
         fixture["review_thread_events"] = []
-        result = reporter.build_report(fixture, minimal_decisions())
+        result = authoritative_report(fixture, minimal_decisions())
         timing = result["delivery"]["first_push_to_clean_review"]
         self.assertEqual(timing["status"], "unavailable")
         self.assertEqual(
@@ -1756,7 +2216,7 @@ class FailClosedDataTests(unittest.TestCase):
         decisions["pull_requests"][-1]["stack"]["exception_reason"] = (
             "The protocol layer requires one temporary third dependent layer."
         )
-        reporter.build_report(fixture, decisions)
+        authoritative_report(fixture, decisions)
 
     def test_stack_depth_parent_presence_and_authoritative_base_are_enforced(self):
         fixture = minimal_fixture()
@@ -1929,7 +2389,7 @@ class FailClosedDataTests(unittest.TestCase):
 class ArtifactLifecycleTests(unittest.TestCase):
     def assert_rejected(self, fixture, decisions, pattern):
         with self.assertRaisesRegex(reporter.PilotDataError, pattern):
-            reporter.build_report(fixture, decisions)
+            authoritative_report(fixture, decisions)
 
     def test_orphan_duplicate_expired_and_deletion_ready_artifacts_reject(self):
         fixture = minimal_fixture()
@@ -2012,7 +2472,7 @@ class ArtifactLifecycleTests(unittest.TestCase):
                 )
 
         fixture["events"].reverse()
-        report = reporter.build_report(fixture, minimal_decisions())
+        report = authoritative_report(fixture, minimal_decisions())
         self.assertEqual(
             report["artifacts"]["current"][0]["current_disposition"],
             "Graduate",
@@ -2047,6 +2507,45 @@ class ArtifactLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(before, {path: path.read_bytes() for path in paths})
 
+    def test_empty_git_authority_cannot_validate_executable_proofs(self):
+        fixture = reporter.load_json(BASELINE)
+        decisions = reporter.load_json(DECISIONS)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-pilot-empty-authority-",
+            dir=TEST_ARTIFACTS,
+        ) as temporary:
+            repository_root = Path(temporary)
+            subprocess.run(
+                ["git", "init", "-q", "-b", "master", str(repository_root)],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repository_root),
+                    "remote",
+                    "add",
+                    "origin",
+                    "https://github.com/laqieer/fireemblem8-expansion.git",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "does not exist in the repository",
+            ):
+                reporter.validate_executable_deletion_proofs(
+                    repository_root,
+                    BASELINE,
+                    DECISIONS,
+                    BASELINE_EXPECTED,
+                    fixture,
+                    decisions,
+                )
+
     def test_fabricated_proof_and_fixture_commands_are_not_executable(self):
         fixture = reporter.load_json(BASELINE)
         decisions = reporter.load_json(DECISIONS)
@@ -2055,7 +2554,7 @@ class ArtifactLifecycleTests(unittest.TestCase):
             for event in fixture["events"]
             if event["type"] == "deletion_proof"
         )["reason"] = "self-authored claim"
-        reporter.build_report(fixture, decisions)
+        authoritative_report(fixture, decisions)
         with self.assertRaisesRegex(
             reporter.PilotDataError,
             "differs from its executable fail/remove/restore contract",
@@ -2073,7 +2572,7 @@ class ArtifactLifecycleTests(unittest.TestCase):
         decisions = reporter.load_json(DECISIONS)
         fixture["dependency_edges"][0]["source"] = "python3 -c arbitrary"
         decisions["artifacts"][0]["executable_consumer"] = "python3 -c arbitrary"
-        reporter.build_report(fixture, decisions)
+        authoritative_report(fixture, decisions)
         with self.assertRaisesRegex(
             reporter.PilotDataError,
             "consumer differs from its executable allowlist",
@@ -2090,9 +2589,34 @@ class ArtifactLifecycleTests(unittest.TestCase):
     def test_stale_executable_deletion_proof_is_rejected(self):
         with tempfile.TemporaryDirectory(
             prefix="workflow-pilot-stale-proof-",
-            dir=ROOT.parent,
+            dir=TEST_ARTIFACTS,
         ) as temporary:
-            repository_root = Path(temporary)
+            repository_root = Path(temporary) / "authority"
+            subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "-q",
+                    "--shared",
+                    str(ROOT),
+                    str(repository_root),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repository_root),
+                    "remote",
+                    "set-url",
+                    "origin",
+                    "https://github.com/laqieer/fireemblem8-expansion.git",
+                ],
+                check=True,
+                capture_output=True,
+            )
             copy_paths = {
                 *reporter.DELETION_PROOF_SUPPORT_PATHS,
                 *(
@@ -2105,11 +2629,6 @@ class ArtifactLifecycleTests(unittest.TestCase):
                 target = repository_root / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
-            subprocess.run(
-                ["git", "init", "-q", "-b", "master", str(repository_root)],
-                check=True,
-                capture_output=True,
-            )
             expected_path = repository_root / reporter.BASELINE_EXPECTED_PATH
             expected = reporter.load_json(expected_path)
             expected["paths"]["builds.runs"] = -1
@@ -2145,7 +2664,7 @@ class ArtifactLifecycleTests(unittest.TestCase):
                 "reason": "The non-destructive proof preserved every invariant.",
             }
         )
-        report = reporter.build_report(fixture, decisions)
+        report = authoritative_report(fixture, decisions)
         self.assertEqual(
             report["artifacts"]["current"][0]["current_disposition"],
             "Delete",
@@ -2174,7 +2693,7 @@ class ArtifactLifecycleTests(unittest.TestCase):
         decisions["artifacts"][0]["history"][-1]["recorded_at"] = (
             "2026-01-01T09:05:00Z"
         )
-        report = reporter.build_report(minimal_fixture(), decisions)
+        report = authoritative_report(minimal_fixture(), decisions)
         artifact = report["artifacts"]["current"][0]
         self.assertEqual(
             [entry["disposition"] for entry in artifact["history"]],
@@ -2225,7 +2744,7 @@ class ArtifactLifecycleTests(unittest.TestCase):
                 },
             ]
         )
-        result = reporter.build_report(fixture, minimal_decisions())
+        result = authoritative_report(fixture, minimal_decisions())
         self.assertEqual(result["artifacts"]["invalidated_review_ids"], [10])
 
     def test_consumes_and_checks_edges_require_exact_reverse_ownership(self):
