@@ -3153,7 +3153,7 @@ def validate_executable_deletion_proofs(
             return results
     except OSError as error:
         raise PilotDataError(
-            f"cannot prepare isolated deletion-proof repository: {error}"
+            f"cannot prepare temporary deletion-proof artifact sandbox: {error}"
         ) from error
 
 

@@ -291,18 +291,25 @@ availability or grant credentials.
    success. Confirm automatic bounded cleanup, unchanged source artifact
    bytes, and fail-closed stale, fabricated, or fixture-command substitutions.
 8. Inspect the CI authority-hydration fixture: an exact-ref shallow checkout
-   initially lacks PR #74's force-pushed reviewed commit, and the prior
-   all-head refspec still cannot recover it with lazy fetching disabled. The
-   strict helper derives every required commit from the committed baseline,
-   fetches missing exact IDs from fixed `origin` in bounded
-   no-tags/blob-filtered/no-ref batches, verifies them, and leaves both `HEAD`
-   and refs unchanged. Confirm the setup step precedes reporter tests and is
-   absent from the 28 local gates.
+   in a new object-clean temporary repository initially lacks a test-created,
+   force-pushed unreachable commit, and the prior all-head refspec still cannot
+   recover it with lazy fetching disabled. The strict exact-commit seam
+   restores it without changing `HEAD`, refs, or `FETCH_HEAD`. Separately,
+   confirm production extraction returns exactly the unique commit identities
+   in the committed full baseline and that setup remains absent from the 28
+   local gates.
 9. Mutate every combined worker with container/services/strategy/permissions/
    defaults/needs/if/advisory/environment/concurrency/uses/secrets/shell
    execution context, including spaced, quoted, escaped, tagged, explicit,
    flow, duplicate, reordered, and wrong-value forms.
-10. Run `python3 scripts/check_docs.py --check`.
+10. Place a real `sitecustomize.py` that exits successfully before ordinary
+    Python commands. Confirm normal startup is bypassed while all three
+    `/usr/bin/python3 -I` launcher modes execute, and arbitrary modes,
+    arguments, roots, or launcher/`-I` changes fail.
+11. Feed the workflow mirror parser a long repeated
+    `a\n        ` environment adversary and require bounded completion with
+    the same accepted/rejected structural results.
+12. Run `python3 scripts/check_docs.py --check`.
 
 ### Expected result
 
@@ -389,6 +396,10 @@ protected-step environments, ownership, or checked-out-root binding is removed
 or weakened. It also requires each combined worker's exact direct job mapping
 and values; no container or alternate execution context can replace the
 reviewed Ubuntu host.
+The protected Python steps use the closed isolated launcher, so repository or
+user site customization cannot run before control. The workflow mirror parser
+uses deterministic line/indent parsing rather than an ambiguous multiline
+regular expression.
 
 `python3 scripts/check_docs.py --check` validates this complete procedure,
 registry ownership, links, and automation evidence.

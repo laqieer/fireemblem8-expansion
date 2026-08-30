@@ -6,6 +6,7 @@ import fnmatch
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -62,11 +63,11 @@ MAP_MENU_PRESENTATION_GATE = (
     "make expansion-modern-map-menu-presentation-check -j1"
 )
 WORKFLOW_PILOT_GATE = (
-    "/usr/bin/python3 -m unittest discover -s scripts/workflow_pilot/tests "
-    "-p 'test_*.py' -v"
+    "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py "
+    "reporter-tests"
 )
 WORKFLOW_PILOT_BASELINE_GATE = (
-    "/usr/bin/python3 -m scripts.workflow_pilot.reporter "
+    "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline "
     '--repository-root "$GITHUB_WORKSPACE" '
     "--fixture scripts/workflow_pilot/tests/fixtures/baseline.json "
     "--decisions .github/workflow-pilot-decisions.json "
@@ -89,7 +90,7 @@ COMBINED_JOB_ENV = {
     ),
 }
 WORKFLOW_PILOT_AUTHORITY_HYDRATION = (
-    "/usr/bin/python3 -m scripts.workflow_pilot.hydrate_authority "
+    "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py hydrate "
     '--repository-root "$GITHUB_WORKSPACE" '
     "--fixture scripts/workflow_pilot/tests/fixtures/baseline.json "
     '--expected-head "$EXPECTED_BUILD_SHA"'
@@ -1070,13 +1071,14 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         replacements = (
             "true",
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(" -I ", " "),
             WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
                 "/usr/bin/python3",
                 "python3",
             ),
             WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
-                "scripts.workflow_pilot.hydrate_authority",
-                "scripts.workflow_pilot.reporter",
+                "scripts/workflow_pilot/isolated_launcher.py",
+                "scripts/workflow_pilot/reporter.py",
             ),
             WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
                 "--fixture scripts/workflow_pilot/tests/fixtures/baseline.json ",
@@ -1102,6 +1104,189 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     )
                 )
 
+    def test_isolated_launcher_and_closed_modes_are_pinned(self):
+        commands = (
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION,
+            WORKFLOW_PILOT_GATE,
+            WORKFLOW_PILOT_BASELINE_GATE,
+        )
+        replacements = (
+            lambda command: command.replace(" -I ", " "),
+            lambda command: command.replace(
+                "scripts/workflow_pilot/isolated_launcher.py",
+                "scripts/workflow_pilot/reporter.py",
+            ),
+            lambda command: command.replace(
+                " isolated_launcher.py hydrate",
+                " isolated_launcher.py arbitrary",
+            ),
+            lambda command: command.replace(" hydrate ", " arbitrary "),
+            lambda command: command.replace(" reporter-tests", " arbitrary"),
+            lambda command: command.replace(" baseline ", " arbitrary "),
+        )
+        for command in commands:
+            for replace in replacements:
+                replacement = replace(command)
+                if replacement == command:
+                    continue
+                with self.subTest(command=command, replacement=replacement):
+                    changed = self.text.replace(
+                        f"      run: {command}\n",
+                        f"      run: {replacement}\n",
+                        1,
+                    )
+                    self.assertTrue(
+                        any(
+                            "protected pre-pilot step sequence differs" in error
+                            or "lost exact workflow-pilot" in error
+                            or "lost exact fail-closed" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+    def test_isolated_launcher_ignores_repository_sitecustomize(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-isolated-launcher-",
+            dir=artifact_root,
+        ) as temporary:
+            root = Path(temporary)
+            package = root / "scripts" / "workflow_pilot"
+            tests = package / "tests"
+            tests.mkdir(parents=True)
+            (root / "scripts" / "__init__.py").write_text("", encoding="ascii")
+            (package / "__init__.py").write_text("", encoding="ascii")
+            (tests / "__init__.py").write_text("", encoding="ascii")
+            shutil.copy2(
+                ROOT / "scripts/workflow_pilot/isolated_launcher.py",
+                package / "isolated_launcher.py",
+            )
+            (root / "sitecustomize.py").write_text(
+                "import os\nos._exit(0)\n",
+                encoding="ascii",
+            )
+            (package / "hydrate_authority.py").write_text(
+                "from pathlib import Path\n"
+                "def main(argv):\n"
+                "    Path(__file__).resolve().parents[2]"
+                ".joinpath('hydrate.marker').write_text('ran')\n"
+                "    return 0\n",
+                encoding="ascii",
+            )
+            (package / "reporter.py").write_text(
+                "from pathlib import Path\n"
+                "def main(argv):\n"
+                "    Path(__file__).resolve().parents[2]"
+                ".joinpath('baseline.marker').write_text('ran')\n"
+                "    return 0\n"
+                "if __name__ == '__main__':\n"
+                "    raise SystemExit(main(None))\n",
+                encoding="ascii",
+            )
+            (tests / "test_probe.py").write_text(
+                "import unittest\n"
+                "from pathlib import Path\n"
+                "class Probe(unittest.TestCase):\n"
+                "    def test_probe(self):\n"
+                "        Path(__file__).resolve().parents[3]"
+                ".joinpath('tests.marker').write_text('ran')\n",
+                encoding="ascii",
+            )
+            hostile_environment = dict(os.environ)
+            hostile_environment["PYTHONPATH"] = str(root)
+            normal = subprocess.run(
+                [
+                    "/usr/bin/python3",
+                    "-m",
+                    "scripts.workflow_pilot.reporter",
+                ],
+                cwd=root,
+                env=hostile_environment,
+                check=False,
+                capture_output=True,
+            )
+            self.assertEqual(normal.returncode, 0)
+            self.assertFalse((root / "baseline.marker").exists())
+
+            launcher = "scripts/workflow_pilot/isolated_launcher.py"
+            commands = (
+                ["/usr/bin/python3", "-I", launcher, "reporter-tests"],
+                [
+                    "/usr/bin/python3",
+                    "-I",
+                    launcher,
+                    "baseline",
+                    "--repository-root",
+                    str(root),
+                ],
+                [
+                    "/usr/bin/python3",
+                    "-I",
+                    launcher,
+                    "hydrate",
+                    "--repository-root",
+                    str(root),
+                ],
+            )
+            for command in commands:
+                completed = subprocess.run(
+                    command,
+                    cwd=root,
+                    env=hostile_environment,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    completed.stderr.decode("utf-8", errors="replace"),
+                )
+            for marker in (
+                "tests.marker",
+                "baseline.marker",
+                "hydrate.marker",
+            ):
+                self.assertEqual(
+                    (root / marker).read_text(encoding="ascii"),
+                    "ran",
+                )
+
+            rejected = subprocess.run(
+                ["/usr/bin/python3", "-I", launcher, "arbitrary"],
+                cwd=root,
+                env=hostile_environment,
+                check=False,
+                capture_output=True,
+            )
+            self.assertEqual(rejected.returncode, 2)
+            self.assertFalse((root / "arbitrary.marker").exists())
+            for command in (
+                [
+                    "/usr/bin/python3",
+                    "-I",
+                    launcher,
+                    "reporter-tests",
+                    "arbitrary",
+                ],
+                [
+                    "/usr/bin/python3",
+                    "-I",
+                    launcher,
+                    "baseline",
+                    "--repository-root",
+                    str(package),
+                ],
+            ):
+                completed = subprocess.run(
+                    command,
+                    cwd=root,
+                    env=hostile_environment,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(completed.returncode, 2)
+
     def test_exact_fixture_hydration_restores_force_pushed_commit(self):
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
@@ -1110,40 +1295,129 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             dir=artifact_root,
         ) as temporary:
             root = Path(temporary)
+            seed = root / "seed"
             remote = root / "remote.git"
             checkout = root / "checkout"
-            expected_head = subprocess.check_output(
-                ["git", "-C", ROOT, "rev-parse", "HEAD"],
-                text=True,
-            ).strip()
 
             subprocess.run(
-                ["git", "clone", "-q", "--bare", "--shared", ROOT, remote],
+                ["git", "init", "-q", "-b", "master", seed],
                 check=True,
                 capture_output=True,
             )
-            refs = subprocess.check_output(
-                [
-                    "git",
-                    f"--git-dir={remote}",
-                    "for-each-ref",
-                    "--format=%(refname)",
-                ],
-                text=True,
-            ).splitlines()
-            for ref in refs:
+            for key, value in (
+                ("user.name", "Hydration Test"),
+                ("user.email", "hydration@example.invalid"),
+            ):
                 subprocess.run(
-                    ["git", f"--git-dir={remote}", "update-ref", "-d", ref],
+                    ["git", "-C", seed, "config", key, value],
                     check=True,
                     capture_output=True,
                 )
+            (seed / "expected.txt").write_text("expected\n", encoding="ascii")
+            subprocess.run(
+                ["git", "-C", seed, "add", "expected.txt"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", seed, "commit", "-q", "-m", "expected head"],
+                check=True,
+                capture_output=True,
+            )
+            expected_head = subprocess.check_output(
+                ["git", "-C", seed, "rev-parse", "HEAD"],
+                text=True,
+            ).strip()
             subprocess.run(
                 [
                     "git",
-                    f"--git-dir={remote}",
-                    "update-ref",
-                    "refs/heads/master",
-                    expected_head,
+                    "-C",
+                    seed,
+                    "checkout",
+                    "-q",
+                    "--orphan",
+                    "force-pushed",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", seed, "rm", "-q", "-rf", "."],
+                check=True,
+                capture_output=True,
+            )
+            (seed / "historical.txt").write_text(
+                "force-pushed\n",
+                encoding="ascii",
+            )
+            subprocess.run(
+                ["git", "-C", seed, "add", "historical.txt"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    seed,
+                    "commit",
+                    "-q",
+                    "-m",
+                    "force-pushed historical candidate",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            historical = subprocess.check_output(
+                ["git", "-C", seed, "rev-parse", "HEAD"],
+                text=True,
+            ).strip()
+            subprocess.run(
+                ["git", "-C", seed, "checkout", "-q", "master"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "init", "-q", "--bare", remote],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    seed,
+                    "remote",
+                    "add",
+                    "origin",
+                    str(remote),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    seed,
+                    "push",
+                    "-q",
+                    "origin",
+                    "master",
+                    f"{historical}:refs/heads/force-pushed",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    seed,
+                    "push",
+                    "-q",
+                    "origin",
+                    ":refs/heads/force-pushed",
                 ],
                 check=True,
                 capture_output=True,
@@ -1208,15 +1482,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 check=True,
                 capture_output=True,
             )
-            fixture_path = checkout / (
-                "scripts/workflow_pilot/tests/fixtures/baseline.json"
-            )
-            fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
-            historical = next(
-                review["commit_sha"]
-                for review in fixture["reviews"]
-                if review["id"] == 4989066820
-            )
             offline_environment = dict(os.environ)
             offline_environment["GIT_NO_LAZY_FETCH"] = "1"
             self.assertNotEqual(
@@ -1264,13 +1529,16 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             refs_before = subprocess.check_output(
                 ["git", "-C", checkout, "show-ref"],
             )
+            fetch_head_before = (checkout / ".git" / "FETCH_HEAD").read_bytes()
 
-            result = hydrate_authority.hydrate_authority(
+            required = sorted([expected_head, historical])
+            result = hydrate_authority.hydrate_exact_commits(
                 checkout,
-                fixture_path,
+                "laqieer/fireemblem8-expansion",
+                required,
                 expected_head,
             )
-            self.assertEqual(result["required"], len(fixture["commits"]))
+            self.assertEqual(result["required"], 2)
             self.assertGreater(result["fetched"], 0)
             subprocess.run(
                 ["git", "-C", checkout, "cat-file", "-e", f"{historical}^{{commit}}"],
@@ -1288,21 +1556,23 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 subprocess.check_output(["git", "-C", checkout, "show-ref"]),
                 refs_before,
             )
-            alternate_fixture = checkout / "build" / "alternate.json"
-            alternate_fixture.parent.mkdir(parents=True)
-            alternate_fixture.write_text(
-                json.dumps(fixture),
-                encoding="utf-8",
+            self.assertEqual(
+                (checkout / ".git" / "FETCH_HEAD").read_bytes(),
+                fetch_head_before,
             )
-            with self.assertRaisesRegex(
-                reporter.PilotDataError,
-                "--fixture must identify",
-            ):
-                hydrate_authority.hydrate_authority(
-                    checkout,
-                    alternate_fixture,
-                    expected_head,
-                )
+
+    def test_production_hydration_extracts_only_strict_fixture_commits(self):
+        fixture_path = ROOT / "scripts/workflow_pilot/tests/fixtures/baseline.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        repository, required = hydrate_authority.required_commits_from_fixture(
+            fixture_path
+        )
+        self.assertEqual(repository, "laqieer/fireemblem8-expansion")
+        self.assertEqual(required, sorted(set(required)))
+        self.assertEqual(
+            required,
+            sorted(commit["sha"] for commit in fixture["commits"]),
+        )
 
     def test_synthetic_stacked_pull_request_runs_candidate_jobs_on_its_real_base(self):
         event = {

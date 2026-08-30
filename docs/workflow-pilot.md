@@ -128,10 +128,14 @@ semantic gate; local
 Checkout, exact-revision verification, hydration, host dependency setup, and
 the three preceding host suites are one exact ordered pre-pilot sequence with
 reviewed actions, commands, and fields. Hydration plus both reporter gates use
-absolute `/usr/bin/python3`; the helper uses `/usr/bin/git`. Their step
-environments set `BASH_ENV`, `ENV`, and `PYTHONPATH` empty and pin
-`PATH=/usr/bin:/bin`, preventing earlier runner environment files or shell
-startup hooks from replacing either executable.
+`/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py`. Python
+therefore completes isolated startup before the launcher inserts only its
+resolved source root and dispatches exactly `hydrate`, `reporter-tests`, or
+`baseline`; it exposes no arbitrary module, command, or evaluation mode. The
+hydration helper uses `/usr/bin/git`. Protected step environments set
+`BASH_ENV`, `ENV`, and `PYTHONPATH` empty and pin `PATH=/usr/bin:/bin`, so
+runner environment files, repository/user `sitecustomize.py`, and shell
+startup hooks cannot replace either executable.
 At job scope, every combined worker has a closed direct mapping: exact
 `runs-on: ubuntu-latest`, `timeout-minutes: 60`, its reviewed environment, and
 `steps` only. Host, modern, extended-host, and legacy therefore reject

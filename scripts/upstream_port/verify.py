@@ -181,14 +181,9 @@ def gates(jobs: int = 2) -> List[Gate]:
             name="workflow-pilot-reporter-tests",
             command=[
                 "/usr/bin/python3",
-                "-m",
-                "unittest",
-                "discover",
-                "-s",
-                "scripts/workflow_pilot/tests",
-                "-p",
-                "test_*.py",
-                "-v",
+                "-I",
+                "scripts/workflow_pilot/isolated_launcher.py",
+                "reporter-tests",
             ],
             applicable_note=(
                 "issue #176 host lane: pure-stdlib workflow-pilot reporter "
@@ -199,8 +194,9 @@ def gates(jobs: int = 2) -> List[Gate]:
             name="workflow-pilot-baseline",
             command=[
                 "/usr/bin/python3",
-                "-m",
-                "scripts.workflow_pilot.reporter",
+                "-I",
+                "scripts/workflow_pilot/isolated_launcher.py",
+                "baseline",
                 "--repository-root",
                 "$GITHUB_WORKSPACE",
                 "--fixture",

@@ -83,22 +83,73 @@ def _parse_workflow_gate_commands(path=BUILD_WORKFLOW_PATH):
     return _parse_workflow_gate_commands_text(text)
 
 
+def _workflow_job_blocks(text):
+    lines = text.splitlines(keepends=True)
+    try:
+        jobs_index = next(
+            index
+            for index, line in enumerate(lines)
+            if line.rstrip("\r\n") == "jobs:"
+        )
+    except StopIteration as error:
+        raise AssertionError("workflow lacks jobs mapping") from error
+
+    starts = []
+    for index in range(jobs_index + 1, len(lines)):
+        line = lines[index].rstrip("\r\n")
+        if not line.startswith("  ") or line.startswith("    "):
+            continue
+        header = line[2:]
+        if not header.endswith(":"):
+            continue
+        name = header[:-1]
+        if name and all(character.isalnum() or character in "_-" for character in name):
+            starts.append((name, index))
+    return {
+        name: "".join(
+            lines[
+                index + 1 :
+                starts[position + 1][1]
+                if position + 1 < len(starts)
+                else len(lines)
+            ]
+        )
+        for position, (name, index) in enumerate(starts)
+    }
+
+
+def _scrubbed_environment_entries(block):
+    lines = block.splitlines()
+    try:
+        env_index = lines.index("      env:")
+    except ValueError:
+        return None
+    entries = []
+    for line in lines[env_index + 1 :]:
+        if line == "      run:" or line.startswith("      run: "):
+            return tuple(entries)
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith("        "):
+            return None
+        entries.append(line.strip())
+    return None
+
+
 def _parse_workflow_gate_commands_text(text):
     commands = []
+    jobs = _workflow_job_blocks(text)
     for job_name in ("host-tests", "build", "extended-host-tests", "legacy"):
-        job = re.search(
-            rf"(?ms)^  {re.escape(job_name)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
-            text,
-        )
-        assert job is not None, f"missing candidate Build job {job_name!r}"
-        step_matches = list(_STEP_NAME_RE.finditer(job.group("body")))
+        body = jobs.get(job_name)
+        assert body is not None, f"missing candidate Build job {job_name!r}"
+        step_matches = list(_STEP_NAME_RE.finditer(body))
         assert step_matches, f"no steps found parsing {job_name!r}; workflow format changed?"
 
         for i, m in enumerate(step_matches):
             step_name = m.group(1).strip()
             start = m.end()
-            end = step_matches[i + 1].start() if i + 1 < len(step_matches) else len(job.group("body"))
-            block = job.group("body")[start:end]
+            end = step_matches[i + 1].start() if i + 1 < len(step_matches) else len(body)
+            block = body[start:end]
 
             if step_name in _NON_GATE_STEP_NAMES:
                 continue
@@ -132,19 +183,10 @@ def _parse_workflow_gate_commands_text(text):
                         f"protected pilot step {step_name!r} must contain only "
                         f"the reviewed name, env, and run fields, got {fields!r}"
                     )
-                    env_match = re.search(
-                        r"(?ms)^      env:\n(?P<env>(?:        .+\n)+)"
-                        r"^      run:",
-                        block,
-                    )
-                    assert env_match is not None, (
+                    env_entries = _scrubbed_environment_entries(block)
+                    assert env_entries is not None, (
                         f"protected pilot step {step_name!r} lacks its "
                         "reviewed scrubbed environment"
-                    )
-                    env_entries = tuple(
-                        line.strip()
-                        for line in env_match.group("env").splitlines()
-                        if line.strip()
                     )
                     assert env_entries == _SCRUBBED_PILOT_ENV, (
                         f"protected pilot step {step_name!r} changes its "
@@ -397,14 +439,17 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 (
                     _WORKFLOW_PILOT_TEST_STEP_NAME,
                     [
-                        "/usr/bin/python3", "-m", "unittest", "discover", "-s",
-                        "scripts/workflow_pilot/tests", "-p", "test_*.py", "-v",
+                        "/usr/bin/python3", "-I",
+                        "scripts/workflow_pilot/isolated_launcher.py",
+                        "reporter-tests",
                     ],
                 ),
                 (
                     _WORKFLOW_PILOT_BASELINE_STEP_NAME,
                     [
-                        "/usr/bin/python3", "-m", "scripts.workflow_pilot.reporter",
+                        "/usr/bin/python3", "-I",
+                        "scripts/workflow_pilot/isolated_launcher.py",
+                        "baseline",
                         "--repository-root", "$GITHUB_WORKSPACE",
                         "--fixture",
                         "scripts/workflow_pilot/tests/fixtures/baseline.json",
@@ -433,6 +478,26 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             ordered_steps.index(_WORKFLOW_PILOT_BASELINE_STEP_NAME),
             ordered_steps.index(_LOCALIZATION_HOST_STEP_NAME),
         )
+
+    def test_workflow_parser_is_linear_on_long_environment_adversary(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            workflow = handle.read()
+        self.assertTrue(_parse_workflow_gate_commands_text(workflow))
+        adversarial = workflow.replace(
+            "    - name: Run workflow-pilot reporter regression suite (issue #176)\n"
+            "      env:\n"
+            "        BASH_ENV: ''\n",
+            "    - name: Run workflow-pilot reporter regression suite (issue #176)\n"
+            "      env:\n"
+            + ("        a\n" * 50000)
+            + "        BASH_ENV: ''\n",
+            1,
+        )
+        with self.assertRaisesRegex(
+            AssertionError,
+            "reviewed scrubbed environment",
+        ):
+            _parse_workflow_gate_commands_text(adversarial)
 
     def test_every_mirrored_gate_rejects_unmodeled_execution_fields(self):
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:

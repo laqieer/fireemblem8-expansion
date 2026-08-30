@@ -225,8 +225,8 @@ local prerequisites.
    rerun it for the current test count rather than trusting a written count)
 3. `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`
    (pure-stdlib consolidated Build CI topology and checkout contracts)
-4. `/usr/bin/python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`
-5. `/usr/bin/python3 -m scripts.workflow_pilot.reporter --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null`
+4. `/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests`
+5. `/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null`
 6. `python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"`
    (issue #18 host-only localization schema/catalog/pseudo/generation/resolver
    coverage)

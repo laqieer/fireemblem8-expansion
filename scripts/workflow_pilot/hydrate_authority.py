@@ -100,25 +100,28 @@ def available_commits(
     return available
 
 
-def hydrate_authority(
+def required_commits_from_fixture(fixture_path: Path) -> tuple[str, list[str]]:
+    data = reporter.validate_fixture(reporter.load_json(fixture_path))
+    return data["fixture"]["repository"], sorted(data["commits"])
+
+
+def hydrate_exact_commits(
     repository_root: Path,
-    fixture_path: Path,
+    repository: str,
+    required: list[str],
     expected_head: str,
 ) -> dict[str, int]:
     repository_root = reporter.validate_repository_root(repository_root)
-    expected_fixture = (repository_root / reporter.BASELINE_FIXTURE_PATH).resolve()
-    try:
-        fixture_path = fixture_path.resolve(strict=True)
-    except OSError as error:
-        raise reporter.PilotDataError(
-            f"strict baseline fixture is unavailable: {error}"
-        ) from error
-    if fixture_path != expected_fixture:
-        raise reporter.PilotDataError(
-            f"--fixture must identify {expected_fixture}"
-        )
+    reporter.expect_string(repository, "required repository")
     reporter.expect_sha(expected_head, "--expected-head")
-    data = reporter.validate_fixture(reporter.load_json(fixture_path))
+    if not required:
+        raise reporter.PilotDataError("required commit set must not be empty")
+    for sha in required:
+        reporter.expect_sha(sha, "required commit")
+    if required != sorted(set(required)):
+        raise reporter.PilotDataError(
+            "required commits must be unique and sorted"
+        )
 
     remote = reporter.run_git(
         repository_root,
@@ -126,10 +129,10 @@ def hydrate_authority(
         "--get",
         "remote.origin.url",
     ).decode("utf-8").strip()
-    repository = reporter._github_repository_from_remote(remote)
-    if repository != data["fixture"]["repository"]:
+    origin_repository = reporter._github_repository_from_remote(remote)
+    if origin_repository != repository:
         raise reporter.PilotDataError(
-            "origin does not match the strict baseline repository"
+            "origin does not match the required repository"
         )
 
     head_before = reporter.run_git(
@@ -147,7 +150,6 @@ def hydrate_authority(
         "--format=%(refname)%00%(objectname)",
     )
 
-    required = sorted(data["commits"])
     missing = sorted(set(required) - available_commits(repository_root, required))
     for offset in range(0, len(missing), BATCH_SIZE):
         batch = missing[offset : offset + BATCH_SIZE]
@@ -186,6 +188,32 @@ def hydrate_authority(
             "exact fixture authority hydration moved repository refs"
         )
     return {"required": len(required), "fetched": len(missing)}
+
+
+def hydrate_authority(
+    repository_root: Path,
+    fixture_path: Path,
+    expected_head: str,
+) -> dict[str, int]:
+    repository_root = reporter.validate_repository_root(repository_root)
+    expected_fixture = (repository_root / reporter.BASELINE_FIXTURE_PATH).resolve()
+    try:
+        fixture_path = fixture_path.resolve(strict=True)
+    except OSError as error:
+        raise reporter.PilotDataError(
+            f"strict baseline fixture is unavailable: {error}"
+        ) from error
+    if fixture_path != expected_fixture:
+        raise reporter.PilotDataError(
+            f"--fixture must identify {expected_fixture}"
+        )
+    repository, required = required_commits_from_fixture(fixture_path)
+    return hydrate_exact_commits(
+        repository_root,
+        repository,
+        required,
+        expected_head,
+    )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
