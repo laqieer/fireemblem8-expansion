@@ -5,6 +5,7 @@ import os
 import re
 import shlex
 import subprocess
+import tempfile
 import unittest
 from unittest import mock
 
@@ -848,77 +849,73 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
 
 
 class VerifyCliCwdTests(unittest.TestCase):
-    LIGHTWEIGHT_COMMAND = [
-        "python3",
-        "-c",
-        (
-            "from pathlib import Path; "
-            "assert Path('scripts/upstream_port/verify.py').is_file(); "
-            "import scripts.upstream_port.verify"
-        ),
-    ]
+    def test_normal_cli_executes_all_gates_at_selected_target_root(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-target-checkout-",
+            dir=artifact_root,
+        ) as temporary:
+            target_root = os.path.join(temporary, "target")
+            subprocess.run(
+                ["git", "clone", "-q", "--shared", REPO_ROOT, target_root],
+                check=True,
+                capture_output=True,
+            )
+            for arguments, expected_root in (
+                (["verify"], REPO_ROOT),
+                (["--repo", target_root, "verify"], target_root),
+            ):
+                with self.subTest(arguments=arguments):
+                    seen = []
+                    real_run = subprocess.run
 
-    def test_normal_cli_executes_all_gates_at_target_root(self):
-        caller_cwd = os.path.join(REPO_ROOT, "tests")
-        for arguments in (
-            ["verify"],
-            ["--repo", REPO_ROOT, "verify"],
-        ):
-            with self.subTest(arguments=arguments):
-                seen = []
+                    def fake_run(argv, **kwargs):
+                        if argv[0] == "git":
+                            return real_run(argv, **kwargs)
+                        seen.append((list(argv), kwargs))
+                        return subprocess.CompletedProcess(
+                            argv,
+                            0,
+                            stdout="",
+                            stderr="",
+                        )
 
-                def fake_run(argv, **kwargs):
-                    seen.append((list(argv), kwargs))
-                    return subprocess.CompletedProcess(
-                        argv,
-                        0,
-                        stdout="",
-                        stderr="",
+                    with (
+                        contextlib.chdir(REPO_ROOT),
+                        mock.patch.dict(os.environ, {}, clear=True),
+                        mock.patch.object(
+                            verify_mod.subprocess,
+                            "run",
+                            side_effect=fake_run,
+                        ),
+                        contextlib.redirect_stdout(io.StringIO()),
+                    ):
+                        self.assertEqual(cli.main(arguments), 0)
+
+                    self.assertEqual(len(seen), 28)
+                    self.assertEqual(
+                        [kwargs["cwd"] for _, kwargs in seen],
+                        [expected_root] * 28,
                     )
-
-                with (
-                    mock.patch.object(cli.os, "getcwd", return_value=caller_cwd),
-                    mock.patch.object(cli, "_repo_root", return_value=REPO_ROOT),
-                    mock.patch.object(
-                        verify_mod,
-                        "_resolve_repository_root",
-                        return_value=REPO_ROOT,
-                    ) as repository_root,
-                    mock.patch.object(
-                        verify_mod.subprocess,
-                        "run",
-                        side_effect=fake_run,
-                    ),
-                    contextlib.redirect_stdout(io.StringIO()),
-                ):
-                    self.assertEqual(cli.main(arguments), 0)
-
-                repository_root.assert_called_once_with(REPO_ROOT)
-                self.assertEqual(len(seen), 28)
-                self.assertEqual(
-                    [kwargs["cwd"] for _, kwargs in seen],
-                    [REPO_ROOT] * 28,
-                )
-                baseline = seen[
-                    [gate.name for gate in verify_mod.gates()].index(
-                        "workflow-pilot-baseline"
+                    baseline = seen[
+                        [gate.name for gate in verify_mod.gates()].index(
+                            "workflow-pilot-baseline"
+                        )
+                    ][0]
+                    self.assertEqual(
+                        baseline[baseline.index("--repository-root") + 1],
+                        expected_root,
                     )
-                ][0]
-                self.assertEqual(
-                    baseline[baseline.index("--repository-root") + 1],
-                    REPO_ROOT,
-                )
 
     def test_dry_run_and_normal_cli_select_the_same_target_root(self):
-        caller_cwd = os.path.join(REPO_ROOT, "tests")
-        for common in (
-            [],
-            ["--repo", REPO_ROOT],
+        for common, expected_root in (
+            ([], REPO_ROOT),
+            (["--repo", REPO_ROOT], REPO_ROOT),
         ):
             with self.subTest(arguments=common):
                 with (
-                    mock.patch.object(cli.os, "getcwd", return_value=caller_cwd),
-                    mock.patch.object(cli, "_repo_root", return_value=REPO_ROOT),
+                    contextlib.chdir(REPO_ROOT),
                     mock.patch.object(
                         verify_mod,
                         "run_gates",
@@ -934,46 +931,27 @@ class VerifyCliCwdTests(unittest.TestCase):
                 self.assertEqual(
                     run_gates.call_args_list,
                     [
-                        mock.call(REPO_ROOT, jobs=2, dry_run=False),
-                        mock.call(REPO_ROOT, jobs=2, dry_run=True),
+                        mock.call(expected_root, jobs=2, dry_run=False),
+                        mock.call(expected_root, jobs=2, dry_run=True),
                     ],
                 )
 
-    def test_public_cli_real_relative_gate_uses_selected_repository_root(self):
-        lightweight_gate = verify_mod.Gate(
-            name="lightweight-relative-import",
-            command=self.LIGHTWEIGHT_COMMAND,
-            applicable_note="repository-root execution regression",
+    def test_documented_source_root_module_dry_run_is_real(self):
+        completed = subprocess.run(
+            [
+                "python3",
+                "-m",
+                "scripts.upstream_port",
+                "verify",
+                "--dry-run",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
         )
-        cases = (
-            (
-                os.path.join(REPO_ROOT, "tests"),
-                ["verify"],
-            ),
-            (
-                os.path.dirname(REPO_ROOT),
-                ["--repo", REPO_ROOT, "verify"],
-            ),
-        )
-        for caller_cwd, arguments in cases:
-            with self.subTest(caller_cwd=caller_cwd, arguments=arguments):
-                old_behavior = subprocess.run(
-                    self.LIGHTWEIGHT_COMMAND,
-                    cwd=caller_cwd,
-                    check=False,
-                    capture_output=True,
-                )
-                self.assertNotEqual(old_behavior.returncode, 0)
-                with (
-                    contextlib.chdir(caller_cwd),
-                    mock.patch.object(
-                        verify_mod,
-                        "gates",
-                        return_value=[lightweight_gate],
-                    ),
-                    contextlib.redirect_stdout(io.StringIO()),
-                ):
-                    self.assertEqual(cli.main(arguments), 0)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout.count("[SKIPPED(dry-run)]"), 28)
 
 
 if __name__ == "__main__":

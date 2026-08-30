@@ -56,26 +56,15 @@ from . import scan as scan_mod
 from . import state as state_mod
 from . import verify as verify_mod
 
+SOURCE_ROOT = os.path.realpath(
+    os.path.join(os.path.dirname(__file__), "..", "..")
+)
+
 
 def _repo_root(explicit: Optional[str]) -> str:
     if explicit:
         return os.path.abspath(explicit)
-    proc_cwd = os.getcwd()
-    try:
-        import subprocess
-
-        proc = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=proc_cwd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if proc.returncode == 0:
-            return proc.stdout.strip()
-    except OSError:
-        pass
-    return proc_cwd
+    return SOURCE_ROOT
 
 
 def _state_path(repo_root: str, explicit: Optional[str]) -> str:
@@ -130,7 +119,11 @@ def build_parser() -> argparse.ArgumentParser:
         prog="upstream_port",
         description="Read-only-by-default canonical upstream port tooling (Issue #12).",
     )
-    parser.add_argument("--repo", default=None, help="Repo root (default: auto-detect via git)")
+    parser.add_argument(
+        "--repo",
+        default=None,
+        help="Target repo root (default: this source checkout)",
+    )
     parser.add_argument("--state", default=None, help="State file path (default: %s)" % constants.DEFAULT_STATE_PATH)
     sub = parser.add_subparsers(dest="command", required=True)
 

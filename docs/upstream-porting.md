@@ -190,12 +190,14 @@ below. The four combined workers run in parallel in CI; `summary` is their
 only serial, fail-closed join. Local `verify` runs the same 28 gates in its
 documented order and therefore does not reproduce CI wall-clock parallelism.
 Every mirrored command uses repository-relative argv, so all 28 subprocesses
-run at one resolved target repository root. With implicit selection, the
-invocation directory is used only to discover that Git top level; with
-`--repo`, invocation may be outside the target checkout. In CI,
-`GITHUB_WORKSPACE` must resolve to the same target. That one root is both the
-subprocess working directory and the pilot baseline's `--repository-root`;
-there is no per-step working-directory override.
+run at one resolved target repository root. Launch the source-tree module from
+this source repository root. Implicit selection targets that source checkout;
+`--repo <target-root>` may select another checkout while the module still
+launches from its source root. Nested/external module discovery is not an
+installed or supported interface. In CI, `GITHUB_WORKSPACE` must resolve to
+the selected target. That one root is both the subprocess working directory
+and the pilot baseline's `--repository-root`; there is no per-step
+working-directory override.
 
 Before a non-dry-run local `verify`, install both the supported modern
 toolchain and the explicit archival `make legacy` prerequisites. The
