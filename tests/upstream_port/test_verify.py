@@ -61,6 +61,12 @@ _WORKFLOW_PILOT_TEST_STEP_NAME = (
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     "Validate workflow-pilot baseline against checked-out Git history"
 )
+_SCRUBBED_PILOT_ENV = (
+    "BASH_ENV: ''",
+    "ENV: ''",
+    "PATH: /usr/bin:/bin",
+    "PYTHONPATH: ''",
+)
 
 
 def _parse_workflow_gate_commands(path=BUILD_WORKFLOW_PATH):
@@ -118,10 +124,37 @@ def _parse_workflow_gate_commands_text(text):
                             f"mirrored gate step {step_name!r} uses unsupported "
                             "direct mapping indentation"
                         )
-                assert fields == ["run"], (
-                    f"mirrored gate step {step_name!r} must contain only the "
-                    f"reviewed name and run fields, got {fields!r}"
-                )
+                if step_name in {
+                    _WORKFLOW_PILOT_TEST_STEP_NAME,
+                    _WORKFLOW_PILOT_BASELINE_STEP_NAME,
+                }:
+                    assert fields == ["env", "run"], (
+                        f"protected pilot step {step_name!r} must contain only "
+                        f"the reviewed name, env, and run fields, got {fields!r}"
+                    )
+                    env_match = re.search(
+                        r"(?ms)^      env:\n(?P<env>(?:        .+\n)+)"
+                        r"^      run:",
+                        block,
+                    )
+                    assert env_match is not None, (
+                        f"protected pilot step {step_name!r} lacks its "
+                        "reviewed scrubbed environment"
+                    )
+                    env_entries = tuple(
+                        line.strip()
+                        for line in env_match.group("env").splitlines()
+                        if line.strip()
+                    )
+                    assert env_entries == _SCRUBBED_PILOT_ENV, (
+                        f"protected pilot step {step_name!r} changes its "
+                        "reviewed scrubbed environment"
+                    )
+                else:
+                    assert fields == ["run"], (
+                        f"mirrored gate step {step_name!r} must contain only "
+                        f"the reviewed name and run fields, got {fields!r}"
+                    )
 
             single_m = _SINGLE_RUN_RE.search(block)
             if single_m:
@@ -364,14 +397,14 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 (
                     _WORKFLOW_PILOT_TEST_STEP_NAME,
                     [
-                        "python3", "-m", "unittest", "discover", "-s",
+                        "/usr/bin/python3", "-m", "unittest", "discover", "-s",
                         "scripts/workflow_pilot/tests", "-p", "test_*.py", "-v",
                     ],
                 ),
                 (
                     _WORKFLOW_PILOT_BASELINE_STEP_NAME,
                     [
-                        "python3", "-m", "scripts.workflow_pilot.reporter",
+                        "/usr/bin/python3", "-m", "scripts.workflow_pilot.reporter",
                         "--repository-root", "$GITHUB_WORKSPACE",
                         "--fixture",
                         "scripts/workflow_pilot/tests/fixtures/baseline.json",
@@ -437,7 +470,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                     self.assertNotEqual(changed, workflow)
                     with self.assertRaisesRegex(
                         AssertionError,
-                        "unsupported direct mapping|only the reviewed name and run",
+                        "unsupported direct mapping|only the reviewed "
+                        "(?:name and run|name, env, and run)",
                     ):
                         _parse_workflow_gate_commands_text(changed)
 

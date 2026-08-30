@@ -200,11 +200,13 @@ and the pilot baseline's `--repository-root`; there is no per-step
 working-directory override.
 
 CI additionally hydrates commit authority before the workflow-pilot tests with
-a no-tags, blob-filtered all-remote-head fetch and then rechecks exact
-`EXPECTED_BUILD_SHA`. This compensates only for Actions checkout's
-exact-candidate ref optimization; it is classified as CI setup and is not
-mirrored into the 28 local gates. Normal local clones already carry branch
-history, so `verify` remains network-independent.
+the strict fixture-derived helper. It fetches only missing exact commit IDs
+from fixed `origin`, in bounded no-tags/blob-filtered/no-ref batches, verifies
+every commit, and rechecks exact `EXPECTED_BUILD_SHA` plus the complete ref
+set. This covers force-pushed candidates that an all-head fetch cannot
+recover. It is CI setup, not one of the 28 local gates; normal local clones
+are never hydrated by `verify`, which remains deliberately
+network-independent and fails if their authority is incomplete.
 
 Before a non-dry-run local `verify`, install both the supported modern
 toolchain and the explicit archival `make legacy` prerequisites. The
@@ -223,8 +225,8 @@ local prerequisites.
    rerun it for the current test count rather than trusting a written count)
 3. `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`
    (pure-stdlib consolidated Build CI topology and checkout contracts)
-4. `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`
-5. `python3 -m scripts.workflow_pilot.reporter --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null`
+4. `/usr/bin/python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`
+5. `/usr/bin/python3 -m scripts.workflow_pilot.reporter --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null`
 6. `python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"`
    (issue #18 host-only localization schema/catalog/pseudo/generation/resolver
    coverage)

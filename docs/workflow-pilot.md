@@ -113,14 +113,25 @@ shell operators, wrappers, substitutions, or changed redirections cannot turn
 either command into advisory evidence.
 
 The reporter disables Git lazy fetching, remains offline, and fails closed
-when any fixture commit object is absent. A normal clone with remote branch history already supplies this
-authority. Actions checkout's exact-candidate ref optimization can omit older
-commits that remain reachable only from another remote branch, so the
-`host-tests` job performs one CI-only setup fetch before reporter tests:
-no tags, blob-filtered, and bounded to all remote branch heads. It immediately
-rechecks that `HEAD` still equals `EXPECTED_BUILD_SHA`. This hydration is
-environment setup, not a 29th local semantic gate; local
+when any fixture commit object is absent. The development object database used
+to freeze the fixture already supplies this authority. A clean Actions
+exact-candidate checkout can omit older force-pushed commits, so the
+`host-tests` job runs one CI-only helper before reporter tests. The helper
+reads only the committed strict baseline fixture, derives its unique commit
+IDs, and fetches missing objects from fixed remote `origin` in bounded batches
+with no tags, eager blobs, FETCH_HEAD write, or ref movement. It verifies every
+identity as a commit and rechecks that `HEAD` still equals
+`EXPECTED_BUILD_SHA`. This hydration is environment setup, not a 29th local
+semantic gate; local
 `scripts.upstream_port verify` remains network-independent.
+
+Checkout, exact-revision verification, hydration, host dependency setup, and
+the three preceding host suites are one exact ordered pre-pilot sequence with
+reviewed actions, commands, and fields. Hydration plus both reporter gates use
+absolute `/usr/bin/python3`; the helper uses `/usr/bin/git`. Their step
+environments set `BASH_ENV`, `ENV`, and `PYTHONPATH` empty and pin
+`PATH=/usr/bin:/bin`, preventing earlier runner environment files or shell
+startup hooks from replacing either executable.
 
 Before the command succeeds, it creates a bounded mutable artifact sandbox
 under the checkout's ignored `build/test-artifacts/` directory and copies only

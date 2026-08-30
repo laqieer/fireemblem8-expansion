@@ -291,10 +291,13 @@ availability or grant credentials.
    success. Confirm automatic bounded cleanup, unchanged source artifact
    bytes, and fail-closed stale, fabricated, or fixture-command substitutions.
 8. Inspect the CI authority-hydration fixture: an exact-ref shallow checkout
-   initially lacks a historical commit reachable from another remote branch;
-   the no-tags, blob-filtered all-head refspec restores that commit without
-   moving `HEAD`. Confirm the setup step precedes reporter tests and is absent
-   from the 28 local gates.
+   initially lacks PR #74's force-pushed reviewed commit, and the prior
+   all-head refspec still cannot recover it with lazy fetching disabled. The
+   strict helper derives every required commit from the committed baseline,
+   fetches missing exact IDs from fixed `origin` in bounded
+   no-tags/blob-filtered/no-ref batches, verifies them, and leaves both `HEAD`
+   and refs unchanged. Confirm the setup step precedes reporter tests and is
+   absent from the 28 local gates.
 9. Run `python3 scripts/check_docs.py --check`.
 
 ### Expected result
@@ -375,10 +378,11 @@ parses the decision and fixture schemas, reproduces every frozen calculation,
 compares canonical bytes, and exercises all positive/adversarial controls
 above. Build CI runs the same command plus the baseline reporter with
 `--repository-root "$GITHUB_WORKSPACE"` in its existing required `host-tests`
-job. Before those reporter commands, CI hydrates all remote branch commit
-authority and proves exact `HEAD` is unchanged. The parsed workflow topology
-suite fails if hydration, ownership, the protected environment mapping, or the
-checked-out-root binding is removed or weakened.
+job. Before those reporter commands, CI hydrates the fixture's exact commit
+authority and proves exact `HEAD` and refs are unchanged. The parsed workflow
+topology suite fails if hydration, pre-pilot step order/content, scrubbed
+protected-step environments, ownership, or checked-out-root binding is removed
+or weakened.
 
 `python3 scripts/check_docs.py --check` validates this complete procedure,
 registry ownership, links, and automation evidence.

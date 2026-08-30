@@ -50,11 +50,17 @@ jobs:
         printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
         test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
 
-    # Exact-ref checkout can omit commits retained only by another branch.
-    # Hydrate commit/tree authority without tags or blobs, then prove the
-    # candidate checkout did not move.
+    # Exact-ref checkout can omit force-pushed historical fixture commits.
+    # The CI-only helper derives exact object IDs from the committed fixture,
+    # fetches only missing commits without refs/tags/eager blobs, and proves
+    # both refs and the candidate checkout remain unchanged.
     - name: Hydrate workflow-pilot Git authority
-      run: git fetch --quiet --no-tags --filter=blob:none origin '+refs/heads/*:refs/remotes/origin/*' && test "$(git rev-parse HEAD)" = "$EXPECTED_BUILD_SHA"
+      env:
+        BASH_ENV: ''
+        ENV: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: /usr/bin/python3 -m scripts.workflow_pilot.hydrate_authority --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --expected-head "$EXPECTED_BUILD_SHA"
 
     - name: Install host-only dependencies (no arm-none-eabi toolchain)
       run: sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev
@@ -93,10 +99,20 @@ jobs:
       run: python3 -m unittest discover -s tests/workflows -p "test_*.py" -v
 
     - name: Run workflow-pilot reporter regression suite (issue #176)
-      run: python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v
+      env:
+        BASH_ENV: ''
+        ENV: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: /usr/bin/python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v
 
     - name: Validate workflow-pilot baseline against checked-out Git history
-      run: python3 -m scripts.workflow_pilot.reporter --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null
+      env:
+        BASH_ENV: ''
+        ENV: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: /usr/bin/python3 -m scripts.workflow_pilot.reporter --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null
 
     # Issue #18 host-lane closure fix: the scripts/localization package's
     # own pure-stdlib unit test suite (schema/pseudo/catalog/generate/CLI/

@@ -180,7 +180,7 @@ def gates(jobs: int = 2) -> List[Gate]:
         Gate(
             name="workflow-pilot-reporter-tests",
             command=[
-                "python3",
+                "/usr/bin/python3",
                 "-m",
                 "unittest",
                 "discover",
@@ -198,7 +198,7 @@ def gates(jobs: int = 2) -> List[Gate]:
         Gate(
             name="workflow-pilot-baseline",
             command=[
-                "python3",
+                "/usr/bin/python3",
                 "-m",
                 "scripts.workflow_pilot.reporter",
                 "--repository-root",

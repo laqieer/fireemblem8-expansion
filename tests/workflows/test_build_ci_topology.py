@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import fnmatch
+import json
 import os
 import re
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+from scripts.workflow_pilot import hydrate_authority, reporter
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -59,11 +62,11 @@ MAP_MENU_PRESENTATION_GATE = (
     "make expansion-modern-map-menu-presentation-check -j1"
 )
 WORKFLOW_PILOT_GATE = (
-    "python3 -m unittest discover -s scripts/workflow_pilot/tests "
+    "/usr/bin/python3 -m unittest discover -s scripts/workflow_pilot/tests "
     "-p 'test_*.py' -v"
 )
 WORKFLOW_PILOT_BASELINE_GATE = (
-    "python3 -m scripts.workflow_pilot.reporter "
+    "/usr/bin/python3 -m scripts.workflow_pilot.reporter "
     '--repository-root "$GITHUB_WORKSPACE" '
     "--fixture scripts/workflow_pilot/tests/fixtures/baseline.json "
     "--decisions .github/workflow-pilot-decisions.json "
@@ -76,9 +79,16 @@ EXPECTED_BUILD_SHA_EXPRESSION = (
 )
 HOST_ENV_LINE = f"      EXPECTED_BUILD_SHA: {EXPECTED_BUILD_SHA_EXPRESSION}"
 WORKFLOW_PILOT_AUTHORITY_HYDRATION = (
-    "git fetch --quiet --no-tags --filter=blob:none origin "
-    "'+refs/heads/*:refs/remotes/origin/*' && "
-    'test "$(git rev-parse HEAD)" = "$EXPECTED_BUILD_SHA"'
+    "/usr/bin/python3 -m scripts.workflow_pilot.hydrate_authority "
+    '--repository-root "$GITHUB_WORKSPACE" '
+    "--fixture scripts/workflow_pilot/tests/fixtures/baseline.json "
+    '--expected-head "$EXPECTED_BUILD_SHA"'
+)
+SCRUBBED_STEP_ENV = (
+    "        BASH_ENV: ''",
+    "        ENV: ''",
+    "        PATH: /usr/bin:/bin",
+    "        PYTHONPATH: ''",
 )
 
 
@@ -286,9 +296,163 @@ def _contains_exact_command(job: str, command: str) -> bool:
         if len(commands) != 1 or _normalise(commands[0]) != expected:
             continue
         fields = _direct_step_mapping_fields(step)
-        if fields is not None and len(fields) == 2 and set(fields) == {"name", "run"}:
+        if fields is not None and (
+            (len(fields) == 2 and set(fields) == {"name", "run"})
+            or (
+                len(fields) == 3
+                and set(fields) == {"name", "env", "run"}
+                and _step_has_scrubbed_environment(step)
+            )
+        ):
             return True
     return False
+
+
+def _step_has_scrubbed_environment(step: str) -> bool:
+    lines = step.splitlines()
+    try:
+        env_index = lines.index("      env:")
+    except ValueError:
+        return False
+    entries = []
+    for line in lines[env_index + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 6:
+            break
+        if line.strip() and not line.lstrip().startswith("#"):
+            entries.append(line)
+    return tuple(entries) == SCRUBBED_STEP_ENV
+
+
+def _step_name(step: str) -> str | None:
+    match = re.search(r"^    - name: (?P<name>.+)$", step, re.MULTILINE)
+    return match.group("name") if match is not None else None
+
+
+def _checkout_step_is_exact(step: str) -> bool:
+    action = (
+        "    - uses: actions/checkout@"
+        "3d3c42e5aac5ba805825da76410c181273ba90b1"
+    )
+    action_lines = [
+        line.split(" #", 1)[0]
+        for line in step.splitlines()
+        if line.startswith("    - uses:")
+    ]
+    if action_lines != [action]:
+        return False
+    if _direct_step_mapping_fields(step) != ["uses", "with"]:
+        return False
+    expected = (
+        "        ref: ${{ github.event_name == 'pull_request' && "
+        "github.event.pull_request.head.sha || github.sha }}",
+        "        fetch-depth: 0",
+        "        submodules: recursive",
+        "        persist-credentials: false",
+    )
+    lines = step.splitlines()
+    try:
+        with_index = lines.index("      with:")
+    except ValueError:
+        return False
+    entries = []
+    for line in lines[with_index + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 6:
+            break
+        if line.strip() and not line.lstrip().startswith("#"):
+            entries.append(line)
+    return tuple(entries) == expected
+
+
+def _run_step_is_exact(
+    step: str,
+    name: str,
+    commands: tuple[str, ...],
+    scrubbed: bool = False,
+) -> bool:
+    if _step_name(step) != name:
+        return False
+    if tuple(_run_block_commands(step)) != commands:
+        return False
+    fields = _direct_step_mapping_fields(step)
+    expected_fields = (
+        {"name", "env", "run"} if scrubbed else {"name", "run"}
+    )
+    if fields is None or len(fields) != len(expected_fields):
+        return False
+    if set(fields) != expected_fields:
+        return False
+    return not scrubbed or _step_has_scrubbed_environment(step)
+
+
+def _protected_host_prefix_errors(host: str) -> list[str]:
+    steps = _step_blocks(host)
+    if len(steps) < 9:
+        return ["host-tests lacks the complete protected pre-pilot sequence"]
+    expected = (
+        _checkout_step_is_exact(steps[0]),
+        _run_step_is_exact(
+            steps[1],
+            "Verify checked-out revision",
+            (
+                'ACTUAL_SHA="$(git rev-parse HEAD)"',
+                "printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"",
+                'test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"',
+            ),
+        ),
+        _run_step_is_exact(
+            steps[2],
+            "Hydrate workflow-pilot Git authority",
+            (WORKFLOW_PILOT_AUTHORITY_HYDRATION,),
+            scrubbed=True,
+        ),
+        _run_step_is_exact(
+            steps[3],
+            "Install host-only dependencies (no arm-none-eabi toolchain)",
+            (
+                "sudo apt-get update && sudo apt-get install -y "
+                "build-essential libmgba-dev",
+            ),
+        ),
+        _run_step_is_exact(
+            steps[4],
+            "Run gba-playtest host test suite",
+            (
+                "GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover "
+                "-s tools/gba-playtest/tests -v",
+            ),
+        ),
+        _run_step_is_exact(
+            steps[5],
+            "Run upstream-port tooling test suite",
+            ("python3 -m unittest discover -s tests/upstream_port -v",),
+        ),
+        _run_step_is_exact(
+            steps[6],
+            "Run workflow contract test suite",
+            (
+                "python3 -m unittest discover -s tests/workflows "
+                '-p "test_*.py" -v',
+            ),
+        ),
+        _run_step_is_exact(
+            steps[7],
+            "Run workflow-pilot reporter regression suite (issue #176)",
+            (WORKFLOW_PILOT_GATE,),
+            scrubbed=True,
+        ),
+        _run_step_is_exact(
+            steps[8],
+            "Validate workflow-pilot baseline against checked-out Git history",
+            (WORKFLOW_PILOT_BASELINE_GATE,),
+            scrubbed=True,
+        ),
+    )
+    if all(expected):
+        return []
+    return [
+        "host-tests protected pre-pilot step sequence differs from reviewed "
+        "actions, commands, fields, order, or scrubbed environments"
+    ]
 
 
 def _has_execution_defaults(text: str, workflow_scope: bool) -> bool:
@@ -481,6 +645,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(f"{job_name} must not be advisory")
 
     errors.extend(_host_environment_errors(jobs["host-tests"]))
+    errors.extend(_protected_host_prefix_errors(jobs["host-tests"]))
 
     if f"if: {MASTER_PUBLISHER_CONDITION}" not in jobs["patch-release"]:
         errors.append("patch-release must remain master-push-only")
@@ -685,7 +850,164 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             )
         )
 
+    def test_every_pre_pilot_step_is_exact_and_cannot_persist_masks(self):
+        mutations = (
+            self.text.replace(
+                "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                "actions/checkout@main",
+                1,
+            ),
+            self.text.replace(
+                "        persist-credentials: false\n",
+                "        persist-credentials: true\n",
+                1,
+            ),
+            self.text.replace(
+                '        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"\n',
+                '        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"\n'
+                '        echo "BASH_ENV=build/mask" >> "$GITHUB_ENV"\n',
+                1,
+            ),
+            self.text.replace(
+                "sudo apt-get update && sudo apt-get install -y "
+                "build-essential libmgba-dev",
+                "sudo apt-get update && sudo apt-get install -y "
+                "build-essential libmgba-dev && "
+                'echo build/bin >> "$GITHUB_PATH"',
+                1,
+            ),
+            self.text.replace(
+                "GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover "
+                "-s tools/gba-playtest/tests -v",
+                "true",
+                1,
+            ),
+            self.text.replace(
+                "python3 -m unittest discover -s tests/upstream_port -v",
+                "python3 -m unittest discover -s tests/upstream_port -v || true",
+                1,
+            ),
+            self.text.replace(
+                'python3 -m unittest discover -s tests/workflows -p "test_*.py" -v',
+                'python3 -m unittest discover -s tests/workflows -p "test_*.py" '
+                '-v && echo "PYTHONPATH=build/mask" >> "$GITHUB_ENV"',
+                1,
+            ),
+            self.text.replace(
+                "    - name: Run workflow-pilot reporter regression suite",
+                "    - name: Unreviewed setup\n"
+                "      run: echo build/bin >> \"$GITHUB_PATH\"\n\n"
+                "    - name: Run workflow-pilot reporter regression suite",
+                1,
+            ),
+            self.text.replace(
+                "    - name: Run upstream-port tooling test suite",
+                "    - uses: actions/setup-python@main\n\n"
+                "    - name: Run upstream-port tooling test suite",
+                1,
+            ),
+            self.text.replace(
+                "    - name: Run upstream-port tooling test suite",
+                "    - name: Run workflow contract test suite",
+                1,
+            ),
+        )
+        protected_names = (
+            "Verify checked-out revision",
+            "Install host-only dependencies (no arm-none-eabi toolchain)",
+            "Run gba-playtest host test suite",
+            "Run upstream-port tooling test suite",
+            "Run workflow contract test suite",
+        )
+        for name in protected_names:
+            mutations += (
+                self.text.replace(
+                    f"    - name: {name}\n",
+                    f"    - name: {name}\n      shell: bash {{0}}\n",
+                    1,
+                ),
+                self.text.replace(
+                    f"    - name: {name}\n",
+                    f"    - name: {name}\n      working-directory: /\n",
+                    1,
+                ),
+                self.text.replace(
+                    f"    - name: {name}\n",
+                    f"    - name: {name}\n      continue-on-error: true\n",
+                    1,
+                ),
+                self.text.replace(
+                    f"    - name: {name}\n",
+                    f"    - name: {name}\n      if: ${{{{ false }}}}\n",
+                    1,
+                ),
+                self.text.replace(
+                    f"    - name: {name}\n",
+                    f'    - "name": {name}\n',
+                    1,
+                ),
+            )
+        for changed in mutations:
+            with self.subTest(mutation=changed[:180]):
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "protected pre-pilot step sequence differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_protected_pilot_steps_require_exact_scrubbed_environment(self):
+        names = (
+            "Hydrate workflow-pilot Git authority",
+            "Run workflow-pilot reporter regression suite (issue #176)",
+            "Validate workflow-pilot baseline against checked-out Git history",
+        )
+        env_block = "      env:\n" + "\n".join(SCRUBBED_STEP_ENV) + "\n"
+        variants = (
+            "",
+            env_block.replace("        BASH_ENV: ''\n", ""),
+            env_block.replace("        ENV: ''\n", ""),
+            env_block.replace("        PYTHONPATH: ''\n", ""),
+            env_block.replace("        PATH: /usr/bin:/bin\n", ""),
+            env_block.replace("        PATH: /usr/bin:/bin", "        PATH: /untrusted"),
+            env_block + "        GITHUB_ENV: build/mask\n",
+            env_block.replace("      env:", '      "env":'),
+            env_block.replace("        BASH_ENV:", "        BASH_ENV :"),
+            env_block.replace("        ENV: ''", "        ENV: &mask ''"),
+            env_block.replace("        PYTHONPATH: ''", "        <<: *mask"),
+        )
+        for name in names:
+            for variant in variants:
+                with self.subTest(name=name, variant=variant):
+                    step_start = self.text.index(f"    - name: {name}\n")
+                    env_start = self.text.index("      env:\n", step_start)
+                    run_start = self.text.index("      run:", env_start)
+                    changed = (
+                        self.text[:env_start]
+                        + variant
+                        + self.text[run_start:]
+                    )
+                    self.assertTrue(
+                        any(
+                            "protected pre-pilot step sequence differs" in error
+                            or "lost exact workflow-pilot" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
     def test_workflow_pilot_authority_hydration_is_exact_and_ordered(self):
+        self.assertEqual(hydrate_authority.GIT, "/usr/bin/git")
+        self.assertEqual(hydrate_authority.BATCH_SIZE, 256)
+        self.assertEqual(
+            hydrate_authority.FETCH_OPTIONS,
+            (
+                "--quiet",
+                "--no-tags",
+                "--filter=blob:none",
+                "--no-write-fetch-head",
+            ),
+        )
         host = _job_blocks(self.text)["host-tests"]
         self.assertTrue(
             _contains_exact_command(
@@ -700,15 +1022,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         replacements = (
             "true",
             WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
-                "--filter=blob:none ",
+                "/usr/bin/python3",
+                "python3",
+            ),
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
+                "scripts.workflow_pilot.hydrate_authority",
+                "scripts.workflow_pilot.reporter",
+            ),
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
+                "--fixture scripts/workflow_pilot/tests/fixtures/baseline.json ",
                 "",
             ),
-            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace("--no-tags ", ""),
             WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
-                "'+refs/heads/*:refs/remotes/origin/*'",
-                "master",
+                '--expected-head "$EXPECTED_BUILD_SHA"',
+                "--remote untrusted",
             ),
-            WORKFLOW_PILOT_AUTHORITY_HYDRATION.split(" && ", 1)[0],
         )
         for replacement in replacements:
             with self.subTest(replacement=replacement):
@@ -725,7 +1053,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     )
                 )
 
-    def test_all_head_hydration_preserves_head_and_restores_history(self):
+    def test_exact_fixture_hydration_restores_force_pushed_commit(self):
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
@@ -733,72 +1061,52 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             dir=artifact_root,
         ) as temporary:
             root = Path(temporary)
-            seed = root / "seed"
             remote = root / "remote.git"
             checkout = root / "checkout"
+            expected_head = subprocess.check_output(
+                ["git", "-C", ROOT, "rev-parse", "HEAD"],
+                text=True,
+            ).strip()
 
             subprocess.run(
-                ["git", "init", "-q", "-b", "master", seed],
+                ["git", "clone", "-q", "--bare", "--shared", ROOT, remote],
                 check=True,
                 capture_output=True,
             )
-            for key, value in (
-                ("user.name", "Hydration Test"),
-                ("user.email", "hydration@example.invalid"),
-            ):
+            refs = subprocess.check_output(
+                [
+                    "git",
+                    f"--git-dir={remote}",
+                    "for-each-ref",
+                    "--format=%(refname)",
+                ],
+                text=True,
+            ).splitlines()
+            for ref in refs:
                 subprocess.run(
-                    ["git", "-C", seed, "config", key, value],
+                    ["git", f"--git-dir={remote}", "update-ref", "-d", ref],
                     check=True,
                     capture_output=True,
                 )
-            (seed / "history.txt").write_text("historical\n", encoding="ascii")
             subprocess.run(
-                ["git", "-C", seed, "add", "history.txt"],
+                [
+                    "git",
+                    f"--git-dir={remote}",
+                    "update-ref",
+                    "refs/heads/master",
+                    expected_head,
+                ],
                 check=True,
                 capture_output=True,
             )
             subprocess.run(
-                ["git", "-C", seed, "commit", "-q", "-m", "historical"],
-                check=True,
-                capture_output=True,
-            )
-            historical = subprocess.check_output(
-                ["git", "-C", seed, "rev-parse", "HEAD"],
-                text=True,
-            ).strip()
-            subprocess.run(
-                ["git", "-C", seed, "branch", "historical"],
-                check=True,
-                capture_output=True,
-            )
-            (seed / "head.txt").write_text("head\n", encoding="ascii")
-            subprocess.run(
-                ["git", "-C", seed, "add", "head.txt"],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                ["git", "-C", seed, "commit", "-q", "-m", "candidate"],
-                check=True,
-                capture_output=True,
-            )
-            expected_head = subprocess.check_output(
-                ["git", "-C", seed, "rev-parse", "HEAD"],
-                text=True,
-            ).strip()
-
-            subprocess.run(
-                ["git", "init", "-q", "--bare", remote],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                ["git", "-C", seed, "remote", "add", "origin", str(remote)],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                ["git", "-C", seed, "push", "-q", "origin", "master", "historical"],
+                [
+                    "git",
+                    f"--git-dir={remote}",
+                    "config",
+                    "uploadpack.allowAnySHA1InWant",
+                    "true",
+                ],
                 check=True,
                 capture_output=True,
             )
@@ -815,7 +1123,19 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "remote",
                     "add",
                     "origin",
-                    f"file://{remote}",
+                    "https://github.com/laqieer/fireemblem8-expansion.git",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    checkout,
+                    "config",
+                    f"url.file://{remote}.insteadOf",
+                    "https://github.com/laqieer/fireemblem8-expansion.git",
                 ],
                 check=True,
                 capture_output=True,
@@ -839,9 +1159,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 check=True,
                 capture_output=True,
             )
+            fixture_path = checkout / (
+                "scripts/workflow_pilot/tests/fixtures/baseline.json"
+            )
+            fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+            historical = next(
+                review["commit_sha"]
+                for review in fixture["reviews"]
+                if review["id"] == 4989066820
+            )
+            offline_environment = dict(os.environ)
+            offline_environment["GIT_NO_LAZY_FETCH"] = "1"
             self.assertNotEqual(
                 subprocess.run(
                     ["git", "-C", checkout, "cat-file", "-e", f"{historical}^{{commit}}"],
+                    env=offline_environment,
                     check=False,
                     capture_output=True,
                 ).returncode,
@@ -860,6 +1192,39 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "origin",
                     "+refs/heads/*:refs/remotes/origin/*",
                 ],
+                env=offline_environment,
+                check=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(
+                subprocess.run(
+                    [
+                        "git",
+                        "-C",
+                        checkout,
+                        "cat-file",
+                        "-e",
+                        f"{historical}^{{commit}}",
+                    ],
+                    env=offline_environment,
+                    check=False,
+                    capture_output=True,
+                ).returncode,
+                0,
+            )
+            refs_before = subprocess.check_output(
+                ["git", "-C", checkout, "show-ref"],
+            )
+
+            result = hydrate_authority.hydrate_authority(
+                checkout,
+                fixture_path,
+                expected_head,
+            )
+            self.assertEqual(result["required"], len(fixture["commits"]))
+            self.assertGreater(result["fetched"], 0)
+            subprocess.run(
+                ["git", "-C", checkout, "cat-file", "-e", f"{historical}^{{commit}}"],
                 check=True,
                 capture_output=True,
             )
@@ -870,11 +1235,25 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 ).strip(),
                 expected_head,
             )
-            subprocess.run(
-                ["git", "-C", checkout, "cat-file", "-e", f"{historical}^{{commit}}"],
-                check=True,
-                capture_output=True,
+            self.assertEqual(
+                subprocess.check_output(["git", "-C", checkout, "show-ref"]),
+                refs_before,
             )
+            alternate_fixture = checkout / "build" / "alternate.json"
+            alternate_fixture.parent.mkdir(parents=True)
+            alternate_fixture.write_text(
+                json.dumps(fixture),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "--fixture must identify",
+            ):
+                hydrate_authority.hydrate_authority(
+                    checkout,
+                    alternate_fixture,
+                    expected_head,
+                )
 
     def test_synthetic_stacked_pull_request_runs_candidate_jobs_on_its_real_base(self):
         event = {
@@ -1297,7 +1676,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             )
         )
 
-    def test_workflow_pilot_steps_allow_reviewed_keys_with_spaced_colons(self):
+    def test_workflow_pilot_steps_reject_spaced_protected_keys(self):
         changed = self.text
         steps = (
             (
@@ -1311,14 +1690,22 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         for step_name, command in steps:
             changed = changed.replace(
-                f"    - name: {step_name}\n"
+                f"    - name: {step_name}\n",
+                f"    - name : {step_name}\n",
+                1,
+            ).replace(
                 f"      run: {command}\n",
-                f"    - name : {step_name}\n"
                 f"      run : {command}\n",
                 1,
             )
         self.assertNotEqual(changed, self.text)
-        self.assertEqual(_errors(changed, False), [])
+        self.assertTrue(
+            any(
+                "protected pre-pilot step sequence differs" in error
+                or "lost exact fail-closed Build evidence" in error
+                for error in _errors(changed, False)
+            )
+        )
 
     def test_both_workflow_pilot_steps_reject_complex_or_advisory_keys(self):
         variants = (
@@ -1378,10 +1765,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "@unsupported",
         )
         for step_name, command in steps:
-            original = (
-                f"    - name: {step_name}\n"
-                f"      run: {command}\n"
-            )
+            original = f"    - name: {step_name}\n"
             reviewed_key_variants = (
                 f'"name": {step_name}',
                 f'"n\\u0061me": {step_name}',
@@ -1393,8 +1777,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 with self.subTest(command=command, variant=variant):
                     changed = self.text.replace(
                         original,
-                        f"    - {variant}\n"
-                        f"      run: {command}\n",
+                        f"    - {variant}\n",
                         1,
                     )
                     self.assertNotEqual(changed, self.text)
