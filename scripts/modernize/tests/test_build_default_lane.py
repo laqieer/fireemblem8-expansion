@@ -55,7 +55,6 @@ QUICKSTART = ROOT / "scripts" / "quickstart.sh"
 CONFIGURE = ROOT / "configure"
 GNUMAKEFILE_IN = ROOT / "GNUmakefile.in"
 COPILOT_INSTRUCTIONS = ROOT / ".github" / "copilot-instructions.md"
-CLAUDE_INSTRUCTIONS = ROOT / "CLAUDE.md"
 
 
 def run_make(args, env_overrides=None):
@@ -561,7 +560,7 @@ class RemoteCompletionGateTests(unittest.TestCase):
         )
 
     def test_agent_instructions_make_remote_gate_mandatory(self):
-        for path in (COPILOT_INSTRUCTIONS, CLAUDE_INSTRUCTIONS):
+        for path in (COPILOT_INSTRUCTIONS,):
             text = path.read_text(encoding="utf-8")
             self.assertIn("make remote-completion-check", text)
             self.assertIn("make all-issues-completion-check", text)

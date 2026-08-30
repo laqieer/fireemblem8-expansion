@@ -449,7 +449,7 @@ This round's findings-driven fixes:
   was replaced with a pointer to `scripts/check_docs.py`'s own
   static-Makefile-parse mechanism plus the reproducible `make -n`/
   `make print-<VARIABLE>` commands above.
-- `CLAUDE.md`: brought in line with `.github/copilot-instructions.md`'s
+- The former `CLAUDE.md`: brought in line with `.github/copilot-instructions.md`'s
   already-corrected modern-default/archival-lane framing (previously it
   still led with the archival decomp workflow as the primary path); see
   the updated checklist row in
