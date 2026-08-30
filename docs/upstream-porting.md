@@ -181,13 +181,13 @@ python3 -m scripts.upstream_port verify --dry-run   # list the gate commands wit
 
 **⚠️ This builds and checks the CURRENT TRUSTED WORKTREE (your repo, after
 you manually applied whatever you accepted) — it never builds, checks out,
-or executes the upstream ref/tree.** It orchestrates all 25 current-master
+or executes the upstream ref/tree.** It orchestrates all 28 current-master
 mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
-carries the same 25 commands with argv/order preserved across its combined
+carries the same 28 commands with argv/order preserved across its combined
 host, modern, extended-host, and archival jobs, plus the deliberately
 standalone issues #7/#17 documentation-governance workflow gate described
 below. The four combined workers run in parallel in CI; `summary` is their
-only serial, fail-closed join. Local `verify` runs the same 25 gates in its
+only serial, fail-closed join. Local `verify` runs the same 28 gates in its
 documented order and therefore does not reproduce CI wall-clock parallelism.
 
 Before a non-dry-run local `verify`, install both the supported modern
@@ -196,7 +196,7 @@ archival setup is intentionally opt-in (`./scripts/quickstart.sh --legacy`
 or the equivalent instructions in
 [`docs/archival-decomp.md`](archival-decomp.md)); `verify` has no safe
 subset switch and fails closed if the legacy toolchain is absent. Use
-`verify --dry-run` to inspect the complete 25-gate sequence without those
+`verify --dry-run` to inspect the complete 28-gate sequence without those
 local prerequisites.
 
 1. `GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -v`
@@ -207,36 +207,39 @@ local prerequisites.
    rerun it for the current test count rather than trusting a written count)
 3. `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`
    (pure-stdlib consolidated Build CI topology and checkout contracts)
-4. `python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"`
+4. `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`
+5. `python3 -m scripts.workflow_pilot.reporter --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null`
+6. `python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"`
    (issue #18 host-only localization schema/catalog/pseudo/generation/resolver
    coverage)
-5. `make game-localization-test`
-6. `python3 -m scripts.localization.game_locales check`
-7. `python3 -m scripts.localization.game_locales check-crosswalk`
-8. `python3 -m scripts.localization.game_locales check-raw-closure`
-9. `python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v`
-10. `python3 scripts/artifact_guard.py --revision HEAD`
-11. `python3 -m unittest discover -s scripts/modernize/tests -p test_build_default_lane.py -v`
-12. `python3 -m unittest discover -s scripts/modernize/tests -p test_quickstart.py -v`
-13. `make generated-data-test`
-14. `make generated-data-check`
-15. `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
-16. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs`
-17. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
-18. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
-19. `make expansion-modern-map-menu-presentation-check -j1`
+7. `make game-localization-test`
+8. `python3 -m scripts.localization.game_locales check`
+9. `python3 -m scripts.localization.game_locales check-crosswalk`
+10. `python3 -m scripts.localization.game_locales check-raw-closure`
+11. `python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v`
+12. `python3 scripts/artifact_guard.py --revision HEAD`
+13. `make codeql-alerts-test CODEQL_REQUIRE_FANALYZER=1`
+14. `python3 -m unittest discover -s scripts/modernize/tests -p test_build_default_lane.py -v`
+15. `python3 -m unittest discover -s scripts/modernize/tests -p test_quickstart.py -v`
+16. `make generated-data-test`
+17. `make generated-data-check`
+18. `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
+19. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs`
+20. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
+21. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
+22. `make expansion-modern-map-menu-presentation-check -j1`
     (builds the all-locales/all-features profile once, then verifies the
     localized Danger map-menu/help framebuffer and semantic overlay lifecycle)
-20. `make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test`
-21. `python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v`
-22. `python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v`
-23. `python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v`
-24. `make legacy -j2`
-25. `make -C mgfembp compare`
+23. `make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test`
+24. `python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v`
+25. `python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v`
+26. `python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v`
+27. `make legacy -j2`
+28. `make -C mgfembp compare`
 
-Gates 15-16 aggregate the complete modern debug/release ROM, linker, budget,
+Gates 18-19 aggregate the complete modern debug/release ROM, linker, budget,
 shift, save, starter-feature, and localization runtime matrices through
-`expansion-modern-linker-check`. Gates 17-18 reuse the item-expansion runtime
+`expansion-modern-linker-check`. Gates 20-21 reuse the item-expansion runtime
 probe at cap `0xCE`; the three issue #6 arguments make the same ROM also prove
 the typed starter-content record and both registered mechanics. No additional
 item-expansion ROM build or gate is added.
@@ -252,7 +255,7 @@ python3 scripts/check_docs.py --check --check-examples
 ```
 
 This gate is stdlib-only, zero-network, and zero-ROM, and runs before
-dependency/tool installation. It is additional to all 25 mirrored verifier
+dependency/tool installation. It is additional to all 28 mirrored verifier
 gates and intentionally has no `verify.gates()` entry; it does not weaken,
 reorder, or replace any mirrored command.
 

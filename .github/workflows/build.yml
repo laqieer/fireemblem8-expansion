@@ -68,9 +68,8 @@ jobs:
     - name: Run gba-playtest host test suite
       run: GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -v
 
-    # Issue #12/#15 upstream-port review tooling (scripts/upstream_port): 145
-    # pure-stdlib unittest cases (as of the issues #7/#17 integration merge;
-    # re-run the command below for the current count) covering
+    # Issue #12/#15 upstream-port review tooling (scripts/upstream_port):
+    # pure-stdlib unittest coverage for
     # classify/scan/drift/state/
     # ref-binding/output-safety/merge-commit determinism and, crucially, the
     # verify.gates() <-> this-workflow argv/order mirror. Runs here in the

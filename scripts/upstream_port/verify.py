@@ -44,6 +44,19 @@ def _split_env_prefix(command):
     return env_overrides, argv
 
 
+def _split_stdout_redirect(command):
+    """Translate the workflow's trailing ``> /dev/null`` without a shell."""
+    argv = list(command)
+    if argv[-2:] == [">", "/dev/null"]:
+        return argv[:-2], subprocess.DEVNULL
+    return argv, subprocess.PIPE
+
+
+def _expand_workspace(argv, cwd):
+    workspace = os.environ.get("GITHUB_WORKSPACE", os.path.abspath(cwd))
+    return [workspace if argument == "$GITHUB_WORKSPACE" else argument for argument in argv]
+
+
 @dataclass
 class Gate:
     name: str
@@ -129,6 +142,46 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
+            name="workflow-pilot-reporter-tests",
+            command=[
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "scripts/workflow_pilot/tests",
+                "-p",
+                "test_*.py",
+                "-v",
+            ],
+            applicable_note=(
+                "issue #176 host lane: pure-stdlib workflow-pilot reporter "
+                "regression suite, including immutable baseline validation"
+            ),
+        ),
+        Gate(
+            name="workflow-pilot-baseline",
+            command=[
+                "python3",
+                "-m",
+                "scripts.workflow_pilot.reporter",
+                "--repository-root",
+                "$GITHUB_WORKSPACE",
+                "--fixture",
+                "scripts/workflow_pilot/tests/fixtures/baseline.json",
+                "--decisions",
+                ".github/workflow-pilot-decisions.json",
+                "--expected",
+                "scripts/workflow_pilot/tests/fixtures/baseline_expected.json",
+                ">",
+                "/dev/null",
+            ],
+            applicable_note=(
+                "issue #176 host lane: validates the frozen workflow-pilot "
+                "baseline against checked-out Git history"
+            ),
+        ),
+        Gate(
             name="localization-host-suite",
             command=[
                 "python3",
@@ -142,7 +195,7 @@ def gates(jobs: int = 2) -> List[Gate]:
             ],
             applicable_note=(
                 "issue #18 host lane addition (same `host-tests` job, "
-                "textually after workflow-contract-tests): the "
+                "textually after the workflow-pilot gates): the "
                 "scripts/localization package's own pure-stdlib unit test "
                 "suite (schema/pseudo/catalog/generate/CLI/determinism plus "
                 "the host-native resolver-behavior and vanilla-isolation "
@@ -463,6 +516,8 @@ def run_gates(cwd: str, jobs: int = 2, dry_run: bool = False) -> List[GateResult
             results.append(GateResult(gate=gate, ran=False, returncode=0, stdout="", stderr=""))
             continue
         env_overrides, argv = _split_env_prefix(gate.command)
+        argv, stdout = _split_stdout_redirect(argv)
+        argv = _expand_workspace(argv, cwd)
         child_env = None
         if env_overrides:
             child_env = dict(os.environ)
@@ -471,7 +526,7 @@ def run_gates(cwd: str, jobs: int = 2, dry_run: bool = False) -> List[GateResult
             argv,
             cwd=cwd,
             env=child_env,
-            stdout=subprocess.PIPE,
+            stdout=stdout,
             stderr=subprocess.PIPE,
             text=True,
         )
@@ -479,7 +534,7 @@ def run_gates(cwd: str, jobs: int = 2, dry_run: bool = False) -> List[GateResult
             gate=gate,
             ran=True,
             returncode=proc.returncode,
-            stdout=proc.stdout,
+            stdout=proc.stdout or "",
             stderr=proc.stderr,
         )
         results.append(result)
