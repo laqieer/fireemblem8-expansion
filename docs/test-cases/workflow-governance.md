@@ -244,8 +244,8 @@ availability or grant credentials.
 - **Feature / originating issue:** `workflow-governance` /
   [issue #176](https://github.com/laqieer/fireemblem8-expansion/issues/176).
 - **Supported configuration or artifact:** clean source checkout with Python
-  3, the immutable issue #176 fixture, and the versioned decision record; no
-  GitHub token, live workflow, ROM, emulator, or game build is required.
+  3, Git, the immutable issue #176 fixture, and the versioned decision record;
+  no GitHub token, live workflow, ROM, emulator, or game build is required.
 - **Prerequisites and clean starting state:** start at the repository root with
   `.github/workflow-pilot-decisions.json`,
   `scripts/workflow_pilot/tests/fixtures/baseline.json`, and
@@ -257,21 +257,31 @@ availability or grant credentials.
 1. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`.
 2. Create `build/test-artifacts/workflow-pilot`, then run the documented
-   reporter twice over the committed fixture, decision record, and expected
-   values, writing `first.json` and `second.json` in that directory.
+   reporter twice with `--repository-root .` over the committed fixture,
+   decision record, and expected values, writing `first.json` and
+   `second.json` in that directory.
 3. Compare `first.json` and `second.json` byte for byte. Parse either file and
    verify the frozen window, identity arrays, 64-PR/9.4-hour delivery baseline,
    326 exhaustively partitioned Build outcomes, one active run, 51
    duplicate-SHA Builds, and PR #150's review/Build/base-change/close-reopen
-   metrics.
+   metrics. Confirm first-push-to-clean-review is `unavailable`, its reason is
+   `historical-review-thread-events-not-collected`, `pilot_ready` is false,
+   and `median_hours` is null while 34 reviews, 101 findings, and zero current
+   unresolved findings remain reportable.
 4. Inspect the focused suite's positive classification fixture for inclusive
    boundaries, cancellation, supersession, unchanged-SHA duplication, stack
    ancestry, generated-only work, bulk deletion, reverts, still-running work,
    cross-PR SHA-bound safety outcomes, and pilot overhead.
-5. Inspect its adversarial decision, authoritative-data, event, dependency,
-   and artifact mutations. Confirm each is rejected before canonical output is
-   emitted.
-6. Run `python3 scripts/check_docs.py --check`.
+5. Inspect the temporary-Git-repository controls: an exact pre-review override
+   tree passes; a missing decision file, missing/changed entry, digest
+   mismatch, non-candidate SHA, post-review commit, backdating, reordering, and
+   recomputed current-record mutation each fail.
+6. Inspect the resolution controls: cumulative unresolved identities,
+   resolution before/after review, absent source timing, direct synthetic
+   `resolved_at`, and an untrusted source kind. Confirm only a complete
+   identity-bound GitHub webhook history can produce numeric clean-review
+   evidence.
+7. Run `python3 scripts/check_docs.py --check`.
 
 ### Expected result
 
@@ -280,7 +290,11 @@ Both reporter outputs are byte-identical canonical JSON and match
 measurement boundary even though GitHub later completed it. Current PR and
 artifact states are derived from authoritative facts and disposition history;
 threshold override decisions contain no editable introduction timestamp, SHA,
-diff, run conclusion, or copied current-state field.
+diff, run conclusion, or copied current-state field. Every override is read
+from the cited candidate commit and first-reviewed commit trees. PR #150's
+clean-review timing remains explicitly unavailable because no authoritative
+historical thread events were collected; no numeric result is emitted or
+eligible for pilot comparison/promotion.
 
 The positive controls report Build/review savings beside coordination and
 metadata-maintenance overhead. Checkpoint, dependency-change, and
@@ -292,8 +306,10 @@ semantic failure, and a deletion-ready artifact passes only with `Delete`.
 The suite rejects a boundary record outside the snapshot, terminal/active
 status contradiction, cancelled-run misclassification, missing Actions page,
 missing issue/commit/review/decision, derived-fact override, post-review
-override insertion/backdating/mutation, cumulative unresolved findings,
-post-review resolution, wrong-PR or missing event SHA, inconsistent stack
+override insertion/backdating/reordering/current-record mutation, a cited tree
+without the exact override entry, cumulative unresolved findings, post-review
+resolution, direct synthetic resolution timestamps, untrusted/incomplete
+resolution history, wrong-PR or missing event SHA, inconsistent stack
 parent/base/depth, an older spotlight run outside the cohort, queued duration,
 unreported accepted conclusion, unknown risk/event/edge/disposition,
 unclaimed or ambiguously owned dependency edge, orphan/duplicate/expired
@@ -315,9 +331,10 @@ none; there is no feature flag and no ROM/RAM or save-format impact.
 `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`
 parses the decision and fixture schemas, reproduces every frozen calculation,
 compares canonical bytes, and exercises all positive/adversarial controls
-above. Build CI runs the same command in its existing required `host-tests`
-job, and the parsed workflow topology suite fails if that ownership is
-removed.
+above. Build CI runs the same command plus the baseline reporter with
+`--repository-root "$GITHUB_WORKSPACE"` in its existing required `host-tests`
+job, and the parsed workflow topology suite fails if either ownership or the
+checked-out-root binding is removed.
 
 `python3 scripts/check_docs.py --check` validates this complete procedure,
 registry ownership, links, and automation evidence.
@@ -326,8 +343,12 @@ registry ownership, links, and automation evidence.
 
 Remove `build/test-artifacts/workflow-pilot`. No remote state was read or
 changed by the procedure. The frozen fixture can reproduce only the explicitly
-captured source semantics; the reporter fails rather than claiming a live
-GitHub measurement from unavailable data. No manual-only criterion applies.
+captured source semantics. GitHub's historical thread-resolution timing was
+not captured for this baseline, so the reporter preserves counts/current
+state while making the timing metric and its pilot readiness unavailable.
+Future numeric evidence requires complete GitHub
+`pull_request_review_thread` webhook delivery capture. No manual-only
+criterion applies.
 
 Rollback is a normal revert of issue #176's dedicated commit; no workflow or
 game behavior needs a compensating change.

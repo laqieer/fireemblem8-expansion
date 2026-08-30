@@ -59,6 +59,13 @@ WORKFLOW_PILOT_GATE = (
     "python3 -m unittest discover -s scripts/workflow_pilot/tests "
     "-p 'test_*.py' -v"
 )
+WORKFLOW_PILOT_BASELINE_GATE = (
+    "python3 -m scripts.workflow_pilot.reporter "
+    '--repository-root "$GITHUB_WORKSPACE" '
+    "--fixture scripts/workflow_pilot/tests/fixtures/baseline.json "
+    "--decisions .github/workflow-pilot-decisions.json "
+    "--expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json"
+)
 
 
 def _trigger_block(header: str, event_name: str) -> str:
@@ -366,6 +373,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         "scripts.localization.game_locales check-crosswalk",
         "scripts.localization.game_locales check-raw-closure",
         WORKFLOW_PILOT_GATE,
+        WORKFLOW_PILOT_BASELINE_GATE,
     ):
         if not _contains_command(jobs["host-tests"], command):
             errors.append(f"candidate host lost Build-owned evidence: {command}")
@@ -734,11 +742,18 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertTrue(any("summary must depend" in error for error in _errors(changed, False)))
 
     def test_workflow_pilot_suite_remains_owned_by_required_host_job(self):
-        self.assertTrue(
-            _contains_command(
-                _job_blocks(self.text)["host-tests"],
-                WORKFLOW_PILOT_GATE,
-            )
+        host_tests = _job_blocks(self.text)["host-tests"]
+        for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
+            with self.subTest(command=command):
+                self.assertTrue(
+                    _contains_command(
+                        host_tests,
+                        command,
+                    )
+                )
+        self.assertIn(
+            '--repository-root "$GITHUB_WORKSPACE"',
+            WORKFLOW_PILOT_BASELINE_GATE,
         )
         changed = self.text.replace(
             f"      run: {WORKFLOW_PILOT_GATE}\n",
@@ -749,6 +764,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertTrue(
             any(
                 f"candidate host lost Build-owned evidence: {WORKFLOW_PILOT_GATE}"
+                in error
+                for error in _errors(changed, False)
+            )
+        )
+
+        changed = self.text.replace(
+            f"      run: {WORKFLOW_PILOT_BASELINE_GATE} > /dev/null\n",
+            "      run: true\n",
+            1,
+        )
+        self.assertNotEqual(changed, self.text)
+        self.assertTrue(
+            any(
+                "candidate host lost Build-owned evidence: "
+                f"{WORKFLOW_PILOT_BASELINE_GATE}"
                 in error
                 for error in _errors(changed, False)
             )

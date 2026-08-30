@@ -1,7 +1,9 @@
 import copy
 import json
+import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -13,6 +15,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 BASELINE = FIXTURES / "baseline.json"
 BASELINE_EXPECTED = FIXTURES / "baseline_expected.json"
 DECISIONS = ROOT / ".github" / "workflow-pilot-decisions.json"
+REVIEWER_OVERRIDE_REPRO_SHA = "980dbee7337633b97fb4d8217ae7cc71f34a9035"
 
 
 def sha(character):
@@ -87,9 +90,31 @@ def minimal_fixture():
                 "review_id": 10,
                 "thread_id": "thread:100",
                 "created_at": "2026-01-01T04:01:00Z",
-                "resolved_at": "2026-01-01T06:00:00Z",
+                "is_resolved": True,
                 "outdated": True,
                 "path": "scripts/feature.py",
+            }
+        ],
+        "review_thread_event_source": {
+            "kind": reporter.REVIEW_THREAD_EVENT_SOURCE,
+            "complete": True,
+            "coverage_start": "2026-01-01T00:00:00Z",
+            "coverage_end": "2026-01-01T10:05:00Z",
+            "unavailable_reason": None,
+        },
+        "review_thread_events": [
+            {
+                "delivery_id": 1000,
+                "delivery_guid": "00000000-0000-4000-8000-000000000001",
+                "delivered_at": "2026-01-01T06:00:00Z",
+                "event": "pull_request_review_thread",
+                "action": "resolved",
+                "repository": "example/workflow",
+                "pr_number": 1,
+                "review_id": 10,
+                "finding_id": 100,
+                "thread_id": "thread:100",
+                "actor": "review-owner",
             }
         ],
         "workflow_runs": [
@@ -426,6 +451,35 @@ class BaselineFixtureTests(unittest.TestCase):
         )
         self.assertEqual(first, second)
 
+    def test_baseline_has_no_synthetic_resolution_timestamps(self):
+        self.assertTrue(self.fixture["review_findings"])
+        self.assertTrue(
+            all(
+                "resolved_at" not in finding
+                for finding in self.fixture["review_findings"]
+            )
+        )
+        self.assertEqual(
+            self.fixture["review_thread_event_source"],
+            {
+                "kind": reporter.REVIEW_THREAD_EVENT_SOURCE,
+                "complete": False,
+                "coverage_start": None,
+                "coverage_end": None,
+                "unavailable_reason": (
+                    "historical-review-thread-events-not-collected"
+                ),
+            },
+        )
+        result = reporter.build_report(self.fixture, self.decisions)
+        timing = result["delivery"]["first_push_to_clean_review"]
+        self.assertEqual(timing["status"], "unavailable")
+        self.assertIsNone(timing["median_hours"])
+        self.assertFalse(timing["pilot_ready"])
+        self.assertEqual(result["reviews"]["rounds"], 34)
+        self.assertEqual(result["reviews"]["valid_findings"], 101)
+        self.assertEqual(result["reviews"]["current_unresolved_findings"], 0)
+
     def test_cli_checks_expected_without_live_github(self):
         command = [
             sys.executable,
@@ -437,6 +491,8 @@ class BaselineFixtureTests(unittest.TestCase):
             str(DECISIONS),
             "--expected",
             str(BASELINE_EXPECTED),
+            "--repository-root",
+            str(ROOT),
         ]
         result = subprocess.run(
             command,
@@ -451,6 +507,46 @@ class BaselineFixtureTests(unittest.TestCase):
                 reporter.build_report(self.fixture, self.decisions)
             ),
         )
+
+    def test_cli_requires_exact_repository_and_decision_paths(self):
+        common = [
+            sys.executable,
+            "-m",
+            "scripts.workflow_pilot.reporter",
+            "--fixture",
+            str(BASELINE),
+            "--expected",
+            str(BASELINE_EXPECTED),
+        ]
+        wrong_root = subprocess.run(
+            [
+                *common,
+                "--decisions",
+                str(DECISIONS),
+                "--repository-root",
+                str(ROOT / "scripts"),
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(wrong_root.returncode, 2)
+        self.assertIn(b"exact Git top level", wrong_root.stderr)
+
+        wrong_decisions = subprocess.run(
+            [
+                *common,
+                "--decisions",
+                str(BASELINE_EXPECTED),
+                "--repository-root",
+                str(ROOT),
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(wrong_decisions.returncode, 2)
+        self.assertIn(b"--decisions must identify", wrong_decisions.stderr)
 
 
 class FormulaAndClassificationTests(unittest.TestCase):
@@ -558,11 +654,16 @@ class FormulaAndClassificationTests(unittest.TestCase):
         self.assertEqual(result["reviews"]["rounds"], 2)
         self.assertEqual(result["reviews"]["superseded_rounds"], 0)
         self.assertEqual(result["reviews"]["valid_findings"], 1)
+        self.assertEqual(result["reviews"]["current_resolved_findings"], 1)
+        self.assertEqual(result["reviews"]["current_unresolved_findings"], 0)
         self.assertEqual(result["reviews"]["valid_findings_per_kloc"], "1.000")
         self.assertEqual(result["reviews"]["valid_findings_per_review"], "0.500")
         self.assertEqual(
             result["delivery"]["first_push_to_clean_review"]["median_hours"],
             "7.0",
+        )
+        self.assertTrue(
+            result["delivery"]["first_push_to_clean_review"]["pilot_ready"]
         )
 
     def test_conflict_and_safety_outcome_events(self):
@@ -683,7 +784,13 @@ class FormulaAndClassificationTests(unittest.TestCase):
 
 
 class FailClosedDataTests(unittest.TestCase):
-    def assert_rejected(self, fixture=None, decisions=None, pattern=None):
+    def assert_rejected(
+        self,
+        fixture=None,
+        decisions=None,
+        pattern=None,
+        repository_root=None,
+    ):
         with self.assertRaisesRegex(
             reporter.PilotDataError,
             pattern or ".+",
@@ -691,7 +798,156 @@ class FailClosedDataTests(unittest.TestCase):
             reporter.build_report(
                 fixture if fixture is not None else minimal_fixture(),
                 decisions if decisions is not None else minimal_decisions(),
+                repository_root,
             )
+
+    def make_override_case(
+        self,
+        *,
+        first_tree="exact",
+        introduction="a",
+        override_count=1,
+    ):
+        temp_parent = ROOT / "build" / "test-artifacts"
+        temp_parent.mkdir(parents=True, exist_ok=True)
+        directory = self.enterContext(
+            tempfile.TemporaryDirectory(
+                prefix="workflow-pilot-git-",
+                dir=temp_parent,
+            )
+        )
+        repository_root = Path(directory)
+        subprocess.run(
+            ["git", "init", "-q", "-b", "master", str(repository_root)],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repository_root), "config", "user.name", "Pilot Test"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repository_root),
+                "config",
+                "user.email",
+                "pilot@example.invalid",
+            ],
+            check=True,
+            capture_output=True,
+        )
+
+        decisions = minimal_decisions()
+        overrides = [
+            {
+                "enabled": index % 2 == 0,
+                "reason": f"Immutable pre-review override {index}.",
+            }
+            for index in range(override_count)
+        ]
+        decisions["pull_requests"][0]["threshold"]["override_history"] = copy.deepcopy(
+            overrides
+        )
+        exact_tree = copy.deepcopy(decisions)
+        if first_tree == "exact":
+            first_decisions = exact_tree
+        elif first_tree == "missing-file":
+            first_decisions = None
+        elif first_tree == "missing-entry":
+            first_decisions = minimal_decisions()
+        elif first_tree == "changed-entry":
+            first_decisions = copy.deepcopy(exact_tree)
+            first_decisions["pull_requests"][0]["threshold"]["override_history"][0][
+                "enabled"
+            ] = not overrides[0]["enabled"]
+        elif first_tree == "invalid-schema":
+            first_decisions = copy.deepcopy(exact_tree)
+            first_decisions["pull_requests"][0]["gate_mode"] = "unknown"
+        else:
+            self.fail(f"unknown first-tree mode {first_tree}")
+
+        decision_path = repository_root / reporter.DECISION_RECORD_PATH
+        decision_path.parent.mkdir(parents=True, exist_ok=True)
+        dates = {
+            "a": "2026-01-01T01:00:00+00:00",
+            "b": "2026-01-01T03:00:00+00:00",
+            "c": "2026-01-01T06:00:00+00:00",
+            "d": "2026-01-01T09:00:00+00:00",
+        }
+        shas = {}
+        for letter in ("a", "b", "c", "d"):
+            tree_decisions = first_decisions if letter == "a" else exact_tree
+            if tree_decisions is None:
+                decision_path.unlink(missing_ok=True)
+            else:
+                decision_path.write_bytes(reporter.normalized_json(tree_decisions))
+            (repository_root / "marker.txt").write_text(
+                f"{letter}\n", encoding="ascii"
+            )
+            subprocess.run(
+                ["git", "-C", str(repository_root), "add", "-A"],
+                check=True,
+                capture_output=True,
+            )
+            env = dict(os.environ)
+            env.update(
+                {
+                    "GIT_AUTHOR_DATE": dates[letter],
+                    "GIT_COMMITTER_DATE": dates[letter],
+                }
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repository_root),
+                    "commit",
+                    "-q",
+                    "-m",
+                    f"test commit {letter}",
+                ],
+                check=True,
+                capture_output=True,
+                env=env,
+            )
+            shas[letter] = (
+                subprocess.run(
+                    ["git", "-C", str(repository_root), "rev-parse", "HEAD"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                .stdout.strip()
+            )
+
+        fixture_text = json.dumps(minimal_fixture())
+        for letter, commit_sha in shas.items():
+            fixture_text = fixture_text.replace(sha(letter), commit_sha)
+        fixture = json.loads(fixture_text)
+        introduction_sha = shas[introduction]
+        introduced_at = next(
+            commit["committed_at"]
+            for commit in fixture["commits"]
+            if commit["sha"] == introduction_sha
+        )
+        for index, override in enumerate(overrides):
+            fixture["events"].append(
+                {
+                    "id": f"override:introduced:{index}",
+                    "type": "threshold_override_introduced",
+                    "occurred_at": introduced_at,
+                    "pr_number": 1,
+                    "sha": introduction_sha,
+                    "override_index": index,
+                    "decision_digest": reporter.threshold_override_digest(
+                        1, index, override
+                    ),
+                }
+            )
+        return repository_root, fixture, decisions, overrides, shas
 
     def test_missing_authoritative_issue_commit_and_page_data(self):
         fixture = minimal_fixture()
@@ -728,47 +984,163 @@ class FailClosedDataTests(unittest.TestCase):
         decisions["pull_requests"][0]["head_sha"] = sha("f")
         self.assert_rejected(decisions=decisions, pattern="unknown fields: head_sha")
 
-    def test_pre_review_override_binds_to_authoritative_introduction(self):
-        fixture = minimal_fixture()
-        decisions = minimal_decisions()
-        add_override(fixture, decisions)
-        reporter.build_report(fixture, decisions)
+    def test_pre_review_override_exists_in_immutable_reviewed_tree(self):
+        repository_root, fixture, decisions, _, _ = self.make_override_case()
+        reporter.build_report(fixture, decisions, repository_root)
 
-    def test_honest_post_review_override_is_rejected(self):
-        fixture = minimal_fixture()
-        decisions = minimal_decisions()
-        add_override(fixture, decisions, commit_sha=sha("c"))
+    def test_reviewer_old_sha_fixture_event_reproducer_is_rejected(self):
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "lacks .github/workflow-pilot-decisions.json",
+        ):
+            reporter.load_decisions_from_commit(ROOT, REVIEWER_OVERRIDE_REPRO_SHA)
+
+        fixture = reporter.load_json(BASELINE)
+        decisions = reporter.load_json(DECISIONS)
+        override = {
+            "enabled": True,
+            "reason": "A newly authored event cannot create historical provenance.",
+        }
+        decisions["pull_requests"][0]["threshold"]["override_history"].append(
+            override
+        )
+        pr = next(
+            item for item in fixture["pull_requests"] if item["number"] == 150
+        )
+        cited_sha = pr["commit_shas"][0]
+        self.assertEqual(cited_sha, REVIEWER_OVERRIDE_REPRO_SHA)
+        commit = next(
+            item
+            for item in fixture["commits"]
+            if item["sha"] == cited_sha
+        )
+        fixture["events"].append(
+            {
+                "id": "override:reviewer-reproducer",
+                "type": "threshold_override_introduced",
+                "occurred_at": commit["committed_at"],
+                "pr_number": 150,
+                "sha": cited_sha,
+                "override_index": 0,
+                "decision_digest": reporter.threshold_override_digest(
+                    150,
+                    0,
+                    override,
+                ),
+            }
+        )
         self.assert_rejected(
             fixture=fixture,
             decisions=decisions,
-            pattern="introduced after first review",
+            repository_root=ROOT,
+            pattern="lacks .github/workflow-pilot-decisions.json",
         )
 
-    def test_backdated_override_provenance_is_rejected(self):
-        fixture = minimal_fixture()
-        decisions = minimal_decisions()
-        add_override(
-            fixture,
-            decisions,
-            commit_sha=sha("c"),
-            occurred_at="2026-01-01T03:00:00Z",
+    def test_missing_or_changed_historical_override_is_rejected(self):
+        for first_tree, pattern in (
+            ("missing-file", "lacks .github/workflow-pilot-decisions.json"),
+            ("missing-entry", "lacks PR 1 threshold override 0"),
+            ("changed-entry", "differs from its immutable introduction tree"),
+            ("invalid-schema", "gate_mode must be one of"),
+        ):
+            with self.subTest(first_tree=first_tree):
+                repository_root, fixture, decisions, _, _ = self.make_override_case(
+                    first_tree=first_tree
+                )
+                self.assert_rejected(
+                    fixture=fixture,
+                    decisions=decisions,
+                    repository_root=repository_root,
+                    pattern=pattern,
+                )
+
+    def test_override_digest_mismatch_is_rejected(self):
+        repository_root, fixture, decisions, _, _ = self.make_override_case()
+        fixture["events"][-1]["decision_digest"] = "0" * 64
+        self.assert_rejected(
+            fixture=fixture,
+            decisions=decisions,
+            repository_root=repository_root,
+            pattern="digest does not match",
+        )
+
+    def test_non_candidate_override_commit_is_rejected(self):
+        repository_root, fixture, decisions, _, shas = self.make_override_case()
+        event = fixture["events"][-1]
+        event["sha"] = shas["d"]
+        event["occurred_at"] = "2026-01-01T09:00:00Z"
+        self.assert_rejected(
+            fixture=fixture,
+            decisions=decisions,
+            repository_root=repository_root,
+            pattern="non-candidate commit",
+        )
+
+    def test_post_review_override_commit_is_rejected_even_when_backdated(self):
+        for introduction, pattern in (
+            ("b", "not present at the first reviewed commit"),
+            ("c", "does not predate the first review"),
+        ):
+            with self.subTest(introduction=introduction):
+                repository_root, fixture, decisions, _, _ = (
+                    self.make_override_case(
+                        first_tree="missing-entry",
+                        introduction=introduction,
+                    )
+                )
+                self.assert_rejected(
+                    fixture=fixture,
+                    decisions=decisions,
+                    repository_root=repository_root,
+                    pattern=pattern,
+                )
+
+    def test_backdated_override_commit_fixture_and_event_are_rejected(self):
+        repository_root, fixture, decisions, _, _ = self.make_override_case()
+        fixture["events"][-1]["occurred_at"] = "2026-01-01T00:30:00Z"
+        introduction_sha = fixture["events"][-1]["sha"]
+        next(
+            commit
+            for commit in fixture["commits"]
+            if commit["sha"] == introduction_sha
+        )["committed_at"] = "2026-01-01T00:30:00Z"
+        self.assert_rejected(
+            fixture=fixture,
+            decisions=decisions,
+            repository_root=repository_root,
+            pattern="does not match its immutable Git commit",
+        )
+
+    def test_reordered_override_with_recomputed_digests_is_rejected(self):
+        repository_root, fixture, decisions, _, _ = self.make_override_case(
+            override_count=2
+        )
+        history = decisions["pull_requests"][0]["threshold"]["override_history"]
+        history.reverse()
+        for event in fixture["events"][-2:]:
+            index = event["override_index"]
+            event["decision_digest"] = reporter.threshold_override_digest(
+                1, index, history[index]
+            )
+        self.assert_rejected(
+            fixture=fixture,
+            decisions=decisions,
+            repository_root=repository_root,
+            pattern="differs from its immutable introduction tree",
+        )
+
+    def test_current_override_mutation_with_recomputed_digest_is_rejected(self):
+        repository_root, fixture, decisions, _, _ = self.make_override_case()
+        override = decisions["pull_requests"][0]["threshold"]["override_history"][0]
+        override["enabled"] = not override["enabled"]
+        fixture["events"][-1]["decision_digest"] = reporter.threshold_override_digest(
+            1, 0, override
         )
         self.assert_rejected(
             fixture=fixture,
             decisions=decisions,
-            pattern="occurrence does not match",
-        )
-
-    def test_changed_pre_review_override_is_rejected_after_review(self):
-        fixture = minimal_fixture()
-        decisions = minimal_decisions()
-        override = add_override(fixture, decisions)
-        reporter.build_report(fixture, decisions)
-        override["enabled"] = False
-        self.assert_rejected(
-            fixture=fixture,
-            decisions=decisions,
-            pattern="changed after its authoritative introduction",
+            repository_root=repository_root,
+            pattern="differs from its immutable introduction tree",
         )
 
     def test_inserted_override_without_provenance_is_rejected(self):
@@ -819,7 +1191,8 @@ class FailClosedDataTests(unittest.TestCase):
 
     def test_clean_review_requires_all_prior_findings_resolved(self):
         fixture = minimal_fixture()
-        fixture["review_findings"][0]["resolved_at"] = None
+        fixture["review_findings"][0]["is_resolved"] = False
+        fixture["review_thread_events"] = []
         fixture["reviews"].insert(
             1,
             {
@@ -839,22 +1212,143 @@ class FailClosedDataTests(unittest.TestCase):
                 "review_id": 12,
                 "thread_id": "thread:101",
                 "created_at": "2026-01-01T05:01:00Z",
-                "resolved_at": "2026-01-01T07:00:00Z",
+                "is_resolved": True,
                 "outdated": True,
                 "path": "scripts/feature.py",
             }
         )
-        self.assert_rejected(
-            fixture=fixture,
-            pattern="no authoritative clean-review boundary",
+        fixture["review_thread_events"].append(
+            {
+                "delivery_id": 1001,
+                "delivery_guid": "00000000-0000-4000-8000-000000000002",
+                "delivered_at": "2026-01-01T07:00:00Z",
+                "event": "pull_request_review_thread",
+                "action": "resolved",
+                "repository": "example/workflow",
+                "pr_number": 1,
+                "review_id": 12,
+                "finding_id": 101,
+                "thread_id": "thread:101",
+                "actor": "review-owner",
+            }
         )
+        result = reporter.build_report(fixture, minimal_decisions())
+        timing = result["delivery"]["first_push_to_clean_review"]
+        self.assertEqual(timing["status"], "unavailable")
+        self.assertEqual(timing["reason"], "no-authoritative-clean-review-boundary")
+        self.assertIsNone(timing["median_hours"])
+        self.assertFalse(timing["pilot_ready"])
 
     def test_resolution_after_review_does_not_retroactively_make_it_clean(self):
         fixture = minimal_fixture()
-        fixture["review_findings"][0]["resolved_at"] = "2026-01-01T08:00:01Z"
+        fixture["review_thread_events"][0]["delivered_at"] = (
+            "2026-01-01T08:00:01Z"
+        )
+        result = reporter.build_report(fixture, minimal_decisions())
+        timing = result["delivery"]["first_push_to_clean_review"]
+        self.assertEqual(timing["status"], "unavailable")
+        self.assertEqual(timing["reason"], "no-authoritative-clean-review-boundary")
+        self.assertIsNone(timing["median_hours"])
+        self.assertFalse(timing["pilot_ready"])
+
+    def test_authoritative_resolution_before_review_is_numeric(self):
+        result = reporter.build_report(minimal_fixture(), minimal_decisions())
+        timing = result["delivery"]["first_push_to_clean_review"]
+        self.assertEqual(timing["status"], "available")
+        self.assertEqual(timing["median_hours"], "7.0")
+        self.assertTrue(timing["pilot_ready"])
+
+    def test_authoritative_unresolve_transition_prevents_clean_review(self):
+        fixture = minimal_fixture()
+        fixture["review_thread_events"].append(
+            {
+                "delivery_id": 1001,
+                "delivery_guid": "00000000-0000-4000-8000-000000000002",
+                "delivered_at": "2026-01-01T07:00:00Z",
+                "event": "pull_request_review_thread",
+                "action": "unresolved",
+                "repository": "example/workflow",
+                "pr_number": 1,
+                "review_id": 10,
+                "finding_id": 100,
+                "thread_id": "thread:100",
+                "actor": "review-owner",
+            }
+        )
+        fixture["review_findings"][0]["is_resolved"] = False
+        timing = reporter.build_report(fixture, minimal_decisions())["delivery"][
+            "first_push_to_clean_review"
+        ]
+        self.assertEqual(timing["status"], "unavailable")
+        self.assertIsNone(timing["median_hours"])
+        self.assertFalse(timing["pilot_ready"])
+
+    def test_absent_resolution_history_is_explicitly_unavailable(self):
+        fixture = minimal_fixture()
+        fixture["review_thread_event_source"] = {
+            "kind": reporter.REVIEW_THREAD_EVENT_SOURCE,
+            "complete": False,
+            "coverage_start": None,
+            "coverage_end": None,
+            "unavailable_reason": "historical-review-thread-events-not-collected",
+        }
+        fixture["review_thread_events"] = []
+        result = reporter.build_report(fixture, minimal_decisions())
+        timing = result["delivery"]["first_push_to_clean_review"]
+        self.assertEqual(timing["status"], "unavailable")
+        self.assertEqual(
+            timing["reason"],
+            "historical-review-thread-events-not-collected",
+        )
+        self.assertIsNone(timing["median_hours"])
+        self.assertFalse(timing["pilot_ready"])
+        self.assertEqual(result["reviews"]["valid_findings"], 1)
+        self.assertEqual(result["reviews"]["current_unresolved_findings"], 0)
+
+    def test_synthetic_finding_timestamp_and_untrusted_source_are_rejected(self):
+        fixture = minimal_fixture()
+        fixture["review_findings"][0]["resolved_at"] = "2026-01-01T06:00:00Z"
+        self.assert_rejected(fixture=fixture, pattern="unknown fields: resolved_at")
+
+        fixture = minimal_fixture()
+        fixture["review_thread_event_source"]["kind"] = "fixture-authored"
         self.assert_rejected(
             fixture=fixture,
-            pattern="no authoritative clean-review boundary",
+            pattern="review_thread_event_source.kind",
+        )
+
+    def test_review_thread_delivery_identity_coverage_and_state_fail_closed(self):
+        fixture = minimal_fixture()
+        fixture["review_thread_events"][0]["thread_id"] = "thread:other"
+        self.assert_rejected(fixture=fixture, pattern="contradicts its finding")
+
+        fixture = minimal_fixture()
+        fixture["review_thread_event_source"]["coverage_start"] = (
+            "2026-01-01T05:00:00Z"
+        )
+        self.assert_rejected(
+            fixture=fixture,
+            pattern="coverage starts after finding history",
+        )
+
+        fixture = minimal_fixture()
+        fixture["review_findings"][0]["is_resolved"] = False
+        self.assert_rejected(
+            fixture=fixture,
+            pattern="contradicts authoritative deliveries",
+        )
+
+        fixture = minimal_fixture()
+        fixture["review_thread_event_source"] = {
+            "kind": reporter.REVIEW_THREAD_EVENT_SOURCE,
+            "complete": False,
+            "coverage_start": None,
+            "coverage_end": None,
+            "unavailable_reason": "historical-review-thread-events-not-collected",
+        }
+        self.assert_rejected(
+            fixture=fixture,
+            pattern="unavailable review-thread event source cannot contain",
         )
 
     def test_stack_parent_depth_and_exception_are_consistent(self):

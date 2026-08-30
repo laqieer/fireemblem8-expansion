@@ -37,9 +37,17 @@ The frozen source semantics are:
   issue-to-merge; a referenced issue with no fixture record is an error.
 - Review identities are submitted
   `copilot-pull-request-reviewer[bot]` reviews on those PRs. Inline Copilot
-  comments are review findings. Their authoritative resolution timestamps and
-  outdated thread state are fixture evidence rather than decision-record
-  overrides.
+  comments are review findings. GitHub exposes each thread's current
+  `isResolved`/`resolvedBy` state, but neither the review-thread GraphQL object
+  nor the PR timeline supplies a historical resolution timestamp. The
+  fixture therefore preserves finding identities and current resolution state
+  but contains no manufactured `resolved_at` values.
+- Historical resolution timing is accepted only from complete GitHub
+  `pull_request_review_thread` webhook delivery history. Each normalized event
+  retains the GitHub delivery ID/GUID, delivery timestamp, repository, PR,
+  review, finding, thread, actor, and `resolved`/`unresolved` action. The
+  baseline has no such historical capture, so its source is explicitly
+  unavailable rather than interpreted as an empty event history.
 - The workflow cohort is the latest 1,000 Actions runs created at or before
   the end timestamp, ordered by `(created_at, run_id)` descending. Workflow
   run `33307027945` was still active at the measurement instant; its later
@@ -68,6 +76,7 @@ Run the stdlib-only reporter from the repository root:
 
 ```bash
 python3 -m scripts.workflow_pilot.reporter \
+  --repository-root . \
   --fixture scripts/workflow_pilot/tests/fixtures/baseline.json \
   --decisions .github/workflow-pilot-decisions.json \
   --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json
@@ -78,10 +87,12 @@ separators, and one trailing newline. Running over identical immutable inputs
 is byte-identical. `baseline_expected.json` contains only immutable expected
 values, not another authored current-state report.
 
-The same stdlib suite is a required `host-tests` step in Build CI. The parsed
-workflow topology regression requires that exact command to remain in the
-existing required job, without adding a job, trigger, dependency, or publisher
-path.
+`--repository-root` is required and must resolve to the exact checked-out Git
+top level. The decision path must resolve to
+`.github/workflow-pilot-decisions.json` in that tree. Build CI passes
+`"$GITHUB_WORKSPACE"` explicitly, runs both the same stdlib suite and the
+baseline/expected invocation in its required `host-tests` job, and the parsed
+workflow topology regression rejects removal or substitution.
 
 The fixture carries derivable Git/GitHub/Actions facts. The single versioned
 decision record,
@@ -92,7 +103,7 @@ contains only the decisions those systems cannot supply:
 | --- | --- |
 | `risk_boundaries` | Closed enum; `none` must stand alone. |
 | `threshold.triggers` | Closed enum for risk, changed-line, changed-file, and major-boundary triggers. |
-| `threshold.override_history` | Ordered override decisions containing only `enabled` and a nonempty reason. Each entry must exactly match an authoritative `threshold_override_introduced` event digest and candidate commit that predates the first review. |
+| `threshold.override_history` | Ordered override decisions containing only `enabled` and a nonempty reason. The cited introduction SHA must be an actual candidate ancestor of the first-reviewed commit. The reporter reads `.github/workflow-pilot-decisions.json` directly from both immutable Git trees and requires the exact PR, schema, index, entry, and digest to match the current record. |
 | `gate_mode` | Exactly `concurrent` or `review-first`. |
 | `stack` | Depth, immediate parent decision, and a required depth-three exception reason; the parent/base relation is checked against authoritative PR data. |
 | `pilot` | Inclusion boolean and a closed pilot disposition. |
@@ -104,7 +115,10 @@ forbidden from the corresponding decision schema. Artifact audit history
 retains only its non-derivable disposition decision and decision time. Unknown
 keys cannot override a derived fact. Duplicate JSON keys, missing spotlight
 decisions, unknown enum values, and an override inserted, backdated, reordered,
-or changed after its authoritative introduction all fail.
+or changed after its authoritative introduction all fail. A newly authored
+fixture event plus an old candidate SHA is insufficient when that commit tree
+lacks the exact decision entry; Git remains the only stored commit-content
+authority, and the decision record stores no copied tree, blob, or commit hash.
 
 ## Reproducible formulas
 
@@ -117,9 +131,9 @@ convention.
 | Metric | Formula and inclusion |
 | --- | --- |
 | Issue-to-merge | For each in-window merged PR with closing issues: `merged_at - min(linked issue created_at)`. Report the eligible count and authoritative empty-link exclusions. |
-| First-push-to-clean-review | For each declared subject: the first GitHub-visible candidate boundary is the earlier of PR `created_at` and its earliest retained Actions head event. Subtract it from the first Copilot review with no findings only when every cumulative prior finding identity has an authoritative `resolved_at` strictly before that review. A later review containing resolved findings cannot erase an older unresolved identity, and a later resolution cannot retroactively make a review clean. Missing branch runs, reviews, resolution proof, or a clean boundary fails. Local commit dates are never substituted for publication. |
+| First-push-to-clean-review | For each declared subject: the first GitHub-visible candidate boundary is the earlier of PR `created_at` and its earliest retained Actions head event. Subtract it from the first Copilot review with no findings only when complete GitHub review-thread webhook history proves every cumulative prior thread's latest action strictly before that review is `resolved`. `unresolved` transitions remain cumulative evidence, and a delivery at or after the review cannot make that review clean retroactively. Without complete source coverage or a proven clean boundary, emit `status: unavailable`, a nonempty reason, `pilot_ready: false`, and `median_hours: null`; pilot comparison or promotion must not consume a numeric value. Local commit dates and current thread state are never substituted for historical delivery evidence. |
 | Review rounds | Count unique submitted Copilot review IDs for the subject PR. |
-| Valid findings | Count resolved inline Copilot finding identities; report `findings / ((additions + deletions) / 1000)` and `findings / review rounds`. A zero denominator is reported as unavailable, not infinity. |
+| Valid findings | Count captured inline Copilot finding identities independently of historical timing availability; report current resolved/unresolved counts, `findings / ((additions + deletions) / 1000)`, and `findings / review rounds`. A zero denominator is reported as unavailable, not infinity. Current unresolved conversations must still be zero for real delivery. |
 | Build totals | From the declared latest-1,000 cohort, count runs whose workflow name is `Build CI`; exhaustively partition terminal `success`, `failure`, `cancelled`, `neutral`, `skipped`, and `action_required` conclusions plus active queued/in-progress runs. Unknown conclusions fail instead of disappearing from the partition. |
 | Build minutes | Sum `completed_at - started_at`; clamp an in-progress run at the inclusive end, count a queued run as zero even if `started_at` is populated, then floor the aggregate seconds divided by 60. |
 | Duplicate unchanged-SHA Builds | Group sampled Builds by exact `head_sha`; sum `group size - 1` for groups larger than one. Attempts remain separate runs. |
@@ -192,7 +206,7 @@ removing any one loses a dependency required by issues #177 through #181.
 | In-window merged PRs | 64 |
 | Frozen PR-open-to-merge median | 9.4 hours |
 | Linked-issue cohort / issue-to-merge median | 57 PRs / 44.7 hours |
-| PR #150 first-visible-candidate-to-clean-review | 100.6 hours |
+| PR #150 first-visible-candidate-to-clean-review | Unavailable: historical review-thread events were not collected |
 | Latest sampled workflow runs | 1,000 |
 | Sampled Build runs | 326 |
 | Build success / failure / cancelled / active | 98 / 61 / 166 / 1 |
@@ -200,7 +214,7 @@ removing any one loses a dependency required by issues #177 through #181.
 | Sampled accumulated Build minutes | 9,939 |
 | Duplicate unchanged-SHA Builds | 51 |
 | PR #150 Copilot review rounds | 34 |
-| PR #150 resolved inline findings | 101 |
+| PR #150 inline findings / current unresolved | 101 / 0 |
 | PR #150 Build runs | 79 |
 | PR #150 accumulated Build minutes | 2,210 |
 | PR #150 base changes / close-reopen cycles / superseded candidates | 31 / 16 / 45 |
@@ -208,6 +222,16 @@ removing any one loses a dependency required by issues #177 through #181.
 These values are immutable fixture expectations only. The reporter derives
 them from identities and timestamps; they are not editable fields in the
 decision record.
+
+The unavailable clean-review result is the actual historical boundary, not a
+zero, success, or estimate. It makes that metric ineligible for pilot
+comparison/promotion while leaving the 34 review rounds, 101 finding
+identities, current zero-unresolved state, and every other frozen baseline
+metric useful. Future pilot collection must register a repository webhook,
+capture GitHub's `pull_request_review_thread` `resolved` and `unresolved`
+deliveries as they occur, and normalize their delivery API identities and
+timestamps into a complete coverage interval before the reporter can emit a
+numeric clean-review duration.
 
 ## Relationships, impact, and rollback
 

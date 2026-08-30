@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -18,8 +19,13 @@ from typing import Any, Iterable
 SCHEMA_VERSION = 1
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+DELIVERY_GUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 REVERT_RE = re.compile(r"(?im)^This reverts commit ([0-9a-f]{40})\.\s*$")
 REVIEW_BOT = "copilot-pull-request-reviewer[bot]"
+DECISION_RECORD_PATH = Path(".github/workflow-pilot-decisions.json")
+REVIEW_THREAD_EVENT_SOURCE = "github-webhook-deliveries"
 
 RISK_BOUNDARIES = {
     "abi",
@@ -113,14 +119,16 @@ def _object_no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def load_json(path: Path) -> Any:
     try:
-        return json.loads(
-            path.read_text(encoding="utf-8"),
-            object_pairs_hook=_object_no_duplicates,
-        )
+        return parse_json(path.read_text(encoding="utf-8"), str(path))
     except OSError as error:
         raise PilotDataError(f"cannot read {path}: {error}") from error
+
+
+def parse_json(text: str, label: str) -> Any:
+    try:
+        return json.loads(text, object_pairs_hook=_object_no_duplicates)
     except json.JSONDecodeError as error:
-        raise PilotDataError(f"invalid JSON in {path}: {error}") from error
+        raise PilotDataError(f"invalid JSON in {label}: {error}") from error
 
 
 def normalized_json(value: Any) -> bytes:
@@ -269,6 +277,401 @@ def is_ancestor(
     return False
 
 
+def run_git(
+    repository_root: Path,
+    *arguments: str,
+) -> bytes:
+    try:
+        completed = subprocess.run(
+            ("git", "-C", str(repository_root), *arguments),
+            check=False,
+            capture_output=True,
+        )
+    except OSError as error:
+        raise PilotDataError(f"cannot execute Git: {error}") from error
+    if completed.returncode == 0:
+        return completed.stdout
+    detail = completed.stderr.decode("utf-8", errors="replace").strip()
+    raise PilotDataError(
+        f"Git {' '.join(arguments)} failed"
+        + (f": {detail}" if detail else "")
+    )
+
+
+def validate_repository_root(repository_root: Path) -> Path:
+    try:
+        resolved = repository_root.resolve(strict=True)
+    except OSError as error:
+        raise PilotDataError(
+            f"repository root {repository_root} is unavailable: {error}"
+        ) from error
+    if not resolved.is_dir():
+        raise PilotDataError(f"repository root {resolved} is not a directory")
+    top_level = Path(
+        run_git(resolved, "rev-parse", "--show-toplevel")
+        .decode("utf-8")
+        .strip()
+    ).resolve()
+    if top_level != resolved:
+        raise PilotDataError(
+            f"repository root must be the exact Git top level {top_level}"
+        )
+    return resolved
+
+
+def git_commit_time(repository_root: Path, sha: str) -> datetime:
+    raw = (
+        run_git(repository_root, "show", "-s", "--format=%cI", sha)
+        .decode("ascii")
+        .strip()
+    )
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError as error:
+        raise PilotDataError(
+            f"Git commit {sha} has an invalid committer timestamp"
+        ) from error
+    return parsed.astimezone(timezone.utc)
+
+
+def git_is_ancestor(repository_root: Path, ancestor: str, descendant: str) -> bool:
+    if ancestor == descendant:
+        run_git(repository_root, "cat-file", "-e", f"{ancestor}^{{commit}}")
+        return True
+    try:
+        completed = subprocess.run(
+            (
+                "git",
+                "-C",
+                str(repository_root),
+                "merge-base",
+                "--is-ancestor",
+                ancestor,
+                descendant,
+            ),
+            check=False,
+            capture_output=True,
+        )
+    except OSError as error:
+        raise PilotDataError(f"cannot execute Git: {error}") from error
+    if completed.returncode == 0:
+        return True
+    if completed.returncode == 1:
+        return False
+    detail = completed.stderr.decode("utf-8", errors="replace").strip()
+    raise PilotDataError(
+        f"Git cannot compare commits {ancestor} and {descendant}"
+        + (f": {detail}" if detail else "")
+    )
+
+
+def load_decisions_from_commit(repository_root: Path, sha: str) -> dict[str, Any]:
+    specification = f"{sha}:{DECISION_RECORD_PATH.as_posix()}"
+    try:
+        raw = run_git(repository_root, "show", specification)
+    except PilotDataError as error:
+        raise PilotDataError(
+            f"commit {sha} lacks {DECISION_RECORD_PATH.as_posix()}"
+        ) from error
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise PilotDataError(
+            f"commit {sha} decision record is not UTF-8"
+        ) from error
+    return expect_object(
+        parse_json(text, specification),
+        f"decision record at commit {sha}",
+    )
+
+
+def historical_override_entry(
+    decisions: dict[str, Any],
+    sha: str,
+    pull_request: int,
+    override_index: int,
+) -> dict[str, Any]:
+    label = f"decision record at commit {sha}"
+    expect_keys(
+        decisions,
+        label,
+        ("schema_version", "pull_requests", "artifacts"),
+    )
+    if decisions["schema_version"] != SCHEMA_VERSION:
+        raise PilotDataError(
+            f"{label} schema_version must be {SCHEMA_VERSION}"
+        )
+    records = expect_list(decisions["pull_requests"], f"{label}.pull_requests")
+    expect_list(decisions["artifacts"], f"{label}.artifacts")
+    matches = []
+    identities = []
+    for record_index, raw_record in enumerate(records):
+        record_label = f"{label}.pull_requests[{record_index}]"
+        record = expect_object(raw_record, record_label)
+        expect_keys(
+            record,
+            record_label,
+            (
+                "pull_request",
+                "risk_boundaries",
+                "threshold",
+                "gate_mode",
+                "stack",
+                "pilot",
+            ),
+        )
+        number = expect_int(
+            record["pull_request"], f"{record_label}.pull_request", 1
+        )
+        identities.append(number)
+        if number == pull_request:
+            matches.append(record)
+    expect_unique(identities, f"{label} pull-request identities")
+    if len(matches) != 1:
+        raise PilotDataError(
+            f"commit {sha} decision record lacks exact PR {pull_request} identity"
+        )
+    record = matches[0]
+    risks = expect_list(
+        record["risk_boundaries"],
+        f"{label} PR {pull_request}.risk_boundaries",
+    )
+    if not risks:
+        raise PilotDataError(
+            f"{label} PR {pull_request}.risk_boundaries must not be empty"
+        )
+    for risk in risks:
+        expect_enum(
+            risk,
+            RISK_BOUNDARIES,
+            f"{label} PR {pull_request}.risk_boundaries member",
+        )
+    expect_unique(risks, f"{label} PR {pull_request}.risk_boundaries")
+    if "none" in risks and len(risks) != 1:
+        raise PilotDataError(
+            f"{label} PR {pull_request}.risk_boundaries none must stand alone"
+        )
+    threshold = expect_object(
+        record["threshold"],
+        f"{label} PR {pull_request}.threshold",
+    )
+    expect_keys(
+        threshold,
+        f"{label} PR {pull_request}.threshold",
+        ("triggers", "override_history"),
+    )
+    triggers = expect_list(
+        threshold["triggers"],
+        f"{label} PR {pull_request}.threshold.triggers",
+    )
+    if not triggers:
+        raise PilotDataError(
+            f"{label} PR {pull_request}.threshold.triggers must not be empty"
+        )
+    for trigger in triggers:
+        expect_enum(
+            trigger,
+            THRESHOLD_TRIGGERS,
+            f"{label} PR {pull_request}.threshold.triggers member",
+        )
+    expect_unique(triggers, f"{label} PR {pull_request}.threshold.triggers")
+    if "none" in triggers and len(triggers) != 1:
+        raise PilotDataError(
+            f"{label} PR {pull_request}.threshold.triggers none must stand alone"
+        )
+    expect_enum(
+        record["gate_mode"],
+        GATE_MODES,
+        f"{label} PR {pull_request}.gate_mode",
+    )
+    stack = expect_object(
+        record["stack"],
+        f"{label} PR {pull_request}.stack",
+    )
+    expect_keys(
+        stack,
+        f"{label} PR {pull_request}.stack",
+        ("depth", "parent_pr", "exception_reason"),
+    )
+    depth = expect_int(
+        stack["depth"],
+        f"{label} PR {pull_request}.stack.depth",
+        0,
+    )
+    if depth > 3:
+        raise PilotDataError(
+            f"{label} PR {pull_request}.stack.depth exceeds the supported maximum"
+        )
+    if stack["parent_pr"] is not None:
+        expect_int(
+            stack["parent_pr"],
+            f"{label} PR {pull_request}.stack.parent_pr",
+            1,
+        )
+    if stack["exception_reason"] is not None:
+        expect_string(
+            stack["exception_reason"],
+            f"{label} PR {pull_request}.stack.exception_reason",
+        )
+    pilot = expect_object(
+        record["pilot"],
+        f"{label} PR {pull_request}.pilot",
+    )
+    expect_keys(
+        pilot,
+        f"{label} PR {pull_request}.pilot",
+        ("included", "disposition"),
+    )
+    expect_bool(
+        pilot["included"],
+        f"{label} PR {pull_request}.pilot.included",
+    )
+    expect_enum(
+        pilot["disposition"],
+        PILOT_DISPOSITIONS,
+        f"{label} PR {pull_request}.pilot.disposition",
+    )
+    if pilot["included"] and pilot["disposition"] in {
+        "baseline-only",
+        "excluded",
+    }:
+        raise PilotDataError(
+            f"{label} PR {pull_request}.pilot inclusion contradicts disposition"
+        )
+    if not pilot["included"] and pilot["disposition"] in {
+        "evaluate",
+        "graduated",
+    }:
+        raise PilotDataError(
+            f"{label} PR {pull_request}.pilot exclusion contradicts disposition"
+        )
+    history = expect_list(
+        threshold["override_history"],
+        f"{label} PR {pull_request}.threshold.override_history",
+    )
+    if override_index >= len(history):
+        raise PilotDataError(
+            f"commit {sha} decision record lacks PR {pull_request} threshold "
+            f"override {override_index}"
+        )
+    entry_label = (
+        f"{label} PR {pull_request}.threshold.override_history[{override_index}]"
+    )
+    entry = expect_object(history[override_index], entry_label)
+    expect_keys(entry, entry_label, ("enabled", "reason"))
+    expect_bool(entry["enabled"], f"{entry_label}.enabled")
+    expect_string(entry["reason"], f"{entry_label}.reason")
+    return entry
+
+
+def validate_override_git_provenance(
+    repository_root: Path,
+    data: dict[str, Any],
+    pull_request: int,
+    override_index: int,
+    override: dict[str, Any],
+    introduction: dict[str, Any],
+    first_review: dict[str, Any] | None,
+) -> None:
+    sha = introduction["sha"]
+    pr = data["pull_requests"][pull_request]
+    if sha not in pr["commit_shas"]:
+        raise PilotDataError(
+            f"PR {pull_request} threshold override {override_index} cites a "
+            "non-candidate commit"
+        )
+    run_git(repository_root, "cat-file", "-e", f"{sha}^{{commit}}")
+    run_git(
+        repository_root,
+        "cat-file",
+        "-e",
+        f"{pr['head_sha']}^{{commit}}",
+    )
+    if not git_is_ancestor(repository_root, sha, pr["head_sha"]):
+        raise PilotDataError(
+            f"PR {pull_request} threshold override {override_index} commit is "
+            "not in the candidate ancestry"
+        )
+    actual_time = git_commit_time(repository_root, sha)
+    fixture_time = parse_time(
+        data["commits"][sha]["committed_at"],
+        f"commit {sha}.committed_at",
+    )
+    introduced_at = parse_time(
+        introduction["occurred_at"],
+        f"event {introduction['id']}.occurred_at",
+    )
+    if actual_time != fixture_time or introduced_at != actual_time:
+        raise PilotDataError(
+            f"PR {pull_request} threshold override {override_index} timestamp "
+            "does not match its immutable Git commit"
+        )
+
+    expected_digest = threshold_override_digest(
+        pull_request,
+        override_index,
+        override,
+    )
+    if introduction["decision_digest"] != expected_digest:
+        raise PilotDataError(
+            f"PR {pull_request} threshold override {override_index} digest "
+            "does not match the current decision entry"
+        )
+    introduced_decisions = load_decisions_from_commit(repository_root, sha)
+    introduced_entry = historical_override_entry(
+        introduced_decisions,
+        sha,
+        pull_request,
+        override_index,
+    )
+    introduced_digest = threshold_override_digest(
+        pull_request,
+        override_index,
+        introduced_entry,
+    )
+    if introduced_entry != override or introduced_digest != expected_digest:
+        raise PilotDataError(
+            f"PR {pull_request} threshold override {override_index} differs "
+            "from its immutable introduction tree"
+        )
+
+    if first_review is None:
+        return
+    review_sha = first_review["commit_sha"]
+    review_at = parse_time(
+        first_review["submitted_at"],
+        f"review {first_review['id']}.submitted_at",
+    )
+    run_git(repository_root, "cat-file", "-e", f"{review_sha}^{{commit}}")
+    review_commit_time = git_commit_time(repository_root, review_sha)
+    if review_commit_time > review_at:
+        raise PilotDataError(
+            f"PR {pull_request} first review predates its reviewed Git commit"
+        )
+    if actual_time >= review_at:
+        raise PilotDataError(
+            f"PR {pull_request} threshold override {override_index} commit "
+            "does not predate the first review"
+        )
+    if not git_is_ancestor(repository_root, sha, review_sha):
+        raise PilotDataError(
+            f"PR {pull_request} threshold override {override_index} was not "
+            "present at the first reviewed commit"
+        )
+    reviewed_decisions = load_decisions_from_commit(repository_root, review_sha)
+    reviewed_entry = historical_override_entry(
+        reviewed_decisions,
+        review_sha,
+        pull_request,
+        override_index,
+    )
+    if reviewed_entry != override:
+        raise PilotDataError(
+            f"PR {pull_request} threshold override {override_index} changed "
+            "between introduction and first review"
+        )
+
+
 def _validate_fixture_root(fixture: dict[str, Any]) -> None:
     expect_keys(
         fixture,
@@ -288,6 +691,8 @@ def _validate_fixture_root(fixture: dict[str, Any]) -> None:
             "issues",
             "reviews",
             "review_findings",
+            "review_thread_event_source",
+            "review_thread_events",
             "workflow_runs",
             "commits",
             "events",
@@ -324,6 +729,7 @@ def _validate_fixture_root(fixture: dict[str, Any]) -> None:
         "issues",
         "reviews",
         "review_findings",
+        "review_thread_events",
         "workflow_runs",
         "commits",
         "events",
@@ -472,7 +878,7 @@ def validate_findings(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
                 "review_id",
                 "thread_id",
                 "created_at",
-                "resolved_at",
+                "is_resolved",
                 "outdated",
                 "path",
             ),
@@ -482,15 +888,161 @@ def validate_findings(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
             raise PilotDataError(f"duplicate review finding {finding_id}")
         expect_int(item["review_id"], f"{label}.review_id", 1)
         expect_string(item["thread_id"], f"{label}.thread_id")
-        created = parse_time(item["created_at"], f"{label}.created_at")
-        resolved = parse_time(
-            item["resolved_at"], f"{label}.resolved_at", nullable=True
-        )
-        if resolved is not None and resolved <= created:
-            raise PilotDataError(f"{label}.resolved_at must follow creation")
+        parse_time(item["created_at"], f"{label}.created_at")
+        expect_bool(item["is_resolved"], f"{label}.is_resolved")
         expect_bool(item["outdated"], f"{label}.outdated")
         expect_string(item["path"], f"{label}.path")
         result[finding_id] = item
+    return result
+
+
+def validate_review_thread_event_source(
+    fixture: dict[str, Any],
+) -> dict[str, Any]:
+    source = expect_object(
+        fixture["review_thread_event_source"],
+        "fixture.review_thread_event_source",
+    )
+    expect_keys(
+        source,
+        "fixture.review_thread_event_source",
+        (
+            "kind",
+            "complete",
+            "coverage_start",
+            "coverage_end",
+            "unavailable_reason",
+        ),
+    )
+    if source["kind"] != REVIEW_THREAD_EVENT_SOURCE:
+        raise PilotDataError(
+            "fixture.review_thread_event_source.kind must be "
+            f"{REVIEW_THREAD_EVENT_SOURCE!r}"
+        )
+    complete = expect_bool(
+        source["complete"],
+        "fixture.review_thread_event_source.complete",
+    )
+    coverage_start = parse_time(
+        source["coverage_start"],
+        "fixture.review_thread_event_source.coverage_start",
+        nullable=True,
+    )
+    coverage_end = parse_time(
+        source["coverage_end"],
+        "fixture.review_thread_event_source.coverage_end",
+        nullable=True,
+    )
+    reason = source["unavailable_reason"]
+    if complete:
+        if coverage_start is None or coverage_end is None:
+            raise PilotDataError(
+                "complete review-thread event source requires coverage bounds"
+            )
+        if coverage_start > coverage_end:
+            raise PilotDataError(
+                "review-thread event source coverage start follows its end"
+            )
+        if reason is not None:
+            raise PilotDataError(
+                "complete review-thread event source cannot have an "
+                "unavailable reason"
+            )
+    else:
+        if coverage_start is not None or coverage_end is not None:
+            raise PilotDataError(
+                "unavailable review-thread event source cannot claim coverage"
+            )
+        expect_string(
+            reason,
+            "fixture.review_thread_event_source.unavailable_reason",
+        )
+    return source
+
+
+def validate_review_thread_events(
+    fixture: dict[str, Any],
+    source: dict[str, Any],
+    pull_requests: dict[int, dict[str, Any]],
+    reviews: dict[int, dict[str, Any]],
+    findings: dict[int, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    required = (
+        "delivery_id",
+        "delivery_guid",
+        "delivered_at",
+        "event",
+        "action",
+        "repository",
+        "pr_number",
+        "review_id",
+        "finding_id",
+        "thread_id",
+        "actor",
+    )
+    result: dict[str, dict[str, Any]] = {}
+    delivery_ids = []
+    for index, raw in enumerate(fixture["review_thread_events"]):
+        label = f"review_thread_events[{index}]"
+        event = expect_object(raw, label)
+        expect_keys(event, label, required)
+        delivery_id = expect_int(event["delivery_id"], f"{label}.delivery_id", 1)
+        delivery_ids.append(delivery_id)
+        delivery_guid = event["delivery_guid"]
+        if (
+            not isinstance(delivery_guid, str)
+            or DELIVERY_GUID_RE.fullmatch(delivery_guid) is None
+        ):
+            raise PilotDataError(
+                f"{label}.delivery_guid must be a lowercase GitHub delivery UUID"
+            )
+        if delivery_guid in result:
+            raise PilotDataError(
+                f"duplicate review-thread delivery {delivery_guid!r}"
+            )
+        delivered_at = parse_time(event["delivered_at"], f"{label}.delivered_at")
+        if event["event"] != "pull_request_review_thread":
+            raise PilotDataError(
+                f"{label}.event must be 'pull_request_review_thread'"
+            )
+        expect_enum(event["action"], {"resolved", "unresolved"}, f"{label}.action")
+        repository = expect_string(event["repository"], f"{label}.repository")
+        if repository != fixture["repository"]:
+            raise PilotDataError(
+                f"{label}.repository contradicts fixture.repository"
+            )
+        pr_number = expect_int(event["pr_number"], f"{label}.pr_number", 1)
+        review_id = expect_int(event["review_id"], f"{label}.review_id", 1)
+        finding_id = expect_int(event["finding_id"], f"{label}.finding_id", 1)
+        review = reviews.get(review_id)
+        finding = findings.get(finding_id)
+        if pr_number not in pull_requests:
+            raise PilotDataError(f"{label} references unknown PR {pr_number}")
+        if review is None or review["pr_number"] != pr_number:
+            raise PilotDataError(
+                f"{label} references a missing or mismatched review"
+            )
+        if finding is None or finding["review_id"] != review_id:
+            raise PilotDataError(
+                f"{label} references a missing or mismatched finding"
+            )
+        thread_id = expect_string(event["thread_id"], f"{label}.thread_id")
+        if finding["thread_id"] != thread_id:
+            raise PilotDataError(f"{label}.thread_id contradicts its finding")
+        created_at = parse_time(
+            finding["created_at"], f"finding {finding_id}.created_at"
+        )
+        if delivered_at <= created_at:
+            raise PilotDataError(
+                f"{label}.delivered_at must follow finding creation"
+            )
+        expect_string(event["actor"], f"{label}.actor")
+        result[delivery_guid] = event
+    expect_unique(delivery_ids, "review-thread delivery IDs")
+    if not source["complete"] and result:
+        raise PilotDataError(
+            "unavailable review-thread event source cannot contain deliveries"
+        )
     return result
 
 
@@ -754,6 +1306,8 @@ def cross_validate_fixture(
     issues: dict[int, dict[str, Any]],
     reviews: dict[int, dict[str, Any]],
     findings: dict[int, dict[str, Any]],
+    review_thread_source: dict[str, Any],
+    review_thread_events: dict[str, dict[str, Any]],
     commits: dict[str, dict[str, Any]],
     events: dict[str, dict[str, Any]],
     artifacts: dict[str, dict[str, Any]],
@@ -762,6 +1316,79 @@ def cross_validate_fixture(
     lifecycle_as_of = parse_time(
         fixture["lifecycle_as_of"], "fixture.lifecycle_as_of"
     )
+    if review_thread_source["complete"]:
+        coverage_start = parse_time(
+            review_thread_source["coverage_start"],
+            "fixture.review_thread_event_source.coverage_start",
+        )
+        coverage_end = parse_time(
+            review_thread_source["coverage_end"],
+            "fixture.review_thread_event_source.coverage_end",
+        )
+        if findings:
+            first_finding = min(
+                parse_time(
+                    finding["created_at"],
+                    f"finding {finding['id']}.created_at",
+                )
+                for finding in findings.values()
+            )
+            if coverage_start > first_finding:
+                raise PilotDataError(
+                    "review-thread event coverage starts after finding history"
+                )
+        if coverage_end < lifecycle_as_of:
+            raise PilotDataError(
+                "review-thread event coverage ends before lifecycle_as_of"
+            )
+    events_by_finding: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for event in review_thread_events.values():
+        delivered_at = parse_time(
+            event["delivered_at"],
+            f"review-thread delivery {event['delivery_guid']}.delivered_at",
+        )
+        if delivered_at > lifecycle_as_of:
+            raise PilotDataError(
+                f"review-thread delivery {event['delivery_guid']!r} follows "
+                "lifecycle_as_of"
+            )
+        events_by_finding[event["finding_id"]].append(event)
+    for finding_id, thread_events in events_by_finding.items():
+        ordered = sorted(
+            thread_events,
+            key=lambda event: (
+                parse_time(
+                    event["delivered_at"],
+                    f"review-thread delivery {event['delivery_guid']}.delivered_at",
+                ),
+                event["delivery_id"],
+            ),
+        )
+        timestamps = [
+            parse_time(
+                event["delivered_at"],
+                f"review-thread delivery {event['delivery_guid']}.delivered_at",
+            )
+            for event in ordered
+        ]
+        expect_unique(
+            timestamps,
+            f"review finding {finding_id} delivery timestamps",
+        )
+        resolved = ordered[-1]["action"] == "resolved"
+        if findings[finding_id]["is_resolved"] != resolved:
+            raise PilotDataError(
+                f"review finding {finding_id} current resolution state "
+                "contradicts authoritative deliveries"
+            )
+    if review_thread_source["complete"]:
+        for finding in findings.values():
+            if finding["is_resolved"] and finding["id"] not in events_by_finding:
+                raise PilotDataError(
+                    f"review finding {finding['id']} is resolved without an "
+                    "authoritative delivery"
+                )
+
     review_threads: dict[int, set[str]] = defaultdict(set)
     for finding in findings.values():
         review_id = finding["review_id"]
@@ -774,15 +1401,6 @@ def cross_validate_fixture(
                 f"review {review_id} repeats thread {finding['thread_id']!r}"
             )
         review_threads[review_id].add(finding["thread_id"])
-        resolved_at = parse_time(
-            finding["resolved_at"],
-            f"review finding {finding['id']}.resolved_at",
-            nullable=True,
-        )
-        if resolved_at is not None and resolved_at > lifecycle_as_of:
-            raise PilotDataError(
-                f"review finding {finding['id']} resolves after lifecycle_as_of"
-            )
     for review_id, review in reviews.items():
         pr_number = review["pr_number"]
         if pr_number not in pull_requests:
@@ -956,6 +1574,14 @@ def validate_fixture(fixture: Any) -> dict[str, Any]:
     issues = validate_issues(fixture)
     reviews = validate_reviews(fixture)
     findings = validate_findings(fixture)
+    review_thread_source = validate_review_thread_event_source(fixture)
+    review_thread_events = validate_review_thread_events(
+        fixture,
+        review_thread_source,
+        pull_requests,
+        reviews,
+        findings,
+    )
     runs = validate_runs(fixture)
     commits = validate_commits(fixture)
     if fixture["base_sha"] not in commits:
@@ -969,6 +1595,8 @@ def validate_fixture(fixture: Any) -> dict[str, Any]:
         issues,
         reviews,
         findings,
+        review_thread_source,
+        review_thread_events,
         commits,
         events,
         artifacts,
@@ -980,6 +1608,8 @@ def validate_fixture(fixture: Any) -> dict[str, Any]:
         "issues": issues,
         "reviews": reviews,
         "findings": findings,
+        "review_thread_source": review_thread_source,
+        "review_thread_events": review_thread_events,
         "runs": runs,
         "commits": commits,
         "events": events,
@@ -991,6 +1621,7 @@ def validate_fixture(fixture: Any) -> dict[str, Any]:
 def validate_decisions(
     raw_decisions: Any,
     data: dict[str, Any],
+    repository_root: Path | None = None,
 ) -> dict[str, Any]:
     decisions = expect_object(raw_decisions, "decisions")
     expect_keys(decisions, "decisions", ("schema_version", "pull_requests", "artifacts"))
@@ -1056,9 +1687,10 @@ def validate_decisions(
             if review["pr_number"] == number and review["author"] == REVIEW_BOT
         ]
         first_review = min(
-            (
-                parse_time(review["submitted_at"], f"review {review['id']}.submitted_at")
-                for review in reviews
+            reviews,
+            key=lambda review: parse_time(
+                review["submitted_at"],
+                f"review {review['id']}.submitted_at",
             ),
             default=None,
         )
@@ -1101,21 +1733,20 @@ def validate_decisions(
             expect_bool(override["enabled"], f"{override_label}.enabled")
             expect_string(override["reason"], f"{override_label}.reason")
             introduction = introduction_events[override_index]
-            if introduction["decision_digest"] != threshold_override_digest(
-                number, override_index, override
-            ):
+            if repository_root is None:
                 raise PilotDataError(
-                    f"PR {number} threshold override {override_index} changed after "
-                    "its authoritative introduction"
+                    f"PR {number} threshold override provenance requires an "
+                    "explicit repository root"
                 )
-            introduced_at = parse_time(
-                data["commits"][introduction["sha"]]["committed_at"],
-                f"commit {introduction['sha']}.committed_at",
+            validate_override_git_provenance(
+                repository_root,
+                data,
+                number,
+                override_index,
+                override,
+                introduction,
+                first_review,
             )
-            if first_review is not None and introduced_at >= first_review:
-                raise PilotDataError(
-                    f"PR {number} threshold override was introduced after first review"
-                )
 
         expect_enum(record["gate_mode"], GATE_MODES, f"{label}.gate_mode")
         stack = expect_object(record["stack"], f"{label}.stack")
@@ -1438,6 +2069,32 @@ def run_elapsed_seconds(
     return duration_seconds(started, completed or captured, f"run {run['id']}")
 
 
+def finding_resolved_before(
+    finding_id: int,
+    boundary: datetime,
+    events_by_finding: dict[int, list[dict[str, Any]]],
+) -> bool:
+    events = sorted(
+        (
+            event
+            for event in events_by_finding[finding_id]
+            if parse_time(
+                event["delivered_at"],
+                f"review-thread delivery {event['delivery_guid']}.delivered_at",
+            )
+            < boundary
+        ),
+        key=lambda event: (
+            parse_time(
+                event["delivered_at"],
+                f"review-thread delivery {event['delivery_guid']}.delivered_at",
+            ),
+            event["delivery_id"],
+        ),
+    )
+    return bool(events) and events[-1]["action"] == "resolved"
+
+
 def report_delivery(data: dict[str, Any]) -> dict[str, Any]:
     fixture = data["fixture"]
     start = parse_time(fixture["window"]["start"], "fixture.window.start")
@@ -1479,14 +2136,23 @@ def report_delivery(data: dict[str, Any]) -> dict[str, Any]:
             )
 
     first_push_durations = []
+    clean_review_unavailable_reason = None
     findings_by_review: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for finding in data["findings"].values():
         findings_by_review[finding["review_id"]].append(finding)
+    thread_events_by_finding: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for event in data["review_thread_events"].values():
+        thread_events_by_finding[event["finding_id"]].append(event)
     runs_by_branch: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for run in data["runs"].values():
         runs_by_branch[run["head_branch"]].append(run)
     first_push_subjects = [data["pull_requests"][fixture["spotlight_pr"]]]
     for pr in first_push_subjects:
+        if not data["review_thread_source"]["complete"]:
+            clean_review_unavailable_reason = data["review_thread_source"][
+                "unavailable_reason"
+            ]
+            continue
         branch_runs = runs_by_branch.get(pr["head_branch"], [])
         reviews = sorted(
             (
@@ -1500,9 +2166,8 @@ def report_delivery(data: dict[str, Any]) -> dict[str, Any]:
             ),
         )
         if not branch_runs or not reviews:
-            raise PilotDataError(
-                f"PR {pr['number']} lacks first-push or review evidence"
-            )
+            clean_review_unavailable_reason = "missing-first-push-or-review-evidence"
+            continue
         first_push = min(
             parse_time(pr["created_at"], f"PR {pr['number']}.created_at"),
             *(
@@ -1520,15 +2185,11 @@ def report_delivery(data: dict[str, Any]) -> dict[str, Any]:
             if (
                 not review_findings
                 and all(
-                    (
-                        resolved_at := parse_time(
-                            finding["resolved_at"],
-                            f"finding {finding['id']}.resolved_at",
-                            nullable=True,
-                        )
+                    finding_resolved_before(
+                        finding["id"],
+                        review_at,
+                        thread_events_by_finding,
                     )
-                    is not None
-                    and resolved_at < review_at
                     for finding in prior_findings
                 )
                 and is_ancestor(
@@ -1551,9 +2212,14 @@ def report_delivery(data: dict[str, Any]) -> dict[str, Any]:
                 )
             )
         else:
-            raise PilotDataError(
-                f"PR {pr['number']} has no authoritative clean-review boundary"
+            clean_review_unavailable_reason = (
+                "no-authoritative-clean-review-boundary"
             )
+
+    clean_review_available = (
+        clean_review_unavailable_reason is None
+        and len(first_push_durations) == len(first_push_subjects)
+    )
 
     return {
         "merged_pull_requests": len(merged),
@@ -1564,10 +2230,17 @@ def report_delivery(data: dict[str, Any]) -> dict[str, Any]:
             "median_hours": median_tenth(issue_durations),
         },
         "first_push_to_clean_review": {
+            "status": "available" if clean_review_available else "unavailable",
+            "reason": None
+            if clean_review_available
+            else clean_review_unavailable_reason,
+            "pilot_ready": clean_review_available,
             "eligible_pull_requests": len(first_push_durations),
             "excluded_without_complete_evidence": len(first_push_subjects)
             - len(first_push_durations),
-            "median_hours": median_tenth(first_push_durations),
+            "median_hours": median_tenth(first_push_durations)
+            if clean_review_available
+            else None,
         },
     }
 
@@ -1585,8 +2258,8 @@ def report_reviews(data: dict[str, Any]) -> dict[str, Any]:
         finding
         for finding in data["findings"].values()
         if finding["review_id"] in review_ids
-        and finding["resolved_at"] is not None
     ]
+    current_resolved = sum(finding["is_resolved"] for finding in findings)
     changed_lines = pr["additions"] + pr["deletions"]
     superseded_reviews = sum(
         not is_ancestor(review["commit_sha"], pr["head_sha"], data["commits"])
@@ -1614,6 +2287,8 @@ def report_reviews(data: dict[str, Any]) -> dict[str, Any]:
         "rounds": len(reviews),
         "superseded_rounds": superseded_reviews,
         "valid_findings": len(findings),
+        "current_resolved_findings": current_resolved,
+        "current_unresolved_findings": len(findings) - current_resolved,
         "changed_lines": changed_lines,
         "valid_findings_per_kloc": findings_per_kloc,
         "valid_findings_per_review": findings_per_review,
@@ -1858,9 +2533,15 @@ def report_artifacts(
     }
 
 
-def build_report(fixture: Any, raw_decisions: Any) -> dict[str, Any]:
+def build_report(
+    fixture: Any,
+    raw_decisions: Any,
+    repository_root: Path | None = None,
+) -> dict[str, Any]:
+    if repository_root is not None:
+        repository_root = validate_repository_root(repository_root)
     data = validate_fixture(fixture)
-    decisions = validate_decisions(raw_decisions, data)
+    decisions = validate_decisions(raw_decisions, data, repository_root)
     workflow_sample(data)
     return {
         "schema_version": SCHEMA_VERSION,
@@ -1875,6 +2556,7 @@ def build_report(fixture: Any, raw_decisions: Any) -> dict[str, Any]:
             "pull_requests": sorted(data["pull_requests"]),
             "issues": sorted(data["issues"]),
             "reviews": sorted(data["reviews"]),
+            "review_thread_deliveries": sorted(data["review_thread_events"]),
             "workflow_runs": sorted(data["runs"]),
             "commits": sorted(data["commits"]),
         },
@@ -1917,15 +2599,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--decisions", type=Path, required=True)
     parser.add_argument("--expected", type=Path)
+    parser.add_argument(
+        "--repository-root",
+        type=Path,
+        required=True,
+        help=(
+            "exact checked-out Git top level used to verify immutable override "
+            "decision history"
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
+        repository_root = validate_repository_root(args.repository_root)
+        expected_decisions = (repository_root / DECISION_RECORD_PATH).resolve()
+        if args.decisions.resolve() != expected_decisions:
+            raise PilotDataError(
+                f"--decisions must identify {expected_decisions}"
+            )
         fixture = load_json(args.fixture)
         decisions = load_json(args.decisions)
-        report = build_report(fixture, decisions)
+        report = build_report(fixture, decisions, repository_root)
         if args.expected is not None:
             check_expected(report, load_json(args.expected))
     except PilotDataError as error:

@@ -90,6 +90,9 @@ jobs:
     - name: Run workflow-pilot reporter regression suite (issue #176)
       run: python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v
 
+    - name: Validate workflow-pilot baseline against checked-out Git history
+      run: python3 -m scripts.workflow_pilot.reporter --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null
+
     # Issue #18 host-lane closure fix: the scripts/localization package's
     # own pure-stdlib unit test suite (schema/pseudo/catalog/generate/CLI/
     # determinism, plus the host-native resolver-behavior and
