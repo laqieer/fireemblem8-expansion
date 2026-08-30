@@ -47,6 +47,25 @@ _CHECKOUT_WITH = (
     ),
     ("submodules", "recursive"),
 )
+_EXPECTED_BUILD_SHA_EXPRESSION = (
+    "${{ github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.sha || github.sha }}"
+)
+_EXPECTED_JOB_ENV = {
+    "host-tests": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
+    "build": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
+    "extended-host-tests": (
+        ("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),
+    ),
+    "legacy": (
+        ("AGBCC_COMMIT", "da598c1d918402c42c0c0d7128ba14567f3175e9"),
+        ("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),
+        (
+            "MGFEMBP_AGBCC_COMMIT",
+            "63b22f3eb8a8051af30bd80c4795b355e439e7ef",
+        ),
+    ),
+}
 _NON_GATE_STEP_NAMES = {
     "Verify checked-out revision",
     "Hydrate workflow-pilot Git authority",
@@ -285,6 +304,208 @@ def _workflow_job_entries(text):
     )
 
 
+def _parse_workflow_context(text):
+    lines = text.splitlines()
+    direct = []
+    for index, line in enumerate(lines):
+        if line == "jobs:":
+            direct.append(("jobs", "", index))
+            break
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            match = re.fullmatch(
+                r"([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
+                line,
+            )
+            if match is None:
+                raise ValueError(
+                    "workflow uses unsupported top-level key syntax"
+                )
+            direct.append((match.group(1), match.group(2), index))
+    names = [name for name, _, _ in direct]
+    if len(names) != len(set(names)):
+        raise ValueError("workflow contains duplicate top-level keys")
+    if names != ["name", "on", "permissions", "jobs"]:
+        raise ValueError(
+            "workflow top-level execution context must be exactly "
+            "name, on, permissions, and jobs"
+        )
+
+    values = {}
+    for field_index, (name, raw_value, line_index) in enumerate(direct):
+        end = (
+            direct[field_index + 1][2]
+            if field_index + 1 < len(direct)
+            else len(lines)
+        )
+        value = raw_value.strip()
+        nested = [
+            line
+            for line in lines[line_index + 1 : end]
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        if name == "name":
+            if value != "Build CI" or nested:
+                raise ValueError(
+                    "workflow name must be exactly 'Build CI'"
+                )
+            values[name] = value
+        elif name == "on":
+            if value or not nested:
+                raise ValueError(
+                    "workflow on must use the reviewed block mapping"
+                )
+            values[name] = tuple(
+                (
+                    len(line) - len(line.lstrip(" ")),
+                    line.strip(),
+                )
+                for line in nested
+            )
+        elif name == "permissions":
+            if value:
+                raise ValueError(
+                    "workflow permissions must use a block mapping"
+                )
+            entries = {}
+            for line in nested:
+                if len(line) - len(line.lstrip(" ")) != 2:
+                    raise ValueError(
+                        "workflow permissions uses unsupported indentation"
+                    )
+                match = re.fullmatch(
+                    r"  ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
+                    line,
+                )
+                if match is None:
+                    raise ValueError(
+                        "workflow permissions uses unsupported key syntax"
+                    )
+                key = match.group(1)
+                if key in entries:
+                    raise ValueError(
+                        f"workflow permissions repeats key {key!r}"
+                    )
+                entries[key] = match.group(2).strip()
+            permissions = tuple(sorted(entries.items()))
+            if permissions != (("contents", "read"),):
+                raise ValueError(
+                    "workflow permissions must be exactly contents: read"
+                )
+            values[name] = permissions
+        else:
+            if value:
+                raise ValueError("workflow jobs must use a block mapping")
+            values[name] = None
+    return tuple((name, values[name]) for name in names)
+
+
+def _parse_job_environment(lines, start, end, job_name):
+    entries = {}
+    for line in lines[start:end]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if len(line) - len(line.lstrip(" ")) != 6:
+            raise ValueError(
+                f"job {job_name!r} env uses unsupported indentation"
+            )
+        match = re.fullmatch(
+            r"      ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
+            line,
+        )
+        if match is None:
+            raise ValueError(
+                f"job {job_name!r} env uses unsupported key syntax"
+            )
+        key = match.group(1)
+        if key in entries:
+            raise ValueError(f"job {job_name!r} env repeats key {key!r}")
+        value = match.group(2).strip()
+        if not value:
+            raise ValueError(f"job {job_name!r} env.{key} is empty")
+        entries[key] = value
+    return tuple(sorted(entries.items()))
+
+
+def _parse_job_context(job_name, body):
+    lines = body.splitlines()
+    direct = []
+    for index, line in enumerate(lines):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent != 4 or line.startswith("    -"):
+            continue
+        match = re.fullmatch(
+            r"    ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
+            line,
+        )
+        if match is None:
+            raise ValueError(
+                f"job {job_name!r} uses unsupported direct key syntax"
+            )
+        direct.append((match.group(1), match.group(2), index))
+    names = [name for name, _, _ in direct]
+    if len(names) != len(set(names)):
+        raise ValueError(f"job {job_name!r} contains duplicate direct keys")
+    if names != ["runs-on", "timeout-minutes", "env", "steps"]:
+        raise ValueError(
+            f"job {job_name!r} direct mapping must be exactly "
+            "runs-on, timeout-minutes, env, and steps"
+        )
+
+    values = {}
+    for field_index, (name, raw_value, line_index) in enumerate(direct):
+        end = (
+            direct[field_index + 1][2]
+            if field_index + 1 < len(direct)
+            else len(lines)
+        )
+        value = raw_value.strip()
+        nested = [
+            line
+            for line in lines[line_index + 1 : end]
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        if name == "runs-on":
+            if value != "ubuntu-latest" or nested:
+                raise ValueError(
+                    f"job {job_name!r} runs-on must be ubuntu-latest"
+                )
+            values[name] = value
+        elif name == "timeout-minutes":
+            if value != "60" or nested:
+                raise ValueError(
+                    f"job {job_name!r} timeout-minutes must be 60"
+                )
+            values[name] = value
+        elif name == "env":
+            if value:
+                raise ValueError(
+                    f"job {job_name!r} env must use a block mapping"
+                )
+            environment = _parse_job_environment(
+                lines,
+                line_index + 1,
+                end,
+                job_name,
+            )
+            if environment != _EXPECTED_JOB_ENV[job_name]:
+                raise ValueError(
+                    f"job {job_name!r} env differs from its reviewed mapping"
+                )
+            values[name] = environment
+        else:
+            if value:
+                raise ValueError(
+                    f"job {job_name!r} steps must use a block sequence"
+                )
+            values[name] = None
+    return tuple((name, values[name]) for name in names)
+
+
 def _parse_nested_mapping(lines, start, end, field, step_label):
     entries = {}
     for line in lines[start:end]:
@@ -347,7 +568,7 @@ def _parse_step(block, job_name, index):
     if first_index is None:
         raise ValueError(f"{step_label} is empty")
     first = re.fullmatch(
-        r"    -[ \t]+([A-Za-z_][A-Za-z0-9_-]*)[ \t]*:[ \t]*(.*)",
+        r"    -[ \t]+([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
         lines[first_index],
     )
     if first is None:
@@ -361,7 +582,7 @@ def _parse_step(block, job_name, index):
         indent = len(line) - len(line.lstrip(" "))
         if indent == 6:
             match = re.fullmatch(
-                r"      ([A-Za-z_][A-Za-z0-9_-]*)[ \t]*:[ \t]*(.*)",
+                r"      ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
                 line,
             )
             if match is None:
@@ -532,6 +753,7 @@ def _parse_job_steps(job_name, body):
 
 
 def _parse_workflow_structure_text(text):
+    workflow_context = _parse_workflow_context(text)
     jobs = _workflow_job_entries(text)
     names = tuple(name for name, _ in jobs)
     if names != _EXPECTED_JOBS:
@@ -543,16 +765,20 @@ def _parse_workflow_structure_text(text):
         if required not in blocks:
             raise ValueError(f"missing candidate Build job {required!r}")
     structures = tuple(
-        (name, _parse_job_steps(name, blocks[name]))
+        (
+            name,
+            _parse_job_context(name, blocks[name]),
+            _parse_job_steps(name, blocks[name]),
+        )
         for name in _COMBINED_JOBS
     )
-    return names, structures
+    return workflow_context, names, structures
 
 
 def _workflow_gate_contract(structure):
     commands = []
-    _, jobs = structure
-    for job_name, steps in jobs:
+    _, _, jobs = structure
+    for job_name, _, steps in jobs:
         for role, step_name, fields in steps:
             if role not in {"gate", "standalone-gate"}:
                 continue

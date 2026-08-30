@@ -428,7 +428,11 @@ without importing target code and requires complete source/target job and step
 sequences: counts/order, unique names, setup-versus-gate roles, immutable
 actions, run argv, `env`/`with` mappings, direct fields, and root execution
 before dry-run or execution. Unnamed non-checkout steps, duplicate setup names,
-complex keys, and extra jobs fail closed.
+complex keys, and extra jobs fail closed. Workflow execution context is
+exactly name/triggers/read-only permissions/jobs with no workflow env,
+defaults, or concurrency. Every combined job is exactly Ubuntu, 60 minutes,
+its allowlisted env, and steps; self-hosted/container/service/strategy/default
+shell or any other execution field fails before dry-run.
 
 `python3 scripts/check_docs.py --check` validates this complete procedure,
 registry ownership, links, and automation evidence.

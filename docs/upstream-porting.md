@@ -208,6 +208,15 @@ commands are then checked against source `gates()`. An unnamed non-checkout
 step, duplicate setup/name, complex key form, or older, newer, missing, added,
 removed, reordered, or changed target step fails closed instead of running
 source-defined evidence against a different checkout contract.
+The same structure closes execution context before step comparison:
+workflow-level keys are exactly reviewed `name`, triggers, read-only
+permissions, and jobs, with workflow `env`, `defaults`, and `concurrency`
+absent. Each combined job contains only ordered `runs-on: ubuntu-latest`,
+`timeout-minutes: 60`, its exact allowlisted environment, and `steps`.
+Containers, services, strategies/matrices, permissions, defaults, dependency
+or condition controls, deployment environment, concurrency, reusable-job
+`uses`/secrets, custom shell context, unknown fields, and complex, duplicate,
+or reordered keys fail before dry-run.
 
 CI additionally hydrates commit authority before the workflow-pilot tests with
 the strict fixture-derived helper. It fetches only missing exact commit IDs

@@ -853,6 +853,20 @@ class VerifyCliCwdTests(unittest.TestCase):
         end = body_start + next_job.start()
         return workflow[:end] + steps + "\n" + workflow[end:]
 
+    def replace_in_job(self, workflow, job_name, old, new):
+        start = workflow.index(f"\n  {job_name}:\n") + 1
+        body_start = workflow.index("\n", start) + 1
+        next_job = re.search(
+            r"^  [A-Za-z_][A-Za-z0-9_-]*:",
+            workflow[body_start:],
+            re.M,
+        )
+        self.assertIsNotNone(next_job)
+        end = body_start + next_job.start()
+        body = workflow[start:end]
+        self.assertIn(old, body)
+        return workflow[:start] + body.replace(old, new, 1) + workflow[end:]
+
     def test_normal_cli_executes_all_gates_at_selected_target_root(self):
         artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
         os.makedirs(artifact_root, exist_ok=True)
@@ -1039,6 +1053,152 @@ class VerifyCliCwdTests(unittest.TestCase):
                         ValueError,
                         "unreviewed unnamed step",
                     ):
+                        verify_mod.run_gates(target_root, dry_run=True)
+
+    def test_target_execution_context_is_closed_before_dry_run(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-execution-context-",
+            dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            workflow_path = os.path.join(
+                target_root,
+                ".github",
+                "workflows",
+                "build.yml",
+            )
+            with open(workflow_path, "r", encoding="utf-8") as handle:
+                original = handle.read()
+            self.assertEqual(
+                len(verify_mod.run_gates(target_root, dry_run=True)),
+                28,
+            )
+
+            for job_name in verify_mod._COMBINED_JOBS:
+                job_mutations = {
+                    "self-hosted": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    runs-on: ubuntu-latest",
+                        "    runs-on: self-hosted",
+                    ),
+                    "container": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    timeout-minutes: 60",
+                        "    timeout-minutes: 60\n"
+                        "    container: ubuntu:latest",
+                    ),
+                    "timeout": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    timeout-minutes: 60",
+                        "    timeout-minutes: 1",
+                    ),
+                    "job-env": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    env:\n",
+                        "    env:\n      BASH_ENV: build/mask\n",
+                    ),
+                    "defaults-shell": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    steps:\n",
+                        "    defaults:\n"
+                        "      run:\n"
+                        "        shell: bash\n"
+                        "    steps:\n",
+                    ),
+                    "services": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    steps:\n",
+                        "    services:\n"
+                        "      db:\n"
+                        "        image: postgres\n"
+                        "    steps:\n",
+                    ),
+                    "strategy": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    steps:\n",
+                        "    strategy: {matrix: {runner: [self-hosted]}}\n"
+                        "    steps:\n",
+                    ),
+                    "complex-key": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    runs-on: ubuntu-latest",
+                        '    "runs-on": ubuntu-latest',
+                    ),
+                    "duplicate-key": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    timeout-minutes: 60",
+                        "    timeout-minutes: 60\n"
+                        "    timeout-minutes: 60",
+                    ),
+                    "reordered-keys": self.replace_in_job(
+                        self.replace_in_job(
+                            original,
+                            job_name,
+                            "    runs-on: ubuntu-latest",
+                            "    __RUNS_ON__",
+                        ),
+                        job_name,
+                        "    timeout-minutes: 60",
+                        "    runs-on: ubuntu-latest",
+                    ).replace(
+                        "    __RUNS_ON__",
+                        "    timeout-minutes: 60",
+                        1,
+                    ),
+                }
+                for mutation, changed in job_mutations.items():
+                    with self.subTest(job=job_name, mutation=mutation):
+                        with open(
+                            workflow_path,
+                            "w",
+                            encoding="utf-8",
+                        ) as handle:
+                            handle.write(changed)
+                        with self.assertRaises(ValueError):
+                            verify_mod.run_gates(target_root, dry_run=True)
+
+            workflow_mutations = {
+                "env": original.replace(
+                    "permissions:\n",
+                    "env:\n  BASH_ENV: build/mask\n\npermissions:\n",
+                    1,
+                ),
+                "defaults": original.replace(
+                    "permissions:\n",
+                    "defaults:\n  run:\n    shell: bash\n\npermissions:\n",
+                    1,
+                ),
+                "permissions": original.replace(
+                    "  contents: read",
+                    "  contents: write",
+                    1,
+                ),
+                "concurrency": original.replace(
+                    "permissions:\n",
+                    "concurrency: target-controlled\n\npermissions:\n",
+                    1,
+                ),
+            }
+            for mutation, changed in workflow_mutations.items():
+                with self.subTest(workflow=mutation):
+                    with open(
+                        workflow_path,
+                        "w",
+                        encoding="utf-8",
+                    ) as handle:
+                        handle.write(changed)
+                    with self.assertRaises(ValueError):
                         verify_mod.run_gates(target_root, dry_run=True)
 
                 with self.subTest(job=job_name, mutation="duplicate-setup"):
