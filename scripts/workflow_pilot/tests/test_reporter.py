@@ -997,6 +997,12 @@ class BaselineFixtureTests(unittest.TestCase):
 
 
 class RepositoryAuthorityTests(unittest.TestCase):
+    def test_repository_authority_disables_lazy_network_fetches(self):
+        with mock.patch.dict(os.environ, {"PRESERVED": "yes"}, clear=True):
+            environment = reporter.offline_git_environment()
+        self.assertEqual(environment["GIT_NO_LAZY_FETCH"], "1")
+        self.assertEqual(environment["PRESERVED"], "yes")
+
     def test_report_construction_requires_explicit_repository_authority(self):
         with self.assertRaisesRegex(
             reporter.PilotDataError,
@@ -1295,6 +1301,262 @@ class CohortIdentitySealTests(unittest.TestCase):
             "must exactly match the frozen result contract",
         ):
             reporter.check_expected(report, expected)
+
+
+class DecisionSemanticsSealTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.fixture = reporter.load_json(BASELINE)
+        cls.decisions = reporter.load_json(DECISIONS)
+        cls.report = authoritative_report(cls.fixture, cls.decisions)
+        cls.expected = reporter.load_json(BASELINE_EXPECTED)
+
+    def assert_decision_change(
+        self,
+        name,
+        mutate,
+        computed_unchanged=True,
+    ):
+        fixture = copy.deepcopy(self.fixture)
+        decisions = copy.deepcopy(self.decisions)
+        mutate(fixture, decisions)
+        with self.subTest(name=name):
+            try:
+                report = authoritative_report(fixture, decisions)
+            except reporter.PilotDataError:
+                return
+            if computed_unchanged:
+                self.assertEqual(
+                    report["computed"]["seal"],
+                    self.report["computed"]["seal"],
+                )
+            self.assertNotEqual(
+                report["decisions"]["seal"],
+                self.report["decisions"]["seal"],
+            )
+            expected = copy.deepcopy(self.expected)
+            if not computed_unchanged:
+                expected["paths"]["computed.seal"] = report["computed"]["seal"]
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "decisions.seal",
+            ):
+                reporter.check_expected(report, expected)
+
+    def test_pr_governance_fields_are_sealed_or_fail_validation(self):
+        mutations = (
+            ("pull-request", lambda _, d: d["pull_requests"][0].update(
+                {"pull_request": 151}
+            )),
+            ("risk-boundaries", lambda _, d: d["pull_requests"][0].update(
+                {"risk_boundaries": ["security"]}
+            )),
+            ("threshold-triggers", lambda _, d: d["pull_requests"][0][
+                "threshold"
+            ].update({"triggers": ["none"]})),
+            ("override-history", lambda _, d: d["pull_requests"][0][
+                "threshold"
+            ]["override_history"].append(
+                {"enabled": True, "reason": "Schema-valid new override."}
+            )),
+            ("gate-mode", lambda _, d: d["pull_requests"][0].update(
+                {"gate_mode": "review-first"}
+            )),
+            ("stack-depth", lambda _, d: d["pull_requests"][0]["stack"].update(
+                {"depth": 1}
+            )),
+            ("stack-parent", lambda _, d: d["pull_requests"][0]["stack"].update(
+                {"parent_pr": 150}
+            )),
+            ("stack-exception", lambda _, d: d["pull_requests"][0]["stack"].update(
+                {"exception_reason": "Schema-valid exception reason."}
+            )),
+            ("pilot-inclusion", lambda _, d: d["pull_requests"][0]["pilot"].update(
+                {"included": True}
+            )),
+            ("pilot-disposition", lambda _, d: d["pull_requests"][0]["pilot"].update(
+                {"disposition": "paused"}
+            )),
+        )
+        for name, mutate in mutations:
+            self.assert_decision_change(
+                name,
+                mutate,
+                computed_unchanged=not name.startswith("disposition"),
+            )
+
+    def test_artifact_governance_fields_are_sealed_or_fail_validation(self):
+        mutations = (
+            ("artifact-id", lambda _, d: d["artifacts"][0].update(
+                {"artifact_id": "alternate-artifact"}
+            )),
+            ("owner", lambda _, d: d["artifacts"][0].update(
+                {"owner": "alternate-governance"}
+            )),
+            ("consumer", lambda f, d: (
+                d["artifacts"][0].update(
+                    {"executable_consumer": "alternate-consumer"}
+                ),
+                f["dependency_edges"][0].update(
+                    {"source": "alternate-consumer"}
+                ),
+            )),
+            ("unique-decision", lambda _, d: d["artifacts"][0].update(
+                {"unique_decision": "alternate-unique-decision"}
+            )),
+            ("consistency-check", lambda f, d: (
+                d["artifacts"][0].update(
+                    {"consistency_check": "alternate-check"}
+                ),
+                f["dependency_edges"][1].update({"source": "alternate-check"}),
+            )),
+            ("maximum-cost", lambda _, d: d["artifacts"][0].update(
+                {"max_maintenance_minutes": 6}
+            )),
+            ("estimated-cost", lambda _, d: d["artifacts"][0].update(
+                {"estimated_maintenance_minutes": 3}
+            )),
+            ("delete-when", lambda _, d: d["artifacts"][0].update(
+                {"deletion_criterion": "Delete after all dependents retire."}
+            )),
+            ("expiry", lambda _, d: d["artifacts"][0].update(
+                {"expires_at": "2026-09-01T00:00:00Z"}
+            )),
+            ("disposition-time", lambda _, d: d["artifacts"][0]["history"][0].update(
+                {"recorded_at": "2026-08-30T12:22:31Z"}
+            )),
+            ("disposition", lambda _, d: d["artifacts"][0]["history"][0].update(
+                {"disposition": "Consolidate"}
+            )),
+            ("disposition-reason", lambda _, d: d["artifacts"][0]["history"][0].update(
+                {"reason": "Alternate schema-valid disposition reason."}
+            )),
+        )
+        for name, mutate in mutations:
+            self.assert_decision_change(
+                name,
+                mutate,
+                computed_unchanged=not name.startswith("disposition"),
+            )
+
+    def test_authority_proof_review_and_dependency_relationships_are_sealed(self):
+        data = reporter.validate_fixture(minimal_fixture())
+        decisions = reporter.validate_decisions(
+            minimal_decisions(),
+            data,
+        )
+        baseline = reporter.decision_semantics_seal(data, decisions)
+        mutations = []
+
+        changed_data = copy.deepcopy(data)
+        changed_data["artifacts"]["contract"]["path"] = ".github/alternate.json"
+        mutations.append(("authoritative-source", changed_data, copy.deepcopy(decisions)))
+
+        changed_data = copy.deepcopy(data)
+        changed_data["events"]["artifact:proof"]["reason"] = (
+            "Alternate schema-valid deletion result."
+        )
+        mutations.append(("verify-deletion", changed_data, copy.deepcopy(decisions)))
+
+        changed_data = copy.deepcopy(data)
+        changed_data["reviews"][10]["submitted_at"] = "2026-01-01T04:00:01Z"
+        mutations.append(("review-boundary", changed_data, copy.deepcopy(decisions)))
+
+        changed_data = copy.deepcopy(data)
+        changed_decisions = copy.deepcopy(decisions)
+        changed_data["edges"]["consume:contract"]["source"] = "alternate-consumer"
+        changed_decisions["artifacts"]["contract"]["executable_consumer"] = (
+            "alternate-consumer"
+        )
+        mutations.append(
+            ("dependency-association", changed_data, changed_decisions)
+        )
+
+        changed_data = copy.deepcopy(data)
+        changed_decisions = copy.deepcopy(decisions)
+        changed_decisions["pull_requests"][1]["threshold"][
+            "override_history"
+        ].append({"enabled": True, "reason": "Sealed override reason."})
+        changed_data["events"]["override:sealed"] = {
+            "id": "override:sealed",
+            "type": "threshold_override_introduced",
+            "occurred_at": "2026-01-01T01:00:00Z",
+            "pr_number": 1,
+            "sha": sha("a"),
+            "override_index": 0,
+            "decision_digest": reporter.threshold_override_digest(
+                1,
+                0,
+                changed_decisions["pull_requests"][1]["threshold"][
+                    "override_history"
+                ][0],
+            ),
+        }
+        mutations.append(
+            ("override-provenance", changed_data, changed_decisions)
+        )
+
+        for name, changed_data, changed_decisions in mutations:
+            with self.subTest(name=name):
+                self.assertNotEqual(
+                    reporter.decision_semantics_seal(
+                        changed_data,
+                        changed_decisions,
+                    ),
+                    baseline,
+                )
+
+        override_data = copy.deepcopy(data)
+        override_decisions = copy.deepcopy(decisions)
+        override = {"enabled": True, "reason": "Sealed override reason."}
+        override_decisions["pull_requests"][1]["threshold"][
+            "override_history"
+        ].append(override)
+        override_data["events"]["override:sealed"] = {
+            "id": "override:sealed",
+            "type": "threshold_override_introduced",
+            "occurred_at": "2026-01-01T01:00:00Z",
+            "pr_number": 1,
+            "sha": sha("a"),
+            "override_index": 0,
+            "decision_digest": reporter.threshold_override_digest(
+                1,
+                0,
+                override,
+            ),
+        }
+        override_seal = reporter.decision_semantics_seal(
+            override_data,
+            override_decisions,
+        )
+        for field, value in (
+            ("enabled", False),
+            ("reason", "Changed schema-valid override reason."),
+        ):
+            with self.subTest(override_field=field):
+                changed_decisions = copy.deepcopy(override_decisions)
+                changed_decisions["pull_requests"][1]["threshold"][
+                    "override_history"
+                ][0][field] = value
+                self.assertNotEqual(
+                    reporter.decision_semantics_seal(
+                        override_data,
+                        changed_decisions,
+                    ),
+                    override_seal,
+                )
+
+        changed_data = copy.deepcopy(override_data)
+        changed_data["events"]["override:sealed"]["occurred_at"] = (
+            "2026-01-01T01:00:01Z"
+        )
+        self.assertNotEqual(
+            reporter.decision_semantics_seal(
+                changed_data,
+                override_decisions,
+            ),
+            override_seal,
+        )
 
 
 class FormulaAndClassificationTests(unittest.TestCase):

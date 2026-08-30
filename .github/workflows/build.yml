@@ -50,6 +50,12 @@ jobs:
         printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
         test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
 
+    # Exact-ref checkout can omit commits retained only by another branch.
+    # Hydrate commit/tree authority without tags or blobs, then prove the
+    # candidate checkout did not move.
+    - name: Hydrate workflow-pilot Git authority
+      run: git fetch --quiet --no-tags --filter=blob:none origin '+refs/heads/*:refs/remotes/origin/*' && test "$(git rev-parse HEAD)" = "$EXPECTED_BUILD_SHA"
+
     - name: Install host-only dependencies (no arm-none-eabi toolchain)
       run: sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev
 

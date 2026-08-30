@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import fnmatch
+import os
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -66,6 +69,16 @@ WORKFLOW_PILOT_BASELINE_GATE = (
     "--decisions .github/workflow-pilot-decisions.json "
     "--expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json "
     "> /dev/null"
+)
+EXPECTED_BUILD_SHA_EXPRESSION = (
+    "${{ github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.sha || github.sha }}"
+)
+HOST_ENV_LINE = f"      EXPECTED_BUILD_SHA: {EXPECTED_BUILD_SHA_EXPRESSION}"
+WORKFLOW_PILOT_AUTHORITY_HYDRATION = (
+    "git fetch --quiet --no-tags --filter=blob:none origin "
+    "'+refs/heads/*:refs/remotes/origin/*' && "
+    'test "$(git rev-parse HEAD)" = "$EXPECTED_BUILD_SHA"'
 )
 
 
@@ -317,6 +330,29 @@ def _has_direct_key(text: str, indent: int, key: str) -> bool:
     ) is not None
 
 
+def _host_environment_errors(job: str) -> list[str]:
+    lines = job.splitlines()
+    env_indices = [
+        index for index, line in enumerate(lines) if line == "    env:"
+    ]
+    if len(env_indices) != 1:
+        return ["host-tests must define exactly one reviewed env mapping"]
+    index = env_indices[0] + 1
+    entries = []
+    while index < len(lines):
+        line = lines[index]
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 4:
+            break
+        if line.strip() and not line.lstrip().startswith("#"):
+            entries.append(line)
+        index += 1
+    if entries != [HOST_ENV_LINE]:
+        return [
+            "host-tests env must contain only the reviewed EXPECTED_BUILD_SHA"
+        ]
+    return []
+
+
 def _hashed_requirements_errors(text: str) -> list[str]:
     logical_lines = []
     current = ""
@@ -377,6 +413,8 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         errors.append("workflow uses unsupported direct mapping-key syntax")
     if _has_execution_defaults(header, workflow_scope=True):
         errors.append("workflow execution defaults must not alter candidate gates")
+    if _has_direct_key(header, indent=0, key="env"):
+        errors.append("workflow-level env is forbidden")
     try:
         _pull_request_actions(header)
     except ValueError as exc:
@@ -442,6 +480,8 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         ):
             errors.append(f"{job_name} must not be advisory")
 
+    errors.extend(_host_environment_errors(jobs["host-tests"]))
+
     if f"if: {MASTER_PUBLISHER_CONDITION}" not in jobs["patch-release"]:
         errors.append("patch-release must remain master-push-only")
     for job_name in INDEPENDENT_JOBS:
@@ -492,6 +532,27 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(
                 f"candidate host lost exact fail-closed Build evidence: {command}"
             )
+    if not _contains_exact_command(
+        jobs["host-tests"],
+        WORKFLOW_PILOT_AUTHORITY_HYDRATION,
+    ):
+        errors.append(
+            "candidate host lost exact workflow-pilot Git authority hydration"
+        )
+    hydration_index = jobs["host-tests"].find(
+        "Hydrate workflow-pilot Git authority"
+    )
+    reporter_index = jobs["host-tests"].find(
+        "Run workflow-pilot reporter regression suite (issue #176)"
+    )
+    if (
+        hydration_index < 0
+        or reporter_index < 0
+        or hydration_index >= reporter_index
+    ):
+        errors.append(
+            "workflow-pilot Git authority hydration must precede reporter tests"
+        )
     if _has_execution_defaults(jobs["host-tests"], workflow_scope=False):
         errors.append("candidate host execution defaults must not alter pilot gates")
 
@@ -542,6 +603,278 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             _remote_completion_errors(MAKEFILE.read_text(encoding="utf-8")),
             [],
         )
+
+    def test_protected_environment_is_exact_and_cannot_mask_python(self):
+        workflow_env_variants = (
+            "env:\n  BASH_ENV: build/python-mask.sh\n",
+            '"env":\n  PATH: /untrusted\n',
+            '"\\u0065nv":\n  PYTHONPATH: build/mask\n',
+            "? env\n:\n  SHELLOPTS: sourcepath\n",
+            "!!str env:\n  ENV: build/mask\n",
+            "env: &shared {BASH_ENV: build/python-mask.sh}\n",
+            "env: {BASH_ENV: build/python-mask.sh}\n",
+        )
+        for variant in workflow_env_variants:
+            with self.subTest(workflow_env=variant):
+                changed = self.text.replace(
+                    "\npermissions:\n",
+                    f"\n{variant}\npermissions:\n",
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "workflow-level env is forbidden" in error
+                        or "unsupported direct mapping-key syntax" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+        env_block = (
+            "    env:\n"
+            f"{HOST_ENV_LINE}\n"
+        )
+        value = EXPECTED_BUILD_SHA_EXPRESSION
+        host_env_variants = (
+            f"    env:\n{HOST_ENV_LINE}\n"
+            "      BASH_ENV: build/python-mask.sh\n",
+            f"    env:\n{HOST_ENV_LINE}\n      ENV: build/mask\n",
+            f"    env:\n{HOST_ENV_LINE}\n      PATH: /untrusted\n",
+            f"    env:\n{HOST_ENV_LINE}\n      PYTHONPATH: build/mask\n",
+            f"    env:\n{HOST_ENV_LINE}\n      SHELLOPTS: sourcepath\n",
+            f'    env:\n      "EXPECTED_BUILD_SHA": {value}\n',
+            f'    env:\n      "EXPECTED_\\u0042UILD_SHA": {value}\n',
+            f"    env:\n      ? EXPECTED_BUILD_SHA\n      : {value}\n",
+            f"    env:\n      !!str EXPECTED_BUILD_SHA: {value}\n",
+            f"    env:\n      <<: *shared\n{HOST_ENV_LINE}\n",
+            f"    env: &shared\n{HOST_ENV_LINE}\n",
+            f"    env: {{EXPECTED_BUILD_SHA: \"{value}\"}}\n",
+            f"    env:\n      EXPECTED_BUILD_SHA: \"{value}\"\n",
+            f"    env:\n      EXPECTED_BUILD_SHA: !!str {value}\n",
+            f"    env:\n      EXPECTED_BUILD_SHA: &sha {value}\n",
+            "    env:\n      EXPECTED_BUILD_SHA: *sha\n",
+        )
+        for variant in host_env_variants:
+            with self.subTest(host_env=variant):
+                changed = self.text.replace(env_block, variant, 1)
+                self.assertTrue(
+                    any(
+                        "host-tests env must contain only" in error
+                        or "exactly one reviewed env mapping" in error
+                        or "unsupported direct mapping-key syntax" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+        masked = self.text.replace(
+            env_block,
+            f"    env:\n{HOST_ENV_LINE}\n"
+            "      BASH_ENV: build/python-mask.sh\n",
+            1,
+        ).replace(
+            "    - name: Run workflow-pilot reporter regression suite",
+            "    - name: Prepare Python function mask\n"
+            "      run: printf 'python3() { return 0; }\\n' "
+            "> build/python-mask.sh\n\n"
+            "    - name: Run workflow-pilot reporter regression suite",
+            1,
+        )
+        self.assertTrue(
+            any(
+                "host-tests env must contain only" in error
+                for error in _errors(masked, False)
+            )
+        )
+
+    def test_workflow_pilot_authority_hydration_is_exact_and_ordered(self):
+        host = _job_blocks(self.text)["host-tests"]
+        self.assertTrue(
+            _contains_exact_command(
+                host,
+                WORKFLOW_PILOT_AUTHORITY_HYDRATION,
+            )
+        )
+        self.assertLess(
+            host.index("Hydrate workflow-pilot Git authority"),
+            host.index("Run workflow-pilot reporter regression suite"),
+        )
+        replacements = (
+            "true",
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
+                "--filter=blob:none ",
+                "",
+            ),
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace("--no-tags ", ""),
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
+                "'+refs/heads/*:refs/remotes/origin/*'",
+                "master",
+            ),
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.split(" && ", 1)[0],
+        )
+        for replacement in replacements:
+            with self.subTest(replacement=replacement):
+                changed = self.text.replace(
+                    f"      run: {WORKFLOW_PILOT_AUTHORITY_HYDRATION}\n",
+                    f"      run: {replacement}\n",
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "lost exact workflow-pilot Git authority hydration"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_all_head_hydration_preserves_head_and_restores_history(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-authority-hydration-",
+            dir=artifact_root,
+        ) as temporary:
+            root = Path(temporary)
+            seed = root / "seed"
+            remote = root / "remote.git"
+            checkout = root / "checkout"
+
+            subprocess.run(
+                ["git", "init", "-q", "-b", "master", seed],
+                check=True,
+                capture_output=True,
+            )
+            for key, value in (
+                ("user.name", "Hydration Test"),
+                ("user.email", "hydration@example.invalid"),
+            ):
+                subprocess.run(
+                    ["git", "-C", seed, "config", key, value],
+                    check=True,
+                    capture_output=True,
+                )
+            (seed / "history.txt").write_text("historical\n", encoding="ascii")
+            subprocess.run(
+                ["git", "-C", seed, "add", "history.txt"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", seed, "commit", "-q", "-m", "historical"],
+                check=True,
+                capture_output=True,
+            )
+            historical = subprocess.check_output(
+                ["git", "-C", seed, "rev-parse", "HEAD"],
+                text=True,
+            ).strip()
+            subprocess.run(
+                ["git", "-C", seed, "branch", "historical"],
+                check=True,
+                capture_output=True,
+            )
+            (seed / "head.txt").write_text("head\n", encoding="ascii")
+            subprocess.run(
+                ["git", "-C", seed, "add", "head.txt"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", seed, "commit", "-q", "-m", "candidate"],
+                check=True,
+                capture_output=True,
+            )
+            expected_head = subprocess.check_output(
+                ["git", "-C", seed, "rev-parse", "HEAD"],
+                text=True,
+            ).strip()
+
+            subprocess.run(
+                ["git", "init", "-q", "--bare", remote],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", seed, "remote", "add", "origin", str(remote)],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", seed, "push", "-q", "origin", "master", "historical"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "init", "-q", "-b", "master", checkout],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    checkout,
+                    "remote",
+                    "add",
+                    "origin",
+                    f"file://{remote}",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    checkout,
+                    "fetch",
+                    "-q",
+                    "--depth=1",
+                    "origin",
+                    expected_head,
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", checkout, "checkout", "-q", "--detach", "FETCH_HEAD"],
+                check=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(
+                subprocess.run(
+                    ["git", "-C", checkout, "cat-file", "-e", f"{historical}^{{commit}}"],
+                    check=False,
+                    capture_output=True,
+                ).returncode,
+                0,
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    checkout,
+                    "fetch",
+                    "--quiet",
+                    "--no-tags",
+                    "--filter=blob:none",
+                    "origin",
+                    "+refs/heads/*:refs/remotes/origin/*",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "-C", checkout, "rev-parse", "HEAD"],
+                    text=True,
+                ).strip(),
+                expected_head,
+            )
+            subprocess.run(
+                ["git", "-C", checkout, "cat-file", "-e", f"{historical}^{{commit}}"],
+                check=True,
+                capture_output=True,
+            )
 
     def test_synthetic_stacked_pull_request_runs_candidate_jobs_on_its_real_base(self):
         event = {

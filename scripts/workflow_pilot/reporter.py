@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -211,6 +212,7 @@ EXPECTED_RESULT_PATHS = frozenset(
         "classification_summary.work_states.merged",
         "classification_summary.work_states.still_running",
         "computed.seal",
+        "decisions.seal",
         "delivery.first_push_to_clean_review.eligible_pull_requests",
         "delivery.first_push_to_clean_review.excluded_without_complete_evidence",
         "delivery.first_push_to_clean_review.median_hours",
@@ -473,6 +475,12 @@ def observed_candidate_shas(
     return result
 
 
+def offline_git_environment() -> dict[str, str]:
+    environment = dict(os.environ)
+    environment["GIT_NO_LAZY_FETCH"] = "1"
+    return environment
+
+
 def run_git(
     repository_root: Path,
     *arguments: str,
@@ -480,6 +488,7 @@ def run_git(
     try:
         completed = subprocess.run(
             ("git", "-C", str(repository_root), *arguments),
+            env=offline_git_environment(),
             check=False,
             capture_output=True,
         )
@@ -537,6 +546,7 @@ def _load_git_commit_objects(
         completed = subprocess.run(
             ("git", "-C", str(repository_root), "cat-file", "--batch"),
             input=b"".join(f"{sha}\n".encode("ascii") for sha in ordered),
+            env=offline_git_environment(),
             check=False,
             capture_output=True,
         )
@@ -651,6 +661,7 @@ def git_is_ancestor(repository_root: Path, ancestor: str, descendant: str) -> bo
                 ancestor,
                 descendant,
             ),
+            env=offline_git_environment(),
             check=False,
             capture_output=True,
         )
@@ -3666,6 +3677,7 @@ def report_artifacts(
 
 IDENTITY_SEAL_DOMAIN = b"workflow-pilot-cohort-relationships-v2\0"
 COMPUTED_RESULT_SEAL_DOMAIN = b"workflow-pilot-computed-results-v1\0"
+DECISION_SEAL_DOMAIN = b"workflow-pilot-nonderivable-decisions-v1\0"
 
 
 def _sealed_records(
@@ -3722,6 +3734,124 @@ def computed_result_seal(result: dict[str, Any]) -> str:
     ).hexdigest()
 
 
+def decision_semantics_seal(
+    data: dict[str, Any],
+    decisions: dict[str, Any],
+) -> str:
+    pull_requests = []
+    for number, record in sorted(decisions["pull_requests"].items()):
+        reviews = sorted(
+            (
+                review
+                for review in data["reviews"].values()
+                if review["pr_number"] == number
+                and review["author"] == REVIEW_BOT
+            ),
+            key=lambda review: (
+                parse_time(
+                    review["submitted_at"],
+                    f"review {review['id']}.submitted_at",
+                ),
+                review["id"],
+            ),
+        )
+        introductions = sorted(
+            (
+                event
+                for event in data["events"].values()
+                if event["type"] == "threshold_override_introduced"
+                and event["pr_number"] == number
+            ),
+            key=lambda event: (event["override_index"], event["id"]),
+        )
+        decision = copy.deepcopy(record)
+        decision["risk_boundaries"] = sorted(decision["risk_boundaries"])
+        decision["threshold"]["triggers"] = sorted(
+            decision["threshold"]["triggers"]
+        )
+        pull_requests.append(
+            {
+                "decision": decision,
+                "first_review_boundary": reviews[0] if reviews else None,
+                "override_provenance": introductions,
+            }
+        )
+
+    artifacts = []
+    for artifact_id, record in sorted(decisions["artifacts"].items()):
+        source = copy.deepcopy(data["artifacts"][artifact_id])
+        source["dependency_ids"] = sorted(source["dependency_ids"])
+        associations = sorted(
+            (
+                data["edges"][edge_id]
+                for edge_id in source["dependency_ids"]
+            ),
+            key=lambda edge: edge["id"],
+        )
+        lifecycle_events = sorted(
+            (
+                event
+                for event in data["events"].values()
+                if event.get("artifact_id") == artifact_id
+            ),
+            key=lambda event: (
+                parse_time(
+                    event["occurred_at"],
+                    f"event {event['id']}.occurred_at",
+                ),
+                event["id"],
+            ),
+        )
+        artifacts.append(
+            {
+                "admission_and_disposition": record,
+                "authoritative_source": source,
+                "delete_when": {
+                    "criterion": record["deletion_criterion"],
+                    "expires_at": record["expires_at"],
+                },
+                "dependency_associations": associations,
+                "verify_deletion": lifecycle_events,
+            }
+        )
+
+    review_edges = sorted(
+        (
+            edge
+            for edge in data["edges"].values()
+            if edge["type"] == "review_depends_on"
+        ),
+        key=lambda edge: edge["id"],
+    )
+    review_events = sorted(
+        (
+            event
+            for event in data["events"].values()
+            if event["type"] == "dependency_changed"
+        ),
+        key=lambda event: (
+            parse_time(
+                event["occurred_at"],
+                f"event {event['id']}.occurred_at",
+            ),
+            event["id"],
+        ),
+    )
+    payload = {
+        "schema_version": decisions["raw"]["schema_version"],
+        "pull_requests": pull_requests,
+        "artifacts": artifacts,
+        "review_boundary": {
+            "lifecycle_as_of": data["fixture"]["lifecycle_as_of"],
+            "dependency_edges": review_edges,
+            "dependency_events": review_events,
+        },
+    }
+    return hashlib.sha256(
+        DECISION_SEAL_DOMAIN + normalized_json(payload)
+    ).hexdigest()
+
+
 def build_report(
     fixture: Any,
     raw_decisions: Any,
@@ -3770,6 +3900,9 @@ def build_report(
             "workflow_runs": sorted(data["runs"]),
             "commits": sorted(data["commits"]),
             "seal": cohort_identity_seal(data),
+        },
+        "decisions": {
+            "seal": decision_semantics_seal(data, decisions),
         },
         **computed,
         "computed": {"seal": computed_result_seal(computed)},

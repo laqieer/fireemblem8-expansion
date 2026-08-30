@@ -290,7 +290,12 @@ availability or grant credentials.
    test, observes the named semantic failure, restores the copy, and observes
    success. Confirm automatic bounded cleanup, unchanged source artifact
    bytes, and fail-closed stale, fabricated, or fixture-command substitutions.
-8. Run `python3 scripts/check_docs.py --check`.
+8. Inspect the CI authority-hydration fixture: an exact-ref shallow checkout
+   initially lacks a historical commit reachable from another remote branch;
+   the no-tags, blob-filtered all-head refspec restores that commit without
+   moving `HEAD`. Confirm the setup step precedes reporter tests and is absent
+   from the 28 local gates.
+9. Run `python3 scripts/check_docs.py --check`.
 
 ### Expected result
 
@@ -309,6 +314,9 @@ The expected cohort seal binds normalized identities plus review, event,
 timestamp, PR/SHA, and other metric relationships.
 Every Build and non-Build workflow run is also rejected when its creation
 precedes the repository-validated commit time of its head SHA.
+The independent decision seal binds all validated PR decisions, artifact
+admission/disposition semantics, authoritative artifact sources, lifecycle
+proofs, review boundaries/events, and dependency associations.
 PR #150's clean-review timing remains explicitly unavailable because no
 authoritative historical thread events were collected; no numeric result is
 emitted or eligible for pilot comparison/promotion.
@@ -367,8 +375,10 @@ parses the decision and fixture schemas, reproduces every frozen calculation,
 compares canonical bytes, and exercises all positive/adversarial controls
 above. Build CI runs the same command plus the baseline reporter with
 `--repository-root "$GITHUB_WORKSPACE"` in its existing required `host-tests`
-job, and the parsed workflow topology suite fails if either ownership or the
-checked-out-root binding is removed.
+job. Before those reporter commands, CI hydrates all remote branch commit
+authority and proves exact `HEAD` is unchanged. The parsed workflow topology
+suite fails if hydration, ownership, the protected environment mapping, or the
+checked-out-root binding is removed or weakened.
 
 `python3 scripts/check_docs.py --check` validates this complete procedure,
 registry ownership, links, and automation evidence.

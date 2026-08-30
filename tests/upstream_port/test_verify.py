@@ -29,6 +29,10 @@ _NON_GATE_STEP_NAMES = {
     # tests/workflows/test_build_ci_checkout.py owns its positive and negative
     # structural coverage.
     "Verify checked-out revision",
+    # CI-only authority setup: checkout's exact-ref optimization may omit
+    # historical branch commits required by the offline workflow-pilot fixture.
+    # Local verify uses an ordinary clone and remains network-independent.
+    "Hydrate workflow-pilot Git authority",
     # host-tests job setup: installs build-essential + libmgba-dev only (no
     # arm-none-eabi toolchain), so it is environment setup, not a gate.
     "Install host-only dependencies (no arm-none-eabi toolchain)",
@@ -199,6 +203,18 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
         self.assertFalse(
             any(argv and argv[0].startswith("ACTUAL_SHA=") for _, argv in parsed),
+        )
+
+    def test_ci_authority_hydration_is_setup_not_a_local_network_gate(self):
+        parsed_names = {
+            step_name for step_name, _ in _parse_workflow_gate_commands()
+        }
+        self.assertNotIn("Hydrate workflow-pilot Git authority", parsed_names)
+        self.assertFalse(
+            any(
+                gate.command[:2] == ["git", "fetch"]
+                for gate in verify_mod.gates()
+            )
         )
 
     def test_issue_7_17_docs_governance_is_a_standalone_workflow_step_not_a_verify_gate(self):

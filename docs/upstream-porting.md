@@ -199,6 +199,13 @@ the selected target. That one root is both the subprocess working directory
 and the pilot baseline's `--repository-root`; there is no per-step
 working-directory override.
 
+CI additionally hydrates commit authority before the workflow-pilot tests with
+a no-tags, blob-filtered all-remote-head fetch and then rechecks exact
+`EXPECTED_BUILD_SHA`. This compensates only for Actions checkout's
+exact-candidate ref optimization; it is classified as CI setup and is not
+mirrored into the 28 local gates. Normal local clones already carry branch
+history, so `verify` remains network-independent.
+
 Before a non-dry-run local `verify`, install both the supported modern
 toolchain and the explicit archival `make legacy` prerequisites. The
 archival setup is intentionally opt-in (`./scripts/quickstart.sh --legacy`

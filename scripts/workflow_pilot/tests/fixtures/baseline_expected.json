@@ -33,6 +33,7 @@
     "classification_summary.work_states.merged": 64,
     "classification_summary.work_states.still_running": 0,
     "computed.seal": "3adf6396939c0ea2e8db28833d77204ef336e93770e3b1000b7a52bb3ec0df97",
+    "decisions.seal": "e4eae4b948bde533d9b7f4cbdf6fa2b03305370d187bd89dbae383ff4dd454c1",
     "delivery.merged_pull_requests": 64,
     "delivery.first_push_to_clean_review.eligible_pull_requests": 0,
     "delivery.first_push_to_clean_review.excluded_without_complete_evidence": 1,

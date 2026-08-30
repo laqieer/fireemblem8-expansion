@@ -112,6 +112,16 @@ workflow topology regression requires both pilot commands exactly. Appended
 shell operators, wrappers, substitutions, or changed redirections cannot turn
 either command into advisory evidence.
 
+The reporter disables Git lazy fetching, remains offline, and fails closed
+when any fixture commit object is absent. A normal clone with remote branch history already supplies this
+authority. Actions checkout's exact-candidate ref optimization can omit older
+commits that remain reachable only from another remote branch, so the
+`host-tests` job performs one CI-only setup fetch before reporter tests:
+no tags, blob-filtered, and bounded to all remote branch heads. It immediately
+rechecks that `HEAD` still equals `EXPECTED_BUILD_SHA`. This hydration is
+environment setup, not a 29th local semantic gate; local
+`scripts.upstream_port verify` remains network-independent.
+
 Before the command succeeds, it creates a bounded mutable artifact sandbox
 under the checkout's ignored `build/test-artifacts/` directory and copies only
 the three declared pilot artifacts, the expected values, and the focused
@@ -289,7 +299,11 @@ snapshot/computed result is required, and collection-shaped classifications,
 reverts, and artifact results participate in the domain-separated computed
 result seal. Missing, extra, renamed, malformed, or duplicate expected paths
 fail before any value comparison. The independent v2 identity/relationship
-seal remains required as the fixture-input boundary.
+seal remains required as the fixture-input boundary. A third,
+domain-separated non-derivable decision seal covers every validated PR
+governance field, artifact admission/disposition field, override/review
+boundary, lifecycle proof, authoritative artifact source, and dependency
+association without copying Git objects or adding a source/ROM identity gate.
 
 Review-size evidence is deliberately not stored as mutable current-head
 numbers in this document. At each candidate, the coordinator derives the
