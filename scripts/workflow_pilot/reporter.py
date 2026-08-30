@@ -888,6 +888,9 @@ def validate_issues(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
 
 def validate_reviews(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
     result: dict[int, dict[str, Any]] = {}
+    captured = parse_time(fixture["captured_at"], "fixture.captured_at")
+    window = expect_object(fixture["window"], "fixture.window")
+    window_start = parse_time(window["start"], "fixture.window.start")
     required = (
         "id",
         "pr_number",
@@ -906,9 +909,17 @@ def validate_reviews(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
             raise PilotDataError(f"duplicate review {review_id}")
         expect_int(item["pr_number"], f"{label}.pr_number", 1)
         expect_string(item["author"], f"{label}.author")
-        parse_time(item["submitted_at"], f"{label}.submitted_at")
+        submitted = parse_time(item["submitted_at"], f"{label}.submitted_at")
+        if submitted < window_start or submitted > captured:
+            raise PilotDataError(
+                f"{label}.submitted_at is outside the captured analysis window"
+            )
         expect_sha(item["commit_sha"], f"{label}.commit_sha")
-        expect_enum(item["state"], REVIEW_STATES, f"{label}.state")
+        state = expect_enum(item["state"], REVIEW_STATES, f"{label}.state")
+        if item["author"] == REVIEW_BOT and state != "COMMENTED":
+            raise PilotDataError(
+                f"{label} Copilot review must have COMMENTED state"
+            )
         threads = expect_list(item["thread_ids"], f"{label}.thread_ids")
         for thread_id in threads:
             expect_string(thread_id, f"{label}.thread_ids member")
@@ -919,6 +930,9 @@ def validate_reviews(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
 
 def validate_findings(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
     result: dict[int, dict[str, Any]] = {}
+    captured = parse_time(fixture["captured_at"], "fixture.captured_at")
+    window = expect_object(fixture["window"], "fixture.window")
+    window_start = parse_time(window["start"], "fixture.window.start")
     for index, raw in enumerate(fixture["review_findings"]):
         label = f"review_findings[{index}]"
         item = expect_object(raw, label)
@@ -940,7 +954,11 @@ def validate_findings(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
             raise PilotDataError(f"duplicate review finding {finding_id}")
         expect_int(item["review_id"], f"{label}.review_id", 1)
         expect_string(item["thread_id"], f"{label}.thread_id")
-        parse_time(item["created_at"], f"{label}.created_at")
+        created = parse_time(item["created_at"], f"{label}.created_at")
+        if created < window_start or created > captured:
+            raise PilotDataError(
+                f"{label}.created_at is outside the captured analysis window"
+            )
         expect_bool(item["is_resolved"], f"{label}.is_resolved")
         expect_bool(item["outdated"], f"{label}.outdated")
         expect_string(item["path"], f"{label}.path")
@@ -1034,6 +1052,9 @@ def validate_review_thread_events(
     )
     result: dict[str, dict[str, Any]] = {}
     delivery_ids = []
+    captured = parse_time(fixture["captured_at"], "fixture.captured_at")
+    window = expect_object(fixture["window"], "fixture.window")
+    window_start = parse_time(window["start"], "fixture.window.start")
     for index, raw in enumerate(fixture["review_thread_events"]):
         label = f"review_thread_events[{index}]"
         event = expect_object(raw, label)
@@ -1053,6 +1074,10 @@ def validate_review_thread_events(
                 f"duplicate review-thread delivery {delivery_guid!r}"
             )
         delivered_at = parse_time(event["delivered_at"], f"{label}.delivered_at")
+        if delivered_at < window_start or delivered_at > captured:
+            raise PilotDataError(
+                f"{label}.delivered_at is outside the captured analysis window"
+            )
         if event["event"] != "pull_request_review_thread":
             raise PilotDataError(
                 f"{label}.event must be 'pull_request_review_thread'"
@@ -1378,6 +1403,7 @@ def cross_validate_fixture(
     artifacts: dict[str, dict[str, Any]],
     edges: dict[str, dict[str, Any]],
 ) -> None:
+    captured = parse_time(fixture["captured_at"], "fixture.captured_at")
     lifecycle_as_of = parse_time(
         fixture["lifecycle_as_of"], "fixture.lifecycle_as_of"
     )
@@ -1470,6 +1496,26 @@ def cross_validate_fixture(
         pr_number = review["pr_number"]
         if pr_number not in pull_requests:
             raise PilotDataError(f"review {review_id} references unknown PR {pr_number}")
+        pr = pull_requests[pr_number]
+        submitted = parse_time(
+            review["submitted_at"], f"review {review_id}.submitted_at"
+        )
+        pr_created = parse_time(
+            pr["created_at"], f"pull request {pr_number}.created_at"
+        )
+        if submitted < pr_created:
+            raise PilotDataError(
+                f"review {review_id} precedes PR {pr_number} creation"
+            )
+        pr_closed = parse_time(
+            pr["closed_at"],
+            f"pull request {pr_number}.closed_at",
+            nullable=True,
+        )
+        if pr_closed is not None and submitted > pr_closed:
+            raise PilotDataError(
+                f"review {review_id} follows PR {pr_number} closure"
+            )
         if review_id not in pull_requests[pr_number]["review_ids"]:
             raise PilotDataError(
                 f"review {review_id} is absent from PR {pr_number}'s identity list"
@@ -1478,8 +1524,82 @@ def cross_validate_fixture(
             raise PilotDataError(
                 f"review {review_id} references missing commit {review['commit_sha']}"
             )
+        commit_time = parse_time(
+            commits[review["commit_sha"]]["committed_at"],
+            f"commit {review['commit_sha']}.committed_at",
+        )
+        if submitted < commit_time:
+            raise PilotDataError(
+                f"review {review_id} precedes its reviewed commit"
+            )
         if set(review["thread_ids"]) != review_threads.get(review_id, set()):
             raise PilotDataError(f"review {review_id} thread identity list is incomplete")
+    for finding_id, finding in findings.items():
+        review = reviews[finding["review_id"]]
+        pr = pull_requests[review["pr_number"]]
+        created = parse_time(
+            finding["created_at"], f"review finding {finding_id}.created_at"
+        )
+        pr_created = parse_time(
+            pr["created_at"], f"pull request {pr['number']}.created_at"
+        )
+        commit_time = parse_time(
+            commits[review["commit_sha"]]["committed_at"],
+            f"commit {review['commit_sha']}.committed_at",
+        )
+        if created < pr_created:
+            raise PilotDataError(
+                f"review finding {finding_id} precedes PR {pr['number']} creation"
+            )
+        if created < commit_time:
+            raise PilotDataError(
+                f"review finding {finding_id} precedes its reviewed commit"
+            )
+        pr_closed = parse_time(
+            pr["closed_at"],
+            f"pull request {pr['number']}.closed_at",
+            nullable=True,
+        )
+        if pr_closed is not None and created > pr_closed:
+            raise PilotDataError(
+                f"review finding {finding_id} follows PR {pr['number']} closure"
+            )
+    for delivery_guid, event in review_thread_events.items():
+        review = reviews[event["review_id"]]
+        pr = pull_requests[event["pr_number"]]
+        delivered = parse_time(
+            event["delivered_at"],
+            f"review-thread delivery {delivery_guid}.delivered_at",
+        )
+        submitted = parse_time(
+            review["submitted_at"], f"review {review['id']}.submitted_at"
+        )
+        commit_time = parse_time(
+            commits[review["commit_sha"]]["committed_at"],
+            f"commit {review['commit_sha']}.committed_at",
+        )
+        if delivered < submitted:
+            raise PilotDataError(
+                f"review-thread delivery {delivery_guid!r} precedes its review"
+            )
+        if delivered < commit_time:
+            raise PilotDataError(
+                f"review-thread delivery {delivery_guid!r} precedes its commit"
+            )
+        pr_closed = parse_time(
+            pr["closed_at"],
+            f"pull request {pr['number']}.closed_at",
+            nullable=True,
+        )
+        if pr_closed is not None and delivered > pr_closed:
+            raise PilotDataError(
+                f"review-thread delivery {delivery_guid!r} follows PR "
+                f"{pr['number']} closure"
+            )
+        if delivered > captured:
+            raise PilotDataError(
+                f"review-thread delivery {delivery_guid!r} follows the snapshot"
+            )
     for pr_number, pr in pull_requests.items():
         for issue_number in pr["issue_numbers"]:
             if issue_number not in issues:

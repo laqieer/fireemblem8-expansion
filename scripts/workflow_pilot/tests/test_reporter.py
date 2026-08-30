@@ -1,4 +1,6 @@
 import copy
+import contextlib
+import io
 import json
 import os
 import re
@@ -8,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.workflow_pilot import reporter
 
@@ -490,6 +493,29 @@ class BaselineFixtureTests(unittest.TestCase):
     def test_frozen_baseline_and_expected_values(self):
         result = reporter.build_report(self.fixture, self.decisions)
         reporter.check_expected(result, self.expected)
+        self.assertEqual(
+            {
+                path: self.expected["paths"][path]
+                for path in (
+                    "snapshot.repository",
+                    "snapshot.base_sha",
+                    "snapshot.captured_at",
+                    "snapshot.lifecycle_as_of",
+                    "snapshot.window.start",
+                    "snapshot.window.end",
+                )
+            },
+            {
+                "snapshot.repository": "laqieer/fireemblem8-expansion",
+                "snapshot.base_sha": (
+                    "b8e7f9125e11d322ca37b5288b141bbd52902b61"
+                ),
+                "snapshot.captured_at": "2026-08-30T11:17:08Z",
+                "snapshot.lifecycle_as_of": "2026-08-30T12:23:00Z",
+                "snapshot.window.start": "2026-08-20T00:00:00Z",
+                "snapshot.window.end": "2026-08-30T11:17:08Z",
+            },
+        )
         self.assertEqual(len(result["identities"]["pull_requests"]), 64)
         self.assertEqual(len(result["identities"]["issues"]), 53)
         self.assertEqual(len(result["identities"]["reviews"]), 566)
@@ -507,6 +533,62 @@ class BaselineFixtureTests(unittest.TestCase):
             )
         )
         self.assertEqual(first, second)
+
+    def test_expected_rejects_coordinated_snapshot_identity_drift(self):
+        mutations = []
+
+        repository = copy.deepcopy(self.fixture)
+        repository["repository"] = "laqieer/coordinated-drift"
+        mutations.append(repository)
+
+        base_sha = copy.deepcopy(self.fixture)
+        base_sha["base_sha"] = base_sha["commits"][0]["sha"]
+        mutations.append(base_sha)
+
+        captured = copy.deepcopy(self.fixture)
+        captured["captured_at"] = "2026-08-30T11:17:09Z"
+        captured["window"]["end"] = captured["captured_at"]
+        mutations.append(captured)
+
+        window_start = copy.deepcopy(self.fixture)
+        window_start["window"]["start"] = "2026-08-19T23:59:59Z"
+        mutations.append(window_start)
+
+        for fixture in mutations:
+            with self.subTest(snapshot=fixture["repository"], window=fixture["window"]):
+                report = reporter.build_report(fixture, self.decisions)
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "expected path 'snapshot\\.",
+                ):
+                    reporter.check_expected(report, self.expected)
+
+    def test_cli_expected_rejects_coordinated_capture_window_drift(self):
+        fixture = copy.deepcopy(self.fixture)
+        fixture["captured_at"] = "2026-08-30T11:17:09Z"
+        fixture["window"]["end"] = fixture["captured_at"]
+        arguments = [
+            "--fixture",
+            str(BASELINE),
+            "--decisions",
+            str(DECISIONS),
+            "--expected",
+            str(BASELINE_EXPECTED),
+            "--repository-root",
+            str(ROOT),
+        ]
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(
+                reporter,
+                "load_json",
+                side_effect=[fixture, self.decisions, self.expected],
+            ),
+            mock.patch.object(reporter, "validate_executable_deletion_proofs"),
+            contextlib.redirect_stderr(stderr),
+        ):
+            self.assertEqual(reporter.main(arguments), 2)
+        self.assertIn("expected path 'snapshot.captured_at'", stderr.getvalue())
 
     def test_baseline_has_no_synthetic_resolution_timestamps(self):
         self.assertTrue(self.fixture["review_findings"])
@@ -646,6 +728,10 @@ class BaselineFixtureTests(unittest.TestCase):
 
 
 class FormulaAndClassificationTests(unittest.TestCase):
+    def assert_rejected(self, fixture, pattern):
+        with self.assertRaisesRegex(reporter.PilotDataError, pattern):
+            reporter.build_report(fixture, minimal_decisions())
+
     def test_boundary_timestamps_are_inclusive(self):
         for boundary in (
             "2026-01-01T00:00:00Z",
@@ -659,6 +745,10 @@ class FormulaAndClassificationTests(unittest.TestCase):
                 fixture["issues"][0]["created_at"] = "2025-12-31T22:00:00Z"
                 fixture["pull_requests"][0]["merged_at"] = boundary
                 fixture["pull_requests"][0]["closed_at"] = boundary
+                fixture["pull_requests"][0]["review_ids"] = []
+                fixture["reviews"] = []
+                fixture["review_findings"] = []
+                fixture["review_thread_events"] = []
                 report = reporter.build_report(fixture, minimal_decisions())
                 self.assertEqual(report["delivery"]["merged_pull_requests"], 1)
 
@@ -821,6 +911,100 @@ class FormulaAndClassificationTests(unittest.TestCase):
                 )
                 with self.assertRaisesRegex(reporter.PilotDataError, pattern):
                     reporter.build_report(fixture, minimal_decisions())
+
+    def test_review_capture_boundary_and_temporal_binding(self):
+        fixture = minimal_fixture()
+        fixture["pull_requests"][0]["merged_at"] = fixture["captured_at"]
+        fixture["pull_requests"][0]["closed_at"] = fixture["captured_at"]
+        fixture["reviews"][1]["submitted_at"] = fixture["captured_at"]
+        reporter.build_report(fixture, minimal_decisions())
+
+        mutations = (
+            ("submitted_at", "2026-01-01T10:00:00.000001Z", "analysis window"),
+            ("submitted_at", "2026-01-01T00:59:59Z", "precedes PR"),
+        )
+        for field, value, pattern in mutations:
+            with self.subTest(field=field, value=value):
+                changed = minimal_fixture()
+                changed["reviews"][1][field] = value
+                self.assert_rejected(fixture=changed, pattern=pattern)
+
+        fixture = minimal_fixture()
+        fixture["reviews"][0]["submitted_at"] = "2026-01-01T01:30:00Z"
+        fixture["commits"][0]["committed_at"] = "2026-01-01T02:00:00Z"
+        self.assert_rejected(fixture=fixture, pattern="reviewed commit")
+
+        fixture = minimal_fixture()
+        fixture["reviews"][0]["state"] = "APPROVED"
+        self.assert_rejected(fixture=fixture, pattern="COMMENTED state")
+
+        fixture = minimal_fixture()
+        fixture["reviews"][0]["submitted_at"] = "2026-01-01T09:00:02Z"
+        self.assert_rejected(fixture=fixture, pattern="follows PR 1 closure")
+
+    def test_finding_capture_boundary_and_temporal_binding(self):
+        fixture = minimal_fixture()
+        fixture["pull_requests"][0]["merged_at"] = fixture["captured_at"]
+        fixture["pull_requests"][0]["closed_at"] = fixture["captured_at"]
+        fixture["review_findings"][0]["created_at"] = fixture["captured_at"]
+        fixture["review_findings"][0]["is_resolved"] = False
+        fixture["review_thread_event_source"] = {
+            "kind": reporter.REVIEW_THREAD_EVENT_SOURCE,
+            "complete": False,
+            "coverage_start": None,
+            "coverage_end": None,
+            "unavailable_reason": "historical-review-thread-events-not-collected",
+        }
+        fixture["review_thread_events"] = []
+        reporter.build_report(fixture, minimal_decisions())
+
+        for value, pattern in (
+            ("2026-01-01T10:00:00.000001Z", "analysis window"),
+            ("2026-01-01T00:59:59Z", "PR 1 creation"),
+        ):
+            with self.subTest(value=value):
+                changed = minimal_fixture()
+                changed["review_findings"][0]["created_at"] = value
+                self.assert_rejected(fixture=changed, pattern=pattern)
+
+        fixture = minimal_fixture()
+        fixture["review_findings"][0]["created_at"] = "2026-01-01T09:00:02Z"
+        fixture["review_findings"][0]["is_resolved"] = False
+        fixture["review_thread_event_source"] = {
+            "kind": reporter.REVIEW_THREAD_EVENT_SOURCE,
+            "complete": False,
+            "coverage_start": None,
+            "coverage_end": None,
+            "unavailable_reason": "historical-review-thread-events-not-collected",
+        }
+        fixture["review_thread_events"] = []
+        self.assert_rejected(fixture=fixture, pattern="follows PR 1 closure")
+
+    def test_review_thread_events_cannot_change_state_after_capture(self):
+        fixture = minimal_fixture()
+        fixture["pull_requests"][0]["merged_at"] = fixture["captured_at"]
+        fixture["pull_requests"][0]["closed_at"] = fixture["captured_at"]
+        fixture["review_thread_events"][0]["delivered_at"] = fixture["captured_at"]
+        reporter.build_report(fixture, minimal_decisions())
+
+        fixture = minimal_fixture()
+        fixture["review_thread_events"][0]["delivered_at"] = (
+            "2026-01-01T10:00:00.000001Z"
+        )
+        self.assert_rejected(fixture=fixture, pattern="analysis window")
+
+        fixture = minimal_fixture()
+        fixture["reviews"][0]["submitted_at"] = "2026-01-01T05:00:00Z"
+        fixture["review_thread_events"][0]["delivered_at"] = (
+            "2026-01-01T04:30:00Z"
+        )
+        self.assert_rejected(fixture=fixture, pattern="precedes its review")
+
+        fixture = minimal_fixture()
+        fixture["review_thread_events"][0]["delivered_at"] = (
+            "2026-01-01T09:00:02Z"
+        )
+        self.assert_rejected(fixture=fixture, pattern="follows PR 1 closure")
 
     def test_spotlight_builds_use_only_latest_declared_sample(self):
         fixture = minimal_fixture()

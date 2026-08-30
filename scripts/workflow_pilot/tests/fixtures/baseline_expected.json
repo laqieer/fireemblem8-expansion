@@ -35,6 +35,11 @@
     "reviews.current_unresolved_findings": 0,
     "reviews.superseded_rounds": 0,
     "reviews.valid_findings": 101,
-    "snapshot.lifecycle_as_of": "2026-08-30T12:23:00Z"
+    "snapshot.base_sha": "b8e7f9125e11d322ca37b5288b141bbd52902b61",
+    "snapshot.captured_at": "2026-08-30T11:17:08Z",
+    "snapshot.lifecycle_as_of": "2026-08-30T12:23:00Z",
+    "snapshot.repository": "laqieer/fireemblem8-expansion",
+    "snapshot.window.end": "2026-08-30T11:17:08Z",
+    "snapshot.window.start": "2026-08-20T00:00:00Z"
   }
 }

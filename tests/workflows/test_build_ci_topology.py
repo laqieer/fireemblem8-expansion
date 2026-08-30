@@ -191,8 +191,8 @@ def _run_block_commands(job: str) -> list[str]:
     commands = []
     index = 0
     while index < len(lines):
-        inline = re.match(r"^    - run: (?P<value>.+)$", lines[index])
-        field = re.match(r"^      run: (?P<value>.+)$", lines[index])
+        inline = re.match(r"^    - run[ \t]*:[ \t]+(?P<value>.+)$", lines[index])
+        field = re.match(r"^      run[ \t]*:[ \t]+(?P<value>.+)$", lines[index])
         match = inline or field
         if match is None:
             index += 1
@@ -241,10 +241,12 @@ def _contains_exact_command(job: str, command: str) -> bool:
         commands = _run_block_commands(step)
         if len(commands) != 1 or _normalise(commands[0]) != expected:
             continue
+        if _has_unsupported_direct_key(step, indent=6, allow_sequence=False):
+            continue
         execution_fields = {
             match.group("field")
             for match in re.finditer(
-                r"^      (?P<field>[A-Za-z][A-Za-z0-9_-]*):",
+                r"^      (?P<field>[A-Za-z][A-Za-z0-9_-]*)[ \t]*:",
                 step,
                 re.MULTILINE,
             )
@@ -268,7 +270,9 @@ def _has_unsupported_direct_key(text: str, indent: int, allow_sequence: bool) ->
     simple_key = re.compile(
         rf"^{' ' * indent}[A-Za-z_][A-Za-z0-9_-]*[ \t]*:"
     )
-    sequence = re.compile(rf"^{' ' * indent}-[ \t]+")
+    sequence = re.compile(
+        rf"^{' ' * indent}-[ \t]+[A-Za-z_][A-Za-z0-9_-]*[ \t]*:"
+    )
     for line in text.splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
             continue
@@ -281,6 +285,14 @@ def _has_unsupported_direct_key(text: str, indent: int, allow_sequence: bool) ->
             continue
         return True
     return False
+
+
+def _has_direct_key(text: str, indent: int, key: str) -> bool:
+    return re.search(
+        rf"^{' ' * indent}{re.escape(key)}[ \t]*:",
+        text,
+        re.MULTILINE,
+    ) is not None
 
 
 def _hashed_requirements_errors(text: str) -> list[str]:
@@ -391,9 +403,21 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(f"{job_name} adds an unreviewed Python package install")
 
     for job_name in COMBINED_WORKERS:
-        if "if:" in jobs[job_name]:
+        if _has_unsupported_direct_key(
+            jobs[job_name],
+            indent=4,
+            allow_sequence=True,
+        ):
+            errors.append(
+                f"{job_name} uses unsupported direct mapping-key syntax"
+            )
+        if _has_direct_key(jobs[job_name], indent=4, key="if"):
             errors.append(f"{job_name} must run for pull-request candidates and master pushes")
-        if re.search(r"^    continue-on-error:", jobs[job_name], re.MULTILINE):
+        if _has_direct_key(
+            jobs[job_name],
+            indent=4,
+            key="continue-on-error",
+        ):
             errors.append(f"{job_name} must not be advisory")
 
     if f"if: {MASTER_PUBLISHER_CONDITION}" not in jobs["patch-release"]:
@@ -446,12 +470,6 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(
                 f"candidate host lost exact fail-closed Build evidence: {command}"
             )
-    if _has_unsupported_direct_key(
-        jobs["host-tests"],
-        indent=4,
-        allow_sequence=True,
-    ):
-        errors.append("candidate host uses unsupported direct mapping-key syntax")
     if _has_execution_defaults(jobs["host-tests"], workflow_scope=False):
         errors.append("candidate host execution defaults must not alter pilot gates")
 
@@ -651,6 +669,68 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             1,
         )
         self.assertTrue(any("must run for pull-request" in error for error in _errors(changed, False)))
+
+    def test_combined_workers_allow_reviewed_job_keys_with_spaced_colons(self):
+        changed = self.text
+        for job_name in COMBINED_WORKERS:
+            job = _job_blocks(changed)[job_name]
+            changed_job = job.replace("    runs-on:", "    runs-on :", 1)
+            self.assertNotEqual(changed_job, job)
+            changed = changed.replace(job, changed_job, 1)
+        self.assertEqual(_errors(changed, False), [])
+
+    def test_every_combined_worker_rejects_spaced_advisory_or_skip_keys(self):
+        for job_name in COMBINED_WORKERS:
+            for field, message in (
+                ("if : ${{ false }}", "must run for pull-request"),
+                ("continue-on-error : true", "must not be advisory"),
+            ):
+                with self.subTest(job=job_name, field=field):
+                    changed = self.text.replace(
+                        f"  {job_name}:\n",
+                        f"  {job_name}:\n    {field}\n",
+                        1,
+                    )
+                    self.assertTrue(
+                        any(message in error for error in _errors(changed, False))
+                    )
+
+    def test_every_combined_worker_rejects_complex_job_keys(self):
+        variants = (
+            '"if": ${{ false }}',
+            '"continue-\\u006fn-error": true',
+            "? if\n    : ${{ false }}",
+            "!!str continue-on-error: true",
+            "{if: false, continue-on-error: true}",
+        )
+        for job_name, variant in zip(
+            COMBINED_WORKERS,
+            variants[: len(COMBINED_WORKERS)],
+        ):
+            with self.subTest(job=job_name, variant=variant):
+                changed = self.text.replace(
+                    f"  {job_name}:\n",
+                    f"  {job_name}:\n    {variant}\n",
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        f"{job_name} uses unsupported direct mapping-key syntax"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
+        changed = self.text.replace(
+            "  host-tests:\n",
+            "  host-tests:\n    {if: false, continue-on-error: true}\n",
+            1,
+        )
+        self.assertTrue(
+            any(
+                "host-tests uses unsupported direct mapping-key syntax" in error
+                for error in _errors(changed, False)
+            )
+        )
 
     def test_missing_pull_request_trigger_fails(self):
         changed = self.text.replace(PULL_REQUEST_TRIGGER, "", 1)
@@ -861,6 +941,68 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 for error in _errors(changed, False)
             )
         )
+
+    def test_workflow_pilot_steps_allow_reviewed_keys_with_spaced_colons(self):
+        changed = self.text
+        for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
+            changed = changed.replace(
+                f"      run: {command}\n",
+                f"      run : {command}\n",
+                1,
+            )
+        self.assertNotEqual(changed, self.text)
+        self.assertEqual(_errors(changed, False), [])
+
+    def test_both_workflow_pilot_steps_reject_complex_or_advisory_keys(self):
+        variants = (
+            '"continue-on-error": true',
+            '"continue-\\u006fn-error": true',
+            "? continue-on-error\n      : true",
+            "!!str continue-on-error: true",
+            "{continue-on-error: true}",
+            '"if": ${{ false }}',
+        )
+        for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
+            for variant in variants:
+                with self.subTest(command=command, variant=variant):
+                    changed = self.text.replace(
+                        f"      run: {command}\n",
+                        f"      {variant}\n      run: {command}\n",
+                        1,
+                    )
+                    self.assertNotEqual(changed, self.text)
+                    self.assertTrue(
+                        any(
+                            "candidate host lost exact fail-closed Build evidence"
+                            in error
+                            or "unsupported direct mapping-key syntax" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+    def test_both_workflow_pilot_steps_reject_complex_run_keys(self):
+        variants = (
+            '"run"',
+            '"r\\u0075n"',
+            "!!str run",
+        )
+        for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
+            for variant in variants:
+                with self.subTest(command=command, variant=variant):
+                    changed = self.text.replace(
+                        f"      run: {command}\n",
+                        f"      {variant}: {command}\n",
+                        1,
+                    )
+                    self.assertNotEqual(changed, self.text)
+                    self.assertTrue(
+                        any(
+                            "candidate host lost exact fail-closed Build evidence"
+                            in error
+                            or "unsupported direct mapping-key syntax" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
 
     def test_workflow_pilot_gates_reject_shell_success_masks_and_wrappers(self):
         mutations = (
