@@ -231,6 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    invocation_cwd = os.getcwd()
     repo_root = _repo_root(args.repo)
     state_path = _state_path(repo_root, args.state)
 
@@ -299,7 +300,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 0
 
         if args.command == "verify":
-            results = verify_mod.run_gates(repo_root, jobs=args.jobs, dry_run=args.dry_run)
+            results = verify_mod.run_gates(
+                invocation_cwd,
+                jobs=args.jobs,
+                dry_run=args.dry_run,
+            )
             ok = True
             for r in results:
                 status = "SKIPPED(dry-run)" if not r.ran else ("PASS" if r.passed else "FAIL")

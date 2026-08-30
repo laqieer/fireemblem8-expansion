@@ -657,6 +657,19 @@ def validate_repository_authority(
     base_sha = fixture["base_sha"]
     if base_sha not in actual:
         raise PilotDataError("fixture.base_sha is not a validated Git commit")
+    captured = parse_time(fixture["captured_at"], "fixture.captured_at")
+
+    def require_commit_available(
+        sha: str,
+        observed_at: datetime,
+        label: str,
+    ) -> None:
+        if actual[sha]["committed_at"] > observed_at:
+            raise PilotDataError(
+                f"{label} predates repository commit {sha} availability"
+            )
+
+    require_commit_available(base_sha, captured, "fixture.base_sha")
     parent_graph = _git_parent_graph(repository_root, commits)
     ancestor_cache = {
         sha: _git_ancestors(sha, parent_graph)
@@ -674,6 +687,15 @@ def validate_repository_authority(
             )
         if pr["state"] == "merged":
             merge_sha = pr["merge_sha"]
+            merged_at = parse_time(
+                pr["merged_at"],
+                f"PR {number}.merged_at",
+            )
+            require_commit_available(
+                merge_sha,
+                merged_at,
+                f"PR {number} merge",
+            )
             merge_parents = actual[merge_sha]["parents"]
             if len(merge_parents) != 2 or merge_parents[1] != pr["head_sha"]:
                 raise PilotDataError(
@@ -722,6 +744,17 @@ def validate_repository_authority(
                     f"PR {number} candidate identities omit its Git history"
                 )
         observed_candidates[number] = authoritative_candidates
+        candidate_boundary = parse_time(
+            pr["closed_at"],
+            f"PR {number}.closed_at",
+            nullable=True,
+        ) or captured
+        for sha in candidate_shas:
+            require_commit_available(
+                sha,
+                candidate_boundary,
+                f"PR {number} candidate history",
+            )
 
     for review_id, review in data["reviews"].items():
         pr = pull_requests[review["pr_number"]]
@@ -730,6 +763,14 @@ def validate_repository_authority(
                 f"review {review_id} commit is outside PR {pr['number']} "
                 "candidate history"
             )
+        require_commit_available(
+            review["commit_sha"],
+            parse_time(
+                review["submitted_at"],
+                f"review {review_id}.submitted_at",
+            ),
+            f"review {review_id}",
+        )
 
     for run_id, run in data["runs"].items():
         pr = pull_request_for_run(run, pull_requests)
@@ -739,6 +780,11 @@ def validate_repository_authority(
                     f"workflow run {run_id} commit is outside PR "
                     f"{pr['number']} candidate history"
                 )
+        require_commit_available(
+            run["head_sha"],
+            parse_time(run["created_at"], f"run {run_id}.created_at"),
+            f"workflow run {run_id}",
+        )
         if (
             run["head_branch"] == fixture["default_branch"]
             and run["head_sha"] not in base_history
@@ -755,6 +801,19 @@ def validate_repository_authority(
     )
     for number, shas in observed.items():
         observed_candidates[number].update(shas)
+
+    for event_id, event in data["events"].items():
+        occurred_at = parse_time(
+            event["occurred_at"],
+            f"event {event_id}.occurred_at",
+        )
+        for field in ("sha", "old_sha", "new_sha"):
+            if field in event:
+                require_commit_available(
+                    event[field],
+                    occurred_at,
+                    f"event {event_id!r} {field}",
+                )
 
     for number, pr in pull_requests.items():
         unobserved = set(pr["commit_shas"]) - observed_candidates[number]

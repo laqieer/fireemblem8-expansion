@@ -305,6 +305,8 @@ every commit object, exact parents, timestamps, messages, PR candidate/merge
 ranges, and referenced history are validated against the real object database.
 The expected cohort seal binds normalized identities plus review, event,
 timestamp, PR/SHA, and other metric relationships.
+Every Build and non-Build workflow run is also rejected when its creation
+precedes the repository-validated commit time of its head SHA.
 PR #150's clean-review timing remains explicitly unavailable because no
 authoritative historical thread events were collected; no numeric result is
 emitted or eligible for pilot comparison/promotion.
@@ -334,7 +336,8 @@ identity/commit/parent/timestamp/message, base-only/merge-only/unrelated/future
 review commits, incoherent candidate/merge or review history, any
 PR/issue/review/run/finding/commit identity or metric-relationship
 substitution, an omitted identity seal, PR events before creation, invalid
-open/closed phases, future event SHAs, earlier/equal/unrelated/fabricated reverts,
+open/closed phases, future event or workflow-run SHAs,
+earlier/equal/unrelated/fabricated reverts,
 inconsistent stack parent/base/depth, missing parent decisions, stack cycles,
 false depth-two or depth-three claims, an older spotlight run outside the
 cohort, impossible non-Build intervals, incoherent

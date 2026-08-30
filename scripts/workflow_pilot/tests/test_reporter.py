@@ -1039,6 +1039,67 @@ class RepositoryAuthorityTests(unittest.TestCase):
         fixture["reviews"][0]["submitted_at"] = "2026-01-01T03:00:00Z"
         authoritative_report(fixture, minimal_decisions())
 
+    def test_run_commit_availability_exact_reproducer_and_boundary(self):
+        fixture = minimal_fixture()
+        fixture["workflow_runs"][0]["head_sha"] = sha("c")
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "workflow run 1 predates repository commit",
+        ):
+            authoritative_report(fixture, minimal_decisions())
+
+        fixture = minimal_fixture()
+        run = fixture["workflow_runs"][2]
+        run["created_at"] = "2026-01-01T05:59:59.999999Z"
+        run["started_at"] = run["created_at"]
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "workflow run 3 predates repository commit",
+        ):
+            authoritative_report(fixture, minimal_decisions())
+
+        fixture = minimal_fixture()
+        fixture["workflow_runs"][2]["created_at"] = "2026-01-01T06:00:00Z"
+        authoritative_report(fixture, minimal_decisions())
+
+    def test_run_availability_covers_status_workflow_and_master_scopes(self):
+        for workflow in ("Build CI", "Running Copilot Code Review"):
+            for status in ("queued", "in_progress", "completed"):
+                with self.subTest(workflow=workflow, status=status):
+                    fixture = minimal_fixture()
+                    run = fixture["workflow_runs"][4]
+                    run.update(
+                        {
+                            "workflow": workflow,
+                            "status": status,
+                            "conclusion": (
+                                "success" if status == "completed" else None
+                            ),
+                            "created_at": "2026-01-01T06:00:00Z",
+                            "started_at": (
+                                None if status == "queued" else "2026-01-01T06:00:00Z"
+                            ),
+                            "completed_at": (
+                                "2026-01-01T06:00:00Z"
+                                if status == "completed"
+                                else None
+                            ),
+                            "head_sha": sha("c"),
+                        }
+                    )
+                    authoritative_report(fixture, minimal_decisions())
+
+        fixture = minimal_fixture()
+        fixture["workflow_runs"][3].update(
+            {
+                "created_at": "2026-01-01T09:00:00Z",
+                "started_at": "2026-01-01T09:00:00Z",
+                "head_sha": sha("d"),
+                "head_branch": "master",
+            }
+        )
+        authoritative_report(fixture, minimal_decisions())
+
 
 class CohortIdentitySealTests(unittest.TestCase):
     def identity_data(self):
@@ -1135,6 +1196,14 @@ class CohortIdentitySealTests(unittest.TestCase):
         changed["findings"][100]["review_id"] = 11
         mutations["finding-review"] = (changed, reporter.report_reviews)
 
+        changed = copy.deepcopy(baseline_data)
+        changed["runs"][5]["head_sha"] = sha("b")
+        mutations["run-head"] = (changed, reporter.report_builds)
+
+        changed = copy.deepcopy(baseline_data)
+        changed["runs"][5]["created_at"] = "2026-01-01T07:30:01Z"
+        mutations["run-timestamp"] = (changed, reporter.report_builds)
+
         for relationship, (changed, report_function) in mutations.items():
             with self.subTest(relationship=relationship):
                 self.assertEqual(
@@ -1190,6 +1259,16 @@ class FormulaAndClassificationTests(unittest.TestCase):
                     for event in fixture["events"]
                     if "pr_number" not in event
                 ]
+                if boundary == "2026-01-01T00:00:00Z":
+                    earlier_times = {
+                        sha("0"): "2025-12-31T22:00:00Z",
+                        sha("a"): "2025-12-31T23:00:00Z",
+                        sha("b"): "2025-12-31T23:20:00Z",
+                        sha("c"): "2025-12-31T23:40:00Z",
+                        sha("d"): "2025-12-31T23:59:59Z",
+                    }
+                    for commit in fixture["commits"]:
+                        commit["committed_at"] = earlier_times[commit["sha"]]
                 report = authoritative_report(fixture, minimal_decisions())
                 self.assertEqual(report["delivery"]["merged_pull_requests"], 1)
 

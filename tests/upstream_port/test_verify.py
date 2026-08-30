@@ -831,5 +831,82 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
         self.assertEqual(results[index].stdout, "")
 
 
+class VerifyCliCwdTests(unittest.TestCase):
+    def test_normal_cli_preserves_nested_cwd_and_uses_checkout_authority(self):
+        caller_cwd = os.path.join(REPO_ROOT, "tests")
+        for arguments in (
+            ["verify"],
+            ["--repo", REPO_ROOT, "verify"],
+        ):
+            with self.subTest(arguments=arguments):
+                seen = []
+
+                def fake_run(argv, **kwargs):
+                    seen.append((list(argv), kwargs))
+                    return subprocess.CompletedProcess(
+                        argv,
+                        0,
+                        stdout="",
+                        stderr="",
+                    )
+
+                with (
+                    mock.patch.object(cli.os, "getcwd", return_value=caller_cwd),
+                    mock.patch.object(cli, "_repo_root", return_value=REPO_ROOT),
+                    mock.patch.object(
+                        verify_mod,
+                        "_repository_root",
+                        return_value=REPO_ROOT,
+                    ) as repository_root,
+                    mock.patch.object(
+                        verify_mod.subprocess,
+                        "run",
+                        side_effect=fake_run,
+                    ),
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    self.assertEqual(cli.main(arguments), 0)
+
+                repository_root.assert_called_once_with(caller_cwd)
+                self.assertEqual(len(seen), 28)
+                self.assertEqual(
+                    [kwargs["cwd"] for _, kwargs in seen],
+                    [caller_cwd] * 28,
+                )
+                baseline = seen[
+                    [gate.name for gate in verify_mod.gates()].index(
+                        "workflow-pilot-baseline"
+                    )
+                ][0]
+                self.assertEqual(
+                    baseline[baseline.index("--repository-root") + 1],
+                    REPO_ROOT,
+                )
+
+    def test_dry_run_cli_preserves_nested_invocation_directory(self):
+        caller_cwd = os.path.join(REPO_ROOT, "tests")
+        for arguments in (
+            ["verify", "--dry-run"],
+            ["--repo", REPO_ROOT, "verify", "--dry-run"],
+        ):
+            with self.subTest(arguments=arguments):
+                with (
+                    mock.patch.object(cli.os, "getcwd", return_value=caller_cwd),
+                    mock.patch.object(cli, "_repo_root", return_value=REPO_ROOT),
+                    mock.patch.object(
+                        verify_mod,
+                        "run_gates",
+                        return_value=[],
+                    ) as run_gates,
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    self.assertEqual(cli.main(arguments), 0)
+                run_gates.assert_called_once_with(
+                    caller_cwd,
+                    jobs=2,
+                    dry_run=True,
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
