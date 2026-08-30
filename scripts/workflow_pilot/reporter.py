@@ -392,6 +392,18 @@ def expect_unique(values: Iterable[Any], label: str) -> None:
         raise PilotDataError(f"{label} contains duplicates")
 
 
+def canonical_commit_message(message_bytes: bytes, sha: str) -> str:
+    try:
+        message = message_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise PilotDataError(
+            f"Git commit {sha} message is not valid UTF-8"
+        ) from error
+    if message.endswith("\n"):
+        return message[:-1]
+    return message
+
+
 def rounded_tenth_hours(delta_seconds: Decimal) -> Decimal:
     return (delta_seconds / Decimal(3600)).quantize(
         Decimal("0.1"), rounding=ROUND_HALF_UP
@@ -594,11 +606,11 @@ def _load_git_commit_objects(
         try:
             headers, message_bytes = payload.split(b"\n\n", 1)
             header_lines = headers.decode("utf-8").splitlines()
-            message = message_bytes.decode("utf-8").rstrip("\n")
         except (ValueError, UnicodeDecodeError) as error:
             raise PilotDataError(
                 f"Git commit {requested_sha} is not valid UTF-8 commit data"
             ) from error
+        message = canonical_commit_message(message_bytes, requested_sha)
         parents = [
             line.split(" ", 1)[1]
             for line in header_lines
@@ -742,7 +754,7 @@ def validate_repository_authority(
             raise PilotDataError(
                 f"commit {sha} timestamp does not match the Git object database"
             )
-        if actual_commit["message"] != commit["message"].rstrip("\n"):
+        if actual_commit["message"] != commit["message"]:
             raise PilotDataError(
                 f"commit {sha} message does not match the Git object database"
             )
@@ -983,7 +995,12 @@ def historical_override_entry(
         label,
         ("schema_version", "pull_requests", "artifacts"),
     )
-    if decisions["schema_version"] != SCHEMA_VERSION:
+    schema_version = expect_int(
+        decisions["schema_version"],
+        f"{label}.schema_version",
+        1,
+    )
+    if schema_version != SCHEMA_VERSION:
         raise PilotDataError(
             f"{label} schema_version must be {SCHEMA_VERSION}"
         )
@@ -1286,7 +1303,12 @@ def _validate_fixture_root(fixture: dict[str, Any]) -> None:
             "dependency_edges",
         ),
     )
-    if fixture["schema_version"] != SCHEMA_VERSION:
+    schema_version = expect_int(
+        fixture["schema_version"],
+        "fixture.schema_version",
+        1,
+    )
+    if schema_version != SCHEMA_VERSION:
         raise PilotDataError(f"fixture schema_version must be {SCHEMA_VERSION}")
     expect_string(fixture["repository"], "fixture.repository")
     expect_sha(fixture["base_sha"], "fixture.base_sha")
@@ -2489,7 +2511,12 @@ def validate_decisions(
 ) -> dict[str, Any]:
     decisions = expect_object(raw_decisions, "decisions")
     expect_keys(decisions, "decisions", ("schema_version", "pull_requests", "artifacts"))
-    if decisions["schema_version"] != SCHEMA_VERSION:
+    schema_version = expect_int(
+        decisions["schema_version"],
+        "decisions.schema_version",
+        1,
+    )
+    if schema_version != SCHEMA_VERSION:
         raise PilotDataError(f"decisions schema_version must be {SCHEMA_VERSION}")
     pr_records = expect_list(decisions["pull_requests"], "decisions.pull_requests")
     artifact_records = expect_list(decisions["artifacts"], "decisions.artifacts")
@@ -3912,7 +3939,12 @@ def build_report(
 def check_expected(report: dict[str, Any], expected: Any) -> None:
     expected = expect_object(expected, "expected")
     expect_keys(expected, "expected", ("schema_version", "paths"))
-    if expected["schema_version"] != SCHEMA_VERSION:
+    schema_version = expect_int(
+        expected["schema_version"],
+        "expected.schema_version",
+        1,
+    )
+    if schema_version != SCHEMA_VERSION:
         raise PilotDataError(f"expected schema_version must be {SCHEMA_VERSION}")
     paths = expect_object(expected["paths"], "expected.paths")
     for path in paths:
@@ -3942,6 +3974,13 @@ def check_expected(report: dict[str, Any], expected: Any) -> None:
             if not isinstance(value, dict) or component not in value:
                 raise PilotDataError(f"expected path {path!r} does not exist")
             value = value[component]
+        if type(value) is int:
+            expect_int(wanted, f"expected path {path!r}")
+        elif type(wanted) is not type(value):
+            raise PilotDataError(
+                f"expected path {path!r} value must have type "
+                f"{type(value).__name__}"
+            )
         if value != wanted:
             raise PilotDataError(
                 f"expected path {path!r} to be {wanted!r}, got {value!r}"

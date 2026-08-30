@@ -56,6 +56,11 @@ The frozen source semantics are:
 - Commit identities, timestamps, parent edges, messages, PR head SHAs, and
   merge SHAs come from Git and GitHub at exact base
   `b8e7f9125e11d322ca37b5288b141bbd52902b61`.
+  Commit messages are decoded as UTF-8 directly from `git cat-file` commit
+  object bytes. Canonicalization removes exactly one conventional terminal LF
+  from the raw message and no other byte; authored additional blank lines,
+  spaces, leading whitespace, and multiline bodies must match the fixture
+  exactly.
 - PR #150 is the declared spotlight for review, Build, base-change, and
   close/reopen measurements. Safety outcomes aggregate across every referenced
   PR instead of inheriting that spotlight filter. Its Build association derives
@@ -191,6 +196,9 @@ or changed after its authoritative introduction all fail. A newly authored
 fixture event plus an old candidate SHA is insufficient when that commit tree
 lacks the exact decision entry; Git remains the only stored commit-content
 authority, and the decision record stores no copied tree, blob, or commit hash.
+Every schema version, identity, count, duration input, attempt, index, depth,
+and cost uses exact-integer validation before bounds or equality checks; JSON
+booleans are accepted only by declared boolean fields.
 
 ## Reproducible formulas
 

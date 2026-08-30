@@ -1170,6 +1170,207 @@ class RepositoryAuthorityTests(unittest.TestCase):
         authoritative_report(fixture, minimal_decisions())
 
 
+class StrictPrimitiveAndMessageTests(unittest.TestCase):
+    def set_value(self, root, path, value):
+        current = root
+        for component in path[:-1]:
+            current = current[component]
+        current[path[-1]] = value
+
+    def test_every_fixture_integer_family_rejects_booleans(self):
+        paths = (
+            ("schema_version",),
+            ("workflow_sample_size",),
+            ("spotlight_pr",),
+            ("pull_requests", 0, "number"),
+            ("pull_requests", 0, "issue_numbers", 0),
+            ("pull_requests", 0, "review_ids", 0),
+            ("pull_requests", 0, "additions"),
+            ("pull_requests", 0, "deletions"),
+            ("issues", 0, "number"),
+            ("reviews", 0, "id"),
+            ("reviews", 0, "pr_number"),
+            ("review_findings", 0, "id"),
+            ("review_findings", 0, "review_id"),
+            ("review_thread_events", 0, "delivery_id"),
+            ("review_thread_events", 0, "pr_number"),
+            ("review_thread_events", 0, "review_id"),
+            ("review_thread_events", 0, "finding_id"),
+            ("workflow_runs", 0, "id"),
+            ("workflow_runs", 0, "attempt"),
+            ("events", 0, "pr_number"),
+            ("events", 4, "minutes"),
+        )
+        for path in paths:
+            for boolean in (False, True):
+                with self.subTest(path=path, boolean=boolean):
+                    fixture = minimal_fixture()
+                    self.set_value(fixture, path, boolean)
+                    with self.assertRaisesRegex(
+                        reporter.PilotDataError,
+                        "must be an integer",
+                    ):
+                        reporter.validate_fixture(fixture)
+
+        for boolean in (False, True):
+            with self.subTest(override_index=boolean):
+                fixture = minimal_fixture()
+                fixture["events"].append(
+                    {
+                        "id": "override:boolean-index",
+                        "type": "threshold_override_introduced",
+                        "occurred_at": "2026-01-01T01:00:00Z",
+                        "pr_number": 1,
+                        "sha": sha("a"),
+                        "override_index": boolean,
+                        "decision_digest": "0" * 64,
+                    }
+                )
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "override_index must be an integer",
+                ):
+                    reporter.validate_fixture(fixture)
+
+    def test_every_decision_and_expected_integer_family_rejects_booleans(self):
+        paths = (
+            ("schema_version",),
+            ("pull_requests", 0, "pull_request"),
+            ("pull_requests", 0, "stack", "depth"),
+            ("pull_requests", 0, "stack", "parent_pr"),
+            ("artifacts", 0, "max_maintenance_minutes"),
+            ("artifacts", 0, "estimated_maintenance_minutes"),
+        )
+        data = reporter.validate_fixture(minimal_fixture())
+        for path in paths:
+            for boolean in (False, True):
+                with self.subTest(path=path, boolean=boolean):
+                    decisions = minimal_decisions()
+                    self.set_value(decisions, path, boolean)
+                    with self.assertRaisesRegex(
+                        reporter.PilotDataError,
+                        "must be an integer",
+                    ):
+                        reporter.validate_decisions(decisions, data)
+
+        report = authoritative_report(
+            reporter.load_json(BASELINE),
+            reporter.load_json(DECISIONS),
+        )
+        for boolean in (False, True):
+            with self.subTest(expected_schema_version=boolean):
+                expected = reporter.load_json(BASELINE_EXPECTED)
+                expected["schema_version"] = boolean
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "expected.schema_version must be an integer",
+                ):
+                    reporter.check_expected(report, expected)
+
+        expected = reporter.load_json(BASELINE_EXPECTED)
+        integer_paths = [
+            path
+            for path, value in expected["paths"].items()
+            if type(value) is int
+        ]
+        self.assertGreater(len(integer_paths), 0)
+        for path in integer_paths:
+            for boolean in (False, True):
+                with self.subTest(expected_path=path, boolean=boolean):
+                    changed = copy.deepcopy(expected)
+                    changed["paths"][path] = boolean
+                    with self.assertRaisesRegex(
+                        reporter.PilotDataError,
+                        "must be an integer",
+                    ):
+                        reporter.check_expected(report, changed)
+
+        for boolean in (False, True):
+            with self.subTest(historical_schema_version=boolean):
+                historical = minimal_decisions()
+                historical["schema_version"] = boolean
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "schema_version must be an integer",
+                ):
+                    reporter.historical_override_entry(
+                        historical,
+                        sha("a"),
+                        1,
+                        0,
+                    )
+
+    def test_boolean_fields_remain_boolean(self):
+        fixture = minimal_fixture()
+        decisions = minimal_decisions()
+        self.assertIs(fixture["review_findings"][0]["is_resolved"], True)
+        self.assertIs(fixture["review_findings"][0]["outdated"], True)
+        self.assertIs(
+            fixture["review_thread_event_source"]["complete"],
+            True,
+        )
+        self.assertIs(decisions["pull_requests"][0]["pilot"]["included"], False)
+        authoritative_report(fixture, decisions)
+
+    def test_commit_message_canonicalization_preserves_authored_whitespace(self):
+        cases = {
+            b"subject\n": "subject",
+            b"subject\n\n": "subject\n",
+            b"subject \n": "subject ",
+            b" subject\n": " subject",
+            b"subject\n\nbody\n": "subject\n\nbody",
+            b"subject\n\nbody\n\n": "subject\n\nbody\n",
+        }
+        canonical = {
+            reporter.canonical_commit_message(raw, sha("a"))
+            for raw in cases
+        }
+        self.assertEqual(canonical, set(cases.values()))
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(
+                    reporter.canonical_commit_message(raw, sha("a")),
+                    expected,
+                )
+
+    def test_fixture_commit_message_whitespace_cannot_collide(self):
+        fixture = reporter.load_json(BASELINE)
+        decisions = reporter.load_json(DECISIONS)
+        original = fixture["commits"][0]["message"]
+        mutations = (
+            original + "\n",
+            original + " ",
+            original + "\n\n",
+            original + "\nchanged body",
+            " " + original,
+        )
+        for message in mutations:
+            with self.subTest(message=repr(message[-40:])):
+                changed = copy.deepcopy(fixture)
+                changed["commits"][0]["message"] = message
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "message does not match the Git object database",
+                ):
+                    authoritative_report(changed, decisions)
+
+        multiline = next(
+            commit
+            for commit in fixture["commits"]
+            if "\n\n" in commit["message"]
+        )
+        actual = reporter._load_git_commit_objects(
+            BASELINE_AUTHORITY,
+            [multiline["sha"]],
+        )
+        self.assertEqual(actual[multiline["sha"]]["message"], multiline["message"])
+
+    def test_real_commit_preserves_authored_terminal_blank_line(self):
+        fixture = minimal_fixture()
+        fixture["commits"][1]["message"] = "subject\n\nbody\n"
+        authoritative_report(fixture, minimal_decisions())
+
+
 class CohortIdentitySealTests(unittest.TestCase):
     def identity_data(self):
         return reporter.validate_fixture(minimal_fixture())

@@ -324,6 +324,11 @@ SHA is an exact member of its PR's candidate-history set and available by the
 review timestamp. Before these calculations, the repository origin, base,
 every commit object, exact parents, timestamps, messages, PR candidate/merge
 ranges, and referenced history are validated against the real object database.
+Commit messages are decoded as UTF-8 from the raw commit object, with exactly
+one conventional terminal LF removed; additional trailing blank lines and all
+other authored whitespace remain exact authority. Every numeric schema field
+requires a JSON integer that is not a boolean before any range or version
+comparison, while declared boolean fields remain valid.
 The expected cohort seal binds normalized identities plus review, event,
 timestamp, PR/SHA, and other metric relationships.
 Every Build and non-Build workflow run is also rejected when its creation
@@ -359,7 +364,9 @@ resolution history, wrong-PR or missing event SHA, fabricated repository
 identity/commit/parent/timestamp/message, base-only/merge-only/unrelated/future
 review commits, incoherent candidate/merge or review history, any
 PR/issue/review/run/finding/commit identity or metric-relationship
-substitution, an omitted identity seal, PR events before creation, invalid
+substitution, boolean substitution for any integer/version/count field,
+commit-message trailing newline/space/blank-line/body/leading-whitespace
+mutation, an omitted identity seal, PR events before creation, invalid
 open/closed phases, future event or workflow-run SHAs,
 earlier/equal/unrelated/fabricated reverts,
 inconsistent stack parent/base/depth, missing parent decisions, stack cycles,
