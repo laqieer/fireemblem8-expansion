@@ -254,57 +254,14 @@ def _contains_exact_command(job: str, command: str) -> bool:
     return False
 
 
-def _has_run_shell_default(text: str, defaults_indent: int) -> bool:
-    lines = text.splitlines()
-    block_key = re.compile(
-        r"^(?P<indent> *)(?P<key>defaults|run|\"defaults\"|\"run\"|"
-        r"'defaults'|'run'):[ \t]*(?:#.*)?$"
-    )
-    shell_key = re.compile(
-        r"^(?P<indent> *)(?:shell|\"shell\"|'shell'):[ \t]*"
-    )
-
-    for index, line in enumerate(lines):
-        match = block_key.match(line)
-        if (
-            match is None
-            or len(match.group("indent")) != defaults_indent
-            or match.group("key").strip("\"'") != "defaults"
-        ):
-            continue
-
-        child_index = index + 1
-        while child_index < len(lines):
-            child_line = lines[child_index]
-            if not child_line.strip() or child_line.lstrip().startswith("#"):
-                child_index += 1
-                continue
-            child_indent = len(child_line) - len(child_line.lstrip(" "))
-            if child_indent <= defaults_indent:
-                break
-            child_match = block_key.match(child_line)
-            if (
-                child_match is None
-                or child_match.group("key").strip("\"'") != "run"
-            ):
-                child_index += 1
-                continue
-
-            run_indent = len(child_match.group("indent"))
-            shell_index = child_index + 1
-            while shell_index < len(lines):
-                shell_line = lines[shell_index]
-                if not shell_line.strip() or shell_line.lstrip().startswith("#"):
-                    shell_index += 1
-                    continue
-                shell_indent = len(shell_line) - len(shell_line.lstrip(" "))
-                if shell_indent <= run_indent:
-                    break
-                if shell_key.match(shell_line):
-                    return True
-                shell_index += 1
-            child_index = shell_index
-    return False
+def _has_execution_defaults(text: str, workflow_scope: bool) -> bool:
+    indent = "" if workflow_scope else r" {4,}"
+    key = r"(?:defaults|\"defaults\"|'defaults')"
+    return re.search(
+        rf"^{indent}{key}[ \t]*:",
+        text,
+        re.MULTILINE,
+    ) is not None
 
 
 def _hashed_requirements_errors(text: str) -> list[str]:
@@ -363,8 +320,8 @@ def _make_recipe(text: str, target: str) -> str:
 def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     errors = []
     header = text[: text.index("\njobs:\n")]
-    if _has_run_shell_default(header, 0):
-        errors.append("workflow run shell defaults must not make candidate gates advisory")
+    if _has_execution_defaults(header, workflow_scope=True):
+        errors.append("workflow execution defaults must not alter candidate gates")
     try:
         _pull_request_actions(header)
     except ValueError as exc:
@@ -468,8 +425,8 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(
                 f"candidate host lost exact fail-closed Build evidence: {command}"
             )
-    if _has_run_shell_default(jobs["host-tests"], 4):
-        errors.append("candidate host run shell defaults must not make pilot gates advisory")
+    if _has_execution_defaults(jobs["host-tests"], workflow_scope=False):
+        errors.append("candidate host execution defaults must not alter pilot gates")
 
     legacy = jobs["legacy"]
     for command in ("make legacy -j2", "make -C mgfembp compare"):
@@ -969,13 +926,41 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "            shell: bash {0} || true\n",
                 1,
             ),
+            self.text.replace(
+                "\njobs:\n",
+                "\n\"defaults\" :\n"
+                "  \"run\" :\n"
+                "    \"shell\" : bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "\njobs:\n",
+                "\ndefaults: {run: {shell: \"bash {0} || true\"}}\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    \"defaults\" :\n"
+                "      \"run\" :\n"
+                "        \"shell\" : bash {0} || true\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    defaults: {run: {shell: \"bash {0} || true\"}}\n",
+                1,
+            ),
         )
         for changed in inherited_defaults:
             with self.subTest(inherited_shell_default=changed[:200]):
                 self.assertNotEqual(changed, self.text)
                 self.assertTrue(
                     any(
-                        "run shell defaults must not make" in error
+                        "execution defaults must not alter" in error
                         for error in _errors(changed, False)
                     )
                 )
