@@ -69,7 +69,10 @@ def _parse_workflow_gate_commands(path=BUILD_WORKFLOW_PATH):
     """
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
+    return _parse_workflow_gate_commands_text(text)
 
+
+def _parse_workflow_gate_commands_text(text):
     commands = []
     for job_name in ("host-tests", "build", "extended-host-tests", "legacy"):
         job = re.search(
@@ -88,6 +91,32 @@ def _parse_workflow_gate_commands(path=BUILD_WORKFLOW_PATH):
 
             if step_name in _NON_GATE_STEP_NAMES:
                 continue
+
+            if step_name != _DOCS_GOVERNANCE_STEP_NAME:
+                fields = []
+                for line in block.splitlines():
+                    if not line.strip() or line.lstrip().startswith("#"):
+                        continue
+                    indent = len(line) - len(line.lstrip(" "))
+                    if indent == 6:
+                        field = re.match(
+                            r"^      (?P<field>[A-Za-z_][A-Za-z0-9_-]*)[ \t]*:",
+                            line,
+                        )
+                        assert field is not None, (
+                            f"mirrored gate step {step_name!r} uses unsupported "
+                            "direct mapping-key syntax"
+                        )
+                        fields.append(field.group("field"))
+                    elif indent < 8:
+                        raise AssertionError(
+                            f"mirrored gate step {step_name!r} uses unsupported "
+                            "direct mapping indentation"
+                        )
+                assert fields == ["run"], (
+                    f"mirrored gate step {step_name!r} must contain only the "
+                    f"reviewed name and run fields, got {fields!r}"
+                )
 
             single_m = _SINGLE_RUN_RE.search(block)
             if single_m:
@@ -354,6 +383,46 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             ordered_steps.index(_WORKFLOW_PILOT_BASELINE_STEP_NAME),
             ordered_steps.index(_LOCALIZATION_HOST_STEP_NAME),
         )
+
+    def test_every_mirrored_gate_rejects_unmodeled_execution_fields(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            workflow = handle.read()
+        mirrored_steps = []
+        for step_name, _ in _parse_workflow_gate_commands():
+            if (
+                step_name != _DOCS_GOVERNANCE_STEP_NAME
+                and step_name not in mirrored_steps
+            ):
+                mirrored_steps.append(step_name)
+
+        variants = (
+            "continue-on-error: true",
+            "if: ${{ false }}",
+            "shell: bash {0} || true",
+            "working-directory: scripts",
+            "working-directory : scripts",
+            '"working-directory": scripts',
+            "'working-directory' : scripts",
+            '"working-\\u0064irectory": scripts',
+            "? working-directory\n      : scripts",
+            "!!str working-directory: scripts",
+            "{working-directory: scripts}",
+        )
+        for step_name in mirrored_steps:
+            marker = f"    - name: {step_name}\n"
+            for variant in variants:
+                with self.subTest(step=step_name, variant=variant):
+                    changed = workflow.replace(
+                        marker,
+                        marker + f"      {variant}\n",
+                        1,
+                    )
+                    self.assertNotEqual(changed, workflow)
+                    with self.assertRaisesRegex(
+                        AssertionError,
+                        "unsupported direct mapping|only the reviewed name and run",
+                    ):
+                        _parse_workflow_gate_commands_text(changed)
 
     def test_issue_15_default_lane_and_quickstart_gates_present(self):
         names = [g.name for g in verify_mod.gates()]
@@ -644,6 +713,37 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                     {} if env is None else env,
                     f"host-only mode leaked into {gate.name}",
                 )
+
+    def test_run_gates_preserves_full_argv_order_and_caller_cwd(self):
+        seen = []
+
+        def fake_run(argv, **kwargs):
+            seen.append((list(argv), kwargs))
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+        caller_cwd = os.path.join(REPO_ROOT, "caller-cwd")
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with mock.patch.object(verify_mod.subprocess, "run", side_effect=fake_run):
+                results = verify_mod.run_gates(caller_cwd, jobs=2)
+
+        expected_argv = []
+        expected_stdout = []
+        for gate in verify_mod.gates(jobs=2):
+            _, argv = verify_mod._split_env_prefix(gate.command)
+            argv, stdout = verify_mod._split_stdout_redirect(argv)
+            expected_argv.append(verify_mod._expand_workspace(argv, caller_cwd))
+            expected_stdout.append(stdout)
+
+        self.assertEqual([argv for argv, _ in seen], expected_argv)
+        self.assertEqual([kwargs["cwd"] for _, kwargs in seen], [caller_cwd] * 28)
+        self.assertEqual(
+            [kwargs["stdout"] for _, kwargs in seen],
+            expected_stdout,
+        )
+        self.assertEqual(
+            [result.gate.name for result in results],
+            [gate.name for gate in verify_mod.gates(jobs=2)],
+        )
 
     def test_baseline_gate_expands_workspace_and_redirects_without_a_shell(self):
         seen = []

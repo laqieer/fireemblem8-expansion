@@ -225,7 +225,7 @@ def _contains_command(job: str, command: str) -> bool:
 
 
 def _step_blocks(job: str) -> list[str]:
-    matches = list(re.finditer(r"^    - (?=[A-Za-z])", job, re.MULTILINE))
+    matches = list(re.finditer(r"^    -(?:[ \t]|\Z)", job, re.MULTILINE))
     return [
         job[
             match.start():
@@ -235,23 +235,45 @@ def _step_blocks(job: str) -> list[str]:
     ]
 
 
+def _direct_step_mapping_fields(step: str) -> list[str] | None:
+    sequence_key = re.compile(
+        r"^    -[ \t]+(?P<field>[A-Za-z_][A-Za-z0-9_-]*)[ \t]*:"
+    )
+    continuation_key = re.compile(
+        r"^      (?P<field>[A-Za-z_][A-Za-z0-9_-]*)[ \t]*:"
+    )
+    fields = []
+    sequence_entries = 0
+    for line in step.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 4:
+            match = sequence_key.match(line)
+            if match is None:
+                return None
+            sequence_entries += 1
+            fields.append(match.group("field"))
+        elif indent == 6:
+            match = continuation_key.match(line)
+            if match is None:
+                return None
+            fields.append(match.group("field"))
+        elif indent < 8:
+            return None
+    if sequence_entries != 1:
+        return None
+    return fields
+
+
 def _contains_exact_command(job: str, command: str) -> bool:
     expected = _normalise(command)
     for step in _step_blocks(job):
         commands = _run_block_commands(step)
         if len(commands) != 1 or _normalise(commands[0]) != expected:
             continue
-        if _has_unsupported_direct_key(step, indent=6, allow_sequence=False):
-            continue
-        execution_fields = {
-            match.group("field")
-            for match in re.finditer(
-                r"^      (?P<field>[A-Za-z][A-Za-z0-9_-]*)[ \t]*:",
-                step,
-                re.MULTILINE,
-            )
-        }
-        if execution_fields == {"run"}:
+        fields = _direct_step_mapping_fields(step)
+        if fields is not None and len(fields) == 2 and set(fields) == {"name", "run"}:
             return True
     return False
 
@@ -944,9 +966,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_workflow_pilot_steps_allow_reviewed_keys_with_spaced_colons(self):
         changed = self.text
-        for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
+        steps = (
+            (
+                "Run workflow-pilot reporter regression suite (issue #176)",
+                WORKFLOW_PILOT_GATE,
+            ),
+            (
+                "Validate workflow-pilot baseline against checked-out Git history",
+                WORKFLOW_PILOT_BASELINE_GATE,
+            ),
+        )
+        for step_name, command in steps:
             changed = changed.replace(
+                f"    - name: {step_name}\n"
                 f"      run: {command}\n",
+                f"    - name : {step_name}\n"
                 f"      run : {command}\n",
                 1,
             )
@@ -955,12 +989,18 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_both_workflow_pilot_steps_reject_complex_or_advisory_keys(self):
         variants = (
+            "continue-on-error: true",
+            "if: ${{ false }}",
+            "shell: bash {0} || true",
+            "working-directory: /",
+            "working-directory : /",
             '"continue-on-error": true',
             '"continue-\\u006fn-error": true',
             "? continue-on-error\n      : true",
             "!!str continue-on-error: true",
             "{continue-on-error: true}",
             '"if": ${{ false }}',
+            "@unsupported",
         )
         for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
             for variant in variants:
@@ -968,6 +1008,60 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     changed = self.text.replace(
                         f"      run: {command}\n",
                         f"      {variant}\n      run: {command}\n",
+                        1,
+                    )
+                    self.assertNotEqual(changed, self.text)
+                    self.assertTrue(
+                        any(
+                            "candidate host lost exact fail-closed Build evidence"
+                            in error
+                            or "unsupported direct mapping-key syntax" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+    def test_both_workflow_pilot_steps_reject_advisory_or_complex_first_keys(self):
+        steps = (
+            (
+                "Run workflow-pilot reporter regression suite (issue #176)",
+                WORKFLOW_PILOT_GATE,
+            ),
+            (
+                "Validate workflow-pilot baseline against checked-out Git history",
+                WORKFLOW_PILOT_BASELINE_GATE,
+            ),
+        )
+        variants = (
+            "continue-on-error: true",
+            "if: ${{ false }}",
+            "shell: bash {0} || true",
+            "working-directory: /",
+            "working-directory : /",
+            '"continue-on-error": true',
+            '"continue-\\u006fn-error": true',
+            "? continue-on-error\n      : true",
+            "!!str continue-on-error: true",
+            "{continue-on-error: true}",
+            "@unsupported",
+        )
+        for step_name, command in steps:
+            original = (
+                f"    - name: {step_name}\n"
+                f"      run: {command}\n"
+            )
+            reviewed_key_variants = (
+                f'"name": {step_name}',
+                f'"n\\u0061me": {step_name}',
+                f"? name\n      : {step_name}",
+                f"!!str name: {step_name}",
+                f"{{name: {step_name}}}",
+            )
+            for variant in variants + reviewed_key_variants:
+                with self.subTest(command=command, variant=variant):
+                    changed = self.text.replace(
+                        original,
+                        f"    - {variant}\n"
+                        f"      run: {command}\n",
                         1,
                     )
                     self.assertNotEqual(changed, self.text)
