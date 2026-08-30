@@ -264,6 +264,25 @@ def _has_execution_defaults(text: str, workflow_scope: bool) -> bool:
     ) is not None
 
 
+def _has_unsupported_direct_key(text: str, indent: int, allow_sequence: bool) -> bool:
+    simple_key = re.compile(
+        rf"^{' ' * indent}[A-Za-z_][A-Za-z0-9_-]*[ \t]*:"
+    )
+    sequence = re.compile(rf"^{' ' * indent}-[ \t]+")
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        line_indent = len(line) - len(line.lstrip(" "))
+        if line_indent != indent:
+            continue
+        if simple_key.match(line):
+            continue
+        if allow_sequence and sequence.match(line):
+            continue
+        return True
+    return False
+
+
 def _hashed_requirements_errors(text: str) -> list[str]:
     logical_lines = []
     current = ""
@@ -320,6 +339,8 @@ def _make_recipe(text: str, target: str) -> str:
 def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     errors = []
     header = text[: text.index("\njobs:\n")]
+    if _has_unsupported_direct_key(header, indent=0, allow_sequence=False):
+        errors.append("workflow uses unsupported direct mapping-key syntax")
     if _has_execution_defaults(header, workflow_scope=True):
         errors.append("workflow execution defaults must not alter candidate gates")
     try:
@@ -425,6 +446,12 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(
                 f"candidate host lost exact fail-closed Build evidence: {command}"
             )
+    if _has_unsupported_direct_key(
+        jobs["host-tests"],
+        indent=4,
+        allow_sequence=True,
+    ):
+        errors.append("candidate host uses unsupported direct mapping-key syntax")
     if _has_execution_defaults(jobs["host-tests"], workflow_scope=False):
         errors.append("candidate host execution defaults must not alter pilot gates")
 
@@ -954,6 +981,56 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "    defaults: {run: {shell: \"bash {0} || true\"}}\n",
                 1,
             ),
+            self.text.replace(
+                "\njobs:\n",
+                "\n\"def\\u0061ults\":\n"
+                "  run:\n"
+                "    shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "\njobs:\n",
+                "\n? defaults\n"
+                ":\n"
+                "  run:\n"
+                "    shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "\njobs:\n",
+                "\n!!str defaults:\n"
+                "  run:\n"
+                "    shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    \"def\\u0061ults\":\n"
+                "      run:\n"
+                "        shell: bash {0} || true\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    ? defaults\n"
+                "    :\n"
+                "      run:\n"
+                "        shell: bash {0} || true\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    !!str defaults:\n"
+                "      run:\n"
+                "        shell: bash {0} || true\n",
+                1,
+            ),
         )
         for changed in inherited_defaults:
             with self.subTest(inherited_shell_default=changed[:200]):
@@ -961,6 +1038,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 self.assertTrue(
                     any(
                         "execution defaults must not alter" in error
+                        or "unsupported direct mapping-key syntax" in error
                         for error in _errors(changed, False)
                     )
                 )
