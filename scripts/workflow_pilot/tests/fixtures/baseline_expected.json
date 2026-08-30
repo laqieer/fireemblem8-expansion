@@ -1,14 +1,20 @@
 {
   "schema_version": 1,
   "paths": {
+    "builds.action_required": 0,
     "builds.active": 1,
     "builds.cancelled": 166,
     "builds.duplicate_unchanged_sha": 51,
     "builds.failure": 61,
     "builds.minutes": 9939,
+    "builds.neutral": 0,
     "builds.runs": 326,
+    "builds.skipped": 0,
+    "builds.spotlight.action_required": 0,
     "builds.spotlight.minutes": 2210,
+    "builds.spotlight.neutral": 0,
     "builds.spotlight.runs": 79,
+    "builds.spotlight.skipped": 0,
     "builds.success": 98,
     "delivery.merged_pull_requests": 64,
     "delivery.first_push_to_clean_review.median_hours": "100.6",
@@ -21,6 +27,7 @@
     "events.superseded_candidates": 45,
     "reviews.rounds": 34,
     "reviews.superseded_rounds": 0,
-    "reviews.valid_findings": 101
+    "reviews.valid_findings": 101,
+    "snapshot.lifecycle_as_of": "2026-08-30T12:23:00Z"
   }
 }

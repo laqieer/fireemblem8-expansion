@@ -55,6 +55,10 @@ SUMMARY_RESULTS = (
 MAP_MENU_PRESENTATION_GATE = (
     "make expansion-modern-map-menu-presentation-check -j1"
 )
+WORKFLOW_PILOT_GATE = (
+    "python3 -m unittest discover -s scripts/workflow_pilot/tests "
+    "-p 'test_*.py' -v"
+)
 
 
 def _trigger_block(header: str, event_name: str) -> str:
@@ -361,6 +365,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     for command in (
         "scripts.localization.game_locales check-crosswalk",
         "scripts.localization.game_locales check-raw-closure",
+        WORKFLOW_PILOT_GATE,
     ):
         if not _contains_command(jobs["host-tests"], command):
             errors.append(f"candidate host lost Build-owned evidence: {command}")
@@ -727,6 +732,27 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             1,
         )
         self.assertTrue(any("summary must depend" in error for error in _errors(changed, False)))
+
+    def test_workflow_pilot_suite_remains_owned_by_required_host_job(self):
+        self.assertTrue(
+            _contains_command(
+                _job_blocks(self.text)["host-tests"],
+                WORKFLOW_PILOT_GATE,
+            )
+        )
+        changed = self.text.replace(
+            f"      run: {WORKFLOW_PILOT_GATE}\n",
+            "      run: true\n",
+            1,
+        )
+        self.assertNotEqual(changed, self.text)
+        self.assertTrue(
+            any(
+                f"candidate host lost Build-owned evidence: {WORKFLOW_PILOT_GATE}"
+                in error
+                for error in _errors(changed, False)
+            )
+        )
 
     def test_summary_omitting_legacy_result_fails(self):
         changed = self.text.replace(

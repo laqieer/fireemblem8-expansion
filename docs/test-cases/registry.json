@@ -2232,15 +2232,19 @@
       "prerequisites": "Start at the repository root with the committed workflow-pilot fixture, decision record, expected values, and reporter unchanged; no token, ROM, emulator, or game build is required.",
       "actions": "Run the focused reporter suite and docs checker; run the reporter twice, compare canonical bytes, inspect frozen metrics, then inspect every adversarial schema, timing, event, edge, state, and artifact mutation.",
       "expected_result": "Both normalized reports are byte-identical and reproduce the frozen PR, review, Build, duplicate-SHA, event, and overhead results while deriving current state and artifact disposition from auditable histories.",
-      "negative_control": "Missing data or decisions; derived-field overrides; post-review override mutation; boundary, cancellation, supersession, stack, revert, unknown enum, orphan, duplicate, expiry, deletion-ready, proof, and restoration violations all fail before canonical output.",
+      "negative_control": "Missing data or decisions; derived-field overrides; inserted, backdated, or changed post-review overrides; cumulative unresolved findings; wrong-PR event SHAs; cohort, queued-duration, conclusion-partition, reverse-edge ownership, lifecycle causality, expiry, deletion-ready, proof, and restoration violations all fail before canonical output.",
       "interactions": "Dependencies none; dependents #177-#181; conflicts none with CI selection, review ordering, merge gates, runtime/configuration/save/generated/localization/archival behavior, and no feature flag.",
       "save_compatibility": "Source-only workflow measurement; no save field, epoch, migration, generated game data, localization, ROM/RAM, modern debug/release, gameplay, or archival impact.",
       "cleanup": "Remove only build/test-artifacts/workflow-pilot if the human procedure created it; the automation and reporter mutate no remote state.",
       "limitations": "The immutable fixture reports only its exact source semantics and fails on unavailable authoritative data; it is not a live GitHub capture or a second mutable delivery ledger.",
       "automation": [
         {
-          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_reporter -v",
+          "command": "python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v",
           "evidence": "scripts/workflow_pilot/tests/test_reporter.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s tests/workflows -p 'test_*.py' -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
         },
         {
           "command": "python3 scripts/check_docs.py --check",

@@ -23,6 +23,11 @@ not the later issue creation or this implementation commit. A timestamp equal
 to either boundary is inside the window. The fixture is expected input, not a
 generated report or a substitute GitHub ledger.
 
+Artifact lifecycle evidence has a separate explicit `lifecycle_as_of` of
+`2026-08-30T12:23:00Z`. This later boundary covers the authoritative
+checkpoint/proof events and current disposition records without moving or
+reinterpreting the historical measurement window.
+
 The frozen source semantics are:
 
 - Pull requests are the 64 PR identities whose authoritative `merged_at` is
@@ -32,8 +37,9 @@ The frozen source semantics are:
   issue-to-merge; a referenced issue with no fixture record is an error.
 - Review identities are submitted
   `copilot-pull-request-reviewer[bot]` reviews on those PRs. Inline Copilot
-  comments are review findings, and their resolved/outdated thread state is
-  fixture evidence rather than a decision-record override.
+  comments are review findings. Their authoritative resolution timestamps and
+  outdated thread state are fixture evidence rather than decision-record
+  overrides.
 - The workflow cohort is the latest 1,000 Actions runs created at or before
   the end timestamp, ordered by `(created_at, run_id)` descending. Workflow
   run `33307027945` was still active at the measurement instant; its later
@@ -43,9 +49,10 @@ The frozen source semantics are:
   merge SHAs come from Git and GitHub at exact base
   `b8e7f9125e11d322ca37b5288b141bbd52902b61`.
 - PR #150 is the declared spotlight for review, Build, base-change, and
-  close/reopen measurements. Its Build association derives from the
-  authoritative PR head branch and Actions `head_branch`, not a manually
-  copied run list.
+  close/reopen measurements. Safety outcomes aggregate across every referenced
+  PR instead of inheriting that spotlight filter. Its Build association derives
+  from the authoritative PR head branch and Actions `head_branch`, not a
+  manually copied run list.
 
 The frozen GitHub response fields were normalized from the Pulls, closing
 issues, review/review-comment, PR timeline, and Actions Runs APIs. The reporter
@@ -71,6 +78,11 @@ separators, and one trailing newline. Running over identical immutable inputs
 is byte-identical. `baseline_expected.json` contains only immutable expected
 values, not another authored current-state report.
 
+The same stdlib suite is a required `host-tests` step in Build CI. The parsed
+workflow topology regression requires that exact command to remain in the
+existing required job, without adding a job, trigger, dependency, or publisher
+path.
+
 The fixture carries derivable Git/GitHub/Actions facts. The single versioned
 decision record,
 [`.github/workflow-pilot-decisions.json`](../.github/workflow-pilot-decisions.json),
@@ -80,17 +92,19 @@ contains only the decisions those systems cannot supply:
 | --- | --- |
 | `risk_boundaries` | Closed enum; `none` must stand alone. |
 | `threshold.triggers` | Closed enum for risk, changed-line, changed-file, and major-boundary triggers. |
-| `threshold.override_history` | Chronological override decisions with a nonempty pre-review reason; every entry must predate the first authoritative review. |
+| `threshold.override_history` | Ordered override decisions containing only `enabled` and a nonempty reason. Each entry must exactly match an authoritative `threshold_override_introduced` event digest and candidate commit that predates the first review. |
 | `gate_mode` | Exactly `concurrent` or `review-first`. |
 | `stack` | Depth, immediate parent decision, and a required depth-three exception reason; the parent/base relation is checked against authoritative PR data. |
 | `pilot` | Inclusion boolean and a closed pilot disposition. |
 | artifact admission/history | Owner, executable consumer, unique decision, consistency check, bounded cost, deletion criterion, expiry, and disposition history. |
 
-SHA, timestamps, ancestry, branches, diff size, review/run status and
-conclusions, current PR state, and current artifact disposition are forbidden
-from the decision schema. Unknown keys therefore cannot override a derived
-fact. Duplicate JSON keys, missing spotlight decisions, unknown enum values,
-and an override added or changed at or after first review all fail.
+Candidate/event SHAs, override-introduction timestamps, ancestry, branches,
+diff size, review/run status and conclusions, and current PR state are
+forbidden from the corresponding decision schema. Artifact audit history
+retains only its non-derivable disposition decision and decision time. Unknown
+keys cannot override a derived fact. Duplicate JSON keys, missing spotlight
+decisions, unknown enum values, and an override inserted, backdated, reordered,
+or changed after its authoritative introduction all fail.
 
 ## Reproducible formulas
 
@@ -103,17 +117,17 @@ convention.
 | Metric | Formula and inclusion |
 | --- | --- |
 | Issue-to-merge | For each in-window merged PR with closing issues: `merged_at - min(linked issue created_at)`. Report the eligible count and authoritative empty-link exclusions. |
-| First-push-to-clean-review | For each declared subject: the first GitHub-visible candidate boundary is the earlier of PR `created_at` and its earliest retained Actions head event. Subtract it from the first Copilot review with no findings after every prior finding is resolved. Missing branch runs, reviews, or a clean boundary fail. Local commit dates are never substituted for publication. |
+| First-push-to-clean-review | For each declared subject: the first GitHub-visible candidate boundary is the earlier of PR `created_at` and its earliest retained Actions head event. Subtract it from the first Copilot review with no findings only when every cumulative prior finding identity has an authoritative `resolved_at` strictly before that review. A later review containing resolved findings cannot erase an older unresolved identity, and a later resolution cannot retroactively make a review clean. Missing branch runs, reviews, resolution proof, or a clean boundary fails. Local commit dates are never substituted for publication. |
 | Review rounds | Count unique submitted Copilot review IDs for the subject PR. |
 | Valid findings | Count resolved inline Copilot finding identities; report `findings / ((additions + deletions) / 1000)` and `findings / review rounds`. A zero denominator is reported as unavailable, not infinity. |
-| Build totals | From the latest-1,000 cohort, count runs whose workflow name is `Build CI`; partition terminal conclusions and the still-active status. |
-| Build minutes | Sum `completed_at - started_at`; clamp an active run at the inclusive end, count queued time as zero, then floor the aggregate seconds divided by 60. |
+| Build totals | From the declared latest-1,000 cohort, count runs whose workflow name is `Build CI`; exhaustively partition terminal `success`, `failure`, `cancelled`, `neutral`, `skipped`, and `action_required` conclusions plus active queued/in-progress runs. Unknown conclusions fail instead of disappearing from the partition. |
+| Build minutes | Sum `completed_at - started_at`; clamp an in-progress run at the inclusive end, count a queued run as zero even if `started_at` is populated, then floor the aggregate seconds divided by 60. |
 | Duplicate unchanged-SHA Builds | Group sampled Builds by exact `head_sha`; sum `group size - 1` for groups larger than one. Attempts remain separate runs. |
-| PR #150 Build totals | Select every sampled Build whose `head_branch` equals PR #150's authoritative head branch; apply the same status and minute formulas. |
+| PR #150 Build totals | Select sampled Builds whose `head_branch` equals PR #150's authoritative head branch; older matching runs outside the declared latest-1,000 cohort are excluded. Apply the same exhaustive status and minute formulas. |
 | Base changes and close/reopen | Count authoritative base-change events. Close/reopen cycles are `min(close events, reopen events)`, so the final merge closure is not a fake cycle. |
-| Conflicts | Count typed authoritative conflict events inside the window. No event means zero; an unknown event name is not treated as zero. |
+| Conflicts | Count typed authoritative conflict events for every PR inside the window. No event means zero; an unknown event name is not treated as zero. |
 | Superseded candidates | For a PR head branch, count distinct authoritative workflow `head_sha` values minus one. Repeated runs on one SHA are duplicates, not supersessions. |
-| Escaped defects, broken master, security findings, manual rejects | Count their typed in-window events. Each identity binds a PR and exact SHA. |
+| Escaped defects, broken master, security findings, manual rejects | Count their typed in-window events across every PR, independently of spotlight metrics. Each identity binds a full SHA to an authoritative commit and that PR's candidate/merge history. |
 | Reverts | Parse the exact Git-generated `This reverts commit <full SHA>.` relation and require the target commit in the fixture. |
 | Pilot coordination and metadata maintenance | Sum only typed in-window pilot minutes. Report both beside saved Build and review minutes; net saved minutes are savings minus both overhead classes. |
 
@@ -144,15 +158,18 @@ No class removes a run, review, finding, or cost from the identity history.
 Every pilot artifact is admitted only when all six decisions exist: one owner,
 one executable consumer, one unique decision, one executable consistency
 check, a bounded estimated maintenance cost, and a deletion criterion.
-Authoritative dependency edges bind consumers/checkers to the artifact.
-Duplicate artifacts, duplicate unique decisions, orphan consumers/checks,
-expired retained artifacts, and unknown edge types fail.
+Authoritative dependency edges bind consumers/checkers to the artifact in both
+directions: every listed dependency must target its owner, and every
+`consumes`/`checks` edge must be claimed exactly once by that target artifact.
+Semantic duplicate edges, ambiguous claims, orphan derives/review dependencies,
+duplicate artifacts, duplicate unique decisions, expired retained artifacts,
+and unknown edge types fail.
 
 Review invalidation is derived from `review_depends_on` edges and later
 `dependency_changed` events. Unknown events or edges require contract review
 and are rejected rather than ignored. Every checkpoint and pre-graduation
 event, plus every dependency-change event that occurs, requires exactly one
-later non-destructive deletion proof:
+strictly later non-destructive deletion proof:
 
 - if removal preserves semantics, restoration must pass and the current
   disposition must be `Delete`;
@@ -161,10 +178,12 @@ later non-destructive deletion proof:
 
 Disposition values are exactly `Delete`, `Derive`, `Consolidate`, and
 `Graduate`. History is append-only and strictly chronological; current
-disposition is the last derived value, not a second mutable field. The
-committed baseline contract, fixture, and reporter currently derive to
-`Graduate` because removing any one loses a dependency required by issues
-#177 through #181.
+disposition is the last derived value, not a second mutable field. It must be
+strictly later than every justifying proof and no event or disposition may
+follow `lifecycle_as_of`. Expiry is evaluated at that lifecycle boundary,
+rather than the older metric-capture timestamp. The committed baseline
+contract, fixture, and reporter currently derive to `Graduate` because
+removing any one loses a dependency required by issues #177 through #181.
 
 ## Frozen expected results
 
@@ -177,6 +196,7 @@ committed baseline contract, fixture, and reporter currently derive to
 | Latest sampled workflow runs | 1,000 |
 | Sampled Build runs | 326 |
 | Build success / failure / cancelled / active | 98 / 61 / 166 / 1 |
+| Build neutral / skipped / action-required | 0 / 0 / 0 |
 | Sampled accumulated Build minutes | 9,939 |
 | Duplicate unchanged-SHA Builds | 51 |
 | PR #150 Copilot review rounds | 34 |

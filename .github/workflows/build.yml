@@ -17,8 +17,9 @@ jobs:
   # upstream-port review tooling suite (tests/upstream_port:
   # classify/scan/drift/state/ref-binding/output-safety/merge-commit and the
   # verify.gates() <-> build.yml mirror), plus the stdlib-only workflow
-  # contract suite under tests/workflows. None needs the arm-none-eabi
-  # cross-toolchain or a 16 MB ROM build. Only a native C compiler
+  # contract suite under tests/workflows and workflow-pilot reporter
+  # regression suite. None needs the arm-none-eabi cross-toolchain or a
+  # 16 MB ROM build. Only a native C compiler
   # (build-essential) and libmgba-dev are installed, since the one integration
   # test that actually drives libmGBA (test_backend_integration.py) compiles
   # its tiny backend for the *host*, never the GBA target; the upstream-port
@@ -85,6 +86,9 @@ jobs:
     # stdlib/YAML-text parsing; no ROM/toolchain.
     - name: Run workflow contract test suite
       run: python3 -m unittest discover -s tests/workflows -p "test_*.py" -v
+
+    - name: Run workflow-pilot reporter regression suite (issue #176)
+      run: python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v
 
     # Issue #18 host-lane closure fix: the scripts/localization package's
     # own pure-stdlib unit test suite (schema/pseudo/catalog/generate/CLI/

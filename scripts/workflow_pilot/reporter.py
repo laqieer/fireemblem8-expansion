@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -16,6 +17,7 @@ from typing import Any, Iterable
 
 SCHEMA_VERSION = 1
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 REVERT_RE = re.compile(r"(?im)^This reverts commit ([0-9a-f]{40})\.\s*$")
 REVIEW_BOT = "copilot-pull-request-reviewer[bot]"
 
@@ -70,8 +72,16 @@ EVENT_TYPES = {
     "reopened",
     "review_saved",
     "security_finding",
+    "threshold_override_introduced",
 }
 EDGE_TYPES = {"checks", "consumes", "derives", "review_depends_on"}
+SAFETY_EVENT_TYPES = {
+    "broken_master",
+    "conflict_detected",
+    "escaped_defect",
+    "manual_reject",
+    "security_finding",
+}
 DELETION_TRIGGER_TYPES = {
     "artifact_checkpoint",
     "dependency_changed",
@@ -118,6 +128,20 @@ def normalized_json(value: Any) -> bytes:
         json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
         + "\n"
     ).encode("ascii")
+
+
+def threshold_override_digest(
+    pull_request: int,
+    index: int,
+    override: dict[str, Any],
+) -> str:
+    payload = {
+        "enabled": override["enabled"],
+        "index": index,
+        "pull_request": pull_request,
+        "reason": override["reason"],
+    }
+    return hashlib.sha256(normalized_json(payload)).hexdigest()
 
 
 def expect_object(value: Any, label: str) -> dict[str, Any]:
@@ -254,6 +278,7 @@ def _validate_fixture_root(fixture: dict[str, Any]) -> None:
             "repository",
             "base_sha",
             "captured_at",
+            "lifecycle_as_of",
             "window",
             "default_branch",
             "workflow_sample_size",
@@ -275,6 +300,13 @@ def _validate_fixture_root(fixture: dict[str, Any]) -> None:
     expect_string(fixture["repository"], "fixture.repository")
     expect_sha(fixture["base_sha"], "fixture.base_sha")
     captured = parse_time(fixture["captured_at"], "fixture.captured_at")
+    lifecycle_as_of = parse_time(
+        fixture["lifecycle_as_of"], "fixture.lifecycle_as_of"
+    )
+    if lifecycle_as_of < captured:
+        raise PilotDataError(
+            "fixture.lifecycle_as_of must not precede fixture.captured_at"
+        )
     window = expect_object(fixture["window"], "fixture.window")
     expect_keys(window, "fixture.window", ("start", "end"))
     start = parse_time(window["start"], "fixture.window.start")
@@ -440,7 +472,7 @@ def validate_findings(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
                 "review_id",
                 "thread_id",
                 "created_at",
-                "resolved",
+                "resolved_at",
                 "outdated",
                 "path",
             ),
@@ -450,8 +482,12 @@ def validate_findings(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
             raise PilotDataError(f"duplicate review finding {finding_id}")
         expect_int(item["review_id"], f"{label}.review_id", 1)
         expect_string(item["thread_id"], f"{label}.thread_id")
-        parse_time(item["created_at"], f"{label}.created_at")
-        expect_bool(item["resolved"], f"{label}.resolved")
+        created = parse_time(item["created_at"], f"{label}.created_at")
+        resolved = parse_time(
+            item["resolved_at"], f"{label}.resolved_at", nullable=True
+        )
+        if resolved is not None and resolved <= created:
+            raise PilotDataError(f"{label}.resolved_at must follow creation")
         expect_bool(item["outdated"], f"{label}.outdated")
         expect_string(item["path"], f"{label}.path")
         result[finding_id] = item
@@ -558,7 +594,13 @@ def validate_events(
             "new_sha",
         ),
         "closed": ("id", "type", "occurred_at", "pr_number"),
-        "conflict_detected": ("id", "type", "occurred_at", "pr_number"),
+        "conflict_detected": (
+            "id",
+            "type",
+            "occurred_at",
+            "pr_number",
+            "sha",
+        ),
         "deletion_proof": (
             "id",
             "type",
@@ -596,6 +638,15 @@ def validate_events(
         "reopened": ("id", "type", "occurred_at", "pr_number"),
         "review_saved": ("id", "type", "occurred_at", "pr_number", "minutes"),
         "security_finding": ("id", "type", "occurred_at", "pr_number", "sha"),
+        "threshold_override_introduced": (
+            "id",
+            "type",
+            "occurred_at",
+            "pr_number",
+            "sha",
+            "override_index",
+            "decision_digest",
+        ),
     }
     result: dict[str, dict[str, Any]] = {}
     for index, raw in enumerate(fixture["events"]):
@@ -629,6 +680,13 @@ def validate_events(
             expect_string(event["artifact_id"], f"{label}.artifact_id")
         if "dependency_id" in event:
             expect_string(event["dependency_id"], f"{label}.dependency_id")
+        if event_type == "threshold_override_introduced":
+            expect_int(event["override_index"], f"{label}.override_index", 0)
+            digest = event["decision_digest"]
+            if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
+                raise PilotDataError(
+                    f"{label}.decision_digest must be a lowercase SHA-256"
+                )
         if event_type == "deletion_proof":
             expect_string(event["trigger_event_id"], f"{label}.trigger_event_id")
             expect_enum(
@@ -644,6 +702,7 @@ def validate_events(
 
 def validate_edges(fixture: dict[str, Any]) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
+    identities: set[tuple[str, str, str]] = set()
     for index, raw in enumerate(fixture["dependency_edges"]):
         label = f"dependency_edges[{index}]"
         edge = expect_object(raw, label)
@@ -656,6 +715,10 @@ def validate_edges(fixture: dict[str, Any]) -> dict[str, dict[str, Any]]:
         expect_string(edge["target"], f"{label}.target")
         if edge["source"] == edge["target"]:
             raise PilotDataError(f"{label} cannot be self-referential")
+        identity = (edge["type"], edge["source"], edge["target"])
+        if identity in identities:
+            raise PilotDataError(f"{label} duplicates an existing dependency edge")
+        identities.add(identity)
         result[edge_id] = edge
     return result
 
@@ -696,6 +759,9 @@ def cross_validate_fixture(
     artifacts: dict[str, dict[str, Any]],
     edges: dict[str, dict[str, Any]],
 ) -> None:
+    lifecycle_as_of = parse_time(
+        fixture["lifecycle_as_of"], "fixture.lifecycle_as_of"
+    )
     review_threads: dict[int, set[str]] = defaultdict(set)
     for finding in findings.values():
         review_id = finding["review_id"]
@@ -708,6 +774,15 @@ def cross_validate_fixture(
                 f"review {review_id} repeats thread {finding['thread_id']!r}"
             )
         review_threads[review_id].add(finding["thread_id"])
+        resolved_at = parse_time(
+            finding["resolved_at"],
+            f"review finding {finding['id']}.resolved_at",
+            nullable=True,
+        )
+        if resolved_at is not None and resolved_at > lifecycle_as_of:
+            raise PilotDataError(
+                f"review finding {finding['id']} resolves after lifecycle_as_of"
+            )
     for review_id, review in reviews.items():
         pr_number = review["pr_number"]
         if pr_number not in pull_requests:
@@ -761,6 +836,11 @@ def cross_validate_fixture(
                 f"workflow run {run['id']} references missing commit {run['head_sha']}"
             )
     for event_id, event in events.items():
+        occurred_at = parse_time(
+            event["occurred_at"], f"event {event_id}.occurred_at"
+        )
+        if occurred_at > lifecycle_as_of:
+            raise PilotDataError(f"event {event_id!r} follows lifecycle_as_of")
         if "artifact_id" in event and event["artifact_id"] not in artifacts:
             raise PilotDataError(
                 f"event {event_id!r} references unknown artifact {event['artifact_id']!r}"
@@ -779,16 +859,94 @@ def cross_validate_fixture(
             trigger_at = parse_time(
                 trigger["occurred_at"], f"event {trigger['id']}.occurred_at"
             )
-            if proof_at < trigger_at:
+            if proof_at <= trigger_at:
                 raise PilotDataError(
-                    f"deletion proof {event_id!r} predates its trigger"
+                    f"deletion proof {event_id!r} must strictly follow its trigger"
                 )
+        sha_fields = ("sha", "old_sha", "new_sha")
+        for field in sha_fields:
+            if field not in event:
+                continue
+            sha = event[field]
+            if sha not in commits:
+                raise PilotDataError(
+                    f"event {event_id!r} {field} has no authoritative commit"
+                )
+            if "pr_number" in event:
+                pr = pull_requests[event["pr_number"]]
+                pr_history = set(pr["commit_shas"])
+                if pr["merge_sha"] is not None:
+                    pr_history.add(pr["merge_sha"])
+                if sha not in pr_history:
+                    raise PilotDataError(
+                        f"event {event_id!r} {field} is outside PR "
+                        f"{pr['number']} candidate/merge history"
+                    )
+        if event["type"] == "threshold_override_introduced":
+            committed_at = parse_time(
+                commits[event["sha"]]["committed_at"],
+                f"commit {event['sha']}.committed_at",
+            )
+            if occurred_at != committed_at:
+                raise PilotDataError(
+                    f"threshold override event {event_id!r} occurrence does not "
+                    "match its authoritative introduction commit"
+                )
+
+    edge_claims: dict[str, list[str]] = defaultdict(list)
     for artifact_id, artifact in artifacts.items():
         for edge_id in artifact["dependency_ids"]:
             if edge_id not in edges:
                 raise PilotDataError(
                     f"artifact {artifact_id!r} references missing edge {edge_id!r}"
                 )
+            edge_claims[edge_id].append(artifact_id)
+
+    review_dependency_targets = set()
+    for edge_id, edge in edges.items():
+        claims = edge_claims.get(edge_id, [])
+        if len(claims) > 1:
+            raise PilotDataError(
+                f"dependency edge {edge_id!r} has ambiguous artifact ownership"
+            )
+        if edge["type"] in {"consumes", "checks"}:
+            target = edge["target"]
+            if target not in artifacts:
+                raise PilotDataError(
+                    f"{edge['type']} edge {edge_id!r} targets unknown artifact"
+                )
+            if claims != [target]:
+                raise PilotDataError(
+                    f"{edge['type']} edge {edge_id!r} is not claimed exactly by "
+                    f"target artifact {target!r}"
+                )
+        elif claims:
+            raise PilotDataError(
+                f"artifact {claims[0]!r} claims non-consumer edge {edge_id!r}"
+            )
+
+        if edge["type"] == "derives":
+            if edge["source"] not in artifacts or edge["target"] not in artifacts:
+                raise PilotDataError(
+                    f"derives edge {edge_id!r} must connect authoritative artifacts"
+                )
+        elif edge["type"] == "review_depends_on":
+            match = re.fullmatch(r"review:([1-9][0-9]*)", edge["source"])
+            review_id = int(match.group(1)) if match is not None else None
+            if review_id not in reviews:
+                raise PilotDataError(
+                    f"review dependency edge {edge_id!r} references missing review"
+                )
+            review_dependency_targets.add(edge["target"])
+
+    for event_id, event in events.items():
+        if (
+            event["type"] == "dependency_changed"
+            and event["dependency_id"] not in review_dependency_targets
+        ):
+            raise PilotDataError(
+                f"dependency change {event_id!r} has no review dependency edge"
+            )
 
 
 def validate_fixture(fixture: Any) -> dict[str, Any]:
@@ -908,7 +1066,28 @@ def validate_decisions(
             threshold["override_history"],
             f"{label}.threshold.override_history",
         )
-        prior_override_at: datetime | None = None
+        introduction_events = {
+            event["override_index"]: event
+            for event in data["events"].values()
+            if event["type"] == "threshold_override_introduced"
+            and event["pr_number"] == number
+        }
+        if len(introduction_events) != len(
+            [
+                event
+                for event in data["events"].values()
+                if event["type"] == "threshold_override_introduced"
+                and event["pr_number"] == number
+            ]
+        ):
+            raise PilotDataError(
+                f"PR {number} threshold override provenance repeats an index"
+            )
+        if set(introduction_events) != set(range(len(override_history))):
+            raise PilotDataError(
+                f"PR {number} threshold overrides lack exact authoritative "
+                "introduction coverage"
+            )
         for override_index, raw_override in enumerate(override_history):
             override_label = (
                 f"{label}.threshold.override_history[{override_index}]"
@@ -917,22 +1096,26 @@ def validate_decisions(
             expect_keys(
                 override,
                 override_label,
-                ("recorded_at", "enabled", "reason"),
-            )
-            recorded_at = parse_time(
-                override["recorded_at"], f"{override_label}.recorded_at"
+                ("enabled", "reason"),
             )
             expect_bool(override["enabled"], f"{override_label}.enabled")
             expect_string(override["reason"], f"{override_label}.reason")
-            if prior_override_at is not None and recorded_at <= prior_override_at:
+            introduction = introduction_events[override_index]
+            if introduction["decision_digest"] != threshold_override_digest(
+                number, override_index, override
+            ):
                 raise PilotDataError(
-                    f"{label}.threshold.override_history is not strictly chronological"
+                    f"PR {number} threshold override {override_index} changed after "
+                    "its authoritative introduction"
                 )
-            if first_review is not None and recorded_at >= first_review:
+            introduced_at = parse_time(
+                data["commits"][introduction["sha"]]["committed_at"],
+                f"commit {introduction['sha']}.committed_at",
+            )
+            if first_review is not None and introduced_at >= first_review:
                 raise PilotDataError(
-                    f"PR {number} threshold override was recorded after first review"
+                    f"PR {number} threshold override was introduced after first review"
                 )
-            prior_override_at = recorded_at
 
         expect_enum(record["gate_mode"], GATE_MODES, f"{label}.gate_mode")
         stack = expect_object(record["stack"], f"{label}.stack")
@@ -986,6 +1169,18 @@ def validate_decisions(
         if not pilot["included"] and disposition in {"evaluate", "graduated"}:
             raise PilotDataError(f"{label}.pilot exclusion contradicts disposition")
         pr_decisions[number] = record
+
+    introduction_prs = {
+        event["pr_number"]
+        for event in data["events"].values()
+        if event["type"] == "threshold_override_introduced"
+    }
+    orphan_introductions = sorted(introduction_prs - set(pr_decisions))
+    if orphan_introductions:
+        raise PilotDataError(
+            "threshold override provenance has no decision record for PRs "
+            + ", ".join(str(number) for number in orphan_introductions)
+        )
 
     spotlight = data["fixture"]["spotlight_pr"]
     if spotlight not in pr_decisions:
@@ -1065,10 +1260,16 @@ def validate_decisions(
                 raise PilotDataError(f"{label}.history is not strictly chronological")
             previous_at = recorded_at
         current = history[-1]["disposition"]
-        captured = parse_time(
-            data["fixture"]["captured_at"], "fixture.captured_at"
+        lifecycle_as_of = parse_time(
+            data["fixture"]["lifecycle_as_of"], "fixture.lifecycle_as_of"
         )
-        if expires_at is not None and expires_at <= captured and current != "Delete":
+        if previous_at is not None and previous_at > lifecycle_as_of:
+            raise PilotDataError(f"{label}.history follows lifecycle_as_of")
+        if (
+            expires_at is not None
+            and expires_at <= lifecycle_as_of
+            and current != "Delete"
+        ):
             raise PilotDataError(f"artifact {artifact_id!r} is expired but not deleted")
         artifact_decisions[artifact_id] = record
     expect_unique(unique_decisions, "artifact unique decisions")
@@ -1162,6 +1363,19 @@ def validate_artifact_lifecycle(
                 proof["occurred_at"], f"event {proof['id']}.occurred_at"
             ),
         )
+        latest_proof_at = parse_time(
+            latest_proof["occurred_at"],
+            f"event {latest_proof['id']}.occurred_at",
+        )
+        disposition_at = parse_time(
+            decision["history"][-1]["recorded_at"],
+            f"artifact decision {artifact_id}.current recorded_at",
+        )
+        if disposition_at <= latest_proof_at:
+            raise PilotDataError(
+                f"artifact {artifact_id!r} current disposition must strictly "
+                "follow every deletion proof"
+            )
         current_disposition = decision["history"][-1]["disposition"]
         if latest_proof["semantic_result"] == "pass":
             if latest_proof["restored_result"] != "pass":
@@ -1213,6 +1427,8 @@ def run_elapsed_seconds(
     run: dict[str, Any],
     captured: datetime,
 ) -> Decimal:
+    if run["status"] == "queued":
+        return Decimal(0)
     started = parse_time(run["started_at"], f"run {run['id']}.started_at", nullable=True)
     if started is None:
         return Decimal(0)
@@ -1294,29 +1510,36 @@ def report_delivery(data: dict[str, Any]) -> dict[str, Any]:
                 for run in branch_runs
             ),
         )
-        unresolved_prior = False
+        prior_findings: list[dict[str, Any]] = []
         clean_at = None
         for review in reviews:
             review_findings = findings_by_review.get(review["id"], [])
-            if any(not finding["resolved"] for finding in review_findings):
-                unresolved_prior = True
+            review_at = parse_time(
+                review["submitted_at"], f"review {review['id']}.submitted_at"
+            )
             if (
                 not review_findings
-                and not unresolved_prior
+                and all(
+                    (
+                        resolved_at := parse_time(
+                            finding["resolved_at"],
+                            f"finding {finding['id']}.resolved_at",
+                            nullable=True,
+                        )
+                    )
+                    is not None
+                    and resolved_at < review_at
+                    for finding in prior_findings
+                )
                 and is_ancestor(
                     review["commit_sha"],
                     pr["head_sha"],
                     data["commits"],
                 )
             ):
-                clean_at = parse_time(
-                    review["submitted_at"], f"review {review['id']}.submitted_at"
-                )
+                clean_at = review_at
                 break
-            if review_findings and all(
-                finding["resolved"] for finding in review_findings
-            ):
-                unresolved_prior = False
+            prior_findings.extend(review_findings)
         if clean_at is not None:
             first_push_durations.append(
                 rounded_tenth_hours(
@@ -1361,7 +1584,8 @@ def report_reviews(data: dict[str, Any]) -> dict[str, Any]:
     findings = [
         finding
         for finding in data["findings"].values()
-        if finding["review_id"] in review_ids and finding["resolved"]
+        if finding["review_id"] in review_ids
+        and finding["resolved_at"] is not None
     ]
     changed_lines = pr["additions"] + pr["deletions"]
     superseded_reviews = sum(
@@ -1417,9 +1641,8 @@ def report_builds(data: dict[str, Any]) -> dict[str, Any]:
     head_branch = data["pull_requests"][spotlight]["head_branch"]
     spotlight_builds = [
         run
-        for run in data["runs"].values()
-        if run["workflow"] == fixture["build_workflow"]
-        and run["head_branch"] == head_branch
+        for run in builds
+        if run["head_branch"] == head_branch
     ]
     spotlight_seconds = sum(
         (run_elapsed_seconds(run, captured) for run in spotlight_builds),
@@ -1434,6 +1657,9 @@ def report_builds(data: dict[str, Any]) -> dict[str, Any]:
         "success": conclusions["success"],
         "failure": conclusions["failure"],
         "cancelled": conclusions["cancelled"],
+        "action_required": conclusions["action_required"],
+        "neutral": conclusions["neutral"],
+        "skipped": conclusions["skipped"],
         "active": conclusions["active"],
         "minutes": int(total_seconds // Decimal(60)),
         "duplicate_unchanged_sha": duplicates,
@@ -1443,6 +1669,9 @@ def report_builds(data: dict[str, Any]) -> dict[str, Any]:
             "success": spotlight_conclusions["success"],
             "failure": spotlight_conclusions["failure"],
             "cancelled": spotlight_conclusions["cancelled"],
+            "action_required": spotlight_conclusions["action_required"],
+            "neutral": spotlight_conclusions["neutral"],
+            "skipped": spotlight_conclusions["skipped"],
             "active": spotlight_conclusions["active"],
             "minutes": int(spotlight_seconds // Decimal(60)),
         },
@@ -1455,17 +1684,20 @@ def report_events(data: dict[str, Any]) -> dict[str, Any]:
         data["fixture"]["window"]["start"], "fixture.window.start"
     )
     end = parse_time(data["fixture"]["window"]["end"], "fixture.window.end")
-    events = [
+    in_window_events = [
         event
         for event in data["events"].values()
-        if event.get("pr_number") == spotlight
-        and start
+        if start
         <= parse_time(event["occurred_at"], f"event {event['id']}.occurred_at")
         <= end
     ]
-    counts: dict[str, int] = defaultdict(int)
-    for event in events:
-        counts[event["type"]] += 1
+    spotlight_counts: dict[str, int] = defaultdict(int)
+    safety_counts: dict[str, int] = defaultdict(int)
+    for event in in_window_events:
+        if event.get("pr_number") == spotlight:
+            spotlight_counts[event["type"]] += 1
+        if event["type"] in SAFETY_EVENT_TYPES:
+            safety_counts[event["type"]] += 1
     reverts = []
     for commit in data["commits"].values():
         match = REVERT_RE.search(commit["message"])
@@ -1485,14 +1717,16 @@ def report_events(data: dict[str, Any]) -> dict[str, Any]:
     derived_superseded = max(0, len(candidate_shas) - 1)
     return {
         "spotlight_pr": spotlight,
-        "base_changes": counts["base_changed"],
-        "close_reopen_cycles": min(counts["closed"], counts["reopened"]),
-        "conflicts": counts["conflict_detected"],
+        "base_changes": spotlight_counts["base_changed"],
+        "close_reopen_cycles": min(
+            spotlight_counts["closed"], spotlight_counts["reopened"]
+        ),
+        "conflicts": safety_counts["conflict_detected"],
         "superseded_candidates": derived_superseded,
-        "escaped_defects": counts["escaped_defect"],
-        "broken_master": counts["broken_master"],
-        "security_findings": counts["security_finding"],
-        "manual_rejects": counts["manual_reject"],
+        "escaped_defects": safety_counts["escaped_defect"],
+        "broken_master": safety_counts["broken_master"],
+        "security_findings": safety_counts["security_finding"],
+        "manual_rejects": safety_counts["manual_reject"],
         "reverts": reverts,
     }
 
@@ -1634,6 +1868,7 @@ def build_report(fixture: Any, raw_decisions: Any) -> dict[str, Any]:
             "repository": data["fixture"]["repository"],
             "base_sha": data["fixture"]["base_sha"],
             "captured_at": data["fixture"]["captured_at"],
+            "lifecycle_as_of": data["fixture"]["lifecycle_as_of"],
             "window": data["fixture"]["window"],
         },
         "identities": {
