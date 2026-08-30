@@ -53,6 +53,7 @@ TRANSCRIPT_SESSION = {
 PLANNER_DRIVER_SOURCES = (
     "src/action_semantics.c",
     "src/bmtarget.c",
+    "src/bmtrick.c",
     "src/expansion_autoplay_planner.c",
     "tools/gba-playtest/tests/c/expansion_autoplay_planner_driver.c",
 )
@@ -253,6 +254,11 @@ def _commit(observation, choice, token=None):
 
 def _cancel(observation):
     return planner.Command(planner.CommandKind.CANCEL, observation.run_id, observation.observation_id)
+
+
+def _checkpoint_prefix(observation):
+    return (0x41504C4E, planner.PROTOCOL_VERSION, 52, observation.run_id, observation.chapter,
+            0, observation.chapter_turn, *observation.rng_state, observation.rng_lcg, observation.rng_consumption)
 
 
 def _assert_page_mutation_rejected(
@@ -3211,25 +3217,10 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             choice = implementation.choose(first)
             self.assertEqual(implementation.last_semantic_digest, planner._digest(planner._observation_semantics(first)))
             waiting = transport.exchange(_commit(first, choice))
-            self.assertEqual(waiting.state, 2)
-            self.assertEqual(waiting.chapter, 2)
+            self.assertEqual((waiting.state, waiting.chapter), (2, 2))
             self.assertEqual(len(transport.checkpoint), 13)
             transition_checkpoint = transport.checkpoint
-            self.assertEqual(
-                transition_checkpoint[:12],
-                (
-                    0x41504C4E,
-                    planner.PROTOCOL_VERSION,
-                    52,
-                    first.run_id,
-                    first.chapter,
-                    0,
-                    first.chapter_turn,
-                    *first.rng_state,
-                    first.rng_lcg,
-                    first.rng_consumption,
-                ),
-            )
+            self.assertEqual(transition_checkpoint[:12], _checkpoint_prefix(first))
             self.assertNotEqual(transition_checkpoint[12], 0)
             self.assertEqual(waiting.run_id, first.run_id)
             second = planner.collect_observation_pages(transport, waiting)
@@ -3237,13 +3228,22 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             choice = implementation.choose(second)
             committed = transport.exchange(_commit(second, choice))
             self.assertEqual(committed.state, 2)
-            self.assertEqual(transport.checkpoint, transition_checkpoint)
+            replacement_checkpoint = transport.checkpoint
+            self.assertNotEqual(replacement_checkpoint, transition_checkpoint)
+            self.assertEqual(replacement_checkpoint[:12], _checkpoint_prefix(second))
+            third = planner.collect_observation_pages(transport, committed)
+            self.assertEqual(third.chapter, 3)
+            self.assertEqual(transport.checkpoint, replacement_checkpoint)
+            choice = implementation.choose(third)
+            committed = transport.exchange(_commit(third, choice))
+            self.assertEqual((committed.state, committed.chapter), (2, 3))
+            self.assertEqual(transport.checkpoint, replacement_checkpoint)
             settled = planner.collect_observation_pages(transport, committed)
             cancelled = transport.exchange(_cancel(settled))
             self.assertEqual(cancelled.state, 4)
             self.assertTrue(all(value == 0 for value in transport.checkpoint))
-            return settled, transition_checkpoint, transport.transcript.export()
-    def test_host_driven_production_mailbox_replays_two_chapters(self):
+            return settled, replacement_checkpoint, transport.transcript.export()
+    def test_host_driven_production_mailbox_replays_multiple_chapters(self):
         with self._fixture() as (rom, backend, _):
             symbols = subprocess.run(["arm-none-eabi-nm", str(rom.with_suffix(".elf"))], capture_output=True, text=True)
             self.assertEqual(symbols.returncode, 0, symbols.stdout + symbols.stderr)
@@ -3261,18 +3261,46 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                 self.assertEqual(planner.replay_transcript_on_clean_transport(recorded, lambda: PlannerProcessTransport(backend, rom)), recorded)
             imported = planner.PlannerTranscript.import_production_bytes(scripted[2])
             self.assertEqual(imported.export(), scripted[2])
-            checkpoint_event = next(
-                event for event in imported.events
-                if event["event"] == "settled" and any(event["checkpoint"]))
-            for word in (0, 1, 2, 3, 4, 5, 6, 12):
-                document = json.loads(scripted[2])
-                target = next(event for event in document["events"]
-                              if event["sequence"] == checkpoint_event["sequence"])
-                target["checkpoint"][word] ^= 1
+            def reject(document, message=None):
                 _rechain_transcript(document)
-                _assert_replay_rejected(
-                    self, planner._canonical(document),
+                _assert_replay_rejected(self, planner._canonical(document), message,
                     validation_mode=planner.ValidationMode.PRODUCTION)
+            document = json.loads(scripted[2])
+            checkpoints = [_accepted_response(document, "COMMIT", index)[1]
+                           for index in range(2)]
+            self.assertEqual([event["checkpoint"][4] for event in checkpoints], [1, 2])
+            for checkpoint_event in checkpoints:
+                for word in range(13):
+                    document = json.loads(scripted[2])
+                    target = next(event for event in document["events"] if
+                                  event["sequence"] == checkpoint_event["sequence"])
+                    target["checkpoint"][word] ^= 1
+                    reject(document)
+            for word in (5, *range(7, 12)):
+                document = json.loads(scripted[2])
+                for event in document["events"]:
+                    if event["event"] == "settled" and event["checkpoint"][4] == 2:
+                        event["checkpoint"][word] ^= 1
+                reject(document, "checkpoint does not bind")
+            stale = json.loads(scripted[2])
+            prior_checkpoint = _accepted_response(stale, "COMMIT", 0)[1]["checkpoint"]
+            for event in stale["events"]:
+                if event["event"] == "settled" and event["checkpoint"][4] == 2:
+                    event["checkpoint"] = prior_checkpoint
+            reject(stale, "checkpoint changed")
+            missing = json.loads(scripted[2])
+            _accepted_response(missing, "COMMIT", 0)[1]["checkpoint"] = [0] * 13
+            reject(missing, "cleared checkpoint")
+            same_chapter = json.loads(scripted[2])
+            settled = _accepted_response(same_chapter, "COMMIT", 2)[1]
+            settled["checkpoint"][12] ^= 1
+            reject(same_chapter, "checkpoint changed")
+            wrong_stage = json.loads(scripted[2])
+            settled = next(event for event in wrong_stage["events"] if
+                           event["event"] == "settled" and event["command_words"][6]
+                           and any(event["checkpoint"]))
+            settled["checkpoint"][12] ^= 1
+            reject(wrong_stage, "checkpoint changed")
             forged = json.loads(scripted[2])
             dimensions = {(event["observation"]["run_id"], event["observation"]["observation_id"]): next(field["value"] for field in event["observation"]["fields"] if field["name"] == "map_dimensions") for event in forged["events"] if event["event"] == "observation_complete"}
             first_identity = planner._runtime_scenario_identity(1, 1, next(iter(dimensions.values())))
@@ -3523,16 +3551,9 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
     def test_world_map_transition_records_settled_checkpoint(self):
         with self._fixture(transition_subcode=1) as (rom, backend, _):
             _, checkpoint, transcript = self._run_planner(
-                backend,
-                rom,
-                planner.ScriptedPlanner(),
-            )
-            self.assertEqual(checkpoint[4], 1)
-            self.assertNotEqual(checkpoint[12], 0)
-            self.assertEqual(
-                planner.PlannerTranscript.import_bytes(transcript).export(),
-                transcript,
-            )
+                backend, rom, planner.ScriptedPlanner())
+            self.assertEqual((checkpoint[4], checkpoint[12] != 0,
+                planner.PlannerTranscript.import_bytes(transcript).export()), (2, True, transcript))
     def test_no_save_transition_records_and_rearms_checkpoint(self):
         with self._fixture(transition_subcode=3) as (rom, backend, _):
             symbols = subprocess.run(
@@ -3566,16 +3587,9 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
             self.assertIn("<Proc_Goto>", no_save)
             self.assertIn("<Proc_EndEach>", no_save)
             _, checkpoint, transcript = self._run_planner(
-                backend,
-                rom,
-                planner.ScriptedPlanner(),
-            )
-            self.assertEqual(checkpoint[4], 1)
-            self.assertNotEqual(checkpoint[12], 0)
-            self.assertEqual(
-                planner.PlannerTranscript.import_bytes(transcript).export(),
-                transcript,
-            )
+                backend, rom, planner.ScriptedPlanner())
+            self.assertEqual((checkpoint[4], checkpoint[12] != 0,
+                planner.PlannerTranscript.import_bytes(transcript).export()), (2, True, transcript))
     def test_exhausted_runs_restore_without_fallback_or_reentry(self):
         for candidate_mode, rejection in ((1, 5), (2, 7)):
             with self.subTest(candidate_mode=candidate_mode):

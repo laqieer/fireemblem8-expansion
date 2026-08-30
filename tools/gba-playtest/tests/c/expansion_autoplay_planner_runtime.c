@@ -145,6 +145,7 @@ enum PlannerRuntimeStage
     PLANNER_RUNTIME_DELAY_CHAPTER_ONE,
     PLANNER_RUNTIME_WAIT_CHAPTER_TWO,
     PLANNER_RUNTIME_DELAY_CHAPTER_TWO,
+    PLANNER_RUNTIME_DELAY_CHAPTER_THREE,
     PLANNER_RUNTIME_WAIT_FINAL,
     PLANNER_RUNTIME_DONE,
 };
@@ -257,7 +258,10 @@ struct Trap* GetTrapAt(int x, int y)
 }
 int GetObstacleHpAt(int x, int y)
 {
-    struct Trap* trap = GetObstacleTrapForTarget(x, y);
+    struct Trap* trap = GetTrapAt(x, y);
+
+    if (trap == NULL)
+        trap = GetObstacleTrapForTarget(x, y);
     return trap == NULL ? 0 : trap->extra;
 }
 int GetBallistaItemAt(int x, int y)
@@ -490,13 +494,14 @@ static void InitializeRuntime(void)
 #endif
     sStage = PLANNER_RUNTIME_WAIT_START;
 }
-static void PublishChapterTwo(struct AiDecision* decision)
+static void PublishNextChapter(struct AiDecision* decision, int chapter,
+                               enum PlannerRuntimeStage stage)
 {
     u32 command = _EvtArg0(
         EV_CMD_CHANGECHAPTER,
-        2,
+        chapter,
         FE8_AUTOPLAY_PLANNER_RUNTIME_TRANSITION_SUBCODE,
-        2);
+        chapter);
     struct EventEngineProc event;
 
     memset(&event, 0, sizeof(event));
@@ -505,19 +510,13 @@ static void PublishChapterTwo(struct AiDecision* decision)
     event.evStateBits = EV_STATE_ABORT;
     Event2A_MoveToChapter(&event);
     EventEngine_OnEnd(&event);
-    gPlaySt.chapterIndex = 2;
+    gPlaySt.chapterIndex = chapter;
     gPlaySt.chapterTurnNumber = 1;
-    sConvoy[1] = 2;
+    sConvoy[chapter - 1] = chapter;
     ExpansionAutoplayPlanner_OnMapReady();
     PrepareDecision(decision);
     ExpansionAutoplayPlanner_OfferDecision(decision);
-    sStage = PLANNER_RUNTIME_WAIT_CHAPTER_TWO;
-}
-static void PublishFinalObservation(struct AiDecision* decision)
-{
-    PrepareDecision(decision);
-    ExpansionAutoplayPlanner_OfferDecision(decision);
-    sStage = PLANNER_RUNTIME_WAIT_FINAL;
+    sStage = stage;
 }
 static void PollCommittedDecision(
     struct AiDecision* decision,
@@ -576,7 +575,6 @@ static void PollCommittedDecision(
 static void TickRuntime(void)
 {
     static struct AiDecision decision;
-    enum ExpansionAutoplayPlannerDecisionResult result;
 
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_IGNORE_COMMANDS
     if (gExpansionAutoplayPlannerObservation.state
@@ -611,7 +609,7 @@ static void TickRuntime(void)
         return;
     case PLANNER_RUNTIME_DELAY_CHAPTER_ONE:
         if (--sCommitDelayFrames == 0)
-            PublishChapterTwo(&decision);
+            PublishNextChapter(&decision, 2, PLANNER_RUNTIME_WAIT_CHAPTER_TWO);
         return;
     case PLANNER_RUNTIME_WAIT_CHAPTER_TWO:
         PollCommittedDecision(
@@ -620,12 +618,18 @@ static void TickRuntime(void)
         return;
     case PLANNER_RUNTIME_DELAY_CHAPTER_TWO:
         if (--sCommitDelayFrames == 0)
-            PublishFinalObservation(&decision);
+            PublishNextChapter(&decision, 3, PLANNER_RUNTIME_WAIT_FINAL);
+        return;
+    case PLANNER_RUNTIME_DELAY_CHAPTER_THREE:
+        if (--sCommitDelayFrames == 0)
+        {
+            PrepareDecision(&decision);
+            ExpansionAutoplayPlanner_OfferDecision(&decision);
+            sStage = PLANNER_RUNTIME_WAIT_FINAL;
+        }
         return;
     case PLANNER_RUNTIME_WAIT_FINAL:
-        result = ExpansionAutoplayPlanner_PollDecision(&decision);
-        if (result != EXPANSION_AUTOPLAY_PLANNER_DECISION_WAIT)
-            sStage = PLANNER_RUNTIME_DONE;
+        PollCommittedDecision(&decision, PLANNER_RUNTIME_DELAY_CHAPTER_THREE);
         return;
     default:
         return;

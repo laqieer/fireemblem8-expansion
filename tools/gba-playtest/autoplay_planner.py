@@ -421,6 +421,7 @@ def _validate_checkpoint_binding(
     command: dict[str, object] | None,
     acknowledgement: dict[str, object] | None,
     previous_observation: dict[str, object] | None,
+    current_observation: dict[str, object],
     terminal: dict[str, object],
     initial_settlement: bool,
 ) -> None:
@@ -429,35 +430,50 @@ def _validate_checkpoint_binding(
         and acknowledgement is not None
         and acknowledgement["result"] == 1
         and acknowledgement["rejection"] == 0 else None)
+    accepted_transition = (
+        accepted_kind == CommandKind.COMMIT.value
+        and previous_observation is not None
+        and current_observation["chapter"] != previous_observation["chapter"])
     if terminal["state"] in {4, 5}:
         if any(checkpoint):
             raise PlannerError("terminal response retained checkpoint")
         return
     if not any(checkpoint):
-        if (previous_checkpoint is not None and any(previous_checkpoint)
-                and accepted_kind != CommandKind.START.value):
+        if (accepted_transition
+                or (previous_checkpoint is not None
+                    and any(previous_checkpoint)
+                    and accepted_kind != CommandKind.START.value)):
             raise PlannerError("nonterminal response cleared checkpoint")
         return
     if checkpoint[3] == 0 or checkpoint[3] not in {
             session["ready_run_id"], session["run_id"]} or checkpoint[12] == 0:
         raise PlannerError("checkpoint run or semantic identity mismatch")
     if previous_checkpoint is not None and any(previous_checkpoint):
-        if checkpoint != previous_checkpoint:
+        checkpoint_unchanged = checkpoint == previous_checkpoint
+        if accepted_transition == checkpoint_unchanged:
             raise PlannerError("checkpoint changed after publication")
-        return
+        if checkpoint_unchanged:
+            return
     if command is None:
         if (not initial_settlement
                 or checkpoint[3] != session["ready_run_id"]):
             raise PlannerError("checkpoint appeared without accepted COMMIT")
         return
-    if accepted_kind != CommandKind.COMMIT.value or previous_observation is None:
+    if not accepted_transition:
         raise PlannerError("checkpoint appeared without accepted COMMIT")
-    campaign = previous_observation.get("campaign")
+    campaign = current_observation.get("campaign")
+    previous_rng, current_rng = (
+        [*observation["rng_state"], observation["rng_lcg"], observation["rng_consumption"]]
+        for observation in (previous_observation, current_observation)
+    )
+    expected_rng = (current_rng if checkpoint[11] == current_rng[4]
+                    else previous_rng if checkpoint[11] == previous_rng[4] else None)
     if (checkpoint[3] != command["run_id"]
             or checkpoint[4] != previous_observation["chapter"]
             or checkpoint[6] != previous_observation["chapter_turn"]
-            or checkpoint[11] < previous_observation["rng_consumption"]
-            or campaign is not None and checkpoint[5] != campaign["mode"]):
+            or not previous_rng[4] <= checkpoint[11] <= current_rng[4]
+            or (expected_rng is not None and checkpoint[7:12] != expected_rng)
+            or (campaign is not None and checkpoint[5] != campaign["mode"])):
         raise PlannerError("checkpoint does not bind settled campaign state")
 
 
@@ -2046,7 +2062,7 @@ class PlannerTranscript:
                     pending_previous_checkpoint, (
                         settled_command["command"]
                         if settled_command is not None else None),
-                    settled_ack, pending_previous_observation, terminal,
+                    settled_ack, pending_previous_observation, latest_observation, terminal,
                     settled_command is None and latest_command_words is None)
                 transition_reset = (
                     settled_command is not None and settled_ack is not None

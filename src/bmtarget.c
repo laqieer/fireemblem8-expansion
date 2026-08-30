@@ -197,17 +197,19 @@ void TryAddTrapsToTargetList(void) {
 #ifndef FE8_ARCHIVAL_BUILD
 struct Trap* GetObstacleTrapForTarget(int x, int y)
 {
-    struct Trap* trap = GetTrapAt(x, y);
+    struct Trap* trap;
 
-    if (trap != NULL && trap->type == TRAP_OBSTACLE)
-        return trap;
+    for (trap = GetTrap(0); trap->type != TRAP_NONE; ++trap)
+        if (trap->xPos == x && trap->yPos == y)
+            return trap->type == TRAP_OBSTACLE ? trap : NULL;
     if (y <= 0
         || gBmMapTerrain[y][x] != TERRAIN_WALL_DAMAGED
         || gBmMapTerrain[y - 1][x] != TERRAIN_WALL_DAMAGED)
         return NULL;
-    trap = GetTrapAt(x, y - 1);
-    return trap != NULL && trap->type == TRAP_OBSTACLE
-        ? trap : NULL;
+    for (trap = GetTrap(0); trap->type != TRAP_NONE; ++trap)
+        if (trap->xPos == x && trap->yPos == y - 1)
+            return trap->type == TRAP_OBSTACLE ? trap : NULL;
+    return NULL;
 }
 
 bool IsSnagObstacleTarget(int x, int y)

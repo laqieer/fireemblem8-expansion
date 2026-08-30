@@ -1120,7 +1120,7 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		PLANNER_PRODUCTION_ELF="$(MODERN_AUTOPLAY_PLANNER_ELF)" \
 		"$(PYTHON)" -m unittest \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerBridgeTests \
-		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_production_mailbox_replays_two_chapters \
+		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_host_driven_production_mailbox_replays_multiple_chapters \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_clean_transport_replays_rejection_and_cancel \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_world_map_transition_records_settled_checkpoint \
 		tools.gba-playtest.tests.test_autoplay_planner.PlannerLibmGBAIntegrationTests.test_no_save_transition_records_and_rearms_checkpoint \

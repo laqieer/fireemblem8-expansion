@@ -37,6 +37,8 @@
         } \
     } while (0)
 
+#define sTraps (GetTrap(0))
+
 void ExpansionAutoplayPlanner_SetRunIdForTest(u32 runId);
 
 struct PlaySt gPlaySt;
@@ -77,7 +79,6 @@ static struct Unit sUnit;
 static struct Unit sAlly;
 static struct Unit sEnemy;
 static struct Unit sSummon;
-static struct Trap sTraps[TRAP_MAX_COUNT];
 static struct Unit sMaxUnits[132];
 static u8 sPermanentFlags[256];
 static u8 sChapterFlags[256];
@@ -88,9 +89,7 @@ static bool sConvoyAvailable = true;
 static bool sUseMaxUnits;
 static int sMagRange = 1;
 static int sRedUnitCount;
-static int sTrapApplyCount;
 static int sConsumedSlot;
-static bool sTrapContractFailed;
 static u16 sConvoy[CONVOY_ITEM_COUNT];
 static u8 sMovementData[17][32];
 static u8* sMovementRows[17];
@@ -319,30 +318,6 @@ bool IsThereClosedDoorAt(s8 x, s8 y)
 
 s8 IsItemHammernable(int item) { return item != 0 && (item & 0xFF00) != 0xFF00; }
 
-struct Trap* GetTrap(int id)
-{
-    return &sTraps[id];
-}
-
-struct Trap* GetTrapAt(int x, int y)
-{
-    int index;
-    for (index = 0; index < TRAP_MAX_COUNT; index++)
-    {
-        if (sTraps[index].type == TRAP_NONE)
-            break;
-        if (sTraps[index].xPos == x && sTraps[index].yPos == y)
-            return &sTraps[index];
-    }
-    return NULL;
-}
-
-int GetObstacleHpAt(int x, int y)
-{
-    struct Trap* trap = GetObstacleTrapForTarget(x, y);
-    return trap == NULL ? 0 : trap->extra;
-}
-
 int GetBallistaItemAt(int x, int y)
 {
     struct Trap* trap = GetTrapAt(x, y);
@@ -358,27 +333,6 @@ int GetBallistaItemAt(int x, int y)
 struct Trap* GetRiddenBallistaAt(int x, int y)
 {
     return GetBallistaItemAt(x, y) == 0 ? NULL : GetTrapAt(x, y);
-}
-
-struct Trap* AddTrap(int x, int y, int trapType, int meta)
-{
-    struct Trap* trap = &sTraps[sTrapApplyCount];
-    if ((trapType == TRAP_TORCHLIGHT && meta != 8)
-        || sTrapApplyCount >= TRAP_MAX_COUNT)
-    {
-        sTrapContractFailed = true;
-        return NULL;
-    }
-    trap->xPos = x;
-    trap->yPos = y;
-    trap->type = trapType;
-    sTrapApplyCount++;
-    return trap;
-}
-
-struct Trap* AddLightRune(int x, int y)
-{
-    return AddTrap(x, y, TRAP_LIGHT_RUNE, 0);
 }
 
 void SetUnitStatusExt(struct Unit* unit, int status, int duration)
@@ -719,7 +673,7 @@ static void ResetActionFixture(int width, int height)
     memset(&sAlly, 0, sizeof(sAlly));
     memset(&sEnemy, 0, sizeof(sEnemy));
     memset(&sSummon, 0, sizeof(sSummon));
-    memset(sTraps, 0, sizeof(sTraps));
+    ClearTraps();
     memset(&gActionData, 0, sizeof(gActionData));
     memset(TerrainTable_MovCost_FlyNormal, 0,
            sizeof(TerrainTable_MovCost_FlyNormal));
@@ -744,9 +698,7 @@ static void ResetActionFixture(int width, int height)
     sFlagPointersAvailable = true;
     sConvoyAvailable = true;
     sRedUnitCount = 0;
-    sTrapApplyCount = 0;
     sConsumedSlot = -1;
-    sTrapContractFailed = false;
 }
 
 static int CountActionId(u32 count, int actionId)
@@ -791,10 +743,11 @@ static int TestActionSemanticEffects(void)
     sClass.attributes = CA_SUMMON;
     SetupTestUnit(&sAlly, &sAllyCharacter, &sAllyClass, 2, 4, 4);
     CHECK(ActionSemantics_ApplyTorchTarget(1, 6)
-              && ActionSemantics_ApplyTorchTarget(6, 1) && !sTrapContractFailed
-              && sTrapApplyCount == 2 && sTraps[1].xPos == 6 && sTraps[1].yPos == 1,
+              && ActionSemantics_ApplyTorchTarget(6, 1)
+              && sTraps[0].extra == 8 && sTraps[1].extra == 8
+              && sTraps[1].xPos == 6 && sTraps[1].yPos == 1,
           "Torch effect must use both selected coordinates");
-    CHECK(!ActionSemantics_ApplyTorchTarget(8, 1) && sTrapApplyCount == 2,
+    CHECK(!ActionSemantics_ApplyTorchTarget(8, 1) && sTraps[2].type == TRAP_NONE,
           "out-of-bounds Torch coordinate must not apply");
     CHECK(ActionSemantics_ApplyWarpTarget(&sAlly, 1, 5)
               && sAlly.xPos == 1 && sAlly.yPos == 5
@@ -1797,6 +1750,14 @@ static int TestBallistaAndWallCombat(void)
     CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
               && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 0,
           "out-of-range target must not receive ballista combat");
+    sTraps[0].type = TRAP_OBSTACLE;
+    sTraps[0].yPos = 1;
+    sTraps[1].xPos = 2;
+    sTraps[1].yPos = 2;
+    sTraps[1].extra = ITEM_BALLISTA_REGULAR;
+    sTerrainData[1][2] = sTerrainData[2][2] = TERRAIN_WALL_DAMAGED;
+    CHECK(GetObstacleHpAt(2, 2) == ITEM_BALLISTA_REGULAR,
+          "later direct ballista data must win before wall aliasing");
     ResetActionFixture(6, 6);
     sUnit.items[0] = ITEM_SWORD_IRON | (20 << 8);
     sMovementData[3][2] = 1;
@@ -1822,16 +1783,19 @@ static int TestBallistaAndWallCombat(void)
         wallBottom += action->xTarget == 3 && action->yTarget == 3;
         snag += action->xTarget == 1 && action->yTarget == 2;
     }
-    CHECK(wallTop == 1 && wallBottom == 1 && snag == 1,
+    CHECK(wallTop == 1 && wallBottom == 1 && snag == 1 && GetObstacleHpAt(3, 2) == 20
+              && GetObstacleHpAt(3, 3) == 20 && GetObstacleHpAt(1, 2) == 10,
           "both damaged-wall cells and Snag must coexist");
     sTerrainData[2][3] = TERRAIN_SNAG;
     CHECK(!IsObstacleAttackTargetAt(
               sUnit.items[0], 2, 3, 3, 3)
               && IsObstacleAttackTargetAt(
-                sUnit.items[0], 2, 2, 3, 2),
+                sUnit.items[0], 2, 2, 3, 2)
+              && GetObstacleHpAt(3, 3) == 0,
           "Snag above an unrelated damaged wall must not own it");
     sTerrainData[2][3] = 1;
     CHECK(!IsObstacleAttackTargetAt(sUnit.items[0], 2, 3, 3, 3)
+              && GetObstacleHpAt(3, 3) == 0
               && GetObstacleTrapForTarget(0, 0) == NULL,
           "ordinary and edge cells must not borrow an obstacle");
     sTerrainData[2][3] = TERRAIN_WALL_DAMAGED;
@@ -1858,7 +1822,8 @@ static int TestBallistaAndWallCombat(void)
                   "stale lower wall must reject before executor");
             sTerrainData[3][3] = TERRAIN_WALL_DAMAGED;
             sTraps[0].type = TRAP_NONE;
-            CHECK(GetObstacleTrapForTarget(3, 3) == NULL,
+            CHECK(GetObstacleTrapForTarget(3, 3) == NULL
+                      && GetObstacleHpAt(3, 3) == 0,
                   "destroyed wall trap must not remain targetable");
             break;
         }

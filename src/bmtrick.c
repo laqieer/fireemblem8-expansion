@@ -259,6 +259,9 @@ int GetObstacleHpAt(int x, int y)
         return trap->extra;
     return 0;
 #else
+    for (trap = GetTrap(0); trap->type != TRAP_NONE; ++trap)
+        if (trap->xPos == x && trap->yPos == y)
+            return trap->extra;
     trap = GetObstacleTrapForTarget(x, y);
     return trap == NULL ? 0 : trap->extra;
 #endif

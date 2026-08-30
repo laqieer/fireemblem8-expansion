@@ -130,6 +130,7 @@ bool ExpansionAutoplayPlanner_PrepareActionData(
 {
     if (sSnagMode)
         return decision->targetId == 0
+            && sTrap.type == TRAP_OBSTACLE
             && GetObstacleTrapForTarget(
                 decision->xTarget, decision->yTarget) != NULL
             && (gBmMapTerrain[decision->yTarget][decision->xTarget]
@@ -249,7 +250,10 @@ struct Trap* GetObstacleTrapForTarget(int x, int y)
 
 int GetObstacleHpAt(int x, int y)
 {
-    struct Trap* trap = GetObstacleTrapForTarget(x, y);
+    struct Trap* trap = GetTrapAt(x, y);
+
+    if (trap == NULL)
+        trap = GetObstacleTrapForTarget(x, y);
     return trap == NULL ? 0 : trap->extra;
 }
 
