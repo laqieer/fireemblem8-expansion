@@ -67,18 +67,23 @@ def _git_top_level(path):
         ) from error
 
 
-def _repository_root(cwd):
-    caller_root = _git_top_level(os.path.abspath(cwd))
+def _resolve_repository_root(repository_root):
+    requested_root = os.path.realpath(os.path.abspath(repository_root))
+    target_root = _git_top_level(requested_root)
+    if requested_root != target_root:
+        raise ValueError(
+            f"gate repository must be the exact Git top level {target_root!r}"
+        )
     workspace = os.environ.get("GITHUB_WORKSPACE")
     if workspace is None:
-        return caller_root
+        return target_root
     workspace_root = _git_top_level(os.path.abspath(workspace))
-    if workspace_root != caller_root:
+    if workspace_root != target_root:
         raise ValueError(
-            "GITHUB_WORKSPACE and the caller cwd identify different Git "
+            "GITHUB_WORKSPACE and the target root identify different Git "
             "repositories"
         )
-    return workspace_root
+    return target_root
 
 
 def _expand_workspace(argv, repository_root):
@@ -527,9 +532,13 @@ class GateResult:
         return self.ran and self.returncode == 0
 
 
-def run_gates(cwd: str, jobs: int = 2, dry_run: bool = False) -> List[GateResult]:
-    """Execute (or, if dry_run, just describe) every gate, in the fixed
-    order returned by `gates()`.
+def run_gates(
+    repository_root: str,
+    jobs: int = 2,
+    dry_run: bool = False,
+) -> List[GateResult]:
+    """Execute (or, if dry_run, just describe) every gate at the exact target
+    repository root, in the fixed order returned by `gates()`.
 
     Stops at the first failing gate (fail-fast, matching CI). Never
     weakens, reorders, or skips a gate. There is intentionally no gate
@@ -542,7 +551,7 @@ def run_gates(cwd: str, jobs: int = 2, dry_run: bool = False) -> List[GateResult
     that either.)
     """
     results: List[GateResult] = []
-    repository_root = None if dry_run else _repository_root(cwd)
+    repository_root = _resolve_repository_root(repository_root)
     for gate in gates(jobs=jobs):
         if dry_run:
             results.append(GateResult(gate=gate, ran=False, returncode=0, stdout="", stderr=""))
@@ -556,7 +565,7 @@ def run_gates(cwd: str, jobs: int = 2, dry_run: bool = False) -> List[GateResult
             child_env.update(env_overrides)
         proc = subprocess.run(
             argv,
-            cwd=cwd,
+            cwd=repository_root,
             env=child_env,
             stdout=stdout,
             stderr=subprocess.PIPE,

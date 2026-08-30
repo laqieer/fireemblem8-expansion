@@ -420,18 +420,27 @@ pointer/timing/source-text coincidences, are the behavioral oracle.
    ignored `build/upstream-port/` directory.
 3. Review the report and manually record each port/skip/supersede/conflict
    decision with rationale and validation evidence, then run `verify`.
+4. Invoke `verify --dry-run` and a lightweight repository-relative gate from a
+   nested checkout directory with implicit repository discovery, then from an
+   external directory with `--repo <checkout-root>`.
 
 ### Expected result
 
 Scan and drift are read-only and deterministic. Report output contains only
 the explicitly selected local commits; an accepted human decision is recorded
 with its rationale/evidence before the port boundary can advance.
+Both public `verify` paths execute repository-relative gates at the resolved
+target Git top level. That same root supplies `$GITHUB_WORKSPACE` expansion
+and workflow-pilot repository authority; invocation cwd is discovery context
+only, and no gate has a separate working directory.
 
 ### Negative control
 
 The tool rejects a wrong remote, stale/diverged ref, merge report request,
 unsafe/tracked/outside/symlink output path, missing decision evidence, or
-attempt to mutate upstream source.
+attempt to mutate upstream source. Executing repository-relative gate argv at
+the nested or external invocation directory is also rejected by the focused
+regression.
 
 ### Interactions and save compatibility
 

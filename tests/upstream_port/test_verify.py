@@ -536,7 +536,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         self.assertIn("MODERN_CONFIG=release", release_gate.command)
 
     def test_dry_run_never_executes_subprocess(self):
-        results = verify_mod.run_gates("/nonexistent/path/should/not/matter", dry_run=True)
+        results = verify_mod.run_gates(REPO_ROOT, dry_run=True)
         self.assertEqual(len(results), 28)
         self.assertTrue(all(r.ran is False for r in results))
         self.assertTrue(all(r.passed is False for r in results))  # not-ran != passed
@@ -545,7 +545,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         """`--dry-run` (verify_mod.run_gates(dry_run=True)) must always list
         every gate the (non-dry-run) real run would perform, in the exact
         same order -- never a partial/filtered preview."""
-        dry = [r.gate.name for r in verify_mod.run_gates("/nonexistent/path", dry_run=True)]
+        dry = [r.gate.name for r in verify_mod.run_gates(REPO_ROOT, dry_run=True)]
         real_names = [g.name for g in verify_mod.gates()]
         self.assertEqual(dry, real_names)
         self.assertEqual(len(dry), 28)
@@ -563,12 +563,17 @@ class VerifyGateSelectionRemovedTests(unittest.TestCase):
         sig = inspect.signature(verify_mod.run_gates)
         self.assertNotIn("selected", sig.parameters)
         self.assertNotIn("gates", sig.parameters)
-        self.assertEqual(set(sig.parameters), {"cwd", "jobs", "dry_run"})
+        self.assertEqual(
+            set(sig.parameters),
+            {"repository_root", "jobs", "dry_run"},
+        )
 
     def test_run_gates_rejects_unexpected_selection_kwarg(self):
         with self.assertRaises(TypeError):
             verify_mod.run_gates(  # type: ignore[call-arg]
-                "/nonexistent/path", dry_run=True, selected=["artifact-guard"]
+                REPO_ROOT,
+                dry_run=True,
+                selected=["artifact-guard"],
             )
 
     def test_cli_verify_has_no_gate_flag_at_all(self):
@@ -697,11 +702,11 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                 ),
                 mock.patch.object(
                     verify_mod,
-                    "_repository_root",
+                    "_resolve_repository_root",
                     return_value=REPO_ROOT,
                 ),
             ):
-                results = verify_mod.run_gates(".", jobs=2)
+                results = verify_mod.run_gates(REPO_ROOT, jobs=2)
             self.assertNotIn(
                 self.HOST_ONLY_ENV,
                 os.environ,
@@ -725,24 +730,23 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                     f"host-only mode leaked into {gate.name}",
                 )
 
-    def test_run_gates_preserves_full_argv_order_and_caller_cwd(self):
+    def test_run_gates_preserves_argv_order_at_target_repository_root(self):
         seen = []
 
         def fake_run(argv, **kwargs):
             seen.append((list(argv), kwargs))
             return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
-        caller_cwd = os.path.join(REPO_ROOT, "tests")
         with (
             mock.patch.dict(os.environ, {}, clear=True),
             mock.patch.object(verify_mod.subprocess, "run", side_effect=fake_run),
             mock.patch.object(
                 verify_mod,
-                "_repository_root",
+                "_resolve_repository_root",
                 return_value=REPO_ROOT,
             ),
         ):
-            results = verify_mod.run_gates(caller_cwd, jobs=2)
+            results = verify_mod.run_gates(REPO_ROOT, jobs=2)
 
         expected_argv = []
         expected_stdout = []
@@ -753,7 +757,10 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
             expected_stdout.append(stdout)
 
         self.assertEqual([argv for argv, _ in seen], expected_argv)
-        self.assertEqual([kwargs["cwd"] for _, kwargs in seen], [caller_cwd] * 28)
+        self.assertEqual(
+            [kwargs["cwd"] for _, kwargs in seen],
+            [REPO_ROOT] * 28,
+        )
         baseline_argv = seen[
             [gate.name for gate in verify_mod.gates()].index(
                 "workflow-pilot-baseline"
@@ -763,25 +770,34 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
             baseline_argv[baseline_argv.index("--repository-root") + 1],
             REPO_ROOT,
         )
-        self.assertNotEqual(caller_cwd, REPO_ROOT)
         self.assertEqual([kwargs["stdout"] for _, kwargs in seen], expected_stdout)
         self.assertEqual(
             [result.gate.name for result in results],
             [gate.name for gate in verify_mod.gates(jobs=2)],
         )
 
-    def test_local_repository_authority_is_distinct_from_caller_cwd(self):
-        caller_cwd = os.path.join(REPO_ROOT, "tests")
+    def test_target_repository_root_is_both_authority_and_execution_root(self):
         with mock.patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(verify_mod._repository_root(caller_cwd), REPO_ROOT)
+            self.assertEqual(
+                verify_mod._resolve_repository_root(REPO_ROOT),
+                REPO_ROOT,
+            )
         with mock.patch.dict(
             os.environ,
             {"GITHUB_WORKSPACE": REPO_ROOT},
             clear=True,
         ):
-            self.assertEqual(verify_mod._repository_root(caller_cwd), REPO_ROOT)
+            self.assertEqual(
+                verify_mod._resolve_repository_root(REPO_ROOT),
+                REPO_ROOT,
+            )
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "exact Git top level"):
+                verify_mod._resolve_repository_root(
+                    os.path.join(REPO_ROOT, "tests")
+                )
 
-    def test_workspace_and_caller_must_identify_the_same_checkout(self):
+    def test_workspace_and_target_must_identify_the_same_checkout(self):
         with (
             mock.patch.dict(
                 os.environ,
@@ -795,7 +811,7 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
             ),
             self.assertRaisesRegex(ValueError, "different Git repositories"),
         ):
-            verify_mod._repository_root(REPO_ROOT)
+            verify_mod._resolve_repository_root(REPO_ROOT)
 
     def test_baseline_gate_expands_workspace_and_redirects_without_a_shell(self):
         seen = []
@@ -813,11 +829,11 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                 ),
                 mock.patch.object(
                     verify_mod,
-                    "_repository_root",
+                    "_resolve_repository_root",
                     return_value=REPO_ROOT,
                 ),
             ):
-                results = verify_mod.run_gates(".", jobs=2)
+                results = verify_mod.run_gates(REPO_ROOT, jobs=2)
 
         index = [gate.name for gate in verify_mod.gates()].index(
             "workflow-pilot-baseline"
@@ -826,13 +842,23 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
         self.assertNotIn(">", argv)
         self.assertNotIn("/dev/null", argv)
         self.assertNotIn("$GITHUB_WORKSPACE", argv)
-        self.assertEqual(argv[argv.index("--repository-root") + 1], os.path.abspath("."))
+        self.assertEqual(argv[argv.index("--repository-root") + 1], REPO_ROOT)
         self.assertEqual(kwargs["stdout"], subprocess.DEVNULL)
         self.assertEqual(results[index].stdout, "")
 
 
 class VerifyCliCwdTests(unittest.TestCase):
-    def test_normal_cli_preserves_nested_cwd_and_uses_checkout_authority(self):
+    LIGHTWEIGHT_COMMAND = [
+        "python3",
+        "-c",
+        (
+            "from pathlib import Path; "
+            "assert Path('scripts/upstream_port/verify.py').is_file(); "
+            "import scripts.upstream_port.verify"
+        ),
+    ]
+
+    def test_normal_cli_executes_all_gates_at_target_root(self):
         caller_cwd = os.path.join(REPO_ROOT, "tests")
         for arguments in (
             ["verify"],
@@ -855,7 +881,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                     mock.patch.object(cli, "_repo_root", return_value=REPO_ROOT),
                     mock.patch.object(
                         verify_mod,
-                        "_repository_root",
+                        "_resolve_repository_root",
                         return_value=REPO_ROOT,
                     ) as repository_root,
                     mock.patch.object(
@@ -867,11 +893,11 @@ class VerifyCliCwdTests(unittest.TestCase):
                 ):
                     self.assertEqual(cli.main(arguments), 0)
 
-                repository_root.assert_called_once_with(caller_cwd)
+                repository_root.assert_called_once_with(REPO_ROOT)
                 self.assertEqual(len(seen), 28)
                 self.assertEqual(
                     [kwargs["cwd"] for _, kwargs in seen],
-                    [caller_cwd] * 28,
+                    [REPO_ROOT] * 28,
                 )
                 baseline = seen[
                     [gate.name for gate in verify_mod.gates()].index(
@@ -883,13 +909,13 @@ class VerifyCliCwdTests(unittest.TestCase):
                     REPO_ROOT,
                 )
 
-    def test_dry_run_cli_preserves_nested_invocation_directory(self):
+    def test_dry_run_and_normal_cli_select_the_same_target_root(self):
         caller_cwd = os.path.join(REPO_ROOT, "tests")
-        for arguments in (
-            ["verify", "--dry-run"],
-            ["--repo", REPO_ROOT, "verify", "--dry-run"],
+        for common in (
+            [],
+            ["--repo", REPO_ROOT],
         ):
-            with self.subTest(arguments=arguments):
+            with self.subTest(arguments=common):
                 with (
                     mock.patch.object(cli.os, "getcwd", return_value=caller_cwd),
                     mock.patch.object(cli, "_repo_root", return_value=REPO_ROOT),
@@ -900,12 +926,54 @@ class VerifyCliCwdTests(unittest.TestCase):
                     ) as run_gates,
                     contextlib.redirect_stdout(io.StringIO()),
                 ):
-                    self.assertEqual(cli.main(arguments), 0)
-                run_gates.assert_called_once_with(
-                    caller_cwd,
-                    jobs=2,
-                    dry_run=True,
+                    self.assertEqual(cli.main([*common, "verify"]), 0)
+                    self.assertEqual(
+                        cli.main([*common, "verify", "--dry-run"]),
+                        0,
+                    )
+                self.assertEqual(
+                    run_gates.call_args_list,
+                    [
+                        mock.call(REPO_ROOT, jobs=2, dry_run=False),
+                        mock.call(REPO_ROOT, jobs=2, dry_run=True),
+                    ],
                 )
+
+    def test_public_cli_real_relative_gate_uses_selected_repository_root(self):
+        lightweight_gate = verify_mod.Gate(
+            name="lightweight-relative-import",
+            command=self.LIGHTWEIGHT_COMMAND,
+            applicable_note="repository-root execution regression",
+        )
+        cases = (
+            (
+                os.path.join(REPO_ROOT, "tests"),
+                ["verify"],
+            ),
+            (
+                os.path.dirname(REPO_ROOT),
+                ["--repo", REPO_ROOT, "verify"],
+            ),
+        )
+        for caller_cwd, arguments in cases:
+            with self.subTest(caller_cwd=caller_cwd, arguments=arguments):
+                old_behavior = subprocess.run(
+                    self.LIGHTWEIGHT_COMMAND,
+                    cwd=caller_cwd,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertNotEqual(old_behavior.returncode, 0)
+                with (
+                    contextlib.chdir(caller_cwd),
+                    mock.patch.object(
+                        verify_mod,
+                        "gates",
+                        return_value=[lightweight_gate],
+                    ),
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    self.assertEqual(cli.main(arguments), 0)
 
 
 if __name__ == "__main__":
