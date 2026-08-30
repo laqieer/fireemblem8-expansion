@@ -254,6 +254,55 @@ def _contains_exact_command(job: str, command: str) -> bool:
     return False
 
 
+def _has_run_shell_default(text: str, defaults_indent: int) -> bool:
+    prefix = " " * defaults_indent
+    child_prefix = " " * (defaults_indent + 2)
+    grandchild_prefix = " " * (defaults_indent + 4)
+    defaults_matches = list(
+        re.finditer(
+            rf"^{re.escape(prefix)}defaults:[ \t]*$",
+            text,
+            re.MULTILINE,
+        )
+    )
+    for defaults_match in defaults_matches:
+        next_peer = re.search(
+            rf"^{re.escape(prefix)}[A-Za-z_][A-Za-z0-9_-]*:",
+            text[defaults_match.end():],
+            re.MULTILINE,
+        )
+        defaults_end = (
+            defaults_match.end() + next_peer.start()
+            if next_peer is not None
+            else len(text)
+        )
+        defaults_block = text[defaults_match.end():defaults_end]
+        run_match = re.search(
+            rf"^{re.escape(child_prefix)}run:[ \t]*$",
+            defaults_block,
+            re.MULTILINE,
+        )
+        if run_match is None:
+            continue
+        next_run_peer = re.search(
+            rf"^{re.escape(child_prefix)}[A-Za-z_][A-Za-z0-9_-]*:",
+            defaults_block[run_match.end():],
+            re.MULTILINE,
+        )
+        run_end = (
+            run_match.end() + next_run_peer.start()
+            if next_run_peer is not None
+            else len(defaults_block)
+        )
+        if re.search(
+            rf"^{re.escape(grandchild_prefix)}shell:",
+            defaults_block[run_match.end():run_end],
+            re.MULTILINE,
+        ):
+            return True
+    return False
+
+
 def _hashed_requirements_errors(text: str) -> list[str]:
     logical_lines = []
     current = ""
@@ -310,6 +359,8 @@ def _make_recipe(text: str, target: str) -> str:
 def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     errors = []
     header = text[: text.index("\njobs:\n")]
+    if _has_run_shell_default(header, 0):
+        errors.append("workflow run shell defaults must not make candidate gates advisory")
     try:
         _pull_request_actions(header)
     except ValueError as exc:
@@ -413,6 +464,8 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(
                 f"candidate host lost exact fail-closed Build evidence: {command}"
             )
+    if _has_run_shell_default(jobs["host-tests"], 4):
+        errors.append("candidate host run shell defaults must not make pilot gates advisory")
 
     legacy = jobs["legacy"]
     for command in ("make legacy -j2", "make -C mgfembp compare"):
@@ -843,6 +896,34 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     any(
                         "candidate host lost exact fail-closed Build evidence"
                         in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+        inherited_defaults = (
+            self.text.replace(
+                "\njobs:\n",
+                "\ndefaults:\n"
+                "  run:\n"
+                "    shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    defaults:\n"
+                "      run:\n"
+                "        shell: bash {0} || true\n",
+                1,
+            ),
+        )
+        for changed in inherited_defaults:
+            with self.subTest(inherited_shell_default=changed[:200]):
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "run shell defaults must not make" in error
                         for error in _errors(changed, False)
                     )
                 )
