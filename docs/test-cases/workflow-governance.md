@@ -238,3 +238,88 @@ temporary base flip solely to trigger CI.
 No cleanup is required. The case evaluates committed workflow and governance
 contracts without dispatching GitHub Actions; it does not prove live service
 availability or grant credentials.
+
+## TC-WORKFLOW-PILOT-BASELINE-001: Freeze reproducible pilot baseline and decisions
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #176](https://github.com/laqieer/fireemblem8-expansion/issues/176).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3, the immutable issue #176 fixture, and the versioned decision record; no
+  GitHub token, live workflow, ROM, emulator, or game build is required.
+- **Prerequisites and clean starting state:** start at the repository root with
+  `.github/workflow-pilot-decisions.json`,
+  `scripts/workflow_pilot/tests/fixtures/baseline.json`, and
+  `scripts/workflow_pilot/reporter.py` unchanged. Remove any prior
+  `build/test-artifacts/workflow-pilot` directory.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_reporter -v`.
+2. Create `build/test-artifacts/workflow-pilot`, then run the documented
+   reporter twice over the committed fixture, decision record, and expected
+   values, writing `first.json` and `second.json` in that directory.
+3. Compare `first.json` and `second.json` byte for byte. Parse either file and
+   verify the frozen window, identity arrays, 64-PR/9.4-hour delivery baseline,
+   326 Build outcomes, one active run, 51 duplicate-SHA Builds, and PR #150's
+   review/Build/base-change/close-reopen metrics.
+4. Inspect the focused suite's positive classification fixture for inclusive
+   boundaries, cancellation, supersession, unchanged-SHA duplication, stack
+   ancestry, generated-only work, bulk deletion, reverts, still-running work,
+   conflicts, safety outcomes, and pilot overhead.
+5. Inspect its adversarial decision, authoritative-data, event, dependency,
+   and artifact mutations. Confirm each is rejected before canonical output is
+   emitted.
+6. Run `python3 scripts/check_docs.py --check`.
+
+### Expected result
+
+Both reporter outputs are byte-identical canonical JSON and match
+`baseline_expected.json`. The active run remains active at the frozen
+measurement boundary even though GitHub later completed it. Current PR and
+artifact states are derived from authoritative facts and disposition history;
+the decision file contains no SHA, timestamp, diff, run conclusion, or copied
+current-state field.
+
+The positive controls report Build/review savings beside coordination and
+metadata-maintenance overhead. Checkpoint, dependency-change, and
+pre-graduation removal proofs preserve necessary artifacts after a named
+semantic failure, and a deletion-ready artifact passes only with `Delete`.
+
+### Negative control
+
+The suite rejects a boundary record outside the snapshot, terminal/active
+status contradiction, cancelled-run misclassification, missing Actions page,
+missing issue/commit/review/decision, derived-fact override, post-review
+override mutation, inconsistent stack parent/base/depth, unknown risk,
+event, edge, or disposition, orphan/duplicate/expired artifact,
+deletion-ready non-Delete artifact, missing/duplicate/orphan deletion proof,
+and failed restoration of a necessary artifact. It also proves that restoring
+that artifact makes the same semantic contract pass.
+
+### Interactions and save compatibility
+
+Dependencies are none. Dependents are issues #177, #178, #179, #180, and
+#181. Conflicts are none with CI selection, review ordering, merge gates,
+runtime/gameplay, configuration, save, generated game data, localization, or
+archival output. Modern debug, modern release, and archival impact are all
+none; there is no feature flag and no ROM/RAM or save-format impact.
+
+### Automation
+
+`python3 -m unittest scripts.workflow_pilot.tests.test_reporter -v` parses the
+decision and fixture schemas, reproduces every frozen calculation, compares
+canonical bytes, and exercises all positive/adversarial controls above.
+
+`python3 scripts/check_docs.py --check` validates this complete procedure,
+registry ownership, links, and automation evidence.
+
+### Cleanup and limitations
+
+Remove `build/test-artifacts/workflow-pilot`. No remote state was read or
+changed by the procedure. The frozen fixture can reproduce only the explicitly
+captured source semantics; the reporter fails rather than claiming a live
+GitHub measurement from unavailable data. No manual-only criterion applies.
+
+Rollback is a normal revert of issue #176's dedicated commit; no workflow or
+game behavior needs a compensating change.

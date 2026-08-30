@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "paths": {
+    "builds.active": 1,
+    "builds.cancelled": 166,
+    "builds.duplicate_unchanged_sha": 51,
+    "builds.failure": 61,
+    "builds.minutes": 9939,
+    "builds.runs": 326,
+    "builds.spotlight.minutes": 2210,
+    "builds.spotlight.runs": 79,
+    "builds.success": 98,
+    "delivery.merged_pull_requests": 64,
+    "delivery.first_push_to_clean_review.median_hours": "100.6",
+    "delivery.issue_to_merge.eligible_pull_requests": 57,
+    "delivery.issue_to_merge.excluded_without_linked_issue": 7,
+    "delivery.issue_to_merge.median_hours": "44.7",
+    "delivery.pr_open_to_merge_median_hours": "9.4",
+    "events.base_changes": 31,
+    "events.close_reopen_cycles": 16,
+    "events.superseded_candidates": 45,
+    "reviews.rounds": 34,
+    "reviews.superseded_rounds": 0,
+    "reviews.valid_findings": 101
+  }
+}

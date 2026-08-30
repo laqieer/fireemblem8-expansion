@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "pull_requests": [
+    {
+      "pull_request": 150,
+      "risk_boundaries": [
+        "lifecycle",
+        "protocol",
+        "runtime"
+      ],
+      "threshold": {
+        "triggers": [
+          "changed-files",
+          "changed-lines",
+          "major-boundaries",
+          "risk-boundary"
+        ],
+        "override_history": []
+      },
+      "gate_mode": "concurrent",
+      "stack": {
+        "depth": 0,
+        "parent_pr": null,
+        "exception_reason": null
+      },
+      "pilot": {
+        "included": false,
+        "disposition": "baseline-only"
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "artifact_id": "workflow-pilot-decisions",
+      "owner": "workflow-governance",
+      "executable_consumer": "workflow-pilot-reporter",
+      "unique_decision": "minimal-nonderivable-pilot-decisions",
+      "consistency_check": "workflow-pilot-tests",
+      "max_maintenance_minutes": 5,
+      "estimated_maintenance_minutes": 2,
+      "deletion_criterion": "Delete only after every dependent pilot decision is graduated or removed.",
+      "expires_at": null,
+      "history": [
+        {
+          "recorded_at": "2026-08-30T12:20:00Z",
+          "disposition": "Graduate",
+          "reason": "Dependents require one stable fail-closed decision seam."
+        }
+      ]
+    },
+    {
+      "artifact_id": "workflow-pilot-fixture",
+      "owner": "workflow-governance",
+      "executable_consumer": "workflow-pilot-reporter",
+      "unique_decision": "frozen-issue-176-authoritative-baseline",
+      "consistency_check": "workflow-pilot-tests",
+      "max_maintenance_minutes": 5,
+      "estimated_maintenance_minutes": 0,
+      "deletion_criterion": "Delete only after the pilot and every comparison audit no longer require the pre-pilot cohort.",
+      "expires_at": null,
+      "history": [
+        {
+          "recorded_at": "2026-08-30T12:20:00Z",
+          "disposition": "Graduate",
+          "reason": "The immutable baseline is required for reproducible dependent comparisons."
+        }
+      ]
+    },
+    {
+      "artifact_id": "workflow-pilot-reporter",
+      "owner": "workflow-governance",
+      "executable_consumer": "workflow-pilot-tests",
+      "unique_decision": "single-normalized-workflow-pilot-reporter",
+      "consistency_check": "workflow-pilot-tests",
+      "max_maintenance_minutes": 10,
+      "estimated_maintenance_minutes": 5,
+      "deletion_criterion": "Delete only after all pilot measurements and lifecycle decisions have been retired.",
+      "expires_at": null,
+      "history": [
+        {
+          "recorded_at": "2026-08-30T12:20:00Z",
+          "disposition": "Graduate",
+          "reason": "One shared reporter prevents competing metric implementations."
+        }
+      ]
+    }
+  ]
+}

@@ -1011,6 +1011,14 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_development_workflow_skill -v",
                         },
                     },
+                    "TC-WORKFLOW-PILOT-BASELINE-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.workflow_pilot.tests.test_reporter -v",
+                            "python3 scripts/check_docs.py --check",
+                        },
+                    },
                 },
             },
         }
