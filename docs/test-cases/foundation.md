@@ -55,9 +55,10 @@ and its fail-closed all-current-feature coverage assertion.
   [issue #100](https://github.com/laqieer/fireemblem8-expansion/issues/100).
 - **Reference docs:** the canonical policy lives in the
   [development workflow](../../.github/skills/development-workflow/SKILL.md#meaningful-test-evidence)
-  and is mirrored by the [project instructions](../../.github/copilot-instructions.md#meaningful-test-evidence)
-  and [CLAUDE.md](../../CLAUDE.md#meaningful-test-evidence). This procedure
-  links to those references rather than duplicating their policy prose.
+  and is mirrored by the
+  [project instructions](../../.github/copilot-instructions.md#meaningful-test-evidence).
+  This procedure links to those references rather than duplicating their
+  policy prose.
 - **Supported configuration or artifact:** clean source checkout with Python
   3; no ROM, emulator, artifact, optional feature profile, or save state.
 - **Prerequisites and clean starting state:** start in the repository root

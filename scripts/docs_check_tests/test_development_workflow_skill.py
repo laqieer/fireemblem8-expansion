@@ -21,7 +21,6 @@ SKILL_PATH = (
 )
 CONTRIBUTING_PATH = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
-CLAUDE_PATH = ROOT / "CLAUDE.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
 WORKFLOW_GOVERNANCE_PATH = ROOT / "docs" / "test-cases" / "workflow-governance.md"
 TEST_CASE_REGISTRY_PATH = ROOT / "docs" / "test-cases" / "registry.json"
@@ -166,7 +165,6 @@ WATCHER_DOC_PATHS = (
 COMBINED_BUILD_GUIDANCE_PATHS = (
     SKILL_PATH,
     ROOT / ".github" / "copilot-instructions.md",
-    CLAUDE_PATH,
     CONTRIBUTING_PATH,
     FRAMEWORK_SUPPORT_PATH,
     LOCALIZATION_PATH,
@@ -174,7 +172,6 @@ COMBINED_BUILD_GUIDANCE_PATHS = (
 TRUSTED_PUSH_GUIDANCE_PATHS = (
     SKILL_PATH,
     ROOT / ".github" / "copilot-instructions.md",
-    CLAUDE_PATH,
 )
 FLEET_COORDINATOR_GUIDANCE_PATHS = TRUSTED_PUSH_GUIDANCE_PATHS
 FOCUSED_LOCAL_VALIDATION_PATHS = TRUSTED_PUSH_GUIDANCE_PATHS
@@ -1967,7 +1964,6 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         project_instructions = (
             ROOT / ".github" / "copilot-instructions.md"
         ).read_text(encoding="utf-8")
-        claude_instructions = CLAUDE_PATH.read_text(encoding="utf-8")
         contributing = CONTRIBUTING_PATH.read_text(encoding="utf-8")
         required_policy = (
             (
@@ -1980,7 +1976,6 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         for surface, instructions in (
             ("development workflow skill", text),
             ("project instructions", project_instructions),
-            ("Claude project instructions", claude_instructions),
             ("contributor guidance", contributing),
         ):
             assert_normalized_policy(
@@ -2179,7 +2174,6 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Copilot instructions": (ROOT / ".github" / "copilot-instructions.md").read_text(
                 encoding="utf-8"
             ),
-            "CLAUDE": CLAUDE_PATH.read_text(encoding="utf-8"),
         }
         required_contract = (
             "After each merge, immediately inspect every open PR.",
@@ -2207,7 +2201,6 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Copilot instructions": (ROOT / ".github" / "copilot-instructions.md").read_text(
                 encoding="utf-8"
             ),
-            "CLAUDE": CLAUDE_PATH.read_text(encoding="utf-8"),
         }
         required_contract = (
             "After each PR opens or updates",
@@ -2291,7 +2284,6 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         for path in (
             SKILL_PATH,
             COPILOT_INSTRUCTIONS_PATH,
-            CLAUDE_PATH,
         ):
             with self.subTest(surface=str(path.relative_to(ROOT))):
                 self.assertEqual(

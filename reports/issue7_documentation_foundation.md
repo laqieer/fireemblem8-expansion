@@ -91,7 +91,7 @@ CI-enforced so regressions cannot land silently.
 | Stale command/path denylist + Makefile-target existence check | `scripts/check_docs.py`'s `STALE_PHRASE_RULES` + `parse_make_targets`/`make_target_exists` (static Makefile parse, recipe never executed) | Candidate current-scope, CI-enforced |
 | Safe, executable doc examples | `scripts/check_docs.py --check-examples` (quickstart/upstream-port/check-docs `--help`, zero-ROM/zero-network) | Candidate current-scope, CI-enforced |
 | Fast-fail CI wiring before expensive build/tools steps | `.github/workflows/build.yml`'s "Check documentation" step (added after the artifact guard, before dependency install/build) | Candidate current-scope |
-| Stale AI-agent-instruction pointer fixed | [`.github/copilot-instructions.md`](../.github/copilot-instructions.md) **and** [`CLAUDE.md`](../CLAUDE.md) (both: decomp tutorial pointer corrected to `docs/archival-decomp.md`; build-command framing corrected to lead with the modern `make`/`make all` default, archival `make legacy`/`make fireemblem8.gba` kept as an explicit, separate lane) | Candidate current-scope |
+| Stale AI-agent-instruction pointer fixed | [`.github/copilot-instructions.md`](../.github/copilot-instructions.md) (decomp tutorial pointer corrected to `docs/archival-decomp.md`; build-command framing corrected to lead with the modern `make`/`make all` default, archival `make legacy`/`make fireemblem8.gba` kept as an explicit, separate lane) | Candidate current-scope |
 
 ## Acceptance criteria -> evidence mapping
 
