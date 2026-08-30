@@ -298,7 +298,11 @@ availability or grant credentials.
    no-tags/blob-filtered/no-ref batches, verifies them, and leaves both `HEAD`
    and refs unchanged. Confirm the setup step precedes reporter tests and is
    absent from the 28 local gates.
-9. Run `python3 scripts/check_docs.py --check`.
+9. Mutate every combined worker with container/services/strategy/permissions/
+   defaults/needs/if/advisory/environment/concurrency/uses/secrets/shell
+   execution context, including spaced, quoted, escaped, tagged, explicit,
+   flow, duplicate, reordered, and wrong-value forms.
+10. Run `python3 scripts/check_docs.py --check`.
 
 ### Expected result
 
@@ -382,7 +386,9 @@ job. Before those reporter commands, CI hydrates the fixture's exact commit
 authority and proves exact `HEAD` and refs are unchanged. The parsed workflow
 topology suite fails if hydration, pre-pilot step order/content, scrubbed
 protected-step environments, ownership, or checked-out-root binding is removed
-or weakened.
+or weakened. It also requires each combined worker's exact direct job mapping
+and values; no container or alternate execution context can replace the
+reviewed Ubuntu host.
 
 `python3 scripts/check_docs.py --check` validates this complete procedure,
 registry ownership, links, and automation evidence.

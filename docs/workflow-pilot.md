@@ -132,6 +132,14 @@ absolute `/usr/bin/python3`; the helper uses `/usr/bin/git`. Their step
 environments set `BASH_ENV`, `ENV`, and `PYTHONPATH` empty and pin
 `PATH=/usr/bin:/bin`, preventing earlier runner environment files or shell
 startup hooks from replacing either executable.
+At job scope, every combined worker has a closed direct mapping: exact
+`runs-on: ubuntu-latest`, `timeout-minutes: 60`, its reviewed environment, and
+`steps` only. Host, modern, extended-host, and legacy therefore reject
+containers, services, matrices/strategies, job permissions/defaults,
+dependencies, conditions/advisory mode, deployment environments, concurrency,
+reusable-job `uses`/secrets, custom shell context, unknown fields, duplicate
+keys, reordered keys, and complex key aliases. Patch publication and summary
+retain their separate existing contracts.
 
 Before the command succeeds, it creates a bounded mutable artifact sandbox
 under the checkout's ignored `build/test-artifacts/` directory and copies only

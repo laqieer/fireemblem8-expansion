@@ -78,6 +78,16 @@ EXPECTED_BUILD_SHA_EXPRESSION = (
     "github.event.pull_request.head.sha || github.sha }}"
 )
 HOST_ENV_LINE = f"      EXPECTED_BUILD_SHA: {EXPECTED_BUILD_SHA_EXPRESSION}"
+COMBINED_JOB_ENV = {
+    "host-tests": (HOST_ENV_LINE,),
+    "build": (HOST_ENV_LINE,),
+    "extended-host-tests": (HOST_ENV_LINE,),
+    "legacy": (
+        HOST_ENV_LINE,
+        "      AGBCC_COMMIT: da598c1d918402c42c0c0d7128ba14567f3175e9",
+        "      MGFEMBP_AGBCC_COMMIT: 63b22f3eb8a8051af30bd80c4795b355e439e7ef",
+    ),
+}
 WORKFLOW_PILOT_AUTHORITY_HYDRATION = (
     "/usr/bin/python3 -m scripts.workflow_pilot.hydrate_authority "
     '--repository-root "$GITHUB_WORKSPACE" '
@@ -517,6 +527,44 @@ def _host_environment_errors(job: str) -> list[str]:
     return []
 
 
+def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
+    direct_lines = []
+    for line in job.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent != 4 or line.startswith("    -"):
+            continue
+        direct_lines.append(line)
+    expected_direct = [
+        "    runs-on: ubuntu-latest",
+        "    timeout-minutes: 60",
+        "    env:",
+        "    steps:",
+    ]
+    errors = []
+    if direct_lines != expected_direct:
+        errors.append(
+            f"{job_name} direct job mapping differs from the reviewed "
+            "runs-on, timeout, env, and steps contract"
+        )
+
+    lines = job.splitlines()
+    try:
+        env_index = lines.index("    env:")
+    except ValueError:
+        return errors + [f"{job_name} lacks its reviewed env mapping"]
+    entries = []
+    for line in lines[env_index + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 4:
+            break
+        if line.strip() and not line.lstrip().startswith("#"):
+            entries.append(line)
+    if tuple(entries) != COMBINED_JOB_ENV[job_name]:
+        errors.append(f"{job_name} env differs from its reviewed exact mapping")
+    return errors
+
+
 def _hashed_requirements_errors(text: str) -> list[str]:
     logical_lines = []
     current = ""
@@ -643,6 +691,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             key="continue-on-error",
         ):
             errors.append(f"{job_name} must not be advisory")
+        errors.extend(_combined_job_contract_errors(job_name, jobs[job_name]))
 
     errors.extend(_host_environment_errors(jobs["host-tests"]))
     errors.extend(_protected_host_prefix_errors(jobs["host-tests"]))
@@ -1404,14 +1453,56 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         self.assertTrue(any("must run for pull-request" in error for error in _errors(changed, False)))
 
-    def test_combined_workers_allow_reviewed_job_keys_with_spaced_colons(self):
-        changed = self.text
+    def test_combined_workers_reject_spaced_reviewed_job_keys(self):
         for job_name in COMBINED_WORKERS:
-            job = _job_blocks(changed)[job_name]
-            changed_job = job.replace("    runs-on:", "    runs-on :", 1)
-            self.assertNotEqual(changed_job, job)
-            changed = changed.replace(job, changed_job, 1)
-        self.assertEqual(_errors(changed, False), [])
+            with self.subTest(job=job_name):
+                job = _job_blocks(self.text)[job_name]
+                changed_job = job.replace("    runs-on:", "    runs-on :", 1)
+                self.assertNotEqual(changed_job, job)
+                changed = self.text.replace(job, changed_job, 1)
+                self.assertTrue(
+                    any(
+                        f"{job_name} direct job mapping differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_reviewed_job_key_aliases_fail_closed(self):
+        allowed = {
+            "runs-on": "ubuntu-latest",
+            "timeout-minutes": "60",
+            "env": "",
+            "steps": "",
+        }
+        for job_name in COMBINED_WORKERS:
+            for field, value in allowed.items():
+                escaped = f'"\\u{ord(field[0]):04x}{field[1:]}"'
+                suffix = f" {value}" if value else ""
+                original = f"    {field}:{suffix}"
+                variants = (
+                    f'    "{field}":{suffix}',
+                    f"    {escaped}:{suffix}",
+                    f"    !!str {field}:{suffix}",
+                    f"    ? {field}\n    :{suffix}",
+                    f"    {{{field}:{suffix}}}",
+                )
+                for variant in variants:
+                    with self.subTest(
+                        job=job_name,
+                        field=field,
+                        variant=variant,
+                    ):
+                        job = _job_blocks(self.text)[job_name]
+                        changed_job = job.replace(original, variant, 1)
+                        self.assertNotEqual(changed_job, job)
+                        changed = self.text.replace(job, changed_job, 1)
+                        self.assertTrue(
+                            any(
+                                f"{job_name} direct job mapping differs" in error
+                                or f"{job_name} uses unsupported" in error
+                                for error in _errors(changed, False)
+                            )
+                        )
 
     def test_every_combined_worker_rejects_spaced_advisory_or_skip_keys(self):
         for job_name in COMBINED_WORKERS:
@@ -1465,6 +1556,143 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 for error in _errors(changed, False)
             )
         )
+
+    def test_every_combined_worker_has_a_closed_execution_context(self):
+        execution_fields = {
+            "container": "ubuntu:latest",
+            "services": "{}",
+            "strategy": "{matrix: {python: [3.12]}}",
+            "permissions": "{contents: write}",
+            "defaults": "{run: {shell: bash}}",
+            "needs": "summary",
+            "if": "${{ false }}",
+            "continue-on-error": "true",
+            "environment": "production",
+            "concurrency": "attacker-controlled",
+            "uses": "./untrusted-job.yml",
+            "secrets": "inherit",
+            "shell": "untrusted-shell {0}",
+        }
+        for job_name in COMBINED_WORKERS:
+            for field, value in execution_fields.items():
+                with self.subTest(job=job_name, field=field):
+                    changed = self.text.replace(
+                        f"  {job_name}:\n",
+                        f"  {job_name}:\n    {field}: {value}\n",
+                        1,
+                    )
+                    self.assertTrue(
+                        any(
+                            f"{job_name} direct job mapping differs" in error
+                            or f"{job_name} must " in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+            for allowed_line in (
+                "    runs-on: ubuntu-latest",
+                "    timeout-minutes: 60",
+                "    env:",
+                "    steps:",
+            ):
+                with self.subTest(job=job_name, duplicate=allowed_line):
+                    job = _job_blocks(self.text)[job_name]
+                    changed_job = job.replace(
+                        allowed_line,
+                        f"{allowed_line}\n{allowed_line}",
+                        1,
+                    )
+                    changed = self.text.replace(job, changed_job, 1)
+                    self.assertTrue(
+                        any(
+                            f"{job_name} direct job mapping differs" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+            job = _job_blocks(self.text)[job_name]
+            reordered = (
+                job.replace(
+                    "    runs-on: ubuntu-latest",
+                    "    __RUNS_ON__",
+                    1,
+                )
+                .replace(
+                    "    timeout-minutes: 60",
+                    "    runs-on: ubuntu-latest",
+                    1,
+                )
+                .replace("    __RUNS_ON__", "    timeout-minutes: 60", 1)
+            )
+            with self.subTest(job=job_name, reordered=True):
+                changed = self.text.replace(job, reordered, 1)
+                self.assertTrue(
+                    any(
+                        f"{job_name} direct job mapping differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+            for original, replacement in (
+                ("    runs-on: ubuntu-latest", "    runs-on: self-hosted"),
+                ("    timeout-minutes: 60", "    timeout-minutes: 59"),
+            ):
+                with self.subTest(job=job_name, replacement=replacement):
+                    job = _job_blocks(self.text)[job_name]
+                    changed = self.text.replace(
+                        job,
+                        job.replace(original, replacement, 1),
+                        1,
+                    )
+                    self.assertTrue(
+                        any(
+                            f"{job_name} direct job mapping differs" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+    def test_execution_context_key_syntax_bypasses_fail_closed(self):
+        execution_fields = {
+            "container": "ubuntu:latest",
+            "services": "{}",
+            "strategy": "{matrix: {python: [3.12]}}",
+            "permissions": "{contents: write}",
+            "defaults": "{run: {shell: bash}}",
+            "needs": "summary",
+            "if": "${{ false }}",
+            "continue-on-error": "true",
+            "environment": "production",
+            "concurrency": "attacker-controlled",
+            "uses": "./untrusted-job.yml",
+            "secrets": "inherit",
+            "shell": "untrusted-shell {0}",
+        }
+        for job_name in COMBINED_WORKERS:
+            for field, value in execution_fields.items():
+                escaped = f'"\\u{ord(field[0]):04x}{field[1:]}"'
+                variants = (
+                    f"{field} : {value}",
+                    f'"{field}": {value}',
+                    f"{escaped}: {value}",
+                    f"!!str {field}: {value}",
+                    f"{{{field}: {value}}}",
+                    f"? {field}\n    : {value}",
+                )
+                for variant in variants:
+                    with self.subTest(job=job_name, variant=variant):
+                        changed = self.text.replace(
+                            f"  {job_name}:\n",
+                            f"  {job_name}:\n    {variant}\n",
+                            1,
+                        )
+                        self.assertTrue(
+                            any(
+                                f"{job_name} direct job mapping differs" in error
+                                or f"{job_name} uses unsupported" in error
+                                or f"{job_name} must " in error
+                                for error in _errors(changed, False)
+                            )
+                        )
 
     def test_missing_pull_request_trigger_fails(self):
         changed = self.text.replace(PULL_REQUEST_TRIGGER, "", 1)
