@@ -505,7 +505,7 @@ int main(void)
     PrepareDecision(&sUnit, 2, 3, 3, 3);
     gAiDecision.actionId = AI_ACTION_COMBAT;
     gAiDecision.targetId = 0;
-    gAiDecision.itemSlot = 0;
+    gAiDecision.itemSlot = BU_ISLOT_AUTO;
     gAiDecision.actionPerformed = true;
     sTerrainData[2][3] = TERRAIN_SNAG;
     AiStartCombatAction(NULL);
@@ -513,13 +513,14 @@ int main(void)
           "unrelated Snag above wall must not reach executor");
     sTerrainData[2][3] = TERRAIN_WALL_DAMAGED;
     AiStartCombatAction(NULL);
-    CHECK(sApplyCount == 1 && gActionData.trapType == 20,
-          "lower damaged-wall cell must lower shared obstacle HP");
+    CHECK(sApplyCount == 1 && gActionData.trapType == 20
+              && gActionData.itemSlotIndex == BU_ISLOT_BALLISTA,
+          "ballista lower-wall combat must lower shared obstacle HP");
     InitObstacleBattleUnit();
     gBattleTarget.unit.curHP = 0;
     UpdateObstacleFromBattle(&gBattleTarget);
     CHECK(sTrap.type == TRAP_NONE && sMapChangeCount == 2,
-          "lower damaged-wall combat must destroy owning obstacle");
+          "ballista lower-wall combat must destroy owning obstacle");
     sSnagMode = false;
     sTrap.type = TRAP_BALLISTA;
     sTrap.xPos = 4;

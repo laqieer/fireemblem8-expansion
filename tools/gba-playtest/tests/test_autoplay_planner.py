@@ -1501,17 +1501,20 @@ class PlannerBridgeTests(unittest.TestCase):
         resource_page = pages[page_index[planner.PageKind.RESOURCES]]
         flag_page = pages[page_index[planner.PageKind.FLAGS]]
         action_page = pages[page_index[planner.PageKind.ACTIONS]]
-        for name, position, terrain in (
-                ("top-left Snag", (0, 0), 0x33),
-                ("top-left wall", (0, 0), 0x1B),
-                ("nonzero Snag", (1, 0), 0x33),
+        for name, position, terrain, item_slot in (
+                ("top-left Snag", (0, 0), 0x33, 0),
+                ("top-left wall", (0, 0), 0x1B, 0),
+                ("nonzero Snag", (1, 0), 0x33, 0),
+                ("ballista top-left wall", (0, 0), 0x1B, None),
+                ("ballista nonzero Snag", (1, 0), 0x33, None),
         ):
             with self.subTest(obstacle_action=name):
                 obstacle_pages = list(pages)
                 map_records = list(map_page.map_cells)
                 cell_index = position[1] * 64 + position[0]
-                map_records[cell_index] = replace(
+                valid_cell = replace(
                     map_records[cell_index], terrain=terrain, unit=0)
+                map_records[cell_index] = valid_cell
                 obstacle_pages[page_index[planner.PageKind.MAP]] = replace(
                     map_page, map_cells=tuple(map_records))
                 action_records = list(action_page.actions)
@@ -1520,7 +1523,7 @@ class PlannerBridgeTests(unittest.TestCase):
                     action=planner.Action(
                         "COMBAT", 1,
                         (1, 0) if position == (0, 0) else (0, 0),
-                        target=0, item_slot=0,
+                        target=0, item_slot=item_slot,
                         target_position=position))
                 obstacle_pages[page_index[planner.PageKind.ACTIONS]] = replace(
                     action_page, actions=tuple(action_records))
@@ -1546,15 +1549,17 @@ class PlannerBridgeTests(unittest.TestCase):
                             obstacle_pages,
                             planner.ValidationMode.PRODUCTION)),
                     encoded)
-                map_records[cell_index] = replace(
-                    map_records[cell_index], terrain=1)
-                obstacle_pages[page_index[planner.PageKind.MAP]] = replace(
-                    map_page, map_cells=tuple(map_records))
-                with self.assertRaisesRegex(
-                        planner.PlannerError,
-                        "actions are not canonical"):
-                    planner._assemble_observation_pages(
-                        obstacle_pages, planner.ValidationMode.PRODUCTION)
+                for invalid_cell in (
+                        replace(valid_cell, terrain=1),
+                        replace(valid_cell, unit=2)):
+                    map_records[cell_index] = invalid_cell
+                    obstacle_pages[page_index[planner.PageKind.MAP]] = replace(
+                        map_page, map_cells=tuple(map_records))
+                    with self.assertRaisesRegex(
+                            planner.PlannerError,
+                            "actions are not canonical"):
+                        planner._assemble_observation_pages(
+                            obstacle_pages, planner.ValidationMode.PRODUCTION)
         swapped = lambda records: (records[1], records[0], *records[2:])
         mutations = (
             ("dimensions", 0, {
@@ -3687,7 +3692,9 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
                         for implementation in (planner.ScriptedPlanner(), planner.BoundedSearchPlanner(max_nodes=512)):
                             self.assertIsNotNone(implementation.choose(complete))
                         choice = next(record for record in complete.actions
-                                      if record.action.kind == kind and (kind == "COMBAT" or record.action.target_position != (0, 0)))
+                                      if record.action.kind == kind and (
+                                          record.action.target == 0 if kind == "COMBAT"
+                                          else record.action.target_position != (0, 0)))
                         self.assertEqual(choice.action.item_slot, None if mode == 5 else 0)
                         if mode >= 6:
                             self.assertEqual((choice.action.target,
@@ -3704,7 +3711,8 @@ class PlannerLibmGBAIntegrationTests(unittest.TestCase):
         ) as (rom, backend, _):
             with _open_transport(backend, rom) as transport:
                 complete = planner.collect_observation_pages(transport, transport.start())
-                choice = next(record for record in complete.actions if record.action.kind == "COMBAT" and record.action.item_slot is None)
+                choice = next(record for record in complete.actions if record.action.kind == "COMBAT"
+                              and record.action.item_slot is None and record.action.target == 0)
                 rejected = transport.exchange(_commit(complete, choice))
                 self.assertEqual((rejected.state, rejected.rejection), (2, 6))
     def test_flag_checkpoint_bounds_on_arm_transport(self):

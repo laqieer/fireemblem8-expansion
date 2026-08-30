@@ -536,11 +536,41 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateWait(
     return EmitDecision(enumeration, &decision);
 }
 
+static enum ExpansionAutoplayPlannerEnumerationResult EnumerateCombatTargets(
+    struct PlannerEnumeration* enumeration, int xMove, int yMove, int item, int itemSlot)
+{
+    struct AiDecision decision;
+    enum ExpansionAutoplayPlannerEnumerationResult result;
+    int targetId;
+    for (targetId = 1; targetId < 0xC0; targetId++)
+    {
+        struct Unit* target = GetUnit(targetId);
+        if (!IsCanonicalUnitSlot(targetId)
+            || !IsCombatTargetLegal(target, xMove, yMove, item))
+            continue;
+        MakeDecision(&decision, xMove, yMove, AI_ACTION_COMBAT, target->index, itemSlot, 0, 0);
+        if ((result = EmitDecision(enumeration, &decision))
+                != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK || enumeration->stopped)
+            return result;
+    }
+    for (targetId = 0; targetId < gBmMapSize.y * gBmMapSize.x; targetId++)
+    {
+        int xTarget = targetId % gBmMapSize.x;
+        int yTarget = targetId / gBmMapSize.x;
+        if (!IsObstacleAttackTargetAt(item, xMove, yMove, xTarget, yTarget))
+            continue;
+        MakeDecision(&decision, xMove, yMove, AI_ACTION_COMBAT, 0, itemSlot, xTarget, yTarget);
+        if ((result = EmitDecision(enumeration, &decision))
+                != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK || enumeration->stopped)
+            return result;
+    }
+    return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
+}
+
 static enum ExpansionAutoplayPlannerEnumerationResult EnumerateCombat(
     struct PlannerEnumeration* enumeration, int xMove, int yMove)
 {
     int itemSlot;
-    int targetId;
     bool riding = (gActiveUnit->state & US_IN_BALLISTA)
         && GetRiddenBallistaAt(
             gActiveUnit->xPos, gActiveUnit->yPos) != NULL;
@@ -550,6 +580,7 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateCombat(
         for (itemSlot = 0; itemSlot < UNIT_ITEM_COUNT; itemSlot++)
         {
             int item = gActiveUnit->items[itemSlot];
+            enum ExpansionAutoplayPlannerEnumerationResult result;
 
             if (item == 0)
                 break;
@@ -558,41 +589,10 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateCombat(
             if ((GetItemAttributes(item) & IA_MAGIC)
                 && IsPositionMagicSealed(xMove, yMove))
                 continue;
-
-            for (targetId = 1; targetId < 0xC0; targetId++)
-            {
-                struct Unit* target = GetUnit(targetId);
-                struct AiDecision decision;
-                enum ExpansionAutoplayPlannerEnumerationResult result;
-
-                if (!IsCanonicalUnitSlot(targetId)
-                    || !IsCombatTargetLegal(target, xMove, yMove, item))
-                    continue;
-                MakeDecision(&decision, xMove, yMove, AI_ACTION_COMBAT, target->index, itemSlot, 0,
-                             0);
-                result = EmitDecision(enumeration, &decision);
-                if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
-                    || enumeration->stopped)
-                    return result;
-            }
-            for (targetId = 0; targetId < gBmMapSize.y * gBmMapSize.x; targetId++)
-            {
-                struct AiDecision decision;
-                enum ExpansionAutoplayPlannerEnumerationResult result;
-                int xTarget = targetId % gBmMapSize.x;
-                int yTarget = targetId / gBmMapSize.x;
-
-                if (!IsObstacleAttackTargetAt(
-                        item, xMove, yMove, xTarget, yTarget))
-                    continue;
-                MakeDecision(
-                    &decision, xMove, yMove, AI_ACTION_COMBAT, 0,
-                    itemSlot, xTarget, yTarget);
-                result = EmitDecision(enumeration, &decision);
-                if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
-                    || enumeration->stopped)
-                    return result;
-            }
+            if ((result = EnumerateCombatTargets(
+                    enumeration, xMove, yMove, item, itemSlot))
+                    != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK || enumeration->stopped)
+                return result;
         }
     }
     if (UNIT_CATTRIBUTES(gActiveUnit) & CA_BALLISTAE)
@@ -600,26 +600,7 @@ static enum ExpansionAutoplayPlannerEnumerationResult EnumerateCombat(
         int item = GetBallistaItemAt(xMove, yMove);
 
         if (item != 0)
-        {
-            for (targetId = 1; targetId < 0xC0; targetId++)
-            {
-                struct Unit* target = GetUnit(targetId);
-                struct AiDecision decision;
-                enum ExpansionAutoplayPlannerEnumerationResult result;
-
-                if (!IsCanonicalUnitSlot(targetId)
-                    || !IsCombatTargetLegal(
-                        target, xMove, yMove, item))
-                    continue;
-                MakeDecision(
-                    &decision, xMove, yMove, AI_ACTION_COMBAT,
-                    target->index, BU_ISLOT_AUTO, 0, 0);
-                result = EmitDecision(enumeration, &decision);
-                if (result != EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
-                    || enumeration->stopped)
-                    return result;
-            }
-        }
+            return EnumerateCombatTargets(enumeration, xMove, yMove, item, BU_ISLOT_AUTO);
     }
     return EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK;
 }
@@ -2227,13 +2208,15 @@ bool ExpansionAutoplayPlanner_PrepareActionData(const struct AiDecision* decisio
         {
             item = GetBallistaItemAt(
                 decision->xMove, decision->yMove);
-            return decision->targetId != 0
-                && (UNIT_CATTRIBUTES(gActiveUnit) & CA_BALLISTAE)
+            return (UNIT_CATTRIBUTES(gActiveUnit) & CA_BALLISTAE)
                 && IsReachableDestination(
                     decision->xMove, decision->yMove)
                 && item != 0
-                && IsCombatTargetLegal(
-                    target, decision->xMove, decision->yMove, item);
+                && (decision->targetId == 0
+                    ? IsObstacleAttackTargetAt(
+                        item, decision->xMove, decision->yMove,
+                        decision->xTarget, decision->yTarget)
+                    : IsCombatTargetLegal(target, decision->xMove, decision->yMove, item));
         }
         if (decision->itemSlot >= UNIT_ITEM_COUNT)
             return false;

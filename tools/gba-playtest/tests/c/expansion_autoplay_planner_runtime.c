@@ -431,6 +431,9 @@ static void InitializeRuntime(void)
     sTraps[0].yPos = 0;
     sTraps[0].extra = ITEM_BALLISTA_REGULAR;
     sTraps[0].data[TRAP_EXTDATA_BLST_ITEMUSES] = 3;
+    sTraps[1].type = TRAP_OBSTACLE;
+    sTraps[1].xPos = 2;
+    sTraps[1].extra = 20;
 #elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 1
     sUnit.state = US_NOT_DEPLOYED;
 #endif
@@ -456,6 +459,7 @@ static void InitializeRuntime(void)
     sUnitData[0][0] = 1;
 #if FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE == 5
     sUnitData[0][3] = 0x81;
+    sTerrainData[0][2] = TERRAIN_SNAG;
 #elif FE8_AUTOPLAY_PLANNER_RUNTIME_CANDIDATE_MODE >= 6
     sUnitData[0][1] = 2;
 #endif

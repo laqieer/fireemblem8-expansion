@@ -229,7 +229,7 @@ static bool IsObstacleTargetAt(int x, int y)
     if (x < 0 || x >= gBmMapSize.x
         || y < 0 || y >= gBmMapSize.y)
         return false;
-    return GetObstacleTrapForTarget(x, y) != NULL
+    return gBmMapUnit[y][x] == 0 && GetObstacleTrapForTarget(x, y) != NULL
         && (gBmMapTerrain[y][x] == TERRAIN_SNAG
             || gBmMapTerrain[y][x] == TERRAIN_WALL_DAMAGED);
 }

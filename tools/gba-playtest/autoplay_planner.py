@@ -752,7 +752,8 @@ def _observation_action_item_valid(
     distance = sum(abs(left - right) for left, right in zip(action["destination"], target_position))
     if item_slot is None:
         return (kind in {"MOVE_WAIT", "SUMMON"}
-                or kind == "COMBAT" and target != 0 and target_position == (0, 0)
+                or kind == "COMBAT"
+                and _observation_action_target_valid(action, map_cells)
                 or kind == "PICK" and units.get(action["actor"], {}).get("unit_class") == 0x33
                 and cell is not None and cell["terrain"] in _PICK_IDS_BY_TERRAIN
                 and distance == (0 if cell["terrain"] == 0x21 else 1))
@@ -934,8 +935,7 @@ def _validate_action_contract(action: object, context: str) -> None:
             or target_slot is not None and kind != "STAFF" or target_slot is not None and (target == 0 or target_position != (0, 0))
             or kind in {"MOVE_WAIT", "PICK", "SUMMON"} and target != 0 or kind == "MOVE_WAIT" and target_position != (0, 0)
             or kind == "SUMMON" and action_id == 12 and target_position != (0, 0)
-            or kind == "COMBAT" and target != 0 and target_position != (0, 0)
-            or kind == "COMBAT" and item_slot is None and target == 0):
+            or kind == "COMBAT" and target != 0 and target_position != (0, 0)):
         raise PlannerError(f"invalid planner {context} sentinel contract")
 
 

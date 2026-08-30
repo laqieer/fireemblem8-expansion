@@ -1686,24 +1686,31 @@ static int TestBallistaAndWallCombat(void)
     sTraps[1].yPos = 2;
     sTraps[1].extra = ITEM_BALLISTA_LONG;
     sTraps[1].data[TRAP_EXTDATA_BLST_ITEMUSES] = 2;
+    AddTrap(2, 0, TRAP_OBSTACLE, 10);
+    AddTrap(4, 3, TRAP_OBSTACLE, 20);
+    sTerrainData[0][2] = TERRAIN_SNAG;
+    sTerrainData[3][4] = sTerrainData[4][4] = TERRAIN_WALL_DAMAGED;
     SetupTestUnit(&sEnemy, &sEnemyCharacter, &sEnemyClass, 0x81, 5, 2);
     sUnitData[2][5] = 0x81;
     CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
-              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 2
+              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 8
               && CountActionSlot(count, AI_ACTION_COMBAT, 0) != 0,
-          "inventory and two reachable ballista attacks must coexist");
+          "inventory, unit, Snag, and paired-wall ballista attacks must coexist");
     sUnit.state |= US_IN_BALLISTA;
     sUnit.ballistaIndex = 0;
     CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
-              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 1
+              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 4
               && CountActionSlot(count, AI_ACTION_COMBAT, 0) == 0,
           "riding unit must use only its current ballista");
     sUnit.state &= ~US_IN_BALLISTA;
+    CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK,
+          "dismounted ballista targets must republish");
     for (index = 0; index < (int)count; index++)
     {
         if (sEnumeratedActions[index].actionId != AI_ACTION_COMBAT)
             continue;
-        if (sEnumeratedActions[index].itemSlot == 0xFF)
+        if (sEnumeratedActions[index].itemSlot == 0xFF
+            && sEnumeratedActions[index].targetId == 0)
         {
             ordinal = index;
             break;
@@ -1712,8 +1719,13 @@ static int TestBallistaAndWallCombat(void)
     }
     CHECK(SelectAction(
             &decision, AI_ACTION_COMBAT, occurrence, &ordinal, &selected)
-              && selected.itemSlot == 0xFFFF,
-          "ballista must use canonical no-inventory sentinel");
+              && selected.itemSlot == 0xFFFF && sEnumeratedActions[ordinal].xTarget == 2
+              && sEnumeratedActions[ordinal].yTarget == 0
+              && sEnumeratedActions[ordinal - 1].targetId != 0
+              && sEnumeratedActions[ordinal + 1].xTarget == 4
+              && sEnumeratedActions[ordinal + 2].yTarget == 4
+              && ExpansionAutoplayPlanner_PrepareActionData(&sEnumeratedActions[ordinal]),
+          "ballista targets must order unit then row-major obstacles");
     ballista = GetTrapAt(
         sEnumeratedActions[ordinal].xMove,
         sEnumeratedActions[ordinal].yMove);
@@ -1728,9 +1740,29 @@ static int TestBallistaAndWallCombat(void)
     CHECK(CommitBecameIllegal(&decision, ordinal, &selected.token0),
           "changed ballista weapon must stale the selected resource");
     ballista->extra = ITEM_BALLISTA_REGULAR;
+    CHECK(SelectAction(&decision, AI_ACTION_COMBAT, occurrence, &ordinal, &selected),
+          "restored ballista obstacle must republish");
+    sTraps[2].extra--;
+    CHECK(CommitBecameIllegal(&decision, ordinal, &selected.token0),
+          "changed ballista obstacle HP must stale the candidate");
+    sTraps[2].extra++;
+    CHECK(SelectAction(&decision, AI_ACTION_COMBAT, occurrence, &ordinal, &selected),
+          "restored ballista obstacle HP must republish");
+    sTerrainData[0][2] = 1;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&sEnumeratedActions[ordinal])
+              && CommitBecameIllegal(&decision, ordinal, &selected.token0),
+          "stale ballista obstacle terrain must reject");
+    sTerrainData[0][2] = TERRAIN_SNAG;
+    CHECK(SelectAction(&decision, AI_ACTION_COMBAT, occurrence, &ordinal, &selected),
+          "restored ballista obstacle terrain must republish");
+    sUnitData[0][2] = 0x81;
+    CHECK(!ExpansionAutoplayPlanner_PrepareActionData(&sEnumeratedActions[ordinal])
+              && CommitBecameIllegal(&decision, ordinal, &selected.token0),
+          "occupied ballista obstacle must reject without a duplicate");
+    sUnitData[0][2] = 0;
     ballista->data[TRAP_EXTDATA_BLST_ITEMUSES] = 0;
     CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
-              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 1,
+              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 4,
           "broken ballista must be absent");
     sClass.attributes = 0;
     CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
@@ -1740,16 +1772,16 @@ static int TestBallistaAndWallCombat(void)
     sTraps[0].data[TRAP_EXTDATA_BLST_ITEMUSES] = 3;
     sFogData[2][5] = 0;
     CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
-              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 0,
-          "fog-hidden target must not receive ballista combat");
+              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 6,
+          "fog-hidden unit must leave only ballista obstacle combat");
     sFogData[2][5] = 1;
     sUnitData[2][5] = 0;
     sEnemy.xPos = 7;
     sEnemy.yPos = 7;
     sUnitData[7][7] = 0x81;
     CHECK(CollectActions(&count) == EXPANSION_AUTOPLAY_PLANNER_ENUMERATION_OK
-              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 0,
-          "out-of-range target must not receive ballista combat");
+              && CountActionSlot(count, AI_ACTION_COMBAT, 0xFF) == 6,
+          "out-of-range unit must leave only ballista obstacle combat");
     sTraps[0].type = TRAP_OBSTACLE;
     sTraps[0].yPos = 1;
     sTraps[1].xPos = 2;
