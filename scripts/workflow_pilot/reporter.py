@@ -145,6 +145,21 @@ SAFETY_EVENT_TYPES = {
     "manual_reject",
     "security_finding",
 }
+PR_OPEN_PHASE_EVENT_TYPES = {
+    "base_changed",
+    "build_saved",
+    "candidate_superseded",
+    "conflict_detected",
+    "manual_reject",
+    "metadata_maintenance",
+    "pilot_coordination",
+    "review_saved",
+    "threshold_override_introduced",
+}
+POST_MERGE_EVENT_TYPES = {
+    "broken_master",
+    "escaped_defect",
+}
 DELETION_TRIGGER_TYPES = {
     "artifact_checkpoint",
     "dependency_changed",
@@ -332,6 +347,48 @@ def is_ancestor(
         if commit is not None:
             pending.extend(commit["parents"])
     return False
+
+
+def pull_request_for_run(
+    run: dict[str, Any],
+    pull_requests: dict[int, dict[str, Any]],
+) -> dict[str, Any] | None:
+    pr = next(
+        (
+            candidate
+            for candidate in pull_requests.values()
+            if candidate["head_branch"] == run["head_branch"]
+        ),
+        None,
+    )
+    pull_ref = re.fullmatch(r"refs/pull/([1-9][0-9]*)/head", run["head_branch"])
+    if pr is None and pull_ref is not None:
+        pr = pull_requests.get(int(pull_ref.group(1)))
+    return pr
+
+
+def observed_candidate_shas(
+    pull_requests: dict[int, dict[str, Any]],
+    reviews: Iterable[dict[str, Any]],
+    runs: Iterable[dict[str, Any]],
+    events: Iterable[dict[str, Any]],
+) -> dict[int, set[str]]:
+    result: dict[int, set[str]] = defaultdict(set)
+    for review in reviews:
+        if review["commit_sha"] in pull_requests[review["pr_number"]]["commit_shas"]:
+            result[review["pr_number"]].add(review["commit_sha"])
+    for run in runs:
+        pr = pull_request_for_run(run, pull_requests)
+        if pr is not None and run["head_sha"] in pr["commit_shas"]:
+            result[pr["number"]].add(run["head_sha"])
+    for event in events:
+        if "pr_number" not in event:
+            continue
+        candidates = set(pull_requests[event["pr_number"]]["commit_shas"])
+        for field in ("sha", "old_sha", "new_sha"):
+            if field in event and event[field] in candidates:
+                result[event["pr_number"]].add(event[field])
+    return result
 
 
 def run_git(
@@ -608,9 +665,7 @@ def validate_repository_authority(
     base_history = ancestor_cache[base_sha]
 
     pull_requests = data["pull_requests"]
-    prs_by_branch = {
-        pr["head_branch"]: pr for pr in pull_requests.values()
-    }
+    observed_candidates: dict[int, set[str]] = {}
     for number, pr in pull_requests.items():
         candidate_shas = set(pr["commit_shas"])
         if pr["head_sha"] not in candidate_shas:
@@ -628,9 +683,9 @@ def validate_repository_authority(
                 ancestor_cache[pr["head_sha"]]
                 - _git_ancestors(merge_parents[0], parent_graph)
             )
-            if candidate_shas != authoritative_candidates:
+            if not authoritative_candidates <= candidate_shas:
                 raise PilotDataError(
-                    f"PR {number} candidate identities do not match its Git merge range"
+                    f"PR {number} candidate identities omit its Git merge range"
                 )
             if merge_sha not in base_history:
                 raise PilotDataError(
@@ -662,26 +717,22 @@ def validate_repository_authority(
                 ancestor_cache[pr["head_sha"]]
                 - _git_ancestors(base, parent_graph)
             )
-            if candidate_shas != authoritative_candidates:
+            if not authoritative_candidates <= candidate_shas:
                 raise PilotDataError(
-                    f"PR {number} candidate identities do not match its Git history"
+                    f"PR {number} candidate identities omit its Git history"
                 )
+        observed_candidates[number] = authoritative_candidates
 
     for review_id, review in data["reviews"].items():
         pr = pull_requests[review["pr_number"]]
-        if not (
-            ancestor_cache[review["commit_sha"]]
-            & ancestor_cache[pr["head_sha"]]
-        ):
+        if review["commit_sha"] not in pr["commit_shas"]:
             raise PilotDataError(
-                f"review {review_id} commit is outside PR {pr['number']} Git history"
+                f"review {review_id} commit is outside PR {pr['number']} "
+                "candidate history"
             )
 
     for run_id, run in data["runs"].items():
-        pr = prs_by_branch.get(run["head_branch"])
-        pull_ref = re.fullmatch(r"refs/pull/([1-9][0-9]*)/head", run["head_branch"])
-        if pr is None and pull_ref is not None:
-            pr = pull_requests.get(int(pull_ref.group(1)))
+        pr = pull_request_for_run(run, pull_requests)
         if pr is not None:
             if run["head_sha"] not in pr["commit_shas"]:
                 raise PilotDataError(
@@ -694,6 +745,23 @@ def validate_repository_authority(
         ):
             raise PilotDataError(
                 f"workflow run {run_id} is outside the frozen base history"
+            )
+
+    observed = observed_candidate_shas(
+        pull_requests,
+        data["reviews"].values(),
+        data["runs"].values(),
+        data["events"].values(),
+    )
+    for number, shas in observed.items():
+        observed_candidates[number].update(shas)
+
+    for number, pr in pull_requests.items():
+        unobserved = set(pr["commit_shas"]) - observed_candidates[number]
+        if unobserved:
+            raise PilotDataError(
+                f"PR {number} candidate identities contain unobserved commits: "
+                + ", ".join(sorted(unobserved))
             )
 
     reverts = []
@@ -1838,6 +1906,11 @@ def cross_validate_fixture(
             raise PilotDataError(
                 f"review {review_id} references missing commit {review['commit_sha']}"
             )
+        if review["commit_sha"] not in pr["commit_shas"]:
+            raise PilotDataError(
+                f"review {review_id} commit is outside PR {pr_number} "
+                "candidate history"
+            )
         commit_time = parse_time(
             commits[review["commit_sha"]]["committed_at"],
             f"commit {review['commit_sha']}.committed_at",
@@ -1914,6 +1987,13 @@ def cross_validate_fixture(
             raise PilotDataError(
                 f"review-thread delivery {delivery_guid!r} follows the snapshot"
             )
+    observed_candidates = observed_candidate_shas(
+        pull_requests,
+        reviews.values(),
+        fixture["workflow_runs"],
+        events.values(),
+    )
+
     for pr_number, pr in pull_requests.items():
         for issue_number in pr["issue_numbers"]:
             if issue_number not in issues:
@@ -1943,21 +2023,71 @@ def cross_validate_fixture(
                 f"PR {pr_number} head is not an ancestor of its merge commit"
             )
         for sha in pr["commit_shas"]:
-            if not is_ancestor(sha, pr["head_sha"], commits):
+            if (
+                not is_ancestor(sha, pr["head_sha"], commits)
+                and sha not in observed_candidates[pr_number]
+            ):
                 raise PilotDataError(
-                    f"PR {pr_number} commit {sha} is not an ancestor of its head"
+                    f"PR {pr_number} commit {sha} is neither in its current "
+                    "head ancestry nor observed candidate history"
                 )
     for run in fixture["workflow_runs"]:
         if run["head_sha"] not in commits:
             raise PilotDataError(
                 f"workflow run {run['id']} references missing commit {run['head_sha']}"
             )
+    phase_events_by_pr: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for event_id, event in events.items():
         occurred_at = parse_time(
             event["occurred_at"], f"event {event_id}.occurred_at"
         )
         if occurred_at > lifecycle_as_of:
             raise PilotDataError(f"event {event_id!r} follows lifecycle_as_of")
+        pr = None
+        if "pr_number" in event:
+            pr = pull_requests[event["pr_number"]]
+            pr_created = parse_time(
+                pr["created_at"],
+                f"pull request {pr['number']}.created_at",
+            )
+            if occurred_at < pr_created:
+                raise PilotDataError(
+                    f"event {event_id!r} precedes PR {pr['number']} creation"
+                )
+            pr_closed = parse_time(
+                pr["closed_at"],
+                f"pull request {pr['number']}.closed_at",
+                nullable=True,
+            )
+            if event["type"] in POST_MERGE_EVENT_TYPES:
+                merged_at = parse_time(
+                    pr["merged_at"],
+                    f"pull request {pr['number']}.merged_at",
+                    nullable=True,
+                )
+                if merged_at is None or occurred_at < merged_at:
+                    raise PilotDataError(
+                        f"event {event_id!r} requires PR {pr['number']} "
+                        "merge availability"
+                    )
+            elif (
+                event["type"] != "security_finding"
+                and pr_closed is not None
+                and occurred_at > pr_closed
+            ):
+                raise PilotDataError(
+                    f"event {event_id!r} follows PR {pr['number']} closure"
+                )
+            if (
+                event["type"] == "security_finding"
+                and pr_closed is not None
+                and occurred_at > pr_closed
+                and pr["merged_at"] is None
+            ):
+                raise PilotDataError(
+                    f"event {event_id!r} cannot follow an unmerged PR closure"
+                )
+            phase_events_by_pr[pr["number"]].append(event)
         if "artifact_id" in event and event["artifact_id"] not in artifacts:
             raise PilotDataError(
                 f"event {event_id!r} references unknown artifact {event['artifact_id']!r}"
@@ -1989,15 +2119,42 @@ def cross_validate_fixture(
                 raise PilotDataError(
                     f"event {event_id!r} {field} has no authoritative commit"
                 )
-            if "pr_number" in event:
-                pr = pull_requests[event["pr_number"]]
-                pr_history = set(pr["commit_shas"])
-                if pr["merge_sha"] is not None:
-                    pr_history.add(pr["merge_sha"])
-                if sha not in pr_history:
+            committed_at = parse_time(
+                commits[sha]["committed_at"],
+                f"commit {sha}.committed_at",
+            )
+            if occurred_at < committed_at:
+                raise PilotDataError(
+                    f"event {event_id!r} {field} predates commit availability"
+                )
+            if pr is not None:
+                candidate_history = set(pr["commit_shas"])
+                if event["type"] in POST_MERGE_EVENT_TYPES:
+                    in_history = (
+                        pr["merge_sha"] is not None
+                        and is_ancestor(pr["merge_sha"], sha, commits)
+                        and is_ancestor(sha, fixture["base_sha"], commits)
+                    )
+                elif (
+                    event["type"] == "security_finding"
+                    and pr["merged_at"] is not None
+                    and occurred_at
+                    >= parse_time(
+                        pr["merged_at"],
+                        f"pull request {pr['number']}.merged_at",
+                    )
+                ):
+                    in_history = (
+                        pr["merge_sha"] is not None
+                        and is_ancestor(pr["merge_sha"], sha, commits)
+                        and is_ancestor(sha, fixture["base_sha"], commits)
+                    )
+                else:
+                    in_history = sha in candidate_history
+                if not in_history:
                     raise PilotDataError(
                         f"event {event_id!r} {field} is outside PR "
-                        f"{pr['number']} candidate/merge history"
+                        f"{pr['number']} causal history"
                     )
         if event["type"] == "threshold_override_introduced":
             committed_at = parse_time(
@@ -2008,6 +2165,62 @@ def cross_validate_fixture(
                 raise PilotDataError(
                     f"threshold override event {event_id!r} occurrence does not "
                     "match its authoritative introduction commit"
+                )
+
+    for pr_number, pr_events in phase_events_by_pr.items():
+        pr = pull_requests[pr_number]
+        final_closed = parse_time(
+            pr["closed_at"],
+            f"pull request {pr_number}.closed_at",
+            nullable=True,
+        )
+        is_open = True
+        phase_order = {"closed": 1, "reopened": 2}
+        for event in sorted(
+            pr_events,
+            key=lambda item: (
+                parse_time(
+                    item["occurred_at"],
+                    f"event {item['id']}.occurred_at",
+                ),
+                phase_order.get(item["type"], 0),
+                item["id"],
+            ),
+        ):
+            event_type = event["type"]
+            event_at = parse_time(
+                event["occurred_at"],
+                f"event {event['id']}.occurred_at",
+            )
+            if event_type in POST_MERGE_EVENT_TYPES or (
+                event_type == "security_finding"
+                and final_closed is not None
+                and event_at > final_closed
+            ):
+                continue
+            if event_type == "closed":
+                if not is_open:
+                    raise PilotDataError(
+                        f"event {event['id']!r} closes an already closed PR"
+                    )
+                is_open = False
+            elif event_type == "reopened":
+                if is_open:
+                    raise PilotDataError(
+                        f"event {event['id']!r} reopens an already open PR"
+                    )
+                if final_closed is not None and event_at >= final_closed:
+                    raise PilotDataError(
+                        f"event {event['id']!r} cannot reopen at or after "
+                        f"PR {pr_number} final closure"
+                    )
+                is_open = True
+            elif (
+                event_type in PR_OPEN_PHASE_EVENT_TYPES
+                or event_type == "security_finding"
+            ) and not is_open:
+                raise PilotDataError(
+                    f"event {event['id']!r} occurs while PR {pr_number} is closed"
                 )
 
     edge_claims: dict[str, list[str]] = defaultdict(list)
@@ -3286,20 +3499,54 @@ def report_artifacts(
     }
 
 
-IDENTITY_SEAL_DOMAIN = b"workflow-pilot-cohort-identities-v1\0"
+IDENTITY_SEAL_DOMAIN = b"workflow-pilot-cohort-relationships-v2\0"
+
+
+def _sealed_records(
+    records: dict[Any, dict[str, Any]],
+    unordered_fields: Iterable[str] = (),
+) -> list[dict[str, Any]]:
+    result = []
+    for identity in sorted(records):
+        record = dict(records[identity])
+        for field in unordered_fields:
+            if field in record:
+                record[field] = sorted(record[field])
+        result.append({"identity": identity, "record": record})
+    return result
 
 
 def cohort_identity_seal(data: dict[str, Any]) -> str:
-    identities = {
+    fixture = data["fixture"]
+    cohort = {
+        "artifacts": _sealed_records(data["artifacts"], ("dependency_ids",)),
         "commits": sorted(data["commits"]),
-        "findings": sorted(data["findings"]),
-        "issues": sorted(data["issues"]),
-        "pull_requests": sorted(data["pull_requests"]),
-        "reviews": sorted(data["reviews"]),
-        "workflow_runs": sorted(data["runs"]),
+        "dependency_edges": _sealed_records(data["edges"]),
+        "events": _sealed_records(data["events"]),
+        "findings": _sealed_records(data["findings"]),
+        "issues": _sealed_records(data["issues"]),
+        "pull_requests": _sealed_records(
+            data["pull_requests"],
+            ("commit_shas", "files", "issue_numbers", "review_ids"),
+        ),
+        "review_thread_events": _sealed_records(data["review_thread_events"]),
+        "review_thread_source": data["review_thread_source"],
+        "reviews": _sealed_records(data["reviews"], ("thread_ids",)),
+        "snapshot": {
+            "base_sha": fixture["base_sha"],
+            "build_workflow": fixture["build_workflow"],
+            "captured_at": fixture["captured_at"],
+            "default_branch": fixture["default_branch"],
+            "lifecycle_as_of": fixture["lifecycle_as_of"],
+            "repository": fixture["repository"],
+            "spotlight_pr": fixture["spotlight_pr"],
+            "window": fixture["window"],
+            "workflow_sample_size": fixture["workflow_sample_size"],
+        },
+        "workflow_runs": _sealed_records(data["runs"]),
     }
     return hashlib.sha256(
-        IDENTITY_SEAL_DOMAIN + normalized_json(identities)
+        IDENTITY_SEAL_DOMAIN + normalized_json(cohort)
     ).hexdigest()
 
 

@@ -85,12 +85,15 @@ python3 -m scripts.workflow_pilot.reporter \
 Successful output is canonical ASCII JSON: recursively sorted keys, compact
 separators, and one trailing newline. Running over identical immutable inputs
 is byte-identical. `baseline_expected.json` contains only immutable expected
-values, not another authored current-state report. Its
-`identities.seal` is a domain-separated SHA-256 of normalized, sorted PR
-numbers, issue numbers, review IDs, workflow-run IDs, finding IDs, and commit
-SHAs. It is an input-format/cohort checksum: it detects identity substitution
-that preserves aggregate metrics, but does not hash source files, blobs,
-objects, ROMs, or the repository tree.
+values, not another authored current-state report. Its `identities.seal` uses
+the `workflow-pilot-cohort-relationships-v2` domain for a SHA-256 of the
+normalized cohort: snapshot fields; PR, issue, review, workflow-run, finding,
+event, delivery, artifact, and dependency records; commit identities; and
+their metric-relevant relationships. Identity
+sets and set-like relationship fields are sorted before hashing. It is an
+input-format/cohort checksum: it detects identity, timestamp, PR/SHA
+association, and relationship substitution that preserves aggregate metrics,
+but does not hash source files, blobs, objects, ROMs, or the repository tree.
 
 `--repository-root` is required and must resolve to the exact checked-out Git
 top level. Before any metric or report section is constructed, the reporter
@@ -122,6 +125,13 @@ come from a closed allowlist in the reporter; fixture text cannot supply
 executable commands. An empty or fabricated `git init` cannot validate the
 baseline. The sandbox is removed automatically and the checked out worktree is
 never modified.
+
+Each PR's `commit_shas` is its authoritative candidate-history set. It contains
+the final candidate-to-merge range plus superseded candidates observed by a
+review, same-PR workflow run, or typed candidate event. Every review must name
+one of those candidates, must not predate that commit, and remains bounded by
+the PR lifetime; sharing an ancestor with the candidate branch is not
+sufficient.
 
 The fixture carries derivable Git/GitHub/Actions facts. The single versioned
 decision record,
@@ -173,6 +183,16 @@ convention.
 | Escaped defects, broken master, security findings, manual rejects | Count their typed in-window events across every PR, independently of spotlight metrics. Each identity binds a full SHA to an authoritative commit and that PR's candidate/merge history. |
 | Reverts | Parse the exact Git-generated `This reverts commit <full SHA>.` relation from the validated commit message. Require both commits in the real object database and frozen base history, require the target to be an ancestor of the revert, and require the revert's authoritative committer timestamp to be strictly later than the target's. Earlier, equal-time, unrelated, or fixture-only relations fail. |
 | Pilot coordination and metadata maintenance | Sum only typed in-window pilot minutes. Report both beside saved Build and review minutes; net saved minutes are savings minus both overhead classes. |
+
+Every PR-scoped event must occur at or after PR creation and no later than the
+fixture lifecycle boundary. Base, review-savings, conflict, manual-reject,
+override, supersession, and ordinary coordination events require an open PR;
+close/reopen transitions must alternate. Candidate SHA events cannot predate
+the referenced commit. Broken-master and escaped-defect events are post-merge
+events and must identify an available commit on the merge-to-frozen-base
+history. A security finding uses candidate history before merge and
+merge/default-branch history at or after merge. Only those post-merge families
+may follow final PR closure.
 
 The 9.4-hour published baseline is specifically **PR-open-to-merge**, because
 that is what the original measurement could reproduce for all 64 PRs. It is

@@ -710,16 +710,21 @@ class BaselineFixtureTests(unittest.TestCase):
         for fixture in mutations:
             with self.subTest(snapshot=fixture["repository"], window=fixture["window"]):
                 report = authoritative_report(fixture, self.decisions)
+                expected = copy.deepcopy(self.expected)
+                expected["paths"]["identities.seal"] = report["identities"]["seal"]
                 with self.assertRaisesRegex(
                     reporter.PilotDataError,
                     "expected path 'snapshot\\.",
                 ):
-                    reporter.check_expected(report, self.expected)
+                    reporter.check_expected(report, expected)
 
     def test_cli_expected_rejects_coordinated_capture_window_drift(self):
         fixture = copy.deepcopy(self.fixture)
         fixture["captured_at"] = "2026-08-30T11:17:09Z"
         fixture["window"]["end"] = fixture["captured_at"]
+        report = authoritative_report(fixture, self.decisions)
+        expected = copy.deepcopy(self.expected)
+        expected["paths"]["identities.seal"] = report["identities"]["seal"]
         arguments = [
             "--fixture",
             str(BASELINE),
@@ -735,7 +740,7 @@ class BaselineFixtureTests(unittest.TestCase):
             mock.patch.object(
                 reporter,
                 "load_json",
-                side_effect=[fixture, self.decisions, self.expected],
+                side_effect=[fixture, self.decisions, expected],
             ),
             mock.patch.object(reporter, "validate_executable_deletion_proofs"),
             contextlib.redirect_stderr(stderr),
@@ -771,6 +776,54 @@ class BaselineFixtureTests(unittest.TestCase):
         self.assertEqual(result["reviews"]["rounds"], 34)
         self.assertEqual(result["reviews"]["valid_findings"], 101)
         self.assertEqual(result["reviews"]["current_unresolved_findings"], 0)
+
+    def test_frozen_review_cannot_be_rebound_to_base_history(self):
+        fixture = copy.deepcopy(self.fixture)
+        review = next(
+            item for item in fixture["reviews"] if item["id"] == 5037233057
+        )
+        self.assertEqual(
+            review["commit_sha"],
+            "0301760c273ff0a5f8e6475f9bd373503f4a5aae",
+        )
+        review["commit_sha"] = "f701e692090c86cfd85fbcbe17fa9a2b96a46030"
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "review 5037233057 commit is outside PR 150 candidate history",
+        ):
+            authoritative_report(fixture, self.decisions)
+
+    def test_frozen_pr150_events_cannot_predate_creation(self):
+        for event_type in ("base_changed", "security_finding"):
+            with self.subTest(event_type=event_type):
+                fixture = copy.deepcopy(self.fixture)
+                if event_type == "base_changed":
+                    event = next(
+                        item
+                        for item in fixture["events"]
+                        if item["type"] == event_type
+                        and item["pr_number"] == 150
+                    )
+                else:
+                    pr = next(
+                        item
+                        for item in fixture["pull_requests"]
+                        if item["number"] == 150
+                    )
+                    event = {
+                        "id": "security:pre-creation-reproducer",
+                        "type": event_type,
+                        "occurred_at": "2026-08-20T00:00:00Z",
+                        "pr_number": 150,
+                        "sha": pr["commit_shas"][0],
+                    }
+                    fixture["events"].append(event)
+                event["occurred_at"] = "2026-08-20T00:00:00Z"
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "precedes PR 150 creation",
+                ):
+                    authoritative_report(fixture, self.decisions)
 
     def test_cli_checks_expected_without_live_github(self):
         command = [
@@ -935,7 +988,7 @@ class RepositoryAuthorityTests(unittest.TestCase):
             changed["pull_requests"][0]["commit_shas"] = changed[
                 "pull_requests"
             ][0]["commit_shas"][1:]
-            mutations.append((changed, "candidate identities do not match"))
+            mutations.append((changed, "outside PR 1 candidate history"))
 
             for changed, pattern in mutations:
                 with self.subTest(pattern=pattern):
@@ -959,39 +1012,37 @@ class RepositoryAuthorityTests(unittest.TestCase):
         self.assertEqual(len(authority["commits"]), 1017)
         self.assertEqual(authority["reverts"], [])
 
-    def test_review_commit_must_share_real_pr_history(self):
+    def test_review_commit_candidate_and_availability_boundaries(self):
+        for commit_sha, pattern in (
+            (sha("0"), "outside PR 1 candidate history"),
+            (sha("9"), "outside PR 1 candidate history"),
+            (sha("d"), "outside PR 1 candidate history"),
+            (sha("c"), "precedes its reviewed commit"),
+        ):
+            with self.subTest(commit_sha=commit_sha):
+                fixture = minimal_fixture()
+                if commit_sha == sha("9"):
+                    fixture["commits"].append(
+                        {
+                            "sha": sha("9"),
+                            "committed_at": "2026-01-01T02:00:00Z",
+                            "parents": [],
+                            "message": "unrelated commit",
+                        }
+                    )
+                fixture["reviews"][0]["commit_sha"] = commit_sha
+                with self.assertRaisesRegex(reporter.PilotDataError, pattern):
+                    reporter.validate_fixture(fixture)
+
         fixture = minimal_fixture()
-        fixture["commits"].append(
-            {
-                "sha": sha("9"),
-                "committed_at": "2026-01-01T02:00:00Z",
-                "parents": [],
-                "message": "unrelated commit",
-            }
-        )
-        fixture["reviews"][0]["commit_sha"] = sha("9")
-        with git_authority(fixture) as (authoritative_fixture, repository_root):
-            with self.assertRaisesRegex(
-                reporter.PilotDataError,
-                "review 10 commit is outside PR 1 Git history",
-            ):
-                reporter.build_report(
-                    authoritative_fixture,
-                    minimal_decisions(),
-                    repository_root,
-                )
+        fixture["reviews"][0]["commit_sha"] = sha("b")
+        fixture["reviews"][0]["submitted_at"] = "2026-01-01T03:00:00Z"
+        authoritative_report(fixture, minimal_decisions())
 
 
 class CohortIdentitySealTests(unittest.TestCase):
     def identity_data(self):
-        return {
-            "commits": {"a" * 40: {}},
-            "findings": {101: {}},
-            "issues": {10: {}},
-            "pull_requests": {20: {}},
-            "reviews": {30: {}},
-            "runs": {40: {}},
-        }
+        return reporter.validate_fixture(minimal_fixture())
 
     def test_every_frozen_identity_family_changes_the_expected_seal(self):
         baseline_data = self.identity_data()
@@ -1001,12 +1052,12 @@ class CohortIdentitySealTests(unittest.TestCase):
             "paths": {"identities.seal": seal},
         }
         families = {
-            "pull_requests": (20, 21),
-            "issues": (10, 11),
-            "reviews": (30, 31),
-            "runs": (40, 41),
-            "findings": (101, 102),
-            "commits": ("a" * 40, "b" * 40),
+            "pull_requests": (1, 2),
+            "issues": (1, 2),
+            "reviews": (10, 12),
+            "runs": (1, 10),
+            "findings": (100, 101),
+            "commits": (sha("a"), sha("9")),
         }
         for family, (old, new) in families.items():
             with self.subTest(family=family):
@@ -1025,14 +1076,81 @@ class CohortIdentitySealTests(unittest.TestCase):
 
     def test_identity_seal_normalizes_family_ordering(self):
         forward = self.identity_data()
-        reverse = {
-            family: dict(reversed(list(identities.items())))
-            for family, identities in reversed(list(forward.items()))
-        }
+        reverse = copy.deepcopy(forward)
+        for family in (
+            "artifacts",
+            "commits",
+            "edges",
+            "events",
+            "findings",
+            "issues",
+            "pull_requests",
+            "reviews",
+            "review_thread_events",
+            "runs",
+        ):
+            reverse[family] = dict(reversed(list(reverse[family].items())))
+        reverse["pull_requests"][1]["commit_shas"].reverse()
+        reverse["pull_requests"][1]["review_ids"].reverse()
         self.assertEqual(
             reporter.cohort_identity_seal(forward),
             reporter.cohort_identity_seal(reverse),
         )
+
+    def test_metric_relationship_mutations_change_expected_seal(self):
+        baseline_data = self.identity_data()
+        baseline_data["repository_authority"] = {"reverts": []}
+        seal = reporter.cohort_identity_seal(baseline_data)
+        expected = {
+            "schema_version": reporter.SCHEMA_VERSION,
+            "paths": {"identities.seal": seal},
+        }
+        mutations = {}
+
+        changed = copy.deepcopy(baseline_data)
+        changed["reviews"][10]["commit_sha"] = sha("b")
+        mutations["review-commit"] = (changed, reporter.report_reviews)
+
+        changed = copy.deepcopy(baseline_data)
+        event = changed["events"].pop("supersede:1")
+        event["id"] = "supersede:renamed"
+        changed["events"][event["id"]] = event
+        mutations["event-id"] = (changed, reporter.report_events)
+
+        changed = copy.deepcopy(baseline_data)
+        changed["events"]["supersede:1"]["occurred_at"] = (
+            "2026-01-01T06:00:01Z"
+        )
+        mutations["event-timestamp"] = (changed, reporter.report_events)
+
+        changed = copy.deepcopy(baseline_data)
+        changed["events"]["supersede:1"]["pr_number"] = 2
+        mutations["event-pr"] = (changed, reporter.report_events)
+
+        changed = copy.deepcopy(baseline_data)
+        changed["events"]["supersede:1"]["new_sha"] = sha("b")
+        mutations["event-sha"] = (changed, reporter.report_events)
+
+        changed = copy.deepcopy(baseline_data)
+        changed["findings"][100]["review_id"] = 11
+        mutations["finding-review"] = (changed, reporter.report_reviews)
+
+        for relationship, (changed, report_function) in mutations.items():
+            with self.subTest(relationship=relationship):
+                self.assertEqual(
+                    report_function(baseline_data),
+                    report_function(changed),
+                )
+                report = {
+                    "identities": {
+                        "seal": reporter.cohort_identity_seal(changed),
+                    }
+                }
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "identities.seal",
+                ):
+                    reporter.check_expected(report, expected)
 
     def test_expected_contract_cannot_omit_identity_seal(self):
         with self.assertRaisesRegex(
@@ -1067,6 +1185,11 @@ class FormulaAndClassificationTests(unittest.TestCase):
                 fixture["reviews"] = []
                 fixture["review_findings"] = []
                 fixture["review_thread_events"] = []
+                fixture["events"] = [
+                    event
+                    for event in fixture["events"]
+                    if "pr_number" not in event
+                ]
                 report = authoritative_report(fixture, minimal_decisions())
                 self.assertEqual(report["delivery"]["merged_pull_requests"], 1)
 
@@ -1256,12 +1379,21 @@ class FormulaAndClassificationTests(unittest.TestCase):
             ("security_finding", "security:1"),
             ("manual_reject", "manual:1"),
         ):
+            post_merge = event_type in {
+                "broken_master",
+                "escaped_defect",
+                "security_finding",
+            }
             event = {
                 "id": event_id,
                 "type": event_type,
-                "occurred_at": "2026-01-01T09:30:00Z",
+                "occurred_at": (
+                    "2026-01-01T09:30:00Z"
+                    if post_merge
+                    else "2026-01-01T08:30:00Z"
+                ),
                 "pr_number": 1,
-                "sha": sha("d"),
+                "sha": sha("d") if post_merge else sha("c"),
             }
             fixture["events"].append(event)
         events = authoritative_report(fixture, minimal_decisions())["events"]
@@ -1270,6 +1402,134 @@ class FormulaAndClassificationTests(unittest.TestCase):
         self.assertEqual(events["broken_master"], 1)
         self.assertEqual(events["security_findings"], 1)
         self.assertEqual(events["manual_rejects"], 1)
+
+    def test_pr_event_creation_closure_and_commit_boundaries(self):
+        fixture = minimal_fixture()
+        next(
+            event for event in fixture["events"] if event["id"] == "base:1"
+        )["occurred_at"] = fixture["pull_requests"][0]["created_at"]
+        next(
+            event for event in fixture["events"] if event["id"] == "saved:review"
+        )["occurred_at"] = fixture["pull_requests"][0]["closed_at"]
+        next(
+            event
+            for event in fixture["events"]
+            if event["id"] == "supersede:1"
+        )["occurred_at"] = "2026-01-01T06:00:00Z"
+        authoritative_report(fixture, minimal_decisions())
+
+        fixture = minimal_fixture()
+        next(
+            event
+            for event in fixture["events"]
+            if event["id"] == "supersede:1"
+        )["occurred_at"] = "2026-01-01T05:59:59Z"
+        self.assert_rejected(fixture, "predates commit availability")
+
+    def test_post_close_event_phase_and_history_rules(self):
+        for event_type in ("broken_master", "escaped_defect", "security_finding"):
+            with self.subTest(allowed=event_type):
+                fixture = minimal_fixture()
+                fixture["events"].append(
+                    {
+                        "id": f"post-close:{event_type}",
+                        "type": event_type,
+                        "occurred_at": "2026-01-01T09:30:00Z",
+                        "pr_number": 1,
+                        "sha": sha("d"),
+                    }
+                )
+                authoritative_report(fixture, minimal_decisions())
+
+        post_close_events = (
+            {
+                "id": "post-close:base",
+                "type": "base_changed",
+                "occurred_at": "2026-01-01T09:30:00Z",
+                "pr_number": 1,
+                "old_base": "parent",
+                "new_base": "master",
+            },
+            {
+                "id": "post-close:review",
+                "type": "review_saved",
+                "occurred_at": "2026-01-01T09:30:00Z",
+                "pr_number": 1,
+                "minutes": 1,
+            },
+            {
+                "id": "post-close:conflict",
+                "type": "conflict_detected",
+                "occurred_at": "2026-01-01T09:30:00Z",
+                "pr_number": 1,
+                "sha": sha("c"),
+            },
+            {
+                "id": "post-close:manual",
+                "type": "manual_reject",
+                "occurred_at": "2026-01-01T09:30:00Z",
+                "pr_number": 1,
+                "sha": sha("c"),
+            },
+            {
+                "id": "post-close:supersession",
+                "type": "candidate_superseded",
+                "occurred_at": "2026-01-01T09:30:00Z",
+                "pr_number": 1,
+                "old_sha": sha("b"),
+                "new_sha": sha("c"),
+            },
+        )
+        for event in post_close_events:
+            with self.subTest(rejected=event["type"]):
+                fixture = minimal_fixture()
+                fixture["events"].append(event)
+                self.assert_rejected(fixture, "follows PR 1 closure")
+
+        fixture = minimal_fixture()
+        fixture["events"].append(
+            {
+                "id": "post-close:security-candidate",
+                "type": "security_finding",
+                "occurred_at": "2026-01-01T09:30:00Z",
+                "pr_number": 1,
+                "sha": sha("c"),
+            }
+        )
+        self.assert_rejected(fixture, "outside PR 1 causal history")
+
+    def test_close_reopen_and_override_events_require_open_phase(self):
+        fixture = minimal_fixture()
+        fixture["events"].append(
+            {
+                "id": "close:duplicate",
+                "type": "closed",
+                "occurred_at": "2026-01-01T05:05:30Z",
+                "pr_number": 1,
+            }
+        )
+        self.assert_rejected(fixture, "closes an already closed PR")
+
+        fixture = minimal_fixture()
+        fixture["events"].append(
+            {
+                "id": "reopen:duplicate",
+                "type": "reopened",
+                "occurred_at": "2026-01-01T04:30:00Z",
+                "pr_number": 1,
+            }
+        )
+        self.assert_rejected(fixture, "reopens an already open PR")
+
+        fixture = minimal_fixture()
+        decisions = minimal_decisions()
+        add_override(
+            fixture,
+            decisions,
+            commit_sha=sha("b"),
+            occurred_at="2026-01-01T09:30:00Z",
+        )
+        self.assert_rejected(fixture, "follows PR 1 closure")
 
     def test_safety_events_aggregate_across_pull_requests(self):
         fixture = minimal_fixture()
@@ -1290,7 +1550,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
     def test_safety_event_sha_requires_commit_and_matching_pr_history(self):
         for event_sha, pattern in (
             (sha("f"), "has no authoritative commit"),
-            (sha("d"), "outside PR 2 candidate/merge history"),
+            (sha("d"), "outside PR 2 causal history"),
         ):
             with self.subTest(event_sha=event_sha):
                 fixture = minimal_fixture()
@@ -1298,7 +1558,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
                 fixture["events"].append(
                     {
                         "id": "escape:cross-pr",
-                        "type": "escaped_defect",
+                        "type": "manual_reject",
                         "occurred_at": "2026-01-01T09:30:00Z",
                         "pr_number": 2,
                         "sha": event_sha,
@@ -1903,7 +2163,7 @@ class FailClosedDataTests(unittest.TestCase):
             fixture=fixture,
             decisions=decisions,
             repository_root=repository_root,
-            pattern="non-candidate commit",
+            pattern="outside PR 1 causal history",
         )
 
     def test_post_review_override_commit_is_rejected_even_when_backdated(self):
@@ -1938,7 +2198,7 @@ class FailClosedDataTests(unittest.TestCase):
             fixture=fixture,
             decisions=decisions,
             repository_root=repository_root,
-            pattern="timestamp does not match the Git object database",
+            pattern="precedes PR 1 creation",
         )
 
     def test_reordered_override_with_recomputed_digests_is_rejected(self):

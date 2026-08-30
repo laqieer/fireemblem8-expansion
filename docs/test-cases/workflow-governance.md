@@ -298,11 +298,13 @@ measurement boundary even though GitHub later completed it. Current PR and
 artifact states are derived from authoritative facts and disposition history;
 threshold override decisions contain no editable introduction timestamp, SHA,
 diff, run conclusion, or copied current-state field. Every override is read
-from the cited candidate commit and first-reviewed commit trees. Before these
-calculations, the repository origin, base, every commit object, exact parents,
-timestamps, messages, PR candidate/merge ranges, and referenced history are
-validated against the real object database. The expected cohort seal binds
-the normalized PR, issue, review, workflow-run, finding, and commit identities.
+from the cited candidate commit and first-reviewed commit trees. Every review
+SHA is an exact member of its PR's candidate-history set and available by the
+review timestamp. Before these calculations, the repository origin, base,
+every commit object, exact parents, timestamps, messages, PR candidate/merge
+ranges, and referenced history are validated against the real object database.
+The expected cohort seal binds normalized identities plus review, event,
+timestamp, PR/SHA, and other metric relationships.
 PR #150's clean-review timing remains explicitly unavailable because no
 authoritative historical thread events were collected; no numeric result is
 emitted or eligible for pilot comparison/promotion.
@@ -328,9 +330,11 @@ override insertion/backdating/reordering/current-record mutation, a cited tree
 without the exact override entry, cumulative unresolved findings, post-review
 resolution, direct synthetic resolution timestamps, untrusted/incomplete
 resolution history, wrong-PR or missing event SHA, fabricated repository
-identity/commit/parent/timestamp/message, incoherent candidate/merge or review
-history, any PR/issue/review/run/finding/commit identity substitution, an
-omitted identity seal, earlier/equal/unrelated/fabricated reverts,
+identity/commit/parent/timestamp/message, base-only/merge-only/unrelated/future
+review commits, incoherent candidate/merge or review history, any
+PR/issue/review/run/finding/commit identity or metric-relationship
+substitution, an omitted identity seal, PR events before creation, invalid
+open/closed phases, future event SHAs, earlier/equal/unrelated/fabricated reverts,
 inconsistent stack parent/base/depth, missing parent decisions, stack cycles,
 false depth-two or depth-three claims, an older spotlight run outside the
 cohort, impossible non-Build intervals, incoherent
