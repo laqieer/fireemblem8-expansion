@@ -282,12 +282,14 @@ availability or grant credentials.
    identity-bound GitHub webhook history can produce numeric clean-review
    evidence.
 7. Inspect the executable lifecycle controls. Confirm the reporter creates a
-   bounded temporary repository outside the checkout, removes each allowlisted
-   decision/fixture/reporter artifact in turn, runs the declared production
-   reporter consumer and/or focused reporter consistency test, observes the
-   named semantic failure, restores the artifact, and observes success.
-   Confirm the source artifact bytes are unchanged afterward and stale,
-   fabricated, or fixture-command substitutions fail closed.
+   bounded plain artifact sandbox beneath the checkout's ignored
+   `build/test-artifacts/` directory, while retaining the original checkout
+   and object database as separate immutable Git authority. Confirm it removes
+   each allowlisted decision/fixture/reporter artifact copy in turn, runs the
+   declared production reporter consumer and/or focused reporter consistency
+   test, observes the named semantic failure, restores the copy, and observes
+   success. Confirm automatic bounded cleanup, unchanged source artifact
+   bytes, and fail-closed stale, fabricated, or fixture-command substitutions.
 8. Run `python3 scripts/check_docs.py --check`.
 
 ### Expected result
@@ -318,10 +320,10 @@ the complete parent-decision chain, including a genuine depth-three exception.
 Checkpoint, dependency-change, and pre-graduation removal proofs preserve
 necessary artifacts after a named semantic failure; every historical
 restoration passes, and a deletion-ready artifact passes only with `Delete`.
-The committed artifacts additionally pass actual isolated removal/failure and
-restoration/success execution through the closed command allowlist while the
-artifact sandbox continues to use the immutable real checkout as Git
-authority.
+The committed artifacts additionally pass actual sandboxed removal/failure
+and restoration/success execution through the closed command allowlist while
+the plain `build/test-artifacts/` sandbox continues to use the immutable
+original checkout and object database as separate Git authority.
 
 ### Negative control
 

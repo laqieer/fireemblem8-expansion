@@ -22,6 +22,9 @@ from typing import Any, Iterable
 SCHEMA_VERSION = 1
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+EXPECTED_PATH_RE = re.compile(
+    r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$"
+)
 DELIVERY_GUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
@@ -173,6 +176,85 @@ GENERATED_PREFIXES = (
 GENERATED_SUFFIXES = (
     ".generated.json",
     ".generated.md",
+)
+EXPECTED_RESULT_PATHS = frozenset(
+    {
+        "artifacts.invalidated_review_ids",
+        "builds.action_required",
+        "builds.active",
+        "builds.cancelled",
+        "builds.duplicate_unchanged_sha",
+        "builds.failure",
+        "builds.minutes",
+        "builds.neutral",
+        "builds.runs",
+        "builds.sample_size",
+        "builds.skipped",
+        "builds.spotlight.action_required",
+        "builds.spotlight.active",
+        "builds.spotlight.cancelled",
+        "builds.spotlight.failure",
+        "builds.spotlight.minutes",
+        "builds.spotlight.neutral",
+        "builds.spotlight.pr",
+        "builds.spotlight.runs",
+        "builds.spotlight.skipped",
+        "builds.spotlight.success",
+        "builds.success",
+        "classification_summary.flags.bulk_deletion",
+        "classification_summary.flags.generated_only",
+        "classification_summary.flags.reverted",
+        "classification_summary.flags.stacked",
+        "classification_summary.flags.still_running",
+        "classification_summary.flags.superseded",
+        "classification_summary.work_states.cancelled",
+        "classification_summary.work_states.merged",
+        "classification_summary.work_states.still_running",
+        "computed.seal",
+        "delivery.first_push_to_clean_review.eligible_pull_requests",
+        "delivery.first_push_to_clean_review.excluded_without_complete_evidence",
+        "delivery.first_push_to_clean_review.median_hours",
+        "delivery.first_push_to_clean_review.pilot_ready",
+        "delivery.first_push_to_clean_review.reason",
+        "delivery.first_push_to_clean_review.status",
+        "delivery.issue_to_merge.eligible_pull_requests",
+        "delivery.issue_to_merge.excluded_without_linked_issue",
+        "delivery.issue_to_merge.median_hours",
+        "delivery.merged_pull_requests",
+        "delivery.pr_open_to_merge_median_hours",
+        "efficiency.metadata_maintenance_minutes",
+        "efficiency.net_saved_minutes",
+        "efficiency.pilot_coordination_minutes",
+        "efficiency.saved_build_minutes",
+        "efficiency.saved_review_minutes",
+        "events.base_changes",
+        "events.broken_master",
+        "events.close_reopen_cycles",
+        "events.conflicts",
+        "events.escaped_defects",
+        "events.manual_rejects",
+        "events.reverts",
+        "events.security_findings",
+        "events.spotlight_pr",
+        "events.superseded_candidates",
+        "identities.seal",
+        "reviews.changed_lines",
+        "reviews.current_resolved_findings",
+        "reviews.current_unresolved_findings",
+        "reviews.rounds",
+        "reviews.spotlight_pr",
+        "reviews.superseded_rounds",
+        "reviews.valid_findings",
+        "reviews.valid_findings_per_kloc",
+        "reviews.valid_findings_per_review",
+        "schema_version",
+        "snapshot.base_sha",
+        "snapshot.captured_at",
+        "snapshot.lifecycle_as_of",
+        "snapshot.repository",
+        "snapshot.window.end",
+        "snapshot.window.start",
+    }
 )
 
 
@@ -3456,9 +3538,11 @@ def report_efficiency(data: dict[str, Any]) -> dict[str, int]:
 
 
 def report_classifications(data: dict[str, Any]) -> list[dict[str, Any]]:
-    runs_by_branch: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    runs_by_pr: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for run in data["runs"].values():
-        runs_by_branch[run["head_branch"]].append(run)
+        pr = pull_request_for_run(run, data["pull_requests"])
+        if pr is not None:
+            runs_by_pr[pr["number"]].append(run)
     reverted_shas = {
         relation["reverts"]
         for relation in data["repository_authority"]["reverts"]
@@ -3466,10 +3550,13 @@ def report_classifications(data: dict[str, Any]) -> list[dict[str, Any]]:
     result = []
     for number, pr in sorted(data["pull_requests"].items()):
         lines = pr["additions"] + pr["deletions"]
-        branch_shas = {run["head_sha"] for run in runs_by_branch[pr["head_branch"]]}
+        pr_runs = runs_by_pr[number]
+        branch_shas = {run["head_sha"] for run in pr_runs}
         flags = []
         if len(branch_shas) > 1:
             flags.append("superseded")
+        if any(run["status"] in {"queued", "in_progress"} for run in pr_runs):
+            flags.append("still-running")
         if pr["base_ref"] != data["fixture"]["default_branch"]:
             flags.append("stacked")
         if pr["files"] and all(is_generated_path(path) for path in pr["files"]):
@@ -3492,6 +3579,25 @@ def report_classifications(data: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return result
+
+
+def report_classification_summary(
+    classifications: list[dict[str, Any]],
+) -> dict[str, dict[str, int]]:
+    work_states = {"cancelled": 0, "merged": 0, "still_running": 0}
+    flags = {
+        "bulk_deletion": 0,
+        "generated_only": 0,
+        "reverted": 0,
+        "stacked": 0,
+        "still_running": 0,
+        "superseded": 0,
+    }
+    for classification in classifications:
+        work_states[classification["work_state"].replace("-", "_")] += 1
+        for flag in classification["flags"]:
+            flags[flag.replace("-", "_")] += 1
+    return {"work_states": work_states, "flags": flags}
 
 
 def report_artifacts(
@@ -3559,6 +3665,7 @@ def report_artifacts(
 
 
 IDENTITY_SEAL_DOMAIN = b"workflow-pilot-cohort-relationships-v2\0"
+COMPUTED_RESULT_SEAL_DOMAIN = b"workflow-pilot-computed-results-v1\0"
 
 
 def _sealed_records(
@@ -3609,6 +3716,12 @@ def cohort_identity_seal(data: dict[str, Any]) -> str:
     ).hexdigest()
 
 
+def computed_result_seal(result: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        COMPUTED_RESULT_SEAL_DOMAIN + normalized_json(result)
+    ).hexdigest()
+
+
 def build_report(
     fixture: Any,
     raw_decisions: Any,
@@ -3626,6 +3739,19 @@ def build_report(
     )
     decisions = validate_decisions(raw_decisions, data, repository_root)
     workflow_sample(data)
+    classifications = report_classifications(data)
+    computed = {
+        "delivery": report_delivery(data),
+        "reviews": report_reviews(data),
+        "builds": report_builds(data),
+        "events": report_events(data),
+        "efficiency": report_efficiency(data),
+        "classifications": classifications,
+        "classification_summary": report_classification_summary(
+            classifications
+        ),
+        "artifacts": report_artifacts(data, decisions),
+    }
     return {
         "schema_version": SCHEMA_VERSION,
         "snapshot": {
@@ -3645,13 +3771,8 @@ def build_report(
             "commits": sorted(data["commits"]),
             "seal": cohort_identity_seal(data),
         },
-        "delivery": report_delivery(data),
-        "reviews": report_reviews(data),
-        "builds": report_builds(data),
-        "events": report_events(data),
-        "efficiency": report_efficiency(data),
-        "classifications": report_classifications(data),
-        "artifacts": report_artifacts(data, decisions),
+        **computed,
+        "computed": {"seal": computed_result_seal(computed)},
     }
 
 
@@ -3661,9 +3782,20 @@ def check_expected(report: dict[str, Any], expected: Any) -> None:
     if expected["schema_version"] != SCHEMA_VERSION:
         raise PilotDataError(f"expected schema_version must be {SCHEMA_VERSION}")
     paths = expect_object(expected["paths"], "expected.paths")
-    if "identities.seal" not in paths:
+    for path in paths:
+        if (
+            not isinstance(path, str)
+            or EXPECTED_PATH_RE.fullmatch(path) is None
+        ):
+            raise PilotDataError(
+                f"expected path {path!r} is malformed"
+            )
+    missing = sorted(EXPECTED_RESULT_PATHS - set(paths))
+    extra = sorted(set(paths) - EXPECTED_RESULT_PATHS)
+    if missing or extra:
         raise PilotDataError(
-            "expected.paths must pin the canonical identities.seal"
+            "expected.paths must exactly match the frozen result contract "
+            f"(missing={missing}, extra={extra})"
         )
     seal = paths["identities.seal"]
     if not isinstance(seal, str) or SHA256_RE.fullmatch(seal) is None:

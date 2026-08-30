@@ -953,6 +953,39 @@ class VerifyCliCwdTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.count("[SKIPPED(dry-run)]"), 28)
 
+    def test_invalid_explicit_repo_is_a_normal_cli_error(self):
+        cases = (
+            os.path.join(REPO_ROOT, "build", "does-not-exist"),
+            os.path.join(REPO_ROOT, "tests"),
+            os.path.join(REPO_ROOT, "scripts", "upstream_port", "cli.py"),
+        )
+        for target in cases:
+            with self.subTest(target=target):
+                stderr = io.StringIO()
+                with (
+                    contextlib.chdir(REPO_ROOT),
+                    mock.patch.dict(os.environ, {}, clear=True),
+                    contextlib.redirect_stderr(stderr),
+                ):
+                    self.assertEqual(
+                        cli.main(["--repo", target, "verify", "--dry-run"]),
+                        1,
+                    )
+                self.assertTrue(stderr.getvalue().startswith("error: "))
+                self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_implicit_repo_is_the_exact_source_root(self):
+        self.assertEqual(cli._repo_root(None), REPO_ROOT)
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(cli, "SOURCE_ROOT", os.path.join(REPO_ROOT, "tests")),
+            mock.patch.dict(os.environ, {}, clear=True),
+            contextlib.redirect_stderr(stderr),
+        ):
+            self.assertEqual(cli.main(["verify", "--dry-run"]), 1)
+        self.assertIn("exact Git top level", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

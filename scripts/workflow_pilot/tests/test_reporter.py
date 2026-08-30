@@ -516,6 +516,16 @@ def authoritative_report(fixture, decisions, repository_root=None):
         )
 
 
+def expected_from_report(report):
+    paths = {}
+    for path in reporter.EXPECTED_RESULT_PATHS:
+        value = report
+        for component in path.split("."):
+            value = value[component]
+        paths[path] = copy.deepcopy(value)
+    return {"schema_version": reporter.SCHEMA_VERSION, "paths": paths}
+
+
 def add_second_pr(fixture):
     fixture["pull_requests"].append(
         {
@@ -680,6 +690,57 @@ class BaselineFixtureTests(unittest.TestCase):
         )
         self.assertEqual(first, second)
 
+    def test_expected_paths_are_a_complete_closed_contract(self):
+        report = authoritative_report(self.fixture, self.decisions)
+        self.assertEqual(
+            set(self.expected["paths"]),
+            reporter.EXPECTED_RESULT_PATHS,
+        )
+        for removed_path in sorted(reporter.EXPECTED_RESULT_PATHS):
+            with self.subTest(removed_path=removed_path):
+                expected = copy.deepcopy(self.expected)
+                del expected["paths"][removed_path]
+                changed_report = copy.deepcopy(report)
+                changed_report["builds"]["runs"] = -1
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "must exactly match the frozen result contract",
+                ):
+                    reporter.check_expected(changed_report, expected)
+
+        for path in ("builds.renamed", "builds..runs", ".builds.runs"):
+            with self.subTest(path=path):
+                expected = copy.deepcopy(self.expected)
+                expected["paths"][path] = 326
+                pattern = (
+                    "is malformed"
+                    if path in {"builds..runs", ".builds.runs"}
+                    else "must exactly match the frozen result contract"
+                )
+                with self.assertRaisesRegex(reporter.PilotDataError, pattern):
+                    reporter.check_expected(report, expected)
+
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "duplicate JSON key 'builds.runs'",
+        ):
+            reporter.parse_json(
+                '{"schema_version":1,"paths":'
+                '{"builds.runs":326,"builds.runs":326}}',
+                "duplicate expected fixture",
+            )
+
+    def test_expected_path_deletion_cannot_hide_reporter_regression(self):
+        report = authoritative_report(self.fixture, self.decisions)
+        report["delivery"]["pr_open_to_merge_median_hours"] = "0.0"
+        expected = copy.deepcopy(self.expected)
+        del expected["paths"]["delivery.pr_open_to_merge_median_hours"]
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "delivery.pr_open_to_merge_median_hours",
+        ):
+            reporter.check_expected(report, expected)
+
     def test_expected_rejects_coordinated_snapshot_identity_drift(self):
         repository = copy.deepcopy(self.fixture)
         repository["repository"] = "laqieer/coordinated-drift"
@@ -712,6 +773,7 @@ class BaselineFixtureTests(unittest.TestCase):
                 report = authoritative_report(fixture, self.decisions)
                 expected = copy.deepcopy(self.expected)
                 expected["paths"]["identities.seal"] = report["identities"]["seal"]
+                expected["paths"]["computed.seal"] = report["computed"]["seal"]
                 with self.assertRaisesRegex(
                     reporter.PilotDataError,
                     "expected path 'snapshot\\.",
@@ -725,6 +787,7 @@ class BaselineFixtureTests(unittest.TestCase):
         report = authoritative_report(fixture, self.decisions)
         expected = copy.deepcopy(self.expected)
         expected["paths"]["identities.seal"] = report["identities"]["seal"]
+        expected["paths"]["computed.seal"] = report["computed"]["seal"]
         arguments = [
             "--fixture",
             str(BASELINE),
@@ -1108,10 +1171,12 @@ class CohortIdentitySealTests(unittest.TestCase):
     def test_every_frozen_identity_family_changes_the_expected_seal(self):
         baseline_data = self.identity_data()
         seal = reporter.cohort_identity_seal(baseline_data)
-        expected = {
-            "schema_version": reporter.SCHEMA_VERSION,
-            "paths": {"identities.seal": seal},
-        }
+        baseline_report = authoritative_report(
+            minimal_fixture(),
+            minimal_decisions(),
+        )
+        expected = expected_from_report(baseline_report)
+        expected["paths"]["identities.seal"] = seal
         families = {
             "pull_requests": (1, 2),
             "issues": (1, 2),
@@ -1124,11 +1189,10 @@ class CohortIdentitySealTests(unittest.TestCase):
             with self.subTest(family=family):
                 changed = copy.deepcopy(baseline_data)
                 changed[family][new] = changed[family].pop(old)
-                report = {
-                    "identities": {
-                        "seal": reporter.cohort_identity_seal(changed),
-                    }
-                }
+                report = copy.deepcopy(baseline_report)
+                report["identities"]["seal"] = reporter.cohort_identity_seal(
+                    changed
+                )
                 with self.assertRaisesRegex(
                     reporter.PilotDataError,
                     "identities.seal",
@@ -1162,10 +1226,12 @@ class CohortIdentitySealTests(unittest.TestCase):
         baseline_data = self.identity_data()
         baseline_data["repository_authority"] = {"reverts": []}
         seal = reporter.cohort_identity_seal(baseline_data)
-        expected = {
-            "schema_version": reporter.SCHEMA_VERSION,
-            "paths": {"identities.seal": seal},
-        }
+        baseline_report = authoritative_report(
+            minimal_fixture(),
+            minimal_decisions(),
+        )
+        expected = expected_from_report(baseline_report)
+        expected["paths"]["identities.seal"] = seal
         mutations = {}
 
         changed = copy.deepcopy(baseline_data)
@@ -1210,11 +1276,10 @@ class CohortIdentitySealTests(unittest.TestCase):
                     report_function(baseline_data),
                     report_function(changed),
                 )
-                report = {
-                    "identities": {
-                        "seal": reporter.cohort_identity_seal(changed),
-                    }
-                }
+                report = copy.deepcopy(baseline_report)
+                report["identities"]["seal"] = reporter.cohort_identity_seal(
+                    changed
+                )
                 with self.assertRaisesRegex(
                     reporter.PilotDataError,
                     "identities.seal",
@@ -1222,14 +1287,14 @@ class CohortIdentitySealTests(unittest.TestCase):
                     reporter.check_expected(report, expected)
 
     def test_expected_contract_cannot_omit_identity_seal(self):
+        report = authoritative_report(minimal_fixture(), minimal_decisions())
+        expected = expected_from_report(report)
+        del expected["paths"]["identities.seal"]
         with self.assertRaisesRegex(
             reporter.PilotDataError,
-            "must pin the canonical identities.seal",
+            "must exactly match the frozen result contract",
         ):
-            reporter.check_expected(
-                {"identities": {"seal": "a" * 64}},
-                {"schema_version": 1, "paths": {}},
-            )
+            reporter.check_expected(report, expected)
 
 
 class FormulaAndClassificationTests(unittest.TestCase):
@@ -1304,7 +1369,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
             {
                 "pr": 1,
                 "work_state": "merged",
-                "flags": ["superseded"],
+                "flags": ["still-running", "superseded"],
                 "current_head_sha": sha("c"),
             },
         )
@@ -1326,7 +1391,13 @@ class FormulaAndClassificationTests(unittest.TestCase):
         self.assertEqual(classification["work_state"], "cancelled")
         self.assertEqual(
             classification["flags"],
-            ["bulk-deletion", "generated-only", "stacked", "superseded"],
+            [
+                "bulk-deletion",
+                "generated-only",
+                "stacked",
+                "still-running",
+                "superseded",
+            ],
         )
 
         fixture["pull_requests"][0].update(
@@ -1358,6 +1429,90 @@ class FormulaAndClassificationTests(unittest.TestCase):
         self.assertNotEqual(
             result["events"]["reverts"][0]["commit"],
             result["events"]["reverts"][0]["reverts"],
+        )
+
+    def test_active_run_flag_coexists_with_every_pr_work_state(self):
+        states = (
+            ("merged", "merged"),
+            ("closed", "cancelled"),
+            ("open", "still-running"),
+        )
+        for run_status in ("queued", "in_progress"):
+            for pr_state, work_state in states:
+                for run_branch in ("agent/one", "refs/pull/1/head"):
+                    with self.subTest(
+                        run_status=run_status,
+                        pr_state=pr_state,
+                        run_branch=run_branch,
+                    ):
+                        fixture = minimal_fixture()
+                        pr = fixture["pull_requests"][0]
+                        if pr_state == "closed":
+                            pr.update(
+                                {
+                                    "state": "closed",
+                                    "merged_at": None,
+                                    "merge_sha": None,
+                                }
+                            )
+                        elif pr_state == "open":
+                            pr.update(
+                                {
+                                    "state": "open",
+                                    "merged_at": None,
+                                    "closed_at": None,
+                                    "merge_sha": None,
+                                }
+                            )
+                        run = fixture["workflow_runs"][3]
+                        run.update(
+                            {
+                                "status": run_status,
+                                "conclusion": None,
+                                "completed_at": None,
+                                "head_branch": run_branch,
+                            }
+                        )
+                        data = reporter.validate_fixture(fixture)
+                        data["repository_authority"] = {"reverts": []}
+                        classification = reporter.report_classifications(data)[0]
+                        self.assertEqual(classification["work_state"], work_state)
+                        self.assertIn("still-running", classification["flags"])
+
+    def test_terminal_runs_do_not_add_still_running_flag(self):
+        fixture = minimal_fixture()
+        fixture["workflow_runs"][3].update(
+            {
+                "status": "completed",
+                "conclusion": "success",
+                "completed_at": "2026-01-01T09:30:00Z",
+            }
+        )
+        data = reporter.validate_fixture(fixture)
+        data["repository_authority"] = {"reverts": []}
+        classification = reporter.report_classifications(data)[0]
+        self.assertEqual(classification["work_state"], "merged")
+        self.assertNotIn("still-running", classification["flags"])
+
+    def test_minimal_fixture_reports_coexisting_classification_summary(self):
+        result = authoritative_report(minimal_fixture(), minimal_decisions())
+        self.assertEqual(
+            result["classification_summary"],
+            {
+                "flags": {
+                    "bulk_deletion": 0,
+                    "generated_only": 0,
+                    "reverted": 0,
+                    "stacked": 0,
+                    "still_running": 1,
+                    "superseded": 1,
+                },
+                "work_states": {
+                    "cancelled": 0,
+                    "merged": 1,
+                    "still_running": 0,
+                },
+            },
         )
 
     def test_revert_requires_later_authoritative_timestamp(self):

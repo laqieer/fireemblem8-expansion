@@ -207,7 +207,7 @@ Classifications are derived and may coexist:
 | Class | Rule |
 | --- | --- |
 | Cancelled work | PR is closed without a merge; a cancelled Build is separately a terminal run conclusion. |
-| Still-running work | PR is open, or an Actions run is queued/in progress at the measurement boundary. |
+| Still-running work | An open PR retains its PR-derived `work_state`. Independently, any queued or in-progress run associated by authoritative PR branch/ref adds the `still-running` flag, so it coexists with merged, cancelled, stacked, superseded, or other classifications. |
 | Superseded | More than one exact candidate SHA is observed for the PR branch; old-SHA runs remain cost evidence. |
 | Stacked | Authoritative base differs from the default branch and the decision's immediate parent/base relation agrees. Depth three requires the documented exception. |
 | Generated-only | Every changed path is under a controlled generated prefix/suffix; a mixed diff is not generated-only. |
@@ -243,9 +243,13 @@ Every proof in the required history is checked independently, so a failed
 earlier restoration cannot be hidden by a later successful proof. For the
 committed baseline's three retained artifacts, every recorded proof must state
 the allowlisted issue #176 semantic failure and successful restoration, and
-the reporter reruns that removal/restoration behavior in its isolated
-temporary repository. A stale restored artifact, fabricated reason/result, or
-fixture-authored command fails before a success-shaped report is emitted.
+the reporter reruns that removal/restoration behavior in a plain temporary
+artifact sandbox beneath the checkout's ignored `build/test-artifacts/`
+directory. The original checkout and its object database remain the separate,
+immutable Git authority. The sandbox is bounded to allowlisted files, removed
+automatically, and never commits or modifies the source artifacts. A stale
+restored artifact, fabricated reason/result, or fixture-authored command fails
+before a success-shaped report is emitted.
 
 Disposition values are exactly `Delete`, `Derive`, `Consolidate`, and
 `Graduate`. History is append-only and strictly chronological; current
@@ -279,6 +283,13 @@ removing any one loses a dependency required by issues #177 through #181.
 These values are immutable fixture expectations only. The reporter derives
 them from identities and timestamps; they are not editable fields in the
 decision record.
+
+The expected file has one closed, versioned path set: every frozen scalar
+snapshot/computed result is required, and collection-shaped classifications,
+reverts, and artifact results participate in the domain-separated computed
+result seal. Missing, extra, renamed, malformed, or duplicate expected paths
+fail before any value comparison. The independent v2 identity/relationship
+seal remains required as the fixture-input boundary.
 
 Review-size evidence is deliberately not stored as mutable current-head
 numbers in this document. At each candidate, the coordinator derives the

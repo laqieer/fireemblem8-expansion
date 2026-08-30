@@ -292,11 +292,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 0
 
         if args.command == "verify":
-            results = verify_mod.run_gates(
-                repo_root,
-                jobs=args.jobs,
-                dry_run=args.dry_run,
-            )
+            try:
+                results = verify_mod.run_gates(
+                    repo_root,
+                    jobs=args.jobs,
+                    dry_run=args.dry_run,
+                )
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
             ok = True
             for r in results:
                 status = "SKIPPED(dry-run)" if not r.ran else ("PASS" if r.passed else "FAIL")
