@@ -320,7 +320,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             ValueError,
-            "reviewed scrubbed environment",
+            "unsupported mapping-key syntax|reviewed scrubbed environment",
         ):
             _parse_workflow_gate_commands_text(adversarial)
 
@@ -360,8 +360,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                     self.assertNotEqual(changed, workflow)
                     with self.assertRaisesRegex(
                         ValueError,
-                        "unsupported direct mapping|only the reviewed "
-                        "(?:name and run|name, env, and run)",
+                        "unsupported direct mapping|unsupported direct fields|"
+                        "must contain exactly",
                     ):
                         _parse_workflow_gate_commands_text(changed)
 
@@ -841,6 +841,18 @@ class VerifyCliCwdTests(unittest.TestCase):
             destination.write(workflow_bytes)
         return target
 
+    def append_job_steps(self, workflow, job_name, steps):
+        start = workflow.index(f"\n  {job_name}:\n") + 1
+        body_start = workflow.index("\n", start) + 1
+        next_job = re.search(
+            r"^  [A-Za-z_][A-Za-z0-9_-]*:",
+            workflow[body_start:],
+            re.M,
+        )
+        self.assertIsNotNone(next_job)
+        end = body_start + next_job.start()
+        return workflow[:end] + steps + "\n" + workflow[end:]
+
     def test_normal_cli_executes_all_gates_at_selected_target_root(self):
         artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
         os.makedirs(artifact_root, exist_ok=True)
@@ -953,6 +965,31 @@ class VerifyCliCwdTests(unittest.TestCase):
                     workflow_step,
                     1,
                 ),
+                "altered-action": original.replace(
+                    verify_mod._CHECKOUT_USES,
+                    "actions/checkout@" + "0" * 40,
+                    1,
+                ),
+                "altered-with": original.replace(
+                    "        fetch-depth: 0",
+                    "        fetch-depth: 1",
+                    1,
+                ),
+                "altered-env": original.replace(
+                    "        BASH_ENV: ''",
+                    "        BASH_ENV: build/mask",
+                    1,
+                ),
+                "altered-setup": original.replace(
+                    "      run: ./build_tools.sh",
+                    "      run: exit 1",
+                    1,
+                ),
+                "extra-job": original
+                + "\n  target-only:\n"
+                + "    runs-on: ubuntu-latest\n"
+                + "    steps:\n"
+                + "    - run: exit 1\n",
             }
             for name, changed in mutations.items():
                 with self.subTest(name=name):
@@ -960,7 +997,9 @@ class VerifyCliCwdTests(unittest.TestCase):
                         handle.write(changed)
                     with self.assertRaisesRegex(
                         ValueError,
-                        "target Build workflow gate contract differs",
+                        "target Build workflow gate contract differs|"
+                        "unreviewed unnamed step|reviewed scrubbed environment|"
+                        "workflow job order|step roles and order",
                     ):
                         verify_mod.run_gates(target_root, dry_run=True)
 
@@ -970,6 +1009,54 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "target Build workflow",
             ):
                 verify_mod.run_gates(target_root, dry_run=True)
+
+    def test_unnamed_and_duplicate_setup_steps_reject_in_every_worker(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-invisible-step-",
+            dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            workflow_path = os.path.join(
+                target_root,
+                ".github",
+                "workflows",
+                "build.yml",
+            )
+            with open(workflow_path, "r", encoding="utf-8") as handle:
+                original = handle.read()
+            for job_name in verify_mod._COMBINED_JOBS:
+                with self.subTest(job=job_name, mutation="unnamed"):
+                    changed = self.append_job_steps(
+                        original,
+                        job_name,
+                        "    - run: exit 1\n",
+                    )
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "unreviewed unnamed step",
+                    ):
+                        verify_mod.run_gates(target_root, dry_run=True)
+
+                with self.subTest(job=job_name, mutation="duplicate-setup"):
+                    changed = self.append_job_steps(
+                        original,
+                        job_name,
+                        "    - name: Build tools\n"
+                        "      run: exit 1\n\n"
+                        "    - name: Build tools\n"
+                        "      run: exit 1\n",
+                    )
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "duplicate step names",
+                    ):
+                        verify_mod.run_gates(target_root, dry_run=True)
 
     def test_source_root_gate_equivalence_remains_supported(self):
         self.assertEqual(

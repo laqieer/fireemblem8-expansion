@@ -200,11 +200,14 @@ and the pilot baseline's `--repository-root`; there is no per-step
 working-directory override. Before either a dry run or execution, the source
 tool parses the target checkout's Build workflow as bounded UTF-8 data without
 importing or executing target Python. The four reviewed worker jobs must have
-the exact same step names, argv, order, direct fields, protected environments,
-and no working-directory override as the source workflow and source `gates()`
-contract. An older, newer, missing, added, removed, reordered, or changed
-target gate fails closed instead of running source-defined evidence against a
-different checkout contract.
+the exact same complete ordered step sequences as the source: step count,
+unique required names, setup-versus-gate role, action and immutable SHA, run
+argv, `env`/`with` mappings, direct fields, and no working-directory override.
+The complete job-name order must also match, so extra jobs fail. The 28 gate
+commands are then checked against source `gates()`. An unnamed non-checkout
+step, duplicate setup/name, complex key form, or older, newer, missing, added,
+removed, reordered, or changed target step fails closed instead of running
+source-defined evidence against a different checkout contract.
 
 CI additionally hydrates commit authority before the workflow-pilot tests with
 the strict fixture-derived helper. It fetches only missing exact commit IDs

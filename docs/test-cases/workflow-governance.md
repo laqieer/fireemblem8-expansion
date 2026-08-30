@@ -424,9 +424,11 @@ The protected Python steps use the closed isolated launcher, so repository or
 user site customization cannot run before control. The workflow mirror parser
 uses deterministic line/indent parsing rather than an ambiguous multiline
 regular expression. Cross-checkout verification parses target workflow data
-without importing target code and requires exact source/target gate names,
-argv, order, fields, protected environment, and root execution before dry-run
-or execution.
+without importing target code and requires complete source/target job and step
+sequences: counts/order, unique names, setup-versus-gate roles, immutable
+actions, run argv, `env`/`with` mappings, direct fields, and root execution
+before dry-run or execution. Unnamed non-checkout steps, duplicate setup names,
+complex keys, and extra jobs fail closed.
 
 `python3 scripts/check_docs.py --check` validates this complete procedure,
 registry ownership, links, and automation evidence.

@@ -34,7 +34,19 @@ _SOURCE_ROOT = os.path.realpath(
     os.path.join(os.path.dirname(__file__), "..", "..")
 )
 _BUILD_WORKFLOW_RELATIVE = os.path.join(".github", "workflows", "build.yml")
-_STEP_NAME_RE = re.compile(r"^    - name: (.+)$", re.M)
+_COMBINED_JOBS = ("host-tests", "build", "extended-host-tests", "legacy")
+_EXPECTED_JOBS = _COMBINED_JOBS + ("patch-release", "summary")
+_CHECKOUT_USES = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+_CHECKOUT_WITH = (
+    ("fetch-depth", "0"),
+    ("persist-credentials", "false"),
+    (
+        "ref",
+        "${{ github.event_name == 'pull_request' && "
+        "github.event.pull_request.head.sha || github.sha }}",
+    ),
+    ("submodules", "recursive"),
+)
 _NON_GATE_STEP_NAMES = {
     "Verify checked-out revision",
     "Hydrate workflow-pilot Git authority",
@@ -78,6 +90,61 @@ _SCRUBBED_PILOT_ENV = (
     "PATH: /usr/bin:/bin",
     "PYTHONPATH: ''",
 )
+_EXPECTED_STEP_ROLES = {
+    "host-tests": (
+        ("setup", None),
+        ("setup", "Verify checked-out revision"),
+        ("setup", "Hydrate workflow-pilot Git authority"),
+        ("setup", "Install host-only dependencies (no arm-none-eabi toolchain)"),
+        ("gate", "Run gba-playtest host test suite"),
+        ("gate", "Run upstream-port tooling test suite"),
+        ("gate", "Run workflow contract test suite"),
+        ("gate", _WORKFLOW_PILOT_TEST_STEP_NAME),
+        ("gate", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
+        ("gate", "Run localization host test suite (issue #18)"),
+        ("gate", "Run full-game localization width contract (issue #18)"),
+    ),
+    "build": (
+        ("setup", None),
+        ("setup", "Verify checked-out revision"),
+        ("gate", "Check tracked artifacts"),
+        ("standalone-gate", _DOCS_GOVERNANCE_STEP_NAME),
+        ("setup", "Install dependencies"),
+        ("setup", "Build tools"),
+        ("gate", "Run CodeQL alert regression suite (issue #84)"),
+        ("gate", "Check default build lane and quickstart legacy glue (issue #15)"),
+        ("gate", "Check generated-data tables for drift"),
+        ("gate", "Build and verify modern target ROMs and linker"),
+        (
+            "gate",
+            "Boundary/serialization item-ID-expansion + content runtime "
+            "gate (cap 0xCE)",
+        ),
+        (
+            "gate",
+            "Build and verify all-locales/all-features map menu "
+            "(issues #49/#168)",
+        ),
+    ),
+    "extended-host-tests": (
+        ("setup", None),
+        ("setup", "Verify checked-out revision"),
+        ("setup", "Install extended host dependencies"),
+        ("gate", "Run CJK font gates"),
+        ("gate", "Run multilang texttools codec gates"),
+        ("gate", "Run configuration and linker-budget gates"),
+    ),
+    "legacy": (
+        ("setup", None),
+        ("setup", "Verify checked-out revision"),
+        ("setup", "Install archival build dependencies"),
+        ("setup", "Preflight archival toolchain executables"),
+        ("setup", "Install pinned archival agbcc compilers"),
+        ("setup", "Build tools"),
+        ("gate", "Build archival lane without a copyrighted baserom"),
+        ("gate", "Validate pinned archival payload identities"),
+    ),
+}
 
 
 def _split_env_prefix(command):
@@ -174,7 +241,7 @@ def _expand_workspace(argv, repository_root):
     ]
 
 
-def _workflow_job_blocks(text):
+def _workflow_job_entries(text):
     lines = text.splitlines(keepends=True)
     try:
         jobs_index = next(
@@ -188,158 +255,322 @@ def _workflow_job_blocks(text):
     starts = []
     for index in range(jobs_index + 1, len(lines)):
         line = lines[index].rstrip("\r\n")
-        if not line.startswith("  ") or line.startswith("    "):
+        if not line.strip() or line.lstrip().startswith("#"):
             continue
-        header = line[2:]
-        if not header.endswith(":"):
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            raise ValueError("workflow has content after the jobs mapping")
+        if indent != 2:
             continue
-        name = header[:-1]
-        if name and all(
-            character.isalnum() or character in "_-"
-            for character in name
-        ):
-            starts.append((name, index))
-    return {
-        name: "".join(
-            lines[
-                index + 1 :
-                starts[position + 1][1]
-                if position + 1 < len(starts)
-                else len(lines)
-            ]
+        match = re.fullmatch(r"  ([A-Za-z_][A-Za-z0-9_-]*):", line)
+        if match is None:
+            raise ValueError("workflow uses unsupported job-key syntax")
+        starts.append((match.group(1), index))
+    names = [name for name, _ in starts]
+    if len(names) != len(set(names)):
+        raise ValueError("workflow contains duplicate job names")
+    return tuple(
+        (
+            name,
+            "".join(
+                lines[
+                    index + 1 :
+                    starts[position + 1][1]
+                    if position + 1 < len(starts)
+                    else len(lines)
+                ]
+            ),
         )
         for position, (name, index) in enumerate(starts)
-    }
+    )
 
 
-def _scrubbed_environment_entries(block):
-    lines = block.splitlines()
-    try:
-        env_index = lines.index("      env:")
-    except ValueError:
-        return None
-    entries = []
-    for line in lines[env_index + 1 :]:
-        if line == "      run:" or line.startswith("      run: "):
-            return tuple(entries)
+def _parse_nested_mapping(lines, start, end, field, step_label):
+    entries = {}
+    for line in lines[start:end]:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
-        if not line.startswith("        "):
-            return None
-        entries.append(line.strip())
-    return None
-
-
-def _parse_run_lines(block, step_name):
-    lines = block.splitlines()
-    run_indices = [
-        index
-        for index, line in enumerate(lines)
-        if line == "      run:" or line.startswith("      run: ")
-    ]
-    if len(run_indices) != 1:
-        raise ValueError(
-            f"step {step_name!r} must have exactly one parseable run field"
-        )
-    run_index = run_indices[0]
-    value = lines[run_index][len("      run:") :].strip()
-    if value and value != "|":
-        return [value]
-    if value != "|":
-        raise ValueError(f"step {step_name!r} has an empty run field")
-    commands = []
-    for line in lines[run_index + 1 :]:
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        if not line.startswith("        "):
+        if len(line) - len(line.lstrip(" ")) != 8:
             raise ValueError(
-                f"step {step_name!r} run block has invalid indentation"
+                f"{step_label} {field} uses unsupported nested indentation"
             )
-        commands.append(line.strip())
-    if not commands:
-        raise ValueError(f"step {step_name!r} has an empty run block")
+        match = re.fullmatch(
+            r"        ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
+            line,
+        )
+        if match is None:
+            raise ValueError(
+                f"{step_label} {field} uses unsupported mapping-key syntax"
+            )
+        key = match.group(1)
+        if key in entries:
+            raise ValueError(f"{step_label} {field} repeats key {key!r}")
+        value = match.group(2).strip()
+        if not value:
+            raise ValueError(f"{step_label} {field}.{key} is empty")
+        entries[key] = value
+    if not entries:
+        raise ValueError(f"{step_label} {field} mapping is empty")
+    return tuple(sorted(entries.items()))
+
+
+def _parse_run_value(lines, start, end, value, step_label):
+    if value and value != "|":
+        commands = (tuple(shlex.split(value)),)
+    elif value == "|":
+        parsed = []
+        for line in lines[start:end]:
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            if len(line) - len(line.lstrip(" ")) < 8:
+                raise ValueError(f"{step_label} run block has invalid indentation")
+            parsed.append(tuple(shlex.split(line.strip())))
+        commands = tuple(parsed)
+    else:
+        raise ValueError(f"{step_label} run field is empty")
+    if not commands or any(not command for command in commands):
+        raise ValueError(f"{step_label} run command is empty")
     return commands
 
 
-def _parse_workflow_gate_contract_text(text):
-    commands = []
-    jobs = _workflow_job_blocks(text)
-    for job_name in ("host-tests", "build", "extended-host-tests", "legacy"):
-        body = jobs.get(job_name)
-        if body is None:
-            raise ValueError(f"missing candidate Build job {job_name!r}")
-        step_matches = list(_STEP_NAME_RE.finditer(body))
-        if not step_matches:
+def _parse_step(block, job_name, index):
+    lines = block.splitlines()
+    first_index = next(
+        (
+            line_index
+            for line_index, line in enumerate(lines)
+            if line.strip() and not line.lstrip().startswith("#")
+        ),
+        None,
+    )
+    step_label = f"job {job_name!r} step {index}"
+    if first_index is None:
+        raise ValueError(f"{step_label} is empty")
+    first = re.fullmatch(
+        r"    -[ \t]+([A-Za-z_][A-Za-z0-9_-]*)[ \t]*:[ \t]*(.*)",
+        lines[first_index],
+    )
+    if first is None:
+        raise ValueError(f"{step_label} uses unsupported sequence-key syntax")
+
+    direct = [(first.group(1), first.group(2), first_index)]
+    for line_index in range(first_index + 1, len(lines)):
+        line = lines[line_index]
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 6:
+            match = re.fullmatch(
+                r"      ([A-Za-z_][A-Za-z0-9_-]*)[ \t]*:[ \t]*(.*)",
+                line,
+            )
+            if match is None:
+                raise ValueError(
+                    f"{step_label} uses unsupported direct mapping-key syntax"
+                )
+            direct.append((match.group(1), match.group(2), line_index))
+        elif indent < 8:
+            raise ValueError(f"{step_label} uses unsupported step indentation")
+
+    direct_names = [name for name, _, _ in direct]
+    if len(direct_names) != len(set(direct_names)):
+        raise ValueError(f"{step_label} contains duplicate direct fields")
+    unknown = sorted(
+        set(direct_names) - {"name", "uses", "run", "env", "with"}
+    )
+    if unknown:
+        raise ValueError(
+            f"{step_label} has unsupported direct fields: {', '.join(unknown)}"
+        )
+
+    values = {}
+    for field_index, (name, raw_value, line_index) in enumerate(direct):
+        end = (
+            direct[field_index + 1][2]
+            if field_index + 1 < len(direct)
+            else len(lines)
+        )
+        value = raw_value.strip()
+        if name in {"env", "with"}:
+            if value:
+                raise ValueError(
+                    f"{step_label} {name} must use a block mapping"
+                )
+            values[name] = _parse_nested_mapping(
+                lines,
+                line_index + 1,
+                end,
+                name,
+                step_label,
+            )
+        elif name == "run":
+            values[name] = _parse_run_value(
+                lines,
+                line_index + 1,
+                end,
+                value,
+                step_label,
+            )
+        else:
+            scalar = value.strip()
+            if name == "uses":
+                scalar = scalar.split(" #", 1)[0].strip()
+            if not scalar:
+                raise ValueError(f"{step_label} {name} is empty")
+            if any(
+                line.strip() and not line.lstrip().startswith("#")
+                for line in lines[line_index + 1 : end]
+            ):
+                raise ValueError(
+                    f"{step_label} {name} cannot contain nested values"
+                )
+            values[name] = scalar
+
+    name = values.get("name")
+    if name is None:
+        if (
+            set(values) != {"uses", "with"}
+            or values["uses"] != _CHECKOUT_USES
+            or values["with"] != _CHECKOUT_WITH
+            or index != 0
+        ):
             raise ValueError(
-                f"no steps found parsing {job_name!r}; workflow format changed"
+                f"{step_label} is an unreviewed unnamed step"
             )
-
-        for index, match in enumerate(step_matches):
-            step_name = match.group(1).strip()
-            start = match.end()
-            end = (
-                step_matches[index + 1].start()
-                if index + 1 < len(step_matches)
-                else len(body)
-            )
-            block = body[start:end]
-            if step_name in _NON_GATE_STEP_NAMES:
-                continue
-
-            fields = []
-            for line in block.splitlines():
-                if not line.strip() or line.lstrip().startswith("#"):
-                    continue
-                indent = len(line) - len(line.lstrip(" "))
-                if indent == 6:
-                    field = re.match(
-                        r"^      (?P<field>[A-Za-z_][A-Za-z0-9_-]*)"
-                        r"[ \t]*:",
-                        line,
-                    )
-                    if field is None:
-                        raise ValueError(
-                            f"mirrored gate step {step_name!r} uses "
-                            "unsupported direct mapping-key syntax"
-                        )
-                    fields.append(field.group("field"))
-                elif indent < 8:
-                    raise ValueError(
-                        f"mirrored gate step {step_name!r} uses "
-                        "unsupported direct mapping indentation"
-                    )
-            if step_name in {
+        role = "setup"
+    else:
+        expected_fields = (
+            {"name", "env", "run"}
+            if name
+            in {
                 _WORKFLOW_PILOT_TEST_STEP_NAME,
                 _WORKFLOW_PILOT_BASELINE_STEP_NAME,
-            }:
-                if fields != ["env", "run"]:
-                    raise ValueError(
-                        f"protected pilot step {step_name!r} must contain "
-                        "only the reviewed name, env, and run fields"
-                    )
-                if (
-                    _scrubbed_environment_entries(block)
-                    != _SCRUBBED_PILOT_ENV
-                ):
-                    raise ValueError(
-                        f"protected pilot step {step_name!r} changes its "
-                        "reviewed scrubbed environment"
-                    )
-            elif fields != ["run"]:
-                raise ValueError(
-                    f"mirrored gate step {step_name!r} must contain only "
-                    "the reviewed name and run fields"
+                "Hydrate workflow-pilot Git authority",
+            }
+            else {"name", "run"}
+        )
+        if set(values) != expected_fields:
+            raise ValueError(
+                f"{step_label} must contain exactly "
+                f"{', '.join(sorted(expected_fields))}"
+            )
+        if "env" in values and values["env"] != tuple(
+            sorted(
+                tuple(
+                    entry.split(": ", 1)
+                    if ": " in entry
+                    else (entry[:-1], "")
                 )
+                for entry in _SCRUBBED_PILOT_ENV
+            )
+        ):
+            raise ValueError(
+                f"{step_label} changes its reviewed scrubbed environment"
+            )
+        if name in _NON_GATE_STEP_NAMES:
+            role = "setup"
+        elif name == _DOCS_GOVERNANCE_STEP_NAME:
+            role = "standalone-gate"
+        else:
+            role = "gate"
+    return (
+        role,
+        name,
+        tuple(sorted(values.items())),
+    )
 
-            lines = _parse_run_lines(block, step_name)
 
+def _parse_job_steps(job_name, body):
+    lines = body.splitlines(keepends=True)
+    step_headers = [
+        index
+        for index, line in enumerate(lines)
+        if re.match(r"^    -(?:[ \t]|\r?\n?\Z)", line)
+    ]
+    steps_lines = [
+        index
+        for index, line in enumerate(lines)
+        if line.rstrip("\r\n") == "    steps:"
+    ]
+    if len(steps_lines) != 1:
+        raise ValueError(f"job {job_name!r} must have exactly one steps sequence")
+    if not step_headers or step_headers[0] <= steps_lines[0]:
+        raise ValueError(f"job {job_name!r} steps sequence is empty")
+    for line in lines[steps_lines[0] + 1 : step_headers[0]]:
+        if line.strip() and not line.lstrip().startswith("#"):
+            raise ValueError(
+                f"job {job_name!r} has content before its first step"
+            )
+    blocks = [
+        "".join(
+            lines[
+                start :
+                step_headers[index + 1]
+                if index + 1 < len(step_headers)
+                else len(lines)
+            ]
+        )
+        for index, start in enumerate(step_headers)
+    ]
+    steps = tuple(
+        _parse_step(block, job_name, index)
+        for index, block in enumerate(blocks)
+    )
+    names = [step[1] for step in steps if step[1] is not None]
+    if len(names) != len(set(names)):
+        raise ValueError(f"job {job_name!r} contains duplicate step names")
+    if sum(step[1] is None for step in steps) != 1:
+        raise ValueError(
+            f"job {job_name!r} must contain exactly one checkout setup step"
+        )
+    roles = tuple((role, name) for role, name, _ in steps)
+    if roles != _EXPECTED_STEP_ROLES[job_name]:
+        raise ValueError(
+            f"job {job_name!r} step roles and order differ from reviewed setup"
+        )
+    return steps
+
+
+def _parse_workflow_structure_text(text):
+    jobs = _workflow_job_entries(text)
+    names = tuple(name for name, _ in jobs)
+    if names != _EXPECTED_JOBS:
+        raise ValueError(
+            "workflow job order must exactly match the reviewed Build jobs"
+        )
+    blocks = dict(jobs)
+    for required in _COMBINED_JOBS:
+        if required not in blocks:
+            raise ValueError(f"missing candidate Build job {required!r}")
+    structures = tuple(
+        (name, _parse_job_steps(name, blocks[name]))
+        for name in _COMBINED_JOBS
+    )
+    return names, structures
+
+
+def _workflow_gate_contract(structure):
+    commands = []
+    _, jobs = structure
+    for job_name, steps in jobs:
+        for role, step_name, fields in steps:
+            if role not in {"gate", "standalone-gate"}:
+                continue
+            values = dict(fields)
+            run_commands = values["run"]
             if step_name == "Build archival lane without a copyrighted baserom":
-                lines = [line for line in lines if line.startswith("make ")]
-            for line in lines:
-                commands.append(
-                    (job_name, step_name, tuple(shlex.split(line)))
+                run_commands = tuple(
+                    command
+                    for command in run_commands
+                    if command and command[0] == "make"
                 )
+            for command in run_commands:
+                commands.append((job_name, step_name, command))
     return tuple(commands)
+
+
+def _parse_workflow_gate_contract_text(text):
+    return _workflow_gate_contract(_parse_workflow_structure_text(text))
 
 
 def _read_workflow_gate_contract(repository_root):
@@ -361,7 +592,7 @@ def _read_workflow_gate_contract(repository_root):
             text = handle.read()
     except (OSError, UnicodeError) as error:
         raise ValueError(f"cannot read target Build workflow {path!r}: {error}") from error
-    return _parse_workflow_gate_contract_text(text)
+    return _parse_workflow_structure_text(text)
 
 
 def _mirrored_workflow_commands(contract):
@@ -380,7 +611,9 @@ def _require_target_gate_equivalence(repository_root):
             "target Build workflow gate contract differs from the reviewed "
             "source checkout"
         )
-    source_commands = _mirrored_workflow_commands(source)
+    source_commands = _mirrored_workflow_commands(
+        _workflow_gate_contract(source)
+    )
     reviewed_commands = [gate.command for gate in gates(jobs=2)]
     if source_commands != reviewed_commands:
         raise ValueError(
