@@ -38,7 +38,6 @@ _RULES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         "docs/*",
         "README*",
         "CONTRIBUTING*",
-        "CLAUDE.md",
     )),
     ("config", (
         ".github/*",
