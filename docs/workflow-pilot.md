@@ -139,9 +139,13 @@ exact-candidate checkout can omit older force-pushed commits, so the
 reads only the committed strict baseline fixture, derives its unique commit
 IDs, and fetches missing objects from fixed remote `origin` in bounded batches
 with no tags, eager blobs, FETCH_HEAD write, or ref movement. It verifies every
-identity as a commit and rechecks that `HEAD` still equals
-`EXPECTED_BUILD_SHA`. This hydration is environment setup, not a 29th local
-semantic gate; local
+identity as a commit. From the strict fixture and current decisions it then
+derives only override-introduction and first-reviewed commits, resolves their
+exact `.github/workflow-pilot-decisions.json` blob IDs from hydrated trees,
+and fetches those blobs explicitly without hydrating unrelated blobs. Both
+bounded phases recheck that `HEAD`, refs, and FETCH_HEAD are unchanged and
+that `HEAD` still equals `EXPECTED_BUILD_SHA`. This hydration is environment
+setup, not a 29th local semantic gate; local
 `scripts.upstream_port verify` remains network-independent.
 
 Checkout, exact-revision verification, hydration, host dependency setup, and
@@ -238,7 +242,7 @@ convention.
 | Conflicts | Count typed authoritative conflict events for every PR inside the window. No event means zero; an unknown event name is not treated as zero. |
 | Superseded candidates | For a PR head branch, count distinct authoritative workflow `head_sha` values minus one. Repeated runs on one SHA are duplicates, not supersessions. |
 | Escaped defects, broken master, security findings, manual rejects | Count their typed in-window events across every PR, independently of spotlight metrics. Each identity binds a full SHA to an authoritative commit and that PR's candidate/merge history. |
-| Reverts | Parse the exact Git-generated `This reverts commit <full SHA>.` relation from the validated commit message. Require both commits in the real object database and frozen base history, require the target to be an ancestor of the revert, and require the revert's authoritative committer timestamp to be strictly later than the target's. Earlier, equal-time, unrelated, or fixture-only relations fail. |
+| Reverts | Parse exactly one case-sensitive `This reverts commit <40 lowercase hex>.` trailer as the final bytes of the canonical raw-authority message, after only the single conventional terminal LF normalization. The standard `git revert` subject, blank line, and final trailer pass. Changed casing, short/uppercase SHA, leading/trailing trailer text, extra trailing blank/text, or multiple trailers fail. Require both commits in the real object database and frozen base history, require the target to be an ancestor of the revert, and require the revert's authoritative committer timestamp to be strictly later than the target's. |
 | Pilot coordination and metadata maintenance | Sum only typed in-window pilot minutes. Report both beside saved Build and review minutes; net saved minutes are savings minus both overhead classes. |
 
 Every PR-scoped event must occur at or after PR creation and no later than the

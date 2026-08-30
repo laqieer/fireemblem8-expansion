@@ -20,6 +20,11 @@ FETCH_OPTIONS = (
     "--filter=blob:none",
     "--no-write-fetch-head",
 )
+BLOB_FETCH_OPTIONS = (
+    "--quiet",
+    "--no-tags",
+    "--no-write-fetch-head",
+)
 
 
 def run_git(
@@ -48,12 +53,42 @@ def run_git(
     )
 
 
-def available_commits(
+def available_objects(
     repository_root: Path,
     shas: list[str],
+    object_type: str,
 ) -> set[str]:
     if not shas:
         return set()
+    if object_type == "blob":
+        available = set()
+        for requested in shas:
+            try:
+                completed = subprocess.run(
+                    reporter.git_command(
+                        repository_root,
+                        "cat-file",
+                        "-t",
+                        requested,
+                    ),
+                    env=reporter.git_environment(offline=True),
+                    check=False,
+                    capture_output=True,
+                    timeout=FETCH_TIMEOUT_SECONDS,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise reporter.PilotDataError(
+                    f"cannot inspect Git authority objects: {error}"
+                ) from error
+            if completed.returncode != 0:
+                continue
+            actual_type = completed.stdout.decode("ascii").strip()
+            if actual_type != object_type:
+                raise reporter.PilotDataError(
+                    f"fixture identity {requested} is not a {object_type} object"
+                )
+            available.add(requested)
+        return available
     try:
         completed = subprocess.run(
             reporter.git_command(
@@ -71,32 +106,248 @@ def available_commits(
         raise reporter.PilotDataError(
             f"cannot inspect Git authority objects: {error}"
         ) from error
-    if completed.returncode != 0:
-        detail = completed.stderr.decode("utf-8", errors="replace").strip()
-        raise reporter.PilotDataError(
-            "cannot inspect Git authority objects"
-            + (f": {detail}" if detail else "")
-        )
     lines = completed.stdout.decode("ascii").splitlines()
     if len(lines) != len(shas):
+        detail = completed.stderr.decode("utf-8", errors="replace").strip()
         raise reporter.PilotDataError(
             "Git returned incomplete authority object results"
+            + (f": {detail}" if detail else "")
         )
     available = set()
     for requested, line in zip(shas, lines):
         fields = line.split()
-        if len(fields) == 2 and fields[0] == requested and fields[1] == "commit":
+        if (
+            len(fields) == 2
+            and fields[0] == requested
+            and fields[1] == object_type
+        ):
             available.add(requested)
         elif fields != [requested, "missing"]:
             raise reporter.PilotDataError(
                 f"fixture identity {requested} is not a commit object"
             )
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", errors="replace").strip()
+        if len(available) == len(shas) or "lazy fetching disabled" not in detail:
+            raise reporter.PilotDataError(
+                "Git failed while inspecting available authority objects"
+                + (f": {detail}" if detail else "")
+            )
     return available
+
+
+def available_commits(
+    repository_root: Path,
+    shas: list[str],
+) -> set[str]:
+    return available_objects(repository_root, shas, "commit")
 
 
 def required_commits_from_fixture(fixture_path: Path) -> tuple[str, list[str]]:
     data = reporter.validate_fixture(reporter.load_json(fixture_path))
     return data["fixture"]["repository"], sorted(data["commits"])
+
+
+def required_override_decision_commits(
+    fixture_path: Path,
+    decisions_path: Path,
+) -> tuple[str, list[str], list[str]]:
+    data = reporter.validate_fixture(reporter.load_json(fixture_path))
+    decisions = reporter.expect_object(
+        reporter.load_json(decisions_path),
+        "decisions",
+    )
+    reporter.expect_keys(
+        decisions,
+        "decisions",
+        ("schema_version", "pull_requests", "artifacts"),
+    )
+    version = reporter.expect_int(
+        decisions["schema_version"],
+        "decisions.schema_version",
+        1,
+    )
+    if version != reporter.SCHEMA_VERSION:
+        raise reporter.PilotDataError(
+            f"decisions schema_version must be {reporter.SCHEMA_VERSION}"
+        )
+    records = reporter.expect_list(
+        decisions["pull_requests"],
+        "decisions.pull_requests",
+    )
+    reporter.expect_list(decisions["artifacts"], "decisions.artifacts")
+    records_by_pr = {}
+    for index, raw_record in enumerate(records):
+        label = f"decisions.pull_requests[{index}]"
+        record = reporter.expect_object(raw_record, label)
+        reporter.expect_keys(
+            record,
+            label,
+            (
+                "pull_request",
+                "risk_boundaries",
+                "threshold",
+                "gate_mode",
+                "stack",
+                "pilot",
+            ),
+        )
+        number = reporter.expect_int(
+            record["pull_request"],
+            f"{label}.pull_request",
+            1,
+        )
+        if number in records_by_pr:
+            raise reporter.PilotDataError(
+                f"duplicate PR decision {number}"
+            )
+        threshold = reporter.expect_object(
+            record["threshold"],
+            f"{label}.threshold",
+        )
+        reporter.expect_keys(
+            threshold,
+            f"{label}.threshold",
+            ("triggers", "override_history"),
+        )
+        records_by_pr[number] = threshold
+
+    introduction_events = [
+        event
+        for event in data["events"].values()
+        if event["type"] == "threshold_override_introduced"
+    ]
+    required_decision_commits = set()
+    for number, threshold in records_by_pr.items():
+        history = reporter.expect_list(
+            threshold["override_history"],
+            f"PR {number}.threshold.override_history",
+        )
+        introductions = {
+            event["override_index"]: event
+            for event in introduction_events
+            if event["pr_number"] == number
+        }
+        if len(introductions) != len(
+            [
+                event
+                for event in introduction_events
+                if event["pr_number"] == number
+            ]
+        ):
+            raise reporter.PilotDataError(
+                f"PR {number} threshold override provenance repeats an index"
+            )
+        if set(introductions) != set(range(len(history))):
+            raise reporter.PilotDataError(
+                f"PR {number} threshold overrides lack exact authoritative "
+                "introduction coverage"
+            )
+        for override_index in range(len(history)):
+            entry = reporter.historical_override_entry(
+                decisions,
+                "hydration-input",
+                number,
+                override_index,
+            )
+            introduction = introductions[override_index]
+            if introduction["decision_digest"] != reporter.threshold_override_digest(
+                number,
+                override_index,
+                entry,
+            ):
+                raise reporter.PilotDataError(
+                    f"PR {number} threshold override {override_index} digest "
+                    "does not match the current decision entry"
+                )
+            required_decision_commits.add(introduction["sha"])
+        if history:
+            reviews = [
+                review
+                for review in data["reviews"].values()
+                if review["pr_number"] == number
+                and review["author"] == reporter.REVIEW_BOT
+            ]
+            if reviews:
+                first_review = min(
+                    reviews,
+                    key=lambda review: reporter.parse_time(
+                        review["submitted_at"],
+                        f"review {review['id']}.submitted_at",
+                    ),
+                )
+                required_decision_commits.add(first_review["commit_sha"])
+
+    orphan_prs = sorted(
+        {
+            event["pr_number"]
+            for event in introduction_events
+        }
+        - set(records_by_pr)
+    )
+    if orphan_prs:
+        raise reporter.PilotDataError(
+            "threshold override provenance has no decision record for PRs "
+            + ", ".join(str(number) for number in orphan_prs)
+        )
+    return (
+        data["fixture"]["repository"],
+        sorted(data["commits"]),
+        sorted(required_decision_commits),
+    )
+
+
+def authority_state(repository_root: Path) -> tuple[bytes, bytes, bytes | None]:
+    head = reporter.run_git(repository_root, "rev-parse", "HEAD")
+    refs = reporter.run_git(
+        repository_root,
+        "for-each-ref",
+        "--format=%(refname)%00%(objectname)",
+    )
+    raw_path = (
+        reporter.run_git(
+            repository_root,
+            "rev-parse",
+            "--git-path",
+            "FETCH_HEAD",
+        )
+        .decode("utf-8")
+        .strip()
+    )
+    fetch_head_path = Path(raw_path)
+    if not fetch_head_path.is_absolute():
+        fetch_head_path = repository_root / fetch_head_path
+    try:
+        fetch_head = (
+            fetch_head_path.read_bytes()
+            if fetch_head_path.is_file()
+            else None
+        )
+    except OSError as error:
+        raise reporter.PilotDataError(
+            f"cannot inspect FETCH_HEAD authority state: {error}"
+        ) from error
+    return head, refs, fetch_head
+
+
+def require_unchanged_authority_state(
+    repository_root: Path,
+    expected_head: str,
+    before: tuple[bytes, bytes, bytes | None],
+) -> None:
+    after = authority_state(repository_root)
+    if after[0].decode("ascii").strip() != expected_head:
+        raise reporter.PilotDataError(
+            "exact fixture authority hydration moved checked-out HEAD"
+        )
+    if after[1] != before[1]:
+        raise reporter.PilotDataError(
+            "exact fixture authority hydration moved repository refs"
+        )
+    if after[2] != before[2]:
+        raise reporter.PilotDataError(
+            "exact fixture authority hydration changed FETCH_HEAD"
+        )
 
 
 def hydrate_exact_commits(
@@ -129,21 +380,12 @@ def hydrate_exact_commits(
             "origin does not match the required repository"
         )
 
-    head_before = reporter.run_git(
-        repository_root,
-        "rev-parse",
-        "HEAD",
-    ).decode("ascii").strip()
+    before = authority_state(repository_root)
+    head_before = before[0].decode("ascii").strip()
     if head_before != expected_head:
         raise reporter.PilotDataError(
             f"checked-out HEAD {head_before} does not match {expected_head}"
         )
-    refs_before = reporter.run_git(
-        repository_root,
-        "for-each-ref",
-        "--format=%(refname)%00%(objectname)",
-    )
-
     missing = sorted(set(required) - available_commits(repository_root, required))
     for offset in range(0, len(missing), BATCH_SIZE):
         batch = missing[offset : offset + BATCH_SIZE]
@@ -163,30 +405,99 @@ def hydrate_exact_commits(
             "exact fixture authority remains unavailable: "
             + ", ".join(unavailable)
         )
-    head_after = reporter.run_git(
-        repository_root,
-        "rev-parse",
-        "HEAD",
-    ).decode("ascii").strip()
-    refs_after = reporter.run_git(
-        repository_root,
-        "for-each-ref",
-        "--format=%(refname)%00%(objectname)",
-    )
-    if head_after != expected_head:
-        raise reporter.PilotDataError(
-            "exact fixture authority hydration moved checked-out HEAD"
-        )
-    if refs_after != refs_before:
-        raise reporter.PilotDataError(
-            "exact fixture authority hydration moved repository refs"
-        )
+    require_unchanged_authority_state(repository_root, expected_head, before)
     return {"required": len(required), "fetched": len(missing)}
+
+
+def required_decision_blob_ids(
+    repository_root: Path,
+    decision_commits: list[str],
+) -> list[str]:
+    blob_ids = set()
+    path = reporter.DECISION_RECORD_PATH.as_posix()
+    for commit in decision_commits:
+        raw = reporter.run_git(
+            repository_root,
+            "ls-tree",
+            commit,
+            "--",
+            path,
+        ).decode("utf-8")
+        fields = raw.rstrip("\n").split(maxsplit=3)
+        if (
+            len(fields) != 4
+            or fields[0] != "100644"
+            or fields[1] != "blob"
+            or fields[3] != path
+        ):
+            raise reporter.PilotDataError(
+                f"commit {commit} lacks exact regular-file decision record"
+            )
+        blob_ids.add(reporter.expect_sha(fields[2], f"commit {commit} decision blob"))
+    return sorted(blob_ids)
+
+
+def hydrate_override_decision_blobs(
+    repository_root: Path,
+    repository: str,
+    decision_commits: list[str],
+    expected_head: str,
+) -> dict[str, int]:
+    repository_root = reporter.validate_repository_root(repository_root)
+    reporter.expect_string(repository, "required repository")
+    reporter.expect_sha(expected_head, "--expected-head")
+    if decision_commits != sorted(set(decision_commits)):
+        raise reporter.PilotDataError(
+            "required decision commits must be unique and sorted"
+        )
+    for commit in decision_commits:
+        reporter.expect_sha(commit, "required decision commit")
+    remote = reporter.run_git(
+        repository_root,
+        "config",
+        "--get",
+        "remote.origin.url",
+    ).decode("utf-8").strip()
+    if reporter._github_repository_from_remote(remote) != repository:
+        raise reporter.PilotDataError(
+            "origin does not match the required repository"
+        )
+    before = authority_state(repository_root)
+    if before[0].decode("ascii").strip() != expected_head:
+        raise reporter.PilotDataError(
+            "checked-out HEAD does not match --expected-head"
+        )
+    required = required_decision_blob_ids(
+        repository_root,
+        decision_commits,
+    )
+    missing = sorted(
+        set(required) - available_objects(repository_root, required, "blob")
+    )
+    for offset in range(0, len(missing), BATCH_SIZE):
+        run_git(
+            repository_root,
+            "fetch",
+            *BLOB_FETCH_OPTIONS,
+            "origin",
+            *missing[offset : offset + BATCH_SIZE],
+        )
+    unavailable = sorted(
+        set(required) - available_objects(repository_root, required, "blob")
+    )
+    if unavailable:
+        raise reporter.PilotDataError(
+            "exact override decision blobs remain unavailable: "
+            + ", ".join(unavailable)
+        )
+    require_unchanged_authority_state(repository_root, expected_head, before)
+    return {"required_blobs": len(required), "fetched_blobs": len(missing)}
 
 
 def hydrate_authority(
     repository_root: Path,
     fixture_path: Path,
+    decisions_path: Path,
     expected_head: str,
 ) -> dict[str, int]:
     repository_root = reporter.validate_repository_root(repository_root)
@@ -201,13 +512,34 @@ def hydrate_authority(
         raise reporter.PilotDataError(
             f"--fixture must identify {expected_fixture}"
         )
-    repository, required = required_commits_from_fixture(fixture_path)
-    return hydrate_exact_commits(
+    expected_decisions = (repository_root / reporter.DECISION_RECORD_PATH).resolve()
+    try:
+        decisions_path = decisions_path.resolve(strict=True)
+    except OSError as error:
+        raise reporter.PilotDataError(
+            f"strict decision record is unavailable: {error}"
+        ) from error
+    if decisions_path != expected_decisions:
+        raise reporter.PilotDataError(
+            f"--decisions must identify {expected_decisions}"
+        )
+    repository, required, decision_commits = required_override_decision_commits(
+        fixture_path,
+        decisions_path,
+    )
+    commit_result = hydrate_exact_commits(
         repository_root,
         repository,
         required,
         expected_head,
     )
+    blob_result = hydrate_override_decision_blobs(
+        repository_root,
+        repository,
+        decision_commits,
+        expected_head,
+    )
+    return {**commit_result, **blob_result}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -219,6 +551,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--repository-root", type=Path, required=True)
     parser.add_argument("--fixture", type=Path, required=True)
+    parser.add_argument("--decisions", type=Path, required=True)
     parser.add_argument("--expected-head", required=True)
     return parser.parse_args(argv)
 
@@ -229,6 +562,7 @@ def main(argv: list[str] | None = None) -> int:
         result = hydrate_authority(
             args.repository_root,
             args.fixture,
+            args.decisions,
             args.expected_head,
         )
     except reporter.PilotDataError as error:
@@ -236,7 +570,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print(
         "workflow-pilot-hydration: "
-        f"required={result['required']} fetched={result['fetched']}"
+        f"required={result['required']} fetched={result['fetched']} "
+        f"required_blobs={result['required_blobs']} "
+        f"fetched_blobs={result['fetched_blobs']}"
     )
     return 0
 

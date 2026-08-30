@@ -3,7 +3,6 @@ import inspect
 import io
 import os
 import re
-import shlex
 import subprocess
 import tempfile
 import unittest
@@ -15,37 +14,6 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BUILD_WORKFLOW_PATH = os.path.join(REPO_ROOT, ".github", "workflows", "build.yml")
 UPSTREAM_PORTING_PATH = os.path.join(REPO_ROOT, "docs", "upstream-porting.md")
 
-_STEP_NAME_RE = re.compile(r"^    - name: (.+)$", re.M)
-_SINGLE_RUN_RE = re.compile(r"^      run: (?!\|\s*$)(.+)$", re.M)
-_MULTI_RUN_RE = re.compile(r"^      run: \|\n((?:        .*\n?)+)", re.M)
-
-# Steps in build.yml that are pure environment setup (checkout, apt/pip
-# installs, building host tools) rather than a pass/fail correctness gate
-# `verify` needs to reproduce. Everything else in the workflow is expected
-# to have a literal, argv-identical counterpart in verify.gates().
-_NON_GATE_STEP_NAMES = {
-    # Exact checkout binding is a required workflow invariant, but not a
-    # repository correctness gate mirrored by scripts/upstream_port/verify.py.
-    # tests/workflows/test_build_ci_checkout.py owns its positive and negative
-    # structural coverage.
-    "Verify checked-out revision",
-    # CI-only authority setup: checkout's exact-ref optimization may omit
-    # historical branch commits required by the offline workflow-pilot fixture.
-    # Local verify uses an ordinary clone and remains network-independent.
-    "Hydrate workflow-pilot Git authority",
-    # host-tests job setup: installs build-essential + libmgba-dev only (no
-    # arm-none-eabi toolchain), so it is environment setup, not a gate.
-    "Install host-only dependencies (no arm-none-eabi toolchain)",
-    # build job setup
-    "Install dependencies",
-    "Build tools",
-    # Combined-gate extended and archival job setup.
-    "Install extended host dependencies",
-    "Install archival build dependencies",
-    "Preflight archival toolchain executables",
-    "Install pinned archival agbcc compilers",
-}
-
 # Issues #7/#17 remediation: the documentation step is a genuine required
 # workflow gate, but it is the sole correctness step deliberately excluded
 # from verify.gates(). Its exact commands and position are asserted separately
@@ -55,187 +23,25 @@ _CODEQL_ALERTS_STEP_NAME = "Run CodeQL alert regression suite (issue #84)"
 _LOCALIZATION_HOST_STEP_NAME = "Run localization host test suite (issue #18)"
 _GAME_LOCALIZATION_WIDTH_STEP_NAME = "Run full-game localization width contract (issue #18)"
 _WORKFLOW_CONTRACT_STEP_NAME = "Run workflow contract test suite"
-_WORKFLOW_PILOT_TEST_STEP_NAME = (
-    "Run workflow-pilot reporter regression suite (issue #176)"
-)
+_WORKFLOW_PILOT_TEST_STEP_NAME = verify_mod._WORKFLOW_PILOT_TEST_STEP_NAME
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
-    "Validate workflow-pilot baseline against checked-out Git history"
-)
-_SCRUBBED_PILOT_ENV = (
-    "BASH_ENV: ''",
-    "ENV: ''",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES: ''",
-    "GIT_CEILING_DIRECTORIES: ''",
-    "GIT_COMMON_DIR: ''",
-    "GIT_CONFIG_COUNT: '0'",
-    "GIT_CONFIG_GLOBAL: /dev/null",
-    "GIT_CONFIG_KEY_0: ''",
-    "GIT_CONFIG_NOSYSTEM: '1'",
-    "GIT_CONFIG_PARAMETERS: ''",
-    "GIT_CONFIG_SYSTEM: /dev/null",
-    "GIT_CONFIG_VALUE_0: ''",
-    "GIT_DIR: ''",
-    "GIT_EXEC_PATH: ''",
-    "GIT_INDEX_FILE: ''",
-    "GIT_NAMESPACE: ''",
-    "GIT_NO_LAZY_FETCH: '1'",
-    "GIT_NO_REPLACE_OBJECTS: '1'",
-    "GIT_OBJECT_DIRECTORY: ''",
-    "GIT_REPLACE_REF_BASE: ''",
-    "GIT_WORK_TREE: ''",
-    "PATH: /usr/bin:/bin",
-    "PYTHONPATH: ''",
+    verify_mod._WORKFLOW_PILOT_BASELINE_STEP_NAME
 )
 
 
 def _parse_workflow_gate_commands(path=BUILD_WORKFLOW_PATH):
-    """Read candidate-safe Build CI jobs with stdlib only (no PyYAML).
-
-    ``verify`` is a local, no-secret mirror of all four combined candidate
-    workers. Only the master-only publisher and the serial summary are
-    excluded at the job level; the separately asserted documentation step is
-    the one deliberate command-level exception. This deliberately re-derives
-    expected commands from live run blocks instead of hardcoding a copy.
-    """
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
     return _parse_workflow_gate_commands_text(text)
 
 
-def _workflow_job_blocks(text):
-    lines = text.splitlines(keepends=True)
-    try:
-        jobs_index = next(
-            index
-            for index, line in enumerate(lines)
-            if line.rstrip("\r\n") == "jobs:"
-        )
-    except StopIteration as error:
-        raise AssertionError("workflow lacks jobs mapping") from error
-
-    starts = []
-    for index in range(jobs_index + 1, len(lines)):
-        line = lines[index].rstrip("\r\n")
-        if not line.startswith("  ") or line.startswith("    "):
-            continue
-        header = line[2:]
-        if not header.endswith(":"):
-            continue
-        name = header[:-1]
-        if name and all(character.isalnum() or character in "_-" for character in name):
-            starts.append((name, index))
-    return {
-        name: "".join(
-            lines[
-                index + 1 :
-                starts[position + 1][1]
-                if position + 1 < len(starts)
-                else len(lines)
-            ]
-        )
-        for position, (name, index) in enumerate(starts)
-    }
-
-
-def _scrubbed_environment_entries(block):
-    lines = block.splitlines()
-    try:
-        env_index = lines.index("      env:")
-    except ValueError:
-        return None
-    entries = []
-    for line in lines[env_index + 1 :]:
-        if line == "      run:" or line.startswith("      run: "):
-            return tuple(entries)
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        if not line.startswith("        "):
-            return None
-        entries.append(line.strip())
-    return None
-
-
 def _parse_workflow_gate_commands_text(text):
-    commands = []
-    jobs = _workflow_job_blocks(text)
-    for job_name in ("host-tests", "build", "extended-host-tests", "legacy"):
-        body = jobs.get(job_name)
-        assert body is not None, f"missing candidate Build job {job_name!r}"
-        step_matches = list(_STEP_NAME_RE.finditer(body))
-        assert step_matches, f"no steps found parsing {job_name!r}; workflow format changed?"
-
-        for i, m in enumerate(step_matches):
-            step_name = m.group(1).strip()
-            start = m.end()
-            end = step_matches[i + 1].start() if i + 1 < len(step_matches) else len(body)
-            block = body[start:end]
-
-            if step_name in _NON_GATE_STEP_NAMES:
-                continue
-
-            if step_name != _DOCS_GOVERNANCE_STEP_NAME:
-                fields = []
-                for line in block.splitlines():
-                    if not line.strip() or line.lstrip().startswith("#"):
-                        continue
-                    indent = len(line) - len(line.lstrip(" "))
-                    if indent == 6:
-                        field = re.match(
-                            r"^      (?P<field>[A-Za-z_][A-Za-z0-9_-]*)[ \t]*:",
-                            line,
-                        )
-                        assert field is not None, (
-                            f"mirrored gate step {step_name!r} uses unsupported "
-                            "direct mapping-key syntax"
-                        )
-                        fields.append(field.group("field"))
-                    elif indent < 8:
-                        raise AssertionError(
-                            f"mirrored gate step {step_name!r} uses unsupported "
-                            "direct mapping indentation"
-                        )
-                if step_name in {
-                    _WORKFLOW_PILOT_TEST_STEP_NAME,
-                    _WORKFLOW_PILOT_BASELINE_STEP_NAME,
-                }:
-                    assert fields == ["env", "run"], (
-                        f"protected pilot step {step_name!r} must contain only "
-                        f"the reviewed name, env, and run fields, got {fields!r}"
-                    )
-                    env_entries = _scrubbed_environment_entries(block)
-                    assert env_entries is not None, (
-                        f"protected pilot step {step_name!r} lacks its "
-                        "reviewed scrubbed environment"
-                    )
-                    assert env_entries == _SCRUBBED_PILOT_ENV, (
-                        f"protected pilot step {step_name!r} changes its "
-                        "reviewed scrubbed environment"
-                    )
-                else:
-                    assert fields == ["run"], (
-                        f"mirrored gate step {step_name!r} must contain only "
-                        f"the reviewed name and run fields, got {fields!r}"
-                    )
-
-            single_m = _SINGLE_RUN_RE.search(block)
-            if single_m:
-                lines = [single_m.group(1).strip()]
-            else:
-                multi_m = _MULTI_RUN_RE.search(block)
-                assert multi_m, f"step {step_name!r} has no parseable 'run:' block"
-                lines = [line.strip() for line in multi_m.group(1).splitlines() if line.strip()]
-
-            if step_name == "Build archival lane without a copyrighted baserom":
-                # The workflow adds shell-local `set`/`test` assertions around
-                # its one portable verifier command. `verify` owns the
-                # executable archival build itself; the workflow topology test
-                # owns the surrounding no-baserom shell boundary.
-                lines = [line for line in lines if line.startswith("make ")]
-
-            for line in lines:
-                commands.append((step_name, shlex.split(line)))
-
-    return commands
+    return [
+        (step_name, list(argv))
+        for _, step_name, argv in verify_mod._parse_workflow_gate_contract_text(
+            text
+        )
+    ]
 
 
 class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
@@ -513,7 +319,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             1,
         )
         with self.assertRaisesRegex(
-            AssertionError,
+            ValueError,
             "reviewed scrubbed environment",
         ):
             _parse_workflow_gate_commands_text(adversarial)
@@ -553,7 +359,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                     )
                     self.assertNotEqual(changed, workflow)
                     with self.assertRaisesRegex(
-                        AssertionError,
+                        ValueError,
                         "unsupported direct mapping|only the reviewed "
                         "(?:name and run|name, env, and run)",
                     ):
@@ -1005,6 +811,36 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
 
 
 class VerifyCliCwdTests(unittest.TestCase):
+    def clone_target(self, parent, name="target"):
+        target = os.path.join(parent, name)
+        subprocess.run(
+            [
+                verify_mod._trusted_git_executable(),
+                "--no-replace-objects",
+                "-C",
+                parent,
+                "clone",
+                "-q",
+                "--no-hardlinks",
+                REPO_ROOT,
+                target,
+            ],
+            env=verify_mod._git_environment(),
+            check=True,
+            capture_output=True,
+        )
+        target_workflow = os.path.join(
+            target,
+            ".github",
+            "workflows",
+            "build.yml",
+        )
+        with open(BUILD_WORKFLOW_PATH, "rb") as source:
+            workflow_bytes = source.read()
+        with open(target_workflow, "wb") as destination:
+            destination.write(workflow_bytes)
+        return target
+
     def test_normal_cli_executes_all_gates_at_selected_target_root(self):
         artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
         os.makedirs(artifact_root, exist_ok=True)
@@ -1012,23 +848,7 @@ class VerifyCliCwdTests(unittest.TestCase):
             prefix="verify-target-checkout-",
             dir=artifact_root,
         ) as temporary:
-            target_root = os.path.join(temporary, "target")
-            subprocess.run(
-                [
-                    verify_mod._trusted_git_executable(),
-                    "--no-replace-objects",
-                    "-C",
-                    temporary,
-                    "clone",
-                    "-q",
-                    "--no-hardlinks",
-                    REPO_ROOT,
-                    target_root,
-                ],
-                env=verify_mod._git_environment(),
-                check=True,
-                capture_output=True,
-            )
+            target_root = self.clone_target(temporary)
             for arguments, expected_root in (
                 (["verify"], REPO_ROOT),
                 (["--repo", target_root, "verify"], target_root),
@@ -1074,6 +894,88 @@ class VerifyCliCwdTests(unittest.TestCase):
                         baseline[baseline.index("--repository-root") + 1],
                         expected_root,
                     )
+
+    def test_cross_checkout_requires_exact_target_gate_equivalence(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-target-equivalence-",
+            dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            workflow_path = os.path.join(
+                target_root,
+                ".github",
+                "workflows",
+                "build.yml",
+            )
+            with open(workflow_path, "r", encoding="utf-8") as handle:
+                original = handle.read()
+            self.assertEqual(
+                len(verify_mod.run_gates(target_root, dry_run=True)),
+                28,
+            )
+
+            upstream_step = (
+                "    - name: Run upstream-port tooling test suite\n"
+                "      run: python3 -m unittest discover "
+                "-s tests/upstream_port -v\n"
+            )
+            workflow_step = (
+                "    - name: Run workflow contract test suite\n"
+                '      run: python3 -m unittest discover -s tests/workflows '
+                '-p "test_*.py" -v\n'
+            )
+            mutations = {
+                "newer-added": original.replace(
+                    upstream_step,
+                    "    - name: Run target-only newer gate\n"
+                    "      run: python3 -c pass\n\n"
+                    + upstream_step,
+                    1,
+                ),
+                "older-removed": original.replace(upstream_step, "", 1),
+                "mutated-argv": original.replace(
+                    "tests/upstream_port -v",
+                    "tests/upstream_port-new -v",
+                    1,
+                ),
+                "reordered": original.replace(
+                    upstream_step,
+                    "__UPSTREAM_STEP__",
+                    1,
+                ).replace(
+                    workflow_step,
+                    upstream_step,
+                    1,
+                ).replace(
+                    "__UPSTREAM_STEP__",
+                    workflow_step,
+                    1,
+                ),
+            }
+            for name, changed in mutations.items():
+                with self.subTest(name=name):
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "target Build workflow gate contract differs",
+                    ):
+                        verify_mod.run_gates(target_root, dry_run=True)
+
+            os.unlink(workflow_path)
+            with self.assertRaisesRegex(
+                ValueError,
+                "target Build workflow",
+            ):
+                verify_mod.run_gates(target_root, dry_run=True)
+
+    def test_source_root_gate_equivalence_remains_supported(self):
+        self.assertEqual(
+            len(verify_mod.run_gates(REPO_ROOT, dry_run=True)),
+            28,
+        )
 
     def test_dry_run_and_normal_cli_select_the_same_target_root(self):
         for common, expected_root in (

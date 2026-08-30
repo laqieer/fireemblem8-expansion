@@ -94,6 +94,7 @@ WORKFLOW_PILOT_AUTHORITY_HYDRATION = (
     "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py hydrate "
     '--repository-root "$GITHUB_WORKSPACE" '
     "--fixture scripts/workflow_pilot/tests/fixtures/baseline.json "
+    "--decisions .github/workflow-pilot-decisions.json "
     '--expected-head "$EXPECTED_BUILD_SHA"'
 )
 SCRUBBED_STEP_ENV = (
@@ -1106,6 +1107,14 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "--no-write-fetch-head",
             ),
         )
+        self.assertEqual(
+            hydrate_authority.BLOB_FETCH_OPTIONS,
+            (
+                "--quiet",
+                "--no-tags",
+                "--no-write-fetch-head",
+            ),
+        )
         host = _job_blocks(self.text)["host-tests"]
         self.assertTrue(
             _contains_exact_command(
@@ -1130,6 +1139,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ),
             WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
                 "--fixture scripts/workflow_pilot/tests/fixtures/baseline.json ",
+                "",
+            ),
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
+                "--decisions .github/workflow-pilot-decisions.json ",
                 "",
             ),
             WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
@@ -1380,7 +1393,19 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "force-pushed\n",
                 encoding="ascii",
             )
+            decision_path = (
+                seed / ".github" / "workflow-pilot-decisions.json"
+            )
+            decision_path.parent.mkdir(parents=True)
+            decision_content = (
+                b'{"artifacts":[],"pull_requests":['
+                b'{"pull_request":1,"threshold":{"override_history":['
+                b'{"enabled":true,"reason":"test override"}]}}],'
+                b'"schema_version":1}\n'
+            )
+            decision_path.write_bytes(decision_content)
             _git_run(seed, "add", "historical.txt")
+            _git_run(seed, "add", str(reporter.DECISION_RECORD_PATH))
             _git_run(
                 seed,
                 "commit",
@@ -1421,6 +1446,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "uploadpack.allowAnySHA1InWant",
                 "true",
             )
+            _git_run(remote, "config", "uploadpack.allowFilter", "true")
             checkout.mkdir()
             _git_run(checkout, "init", "-q", "-b", "master")
             _git_run(
@@ -1507,6 +1533,71 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "-e",
                 f"{historical}^{{commit}}",
             )
+            _git_run(
+                checkout,
+                "cat-file",
+                "-e",
+                f"{historical}^{{tree}}",
+            )
+            decision_blobs = hydrate_authority.required_decision_blob_ids(
+                checkout,
+                [historical],
+            )
+            self.assertEqual(len(decision_blobs), 1)
+            self.assertEqual(
+                hydrate_authority.available_objects(
+                    checkout,
+                    decision_blobs,
+                    "blob",
+                ),
+                set(),
+            )
+            self.assertNotEqual(
+                _git_run(
+                    checkout,
+                    "show",
+                    f"{historical}:{reporter.DECISION_RECORD_PATH}",
+                    check=False,
+                ).returncode,
+                0,
+            )
+            unrelated_blob = (
+                _git_run(
+                    checkout,
+                    "ls-tree",
+                    historical,
+                    "--",
+                    "historical.txt",
+                    text=True,
+                )
+                .stdout.split()[2]
+            )
+            blob_result = hydrate_authority.hydrate_override_decision_blobs(
+                checkout,
+                "laqieer/fireemblem8-expansion",
+                [historical],
+                expected_head,
+            )
+            self.assertEqual(
+                blob_result,
+                {"required_blobs": 1, "fetched_blobs": 1},
+            )
+            self.assertEqual(
+                _git_run(
+                    checkout,
+                    "show",
+                    f"{historical}:{reporter.DECISION_RECORD_PATH}",
+                ).stdout,
+                decision_content,
+            )
+            self.assertEqual(
+                hydrate_authority.available_objects(
+                    checkout,
+                    [unrelated_blob],
+                    "blob",
+                ),
+                set(),
+            )
             self.assertEqual(
                 _git_run(
                     checkout,
@@ -1537,6 +1628,24 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             required,
             sorted(commit["sha"] for commit in fixture["commits"]),
         )
+        decisions_path = ROOT / reporter.DECISION_RECORD_PATH
+        (
+            derived_repository,
+            derived_commits,
+            decision_commits,
+        ) = hydrate_authority.required_override_decision_commits(
+            fixture_path,
+            decisions_path,
+        )
+        self.assertEqual(derived_repository, repository)
+        self.assertEqual(derived_commits, required)
+        fixture_data = reporter.validate_fixture(fixture)
+        introduction_commits = {
+            event["sha"]
+            for event in fixture_data["events"].values()
+            if event["type"] == "threshold_override_introduced"
+        }
+        self.assertEqual(set(decision_commits), introduction_commits)
 
     def test_synthetic_stacked_pull_request_runs_candidate_jobs_on_its_real_base(self):
         event = {

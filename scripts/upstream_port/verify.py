@@ -4,11 +4,12 @@ after a maintainer has manually applied a port batch.
 WARNING (see docs/upstream-porting.md): this command builds and checks the
 repository's *own* current working tree/commit. It never builds, checks out,
 or executes the canonical upstream ref/tree. It is a thin, literal mirror of
-the four combined workers in `.github/workflows/build.yml` (kept independent
-from that file: this module doesn't parse/execute the workflow, it re-states
-the same gate commands so `verify` stays runnable locally without a CI
-runner). Only the master-only publisher and serial summary jobs have no local
-gate equivalent. The one DELIBERATE command-level exception is build.yml's
+the four combined workers in `.github/workflows/build.yml`. Before execution,
+it parses the selected target checkout's workflow as data and requires exact
+semantic equivalence with both the source workflow and this module's reviewed
+gate list; target Python is never imported. Only the master-only publisher and
+serial summary jobs have no local gate equivalent. The one DELIBERATE
+command-level exception is build.yml's
 "Check documentation (issues #7/#17)" step, which remains a required
 standalone workflow gate outside this mirror. Run that standalone command pair
 directly to reproduce it locally; see docs/upstream-porting.md.
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import subprocess
 from dataclasses import dataclass
 from typing import List
@@ -28,6 +30,54 @@ from typing import List
 # to the child environment, never exec-ed as a program.
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _TRUSTED_GIT = "/usr/bin/git"
+_SOURCE_ROOT = os.path.realpath(
+    os.path.join(os.path.dirname(__file__), "..", "..")
+)
+_BUILD_WORKFLOW_RELATIVE = os.path.join(".github", "workflows", "build.yml")
+_STEP_NAME_RE = re.compile(r"^    - name: (.+)$", re.M)
+_NON_GATE_STEP_NAMES = {
+    "Verify checked-out revision",
+    "Hydrate workflow-pilot Git authority",
+    "Install host-only dependencies (no arm-none-eabi toolchain)",
+    "Install dependencies",
+    "Build tools",
+    "Install extended host dependencies",
+    "Install archival build dependencies",
+    "Preflight archival toolchain executables",
+    "Install pinned archival agbcc compilers",
+}
+_DOCS_GOVERNANCE_STEP_NAME = "Check documentation (issues #7/#17)"
+_WORKFLOW_PILOT_TEST_STEP_NAME = (
+    "Run workflow-pilot reporter regression suite (issue #176)"
+)
+_WORKFLOW_PILOT_BASELINE_STEP_NAME = (
+    "Validate workflow-pilot baseline against checked-out Git history"
+)
+_SCRUBBED_PILOT_ENV = (
+    "BASH_ENV: ''",
+    "ENV: ''",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES: ''",
+    "GIT_CEILING_DIRECTORIES: ''",
+    "GIT_COMMON_DIR: ''",
+    "GIT_CONFIG_COUNT: '0'",
+    "GIT_CONFIG_GLOBAL: /dev/null",
+    "GIT_CONFIG_KEY_0: ''",
+    "GIT_CONFIG_NOSYSTEM: '1'",
+    "GIT_CONFIG_PARAMETERS: ''",
+    "GIT_CONFIG_SYSTEM: /dev/null",
+    "GIT_CONFIG_VALUE_0: ''",
+    "GIT_DIR: ''",
+    "GIT_EXEC_PATH: ''",
+    "GIT_INDEX_FILE: ''",
+    "GIT_NAMESPACE: ''",
+    "GIT_NO_LAZY_FETCH: '1'",
+    "GIT_NO_REPLACE_OBJECTS: '1'",
+    "GIT_OBJECT_DIRECTORY: ''",
+    "GIT_REPLACE_REF_BASE: ''",
+    "GIT_WORK_TREE: ''",
+    "PATH: /usr/bin:/bin",
+    "PYTHONPATH: ''",
+)
 
 
 def _split_env_prefix(command):
@@ -122,6 +172,220 @@ def _expand_workspace(argv, repository_root):
         repository_root if argument == "$GITHUB_WORKSPACE" else argument
         for argument in argv
     ]
+
+
+def _workflow_job_blocks(text):
+    lines = text.splitlines(keepends=True)
+    try:
+        jobs_index = next(
+            index
+            for index, line in enumerate(lines)
+            if line.rstrip("\r\n") == "jobs:"
+        )
+    except StopIteration as error:
+        raise ValueError("workflow lacks jobs mapping") from error
+
+    starts = []
+    for index in range(jobs_index + 1, len(lines)):
+        line = lines[index].rstrip("\r\n")
+        if not line.startswith("  ") or line.startswith("    "):
+            continue
+        header = line[2:]
+        if not header.endswith(":"):
+            continue
+        name = header[:-1]
+        if name and all(
+            character.isalnum() or character in "_-"
+            for character in name
+        ):
+            starts.append((name, index))
+    return {
+        name: "".join(
+            lines[
+                index + 1 :
+                starts[position + 1][1]
+                if position + 1 < len(starts)
+                else len(lines)
+            ]
+        )
+        for position, (name, index) in enumerate(starts)
+    }
+
+
+def _scrubbed_environment_entries(block):
+    lines = block.splitlines()
+    try:
+        env_index = lines.index("      env:")
+    except ValueError:
+        return None
+    entries = []
+    for line in lines[env_index + 1 :]:
+        if line == "      run:" or line.startswith("      run: "):
+            return tuple(entries)
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith("        "):
+            return None
+        entries.append(line.strip())
+    return None
+
+
+def _parse_run_lines(block, step_name):
+    lines = block.splitlines()
+    run_indices = [
+        index
+        for index, line in enumerate(lines)
+        if line == "      run:" or line.startswith("      run: ")
+    ]
+    if len(run_indices) != 1:
+        raise ValueError(
+            f"step {step_name!r} must have exactly one parseable run field"
+        )
+    run_index = run_indices[0]
+    value = lines[run_index][len("      run:") :].strip()
+    if value and value != "|":
+        return [value]
+    if value != "|":
+        raise ValueError(f"step {step_name!r} has an empty run field")
+    commands = []
+    for line in lines[run_index + 1 :]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith("        "):
+            raise ValueError(
+                f"step {step_name!r} run block has invalid indentation"
+            )
+        commands.append(line.strip())
+    if not commands:
+        raise ValueError(f"step {step_name!r} has an empty run block")
+    return commands
+
+
+def _parse_workflow_gate_contract_text(text):
+    commands = []
+    jobs = _workflow_job_blocks(text)
+    for job_name in ("host-tests", "build", "extended-host-tests", "legacy"):
+        body = jobs.get(job_name)
+        if body is None:
+            raise ValueError(f"missing candidate Build job {job_name!r}")
+        step_matches = list(_STEP_NAME_RE.finditer(body))
+        if not step_matches:
+            raise ValueError(
+                f"no steps found parsing {job_name!r}; workflow format changed"
+            )
+
+        for index, match in enumerate(step_matches):
+            step_name = match.group(1).strip()
+            start = match.end()
+            end = (
+                step_matches[index + 1].start()
+                if index + 1 < len(step_matches)
+                else len(body)
+            )
+            block = body[start:end]
+            if step_name in _NON_GATE_STEP_NAMES:
+                continue
+
+            fields = []
+            for line in block.splitlines():
+                if not line.strip() or line.lstrip().startswith("#"):
+                    continue
+                indent = len(line) - len(line.lstrip(" "))
+                if indent == 6:
+                    field = re.match(
+                        r"^      (?P<field>[A-Za-z_][A-Za-z0-9_-]*)"
+                        r"[ \t]*:",
+                        line,
+                    )
+                    if field is None:
+                        raise ValueError(
+                            f"mirrored gate step {step_name!r} uses "
+                            "unsupported direct mapping-key syntax"
+                        )
+                    fields.append(field.group("field"))
+                elif indent < 8:
+                    raise ValueError(
+                        f"mirrored gate step {step_name!r} uses "
+                        "unsupported direct mapping indentation"
+                    )
+            if step_name in {
+                _WORKFLOW_PILOT_TEST_STEP_NAME,
+                _WORKFLOW_PILOT_BASELINE_STEP_NAME,
+            }:
+                if fields != ["env", "run"]:
+                    raise ValueError(
+                        f"protected pilot step {step_name!r} must contain "
+                        "only the reviewed name, env, and run fields"
+                    )
+                if (
+                    _scrubbed_environment_entries(block)
+                    != _SCRUBBED_PILOT_ENV
+                ):
+                    raise ValueError(
+                        f"protected pilot step {step_name!r} changes its "
+                        "reviewed scrubbed environment"
+                    )
+            elif fields != ["run"]:
+                raise ValueError(
+                    f"mirrored gate step {step_name!r} must contain only "
+                    "the reviewed name and run fields"
+                )
+
+            lines = _parse_run_lines(block, step_name)
+
+            if step_name == "Build archival lane without a copyrighted baserom":
+                lines = [line for line in lines if line.startswith("make ")]
+            for line in lines:
+                commands.append(
+                    (job_name, step_name, tuple(shlex.split(line)))
+                )
+    return tuple(commands)
+
+
+def _read_workflow_gate_contract(repository_root):
+    path = os.path.join(repository_root, _BUILD_WORKFLOW_RELATIVE)
+    try:
+        if os.path.islink(path) or not os.path.isfile(path):
+            raise ValueError(
+                f"target Build workflow {path!r} must be a regular file"
+            )
+        if os.path.commonpath((repository_root, os.path.realpath(path))) != (
+            repository_root
+        ):
+            raise ValueError(
+                f"target Build workflow {path!r} escapes the checkout"
+            )
+        if os.path.getsize(path) > 1024 * 1024:
+            raise ValueError(f"Build workflow {path!r} exceeds 1 MiB")
+        with open(path, "r", encoding="utf-8") as handle:
+            text = handle.read()
+    except (OSError, UnicodeError) as error:
+        raise ValueError(f"cannot read target Build workflow {path!r}: {error}") from error
+    return _parse_workflow_gate_contract_text(text)
+
+
+def _mirrored_workflow_commands(contract):
+    return [
+        list(argv)
+        for _, step_name, argv in contract
+        if step_name != _DOCS_GOVERNANCE_STEP_NAME
+    ]
+
+
+def _require_target_gate_equivalence(repository_root):
+    source = _read_workflow_gate_contract(_SOURCE_ROOT)
+    target = _read_workflow_gate_contract(repository_root)
+    if target != source:
+        raise ValueError(
+            "target Build workflow gate contract differs from the reviewed "
+            "source checkout"
+        )
+    source_commands = _mirrored_workflow_commands(source)
+    reviewed_commands = [gate.command for gate in gates(jobs=2)]
+    if source_commands != reviewed_commands:
+        raise ValueError(
+            "source Build workflow gate contract differs from reviewed gates"
+        )
 
 
 @dataclass
@@ -579,6 +843,7 @@ def run_gates(
     """
     results: List[GateResult] = []
     repository_root = _resolve_repository_root(repository_root)
+    _require_target_gate_equivalence(repository_root)
     for gate in gates(jobs=jobs):
         if dry_run:
             results.append(GateResult(gate=gate, ran=False, returncode=0, stdout="", stderr=""))

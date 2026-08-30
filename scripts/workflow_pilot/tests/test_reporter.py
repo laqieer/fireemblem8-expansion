@@ -1002,6 +1002,46 @@ class BaselineFixtureTests(unittest.TestCase):
 
 
 class RepositoryAuthorityTests(unittest.TestCase):
+    def test_override_blob_commits_derive_from_strict_fixture_and_decisions(self):
+        from scripts.workflow_pilot import hydrate_authority
+
+        fixture = minimal_fixture()
+        decisions = minimal_decisions()
+        add_override(fixture, decisions)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-pilot-blob-inputs-",
+            dir=TEST_ARTIFACTS,
+        ) as temporary:
+            fixture_path = Path(temporary) / "fixture.json"
+            decisions_path = Path(temporary) / "decisions.json"
+            fixture_path.write_bytes(reporter.normalized_json(fixture))
+            decisions_path.write_bytes(reporter.normalized_json(decisions))
+            repository, commits, decision_commits = (
+                hydrate_authority.required_override_decision_commits(
+                    fixture_path,
+                    decisions_path,
+                )
+            )
+            self.assertEqual(repository, fixture["repository"])
+            self.assertEqual(
+                commits,
+                sorted(commit["sha"] for commit in fixture["commits"]),
+            )
+            self.assertEqual(decision_commits, [sha("a"), sha("b")])
+
+            decisions["pull_requests"][0]["threshold"]["override_history"][0][
+                "enabled"
+            ] = False
+            decisions_path.write_bytes(reporter.normalized_json(decisions))
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "digest does not match",
+            ):
+                hydrate_authority.required_override_decision_commits(
+                    fixture_path,
+                    decisions_path,
+                )
+
     def test_repository_authority_uses_minimal_offline_git_environment(self):
         hostile = {
             "GIT_DIR": "/redirected",
@@ -2033,7 +2073,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
                 "sha": sha("e"),
                 "committed_at": "2026-01-01T09:30:00Z",
                 "parents": [sha("d")],
-                "message": f"Revert delivery\n\nThis reverts commit {sha('d')}.\n",
+                "message": f"Revert delivery\n\nThis reverts commit {sha('d')}.",
             }
         )
         fixture["base_sha"] = sha("e")
@@ -2143,7 +2183,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
                         "parents": [sha("d")],
                         "message": (
                             "Revert delivery\n\n"
-                            f"This reverts commit {sha('d')}.\n"
+                            f"This reverts commit {sha('d')}."
                         ),
                     }
                 )
@@ -2164,7 +2204,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
                     "parents": [sha("0")],
                     "message": (
                         "Unrelated revert\n\n"
-                        f"This reverts commit {sha('d')}.\n"
+                        f"This reverts commit {sha('d')}."
                     ),
                 },
                 {
@@ -2190,7 +2230,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
                 "parents": [sha("d")],
                 "message": (
                     "Unknown target\n\n"
-                    f"This reverts commit {sha('f')}.\n"
+                    f"This reverts commit {sha('f')}."
                 ),
             }
         )
@@ -2200,6 +2240,83 @@ class FormulaAndClassificationTests(unittest.TestCase):
             "targets unavailable commit",
         ):
             authoritative_report(fixture, minimal_decisions())
+
+    def test_real_git_revert_message_has_one_exact_final_trailer(self):
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-pilot-real-revert-",
+            dir=TEST_ARTIFACTS,
+        ) as temporary:
+            repository_root = Path(temporary)
+            git_run(repository_root, "init", "-q", "-b", "master")
+            git_run(repository_root, "config", "user.name", "Pilot Test")
+            git_run(
+                repository_root,
+                "config",
+                "user.email",
+                "pilot@example.invalid",
+            )
+            tracked = repository_root / "tracked.txt"
+            tracked.write_text("before\n", encoding="ascii")
+            git_run(repository_root, "add", "tracked.txt")
+            git_run(repository_root, "commit", "-q", "-m", "initial")
+            tracked.write_text("after\n", encoding="ascii")
+            git_run(repository_root, "commit", "-q", "-am", "change")
+            target = git_run(
+                repository_root,
+                "rev-parse",
+                "HEAD",
+                text=True,
+            ).stdout.strip()
+            git_run(repository_root, "revert", "--no-edit", target)
+            revert = git_run(
+                repository_root,
+                "rev-parse",
+                "HEAD",
+                text=True,
+            ).stdout.strip()
+            message = reporter._load_git_commit_objects(
+                repository_root,
+                [revert],
+            )[revert]["message"]
+            self.assertEqual(
+                reporter.canonical_revert_target(message, revert),
+                target,
+            )
+            self.assertEqual(
+                message,
+                f'Revert "change"\n\nThis reverts commit {target}.',
+            )
+
+    def test_noncanonical_revert_trailers_fail_closed(self):
+        target = sha("d")
+        trailer = f"This reverts commit {target}."
+        variants = (
+            f"Revert delivery\n\nthis reverts commit {target}.",
+            f"Revert delivery\n\nThis reverts commit {target[:12]}.",
+            f"Revert delivery\n\nThis reverts commit {target.upper()}.",
+            f"Revert delivery\n\n{trailer}\ntrailing text",
+            f"Revert delivery\n\n{trailer}\n",
+            f"Revert delivery\n\n {trailer}",
+            f"Revert delivery\n\nprefix {trailer}",
+            f"Revert delivery\n\n{trailer}\n\n{trailer}",
+        )
+        for message in variants:
+            with self.subTest(message=repr(message)):
+                fixture = minimal_fixture()
+                fixture["commits"].append(
+                    {
+                        "sha": sha("e"),
+                        "committed_at": "2026-01-01T09:30:00Z",
+                        "parents": [target],
+                        "message": message,
+                    }
+                )
+                fixture["base_sha"] = sha("e")
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "invalid canonical revert trailer",
+                ):
+                    authoritative_report(fixture, minimal_decisions())
 
     def test_review_round_and_density_formulas(self):
         result = authoritative_report(minimal_fixture(), minimal_decisions())

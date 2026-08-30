@@ -79,7 +79,7 @@ jobs:
         GIT_WORK_TREE: ''
         PATH: /usr/bin:/bin
         PYTHONPATH: ''
-      run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py hydrate --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --expected-head "$EXPECTED_BUILD_SHA"
+      run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py hydrate --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected-head "$EXPECTED_BUILD_SHA"
 
     - name: Install host-only dependencies (no arm-none-eabi toolchain)
       run: sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev

@@ -30,7 +30,9 @@ EXPECTED_PATH_RE = re.compile(
 DELIVERY_GUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
-REVERT_RE = re.compile(r"(?im)^This reverts commit ([0-9a-f]{40})\.\s*$")
+REVERT_TRAILER_RE = re.compile(
+    r"(?:\A|\n\n)This reverts commit ([0-9a-f]{40})\.\Z"
+)
 REVIEW_BOT = "copilot-pull-request-reviewer[bot]"
 DECISION_RECORD_PATH = Path(".github/workflow-pilot-decisions.json")
 REVIEW_THREAD_EVENT_SOURCE = "github-webhook-deliveries"
@@ -403,6 +405,18 @@ def canonical_commit_message(message_bytes: bytes, sha: str) -> str:
     if message.endswith("\n"):
         return message[:-1]
     return message
+
+
+def canonical_revert_target(message: str, sha: str) -> str | None:
+    mention_count = message.lower().count("this reverts commit")
+    match = REVERT_TRAILER_RE.search(message)
+    if mention_count == 0:
+        return None
+    if mention_count != 1 or match is None:
+        raise PilotDataError(
+            f"revert commit {sha} has an invalid canonical revert trailer"
+        )
+    return match.group(1)
 
 
 def rounded_tenth_hours(delta_seconds: Decimal) -> Decimal:
@@ -929,10 +943,9 @@ def validate_repository_authority(
 
     reverts = []
     for sha, commit in commits.items():
-        match = REVERT_RE.search(commit["message"])
-        if match is None:
+        target = canonical_revert_target(commit["message"], sha)
+        if target is None:
             continue
-        target = match.group(1)
         if target not in actual:
             raise PilotDataError(
                 f"revert commit {sha} targets unavailable commit {target}"

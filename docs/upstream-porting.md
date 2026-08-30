@@ -197,16 +197,27 @@ launches from its source root. Nested/external module discovery is not an
 installed or supported interface. In CI, `GITHUB_WORKSPACE` must resolve to
 the selected target. That one root is both the subprocess working directory
 and the pilot baseline's `--repository-root`; there is no per-step
-working-directory override.
+working-directory override. Before either a dry run or execution, the source
+tool parses the target checkout's Build workflow as bounded UTF-8 data without
+importing or executing target Python. The four reviewed worker jobs must have
+the exact same step names, argv, order, direct fields, protected environments,
+and no working-directory override as the source workflow and source `gates()`
+contract. An older, newer, missing, added, removed, reordered, or changed
+target gate fails closed instead of running source-defined evidence against a
+different checkout contract.
 
 CI additionally hydrates commit authority before the workflow-pilot tests with
 the strict fixture-derived helper. It fetches only missing exact commit IDs
 from fixed `origin`, in bounded no-tags/blob-filtered/no-ref batches, verifies
-every commit, and rechecks exact `EXPECTED_BUILD_SHA` plus the complete ref
-set. This covers force-pushed candidates that an all-head fetch cannot
-recover. It is CI setup, not one of the 28 local gates; normal local clones
-are never hydrated by `verify`, which remains deliberately
-network-independent and fails if their authority is incomplete.
+every commit, and then derives the exact historical
+`.github/workflow-pilot-decisions.json` blobs needed by override introduction
+and first-review commits from the strict fixture and current decisions. Only
+those blob object IDs are fetched without the commit-level blob filter; other
+blobs remain omitted. The helper rechecks exact `EXPECTED_BUILD_SHA`, the
+complete ref set, and FETCH_HEAD after both phases. This covers force-pushed
+candidates that an all-head fetch cannot recover. It is CI setup, not one of
+the 28 local gates; normal local clones are never hydrated by `verify`, which
+remains deliberately network-independent and fails if authority is incomplete.
 
 Before a non-dry-run local `verify`, install both the supported modern
 toolchain and the explicit archival `make legacy` prerequisites. The

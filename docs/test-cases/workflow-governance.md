@@ -334,6 +334,10 @@ Every Git subprocess uses resolved `/usr/bin/git`, explicit
 environment with no inherited Git redirection or configuration controls.
 Repository grafts, replacement refs, and object-alternate files fail closed;
 hydration alone permits the fixed bounded `origin` fetch.
+Commit hydration keeps `blob:none`, then strict fixture/decision relationships
+derive only override-introduction and first-review decision-record blob IDs.
+Those exact blobs are fetched separately while unrelated blobs, HEAD, refs,
+and FETCH_HEAD remain unchanged.
 The expected cohort seal binds normalized identities plus review, event,
 timestamp, PR/SHA, and other metric relationships.
 Every Build and non-Build workflow run is also rejected when its creation
@@ -378,6 +382,7 @@ commit-message trailing newline/space/blank-line/body/leading-whitespace
 mutation, an omitted identity seal, PR events before creation, invalid
 open/closed phases, future event or workflow-run SHAs,
 earlier/equal/unrelated/fabricated reverts,
+non-final/multiple/mixed-case/short/uppercase or text-padded revert trailers,
 inconsistent stack parent/base/depth, missing parent decisions, stack cycles,
 false depth-two or depth-three claims, an older spotlight run outside the
 cohort, impossible non-Build intervals, incoherent
@@ -418,7 +423,10 @@ reviewed Ubuntu host.
 The protected Python steps use the closed isolated launcher, so repository or
 user site customization cannot run before control. The workflow mirror parser
 uses deterministic line/indent parsing rather than an ambiguous multiline
-regular expression.
+regular expression. Cross-checkout verification parses target workflow data
+without importing target code and requires exact source/target gate names,
+argv, order, fields, protected environment, and root execution before dry-run
+or execution.
 
 `python3 scripts/check_docs.py --check` validates this complete procedure,
 registry ownership, links, and automation evidence.
