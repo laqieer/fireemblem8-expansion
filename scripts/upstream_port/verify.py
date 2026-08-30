@@ -27,6 +27,7 @@ from typing import List
 # the gate list stays an argv-identical copy of the workflow. It is applied
 # to the child environment, never exec-ed as a program.
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_TRUSTED_GIT = "/usr/bin/git"
 
 
 def _split_env_prefix(command):
@@ -52,11 +53,41 @@ def _split_stdout_redirect(command):
     return argv, subprocess.PIPE
 
 
+def _trusted_git_executable():
+    git = os.path.realpath(_TRUSTED_GIT)
+    if not os.path.isfile(git) or not os.access(git, os.X_OK):
+        raise ValueError(f"trusted Git executable {git!r} is unavailable")
+    return git
+
+
+def _git_environment():
+    return {
+        "GIT_CONFIG_COUNT": "0",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "GIT_NO_LAZY_FETCH": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
+
+
 def _git_top_level(path):
+    git = _trusted_git_executable()
     try:
         return os.path.realpath(
             subprocess.check_output(
-                ["git", "-C", path, "rev-parse", "--show-toplevel"],
+                [
+                    git,
+                    "--no-replace-objects",
+                    "-C",
+                    path,
+                    "rev-parse",
+                    "--show-toplevel",
+                ],
+                env=_git_environment(),
                 stderr=subprocess.PIPE,
                 text=True,
             ).strip()

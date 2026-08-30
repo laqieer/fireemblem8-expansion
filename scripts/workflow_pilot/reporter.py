@@ -21,6 +21,7 @@ from typing import Any, Iterable
 
 
 SCHEMA_VERSION = 1
+GIT = "/usr/bin/git"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 EXPECTED_PATH_RE = re.compile(
@@ -487,10 +488,40 @@ def observed_candidate_shas(
     return result
 
 
-def offline_git_environment() -> dict[str, str]:
-    environment = dict(os.environ)
-    environment["GIT_NO_LAZY_FETCH"] = "1"
+def trusted_git_executable() -> str:
+    try:
+        executable = Path(GIT).resolve(strict=True)
+    except OSError as error:
+        raise PilotDataError(f"trusted Git executable is unavailable: {error}") from error
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise PilotDataError(f"trusted Git executable {executable} is not executable")
+    return str(executable)
+
+
+def git_environment(*, offline: bool) -> dict[str, str]:
+    environment = {
+        "GIT_CONFIG_COUNT": "0",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
+    if offline:
+        environment["GIT_NO_LAZY_FETCH"] = "1"
     return environment
+
+
+def git_command(repository_root: Path, *arguments: str) -> tuple[str, ...]:
+    return (
+        trusted_git_executable(),
+        "--no-replace-objects",
+        "-C",
+        str(repository_root),
+        *arguments,
+    )
 
 
 def run_git(
@@ -499,8 +530,8 @@ def run_git(
 ) -> bytes:
     try:
         completed = subprocess.run(
-            ("git", "-C", str(repository_root), *arguments),
-            env=offline_git_environment(),
+            git_command(repository_root, *arguments),
+            env=git_environment(offline=True),
             check=False,
             capture_output=True,
         )
@@ -546,6 +577,35 @@ def validate_repository_root(repository_root: Path) -> Path:
         raise PilotDataError(
             f"repository root must be the exact Git top level {top_level}"
         )
+    for relative, label in (
+        ("info/grafts", "graft file"),
+        ("objects/info/alternates", "alternate object store"),
+        ("objects/info/http-alternates", "HTTP alternate object store"),
+    ):
+        raw_path = (
+            run_git(resolved, "rev-parse", "--git-path", relative)
+            .decode("utf-8")
+            .strip()
+        )
+        metadata_path = Path(raw_path)
+        if not metadata_path.is_absolute():
+            metadata_path = resolved / metadata_path
+        try:
+            has_content = metadata_path.is_file() and metadata_path.stat().st_size > 0
+        except OSError as error:
+            raise PilotDataError(
+                f"cannot inspect repository {label}: {error}"
+            ) from error
+        if has_content:
+            raise PilotDataError(f"repository {label} is not permitted")
+    replace_refs = run_git(
+        resolved,
+        "for-each-ref",
+        "--format=%(refname)",
+        "refs/replace/",
+    )
+    if replace_refs.strip():
+        raise PilotDataError("repository replacement refs are not permitted")
     return resolved
 
 
@@ -556,9 +616,9 @@ def _load_git_commit_objects(
     ordered = sorted(set(shas))
     try:
         completed = subprocess.run(
-            ("git", "-C", str(repository_root), "cat-file", "--batch"),
+            git_command(repository_root, "cat-file", "--batch"),
             input=b"".join(f"{sha}\n".encode("ascii") for sha in ordered),
-            env=offline_git_environment(),
+            env=git_environment(offline=True),
             check=False,
             capture_output=True,
         )
@@ -643,70 +703,6 @@ def _load_git_commit_objects(
     return result
 
 
-def git_commit_time(repository_root: Path, sha: str) -> datetime:
-    raw = (
-        run_git(repository_root, "show", "-s", "--format=%cI", sha)
-        .decode("ascii")
-        .strip()
-    )
-    try:
-        parsed = datetime.fromisoformat(raw)
-    except ValueError as error:
-        raise PilotDataError(
-            f"Git commit {sha} has an invalid committer timestamp"
-        ) from error
-    return parsed.astimezone(timezone.utc)
-
-
-def git_is_ancestor(repository_root: Path, ancestor: str, descendant: str) -> bool:
-    if ancestor == descendant:
-        run_git(repository_root, "cat-file", "-e", f"{ancestor}^{{commit}}")
-        return True
-    try:
-        completed = subprocess.run(
-            (
-                "git",
-                "-C",
-                str(repository_root),
-                "merge-base",
-                "--is-ancestor",
-                ancestor,
-                descendant,
-            ),
-            env=offline_git_environment(),
-            check=False,
-            capture_output=True,
-        )
-    except OSError as error:
-        raise PilotDataError(f"cannot execute Git: {error}") from error
-    if completed.returncode == 0:
-        return True
-    if completed.returncode == 1:
-        return False
-    detail = completed.stderr.decode("utf-8", errors="replace").strip()
-    raise PilotDataError(
-        f"Git cannot compare commits {ancestor} and {descendant}"
-        + (f": {detail}" if detail else "")
-    )
-
-
-def _git_parent_graph(
-    repository_root: Path,
-    shas: Iterable[str],
-) -> dict[str, list[str]]:
-    raw = run_git(
-        repository_root,
-        "rev-list",
-        "--parents",
-        *sorted(set(shas)),
-    ).decode("ascii")
-    graph = {}
-    for line in raw.splitlines():
-        fields = line.split()
-        graph[fields[0]] = fields[1:]
-    return graph
-
-
 def _git_ancestors(sha: str, graph: dict[str, list[str]]) -> set[str]:
     result = set()
     pending = [sha]
@@ -775,7 +771,10 @@ def validate_repository_authority(
             )
 
     require_commit_available(base_sha, captured, "fixture.base_sha")
-    parent_graph = _git_parent_graph(repository_root, commits)
+    parent_graph = {
+        sha: commit["parents"]
+        for sha, commit in actual.items()
+    }
     ancestor_cache = {
         sha: _git_ancestors(sha, parent_graph)
         for sha in commits
@@ -1183,19 +1182,12 @@ def validate_override_git_provenance(
             f"PR {pull_request} threshold override {override_index} cites a "
             "non-candidate commit"
         )
-    run_git(repository_root, "cat-file", "-e", f"{sha}^{{commit}}")
-    run_git(
-        repository_root,
-        "cat-file",
-        "-e",
-        f"{pr['head_sha']}^{{commit}}",
-    )
-    if not git_is_ancestor(repository_root, sha, pr["head_sha"]):
+    if not is_ancestor(sha, pr["head_sha"], data["commits"]):
         raise PilotDataError(
             f"PR {pull_request} threshold override {override_index} commit is "
             "not in the candidate ancestry"
         )
-    actual_time = git_commit_time(repository_root, sha)
+    actual_time = data["repository_authority"]["commits"][sha]["committed_at"]
     fixture_time = parse_time(
         data["commits"][sha]["committed_at"],
         f"commit {sha}.committed_at",
@@ -1245,8 +1237,9 @@ def validate_override_git_provenance(
         first_review["submitted_at"],
         f"review {first_review['id']}.submitted_at",
     )
-    run_git(repository_root, "cat-file", "-e", f"{review_sha}^{{commit}}")
-    review_commit_time = git_commit_time(repository_root, review_sha)
+    review_commit_time = data["repository_authority"]["commits"][review_sha][
+        "committed_at"
+    ]
     if review_commit_time > review_at:
         raise PilotDataError(
             f"PR {pull_request} first review predates its reviewed Git commit"
@@ -1256,7 +1249,7 @@ def validate_override_git_provenance(
             f"PR {pull_request} threshold override {override_index} commit "
             "does not predate the first review"
         )
-    if not git_is_ancestor(repository_root, sha, review_sha):
+    if not is_ancestor(sha, review_sha, data["commits"]):
         raise PilotDataError(
             f"PR {pull_request} threshold override {override_index} was not "
             "present at the first reviewed commit"
@@ -2931,41 +2924,40 @@ def validate_artifact_lifecycle(
                 raise PilotDataError(
                     f"artifact {artifact_id!r} has no {required_type} deletion proof"
                 )
+        current_disposition = decision["history"][-1]["disposition"]
+        required_semantic_result = (
+            "pass" if current_disposition == "Delete" else "fail"
+        )
+        required_reason = proofs[0]["reason"]
+        disposition_at = parse_time(
+            decision["history"][-1]["recorded_at"],
+            f"artifact decision {artifact_id}.current recorded_at",
+        )
         for proof in proofs:
+            proof_at = parse_time(
+                proof["occurred_at"],
+                f"event {proof['id']}.occurred_at",
+            )
+            if proof["semantic_result"] != required_semantic_result:
+                raise PilotDataError(
+                    f"artifact {artifact_id!r} deletion proof "
+                    f"{proof['id']!r} contradicts current disposition "
+                    f"{current_disposition!r}"
+                )
+            if proof["reason"] != required_reason:
+                raise PilotDataError(
+                    f"artifact {artifact_id!r} deletion proof "
+                    f"{proof['id']!r} has a mixed semantic reason"
+                )
             if proof["restored_result"] != "pass":
                 raise PilotDataError(
                     f"artifact {artifact_id!r} deletion proof "
                     f"{proof['id']!r} did not restore"
                 )
-        latest_proof = max(
-            proofs,
-            key=lambda proof: parse_time(
-                proof["occurred_at"], f"event {proof['id']}.occurred_at"
-            ),
-        )
-        latest_proof_at = parse_time(
-            latest_proof["occurred_at"],
-            f"event {latest_proof['id']}.occurred_at",
-        )
-        disposition_at = parse_time(
-            decision["history"][-1]["recorded_at"],
-            f"artifact decision {artifact_id}.current recorded_at",
-        )
-        if disposition_at <= latest_proof_at:
-            raise PilotDataError(
-                f"artifact {artifact_id!r} current disposition must strictly "
-                "follow every deletion proof"
-            )
-        current_disposition = decision["history"][-1]["disposition"]
-        if latest_proof["semantic_result"] == "pass":
-            if current_disposition != "Delete":
+            if disposition_at <= proof_at:
                 raise PilotDataError(
-                    f"artifact {artifact_id!r} is deletion-ready but not Delete"
-                )
-        else:
-            if current_disposition == "Delete":
-                raise PilotDataError(
-                    f"necessary artifact {artifact_id!r} cannot be Delete"
+                    f"artifact {artifact_id!r} current disposition must "
+                    "strictly follow every deletion proof"
                 )
 
 
@@ -2998,8 +2990,12 @@ def _run_deletion_proof_check(
         raise PilotDataError(
             f"deletion-proof check {check_id!r} is not allowlisted"
         )
-    environment = dict(os.environ)
-    environment["WORKFLOW_PILOT_TEST_AUTHORITY_ROOT"] = str(authority_root)
+    environment = {
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+        "PYTHONHASHSEED": "0",
+        "WORKFLOW_PILOT_TEST_AUTHORITY_ROOT": str(authority_root),
+    }
     try:
         return subprocess.run(
             command,

@@ -13,6 +13,12 @@ ROOT = Path(__file__).resolve().parents[2]
 MODES = frozenset({"hydrate", "reporter-tests", "baseline"})
 
 
+def clear_ambient_git_environment() -> None:
+    for name in tuple(os.environ):
+        if name.startswith("GIT_"):
+            del os.environ[name]
+
+
 def controlled_repository_root(arguments: list[str]) -> Path:
     positions = [
         index
@@ -70,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     if not arguments:
         print("workflow-pilot-launcher: mode is required", file=sys.stderr)
         return 2
+    clear_ambient_git_environment()
     sys.path.insert(0, str(ROOT))
     try:
         return dispatch(arguments[0], arguments[1:])

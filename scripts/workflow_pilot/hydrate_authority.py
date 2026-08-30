@@ -11,7 +11,7 @@ from pathlib import Path
 from . import reporter
 
 
-GIT = "/usr/bin/git"
+GIT = reporter.GIT
 BATCH_SIZE = 256
 FETCH_TIMEOUT_SECONDS = 120
 FETCH_OPTIONS = (
@@ -27,12 +27,10 @@ def run_git(
     *arguments: str,
     check: bool = True,
 ) -> subprocess.CompletedProcess[bytes]:
-    environment = reporter.offline_git_environment()
-    environment["GIT_TERMINAL_PROMPT"] = "0"
     try:
         completed = subprocess.run(
-            (GIT, "-C", str(repository_root), *arguments),
-            env=environment,
+            reporter.git_command(repository_root, *arguments),
+            env=reporter.git_environment(offline=False),
             check=False,
             capture_output=True,
             timeout=FETCH_TIMEOUT_SECONDS,
@@ -56,19 +54,15 @@ def available_commits(
 ) -> set[str]:
     if not shas:
         return set()
-    environment = reporter.offline_git_environment()
-    environment["GIT_TERMINAL_PROMPT"] = "0"
     try:
         completed = subprocess.run(
-            (
-                GIT,
-                "-C",
-                str(repository_root),
+            reporter.git_command(
+                repository_root,
                 "cat-file",
                 "--batch-check=%(objectname) %(objecttype)",
             ),
             input="".join(f"{sha}\n" for sha in shas).encode("ascii"),
-            env=environment,
+            env=reporter.git_environment(offline=True),
             check=False,
             capture_output=True,
             timeout=FETCH_TIMEOUT_SECONDS,

@@ -28,6 +28,29 @@ BASELINE_AUTHORITY = Path(
 )
 
 
+def git_run(
+    repository_root,
+    *arguments,
+    input=None,
+    check=True,
+    capture_output=True,
+    text=False,
+    offline=True,
+    environment=None,
+):
+    clean_environment = reporter.git_environment(offline=offline)
+    if environment is not None:
+        clean_environment.update(environment)
+    return subprocess.run(
+        reporter.git_command(Path(repository_root), *arguments),
+        input=input,
+        check=check,
+        capture_output=capture_output,
+        text=text,
+        env=clean_environment,
+    )
+
+
 def sha(character):
     return character * 40
 
@@ -312,7 +335,7 @@ def minimal_fixture():
                 "artifact_id": "contract",
                 "trigger_event_id": "artifact:pre-graduation",
                 "semantic_result": "fail",
-                "reason": "graduation still requires the decision boundary",
+                "reason": "removal loses the decision boundary",
                 "restored_result": "pass",
             },
         ],
@@ -412,30 +435,19 @@ def git_authority(fixture):
         dir=TEST_ARTIFACTS,
     ) as temporary:
         repository_root = Path(temporary)
-        subprocess.run(
-            ["git", "init", "-q", "-b", "master", str(repository_root)],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            [
-                "git",
-                "-C",
-                str(repository_root),
-                "remote",
-                "add",
-                "origin",
-                f"https://github.com/{fixture['repository']}.git",
-            ],
-            check=True,
-            capture_output=True,
+        git_run(repository_root, "init", "-q", "-b", "master")
+        git_run(
+            repository_root,
+            "remote",
+            "add",
+            "origin",
+            f"https://github.com/{fixture['repository']}.git",
         )
         empty_tree = (
-            subprocess.run(
-                ["git", "-C", str(repository_root), "mktree"],
+            git_run(
+                repository_root,
+                "mktree",
                 input=b"",
-                check=True,
-                capture_output=True,
             )
             .stdout.decode("ascii")
             .strip()
@@ -466,32 +478,25 @@ def git_authority(fixture):
                     replacements,
                 )
                 command = [
-                    "git",
-                    "-C",
-                    str(repository_root),
                     "commit-tree",
                     empty_tree,
                 ]
                 for parent_sha in commit["parents"]:
                     command.extend(("-p", replacements[parent_sha]))
-                environment = dict(os.environ)
-                environment.update(
-                    {
-                        "GIT_AUTHOR_NAME": "Pilot Test",
-                        "GIT_AUTHOR_EMAIL": "pilot@example.invalid",
-                        "GIT_COMMITTER_NAME": "Pilot Test",
-                        "GIT_COMMITTER_EMAIL": "pilot@example.invalid",
-                        "GIT_AUTHOR_DATE": commit["committed_at"],
-                        "GIT_COMMITTER_DATE": commit["committed_at"],
-                    }
-                )
+                environment = {
+                    "GIT_AUTHOR_NAME": "Pilot Test",
+                    "GIT_AUTHOR_EMAIL": "pilot@example.invalid",
+                    "GIT_COMMITTER_NAME": "Pilot Test",
+                    "GIT_COMMITTER_EMAIL": "pilot@example.invalid",
+                    "GIT_AUTHOR_DATE": commit["committed_at"],
+                    "GIT_COMMITTER_DATE": commit["committed_at"],
+                }
                 replacements[old_sha] = (
-                    subprocess.run(
-                        command,
+                    git_run(
+                        repository_root,
+                        *command,
                         input=(message + "\n").encode("utf-8"),
-                        check=True,
-                        capture_output=True,
-                        env=environment,
+                        environment=environment,
                     )
                     .stdout.decode("ascii")
                     .strip()
@@ -997,11 +1002,157 @@ class BaselineFixtureTests(unittest.TestCase):
 
 
 class RepositoryAuthorityTests(unittest.TestCase):
-    def test_repository_authority_disables_lazy_network_fetches(self):
-        with mock.patch.dict(os.environ, {"PRESERVED": "yes"}, clear=True):
-            environment = reporter.offline_git_environment()
-        self.assertEqual(environment["GIT_NO_LAZY_FETCH"], "1")
-        self.assertEqual(environment["PRESERVED"], "yes")
+    def test_repository_authority_uses_minimal_offline_git_environment(self):
+        hostile = {
+            "GIT_DIR": "/redirected",
+            "GIT_OBJECT_DIRECTORY": "/redirected/objects",
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "remote.origin.url",
+            "GIT_CONFIG_VALUE_0": "https://github.com/attacker/repository.git",
+            "PRESERVED": "must-not-leak",
+        }
+        with mock.patch.dict(os.environ, hostile, clear=True):
+            environment = reporter.git_environment(offline=True)
+        self.assertEqual(
+            environment,
+            {
+                "GIT_CONFIG_COUNT": "0",
+                "GIT_CONFIG_GLOBAL": "/dev/null",
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_SYSTEM": "/dev/null",
+                "GIT_NO_LAZY_FETCH": "1",
+                "GIT_NO_REPLACE_OBJECTS": "1",
+                "GIT_TERMINAL_PROMPT": "0",
+                "LC_ALL": "C",
+                "PATH": "/usr/bin:/bin",
+            },
+        )
+        self.assertEqual(reporter.trusted_git_executable(), "/usr/bin/git")
+        self.assertEqual(
+            reporter.git_command(ROOT, "rev-parse", "HEAD"),
+            (
+                "/usr/bin/git",
+                "--no-replace-objects",
+                "-C",
+                str(ROOT),
+                "rev-parse",
+                "HEAD",
+            ),
+        )
+
+    def test_ambient_git_repository_object_and_config_redirects_are_ignored(self):
+        fixture = minimal_fixture()
+        with git_authority(fixture) as (authoritative_fixture, repository_root):
+            with git_authority(minimal_fixture()) as (_, alternate_root):
+                hostile = {
+                    "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(
+                        ROOT / ".git" / "objects"
+                    ),
+                    "GIT_CEILING_DIRECTORIES": str(repository_root),
+                    "GIT_CONFIG_COUNT": "1",
+                    "GIT_CONFIG_GLOBAL": str(alternate_root / ".git" / "config"),
+                    "GIT_CONFIG_KEY_0": "remote.origin.url",
+                    "GIT_CONFIG_PARAMETERS": (
+                        "'remote.origin.url'='https://github.com/attacker/repository.git'"
+                    ),
+                    "GIT_CONFIG_SYSTEM": str(alternate_root / ".git" / "config"),
+                    "GIT_CONFIG_VALUE_0": (
+                        "https://github.com/attacker/repository.git"
+                    ),
+                    "GIT_DIR": str(alternate_root / ".git"),
+                    "GIT_EXEC_PATH": str(alternate_root),
+                    "GIT_NO_REPLACE_OBJECTS": "0",
+                    "GIT_OBJECT_DIRECTORY": str(
+                        alternate_root / ".git" / "objects"
+                    ),
+                    "GIT_REPLACE_REF_BASE": "refs/attacker/",
+                    "GIT_WORK_TREE": str(alternate_root),
+                }
+                with mock.patch.dict(os.environ, hostile, clear=False):
+                    report = reporter.build_report(
+                        authoritative_fixture,
+                        minimal_decisions(),
+                        repository_root,
+                    )
+        self.assertEqual(report["delivery"]["merged_pull_requests"], 1)
+
+    def test_repository_replace_refs_grafts_and_object_alternates_reject(self):
+        fixture = minimal_fixture()
+        with git_authority(fixture) as (authoritative_fixture, repository_root):
+            commits = {
+                commit["message"]: commit["sha"]
+                for commit in authoritative_fixture["commits"]
+            }
+            git_run(
+                repository_root,
+                "replace",
+                commits["feat: begin"],
+                commits["fix: review"],
+            )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "replacement refs are not permitted",
+            ):
+                reporter.build_report(
+                    authoritative_fixture,
+                    minimal_decisions(),
+                    repository_root,
+                )
+            git_run(
+                repository_root,
+                "replace",
+                "-d",
+                commits["feat: begin"],
+            )
+
+            graft_path = (
+                repository_root
+                / git_run(
+                    repository_root,
+                    "rev-parse",
+                    "--git-path",
+                    "info/grafts",
+                ).stdout.decode("utf-8").strip()
+            )
+            graft_path.parent.mkdir(parents=True, exist_ok=True)
+            graft_path.write_text(
+                f"{commits['fix: finish']} {commits['test base']}\n",
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "graft file is not permitted",
+            ):
+                reporter.build_report(
+                    authoritative_fixture,
+                    minimal_decisions(),
+                    repository_root,
+                )
+            graft_path.unlink()
+
+            alternates_path = (
+                repository_root
+                / git_run(
+                    repository_root,
+                    "rev-parse",
+                    "--git-path",
+                    "objects/info/alternates",
+                ).stdout.decode("utf-8").strip()
+            )
+            alternates_path.parent.mkdir(parents=True, exist_ok=True)
+            alternates_path.write_text(
+                f"{ROOT / '.git' / 'objects'}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "alternate object store is not permitted",
+            ):
+                reporter.build_report(
+                    authoritative_fixture,
+                    minimal_decisions(),
+                    repository_root,
+                )
 
     def test_report_construction_requires_explicit_repository_authority(self):
         with self.assertRaisesRegex(
@@ -2537,41 +2688,26 @@ class FailClosedDataTests(unittest.TestCase):
             )
         )
         repository_root = Path(directory)
-        subprocess.run(
-            ["git", "init", "-q", "-b", "master", str(repository_root)],
-            check=True,
-            capture_output=True,
+        git_run(repository_root, "init", "-q", "-b", "master")
+        git_run(
+            repository_root,
+            "config",
+            "user.name",
+            "Pilot Test",
         )
-        subprocess.run(
-            ["git", "-C", str(repository_root), "config", "user.name", "Pilot Test"],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            [
-                "git",
-                "-C",
-                str(repository_root),
-                "config",
-                "user.email",
-                "pilot@example.invalid",
-            ],
-            check=True,
-            capture_output=True,
+        git_run(
+            repository_root,
+            "config",
+            "user.email",
+            "pilot@example.invalid",
         )
 
-        subprocess.run(
-            [
-                "git",
-                "-C",
-                str(repository_root),
-                "remote",
-                "add",
-                "origin",
-                "https://github.com/example/workflow.git",
-            ],
-            check=True,
-            capture_output=True,
+        git_run(
+            repository_root,
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/example/workflow.git",
         )
         decisions = minimal_decisions()
         overrides = [
@@ -2628,83 +2764,55 @@ class FailClosedDataTests(unittest.TestCase):
             (repository_root / "marker.txt").write_text(
                 f"{letter}\n", encoding="ascii"
             )
-            subprocess.run(
-                ["git", "-C", str(repository_root), "add", "-A"],
-                check=True,
-                capture_output=True,
-            )
-            env = dict(os.environ)
-            env.update(
-                {
-                    "GIT_AUTHOR_DATE": dates[letter],
-                    "GIT_COMMITTER_DATE": dates[letter],
-                }
-            )
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repository_root),
-                    "commit",
-                    "-q",
-                    "-m",
-                    messages[letter],
-                ],
-                check=True,
-                capture_output=True,
-                env=env,
+            git_run(repository_root, "add", "-A")
+            environment = {
+                "GIT_AUTHOR_DATE": dates[letter],
+                "GIT_COMMITTER_DATE": dates[letter],
+            }
+            git_run(
+                repository_root,
+                "commit",
+                "-q",
+                "-m",
+                messages[letter],
+                environment=environment,
             )
             shas[letter] = (
-                subprocess.run(
-                    ["git", "-C", str(repository_root), "rev-parse", "HEAD"],
-                    check=True,
-                    capture_output=True,
+                git_run(
+                    repository_root,
+                    "rev-parse",
+                    "HEAD",
                     text=True,
                 )
                 .stdout.strip()
             )
-        subprocess.run(
-            [
-                "git",
-                "-C",
-                str(repository_root),
-                "checkout",
-                "-q",
-                "-b",
-                "integration",
-                shas["0"],
-            ],
-            check=True,
-            capture_output=True,
+        git_run(
+            repository_root,
+            "checkout",
+            "-q",
+            "-b",
+            "integration",
+            shas["0"],
         )
-        env = dict(os.environ)
-        env.update(
-            {
-                "GIT_AUTHOR_DATE": dates["d"],
-                "GIT_COMMITTER_DATE": dates["d"],
-            }
-        )
-        subprocess.run(
-            [
-                "git",
-                "-C",
-                str(repository_root),
-                "merge",
-                "--no-ff",
-                "-q",
-                "-m",
-                messages["d"],
-                "master",
-            ],
-            check=True,
-            capture_output=True,
-            env=env,
+        environment = {
+            "GIT_AUTHOR_DATE": dates["d"],
+            "GIT_COMMITTER_DATE": dates["d"],
+        }
+        git_run(
+            repository_root,
+            "merge",
+            "--no-ff",
+            "-q",
+            "-m",
+            messages["d"],
+            "master",
+            environment=environment,
         )
         shas["d"] = (
-            subprocess.run(
-                ["git", "-C", str(repository_root), "rev-parse", "HEAD"],
-                check=True,
-                capture_output=True,
+            git_run(
+                repository_root,
+                "rev-parse",
+                "HEAD",
                 text=True,
             )
             .stdout.strip()
@@ -3348,6 +3456,51 @@ class ArtifactLifecycleTests(unittest.TestCase):
         with self.assertRaisesRegex(reporter.PilotDataError, pattern):
             authoritative_report(fixture, decisions)
 
+    def fixture_with_all_proof_kinds(self):
+        fixture = minimal_fixture()
+        fixture["dependency_edges"].append(
+            {
+                "id": "review:dependency",
+                "type": "review_depends_on",
+                "source": "review:10",
+                "target": "dependency:api",
+            }
+        )
+        fixture["events"].extend(
+            [
+                {
+                    "id": "artifact:dependency-change",
+                    "type": "dependency_changed",
+                    "occurred_at": "2026-01-01T09:02:10Z",
+                    "artifact_id": "contract",
+                    "dependency_id": "dependency:api",
+                },
+                {
+                    "id": "artifact:dependency-proof",
+                    "type": "deletion_proof",
+                    "occurred_at": "2026-01-01T09:02:20Z",
+                    "artifact_id": "contract",
+                    "trigger_event_id": "artifact:dependency-change",
+                    "semantic_result": "fail",
+                    "reason": "removal loses the decision boundary",
+                    "restored_result": "pass",
+                },
+            ]
+        )
+        proof_times = (
+            "2026-01-01T09:04:10Z",
+            "2026-01-01T09:04:20Z",
+            "2026-01-01T09:04:30Z",
+        )
+        proofs = [
+            event
+            for event in fixture["events"]
+            if event["type"] == "deletion_proof"
+        ]
+        for proof, occurred_at in zip(proofs, proof_times):
+            proof["occurred_at"] = occurred_at
+        return fixture
+
     def test_orphan_duplicate_expired_and_deletion_ready_artifacts_reject(self):
         fixture = minimal_fixture()
         fixture["dependency_edges"][0]["type"] = "derives"
@@ -3376,40 +3529,11 @@ class ArtifactLifecycleTests(unittest.TestCase):
         self.assert_rejected(
             fixture,
             minimal_decisions(),
-            "deletion-ready but not Delete",
+            "contradicts current disposition",
         )
 
     def test_every_lifecycle_proof_must_restore_in_any_event_order(self):
-        fixture = minimal_fixture()
-        fixture["dependency_edges"].append(
-            {
-                "id": "review:dependency",
-                "type": "review_depends_on",
-                "source": "review:10",
-                "target": "dependency:api",
-            }
-        )
-        fixture["events"].extend(
-            [
-                {
-                    "id": "artifact:dependency-change",
-                    "type": "dependency_changed",
-                    "occurred_at": "2026-01-01T09:02:10Z",
-                    "artifact_id": "contract",
-                    "dependency_id": "dependency:api",
-                },
-                {
-                    "id": "artifact:dependency-proof",
-                    "type": "deletion_proof",
-                    "occurred_at": "2026-01-01T09:02:20Z",
-                    "artifact_id": "contract",
-                    "trigger_event_id": "artifact:dependency-change",
-                    "semantic_result": "fail",
-                    "reason": "the changed dependency still requires the contract",
-                    "restored_result": "pass",
-                },
-            ]
-        )
+        fixture = self.fixture_with_all_proof_kinds()
         proof_ids = [
             event["id"]
             for event in fixture["events"]
@@ -3434,6 +3558,116 @@ class ArtifactLifecycleTests(unittest.TestCase):
             report["artifacts"]["current"][0]["current_disposition"],
             "Graduate",
         )
+
+    def test_every_mixed_lifecycle_proof_field_and_kind_fails_independently(self):
+        fixture = self.fixture_with_all_proof_kinds()
+        proofs = [
+            event
+            for event in fixture["events"]
+            if event["type"] == "deletion_proof"
+        ]
+        triggers = {
+            event["id"]: event
+            for event in fixture["events"]
+            if event["type"] in reporter.DELETION_TRIGGER_TYPES
+        }
+        self.assertEqual(
+            {
+                triggers[proof["trigger_event_id"]]["type"]
+                for proof in proofs
+            },
+            reporter.DELETION_TRIGGER_TYPES,
+        )
+
+        for proof_index, proof in enumerate(proofs):
+            other = proofs[(proof_index + 1) % len(proofs)]
+            trigger = triggers[proof["trigger_event_id"]]
+            mutations = (
+                (
+                    "id",
+                    lambda item, other=other: item.update({"id": other["id"]}),
+                    "duplicate event",
+                ),
+                (
+                    "kind",
+                    lambda item: item.update({"type": "artifact_checkpoint"}),
+                    "unknown fields",
+                ),
+                (
+                    "occurred_at",
+                    lambda item, trigger=trigger: item.update(
+                        {"occurred_at": trigger["occurred_at"]}
+                    ),
+                    "must strictly follow its trigger",
+                ),
+                (
+                    "artifact_id",
+                    lambda item: item.update({"artifact_id": "missing"}),
+                    "unknown artifact",
+                ),
+                (
+                    "trigger_event_id",
+                    lambda item, other=other: item.update(
+                        {"trigger_event_id": other["trigger_event_id"]}
+                    ),
+                    "must have exactly one deletion proof",
+                ),
+                (
+                    "semantic_result",
+                    lambda item: item.update({"semantic_result": "pass"}),
+                    "contradicts current disposition",
+                ),
+                (
+                    "reason",
+                    lambda item: item.update({"reason": "mixed result"}),
+                    "mixed semantic reason",
+                ),
+                (
+                    "restored_result",
+                    lambda item: item.update({"restored_result": "fail"}),
+                    "did not restore",
+                ),
+            )
+            for field, mutate, pattern in mutations:
+                with self.subTest(
+                    trigger_kind=trigger["type"],
+                    proof=proof["id"],
+                    field=field,
+                ):
+                    changed = copy.deepcopy(fixture)
+                    changed_proof = next(
+                        event
+                        for event in changed["events"]
+                        if event["id"] == proof["id"]
+                    )
+                    mutate(changed_proof)
+                    self.assert_rejected(
+                        changed,
+                        minimal_decisions(),
+                        pattern,
+                    )
+
+            with self.subTest(
+                trigger_kind=trigger["type"],
+                proof=proof["id"],
+                field="current-disposition-time",
+            ):
+                changed = copy.deepcopy(fixture)
+                changed_proof = next(
+                    event
+                    for event in changed["events"]
+                    if event["id"] == proof["id"]
+                )
+                changed_proof["occurred_at"] = (
+                    minimal_decisions()["artifacts"][0]["history"][-1][
+                        "recorded_at"
+                    ]
+                )
+                self.assert_rejected(
+                    changed,
+                    minimal_decisions(),
+                    "current disposition must strictly follow every deletion proof",
+                )
 
     def test_committed_artifact_proofs_execute_removal_and_restoration(self):
         fixture = reporter.load_json(BASELINE)
@@ -3472,36 +3706,38 @@ class ArtifactLifecycleTests(unittest.TestCase):
             dir=TEST_ARTIFACTS,
         ) as temporary:
             repository_root = Path(temporary)
-            subprocess.run(
-                ["git", "init", "-q", "-b", "master", str(repository_root)],
-                check=True,
-                capture_output=True,
+            git_run(repository_root, "init", "-q", "-b", "master")
+            git_run(
+                repository_root,
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/laqieer/fireemblem8-expansion.git",
             )
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repository_root),
-                    "remote",
-                    "add",
-                    "origin",
-                    "https://github.com/laqieer/fireemblem8-expansion.git",
-                ],
-                check=True,
-                capture_output=True,
-            )
-            with self.assertRaisesRegex(
-                reporter.PilotDataError,
-                "does not exist in the repository",
-            ):
-                reporter.validate_executable_deletion_proofs(
-                    repository_root,
-                    BASELINE,
-                    DECISIONS,
-                    BASELINE_EXPECTED,
-                    fixture,
-                    decisions,
-                )
+            hostile = {
+                "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(
+                    ROOT / ".git" / "objects"
+                ),
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "remote.origin.url",
+                "GIT_CONFIG_VALUE_0": (
+                    "https://github.com/laqieer/fireemblem8-expansion.git"
+                ),
+                "GIT_OBJECT_DIRECTORY": str(ROOT / ".git" / "objects"),
+            }
+            with mock.patch.dict(os.environ, hostile, clear=False):
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "does not exist in the repository",
+                ):
+                    reporter.validate_executable_deletion_proofs(
+                        repository_root,
+                        BASELINE,
+                        DECISIONS,
+                        BASELINE_EXPECTED,
+                        fixture,
+                        decisions,
+                    )
 
     def test_fabricated_proof_and_fixture_commands_are_not_executable(self):
         fixture = reporter.load_json(BASELINE)
@@ -3511,16 +3747,11 @@ class ArtifactLifecycleTests(unittest.TestCase):
             for event in fixture["events"]
             if event["type"] == "deletion_proof"
         )["reason"] = "self-authored claim"
-        authoritative_report(fixture, decisions)
         with self.assertRaisesRegex(
             reporter.PilotDataError,
-            "differs from its executable fail/remove/restore contract",
+            "mixed semantic reason",
         ):
-            reporter.validate_executable_deletion_proofs(
-                ROOT,
-                BASELINE,
-                DECISIONS,
-                BASELINE_EXPECTED,
+            authoritative_report(
                 fixture,
                 decisions,
             )
@@ -3549,30 +3780,21 @@ class ArtifactLifecycleTests(unittest.TestCase):
             dir=TEST_ARTIFACTS,
         ) as temporary:
             repository_root = Path(temporary) / "authority"
-            subprocess.run(
-                [
-                    "git",
-                    "clone",
-                    "-q",
-                    "--shared",
-                    str(ROOT),
-                    str(repository_root),
-                ],
-                check=True,
-                capture_output=True,
+            repository_root.mkdir()
+            git_run(
+                repository_root,
+                "clone",
+                "-q",
+                "--no-hardlinks",
+                str(ROOT),
+                ".",
             )
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repository_root),
-                    "remote",
-                    "set-url",
-                    "origin",
-                    "https://github.com/laqieer/fireemblem8-expansion.git",
-                ],
-                check=True,
-                capture_output=True,
+            git_run(
+                repository_root,
+                "remote",
+                "set-url",
+                "origin",
+                "https://github.com/laqieer/fireemblem8-expansion.git",
             )
             copy_paths = {
                 *reporter.DELETION_PROOF_SUPPORT_PATHS,
@@ -3696,7 +3918,7 @@ class ArtifactLifecycleTests(unittest.TestCase):
                     "artifact_id": "contract",
                     "trigger_event_id": "dependency:changed",
                     "semantic_result": "fail",
-                    "reason": "the dependency remains required",
+                    "reason": "removal loses the decision boundary",
                     "restored_result": "pass",
                 },
             ]

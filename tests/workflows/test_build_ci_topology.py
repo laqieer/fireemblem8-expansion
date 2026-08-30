@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.workflow_pilot import hydrate_authority, reporter
 
@@ -98,9 +99,44 @@ WORKFLOW_PILOT_AUTHORITY_HYDRATION = (
 SCRUBBED_STEP_ENV = (
     "        BASH_ENV: ''",
     "        ENV: ''",
+    "        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''",
+    "        GIT_CEILING_DIRECTORIES: ''",
+    "        GIT_COMMON_DIR: ''",
+    "        GIT_CONFIG_COUNT: '0'",
+    "        GIT_CONFIG_GLOBAL: /dev/null",
+    "        GIT_CONFIG_KEY_0: ''",
+    "        GIT_CONFIG_NOSYSTEM: '1'",
+    "        GIT_CONFIG_PARAMETERS: ''",
+    "        GIT_CONFIG_SYSTEM: /dev/null",
+    "        GIT_CONFIG_VALUE_0: ''",
+    "        GIT_DIR: ''",
+    "        GIT_EXEC_PATH: ''",
+    "        GIT_INDEX_FILE: ''",
+    "        GIT_NAMESPACE: ''",
+    "        GIT_NO_LAZY_FETCH: '1'",
+    "        GIT_NO_REPLACE_OBJECTS: '1'",
+    "        GIT_OBJECT_DIRECTORY: ''",
+    "        GIT_REPLACE_REF_BASE: ''",
+    "        GIT_WORK_TREE: ''",
     "        PATH: /usr/bin:/bin",
     "        PYTHONPATH: ''",
 )
+
+
+def _git_run(
+    repository_root: Path,
+    *arguments: str,
+    check: bool = True,
+    text: bool = False,
+    offline: bool = True,
+) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        reporter.git_command(repository_root, *arguments),
+        env=reporter.git_environment(offline=offline),
+        check=check,
+        capture_output=True,
+        text=text,
+    )
 
 
 def _trigger_block(header: str, event_name: str) -> str:
@@ -1016,10 +1052,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         env_block = "      env:\n" + "\n".join(SCRUBBED_STEP_ENV) + "\n"
         variants = (
             "",
-            env_block.replace("        BASH_ENV: ''\n", ""),
-            env_block.replace("        ENV: ''\n", ""),
-            env_block.replace("        PYTHONPATH: ''\n", ""),
-            env_block.replace("        PATH: /usr/bin:/bin\n", ""),
+            *(
+                env_block.replace(f"{entry}\n", "")
+                for entry in SCRUBBED_STEP_ENV
+            ),
             env_block.replace("        PATH: /usr/bin:/bin", "        PATH: /untrusted"),
             env_block + "        GITHUB_ENV: build/mask\n",
             env_block.replace("      env:", '      "env":'),
@@ -1048,6 +1084,18 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_workflow_pilot_authority_hydration_is_exact_and_ordered(self):
         self.assertEqual(hydrate_authority.GIT, "/usr/bin/git")
+        self.assertNotIn(
+            "GIT_NO_LAZY_FETCH",
+            reporter.git_environment(offline=False),
+        )
+        self.assertEqual(
+            reporter.git_environment(offline=False)["GIT_CONFIG_COUNT"],
+            "0",
+        )
+        self.assertEqual(
+            reporter.git_environment(offline=False)["GIT_NO_REPLACE_OBJECTS"],
+            "1",
+        )
         self.assertEqual(hydrate_authority.BATCH_SIZE, 256)
         self.assertEqual(
             hydrate_authority.FETCH_OPTIONS,
@@ -1167,16 +1215,20 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 encoding="ascii",
             )
             (package / "hydrate_authority.py").write_text(
+                "import os\n"
                 "from pathlib import Path\n"
                 "def main(argv):\n"
+                "    assert not any(key.startswith('GIT_') for key in os.environ)\n"
                 "    Path(__file__).resolve().parents[2]"
                 ".joinpath('hydrate.marker').write_text('ran')\n"
                 "    return 0\n",
                 encoding="ascii",
             )
             (package / "reporter.py").write_text(
+                "import os\n"
                 "from pathlib import Path\n"
                 "def main(argv):\n"
+                "    assert not any(key.startswith('GIT_') for key in os.environ)\n"
                 "    Path(__file__).resolve().parents[2]"
                 ".joinpath('baseline.marker').write_text('ran')\n"
                 "    return 0\n"
@@ -1185,16 +1237,23 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 encoding="ascii",
             )
             (tests / "test_probe.py").write_text(
+                "import os\n"
                 "import unittest\n"
                 "from pathlib import Path\n"
                 "class Probe(unittest.TestCase):\n"
                 "    def test_probe(self):\n"
+                "        self.assertFalse(any(key.startswith('GIT_') "
+                "for key in os.environ))\n"
                 "        Path(__file__).resolve().parents[3]"
                 ".joinpath('tests.marker').write_text('ran')\n",
                 encoding="ascii",
             )
             hostile_environment = dict(os.environ)
             hostile_environment["PYTHONPATH"] = str(root)
+            hostile_environment["GIT_DIR"] = str(root / "redirected.git")
+            hostile_environment["GIT_CONFIG_COUNT"] = "1"
+            hostile_environment["GIT_CONFIG_KEY_0"] = "alias.status"
+            hostile_environment["GIT_CONFIG_VALUE_0"] = "!exit 0"
             normal = subprocess.run(
                 [
                     "/usr/bin/python3",
@@ -1299,261 +1358,166 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             remote = root / "remote.git"
             checkout = root / "checkout"
 
-            subprocess.run(
-                ["git", "init", "-q", "-b", "master", seed],
-                check=True,
-                capture_output=True,
-            )
+            seed.mkdir()
+            _git_run(seed, "init", "-q", "-b", "master")
             for key, value in (
                 ("user.name", "Hydration Test"),
                 ("user.email", "hydration@example.invalid"),
             ):
-                subprocess.run(
-                    ["git", "-C", seed, "config", key, value],
-                    check=True,
-                    capture_output=True,
-                )
+                _git_run(seed, "config", key, value)
             (seed / "expected.txt").write_text("expected\n", encoding="ascii")
-            subprocess.run(
-                ["git", "-C", seed, "add", "expected.txt"],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                ["git", "-C", seed, "commit", "-q", "-m", "expected head"],
-                check=True,
-                capture_output=True,
-            )
-            expected_head = subprocess.check_output(
-                ["git", "-C", seed, "rev-parse", "HEAD"],
+            _git_run(seed, "add", "expected.txt")
+            _git_run(seed, "commit", "-q", "-m", "expected head")
+            expected_head = _git_run(
+                seed,
+                "rev-parse",
+                "HEAD",
                 text=True,
-            ).strip()
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    seed,
-                    "checkout",
-                    "-q",
-                    "--orphan",
-                    "force-pushed",
-                ],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                ["git", "-C", seed, "rm", "-q", "-rf", "."],
-                check=True,
-                capture_output=True,
-            )
+            ).stdout.strip()
+            _git_run(seed, "checkout", "-q", "--orphan", "force-pushed")
+            _git_run(seed, "rm", "-q", "-rf", ".")
             (seed / "historical.txt").write_text(
                 "force-pushed\n",
                 encoding="ascii",
             )
-            subprocess.run(
-                ["git", "-C", seed, "add", "historical.txt"],
-                check=True,
-                capture_output=True,
+            _git_run(seed, "add", "historical.txt")
+            _git_run(
+                seed,
+                "commit",
+                "-q",
+                "-m",
+                "force-pushed historical candidate",
             )
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    seed,
-                    "commit",
-                    "-q",
-                    "-m",
-                    "force-pushed historical candidate",
-                ],
-                check=True,
-                capture_output=True,
-            )
-            historical = subprocess.check_output(
-                ["git", "-C", seed, "rev-parse", "HEAD"],
+            historical = _git_run(
+                seed,
+                "rev-parse",
+                "HEAD",
                 text=True,
-            ).strip()
-            subprocess.run(
-                ["git", "-C", seed, "checkout", "-q", "master"],
-                check=True,
-                capture_output=True,
+            ).stdout.strip()
+            _git_run(seed, "checkout", "-q", "master")
+            remote.mkdir()
+            _git_run(remote, "init", "-q", "--bare")
+            _git_run(seed, "remote", "add", "origin", str(remote))
+            _git_run(
+                seed,
+                "push",
+                "-q",
+                "origin",
+                "master",
+                f"{historical}:refs/heads/force-pushed",
+                offline=False,
             )
-            subprocess.run(
-                ["git", "init", "-q", "--bare", remote],
-                check=True,
-                capture_output=True,
+            _git_run(
+                seed,
+                "push",
+                "-q",
+                "origin",
+                ":refs/heads/force-pushed",
+                offline=False,
             )
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    seed,
-                    "remote",
-                    "add",
-                    "origin",
-                    str(remote),
-                ],
-                check=True,
-                capture_output=True,
+            _git_run(
+                remote,
+                "config",
+                "uploadpack.allowAnySHA1InWant",
+                "true",
             )
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    seed,
-                    "push",
-                    "-q",
-                    "origin",
-                    "master",
-                    f"{historical}:refs/heads/force-pushed",
-                ],
-                check=True,
-                capture_output=True,
+            checkout.mkdir()
+            _git_run(checkout, "init", "-q", "-b", "master")
+            _git_run(
+                checkout,
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/laqieer/fireemblem8-expansion.git",
             )
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    seed,
-                    "push",
-                    "-q",
-                    "origin",
-                    ":refs/heads/force-pushed",
-                ],
-                check=True,
-                capture_output=True,
+            _git_run(
+                checkout,
+                "config",
+                f"url.file://{remote}.insteadOf",
+                "https://github.com/laqieer/fireemblem8-expansion.git",
             )
-            subprocess.run(
-                [
-                    "git",
-                    f"--git-dir={remote}",
-                    "config",
-                    "uploadpack.allowAnySHA1InWant",
-                    "true",
-                ],
-                check=True,
-                capture_output=True,
+            _git_run(
+                checkout,
+                "fetch",
+                "-q",
+                "--depth=1",
+                "origin",
+                expected_head,
+                offline=False,
             )
-            subprocess.run(
-                ["git", "init", "-q", "-b", "master", checkout],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    checkout,
-                    "remote",
-                    "add",
-                    "origin",
-                    "https://github.com/laqieer/fireemblem8-expansion.git",
-                ],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    checkout,
-                    "config",
-                    f"url.file://{remote}.insteadOf",
-                    "https://github.com/laqieer/fireemblem8-expansion.git",
-                ],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    checkout,
-                    "fetch",
-                    "-q",
-                    "--depth=1",
-                    "origin",
-                    expected_head,
-                ],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                ["git", "-C", checkout, "checkout", "-q", "--detach", "FETCH_HEAD"],
-                check=True,
-                capture_output=True,
-            )
-            offline_environment = dict(os.environ)
-            offline_environment["GIT_NO_LAZY_FETCH"] = "1"
+            _git_run(checkout, "checkout", "-q", "--detach", "FETCH_HEAD")
             self.assertNotEqual(
-                subprocess.run(
-                    ["git", "-C", checkout, "cat-file", "-e", f"{historical}^{{commit}}"],
-                    env=offline_environment,
+                _git_run(
+                    checkout,
+                    "cat-file",
+                    "-e",
+                    f"{historical}^{{commit}}",
                     check=False,
-                    capture_output=True,
                 ).returncode,
                 0,
             )
 
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    checkout,
-                    "fetch",
-                    "--quiet",
-                    "--no-tags",
-                    "--filter=blob:none",
-                    "origin",
-                    "+refs/heads/*:refs/remotes/origin/*",
-                ],
-                env=offline_environment,
-                check=True,
-                capture_output=True,
+            _git_run(
+                checkout,
+                "fetch",
+                "--quiet",
+                "--no-tags",
+                "--filter=blob:none",
+                "origin",
+                "+refs/heads/*:refs/remotes/origin/*",
+                offline=False,
             )
             self.assertNotEqual(
-                subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        checkout,
-                        "cat-file",
-                        "-e",
-                        f"{historical}^{{commit}}",
-                    ],
-                    env=offline_environment,
+                _git_run(
+                    checkout,
+                    "cat-file",
+                    "-e",
+                    f"{historical}^{{commit}}",
                     check=False,
-                    capture_output=True,
                 ).returncode,
                 0,
             )
-            refs_before = subprocess.check_output(
-                ["git", "-C", checkout, "show-ref"],
-            )
+            refs_before = _git_run(checkout, "show-ref").stdout
             fetch_head_before = (checkout / ".git" / "FETCH_HEAD").read_bytes()
 
             required = sorted([expected_head, historical])
-            result = hydrate_authority.hydrate_exact_commits(
-                checkout,
-                "laqieer/fireemblem8-expansion",
-                required,
-                expected_head,
-            )
+            hostile = {
+                "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(
+                    seed / ".git" / "objects"
+                ),
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "remote.origin.url",
+                "GIT_CONFIG_VALUE_0": "file:///does-not-exist",
+                "GIT_DIR": str(seed / ".git"),
+                "GIT_OBJECT_DIRECTORY": str(seed / ".git" / "objects"),
+                "GIT_WORK_TREE": str(seed),
+            }
+            with mock.patch.dict(os.environ, hostile, clear=False):
+                result = hydrate_authority.hydrate_exact_commits(
+                    checkout,
+                    "laqieer/fireemblem8-expansion",
+                    required,
+                    expected_head,
+                )
             self.assertEqual(result["required"], 2)
             self.assertGreater(result["fetched"], 0)
-            subprocess.run(
-                ["git", "-C", checkout, "cat-file", "-e", f"{historical}^{{commit}}"],
-                check=True,
-                capture_output=True,
+            _git_run(
+                checkout,
+                "cat-file",
+                "-e",
+                f"{historical}^{{commit}}",
             )
             self.assertEqual(
-                subprocess.check_output(
-                    ["git", "-C", checkout, "rev-parse", "HEAD"],
+                _git_run(
+                    checkout,
+                    "rev-parse",
+                    "HEAD",
                     text=True,
-                ).strip(),
+                ).stdout.strip(),
                 expected_head,
             )
             self.assertEqual(
-                subprocess.check_output(["git", "-C", checkout, "show-ref"]),
+                _git_run(checkout, "show-ref").stdout,
                 refs_before,
             )
             self.assertEqual(

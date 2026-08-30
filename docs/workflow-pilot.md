@@ -117,9 +117,23 @@ workflow topology regression requires both pilot commands exactly. Appended
 shell operators, wrappers, substitutions, or changed redirections cannot turn
 either command into advisory evidence.
 
-The reporter disables Git lazy fetching, remains offline, and fails closed
-when any fixture commit object is absent. The development object database used
-to freeze the fixture already supplies this authority. A clean Actions
+Every authority subprocess uses resolved `/usr/bin/git` with
+`--no-replace-objects` and explicit `-C <validated-root>`. Its environment is
+constructed from a closed minimum rather than inheriting ambient `GIT_*`
+settings: system/global and command-count config injection are disabled,
+replacement objects and prompting are disabled, and offline reporter reads
+set `GIT_NO_LAZY_FETCH=1`. Git directory, work-tree, object/alternate,
+ceiling, namespace, replacement-ref-base, and injected config settings cannot
+redirect the checkout. Nonempty repository graft files, replacement refs, and
+object-alternate files fail closed. Ancestry is traversed from the already
+validated raw commit-object parent lists rather than a replace/graft/shallow-
+sensitive rendered revision walk. The supported upstream-port source-root
+entrypoint uses the same trusted/minimal Git boundary when resolving its target
+checkout before launching repository-relative gates.
+
+The reporter remains offline and fails closed when any fixture commit object
+is absent. The development object database used to freeze the fixture already
+supplies this authority. A clean Actions
 exact-candidate checkout can omit older force-pushed commits, so the
 `host-tests` job runs one CI-only helper before reporter tests. The helper
 reads only the committed strict baseline fixture, derives its unique commit
@@ -138,9 +152,11 @@ therefore completes isolated startup before the launcher inserts only its
 resolved source root and dispatches exactly `hydrate`, `reporter-tests`, or
 `baseline`; it exposes no arbitrary module, command, or evaluation mode. The
 hydration helper uses `/usr/bin/git`. Protected step environments set
-`BASH_ENV`, `ENV`, and `PYTHONPATH` empty and pin `PATH=/usr/bin:/bin`, so
-runner environment files, repository/user `sitecustomize.py`, and shell
-startup hooks cannot replace either executable.
+`BASH_ENV`, `ENV`, `PYTHONPATH`, and known Git redirection controls to reviewed
+safe values and pin `PATH=/usr/bin:/bin`; the isolated launcher removes every
+ambient `GIT_*` name before dispatch. Runner environment files,
+repository/user `sitecustomize.py`, shell startup hooks, and ambient Git
+controls therefore cannot replace either executable or authority root.
 At job scope, every combined worker has a closed direct mapping: exact
 `runs-on: ubuntu-latest`, `timeout-minutes: 60`, its reviewed environment, and
 `steps` only. Host, modern, extended-host, and legacy therefore reject
@@ -281,7 +297,13 @@ strictly later non-destructive deletion proof:
   restoration must pass, and `Delete` is forbidden.
 
 Every proof in the required history is checked independently, so a failed
-earlier restoration cannot be hidden by a later successful proof. For the
+earlier restoration cannot be hidden by a later successful proof. All proofs
+for one artifact must simultaneously agree with the current disposition:
+`Delete` requires every semantic removal result to pass; every retained
+disposition requires every result to fail for one exact shared named reason.
+Each proof must also have a unique identity, the correct artifact and trigger
+kind, a strictly later timestamp, successful restoration, and a disposition
+that follows it. No latest/any/all aggregation can mask a mixed record. For the
 committed baseline's three retained artifacts, every recorded proof must state
 the allowlisted issue #176 semantic failure and successful restoration, and
 the reporter reruns that removal/restoration behavior in a plain temporary

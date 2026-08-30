@@ -329,6 +329,11 @@ one conventional terminal LF removed; additional trailing blank lines and all
 other authored whitespace remain exact authority. Every numeric schema field
 requires a JSON integer that is not a boolean before any range or version
 comparison, while declared boolean fields remain valid.
+Every Git subprocess uses resolved `/usr/bin/git`, explicit
+`--no-replace-objects -C <validated-root>`, and a constructed minimal
+environment with no inherited Git redirection or configuration controls.
+Repository grafts, replacement refs, and object-alternate files fail closed;
+hydration alone permits the fixed bounded `origin` fetch.
 The expected cohort seal binds normalized identities plus review, event,
 timestamp, PR/SHA, and other metric relationships.
 Every Build and non-Build workflow run is also rejected when its creation
@@ -347,6 +352,10 @@ the complete parent-decision chain, including a genuine depth-three exception.
 Checkpoint, dependency-change, and pre-graduation removal proofs preserve
 necessary artifacts after a named semantic failure; every historical
 restoration passes, and a deletion-ready artifact passes only with `Delete`.
+Every proof kind independently has the correct identity, artifact, trigger,
+strictly later time, shared named reason, semantic outcome, restoration, and
+current-disposition causality; one invalid record cannot be masked by valid
+siblings or event ordering.
 The committed artifacts additionally pass actual sandboxed removal/failure
 and restoration/success execution through the closed command allowlist while
 the plain `build/test-artifacts/` sandbox continues to use the immutable
@@ -377,7 +386,10 @@ unknown risk/event/edge/disposition, unclaimed or ambiguously owned dependency
 edge, orphan/duplicate/expired artifact, deletion-ready non-Delete artifact,
 non-causal or missing deletion proof, premature disposition, stale lifecycle
 expiry, any failed historical restoration, an empty/fabricated Git authority,
-a stale or fabricated executable proof, and any unallowlisted fixture command.
+a stale or fabricated executable proof, ambient Git directory/work-tree/object/
+alternate/config/replace redirection, local graft/replace/alternate authority,
+mixed proof semantic/restoration/reason/identity/time/kind/disposition state,
+and any unallowlisted fixture command.
 Build topology mutations also reject pilot commands hidden by `|| true`, `; true`,
 `&& true`, wrappers, substitutions, or changed redirections.
 

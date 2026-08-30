@@ -64,6 +64,25 @@ _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
 _SCRUBBED_PILOT_ENV = (
     "BASH_ENV: ''",
     "ENV: ''",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES: ''",
+    "GIT_CEILING_DIRECTORIES: ''",
+    "GIT_COMMON_DIR: ''",
+    "GIT_CONFIG_COUNT: '0'",
+    "GIT_CONFIG_GLOBAL: /dev/null",
+    "GIT_CONFIG_KEY_0: ''",
+    "GIT_CONFIG_NOSYSTEM: '1'",
+    "GIT_CONFIG_PARAMETERS: ''",
+    "GIT_CONFIG_SYSTEM: /dev/null",
+    "GIT_CONFIG_VALUE_0: ''",
+    "GIT_DIR: ''",
+    "GIT_EXEC_PATH: ''",
+    "GIT_INDEX_FILE: ''",
+    "GIT_NAMESPACE: ''",
+    "GIT_NO_LAZY_FETCH: '1'",
+    "GIT_NO_REPLACE_OBJECTS: '1'",
+    "GIT_OBJECT_DIRECTORY: ''",
+    "GIT_REPLACE_REF_BASE: ''",
+    "GIT_WORK_TREE: ''",
     "PATH: /usr/bin:/bin",
     "PYTHONPATH: ''",
 )
@@ -733,6 +752,28 @@ class VerifyGateSelectionRemovedTests(unittest.TestCase):
 
 
 class HostOnlyEnvGateMirrorTests(unittest.TestCase):
+    def test_repository_discovery_ignores_ambient_git_redirection(self):
+        hostile = {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "alias.rev-parse",
+            "GIT_CONFIG_VALUE_0": "!printf redirected",
+            "GIT_DIR": os.path.join(REPO_ROOT, "build", "redirected.git"),
+            "GIT_OBJECT_DIRECTORY": os.path.join(
+                REPO_ROOT,
+                "build",
+                "redirected-objects",
+            ),
+            "GIT_WORK_TREE": os.path.join(
+                REPO_ROOT,
+                "build",
+                "redirected-tree",
+            ),
+        }
+        with mock.patch.dict(os.environ, hostile, clear=False):
+            self.assertEqual(
+                verify_mod._git_top_level(REPO_ROOT),
+                REPO_ROOT,
+            )
     """Issue #10/#13 harness fix: the host lane runs the tools/gba-playtest
     suite in explicit host-only mode (GBA_PLAYTEST_HOST_ONLY=1), so its
     result is decided by mode, never by whether a git-ignored ROM happens to
@@ -973,7 +1014,18 @@ class VerifyCliCwdTests(unittest.TestCase):
         ) as temporary:
             target_root = os.path.join(temporary, "target")
             subprocess.run(
-                ["git", "clone", "-q", "--shared", REPO_ROOT, target_root],
+                [
+                    verify_mod._trusted_git_executable(),
+                    "--no-replace-objects",
+                    "-C",
+                    temporary,
+                    "clone",
+                    "-q",
+                    "--no-hardlinks",
+                    REPO_ROOT,
+                    target_root,
+                ],
+                env=verify_mod._git_environment(),
                 check=True,
                 capture_output=True,
             )
@@ -986,7 +1038,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                     real_run = subprocess.run
 
                     def fake_run(argv, **kwargs):
-                        if argv[0] == "git":
+                        if argv[0] == verify_mod._trusted_git_executable():
                             return real_run(argv, **kwargs)
                         seen.append((list(argv), kwargs))
                         return subprocess.CompletedProcess(
