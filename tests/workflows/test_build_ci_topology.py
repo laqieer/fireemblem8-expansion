@@ -255,51 +255,55 @@ def _contains_exact_command(job: str, command: str) -> bool:
 
 
 def _has_run_shell_default(text: str, defaults_indent: int) -> bool:
-    prefix = " " * defaults_indent
-    child_prefix = " " * (defaults_indent + 2)
-    grandchild_prefix = " " * (defaults_indent + 4)
-    defaults_matches = list(
-        re.finditer(
-            rf"^{re.escape(prefix)}defaults:[ \t]*$",
-            text,
-            re.MULTILINE,
-        )
+    lines = text.splitlines()
+    block_key = re.compile(
+        r"^(?P<indent> *)(?P<key>defaults|run|\"defaults\"|\"run\"|"
+        r"'defaults'|'run'):[ \t]*(?:#.*)?$"
     )
-    for defaults_match in defaults_matches:
-        next_peer = re.search(
-            rf"^{re.escape(prefix)}[A-Za-z_][A-Za-z0-9_-]*:",
-            text[defaults_match.end():],
-            re.MULTILINE,
-        )
-        defaults_end = (
-            defaults_match.end() + next_peer.start()
-            if next_peer is not None
-            else len(text)
-        )
-        defaults_block = text[defaults_match.end():defaults_end]
-        run_match = re.search(
-            rf"^{re.escape(child_prefix)}run:[ \t]*$",
-            defaults_block,
-            re.MULTILINE,
-        )
-        if run_match is None:
-            continue
-        next_run_peer = re.search(
-            rf"^{re.escape(child_prefix)}[A-Za-z_][A-Za-z0-9_-]*:",
-            defaults_block[run_match.end():],
-            re.MULTILINE,
-        )
-        run_end = (
-            run_match.end() + next_run_peer.start()
-            if next_run_peer is not None
-            else len(defaults_block)
-        )
-        if re.search(
-            rf"^{re.escape(grandchild_prefix)}shell:",
-            defaults_block[run_match.end():run_end],
-            re.MULTILINE,
+    shell_key = re.compile(
+        r"^(?P<indent> *)(?:shell|\"shell\"|'shell'):[ \t]*"
+    )
+
+    for index, line in enumerate(lines):
+        match = block_key.match(line)
+        if (
+            match is None
+            or len(match.group("indent")) != defaults_indent
+            or match.group("key").strip("\"'") != "defaults"
         ):
-            return True
+            continue
+
+        child_index = index + 1
+        while child_index < len(lines):
+            child_line = lines[child_index]
+            if not child_line.strip() or child_line.lstrip().startswith("#"):
+                child_index += 1
+                continue
+            child_indent = len(child_line) - len(child_line.lstrip(" "))
+            if child_indent <= defaults_indent:
+                break
+            child_match = block_key.match(child_line)
+            if (
+                child_match is None
+                or child_match.group("key").strip("\"'") != "run"
+            ):
+                child_index += 1
+                continue
+
+            run_indent = len(child_match.group("indent"))
+            shell_index = child_index + 1
+            while shell_index < len(lines):
+                shell_line = lines[shell_index]
+                if not shell_line.strip() or shell_line.lstrip().startswith("#"):
+                    shell_index += 1
+                    continue
+                shell_indent = len(shell_line) - len(shell_line.lstrip(" "))
+                if shell_indent <= run_indent:
+                    break
+                if shell_key.match(shell_line):
+                    return True
+                shell_index += 1
+            child_index = shell_index
     return False
 
 
@@ -910,11 +914,59 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 1,
             ),
             self.text.replace(
+                "\njobs:\n",
+                "\ndefaults: # inherited mask\n"
+                "  run:\n"
+                "    shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "\njobs:\n",
+                "\ndefaults:\n"
+                "  run: # inherited mask\n"
+                "    shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "\njobs:\n",
+                "\ndefaults:\n"
+                "    run:\n"
+                "        shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
                 "  host-tests:\n",
                 "  host-tests:\n"
                 "    defaults:\n"
                 "      run:\n"
                 "        shell: bash {0} || true\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    defaults: # inherited mask\n"
+                "      run:\n"
+                "        shell: bash {0} || true\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    defaults:\n"
+                "      run: # inherited mask\n"
+                "        shell: bash {0} || true\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    defaults:\n"
+                "        run:\n"
+                "            shell: bash {0} || true\n",
                 1,
             ),
         )
