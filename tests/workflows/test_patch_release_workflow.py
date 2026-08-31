@@ -1192,7 +1192,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "GIT_REPLACE_REF_BASE",
             "GIT_WORK_TREE",
         )
-        self.assertLess(script.index("unset GIT_"), script.index("ACTUAL_SHA="))
+        unset_match = re.search(
+            r"(?ms)^unset (?P<variables>.*?)^ACTUAL_SHA=",
+            script,
+        )
+        self.assertIsNotNone(unset_match)
+        unset_variables = shlex.split(
+            unset_match.group("variables").replace("\\\n", " ")
+        )
+        self.assertCountEqual(unset_variables, git_path_redirects)
+        self.assertEqual(len(unset_variables), len(git_path_redirects))
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
