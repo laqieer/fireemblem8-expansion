@@ -454,7 +454,9 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
 
         for clause in (
             "four combined workers run in parallel",
-            "only serial, fail-closed join",
+            "event identity validator, event router, and mode-specific "
+            "classifier check precede the four",
+            "`summary` is their fail-closed join",
             "install both the supported modern toolchain",
             "explicit archival `make legacy` prerequisites",
             "`verify` has no safe subset switch",
@@ -1029,6 +1031,8 @@ class VerifyCliCwdTests(unittest.TestCase):
                     with self.assertRaisesRegex(
                         ValueError,
                         "target Build workflow gate contract differs|"
+                        "authority checkout differs|"
+                        "classifier mapping differs|"
                         "unreviewed unnamed step|reviewed scrubbed environment|"
                         "workflow job order|step roles and order",
                     ):
@@ -1040,6 +1044,142 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "target Build workflow",
             ):
                 verify_mod.run_gates(target_root, dry_run=True)
+
+    def test_event_setup_router_and_mode_are_closed_but_not_local_gates(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        structure = verify_mod._parse_workflow_structure_text(original)
+        self.assertEqual(
+            structure[1],
+            (
+                "event-identity",
+                "event-router",
+                "event-classifier",
+                "host-tests",
+                "build",
+                "extended-host-tests",
+                "legacy",
+                "patch-release",
+                "summary",
+            ),
+        )
+        self.assertEqual(len(verify_mod.gates()), 28)
+        gate_jobs = {
+            job_name
+            for job_name, _, _ in verify_mod._workflow_gate_contract(
+                structure
+            )
+        }
+        self.assertTrue(
+            {"event-identity", "event-router", "event-classifier"}.isdisjoint(
+                gate_jobs
+            )
+        )
+
+        mutations = (
+            original.replace(
+                '[[ "$1" =~ ^[0-9a-f]{40}$ && "$2" = "\\"$1\\"" ]]',
+                '[[ -n "$1" ]]',
+                1,
+            ),
+            original.replace(
+                '"$EVENT_REF" = "refs/pull/$PR_NUMBER/merge"',
+                '-n "$EVENT_REF"',
+                1,
+            ),
+            original.replace(
+                '[[ "$1" =~ ^[1-9][0-9]*$ && "$2" = "$1" ]]',
+                '[[ -n "$1" ]]',
+                1,
+            ),
+            original.replace(
+                "      expected_head: ${{ steps.classify.outputs.expected_head }}",
+                "      expected_head: attacker",
+                1,
+            ),
+            original.replace(
+                "      CLASSIFIER_REF: ${{ "
+                "needs.event-identity.outputs.classifier_ref }}",
+                "      CLASSIFIER_REF: ${{ github.sha }}",
+                1,
+            ),
+            original.replace(
+                "      identity_valid: ${{ steps.classify.outputs.identity_valid }}",
+                "      identity_valid: true",
+                1,
+            ),
+            original.replace(
+                "        fetch-depth: 1",
+                "        fetch-depth: 0",
+                1,
+            ),
+            original.replace(
+                "    - name: Verify classifier authority revision",
+                "    - name: Skip classifier authority verification",
+                1,
+            ),
+            original.replace(
+                "      id: classify",
+                "      id: attacker",
+                1,
+            ),
+            original.replace(
+                "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py "
+                "classify-event",
+                "python3 scripts/workflow_pilot/event_classifier.py",
+                1,
+            ),
+            original.replace(
+                '            echo "run_expensive=true"',
+                '            echo "run_expensive=false"',
+                1,
+            ),
+            original.replace(
+                '/usr/bin/git check-ref-format "refs/heads/$PR_BASE_REF"',
+                'test -n "$PR_BASE_REF"',
+                1,
+            ),
+        )
+        for changed in mutations:
+            with self.subTest(mutation=changed[:180]):
+                self.assertNotEqual(changed, original)
+                try:
+                    changed_structure = verify_mod._parse_workflow_structure_text(
+                        changed
+                    )
+                except ValueError:
+                    continue
+                self.assertNotEqual(changed_structure, structure)
+
+    def test_every_combined_worker_requires_the_fail_closed_classifier_edge(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        for job_name in verify_mod._COMBINED_JOBS:
+            for old, new in (
+                (
+                    "    needs: [event-identity, event-classifier]",
+                    "    needs: [event-classifier]",
+                ),
+                (
+                    f"    if: {verify_mod._WORKER_CONDITION}",
+                    "    if: ${{ needs.event-classifier.outputs."
+                    "run_expensive == 'true' }}",
+                ),
+            ):
+                with self.subTest(job=job_name, field=old):
+                    changed = self.replace_in_job(
+                        original,
+                        job_name,
+                        old,
+                        new,
+                    )
+                    self.assert_only_job_changed(
+                        original,
+                        changed,
+                        job_name,
+                    )
+                    with self.assertRaises(ValueError):
+                        verify_mod._parse_workflow_structure_text(changed)
 
     def test_unnamed_and_duplicate_setup_steps_reject_in_every_worker(self):
         artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
@@ -1112,6 +1252,7 @@ class VerifyCliCwdTests(unittest.TestCase):
             )
 
             for job_name in verify_mod._COMBINED_JOBS:
+                timeout = "90" if job_name == "build" else "60"
                 job_mutations = {
                     "self-hosted": self.replace_in_job(
                         original,
@@ -1122,14 +1263,14 @@ class VerifyCliCwdTests(unittest.TestCase):
                     "container": self.replace_in_job(
                         original,
                         job_name,
-                        "    timeout-minutes: 60",
-                        "    timeout-minutes: 60\n"
+                        f"    timeout-minutes: {timeout}",
+                        f"    timeout-minutes: {timeout}\n"
                         "    container: ubuntu:latest",
                     ),
                     "timeout": self.replace_in_job(
                         original,
                         job_name,
-                        "    timeout-minutes: 60",
+                        f"    timeout-minutes: {timeout}",
                         "    timeout-minutes: 1",
                     ),
                     "job-env": self.replace_in_job(
@@ -1172,9 +1313,9 @@ class VerifyCliCwdTests(unittest.TestCase):
                     "duplicate-key": self.replace_in_job(
                         original,
                         job_name,
-                        "    timeout-minutes: 60",
-                        "    timeout-minutes: 60\n"
-                        "    timeout-minutes: 60",
+                        f"    timeout-minutes: {timeout}",
+                        f"    timeout-minutes: {timeout}\n"
+                        f"    timeout-minutes: {timeout}",
                     ),
                     "reordered-keys": self.replace_in_job(
                         self.replace_in_job(
@@ -1184,11 +1325,11 @@ class VerifyCliCwdTests(unittest.TestCase):
                             "    __RUNS_ON__",
                         ),
                         job_name,
-                        "    timeout-minutes: 60",
+                        f"    timeout-minutes: {timeout}",
                         "    runs-on: ubuntu-latest",
                     ).replace(
                         "    __RUNS_ON__",
-                        "    timeout-minutes: 60",
+                        f"    timeout-minutes: {timeout}",
                         1,
                     ),
                 }
@@ -1267,16 +1408,28 @@ class VerifyCliCwdTests(unittest.TestCase):
             for job_name, label, old, new in (
                 (
                         "patch-release",
+                        "needs",
+                        "    needs: [event-identity]",
+                        "    needs: [event-classifier]",
+                ),
+                (
+                        "patch-release",
                         "if",
-                        "    if: ${{ github.event_name == 'push' && "
-                        "github.ref == 'refs/heads/master' }}",
+                        f"    if: {verify_mod._PUBLISHER_CONDITION}",
                         "    if: always()",
                 ),
                 (
                         "patch-release",
                         "env",
-                        "      PATCH_COMMIT: ${{ github.sha }}",
+                        "      PATCH_COMMIT: ${{ "
+                        "needs.event-identity.outputs.fallback_sha }}",
                         "      PATCH_COMMIT: attacker",
+                ),
+                (
+                        "patch-release",
+                        "revision",
+                        '        test "$ACTUAL_SHA" = "$PATCH_COMMIT"',
+                        "        true",
                 ),
                 (
                         "patch-release",
@@ -1287,14 +1440,40 @@ class VerifyCliCwdTests(unittest.TestCase):
                 (
                         "patch-release",
                         "step",
-                        "    - run: make expansion-modern-all-locales-all-features-check -j1\n",
-                        "",
+                        "    - name: Build candidate in isolated namespace "
+                        "and stage public inputs",
+                        "    - name: Skip isolated candidate build",
                 ),
                 (
                         "patch-release",
                         "command",
-                        "    - run: ./build_tools.sh",
-                        "    - run: exit 1",
+                        "/usr/bin/python3 -I -S -c",
+                        "python3 -c",
+                ),
+                (
+                        "patch-release",
+                        "isolation",
+                        "        /usr/bin/mount --make-rprivate /",
+                        "        true",
+                ),
+                (
+                        "patch-release",
+                        "late-upload-revalidation",
+                        "    - name: Revalidate patch-only upload",
+                        "    - name: Skip patch-only upload revalidation",
+                ),
+                (
+                        "patch-release",
+                        "candidate-output-isolation",
+                        "          < /dev/null > /dev/null 2>&1 &",
+                        "          &",
+                ),
+                (
+                        "patch-release",
+                        "supervisor-cgroup-view",
+                        '        /usr/bin/mount --bind "$cgroup_path" '
+                        "/mnt/supervisor/cgroup",
+                        "        true",
                 ),
                 (
                         "patch-release",
@@ -1311,7 +1490,9 @@ class VerifyCliCwdTests(unittest.TestCase):
                 (
                         "summary",
                         "needs",
-                        "    needs: [host-tests, build, extended-host-tests, legacy]",
+                        "    needs: [event-identity, event-classifier, "
+                        "host-tests, build, "
+                        "extended-host-tests, legacy, patch-release]",
                         "    needs: [build, host-tests, legacy]",
                 ),
                 (

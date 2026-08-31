@@ -11,7 +11,14 @@ sys.path.insert(0, str(ROOT))
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 EXPECTED_SHA = (
-    "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+    "${{ (needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.expected_head) || "
+    "(needs.event-classifier.result == 'failure' && "
+    "needs.event-identity.outputs.fallback_sha) || '' }}"
+)
+MERGE_SHA_FALLBACK = (
+    "github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.sha || github.sha"
 )
 
 
@@ -32,7 +39,9 @@ def _contract_errors(text):
             errors.append(f"missing {name} job")
             continue
         if f"EXPECTED_BUILD_SHA: {EXPECTED_SHA}" not in job:
-            errors.append(f"{name} does not derive EXPECTED_BUILD_SHA from pull-request head or push SHA")
+            errors.append(
+                f"{name} does not derive EXPECTED_BUILD_SHA from classified exact identity"
+            )
         checkout = f"actions/checkout@{CHECKOUT_PIN.split('@', 1)[1]}"
         checkout_fields = (
             f"ref: {EXPECTED_SHA}",
@@ -67,10 +76,23 @@ class BuildCiCheckoutContractTests(unittest.TestCase):
         self.assertTrue(any("fetch-depth" in error for error in _contract_errors(text)))
 
     def test_merge_ref_fallback_is_rejected(self):
-        text = WORKFLOW.read_text(encoding="utf-8").replace(
-            EXPECTED_SHA, "${{ github.sha }}", 1
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotIn(MERGE_SHA_FALLBACK, text)
+        self.assertNotIn(
+            "needs.event-classifier.result == 'failure' && "
+            "github.event.pull_request.head.sha",
+            EXPECTED_SHA,
         )
-        self.assertTrue(any("pull-request head" in error for error in _contract_errors(text)))
+        host = _job_block(text, "host-tests")
+        changed_host = host.replace(EXPECTED_SHA, "${{ github.sha }}", 1)
+        self.assertNotEqual(changed_host, host)
+        text = text.replace(host, changed_host, 1)
+        self.assertTrue(
+            any(
+                "classified exact identity" in error
+                for error in _contract_errors(text)
+            )
+        )
 
     def test_checkout_ref_must_use_event_head(self):
         text = WORKFLOW.read_text(encoding="utf-8").replace(
@@ -79,6 +101,25 @@ class BuildCiCheckoutContractTests(unittest.TestCase):
             1,
         )
         self.assertTrue(any("checkout must pin" in error for error in _contract_errors(text)))
+
+    def test_fallback_checkouts_never_consume_raw_event_refs(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            "ref: ${{ needs.event-identity.outputs.classifier_ref }}",
+            text,
+        )
+        self.assertIn("needs.event-identity.outputs.fallback_sha", EXPECTED_SHA)
+        self.assertIn(
+            "ref: ${{ needs.event-identity.outputs.fallback_sha }}",
+            text,
+        )
+        for raw_ref in (
+            "ref: ${{ github.sha }}",
+            "ref: ${{ github.event.after }}",
+            "ref: ${{ github.event.pull_request.head.sha }}",
+        ):
+            with self.subTest(raw_ref=raw_ref):
+                self.assertNotIn(raw_ref, text)
 
     def test_missing_checkout_verification_is_rejected(self):
         verification = (

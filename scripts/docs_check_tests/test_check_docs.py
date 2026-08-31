@@ -1011,6 +1011,24 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_development_workflow_skill -v",
                         },
                     },
+                    "TC-WORKFLOW-BODY-EDIT-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.workflow_pilot.tests."
+                            "test_event_classifier -v",
+                            "python3 -m unittest "
+                            "scripts.workflow_pilot.tests."
+                            "test_candidate_evidence -v",
+                            "python3 -m unittest discover -s "
+                            "tests/workflows -p 'test_*.py' -v",
+                            "python3 -m unittest "
+                            "tests.upstream_port.test_verify -v",
+                            "python3 -m unittest "
+                            "scripts.docs_check_tests."
+                            "test_development_workflow_skill -v",
+                        },
+                    },
                     "TC-WORKFLOW-PILOT-BASELINE-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
