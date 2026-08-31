@@ -1028,13 +1028,13 @@ def classifier_bootstrap_contract_violations(text):
             "Unavailable mount/cgroup features fail closed",
             "no UID-wide signal",
             "closes inherited file descriptors above 2",
-            "stdin from /dev/null",
-            "quota-bounded private regular sink",
+            "stdin/stdout/stderr permanently to private /dev/null",
             "no GitHub workflow command-file paths",
             "Candidate output is never replayed, logged, or uploaded",
             "fixed status text with a numeric exit classification",
+            "Arbitrary output volume cannot",
             "tmpfs/ulimit bounds",
-            "sink is removed and its absence proven",
+            "no output sink exists",
             "builder user, tree, wheelhouse, and candidate checkout",
             "unpredictable",
             "mode-restricted",
@@ -3655,6 +3655,13 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 r"(?i:Candidate\s+output\s+is\s+never\s+replayed,\s+"
                 r"logged,\s+or\s+uploaded)",
                 "Candidate output is replayed to the workflow log",
+            ),
+            (
+                "restore-volume-dependent-output-file",
+                "publisher-secret-boundary",
+                r"stdin/stdout/stderr\s+permanently\s+to\s+private\s+"
+                r"`/dev/null`",
+                "stdin/stdout/stderr to a bounded regular sink",
             ),
             (
                 "allow-unexpected-handoff",

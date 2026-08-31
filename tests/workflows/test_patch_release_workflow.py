@@ -221,25 +221,18 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "GITHUB_PATH=\"$GITHUB_PATH\"" in isolated_step
         or "GITHUB_STEP_SUMMARY=\"$GITHUB_STEP_SUMMARY\"" in isolated_step
         or isolated_step.count("\n        close_inherited_fds\n") != 2
-        or 'exec < /dev/null > /dev/null 2>&1' not in isolated_step
+        or isolated_step.count('exec < /dev/null > /dev/null 2>&1') != 2
         or '< /dev/null > /dev/null 2>&1 &' not in isolated_step
-        or (
-            "size=1m \\\n"
-            "          builder-capture /mnt/capture"
-        )
-        not in isolated_step
-        or "candidate-output.log" not in isolated_step
+        or "builder-capture" in isolated_step
+        or "candidate-output.log" in isolated_step
+        or "candidate_sink" in isolated_step
+        or "sink_size" in isolated_step
         or "ulimit -c 0" not in isolated_step
         or "ulimit -f 131072" not in isolated_step
         or "ulimit -n 128" not in isolated_step
         or "ulimit -u 512" not in isolated_step
         or "ulimit -v 8388608" not in isolated_step
-        or 'test "$sink_size" -le 1048576' not in isolated_step
-        or '/bin/rm -f -- "$candidate_sink"' not in isolated_step
-        or 'test ! -e "$candidate_sink"' not in isolated_step
         or 'test "$cgroup_members" = "$$"' not in isolated_step
-        or 'cat "$candidate_sink"' in isolated_step
-        or 'tee "$candidate_sink"' in isolated_step
         or "size=6g builder-source /mnt/source" not in isolated_step
         or "size=1g builder-home /mnt/home" not in isolated_step
         or "size=1g builder-temp /mnt/tmp" not in isolated_step
@@ -567,11 +560,12 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('test ! -e "$builder_cgroup"', self.patch_job)
         self.assertNotRegex(self.patch_job, r"/bin/kill[^\n]*[\"']?\$pid")
         self.assertIn("close_inherited_fds", self.patch_job)
-        self.assertIn('exec < /dev/null > /dev/null 2>&1', self.patch_job)
-        self.assertIn("builder-capture /mnt/capture", self.patch_job)
-        self.assertIn('test "$sink_size" -le 1048576', self.patch_job)
-        self.assertIn('/bin/rm -f -- "$candidate_sink"', self.patch_job)
-        self.assertIn('test ! -e "$candidate_sink"', self.patch_job)
+        self.assertEqual(
+            self.patch_job.count('exec < /dev/null > /dev/null 2>&1'),
+            2,
+        )
+        self.assertNotIn("builder-capture", self.patch_job)
+        self.assertNotIn("candidate-output.log", self.patch_job)
         self.assertIn("ulimit -f 131072", self.patch_job)
         self.assertIn("size=6g builder-source /mnt/source", self.patch_job)
         self.assertIn("candidate build failed: exit=%d", self.patch_job)
@@ -779,11 +773,6 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "\n        close_inherited_fds\n",
             "\n        true\n",
         )
-        unbounded_capture = self.text.replace(
-            "size=1m \\\n          builder-capture /mnt/capture",
-            "size=64g \\\n          builder-capture /mnt/capture",
-            1,
-        )
         unbounded_source = self.text.replace(
             "size=6g builder-source /mnt/source",
             "size=100% builder-source /mnt/source",
@@ -794,16 +783,11 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "        true",
             1,
         )
-        replayed_candidate_output = self.text.replace(
-            '        sink_size="$(/usr/bin/stat -c %s "$candidate_sink")"',
-            '        /bin/cat "$candidate_sink"\n'
-            '        sink_size="$(/usr/bin/stat -c %s "$candidate_sink")"',
-            1,
-        )
-        retained_candidate_sink = self.text.replace(
-            '        /bin/rm -f -- "$candidate_sink"\n'
-            '        test ! -e "$candidate_sink"',
-            "        true",
+        candidate_output_regular_file = self.text.replace(
+            "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc\n"
+            "        exec < /dev/null > /dev/null 2>&1",
+            "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc\n"
+            "        exec < /dev/null > /mnt/source/candidate-output.log 2>&1",
             1,
         )
         leaked_github_output = self.text.replace(
@@ -967,11 +951,9 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("leaked-bash-env", leaked_bash_env),
             ("inherited-actions-log", inherited_actions_log),
             ("retained-inherited-fds", retained_inherited_fds),
-            ("unbounded-capture", unbounded_capture),
             ("unbounded-source", unbounded_source),
             ("removed-file-limit", removed_file_limit),
-            ("replayed-candidate-output", replayed_candidate_output),
-            ("retained-candidate-sink", retained_candidate_sink),
+            ("candidate-output-regular-file", candidate_output_regular_file),
             ("leaked-github-output", leaked_github_output),
             ("leaked-step-summary", leaked_step_summary),
             ("writable-host-root", writable_host_root),
@@ -1276,7 +1258,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             (unexpected_output / "extra").write_bytes(b"not an admitted output")
             self.assertNotEqual(validate(unexpected).returncode, 0)
 
-    def test_candidate_output_is_bounded_private_and_never_replayed(self):
+    def test_candidate_output_is_private_null_and_never_replayed(self):
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
         marker = "Uk9NX0xPR19MRUFLX01BUktFUl80ZjZmNmQ="
@@ -1310,40 +1292,38 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
 
             def run_adversary(script, expected_status=None):
-                sink = sandbox / "private-candidate-output.log"
-                with sink.open("wb") as output:
-                    completed = subprocess.run(
-                        [
-                            "/usr/bin/env",
-                            "-i",
-                            "HOME=" + str(sandbox),
-                            "PATH=/usr/bin:/bin",
-                            "/bin/bash",
-                            "--noprofile",
-                            "--norc",
-                            "-c",
-                            script,
-                            "--",
-                            marker,
-                            str(inherited_fd),
-                        ],
-                        stdin=subprocess.DEVNULL,
-                        stdout=output,
-                        stderr=subprocess.STDOUT,
-                        cwd=sandbox,
-                        close_fds=True,
-                        preexec_fn=limits,
-                        check=False,
-                    )
+                completed = subprocess.run(
+                    [
+                        "/usr/bin/env",
+                        "-i",
+                        "HOME=" + str(sandbox),
+                        "PATH=/usr/bin:/bin",
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-c",
+                        script,
+                        "--",
+                        marker,
+                        str(inherited_fd),
+                    ],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    cwd=sandbox,
+                    close_fds=True,
+                    preexec_fn=limits,
+                    check=False,
+                )
                 visible = (
                     "candidate build status: success"
                     if completed.returncode == 0
                     else f"candidate build failed: exit={completed.returncode}"
                 )
                 self.assertNotIn(marker, visible)
-                self.assertLessEqual(sink.stat().st_size, 65536)
-                sink.unlink()
-                self.assertFalse(sink.exists())
+                self.assertFalse(
+                    (sandbox / "private-candidate-output.log").exists()
+                )
                 if expected_status is not None:
                     self.assertEqual(completed.returncode, expected_status)
                 return completed.returncode
@@ -1386,8 +1366,9 @@ exec /usr/bin/python3 -c \
   'import os,sys; marker=sys.argv[1].encode(); data=(marker+b"\n")*1000000; os.write(1,data); os.write(2,data)' \
   "$1"
 ''',
+                    expected_status=0,
                 )
-                self.assertNotEqual(huge_status, 0)
+                self.assertEqual(huge_status, 0)
             finally:
                 os.close(inherited_fd)
 

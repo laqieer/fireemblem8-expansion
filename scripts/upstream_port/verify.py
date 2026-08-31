@@ -1627,10 +1627,13 @@ def _parse_step(block, job_name, index):
             not in {token for command in values["run"] for token in command}
             or "close_inherited_fds()"
             not in {token for command in values["run"] for token in command}
+            or values["run"].count(
+                ("exec", "<", "/dev/null", ">", "/dev/null", "2>&1")
+            )
+            != 2
             or "candidate-output.log"
-            not in " ".join(token for command in values["run"] for token in command)
+            in " ".join(token for command in values["run"] for token in command)
             or ("ulimit", "-f", "131072") not in values["run"]
-            or ("test", "!", "-e", "$candidate_sink") not in values["run"]
             or ("test", "$cgroup_members", "=", "$$") not in values["run"]
             or "candidate build failed: exit=%d"
             not in " ".join(token for command in values["run"] for token in command)
@@ -1638,11 +1641,6 @@ def _parse_step(block, job_name, index):
             not in " ".join(token for command in values["run"] for token in command)
             or "GITHUB_STEP_SUMMARY-"
             not in " ".join(token for command in values["run"] for token in command)
-            or any(
-                "$candidate_sink" in command
-                for command in values["run"]
-                if command and command[0] in {"/bin/cat", "/usr/bin/tee"}
-            )
             or ("test", "-z", "$(builder_cgroup_pids)")
             not in values["run"]
             or ("test", "-z", "$(builder_group_pids $builder_pgid)")

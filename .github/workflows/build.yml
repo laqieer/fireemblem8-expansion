@@ -1114,23 +1114,7 @@ jobs:
         candidate_script="$6"
         host_uid="$7"
         host_gid="$8"
-        candidate_sink=""
         exec < /dev/null > /dev/null 2>&1
-        cleanup_candidate_sink() {
-          status="$?"
-          trap - EXIT INT TERM
-          exec < /dev/null > /dev/null 2>&1
-          if [ -n "$candidate_sink" ] && [ -e "$candidate_sink" ]; then
-            /bin/rm -f -- "$candidate_sink"
-          fi
-          if [ -n "$candidate_sink" ] && [ -e "$candidate_sink" ]; then
-            exit 125
-          fi
-          exit "$status"
-        }
-        trap cleanup_candidate_sink EXIT
-        trap 'exit 130' INT
-        trap 'exit 143' TERM
         close_inherited_fds() {
           for fd_path in /proc/$$/fd/*; do
             fd="${fd_path##*/}"
@@ -1161,8 +1145,8 @@ jobs:
         /usr/bin/mount -t tmpfs \
           -o nosuid,nodev,noexec,mode=0755,size=16m \
           builder-work /mnt
-        /usr/bin/mkdir -m 0755 /mnt/capture /mnt/control /mnt/export \
-          /mnt/handoff /mnt/home /mnt/source /mnt/tmp /mnt/wheelhouse
+        /usr/bin/mkdir -m 0755 /mnt/control /mnt/export /mnt/handoff \
+          /mnt/home /mnt/source /mnt/tmp /mnt/wheelhouse
         /usr/bin/mount -t tmpfs \
           -o nosuid,nodev,mode=0755,size=6g builder-source /mnt/source
         /bin/cp -a -- "$builder_root/source/." /mnt/source/
@@ -1173,9 +1157,6 @@ jobs:
         /usr/bin/mount -t tmpfs \
           -o nosuid,nodev,noexec,mode=0700,size=40m \
           builder-handoff /mnt/handoff
-        /usr/bin/mount -t tmpfs \
-          -o nosuid,nodev,noexec,mode=0700,size=1m \
-          builder-capture /mnt/capture
         /usr/bin/mount --bind "$builder_root/handoff" /mnt/export
         /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/export
         /usr/bin/mount --bind "$builder_root/wheelhouse" /mnt/wheelhouse
@@ -1226,10 +1207,7 @@ jobs:
         /usr/bin/ln -s /proc/self/fd/2 /dev/stderr
         /usr/bin/mount -o remount,ro,nosuid /dev
         /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc
-        candidate_sink=/mnt/capture/candidate-output.log
-        : > "$candidate_sink"
-        /bin/chmod 0600 "$candidate_sink"
-        exec < /dev/null > "$candidate_sink" 2>&1
+        exec < /dev/null > /dev/null 2>&1
         close_inherited_fds
         ulimit -c 0
         ulimit -f 131072
@@ -1249,13 +1227,6 @@ jobs:
           /mnt/control/candidate-build.sh
         candidate_status="$?"
         set -e
-        exec < /dev/null > /dev/null 2>&1
-        sink_size="$(/usr/bin/stat -c %s "$candidate_sink")"
-        test "$sink_size" -ge 0
-        test "$sink_size" -le 1048576
-        /bin/rm -f -- "$candidate_sink"
-        test ! -e "$candidate_sink"
-        candidate_sink=""
         if [ "$candidate_status" -ne 0 ]; then
           exit "$candidate_status"
         fi
@@ -1311,7 +1282,6 @@ jobs:
         done
         test ! -w "$WHEELHOUSE"
         test ! -w "$HOST_RUNNER_TEMP"
-        test ! -w /mnt/capture
         test ! -w /mnt/export
         for writable_path in "$GITHUB_WORKSPACE" "$HOME" "$RUNNER_TEMP" \
           "$HANDOFF"
@@ -1336,7 +1306,7 @@ jobs:
           case ",$mount_options," in
             *,rw,*)
               case "$mount_target" in
-                /dev/shm|/mnt/capture|/mnt/handoff|/mnt/home|/mnt/source|/mnt/tmp|/tmp) ;;
+                /dev/shm|/mnt/handoff|/mnt/home|/mnt/source|/mnt/tmp|/tmp) ;;
                 *) echo "unexpected writable mount: $mount_target" >&2; exit 1 ;;
               esac
               ;;

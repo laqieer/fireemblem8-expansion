@@ -86,12 +86,12 @@ source hash pins.
 Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
 signal.
 Before candidate code starts, the wrapper closes inherited file descriptors
-above 2, redirects stdin from `/dev/null` and stdout/stderr to a quota-bounded
-private regular sink, and passes no GitHub workflow command-file paths.
+above 2, redirects stdin/stdout/stderr permanently to private `/dev/null`, and
+passes no GitHub workflow command-file paths.
 Candidate output is never replayed, logged, or uploaded; the trusted host emits
-only fixed status text with a numeric exit classification. All writable roots
-and files have tmpfs/ulimit bounds. The sink is removed and its absence proven
-before teardown.
+only fixed status text with a numeric exit classification. Arbitrary output
+volume cannot change an otherwise successful build. All other writable roots
+and regular files retain tmpfs/ulimit bounds; no output sink exists.
 The base is then downloaded to an unpredictable mode-restricted path and only
 absolute isolated Python from an empty runtime CWD/environment may consume the
 staged producer, target, and base. The base is deleted on success/failure,
