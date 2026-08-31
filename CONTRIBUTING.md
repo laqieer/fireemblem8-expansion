@@ -83,6 +83,16 @@ required Build CI and Copilot review running concurrently. When those
 candidate gates are clean, merge directly; the merge automatically starts the
 expanded Build CI on `master`.
 
+High-risk or large candidates also run one bounded fresh read-only adversarial
+pre-review before their first remote review. The reviewer is separate from the
+implementer and cannot mutate repository or GitHub state. Evaluate its exact
+candidate report with `python3 -m scripts.workflow_pilot.review_family`; every
+valid finding must cover its complete action, lifecycle, wire, generated, or
+enabled/disabled resource sibling family with evidence before another push.
+The first two consecutive change-request rounds produce bounded handoffs; the
+third creates an architecture/decomposition hold until disposition. This local
+contract does not replace the mandatory exact-candidate Copilot review.
+
 Both PR and master Build runs execute `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and the seconds-only fail-closed `summary` in
 parallel. Master additionally runs the technically used `patch-release`

@@ -95,6 +95,18 @@ or focused evidence cannot answer the acceptance criterion. Combined Build CI
 is the comprehensive final integration gate. Stop after focused checks pass,
 commit the candidate, and hand it off.
 
+For a high-risk or large candidate, run exactly one bounded fresh read-only
+adversarial pre-review, with an owner separate from the implementer, before the first
+remote review. Use the executable sibling-family contract: every valid finding
+expands across its complete action, lifecycle, wire, generated, or
+enabled/disabled resource family with evidence before the next push. Duplicate
+or overlapping review ownership fails. The fresh reviewer cannot edit, push,
+comment, request review, dispatch CI, or merge. Rounds one and two produce
+bounded family handoffs; a third consecutive change-request round blocks
+another push on an architecture/decomposition hold until disposition. Remote
+Copilot review remains mandatory for the current exact candidate even after a
+zero-finding local review.
+
 CI waiting must not occupy a reasoning subagent. The orchestrator that
 dispatches a workflow records its exact SHA and run ID, then returns
 immediately. The orchestrator runs exactly one bounded direct shell watcher:

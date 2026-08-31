@@ -242,6 +242,110 @@ Every schema version, identity, count, duration input, attempt, index, depth,
 and cost uses exact-integer validation before bounds or equality checks; JSON
 booleans are accepted only by declared boolean fields.
 
+## Sibling-family review convergence
+
+Issue [#179](https://github.com/laqieer/fireemblem8-expansion/issues/179)
+extends the issue #176 seam with an accepted **framework capability:
+review-convergence contract**. It does not change the frozen baseline fixture,
+expected values, decision seal, or reporter formulas. It adds an offline
+stdlib module that consumes one immutable candidate contract and emits
+canonical JSON:
+
+```bash
+python3 -m scripts.workflow_pilot.review_family \
+  --contract scripts/workflow_pilot/tests/fixtures/review_family_complete.json
+```
+
+The module reuses `PilotDataError`, strict JSON loading, full-SHA validation,
+closed risk/threshold enums, and canonical output from the issue #176 reporter.
+It is a report over candidate evidence, not a mutable status ledger. Its
+positive and default fixtures are deterministic source inputs; live ownership,
+review, push, and merge state remain GitHub facts.
+
+### Behavior-row contract
+
+Every behavior row has the same parsed shape. Unknown or missing fields fail:
+
+| Required mapping | Producer / consumer contract |
+| --- | --- |
+| Production predicate and producer | #176 risk/threshold classification and accepted finding identities produce the row. |
+| Executor and consumer | The fresh read-only reviewer plus evaluator execute it; the trusted coordinator consumes the resulting gates and handoff. |
+| Representation | A versioned immutable JSON contract becomes canonical JSON module output. |
+| Stale-state revalidation | Pre-review, remote rounds, findings, sweeps, and holds carry full lowercase candidate SHAs; only a clean review on the current SHA can permit merge. |
+| Host validation | `scripts.workflow_pilot.tests.test_review_family` parses fixtures and exercises production predicates, consumers, transitions, permissions, and mutation controls. |
+| Positive / adversarial / default / runtime evidence | Each class is nonempty typed evidence (`host-test`, `module-output`, or `runtime-contract`) with a normalized source path and named assertion. |
+
+High-risk means any named #176 risk boundary. Large means a
+`changed-files`, `changed-lines`, or `major-boundaries` threshold trigger.
+Before the first remote review of such a candidate, exactly one fresh reviewer
+separate from the implementer receives bounded files, minutes, and findings.
+Its only permission is `contents:read`; its only actions are reading the exact
+candidate and emitting the local report. Edit, push, comment, review request,
+CI dispatch, and merge actions fail. A second, duplicate, or overlapping owner
+also fails. A low-risk/non-large default contract allocates no pre-review
+owner.
+
+### Executable sibling families
+
+Every accepted finding belongs to exactly one family and has exactly one sweep.
+Every listed sibling carries a closed result
+(`affected-fixed`, `verified-unaffected`, or `not-applicable`) and nonempty
+typed evidence:
+
+| Family | Exact members |
+| --- | --- |
+| Action | actions, items, targets |
+| Lifecycle | entries, preservation, resets, terminals |
+| Wire | producers, consumers, validators, replay, stale bindings |
+| Generated | owners, outputs, consumers, drift checks |
+| Resource | enabled, disabled |
+
+Missing, duplicate, extra, or unknown siblings fail before a success-shaped
+handoff. Finding ownership is exact and non-overlapping across the local
+pre-review and remote Copilot rounds. A finding, its sweep, and its owning
+review must bind the same full SHA.
+
+For the first and second consecutive change-request rounds, the module emits a
+bounded family handoff with the exact finding, family, candidate, sibling
+evidence, and derived finding/family/sibling counts. A clean remote round
+resets the consecutive count. The third consecutive change-request round
+emits no narrow handoff: it derives an architecture/decomposition hold and
+sets `push_allowed` false. The candidate cannot advance and another review
+round cannot appear until one typed `decompose`, `redesign`, or
+`retain-with-evidence` disposition resolves that exact held round and SHA.
+
+`remote_copilot_review_required` is always true. A zero-finding local
+pre-review, no accepted finding, or an architecture disposition cannot satisfy
+the final gate. `merge_allowed` requires a zero-finding clean remote Copilot
+review bound to the contract's current exact candidate and no unresolved
+architecture hold.
+
+### Metric and lifecycle integration
+
+The review-family report names, but does not duplicate or overwrite, the
+existing issue #176 metrics:
+
+| Review-family measurement | #176 reporter path |
+| --- | --- |
+| Review rounds | `reviews.rounds` |
+| Accepted findings | `reviews.valid_findings` |
+| Findings per KLOC | `reviews.valid_findings_per_kloc` |
+| Time to clean review | `delivery.first_push_to_clean_review.*` |
+| Coordination overhead | `efficiency.pilot_coordination_minutes` and `efficiency.metadata_maintenance_minutes` |
+
+The frozen baseline remains 34 rounds, 101 findings, 5.054 findings/KLOC,
+unavailable historical time-to-clean evidence, and zero captured pilot and
+metadata overhead. Future #179 pilot events use those existing identities and
+formulas; this module adds no alternate counter or current-state field.
+
+The contract depends on #176 and is required by #181. It conflicts with
+duplicate review agents, mutating pre-review permissions, incomplete family
+sweeps, stale candidate evidence, and a push made through the third-round
+hold. It has no game/runtime, save, generated game-data, localization, ROM,
+RAM, modern debug/release, or archival impact and needs no feature flag.
+Rollback is a normal revert of issue #179; the issue #176 reporter and the
+mandatory remote Build/review/merge gates remain intact.
+
 ## Reproducible formulas
 
 All durations use exact UTC seconds. Subject durations are converted to decimal

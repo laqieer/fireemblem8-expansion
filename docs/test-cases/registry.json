@@ -478,7 +478,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/93",
         "https://github.com/laqieer/fireemblem8-expansion/issues/169",
         "https://github.com/laqieer/fireemblem8-expansion/issues/171",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/176"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/176",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/179"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -486,7 +487,8 @@
         "TC-WORKFLOW-CI-WAIT-001",
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
         "TC-WORKFLOW-STACKED-CI-001",
-        "TC-WORKFLOW-PILOT-BASELINE-001"
+        "TC-WORKFLOW-PILOT-BASELINE-001",
+        "TC-WORKFLOW-REVIEW-FAMILY-001"
       ]
     },
     {
@@ -2249,6 +2251,42 @@
         {
           "command": "python3 -m unittest discover -s tests/workflows -p 'test_*.py' -v",
           "evidence": "tests/workflows/test_build_ci_topology.py"
+        },
+        {
+          "command": "python3 scripts/check_docs.py --check",
+          "evidence": "scripts/check_docs.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-REVIEW-FAMILY-001",
+      "title": "Expand valid findings across complete sibling families",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/179"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families",
+      "profiles": [
+        "Clean source checkout with Python 3, immutable review-family fixtures, and no live GitHub workflow"
+      ],
+      "purpose": "Prove one bounded fresh read-only pre-review, exact behavior mapping, complete sibling-family expansion, bounded round handoffs, a third-round architecture hold, and a mandatory current-candidate remote Copilot review.",
+      "prerequisites": "Start at the repository root with the issue #176 workflow-pilot reporter plus the review-family module and complete/default fixtures unchanged; no credentials, ROM, emulator, or active PR are required.",
+      "actions": "Run the focused review-family suite and canonical CLI twice; inspect one synthetic finding per family, omit each sibling, mutate ownership/permissions/actions/states/SHAs, progress three consecutive change-request rounds, and remove or stale the zero-finding remote review.",
+      "expected_result": "Every accepted finding emits all exact evidenced siblings; rounds one and two emit bounded handoffs; round three blocks push until disposition; the default path allocates no local reviewer; and merge still requires a clean remote Copilot review on the current full SHA.",
+      "negative_control": "A missing sibling/evidence/mapping, unknown family/member/result/action/state, stale SHA, duplicate or overlapping owner/finding, mutating reviewer permission, unbounded scope, unresolved third-round hold, or absent/stale remote review fails closed or leaves merge blocked.",
+      "interactions": "Depends on issue #176 reporter validators, risk/threshold decisions, lifecycle discipline, and metric namespace; issue #181 depends on it; conflicts with overlapping reviewers, incomplete sweeps, stale evidence, and bypassed architecture holds.",
+      "save_compatibility": "Source-only workflow governance; no game/runtime, save, generated game-data, localization, ROM/RAM, modern debug/release, or archival impact.",
+      "cleanup": "No cleanup is required because fixtures are read-only, output is emitted to stdout, and no GitHub or workflow state changes.",
+      "limitations": "The local contract validates candidate evidence and gates but does not replace or invoke the authoritative remote Copilot review, candidate Build, or post-merge Build.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_review_family -v",
+          "evidence": "scripts/workflow_pilot/tests/test_review_family.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
         },
         {
           "command": "python3 scripts/check_docs.py --check",

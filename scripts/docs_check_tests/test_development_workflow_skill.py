@@ -1959,6 +1959,48 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             text,
         )
 
+    def test_adversarial_review_family_contract_is_mirrored(self):
+        _, skill = read_skill()
+        instructions = COPILOT_INSTRUCTIONS_PATH.read_text(encoding="utf-8")
+        shared = (
+            "high-risk or large candidate",
+            "bounded fresh",
+            "read-only",
+            "separate from the implementer",
+            "cannot edit, push, comment, request review, dispatch CI, or merge",
+            "third consecutive change-request round",
+            "architecture/decomposition hold",
+            "Remote",
+            "Copilot review",
+        )
+        for path, text in (
+            (SKILL_PATH, skill),
+            (COPILOT_INSTRUCTIONS_PATH, instructions),
+        ):
+            normalized = " ".join(text.split()).casefold()
+            for requirement in shared:
+                with self.subTest(path=path, requirement=requirement):
+                    self.assertIn(requirement.casefold(), normalized)
+
+        for requirement in (
+            "python3 -m scripts.workflow_pilot.review_family",
+            "actions, items, and targets",
+            "lifecycle entries, preservation, resets, and terminals",
+            "wire producers, consumers, validators, replay, and stale bindings",
+            "generated owners, outputs, consumers, and drift checks",
+            "enabled and disabled resource boundaries",
+            "first and second consecutive change-request rounds",
+            "Unknown families,",
+            "stale SHA bindings",
+            "duplicate owners",
+            "overlapping finding ownership",
+        ):
+            with self.subTest(skill_requirement=requirement):
+                self.assertIn(
+                    requirement.casefold(),
+                    " ".join(skill.split()).casefold(),
+                )
+
     def test_ci_waiting_does_not_hold_reasoning_subagents(self):
         _, text = read_skill()
         project_instructions = (
@@ -2957,6 +2999,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "TC-WORKFLOW-MANUAL-HANDOFF-001",
             "TC-WORKFLOW-STACKED-CI-001",
             "TC-WORKFLOW-PILOT-BASELINE-001",
+            "TC-WORKFLOW-REVIEW-FAMILY-001",
         ]
         self.assertEqual(
             [],

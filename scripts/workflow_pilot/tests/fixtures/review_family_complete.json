@@ -1,0 +1,362 @@
+{
+  "schema_version": 1,
+  "repository": "laqieer/fireemblem8-expansion",
+  "pull_request": 179,
+  "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "implementer": "implementation-agent",
+  "trigger": {
+    "risk_boundaries": [
+      "lifecycle",
+      "protocol"
+    ],
+    "threshold_triggers": [
+      "changed-files",
+      "risk-boundary"
+    ]
+  },
+  "pre_reviews": [
+    {
+      "owner": "fresh-adversarial-reviewer",
+      "fresh": true,
+      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "limits": {
+        "max_files": 40,
+        "max_findings": 10,
+        "max_minutes": 30
+      },
+      "permissions": [
+        "contents:read"
+      ],
+      "authorized_actions": [
+        "read-candidate",
+        "emit-local-report"
+      ],
+      "performed_actions": [
+        "read-candidate",
+        "emit-local-report"
+      ],
+      "finding_ids": [],
+      "completed_before_remote_round": 1
+    }
+  ],
+  "behavior_rows": [
+    {
+      "id": "review-family-convergence",
+      "production": {
+        "predicate": "high-risk or large candidate requires one fresh pre-review",
+        "producer": "workflow-pilot trigger and accepted review findings"
+      },
+      "execution": {
+        "executor": "fresh read-only reviewer and review-family evaluator",
+        "consumer": "trusted push and merge coordinator"
+      },
+      "representation": "versioned immutable review-family JSON contract",
+      "stale_state_revalidation": "all reviews, findings, sweeps, and holds bind full candidate SHAs",
+      "host_validation": "stdlib review-family unit tests and canonical CLI output",
+      "evidence": {
+        "positive": [
+          {
+            "kind": "host-test",
+            "source": "scripts/workflow_pilot/tests/test_review_family.py",
+            "assertion": "complete family fixture emits bounded handoff"
+          }
+        ],
+        "adversarial": [
+          {
+            "kind": "host-test",
+            "source": "scripts/workflow_pilot/tests/test_review_family.py",
+            "assertion": "missing siblings permissions and ownership fail closed"
+          }
+        ],
+        "default": [
+          {
+            "kind": "host-test",
+            "source": "scripts/workflow_pilot/tests/test_review_family.py",
+            "assertion": "low-risk fixture skips local pre-review but retains remote review"
+          }
+        ],
+        "runtime": [
+          {
+            "kind": "module-output",
+            "source": "scripts/workflow_pilot/review_family.py",
+            "assertion": "derived push merge handoff and architecture states are canonical"
+          }
+        ]
+      }
+    }
+  ],
+  "remote_reviews": [
+    {
+      "round": 1,
+      "review_id": 1001,
+      "reviewer": "copilot-pull-request-reviewer[bot]",
+      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "outcome": "changes-requested",
+      "finding_ids": [
+        "finding-action",
+        "finding-generated",
+        "finding-lifecycle",
+        "finding-resource",
+        "finding-wire"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "finding-action",
+      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "family": "action"
+    },
+    {
+      "id": "finding-generated",
+      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "family": "generated"
+    },
+    {
+      "id": "finding-lifecycle",
+      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "family": "lifecycle"
+    },
+    {
+      "id": "finding-resource",
+      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "family": "resource"
+    },
+    {
+      "id": "finding-wire",
+      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "family": "wire"
+    }
+  ],
+  "family_sweeps": [
+    {
+      "finding_id": "finding-action",
+      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "siblings": [
+        {
+          "member": "actions",
+          "result": "affected-fixed",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "action family actions sibling"
+            }
+          ]
+        },
+        {
+          "member": "items",
+          "result": "verified-unaffected",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "action family items sibling"
+            }
+          ]
+        },
+        {
+          "member": "targets",
+          "result": "verified-unaffected",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "action family targets sibling"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "finding_id": "finding-generated",
+      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "siblings": [
+        {
+          "member": "owners",
+          "result": "affected-fixed",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "generated family owners sibling"
+            }
+          ]
+        },
+        {
+          "member": "outputs",
+          "result": "verified-unaffected",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "generated family outputs sibling"
+            }
+          ]
+        },
+        {
+          "member": "consumers",
+          "result": "verified-unaffected",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "generated family consumers sibling"
+            }
+          ]
+        },
+        {
+          "member": "drift-checks",
+          "result": "verified-unaffected",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "generated family drift checks sibling"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "finding_id": "finding-lifecycle",
+      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "siblings": [
+        {
+          "member": "entries",
+          "result": "affected-fixed",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "lifecycle family entries sibling"
+            }
+          ]
+        },
+        {
+          "member": "preservation",
+          "result": "verified-unaffected",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "lifecycle family preservation sibling"
+            }
+          ]
+        },
+        {
+          "member": "resets",
+          "result": "verified-unaffected",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "lifecycle family resets sibling"
+            }
+          ]
+        },
+        {
+          "member": "terminals",
+          "result": "verified-unaffected",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "lifecycle family terminals sibling"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "finding_id": "finding-resource",
+      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "siblings": [
+        {
+          "member": "enabled",
+          "result": "affected-fixed",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "resource family enabled sibling"
+            }
+          ]
+        },
+        {
+          "member": "disabled",
+          "result": "verified-unaffected",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "resource family disabled sibling"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "finding_id": "finding-wire",
+      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "siblings": [
+        {
+          "member": "producers",
+          "result": "affected-fixed",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "wire family producers sibling"
+            }
+          ]
+        },
+        {
+          "member": "consumers",
+          "result": "verified-unaffected",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "wire family consumers sibling"
+            }
+          ]
+        },
+        {
+          "member": "validators",
+          "result": "verified-unaffected",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "wire family validators sibling"
+            }
+          ]
+        },
+        {
+          "member": "replay",
+          "result": "verified-unaffected",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "wire family replay sibling"
+            }
+          ]
+        },
+        {
+          "member": "stale-bindings",
+          "result": "verified-unaffected",
+          "evidence": [
+            {
+              "kind": "host-test",
+              "source": "scripts/workflow_pilot/tests/test_review_family.py",
+              "assertion": "wire family stale bindings sibling"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "architecture_disposition": null
+}

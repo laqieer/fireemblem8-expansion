@@ -561,6 +561,37 @@ Triage every AI review finding. Fix valid findings, answer questions, and close
 false positives with a reasoned explanation. Do not implement review comments
 blindly.
 
+### Adversarial sibling-family review convergence
+
+For a high-risk or large candidate derived from the workflow-pilot risk and
+threshold decisions, run exactly one bounded fresh adversarial pre-review
+before the first remote review. Its owner must be separate from the
+implementer and have no overlapping review owner. The fresh reviewer is
+read-only: it cannot edit, push, comment, request review, dispatch CI, or
+merge. It may only read the exact candidate and emit the local report consumed
+by `python3 -m scripts.workflow_pilot.review_family`.
+
+The executable review-family contract maps every behavior row to its
+production predicate and producer, executor and consumer, representation,
+stale-state revalidation, host validation, and positive, adversarial, default,
+and runtime evidence. A valid finding must expand to every member of exactly
+one closed sibling family before another push:
+
+- actions, items, and targets;
+- lifecycle entries, preservation, resets, and terminals;
+- wire producers, consumers, validators, replay, and stale bindings;
+- generated owners, outputs, consumers, and drift checks; or
+- enabled and disabled resource boundaries.
+
+The first and second consecutive change-request rounds emit bounded family
+handoffs containing every sibling and its evidence. A third consecutive
+change-request round creates an architecture/decomposition hold and blocks
+another push until an explicit disposition is recorded. Unknown families,
+members, actions, outcomes, incomplete evidence, stale SHA bindings, duplicate
+owners, and overlapping finding ownership fail closed. A later zero-finding
+round does not waive remote Copilot review: the current exact candidate still
+needs that clean review before merge.
+
 No human code review or approval is required. A CODEOWNERS request is advisory
 unless an external GitHub ruleset enforces it; this workflow does not add such
 a gate.

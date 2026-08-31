@@ -465,3 +465,90 @@ criterion applies.
 
 Rollback is a normal revert of issue #176's dedicated commit; no workflow or
 game behavior needs a compensating change.
+
+## TC-WORKFLOW-REVIEW-FAMILY-001: Expand valid findings across complete sibling families
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3, the issue #176 workflow-pilot reporter, and the immutable complete/default
+  review-family fixtures; no GitHub token, live PR, workflow, ROM, or emulator
+  is required.
+- **Prerequisites and clean starting state:** start at the repository root
+  with `scripts/workflow_pilot/review_family.py`,
+  `review_family_complete.json`, and `review_family_default.json` unchanged.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_review_family -v`.
+2. Run the module twice over
+   `scripts/workflow_pilot/tests/fixtures/review_family_complete.json` and
+   compare its canonical JSON bytes.
+3. Inspect the complete fixture's one accepted synthetic finding in each
+   action, lifecycle, wire, generated, and resource family. Confirm all exact
+   siblings and typed evidence appear in the global and first-round handoffs.
+4. Remove one sibling from each family in turn. Mutate the reviewer owner,
+   permission, action, family, member, result, remote outcome, and candidate
+   SHA. Require every mutation to fail closed.
+5. Add second and third consecutive change-request rounds. Confirm rounds one
+   and two emit bounded handoffs, round three emits an
+   architecture/decomposition hold, the current SHA cannot advance, and no
+   fourth review is accepted before a typed disposition.
+6. Inspect the default fixture's current zero-finding remote Copilot review.
+   Remove it and then make it stale; confirm merge remains blocked while the
+   remote-review-required gate remains true.
+
+### Expected result
+
+The complete fixture emits one exact read-only pre-review owner, five finding
+families, 18 evidenced siblings, and a bounded first-round handoff. The default
+fixture allocates no local reviewer but still requires and recognizes a clean
+remote Copilot review on the current exact candidate. The module output maps
+every behavior row to production, execution, representation, stale-state,
+host, and positive/adversarial/default/runtime evidence.
+
+### Negative control
+
+The suite rejects one omitted family sibling; missing evidence; unknown family,
+member, result, action, or state; stale or malformed SHA binding; duplicate or
+overlapping owner/finding coverage; a pre-review owner equal to the implementer;
+any edit, push, comment, review-request, CI-dispatch, or merge permission;
+unbounded scope; incomplete behavior mapping; a finding without an exact sweep;
+an unreviewed or stale current candidate; and any push/review progression
+through an unresolved third-round hold.
+
+### Interactions and save compatibility
+
+The contract depends on issue #176's risk/threshold enums, strict JSON/full-SHA
+validators, canonical report representation, lifecycle discipline, and metric
+namespace. Issue #181 depends on this contract. It conflicts with overlapping
+review agents, incomplete sibling evidence, stale candidate state, and narrow
+patching after a third consecutive change request. Remote Copilot review,
+candidate Build, and post-merge Build remain mandatory. There is no game,
+runtime, save, generated game-data, localization, ROM/RAM, modern
+debug/release, or archival impact.
+
+### Automation
+
+`python3 -m unittest scripts.workflow_pilot.tests.test_review_family -v`
+executes the production evaluator with positive, adversarial, default, stale,
+round-progression, permission, ownership, and metric-binding fixtures.
+
+`python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
+checks that the production review/merge policy retains the bounded read-only
+owner, complete sibling families, third-round hold, and mandatory remote
+review.
+
+`python3 scripts/check_docs.py --check` parses this procedure and its registry
+ownership and automation paths.
+
+### Cleanup and limitations
+
+No cleanup is required. The contract emits local canonical JSON and changes no
+remote state. A real delivery still obtains remote Copilot review and GitHub
+candidate facts from their authoritative services. No manual-only criterion
+applies.
+
+Rollback is a normal revert of issue #179. The issue #176 baseline values and
+existing Build, Copilot review, merge, and post-merge gates remain unchanged.
