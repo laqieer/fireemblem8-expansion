@@ -100,10 +100,14 @@ RESULT_SEAL_DOMAIN = b"workflow-pilot-agent-handoff-result-v1\0"
 GIT_SEAL_DOMAIN = b"workflow-pilot-agent-handoff-git-v1\0"
 CHECK_RECEIPT_SEAL_DOMAIN = b"workflow-pilot-agent-check-receipt-v1\0"
 HISTORY_RECEIPT_SEAL_DOMAIN = b"workflow-pilot-agent-history-receipt-v1\0"
+HISTORY_OBSERVATION_SEAL_DOMAIN = (
+    b"workflow-pilot-agent-history-observation-v1\0"
+)
 ZERO_SEAL = "0" * 64
 HISTORY_REF_PREFIX = "refs/workflow-pilot/handoff-history"
 REPOSITORY_IDENTITY_REF = "refs/workflow-pilot/repository-identity"
 RAW_DIFF_CHECK_PATH = Path(__file__).resolve().with_name("raw_diff_check.py")
+AUTHORITY_READ_ATTEMPTS = 3
 
 
 class HandoffDataError(Exception):
@@ -732,20 +736,123 @@ def _read_history_authority_commit(
     return authority, parents
 
 
+def _history_observation(
+    reference: str,
+    object_id: str,
+    attempt: int,
+) -> dict[str, Any]:
+    payload = {
+        "remote": "origin",
+        "ref": reference,
+        "object_id": object_id,
+        "attempt": attempt,
+    }
+    payload["token"] = hashlib.sha256(
+        HISTORY_OBSERVATION_SEAL_DOMAIN + normalized_json(payload)
+    ).hexdigest()
+    return payload
+
+
+def confirm_history_authority_observation(
+    repository_root: Path,
+    observation: dict[str, Any],
+) -> None:
+    observation = expect_object(
+        observation,
+        "history authority observation",
+    )
+    expect_keys(
+        observation,
+        "history authority observation",
+        ("remote", "ref", "object_id", "attempt", "token"),
+    )
+    if observation["remote"] != "origin":
+        raise HandoffDataError(
+            "history authority observation remote must be origin"
+        )
+    reference = expect_string(
+        observation["ref"],
+        "history authority observation.ref",
+    )
+    object_id = expect_sha(
+        observation["object_id"],
+        "history authority observation.object_id",
+    )
+    attempt = expect_int(
+        observation["attempt"],
+        "history authority observation.attempt",
+        1,
+    )
+    if attempt > AUTHORITY_READ_ATTEMPTS:
+        raise HandoffDataError(
+            "history authority observation attempt exceeds bound"
+        )
+    token = observation["token"]
+    if (
+        not isinstance(token, str)
+        or reporter.SHA256_RE.fullmatch(token) is None
+        or token
+        != _history_observation(reference, object_id, attempt)["token"]
+    ):
+        raise HandoffDataError(
+            "history authority observation token does not verify"
+        )
+    current = _remote_ref_oid(
+        repository_root,
+        reference,
+        allow_missing=False,
+    )
+    if current != object_id:
+        raise HandoffDataError("authority-moved")
+
+
 def read_history_authority(
     repository_root: Path,
     repository: str,
     issue: int,
     pull_request: int | None,
+    *,
+    observation_hook=None,
 ) -> dict[str, Any]:
     repository_root = validate_repository_root(repository_root)
     reference = history_authority_ref(issue, pull_request)
-    object_id = _remote_ref_oid(
-        repository_root,
-        reference,
-        allow_missing=False,
-    )
-    _fetch_remote_authority(repository_root, reference, object_id)
+    object_id = None
+    observation = None
+    for attempt in range(1, AUTHORITY_READ_ATTEMPTS + 1):
+        observed_before = _remote_ref_oid(
+            repository_root,
+            reference,
+            allow_missing=False,
+        )
+        fetch_error = None
+        try:
+            _fetch_remote_authority(
+                repository_root,
+                reference,
+                observed_before,
+            )
+        except HandoffDataError as error:
+            fetch_error = error
+        if observation_hook is not None:
+            observation_hook(attempt, "after-fetch", observed_before)
+        observed_after = _remote_ref_oid(
+            repository_root,
+            reference,
+            allow_missing=False,
+        )
+        if observed_before != observed_after:
+            continue
+        if fetch_error is not None:
+            raise fetch_error
+        object_id = observed_before
+        observation = _history_observation(
+            reference,
+            object_id,
+            attempt,
+        )
+        break
+    if object_id is None or observation is None:
+        raise HandoffDataError("authority-moved")
     authority, parents = _read_history_authority_commit(
         repository_root,
         object_id,
@@ -777,6 +884,7 @@ def read_history_authority(
     return {
         "ref": reference,
         "object_id": object_id,
+        "observation": observation,
         **authority,
     }
 
@@ -2515,7 +2623,12 @@ def _empty_handoff_result(handoff: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def validate_document(raw: Any, repository_root: Path) -> dict[str, Any]:
+def validate_document(
+    raw: Any,
+    repository_root: Path,
+    *,
+    authority_hook=None,
+) -> dict[str, Any]:
     document = copy.deepcopy(expect_object(raw, "handoff document"))
     expect_keys(
         document,
@@ -2599,6 +2712,7 @@ def validate_document(raw: Any, repository_root: Path) -> dict[str, Any]:
             "sequence",
             "head_seal",
             "previous_object_id",
+            "observation",
         ),
     )
     canonical_authority = read_history_authority(
@@ -2606,6 +2720,7 @@ def validate_document(raw: Any, repository_root: Path) -> dict[str, Any]:
         repository,
         issue,
         pull_request,
+        observation_hook=authority_hook,
     )
     if supplied_authority != canonical_authority:
         raise HandoffDataError(
@@ -3163,6 +3278,17 @@ def validate_document(raw: Any, repository_root: Path) -> dict[str, Any]:
             result["outcome"] = "accepted"
         elif rejection_codes:
             result["outcome"] = "rejected"
+
+    if authority_hook is not None:
+        authority_hook(
+            canonical_authority["observation"]["attempt"],
+            "before-eligibility-confirm",
+            canonical_authority["object_id"],
+        )
+    confirm_history_authority_observation(
+        repository_root,
+        canonical_authority["observation"],
+    )
 
     completed = [
         result for result in results.values() if result["outcome"] == "accepted"

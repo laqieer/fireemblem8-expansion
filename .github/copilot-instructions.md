@@ -116,6 +116,10 @@ environment and disable external diff, textconv, local attributes, and ambient
 configuration bypasses. After OOM, sent/received/progressing prefixes are
 valid non-eligible replacement progress only when assignment is strictly
 later than interruption; equal, predated, or multiple replacements reject.
+Authority reads use bounded remote-OID-before/fetch/remote-OID-after
+consistency, retry from a moved head, and fail `authority-moved` on exhaustion.
+The stable observation token is rechecked at the final eligibility boundary,
+so no stale authority result can be accepted.
 
 Implementation subagents validate and commit locally but do not push. The
 orchestrator pushes the exact commit under repository-owner context so Build

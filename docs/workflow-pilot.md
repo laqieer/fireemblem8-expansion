@@ -518,11 +518,20 @@ lifecycle, a fixed `origin` ref under
 `refs/workflow-pilot/handoff-history/` points to an append-only authority
 commit. Its `authority.json` contains repository, lifecycle, sequence, handoff
 head seal, and previous authority object; the commit has that exact previous
-object as its sole parent. Validation queries `ls-remote`, fetches the named
-ref without writing `FETCH_HEAD` or any local ref, and walks every authority
-parent back to sequence-zero/null-head genesis. A locally reset ref is
-irrelevant. Ref absence, `prior_handoffs: []` after sequence one, truncation,
-replay, ancestry fork, stale object/sequence, or caller-selected head rejects.
+object as its sole parent.
+
+Authority reads use a fixed three-attempt transaction. Each attempt queries
+the remote OID, fetches the named ref/object without writing `FETCH_HEAD` or
+any local ref, then queries the remote OID again. Only equal before/after OIDs
+whose exact object parses and whose complete authority ancestry reaches
+sequence-zero/null-head genesis are accepted. A moved OID restarts from the
+new head; repeated movement fails `authority-moved` instead of returning the
+stale parent. The stable result carries a domain-separated observation token,
+and handoff validation queries that token again immediately before computing
+trusted-push/delivery eligibility. A move after the initial read therefore
+also rejects. A locally reset ref is irrelevant. Ref absence,
+`prior_handoffs: []` after sequence one, truncation, replay, ancestry fork,
+stale object/sequence, or caller-selected head rejects.
 
 Bootstrap and advance planning are deterministic and read-only:
 

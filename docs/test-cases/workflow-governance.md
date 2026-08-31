@@ -507,7 +507,10 @@ game behavior needs a compensating change.
    Confirm a new document with `prior_handoffs: []`, a reset local ref, stale
    authority object, or missing upstream ref cannot forge genesis. Confirm a
    normal clone explicitly fetches the remote authority without changing
-   local refs.
+   local refs. Use a real bare-origin advance hook between the first remote
+   observation, fetch, and second observation: one move retries from the new
+   OID, repeated moves exhaust the fixed bound with `authority-moved`, and a
+   move before final eligibility invalidates the observation token.
 5. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
@@ -574,7 +577,8 @@ handoffs remain a sealed contiguous chain rather than a mutable ledger, and
 their exact expected head and sequence come from the independently read
 fixed-`origin` authority commit chain. Local ref changes are irrelevant;
 omitted history cannot reset a non-genesis lifecycle, and only owner CAS can
-advance the remote head.
+advance the remote head. A stable read requires equal remote OIDs around the
+fetch; no stale parent survives movement or the final eligibility recheck.
 
 The typed dependency graph reports `child-implement` ready as soon as
 `parent-merge` is done, independently of a healthy running master watcher and
@@ -616,7 +620,9 @@ hand-authored reporter rows, owner-history chain mutation, actor aliases, and
 expired or ineffective availability evidence reject independently. A
 missing/reset canonical history ref, hostile Git config or local attributes,
 incomplete-prefix rejection, and equal/predated/multiple OOM replacement also
-fail their dedicated controls.
+fail their dedicated controls. Mid-read movement retries, repeated movement
+fails `authority-moved`, and movement after the read but before eligibility
+invalidates the sealed observation.
 
 ### Interactions and save compatibility
 
@@ -634,7 +640,8 @@ real ancestry/branch/diff/worktree/trailer facts with the issue #176 clean Git
 boundary, executes only the closed safe check runner, verifies receipts, and
 uses a local bare remote plus separate owner/implementation repositories to
 exercise deterministic bootstrap/advance plans, explicit fetch, local reset,
-stale CAS, and honest CAS. It performs no GitHub mutation. The complete
+stale CAS, honest CAS, stable/moving read boundaries, bounded exhaustion, and
+eligibility-token revalidation. It performs no GitHub mutation. The complete
 `scripts/workflow_pilot/tests` discovery reruns the frozen issue #176 reporter
 regressions. Parsed task/dependency/watcher fixtures compute readiness and
 required edges rather than asserting policy wording. The workflow-governance

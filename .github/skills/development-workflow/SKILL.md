@@ -656,6 +656,13 @@ head. Advance uses the expected remote object/sequence plus an atomic
 force-with-lease/CAS. Missing refs, omitted/truncated prior lists, stale CAS,
 forks, replay, reset genesis, or caller-selected heads reject. Implementation
 owners never bootstrap, advance, or push this authority.
+Every read is a bounded before/fetch/after transaction: observe the remote OID,
+fetch the named authority without moving local refs or `FETCH_HEAD`, then
+observe the remote OID again. Accept only equal observations and the exact
+fetched/parsed object. On movement, retry from the new OID up to the fixed
+bound, then fail `authority-moved`; never return the stale parent. Carry the
+sealed observation into the document and re-query it immediately before the
+eligibility decision.
 
 There is exactly one delivery coordinator and at most one direct watcher for
 an exact run identity. A watcher timeout or process error is transport

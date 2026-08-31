@@ -790,6 +790,109 @@ class DeliveryDependencyGraphTests(unittest.TestCase):
         )
 
 
+class AuthorityReadRaceTests(unittest.TestCase):
+    def test_stable_and_advance_before_read_boundaries(self):
+        with handoff_repository() as (root, _base, _parent, _result):
+            stable = agent_handoff.read_history_authority(
+                root,
+                "example/workflow",
+                178,
+                200,
+            )
+            self.assertEqual(stable["sequence"], 0)
+            self.assertEqual(stable["observation"]["attempt"], 1)
+            agent_handoff.confirm_history_authority_observation(
+                root,
+                stable["observation"],
+            )
+
+            set_history_authority(root, 1, "1" * 64)
+            advanced = agent_handoff.read_history_authority(
+                root,
+                "example/workflow",
+                178,
+                200,
+            )
+            self.assertEqual(advanced["sequence"], 1)
+            self.assertEqual(advanced["head_seal"], "1" * 64)
+            self.assertEqual(advanced["observation"]["attempt"], 1)
+
+    def test_concurrent_advance_retries_from_new_remote_oid(self):
+        with handoff_repository() as (root, _base, _parent, _result):
+            moved = False
+
+            def advance_once(attempt, phase, _object_id):
+                nonlocal moved
+                if phase == "after-fetch" and attempt == 1 and not moved:
+                    moved = True
+                    set_history_authority(root, 1, "2" * 64)
+
+            authority = agent_handoff.read_history_authority(
+                root,
+                "example/workflow",
+                178,
+                200,
+                observation_hook=advance_once,
+            )
+            self.assertTrue(moved)
+            self.assertEqual(authority["sequence"], 1)
+            self.assertEqual(authority["head_seal"], "2" * 64)
+            self.assertEqual(authority["observation"]["attempt"], 2)
+
+    def test_repeated_remote_movement_exhausts_bounded_read(self):
+        with handoff_repository() as (root, _base, _parent, _result):
+            sequence = 0
+
+            def advance_every_time(_attempt, phase, _object_id):
+                nonlocal sequence
+                if phase != "after-fetch":
+                    return
+                sequence += 1
+                set_history_authority(
+                    root,
+                    sequence,
+                    f"{sequence:064x}",
+                )
+
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "authority-moved",
+            ):
+                agent_handoff.read_history_authority(
+                    root,
+                    "example/workflow",
+                    178,
+                    200,
+                    observation_hook=advance_every_time,
+                )
+            self.assertEqual(
+                sequence,
+                agent_handoff.AUTHORITY_READ_ATTEMPTS,
+            )
+
+    def test_advance_after_read_before_eligibility_rejects(self):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            advanced = False
+
+            def advance_at_eligibility(_attempt, phase, _object_id):
+                nonlocal advanced
+                if phase == "before-eligibility-confirm" and not advanced:
+                    advanced = True
+                    set_history_authority(root, 1, "3" * 64)
+
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "authority-moved",
+            ):
+                agent_handoff.validate_document(
+                    document,
+                    root,
+                    authority_hook=advance_at_eligibility,
+                )
+            self.assertTrue(advanced)
+
+
 class ExactHandoffTests(unittest.TestCase):
     def test_exact_clean_strict_descendant_is_accepted(self):
         with handoff_repository() as (root, _base, parent, result):
